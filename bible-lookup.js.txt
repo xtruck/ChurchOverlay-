@@ -1,0 +1,58 @@
+/**
+ * bible-lookup.js
+ * Interroge l'API getbible.net (version Louis Segond) pour obtenir le texte
+ * d'un verset. Fournit deux fonctions :
+ *   getVerse(ref)        -> Promise<{ reference, text }>
+ *   buildReferenceLabel(ref) -> string (ex: "Jean 3:16")
+ */
+const https = require('https');
+
+function buildReferenceLabel(ref) {
+  const plage = ref.verseEnd ? `${ref.verseStart}-${ref.verseEnd}` : `${ref.verseStart}`;
+  return `${ref.book} ${ref.chapter}:${plage}`;
+}
+
+function fetchVerse(book, chapter, verseStart, verseEnd) {
+  const plage = verseEnd ? `${verseStart}-${verseEnd}` : `${verseStart}`;
+  const path = `/v1/lsg/${encodeURIComponent(book)}/${chapter}/${plage}`;
+
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: 'getbible.net',
+      path,
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+      timeout: 5000,
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (!json.verses || !Array.isArray(json.verses)) {
+            return reject(new Error('Format de réponse inattendu'));
+          }
+          const text = json.verses.map(v => v.text).join(' ');
+          resolve(text.trim());
+        } catch (e) {
+          reject(new Error('Réponse JSON invalide'));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+async function getVerse(ref) {
+  const text = await fetchVerse(ref.book, ref.chapter, ref.verseStart, ref.verseEnd);
+  return {
+    reference: buildReferenceLabel(ref),
+    text,
+  };
+}
+
+module.exports = { getVerse, buildReferenceLabel };
