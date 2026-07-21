@@ -15,7 +15,7 @@ Affiche automatiquement dans OBS les passages bibliques cités à l'oral :
    npm start
    ```
 3. Dans OBS, créez une source *Browser* pointant vers
-   `file:///C:/ChurchOverlay/overlay.html` (1920 × 1080).
+   `file:///C:/Users/xtruc/Documents/ChurchOverlay/overlay.html` (1920 × 1080).
 
 Le serveur reste utilisable pour l'affichage manuel si Whisper, FFmpeg ou la
 recherche en ligne ne sont pas disponibles.
