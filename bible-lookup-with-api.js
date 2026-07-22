@@ -76,11 +76,22 @@ async function fetchFromProvider(provider, reference) {
 
     console.log(`[bible-lookup] Trying ${provider.name}...`);
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { 'User-Agent': 'ChurchOverlay/1.0' },
-      timeout: 5000,
-    });
+    // Note: l'option `timeout` n'existe pas sur le fetch natif de Node (undici)
+    // et serait silencieusement ignorée. On utilise AbortController pour que
+    // le timeout de 5s soit réellement appliqué.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'GET',
+        headers: { 'User-Agent': 'ChurchOverlay/1.0' },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       throw new Error(`API returned ${response.status}`);
@@ -127,7 +138,7 @@ async function getVerse(reference) {
 
   if (!text) {
     throw new Error(
-      `Could not fetch verse from any provider. Check your internet connection or configure BIBLE_API_KEY.`
+      `Could not fetch verse from any provider. Check your internet connection.`
     );
   }
 
