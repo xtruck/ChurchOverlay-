@@ -271,20 +271,15 @@ function startPipeline() {
 // ci-dessous, via groq.transcribeWithFallback.
 whisper.on({
   onTranscript: (result) => {
-    console.log('[server] Transcription reçue (whisper direct):', result.text || '(sans texte)');
-    
-    // Relayer la transcription vers tous les clients connectés (overlay.html)
-    broadcast({
-      action: 'transcript',
-      text: result.text || '',
-      source: 'whisper-direct',
-      timestamp: Date.now(),
-    });
-    
-    const windowed = pushToBuffer(result.text || '');
-    processTranscript(windowed).catch((error) => {
-      console.error('[server] Detection error:', error.message);
-    });
+    // LOG UNIQUEMENT — ne rien broadcaster ni traiter ici.
+    // whisper.transcribeFile() déclenche ce callback à CHAQUE appel, y
+    // compris ceux faits en interne par groq.transcribeWithFallback()
+    // (via onAudioSegment ci-dessous). Si ce callback traitait aussi le
+    // texte (buffer, detection, bible lookup), chaque segment audio était
+    // traité deux fois : une fois ici, une fois dans onAudioSegment.
+    // Le traitement réel du texte transcrit vit exclusivement dans
+    // audioCapture.on({ onAudioSegment }) plus bas.
+    console.log('[server] (log) Transcription whisper reçue en interne:', result.text || '(sans texte)');
   },
   onError: (error) => {
     console.error('[server] Erreur Whisper:', error);
