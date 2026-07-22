@@ -33,22 +33,28 @@ const BOOKS = {
 // dé-accentuage NFD dans normalize().
 const CHAPITRE_VARIANTS = [
   'chapitre', 'chappitois', 'sabitoire', 'chabitouale', 'sapitois', 'chapitois',
+  'chappitre', 'chappite', 'chapite', 'chapit', 'chaptre',
 ];
 const VERSET_VARIANTS = [
   'verset', 'versets', 'vecc', 'vece', 'vsc', 'vc', 'veille',
+  'versai', 'verse', 'verce', 'vercet', 'versait',
 ];
 
 function correctPhoneticNoise(text) {
   let result = text;
   for (const variant of CHAPITRE_VARIANTS) {
     if (variant === 'chapitre') continue;
-    result = result.replace(new RegExp(`\\b${variant}\\b`, 'gi'), 'chapitre');
+    result = result.replace(new RegExp(`\\b${escapeRegExp(variant)}\\b`, 'gi'), 'chapitre');
   }
   for (const variant of VERSET_VARIANTS) {
     if (variant === 'verset' || variant === 'versets') continue;
-    result = result.replace(new RegExp(`\\b${variant}\\b`, 'gi'), 'verset');
+    result = result.replace(new RegExp(`\\b${escapeRegExp(variant)}\\b`, 'gi'), 'verset');
   }
   return result;
+}
+
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function normalize(value) {
@@ -86,20 +92,126 @@ const aliases = Object.entries(BOOKS).flatMap(([book, names]) => names.map((name
 
 function detect(text) {
   const normalized = numberWordsToDigits(normalize(text));
+  
   for (const { book, name } of aliases) {
-    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
-    // Accepte « Jean 3:16 », « Jean chapitre 3 versets 16 à 18 » et « Jean 3 16 ».
-    const pattern = new RegExp(`(?:^|\\s)${escaped}\\s+(?:chapitre\\s+)?(\\d{1,3})(?:\\s*(?::|,|\\s+verset(?:s)?\\s+|\\s+)(\\d{1,3})(?:\\s*(?:-|a|à|au)\\s*(\\d{1,3}))?)?(?=$|[\\s,.;!?)])`, 'i');
+    const escaped = escapeRegExp(name).replace(/\s+/g, '\\s+');
+    
+    // Pattern that handles ALL formats:
+    // "Jean 3:4", "Jean chapitre 3, verset 4", "Jean 3 4", "Jean 3:4-6",
+    // "Jean chapitre 3 versets 16 à 18", "Jean 3, verset 4"
+    const pattern = new RegExp(
+      `(?:^|\\s)${escaped}\\s+` +                    // Book name
+      `(?:chapitre\\s+)?` +                          // Optional "chapitre"
+      `(\\d{1,3})` +                                 // Chapter (group 1)
+      `(?:` +                                        // Start optional verse group
+        `\\s*` +                                     // Optional whitespace
+        `(?:` +
+          `[:,]\\s*` +                               // Colon or comma
+          `(?:verset(?:s)?\\s+)?` +                  // Optional "verset" after colon/comma
+          `(\\d{1,3})` +                             // Verse start (group 2) - colon/comma format
+          `|` +
+          `\\s+verset(?:s)?\\s+` +                   // " verset "
+          `(\\d{1,3})` +                             // Verse start (group 3) - "verset" format
+          `|` +
+          `\\s+` +                                   // Just whitespace
+          `(\\d{1,3})` +                             // Verse start (group 4) - space format
+        `)` +
+        `(?:` +                                      // Optional verse range
+          `\\s*` +
+          `(?:-|a|à|au)` +                           // Range separator
+          `\\s*` +
+          `(\\d{1,3})` +                             // Verse end (group 5)
+        `)?` +
+      `)?` +
+      `(?=$|[\\s,.;!?)])`,                           // Word boundary
+      'i'
+    );
+    
     const match = normalized.match(pattern);
     if (!match) continue;
+    
     const chapter = Number(match[1]);
-    const verseStart = match[2] ? Number(match[2]) : undefined;
-    const verseEnd = match[3] ? Number(match[3]) : verseStart;
-    if (chapter > 0 && (!verseStart || verseStart > 0) && (!verseEnd || verseEnd >= verseStart)) {
-      return { book, chapter, verseStart, verseEnd, raw: match[0].trim() };
+    
+    // Get verse start from whichever group captured it (2, 3, or 4)
+    const verseStart = (match[2] || match[3] || match[4]) 
+      ? Number(match[2] || match[3] || match[4]) 
+      : undefined;
+    
+    // Get verse end (group 5) or default to verse start
+    const verseEnd = match[5] ? Number(match[5]) : verseStart;
+    
+    // Validation
+    if (chapter > 0 && chapter <= 150) {
+      if (verseStart && (verseStart <= 0 || verseStart > 200)) continue;
+      if (verseEnd && (verseEnd < verseStart || verseEnd > 200)) continue;
+      
+      return { 
+        book, 
+        chapter, 
+        verseStart, 
+        verseEnd, 
+        raw: match[0].trim() 
+      };
     }
   }
+  
   return null;
+}
+
+// Quick test when run directly
+if (require.main === module) {
+  console.log('=== Testing detector.js ===\n');
+  
+  const tests = [
+    // Formats that should work
+    { text: 'Jean chapitre 3, verset 4', expected: true },
+    { text: 'Jean 3:4', expected: true },
+    { text: 'Jean 3:4-6', expected: true },
+    { text: 'Matthieu chapitre 5, verset 3', expected: true },
+    { text: 'Psaumes 23:1', expected: true },
+    { text: '1 Corinthiens 13:4-7', expected: true },
+    { text: 'Jean chapitre 3 versets 16 à 18', expected: true },
+    { text: 'Romains 8:28', expected: true },
+    { text: 'Apocalypse 21:4', expected: true },
+    
+    // Edge cases
+    { text: 'Jean 3', expected: false }, // Chapter only, no verse
+    { text: 'Jean chapitre 3', expected: false }, // Chapter only
+    
+    // Phonetic variations (Whisper errors)
+    { text: 'Jean chappitois 3, vece 4', expected: true },
+    { text: 'Jean sapitois 3, vsc 4', expected: true },
+    
+    // Should NOT match
+    { text: "Ce qu'il va manger", expected: false },
+    { text: 'Merci beaucoup', expected: false },
+    { text: 'Obrigada', expected: false },
+    
+    // Mixed language
+    { text: 'Se abarde', expected: false },
+  ];
+  
+  let passed = 0;
+  let failed = 0;
+  
+  tests.forEach(({ text, expected }) => {
+    const result = detect(text);
+    const detected = result !== null;
+    const status = detected === expected ? '✅' : '❌';
+    
+    if (detected === expected) passed++;
+    else failed++;
+    
+    console.log(`${status} "${text}"`);
+    if (result) {
+      console.log(`   → ${result.book} ${result.chapter}:${result.verseStart || ''}${result.verseEnd && result.verseEnd !== result.verseStart ? '-' + result.verseEnd : ''}`);
+    } else if (expected) {
+      console.log(`   → Expected match but got null`);
+    }
+    console.log('');
+  });
+  
+  console.log(`=== Results: ${passed} passed, ${failed} failed ===`);
 }
 
 module.exports = { detect, normalize, numberWordsToDigits, BOOKS };
