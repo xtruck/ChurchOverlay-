@@ -25,9 +25,36 @@ const BOOKS = {
   jude: ['jude'], apocalypse: ['apocalypse', 'ap']
 };
 
+// Corrige les déformations phonétiques courantes produites par Whisper
+// (surtout en base/tiny sur bruit ambiant) pour "chapitre" et "verset".
+// Étendez ces listes au fur et à mesure que vous observez de nouvelles
+// variantes dans vos logs de transcription réels. Chaque variante doit être
+// déjà en minuscules/sans accents, car elle est appliquée APRÈS le
+// dé-accentuage NFD dans normalize().
+const CHAPITRE_VARIANTS = [
+  'chapitre', 'chappitois', 'sabitoire', 'chabitouale', 'sapitois', 'chapitois',
+];
+const VERSET_VARIANTS = [
+  'verset', 'versets', 'vecc', 'vece', 'vsc', 'vc', 'veille',
+];
+
+function correctPhoneticNoise(text) {
+  let result = text;
+  for (const variant of CHAPITRE_VARIANTS) {
+    if (variant === 'chapitre') continue;
+    result = result.replace(new RegExp(`\\b${variant}\\b`, 'gi'), 'chapitre');
+  }
+  for (const variant of VERSET_VARIANTS) {
+    if (variant === 'verset' || variant === 'versets') continue;
+    result = result.replace(new RegExp(`\\b${variant}\\b`, 'gi'), 'verset');
+  }
+  return result;
+}
+
 function normalize(value) {
-  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  const base = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .toLowerCase().replace(/[’']/g, ' ').replace(/\s+/g, ' ').trim();
+  return correctPhoneticNoise(base);
 }
 
 const NUMBER_WORDS = {
