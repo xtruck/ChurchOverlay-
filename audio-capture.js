@@ -29,8 +29,8 @@ const CONFIG = {
   sampleRate: 16000,      // Whisper recommande 16000 Hz
   channels: 1,            // Mono
   bitDepth: 16,           // PCM 16-bit
-  segmentDuration: 3000,  // Durée des segments en ms (3 secondes)
-  overlapDuration: 500,   // Chevauchement entre segments en ms
+  segmentDuration: 6000,  // Durée des segments en ms (6 secondes)
+  overlapDuration: 100,   // 1 seconde de chevauchement 
   silenceThreshold: 0.3,  // Seuil de silence pour VAD (0-1)
   minSpeechDuration: 500, // Durée minimum de parole en ms
   tempDir: path.join(__dirname, 'temp-audio'),
