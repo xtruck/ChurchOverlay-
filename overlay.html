@@ -638,8 +638,13 @@
       return false;
     }
 
+    const DUREE_MAX_MS = 3600000; // 1h max (aligné avec la validation serveur)
     let duree = Number(durationMs);
-    if (!Number.isFinite(duree) || duree < DUREE_MIN_MS) duree = DUREE_DEFAUT_MS;
+    if (!Number.isFinite(duree) || duree < DUREE_MIN_MS) {
+      duree = DUREE_DEFAUT_MS;
+    } else if (duree > DUREE_MAX_MS) {
+      duree = DUREE_MAX_MS;
+    }
 
     // Anti-doublon : si le pipeline audio détecte deux fois la même référence
     // en quelques secondes (fréquent avec la reconnaissance vocale en continu),
