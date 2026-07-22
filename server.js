@@ -33,8 +33,14 @@
  *    continue de filtrer les doublons, donc repasser plusieurs fois sur un
  *    texte qui se chevauche ne réaffiche pas le même verset en boucle.
  *
+ *  BIBLE LOOKUP (mise à jour) :
+ *    Utilise désormais bible-lookup-with-api.js qui se connecte à plusieurs
+ *    APIs bibliques gratuites (genuinegospel.com, getbible.net, etc).
+ *    Aucune clé API requise. Fallback automatique si une API est down.
+ *
  *  DÉMARRAGE :
  *    npm install ws        (une seule fois)
+ *    cp .env.example .env  (configurer une fois)
  *    node server.js
  *
  *  Le serveur écoute par défaut sur ws://localhost:8765 — doit correspondre
@@ -48,7 +54,7 @@ const whisper = require('./whisper-wrapper');
 const groq = require('./groq-wrapper');
 const audioCapture = require('./audio-capture');
 const detector = require('./detector');
-const bibleLookup = require('./bible-lookup');
+const bibleLookup = require('./bible-lookup-with-api'); // ✅ Updated to use free API
 const { createContextTracker } = require('./context-tracker');
 const { validateAndSanitize } = require('./validation');
 const { createRateLimiter } = require('./rate-limiter');
@@ -56,8 +62,8 @@ const { validateSystemConfig, displayValidationResults } = require('./config-val
 
 const verseTracker = createContextTracker();
 const rateLimiter = createRateLimiter({
-  maxConnections: 10,
-  maxMessagesPerMinute: 60
+  maxConnections: process.env.MAX_CONNECTIONS || 10,
+  maxMessagesPerMinute: process.env.MAX_MESSAGES_PER_MINUTE || 60
 });
 
 let wss = null; // Sera initialisé après la validation
