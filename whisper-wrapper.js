@@ -23,9 +23,13 @@ const path = require('path');
 const http = require('http');
 
 // Configuration
+// Modèle par défaut : base (meilleure précision que tiny, toujours utilisable
+// en CPU). Pour revenir à tiny (plus rapide, moins précis) sans modifier ce
+// fichier : $env:WHISPER_MODEL = 'ggml-tiny.bin' avant `npm start`.
+const MODEL_FILE = process.env.WHISPER_MODEL || 'ggml-base.bin';
 const CONFIG = {
   whisperServerPath: path.join(__dirname, 'whisper', 'whisper-server.exe'),
-  modelPath: path.join(__dirname, 'whisper', 'models', 'ggml-tiny.bin'), // MODÈLE TINY
+  modelPath: path.join(__dirname, 'whisper', 'models', MODEL_FILE),
   host: '127.0.0.1',
   port: 8080,
   language: 'fr', // 'auto' pour détection automatique
