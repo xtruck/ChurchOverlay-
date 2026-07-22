@@ -1,104 +1,81 @@
 /**
  * ============================================================================
- *  test-pipeline-complet.js — Script de test du pipeline complet
+ *  test-pipeline-complet.js — Test du fallback Groq → Whisper local
  * ----------------------------------------------------------------------------
- *  Teste le circuit complet sans nécessiter FFmpeg:
- *    - Simule des segments audio
- *    - Envoie vers Whisper pour transcription
- *    - Vérifie le relai vers overlay.html
+ *  Appelle directement groq.transcribeWithFallback (sans passer par le
+ *  serveur WebSocket) pour vérifier que :
+ *    - Groq répond normalement quand tout va bien (source: 'groq')
+ *    - Le fallback local se déclenche en cas de timeout/échec réseau
+ *      (source: 'local'), en moins de FALLBACK_TIMEOUT_MS + marge
+ *    - Le texte n'est jamais vide dans les deux cas
  *
  *  USAGE:
- *    node test-pipeline-complet.js
- *
- *  PRÉREQUIS:
- *    - server.js doit être démarré
- *    - Whisper doit être opérationnel
+ *    node tests/test-pipeline-complet.js
  * ============================================================================
  */
 
-const WebSocket = require('ws');
-const fs = require('fs');
 const path = require('path');
+const groq = require('../groq-wrapper');
 
-const WS_URL = 'ws://localhost:8765';
+const FAKE_AUDIO = path.join(__dirname, 'fixtures', 'segment-test.wav');
 
-console.log('=== Test Pipeline Complet ===\n');
+// Simule whisper.transcribeFile : local "rapide" qui répond toujours
+async function fakeLocalOK(audioFilePath) {
+  return { text: 'Transcription locale simulée (Whisper).' };
+}
 
-// Vérifier que server.js tourne
-const socket = new WebSocket(WS_URL);
+// Simule un local qui échoue aussi (cas extrême)
+async function fakeLocalFail(audioFilePath) {
+  throw new Error('Whisper local indisponible (simulation)');
+}
 
-socket.on('open', () => {
-  console.log('[TEST] Connecté au serveur WebSocket');
-  
-  // Test 1: Envoyer un verset manuel pour vérifier overlay.html
-  console.log('\n[TEST] Test 1: Envoi verset manuel...');
-  const messageVerse = {
-    action: 'showVerse',
-    reference: 'Jean 3:16 (test pipeline)',
-    text: "Car Dieu a tant aimé le monde qu'il a donné son Fils unique, afin que quiconque croit en lui ne périsse point, mais qu'il ait la vie éternelle.",
-    durationMs: 10000,
-  };
-  
-  socket.send(JSON.stringify(messageVerse));
-  console.log('[TEST] ✓ Verset envoyé');
-  
-  // Attendre 3 secondes
-  setTimeout(() => {
-    // Test 2: Simuler une transcription envoyée par le serveur
-    console.log('\n[TEST] Test 2: Simulation transcription Whisper...');
-    
-    // Simuler ce que server.js envoie quand il reçoit une transcription
-    const transcriptMessage = {
-      action: 'transcript',
-      text: 'Ceci est une transcription de test simulée',
-      timestamp: Date.now(),
-    };
-    
-    console.log('[TEST] Message transcription simulé (serait envoyé par Whisper)');
-    
-    // Test 3: Vérifier que les messages sont relayés
-    console.log('\n[TEST] Test 3: Vérification circuit WebSocket...');
-    console.log('[TEST] Les messages devraient apparaître dans overlay.html (console)');
-    
-    // Attendre 2 secondes puis terminer
-    setTimeout(() => {
-      console.log('\n[TEST] Test 4: Masquer overlay...');
-      socket.send(JSON.stringify({ action: 'hideVerse' }));
-      console.log('[TEST] ✓ Overlay masqué');
-      
-      setTimeout(() => {
-        console.log('\n=== Tests terminés ===');
-        console.log('[TEST] Note: Pour tester la vraie transcription audio, installez FFmpeg');
-        console.log('[TEST] puis relancez server.js avec la capture audio activée');
-        socket.close();
-        process.exit(0);
-      }, 1000);
-    }, 2000);
-  }, 3000);
-});
+async function testGroqOK() {
+  console.log('\n[TEST 1] Cas normal — Groq doit répondre (source: groq)');
+  const start = Date.now();
+  const result = await groq.transcribeWithFallback(FAKE_AUDIO, fakeLocalOK);
+  const elapsed = Date.now() - start;
+  console.log('[TEST 1] Résultat:', result, `(${elapsed}ms)`);
+  console.log(result.source === 'groq' ? '[TEST 1] ✓ PASS' : '[TEST 1] ✗ FAIL (source attendue: groq)');
+}
 
-socket.on('message', (data) => {
-  const message = JSON.parse(data);
-  console.log('[TEST] Message reçu du serveur:', message.action);
-  
-  if (message.action === 'transcript') {
-    console.log('[TEST] ✓ Transcription relayée:', message.text);
+async function testNetworkCutFallback() {
+  console.log('\n[TEST 2] Coupure réseau simulée — fallback local attendu sous 5s');
+  console.log('[TEST 2] >>> Coupe le réseau maintenant (ou utilise une clé GROQ_API_KEY invalide/URL injoignable) <<<');
+
+  const start = Date.now();
+  const result = await groq.transcribeWithFallback(FAKE_AUDIO, fakeLocalOK, 5000);
+  const elapsed = Date.now() - start;
+
+  console.log('[TEST 2] Résultat:', result, `(${elapsed}ms)`);
+
+  const withinBudget = elapsed <= 5500; // 5s timeout + marge
+  const isLocal = result.source === 'local';
+  const hasText = !!result.text;
+
+  console.log(isLocal ? '[TEST 2] ✓ source = local' : '[TEST 2] ✗ FAIL: source =', result.source);
+  console.log(withinBudget ? '[TEST 2] ✓ temps < 5.5s' : '[TEST 2] ✗ FAIL: trop long =', elapsed, 'ms');
+  console.log(hasText ? '[TEST 2] ✓ overlay non vide' : '[TEST 2] ✗ FAIL: texte vide');
+}
+
+async function testBothFail() {
+  console.log('\n[TEST 3] Cas extrême — Groq ET local échouent (doit rejeter proprement)');
+  try {
+    await groq.transcribeWithFallback(FAKE_AUDIO, fakeLocalFail, 1); // timeout quasi immédiat pour forcer le fallback
+    console.log('[TEST 3] ✗ FAIL: aucune erreur levée alors que les deux sources échouent');
+  } catch (error) {
+    console.log('[TEST 3] ✓ PASS: erreur remontée proprement:', error.message);
   }
-});
+}
 
-socket.on('error', (err) => {
-  console.error('[TEST] ✗ Erreur WebSocket:', err.message);
-  console.error('[TEST] Assurez-vous que server.js est démarré (node server.js)');
-  process.exit(1);
-});
-
-socket.on('close', () => {
-  console.log('[TEST] Connexion WebSocket fermée');
-});
-
-// Gestion Ctrl+C
-process.on('SIGINT', () => {
-  console.log('\n[TEST] Interruption détectée');
-  socket.close();
-  process.exit(0);
-});
+(async () => {
+  console.log('=== Test Pipeline Complet (Groq + fallback local) ===');
+  try {
+    await testGroqOK();
+    await testNetworkCutFallback();
+    await testBothFail();
+    console.log('\n=== Tests terminés ===');
+  } catch (error) {
+    console.error('\n[TEST] Erreur inattendue:', error.message);
+    process.exit(1);
+  }
+})();
