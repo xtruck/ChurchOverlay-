@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "test-envoi": "node tests/test-envoi.js",
-    "test": "node tests/test-detector.js"
+    "test": "node tests/test-detector.js && node tests/test-validation.js && node tests/test-rate-limiter.js && node tests/test-config-validator.js",
+    "test-all": "node tests/test-detector.js && node tests/test-validation.js && node tests/test-rate-limiter.js && node tests/test-config-validator.js && node tests/test-audio-capture.js && node tests/test-whisper.js && node tests/test-pipeline-complet.js"
   },
   "dependencies": {
     "ws": "^8.18.0",

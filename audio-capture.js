@@ -245,6 +245,8 @@ function stopRecording() {
       STATE.ffmpegProcess = null;
       STATE.audioBuffer = [];
       console.log('[audio-capture] Capture audio arrêtée');
+      // Nettoyer automatiquement les fichiers temporaires après l'arrêt
+      cleanupTempFiles({ force: true });
       resolve();
     });
 
@@ -277,16 +279,60 @@ function isRecording() {
 }
 
 /**
- * Nettoie les fichiers temporaires
+ * Nettoie les fichiers temporaires de manière robuste
+ * @param {Object} options - Options de nettoyage
+ * @param {boolean} options.force - Force le nettoyage même si l'enregistrement est en cours
+ * @param {number} options.maxAgeMs - Âge maximum des fichiers à conserver (défaut: 1 heure)
  */
-function cleanupTempFiles() {
-  if (fs.existsSync(CONFIG.tempDir)) {
-    const files = fs.readdirSync(CONFIG.tempDir);
-    files.forEach((file) => {
-      const filePath = path.join(CONFIG.tempDir, file);
-      fs.unlinkSync(filePath);
-    });
-    console.log('[audio-capture] Fichiers temporaires nettoyés');
+function cleanupTempFiles(options = {}) {
+  const { force = false, maxAgeMs = 3600000 } = options;
+  
+  if (!fs.existsSync(CONFIG.tempDir)) {
+    return;
+  }
+
+  // Ne pas nettoyer si l'enregistrement est en cours sauf si force=true
+  if (STATE.isRecording && !force) {
+    console.log('[audio-capture] Enregistrement en cours, nettoyage partiel uniquement');
+  }
+
+  const files = fs.readdirSync(CONFIG.tempDir);
+  let cleanedCount = 0;
+  let keptCount = 0;
+  const now = Date.now();
+
+  files.forEach((file) => {
+    const filePath = path.join(CONFIG.tempDir, file);
+    
+    try {
+      const stats = fs.statSync(filePath);
+      const fileAge = now - stats.mtimeMs;
+      
+      // Nettoyer les fichiers plus vieux que maxAgeMs ou si force=true
+      if (fileAge > maxAgeMs || force) {
+        fs.unlinkSync(filePath);
+        cleanedCount++;
+      } else {
+        keptCount++;
+      }
+    } catch (error) {
+      console.warn('[audio-capture] Impossible de supprimer:', filePath, error.message);
+    }
+  });
+
+  if (cleanedCount > 0) {
+    console.log(`[audio-capture] ${cleanedCount} fichier(s) temporaire(s) nettoyé(s)${keptCount > 0 ? `, ${keptCount} conservé(s)` : ''}`);
+  }
+  
+  // Tenter de supprimer le répertoire temporaire s'il est vide
+  try {
+    const remainingFiles = fs.readdirSync(CONFIG.tempDir);
+    if (remainingFiles.length === 0) {
+      fs.rmdirSync(CONFIG.tempDir);
+      console.log('[audio-capture] Répertoire temporaire supprimé (vide)');
+    }
+  } catch (error) {
+    // Le répertoire n'est pas vide ou ne peut pas être supprimé
   }
 }
 

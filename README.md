@@ -4,6 +4,15 @@ Affiche automatiquement dans OBS les passages bibliques cités à l'oral :
 
 `Micro → FFmpeg → Whisper → detector.js → bible-lookup.js → overlay.html`
 
+## 🆕 Sécurité et Améliorations
+
+Cette version inclut des améliorations de sécurité importantes :
+- **Validation des messages** : Tous les messages WebSocket sont validés et sanitisés
+- **Rate limiting** : Protection contre les abus (10 connexions/IP, 60 messages/minute)
+- **Fallback API** : Système de secours automatique pour les API Bible
+- **Configuration validée** : Validation des variables d'environnement au démarrage
+- **Nettoyage robuste** : Gestion améliorée des fichiers temporaires
+
 ## Démarrage
 
 1. Listez les micros : `node list-audio-devices.js`.
@@ -38,9 +47,23 @@ ou demandez une recherche par référence :
 Testez impérativement la recherche avant un culte : l'API publique utilisée par
 défaut peut évoluer ou être indisponible.
 
+## 📚 Documentation
+
+- **API WebSocket** : Voir `API.md` pour la documentation complète de l'API
+- **Architecture** : Voir `ARCHITECTURE.md` pour les détails techniques
+
 ## Vérification
 
 ```powershell
-npm test
-node test-envoi.js
+npm test              # Tests de validation et sécurité
+npm run test-all      # Tous les tests (incluant audio et Whisper)
+node test-envoi.js    # Test manuel de l'overlay
 ```
+
+## Configuration
+
+Variables d'environnement disponibles :
+- `PORT` : Port du serveur WebSocket (défaut: 8765)
+- `AUDIO_DEVICE` : Nom du périphérique audio
+- `FFMPEG_PATH` : Chemin vers l'exécutable FFmpeg
+- `NODE_ENV` : Environnement (development/production/test)
