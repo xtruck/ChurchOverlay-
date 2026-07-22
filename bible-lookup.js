@@ -13,8 +13,10 @@ const CONFIG = {
   // Liste des fournisseurs avec fallback automatique
   providers: [
     'bibleapi.appspot.com',
-    'api.scripture.api.bible',  // API Bible (requiert une clé, configuré en backup)
-    'bible-api.com'             // Autre API de secours
+    'bible-api.com'             // Fournisseur de secours
+    // NB : api.scripture.api.bible retiré — nécessite une clé API que ce
+    // projet ne configure pas ; l'ajouter causerait un échec systématique
+    // à chaque cycle de fallback. À réactiver seulement avec une vraie clé.
   ]
 };
 

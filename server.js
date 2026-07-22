@@ -187,103 +187,106 @@ audioCapture.on({
 
 let compteurClients = 0;
 
-wss.on('connection', (ws) => {
-  // Vérifier le rate limiting pour les connexions
-  const connectionCheck = rateLimiter.checkConnection(ws);
-  if (!connectionCheck.allowed) {
-    console.warn('[server] Connexion rejetée:', connectionCheck.reason);
-    ws.send(JSON.stringify({ action: 'error', error: connectionCheck.reason }));
-    ws.close();
-    return;
-  }
-
-  compteurClients++;
-  const idClient = compteurClients;
-  console.log('[server] Client #' + idClient + ' connecté. (' + wss.clients.size + ' client(s) au total)');
-
-  ws.on('message', async (data) => {
-    // Vérifier le rate limiting pour les messages
-    const messageCheck = rateLimiter.checkMessage(ws);
-    if (!messageCheck.allowed) {
-      console.warn('[server] Message rejeté pour client #' + idClient + ':', messageCheck.reason);
-      ws.send(JSON.stringify({ action: 'error', error: messageCheck.reason }));
-      return;
-    }
-
-    const message = data.toString();
-
-    // Validation et nettoyage du message
-    let parsed;
-    try {
-      parsed = JSON.parse(message);
-    } catch (e) {
-      console.warn('[server] Message ignoré du client #' + idClient + ' (JSON invalide) :', message);
-      ws.send(JSON.stringify({ action: 'error', error: 'Format JSON invalide' }));
-      return;
-    }
-
-    // Validation approfondie avec le module de validation
-    const validation = validateAndSanitize(parsed);
-    if (!validation.valid) {
-      console.warn('[server] Message rejeté du client #' + idClient + ' :', validation.error);
-      ws.send(JSON.stringify({ action: 'error', error: validation.error }));
-      return;
-    }
-
-    const sanitized = validation.sanitized;
-    console.log('[server] Message validé depuis client #' + idClient + ' :', sanitized.action);
-
-    // Usage depuis un pupitre opérateur : { action: 'lookupReference', reference: 'Jean 3:16' }.
-    if (sanitized.action === 'lookupReference') {
-      const reference = detector.detect(sanitized.reference || '');
-      if (!reference) {
-        ws.send(JSON.stringify({ action: 'lookupError', error: 'Référence biblique non reconnue.' }));
-        return;
-      }
-      try {
-        const verse = await bibleLookup.getVerse(reference);
-        broadcast({ action: 'showVerse', ...verse, durationMs: Number(sanitized.durationMs) || 300000 }, ws);
-      } catch (error) {
-        ws.send(JSON.stringify({ action: 'lookupError', reference, error: error.message }));
-      }
-      return;
-    }
-
-    // Relaie à tous les autres clients connectés (typiquement : overlay.html).
-    const sanitizedMessage = JSON.stringify(sanitized);
-    wss.clients.forEach((client) => {
-      if (client !== ws && client.readyState === WebSocket.OPEN) {
-        client.send(sanitizedMessage);
-      }
-    });
-  });
-
-  ws.on('close', () => {
-    rateLimiter.removeConnection(ws);
-    console.log('[server] Client #' + idClient + ' déconnecté. (' + wss.clients.size + ' client(s) restant(s))');
-  });
-
-  ws.on('error', (err) => {
-    console.error('[server] Erreur sur le client #' + idClient + ' :', err.message);
-  });
-});
-
-wss.on('error', (err) => {
-  console.error('[server] Erreur serveur :', err.message);
-  if (err.code === 'EADDRINUSE') {
-    console.error('[server] Le port est déjà utilisé — un autre server.js tourne-t-il déjà ?');
-  }
-});
-
 /**
  * Démarre le serveur WebSocket avec le port spécifié
  * @param {number} PORT - Port d'écoute
  */
 function startServer(PORT) {
-  wss = new WebSocket.Server({ port: PORT }, () => {
+  // Toujours lié à la machine locale : aucun message showVerse/lookupReference
+  // ne doit pouvoir venir d'un autre poste sur le réseau pendant un culte.
+  const HOST = process.env.WS_HOST || '127.0.0.1';
+  wss = new WebSocket.Server({ host: HOST, port: PORT }, () => {
     startPipeline();
-    console.log('[server] Serveur WebSocket démarré sur ws://localhost:' + PORT);
+    console.log('[server] Serveur WebSocket démarré sur ws://' + HOST + ':' + PORT);
     console.log('[server] En attente de connexions (overlay.html dans OBS, test-envoi.js, ...).');
+  });
+
+  wss.on('connection', (ws) => {
+    // Vérifier le rate limiting pour les connexions
+    const connectionCheck = rateLimiter.checkConnection(ws);
+    if (!connectionCheck.allowed) {
+      console.warn('[server] Connexion rejetée:', connectionCheck.reason);
+      ws.send(JSON.stringify({ action: 'error', error: connectionCheck.reason }));
+      ws.close();
+      return;
+    }
+
+    compteurClients++;
+    const idClient = compteurClients;
+    console.log('[server] Client #' + idClient + ' connecté. (' + wss.clients.size + ' client(s) au total)');
+
+    ws.on('message', async (data) => {
+      // Vérifier le rate limiting pour les messages
+      const messageCheck = rateLimiter.checkMessage(ws);
+      if (!messageCheck.allowed) {
+        console.warn('[server] Message rejeté pour client #' + idClient + ':', messageCheck.reason);
+        ws.send(JSON.stringify({ action: 'error', error: messageCheck.reason }));
+        return;
+      }
+
+      const message = data.toString();
+
+      // Validation et nettoyage du message
+      let parsed;
+      try {
+        parsed = JSON.parse(message);
+      } catch (e) {
+        console.warn('[server] Message ignoré du client #' + idClient + ' (JSON invalide) :', message);
+        ws.send(JSON.stringify({ action: 'error', error: 'Format JSON invalide' }));
+        return;
+      }
+
+      // Validation approfondie avec le module de validation
+      const validation = validateAndSanitize(parsed);
+      if (!validation.valid) {
+        console.warn('[server] Message rejeté du client #' + idClient + ' :', validation.error);
+        ws.send(JSON.stringify({ action: 'error', error: validation.error }));
+        return;
+      }
+
+      const sanitized = validation.sanitized;
+      console.log('[server] Message validé depuis client #' + idClient + ' :', sanitized.action);
+
+      // Usage depuis un pupitre opérateur : { action: 'lookupReference', reference: 'Jean 3:16' }.
+      if (sanitized.action === 'lookupReference') {
+        const reference = detector.detect(sanitized.reference || '');
+        if (!reference) {
+          ws.send(JSON.stringify({ action: 'lookupError', error: 'Référence biblique non reconnue.' }));
+          return;
+        }
+        try {
+          const verse = await bibleLookup.getVerse(reference);
+          broadcast({ action: 'showVerse', ...verse, durationMs: Number(sanitized.durationMs) || 300000 }, ws);
+        } catch (error) {
+          ws.send(JSON.stringify({ action: 'lookupError', reference, error: error.message }));
+        }
+        return;
+      }
+
+      // Relaie à tous les autres clients connectés (typiquement : overlay.html).
+      const sanitizedMessage = JSON.stringify(sanitized);
+      wss.clients.forEach((client) => {
+        if (client !== ws && client.readyState === WebSocket.OPEN) {
+          client.send(sanitizedMessage);
+        }
+      });
+    });
+
+    ws.on('close', () => {
+      rateLimiter.removeConnection(ws);
+      console.log('[server] Client #' + idClient + ' déconnecté. (' + wss.clients.size + ' client(s) restant(s))');
+    });
+
+    ws.on('error', (err) => {
+      console.error('[server] Erreur sur le client #' + idClient + ' :', err.message);
+    });
+  });
+
+  wss.on('error', (err) => {
+    console.error('[server] Erreur serveur :', err.message);
+    if (err.code === 'EADDRINUSE') {
+      console.error('[server] Le port est déjà utilisé — un autre server.js tourne-t-il déjà ?');
+    }
   });
   
   // Arrêt propre du serveur Whisper et de la capture audio lors de la fermeture du serveur

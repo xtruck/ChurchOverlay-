@@ -133,18 +133,11 @@ function validateAndSanitize(message) {
     return validation;
   }
 
-  // Créer une copie nettoyée du message
-  const sanitized = { ...message };
-  
-  // Nettoyer les champs texte
-  if (sanitized.text) {
-    sanitized.text = sanitizeText(sanitized.text);
-  }
-  if (sanitized.reference) {
-    sanitized.reference = sanitizeText(sanitized.reference);
-  }
-
-  return { valid: true, error: null, sanitized };
+  // Pas d'échappement HTML ici : overlay.html affiche via textContent,
+  // qui neutralise déjà tout risque d'injection. Échapper en plus les
+  // entités (&, ', etc.) afficherait à l'écran des versets pollués par
+  // du texte du type "qu&#x27;il" au lieu de "qu'il".
+  return { valid: true, error: null, sanitized: { ...message } };
 }
 
 module.exports = {
