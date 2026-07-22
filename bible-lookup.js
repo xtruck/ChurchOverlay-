@@ -15,28 +15,36 @@ const CONFIG = {
       host: 'bible-api.com',
       useHttps: true,
       buildPath: (code, reference) => {
-        // Use the book name from the reference, not the code
+        // Use the display book name for bible-api.com
+        const bookName = DISPLAY_NAMES[reference.book] || reference.book;
         const verses = reference.verseEnd && reference.verseEnd !== reference.verseStart 
           ? `-${reference.verseEnd}` 
           : (reference.verseStart ? `-${reference.verseStart}` : '');
-        return `/${reference.book}%20${reference.chapter}${verses}?translation=louis-segond`;
+        return `/${encodeURIComponent(bookName)}%20${reference.chapter}${verses}?translation=louis-segond`;
       },
       extractText: (json) => {
-        // bible-api.com returns { text: "..." }
-        if (json.text) return json.text.trim();
-        
-        // Alternative format: { verses: [...] }
-        if (json.verses && Array.isArray(json.verses)) {
-          return json.verses.map(v => v.text || '').join(' ').trim();
+        // Primary format: { text: "..." }
+        if (json.text && typeof json.text === 'string') {
+          return json.text.trim();
         }
         
-        // Alternative format: { verses: { "1": "...", "2": "..." } }
+        // Alternative format: { verses: [{ text: "..." }] }
+        if (json.verses && Array.isArray(json.verses)) {
+          return json.verses
+            .map(v => v.text || '')
+            .join(' ')
+            .trim();
+        }
+        
+        // Alternative format: { verses: { "1": "text", "2": "text" } }
         if (json.verses && typeof json.verses === 'object') {
           return Object.values(json.verses)
-            .map(v => typeof v === 'string' ? v : (v.text || ''))
-            .join(' ').trim();
+            .map(v => typeof v === 'string' ? v : (v.text || v.verse || ''))
+            .join(' ')
+            .trim();
         }
         
+        // Debug: show what we received
         throw new Error(`format bible-api.com non reconnu: ${JSON.stringify(json).substring(0, 200)}`);
       }
     },
@@ -51,29 +59,37 @@ const CONFIG = {
         return `/json?passage=${code}${reference.chapter}:${verses}&v=lsg`;
       },
       extractText: (json) => {
-        try {
-          // getbible.net returns complex nested structure
-          if (json.book && Array.isArray(json.book) && json.book.length > 0) {
-            const book = json.book[0];
-            if (book.chapter) {
-              // Format: { book: [{ chapter: { "1": { verse: "..." }, ... } }] }
-              if (typeof book.chapter === 'object' && !Array.isArray(book.chapter)) {
-                return Object.values(book.chapter)
-                  .map(v => typeof v === 'object' ? (v.verse || '') : String(v))
-                  .join(' ').trim();
-              }
-              // Format: { book: [{ chapter: "text" }] }
-              return String(book.chapter).trim();
-            }
+        // Format: { book: [{ chapter: { "1": { verse: "..." }, ... } }] }
+        if (json.book && Array.isArray(json.book) && json.book.length > 0) {
+          const book = json.book[0];
+          
+          // chapter is an object with numbered keys
+          if (book.chapter && typeof book.chapter === 'object' && !Array.isArray(book.chapter)) {
+            return Object.values(book.chapter)
+              .map(v => {
+                if (typeof v === 'string') return v;
+                if (v && v.verse) return v.verse;
+                if (v && v.text) return v.text;
+                return '';
+              })
+              .filter(Boolean)
+              .join(' ')
+              .trim();
           }
           
-          // Alternative: direct text field
-          if (json.text) return json.text.trim();
-          
-        } catch (e) {
-          throw new Error(`Erreur extraction getbible.net: ${e.message}`);
+          // chapter is a string
+          if (typeof book.chapter === 'string') {
+            return book.chapter.trim();
+          }
         }
         
+        // Alternative: { text: "..." }
+        if (json.text) return json.text.trim();
+        
+        // Alternative: { verses: "..." }
+        if (json.verses) return String(json.verses).trim();
+        
+        // Debug
         throw new Error(`format getbible.net non reconnu: ${JSON.stringify(json).substring(0, 200)}`);
       }
     }
@@ -125,8 +141,8 @@ function getJson(url, redirectCount = 0) {
     
     const client = url.startsWith('https') ? https : http;
     const req = client.get(url, { timeout: CONFIG.timeoutMs }, (res) => { 
-      // Handle redirects
-      if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
+      // Handle all redirect status codes
+      if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
         const redirectUrl = res.headers.location;
         if (redirectUrl) {
           // Handle relative URLs
@@ -145,17 +161,21 @@ function getJson(url, redirectCount = 0) {
       res.on('data', (chunk) => { body += chunk; }); 
       res.on('end', () => { 
         if (res.statusCode < 200 || res.statusCode >= 300) {
-          return reject(new Error(`HTTP ${res.statusCode}: ${body.substring(0, 100)}`)); 
+          // Include response body in error for debugging
+          const preview = body.substring(0, 200).replace(/\n/g, ' ');
+          return reject(new Error(`HTTP ${res.statusCode}: ${preview}`)); 
         }
         try { 
           resolve(JSON.parse(body)); 
         } catch (e) { 
-          // Try to extract useful info even from non-JSON responses
-          if (body.includes('text')) {
-            const match = body.match(/"text"\s*:\s*"([^"]+)"/);
-            if (match) resolve({ text: match[1] });
+          // Try to extract text from malformed responses
+          const textMatch = body.match(/"text"\s*:\s*"([^"]+)"/);
+          if (textMatch) {
+            console.log('[bible-lookup] Extracted text from malformed JSON');
+            resolve({ text: textMatch[1].replace(/\\n/g, ' ') });
+          } else {
+            reject(new Error(`réponse JSON invalide: ${body.substring(0, 200)}`)); 
           }
-          reject(new Error(`réponse JSON invalide: ${body.substring(0, 200)}`)); 
         } 
       }); 
     }); 
@@ -184,7 +204,10 @@ async function getVerse(reference) {
   if (!code || !reference.chapter) throw new Error('Référence biblique invalide');
   
   const key = `${code}:${reference.chapter}:${reference.verseStart || ''}-${reference.verseEnd || ''}`; 
-  if (cache.has(key)) return cache.get(key);
+  if (cache.has(key)) {
+    console.log(`[bible-lookup] Cache hit: ${label(reference)}`);
+    return cache.get(key);
+  }
   
   let lastError = null;
   
@@ -195,25 +218,32 @@ async function getVerse(reference) {
     }
     
     try {
-      const path = provider.buildPath(code, reference);
+      // We need to pass the full reference object to buildPath for book name
+      const path = provider.buildPath(code, { ...reference, book: reference.book });
       const url = `${provider.useHttps ? 'https' : 'http'}://${provider.host}${path}`;
       console.log(`[bible-lookup] Tentative avec provider: ${provider.name}`);
       console.log(`[bible-lookup] URL: ${url}`);
       
       const json = await getJson(url);
-      console.log(`[bible-lookup] Réponse reçue de ${provider.name}:`, JSON.stringify(json).substring(0, 200));
+      console.log(`[bible-lookup] Réponse reçue (${provider.name}):`, JSON.stringify(json).substring(0, 200));
       
       const text = provider.extractText(json);
       
       if (!text) throw new Error('passage absent de la réponse');
       
-      const result = { reference: label(reference), text, provider: provider.name };
-      cache.set(key, result);
+      const result = { 
+        reference: label(reference), 
+        text: text.replace(/\s+/g, ' ').trim(), // Normalize whitespace
+        provider: provider.name 
+      };
       
+      // Cache the result
+      cache.set(key, result);
       if (cache.size > CONFIG.cacheMaxEntries) {
         cache.delete(cache.keys().next().value);
       }
       
+      // Reset failure tracking for this provider
       failedProviders.delete(provider.name);
       console.log(`[bible-lookup] Succès avec provider: ${provider.name}`);
       return result;
@@ -225,36 +255,52 @@ async function getVerse(reference) {
     }
   }
   
+  // All providers failed
   const errorMessage = `Impossible de récupérer ${label(reference)} : tous les providers ont échoué. Dernière erreur: ${lastError ? lastError.message : 'inconnue'}`;
   if (onError) onError(new Error(errorMessage));
   throw new Error(errorMessage);
 }
 
-// Quick test when run directly
+// Test mode when run directly
 if (require.main === module) {
   console.log('=== Testing bible-lookup.js ===\n');
+  console.log('Providers:', CONFIG.providers.map(p => p.name).join(', '));
+  console.log('');
   
   const tests = [
     { book: 'jean', chapter: 3, verseStart: 4 },
     { book: 'jean', chapter: 3, verseStart: 16 },
     { book: 'psaumes', chapter: 23, verseStart: 1 },
+    { book: 'matthieu', chapter: 5, verseStart: 3, verseEnd: 5 },
   ];
   
   (async () => {
+    let success = 0;
+    let failed = 0;
+    
     for (const test of tests) {
       try {
-        console.log(`\nTesting: ${label(test)}`);
+        console.log(`Test: ${label(test)}`);
         const result = await getVerse(test);
-        console.log('✅ Success:', result.reference);
-        console.log('   Text:', result.text.substring(0, 100) + '...');
-        console.log('   Provider:', result.provider);
+        console.log(`  ✅ Succès (${result.provider})`);
+        console.log(`  📖 ${result.text.substring(0, 150)}...\n`);
+        success++;
       } catch (error) {
-        console.error('❌ Failed:', error.message);
+        console.log(`  ❌ Échec: ${error.message}\n`);
+        failed++;
       }
     }
     
-    console.log('\n=== Test complete ===');
-    process.exit(0);
+    console.log(`=== Résultats: ${success} succès, ${failed} échecs ===`);
+    
+    if (failed > 0) {
+      console.log('\n⚠️  Les providers pourraient être indisponibles.');
+      console.log('Vérifiez manuellement avec:');
+      console.log('  curl "https://bible-api.com/Jean%203:4?translation=louis-segond"');
+      console.log('  curl "https://getbible.net/json?passage=jn3:4&v=lsg"');
+    }
+    
+    process.exit(failed > 0 ? 1 : 0);
   })();
 }
 
@@ -265,5 +311,6 @@ module.exports = {
   buildReferenceLabel: label, 
   getApiBookCodes: () => ({ ...API_BOOK_CODES }),
   getProviders: () => CONFIG.providers.map(p => p.name),
-  resetFailedProviders: () => failedProviders.clear()
+  resetFailedProviders: () => failedProviders.clear(),
+  getCacheSize: () => cache.size // Added for diagnostics
 };
