@@ -70,11 +70,58 @@ const TRANSCRIPT_BUFFER_MAX_CHARS = 200; // ~2 segments de contexte
 
 function pushToBuffer(text) {
   if (!text) return transcriptBuffer;
-  transcriptBuffer = (transcriptBuffer + ' ' + text).trim();
+  
+  // If the buffer ends mid-word, the new text is likely a continuation
+  const isContinuation = transcriptBuffer.length > 0 && 
+                         !transcriptBuffer.endsWith(' ') && 
+                         !transcriptBuffer.endsWith('.') && 
+                         !transcriptBuffer.endsWith(',');
+  
+  if (isContinuation) {
+    transcriptBuffer += ' ' + text;
+  } else {
+    // Start fresh if it's a new sentence
+    if (text.startsWith('.') || text.startsWith('!') || text.startsWith('?')) {
+      transcriptBuffer = text;
+    } else {
+      transcriptBuffer = (transcriptBuffer + ' ' + text).trim();
+    }
+  }
+  
+  // Trim from the beginning if too long
   if (transcriptBuffer.length > TRANSCRIPT_BUFFER_MAX_CHARS) {
     transcriptBuffer = transcriptBuffer.slice(-TRANSCRIPT_BUFFER_MAX_CHARS);
+    // Try to start at a word boundary
+    const firstSpace = transcriptBuffer.indexOf(' ');
+    if (firstSpace > 0 && firstSpace < 50) {
+      transcriptBuffer = transcriptBuffer.slice(firstSpace + 1);
+    }
   }
-  return transcriptBuffer;
+  
+  return transcriptBuffer.trim();
+}
+
+// Reset buffer when Groq provides a clean transcription
+function resetBuffer() {
+  transcriptBuffer = '';
+}
+// ------------------------------------------------------------------------
+
+// --- Duplicate segment prevention --------------------------------------
+const processedSegments = new Set();
+const MAX_PROCESSED_SEGMENTS = 50;
+
+function isDuplicateSegment(segmentFile) {
+  const segmentId = segmentFile.split('/').pop().replace('.wav', '');
+  if (processedSegments.has(segmentId)) {
+    return true;
+  }
+  processedSegments.add(segmentId);
+  if (processedSegments.size > MAX_PROCESSED_SEGMENTS) {
+    const firstKey = processedSegments.values().next().value;
+    processedSegments.delete(firstKey);
+  }
+  return false;
 }
 // ------------------------------------------------------------------------
 
@@ -82,7 +129,9 @@ function broadcast(payload, except) {
   if (!wss) return;
   const message = JSON.stringify(payload);
   wss.clients.forEach((client) => {
-    if (client !== except && client.readyState === WebSocket.OPEN) client.send(message);
+    if (client !== except && client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
   });
 }
 
@@ -116,24 +165,70 @@ validateSystemConfig()
   });
 
 async function processTranscript(text) {
+  console.log('[server] Processing transcript:', text.substring(0, 100));
+  
   const reference = detector.detect(text);
-  if (!reference) return;
-  broadcast({ action: 'candidateVerse', reference, transcript: text, timestamp: Date.now() });
-  if (!verseTracker.shouldProcess(reference)) return;
-  console.log('[server] Reference detected:', bibleLookup.buildReferenceLabel(reference));
+  if (!reference) {
+    console.log('[server] No reference detected in segment');
+    return;
+  }
+  
+  console.log('[server] Reference detected:', JSON.stringify(reference));
+  
+  broadcast({ 
+    action: 'candidateVerse', 
+    reference, 
+    transcript: text, 
+    timestamp: Date.now() 
+  });
+  
+  if (!verseTracker.shouldProcess(reference)) {
+    console.log('[server] Reference already processed recently, skipping');
+    return;
+  }
+  
+  console.log('[server] Looking up:', bibleLookup.buildReferenceLabel(reference));
+  
   try {
     const verse = await bibleLookup.getVerse(reference);
-    broadcast({ action: 'showVerse', ...verse, durationMs: 300000, autoDetected: true });
+    broadcast({ 
+      action: 'showVerse', 
+      ...verse, 
+      durationMs: 300000, 
+      autoDetected: true 
+    });
+    console.log('[server] Verse sent to overlay:', verse.reference);
+    
+    // Reset failed providers on success
+    bibleLookup.resetFailedProviders();
+    
   } catch (error) {
     console.warn('[server] Bible lookup unavailable:', error.message);
-    broadcast({ action: 'lookupError', reference, error: error.message, timestamp: Date.now() });
-    // Réinitialiser les providers échoués pour permettre de nouvelles tentatives
-    bibleLookup.resetFailedProviders();
+    
+    // Still show the reference even if lookup failed
+    broadcast({ 
+      action: 'showVerse', 
+      reference: bibleLookup.buildReferenceLabel(reference),
+      text: '(Texte non disponible - vérifiez la connexion internet)',
+      provider: 'error',
+      durationMs: 300000,
+      autoDetected: true 
+    });
+    
+    broadcast({ 
+      action: 'lookupError', 
+      reference, 
+      error: error.message, 
+      timestamp: Date.now() 
+    });
+    
+    // DO NOT reset failed providers on error - they need to cool down
   }
 }
 
 // Démarrage du serveur Whisper au démarrage de server.js
 console.log('[server] Démarrage du serveur Whisper Speech-to-Text...');
+
 function startPipeline() {
   console.log('[server] Starting Whisper Speech-to-Text...');
   whisper.startServer()
@@ -161,7 +256,6 @@ function startPipeline() {
     // Notifier les clients connectés que le pipeline audio est indisponible
     broadcast({ action: 'pipelineError', error: err.message, timestamp: Date.now() });
   });
-
 }
 
 // Configuration des callbacks Whisper
@@ -171,12 +265,13 @@ function startPipeline() {
 // ci-dessous, via groq.transcribeWithFallback.
 whisper.on({
   onTranscript: (result) => {
-    console.log('[server] Transcription reçue:', result.text || '(sans texte)');
+    console.log('[server] Transcription reçue (whisper direct):', result.text || '(sans texte)');
     
     // Relayer la transcription vers tous les clients connectés (overlay.html)
     broadcast({
       action: 'transcript',
       text: result.text || '',
+      source: 'whisper-direct',
       timestamp: Date.now(),
     });
     
@@ -194,6 +289,13 @@ whisper.on({
 audioCapture.on({
   onAudioSegment: async (segmentFile) => {
     console.log('[server] Segment audio reçu, envoi vers Groq + Whisper local...');
+    
+    // Prevent duplicate processing
+    if (isDuplicateSegment(segmentFile)) {
+      console.log('[server] Segment déjà traité, ignoré:', segmentFile);
+      try { fs.unlinkSync(segmentFile); } catch {}
+      return;
+    }
 
     try {
       // Attend Groq (précision), avec fallback automatique sur le
@@ -209,6 +311,12 @@ audioCapture.on({
         result.text || '(sans texte)'
       );
 
+      // If Groq provided the result, it's more accurate - reset buffer
+      if (result.source === 'groq') {
+        console.log('[server] Groq result - resetting transcript buffer');
+        resetBuffer();
+      }
+
       // Relayer vers les clients connectés (overlay.html), en gardant
       // la même forme de message qu'avant (+ la source utilisée).
       broadcast({
@@ -222,9 +330,7 @@ audioCapture.on({
       // segments, pas seulement sur ce segment isolé, pour ne pas perdre
       // une référence coupée entre deux segments (ex: "Jean 3" / "17").
       const windowed = pushToBuffer(result.text || '');
-      processTranscript(windowed).catch((error) => {
-        console.error('[server] Detection error:', error.message);
-      });
+      await processTranscript(windowed);
 
       // Nettoyer le fichier temporaire après transcription
       try {
@@ -235,7 +341,11 @@ audioCapture.on({
     } catch (error) {
       console.error('[server] Erreur lors de la transcription:', error.message);
       // Notifier les clients de l'erreur de transcription
-      broadcast({ action: 'transcriptionError', error: error.message, timestamp: Date.now() });
+      broadcast({ 
+        action: 'transcriptionError', 
+        error: error.message, 
+        timestamp: Date.now() 
+      });
 
       // Nettoyer quand même le fichier temporaire
       try {
@@ -247,7 +357,11 @@ audioCapture.on({
   },
   onError: (error) => {
     console.error('[server] Erreur capture audio:', error.message);
-    broadcast({ action: 'audioCaptureError', error: error.message, timestamp: Date.now() });
+    broadcast({ 
+      action: 'audioCaptureError', 
+      error: error.message, 
+      timestamp: Date.now() 
+    });
   },
 });
 
@@ -267,6 +381,22 @@ function startServer(PORT) {
     console.log('[server] En attente de connexions (overlay.html dans OBS, test-envoi.js, ...).');
   });
 
+  // Heartbeat pour détecter les connexions mortes
+  const heartbeat = setInterval(() => {
+    wss.clients.forEach((ws) => {
+      if (ws.isAlive === false) {
+        console.log('[server] Client stale détecté, déconnexion forcée');
+        return ws.terminate();
+      }
+      ws.isAlive = false;
+      ws.ping();
+    });
+  }, 30000);
+
+  wss.on('close', () => {
+    clearInterval(heartbeat);
+  });
+
   wss.on('connection', (ws) => {
     // Vérifier le rate limiting pour les connexions
     const connectionCheck = rateLimiter.checkConnection(ws);
@@ -276,6 +406,11 @@ function startServer(PORT) {
       ws.close();
       return;
     }
+
+    ws.isAlive = true;
+    ws.on('pong', () => {
+      ws.isAlive = true;
+    });
 
     compteurClients++;
     const idClient = compteurClients;
@@ -313,6 +448,43 @@ function startServer(PORT) {
       const sanitized = validation.sanitized;
       console.log('[server] Message validé depuis client #' + idClient + ' :', sanitized.action);
 
+      // Diagnostic endpoint
+      if (sanitized.action === 'diagnostic') {
+        const diagnostics = {
+          action: 'diagnosticResult',
+          timestamp: Date.now(),
+          modules: {
+            detector: !!detector,
+            bibleLookup: !!bibleLookup,
+            groq: !!groq,
+            whisper: !!whisper,
+            audioCapture: !!audioCapture,
+          },
+          providers: bibleLookup.getProviders(),
+          cacheSize: bibleLookup.getCacheSize ? bibleLookup.getCacheSize() : 'unknown',
+          connections: wss.clients.size,
+          transcriptBuffer: transcriptBuffer.length
+        };
+        
+        // Test a known verse
+        try {
+          const testResult = await bibleLookup.getVerse({ book: 'jean', chapter: 3, verseStart: 16 });
+          diagnostics.bibleApiTest = { 
+            success: true, 
+            text: testResult.text.substring(0, 100) + '...',
+            provider: testResult.provider
+          };
+        } catch (error) {
+          diagnostics.bibleApiTest = { 
+            success: false, 
+            error: error.message 
+          };
+        }
+        
+        ws.send(JSON.stringify(diagnostics));
+        return;
+      }
+
       // Usage depuis un pupitre opérateur : { action: 'lookupReference', reference: 'Jean 3:16' }.
       if (sanitized.action === 'lookupReference') {
         const reference = detector.detect(sanitized.reference || '');
@@ -322,9 +494,17 @@ function startServer(PORT) {
         }
         try {
           const verse = await bibleLookup.getVerse(reference);
-          broadcast({ action: 'showVerse', ...verse, durationMs: Number(sanitized.durationMs) || 300000 }, ws);
+          broadcast({ 
+            action: 'showVerse', 
+            ...verse, 
+            durationMs: Number(sanitized.durationMs) || 300000 
+          }, ws);
         } catch (error) {
-          ws.send(JSON.stringify({ action: 'lookupError', reference, error: error.message }));
+          ws.send(JSON.stringify({ 
+            action: 'lookupError', 
+            reference, 
+            error: error.message 
+          }));
         }
         return;
       }
@@ -357,12 +537,20 @@ function startServer(PORT) {
   
   // Arrêt propre du serveur Whisper et de la capture audio lors de la fermeture du serveur
   process.on('SIGINT', () => {
-    console.log('[server] Arrêt du serveur...');
+    console.log('\n[server] Arrêt du serveur...');
+    
+    // Clear heartbeat
+    clearInterval(heartbeat);
     
     // Arrêter le rate limiter
     if (rateLimiter && rateLimiter.stopCleanup) {
       rateLimiter.stopCleanup();
     }
+    
+    // Fermer toutes les connexions WebSocket
+    wss.clients.forEach((client) => {
+      client.close(1000, 'Server shutting down');
+    });
     
     // Arrêter la capture audio d'abord
     audioCapture.stopRecording()
@@ -382,5 +570,11 @@ function startServer(PORT) {
         console.error('[server] Erreur lors de l\'arrêt:', err.message);
         process.exit(1);
       });
+  });
+  
+  // Handle other termination signals
+  process.on('SIGTERM', () => {
+    console.log('\n[server] SIGTERM reçu, arrêt...');
+    process.emit('SIGINT');
   });
 }
