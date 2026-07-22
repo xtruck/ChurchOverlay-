@@ -11,7 +11,7 @@
  * ============================================================================
  */
 
-const whisper = require('./whisper-wrapper');
+const whisper = require('../whisper-wrapper');
 
 console.log('=== Test Whisper Wrapper ===\n');
 

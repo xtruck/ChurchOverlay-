@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('assert');
-const { detect } = require('./detector');
+const { detect } = require('../detector');
 
 const cases = [
   ['Lisons Jean 3:16.', { book: 'jean', chapter: 3, verseStart: 16, verseEnd: 16 }],

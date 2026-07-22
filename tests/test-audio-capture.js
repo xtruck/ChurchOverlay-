@@ -13,7 +13,7 @@
  * ============================================================================
  */
 
-const audioCapture = require('./audio-capture');
+const audioCapture = require('../audio-capture');
 
 console.log('=== Test Audio Capture ===\n');
 

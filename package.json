@@ -5,11 +5,12 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test-envoi": "node test-envoi.js",
-    "test": "node test-detector.js"
+    "test-envoi": "node tests/test-envoi.js",
+    "test": "node tests/test-detector.js"
   },
   "dependencies": {
     "ws": "^8.18.0",
     "form-data": "^4.0.0"
   }
 }
+
