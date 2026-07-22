@@ -22,6 +22,17 @@
  *    d'échec, il bascule automatiquement sur le résultat local déjà en
  *    cours — l'overlay n'est jamais vide. Voir groq-wrapper.js.
  *
+ *  BUFFER DE TRANSCRIPTION (correctif) :
+ *    Les segments audio font ~6.1s chacun. Une référence biblique prononcée
+ *    à cheval sur deux segments (ex: "Jean 3" en fin de segment N, "17" en
+ *    début de segment N+1) n'était auparavant JAMAIS détectée, car
+ *    detector.detect() ne recevait que le texte d'un seul segment à la fois.
+ *    On maintient donc une fenêtre glissante (les ~200 derniers caractères
+ *    transcrits, tous segments confondus) et on lance la détection sur cette
+ *    fenêtre plutôt que sur le texte du segment isolé. context-tracker.js
+ *    continue de filtrer les doublons, donc repasser plusieurs fois sur un
+ *    texte qui se chevauche ne réaffiche pas le même verset en boucle.
+ *
  *  DÉMARRAGE :
  *    npm install ws        (une seule fois)
  *    node server.js
@@ -50,6 +61,22 @@ const rateLimiter = createRateLimiter({
 });
 
 let wss = null; // Sera initialisé après la validation
+
+// --- Buffer de transcription glissant ---------------------------------
+// Concatène le texte des derniers segments pour ne pas perdre une
+// référence biblique coupée entre deux segments audio consécutifs.
+let transcriptBuffer = '';
+const TRANSCRIPT_BUFFER_MAX_CHARS = 200; // ~2 segments de contexte
+
+function pushToBuffer(text) {
+  if (!text) return transcriptBuffer;
+  transcriptBuffer = (transcriptBuffer + ' ' + text).trim();
+  if (transcriptBuffer.length > TRANSCRIPT_BUFFER_MAX_CHARS) {
+    transcriptBuffer = transcriptBuffer.slice(-TRANSCRIPT_BUFFER_MAX_CHARS);
+  }
+  return transcriptBuffer;
+}
+// ------------------------------------------------------------------------
 
 function broadcast(payload, except) {
   if (!wss) return;
@@ -153,7 +180,8 @@ whisper.on({
       timestamp: Date.now(),
     });
     
-    processTranscript(result.text || '').catch((error) => {
+    const windowed = pushToBuffer(result.text || '');
+    processTranscript(windowed).catch((error) => {
       console.error('[server] Detection error:', error.message);
     });
   },
@@ -190,7 +218,11 @@ audioCapture.on({
         timestamp: Date.now(),
       });
 
-      processTranscript(result.text || '').catch((error) => {
+      // Fenêtre glissante : on détecte sur le texte accumulé des derniers
+      // segments, pas seulement sur ce segment isolé, pour ne pas perdre
+      // une référence coupée entre deux segments (ex: "Jean 3" / "17").
+      const windowed = pushToBuffer(result.text || '');
+      processTranscript(windowed).catch((error) => {
         console.error('[server] Detection error:', error.message);
       });
 
