@@ -15,6 +15,13 @@
  *    enverra directement aux clients connectés (overlay.html), sans passer
  *    par un envoi externe.
  *
+ *  TRANSCRIPTION (étape 5, mise à jour) :
+ *    Chaque segment audio est envoyé en parallèle à Groq (Whisper large-v3,
+ *    cloud, précision prioritaire) et à Whisper local (whisper-wrapper.js).
+ *    Le serveur attend Groq jusqu'à 5 secondes ; en cas de timeout ou
+ *    d'échec, il bascule automatiquement sur le résultat local déjà en
+ *    cours — l'overlay n'est jamais vide. Voir groq-wrapper.js.
+ *
  *  DÉMARRAGE :
  *    npm install ws        (une seule fois)
  *    node server.js
@@ -27,6 +34,7 @@
 const WebSocket = require('ws');
 const fs = require('fs');
 const whisper = require('./whisper-wrapper');
+const groq = require('./groq-wrapper');
 const audioCapture = require('./audio-capture');
 const detector = require('./detector');
 const bibleLookup = require('./bible-lookup');
@@ -130,6 +138,10 @@ function startPipeline() {
 }
 
 // Configuration des callbacks Whisper
+// NOTE : ce bloc reste en place comme filet de sécurité / log si
+// whisper.transcribeFile est appelé ailleurs (ex. tests). Le flux
+// principal de transcription passe désormais par onAudioSegment
+// ci-dessous, via groq.transcribeWithFallback.
 whisper.on({
   onTranscript: (result) => {
     console.log('[server] Transcription reçue:', result.text || '(sans texte)');
@@ -153,13 +165,35 @@ whisper.on({
 // Configuration des callbacks audio-capture
 audioCapture.on({
   onAudioSegment: async (segmentFile) => {
-    console.log('[server] Segment audio reçu, envoi vers Whisper...');
-    
+    console.log('[server] Segment audio reçu, envoi vers Groq + Whisper local...');
+
     try {
-      // Envoyer le segment audio à Whisper pour transcription
-      const result = await whisper.transcribeFile(segmentFile);
-      console.log('[server] Transcription Whisper:', result.text || '(sans texte)');
-      
+      // Attend Groq (précision), avec fallback automatique sur le
+      // whisper local si Groq ne répond pas en 5s ou échoue.
+      const result = await groq.transcribeWithFallback(
+        segmentFile,
+        (path) => whisper.transcribeFile(path),
+      );
+
+      console.log(
+        '[server] Transcription (%s):',
+        result.source,
+        result.text || '(sans texte)'
+      );
+
+      // Relayer vers les clients connectés (overlay.html), en gardant
+      // la même forme de message qu'avant (+ la source utilisée).
+      broadcast({
+        action: 'transcript',
+        text: result.text || '',
+        source: result.source,
+        timestamp: Date.now(),
+      });
+
+      processTranscript(result.text || '').catch((error) => {
+        console.error('[server] Detection error:', error.message);
+      });
+
       // Nettoyer le fichier temporaire après transcription
       try {
         fs.unlinkSync(segmentFile);
@@ -170,7 +204,7 @@ audioCapture.on({
       console.error('[server] Erreur lors de la transcription:', error.message);
       // Notifier les clients de l'erreur de transcription
       broadcast({ action: 'transcriptionError', error: error.message, timestamp: Date.now() });
-      
+
       // Nettoyer quand même le fichier temporaire
       try {
         fs.unlinkSync(segmentFile);
