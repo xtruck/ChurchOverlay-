@@ -100,6 +100,12 @@ assert(sanitized.includes('&lt;script&gt;'), 'Balises devraient être échappée
 console.log('[TEST] ✓ Texte malveillant sanitisé');
 
 // Test 9: Validation et sanitization combinées
+// NOTE : validateAndSanitize() n'échappe PAS le HTML (voir commentaire dans
+// validation.js). overlay.html affiche tout via textContent, qui neutralise
+// déjà toute injection HTML/JS côté navigateur — échapper ici en plus
+// afficherait des versets pollués par des entités (&amp;, &#x27;, ...).
+// Ce test vérifie donc que le texte passe la validation de structure/longueur
+// sans être altéré, PAS qu'il est échappé.
 console.log('[TEST] Test 9: Validation et sanitization combinées...');
 const messageWithXss = {
   action: 'showVerse',
@@ -108,10 +114,9 @@ const messageWithXss = {
   durationMs: 300000
 };
 const result9 = validateAndSanitize(messageWithXss);
-assert.strictEqual(result9.valid, true, 'Message avec XSS devrait être valide');
-assert(!result9.sanitized.text.includes('<script>'), 'Texte sanitisé ne devrait pas contenir de balises');
-assert(result9.sanitized.text.includes('&lt;script&gt;'), 'Texte devrait être échappé');
-console.log('[TEST] ✓ Validation et sanitization combinées réussies');
+assert.strictEqual(result9.valid, true, 'Message avec XSS devrait être valide (validation de structure uniquement)');
+assert.strictEqual(result9.sanitized.text, messageWithXss.text, 'Le texte ne doit pas être altéré : overlay.html neutralise via textContent');
+console.log('[TEST] ✓ Validation et sanitization combinées réussies (texte non altéré, sécurité déléguée à textContent côté overlay)');
 
 // Test 10: Champ non autorisé
 console.log('[TEST] Test 10: Champ non autorisé...');
