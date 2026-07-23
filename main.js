@@ -20,7 +20,11 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
-const APP_ROOT = path.join(__dirname, '..');
+// main.js vit à la racine du projet (à côté de server.js, overlay.html, etc.),
+// donc APP_ROOT = __dirname. Un ancien `path.join(__dirname, '..')` pointait
+// hors du dossier de l'app : server.js n'y était jamais trouvé (spawn ENOENT)
+// et l'URL overlay générée pour OBS était fausse.
+const APP_ROOT = __dirname;
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
 
 let mainWindow = null;
