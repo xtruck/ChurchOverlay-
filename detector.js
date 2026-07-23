@@ -122,7 +122,10 @@ function detect(text) {
           `\\s*` +
           `(\\d{1,3})` +                             // Verse end (group 5)
         `)?` +
-      `)?` +
+      `)?` +                                         // Verse group optional: "Psaume 23" (chapitre
+                                                       // seul, sans verset) doit rester détecté —
+                                                       // voir tests/test-detector.js (suite
+                                                       // officielle exécutée par `npm test`).
       `(?=$|[\\s,.;!?)])`,                           // Word boundary
       'i'
     );
@@ -175,8 +178,10 @@ if (require.main === module) {
     { text: 'Apocalypse 21:4', expected: true },
     
     // Edge cases
-    { text: 'Jean 3', expected: false }, // Chapter only, no verse
-    { text: 'Jean chapitre 3', expected: false }, // Chapter only
+    // Chapitre seul, sans verset : DOIT être détecté (voir tests/test-detector.js,
+    // suite officielle, cas "Psaume 23" avec verseStart/verseEnd undefined).
+    { text: 'Jean 3', expected: true },
+    { text: 'Jean chapitre 3', expected: true },
     
     // Phonetic variations (Whisper errors)
     { text: 'Jean chappitois 3, vece 4', expected: true },
