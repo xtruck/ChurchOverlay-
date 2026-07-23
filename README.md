@@ -13,7 +13,21 @@ Cette version inclut des améliorations de sécurité importantes :
 - **Configuration validée** : Validation des variables d'environnement au démarrage
 - **Nettoyage robuste** : Gestion améliorée des fichiers temporaires
 
-## Démarrage
+## 🚀 Installation Rapide
+
+### Option 1 : Configuration interactive (recommandé)
+
+```powershell
+npm run setup
+```
+
+Ce script vous guidera à travers :
+- Installation des dépendances
+- Vérification de FFmpeg
+- Configuration du micro
+- Création des scripts de démarrage
+
+### Option 2 : Installation manuelle
 
 1. Listez les micros : `node list-audio-devices.js`.
 2. Dans PowerShell, configurez celui retenu (pour la session en cours) :
@@ -24,7 +38,7 @@ Cette version inclut des améliorations de sécurité importantes :
    npm start
    ```
 3. Dans OBS, créez une source *Browser* pointant vers
-   `file:///C:/Users/xtruc/Documents/ChurchOverlay/overlay.html` (1920 × 1080).
+   `file:///C:/Users/HP/xtruck/overlay.html` (1920 × 1080).
 
 Le serveur reste utilisable pour l'affichage manuel si Whisper, FFmpeg ou la
 recherche en ligne ne sont pas disponibles.
@@ -49,8 +63,10 @@ défaut peut évoluer ou être indisponible.
 
 ## 📚 Documentation
 
+- **Guide de déploiement** : Voir `DEPLOYMENT_GUIDE.md` pour l'installation complète
 - **API WebSocket** : Voir `API.md` pour la documentation complète de l'API
 - **Architecture** : Voir `ARCHITECTURE.md` pour les détails techniques
+- **Sécurité** : Voir `SECURITY_IMPROVEMENTS.md` pour les améliorations
 
 ## Vérification
 
@@ -67,3 +83,10 @@ Variables d'environnement disponibles :
 - `AUDIO_DEVICE` : Nom du périphérique audio
 - `FFMPEG_PATH` : Chemin vers l'exécutable FFmpeg
 - `NODE_ENV` : Environnement (development/production/test)
+
+## 🆘 Support
+
+En cas de problème :
+1. Consultez `DEPLOYMENT_GUIDE.md` pour le dépannage
+2. Exécutez `npm run setup` pour reconfigurer
+3. Vérifiez les logs du serveur pour les messages d'erreur

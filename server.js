@@ -69,7 +69,9 @@ validateSystemConfig()
   })
   .catch(error => {
     console.error('[server] Erreur lors de la validation de la configuration:', error.message);
-    process.exit(1);
+    // En cas d'erreur de validation, continuer avec les valeurs par défaut
+    console.log('[server] Utilisation des valeurs par défaut');
+    return 8765;
   })
   .then(PORT => {
     // Continuer avec le démarrage normal
@@ -120,6 +122,10 @@ function startPipeline() {
     } else if (err.message.includes('whisper-server.exe')) {
       console.error('[server] Whisper server non trouvé - Pipeline audio désactivé');
       console.error('[server] Vérifiez que whisper-server.exe est dans le dossier whisper/');
+    } else if (err.message.includes('micro')) {
+      console.error('[server] Aucun micro configuré - Pipeline audio désactivé');
+      console.error('[server] Lancez "node list-audio-devices.js" pour lister les micros disponibles');
+      console.error('[server] Configurez AUDIO_DEVICE avec le nom exact du micro');
     } else {
       console.error('[server] Le serveur continuera sans Speech-to-Text');
     }

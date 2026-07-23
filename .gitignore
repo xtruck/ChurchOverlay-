@@ -4,3 +4,10 @@ whisper/
 .env
 .env.local
 *.log
+start.bat
+start.ps1
+temp-audio/
+
+ChurchOverlay/
+
+xtruck/

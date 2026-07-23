@@ -210,7 +210,8 @@ function createRateLimiter(options = {}) {
     checkMessage,
     removeConnection,
     getStats,
-    stopCleanup
+    stopCleanup,
+    cleanup
   };
 }
 
