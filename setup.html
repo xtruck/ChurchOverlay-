@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<title>ChurchOverlay — Configuration initiale</title>
+<style>
+  :root {
+    --bg: #14161c;
+    --panel: #1c1f28;
+    --border: #2c3040;
+    --text: #e8e9ee;
+    --muted: #9195a6;
+    --accent: #6c8cff;
+    --accent-hover: #8aa4ff;
+    --error: #ff6b6b;
+    --ok: #4fd18b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    font-size: 13px;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .wrap { padding: 22px 26px; }
+  h1 {
+    font-size: 16px;
+    margin: 0 0 4px;
+    font-weight: 600;
+  }
+  .subtitle {
+    color: var(--muted);
+    margin: 0 0 20px;
+    line-height: 1.5;
+  }
+  label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--text);
+  }
+  .field { margin-bottom: 18px; }
+  .row { display: flex; gap: 8px; }
+  select, input[type="password"], input[type="text"] {
+    width: 100%;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 9px 10px;
+    font-size: 13px;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  select:focus, input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .row select { flex: 1; }
+  button {
+    cursor: pointer;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 9px 14px;
+  }
+  .btn-secondary {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  .btn-secondary:hover { border-color: var(--accent); }
+  .btn-primary {
+    background: var(--accent);
+    color: #0c0e14;
+    width: 100%;
+    padding: 11px 14px;
+    margin-top: 6px;
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-primary:disabled {
+    background: var(--border);
+    color: var(--muted);
+    cursor: not-allowed;
+  }
+  .hint {
+    color: var(--muted);
+    font-size: 11.5px;
+    margin-top: 6px;
+    line-height: 1.5;
+  }
+  .hint a { color: var(--accent); text-decoration: none; }
+  .status-line {
+    margin-top: 4px;
+    font-size: 11.5px;
+    min-height: 14px;
+  }
+  .status-line.error { color: var(--error); }
+  .status-line.ok { color: var(--ok); }
+  .toggle-eye {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 11px;
+    padding: 0;
+    margin-top: 6px;
+    text-decoration: underline;
+  }
+  .footer-note {
+    margin-top: 22px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Bienvenue dans ChurchOverlay</h1>
+    <p class="subtitle">
+      Deux réglages avant le premier démarrage : le microphone à écouter
+      et votre clé API Groq (pour la transcription). Rien d'autre à installer.
+    </p>
+
+    <div class="field">
+      <label for="mic-select">Microphone</label>
+      <div class="row">
+        <select id="mic-select">
+          <option value="">Recherche des microphones…</option>
+        </select>
+        <button class="btn-secondary" id="btn-refresh" type="button">Actualiser</button>
+      </div>
+      <div class="status-line" id="mic-status"></div>
+    </div>
+
+    <div class="field">
+      <label for="groq-key">Clé API Groq</label>
+      <input type="password" id="groq-key" placeholder="gsk_..." autocomplete="off" />
+      <button class="toggle-eye" id="btn-toggle-key" type="button">Afficher</button>
+      <div class="hint">
+        Obtenez une clé gratuite sur
+        <a id="link-groq" href="#">console.groq.com/keys</a>
+        (lien à copier-coller dans votre navigateur), puis collez-la ici.
+      </div>
+    </div>
+
+    <button class="btn-primary" id="btn-save" type="button" disabled>
+      Enregistrer et démarrer
+    </button>
+    <div class="status-line" id="save-status"></div>
+
+    <div class="footer-note">
+      Ces informations restent uniquement sur cet ordinateur (fichier de
+      configuration local). Vous pourrez les modifier plus tard depuis le
+      tableau de bord.
+    </div>
+  </div>
+
+  <script>
+    const micSelect = document.getElementById('mic-select');
+    const micStatus = document.getElementById('mic-status');
+    const btnRefresh = document.getElementById('btn-refresh');
+    const groqInput = document.getElementById('groq-key');
+    const btnToggleKey = document.getElementById('btn-toggle-key');
+    const btnSave = document.getElementById('btn-save');
+    const saveStatus = document.getElementById('save-status');
+    const linkGroq = document.getElementById('link-groq');
+
+    // Pas de nodeIntegration : on ne peut pas ouvrir de lien externe
+    // directement, on affiche juste l'adresse à copier.
+    linkGroq.addEventListener('click', (e) => {
+      e.preventDefault();
+      navigator.clipboard.writeText('https://console.groq.com/keys').then(() => {
+        linkGroq.textContent = 'Lien copié ✓';
+        setTimeout(() => { linkGroq.textContent = 'console.groq.com/keys'; }, 1800);
+      }).catch(() => {});
+    });
+
+    function updateSaveEnabled() {
+      const hasMic = !!micSelect.value;
+      const hasKey = groqInput.value.trim().length > 0;
+      btnSave.disabled = !(hasMic && hasKey);
+    }
+
+    async function loadMicrophones() {
+      micStatus.className = 'status-line';
+      micStatus.textContent = '';
+      micSelect.innerHTML = '<option value="">Recherche des microphones…</option>';
+      btnRefresh.disabled = true;
+
+      const devices = await window.churchOverlay.detectMicrophones();
+
+      btnRefresh.disabled = false;
+      micSelect.innerHTML = '';
+
+      if (!devices || devices.length === 0) {
+        micSelect.innerHTML = '<option value="">Aucun microphone détecté</option>';
+        micStatus.className = 'status-line error';
+        micStatus.textContent = 'Vérifiez qu\'un microphone est branché et autorisé dans Windows, puis cliquez sur Actualiser.';
+        updateSaveEnabled();
+        return;
+      }
+
+      devices.forEach((name) => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        micSelect.appendChild(opt);
+      });
+      micStatus.className = 'status-line ok';
+      micStatus.textContent = devices.length + ' microphone(s) détecté(s).';
+      updateSaveEnabled();
+    }
+
+    btnRefresh.addEventListener('click', loadMicrophones);
+    micSelect.addEventListener('change', updateSaveEnabled);
+    groqInput.addEventListener('input', updateSaveEnabled);
+
+    btnToggleKey.addEventListener('click', () => {
+      const show = groqInput.type === 'password';
+      groqInput.type = show ? 'text' : 'password';
+      btnToggleKey.textContent = show ? 'Masquer' : 'Afficher';
+    });
+
+    btnSave.addEventListener('click', async () => {
+      btnSave.disabled = true;
+      btnSave.textContent = 'Enregistrement…';
+      saveStatus.className = 'status-line';
+      saveStatus.textContent = '';
+
+      try {
+        await window.churchOverlay.saveSetup(micSelect.value, groqInput.value.trim());
+        saveStatus.className = 'status-line ok';
+        saveStatus.textContent = 'Configuration enregistrée. Démarrage du pipeline…';
+        // La fermeture de cette fenêtre déclenche côté main.js l'ouverture
+        // du tableau de bord et le démarrage de server.js.
+        setTimeout(() => window.close(), 700);
+      } catch (e) {
+        saveStatus.className = 'status-line error';
+        saveStatus.textContent = 'Erreur lors de l\'enregistrement : ' + (e && e.message ? e.message : e);
+        btnSave.disabled = false;
+        btnSave.textContent = 'Enregistrer et démarrer';
+      }
+    });
+
+    loadMicrophones();
+  </script>
+</body>
+</html>
