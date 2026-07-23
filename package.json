@@ -3,6 +3,7 @@
   "productName": "ChurchOverlay",
   "version": "0.1.0",
   "description": "Overlay de versets bibliques en direct — micro → FFmpeg → Whisper/Groq → detector → overlay.html, packagé en application Windows installable.",
+  "author": "ChurchOverlay",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
