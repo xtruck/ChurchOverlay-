@@ -48,6 +48,13 @@ const SCHEMAS = {
       reference: (value) => typeof value === 'string' && value.length > 0 && value.length <= 200,
       durationMs: (value) => typeof value === 'number' && value > 0 && value <= 3600000
     }
+  },
+  diagnostic: {
+    required: ['action'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'diagnostic'
+    }
   }
 };
 
