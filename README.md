@@ -1,69 +1,207 @@
-# Church Overlay
+# Environment Variables Reference
 
-Affiche automatiquement dans OBS les passages bibliques cités à l'oral :
+## Quick Start
 
-`Micro → FFmpeg → Whisper → detector.js → bible-lookup.js → overlay.html`
+```bash
+# 1. Copy example to .env (never commit .env!)
+cp .env.example .env
 
-## 🆕 Sécurité et Améliorations
+# 2. Edit .env with your values
+code .env
 
-Cette version inclut des améliorations de sécurité importantes :
-- **Validation des messages** : Tous les messages WebSocket sont validés et sanitisés
-- **Rate limiting** : Protection contre les abus (10 connexions/IP, 60 messages/minute)
-- **Fallback API** : Système de secours automatique pour les API Bible
-- **Configuration validée** : Validation des variables d'environnement au démarrage
-- **Nettoyage robuste** : Gestion améliorée des fichiers temporaires
+# 3. List your microphones
+node list-audio-devices.js
 
-## Démarrage
+# 4. Update AUDIO_DEVICE in .env
 
-1. Listez les micros : `node list-audio-devices.js`.
-2. Dans PowerShell, configurez celui retenu (pour la session en cours) :
-   ```powershell
-   $env:AUDIO_DEVICE = 'Nom exact du microphone'
-   # Facultatif si ffmpeg n'est pas dans le PATH :
-   $env:FFMPEG_PATH = 'C:\ffmpeg\bin\ffmpeg.exe'
-   npm start
-   ```
-3. Dans OBS, créez une source *Browser* pointant vers
-   `file:///C:/Users/xtruc/Documents/ChurchOverlay/overlay.html` (1920 × 1080).
-
-Le serveur reste utilisable pour l'affichage manuel si Whisper, FFmpeg ou la
-recherche en ligne ne sont pas disponibles.
-
-## Contrôle manuel
-
-Envoyez un message WebSocket à `ws://localhost:8765` :
-
-```json
-{ "action": "showVerse", "reference": "Jean 3:16", "text": "…", "durationMs": 300000 }
+# 5. Start server
+npm start
 ```
 
-ou demandez une recherche par référence :
+## Configuration Reference
 
-```json
-{ "action": "lookupReference", "reference": "Jean 3:16" }
+### WebSocket Server
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | 8765 | WebSocket server port |
+| `WS_HOST` | 127.0.0.1 | Binding address (127.0.0.1 = local only) |
+
+**Security Note:** Keep `WS_HOST=127.0.0.1` to prevent remote connections. Only change to `0.0.0.0` for testing.
+
+### Audio & Capture
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AUDIO_DEVICE` | (required) | Microphone name from `node list-audio-devices.js` |
+| `FFMPEG_PATH` | (auto) | Path to FFmpeg if not in system PATH |
+
+**Example:**
+```ini
+# Windows
+AUDIO_DEVICE=Microphone (High Definition Audio Device)
+FFMPEG_PATH=C:\ffmpeg\bin\ffmpeg.exe
+
+# Linux
+AUDIO_DEVICE=default
+FFMPEG_PATH=/usr/bin/ffmpeg
 ```
 
-`bible-lookup.js` isole le fournisseur de textes et conserve un cache mémoire.
-Testez impérativement la recherche avant un culte : l'API publique utilisée par
-défaut peut évoluer ou être indisponible.
+### Speech-to-Text
 
-## 📚 Documentation
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GROQ_API_KEY` | (optional) | Cloud transcription key from https://console.groq.com/keys |
+| `NODE_ENV` | production | Environment (development/production/test) |
 
-- **API WebSocket** : Voir `API.md` pour la documentation complète de l'API
-- **Architecture** : Voir `ARCHITECTURE.md` pour les détails techniques
+**How it works:**
+- Without Groq: Uses local Whisper (fast, less accurate)
+- With Groq: Cloud API (slower, very accurate, free tier available)
+- If Groq times out (>5s): Falls back to local Whisper automatically
 
-## Vérification
+**Get Groq API Key:**
+1. Go to https://console.groq.com/keys
+2. Sign up or log in
+3. Create new API key
+4. Paste into `.env`: `GROQ_API_KEY=gsk_xxxxxx...`
 
-```powershell
-npm test              # Tests de validation et sécurité
-npm run test-all      # Tous les tests (incluant audio et Whisper)
-node test-envoi.js    # Test manuel de l'overlay
+### Bible Content
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BIBLE_PROVIDER` | both | Source (local/api/both) |
+| `BIBLE_API_KEY` | (optional) | For premium Bible APIs |
+
+**How it works:**
+- `local`: Uses `bible-lsg.json` if available (fastest)
+- `api`: Uses free online Bible APIs (no key needed)
+- `both`: Tries local first, falls back to API
+
+**Note:** System uses FREE Bible APIs by default. No API key needed!
+
+### Logging & Debug
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEBUG` | false | Verbose logging (true/false) |
+
+**Enable debug:**
+```ini
+DEBUG=true
 ```
 
-## Configuration
+Then watch the console for detailed logs:
+```
+[server] Message validated from client #1: showVerse
+[detector] Detected: jean 3:16
+[bible-lookup] ✓ Got verse from helloao-lsg
+[server] Verse sent to overlay: Jean 3:16
+```
 
-Variables d'environnement disponibles :
-- `PORT` : Port du serveur WebSocket (défaut: 8765)
-- `AUDIO_DEVICE` : Nom du périphérique audio
-- `FFMPEG_PATH` : Chemin vers l'exécutable FFmpeg
-- `NODE_ENV` : Environnement (development/production/test)
+### Security
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAX_CONNECTIONS` | 10 | Max WebSocket connections per IP |
+| `MAX_MESSAGES_PER_MINUTE` | 60 | Max messages per IP per minute |
+| `VALIDATE_MESSAGES` | true | Enable message validation |
+
+**For production (church service):**
+- Keep defaults
+- `VALIDATE_MESSAGES=true` (prevent XSS attacks)
+- `MAX_CONNECTIONS=10` (prevents DDoS)
+
+## Examples
+
+### Minimal Setup (Local Whisper Only)
+```ini
+PORT=8765
+AUDIO_DEVICE=Microphone
+FFMPEG_PATH=C:\ffmpeg\bin\ffmpeg.exe
+NODE_ENV=production
+```
+
+### Full Setup (Cloud + Local Fallback)
+```ini
+PORT=8765
+AUDIO_DEVICE=Microphone
+FFMPEG_PATH=C:\ffmpeg\bin\ffmpeg.exe
+GROQ_API_KEY=gsk_YOUR_KEY_HERE
+NODE_ENV=production
+DEBUG=false
+```
+
+### Development/Testing
+```ini
+PORT=8765
+AUDIO_DEVICE=Microphone
+FFMPEG_PATH=C:\ffmpeg\bin\ffmpeg.exe
+NODE_ENV=development
+DEBUG=true
+```
+
+## Secrets Management
+
+**NEVER commit `.env` to git!** It's already in `.gitignore`.
+
+**Safe way to store production keys:**
+1. Use `.env.example` for documentation
+2. Create `.env` locally (git-ignored)
+3. For servers, use environment variables directly (Heroku, Docker, etc.)
+4. For GitHub secrets, use the Secrets UI (not the repo)
+
+## Validation
+
+**Check your setup:**
+```bash
+# Lists all current environment variables
+node -e "console.log(process.env)"
+
+# Test a specific variable
+node -e "console.log('AUDIO_DEVICE:', process.env.AUDIO_DEVICE)"
+```
+
+**Run tests:**
+```bash
+# Full test suite
+npm test
+
+# Individual tests
+node tests/test-config-validator.js
+node tests/test-validation.js
+```
+
+## Troubleshooting
+
+### "AUDIO_DEVICE not found"
+```bash
+# List available devices:
+node list-audio-devices.js
+
+# Copy exact name from output
+# Update .env:
+AUDIO_DEVICE=Exact Name From List
+```
+
+### "FFmpeg not in PATH"
+```bash
+# Verify FFmpeg is installed:
+ffmpeg -version
+
+# If command not found, install from https://ffmpeg.org/download.html
+# Or set FFMPEG_PATH in .env to full path
+```
+
+### "GROQ_API_KEY invalid"
+```bash
+# Check key format:
+# Should start with "gsk_"
+# Get new key from https://console.groq.com/keys
+# Make sure you copied the FULL key
+```
+
+## Next Steps
+
+- Read `SETUP.md` for full installation guide
+- Read `API.md` for WebSocket protocol
+- Read `ARCHITECTURE.md` for technical details
