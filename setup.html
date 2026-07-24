@@ -4,303 +4,459 @@
 <meta charset="UTF-8" />
 <title>ChurchOverlay — Configuration initiale</title>
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  
   :root {
-    --bg: #14161c;
-    --panel: #1c1f28;
-    --border: #2c3040;
-    --text: #e8e9ee;
-    --muted: #9195a6;
-    --accent: #6c8cff;
-    --accent-hover: #8aa4ff;
-    --error: #ff6b6b;
-    --ok: #4fd18b;
+    --bg-primary: #0a0e1a;
+    --glass-bg: rgba(17, 24, 39, 0.8);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --text-primary: #f9fafb;
+    --text-secondary: #9ca3af;
+    --text-muted: #6b7280;
+    --accent: #6366f1;
+    --accent-hover: #818cf8;
+    --success: #10b981;
+    --error: #ef4444;
+    --warning: #f59e0b;
   }
-  * { box-sizing: border-box; }
-  body {
+
+  * {
+    box-sizing: border-box;
     margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-    font-size: 13px;
-    -webkit-user-select: none;
-    user-select: none;
+    padding: 0;
   }
-  .wrap { padding: 22px 26px; }
-  h1 {
-    font-size: 16px;
-    margin: 0 0 4px;
-    font-weight: 600;
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #0a0e1a 0%, #1a1f3a 100%);
+    color: var(--text-primary);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    -webkit-font-smoothing: antialiased;
   }
-  .subtitle {
-    color: var(--muted);
-    margin: 0 0 20px;
-    line-height: 1.5;
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+    pointer-events: none;
   }
-  label {
-    display: block;
-    font-weight: 600;
-    margin-bottom: 6px;
-    color: var(--text);
-  }
-  .field { margin-bottom: 18px; }
-  .row { display: flex; gap: 8px; }
-  select, input[type="password"], input[type="text"] {
+
+  .container {
+    position: relative;
     width: 100%;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    color: var(--text);
-    border-radius: 6px;
-    padding: 9px 10px;
-    font-size: 13px;
-    -webkit-user-select: text;
-    user-select: text;
+    max-width: 520px;
+    background: var(--glass-bg);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    padding: 40px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+    animation: slideIn 0.4s ease-out;
   }
+
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+
+  .logo {
+    font-size: 48px;
+    margin-bottom: 12px;
+    animation: float 3s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+
+  h1 {
+    font-size: 26px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, var(--accent), var(--success));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .subtitle {
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .form-group {
+    margin-bottom: 24px;
+  }
+
+  label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    color: var(--text-primary);
+    font-size: 14px;
+  }
+
+  .input-row {
+    display: flex;
+    gap: 10px;
+  }
+
+  select, input {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--glass-border);
+    color: var(--text-primary);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 13px;
+    font-family: inherit;
+    transition: all 0.2s ease;
+  }
+
   select:focus, input:focus {
     outline: none;
     border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
   }
-  .row select { flex: 1; }
-  button {
+
+  .btn {
     cursor: pointer;
     border: none;
-    border-radius: 6px;
+    border-radius: 10px;
     font-size: 13px;
     font-weight: 600;
-    padding: 9px 14px;
+    padding: 12px 18px;
+    transition: all 0.2s ease;
+    white-space: nowrap;
   }
+
   .btn-secondary {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    color: var(--text);
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+    border: 1px solid var(--glass-border);
   }
-  .btn-secondary:hover { border-color: var(--accent); }
+
+  .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: var(--accent);
+  }
+
   .btn-primary {
-    background: var(--accent);
-    color: #0c0e14;
     width: 100%;
-    padding: 11px 14px;
-    margin-top: 6px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+    color: white;
+    padding: 14px 20px;
+    font-size: 14px;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
   }
-  .btn-primary:hover { background: var(--accent-hover); }
+
+  .btn-primary:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+  }
+
   .btn-primary:disabled {
-    background: var(--border);
-    color: var(--muted);
+    opacity: 0.5;
     cursor: not-allowed;
+    transform: none;
   }
+
   .hint {
-    color: var(--muted);
-    font-size: 11.5px;
-    margin-top: 6px;
+    color: var(--text-muted);
+    font-size: 11px;
+    margin-top: 8px;
     line-height: 1.5;
   }
-  .hint a { color: var(--accent); text-decoration: none; }
-  .status-line {
-    margin-top: 4px;
-    font-size: 11.5px;
-    min-height: 14px;
+
+  .hint a {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 500;
   }
-  .status-line.error { color: var(--error); }
-  .status-line.ok { color: var(--ok); }
-  .toggle-eye {
-    background: none;
-    border: none;
-    color: var(--muted);
-    font-size: 11px;
-    padding: 0;
-    margin-top: 6px;
+
+  .hint a:hover {
     text-decoration: underline;
   }
-  .footer-note {
-    margin-top: 22px;
-    padding-top: 14px;
-    border-top: 1px solid var(--border);
-    color: var(--muted);
+
+  .status {
+    margin-top: 8px;
+    font-size: 12px;
+    min-height: 18px;
+    padding: 4px 0;
+  }
+
+  .status.success {
+    color: var(--success);
+  }
+
+  .status.error {
+    color: var(--error);
+  }
+
+  .status.warning {
+    color: var(--warning);
+  }
+
+  .toggle-password {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 11px;
+    padding: 4px 0;
+    margin-top: 6px;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+
+  .toggle-password:hover {
+    color: var(--accent);
+  }
+
+  .footer {
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px solid var(--glass-border);
+    color: var(--text-muted);
     font-size: 11px;
     line-height: 1.6;
+    text-align: center;
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Bienvenue dans ChurchOverlay</h1>
-    <p class="subtitle">
-      Deux réglages avant le premier démarrage : le microphone à écouter
-      et votre clé API Groq (pour la transcription). Une clé Deepgram
-      optionnelle peut être ajoutée en secours. Rien d'autre à installer.
-    </p>
+  <div class="container">
+    <div class="header">
+      <div class="logo">✝️</div>
+      <h1>Configuration Initiale</h1>
+      <p class="subtitle">
+        Configurez votre micro et votre clé API Groq pour commencer. 
+        Rien d'autre à installer, tout est prêt !
+      </p>
+    </div>
 
-    <div class="field">
-      <label for="mic-select">Microphone</label>
-      <div class="row">
+    <!-- Microphone -->
+    <div class="form-group">
+      <label>
+        <span>🎤</span> Microphone
+      </label>
+      <div class="input-row">
         <select id="mic-select">
           <option value="">Recherche des microphones…</option>
         </select>
-        <button class="btn-secondary" id="btn-refresh" type="button">Actualiser</button>
+        <button class="btn btn-secondary" id="btn-refresh">
+          🔄 Actualiser
+        </button>
       </div>
-      <div class="status-line" id="mic-status"></div>
+      <div class="status" id="mic-status"></div>
     </div>
 
-    <div class="field">
-      <label for="groq-key">Clé API Groq</label>
+    <!-- Groq API Key -->
+    <div class="form-group">
+      <label>
+        <span>🔑</span> Clé API Groq
+      </label>
       <input type="password" id="groq-key" placeholder="gsk_..." autocomplete="off" />
-      <button class="toggle-eye" id="btn-toggle-key" type="button">Afficher</button>
+      <button class="toggle-password" id="btn-toggle-groq">Afficher</button>
       <div class="hint">
         Obtenez une clé gratuite sur
         <a id="link-groq" href="#">console.groq.com/keys</a>
-        (lien à copier-coller dans votre navigateur), puis collez-la ici.
+        (cliquez pour copier le lien)
       </div>
     </div>
 
-    <div class="field">
-      <label for="deepgram-key">Clé API Deepgram (optionnel)</label>
+    <!-- Deepgram API Key (Optional) -->
+    <div class="form-group">
+      <label>
+        <span>🔐</span> Clé API Deepgram <span style="color: var(--text-muted); font-weight: 400;">(optionnel)</span>
+      </label>
       <input type="password" id="deepgram-key" placeholder="Laisser vide si non utilisé" autocomplete="off" />
-      <button class="toggle-eye" id="btn-toggle-deepgram-key" type="button">Afficher</button>
+      <button class="toggle-password" id="btn-toggle-deepgram">Afficher</button>
       <div class="hint">
-        2e fournisseur cloud, utilisé automatiquement si Groq ne répond pas.
-        Facultatif — l'application fonctionne très bien avec Groq seul.
-        Clé disponible sur
+        Secours automatique si Groq ne répond pas. Facultatif.
         <a id="link-deepgram" href="#">console.deepgram.com</a>
-        (lien à copier-coller dans votre navigateur).
       </div>
     </div>
 
-    <button class="btn-primary" id="btn-save" type="button" disabled>
-      Enregistrer et démarrer
+    <!-- Save Button -->
+    <button class="btn btn-primary" id="btn-save" disabled>
+      🚀 Enregistrer et démarrer
     </button>
-    <div class="status-line" id="save-status"></div>
-    <div class="status-line" id="whisper-status"></div>
+    <div class="status" id="save-status"></div>
+    <div class="status" id="whisper-status"></div>
 
-    <div class="footer-note">
-      Ces informations restent uniquement sur cet ordinateur (fichier de
-      configuration local). Vous pourrez les modifier plus tard depuis le
-      tableau de bord.
+    <div class="footer">
+      🔒 Toutes ces informations restent sur votre ordinateur.
+      Vous pourrez les modifier depuis le tableau de bord.
     </div>
   </div>
 
   <script>
-    const micSelect = document.getElementById('mic-select');
-    const micStatus = document.getElementById('mic-status');
-    const btnRefresh = document.getElementById('btn-refresh');
-    const groqInput = document.getElementById('groq-key');
-    const btnToggleKey = document.getElementById('btn-toggle-key');
-    const deepgramInput = document.getElementById('deepgram-key');
-    const btnToggleDeepgramKey = document.getElementById('btn-toggle-deepgram-key');
-    const btnSave = document.getElementById('btn-save');
-    const saveStatus = document.getElementById('save-status');
-    const linkGroq = document.getElementById('link-groq');
-    const linkDeepgram = document.getElementById('link-deepgram');
+    const elements = {
+      micSelect: document.getElementById('mic-select'),
+      micStatus: document.getElementById('mic-status'),
+      btnRefresh: document.getElementById('btn-refresh'),
+      groqInput: document.getElementById('groq-key'),
+      btnToggleGroq: document.getElementById('btn-toggle-groq'),
+      deepgramInput: document.getElementById('deepgram-key'),
+      btnToggleDeepgram: document.getElementById('btn-toggle-deepgram'),
+      btnSave: document.getElementById('btn-save'),
+      saveStatus: document.getElementById('save-status'),
+      whisperStatus: document.getElementById('whisper-status'),
+      linkGroq: document.getElementById('link-groq'),
+      linkDeepgram: document.getElementById('link-deepgram'),
+    };
 
-    // Pas de nodeIntegration : on ne peut pas ouvrir de lien externe
-    // directement, on affiche juste l'adresse à copier.
-    linkGroq.addEventListener('click', (e) => {
+    // Copy links
+    elements.linkGroq.addEventListener('click', (e) => {
       e.preventDefault();
       navigator.clipboard.writeText('https://console.groq.com/keys').then(() => {
-        linkGroq.textContent = 'Lien copié ✓';
-        setTimeout(() => { linkGroq.textContent = 'console.groq.com/keys'; }, 1800);
-      }).catch(() => {});
+        elements.linkGroq.textContent = 'Lien copié ✓';
+        setTimeout(() => { elements.linkGroq.textContent = 'console.groq.com/keys'; }, 2000);
+      });
     });
 
-    linkDeepgram.addEventListener('click', (e) => {
+    elements.linkDeepgram.addEventListener('click', (e) => {
       e.preventDefault();
       navigator.clipboard.writeText('https://console.deepgram.com').then(() => {
-        linkDeepgram.textContent = 'Lien copié ✓';
-        setTimeout(() => { linkDeepgram.textContent = 'console.deepgram.com'; }, 1800);
-      }).catch(() => {});
+        elements.linkDeepgram.textContent = 'Lien copié ✓';
+        setTimeout(() => { elements.linkDeepgram.textContent = 'console.deepgram.com'; }, 2000);
+      });
     });
 
+    // Toggle password visibility
+    elements.btnToggleGroq.addEventListener('click', () => {
+      const show = elements.groqInput.type === 'password';
+      elements.groqInput.type = show ? 'text' : 'password';
+      elements.btnToggleGroq.textContent = show ? 'Masquer' : 'Afficher';
+    });
+
+    elements.btnToggleDeepgram.addEventListener('click', () => {
+      const show = elements.deepgramInput.type === 'password';
+      elements.deepgramInput.type = show ? 'text' : 'password';
+      elements.btnToggleDeepgram.textContent = show ? 'Masquer' : 'Afficher';
+    });
+
+    // Update save button state
     function updateSaveEnabled() {
-      const hasMic = !!micSelect.value;
-      const hasKey = groqInput.value.trim().length > 0;
-      btnSave.disabled = !(hasMic && hasKey);
+      const hasMic = !!elements.micSelect.value;
+      const hasKey = elements.groqInput.value.trim().length > 0;
+      elements.btnSave.disabled = !(hasMic && hasKey);
     }
 
+    // Load microphones
     async function loadMicrophones() {
-      micStatus.className = 'status-line';
-      micStatus.textContent = '';
-      micSelect.innerHTML = '<option value="">Recherche des microphones…</option>';
-      btnRefresh.disabled = true;
+      elements.micStatus.className = 'status';
+      elements.micStatus.textContent = '';
+      elements.micSelect.innerHTML = '<option value="">🔍 Recherche des microphones…</option>';
+      elements.btnRefresh.disabled = true;
 
       const devices = await window.churchOverlay.detectMicrophones();
 
-      btnRefresh.disabled = false;
-      micSelect.innerHTML = '';
+      elements.btnRefresh.disabled = false;
+      elements.micSelect.innerHTML = '';
 
       if (!devices || devices.length === 0) {
-        micSelect.innerHTML = '<option value="">Aucun microphone détecté</option>';
-        micStatus.className = 'status-line error';
-        micStatus.textContent = 'Vérifiez qu\'un microphone est branché et autorisé dans Windows, puis cliquez sur Actualiser.';
+        elements.micSelect.innerHTML = '<option value="">❌ Aucun microphone détecté</option>';
+        elements.micStatus.className = 'status error';
+        elements.micStatus.textContent = '⚠️ Vérifiez qu\\'un micro est branché, puis cliquez sur Actualiser.';
         updateSaveEnabled();
         return;
       }
 
-      devices.forEach((name) => {
+      devices.forEach(name => {
         const opt = document.createElement('option');
         opt.value = name;
         opt.textContent = name;
-        micSelect.appendChild(opt);
+        elements.micSelect.appendChild(opt);
       });
-      micStatus.className = 'status-line ok';
-      micStatus.textContent = devices.length + ' microphone(s) détecté(s).';
+      elements.micStatus.className = 'status success';
+      elements.micStatus.textContent = `✅ ${devices.length} microphone(s) détecté(s)`;
       updateSaveEnabled();
     }
 
-    btnRefresh.addEventListener('click', loadMicrophones);
-    micSelect.addEventListener('change', updateSaveEnabled);
-    groqInput.addEventListener('input', updateSaveEnabled);
+    // Event listeners
+    elements.btnRefresh.addEventListener('click', loadMicrophones);
+    elements.micSelect.addEventListener('change', updateSaveEnabled);
+    elements.groqInput.addEventListener('input', updateSaveEnabled);
 
-    btnToggleKey.addEventListener('click', () => {
-      const show = groqInput.type === 'password';
-      groqInput.type = show ? 'text' : 'password';
-      btnToggleKey.textContent = show ? 'Masquer' : 'Afficher';
-    });
-
-    btnToggleDeepgramKey.addEventListener('click', () => {
-      const show = deepgramInput.type === 'password';
-      deepgramInput.type = show ? 'text' : 'password';
-      btnToggleDeepgramKey.textContent = show ? 'Masquer' : 'Afficher';
-    });
-
-    const whisperStatus = document.getElementById('whisper-status');
-
-    // Reçoit la progression du téléchargement automatique de Whisper
-    // (déclenché côté main.js juste après saveSetup). Voir preload.js.
+    // Whisper setup progress
     window.churchOverlay.onWhisperSetupProgress((payload) => {
-      whisperStatus.className = 'status-line' + (payload.done ? (payload.ok === false ? ' error' : ' ok') : '');
-      whisperStatus.textContent = payload.message || '';
+      const cls = payload.done ? (payload.ok === false ? 'error' : 'success') : 'warning';
+      elements.whisperStatus.className = 'status ' + cls;
+      
+      if (!payload.done) {
+        elements.whisperStatus.innerHTML = '<span class=\"spinner\"></span> ' + (payload.message || '');
+      } else {
+        elements.whisperStatus.textContent = (payload.ok === false ? '⚠️ ' : '✅ ') + (payload.message || '');
+      }
 
       if (payload.done) {
-        // Que le téléchargement ait réussi ou échoué, on ne bloque pas le
-        // démarrage : Groq (cloud) peut suffire seul. Voir main.js.
-        setTimeout(() => window.close(), payload.ok === false ? 2200 : 900);
+        setTimeout(() => window.close(), payload.ok === false ? 2500 : 1000);
       }
     });
 
-    btnSave.addEventListener('click', async () => {
-      btnSave.disabled = true;
-      btnSave.textContent = 'Enregistrement…';
-      saveStatus.className = 'status-line';
-      saveStatus.textContent = '';
-      whisperStatus.className = 'status-line';
-      whisperStatus.textContent = '';
+    // Save configuration
+    elements.btnSave.addEventListener('click', async () => {
+      elements.btnSave.disabled = true;
+      elements.btnSave.innerHTML = '<span class=\"spinner\"></span> Enregistrement…';
+      elements.saveStatus.className = 'status';
+      elements.saveStatus.textContent = '';
+      elements.whisperStatus.className = 'status';
+      elements.whisperStatus.textContent = '';
 
       try {
-        saveStatus.className = 'status-line ok';
-        saveStatus.textContent = 'Configuration enregistrée. Préparation de la transcription locale…';
-        whisperStatus.textContent = 'Vérification de Whisper local…';
-        // saveSetup ne se résout qu'une fois le téléchargement de Whisper
-        // terminé (ou après échec géré) côté main.js ; la fenêtre se ferme
-        // elle-même via onWhisperSetupProgress ci-dessus une fois "done".
-        await window.churchOverlay.saveSetup(micSelect.value, groqInput.value.trim(), deepgramInput.value.trim());
+        elements.saveStatus.className = 'status success';
+        elements.saveStatus.textContent = '✅ Configuration enregistrée';
+        elements.whisperStatus.innerHTML = '<span class=\"spinner\"></span> Vérification de Whisper local…';
+        
+        await window.churchOverlay.saveSetup(
+          elements.micSelect.value,
+          elements.groqInput.value.trim(),
+          elements.deepgramInput.value.trim()
+        );
       } catch (e) {
-        saveStatus.className = 'status-line error';
-        saveStatus.textContent = 'Erreur lors de l\'enregistrement : ' + (e && e.message ? e.message : e);
-        btnSave.disabled = false;
-        btnSave.textContent = 'Enregistrer et démarrer';
+        elements.saveStatus.className = 'status error';
+        elements.saveStatus.textContent = '❌ Erreur : ' + (e && e.message ? e.message : e);
+        elements.btnSave.disabled = false;
+        elements.btnSave.innerHTML = '🚀 Enregistrer et démarrer';
       }
     });
 
+    // Initialize
     loadMicrophones();
   </script>
 </body>
 </html>
-
