@@ -32,4 +32,11 @@ contextBridge.exposeInMainWorld('churchOverlay', {
     // Retourne une fonction de nettoyage, utile si la fenêtre recharge.
     return () => ipcRenderer.removeListener('status-update', listener);
   },
+
+  // --- Progression du téléchargement automatique de Whisper (setup.html) --
+  onWhisperSetupProgress: (callback) => {
+    const listener = (_evt, payload) => callback(payload);
+    ipcRenderer.on('whisper-setup-progress', listener);
+    return () => ipcRenderer.removeListener('whisper-setup-progress', listener);
+  },
 });
