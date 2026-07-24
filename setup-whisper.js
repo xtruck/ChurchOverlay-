@@ -50,7 +50,11 @@ function log(msg) {
   console.log(`[setup-whisper] ${msg}`);
 }
 
-function download(url, destPath) {
+// onProgress(msg) est appelé pour chaque ligne de statut ET pour chaque
+// changement de pourcentage pendant un téléchargement (msg de la forme
+// "Téléchargement... 42%"), afin qu'un appelant (CLI ou fenêtre Electron)
+// puisse afficher une progression sans dupliquer la logique HTTP.
+function download(url, destPath, onProgress = () => {}) {
   return new Promise((resolve, reject) => {
     const doRequest = (currentUrl, redirectsLeft) => {
       https
@@ -70,20 +74,21 @@ function download(url, destPath) {
           }
           const total = parseInt(res.headers['content-length'] || '0', 10);
           let downloaded = 0;
+          let lastPct = -1;
           const file = fs.createWriteStream(destPath);
           res.on('data', (chunk) => {
             downloaded += chunk.length;
             if (total) {
-              const pct = ((downloaded / total) * 100).toFixed(0);
-              process.stdout.write(`\r[setup-whisper] Téléchargement... ${pct}%`);
+              const pct = Math.floor((downloaded / total) * 100);
+              if (pct !== lastPct) {
+                lastPct = pct;
+                onProgress(`Téléchargement... ${pct}%`);
+              }
             }
           });
           res.pipe(file);
           file.on('finish', () => {
-            file.close(() => {
-              process.stdout.write('\n');
-              resolve();
-            });
+            file.close(() => resolve());
           });
           file.on('error', reject);
         })
@@ -107,17 +112,31 @@ function extractZipWindows(zipPath, destDir) {
   );
 }
 
-async function main() {
+/**
+ * Télécharge et installe whisper-server.exe + le modèle configuré s'ils ne
+ * sont pas déjà présents. Idempotent : peut être rappelée sans risque (ex.
+ * à chaque démarrage de l'app) — si tout est déjà en place, ne fait rien.
+ *
+ * @param {Object} [opts]
+ * @param {(msg: string) => void} [opts.onProgress] - Reçoit chaque ligne de
+ *        statut (et les pourcentages de téléchargement). Permet à main.js
+ *        d'afficher une progression dans la fenêtre de premier lancement au
+ *        lieu de se contenter des logs console (CORRECTIF AUDIT : avant ce
+ *        changement, rien n'appelait jamais ce script pour l'app packagée —
+ *        voir note en tête de fichier).
+ * @returns {Promise<{ installed: boolean, skipped: boolean }>}
+ */
+async function ensureWhisperInstalled(opts = {}) {
+  const onProgress = opts.onProgress || (() => {});
+  const report = (msg) => { log(msg); onProgress(msg); };
+
   if (process.platform !== 'win32') {
-    log(
-      'Ce script télécharge des binaires .exe Windows : il ne sert que sur ' +
-        'Windows (là où tourne réellement ChurchOverlay packagé). Sur ' +
-        'Linux/Mac, la transcription Whisper locale reste indisponible, ' +
-        'mais le reste de l\'app (recherche de versets, overlay, contrôle ' +
-        'manuel) fonctionne normalement.'
+    report(
+      'Plateforme non-Windows détectée : la transcription Whisper locale ' +
+      'restera indisponible (Groq cloud continuera de fonctionner si une ' +
+      'clé API est configurée et qu\'internet est disponible).'
     );
-    process.exitCode = 1;
-    return;
+    return { installed: false, skipped: true };
   }
 
   fs.mkdirSync(WHISPER_DIR, { recursive: true });
@@ -125,14 +144,14 @@ async function main() {
 
   const whisperExePath = path.join(WHISPER_DIR, 'whisper-server.exe');
   if (fs.existsSync(whisperExePath)) {
-    log('whisper-server.exe déjà présent, téléchargement du binaire ignoré.');
+    report('whisper-server.exe déjà présent, téléchargement du binaire ignoré.');
   } else {
     const zipPath = path.join(WHISPER_DIR, '_whisper-bin-x64.zip');
-    log(`Téléchargement de whisper.cpp (build Windows x64 CPU) depuis ${WHISPER_CPP_ZIP_URL}`);
-    await download(WHISPER_CPP_ZIP_URL, zipPath);
+    report(`Téléchargement de whisper.cpp (build Windows x64 CPU)...`);
+    await download(WHISPER_CPP_ZIP_URL, zipPath, onProgress);
 
     const extractTmpDir = path.join(WHISPER_DIR, '_extract_tmp');
-    log('Extraction de l\'archive...');
+    report('Extraction de l\'archive...');
     extractZipWindows(zipPath, extractTmpDir);
 
     // L'archive contient un dossier Release/ avec whisper-server.exe + les
@@ -149,22 +168,28 @@ async function main() {
 
     fs.rmSync(extractTmpDir, { recursive: true, force: true });
     fs.rmSync(zipPath, { force: true });
-    log('whisper-server.exe et ses dépendances (.dll) installés dans whisper/.');
+    report('whisper-server.exe et ses dépendances (.dll) installés dans whisper/.');
   }
 
   const modelPath = path.join(MODELS_DIR, MODEL_FILE);
   if (fs.existsSync(modelPath)) {
-    log(`Modèle ${MODEL_FILE} déjà présent, téléchargement ignoré.`);
+    report(`Modèle ${MODEL_FILE} déjà présent, téléchargement ignoré.`);
   } else {
-    log(`Téléchargement du modèle ${MODEL_FILE} depuis Hugging Face...`);
-    await download(MODEL_URL, modelPath);
-    log(`Modèle installé : whisper/models/${MODEL_FILE}`);
+    report(`Téléchargement du modèle ${MODEL_FILE} depuis Hugging Face...`);
+    await download(MODEL_URL, modelPath, onProgress);
+    report(`Modèle installé : whisper/models/${MODEL_FILE}`);
   }
 
-  log('Terminé. Lance `npm test` puis `npm start` pour vérifier que tout est détecté.');
+  report('Whisper local prêt.');
+  return { installed: true, skipped: false };
 }
 
-main().catch((err) => {
-  console.error(`[setup-whisper] Échec : ${err.message}`);
-  process.exitCode = 1;
-});
+module.exports = { ensureWhisperInstalled };
+
+// Usage en ligne de commande : `npm run setup-whisper`
+if (require.main === module) {
+  ensureWhisperInstalled().catch((err) => {
+    console.error(`[setup-whisper] Échec : ${err.message}`);
+    process.exitCode = 1;
+  });
+}
