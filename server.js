@@ -283,7 +283,17 @@ whisper.on({
     console.log('[server] (log) Transcription whisper reçue en interne:', result.text || '(sans texte)');
   },
   onError: (error) => {
-    console.error('[server] Erreur Whisper:', error);
+    console.error('[server] Erreur Whisper:', error.message || error);
+    // CORRECTIF AUDIT : un crash de whisper-server.exe en cours de service
+    // ne remontait auparavant que dans ce console.log (invisible dans
+    // l'app packagée) — l'overlay pouvait perdre son fallback local sans
+    // que personne ne le sache tant que Groq répondait encore. On le
+    // signale maintenant comme les autres erreurs de pipeline.
+    broadcast({
+      action: 'pipelineError',
+      error: 'Whisper local : ' + (error.message || String(error)),
+      timestamp: Date.now(),
+    });
   },
 });
 
@@ -609,4 +619,19 @@ function startServer(PORT) {
     console.log('\n[server] SIGTERM reçu, arrêt...');
     process.emit('SIGINT');
   });
+
+  // CORRECTIF AUDIT : canal IPC avec le process parent (main.js/Electron).
+  // Sous Windows, main.js ne peut pas compter sur un vrai SIGTERM (kill()
+  // y termine le process de force, sans passer par le handler ci-dessus),
+  // donc il envoie maintenant un message IPC explicite pour demander un
+  // arrêt propre — qui déclenche exactement le même nettoyage que SIGINT
+  // (arrêt de whisper-server.exe et FFmpeg avant de quitter).
+  if (process.send) {
+    process.on('message', (msg) => {
+      if (msg && msg.type === 'shutdown') {
+        console.log('\n[server] Message d\'arrêt reçu du process parent (IPC).');
+        process.emit('SIGINT');
+      }
+    });
+  }
 }
