@@ -10,13 +10,13 @@
     "server-only": "node server.js",
     "test-envoi": "node tests/test-envoi.js",
     "setup-whisper": "node setup-whisper.js",
-    "test": "node tests/test-detector.js && node tests/test-validation.js && node tests/test-rate-limiter.js && node tests/test-config-validator.js",
-    "test-all": "node tests/test-detector.js && node tests/test-validation.js && node tests/test-rate-limiter.js && node tests/test-config-validator.js && node tests/test-audio-capture.js && node tests/test-whisper.js && node tests/test-pipeline-complet.js",
+    "test": "node tests/test-detector.js && node tests/test-validation.js && node tests/test-rate-limiter.js && node tests/test-config-validator.js && node tests/test-groq-fallback-race.js",
+    "test-all": "node tests/test-detector.js && node tests/test-validation.js && node tests/test-rate-limiter.js && node tests/test-config-validator.js && node tests/test-groq-fallback-race.js && node tests/test-audio-capture.js && node tests/test-whisper.js && node tests/test-pipeline-complet.js",
     "dist": "electron-builder --win nsis"
   },
   "dependencies": {
-    "ws": "^8.18.0",
-    "form-data": "^4.0.0"
+    "form-data": "^4.0.6",
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "electron": "^43.2.0",
@@ -40,6 +40,7 @@
       "context-tracker.js",
       "detector.js",
       "groq-wrapper.js",
+      "deepgram-wrapper.js",
       "list-audio-devices.js",
       "rate-limiter.js",
       "setup-whisper.js",
@@ -60,7 +61,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "icon.ico"
