@@ -1,10 +1,11 @@
 {
   "name": "churchoverlay",
   "productName": "ChurchOverlay",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Overlay de versets bibliques en direct — micro → FFmpeg → Whisper/Groq → detector → overlay.html, packagé en application Windows installable.",
   "author": "ChurchOverlay",
   "main": "main.js",
+  "//": "CHANGELOG v0.2.0 — Performance & Stability Repair Plan | 1) asar:true (fast startup, smaller install, avoids per-file AV scans) 2) compression:'maximum' + nsis.differentialPackage:true 3) Exact versions pinned for electron & electron-builder (reproducible builds) 4) Tighter file excludes (.map/.md/tests/docs)",
   "scripts": {
     "start": "electron .",
     "server-only": "node server.js",
@@ -20,16 +21,18 @@
     "ws": "^8.21.1"
   },
   "devDependencies": {
-    "electron": "^43.2.0",
-    "electron-builder": "^26.15.3"
+    "electron": "43.2.0",
+    "electron-builder": "26.15.3"
   },
   "build": {
     "appId": "com.mesev.churchoverlay",
     "productName": "ChurchOverlay",
-    "asar": false,
+    "asar": true,
+    "compression": "maximum",
     "files": [
       "main.js",
       "preload.js",
+      "perf-monitor.js",
       "setup.html",
       "dashboard.html",
       "overlay.html",
@@ -54,7 +57,14 @@
       "!tests/**",
       "!**/*.md",
       "!**/*.bat",
-      "!**/*.vbs"
+      "!**/*.vbs",
+      "!**/*.map",
+      "!**/*.log",
+      "!**/*.test.js",
+      "!**/.DS_Store",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,readme.markdown}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/.cache"
     ],
     "directories": {
       "output": "dist"
@@ -76,7 +86,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "ChurchOverlay"
+      "shortcutName": "ChurchOverlay",
+      "differentialPackage": true
     }
   }
 }
