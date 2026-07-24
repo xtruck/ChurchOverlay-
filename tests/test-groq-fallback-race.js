@@ -103,7 +103,13 @@ async function run() {
   delete process.env.DEEPGRAM_API_KEY;
 
   await withMockedFetch(async (url) => {
-    if (String(url).includes('groq.com')) {
+    let host = '';
+    try {
+      host = new URL(String(url)).hostname;
+    } catch (e) {
+      throw new Error('URL fetch invalide/inattendue: ' + url);
+    }
+    if (host === 'groq.com' || host.endsWith('.groq.com')) {
       return { ok: false, status: 429, text: async () => 'rate limited' };
     }
     throw new Error('fetch inattendu (Deepgram ne doit pas être appelé): ' + url);
