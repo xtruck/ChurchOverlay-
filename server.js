@@ -373,11 +373,41 @@ let compteurClients = 0;
  * Démarre le serveur WebSocket avec le port spécifié
  * @param {number} PORT - Port d'écoute
  */
+/**
+ * Vérifie l'en-tête Origin d'une tentative de connexion WebSocket.
+ *
+ * CORRECTIF SÉCURITÉ : sans ce contrôle, n'importe quelle page web ouverte
+ * dans un navigateur normal sur la même machine pouvait ouvrir une connexion
+ * WebSocket vers ws://127.0.0.1:PORT et envoyer des commandes — un
+ * Cross-Site WebSocket Hijacking (CSWH), les WebSocket n'étant pas soumises
+ * à la Same-Origin Policy comme fetch/XHR.
+ *
+ * Origines acceptées : undefined (clients Node comme test-envoi.js, qui
+ * n'envoient pas d'en-tête Origin) ou "null" (page chargée via file://,
+ * exactement le cas d'overlay.html dans OBS Browser Source).
+ * Origine refusée : toute origine http(s), qui ne peut venir que d'une
+ * page web normale.
+ */
+function verifyOrigin(info) {
+  const origin = info.origin;
+  return origin === undefined || origin === 'null';
+}
+
 function startServer(PORT) {
   // Toujours lié à la machine locale : aucun message showVerse/lookupReference
   // ne doit pouvoir venir d'un autre poste sur le réseau pendant un culte.
   const HOST = process.env.WS_HOST || '127.0.0.1';
-  wss = new WebSocket.Server({ host: HOST, port: PORT }, () => {
+  wss = new WebSocket.Server({
+    host: HOST,
+    port: PORT,
+    verifyClient: (info) => {
+      const allowed = verifyOrigin(info);
+      if (!allowed) {
+        console.warn(`[server] Connexion refusée : origine non autorisée ("${info.origin}")`);
+      }
+      return allowed;
+    },
+  }, () => {
     startPipeline();
     console.log('[server] Serveur WebSocket démarré sur ws://' + HOST + ':' + PORT);
     console.log('[server] En attente de connexions (overlay.html dans OBS, test-envoi.js, ...).');
