@@ -154,6 +154,7 @@
       Enregistrer et démarrer
     </button>
     <div class="status-line" id="save-status"></div>
+    <div class="status-line" id="whisper-status"></div>
 
     <div class="footer-note">
       Ces informations restent uniquement sur cet ordinateur (fichier de
@@ -228,19 +229,37 @@
       btnToggleKey.textContent = show ? 'Masquer' : 'Afficher';
     });
 
+    const whisperStatus = document.getElementById('whisper-status');
+
+    // Reçoit la progression du téléchargement automatique de Whisper
+    // (déclenché côté main.js juste après saveSetup). Voir preload.js.
+    window.churchOverlay.onWhisperSetupProgress((payload) => {
+      whisperStatus.className = 'status-line' + (payload.done ? (payload.ok === false ? ' error' : ' ok') : '');
+      whisperStatus.textContent = payload.message || '';
+
+      if (payload.done) {
+        // Que le téléchargement ait réussi ou échoué, on ne bloque pas le
+        // démarrage : Groq (cloud) peut suffire seul. Voir main.js.
+        setTimeout(() => window.close(), payload.ok === false ? 2200 : 900);
+      }
+    });
+
     btnSave.addEventListener('click', async () => {
       btnSave.disabled = true;
       btnSave.textContent = 'Enregistrement…';
       saveStatus.className = 'status-line';
       saveStatus.textContent = '';
+      whisperStatus.className = 'status-line';
+      whisperStatus.textContent = '';
 
       try {
-        await window.churchOverlay.saveSetup(micSelect.value, groqInput.value.trim());
         saveStatus.className = 'status-line ok';
-        saveStatus.textContent = 'Configuration enregistrée. Démarrage du pipeline…';
-        // La fermeture de cette fenêtre déclenche côté main.js l'ouverture
-        // du tableau de bord et le démarrage de server.js.
-        setTimeout(() => window.close(), 700);
+        saveStatus.textContent = 'Configuration enregistrée. Préparation de la transcription locale…';
+        whisperStatus.textContent = 'Vérification de Whisper local…';
+        // saveSetup ne se résout qu'une fois le téléchargement de Whisper
+        // terminé (ou après échec géré) côté main.js ; la fenêtre se ferme
+        // elle-même via onWhisperSetupProgress ci-dessus une fois "done".
+        await window.churchOverlay.saveSetup(micSelect.value, groqInput.value.trim());
       } catch (e) {
         saveStatus.className = 'status-line error';
         saveStatus.textContent = 'Erreur lors de l\'enregistrement : ' + (e && e.message ? e.message : e);
