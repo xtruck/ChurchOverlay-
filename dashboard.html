@@ -1,4 +1,11 @@
 <!DOCTYPE html>
+<!--
+  CHANGELOG v0.2.0 (dashboard.html)
+    + Cloud-only mode toggle (persisted via IPC setCloudOnlyMode)
+    + Whisper GPU toggle (manual, persisted via IPC setWhisperGpu)
+    + Live CPU % / RSS MB readout (perf-update push, 2s cadence)
+    + Uptime readout for the worker recycling verification
+-->
 <html lang="fr">
 <head>
 <meta charset="UTF-8" />
@@ -27,22 +34,14 @@
     -webkit-user-select: none;
     user-select: none;
   }
-  .wrap { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .wrap { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
 
   .status-card {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px 14px;
+    display: flex; align-items: center; gap: 10px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 14px;
   }
-  .dot {
-    width: 10px; height: 10px; border-radius: 50%;
-    background: var(--muted);
-    flex-shrink: 0;
-  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
   .dot.running { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
   .dot.error { background: var(--error); box-shadow: 0 0 6px var(--error); }
   .dot.starting { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
@@ -51,87 +50,83 @@
   .status-sub { color: var(--muted); font-size: 11.5px; margin-top: 1px; }
   .status-card .spacer { flex: 1; }
 
-  .field-label {
-    font-weight: 600;
-    margin-bottom: 6px;
-    display: block;
-  }
-  .url-row {
-    display: flex;
-    gap: 8px;
-  }
+  .field-label { font-weight: 600; margin-bottom: 6px; display: block; }
+  .url-row { display: flex; gap: 8px; }
   .url-box {
-    flex: 1;
-    background: var(--panel-2);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 8px 10px;
-    font-family: "Consolas", monospace;
-    font-size: 11.5px;
-    color: var(--text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    -webkit-user-select: text;
-    user-select: text;
+    flex: 1; background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px;
+    font-family: "Consolas", monospace; font-size: 11.5px; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    -webkit-user-select: text; user-select: text;
   }
 
   button {
-    cursor: pointer;
-    border: none;
-    border-radius: 6px;
-    font-size: 12.5px;
-    font-weight: 600;
-    padding: 8px 12px;
-    white-space: nowrap;
+    cursor: pointer; border: none; border-radius: 6px;
+    font-size: 12.5px; font-weight: 600; padding: 8px 12px; white-space: nowrap;
   }
-  .btn-secondary {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    color: var(--text);
-  }
+  .btn-secondary { background: var(--panel); border: 1px solid var(--border); color: var(--text); }
   .btn-secondary:hover { border-color: var(--accent); }
-  .btn-accent {
-    background: var(--accent);
-    color: #0c0e14;
-  }
+  .btn-accent { background: var(--accent); color: #0c0e14; }
   .btn-accent:hover { background: var(--accent-hover); }
 
   .actions-row { display: flex; gap: 8px; }
   .actions-row button { flex: 1; }
 
+  /* --- Settings panel (v0.2.0) ------------------------------------- */
+  .settings-card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .toggle-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 4px 0;
+  }
+  .toggle-label { flex: 1; }
+  .toggle-title { font-weight: 600; }
+  .toggle-desc { color: var(--muted); font-size: 11.5px; margin-top: 1px; }
+
+  /* iOS-ish switch */
+  .switch { position: relative; width: 38px; height: 22px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; cursor: pointer; inset: 0;
+    background-color: #3a3f52; border-radius: 22px; transition: 0.15s;
+  }
+  .slider::before {
+    position: absolute; content: ""; height: 16px; width: 16px;
+    left: 3px; top: 3px; background-color: #e8e9ee; border-radius: 50%; transition: 0.15s;
+  }
+  .switch input:checked + .slider { background-color: var(--accent); }
+  .switch input:checked + .slider::before { transform: translateX(16px); }
+  .switch input:disabled + .slider { opacity: 0.4; cursor: not-allowed; }
+
+  /* --- Perf strip -------------------------------------------------- */
+  .perf-strip {
+    display: flex; gap: 10px;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px;
+    font-family: "Consolas", monospace; font-size: 11.5px;
+  }
+  .perf-strip .metric { flex: 1; }
+  .perf-strip .metric b { color: var(--accent); font-weight: 700; }
+  .perf-strip .metric .k { color: var(--muted); margin-right: 4px; }
+
   .logs-section { display: flex; flex-direction: column; flex: 1; min-height: 0; }
   .logs-box {
-    background: var(--panel-2);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 8px 10px;
-    font-family: "Consolas", monospace;
-    font-size: 11px;
-    line-height: 1.55;
-    height: 150px;
-    overflow-y: auto;
-    -webkit-user-select: text;
-    user-select: text;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px;
+    font-family: "Consolas", monospace; font-size: 11px; line-height: 1.55;
+    height: 140px; overflow-y: auto; -webkit-user-select: text; user-select: text;
   }
   .logs-box .line { white-space: pre-wrap; word-break: break-word; }
   .logs-box .line.err { color: var(--error); }
   .logs-box .empty { color: var(--muted); }
 
   .toast {
-    position: fixed;
-    bottom: 14px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--panel);
-    border: 1px solid var(--accent);
-    color: var(--text);
-    padding: 7px 14px;
-    border-radius: 6px;
-    font-size: 12px;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.2s;
+    position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+    background: var(--panel); border: 1px solid var(--accent); color: var(--text);
+    padding: 7px 14px; border-radius: 6px; font-size: 12px;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s;
   }
   .toast.show { opacity: 1; }
 </style>
@@ -146,31 +141,62 @@
         <div class="status-sub" id="status-sub">&nbsp;</div>
       </div>
       <div class="spacer"></div>
-      <button class="btn-secondary" id="btn-restart" type="button">Redémarrer</button>
+      <button class="btn-secondary" id="btn-restart" data-testid="restart-pipeline-btn" type="button">Redémarrer</button>
     </div>
 
     <div>
       <label class="field-label">URL de l'overlay (à coller dans OBS, source Navigateur)</label>
       <div class="url-row">
-        <div class="url-box" id="overlay-url">—</div>
-        <button class="btn-accent" id="btn-copy" type="button">Copier</button>
+        <div class="url-box" id="overlay-url" data-testid="overlay-url-box">—</div>
+        <button class="btn-accent" id="btn-copy" data-testid="copy-overlay-url-btn" type="button">Copier</button>
       </div>
     </div>
 
+    <!-- v0.2.0 : réglages runtime ---------------------------------- -->
+    <div class="settings-card" data-testid="settings-card">
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <div class="toggle-title">Mode cloud uniquement</div>
+          <div class="toggle-desc">Coupe Whisper local — CPU divisé par ~2. Actif par défaut si une clé Groq est configurée.</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="toggle-cloud-only" data-testid="toggle-cloud-only" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <div class="toggle-title">Accélération GPU (Whisper local)</div>
+          <div class="toggle-desc">À activer manuellement si votre poste a un GPU NVIDIA compatible. Ignoré en mode cloud uniquement.</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="toggle-whisper-gpu" data-testid="toggle-whisper-gpu" />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="perf-strip" data-testid="perf-strip">
+      <div class="metric"><span class="k">CPU</span><b id="perf-cpu" data-testid="perf-cpu">—</b> %</div>
+      <div class="metric"><span class="k">RAM</span><b id="perf-rss" data-testid="perf-rss">—</b> Mo</div>
+      <div class="metric"><span class="k">Heap</span><b id="perf-heap" data-testid="perf-heap">—</b> Mo</div>
+      <div class="metric"><span class="k">Uptime</span><b id="perf-uptime" data-testid="perf-uptime">—</b> s</div>
+    </div>
+
     <div class="actions-row">
-      <button class="btn-secondary" id="btn-change-mic" type="button">Changer de microphone / clé</button>
+      <button class="btn-secondary" id="btn-change-mic" data-testid="open-setup-btn" type="button">Changer de microphone / clé</button>
     </div>
 
     <div class="logs-section">
       <label class="field-label">Journal</label>
-      <div class="logs-box" id="logs-box">
+      <div class="logs-box" id="logs-box" data-testid="logs-box">
         <div class="empty">En attente d'activité…</div>
       </div>
     </div>
 
   </div>
 
-  <div class="toast" id="toast"></div>
+  <div class="toast" id="toast" data-testid="toast"></div>
 
   <script>
     const statusDot = document.getElementById('status-dot');
@@ -182,6 +208,12 @@
     const btnCopy = document.getElementById('btn-copy');
     const btnChangeMic = document.getElementById('btn-change-mic');
     const toast = document.getElementById('toast');
+    const tglCloud = document.getElementById('toggle-cloud-only');
+    const tglGpu = document.getElementById('toggle-whisper-gpu');
+    const perfCpu = document.getElementById('perf-cpu');
+    const perfRss = document.getElementById('perf-rss');
+    const perfHeap = document.getElementById('perf-heap');
+    const perfUptime = document.getElementById('perf-uptime');
 
     let currentOverlayUrl = '';
 
@@ -222,41 +254,67 @@
         currentOverlayUrl = payload.overlayUrl;
         overlayUrlBox.textContent = payload.overlayUrl;
       }
-
       renderLogs(payload.logs);
-
       btnRestart.disabled = payload.status === 'starting';
+    }
+
+    function renderPerf(p) {
+      if (!p) return;
+      perfCpu.textContent = (p.cpuPercent != null) ? p.cpuPercent.toFixed(1) : '—';
+      perfRss.textContent = (p.rssMB != null) ? p.rssMB.toFixed(1) : '—';
+      perfHeap.textContent = (p.heapUsedMB != null) ? p.heapUsedMB.toFixed(1) : '—';
+      perfUptime.textContent = (p.uptimeSec != null) ? String(p.uptimeSec) : '—';
     }
 
     btnRestart.addEventListener('click', async () => {
       btnRestart.disabled = true;
       btnRestart.textContent = 'Redémarrage…';
-      try {
-        await window.churchOverlay.requestRestart();
-      } finally {
-        setTimeout(() => {
-          btnRestart.disabled = false;
-          btnRestart.textContent = 'Redémarrer';
-        }, 1200);
+      try { await window.churchOverlay.requestRestart(); }
+      finally {
+        setTimeout(() => { btnRestart.disabled = false; btnRestart.textContent = 'Redémarrer'; }, 1200);
       }
     });
 
     btnCopy.addEventListener('click', () => {
       if (!currentOverlayUrl) return;
-      navigator.clipboard.writeText(currentOverlayUrl).then(() => {
-        showToast('URL copiée dans le presse-papiers');
-      }).catch(() => {
-        showToast('Impossible de copier automatiquement');
-      });
+      navigator.clipboard.writeText(currentOverlayUrl)
+        .then(() => showToast('URL copiée dans le presse-papiers'))
+        .catch(() => showToast('Impossible de copier automatiquement'));
     });
 
     btnChangeMic.addEventListener('click', async () => {
       await window.churchOverlay.openSetup();
     });
 
-    // Chargement initial + abonnement aux mises à jour poussées par main.js
+    tglCloud.addEventListener('change', async () => {
+      tglCloud.disabled = true;
+      try {
+        await window.churchOverlay.setCloudOnlyMode(tglCloud.checked);
+        showToast(tglCloud.checked ? 'Mode cloud uniquement activé' : 'Mode cloud uniquement désactivé');
+      } finally {
+        setTimeout(() => { tglCloud.disabled = false; }, 800);
+      }
+    });
+
+    tglGpu.addEventListener('change', async () => {
+      tglGpu.disabled = true;
+      try {
+        await window.churchOverlay.setWhisperGpu(tglGpu.checked);
+        showToast(tglGpu.checked ? 'GPU Whisper activé' : 'GPU Whisper désactivé');
+      } finally {
+        setTimeout(() => { tglGpu.disabled = false; }, 800);
+      }
+    });
+
+    // Initial state + subscriptions
     window.churchOverlay.getStatus().then(render);
     window.churchOverlay.onStatusUpdate(render);
+    window.churchOverlay.getSettings().then((s) => {
+      tglCloud.checked = !!s.cloudOnlyMode;
+      tglGpu.checked = !!s.whisperGpu;
+    });
+    window.churchOverlay.getPerfStats().then(renderPerf);
+    window.churchOverlay.onPerfUpdate(renderPerf);
   </script>
 </body>
 </html>
