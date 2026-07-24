@@ -319,3 +319,38 @@ module.exports = {
   getCacheSize: () => cache.size,
   clearCache: () => { cache.clear(); chapterCache.clear(); },
 };
+
+// Mode test : `node bible-lookup-with-api.js` (documenté dans SETUP.md).
+// Interroge les vrais fournisseurs en ligne pour vérifier que la recherche
+// de versets fonctionne réellement (utile après un changement de réseau,
+// ou pour vérifier l'état des APIs avant un culte).
+if (require.main === module) {
+  console.log('=== Test bible-lookup-with-api.js (fournisseurs en ligne) ===\n');
+
+  const tests = [
+    { book: 'jean', chapter: 3, verseStart: 16 },
+    { book: 'psaumes', chapter: 23, verseStart: 1 },
+    { book: 'romains', chapter: 8, verseStart: 28 },
+    { book: '1corinthiens', chapter: 13, verseStart: 4, verseEnd: 7 },
+    { book: 'apocalypse', chapter: 21, verseStart: 4 },
+  ];
+
+  (async () => {
+    let success = 0;
+    let failed = 0;
+
+    for (const test of tests) {
+      try {
+        const result = await getVerse(test);
+        console.log(`✅ ${result.reference} [${result.provider}]: "${result.text.substring(0, 80)}..."`);
+        success++;
+      } catch (error) {
+        console.log(`❌ ${label(test)}: ${error.message}`);
+        failed++;
+      }
+    }
+
+    console.log(`\n=== ${success} succès, ${failed} échecs ===`);
+    process.exit(failed > 0 ? 1 : 0);
+  })();
+}
