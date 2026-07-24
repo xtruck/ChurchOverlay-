@@ -18,10 +18,22 @@
  *    (mis en cache) pour toute demande de verset dans ce chapitre, donc une
  *    lecture suivie ne fait qu'un seul appel réseau par chapitre.
  *
- *  Si ce fournisseur tombe à son tour, il suffit d'ajouter un nouvel objet
- *  dans BIBLE_PROVIDERS (voir la forme attendue de fetchChapter/parseVerse)
- *  — le code essaie chaque fournisseur dans l'ordre jusqu'à ce qu'un
- *  réponde.
+ *  DEUXIÈME FOURNISSEUR (ajouté pour redondance, en secours de helloao) :
+ *    https://api.getbible.net/v2/ls1910/{livre}/{chapitre}.json — API JSON
+ *    gratuite, sans clé, servant elle aussi la Segond 1910 en français
+ *    (traduction "ls1910"), mais hébergée par une infrastructure totalement
+ *    indépendante de bible.helloao.org. Si l'un des deux tombe, l'autre
+ *    prend le relais automatiquement (BIBLE_PROVIDERS essaie chaque
+ *    fournisseur dans l'ordre). Le texte ls1910 embarque des numéros de
+ *    concordance Strong ; extractGetbibleVerseText() les retire au mieux
+ *    (chiffres collés directement à un mot, sans espace). Si un résidu
+ *    numérique s'affiche un jour à l'écran via ce fournisseur, c'est ce
+ *    nettoyage qu'il faut affiner.
+ *
+ *  Si ces fournisseurs tombent à leur tour, il suffit d'ajouter un nouvel
+ *  objet dans BIBLE_PROVIDERS (voir la forme attendue de
+ *  fetchChapter/parseVerse) — le code essaie chaque fournisseur dans l'ordre
+ *  jusqu'à ce qu'un réponde.
  * ============================================================================
  */
 'use strict';
@@ -55,6 +67,26 @@ const HELLOAO_BOOK_CODES = {
   hebreux: 'HEB', jacques: 'JAS', '1pierre': '1PE', '2pierre': '2PE',
   '1jean': '1JN', '2jean': '2JN', '3jean': '3JN', jude: 'JUD',
   apocalypse: 'REV',
+};
+
+// Numérotation des livres (1-66, ordre protestant standard) utilisée par
+// l'API getBible v2 pour la traduction ls1910 — vérifiée le 24/07/2026 via
+// https://api.getbible.net/v2/ls1910/books.json. Mêmes clés que
+// HELLOAO_BOOK_CODES ci-dessus pour rester interchangeable.
+const GETBIBLE_BOOK_NUMBERS = {
+  genese: 1, exode: 2, levitique: 3, nombres: 4, deuteronome: 5, josue: 6,
+  juges: 7, ruth: 8, '1samuel': 9, '2samuel': 10, '1rois': 11, '2rois': 12,
+  '1chroniques': 13, '2chroniques': 14, esdras: 15, nehemie: 16, esther: 17,
+  job: 18, psaumes: 19, proverbes: 20, ecclesiaste: 21, cantique: 22,
+  esaie: 23, jeremie: 24, lamentations: 25, ezechiel: 26, daniel: 27,
+  osee: 28, joel: 29, amos: 30, abdias: 31, jonas: 32, michee: 33,
+  nahum: 34, habacuc: 35, sophonie: 36, aggee: 37, zacharie: 38,
+  malachie: 39, matthieu: 40, marc: 41, luc: 42, jean: 43, actes: 44,
+  romains: 45, '1corinthiens': 46, '2corinthiens': 47, galates: 48,
+  ephesiens: 49, philippiens: 50, colossiens: 51, '1thessaloniciens': 52,
+  '2thessaloniciens': 53, '1timothee': 54, '2timothee': 55, tite: 56,
+  philemon: 57, hebreux: 58, jacques: 59, '1pierre': 60, '2pierre': 61,
+  '1jean': 62, '2jean': 63, '3jean': 64, jude: 65, apocalypse: 66,
 };
 
 const DISPLAY_NAMES = {
@@ -159,11 +191,68 @@ function helloaoParseVerse(chapterData, reference) {
     .trim();
 }
 
+// --- Fournisseur : api.getbible.net (ls1910) ------------------------------
+
+async function getbibleFetchChapter(reference) {
+  const bookNr = GETBIBLE_BOOK_NUMBERS[reference.book];
+  if (!bookNr) {
+    throw new Error(`Livre inconnu pour getbible: ${reference.book}`);
+  }
+  const cacheKey = `getbible:${bookNr}:${reference.chapter}`;
+  if (chapterCache.has(cacheKey)) {
+    return chapterCache.get(cacheKey);
+  }
+
+  const url = `https://api.getbible.net/v2/ls1910/${bookNr}/${reference.chapter}.json`;
+  console.log(`[bible-lookup] Téléchargement du chapitre ${reference.book} ${reference.chapter} via getbible...`);
+  const data = await fetchJson(url);
+
+  chapterCache.set(cacheKey, data);
+  if (chapterCache.size > 50) {
+    chapterCache.delete(chapterCache.keys().next().value);
+  }
+  return data;
+}
+
+// Retire au mieux les numéros de concordance Strong embarqués dans le texte
+// ls1910 (chiffres collés directement après un mot, sans espace — ex.
+// "Dieu2316" -> "Dieu"). Voir la note en tête de fichier si un résidu
+// persiste à l'écran.
+function stripStrongNumbers(text) {
+  return text.replace(/(\p{L})\d{1,5}(?=[\s,.;:!?»)]|$)/gu, '$1');
+}
+
+function getbibleParseVerse(chapterData, reference) {
+  const verses = chapterData?.verses;
+  if (!Array.isArray(verses)) return null;
+
+  let selected;
+  if (!reference.verseStart) {
+    selected = verses;
+  } else {
+    const start = reference.verseStart;
+    const end = reference.verseEnd || reference.verseStart;
+    selected = verses.filter((v) => v.verse >= start && v.verse <= end);
+  }
+  if (selected.length === 0) return null;
+
+  return selected
+    .map((v) => `${selected.length > 1 ? v.verse + ' ' : ''}${stripStrongNumbers(String(v.text || '')).trim()}`)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 const BIBLE_PROVIDERS = [
   {
     name: 'helloao-lsg',
     fetchChapter: helloaoFetchChapter,
     parseVerse: helloaoParseVerse,
+  },
+  {
+    name: 'getbible-ls1910',
+    fetchChapter: getbibleFetchChapter,
+    parseVerse: getbibleParseVerse,
   },
 ];
 
