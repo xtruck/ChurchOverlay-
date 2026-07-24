@@ -44,6 +44,10 @@ const CONFIG = {
 const STATE = {
   process: null,
   isRunning: false,
+  // CORRECTIF AUDIT : distingue un arrêt demandé volontairement (stopServer())
+  // d'un arrêt inattendu (crash de whisper-server.exe pendant le service),
+  // pour pouvoir alerter uniquement dans le second cas.
+  stopRequested: false,
   callbacks: {
     onTranscript: null,
     onError: null,
@@ -80,6 +84,10 @@ function startServer(options = {}) {
 
     console.log('[whisper-wrapper] Démarrage de whisper-server.exe...');
 
+    // Référence au timeout de démarrage, annulé dès que le serveur est prêt
+    // (voir plus bas) pour pouvoir aussi le tuer proprement s'il expire.
+    let startupTimeout = null;
+
     // Construire les arguments optimisés pour la vitesse
     const args = [
       '-m', config.modelPath,
@@ -115,10 +123,13 @@ function startServer(options = {}) {
 
       // Détecter quand le serveur est prêt
       if (output.includes('server started') || output.includes('listening')) {
-        STATE.isRunning = true;
-        console.log(`[whisper-wrapper] Serveur prêt sur http://${config.host}:${config.port}`);
-        if (STATE.callbacks.onReady) STATE.callbacks.onReady();
-        resolve();
+        if (!STATE.isRunning) {
+          STATE.isRunning = true;
+          clearTimeout(startupTimeout);
+          console.log(`[whisper-wrapper] Serveur prêt sur http://${config.host}:${config.port}`);
+          if (STATE.callbacks.onReady) STATE.callbacks.onReady();
+          resolve();
+        }
       }
     });
 
@@ -138,6 +149,7 @@ function startServer(options = {}) {
           error.includes('compute buffer (decode)')) {
         if (!STATE.isRunning) {
           STATE.isRunning = true;
+          clearTimeout(startupTimeout);
           console.log(`[whisper-wrapper] Serveur prêt sur http://${config.host}:${config.port}`);
           if (STATE.callbacks.onReady) STATE.callbacks.onReady();
           resolve();
@@ -147,18 +159,43 @@ function startServer(options = {}) {
 
     STATE.process.on('close', (code) => {
       console.log(`[whisper-wrapper] Processus terminé avec code ${code}`);
+      const wasRunning = STATE.isRunning;
       STATE.isRunning = false;
       STATE.process = null;
+
+      // CORRECTIF AUDIT : si le processus s'arrête alors qu'il tournait et
+      // qu'on n'a pas nous-même demandé l'arrêt (stopServer()), c'est un
+      // crash en cours de service — avant ce correctif, ce cas passait
+      // inaperçu (juste ce console.log, invisible dans l'app packagée).
+      // On prévient maintenant server.js via onError pour qu'il puisse
+      // alerter l'opérateur, au lieu de perdre le fallback local en silence.
+      if (wasRunning && !STATE.stopRequested) {
+        const crashErr = new Error(`whisper-server.exe s'est arrêté de façon inattendue (code ${code})`);
+        console.error('[whisper-wrapper]', crashErr.message);
+        if (STATE.callbacks.onError) STATE.callbacks.onError(crashErr);
+      }
+      STATE.stopRequested = false;
     });
 
     STATE.process.on('error', (err) => {
       console.error('[whisper-wrapper] Erreur processus:', err.message);
+      clearTimeout(startupTimeout);
       reject(err);
     });
 
     // Timeout de démarrage (30 secondes)
-    setTimeout(() => {
+    // CORRECTIF AUDIT : avant ce changement, ce timeout rejetait la promesse
+    // sans jamais tuer whisper-server.exe déjà lancé (STATE.process restait
+    // actif et non réinitialisé). Le processus continuait de tourner en
+    // arrière-plan, potentiellement en gardant le port 8080 occupé pour
+    // toute tentative de redémarrage suivante.
+    startupTimeout = setTimeout(() => {
       if (!STATE.isRunning) {
+        console.error('[whisper-wrapper] Timeout de démarrage (30s) — arrêt du processus orphelin.');
+        if (STATE.process) {
+          STATE.process.kill('SIGKILL');
+          STATE.process = null;
+        }
         reject(new Error('Timeout: whisper-server.exe n\'a pas démarré dans les 30 secondes'));
       }
     }, 30000);
@@ -178,6 +215,7 @@ function stopServer() {
     }
 
     console.log('[whisper-wrapper] Arrêt du serveur Whisper...');
+    STATE.stopRequested = true;
 
     STATE.process.on('close', () => {
       STATE.isRunning = false;
