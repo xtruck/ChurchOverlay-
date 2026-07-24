@@ -30,7 +30,8 @@ const CONFIG = {
   channels: 1,            // Mono
   bitDepth: 16,           // PCM 16-bit
   segmentDuration: 6000,  // Durée des segments en ms (6 secondes)
-  overlapDuration: 100,   // 1 seconde de chevauchement 
+  overlapDuration: 100,   // 100ms de chevauchement (compensé par la fenêtre
+                          // glissante côté server.js, voir transcriptBuffer)
   silenceThreshold: 0.3,  // Seuil de silence pour VAD (0-1)
   minSpeechDuration: 500, // Durée minimum de parole en ms
   tempDir: path.join(__dirname, 'temp-audio'),
