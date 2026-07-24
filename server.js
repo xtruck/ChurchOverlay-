@@ -15,12 +15,16 @@
  *    enverra directement aux clients connectés (overlay.html), sans passer
  *    par un envoi externe.
  *
- *  TRANSCRIPTION (étape 5, mise à jour) :
+ *  TRANSCRIPTION (mise à jour — course à 3 niveaux) :
  *    Chaque segment audio est envoyé en parallèle à Groq (Whisper large-v3,
- *    cloud, précision prioritaire) et à Whisper local (whisper-wrapper.js).
- *    Le serveur attend Groq jusqu'à 5 secondes ; en cas de timeout ou
- *    d'échec, il bascule automatiquement sur le résultat local déjà en
- *    cours — l'overlay n'est jamais vide. Voir groq-wrapper.js.
+ *    cloud, précision prioritaire), à Deepgram (Nova-2, cloud, 2e fournisseur,
+ *    si DEEPGRAM_API_KEY est configuré) et à Whisper local (whisper-wrapper.js,
+ *    fonctionne sans internet). Le serveur attend Groq jusqu'à 5 secondes ;
+ *    en cas de timeout ou d'échec, il bascule sur Deepgram (même délai
+ *    global) puis, en dernier recours, sur le résultat local déjà en cours
+ *    — l'overlay n'est jamais vide, et perdre internet pendant le culte ne
+ *    coupe jamais la transcription. Voir groq-wrapper.js et
+ *    deepgram-wrapper.js.
  *
  *  BUFFER DE TRANSCRIPTION (correctif) :
  *    Les segments audio font ~6.1s chacun. Une référence biblique prononcée
@@ -53,6 +57,7 @@ const WebSocket = require('ws');
 const fs = require('fs');
 const whisper = require('./whisper-wrapper');
 const groq = require('./groq-wrapper');
+const deepgram = require('./deepgram-wrapper');
 const audioCapture = require('./audio-capture');
 const detector = require('./detector');
 const bibleLookup = require('./bible-lookup-with-api'); // ✅ Updated to use free API
@@ -141,6 +146,15 @@ function broadcast(payload, except) {
     }
   });
 }
+
+// Deepgram est un 2e fournisseur cloud optionnel : on informe simplement
+// s'il est actif, sans bloquer le démarrage s'il ne l'est pas (Groq seul
+// suffit, avec le local en secours hors ligne).
+console.log(
+  deepgram.isConfigured()
+    ? '[server] Deepgram configuré — actif comme 2e fournisseur cloud (Groq → Deepgram → local).'
+    : '[server] Deepgram non configuré — course à 2 niveaux (Groq → local).'
+);
 
 // Validation de la configuration au démarrage
 console.log('[server] Validation de la configuration...');
@@ -300,7 +314,7 @@ whisper.on({
 // Configuration des callbacks audio-capture
 audioCapture.on({
   onAudioSegment: async (segmentFile) => {
-    console.log('[server] Segment audio reçu, envoi vers Groq + Whisper local...');
+    console.log('[server] Segment audio reçu, envoi vers Groq + Deepgram + Whisper local...');
     
     // Prevent duplicate processing
     if (isDuplicateSegment(segmentFile)) {
@@ -310,8 +324,9 @@ audioCapture.on({
     }
 
     try {
-      // Attend Groq (précision), avec fallback automatique sur le
-      // whisper local si Groq ne répond pas en 5s ou échoue.
+      // Attend Groq (précision), avec bascule automatique sur Deepgram
+      // (si configuré) puis sur le whisper local si Groq ne répond pas
+      // en 5s ou échoue. Voir groq-wrapper.js pour la logique complète.
       const result = await groq.transcribeWithFallback(
         segmentFile,
         (path) => whisper.transcribeFile(path),
@@ -323,9 +338,10 @@ audioCapture.on({
         result.text || '(sans texte)'
       );
 
-      // If Groq provided the result, it's more accurate - reset buffer
-      if (result.source === 'groq') {
-        console.log('[server] Groq result - resetting transcript buffer');
+      // Si un fournisseur cloud (Groq ou Deepgram) a fourni le résultat,
+      // c'est plus précis que le local - reset buffer
+      if (result.source === 'groq' || result.source === 'deepgram') {
+        console.log('[server] Résultat cloud (%s) - reset du buffer de transcription', result.source);
         resetBuffer();
       }
 
