@@ -34,9 +34,10 @@
  *    texte qui se chevauche ne réaffiche pas le même verset en boucle.
  *
  *  BIBLE LOOKUP (mise à jour) :
- *    Utilise désormais bible-lookup-with-api.js qui se connecte à plusieurs
- *    APIs bibliques gratuites (genuinegospel.com, getbible.net, etc).
- *    Aucune clé API requise. Fallback automatique si une API est down.
+ *    Utilise bible-lookup-with-api.js, qui récupère le texte français
+ *    (Louis Segond 1910) via bible.helloao.org — API JSON gratuite, sans
+ *    clé requise. Un chapitre entier est mis en cache pour éviter de le
+ *    re-télécharger à chaque verset demandé dedans.
  *
  *  DÉMARRAGE :
  *    npm install ws        (une seule fois)
