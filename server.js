@@ -2,6 +2,11 @@
  * ============================================================================
  *  server.js — Serveur pont WebSocket pour Overlay Versets (Église Mesev)
  * ----------------------------------------------------------------------------
+ *  CHANGELOG v0.2.1 — Optimisations de Réactivité (Option A + Bonus)
+ *    1. TRANSCRIPT_BUFFER_MAX_CHARS: 200 → 500 (meilleure détection)
+ *    2. Audio segments réduits à 5s (via audio-capture.js)
+ *    3. CLOUD_ONLY_MODE reste la solution principale pour CPU
+ *
  *  CHANGELOG v0.2.0 — Performance & Stability Repair Plan
  *    1. Runs inside a Worker Thread when spawned by main.js
  *       (worker_threads.isMainThread === false, parentPort available).
@@ -102,8 +107,9 @@ const rateLimiter = createRateLimiter({
 let wss = null;
 
 // --- Buffer de transcription glissant ---------------------------------
+// OPTIMISÉ v0.2.1 : 200 → 500 caractères pour meilleure détection
 let transcriptBuffer = '';
-const TRANSCRIPT_BUFFER_MAX_CHARS = 200;
+const TRANSCRIPT_BUFFER_MAX_CHARS = 500;
 
 function pushToBuffer(text) {
   if (!text) return transcriptBuffer;
@@ -158,7 +164,7 @@ function broadcast(payload, except) {
 
 console.log(
   CLOUD_ONLY_MODE
-    ? '[server] CLOUD_ONLY_MODE=1 — Whisper local désactivé, transcription 100% cloud.'
+    ? '[server] ⚡ CLOUD_ONLY_MODE activé — Whisper local désactivé, transcription 100% cloud (CPU optimisé).'
     : (deepgram.isConfigured()
         ? '[server] Deepgram configuré — course Groq → Deepgram → local.'
         : '[server] Deepgram non configuré — course Groq → local.')
@@ -225,9 +231,9 @@ const localTranscribeFn = CLOUD_ONLY_MODE
 
 function startPipeline() {
   if (CLOUD_ONLY_MODE) {
-    console.log('[server] CLOUD_ONLY_MODE : whisper-server.exe NON démarré. Démarrage de la capture audio…');
+    console.log('[server] ⚡ CLOUD_ONLY_MODE : whisper-server.exe NON démarré. Démarrage de la capture audio…');
     audioCapture.startRecording()
-      .then(() => console.log('[server] Capture audio démarrée - Pipeline cloud-only opérationnel'))
+      .then(() => console.log('[server] ✅ Capture audio démarrée - Pipeline cloud-only opérationnel (CPU optimisé)'))
       .catch(pipelineStartFailed);
     return;
   }
@@ -525,3 +531,4 @@ function workerSafeExit(code) {
   }
   process.exit(code);
 }
+
