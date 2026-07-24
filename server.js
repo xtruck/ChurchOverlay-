@@ -2,69 +2,96 @@
  * ============================================================================
  *  server.js — Serveur pont WebSocket pour Overlay Versets (Église Mesev)
  * ----------------------------------------------------------------------------
- *  RÔLE ACTUEL (étape 4) :
+ *  CHANGELOG v0.2.0 — Performance & Stability Repair Plan
+ *    1. Runs inside a Worker Thread when spawned by main.js
+ *       (worker_threads.isMainThread === false, parentPort available).
+ *       Backwards-compatible : still runnable as a stand-alone Node process
+ *       via `npm run server-only` — the worker-only wiring is gated on
+ *       parentPort.
+ *    2. CLOUD_ONLY_MODE=1 → whisper-server.exe is NEVER launched. The local
+ *       fallback stub just throws so that groq.transcribeWithFallback falls
+ *       back to Deepgram (if configured) or reports transcriptionError.
+ *       Biggest CPU win : whisper-server.exe was the single biggest CPU
+ *       consumer (~40-70% of one core, permanently).
+ *    3. Robust temp-file cleanup on SIGINT / SIGTERM / uncaughtException
+ *       / parentPort shutdown.
+ *    4. Under a worker : console.log / console.error / process.exit are
+ *       intercepted so main.js gets everything on the message channel.
+ *       process.exit() becomes parentPort.postMessage({type:'exit'}) so the
+ *       main thread can observe status transitions cleanly.
+ *
+ *  RÔLE ACTUEL :
  *    Relaie tout message JSON reçu d'un client (ex: test-envoi.js, ou plus
  *    tard le pupitre opérateur / pipeline micro) vers tous les autres clients
  *    connectés — en particulier overlay.html ouvert dans OBS Browser Source.
  *
- *  ÉVOLUTION PRÉVUE (étape 5) :
- *    Ce même fichier accueillera la capture micro en continu, la connexion
- *    au service Speech-to-Text, puis le branchement de detector.js +
- *    context-tracker.js + bible-lookup.js. Au lieu d'un simple relais, il
- *    construira lui-même les messages { action: "showVerse", ... } et les
- *    enverra directement aux clients connectés (overlay.html), sans passer
- *    par un envoi externe.
- *
- *  TRANSCRIPTION (mise à jour — course à 3 niveaux) :
- *    Chaque segment audio est envoyé en parallèle à Groq (Whisper large-v3,
- *    cloud, précision prioritaire), à Deepgram (Nova-2, cloud, 2e fournisseur,
- *    si DEEPGRAM_API_KEY est configuré) et à Whisper local (whisper-wrapper.js,
- *    fonctionne sans internet). Le serveur attend Groq jusqu'à 5 secondes ;
- *    en cas de timeout ou d'échec, il bascule sur Deepgram (même délai
- *    global) puis, en dernier recours, sur le résultat local déjà en cours
- *    — l'overlay n'est jamais vide, et perdre internet pendant le culte ne
- *    coupe jamais la transcription. Voir groq-wrapper.js et
- *    deepgram-wrapper.js.
- *
- *  BUFFER DE TRANSCRIPTION (correctif) :
- *    Les segments audio font ~6.1s chacun. Une référence biblique prononcée
- *    à cheval sur deux segments (ex: "Jean 3" en fin de segment N, "17" en
- *    début de segment N+1) n'était auparavant JAMAIS détectée, car
- *    detector.detect() ne recevait que le texte d'un seul segment à la fois.
- *    On maintient donc une fenêtre glissante (les ~200 derniers caractères
- *    transcrits, tous segments confondus) et on lance la détection sur cette
- *    fenêtre plutôt que sur le texte du segment isolé. context-tracker.js
- *    continue de filtrer les doublons, donc repasser plusieurs fois sur un
- *    texte qui se chevauche ne réaffiche pas le même verset en boucle.
- *
- *  BIBLE LOOKUP (mise à jour) :
- *    Utilise bible-lookup-with-api.js, qui récupère le texte français
- *    (Louis Segond 1910) via bible.helloao.org — API JSON gratuite, sans
- *    clé requise. Un chapitre entier est mis en cache pour éviter de le
- *    re-télécharger à chaque verset demandé dedans.
- *
- *  DÉMARRAGE :
- *    npm install ws        (une seule fois)
- *    cp .env.example .env  (configurer une fois)
- *    node server.js
- *
- *  Le serveur écoute par défaut sur ws://localhost:8765 — doit correspondre
- *  à WS_URL dans overlay.html.
+ *  TRANSCRIPTION (course à 3 niveaux) :
+ *    Groq (Whisper large-v3, cloud) → Deepgram (Nova-2, cloud, si clé) →
+ *    Whisper local (whisper-wrapper.js, hors ligne). En CLOUD_ONLY_MODE=1
+ *    la 3e étape est court-circuitée (voir localTranscribeFn ci-dessous).
  * ============================================================================
  */
 
+'use strict';
+
+const { isMainThread, parentPort, workerData } = require('worker_threads');
+const RUNNING_AS_WORKER = !isMainThread && !!parentPort;
+
+// -----------------------------------------------------------------------
+// Worker plumbing : forward console output + graceful shutdown via IPC.
+// Gated on RUNNING_AS_WORKER so `node server.js` behaviour is unchanged.
+// -----------------------------------------------------------------------
+if (RUNNING_AS_WORKER) {
+  const origLog = console.log.bind(console);
+  const origErr = console.error.bind(console);
+  const origWarn = console.warn.bind(console);
+
+  const format = (args) => args.map((a) => {
+    if (typeof a === 'string') return a;
+    try { return JSON.stringify(a); } catch (_) { return String(a); }
+  }).join(' ');
+
+  console.log = (...args) => {
+    const text = format(args);
+    try { parentPort.postMessage({ type: 'log', text, isError: false }); } catch (_) {}
+    origLog(...args);
+  };
+  console.warn = (...args) => {
+    const text = format(args);
+    try { parentPort.postMessage({ type: 'log', text, isError: false }); } catch (_) {}
+    origWarn(...args);
+  };
+  console.error = (...args) => {
+    const text = format(args);
+    try { parentPort.postMessage({ type: 'log', text, isError: true }); } catch (_) {}
+    origErr(...args);
+  };
+
+  // Graceful shutdown from main.js — triggers the same cleanup path as SIGINT.
+  parentPort.on('message', (msg) => {
+    if (msg && msg.type === 'shutdown') {
+      console.log('\n[server] Message d\'arrêt reçu du thread principal (IPC).');
+      process.emit('SIGINT');
+    }
+  });
+}
+
 const WebSocket = require('ws');
 const fs = require('fs');
+const path = require('path');
 const whisper = require('./whisper-wrapper');
 const groq = require('./groq-wrapper');
 const deepgram = require('./deepgram-wrapper');
 const audioCapture = require('./audio-capture');
 const detector = require('./detector');
-const bibleLookup = require('./bible-lookup-with-api'); // ✅ Updated to use free API
+const bibleLookup = require('./bible-lookup-with-api');
 const { createContextTracker } = require('./context-tracker');
 const { validateAndSanitize } = require('./validation');
 const { createRateLimiter } = require('./rate-limiter');
 const { validateSystemConfig, displayValidationResults } = require('./config-validator');
+
+const CLOUD_ONLY_MODE = process.env.CLOUD_ONLY_MODE === '1' ||
+                       String(process.env.CLOUD_ONLY_MODE || '').toLowerCase() === 'true';
 
 const verseTracker = createContextTracker();
 const rateLimiter = createRateLimiter({
@@ -72,62 +99,45 @@ const rateLimiter = createRateLimiter({
   maxMessagesPerMinute: process.env.MAX_MESSAGES_PER_MINUTE || 60
 });
 
-let wss = null; // Sera initialisé après la validation
+let wss = null;
 
 // --- Buffer de transcription glissant ---------------------------------
-// Concatène le texte des derniers segments pour ne pas perdre une
-// référence biblique coupée entre deux segments audio consécutifs.
 let transcriptBuffer = '';
-const TRANSCRIPT_BUFFER_MAX_CHARS = 200; // ~2 segments de contexte
+const TRANSCRIPT_BUFFER_MAX_CHARS = 200;
 
 function pushToBuffer(text) {
   if (!text) return transcriptBuffer;
-  
-  // If the buffer ends mid-word, the new text is likely a continuation
-  const isContinuation = transcriptBuffer.length > 0 && 
-                         !transcriptBuffer.endsWith(' ') && 
-                         !transcriptBuffer.endsWith('.') && 
+  const isContinuation = transcriptBuffer.length > 0 &&
+                         !transcriptBuffer.endsWith(' ') &&
+                         !transcriptBuffer.endsWith('.') &&
                          !transcriptBuffer.endsWith(',');
-  
   if (isContinuation) {
     transcriptBuffer += ' ' + text;
   } else {
-    // Start fresh if it's a new sentence
     if (text.startsWith('.') || text.startsWith('!') || text.startsWith('?')) {
       transcriptBuffer = text;
     } else {
       transcriptBuffer = (transcriptBuffer + ' ' + text).trim();
     }
   }
-  
-  // Trim from the beginning if too long
   if (transcriptBuffer.length > TRANSCRIPT_BUFFER_MAX_CHARS) {
     transcriptBuffer = transcriptBuffer.slice(-TRANSCRIPT_BUFFER_MAX_CHARS);
-    // Try to start at a word boundary
     const firstSpace = transcriptBuffer.indexOf(' ');
     if (firstSpace > 0 && firstSpace < 50) {
       transcriptBuffer = transcriptBuffer.slice(firstSpace + 1);
     }
   }
-  
   return transcriptBuffer.trim();
 }
 
-// Reset buffer when Groq provides a clean transcription
-function resetBuffer() {
-  transcriptBuffer = '';
-}
-// ------------------------------------------------------------------------
+function resetBuffer() { transcriptBuffer = ''; }
 
 // --- Duplicate segment prevention --------------------------------------
 const processedSegments = new Set();
 const MAX_PROCESSED_SEGMENTS = 50;
-
 function isDuplicateSegment(segmentFile) {
-  const segmentId = segmentFile.split('/').pop().replace('.wav', '');
-  if (processedSegments.has(segmentId)) {
-    return true;
-  }
+  const segmentId = segmentFile.split(/[\\/]/).pop().replace('.wav', '');
+  if (processedSegments.has(segmentId)) return true;
   processedSegments.add(segmentId);
   if (processedSegments.size > MAX_PROCESSED_SEGMENTS) {
     const firstKey = processedSegments.values().next().value;
@@ -135,7 +145,6 @@ function isDuplicateSegment(segmentFile) {
   }
   return false;
 }
-// ------------------------------------------------------------------------
 
 function broadcast(payload, except) {
   if (!wss) return;
@@ -147,162 +156,112 @@ function broadcast(payload, except) {
   });
 }
 
-// Deepgram est un 2e fournisseur cloud optionnel : on informe simplement
-// s'il est actif, sans bloquer le démarrage s'il ne l'est pas (Groq seul
-// suffit, avec le local en secours hors ligne).
 console.log(
-  deepgram.isConfigured()
-    ? '[server] Deepgram configuré — actif comme 2e fournisseur cloud (Groq → Deepgram → local).'
-    : '[server] Deepgram non configuré — course à 2 niveaux (Groq → local).'
+  CLOUD_ONLY_MODE
+    ? '[server] CLOUD_ONLY_MODE=1 — Whisper local désactivé, transcription 100% cloud.'
+    : (deepgram.isConfigured()
+        ? '[server] Deepgram configuré — course Groq → Deepgram → local.'
+        : '[server] Deepgram non configuré — course Groq → local.')
 );
 
-// Validation de la configuration au démarrage
+// Config validation puis démarrage
 console.log('[server] Validation de la configuration...');
 validateSystemConfig()
   .then(configValidation => {
     displayValidationResults(configValidation);
-    
     if (!configValidation.valid) {
       console.error('[server] Erreur de configuration critique. Arrêt du serveur.');
-      process.exit(1);
+      workerSafeExit(1);
+      return;
     }
-    
-    // Utiliser la configuration validée
     const PORT = configValidation.config.PORT;
     console.log(`[server] Configuration validée, démarrage sur le port ${PORT}`);
-    return PORT;
-  })
-  .catch(error => {
-    console.error('[server] Erreur lors de la validation de la configuration:', error.message);
-    process.exit(1);
-  })
-  .then(PORT => {
-    // Continuer avec le démarrage normal
     startServer(PORT);
   })
   .catch(error => {
-    console.error('[server] Erreur au démarrage:', error.message);
-    process.exit(1);
+    console.error('[server] Erreur lors de la validation de la configuration:', error.message);
+    workerSafeExit(1);
   });
 
 async function processTranscript(text) {
   console.log('[server] Processing transcript:', text.substring(0, 100));
-  
   const reference = detector.detect(text);
-  if (!reference) {
-    console.log('[server] No reference detected in segment');
-    return;
-  }
-  
+  if (!reference) { console.log('[server] No reference detected in segment'); return; }
   console.log('[server] Reference detected:', JSON.stringify(reference));
-  
-  broadcast({ 
-    action: 'candidateVerse', 
-    reference, 
-    transcript: text, 
-    timestamp: Date.now() 
-  });
-  
+
+  broadcast({ action: 'candidateVerse', reference, transcript: text, timestamp: Date.now() });
+
   if (!verseTracker.shouldProcess(reference)) {
-    console.log('[server] Reference already processed recently, skipping');
-    return;
+    console.log('[server] Reference already processed recently, skipping'); return;
   }
-  
   console.log('[server] Looking up:', bibleLookup.buildReferenceLabel(reference));
-  
+
   try {
     const verse = await bibleLookup.getVerse(reference);
-    broadcast({ 
-      action: 'showVerse', 
-      ...verse, 
-      durationMs: 300000, 
-      autoDetected: true 
-    });
+    broadcast({ action: 'showVerse', ...verse, durationMs: 300000, autoDetected: true });
     console.log('[server] Verse sent to overlay:', verse.reference);
-    
-    // Reset failed providers on success
     bibleLookup.resetFailedProviders();
-    
   } catch (error) {
     console.warn('[server] Bible lookup unavailable:', error.message);
-    
-    // Still show the reference even if lookup failed
-    broadcast({ 
-      action: 'showVerse', 
+    broadcast({
+      action: 'showVerse',
       reference: bibleLookup.buildReferenceLabel(reference),
       text: '(Texte non disponible - vérifiez la connexion internet)',
-      provider: 'error',
-      durationMs: 300000,
-      autoDetected: true 
+      provider: 'error', durationMs: 300000, autoDetected: true,
     });
-    
-    broadcast({ 
-      action: 'lookupError', 
-      reference, 
-      error: error.message, 
-      timestamp: Date.now() 
-    });
-    
-    // DO NOT reset failed providers on error - they need to cool down
+    broadcast({ action: 'lookupError', reference, error: error.message, timestamp: Date.now() });
   }
 }
 
-// Démarrage du serveur Whisper au démarrage de server.js
-console.log('[server] Démarrage du serveur Whisper Speech-to-Text...');
+// -----------------------------------------------------------------------
+// Local transcription function passed to groq.transcribeWithFallback.
+// In CLOUD_ONLY_MODE we deliberately reject so the fallback chain stops
+// at the cloud tier — never launches whisper-server.exe, never touches
+// CPU for local decoding.
+// -----------------------------------------------------------------------
+const localTranscribeFn = CLOUD_ONLY_MODE
+  ? () => Promise.reject(new Error('CLOUD_ONLY_MODE : Whisper local désactivé'))
+  : (p) => whisper.transcribeFile(p);
 
 function startPipeline() {
+  if (CLOUD_ONLY_MODE) {
+    console.log('[server] CLOUD_ONLY_MODE : whisper-server.exe NON démarré. Démarrage de la capture audio…');
+    audioCapture.startRecording()
+      .then(() => console.log('[server] Capture audio démarrée - Pipeline cloud-only opérationnel'))
+      .catch(pipelineStartFailed);
+    return;
+  }
+
   console.log('[server] Starting Whisper Speech-to-Text...');
   whisper.startServer()
-  .then(() => {
-    console.log('[server] Whisper Speech-to-Text prêt et opérationnel');
-    
-    // Démarrer la capture audio après que Whisper soit prêt
-    console.log('[server] Démarrage de la capture audio...');
-    return audioCapture.startRecording();
-  })
-  .then(() => {
-    console.log('[server] Capture audio démarrée - Pipeline complet opérationnel');
-  })
-  .catch((err) => {
-    console.error('[server] Erreur lors du démarrage:', err.message);
-    if (err.message.includes('FFmpeg')) {
-      console.error('[server] FFmpeg n\'est pas installé - Pipeline audio désactivé');
-      console.error('[server] Installez FFmpeg et ajoutez-le au PATH pour activer la capture audio');
-    } else if (err.message.includes('whisper-server.exe')) {
-      console.error('[server] Whisper server non trouvé - Pipeline audio désactivé');
-      console.error('[server] Vérifiez que whisper-server.exe est dans le dossier whisper/');
-    } else {
-      console.error('[server] Le serveur continuera sans Speech-to-Text');
-    }
-    // Notifier les clients connectés que le pipeline audio est indisponible
-    broadcast({ action: 'pipelineError', error: err.message, timestamp: Date.now() });
-  });
+    .then(() => {
+      console.log('[server] Whisper Speech-to-Text prêt et opérationnel');
+      console.log('[server] Démarrage de la capture audio...');
+      return audioCapture.startRecording();
+    })
+    .then(() => console.log('[server] Capture audio démarrée - Pipeline complet opérationnel'))
+    .catch(pipelineStartFailed);
 }
 
-// Configuration des callbacks Whisper
-// NOTE : ce bloc reste en place comme filet de sécurité / log si
-// whisper.transcribeFile est appelé ailleurs (ex. tests). Le flux
-// principal de transcription passe désormais par onAudioSegment
-// ci-dessous, via groq.transcribeWithFallback.
+function pipelineStartFailed(err) {
+  console.error('[server] Erreur lors du démarrage:', err.message);
+  if (err.message.includes('FFmpeg')) {
+    console.error('[server] FFmpeg n\'est pas installé - Pipeline audio désactivé');
+  } else if (err.message.includes('whisper-server.exe')) {
+    console.error('[server] Whisper server non trouvé - Pipeline audio désactivé');
+  } else {
+    console.error('[server] Le serveur continuera sans Speech-to-Text');
+  }
+  broadcast({ action: 'pipelineError', error: err.message, timestamp: Date.now() });
+}
+
+// Whisper callbacks (log-only path, see comment in original file)
 whisper.on({
   onTranscript: (result) => {
-    // LOG UNIQUEMENT — ne rien broadcaster ni traiter ici.
-    // whisper.transcribeFile() déclenche ce callback à CHAQUE appel, y
-    // compris ceux faits en interne par groq.transcribeWithFallback()
-    // (via onAudioSegment ci-dessous). Si ce callback traitait aussi le
-    // texte (buffer, detection, bible lookup), chaque segment audio était
-    // traité deux fois : une fois ici, une fois dans onAudioSegment.
-    // Le traitement réel du texte transcrit vit exclusivement dans
-    // audioCapture.on({ onAudioSegment }) plus bas.
     console.log('[server] (log) Transcription whisper reçue en interne:', result.text || '(sans texte)');
   },
   onError: (error) => {
     console.error('[server] Erreur Whisper:', error.message || error);
-    // CORRECTIF AUDIT : un crash de whisper-server.exe en cours de service
-    // ne remontait auparavant que dans ce console.log (invisible dans
-    // l'app packagée) — l'overlay pouvait perdre son fallback local sans
-    // que personne ne le sache tant que Groq répondait encore. On le
-    // signale maintenant comme les autres erreurs de pipeline.
     broadcast({
       action: 'pipelineError',
       error: 'Whisper local : ' + (error.message || String(error)),
@@ -311,135 +270,74 @@ whisper.on({
   },
 });
 
-// Configuration des callbacks audio-capture
 audioCapture.on({
   onAudioSegment: async (segmentFile) => {
-    console.log('[server] Segment audio reçu, envoi vers Groq + Deepgram + Whisper local...');
-    
-    // Prevent duplicate processing
+    console.log('[server] Segment audio reçu — traitement…');
+
     if (isDuplicateSegment(segmentFile)) {
       console.log('[server] Segment déjà traité, ignoré:', segmentFile);
-      try { fs.unlinkSync(segmentFile); } catch {}
+      safeUnlink(segmentFile);
       return;
     }
 
     try {
-      // Attend Groq (précision), avec bascule automatique sur Deepgram
-      // (si configuré) puis sur le whisper local si Groq ne répond pas
-      // en 5s ou échoue. Voir groq-wrapper.js pour la logique complète.
-      const result = await groq.transcribeWithFallback(
-        segmentFile,
-        (path) => whisper.transcribeFile(path),
-      );
+      const result = await groq.transcribeWithFallback(segmentFile, localTranscribeFn);
+      console.log('[server] Transcription (%s):', result.source, result.text || '(sans texte)');
 
-      console.log(
-        '[server] Transcription (%s):',
-        result.source,
-        result.text || '(sans texte)'
-      );
-
-      // Si un fournisseur cloud (Groq ou Deepgram) a fourni le résultat,
-      // c'est plus précis que le local - reset buffer
       if (result.source === 'groq' || result.source === 'deepgram') {
         console.log('[server] Résultat cloud (%s) - reset du buffer de transcription', result.source);
         resetBuffer();
       }
 
-      // Relayer vers les clients connectés (overlay.html), en gardant
-      // la même forme de message qu'avant (+ la source utilisée).
-      broadcast({
-        action: 'transcript',
-        text: result.text || '',
-        source: result.source,
-        timestamp: Date.now(),
-      });
+      broadcast({ action: 'transcript', text: result.text || '', source: result.source, timestamp: Date.now() });
 
-      // Fenêtre glissante : on détecte sur le texte accumulé des derniers
-      // segments, pas seulement sur ce segment isolé, pour ne pas perdre
-      // une référence coupée entre deux segments (ex: "Jean 3" / "17").
       const windowed = pushToBuffer(result.text || '');
       await processTranscript(windowed);
 
-      // Nettoyer le fichier temporaire après transcription
-      try {
-        fs.unlinkSync(segmentFile);
-      } catch (e) {
-        console.warn('[server] Impossible de supprimer le fichier temporaire:', segmentFile);
-      }
+      safeUnlink(segmentFile);
     } catch (error) {
       console.error('[server] Erreur lors de la transcription:', error.message);
-      // Notifier les clients de l'erreur de transcription
-      broadcast({ 
-        action: 'transcriptionError', 
-        error: error.message, 
-        timestamp: Date.now() 
-      });
-
-      // Nettoyer quand même le fichier temporaire
-      try {
-        fs.unlinkSync(segmentFile);
-      } catch (e) {
-        console.warn('[server] Impossible de supprimer le fichier temporaire après erreur:', segmentFile);
-      }
+      broadcast({ action: 'transcriptionError', error: error.message, timestamp: Date.now() });
+      safeUnlink(segmentFile);
     }
   },
   onError: (error) => {
     console.error('[server] Erreur capture audio:', error.message);
-    broadcast({ 
-      action: 'audioCaptureError', 
-      error: error.message, 
-      timestamp: Date.now() 
-    });
+    broadcast({ action: 'audioCaptureError', error: error.message, timestamp: Date.now() });
   },
 });
 
+/** Safe temp file cleanup (never throws — every exit path calls this). */
+function safeUnlink(file) {
+  try { fs.unlinkSync(file); } catch (_) { /* already gone or locked */ }
+}
+
 let compteurClients = 0;
 
-/**
- * Démarre le serveur WebSocket avec le port spécifié
- * @param {number} PORT - Port d'écoute
- */
-/**
- * Vérifie l'en-tête Origin d'une tentative de connexion WebSocket.
- *
- * CORRECTIF SÉCURITÉ : sans ce contrôle, n'importe quelle page web ouverte
- * dans un navigateur normal sur la même machine pouvait ouvrir une connexion
- * WebSocket vers ws://127.0.0.1:PORT et envoyer des commandes — un
- * Cross-Site WebSocket Hijacking (CSWH), les WebSocket n'étant pas soumises
- * à la Same-Origin Policy comme fetch/XHR.
- *
- * Origines acceptées : undefined (clients Node comme test-envoi.js, qui
- * n'envoient pas d'en-tête Origin) ou "null" (page chargée via file://,
- * exactement le cas d'overlay.html dans OBS Browser Source).
- * Origine refusée : toute origine http(s), qui ne peut venir que d'une
- * page web normale.
- */
 function verifyOrigin(info) {
   const origin = info.origin;
   return origin === undefined || origin === 'null';
 }
 
 function startServer(PORT) {
-  // Toujours lié à la machine locale : aucun message showVerse/lookupReference
-  // ne doit pouvoir venir d'un autre poste sur le réseau pendant un culte.
   const HOST = process.env.WS_HOST || '127.0.0.1';
   wss = new WebSocket.Server({
     host: HOST,
     port: PORT,
     verifyClient: (info) => {
       const allowed = verifyOrigin(info);
-      if (!allowed) {
-        console.warn(`[server] Connexion refusée : origine non autorisée ("${info.origin}")`);
-      }
+      if (!allowed) console.warn(`[server] Connexion refusée : origine non autorisée ("${info.origin}")`);
       return allowed;
     },
   }, () => {
     startPipeline();
     console.log('[server] Serveur WebSocket démarré sur ws://' + HOST + ':' + PORT);
     console.log('[server] En attente de connexions (overlay.html dans OBS, test-envoi.js, ...).');
+    if (RUNNING_AS_WORKER) {
+      try { parentPort.postMessage({ type: 'status', status: 'running' }); } catch (_) {}
+    }
   });
 
-  // Heartbeat pour détecter les connexions mortes
   const heartbeat = setInterval(() => {
     wss.clients.forEach((ws) => {
       if (ws.isAlive === false) {
@@ -451,12 +349,9 @@ function startServer(PORT) {
     });
   }, 30000);
 
-  wss.on('close', () => {
-    clearInterval(heartbeat);
-  });
+  wss.on('close', () => clearInterval(heartbeat));
 
   wss.on('connection', (ws) => {
-    // Vérifier le rate limiting pour les connexions
     const connectionCheck = rateLimiter.checkConnection(ws);
     if (!connectionCheck.allowed) {
       console.warn('[server] Connexion rejetée:', connectionCheck.reason);
@@ -466,16 +361,13 @@ function startServer(PORT) {
     }
 
     ws.isAlive = true;
-    ws.on('pong', () => {
-      ws.isAlive = true;
-    });
+    ws.on('pong', () => { ws.isAlive = true; });
 
     compteurClients++;
     const idClient = compteurClients;
     console.log('[server] Client #' + idClient + ' connecté. (' + wss.clients.size + ' client(s) au total)');
 
     ws.on('message', async (data) => {
-      // Vérifier le rate limiting pour les messages
       const messageCheck = rateLimiter.checkMessage(ws);
       if (!messageCheck.allowed) {
         console.warn('[server] Message rejeté pour client #' + idClient + ':', messageCheck.reason);
@@ -484,18 +376,14 @@ function startServer(PORT) {
       }
 
       const message = data.toString();
-
-      // Validation et nettoyage du message
       let parsed;
-      try {
-        parsed = JSON.parse(message);
-      } catch (e) {
+      try { parsed = JSON.parse(message); }
+      catch (e) {
         console.warn('[server] Message ignoré du client #' + idClient + ' (JSON invalide) :', message);
         ws.send(JSON.stringify({ action: 'error', error: 'Format JSON invalide' }));
         return;
       }
 
-      // Validation approfondie avec le module de validation
       const validation = validateAndSanitize(parsed);
       if (!validation.valid) {
         console.warn('[server] Message rejeté du client #' + idClient + ' :', validation.error);
@@ -506,44 +394,34 @@ function startServer(PORT) {
       const sanitized = validation.sanitized;
       console.log('[server] Message validé depuis client #' + idClient + ' :', sanitized.action);
 
-      // Diagnostic endpoint
       if (sanitized.action === 'diagnostic') {
         const diagnostics = {
           action: 'diagnosticResult',
           timestamp: Date.now(),
           modules: {
-            detector: !!detector,
-            bibleLookup: !!bibleLookup,
-            groq: !!groq,
-            whisper: !!whisper,
-            audioCapture: !!audioCapture,
+            detector: !!detector, bibleLookup: !!bibleLookup,
+            groq: !!groq, whisper: !!whisper, audioCapture: !!audioCapture,
           },
+          cloudOnlyMode: CLOUD_ONLY_MODE,
           providers: bibleLookup.getProviders(),
           cacheSize: bibleLookup.getCacheSize ? bibleLookup.getCacheSize() : 'unknown',
           connections: wss.clients.size,
-          transcriptBuffer: transcriptBuffer.length
+          transcriptBuffer: transcriptBuffer.length,
         };
-        
-        // Test a known verse
         try {
           const testResult = await bibleLookup.getVerse({ book: 'jean', chapter: 3, verseStart: 16 });
-          diagnostics.bibleApiTest = { 
-            success: true, 
+          diagnostics.bibleApiTest = {
+            success: true,
             text: testResult.text.substring(0, 100) + '...',
-            provider: testResult.provider
+            provider: testResult.provider,
           };
         } catch (error) {
-          diagnostics.bibleApiTest = { 
-            success: false, 
-            error: error.message 
-          };
+          diagnostics.bibleApiTest = { success: false, error: error.message };
         }
-        
         ws.send(JSON.stringify(diagnostics));
         return;
       }
 
-      // Usage depuis un pupitre opérateur : { action: 'lookupReference', reference: 'Jean 3:16' }.
       if (sanitized.action === 'lookupReference') {
         const reference = detector.detect(sanitized.reference || '');
         if (!reference) {
@@ -552,27 +430,16 @@ function startServer(PORT) {
         }
         try {
           const verse = await bibleLookup.getVerse(reference);
-          broadcast({ 
-            action: 'showVerse', 
-            ...verse, 
-            durationMs: Number(sanitized.durationMs) || 300000 
-          }, ws);
+          broadcast({ action: 'showVerse', ...verse, durationMs: Number(sanitized.durationMs) || 300000 }, ws);
         } catch (error) {
-          ws.send(JSON.stringify({ 
-            action: 'lookupError', 
-            reference, 
-            error: error.message 
-          }));
+          ws.send(JSON.stringify({ action: 'lookupError', reference, error: error.message }));
         }
         return;
       }
 
-      // Relaie à tous les autres clients connectés (typiquement : overlay.html).
       const sanitizedMessage = JSON.stringify(sanitized);
       wss.clients.forEach((client) => {
-        if (client !== ws && client.readyState === WebSocket.OPEN) {
-          client.send(sanitizedMessage);
-        }
+        if (client !== ws && client.readyState === WebSocket.OPEN) client.send(sanitizedMessage);
       });
     });
 
@@ -580,10 +447,7 @@ function startServer(PORT) {
       rateLimiter.removeConnection(ws);
       console.log('[server] Client #' + idClient + ' déconnecté. (' + wss.clients.size + ' client(s) restant(s))');
     });
-
-    ws.on('error', (err) => {
-      console.error('[server] Erreur sur le client #' + idClient + ' :', err.message);
-    });
+    ws.on('error', (err) => console.error('[server] Erreur sur le client #' + idClient + ' :', err.message));
   });
 
   wss.on('error', (err) => {
@@ -592,62 +456,72 @@ function startServer(PORT) {
       console.error('[server] Le port est déjà utilisé — un autre server.js tourne-t-il déjà ?');
     }
   });
-  
-  // Arrêt propre du serveur Whisper et de la capture audio lors de la fermeture du serveur
-  process.on('SIGINT', () => {
-    console.log('\n[server] Arrêt du serveur...');
-    
-    // Clear heartbeat
-    clearInterval(heartbeat);
-    
-    // Arrêter le rate limiter
-    if (rateLimiter && rateLimiter.stopCleanup) {
-      rateLimiter.stopCleanup();
-    }
-    
-    // Fermer toutes les connexions WebSocket
-    wss.clients.forEach((client) => {
-      client.close(1000, 'Server shutting down');
-    });
-    
-    // Arrêter la capture audio d'abord
-    audioCapture.stopRecording()
-      .then(() => {
-        console.log('[server] Capture audio arrêtée');
-        // Puis arrêter Whisper
-        return whisper.stopServer();
-      })
-      .then(() => {
-        console.log('[server] Whisper arrêté');
-        // Nettoyer les fichiers temporaires
-        audioCapture.cleanupTempFiles({ force: true });
-        console.log('[server] Nettoyage terminé');
-        process.exit(0);
-      })
-      .catch((err) => {
-        console.error('[server] Erreur lors de l\'arrêt:', err.message);
-        process.exit(1);
-      });
-  });
-  
-  // Handle other termination signals
-  process.on('SIGTERM', () => {
-    console.log('\n[server] SIGTERM reçu, arrêt...');
-    process.emit('SIGINT');
-  });
 
-  // CORRECTIF AUDIT : canal IPC avec le process parent (main.js/Electron).
-  // Sous Windows, main.js ne peut pas compter sur un vrai SIGTERM (kill()
-  // y termine le process de force, sans passer par le handler ci-dessus),
-  // donc il envoie maintenant un message IPC explicite pour demander un
-  // arrêt propre — qui déclenche exactement le même nettoyage que SIGINT
-  // (arrêt de whisper-server.exe et FFmpeg avant de quitter).
-  if (process.send) {
-    process.on('message', (msg) => {
-      if (msg && msg.type === 'shutdown') {
-        console.log('\n[server] Message d\'arrêt reçu du process parent (IPC).');
-        process.emit('SIGINT');
-      }
-    });
+  // --- Cleanup on EVERY exit path ----------------------------------------
+  const shutdownOnce = createOnce(() => shutdown(heartbeat));
+  process.on('SIGINT', shutdownOnce);
+  process.on('SIGTERM', shutdownOnce);
+  process.on('uncaughtException', (err) => {
+    console.error('[server] uncaughtException:', err && err.stack || err);
+    shutdownOnce();
+  });
+  process.on('unhandledRejection', (reason) => {
+    console.error('[server] unhandledRejection:', reason && (reason.stack || reason));
+  });
+}
+
+function createOnce(fn) {
+  let called = false;
+  return (...args) => { if (called) return; called = true; try { fn(...args); } catch (_) {} };
+}
+
+function shutdown(heartbeat) {
+  console.log('\n[server] Arrêt du serveur...');
+  if (heartbeat) clearInterval(heartbeat);
+  if (rateLimiter && rateLimiter.stopCleanup) rateLimiter.stopCleanup();
+  if (wss) {
+    try {
+      wss.clients.forEach((client) => { try { client.close(1000, 'Server shutting down'); } catch (_) {} });
+    } catch (_) {}
   }
+
+  const cleanup = () => {
+    try { audioCapture.cleanupTempFiles({ force: true }); } catch (_) {}
+    console.log('[server] Nettoyage terminé');
+    workerSafeExit(0);
+  };
+
+  audioCapture.stopRecording()
+    .then(() => {
+      console.log('[server] Capture audio arrêtée');
+      if (CLOUD_ONLY_MODE) return Promise.resolve();
+      return whisper.stopServer();
+    })
+    .then(() => {
+      if (!CLOUD_ONLY_MODE) console.log('[server] Whisper arrêté');
+      cleanup();
+    })
+    .catch((err) => {
+      console.error('[server] Erreur lors de l\'arrêt:', err.message);
+      cleanup();
+    });
+
+  // Absolute deadline — no matter what, we don't hang the worker exit.
+  setTimeout(() => {
+    console.warn('[server] Deadline d\'arrêt (7s) — sortie forcée après cleanup.');
+    try { audioCapture.cleanupTempFiles({ force: true }); } catch (_) {}
+    workerSafeExit(0);
+  }, 7000).unref?.();
+}
+
+/**
+ * Under a worker, process.exit() kills only the worker (which is what we
+ * want), but we also notify the parent so it can distinguish "stopped
+ * cleanly" from "crashed". Under stand-alone Node, this is just process.exit.
+ */
+function workerSafeExit(code) {
+  if (RUNNING_AS_WORKER) {
+    try { parentPort.postMessage({ type: 'status', status: code === 0 ? 'stopped' : 'error' }); } catch (_) {}
+  }
+  process.exit(code);
 }
