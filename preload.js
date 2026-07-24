@@ -17,8 +17,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('churchOverlay', {
   // --- Écran de configuration initiale (setup.html) -----------------------
   detectMicrophones: () => ipcRenderer.invoke('detect-microphones'),
-  saveSetup: (audioDevice, groqApiKey) =>
-    ipcRenderer.invoke('save-setup', { audioDevice, groqApiKey }),
+  saveSetup: (audioDevice, groqApiKey, deepgramApiKey) =>
+    ipcRenderer.invoke('save-setup', { audioDevice, groqApiKey, deepgramApiKey }),
 
   // --- Tableau de bord (dashboard.html) ------------------------------------
   getStatus: () => ipcRenderer.invoke('get-status'),
