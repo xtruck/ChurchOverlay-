@@ -2,7 +2,10 @@
  * ============================================================================
  *  audio-capture.js — Module de capture audio en continu
  * ----------------------------------------------------------------------------
- *  Capture l'audio du micro en continu et l'envoie à Whisper pour transcription.
+ *  OPTIMISATIONS v0.2.1 (Option A + Bonus):
+ *    1. segmentDuration: 6000ms → 5000ms (plus réactif, -17% de latence)
+ *    2. overlapDuration: 100ms → 400ms (meilleur contexte entre segments)
+ *    3. maxAgeMs: 3600000 (1h) → 180000 (3 minutes) pour nettoyage plus rapide
  *
  *  ARCHITECTURE:
  *    Micro → audio-capture.js → whisper-wrapper.js → server.js → overlay.html
@@ -29,9 +32,8 @@ const CONFIG = {
   sampleRate: 16000,      // Whisper recommande 16000 Hz
   channels: 1,            // Mono
   bitDepth: 16,           // PCM 16-bit
-  segmentDuration: 6000,  // Durée des segments en ms (6 secondes)
-  overlapDuration: 100,   // 100ms de chevauchement (compensé par la fenêtre
-                          // glissante côté server.js, voir transcriptBuffer)
+  segmentDuration: 5000,  // 5 secondes (optimisé pour réactivité)
+  overlapDuration: 400,   // 400ms de chevauchement (meilleur contexte)
   silenceThreshold: 0.3,  // Seuil de silence pour VAD (0-1)
   minSpeechDuration: 500, // Durée minimum de parole en ms
   tempDir: path.join(__dirname, 'temp-audio'),
@@ -87,6 +89,7 @@ function startRecording(options = {}) {
       sampleRate: config.sampleRate,
       channels: config.channels,
       segmentDuration: config.segmentDuration + 'ms',
+      overlapDuration: config.overlapDuration + 'ms',
     });
 
     // Vérifier si FFmpeg est disponible
@@ -283,10 +286,10 @@ function isRecording() {
  * Nettoie les fichiers temporaires de manière robuste
  * @param {Object} options - Options de nettoyage
  * @param {boolean} options.force - Force le nettoyage même si l'enregistrement est en cours
- * @param {number} options.maxAgeMs - Âge maximum des fichiers à conserver (défaut: 1 heure)
+ * @param {number} options.maxAgeMs - Âge maximum des fichiers à conserver (défaut: 3 minutes)
  */
 function cleanupTempFiles(options = {}) {
-  const { force = false, maxAgeMs = 3600000 } = options;
+  const { force = false, maxAgeMs = 180000 } = options; // 3 minutes par défaut (optimisé)
   
   if (!fs.existsSync(CONFIG.tempDir)) {
     return;
@@ -345,3 +348,5 @@ module.exports = {
   cleanupTempFiles,
   getConfig: () => ({ ...CONFIG }),
 };
+
+
