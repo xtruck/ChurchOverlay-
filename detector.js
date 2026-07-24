@@ -145,8 +145,12 @@ function detect(text) {
     
     // Validation
     if (chapter > 0 && chapter <= 150) {
-      if (verseStart && (verseStart <= 0 || verseStart > 200)) continue;
-      if (verseEnd && (verseEnd < verseStart || verseEnd > 200)) continue;
+      // NB: verseStart peut valoir 0 (ex. transcription erronée "verset 0"),
+      // qui est une valeur "falsy" en JS — on doit donc tester
+      // `!== undefined` et non `verseStart` seul, sinon 0 échappait à la
+      // validation de plage ci-dessous.
+      if (verseStart !== undefined && (verseStart <= 0 || verseStart > 200)) continue;
+      if (verseEnd !== undefined && (verseEnd < verseStart || verseEnd > 200)) continue;
       
       return { 
         book, 
