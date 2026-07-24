@@ -237,6 +237,13 @@ function startServer() {
     cwd: APP_ROOT,
     env,
     windowsHide: true, // pas de console noire qui s'affiche
+    // CORRECTIF AUDIT : canal IPC ajouté ('ipc' en 4e position) pour pouvoir
+    // demander un arrêt gracieux via .send() plutôt que .kill(). Sous
+    // Windows, .kill() ne délivre pas un vrai signal : le process est tué
+    // brutalement (TerminateProcess), donc le handler SIGTERM de server.js
+    // ne s'exécute JAMAIS et whisper-server.exe / FFmpeg restent orphelins
+    // en tâche de fond. Voir stopServerGracefully() ci-dessous.
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   });
 
   serverProcess.stdout.on('data', (data) => {
@@ -258,12 +265,67 @@ function startServer() {
   });
 }
 
-function restartServer() {
-  if (serverProcess) {
-    serverProcess.removeAllListeners('exit');
-    serverProcess.kill();
+/**
+ * Demande à server.js de s'arrêter proprement (arrêt de whisper-server.exe
+ * et de FFmpeg inclus) via le canal IPC, avec un repli sur .kill() forcé si
+ * le process ne s'arrête pas de lui-même sous 5 secondes (crash, blocage).
+ *
+ * CORRECTIF AUDIT : avant ce changement, restartServer() et before-quit
+ * appelaient directement serverProcess.kill(). Sous Windows, cela termine
+ * le process server.js sans lui laisser la moindre chance d'exécuter son
+ * handler SIGTERM/SIGINT — qui est le seul endroit où whisper-server.exe et
+ * FFmpeg sont arrêtés. Résultat en production : à chaque redémarrage du
+ * pipeline ou fermeture de l'appli, whisper-server.exe restait en tâche de
+ * fond, gardait le port 8080 occupé, et le whisper-server.exe suivant ne
+ * pouvait plus démarrer dessus (ou un nouveau processus s'accumulait à
+ * chaque fois, orphelin, jusqu'au redémarrage de la machine).
+ *
+ * @param {import('child_process').ChildProcess|null} proc
+ * @param {() => void} onDone - appelé une fois le process terminé (propre ou forcé)
+ */
+function stopServerGracefully(proc, onDone) {
+  if (!proc) {
+    onDone();
+    return;
   }
-  setTimeout(startServer, 500);
+
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    onDone();
+  };
+
+  proc.once('exit', finish);
+
+  try {
+    proc.send({ type: 'shutdown' });
+  } catch (e) {
+    // Canal IPC indisponible (process déjà mort, ou pas encore prêt à
+    // recevoir des messages) : on retombe sur l'arrêt forcé direct.
+    console.warn('[main] Impossible d\'envoyer le message d\'arrêt IPC, arrêt forcé:', e.message);
+    try { proc.kill(); } catch (e2) {}
+    return;
+  }
+
+  // Filet de sécurité : si server.js ne s'est pas arrêté de lui-même
+  // (crash, blocage dans le nettoyage), on force après 5 secondes plutôt
+  // que de laisser le pipeline bloqué indéfiniment.
+  setTimeout(() => {
+    if (!done) {
+      console.warn('[main] Arrêt gracieux du pipeline expiré (5s) — arrêt forcé. whisper-server.exe/FFmpeg risquent de rester orphelins.');
+      try { proc.kill(); } catch (e) {}
+    }
+  }, 5000);
+}
+
+function restartServer() {
+  const oldProcess = serverProcess;
+  serverProcess = null;
+  if (oldProcess) {
+    oldProcess.removeAllListeners('exit');
+  }
+  stopServerGracefully(oldProcess, () => setTimeout(startServer, 500));
 }
 
 let recentLogs = [];
@@ -371,9 +433,17 @@ app.on('window-all-closed', () => {
   // explicitement — c'est voulu : le pipeline doit continuer de tourner.
 });
 
-app.on('before-quit', () => {
+let isShuttingDown = false;
+app.on('before-quit', (event) => {
   app.isQuitting = true;
-  if (serverProcess) {
-    serverProcess.kill();
+  if (serverProcess && !isShuttingDown) {
+    isShuttingDown = true;
+    // On retarde la fermeture réelle de l'app le temps de laisser
+    // server.js arrêter proprement whisper-server.exe et FFmpeg (même
+    // logique que restartServer(), voir stopServerGracefully()).
+    event.preventDefault();
+    const proc = serverProcess;
+    serverProcess = null;
+    stopServerGracefully(proc, () => app.exit(0));
   }
 });
