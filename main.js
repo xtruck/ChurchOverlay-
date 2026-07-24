@@ -15,7 +15,7 @@
 
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -35,21 +35,63 @@ let serverStatus = 'starting'; // starting | running | error | stopped
 
 // ---------------------------------------------------------------------------
 // Configuration locale (remplace le .env manuel — jamais de secret en dur)
+// ----------------------------------------------------------------------------
+// CORRECTIF SÉCURITÉ : la clé Groq était écrite en clair dans config.json.
+// Elle est désormais chiffrée via safeStorage d'Electron (DPAPI sur Windows,
+// Keychain sur macOS, libsecret sur Linux) avant écriture sur disque. Le
+// champ stocké devient groqApiKeyEncrypted (base64) ; groqApiKey n'est
+// jamais persisté en clair. Migration automatique des anciennes configs.
 // ---------------------------------------------------------------------------
 function loadConfig() {
+  let config;
   try {
     if (fs.existsSync(CONFIG_PATH)) {
-      return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+      config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
     }
   } catch (e) {
     console.error('[main] Config illisible, réinitialisation:', e.message);
+    return null;
   }
-  return null;
+  if (!config) return null;
+
+  if (config.groqApiKey && !config.groqApiKeyEncrypted) {
+    console.log('[main] Migration de la clé Groq vers le stockage chiffré...');
+    const plainKey = config.groqApiKey;
+    saveConfig({ audioDevice: config.audioDevice, groqApiKey: plainKey });
+    return { audioDevice: config.audioDevice, groqApiKey: plainKey };
+  }
+
+  if (config.groqApiKeyEncrypted) {
+    if (!safeStorage.isEncryptionAvailable()) {
+      console.error('[main] Chiffrement système indisponible : impossible de lire la clé Groq.');
+      return { audioDevice: config.audioDevice, groqApiKey: null };
+    }
+    try {
+      const decrypted = safeStorage.decryptString(Buffer.from(config.groqApiKeyEncrypted, 'base64'));
+      return { audioDevice: config.audioDevice, groqApiKey: decrypted };
+    } catch (e) {
+      console.error('[main] Échec du déchiffrement de la clé Groq:', e.message);
+      return { audioDevice: config.audioDevice, groqApiKey: null };
+    }
+  }
+
+  return config;
 }
 
 function saveConfig(config) {
   fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
+
+  const toWrite = { audioDevice: config.audioDevice };
+  if (config.groqApiKey) {
+    if (safeStorage.isEncryptionAvailable()) {
+      toWrite.groqApiKeyEncrypted = safeStorage.encryptString(config.groqApiKey).toString('base64');
+    } else {
+      console.warn('[main] Chiffrement système indisponible : clé Groq stockée en clair.');
+      toWrite.groqApiKey = config.groqApiKey;
+    }
+  }
+
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(toWrite, null, 2), 'utf8');
 }
 
 function isFirstRunNeeded() {
