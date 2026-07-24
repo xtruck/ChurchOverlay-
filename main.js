@@ -19,6 +19,7 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage } = require('electr
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const { ensureWhisperInstalled } = require('./setup-whisper');
 
 // main.js vit à la racine du projet (à côté de server.js, overlay.html, etc.),
 // donc APP_ROOT = __dirname. Un ancien `path.join(__dirname, '..')` pointait
@@ -247,6 +248,43 @@ ipcMain.handle('detect-microphones', async () => detectAudioDevices());
 
 ipcMain.handle('save-setup', async (_evt, { audioDevice, groqApiKey }) => {
   saveConfig({ audioDevice, groqApiKey });
+
+  // CORRECTIF AUDIT : avant ce changement, rien ne lançait jamais
+  // setup-whisper.js pour l'app packagée (Electron) — seul `npm run
+  // setup-whisper` en ligne de commande l'exécutait. Résultat : sur le poste
+  // d'un volontaire non-technique, whisper-server.exe et le modèle
+  // n'étaient jamais téléchargés, donc le fallback local (censé garantir
+  // que l'overlay n'est jamais vide si Groq/internet tombe pendant un
+  // culte) était silencieusement indisponible. On le fait maintenant ici,
+  // avec la fenêtre de setup encore ouverte pour montrer la progression.
+  const sender = _evt.sender;
+  try {
+    await ensureWhisperInstalled({
+      onProgress: (msg) => {
+        if (!sender.isDestroyed()) {
+          sender.send('whisper-setup-progress', { done: false, message: msg });
+        }
+      },
+    });
+    if (!sender.isDestroyed()) {
+      sender.send('whisper-setup-progress', { done: true, ok: true, message: 'Whisper local prêt.' });
+    }
+  } catch (err) {
+    console.error('[main] Échec du téléchargement automatique de Whisper:', err.message);
+    // On ne bloque pas le démarrage : Groq (cloud) peut suffire tant que la
+    // connexion internet est disponible pendant le culte. L'utilisateur
+    // pourra relancer `npm run setup-whisper` plus tard pour le fallback
+    // local, ou réessayer depuis le tableau de bord.
+    if (!sender.isDestroyed()) {
+      sender.send('whisper-setup-progress', {
+        done: true,
+        ok: false,
+        message: 'Échec du téléchargement de Whisper local (' + err.message + '). ' +
+          'ChurchOverlay démarrera quand même avec Groq (cloud) uniquement.',
+      });
+    }
+  }
+
   return true;
 });
 
