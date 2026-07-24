@@ -64,7 +64,7 @@ GROQ_API_KEY=
 npm test
 
 # Test Bible lookup (uses free API)
-node bible-lookup.js
+node bible-lookup-with-api.js
 
 # Test manual overlay
 node tests/test-envoi.js
@@ -160,9 +160,11 @@ The system uses free Bible APIs. If they're down:
 3. **Check console for errors**:
    ```bash
    # Look for messages like:
-   # [bible-lookup] ✗ genuinegospel failed: ...
-   # [bible-lookup] ✗ getbible failed: ...
+   # [bible-lookup] ✗ helloao-lsg a échoué: ...
+   # [bible-lookup] ✗ getbible-ls1910 a échoué: ...
    ```
+   The app tries `bible.helloao.org` first, then falls back to
+   `api.getbible.net` automatically — you only need to worry if *both* fail.
 
 ### OBS overlay shows nothing
 
