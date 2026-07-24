@@ -42,6 +42,24 @@ let serverStatus = 'starting'; // starting | running | error | stopped
 // champ stocké devient groqApiKeyEncrypted (base64) ; groqApiKey n'est
 // jamais persisté en clair. Migration automatique des anciennes configs.
 // ---------------------------------------------------------------------------
+// CORRECTIF (Deepgram) : même principe que la clé Groq ci-dessus — la clé
+// Deepgram (optionnelle, 2e fournisseur cloud) est chiffrée via safeStorage
+// avant écriture sur disque. deepgramApiKey n'est jamais persisté en clair,
+// et son absence n'empêche pas l'app de démarrer (Groq seul suffit).
+function decryptKey(encryptedBase64, label) {
+  if (!encryptedBase64) return null;
+  if (!safeStorage.isEncryptionAvailable()) {
+    console.error(`[main] Chiffrement système indisponible : impossible de lire la clé ${label}.`);
+    return null;
+  }
+  try {
+    return safeStorage.decryptString(Buffer.from(encryptedBase64, 'base64'));
+  } catch (e) {
+    console.error(`[main] Échec du déchiffrement de la clé ${label}:`, e.message);
+    return null;
+  }
+}
+
 function loadConfig() {
   let config;
   try {
@@ -54,28 +72,24 @@ function loadConfig() {
   }
   if (!config) return null;
 
+  // Migration ancienne config (clé Groq stockée en clair, pré-chiffrement)
   if (config.groqApiKey && !config.groqApiKeyEncrypted) {
     console.log('[main] Migration de la clé Groq vers le stockage chiffré...');
     const plainKey = config.groqApiKey;
-    saveConfig({ audioDevice: config.audioDevice, groqApiKey: plainKey });
-    return { audioDevice: config.audioDevice, groqApiKey: plainKey };
+    saveConfig({
+      audioDevice: config.audioDevice,
+      groqApiKey: plainKey,
+      deepgramApiKey: decryptKey(config.deepgramApiKeyEncrypted, 'Deepgram'),
+    });
+    return { audioDevice: config.audioDevice, groqApiKey: plainKey, deepgramApiKey: null };
   }
 
-  if (config.groqApiKeyEncrypted) {
-    if (!safeStorage.isEncryptionAvailable()) {
-      console.error('[main] Chiffrement système indisponible : impossible de lire la clé Groq.');
-      return { audioDevice: config.audioDevice, groqApiKey: null };
-    }
-    try {
-      const decrypted = safeStorage.decryptString(Buffer.from(config.groqApiKeyEncrypted, 'base64'));
-      return { audioDevice: config.audioDevice, groqApiKey: decrypted };
-    } catch (e) {
-      console.error('[main] Échec du déchiffrement de la clé Groq:', e.message);
-      return { audioDevice: config.audioDevice, groqApiKey: null };
-    }
-  }
+  const groqApiKey = config.groqApiKeyEncrypted
+    ? decryptKey(config.groqApiKeyEncrypted, 'Groq')
+    : (config.groqApiKey || null);
+  const deepgramApiKey = decryptKey(config.deepgramApiKeyEncrypted, 'Deepgram');
 
-  return config;
+  return { audioDevice: config.audioDevice, groqApiKey, deepgramApiKey };
 }
 
 function saveConfig(config) {
@@ -88,6 +102,16 @@ function saveConfig(config) {
     } else {
       console.warn('[main] Chiffrement système indisponible : clé Groq stockée en clair.');
       toWrite.groqApiKey = config.groqApiKey;
+    }
+  }
+  // Deepgram est optionnel : on ne stocke rien si le champ est vide, pour
+  // que isConfigured() côté deepgram-wrapper.js reste "non configuré".
+  if (config.deepgramApiKey) {
+    if (safeStorage.isEncryptionAvailable()) {
+      toWrite.deepgramApiKeyEncrypted = safeStorage.encryptString(config.deepgramApiKey).toString('base64');
+    } else {
+      console.warn('[main] Chiffrement système indisponible : clé Deepgram stockée en clair.');
+      toWrite.deepgramApiKey = config.deepgramApiKey;
     }
   }
 
@@ -228,6 +252,12 @@ function startServer() {
     GROQ_API_KEY: config.groqApiKey,
     NODE_ENV: 'production',
   });
+  // Deepgram est optionnel : on ne définit la variable que si une clé est
+  // configurée, pour que deepgram.isConfigured() reste false sinon (course
+  // à 2 niveaux Groq → local, comme avant l'ajout de Deepgram).
+  if (config.deepgramApiKey) {
+    env.DEEPGRAM_API_KEY = config.deepgramApiKey;
+  }
 
   serverStatus = 'starting';
   refreshTrayMenu();
@@ -350,8 +380,8 @@ function notifyDashboard() {
 // ---------------------------------------------------------------------------
 ipcMain.handle('detect-microphones', async () => detectAudioDevices());
 
-ipcMain.handle('save-setup', async (_evt, { audioDevice, groqApiKey }) => {
-  saveConfig({ audioDevice, groqApiKey });
+ipcMain.handle('save-setup', async (_evt, { audioDevice, groqApiKey, deepgramApiKey }) => {
+  saveConfig({ audioDevice, groqApiKey, deepgramApiKey });
 
   // CORRECTIF AUDIT : avant ce changement, rien ne lançait jamais
   // setup-whisper.js pour l'app packagée (Electron) — seul `npm run
