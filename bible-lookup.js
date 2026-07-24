@@ -1,6 +1,12 @@
 /**
  * Recherche d'un passage biblique - version locale
  * Utilise un fichier JSON local au lieu d'APIs externes.
+ *
+ * ⚠️ NON UTILISÉ EN PRODUCTION : server.js importe `bible-lookup-with-api.js`
+ * (fournisseurs en ligne helloao/getbible), pas ce fichier. Ce module attend
+ * un fichier `bible-lsg.json` qui n'existe pas dans ce dépôt — il échouera
+ * si on l'exécute tel quel (`node bible-lookup.js`). Conservé au cas où un
+ * fournisseur local hors-ligne serait ajouté plus tard ; sinon, à supprimer.
  */
 'use strict';
 const fs = require('fs');
