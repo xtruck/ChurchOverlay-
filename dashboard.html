@@ -1,322 +1,748 @@
 <!DOCTYPE html>
 <!--
-  CHANGELOG v0.2.0 (dashboard.html)
-    + Cloud-only mode toggle (persisted via IPC setCloudOnlyMode)
-    + Whisper GPU toggle (manual, persisted via IPC setWhisperGpu)
-    + Live CPU % / RSS MB readout (perf-update push, 2s cadence)
-    + Uptime readout for the worker recycling verification
+  CHANGELOG v0.2.1 (dashboard.html) - DESIGN MODERNE
+    + Design glassmorphism avec gradients
+    + Animations fluides et transitions
+    + Meilleure hiérarchie visuelle
+    + Icons et emojis pour clarté
+    + Responsive et structuré
 -->
 <html lang="fr">
 <head>
 <meta charset="UTF-8" />
 <title>ChurchOverlay — Tableau de bord</title>
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  
   :root {
-    --bg: #14161c;
-    --panel: #1c1f28;
-    --panel-2: #171a22;
-    --border: #2c3040;
-    --text: #e8e9ee;
-    --muted: #9195a6;
-    --accent: #6c8cff;
-    --accent-hover: #8aa4ff;
-    --error: #ff6b6b;
-    --ok: #4fd18b;
-    --warn: #f0b94c;
+    --bg-primary: #0a0e1a;
+    --bg-secondary: #111827;
+    --glass-bg: rgba(17, 24, 39, 0.7);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --text-primary: #f9fafb;
+    --text-secondary: #9ca3af;
+    --text-muted: #6b7280;
+    --accent: #6366f1;
+    --accent-hover: #818cf8;
+    --accent-glow: rgba(99, 102, 241, 0.3);
+    --success: #10b981;
+    --success-glow: rgba(16, 185, 129, 0.3);
+    --warning: #f59e0b;
+    --warning-glow: rgba(245, 158, 11, 0.3);
+    --error: #ef4444;
+    --error-glow: rgba(239, 68, 68, 0.3);
+    --shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+    --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
   }
-  * { box-sizing: border-box; }
-  body {
+
+  * {
+    box-sizing: border-box;
     margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #0a0e1a 0%, #1a1f3a 100%);
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Animated gradient background */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: radial-gradient(circle at 20% 50%, rgba(99, 102, 241, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(16, 185, 129, 0.08) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 24px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* Header */
+  .header {
+    text-align: center;
+    margin-bottom: 8px;
+  }
+
+  .logo {
+    font-size: 32px;
+    margin-bottom: 8px;
+    display: inline-block;
+    animation: float 3s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+
+  .title {
+    font-size: 24px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--success) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 4px;
+  }
+
+  .subtitle {
+    color: var(--text-secondary);
     font-size: 13px;
-    -webkit-user-select: none;
-    user-select: none;
   }
-  .wrap { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
 
+  /* Glass card */
+  .glass-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: var(--shadow);
+    transition: all 0.3s ease;
+  }
+
+  .glass-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow), 0 0 0 1px var(--glass-border);
+  }
+
+  /* Status card */
   .status-card {
-    display: flex; align-items: center; gap: 10px;
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: 8px; padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
   }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
-  .dot.running { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
-  .dot.error { background: var(--error); box-shadow: 0 0 6px var(--error); }
-  .dot.starting { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
-  .dot.stopped { background: var(--muted); }
-  .status-text { font-weight: 600; }
-  .status-sub { color: var(--muted); font-size: 11.5px; margin-top: 1px; }
-  .status-card .spacer { flex: 1; }
 
-  .field-label { font-weight: 600; margin-bottom: 6px; display: block; }
-  .url-row { display: flex; gap: 8px; }
+  .status-indicator {
+    position: relative;
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--glass-border);
+  }
+
+  .status-indicator::after {
+    content: '';
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid var(--bg-secondary);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.2); opacity: 0.8; }
+  }
+
+  .status-indicator.running::after { background: var(--success); box-shadow: 0 0 12px var(--success-glow); }
+  .status-indicator.starting::after { background: var(--warning); box-shadow: 0 0 12px var(--warning-glow); }
+  .status-indicator.error::after { background: var(--error); box-shadow: 0 0 12px var(--error-glow); }
+  .status-indicator.stopped::after { background: var(--text-muted); animation: none; }
+
+  .status-content {
+    flex: 1;
+  }
+
+  .status-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .status-desc {
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+
+  /* Buttons */
+  .btn {
+    cursor: pointer;
+    border: none;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 10px 18px;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    transform: translate(-50%, -50%);
+    transition: width 0.6s, height 0.6s;
+  }
+
+  .btn:hover::before {
+    width: 300px;
+    height: 300px;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+    color: white;
+    box-shadow: 0 4px 12px var(--accent-glow);
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px var(--accent-glow);
+  }
+
+  .btn-secondary {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    border: 1px solid var(--glass-border);
+  }
+
+  .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--accent);
+  }
+
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+  }
+
+  /* URL Box */
+  .url-section {
+    margin-bottom: 8px;
+  }
+
+  .section-label {
+    font-weight: 600;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-primary);
+  }
+
+  .url-box-container {
+    display: flex;
+    gap: 10px;
+  }
+
   .url-box {
-    flex: 1; background: var(--panel-2); border: 1px solid var(--border);
-    border-radius: 6px; padding: 8px 10px;
-    font-family: "Consolas", monospace; font-size: 11.5px; color: var(--text);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    -webkit-user-select: text; user-select: text;
+    flex: 1;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 11px;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: text;
+    user-select: text;
+    -webkit-user-select: text;
   }
 
-  button {
-    cursor: pointer; border: none; border-radius: 6px;
-    font-size: 12.5px; font-weight: 600; padding: 8px 12px; white-space: nowrap;
+  /* Settings */
+  .settings-grid {
+    display: grid;
+    gap: 12px;
   }
-  .btn-secondary { background: var(--panel); border: 1px solid var(--border); color: var(--text); }
-  .btn-secondary:hover { border-color: var(--accent); }
-  .btn-accent { background: var(--accent); color: #0c0e14; }
-  .btn-accent:hover { background: var(--accent-hover); }
 
-  .actions-row { display: flex; gap: 8px; }
-  .actions-row button { flex: 1; }
+  .setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 10px;
+    border: 1px solid var(--glass-border);
+    transition: all 0.2s ease;
+  }
 
-  /* --- Settings panel (v0.2.0) ------------------------------------- */
-  .settings-card {
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px;
+  .setting-row:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--accent);
   }
-  .toggle-row {
-    display: flex; align-items: center; gap: 10px;
-    padding: 4px 0;
-  }
-  .toggle-label { flex: 1; }
-  .toggle-title { font-weight: 600; }
-  .toggle-desc { color: var(--muted); font-size: 11.5px; margin-top: 1px; }
 
-  /* iOS-ish switch */
-  .switch { position: relative; width: 38px; height: 22px; flex-shrink: 0; }
-  .switch input { opacity: 0; width: 0; height: 0; }
-  .slider {
-    position: absolute; cursor: pointer; inset: 0;
-    background-color: #3a3f52; border-radius: 22px; transition: 0.15s;
+  .setting-info {
+    flex: 1;
   }
-  .slider::before {
-    position: absolute; content: ""; height: 16px; width: 16px;
-    left: 3px; top: 3px; background-color: #e8e9ee; border-radius: 50%; transition: 0.15s;
-  }
-  .switch input:checked + .slider { background-color: var(--accent); }
-  .switch input:checked + .slider::before { transform: translateX(16px); }
-  .switch input:disabled + .slider { opacity: 0.4; cursor: not-allowed; }
 
-  /* --- Perf strip -------------------------------------------------- */
-  .perf-strip {
-    display: flex; gap: 10px;
-    background: var(--panel-2); border: 1px solid var(--border);
-    border-radius: 6px; padding: 8px 10px;
-    font-family: "Consolas", monospace; font-size: 11.5px;
+  .setting-title {
+    font-weight: 600;
+    margin-bottom: 2px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
-  .perf-strip .metric { flex: 1; }
-  .perf-strip .metric b { color: var(--accent); font-weight: 700; }
-  .perf-strip .metric .k { color: var(--muted); margin-right: 4px; }
 
-  .logs-section { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-  .logs-box {
-    background: var(--panel-2); border: 1px solid var(--border);
-    border-radius: 6px; padding: 8px 10px;
-    font-family: "Consolas", monospace; font-size: 11px; line-height: 1.55;
-    height: 140px; overflow-y: auto; -webkit-user-select: text; user-select: text;
+  .setting-desc {
+    color: var(--text-secondary);
+    font-size: 11px;
   }
-  .logs-box .line { white-space: pre-wrap; word-break: break-word; }
-  .logs-box .line.err { color: var(--error); }
-  .logs-box .empty { color: var(--muted); }
 
+  /* Modern toggle switch */
+  .toggle {
+    position: relative;
+    width: 48px;
+    height: 26px;
+    flex-shrink: 0;
+  }
+
+  .toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 26px;
+    transition: 0.3s;
+    border: 1px solid var(--glass-border);
+  }
+
+  .toggle-slider::before {
+    content: '';
+    position: absolute;
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    top: 3px;
+    background: white;
+    border-radius: 50%;
+    transition: 0.3s;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  .toggle input:checked + .toggle-slider {
+    background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+    border-color: var(--accent);
+  }
+
+  .toggle input:checked + .toggle-slider::before {
+    transform: translateX(22px);
+  }
+
+  .toggle input:disabled + .toggle-slider {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Performance metrics */
+  .perf-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .perf-metric {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+  }
+
+  .perf-label {
+    color: var(--text-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+
+  .perf-value {
+    font-size: 20px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), var(--success));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .perf-unit {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-left: 2px;
+  }
+
+  /* Logs */
+  .logs-container {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    padding: 14px;
+    height: 180px;
+    overflow-y: auto;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 11px;
+    line-height: 1.6;
+  }
+
+  .logs-container::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .logs-container::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 3px;
+  }
+
+  .logs-container::-webkit-scrollbar-thumb {
+    background: var(--accent);
+    border-radius: 3px;
+  }
+
+  .log-line {
+    padding: 2px 0;
+    word-break: break-word;
+  }
+
+  .log-line.error {
+    color: var(--error);
+  }
+
+  .log-empty {
+    color: var(--text-muted);
+    text-align: center;
+    padding: 20px;
+  }
+
+  /* Actions */
+  .actions-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  /* Toast notification */
   .toast {
-    position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
-    background: var(--panel); border: 1px solid var(--accent); color: var(--text);
-    padding: 7px 14px; border-radius: 6px; font-size: 12px;
-    opacity: 0; pointer-events: none; transition: opacity 0.2s;
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    padding: 12px 20px;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: var(--shadow);
+    opacity: 0;
+    transition: all 0.3s ease;
+    z-index: 1000;
   }
-  .toast.show { opacity: 1; }
+
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
 </style>
 </head>
 <body>
-  <div class="wrap">
-
-    <div class="status-card">
-      <div class="dot" id="status-dot"></div>
-      <div>
-        <div class="status-text" id="status-text">Chargement…</div>
-        <div class="status-sub" id="status-sub">&nbsp;</div>
-      </div>
-      <div class="spacer"></div>
-      <button class="btn-secondary" id="btn-restart" data-testid="restart-pipeline-btn" type="button">Redémarrer</button>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="logo">✝️</div>
+      <h1 class="title">ChurchOverlay</h1>
+      <p class="subtitle">Tableau de bord — Transcription & Overlay Biblique</p>
     </div>
 
-    <div>
-      <label class="field-label">URL de l'overlay (à coller dans OBS, source Navigateur)</label>
-      <div class="url-row">
+    <!-- Status Card -->
+    <div class="glass-card status-card">
+      <div class="status-indicator" id="status-indicator">
+        <span id="status-emoji">⚙️</span>
+      </div>
+      <div class="status-content">
+        <div class="status-title" id="status-title">Chargement…</div>
+        <div class="status-desc" id="status-desc">Initialisation du pipeline</div>
+      </div>
+      <button class="btn btn-primary" id="btn-restart" data-testid="restart-pipeline-btn">
+        <span>🔄</span> Redémarrer
+      </button>
+    </div>
+
+    <!-- URL Section -->
+    <div class="glass-card url-section">
+      <div class="section-label">
+        <span>🔗</span> URL Overlay pour OBS
+      </div>
+      <div class="url-box-container">
         <div class="url-box" id="overlay-url" data-testid="overlay-url-box">—</div>
-        <button class="btn-accent" id="btn-copy" data-testid="copy-overlay-url-btn" type="button">Copier</button>
+        <button class="btn btn-secondary" id="btn-copy" data-testid="copy-overlay-url-btn">
+          📋 Copier
+        </button>
       </div>
     </div>
 
-    <!-- v0.2.0 : réglages runtime ---------------------------------- -->
-    <div class="settings-card" data-testid="settings-card">
-      <div class="toggle-row">
-        <div class="toggle-label">
-          <div class="toggle-title">Mode cloud uniquement</div>
-          <div class="toggle-desc">Coupe Whisper local — CPU divisé par ~2. Actif par défaut si une clé Groq est configurée.</div>
+    <!-- Settings -->
+    <div class="glass-card">
+      <div class="section-label">
+        <span>⚙️</span> Configuration
+      </div>
+      <div class="settings-grid">
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-title">
+              <span>☁️</span> Mode cloud uniquement
+            </div>
+            <div class="setting-desc">Désactive Whisper local — CPU divisé par ~2</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="toggle-cloud-only" data-testid="toggle-cloud-only" />
+            <span class="toggle-slider"></span>
+          </label>
         </div>
-        <label class="switch">
-          <input type="checkbox" id="toggle-cloud-only" data-testid="toggle-cloud-only" />
-          <span class="slider"></span>
-        </label>
-      </div>
-      <div class="toggle-row">
-        <div class="toggle-label">
-          <div class="toggle-title">Accélération GPU (Whisper local)</div>
-          <div class="toggle-desc">À activer manuellement si votre poste a un GPU NVIDIA compatible. Ignoré en mode cloud uniquement.</div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-title">
+              <span>🎮</span> Accélération GPU
+            </div>
+            <div class="setting-desc">Whisper local avec GPU NVIDIA (si compatible)</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="toggle-whisper-gpu" data-testid="toggle-whisper-gpu" />
+            <span class="toggle-slider"></span>
+          </label>
         </div>
-        <label class="switch">
-          <input type="checkbox" id="toggle-whisper-gpu" data-testid="toggle-whisper-gpu" />
-          <span class="slider"></span>
-        </label>
       </div>
     </div>
 
-    <div class="perf-strip" data-testid="perf-strip">
-      <div class="metric"><span class="k">CPU</span><b id="perf-cpu" data-testid="perf-cpu">—</b> %</div>
-      <div class="metric"><span class="k">RAM</span><b id="perf-rss" data-testid="perf-rss">—</b> Mo</div>
-      <div class="metric"><span class="k">Heap</span><b id="perf-heap" data-testid="perf-heap">—</b> Mo</div>
-      <div class="metric"><span class="k">Uptime</span><b id="perf-uptime" data-testid="perf-uptime">—</b> s</div>
-    </div>
-
-    <div class="actions-row">
-      <button class="btn-secondary" id="btn-change-mic" data-testid="open-setup-btn" type="button">Changer de microphone / clé</button>
-    </div>
-
-    <div class="logs-section">
-      <label class="field-label">Journal</label>
-      <div class="logs-box" id="logs-box" data-testid="logs-box">
-        <div class="empty">En attente d'activité…</div>
+    <!-- Performance Metrics -->
+    <div class="glass-card">
+      <div class="section-label">
+        <span>📊</span> Performances en temps réel
+      </div>
+      <div class="perf-grid" data-testid="perf-strip">
+        <div class="perf-metric">
+          <div class="perf-label">CPU</div>
+          <div class="perf-value">
+            <span id="perf-cpu" data-testid="perf-cpu">—</span>
+            <span class="perf-unit">%</span>
+          </div>
+        </div>
+        <div class="perf-metric">
+          <div class="perf-label">RAM</div>
+          <div class="perf-value">
+            <span id="perf-rss" data-testid="perf-rss">—</span>
+            <span class="perf-unit">Mo</span>
+          </div>
+        </div>
+        <div class="perf-metric">
+          <div class="perf-label">Heap</div>
+          <div class="perf-value">
+            <span id="perf-heap" data-testid="perf-heap">—</span>
+            <span class="perf-unit">Mo</span>
+          </div>
+        </div>
+        <div class="perf-metric">
+          <div class="perf-label">Uptime</div>
+          <div class="perf-value">
+            <span id="perf-uptime" data-testid="perf-uptime">—</span>
+            <span class="perf-unit">s</span>
+          </div>
+        </div>
       </div>
     </div>
 
+    <!-- Actions -->
+    <div class="actions-grid">
+      <button class="btn btn-secondary" id="btn-change-mic" data-testid="open-setup-btn">
+        🎤 Config micro
+      </button>
+      <button class="btn btn-secondary" onclick="window.open('https://console.groq.com/keys')">
+        🔑 Clé Groq
+      </button>
+    </div>
+
+    <!-- Logs -->
+    <div class="glass-card">
+      <div class="section-label">
+        <span>📝</span> Journal d'activité
+      </div>
+      <div class="logs-container" id="logs-box" data-testid="logs-box">
+        <div class="log-empty">En attente d'activité…</div>
+      </div>
+    </div>
   </div>
 
   <div class="toast" id="toast" data-testid="toast"></div>
 
   <script>
-    const statusDot = document.getElementById('status-dot');
-    const statusText = document.getElementById('status-text');
-    const statusSub = document.getElementById('status-sub');
-    const overlayUrlBox = document.getElementById('overlay-url');
-    const logsBox = document.getElementById('logs-box');
-    const btnRestart = document.getElementById('btn-restart');
-    const btnCopy = document.getElementById('btn-copy');
-    const btnChangeMic = document.getElementById('btn-change-mic');
-    const toast = document.getElementById('toast');
-    const tglCloud = document.getElementById('toggle-cloud-only');
-    const tglGpu = document.getElementById('toggle-whisper-gpu');
-    const perfCpu = document.getElementById('perf-cpu');
-    const perfRss = document.getElementById('perf-rss');
-    const perfHeap = document.getElementById('perf-heap');
-    const perfUptime = document.getElementById('perf-uptime');
+    const STATUS_CONFIG = {
+      starting: { emoji: '⚙️', title: 'Démarrage', desc: 'Le pipeline audio se lance…', class: 'starting' },
+      running: { emoji: '✅', title: 'En marche', desc: 'Pipeline opérationnel — Micro écouté', class: 'running' },
+      error: { emoji: '❌', title: 'Erreur', desc: 'Consultez les logs ci-dessous', class: 'error' },
+      stopped: { emoji: '⏸️', title: 'Arrêté', desc: 'Cliquez sur Redémarrer', class: 'stopped' },
+    };
+
+    const elements = {
+      statusIndicator: document.getElementById('status-indicator'),
+      statusEmoji: document.getElementById('status-emoji'),
+      statusTitle: document.getElementById('status-title'),
+      statusDesc: document.getElementById('status-desc'),
+      overlayUrl: document.getElementById('overlay-url'),
+      logsBox: document.getElementById('logs-box'),
+      btnRestart: document.getElementById('btn-restart'),
+      btnCopy: document.getElementById('btn-copy'),
+      btnChangeMic: document.getElementById('btn-change-mic'),
+      toast: document.getElementById('toast'),
+      toggleCloud: document.getElementById('toggle-cloud-only'),
+      toggleGpu: document.getElementById('toggle-whisper-gpu'),
+      perfCpu: document.getElementById('perf-cpu'),
+      perfRss: document.getElementById('perf-rss'),
+      perfHeap: document.getElementById('perf-heap'),
+      perfUptime: document.getElementById('perf-uptime'),
+    };
 
     let currentOverlayUrl = '';
 
-    const STATUS_LABELS = {
-      starting: { text: 'Démarrage en cours…', sub: 'Le pipeline audio se lance, un instant.' },
-      running: { text: 'En marche', sub: 'Le micro est écouté et l\'overlay est prêt à recevoir OBS.' },
-      error: { text: 'Erreur', sub: 'Consultez le journal ci-dessous, ou redémarrez le pipeline.' },
-      stopped: { text: 'Arrêté', sub: 'Cliquez sur Redémarrer pour relancer le pipeline.' },
-    };
-
-    function showToast(msg) {
-      toast.textContent = msg;
-      toast.classList.add('show');
-      setTimeout(() => toast.classList.remove('show'), 1600);
+    function showToast(message) {
+      elements.toast.textContent = message;
+      elements.toast.classList.add('show');
+      setTimeout(() => elements.toast.classList.remove('show'), 2000);
     }
 
     function renderLogs(logs) {
       if (!logs || logs.length === 0) {
-        logsBox.innerHTML = '<div class="empty">En attente d\'activité…</div>';
+        elements.logsBox.innerHTML = '<div class="log-empty">En attente d\'activité…</div>';
         return;
       }
-      const wasAtBottom = logsBox.scrollTop + logsBox.clientHeight >= logsBox.scrollHeight - 4;
-      logsBox.innerHTML = logs.map((l) => {
-        const cls = l.isError ? 'line err' : 'line';
-        const safe = (l.text || '').replace(/[<>&]/g, (c) => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
-        return '<div class="' + cls + '">' + safe.trimEnd() + '</div>';
+      const wasAtBottom = elements.logsBox.scrollTop + elements.logsBox.clientHeight >= elements.logsBox.scrollHeight - 4;
+      elements.logsBox.innerHTML = logs.map(l => {
+        const cls = l.isError ? 'log-line error' : 'log-line';
+        const safe = (l.text || '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+        return `<div class="${cls}">${safe.trimEnd()}</div>`;
       }).join('');
-      if (wasAtBottom) logsBox.scrollTop = logsBox.scrollHeight;
+      if (wasAtBottom) elements.logsBox.scrollTop = elements.logsBox.scrollHeight;
     }
 
     function render(payload) {
-      const info = STATUS_LABELS[payload.status] || { text: payload.status, sub: '' };
-      statusDot.className = 'dot ' + payload.status;
-      statusText.textContent = info.text;
-      statusSub.textContent = info.sub;
+      const config = STATUS_CONFIG[payload.status] || STATUS_CONFIG.stopped;
+      elements.statusIndicator.className = 'status-indicator ' + config.class;
+      elements.statusEmoji.textContent = config.emoji;
+      elements.statusTitle.textContent = config.title;
+      elements.statusDesc.textContent = config.desc;
 
       if (payload.overlayUrl) {
         currentOverlayUrl = payload.overlayUrl;
-        overlayUrlBox.textContent = payload.overlayUrl;
+        elements.overlayUrl.textContent = payload.overlayUrl;
       }
       renderLogs(payload.logs);
-      btnRestart.disabled = payload.status === 'starting';
+      elements.btnRestart.disabled = payload.status === 'starting';
     }
 
     function renderPerf(p) {
       if (!p) return;
-      perfCpu.textContent = (p.cpuPercent != null) ? p.cpuPercent.toFixed(1) : '—';
-      perfRss.textContent = (p.rssMB != null) ? p.rssMB.toFixed(1) : '—';
-      perfHeap.textContent = (p.heapUsedMB != null) ? p.heapUsedMB.toFixed(1) : '—';
-      perfUptime.textContent = (p.uptimeSec != null) ? String(p.uptimeSec) : '—';
+      elements.perfCpu.textContent = (p.cpuPercent != null) ? p.cpuPercent.toFixed(1) : '—';
+      elements.perfRss.textContent = (p.rssMB != null) ? p.rssMB.toFixed(0) : '—';
+      elements.perfHeap.textContent = (p.heapUsedMB != null) ? p.heapUsedMB.toFixed(0) : '—';
+      elements.perfUptime.textContent = (p.uptimeSec != null) ? String(p.uptimeSec) : '—';
     }
 
-    btnRestart.addEventListener('click', async () => {
-      btnRestart.disabled = true;
-      btnRestart.textContent = 'Redémarrage…';
-      try { await window.churchOverlay.requestRestart(); }
-      finally {
-        setTimeout(() => { btnRestart.disabled = false; btnRestart.textContent = 'Redémarrer'; }, 1200);
+    // Event listeners
+    elements.btnRestart.addEventListener('click', async () => {
+      elements.btnRestart.disabled = true;
+      const originalText = elements.btnRestart.innerHTML;
+      elements.btnRestart.innerHTML = '<span>⏳</span> Redémarrage…';
+      try {
+        await window.churchOverlay.requestRestart();
+        showToast('✅ Pipeline redémarré');
+      } catch (e) {
+        showToast('❌ Erreur de redémarrage');
+      } finally {
+        setTimeout(() => {
+          elements.btnRestart.disabled = false;
+          elements.btnRestart.innerHTML = originalText;
+        }, 1500);
       }
     });
 
-    btnCopy.addEventListener('click', () => {
+    elements.btnCopy.addEventListener('click', () => {
       if (!currentOverlayUrl) return;
       navigator.clipboard.writeText(currentOverlayUrl)
-        .then(() => showToast('URL copiée dans le presse-papiers'))
-        .catch(() => showToast('Impossible de copier automatiquement'));
+        .then(() => showToast('✅ URL copiée!'))
+        .catch(() => showToast('❌ Erreur de copie'));
     });
 
-    btnChangeMic.addEventListener('click', async () => {
+    elements.btnChangeMic.addEventListener('click', async () => {
       await window.churchOverlay.openSetup();
     });
 
-    tglCloud.addEventListener('change', async () => {
-      tglCloud.disabled = true;
+    elements.toggleCloud.addEventListener('change', async () => {
+      elements.toggleCloud.disabled = true;
       try {
-        await window.churchOverlay.setCloudOnlyMode(tglCloud.checked);
-        showToast(tglCloud.checked ? 'Mode cloud uniquement activé' : 'Mode cloud uniquement désactivé');
+        await window.churchOverlay.setCloudOnlyMode(elements.toggleCloud.checked);
+        showToast(elements.toggleCloud.checked ? '☁️ Mode cloud activé' : '💻 Mode local activé');
       } finally {
-        setTimeout(() => { tglCloud.disabled = false; }, 800);
+        setTimeout(() => { elements.toggleCloud.disabled = false; }, 1000);
       }
     });
 
-    tglGpu.addEventListener('change', async () => {
-      tglGpu.disabled = true;
+    elements.toggleGpu.addEventListener('change', async () => {
+      elements.toggleGpu.disabled = true;
       try {
-        await window.churchOverlay.setWhisperGpu(tglGpu.checked);
-        showToast(tglGpu.checked ? 'GPU Whisper activé' : 'GPU Whisper désactivé');
+        await window.churchOverlay.setWhisperGpu(elements.toggleGpu.checked);
+        showToast(elements.toggleGpu.checked ? '🎮 GPU activé' : '💻 CPU seulement');
       } finally {
-        setTimeout(() => { tglGpu.disabled = false; }, 800);
+        setTimeout(() => { elements.toggleGpu.disabled = false; }, 1000);
       }
     });
 
-    // Initial state + subscriptions
+    // Initialize
     window.churchOverlay.getStatus().then(render);
     window.churchOverlay.onStatusUpdate(render);
-    window.churchOverlay.getSettings().then((s) => {
-      tglCloud.checked = !!s.cloudOnlyMode;
-      tglGpu.checked = !!s.whisperGpu;
+    window.churchOverlay.getSettings().then(s => {
+      elements.toggleCloud.checked = !!s.cloudOnlyMode;
+      elements.toggleGpu.checked = !!s.whisperGpu;
     });
     window.churchOverlay.getPerfStats().then(renderPerf);
     window.churchOverlay.onPerfUpdate(renderPerf);
   </script>
 </body>
 </html>
-
-
