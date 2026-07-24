@@ -125,7 +125,8 @@
     <h1>Bienvenue dans ChurchOverlay</h1>
     <p class="subtitle">
       Deux réglages avant le premier démarrage : le microphone à écouter
-      et votre clé API Groq (pour la transcription). Rien d'autre à installer.
+      et votre clé API Groq (pour la transcription). Une clé Deepgram
+      optionnelle peut être ajoutée en secours. Rien d'autre à installer.
     </p>
 
     <div class="field">
@@ -150,6 +151,19 @@
       </div>
     </div>
 
+    <div class="field">
+      <label for="deepgram-key">Clé API Deepgram (optionnel)</label>
+      <input type="password" id="deepgram-key" placeholder="Laisser vide si non utilisé" autocomplete="off" />
+      <button class="toggle-eye" id="btn-toggle-deepgram-key" type="button">Afficher</button>
+      <div class="hint">
+        2e fournisseur cloud, utilisé automatiquement si Groq ne répond pas.
+        Facultatif — l'application fonctionne très bien avec Groq seul.
+        Clé disponible sur
+        <a id="link-deepgram" href="#">console.deepgram.com</a>
+        (lien à copier-coller dans votre navigateur).
+      </div>
+    </div>
+
     <button class="btn-primary" id="btn-save" type="button" disabled>
       Enregistrer et démarrer
     </button>
@@ -169,9 +183,12 @@
     const btnRefresh = document.getElementById('btn-refresh');
     const groqInput = document.getElementById('groq-key');
     const btnToggleKey = document.getElementById('btn-toggle-key');
+    const deepgramInput = document.getElementById('deepgram-key');
+    const btnToggleDeepgramKey = document.getElementById('btn-toggle-deepgram-key');
     const btnSave = document.getElementById('btn-save');
     const saveStatus = document.getElementById('save-status');
     const linkGroq = document.getElementById('link-groq');
+    const linkDeepgram = document.getElementById('link-deepgram');
 
     // Pas de nodeIntegration : on ne peut pas ouvrir de lien externe
     // directement, on affiche juste l'adresse à copier.
@@ -180,6 +197,14 @@
       navigator.clipboard.writeText('https://console.groq.com/keys').then(() => {
         linkGroq.textContent = 'Lien copié ✓';
         setTimeout(() => { linkGroq.textContent = 'console.groq.com/keys'; }, 1800);
+      }).catch(() => {});
+    });
+
+    linkDeepgram.addEventListener('click', (e) => {
+      e.preventDefault();
+      navigator.clipboard.writeText('https://console.deepgram.com').then(() => {
+        linkDeepgram.textContent = 'Lien copié ✓';
+        setTimeout(() => { linkDeepgram.textContent = 'console.deepgram.com'; }, 1800);
       }).catch(() => {});
     });
 
@@ -229,6 +254,12 @@
       btnToggleKey.textContent = show ? 'Masquer' : 'Afficher';
     });
 
+    btnToggleDeepgramKey.addEventListener('click', () => {
+      const show = deepgramInput.type === 'password';
+      deepgramInput.type = show ? 'text' : 'password';
+      btnToggleDeepgramKey.textContent = show ? 'Masquer' : 'Afficher';
+    });
+
     const whisperStatus = document.getElementById('whisper-status');
 
     // Reçoit la progression du téléchargement automatique de Whisper
@@ -259,7 +290,7 @@
         // saveSetup ne se résout qu'une fois le téléchargement de Whisper
         // terminé (ou après échec géré) côté main.js ; la fenêtre se ferme
         // elle-même via onWhisperSetupProgress ci-dessus une fois "done".
-        await window.churchOverlay.saveSetup(micSelect.value, groqInput.value.trim());
+        await window.churchOverlay.saveSetup(micSelect.value, groqInput.value.trim(), deepgramInput.value.trim());
       } catch (e) {
         saveStatus.className = 'status-line error';
         saveStatus.textContent = 'Erreur lors de l\'enregistrement : ' + (e && e.message ? e.message : e);
