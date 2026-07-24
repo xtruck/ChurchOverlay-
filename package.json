@@ -42,6 +42,7 @@
       "groq-wrapper.js",
       "list-audio-devices.js",
       "rate-limiter.js",
+      "setup-whisper.js",
       "validation.js",
       "whisper-wrapper.js",
       "icon.png",
