@@ -20,6 +20,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const { ensureWhisperInstalled } = require('./setup-whisper');
+const { ensureFfmpegInstalled, resolveFfmpegPath } = require('./setup-ffmpeg');
 
 // main.js vit à la racine du projet (à côté de server.js, overlay.html, etc.),
 // donc APP_ROOT = __dirname. Un ancien `path.join(__dirname, '..')` pointait
@@ -128,7 +129,7 @@ function isFirstRunNeeded() {
 // ---------------------------------------------------------------------------
 function detectAudioDevices() {
   return new Promise((resolve) => {
-    const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
+    const ffmpegPath = resolveFfmpegPath();
     let settled = false;
     const finish = (devices) => {
       if (settled) return;
@@ -251,6 +252,13 @@ function startServer() {
     AUDIO_DEVICE: config.audioDevice,
     GROQ_API_KEY: config.groqApiKey,
     NODE_ENV: 'production',
+    // CORRECTIF : server.js et audio-capture.js lisent FFMPEG_PATH depuis
+    // leur propre process.env, qui n'a jamais connu du binaire installé par
+    // ensureFfmpegInstalled() dans ffmpeg/ — seul main.js (via
+    // resolveFfmpegPath()) sait où il se trouve. Sans cette ligne, le
+    // process enfant retombait sur 'ffmpeg' nu et échouait (ENOENT) sur un
+    // poste sans FFmpeg dans le PATH système.
+    FFMPEG_PATH: resolveFfmpegPath(),
   });
   // Deepgram est optionnel : on ne définit la variable que si une clé est
   // configurée, pour que deepgram.isConfigured() reste false sinon (course
@@ -392,6 +400,34 @@ ipcMain.handle('save-setup', async (_evt, { audioDevice, groqApiKey, deepgramApi
   // culte) était silencieusement indisponible. On le fait maintenant ici,
   // avec la fenêtre de setup encore ouverte pour montrer la progression.
   const sender = _evt.sender;
+
+  // Même raisonnement que pour Whisper ci-dessous : sans cet appel, un poste
+  // non-technique n'a jamais ffmpeg.exe installé automatiquement, et
+  // detectAudioDevices()/server.js échouent silencieusement (spawn ENOENT)
+  // tant que personne n'exécute `npm run setup-ffmpeg` à la main.
+  try {
+    await ensureFfmpegInstalled({
+      onProgress: (msg) => {
+        if (!sender.isDestroyed()) {
+          sender.send('whisper-setup-progress', { done: false, message: msg });
+        }
+      },
+    });
+  } catch (err) {
+    console.error('[main] Échec du téléchargement automatique de FFmpeg:', err.message);
+    // Non bloquant, comme pour Whisper : si un FFmpeg système existe déjà
+    // dans le PATH, resolveFfmpegPath() y retombera au démarrage du
+    // pipeline. On informe simplement que l'installation auto a échoué.
+    if (!sender.isDestroyed()) {
+      sender.send('whisper-setup-progress', {
+        done: false,
+        ok: false,
+        message: 'Échec du téléchargement automatique de FFmpeg (' + err.message + '). ' +
+          'ChurchOverlay tentera d\'utiliser un FFmpeg déjà présent dans le PATH système.',
+      });
+    }
+  }
+
   try {
     await ensureWhisperInstalled({
       onProgress: (msg) => {
