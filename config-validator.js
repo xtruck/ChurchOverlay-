@@ -208,10 +208,20 @@ async function validateSystemConfig() {
   }
 
   // 4. Vérifier le périphérique audio si FFmpeg est disponible
+  // CORRECTIF (auto-détection micro) : AUDIO_DEVICE vide ne signifie plus
+  // "capture désactivée" — audio-capture.js détecte et choisit désormais
+  // un micro automatiquement au démarrage (voir autoDetectDevice() dans
+  // audio-capture.js). L'ancien message ("La capture audio sera
+  // désactivée") était devenu trompeur et aurait fait croire à tort que
+  // rien n'allait se passer.
   if (ffmpegCheck.available && envValidation.config.AUDIO_DEVICE) {
-    console.log('[config-validator] Périphérique audio configuré:', envValidation.config.AUDIO_DEVICE);
+    console.log('[config-validator] Périphérique audio configuré manuellement:', envValidation.config.AUDIO_DEVICE);
   } else if (ffmpegCheck.available) {
-    warnings.push('Aucun périphérique audio configuré (AUDIO_DEVICE). La capture audio sera désactivée.');
+    warnings.push(
+      'Aucun périphérique audio configuré (AUDIO_DEVICE) : un micro sera ' +
+      'détecté et choisi automatiquement au démarrage de la capture ' +
+      '(node list-audio-devices.js permet de vérifier ce choix à l\'avance).'
+    );
   }
 
   return {
