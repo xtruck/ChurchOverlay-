@@ -424,9 +424,9 @@
       // etc.), la fonction s'arrêtait au milieu de son exécution et l'UI
       // restait figée pour toujours sur "Recherche des microphones…", sans
       // jamais afficher le moindre message à l'utilisateur.
-      let devices;
+      let result;
       try {
-        devices = await window.churchOverlay.detectMicrophones(force);
+        result = await window.churchOverlay.detectMicrophones(force);
       } catch (err) {
         elements.btnRefresh.disabled = false;
         elements.micSelect.innerHTML = '<option value="">❌ Erreur de détection</option>';
@@ -440,10 +440,38 @@
       elements.btnRefresh.disabled = false;
       elements.micSelect.innerHTML = '';
 
-      if (!devices || devices.length === 0) {
+      // CORRECTIF (diagnostic précis) : le backend distingue maintenant
+      // POURQUOI la liste est vide (voir diagnoseEmptyResult() dans main.js)
+      // au lieu d'un unique message générique "vérifiez qu'un micro est
+      // branché" qui n'aidait pas quand la vraie cause était, par exemple,
+      // un échec d'énumération DirectShow (pilote audio cassé) — cas où
+      // brancher/débrancher un micro ne change strictement rien.
+      const devices = (result && result.devices) || [];
+      const diagnostic = result && result.diagnostic;
+
+      if (devices.length === 0) {
         elements.micSelect.innerHTML = '<option value="">❌ Aucun microphone détecté</option>';
         elements.micStatus.className = 'status error';
-        elements.micStatus.textContent = "⚠️ Vérifiez qu'un micro est branché, puis cliquez sur Actualiser.";
+        const messages = {
+          enumeration_failed:
+            "⚠️ Windows refuse l'énumération des périphériques audio (pilote audio " +
+            "potentiellement défaillant). Essayez : clic droit sur le son dans la barre " +
+            "des tâches → Paramètres son → Gérer les périphériques sonores, ou " +
+            "redémarrez le service audio Windows, puis cliquez sur Actualiser.",
+          com_failed:
+            "⚠️ L'API Windows utilisée pour lister les périphériques (DirectShow/COM) " +
+            "est indisponible. Un redémarrage de Windows résout généralement ce cas. " +
+            "Cliquez sur Actualiser après redémarrage.",
+          no_dshow_output:
+            '⚠️ FFmpeg a répondu, mais pas dans le format attendu (build FFmpeg ' +
+            'incompatible ?). Cliquez sur Actualiser pour réessayer ; si le problème ' +
+            'persiste, contactez le support avec ce message.',
+          zero_devices:
+            "⚠️ Vérifiez qu'un micro est branché et autorisé dans Windows " +
+            '(Paramètres → Confidentialité → Microphone → Autoriser les applications ' +
+            "de bureau à accéder au micro), puis cliquez sur Actualiser.",
+        };
+        elements.micStatus.textContent = messages[diagnostic] || messages.zero_devices;
         updateSaveEnabled();
         micsLoaded = true;
         return;
