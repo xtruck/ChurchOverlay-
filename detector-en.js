@@ -164,3 +164,4 @@ function detect(text) {
 }
 
 module.exports = { detect, normalize, numberWordsToDigits, BOOKS };
+
