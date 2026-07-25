@@ -315,7 +315,6 @@
       🚀 Enregistrer et démarrer
     </button>
     <div class="status" id="save-status"></div>
-    <div class="status" id="whisper-status"></div>
 
     <div class="footer">
       🔒 Toutes ces informations restent sur votre ordinateur.
@@ -334,7 +333,6 @@
       btnToggleDeepgram: document.getElementById('btn-toggle-deepgram'),
       btnSave: document.getElementById('btn-save'),
       saveStatus: document.getElementById('save-status'),
-      whisperStatus: document.getElementById('whisper-status'),
       linkGroq: document.getElementById('link-groq'),
       linkDeepgram: document.getElementById('link-deepgram'),
     };
@@ -412,15 +410,15 @@
     elements.micSelect.addEventListener('change', updateSaveEnabled);
     elements.groqInput.addEventListener('input', updateSaveEnabled);
 
-    // Whisper setup progress
-    window.churchOverlay.onWhisperSetupProgress((payload) => {
+    // Progression du téléchargement automatique de FFmpeg (si nécessaire)
+    window.churchOverlay.onFfmpegSetupProgress((payload) => {
       const cls = payload.done ? (payload.ok === false ? 'error' : 'success') : 'warning';
-      elements.whisperStatus.className = 'status ' + cls;
-      
+      elements.saveStatus.className = 'status ' + cls;
+
       if (!payload.done) {
-        elements.whisperStatus.innerHTML = '<span class=\"spinner\"></span> ' + (payload.message || '');
+        elements.saveStatus.innerHTML = '<span class=\"spinner\"></span> ' + (payload.message || '');
       } else {
-        elements.whisperStatus.textContent = (payload.ok === false ? '⚠️ ' : '✅ ') + (payload.message || '');
+        elements.saveStatus.textContent = (payload.ok === false ? '⚠️ ' : '✅ ') + (payload.message || '');
       }
 
       if (payload.done) {
@@ -434,14 +432,11 @@
       elements.btnSave.innerHTML = '<span class=\"spinner\"></span> Enregistrement…';
       elements.saveStatus.className = 'status';
       elements.saveStatus.textContent = '';
-      elements.whisperStatus.className = 'status';
-      elements.whisperStatus.textContent = '';
 
       try {
         elements.saveStatus.className = 'status success';
-        elements.saveStatus.textContent = '✅ Configuration enregistrée';
-        elements.whisperStatus.innerHTML = '<span class=\"spinner\"></span> Vérification de Whisper local…';
-        
+        elements.saveStatus.innerHTML = '<span class=\"spinner\"></span> Configuration enregistrée — vérification de FFmpeg…';
+
         await window.churchOverlay.saveSetup(
           elements.micSelect.value,
           elements.groqInput.value.trim(),

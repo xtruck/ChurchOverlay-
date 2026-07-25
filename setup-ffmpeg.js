@@ -43,9 +43,8 @@ function log(msg) {
   console.log(`[setup-ffmpeg] ${msg}`);
 }
 
-// Même logique de téléchargement (avec suivi de progression) que
-// setup-whisper.js — dupliquée ici plutôt que factorisée pour ne pas créer
-// de dépendance croisée entre les deux scripts d'installation.
+// Logique de téléchargement avec suivi de progression, dédiée à FFmpeg
+// (le téléchargement automatique de Whisper local a été retiré en v0.3.0).
 function download(url, destPath, onProgress = () => {}) {
   return new Promise((resolve, reject) => {
     const doRequest = (currentUrl, redirectsLeft) => {

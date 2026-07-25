@@ -181,28 +181,6 @@ async function validateSystemConfig() {
 
   // 3. Vérifier les fichiers requis
   console.log('[config-validator] Vérification des fichiers requis...');
-  
-  const whisperServerPath = path.join(__dirname, 'whisper', 'whisper-server.exe');
-  const whisperServerCheck = checkFileExists(whisperServerPath);
-  if (!whisperServerCheck.exists) {
-    warnings.push('whisper-server.exe non trouvé. La transcription sera désactivée.');
-  } else {
-    console.log('[config-validator] whisper-server.exe trouvé');
-  }
-
-  // Doit rester synchronisé avec MODEL_FILE dans whisper-wrapper.js (même
-  // valeur par défaut 'ggml-base.bin', même variable d'env WHISPER_MODEL).
-  // Un ancien hardcode sur 'ggml-tiny.bin' ici faisait échouer cette
-  // vérification même quand le modèle réellement utilisé (base) était bien
-  // présent, et inversement la validait à tort si seul tiny était présent.
-  const modelFile = process.env.WHISPER_MODEL || 'ggml-base.bin';
-  const modelPath = path.join(__dirname, 'whisper', 'models', modelFile);
-  const modelCheck = checkFileExists(modelPath);
-  if (!modelCheck.exists) {
-    warnings.push(`Modèle Whisper non trouvé (${modelFile}). La transcription sera désactivée.`);
-  } else {
-    console.log(`[config-validator] Modèle Whisper trouvé (${modelFile})`);
-  }
 
   // 4. Vérifier le périphérique audio si FFmpeg est disponible
   if (ffmpegCheck.available && envValidation.config.AUDIO_DEVICE) {

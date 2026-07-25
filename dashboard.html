@@ -520,39 +520,6 @@
       </div>
     </div>
 
-    <!-- Settings -->
-    <div class="glass-card">
-      <div class="section-label">
-        <span>⚙️</span> Configuration
-      </div>
-      <div class="settings-grid">
-        <div class="setting-row">
-          <div class="setting-info">
-            <div class="setting-title">
-              <span>☁️</span> Mode cloud uniquement
-            </div>
-            <div class="setting-desc">Désactive Whisper local — CPU divisé par ~2</div>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" id="toggle-cloud-only" data-testid="toggle-cloud-only" />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="setting-row">
-          <div class="setting-info">
-            <div class="setting-title">
-              <span>🎮</span> Accélération GPU
-            </div>
-            <div class="setting-desc">Whisper local avec GPU NVIDIA (si compatible)</div>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" id="toggle-whisper-gpu" data-testid="toggle-whisper-gpu" />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-      </div>
-    </div>
-
     <!-- Performance Metrics -->
     <div class="glass-card">
       <div class="section-label">
@@ -632,8 +599,6 @@
       btnCopy: document.getElementById('btn-copy'),
       btnChangeMic: document.getElementById('btn-change-mic'),
       toast: document.getElementById('toast'),
-      toggleCloud: document.getElementById('toggle-cloud-only'),
-      toggleGpu: document.getElementById('toggle-whisper-gpu'),
       perfCpu: document.getElementById('perf-cpu'),
       perfRss: document.getElementById('perf-rss'),
       perfHeap: document.getElementById('perf-heap'),
@@ -714,33 +679,9 @@
       await window.churchOverlay.openSetup();
     });
 
-    elements.toggleCloud.addEventListener('change', async () => {
-      elements.toggleCloud.disabled = true;
-      try {
-        await window.churchOverlay.setCloudOnlyMode(elements.toggleCloud.checked);
-        showToast(elements.toggleCloud.checked ? '☁️ Mode cloud activé' : '💻 Mode local activé');
-      } finally {
-        setTimeout(() => { elements.toggleCloud.disabled = false; }, 1000);
-      }
-    });
-
-    elements.toggleGpu.addEventListener('change', async () => {
-      elements.toggleGpu.disabled = true;
-      try {
-        await window.churchOverlay.setWhisperGpu(elements.toggleGpu.checked);
-        showToast(elements.toggleGpu.checked ? '🎮 GPU activé' : '💻 CPU seulement');
-      } finally {
-        setTimeout(() => { elements.toggleGpu.disabled = false; }, 1000);
-      }
-    });
-
     // Initialize
     window.churchOverlay.getStatus().then(render);
     window.churchOverlay.onStatusUpdate(render);
-    window.churchOverlay.getSettings().then(s => {
-      elements.toggleCloud.checked = !!s.cloudOnlyMode;
-      elements.toggleGpu.checked = !!s.whisperGpu;
-    });
     window.churchOverlay.getPerfStats().then(renderPerf);
     window.churchOverlay.onPerfUpdate(renderPerf);
   </script>

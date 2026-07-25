@@ -2,10 +2,20 @@
  * ============================================================================
  *  server.js — Serveur pont WebSocket pour Overlay Versets (Église Mesev)
  * ----------------------------------------------------------------------------
+ *  CHANGELOG v0.3.0 — Suppression complète de Whisper local
+ *    1. whisper-wrapper.js n'est plus chargé du tout : plus aucun code ne
+ *       peut démarrer whisper-server.exe (c'était le plus gros
+ *       consommateur CPU de l'app, ~40-70% d'un cœur en continu quand il
+ *       tournait). Transcription = Groq (cloud) → Deepgram (cloud, si
+ *       clé) uniquement, voir groq-wrapper.js.
+ *    2. console.log / console.error ne sont plus interceptés dans le
+ *       worker : ils partaient déjà en double vers le tableau de bord
+ *       (une fois via stdout/stderr piping du Worker, une fois via un
+ *       postMessage explicite). Un seul chemin reste : stdout/stderr.
+ *
  *  CHANGELOG v0.2.1 — Optimisations de Réactivité (Option A + Bonus)
  *    1. TRANSCRIPT_BUFFER_MAX_CHARS: 200 → 500 (meilleure détection)
  *    2. Audio segments réduits à 5s (via audio-capture.js)
- *    3. CLOUD_ONLY_MODE reste la solution principale pour CPU
  *
  *  CHANGELOG v0.2.0 — Performance & Stability Repair Plan
  *    1. Runs inside a Worker Thread when spawned by main.js
@@ -13,27 +23,19 @@
  *       Backwards-compatible : still runnable as a stand-alone Node process
  *       via `npm run server-only` — the worker-only wiring is gated on
  *       parentPort.
- *    2. CLOUD_ONLY_MODE=1 → whisper-server.exe is NEVER launched. The local
- *       fallback stub just throws so that groq.transcribeWithFallback falls
- *       back to Deepgram (if configured) or reports transcriptionError.
- *       Biggest CPU win : whisper-server.exe was the single biggest CPU
- *       consumer (~40-70% of one core, permanently).
- *    3. Robust temp-file cleanup on SIGINT / SIGTERM / uncaughtException
+ *    2. Robust temp-file cleanup on SIGINT / SIGTERM / uncaughtException
  *       / parentPort shutdown.
- *    4. Under a worker : console.log / console.error / process.exit are
- *       intercepted so main.js gets everything on the message channel.
- *       process.exit() becomes parentPort.postMessage({type:'exit'}) so the
- *       main thread can observe status transitions cleanly.
  *
  *  RÔLE ACTUEL :
  *    Relaie tout message JSON reçu d'un client (ex: test-envoi.js, ou plus
  *    tard le pupitre opérateur / pipeline micro) vers tous les autres clients
  *    connectés — en particulier overlay.html ouvert dans OBS Browser Source.
  *
- *  TRANSCRIPTION (course à 3 niveaux) :
- *    Groq (Whisper large-v3, cloud) → Deepgram (Nova-2, cloud, si clé) →
- *    Whisper local (whisper-wrapper.js, hors ligne). En CLOUD_ONLY_MODE=1
- *    la 3e étape est court-circuitée (voir localTranscribeFn ci-dessous).
+ *  TRANSCRIPTION (course à 2 niveaux, 100% cloud) :
+ *    Groq (Whisper large-v3, cloud) → Deepgram (Nova-2, cloud, si clé
+ *    configurée). Sans internet, la transcription s'arrête et
+ *    transcriptionError est diffusé — il n'y a plus de filet de secours
+ *    local.
  * ============================================================================
  */
 
@@ -47,30 +49,16 @@ const RUNNING_AS_WORKER = !isMainThread && !!parentPort;
 // Gated on RUNNING_AS_WORKER so `node server.js` behaviour is unchanged.
 // -----------------------------------------------------------------------
 if (RUNNING_AS_WORKER) {
-  const origLog = console.log.bind(console);
-  const origErr = console.error.bind(console);
-  const origWarn = console.warn.bind(console);
-
-  const format = (args) => args.map((a) => {
-    if (typeof a === 'string') return a;
-    try { return JSON.stringify(a); } catch (_) { return String(a); }
-  }).join(' ');
-
-  console.log = (...args) => {
-    const text = format(args);
-    try { parentPort.postMessage({ type: 'log', text, isError: false }); } catch (_) {}
-    origLog(...args);
-  };
-  console.warn = (...args) => {
-    const text = format(args);
-    try { parentPort.postMessage({ type: 'log', text, isError: false }); } catch (_) {}
-    origWarn(...args);
-  };
-  console.error = (...args) => {
-    const text = format(args);
-    try { parentPort.postMessage({ type: 'log', text, isError: true }); } catch (_) {}
-    origErr(...args);
-  };
+  // CORRECTIF v0.3.0 — logs dupliqués dans le tableau de bord :
+  // main.js crée ce Worker avec { stdout: true, stderr: true }, ce qui
+  // capture déjà TOUT ce que console.log/warn/error écrit (via
+  // worker.stdout / worker.stderr). Un ancien correctif ajoutait EN PLUS
+  // un postMessage({ type: 'log', ... }) explicite pour chaque appel —
+  // main.js traitait donc les deux, affichant chaque ligne deux fois.
+  // On ne garde ici que ce qui n'est pas déjà couvert par stdout/stderr :
+  // le canal de statut (status: running/stopped/error) et l'arrêt propre.
+  // console.log/warn/error ne sont plus interceptés du tout : le
+  // comportement par défaut du Worker (piping vers stdout/stderr) suffit.
 
   // Graceful shutdown from main.js — triggers the same cleanup path as SIGINT.
   parentPort.on('message', (msg) => {
@@ -84,7 +72,6 @@ if (RUNNING_AS_WORKER) {
 const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
-const whisper = require('./whisper-wrapper');
 const groq = require('./groq-wrapper');
 const deepgram = require('./deepgram-wrapper');
 const audioCapture = require('./audio-capture');
@@ -94,9 +81,6 @@ const { createContextTracker } = require('./context-tracker');
 const { validateAndSanitize } = require('./validation');
 const { createRateLimiter } = require('./rate-limiter');
 const { validateSystemConfig, displayValidationResults } = require('./config-validator');
-
-const CLOUD_ONLY_MODE = process.env.CLOUD_ONLY_MODE === '1' ||
-                       String(process.env.CLOUD_ONLY_MODE || '').toLowerCase() === 'true';
 
 const verseTracker = createContextTracker();
 const rateLimiter = createRateLimiter({
@@ -163,11 +147,9 @@ function broadcast(payload, except) {
 }
 
 console.log(
-  CLOUD_ONLY_MODE
-    ? '[server] ⚡ CLOUD_ONLY_MODE activé — Whisper local désactivé, transcription 100% cloud (CPU optimisé).'
-    : (deepgram.isConfigured()
-        ? '[server] Deepgram configuré — course Groq → Deepgram → local.'
-        : '[server] Deepgram non configuré — course Groq → local.')
+  deepgram.isConfigured()
+    ? '[server] Deepgram configuré — course Groq → Deepgram.'
+    : '[server] Deepgram non configuré — Groq uniquement.'
 );
 
 // Config validation puis démarrage
@@ -219,33 +201,10 @@ async function processTranscript(text) {
   }
 }
 
-// -----------------------------------------------------------------------
-// Local transcription function passed to groq.transcribeWithFallback.
-// In CLOUD_ONLY_MODE we deliberately reject so the fallback chain stops
-// at the cloud tier — never launches whisper-server.exe, never touches
-// CPU for local decoding.
-// -----------------------------------------------------------------------
-const localTranscribeFn = CLOUD_ONLY_MODE
-  ? () => Promise.reject(new Error('CLOUD_ONLY_MODE : Whisper local désactivé'))
-  : (p) => whisper.transcribeFile(p);
-
 function startPipeline() {
-  if (CLOUD_ONLY_MODE) {
-    console.log('[server] ⚡ CLOUD_ONLY_MODE : whisper-server.exe NON démarré. Démarrage de la capture audio…');
-    audioCapture.startRecording()
-      .then(() => console.log('[server] ✅ Capture audio démarrée - Pipeline cloud-only opérationnel (CPU optimisé)'))
-      .catch(pipelineStartFailed);
-    return;
-  }
-
-  console.log('[server] Starting Whisper Speech-to-Text...');
-  whisper.startServer()
-    .then(() => {
-      console.log('[server] Whisper Speech-to-Text prêt et opérationnel');
-      console.log('[server] Démarrage de la capture audio...');
-      return audioCapture.startRecording();
-    })
-    .then(() => console.log('[server] Capture audio démarrée - Pipeline complet opérationnel'))
+  console.log('[server] Démarrage de la capture audio…');
+  audioCapture.startRecording()
+    .then(() => console.log('[server] Capture audio démarrée - Pipeline opérationnel (Groq/Deepgram cloud)'))
     .catch(pipelineStartFailed);
 }
 
@@ -253,28 +212,11 @@ function pipelineStartFailed(err) {
   console.error('[server] Erreur lors du démarrage:', err.message);
   if (err.message.includes('FFmpeg')) {
     console.error('[server] FFmpeg n\'est pas installé - Pipeline audio désactivé');
-  } else if (err.message.includes('whisper-server.exe')) {
-    console.error('[server] Whisper server non trouvé - Pipeline audio désactivé');
   } else {
     console.error('[server] Le serveur continuera sans Speech-to-Text');
   }
   broadcast({ action: 'pipelineError', error: err.message, timestamp: Date.now() });
 }
-
-// Whisper callbacks (log-only path, see comment in original file)
-whisper.on({
-  onTranscript: (result) => {
-    console.log('[server] (log) Transcription whisper reçue en interne:', result.text || '(sans texte)');
-  },
-  onError: (error) => {
-    console.error('[server] Erreur Whisper:', error.message || error);
-    broadcast({
-      action: 'pipelineError',
-      error: 'Whisper local : ' + (error.message || String(error)),
-      timestamp: Date.now(),
-    });
-  },
-});
 
 audioCapture.on({
   onAudioSegment: async (segmentFile) => {
@@ -287,7 +229,7 @@ audioCapture.on({
     }
 
     try {
-      const result = await groq.transcribeWithFallback(segmentFile, localTranscribeFn);
+      const result = await groq.transcribeWithFallback(segmentFile);
       console.log('[server] Transcription (%s):', result.source, result.text || '(sans texte)');
 
       if (result.source === 'groq' || result.source === 'deepgram') {
@@ -406,9 +348,8 @@ function startServer(PORT) {
           timestamp: Date.now(),
           modules: {
             detector: !!detector, bibleLookup: !!bibleLookup,
-            groq: !!groq, whisper: !!whisper, audioCapture: !!audioCapture,
+            groq: !!groq, audioCapture: !!audioCapture,
           },
-          cloudOnlyMode: CLOUD_ONLY_MODE,
           providers: bibleLookup.getProviders(),
           cacheSize: bibleLookup.getCacheSize ? bibleLookup.getCacheSize() : 'unknown',
           connections: wss.clients.size,
@@ -506,11 +447,6 @@ function shutdown(heartbeat) {
   audioCapture.stopRecording()
     .then(() => {
       console.log('[server] Capture audio arrêtée');
-      if (CLOUD_ONLY_MODE) return Promise.resolve();
-      return whisper.stopServer();
-    })
-    .then(() => {
-      if (!CLOUD_ONLY_MODE) console.log('[server] Whisper arrêté');
       cleanup();
     })
     .catch((err) => {

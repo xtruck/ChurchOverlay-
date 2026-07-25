@@ -1,5 +1,21 @@
 # Architecture Pipeline Speech-to-Text - Église Mesev
 
+> ⚠️ **Document en grande partie obsolète.** Il décrit une version plus
+> ancienne du pipeline (Whisper local comme moteur principal). Depuis
+> v0.3.0, Whisper local a été **retiré entièrement** du projet (c'était le
+> plus gros consommateur CPU de l'app). Le pipeline réel est maintenant :
+>
+> ```
+> Micro → audio-capture.js → groq-wrapper.js (cloud) → deepgram-wrapper.js
+>       (repli, si configuré) → detector.js → bible-lookup-with-api.js
+>       → server.js (WebSocket) → overlay.html (OBS)
+> ```
+>
+> Tout ce qui suit ce bandeau concernant `whisper-wrapper.js`,
+> `whisper-server.exe`, ou les modèles `.bin` ne s'applique plus. Ce
+> fichier mériterait une réécriture complète — non faite ici pour rester
+> concentré sur la suppression de Whisper, le pipeline et les logs.
+
 ## Vue d'ensemble
 
 Système complet de transcription audio en temps réel pour affichage automatique de versets bibliques via OBS Studio.

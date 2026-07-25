@@ -6,38 +6,48 @@
  *    1. server.js is now loaded as a Worker Thread (worker_threads.Worker)
  *       instead of being spawn()'d as a separate Node process.
  *       → single Node runtime, ~50% RAM cut, no more ghost processes.
- *    2. CLOUD_ONLY_MODE : if a Groq key is configured, the local
- *       whisper-server.exe is NOT launched (biggest CPU win). Auto-ON by
- *       default when Groq key detected; togglable from the dashboard.
- *    3. Default Whisper model is now ggml-tiny.en.bin (~75MB) instead of
- *       ggml-base.bin — smaller install, faster fallback when it IS used.
- *    4. saveConfig() is now async (fs.promises.writeFile) → no more UI
+ *    2. saveConfig() is now async (fs.promises.writeFile) → no more UI
  *       freeze on save.
- *    5. notifyDashboard() is debounced to a single flush every 500ms → the
+ *    3. notifyDashboard() is debounced to a single flush every 500ms → the
  *       dashboard stays responsive under heavy log flow.
- *    6. detectAudioDevices() is cached in memory + on disk (24h TTL); only
+ *    4. detectAudioDevices() is cached in memory + on disk (24h TTL); only
  *       refreshed on explicit user request from setup.html.
- *    7. Robust temp-file cleanup on SIGINT / SIGTERM / uncaughtException
+ *    5. Robust temp-file cleanup on SIGINT / SIGTERM / uncaughtException
  *       / worker exit.
- *    8. Worker memory limit + auto-restart on worker crash (max 3 crashes
+ *    6. Worker memory limit + auto-restart on worker crash (max 3 crashes
  *       in 60s → hard stop to avoid a restart storm).
- *    9. Worker auto-recycling every 4h to prevent slow leaks in long
+ *    7. Worker auto-recycling every 4h to prevent slow leaks in long
  *       services (>2h).
- *   10. FFmpeg device enumeration : soft-terminate at 10s, then hard-kill,
+ *    8. FFmpeg device enumeration : soft-terminate at 10s, then hard-kill,
  *       with one retry on transient failure.
- *   11. Bounded log ring buffer with proper eviction (kept at 200; head
+ *    9. Bounded log ring buffer with proper eviction (kept at 200; head
  *       eviction on every push, no periodic scan).
- *   12. Perf monitor exposes live CPU % / RSS MB to the dashboard.
- *   13. Whisper GPU flag (manual, off by default) — persisted in config.
+ *   10. Perf monitor exposes live CPU % / RSS MB to the dashboard.
+ *
+ *  CHANGELOG v0.3.0 — Suppression complète de Whisper local
+ *    - whisper-server.exe n'était déjà plus lancé quand CLOUD_ONLY_MODE
+ *      était actif, mais tout le code, le téléchargement (~75-466MB) et
+ *      les bascules GPU/cloud restaient présents et pouvaient se
+ *      réactiver (config existante avec cloudOnlyMode:false, régression
+ *      future...). Ce risque CPU/RAM est maintenant éliminé à la racine :
+ *      plus aucun code ne peut démarrer whisper-server.exe. Transcription
+ *      = Groq (cloud) → Deepgram (cloud, si clé) uniquement.
+ *    - Correctif log dupliqué : chaque ligne de log du worker server.js
+ *      était envoyée deux fois au dashboard (une fois via le message IPC
+ *      explicite 'log', une fois via le flux stdout/stderr du Worker qui
+ *      capture déjà tout ce qu'écrit console.log/console.error). Le
+ *      dashboard affichait donc chaque ligne en double. Corrigé en ne
+ *      gardant qu'un seul chemin (le flux stdout/stderr du Worker).
  *
  *  RÔLE :
  *    - Fournir une icône d'application (barre des tâches + system tray)
  *    - Au premier lancement : demander le micro + la clé Groq via une petite
  *      fenêtre graphique (aucun PowerShell, aucun .env à éditer à la main)
  *    - Ensuite : démarrer automatiquement server.js (le pipeline complet
- *      micro → Whisper/Groq → detector → overlay) dans un Worker Thread
+ *      micro → Groq/Deepgram (cloud) → detector → overlay) dans un Worker
+ *      Thread
  *    - Fenêtre principale = tableau de bord (statut serveur, URL overlay à
- *      coller dans OBS, bouton "changer de micro", mode cloud only, CPU/RAM)
+ *      coller dans OBS, bouton "changer de micro", CPU/RAM)
  * ============================================================================
  */
 
@@ -50,7 +60,6 @@ const fsp = require('fs').promises;
 const { spawn } = require('child_process');
 const { Worker } = require('worker_threads');
 const os = require('os');
-const { ensureWhisperInstalled } = require('./setup-whisper');
 const { ensureFfmpegInstalled, resolveFfmpegPath } = require('./setup-ffmpeg');
 const perfMonitor = require('./perf-monitor');
 
@@ -98,7 +107,6 @@ let serverStatus = 'starting'; // starting | running | error | stopped
 // manuel, etc.). Chaque instance ouvre son propre process Electron + son
 // propre Worker Thread server.js, qui tente chacun de :
 //   - démarrer FFmpeg sur le même micro (conflit de périphérique),
-//   - lancer whisper-server.exe (double consommation CPU si mode local),
 //   - binder le serveur WebSocket sur le même port 8765 : la 1ère instance
 //     réussit, la 2e échoue silencieusement (EADDRINUSE) et son dashboard
 //     reste bloqué sur "connexion..." indéfiniment car son propre worker ne
@@ -127,9 +135,10 @@ if (!gotSingleInstanceLock) {
 // ---------------------------------------------------------------------------
 // Configuration locale (remplace le .env manuel — jamais de secret en dur)
 // ---------------------------------------------------------------------------
-// v0.2.0 : la config gère maintenant aussi { cloudOnlyMode, whisperGpu,
-// logBatchInterval }. Migration : ces champs prennent des valeurs par
-// défaut sûres si absents (voir loadConfig()).
+// v0.3.0 : la config ne gère plus que { audioDevice, groqApiKey,
+// deepgramApiKey, logBatchInterval } — cloudOnlyMode et whisperGpu ont
+// disparu avec Whisper local. Migration : ces champs prennent des valeurs
+// par défaut sûres si absents (voir loadConfig()).
 // ---------------------------------------------------------------------------
 function decryptKey(encryptedBase64, label) {
   if (!encryptedBase64) return null;
@@ -170,24 +179,13 @@ function loadConfig() {
       audioDevice: raw.audioDevice,
       groqApiKey: raw.groqApiKey,
       deepgramApiKey,
-      cloudOnlyMode: raw.cloudOnlyMode,
-      whisperGpu: raw.whisperGpu,
     }).catch((e) => console.error('[main] Migration config échouée:', e.message));
   }
-
-  // v0.2.0 defaults : cloud-only auto-ON if a Groq key is present, unless
-  // the user has explicitly opted out (cloudOnlyMode === false).
-  const hasCloudKey = !!groqApiKey || !!deepgramApiKey;
-  const cloudOnlyMode = typeof raw.cloudOnlyMode === 'boolean'
-    ? raw.cloudOnlyMode
-    : hasCloudKey; // default ON when a cloud key is configured
 
   return {
     audioDevice: raw.audioDevice,
     groqApiKey,
     deepgramApiKey,
-    cloudOnlyMode,
-    whisperGpu: !!raw.whisperGpu,
     logBatchInterval: Number.isFinite(raw.logBatchInterval) ? raw.logBatchInterval : DASHBOARD_FLUSH_MS,
   };
 }
@@ -219,8 +217,6 @@ async function saveConfigAsync(config) {
       toWrite.deepgramApiKey = config.deepgramApiKey;
     }
   }
-  if (typeof config.cloudOnlyMode === 'boolean') toWrite.cloudOnlyMode = config.cloudOnlyMode;
-  if (typeof config.whisperGpu === 'boolean') toWrite.whisperGpu = config.whisperGpu;
   if (Number.isFinite(config.logBatchInterval)) toWrite.logBatchInterval = config.logBatchInterval;
 
   // Atomic-ish : write to tmp, rename. Avoids half-written config on crash.
@@ -402,13 +398,6 @@ function startServer() {
     GROQ_API_KEY: config.groqApiKey,
     NODE_ENV: 'production',
     FFMPEG_PATH: resolveFfmpegPath(),
-    // v0.2.0 : default model shipped is tiny.en (~75MB) — user choice.
-    WHISPER_MODEL: process.env.WHISPER_MODEL || 'ggml-tiny.en.bin',
-    // v0.2.0 : manual GPU toggle (whisper-wrapper.js reads WHISPER_GPU).
-    WHISPER_GPU: config.whisperGpu ? '1' : '',
-    // v0.2.0 : cloud-only bypass of local Whisper. Auto-ON when Groq key
-    // detected (user choice). Skips launching whisper-server.exe entirely.
-    CLOUD_ONLY_MODE: config.cloudOnlyMode ? '1' : '',
     APP_ROOT,
   });
   if (config.deepgramApiKey) {
@@ -449,15 +438,12 @@ function startServer() {
 
   worker.on('message', (msg) => {
     if (!msg || typeof msg !== 'object') return;
-    if (msg.type === 'log') {
-      appendLog(msg.text || '', !!msg.isError);
-      if (msg.text && msg.text.includes('Serveur WebSocket démarré')) {
-        serverStatus = 'running';
-        refreshTrayMenu();
-        scheduleDashboardFlush();
-      }
-      return;
-    }
+    // NOTE : les logs eux-mêmes n'arrivent plus ici — voir CHANGELOG v0.3.0
+    // ci-dessus. worker.stdout/worker.stderr (branchés juste au-dessus)
+    // capturent déjà tout ce qu'écrit console.log/console.error dans le
+    // worker ; les traiter aussi ici doublait chaque ligne dans le
+    // tableau de bord. Seuls les changements de statut explicites
+    // ({ type: 'status' }, envoyés par server.js) transitent par ce canal.
     if (msg.type === 'status') {
       serverStatus = msg.status || serverStatus;
       refreshTrayMenu();
@@ -517,9 +503,9 @@ let shuttingDownWorker = false;
 let onWorkerStopped = null;
 
 /**
- * Demande au worker server.js de s'arrêter proprement (arrêt de
- * whisper-server.exe et de FFmpeg inclus) via postMessage, avec un repli
- * sur .terminate() forcé si le worker ne s'arrête pas de lui-même sous 5s.
+ * Demande au worker server.js de s'arrêter proprement (arrêt de FFmpeg
+ * inclus) via postMessage, avec un repli sur .terminate() forcé si le
+ * worker ne s'arrête pas de lui-même sous 5s.
  */
 function stopServerGracefully(cb) {
   if (!worker) { cb && cb(); return; }
@@ -614,67 +600,26 @@ function flushDashboard() {
 ipcMain.handle('detect-microphones', async (_evt, opts) => detectAudioDevices({ force: !!(opts && opts.force) }));
 
 ipcMain.handle('save-setup', async (_evt, { audioDevice, groqApiKey, deepgramApiKey }) => {
-  // v0.2.0 : cloud-only defaults ON when a Groq key is present at save
-  // time (user's choice). User can flip it off from the dashboard toggle.
-  const existing = loadConfig() || {};
-  const hasCloudKey = !!groqApiKey || !!deepgramApiKey;
-  const cloudOnlyMode = typeof existing.cloudOnlyMode === 'boolean'
-    ? existing.cloudOnlyMode
-    : hasCloudKey;
-
-  await saveConfigAsync({
-    audioDevice,
-    groqApiKey,
-    deepgramApiKey,
-    cloudOnlyMode,
-    whisperGpu: !!existing.whisperGpu,
-  });
+  await saveConfigAsync({ audioDevice, groqApiKey, deepgramApiKey });
 
   const sender = _evt.sender;
 
   try {
     await ensureFfmpegInstalled({
       onProgress: (msg) => {
-        if (!sender.isDestroyed()) sender.send('whisper-setup-progress', { done: false, message: msg });
+        if (!sender.isDestroyed()) sender.send('ffmpeg-setup-progress', { done: false, message: msg });
       },
     });
+    if (!sender.isDestroyed()) {
+      sender.send('ffmpeg-setup-progress', { done: true, ok: true, message: 'Prêt.' });
+    }
   } catch (err) {
     console.error('[main] Échec du téléchargement automatique de FFmpeg:', err.message);
     if (!sender.isDestroyed()) {
-      sender.send('whisper-setup-progress', {
-        done: false, ok: false,
+      sender.send('ffmpeg-setup-progress', {
+        done: true, ok: false,
         message: 'Échec du téléchargement automatique de FFmpeg (' + err.message + '). ' +
           'ChurchOverlay tentera d\'utiliser un FFmpeg déjà présent dans le PATH système.',
-      });
-    }
-  }
-
-  // In cloud-only mode we do NOT block startup on Whisper install (skipping
-  // it entirely also skips the big model download — huge first-run win).
-  if (cloudOnlyMode) {
-    if (!sender.isDestroyed()) {
-      sender.send('whisper-setup-progress', {
-        done: true, ok: true,
-        message: 'Mode cloud uniquement activé — Whisper local ignoré (téléchargement évité).',
-      });
-    }
-    return true;
-  }
-
-  try {
-    await ensureWhisperInstalled({
-      onProgress: (msg) => {
-        if (!sender.isDestroyed()) sender.send('whisper-setup-progress', { done: false, message: msg });
-      },
-    });
-    if (!sender.isDestroyed()) sender.send('whisper-setup-progress', { done: true, ok: true, message: 'Whisper local prêt.' });
-  } catch (err) {
-    console.error('[main] Échec du téléchargement automatique de Whisper:', err.message);
-    if (!sender.isDestroyed()) {
-      sender.send('whisper-setup-progress', {
-        done: true, ok: false,
-        message: 'Échec du téléchargement de Whisper local (' + err.message + '). ' +
-          'ChurchOverlay démarrera quand même avec Groq (cloud) uniquement.',
       });
     }
   }
@@ -698,27 +643,9 @@ ipcMain.handle('open-setup', async () => {
 ipcMain.handle('get-settings', async () => {
   const cfg = loadConfig() || {};
   return {
-    cloudOnlyMode: !!cfg.cloudOnlyMode,
-    whisperGpu: !!cfg.whisperGpu,
     hasGroqKey: !!cfg.groqApiKey,
     hasDeepgramKey: !!cfg.deepgramApiKey,
   };
-});
-
-ipcMain.handle('set-cloud-only-mode', async (_evt, enabled) => {
-  const cfg = loadConfig() || {};
-  await saveConfigAsync({ ...cfg, cloudOnlyMode: !!enabled });
-  appendLog(`Mode cloud uniquement ${enabled ? 'activé' : 'désactivé'}. Redémarrage du pipeline…`, false);
-  restartServer();
-  return true;
-});
-
-ipcMain.handle('set-whisper-gpu', async (_evt, enabled) => {
-  const cfg = loadConfig() || {};
-  await saveConfigAsync({ ...cfg, whisperGpu: !!enabled });
-  appendLog(`Accélération GPU Whisper ${enabled ? 'activée' : 'désactivée'}. Redémarrage du pipeline…`, false);
-  restartServer();
-  return true;
 });
 
 ipcMain.handle('get-perf-stats', async () => perfMonitor.getStats());

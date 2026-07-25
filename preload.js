@@ -2,9 +2,13 @@
  * ============================================================================
  *  electron/preload.js — Pont sécurisé renderer <-> main
  * ----------------------------------------------------------------------------
+ *  CHANGELOG v0.3.0 — Suppression complète de Whisper local
+ *    - setCloudOnlyMode / setWhisperGpu supprimés (plus de toggle : la
+ *      transcription est désormais toujours 100% cloud, Groq -> Deepgram).
+ *    - onWhisperSetupProgress renommé onFfmpegSetupProgress (seul FFmpeg
+ *      est encore téléchargé automatiquement au premier lancement).
+ *
  *  CHANGELOG v0.2.0
- *    + setCloudOnlyMode(enabled)   — dashboard toggle "Mode cloud uniquement"
- *    + setWhisperGpu(enabled)      — dashboard toggle "Accélération GPU"
  *    + getPerfStats()              — CPU % / RSS MB polling for dashboard
  *    + getSettings()               — read persisted flags on dashboard load
  *    + onPerfUpdate(cb)            — pushed CPU/RAM samples (2s interval)
@@ -34,8 +38,6 @@ contextBridge.exposeInMainWorld('churchOverlay', {
 
   // --- v0.2.0 : réglages runtime exposés au dashboard ---------------------
   getSettings: () => ipcRenderer.invoke('get-settings'),
-  setCloudOnlyMode: (enabled) => ipcRenderer.invoke('set-cloud-only-mode', !!enabled),
-  setWhisperGpu: (enabled) => ipcRenderer.invoke('set-whisper-gpu', !!enabled),
   getPerfStats: () => ipcRenderer.invoke('get-perf-stats'),
 
   // --- Mises à jour poussées depuis main.js (notifyDashboard) -------------
@@ -53,10 +55,10 @@ contextBridge.exposeInMainWorld('churchOverlay', {
     return () => ipcRenderer.removeListener('perf-update', listener);
   },
 
-  // --- Progression du téléchargement automatique de Whisper (setup.html) --
-  onWhisperSetupProgress: (callback) => {
+  // --- Progression du téléchargement automatique de FFmpeg (setup.html) --
+  onFfmpegSetupProgress: (callback) => {
     const listener = (_evt, payload) => callback(payload);
-    ipcRenderer.on('whisper-setup-progress', listener);
-    return () => ipcRenderer.removeListener('whisper-setup-progress', listener);
+    ipcRenderer.on('ffmpeg-setup-progress', listener);
+    return () => ipcRenderer.removeListener('ffmpeg-setup-progress', listener);
   },
 });

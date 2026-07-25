@@ -8,16 +8,16 @@
  *    3. maxAgeMs: 3600000 (1h) → 180000 (3 minutes) pour nettoyage plus rapide
  *
  *  ARCHITECTURE:
- *    Micro → audio-capture.js → whisper-wrapper.js → server.js → overlay.html
+ *    Micro → audio-capture.js → groq-wrapper.js (cloud) → server.js → overlay.html
  *
  *  FONCTIONNALITÉS:
  *    - Capture audio en continu (streaming)
  *    - Segmentation intelligente (VAD - Voice Activity Detection)
- *    - Envoi des segments audio à Whisper
+ *    - Envoi des segments audio à Groq/Deepgram (transcription cloud)
  *    - Gestion du buffer circulaire pour éviter la perte de données
  *
  *  CONFIGURATION:
- *    - Sample rate: 16000 Hz (recommandé pour Whisper)
+ *    - Sample rate: 16000 Hz (recommandé pour Whisper large-v3 côté Groq)
  *    - Channels: 1 (mono)
  *    - Format: PCM 16-bit
  * ============================================================================
@@ -29,7 +29,7 @@ const path = require('path');
 
 // Configuration
 const CONFIG = {
-  sampleRate: 16000,      // Whisper recommande 16000 Hz
+  sampleRate: 16000,      // recommandé pour Whisper large-v3 (Groq)
   channels: 1,            // Mono
   bitDepth: 16,           // PCM 16-bit
   segmentDuration: 5000,  // 5 secondes (optimisé pour réactivité)

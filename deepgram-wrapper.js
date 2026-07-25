@@ -2,9 +2,9 @@
  * ============================================================================
  *  deepgram-wrapper.js — Transcription cloud Deepgram (Nova-2), 2e fournisseur
  * ----------------------------------------------------------------------------
- *  Même forme de résultat que groq-wrapper.js/whisper-wrapper.js (result.text),
- *  pour que server.js puisse traiter les trois sources de façon identique
- *  dans la course à 3 niveaux (Groq → Deepgram → local).
+ *  Même forme de résultat que groq-wrapper.js (result.text), pour que
+ *  server.js puisse traiter les deux sources de façon identique dans la
+ *  course à 2 niveaux (Groq → Deepgram).
  *
  *  Prérequis : DEEPGRAM_API_KEY doit être défini en variable d'environnement.
  *  Optionnel : si absent, ce module reste inerte (transcribeFile rejette
