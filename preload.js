@@ -31,6 +31,9 @@ contextBridge.exposeInMainWorld('churchOverlay', {
   // "Actualiser" de l'assistant de configuration relisait toujours le cache
   // disque (jusqu'à 24h) au lieu de relancer un vrai scan FFmpeg.
   detectMicrophones: (force) => ipcRenderer.invoke('detect-microphones', { force: !!force }),
+  // CORRECTIF : installe FFmpeg (si absent) avant la toute première
+  // détection de micros — voir commentaire dans main.js.
+  ensureFfmpegReady: () => ipcRenderer.invoke('ensure-ffmpeg-ready'),
   saveSetup: (audioDevice, groqApiKey, deepgramApiKey) =>
     ipcRenderer.invoke('save-setup', { audioDevice, groqApiKey, deepgramApiKey }),
 
