@@ -326,7 +326,19 @@ let compteurClients = 0;
 
 function verifyOrigin(info) {
   const origin = info.origin;
-  return origin === undefined || origin === 'null';
+  // Une page HTML chargée en local (overlay.html ouvert directement, sans
+  // serveur web devant) n'a pas d'origine web classique. Selon le moteur du
+  // navigateur, cette absence d'origine est signalée différemment :
+  //   - Chrome/Edge/Firefox classiques -> origin === undefined
+  //   - La plupart des Chromium         -> origin === 'null' (chaîne littérale)
+  //   - CEF (moteur d'OBS Studio "Source Navigateur")
+  //                                     -> origin === 'file://' (littéral)
+  // Les trois cas correspondent au même scénario légitime (fichier local,
+  // pas un site web tiers) : on les accepte tous les trois. C'est ce
+  // dernier cas (CEF/OBS) qui manquait, causant un rejet en boucle de la
+  // connexion WebSocket dès qu'overlay.html est ajouté comme Source
+  // Navigateur "Fichier local" dans OBS.
+  return origin === undefined || origin === 'null' || origin === 'file://';
 }
 
 function startServer(PORT) {
@@ -607,4 +619,3 @@ function workerSafeExit(code) {
   }
   process.exit(code);
 }
-
