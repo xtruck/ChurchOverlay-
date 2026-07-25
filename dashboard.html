@@ -133,6 +133,55 @@
     gap: 16px;
   }
 
+  /* CORRECTIF (audit) — Bannière d'alerte pipeline. Avant, une panne
+     (micro, réseau, transcription) n'était visible que noyée dans le
+     flux de logs bruts. Cette bannière la met en évidence, avec une
+     couleur selon la sévérité. */
+  .alert-banner {
+    display: none;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    border: 1px solid transparent;
+    animation: alertIn 0.25s ease-out;
+  }
+  .alert-banner.show { display: flex; }
+  .alert-banner.severity-error {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.4);
+  }
+  .alert-banner.severity-warning {
+    background: rgba(245, 158, 11, 0.12);
+    border-color: rgba(245, 158, 11, 0.4);
+  }
+  .alert-banner .alert-icon { font-size: 20px; line-height: 1; }
+  .alert-banner .alert-body { flex: 1; min-width: 0; }
+  .alert-banner .alert-title { font-weight: 600; margin-bottom: 2px; }
+  .alert-banner.severity-error .alert-title { color: var(--error); }
+  .alert-banner.severity-warning .alert-title { color: var(--warning); }
+  .alert-banner .alert-message {
+    color: var(--text-secondary);
+    font-size: 13px;
+    word-break: break-word;
+  }
+  .alert-banner .alert-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 2px 6px;
+    border-radius: 6px;
+  }
+  .alert-banner .alert-close:hover { background: rgba(255, 255, 255, 0.08); }
+
+  @keyframes alertIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
   .status-indicator {
     position: relative;
     width: 48px;
@@ -493,6 +542,16 @@
       <p class="subtitle">Tableau de bord — Transcription & Overlay Biblique</p>
     </div>
 
+    <!-- Alert Banner (CORRECTIF audit — erreurs pipeline visibles) -->
+    <div class="alert-banner" id="alert-banner" data-testid="alert-banner">
+      <span class="alert-icon" id="alert-icon">⚠️</span>
+      <div class="alert-body">
+        <div class="alert-title" id="alert-title">Alerte</div>
+        <div class="alert-message" id="alert-message"></div>
+      </div>
+      <button class="alert-close" id="alert-close" title="Fermer">✕</button>
+    </div>
+
     <!-- Status Card -->
     <div class="glass-card status-card">
       <div class="status-indicator" id="status-indicator">
@@ -603,6 +662,11 @@
       perfRss: document.getElementById('perf-rss'),
       perfHeap: document.getElementById('perf-heap'),
       perfUptime: document.getElementById('perf-uptime'),
+      alertBanner: document.getElementById('alert-banner'),
+      alertIcon: document.getElementById('alert-icon'),
+      alertTitle: document.getElementById('alert-title'),
+      alertMessage: document.getElementById('alert-message'),
+      alertClose: document.getElementById('alert-close'),
     };
 
     let currentOverlayUrl = '';
@@ -649,6 +713,46 @@
       elements.perfHeap.textContent = (p.heapUsedMB != null) ? p.heapUsedMB.toFixed(0) : '—';
       elements.perfUptime.textContent = (p.uptimeSec != null) ? String(p.uptimeSec) : '—';
     }
+
+    // --- CORRECTIF (audit) : bannière d'alerte pipeline --------------------
+    // 'error' (micro/FFmpeg/démarrage) reste affichée jusqu'à fermeture
+    // manuelle ou redémarrage réussi du pipeline (voir main.js : envoie
+    // { clear: true } quand le statut repasse à 'running').
+    // 'warning' (transcription/verset ponctuellement indisponible) s'efface
+    // automatiquement après 30s sans nouvelle alerte du même type, pour ne
+    // pas rester bloquée à l'écran après le retour à la normale.
+    const ALERT_ICONS = { error: '🔴', warning: '⚠️' };
+    const ALERT_TITLES = {
+      audioCaptureError: 'Problème micro / FFmpeg',
+      pipelineError: 'Le pipeline ne démarre pas',
+      transcriptionError: 'Transcription indisponible',
+      lookupError: 'Verset introuvable',
+    };
+    let alertAutoHideTimer = null;
+
+    function showAlert(payload) {
+      if (payload && payload.clear) { hideAlert(); return; }
+      const severity = payload.severity === 'error' ? 'error' : 'warning';
+      elements.alertBanner.className = 'alert-banner show severity-' + severity;
+      elements.alertIcon.textContent = ALERT_ICONS[severity];
+      elements.alertTitle.textContent = ALERT_TITLES[payload.code] || 'Alerte';
+      elements.alertMessage.textContent = payload.message || '';
+
+      if (alertAutoHideTimer) clearTimeout(alertAutoHideTimer);
+      if (severity === 'warning') {
+        // 30s de silence sans nouvelle alerte du même type = on considère
+        // que ça s'est rétabli tout seul (ex: micro-coupure réseau).
+        alertAutoHideTimer = setTimeout(hideAlert, 30000);
+      }
+    }
+
+    function hideAlert() {
+      elements.alertBanner.className = 'alert-banner';
+      if (alertAutoHideTimer) { clearTimeout(alertAutoHideTimer); alertAutoHideTimer = null; }
+    }
+
+    elements.alertClose.addEventListener('click', hideAlert);
+    window.churchOverlay.onPipelineAlert(showAlert);
 
     // Event listeners
     elements.btnRestart.addEventListener('click', async () => {
