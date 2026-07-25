@@ -25,6 +25,7 @@
 
 const { spawn } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 // Configuration
@@ -36,7 +37,17 @@ const CONFIG = {
   overlapDuration: 400,   // 400ms de chevauchement (meilleur contexte)
   silenceThreshold: 0.3,  // Seuil de silence pour VAD (0-1)
   minSpeechDuration: 500, // Durée minimum de parole en ms
-  tempDir: path.join(__dirname, 'temp-audio'),
+  // IMPORTANT : ne jamais utiliser un chemin dérivé de __dirname ici.
+  // L'app est packagée avec "asar": true (package.json), donc en
+  // production __dirname pointe DANS l'archive app.asar : un fichier
+  // unique en lecture seule qui ne fait qu'imiter une arborescence de
+  // dossiers pour la LECTURE. Toute tentative d'y CRÉER un vrai dossier
+  // (fs.mkdirSync) échoue avec "ENOTDIR: not a directory", car Node essaie
+  // de traiter le fichier app.asar comme s'il s'agissait d'un dossier.
+  // os.tmpdir() est toujours un vrai dossier accessible en écriture,
+  // indépendant du packaging — c'est l'endroit standard pour des fichiers
+  // temporaires côté OS (Windows: %TEMP%, macOS/Linux: /tmp).
+  tempDir: path.join(os.tmpdir(), 'churchoverlay-audio'),
   // Configurables sans modifier le code : FFMPEG_PATH et AUDIO_DEVICE.
   ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
   audioDevice: process.env.AUDIO_DEVICE || '',
@@ -348,5 +359,3 @@ module.exports = {
   cleanupTempFiles,
   getConfig: () => ({ ...CONFIG }),
 };
-
-
