@@ -90,6 +90,41 @@ let recentCrashes = [];
 let serverStatus = 'starting'; // starting | running | error | stopped
 
 // ---------------------------------------------------------------------------
+// Verrou mono-instance (correctif)
+// ----------------------------------------------------------------------------
+// PROBLÈME OBSERVÉ : ralentissement machine + dashboard bloqué + pipeline qui
+// ne se connecte jamais. Cause racine : rien n'empêchait de lancer l'app
+// plusieurs fois (double-clic, raccourci de démarrage Windows + lancement
+// manuel, etc.). Chaque instance ouvre son propre process Electron + son
+// propre Worker Thread server.js, qui tente chacun de :
+//   - démarrer FFmpeg sur le même micro (conflit de périphérique),
+//   - lancer whisper-server.exe (double consommation CPU si mode local),
+//   - binder le serveur WebSocket sur le même port 8765 : la 1ère instance
+//     réussit, la 2e échoue silencieusement (EADDRINUSE) et son dashboard
+//     reste bloqué sur "connexion..." indéfiniment car son propre worker ne
+//     passe jamais à l'état "running".
+// Résultat cumulé : CPU/RAM doublés (ou plus) + un dashboard qui semble figé.
+//
+// CORRECTIF : un seul verrou système par utilisateur Windows. Toute 2e
+// tentative de lancement se ferme immédiatement et redonne le focus à la
+// fenêtre déjà ouverte de la 1ère instance, au lieu de créer un doublon.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    // Une 2e tentative de lancement a eu lieu : on ramène la fenêtre
+    // existante au premier plan au lieu de laisser un doublon se créer.
+    const win = mainWindow || null;
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Configuration locale (remplace le .env manuel — jamais de secret en dur)
 // ---------------------------------------------------------------------------
 // v0.2.0 : la config gère maintenant aussi { cloudOnlyMode, whisperGpu,
