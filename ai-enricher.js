@@ -129,36 +129,3 @@ module.exports = {
   generatePostServiceRecap,
   findCrossReferences,
 };
-Intégration dans server.js
-const aiEnricher = require('./ai-enricher');
-const features = require('./config/features.json');
-
-// Toutes les X secondes, si activé, détecte le thème
-let themeDetectionTimer = null;
-function startThemeDetectionLoop() {
-  if (!features.ai.themeDetection.enabled) return;
-  const intervalMs = features.ai.themeDetection.intervalSec * 1000;
-  themeDetectionTimer = setInterval(async () => {
-    const theme = await aiEnricher.detectSermonTheme(transcriptBuffer);
-    if (theme) {
-      broadcast({ action: 'themeDetected', ...theme, timestamp: Date.now() });
-    }
-  }, intervalMs);
-}
-
-// À la fin de processTranscript, si cross-refs activés
-if (features.ai.crossReferences.enabled) {
-  const refs = await aiEnricher.findCrossReferences(verse.reference, verse.text);
-  if (refs.length > 0) {
-    broadcast({ action: 'crossReferences', mainRef: verse.reference, refs });
-  }
-}
-
-// Handler pour post-service
-if (sanitized.action === 'generateRecap') {
-  const recap = await aiEnricher.generatePostServiceRecap(
-    fullTranscriptHistory,
-    verseHistory
-  );
-  ws.send(JSON.stringify({ action: 'recapGenerated', recap }));
-}
