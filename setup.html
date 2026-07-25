@@ -381,6 +381,38 @@
       elements.micSelect.innerHTML = '<option value="">🔍 Recherche des microphones…</option>';
       elements.btnRefresh.disabled = true;
 
+      // CORRECTIF : la détection de micros dépend de FFmpeg, qui n'était
+      // installé automatiquement qu'au clic sur "Enregistrer et démarrer" —
+      // trop tard, puisqu'il faut déjà avoir choisi un micro à ce moment-là.
+      // Sur un poste neuf (FFmpeg absent du PATH), ça produisait toujours
+      // "Aucun microphone détecté", même avec un micro branché. On installe
+      // maintenant FFmpeg (si besoin — no-op s'il est déjà présent) avant
+      // la toute première tentative de détection.
+      elements.micSelect.innerHTML = '<option value="">⬇️ Préparation de FFmpeg…</option>';
+      try {
+        const ffmpegResult = await window.churchOverlay.ensureFfmpegReady();
+        if (!ffmpegResult || ffmpegResult.ok === false) {
+          elements.btnRefresh.disabled = false;
+          elements.micSelect.innerHTML = '<option value="">❌ FFmpeg indisponible</option>';
+          elements.micStatus.className = 'status error';
+          elements.micStatus.textContent = '⚠️ Impossible d\'installer FFmpeg automatiquement' +
+            (ffmpegResult && ffmpegResult.error ? ` (${ffmpegResult.error})` : '') +
+            '. Vérifiez votre connexion internet, puis cliquez sur Actualiser.';
+          updateSaveEnabled();
+          micsLoaded = true;
+          return;
+        }
+      } catch (err) {
+        elements.btnRefresh.disabled = false;
+        elements.micSelect.innerHTML = '<option value="">❌ FFmpeg indisponible</option>';
+        elements.micStatus.className = 'status error';
+        elements.micStatus.textContent = `⚠️ Erreur FFmpeg : ${err && err.message ? err.message : err}. Cliquez sur Actualiser pour réessayer.`;
+        updateSaveEnabled();
+        micsLoaded = true;
+        return;
+      }
+      elements.micSelect.innerHTML = '<option value="">🔍 Recherche des microphones…</option>';
+
       // CORRECTIF : avant, "Actualiser" appelait detectMicrophones() sans
       // argument, donc rappelait toujours le cache disque (jusqu'à 24h) au
       // lieu de relancer un vrai scan FFmpeg — le bouton semblait ne rien
@@ -401,6 +433,7 @@
         elements.micStatus.className = 'status error';
         elements.micStatus.textContent = `⚠️ Erreur : ${err && err.message ? err.message : err}. Cliquez sur Actualiser pour réessayer.`;
         updateSaveEnabled();
+        micsLoaded = true;
         return;
       }
 
@@ -412,6 +445,7 @@
         elements.micStatus.className = 'status error';
         elements.micStatus.textContent = "⚠️ Vérifiez qu'un micro est branché, puis cliquez sur Actualiser.";
         updateSaveEnabled();
+        micsLoaded = true;
         return;
       }
 
@@ -424,6 +458,7 @@
       elements.micStatus.className = 'status success';
       elements.micStatus.textContent = `✅ ${devices.length} microphone(s) détecté(s)`;
       updateSaveEnabled();
+      micsLoaded = true;
     }
 
     // Event listeners
@@ -431,18 +466,28 @@
     elements.micSelect.addEventListener('change', updateSaveEnabled);
     elements.groqInput.addEventListener('input', updateSaveEnabled);
 
-    // Progression du téléchargement automatique de FFmpeg (si nécessaire)
+    // Progression du téléchargement automatique de FFmpeg (si nécessaire).
+    // Utilisée à deux moments : au premier chargement (avant detect-microphones,
+    // voir loadMicrophones) et au clic sur "Enregistrer et démarrer". On route
+    // l'affichage vers micStatus tant que les micros ne sont pas encore chargés,
+    // vers saveStatus ensuite (pendant/à la sauvegarde).
+    let micsLoaded = false;
     window.churchOverlay.onFfmpegSetupProgress((payload) => {
+      const target = micsLoaded ? elements.saveStatus : elements.micStatus;
       const cls = payload.done ? (payload.ok === false ? 'error' : 'success') : 'warning';
-      elements.saveStatus.className = 'status ' + cls;
+      target.className = 'status ' + cls;
 
       if (!payload.done) {
-        elements.saveStatus.innerHTML = '<span class=\"spinner\"></span> ' + (payload.message || '');
+        target.innerHTML = '<span class="spinner"></span> ' + (payload.message || '');
+      } else if (!micsLoaded) {
+        // Le message "done" pendant la phase de détection initiale est géré
+        // par loadMicrophones() elle-même (succès/échec de detectMicrophones) ;
+        // on évite de l'écraser ici.
       } else {
-        elements.saveStatus.textContent = (payload.ok === false ? '⚠️ ' : '✅ ') + (payload.message || '');
+        target.textContent = (payload.ok === false ? '⚠️ ' : '✅ ') + (payload.message || '');
       }
 
-      if (payload.done) {
+      if (payload.done && micsLoaded) {
         setTimeout(() => window.close(), payload.ok === false ? 2500 : 1000);
       }
     });
