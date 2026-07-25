@@ -62,6 +62,7 @@ const { Worker } = require('worker_threads');
 const os = require('os');
 const { ensureFfmpegInstalled, resolveFfmpegPath } = require('./setup-ffmpeg');
 const perfMonitor = require('./perf-monitor');
+const { parseDshowAudioDevices } = require('./dshow-parser');
 
 // main.js vit à la racine du projet (à côté de server.js, overlay.html, etc.),
 // donc APP_ROOT = __dirname.
@@ -298,12 +299,12 @@ function enumerateDevicesLive() {
     ff.stderr.on('data', (d) => { output += d.toString(); });
 
     ff.on('close', () => {
-      const devices = [];
-      output.split(/\r?\n/).forEach((line) => {
-        const m = line.match(/"([^"]+)"\s*\(audio\)/);
-        if (m) devices.push(m[1]);
-      });
-      finish(devices);
+      // CORRECTIF : l'ancienne regex ne matchait que le format
+      // '"Nom" (audio)' inline, absent des builds FFmpeg Windows les plus
+      // courants (Gyan.dev/BtbN), qui utilisent un format à deux sections
+      // ("DirectShow audio devices" + noms sans suffixe). Résultat : la
+      // liste était systématiquement vide sur la majorité des machines.
+      finish(parseDshowAudioDevices(output));
     });
     ff.on('error', () => finish(null));
 
