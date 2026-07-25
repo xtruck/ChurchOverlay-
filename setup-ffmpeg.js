@@ -116,9 +116,38 @@ function extractZipWindows(zipPath, destDir) {
  * @returns {string}
  */
 function resolveFfmpegPath() {
-  if (fs.existsSync(FFMPEG_EXE)) return FFMPEG_EXE;
+  try {
+    if (fs.statSync(FFMPEG_EXE).isFile() && fs.statSync(FFMPEG_EXE).size > 0) return FFMPEG_EXE;
+  } catch (_) { /* n'existe pas ou inaccessible : on continue vers les autres options */ }
   if (process.env.FFMPEG_PATH) return process.env.FFMPEG_PATH;
   return 'ffmpeg';
+}
+
+/**
+ * Supprime les restes d'une tentative précédente interrompue (téléchargement
+ * coupé, extraction interrompue par un antivirus, double-clic sur
+ * "Actualiser" pendant qu'une installation était déjà en cours, etc.).
+ *
+ * BUG CORRIGÉ : sans ce nettoyage préalable, un dossier ffmpeg/_extract_tmp
+ * ou un fichier ffmpeg/_ffmpeg-win64.zip laissé dans un état incohérent par
+ * une tentative avortée provoquait, à la tentative suivante, une erreur
+ * Node « ENOTDIR: not a directory » (un des éléments du chemin n'était plus
+ * du tout ce que le code attendait) — et comme rien ne le nettoyait jamais,
+ * l'app restait bloquée sur cette même erreur à chaque nouvel essai, sans
+ * moyen de s'en sortir autrement qu'en supprimant le dossier à la main.
+ * Si `fs.rmSync` échoue malgré tout (fichier verrouillé par l'antivirus,
+ * permissions), on avale l'erreur ici : la suite de l'installation le
+ * détectera et échouera avec un message clair plutôt que de planter cette
+ * fonction de nettoyage elle-même.
+ */
+function cleanStaleArtifacts() {
+  const zipPath = path.join(FFMPEG_DIR, '_ffmpeg-win64.zip');
+  const extractTmpDir = path.join(FFMPEG_DIR, '_extract_tmp');
+  for (const p of [zipPath, extractTmpDir]) {
+    try {
+      fs.rmSync(p, { recursive: true, force: true });
+    } catch (_) { /* non-fatal : au pire la tentative suivante échouera avec un message clair */ }
+  }
 }
 
 /**
@@ -144,43 +173,74 @@ async function ensureFfmpegInstalled(opts = {}) {
     return { installed: false, skipped: true };
   }
 
+  // CORRECTIF : `existsSync` seul ne garantit pas que FFMPEG_EXE est un
+  // fichier valide (il pourrait s'agir d'un dossier ou d'un fichier
+  // corrompu/tronqué laissé par une tentative précédente) — dans ce cas on
+  // le retire et on réinstalle plutôt que de faussement le considérer prêt.
   if (fs.existsSync(FFMPEG_EXE)) {
-    report('ffmpeg.exe déjà présent dans ffmpeg/, téléchargement ignoré.');
-    return { installed: true, skipped: false };
+    let isValidFile = false;
+    try { isValidFile = fs.statSync(FFMPEG_EXE).isFile() && fs.statSync(FFMPEG_EXE).size > 0; } catch (_) {}
+    if (isValidFile) {
+      report('ffmpeg.exe déjà présent dans ffmpeg/, téléchargement ignoré.');
+      return { installed: true, skipped: false };
+    }
+    report('ffmpeg.exe présent mais invalide (dossier ou fichier vide) — réinstallation.');
+    try { fs.rmSync(FFMPEG_EXE, { recursive: true, force: true }); } catch (_) {}
   }
 
+  // CORRECTIF : si FFMPEG_DIR lui-même existe déjà comme un FICHIER (et non
+  // un dossier) — par exemple suite à une corruption externe — mkdirSync
+  // recursive échoue avec EEXIST au lieu de simplement "déjà là". On
+  // normalise avant de continuer.
+  if (fs.existsSync(FFMPEG_DIR) && !fs.statSync(FFMPEG_DIR).isDirectory()) {
+    try { fs.rmSync(FFMPEG_DIR, { force: true }); } catch (_) {}
+  }
   fs.mkdirSync(FFMPEG_DIR, { recursive: true });
 
+  // Nettoie tout reste d'une tentative précédente avortée AVANT de
+  // commencer — c'est ce qui manquait et causait l'erreur ENOTDIR en boucle.
+  cleanStaleArtifacts();
+
   const zipPath = path.join(FFMPEG_DIR, '_ffmpeg-win64.zip');
-  report('Téléchargement de FFmpeg (build Windows x64 statique)...');
-  await download(FFMPEG_ZIP_URL, zipPath, onProgress);
-
   const extractTmpDir = path.join(FFMPEG_DIR, '_extract_tmp');
-  report('Extraction de l\'archive...');
-  extractZipWindows(zipPath, extractTmpDir);
 
-  // L'archive contient un dossier versionné (ex.
-  // ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe) dont le nom exact change
-  // à chaque build : on le retrouve dynamiquement plutôt que de le coder en
-  // dur, puis on ne copie que ffmpeg.exe (ffplay.exe/ffprobe.exe ne sont pas
-  // utilisés par cette app, inutile d'alourdir le paquet).
-  const topLevelEntries = fs.readdirSync(extractTmpDir);
-  const versionedDir = topLevelEntries.length === 1
-    ? path.join(extractTmpDir, topLevelEntries[0])
-    : extractTmpDir;
-  const binDir = path.join(versionedDir, 'bin');
-  const sourceDir = fs.existsSync(binDir) ? binDir : versionedDir;
-  const sourceExe = path.join(sourceDir, 'ffmpeg.exe');
+  try {
+    report('Téléchargement de FFmpeg (build Windows x64 statique)...');
+    await download(FFMPEG_ZIP_URL, zipPath, onProgress);
 
-  if (!fs.existsSync(sourceExe)) {
-    fs.rmSync(extractTmpDir, { recursive: true, force: true });
-    fs.rmSync(zipPath, { force: true });
-    throw new Error(`ffmpeg.exe introuvable dans l'archive extraite (${sourceDir})`);
+    report('Extraction de l\'archive...');
+    extractZipWindows(zipPath, extractTmpDir);
+
+    // L'archive contient un dossier versionné (ex.
+    // ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe) dont le nom exact change
+    // à chaque build : on le retrouve dynamiquement plutôt que de le coder en
+    // dur, puis on ne copie que ffmpeg.exe (ffplay.exe/ffprobe.exe ne sont pas
+    // utilisés par cette app, inutile d'alourdir le paquet).
+    const topLevelEntries = fs.readdirSync(extractTmpDir);
+    const versionedDir = topLevelEntries.length === 1
+      ? path.join(extractTmpDir, topLevelEntries[0])
+      : extractTmpDir;
+    const binDir = path.join(versionedDir, 'bin');
+    const sourceDir = fs.existsSync(binDir) ? binDir : versionedDir;
+    const sourceExe = path.join(sourceDir, 'ffmpeg.exe');
+
+    if (!fs.existsSync(sourceExe)) {
+      throw new Error(`ffmpeg.exe introuvable dans l'archive extraite (${sourceDir})`);
+    }
+    fs.copyFileSync(sourceExe, FFMPEG_EXE);
+  } catch (err) {
+    // Quel que soit l'échec (réseau, extraction, archive inattendue...), on
+    // nettoie systématiquement pour que la PROCHAINE tentative reparte d'un
+    // état propre au lieu d'accumuler des restes qui la feraient échouer
+    // différemment (c'était la source du bug ENOTDIR répété).
+    cleanStaleArtifacts();
+    throw new Error(
+      `Échec de l'installation de FFmpeg (${err.message}). ` +
+      'Les fichiers temporaires ont été nettoyés — cliquez sur Actualiser pour réessayer.'
+    );
   }
-  fs.copyFileSync(sourceExe, FFMPEG_EXE);
 
-  fs.rmSync(extractTmpDir, { recursive: true, force: true });
-  fs.rmSync(zipPath, { force: true });
+  cleanStaleArtifacts();
   report('ffmpeg.exe installé dans ffmpeg/.');
 
   return { installed: true, skipped: false };
