@@ -15,12 +15,18 @@
 const SCHEMAS = {
   showVerse: {
     required: ['action', 'reference', 'text'],
-    optional: ['durationMs'],
+    optional: ['durationMs', 'text_fr', 'text_en', 'langMode', 'provider', 'lang', 'autoDetected'],
     validators: {
       action: (value) => value === 'showVerse',
       reference: (value) => typeof value === 'string' && value.length > 0 && value.length <= 200,
       text: (value) => typeof value === 'string' && value.length > 0 && value.length <= 5000,
-      durationMs: (value) => typeof value === 'number' && value > 0 && value <= 3600000 // Max 1 heure
+      durationMs: (value) => typeof value === 'number' && value > 0 && value <= 3600000, // Max 1 heure
+      text_fr: (value) => value === null || (typeof value === 'string' && value.length <= 5000),
+      text_en: (value) => value === null || (typeof value === 'string' && value.length <= 5000),
+      langMode: (value) => typeof value === 'string' && ['fr', 'en', 'both'].includes(value),
+      provider: (value) => typeof value === 'string' && value.length <= 100,
+      lang: (value) => typeof value === 'string' && ['fr', 'en'].includes(value),
+      autoDetected: (value) => typeof value === 'boolean'
     }
   },
   hideVerse: {
@@ -42,11 +48,48 @@ const SCHEMAS = {
   },
   lookupReference: {
     required: ['action', 'reference'],
-    optional: ['durationMs'],
+    optional: ['durationMs', 'language'],
     validators: {
       action: (value) => value === 'lookupReference',
       reference: (value) => typeof value === 'string' && value.length > 0 && value.length <= 200,
-      durationMs: (value) => typeof value === 'number' && value > 0 && value <= 3600000
+      durationMs: (value) => typeof value === 'number' && value > 0 && value <= 3600000,
+      language: (value) => typeof value === 'string' && ['fr', 'en', 'both'].includes(value.toLowerCase())
+    }
+  },
+  setLanguage: {
+    required: ['action', 'language'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'setLanguage',
+      language: (value) => typeof value === 'string' && ['fr', 'en', 'both'].includes(value.toLowerCase())
+    }
+  },
+  setTranslation: {
+    required: ['action', 'language', 'code'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'setTranslation',
+      language: (value) => typeof value === 'string' && ['fr', 'en'].includes(value.toLowerCase()),
+      code: (value) => typeof value === 'string' && /^[a-z0-9_-]{2,20}$/i.test(value)
+    }
+  },
+  getState: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'getState' }
+  },
+  getHistory: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'getHistory' }
+  },
+  replayVerse: {
+    required: ['action', 'id'],
+    optional: ['durationMs'],
+    validators: {
+      action: (value) => value === 'replayVerse',
+      id: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
+      durationMs: (value) => typeof value === 'number' && value > 0 && value <= 3600000,
     }
   },
   diagnostic: {
@@ -153,3 +196,4 @@ module.exports = {
   validateAndSanitize,
   SCHEMAS
 };
+
