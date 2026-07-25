@@ -254,30 +254,72 @@ let deviceCacheMem = null; // { ts, devices }
 
 async function detectAudioDevices({ force = false } = {}) {
   // 1) cache mémoire
-  if (!force && deviceCacheMem && (Date.now() - deviceCacheMem.ts) < DEVICE_CACHE_TTL_MS) {
-    return deviceCacheMem.devices;
+  // CORRECTIF (cache empoisonné) : on ne sert JAMAIS depuis le cache un
+  // résultat vide (0 micro). Avant ce correctif, une détection ratée (ex.
+  // FFmpeg absent/cassé au tout premier lancement) mettait "0 micro" en
+  // cache pour 24h, dans un fichier qui SURVIT à une réinstallation
+  // (userData n'est jamais touché par l'installeur NSIS). Résultat :
+  // même après avoir réparé FFmpeg et réinstallé l'appli, l'écran de
+  // configuration continuait de servir ce résultat périmé au premier
+  // chargement (qui n'utilise pas force=true), donnant l'impression que
+  // rien n'était réparé. Un résultat non-vide reste caché normalement
+  // (c'est un scan FFmpeg de ~1-2s à éviter de refaire à chaque ouverture).
+  if (!force && deviceCacheMem && deviceCacheMem.devices.length > 0 &&
+      (Date.now() - deviceCacheMem.ts) < DEVICE_CACHE_TTL_MS) {
+    return { devices: deviceCacheMem.devices, diagnostic: null, fromCache: true };
   }
   // 2) cache disque
   if (!force) {
     try {
       const raw = await fsp.readFile(DEVICE_CACHE_PATH(), 'utf8');
       const parsed = JSON.parse(raw);
-      if (parsed && Array.isArray(parsed.devices) && Number.isFinite(parsed.ts) &&
-          (Date.now() - parsed.ts) < DEVICE_CACHE_TTL_MS) {
+      if (parsed && Array.isArray(parsed.devices) && parsed.devices.length > 0 &&
+          Number.isFinite(parsed.ts) && (Date.now() - parsed.ts) < DEVICE_CACHE_TTL_MS) {
         deviceCacheMem = parsed;
-        return parsed.devices;
+        return { devices: parsed.devices, diagnostic: null, fromCache: true };
       }
     } catch (_) { /* cache miss */ }
   }
 
   // 3) live enumeration
-  const devices = await enumerateDevicesLive();
-  const payload = { ts: Date.now(), devices };
-  deviceCacheMem = payload;
-  fsp.mkdir(path.dirname(DEVICE_CACHE_PATH()), { recursive: true })
-    .then(() => fsp.writeFile(DEVICE_CACHE_PATH(), JSON.stringify(payload), 'utf8'))
-    .catch(() => {}); // non-fatal
-  return devices;
+  const { devices, diagnostic } = await enumerateDevicesLive();
+  // On ne persiste QUE les résultats non-vides (voir commentaire ci-dessus) :
+  // un résultat vide reste toujours re-tenté au prochain appel, même sans
+  // clic explicite sur "Actualiser".
+  if (devices.length > 0) {
+    const payload = { ts: Date.now(), devices };
+    deviceCacheMem = payload;
+    fsp.mkdir(path.dirname(DEVICE_CACHE_PATH()), { recursive: true })
+      .then(() => fsp.writeFile(DEVICE_CACHE_PATH(), JSON.stringify(payload), 'utf8'))
+      .catch(() => {}); // non-fatal
+  }
+  return { devices, diagnostic, fromCache: false };
+}
+
+/**
+ * CORRECTIF (diagnostic) : avant, un résultat vide affichait toujours le
+ * même message générique "vérifiez qu'un micro est branché", qu'il
+ * s'agisse (a) d'une machine sans aucun micro, (b) d'un FFmpeg qui ne sait
+ * pas parler dshow (mauvais build/plateforme), ou (c) d'un échec
+ * d'énumération DirectShow lui-même (ex. un pilote audio cassé fait
+ * planter l'énumération COM — FFmpeg logue alors littéralement "Could not
+ * enumerate audio devices", AVANT même d'afficher la moindre liste). Ces
+ * trois cas demandent des solutions totalement différentes, mais
+ * l'utilisateur n'avait aucun moyen de les distinguer. On les détecte
+ * maintenant explicitement pour donner un message actionnable.
+ */
+function diagnoseEmptyResult(rawOutput) {
+  const out = String(rawOutput || '');
+  if (/Could not enumerate audio devices/i.test(out)) {
+    return 'enumeration_failed'; // Windows/pilote a refusé l'énumération elle-même
+  }
+  if (/Could not enumerate system devices/i.test(out)) {
+    return 'com_failed'; // API COM DirectShow indisponible
+  }
+  if (!/dshow/i.test(out)) {
+    return 'no_dshow_output'; // FFmpeg n'a produit aucune sortie dshow reconnaissable
+  }
+  return 'zero_devices'; // énumération réussie, 0 micro physiquement présent
 }
 
 function enumerateDevicesLive() {
@@ -285,13 +327,15 @@ function enumerateDevicesLive() {
 
   const attempt = () => new Promise((resolve) => {
     let settled = false;
-    const finish = (devices) => { if (!settled) { settled = true; resolve(devices); } };
+    const finish = (devices, rawOutput) => {
+      if (!settled) { settled = true; resolve({ devices, rawOutput }); }
+    };
 
     let ff;
     try {
       ff = spawn(ffmpegPath, ['-hide_banner', '-list_devices', 'true', '-f', 'dshow', '-i', 'dummy']);
-    } catch (_) {
-      finish(null);
+    } catch (err) {
+      finish(null, `spawn a échoué : ${err.message}`);
       return;
     }
 
@@ -304,20 +348,28 @@ function enumerateDevicesLive() {
       // courants (Gyan.dev/BtbN), qui utilisent un format à deux sections
       // ("DirectShow audio devices" + noms sans suffixe). Résultat : la
       // liste était systématiquement vide sur la majorité des machines.
-      finish(parseDshowAudioDevices(output));
+      finish(parseDshowAudioDevices(output), output);
     });
-    ff.on('error', () => finish(null));
+    ff.on('error', (err) => finish(null, `erreur process : ${err.message}`));
 
     // Soft-terminate at 10s, hard-kill 2s later.
     const softKill = setTimeout(() => { try { ff.kill('SIGTERM'); } catch (_) {} }, 10000);
-    const hardKill = setTimeout(() => { try { ff.kill('SIGKILL'); } catch (_) {} finish(null); }, 12000);
+    const hardKill = setTimeout(() => { try { ff.kill('SIGKILL'); } catch (_) {} finish(null, 'délai dépassé (FFmpeg ne répond pas)'); }, 12000);
     ff.on('close', () => { clearTimeout(softKill); clearTimeout(hardKill); });
   });
 
-  return attempt().then((devices) => {
-    if (devices && devices.length >= 0 && devices !== null) return devices;
-    // one retry on transient failure
-    return attempt().then((d) => d || []);
+  return attempt().then(({ devices, rawOutput }) => {
+    if (devices && devices.length > 0) return { devices, diagnostic: null };
+    // one retry on transient failure (devices === null, i.e. spawn/erreur —
+    // pas la peine de re-essayer si on a simplement trouvé 0 périphérique
+    // via une énumération qui a, elle, bien réussi)
+    if (devices === null) {
+      return attempt().then(({ devices: d2, rawOutput: raw2 }) => ({
+        devices: d2 || [],
+        diagnostic: (d2 && d2.length > 0) ? null : diagnoseEmptyResult(raw2),
+      }));
+    }
+    return { devices: [], diagnostic: diagnoseEmptyResult(rawOutput) };
   });
 }
 
