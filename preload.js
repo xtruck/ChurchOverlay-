@@ -61,4 +61,13 @@ contextBridge.exposeInMainWorld('churchOverlay', {
     ipcRenderer.on('ffmpeg-setup-progress', listener);
     return () => ipcRenderer.removeListener('ffmpeg-setup-progress', listener);
   },
+
+  // --- CORRECTIF (audit) : alertes pipeline visibles (dashboard.html) -----
+  // { code, severity: 'error'|'warning', message, timestamp } ou
+  // { clear: true } pour effacer la bannière (ex: après un redémarrage OK).
+  onPipelineAlert: (callback) => {
+    const listener = (_evt, payload) => callback(payload);
+    ipcRenderer.on('pipeline-alert', listener);
+    return () => ipcRenderer.removeListener('pipeline-alert', listener);
+  },
 });
