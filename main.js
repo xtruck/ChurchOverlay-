@@ -630,6 +630,26 @@ function flushDashboard() {
 // ---------------------------------------------------------------------------
 ipcMain.handle('detect-microphones', async (_evt, opts) => detectAudioDevices({ force: !!(opts && opts.force) }));
 
+// CORRECTIF : avant, FFmpeg n'était installé qu'au clic sur "Enregistrer et
+// démarrer" (save-setup), mais la détection des micros (appelée dès
+// l'ouverture de l'écran de configuration) en dépend déjà. Sur un poste
+// neuf, ça formait un cercle vicieux : pas de FFmpeg -> détection échoue en
+// silence -> "Aucun microphone détecté" affiché même quand un micro existe
+// bel et bien. setup.html appelle maintenant ceci AVANT detect-microphones.
+ipcMain.handle('ensure-ffmpeg-ready', async (_evt) => {
+  const sender = _evt.sender;
+  try {
+    await ensureFfmpegInstalled({
+      onProgress: (msg) => {
+        if (!sender.isDestroyed()) sender.send('ffmpeg-setup-progress', { done: false, message: msg });
+      },
+    });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
 ipcMain.handle('save-setup', async (_evt, { audioDevice, groqApiKey, deepgramApiKey }) => {
   await saveConfigAsync({ audioDevice, groqApiKey, deepgramApiKey });
 
