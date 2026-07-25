@@ -480,4 +480,3 @@ if (require.main === module) {
     process.exit(failed > 0 ? 1 : 0);
   })();
 }
-
