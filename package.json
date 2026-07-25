@@ -1,7 +1,7 @@
 {
   "name": "churchoverlay",
   "productName": "ChurchOverlay",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Overlay de versets bibliques en direct — micro → FFmpeg → Groq/Deepgram (cloud) → detector → overlay.html, packagé en application Windows installable.",
   "author": "ChurchOverlay",
   "main": "main.js",
