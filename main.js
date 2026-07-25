@@ -66,6 +66,15 @@ const perfMonitor = require('./perf-monitor');
 // main.js vit à la racine du projet (à côté de server.js, overlay.html, etc.),
 // donc APP_ROOT = __dirname.
 const APP_ROOT = __dirname;
+
+// CORRECTIF (audit) — sur un PC avec peu de RAM/un GPU intégré faible,
+// le processus GPU d'Electron peut lui-même consommer beaucoup de
+// ressources ou provoquer des ralentissements/saccades. ChurchOverlay
+// n'a besoin d'aucun rendu 3D/accéléré (juste du texte et des cartes en
+// CSS) : désactiver l'accélération matérielle retire ce processus GPU
+// dédié et est l'optimisation Electron la plus efficace pour du matériel
+// limité. Sans effet notable sur un PC récent.
+app.disableHardwareAcceleration();
 const USER_DATA = () => app.getPath('userData');
 const CONFIG_PATH = () => path.join(USER_DATA(), 'config.json');
 const DEVICE_CACHE_PATH = () => path.join(USER_DATA(), 'audio-devices.cache.json');
@@ -448,6 +457,27 @@ function startServer() {
       serverStatus = msg.status || serverStatus;
       refreshTrayMenu();
       scheduleDashboardFlush();
+      // Un retour à 'running' signifie que le pipeline vient de (re)démarrer
+      // proprement : on efface toute alerte affichée, elle ne s'applique
+      // plus forcément.
+      if (msg.status === 'running' && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('pipeline-alert', { clear: true });
+      }
+      return;
+    }
+
+    // CORRECTIF (audit) — voir server.js/notifyAlert(). Poussé immédiatement
+    // (pas de debounce comme pour les logs) : une panne réseau/micro doit
+    // être visible sans délai pour l'équipe régie.
+    if (msg.type === 'alert') {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('pipeline-alert', {
+          code: msg.code,
+          severity: msg.severity || 'warning',
+          message: msg.message || '',
+          timestamp: msg.timestamp || Date.now(),
+        });
+      }
       return;
     }
   });
