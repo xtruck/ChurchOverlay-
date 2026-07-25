@@ -1,0 +1,51 @@
+{
+  "id": "nuit",
+  "name": "Nuit — Doré Nuit",
+  "author": "system",
+  "readonly": true,
+  "description": "Fond bleu nuit dégradé, accents dorés, effets complets (croix, halo, particules). Thème par défaut, adapté aux salles obscurcies.",
+  "colors": {
+    "background": {
+      "type": "gradient",
+      "stops": [
+        { "color": "#060D24", "position": 0 },
+        { "color": "#0E1E4A", "position": 48 },
+        { "color": "#2F5FBF", "position": 88 }
+      ],
+      "angle": 165
+    },
+    "accent": "#D9BB6C",
+    "accentBright": "#F4E3A6",
+    "text": "#FFFFFF",
+    "reference": "#F4E3A6"
+  },
+  "typography": {
+    "verseFontFamily": "Merriweather",
+    "verseFontWeight": 700,
+    "verseFontSize": "clamp(2.4rem, 4.6vw, 5.2rem)",
+    "referenceFontFamily": "Manrope",
+    "referenceLetterSpacing": "0.14em"
+  },
+  "effects": {
+    "showCross": true,
+    "showRays": true,
+    "showHalo": true,
+    "showParticles": true,
+    "showGrain": true,
+    "borderRadius": "28px",
+    "blurBackdrop": "26px",
+    "goldSeparator": true
+  },
+  "animations": {
+    "entryAnimation": "focus-in",
+    "entrySpeed": 1.1,
+    "exitAnimation": "fondu",
+    "kineticTypography": false
+  },
+  "backgroundImage": {
+    "type": "none",
+    "source": null,
+    "kenBurns": false,
+    "opacity": 0
+  }
+}
