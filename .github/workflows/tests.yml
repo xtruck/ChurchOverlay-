@@ -1,0 +1,44 @@
+name: Tests
+
+# Exécute la suite de tests (npm test) à chaque push et pull request sur main.
+# Avant ce fichier, aucun workflow ne lançait les tests automatiquement :
+# seul CodeQL (analyse statique) tournait. Une régression pouvait donc être
+# mergée sur main sans qu'aucun test ne soit exécuté par CI.
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20.x, 22.x]
+
+    steps:
+      - name: Checkout du dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Vérifier la syntaxe de tous les fichiers .js
+        run: |
+          for f in $(git ls-files '*.js'); do
+            node --check "$f"
+          done
+
+      - name: Lancer la suite de tests
+        run: npm test
+
+      - name: Audit des dépendances de production
+        run: npm audit --omit=dev --audit-level=high
