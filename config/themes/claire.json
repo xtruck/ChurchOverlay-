@@ -1,0 +1,51 @@
+{
+  "id": "claire",
+  "name": "Claire — Sobre minimaliste",
+  "author": "system",
+  "readonly": true,
+  "description": "Fond blanc-crème, typographie sombre, aucune animation. Idéal pour projections en journée sans fenêtres obscurcies.",
+  "colors": {
+    "background": {
+      "type": "gradient",
+      "stops": [
+        { "color": "#F5F1E8", "position": 0 },
+        { "color": "#EFE8D6", "position": 48 },
+        { "color": "#DDD1AF", "position": 88 }
+      ],
+      "angle": 165
+    },
+    "accent": "#7A5C1E",
+    "accentBright": "#9A7A2E",
+    "text": "#1A150C",
+    "reference": "#7A5C1E"
+  },
+  "typography": {
+    "verseFontFamily": "Georgia, 'Times New Roman', serif",
+    "verseFontWeight": 400,
+    "verseFontSize": "clamp(2.2rem, 4.2vw, 4.8rem)",
+    "referenceFontFamily": "Manrope",
+    "referenceLetterSpacing": "0.10em"
+  },
+  "effects": {
+    "showCross": false,
+    "showRays": false,
+    "showHalo": false,
+    "showParticles": false,
+    "showGrain": false,
+    "borderRadius": "0px",
+    "blurBackdrop": "0px",
+    "goldSeparator": true
+  },
+  "animations": {
+    "entryAnimation": "focus-in",
+    "entrySpeed": 1.1,
+    "exitAnimation": "fondu",
+    "kineticTypography": false
+  },
+  "backgroundImage": {
+    "type": "none",
+    "source": null,
+    "kenBurns": false,
+    "opacity": 0
+  }
+}
