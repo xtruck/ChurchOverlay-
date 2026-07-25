@@ -92,8 +92,55 @@ Fichiers livrés dans ce round
 
 Non touché intentionnellement
 -------------------------------
-- theme-loader.js et obs-controller.js eux-mêmes : syntaxiquement corrects,
-  mais fonctionnalité non finalisée / non branchée. Les modifier sans
-  spec claire serait introduire du comportement non demandé.
 - config/features.json : toutes les features expérimentales (IA, thèmes
   custom, multi-scène OBS) restent désactivées par défaut, comme avant.
+
+Mise à jour — chantier "thèmes personnalisables" terminé
+-----------------------------------------------------------
+Suite à ta décision de finir cette fonctionnalité, avec deux thèmes :
+"nuit" (sombre/doré) et "claire" (clair/sobre).
+
+Format de données retenu : celui déjà utilisé par mesev-default.json
+(colors.accent / colors.background / effects.borderRadius, etc.) — c'est
+le seul des deux formats déjà présents dans le dépôt qui correspondait au
+code réel de themeToCss() dans theme-loader.js. L'autre format
+(colors.or / colors.nuit, vu dans sobre-clair.json) a été abandonné car
+incohérent avec le code, pas avec l'autre fichier JSON.
+
+Fichiers livrés :
+- config/themes/nuit.json (nouveau) — reprise exacte de mesev-default.json,
+  renommé "nuit", marqué readonly: true.
+- config/themes/claire.json (nouveau) — reprise de sobre-clair.json,
+  converti au format colors.accent/colors.background, renommé "claire",
+  marqué readonly: true.
+- theme-loader.js (complété) — ajout de duplicateTheme(), getActiveTheme(),
+  setActiveTheme() (persisté dans config/design.activeTheme de
+  features.json). saveTheme()/deleteTheme() protègent désormais tout thème
+  readonly (pas seulement mesev-default en dur). themeToCss() hérite
+  maintenant dynamiquement du thème par défaut réel (nuit) au lieu de
+  valeurs codées en dur.
+- test/test-theme-loader.js (réécrit) — 31 assertions, toutes contre
+  nuit/claire et l'API réellement implémentée. Passe intégralement
+  (node test/test-theme-loader.js).
+- package.json — ajout de theme-loader.js, obs-controller.js,
+  config/themes/**/*, config/features.json à build.files (nécessaires
+  pour qu'un futur branchement UI fonctionne dans le .exe packagé, pas
+  seulement en dev).
+
+Conservé sans y toucher : config/themes/mesev-default.json et
+config/themes/sobre-clair.json restent en place tels quels (aucune
+suppression), en cas d'usage externe déjà fait de ces ids — mais nuit/
+claire sont désormais les thèmes de référence, et activeTheme par défaut
+dans features.json a été mis à "nuit".
+
+obs-controller.js n'a pas été davantage modifié : sa dépendance manquante
+était déjà corrigée au point 2 ci-dessus (obs-websocket-js ajouté à
+package.json), et son code n'avait pas d'incohérence de format de données
+comme theme-loader.js — seul son branchement à l'UI dashboard reste à
+faire, hors périmètre de cette demande (thèmes uniquement).
+
+Vérifications faites (finalisation) :
+- node test/test-theme-loader.js : 31/31 OK.
+- npm test (suite officielle complète) : 100% OK, aucune régression.
+- node scripts/check-build-files.js : ✓ OK.
+- node --check sur tous les .js du dépôt : 0 erreur.
