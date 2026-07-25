@@ -17,6 +17,14 @@ on:
       - "v*.*.*"
   workflow_dispatch: {}
 
+# Par défaut, le GITHUB_TOKEN généré automatiquement pour ce workflow n'a
+# que la permission de lecture ("contents: read"), ce qui suffit pour
+# checkout mais PAS pour créer une Release (softprops/action-gh-release en
+# a besoin) -> erreur 403 "Resource not accessible by integration".
+# On élève explicitement la permission à l'écriture pour ce workflow.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -34,6 +42,15 @@ jobs:
         run: npm ci
 
       - name: Construire l'installeur (electron-builder --win nsis)
+        # electron-builder détecte automatiquement le tag "vX.Y.Z" et essaie
+        # de publier lui-même une Release GitHub, ce qui exige GH_TOKEN et
+        # fait échouer le build (exit 1) si cette variable n'est pas fournie
+        # à CETTE étape. On ne veut pas de cette publication implicite : les
+        # étapes suivantes (upload-artifact + softprops/action-gh-release)
+        # s'en chargent déjà, de façon explicite et contrôlée.
+        # --publish=never désactive ce comportement implicite (recommandé
+        # par electron-builder lui-même dans le log : "please use --publish
+        # explicitly").
         run: npx electron-builder --win nsis --publish=never
 
       - name: Uploader l'installeur comme artifact
