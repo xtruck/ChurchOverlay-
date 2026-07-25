@@ -295,6 +295,53 @@
     transform: none !important;
   }
 
+  /* Sélecteur de langue d'affichage (FR / EN / FR+EN) — segmented control */
+  .lang-selector {
+    display: flex;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 5px;
+  }
+  .lang-option {
+    flex: 1;
+    cursor: pointer;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 10px 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+  }
+  .lang-option:hover {
+    color: var(--text-primary);
+  }
+  .lang-option.active {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+    color: white;
+    box-shadow: 0 2px 10px var(--accent-glow);
+  }
+  .lang-status {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .lang-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .lang-status-dot.connected { background: var(--success); }
+  .lang-status-dot.error { background: var(--error); }
+
   /* URL Box */
   .url-section {
     margin-bottom: 8px;
@@ -616,6 +663,22 @@
       </div>
     </div>
 
+    <!-- Langue d'affichage -->
+    <div class="glass-card">
+      <div class="section-label">
+        <span>🌍</span> Langue d'affichage des versets
+      </div>
+      <div class="lang-selector" data-testid="lang-selector">
+        <button class="lang-option" id="lang-fr" data-mode="fr">🇫🇷 Français</button>
+        <button class="lang-option" id="lang-en" data-mode="en">🇬🇧 English</button>
+        <button class="lang-option" id="lang-both" data-mode="both">🇫🇷+🇬🇧 Les deux</button>
+      </div>
+      <div class="lang-status">
+        <span class="lang-status-dot" id="lang-status-dot"></span>
+        <span id="lang-status-text">Connexion au pipeline…</span>
+      </div>
+    </div>
+
     <!-- Actions -->
     <div class="actions-grid">
       <button class="btn btn-secondary" id="btn-change-mic" data-testid="open-setup-btn">
@@ -788,6 +851,93 @@
     window.churchOverlay.onStatusUpdate(render);
     window.churchOverlay.getPerfStats().then(renderPerf);
     window.churchOverlay.onPerfUpdate(renderPerf);
+
+    // -----------------------------------------------------------------
+    // Sélecteur de langue d'affichage (FR / EN / FR+EN)
+    // -----------------------------------------------------------------
+    // Connexion WebSocket légère et dédiée au tableau de bord — dashboard.html
+    // tourne dans une fenêtre Electron séparée d'overlay.html (pas de partage
+    // possible du socket entre les deux), donc on ouvre notre propre client
+    // WS pour envoyer/recevoir setLanguageMode / languageModeChanged.
+    // Se reconnecte automatiquement (le pipeline peut démarrer après le
+    // dashboard, ou redémarrer pendant que le dashboard reste ouvert).
+    (function () {
+      const WS_URL = 'ws://localhost:8765';
+      const DELAI_RECONNEXION_MS = 2000;
+      const langButtons = {
+        fr: document.getElementById('lang-fr'),
+        en: document.getElementById('lang-en'),
+        both: document.getElementById('lang-both'),
+      };
+      const statusDot = document.getElementById('lang-status-dot');
+      const statusText = document.getElementById('lang-status-text');
+
+      let socket = null;
+      let modeEnCoursDEnvoi = null;
+
+      function setActiveMode(mode) {
+        Object.entries(langButtons).forEach(([key, btn]) => {
+          btn.classList.toggle('active', key === mode);
+        });
+      }
+
+      function setConnectionState(state, detail) {
+        statusDot.className = 'lang-status-dot' + (state === 'connected' ? ' connected' : state === 'error' ? ' error' : '');
+        statusText.textContent = detail;
+      }
+
+      function connect() {
+        try {
+          socket = new WebSocket(WS_URL);
+        } catch (e) {
+          setConnectionState('error', 'Pipeline non joignable — nouvelle tentative…');
+          setTimeout(connect, DELAI_RECONNEXION_MS);
+          return;
+        }
+
+        socket.addEventListener('open', () => {
+          setConnectionState('connected', 'Connecté — cliquez pour changer la langue affichée à l\'écran');
+        });
+
+        socket.addEventListener('message', (event) => {
+          let data;
+          try { data = JSON.parse(event.data); } catch (e) { return; }
+          if (data.action === 'languageModeChanged') {
+            setActiveMode(data.mode);
+            setConnectionState('connected', 'Langue active : ' +
+              (data.mode === 'fr' ? 'Français seul' : data.mode === 'en' ? 'English seul' : 'Français + English'));
+            modeEnCoursDEnvoi = null;
+          } else if (data.action === 'error' && modeEnCoursDEnvoi) {
+            setConnectionState('error', 'Changement refusé : ' + (data.error || 'erreur inconnue'));
+            modeEnCoursDEnvoi = null;
+          }
+        });
+
+        socket.addEventListener('close', () => {
+          setConnectionState('error', 'Déconnecté du pipeline — nouvelle tentative…');
+          setTimeout(connect, DELAI_RECONNEXION_MS);
+        });
+
+        socket.addEventListener('error', () => {
+          // 'close' suit toujours 'error' sur un WebSocket natif — la
+          // reconnexion est déjà planifiée par le handler 'close' ci-dessus.
+        });
+      }
+
+      Object.entries(langButtons).forEach(([mode, btn]) => {
+        btn.addEventListener('click', () => {
+          if (!socket || socket.readyState !== WebSocket.OPEN) {
+            showToast('❌ Pipeline non connecté');
+            return;
+          }
+          modeEnCoursDEnvoi = mode;
+          setConnectionState('connected', 'Changement en cours…');
+          socket.send(JSON.stringify({ action: 'setLanguageMode', mode }));
+        });
+      });
+
+      connect();
+    })();
   </script>
 </body>
 </html>
