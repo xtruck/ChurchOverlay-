@@ -375,13 +375,18 @@
     }
 
     // Load microphones
-    async function loadMicrophones() {
+    async function loadMicrophones(force = false) {
       elements.micStatus.className = 'status';
       elements.micStatus.textContent = '';
       elements.micSelect.innerHTML = '<option value="">🔍 Recherche des microphones…</option>';
       elements.btnRefresh.disabled = true;
 
-      const devices = await window.churchOverlay.detectMicrophones();
+      // CORRECTIF : avant, "Actualiser" appelait detectMicrophones() sans
+      // argument, donc rappelait toujours le cache disque (jusqu'à 24h) au
+      // lieu de relancer un vrai scan FFmpeg — le bouton semblait ne rien
+      // faire, notamment si le cache avait été rempli par l'ancien bug de
+      // parsing (liste vide).
+      const devices = await window.churchOverlay.detectMicrophones(force);
 
       elements.btnRefresh.disabled = false;
       elements.micSelect.innerHTML = '';
@@ -406,7 +411,7 @@
     }
 
     // Event listeners
-    elements.btnRefresh.addEventListener('click', loadMicrophones);
+    elements.btnRefresh.addEventListener('click', () => loadMicrophones(true));
     elements.micSelect.addEventListener('change', updateSaveEnabled);
     elements.groqInput.addEventListener('input', updateSaveEnabled);
 
