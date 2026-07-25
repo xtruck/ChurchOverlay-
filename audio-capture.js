@@ -2,6 +2,16 @@
  * ============================================================================
  *  audio-capture.js — Module de capture audio en continu
  * ----------------------------------------------------------------------------
+ *  CHANGELOG v0.4.0 — Auto-reconnexion micro
+ *    Si FFmpeg s'arrête de façon inattendue en cours d'enregistrement (micro
+ *    USB débranché, pilote qui plante...), le module ne meurt plus en
+ *    silence : il retente automatiquement de relancer la capture avec un
+ *    backoff exponentiel (2s, 4s, 8s, 16s, puis 30s en continu), sans
+ *    jamais abandonner tant que stopRecording() n'a pas été appelé
+ *    explicitement. Dès que le flux audio reprend (données reçues), la
+ *    reconnexion est considérée réussie. Nouveaux callbacks disponibles via
+ *    on({ onDeviceLost, onReconnecting, onReconnected }).
+ *
  *  OPTIMISATIONS v0.2.1 (Option A + Bonus):
  *    1. segmentDuration: 6000ms → 5000ms (plus réactif, -17% de latence)
  *    2. overlapDuration: 100ms → 400ms (meilleur contexte entre segments)
@@ -15,6 +25,7 @@
  *    - Segmentation intelligente (VAD - Voice Activity Detection)
  *    - Envoi des segments audio à Groq/Deepgram (transcription cloud)
  *    - Gestion du buffer circulaire pour éviter la perte de données
+ *    - Reconnexion automatique en cas de coupure micro (v0.4.0)
  *
  *  CONFIGURATION:
  *    - Sample rate: 16000 Hz (recommandé pour Whisper large-v3 côté Groq)
@@ -25,7 +36,6 @@
 
 const { spawn } = require('child_process');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 
 // Configuration
@@ -37,20 +47,18 @@ const CONFIG = {
   overlapDuration: 400,   // 400ms de chevauchement (meilleur contexte)
   silenceThreshold: 0.3,  // Seuil de silence pour VAD (0-1)
   minSpeechDuration: 500, // Durée minimum de parole en ms
-  // IMPORTANT : ne jamais utiliser un chemin dérivé de __dirname ici.
-  // L'app est packagée avec "asar": true (package.json), donc en
-  // production __dirname pointe DANS l'archive app.asar : un fichier
-  // unique en lecture seule qui ne fait qu'imiter une arborescence de
-  // dossiers pour la LECTURE. Toute tentative d'y CRÉER un vrai dossier
-  // (fs.mkdirSync) échoue avec "ENOTDIR: not a directory", car Node essaie
-  // de traiter le fichier app.asar comme s'il s'agissait d'un dossier.
-  // os.tmpdir() est toujours un vrai dossier accessible en écriture,
-  // indépendant du packaging — c'est l'endroit standard pour des fichiers
-  // temporaires côté OS (Windows: %TEMP%, macOS/Linux: /tmp).
-  tempDir: path.join(os.tmpdir(), 'churchoverlay-audio'),
+  tempDir: path.join(__dirname, 'temp-audio'),
   // Configurables sans modifier le code : FFMPEG_PATH et AUDIO_DEVICE.
   ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
   audioDevice: process.env.AUDIO_DEVICE || '',
+};
+
+// v0.4.0 — Auto-reconnexion micro (débranchement/rebranchement USB en
+// cours de service, sans devoir relancer l'app).
+const RECONNECT_CONFIG = {
+  baseDelayMs: 2000,   // 1re tentative : 2s après la coupure
+  maxDelayMs: 30000,   // plafonné à 30s entre deux tentatives
+  factor: 2,           // backoff exponentiel (2s, 4s, 8s, 16s, 30s, 30s…)
 };
 
 // État du module
@@ -62,7 +70,17 @@ const STATE = {
   callbacks: {
     onAudioSegment: null,
     onError: null,
+    // v0.4.0 — cycle de vie de la reconnexion micro
+    onDeviceLost: null,   // (err) => void — le micro vient de décrocher
+    onReconnecting: null, // (attempt, delayMs) => void — nouvelle tentative planifiée
+    onReconnected: null,  // () => void — le micro répond de nouveau
   },
+  // v0.4.0 — reconnexion
+  activeConfig: null,       // config utilisée par le flux courant (pour relancer à l'identique)
+  stopRequested: false,     // true seulement si stopRecording() a été appelé explicitement
+  reconnectTimer: null,
+  reconnectAttempts: 0,
+  hasReceivedDataThisSession: false,
 };
 
 /**
@@ -103,14 +121,50 @@ function startRecording(options = {}) {
       overlapDuration: config.overlapDuration + 'ms',
     });
 
+    STATE.activeConfig = config;
+    STATE.stopRequested = false;
+    STATE.reconnectAttempts = 0;
+    clearReconnectTimer();
+
+    spawnFfmpegProcess(config, { isReconnectAttempt: false })
+      .then(resolve)
+      .catch(reject);
+  });
+}
+
+/**
+ * Vérifie FFmpeg puis lance le process de capture pour la config donnée.
+ * Utilisé à la fois par le démarrage initial (startRecording) et par les
+ * tentatives de reconnexion automatique (scheduleReconnect) — dans ce
+ * dernier cas, aucune erreur n'est rejetée vers un appelant : on notifie
+ * juste via les callbacks onDeviceLost/onReconnecting/onReconnected et on
+ * replanifie une tentative.
+ *
+ * @param {Object} config
+ * @param {Object} opts
+ * @param {boolean} opts.isReconnectAttempt
+ * @returns {Promise<void>}
+ */
+function spawnFfmpegProcess(config, { isReconnectAttempt }) {
+  return new Promise((resolve, reject) => {
+    const failFast = (err) => {
+      if (isReconnectAttempt) {
+        // On ne rejette jamais côté appelant en reconnexion : on replanifie.
+        scheduleReconnect(config, err);
+        resolve(); // résout quand même la promesse interne (pas d'appelant en attente)
+      } else {
+        reject(err);
+      }
+    };
+
     // Vérifier si FFmpeg est disponible
     const ffmpegCheck = spawn(config.ffmpegPath, ['-version']);
     ffmpegCheck.on('error', () => {
-      reject(new Error('FFmpeg n\'est pas installé ou non trouvé: ' + config.ffmpegPath));
+      failFast(new Error('FFmpeg n\'est pas installé ou non trouvé: ' + config.ffmpegPath));
     });
     ffmpegCheck.on('close', (code) => {
       if (code !== 0) {
-        reject(new Error('FFmpeg n\'est pas installé ou non trouvé dans PATH'));
+        failFast(new Error('FFmpeg n\'est pas installé ou non trouvé dans PATH'));
         return;
       }
 
@@ -127,8 +181,18 @@ function startRecording(options = {}) {
       ];
 
       STATE.ffmpegProcess = spawn(config.ffmpegPath, ffmpegArgs);
+      STATE.hasReceivedDataThisSession = false;
 
       STATE.ffmpegProcess.stdout.on('data', (data) => {
+        if (!STATE.hasReceivedDataThisSession) {
+          STATE.hasReceivedDataThisSession = true;
+          // De la vraie donnée audio arrive : le micro répond bel et bien.
+          if (isReconnectAttempt) {
+            console.log('[audio-capture] ✅ Micro reconnecté — flux audio rétabli.');
+            STATE.reconnectAttempts = 0;
+            if (STATE.callbacks.onReconnected) STATE.callbacks.onReconnected();
+          }
+        }
         handleAudioData(data, config);
       });
 
@@ -139,13 +203,31 @@ function startRecording(options = {}) {
       STATE.ffmpegProcess.on('error', (err) => {
         console.error('[audio-capture] Erreur FFmpeg:', err.message);
         if (STATE.callbacks.onError) STATE.callbacks.onError(err);
-        reject(err);
+        failFast(err);
       });
 
       STATE.ffmpegProcess.on('close', (code) => {
         console.log(`[audio-capture] FFmpeg terminé avec code ${code}`);
+        const wasRecording = STATE.isRecording;
         STATE.isRecording = false;
         STATE.ffmpegProcess = null;
+
+        // Arrêt volontaire (stopRecording()) : rien à faire de plus, c'est
+        // stopRecording() elle-même qui gère la suite via son propre
+        // listener 'close'.
+        if (STATE.stopRequested) return;
+
+        // Coupure inattendue en cours de service (micro débranché, pilote
+        // qui plante, etc.) : on tente de se reconnecter automatiquement
+        // plutôt que de laisser le pipeline mort en silence.
+        if (wasRecording || isReconnectAttempt) {
+          const err = new Error(`FFmpeg s'est arrêté de façon inattendue (code ${code}) — micro probablement débranché.`);
+          if (!isReconnectAttempt) {
+            console.error('[audio-capture] 🔌 Perte du micro détectée — tentative de reconnexion automatique…');
+            if (STATE.callbacks.onDeviceLost) STATE.callbacks.onDeviceLost(err);
+          }
+          scheduleReconnect(config, err);
+        }
       });
 
       STATE.isRecording = true;
@@ -154,6 +236,44 @@ function startRecording(options = {}) {
       resolve();
     });
   });
+}
+
+/**
+ * Planifie une nouvelle tentative de reconnexion avec backoff exponentiel
+ * (2s, 4s, 8s, 16s, 30s, 30s, 30s…). Ne s'arrête jamais tant que
+ * stopRecording() n'a pas été appelé explicitement — un service peut durer
+ * des heures, mieux vaut continuer à réessayer que d'abandonner.
+ */
+function scheduleReconnect(config, err) {
+  if (STATE.stopRequested) return;
+  clearReconnectTimer();
+
+  STATE.reconnectAttempts += 1;
+  const delayMs = Math.min(
+    RECONNECT_CONFIG.baseDelayMs * Math.pow(RECONNECT_CONFIG.factor, STATE.reconnectAttempts - 1),
+    RECONNECT_CONFIG.maxDelayMs
+  );
+
+  console.warn(
+    `[audio-capture] 🔄 Reconnexion micro : tentative #${STATE.reconnectAttempts} dans ${Math.round(delayMs / 1000)}s ` +
+    `(${err ? err.message : 'raison inconnue'})`
+  );
+  if (STATE.callbacks.onReconnecting) STATE.callbacks.onReconnecting(STATE.reconnectAttempts, delayMs);
+
+  STATE.reconnectTimer = setTimeout(() => {
+    if (STATE.stopRequested) return;
+    spawnFfmpegProcess(config, { isReconnectAttempt: true }).catch(() => {
+      // spawnFfmpegProcess ne rejette jamais en mode reconnexion (voir
+      // failFast ci-dessus) — ce .catch est juste une garde défensive.
+    });
+  }, delayMs);
+}
+
+function clearReconnectTimer() {
+  if (STATE.reconnectTimer) {
+    clearTimeout(STATE.reconnectTimer);
+    STATE.reconnectTimer = null;
+  }
 }
 
 /**
@@ -247,6 +367,12 @@ function createWavFile(pcmData, sampleRate, channels, bitDepth) {
  */
 function stopRecording() {
   return new Promise((resolve) => {
+    // v0.4.0 : empêche toute tentative de reconnexion automatique de
+    // redémarrer FFmpeg juste après un arrêt volontaire.
+    STATE.stopRequested = true;
+    clearReconnectTimer();
+    STATE.reconnectAttempts = 0;
+
     if (!STATE.ffmpegProcess) {
       console.warn('[audio-capture] Aucun enregistrement en cours');
       resolve();
@@ -279,7 +405,8 @@ function stopRecording() {
 
 /**
  * Enregistre les callbacks d'événements
- * @param {Object} callbacks - { onAudioSegment, onError }
+ * @param {Object} callbacks - { onAudioSegment, onError, onDeviceLost,
+ *        onReconnecting, onReconnected } (les 3 derniers : v0.4.0)
  */
 function on(callbacks) {
   STATE.callbacks = { ...STATE.callbacks, ...callbacks };
