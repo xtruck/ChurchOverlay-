@@ -459,8 +459,14 @@ function startServer(PORT) {
   wss.on('error', (err) => {
     console.error('[server] Erreur serveur :', err.message);
     if (err.code === 'EADDRINUSE') {
-      console.error('[server] Le port est déjà utilisé — un autre server.js tourne-t-il déjà ?');
+      console.error('[server] Le port est déjà utilisé — une autre instance de l\'app tourne-t-elle déjà ?');
     }
+    // CORRECTIF : avant, une erreur de bind (ex: EADDRINUSE) restait un
+    // simple log — le worker ne passait jamais à 'running' ET ne notifiait
+    // jamais 'error' non plus, donc main.js/le dashboard restaient bloqués
+    // indéfiniment sur "connexion...". On force maintenant un arrêt propre
+    // + notification 'error' pour que le dashboard sorte de cet état figé.
+    shutdownOnce();
   });
 
   // --- Cleanup on EVERY exit path ----------------------------------------
@@ -531,4 +537,3 @@ function workerSafeExit(code) {
   }
   process.exit(code);
 }
-
