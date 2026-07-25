@@ -41,6 +41,9 @@ jobs:
       - name: Installer les dépendances
         run: npm ci
 
+      - name: Vérifier que tous les fichiers requis sont packagés (anti-régression)
+        run: npm run check-files
+
       - name: Construire l'installeur (electron-builder --win nsis)
         # electron-builder détecte automatiquement le tag "vX.Y.Z" et essaie
         # de publier lui-même une Release GitHub, ce qui exige GH_TOKEN et
