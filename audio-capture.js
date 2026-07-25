@@ -2,16 +2,6 @@
  * ============================================================================
  *  audio-capture.js — Module de capture audio en continu
  * ----------------------------------------------------------------------------
- *  CHANGELOG v0.4.0 — Auto-reconnexion micro
- *    Si FFmpeg s'arrête de façon inattendue en cours d'enregistrement (micro
- *    USB débranché, pilote qui plante...), le module ne meurt plus en
- *    silence : il retente automatiquement de relancer la capture avec un
- *    backoff exponentiel (2s, 4s, 8s, 16s, puis 30s en continu), sans
- *    jamais abandonner tant que stopRecording() n'a pas été appelé
- *    explicitement. Dès que le flux audio reprend (données reçues), la
- *    reconnexion est considérée réussie. Nouveaux callbacks disponibles via
- *    on({ onDeviceLost, onReconnecting, onReconnected }).
- *
  *  OPTIMISATIONS v0.2.1 (Option A + Bonus):
  *    1. segmentDuration: 6000ms → 5000ms (plus réactif, -17% de latence)
  *    2. overlapDuration: 100ms → 400ms (meilleur contexte entre segments)
@@ -25,7 +15,6 @@
  *    - Segmentation intelligente (VAD - Voice Activity Detection)
  *    - Envoi des segments audio à Groq/Deepgram (transcription cloud)
  *    - Gestion du buffer circulaire pour éviter la perte de données
- *    - Reconnexion automatique en cas de coupure micro (v0.4.0)
  *
  *  CONFIGURATION:
  *    - Sample rate: 16000 Hz (recommandé pour Whisper large-v3 côté Groq)
@@ -37,6 +26,7 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { parseDshowAudioDevices } = require('./dshow-parser');
 
 // Configuration
 const CONFIG = {
@@ -49,16 +39,10 @@ const CONFIG = {
   minSpeechDuration: 500, // Durée minimum de parole en ms
   tempDir: path.join(__dirname, 'temp-audio'),
   // Configurables sans modifier le code : FFMPEG_PATH et AUDIO_DEVICE.
+  // AUDIO_DEVICE peut désormais rester VIDE : startRecording() détecte et
+  // choisit automatiquement un micro (voir autoDetectDevice() plus bas).
   ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
   audioDevice: process.env.AUDIO_DEVICE || '',
-};
-
-// v0.4.0 — Auto-reconnexion micro (débranchement/rebranchement USB en
-// cours de service, sans devoir relancer l'app).
-const RECONNECT_CONFIG = {
-  baseDelayMs: 2000,   // 1re tentative : 2s après la coupure
-  maxDelayMs: 30000,   // plafonné à 30s entre deux tentatives
-  factor: 2,           // backoff exponentiel (2s, 4s, 8s, 16s, 30s, 30s…)
 };
 
 // État du module
@@ -70,17 +54,7 @@ const STATE = {
   callbacks: {
     onAudioSegment: null,
     onError: null,
-    // v0.4.0 — cycle de vie de la reconnexion micro
-    onDeviceLost: null,   // (err) => void — le micro vient de décrocher
-    onReconnecting: null, // (attempt, delayMs) => void — nouvelle tentative planifiée
-    onReconnected: null,  // () => void — le micro répond de nouveau
   },
-  // v0.4.0 — reconnexion
-  activeConfig: null,       // config utilisée par le flux courant (pour relancer à l'identique)
-  stopRequested: false,     // true seulement si stopRecording() a été appelé explicitement
-  reconnectTimer: null,
-  reconnectAttempts: 0,
-  hasReceivedDataThisSession: false,
 };
 
 /**
@@ -93,26 +67,170 @@ function initTempDir(tempDir) {
 }
 
 /**
+ * ============================================================================
+ *  AUTO-DÉTECTION DU MICRO (ajouté à la demande : AUDIO_DEVICE ne devrait
+ *  plus être obligatoire à configurer à la main)
+ * ----------------------------------------------------------------------------
+ *  DirectShow (le backend Windows utilisé par FFmpeg ici, -f dshow) n'a
+ *  PAS de notion native de "périphérique par défaut" — contrairement à
+ *  WASAPI ou PulseAudio, chaque appel dshow doit nommer un périphérique
+ *  précis (`audio=<nom exact>`). Il n'existe donc pas de flag FFmpeg du
+ *  type `audio=default` qui fonctionne avec dshow : c'est une limite du
+ *  backend, pas un bug de ce projet.
+ *
+ *  Ce qu'on peut automatiser, en revanche, c'est le CHOIX : lister tous
+ *  les micros disponibles (comme list-audio-devices.js le fait déjà) puis
+ *  choisir le plus probable automatiquement, sans obliger l'utilisateur à
+ *  copier un nom depuis une commande. C'est ce que fait autoDetectDevice()
+ *  ci-dessous, utilisé par startRecording() quand AUDIO_DEVICE est vide.
+ * ============================================================================
+ */
+
+/**
+ * Interroge FFmpeg pour lister les périphériques audio DirectShow.
+ * @param {string} ffmpegPath
+ * @param {number} timeoutMs
+ * @returns {Promise<string[]>} Liste des noms de périphériques (peut être vide)
+ */
+function listDevices(ffmpegPath = CONFIG.ffmpegPath, timeoutMs = 8000) {
+  return new Promise((resolve) => {
+    let ff;
+    try {
+      ff = spawn(ffmpegPath, ['-hide_banner', '-list_devices', 'true', '-f', 'dshow', '-i', 'dummy']);
+    } catch (_) {
+      resolve([]);
+      return;
+    }
+
+    let output = '';
+    let settled = false;
+    const finish = (devices) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(hardKill);
+      resolve(devices);
+    };
+
+    ff.stderr.on('data', (d) => { output += d.toString(); });
+    ff.on('close', () => finish(parseDshowAudioDevices(output)));
+    ff.on('error', () => finish([]));
+
+    const hardKill = setTimeout(() => {
+      try { ff.kill('SIGKILL'); } catch (_) { /* déjà terminé */ }
+      finish([]);
+    }, timeoutMs);
+  });
+}
+
+// Périphériques à écarter automatiquement : ce sont des boucles de retour
+// (ce que les haut-parleurs émettent, pas ce que le micro capte) ou des
+// "câbles" virtuels de routage audio — jamais un micro physique.
+const LOOPBACK_PATTERNS = /stereo mix|what u hear|wave ?out|loopback|cable output|mix st[ée]r[ée]o|virtual cable/i;
+
+// Mots qui indiquent fortement un vrai micro.
+const MIC_HINT_PATTERNS = /micro|mic\b|headset|casque|webcam/i;
+
+/**
+ * Choisit le périphérique le plus probable parmi une liste détectée.
+ * Heuristique : élimine les boucles de retour/périphériques virtuels,
+ * privilégie les noms contenant "micro"/"mic"/"casque"/"webcam", et à
+ * défaut garde le premier de la liste (ordre renvoyé par Windows, où le
+ * périphérique par défaut apparaît généralement en premier).
+ * @param {string[]} devices
+ * @returns {{ chosen: string|null, candidates: string[], rejected: string[] }}
+ */
+function pickBestDevice(devices) {
+  if (!devices || devices.length === 0) {
+    return { chosen: null, candidates: [], rejected: [] };
+  }
+  const rejected = devices.filter((d) => LOOPBACK_PATTERNS.test(d));
+  const candidates = devices.filter((d) => !LOOPBACK_PATTERNS.test(d));
+
+  if (candidates.length === 0) {
+    // Rien de sûr : mieux vaut ne rien choisir que de capter un loopback.
+    return { chosen: null, candidates: [], rejected };
+  }
+  if (candidates.length === 1) {
+    return { chosen: candidates[0], candidates, rejected };
+  }
+
+  const withMicHint = candidates.filter((d) => MIC_HINT_PATTERNS.test(d));
+  const chosen = withMicHint.length > 0 ? withMicHint[0] : candidates[0];
+  return { chosen, candidates, rejected };
+}
+
+/**
+ * Détecte et choisit automatiquement un micro. Ne lève jamais d'exception :
+ * en cas d'échec (FFmpeg absent, aucun périphérique, uniquement des
+ * loopbacks), retourne { device: null, reason } pour que l'appelant puisse
+ * afficher un message clair plutôt qu'un plantage silencieux.
+ * @param {string} ffmpegPath
+ * @returns {Promise<{ device: string|null, candidates: string[], rejected: string[], reason?: string }>}
+ */
+async function autoDetectDevice(ffmpegPath = CONFIG.ffmpegPath) {
+  const devices = await listDevices(ffmpegPath);
+  if (devices.length === 0) {
+    return {
+      device: null,
+      candidates: [],
+      rejected: [],
+      reason: 'Aucun périphérique audio DirectShow détecté par FFmpeg (micro débranché, non autorisé dans Windows, ou pilote manquant).',
+    };
+  }
+
+  const { chosen, candidates, rejected } = pickBestDevice(devices);
+  if (!chosen) {
+    return {
+      device: null,
+      candidates,
+      rejected,
+      reason: `Seuls des périphériques de boucle de retour ont été détectés (${rejected.join(', ')}) — aucun micro physique fiable à choisir automatiquement.`,
+    };
+  }
+  return { device: chosen, candidates, rejected };
+}
+
+/**
  * Démarre la capture audio via FFmpeg
  * @param {Object} options - Options de configuration (surcharge CONFIG)
  * @returns {Promise<void>}
  */
-function startRecording(options = {}) {
+async function startRecording(options = {}) {
+  if (STATE.isRecording) {
+    console.warn('[audio-capture] Enregistrement déjà en cours');
+    return;
+  }
+
+  const config = { ...CONFIG, ...options };
+  initTempDir(config.tempDir);
+
+  // AUDIO_DEVICE non défini : on détecte et choisit un micro automatiquement
+  // au lieu d'exiger une configuration manuelle (voir autoDetectDevice()).
+  if (!config.audioDevice) {
+    console.log('[audio-capture] AUDIO_DEVICE non défini — détection automatique du micro...');
+    const auto = await autoDetectDevice(config.ffmpegPath);
+
+    if (!auto.device) {
+      throw new Error(
+        `Détection automatique du micro impossible : ${auto.reason} ` +
+        'Lancez "node list-audio-devices.js" pour un diagnostic détaillé, ' +
+        'ou définissez AUDIO_DEVICE manuellement dans .env.'
+      );
+    }
+
+    config.audioDevice = auto.device;
+    console.log(`[audio-capture] Micro choisi automatiquement : "${auto.device}"`);
+    const others = auto.candidates.filter((d) => d !== auto.device);
+    if (others.length > 0) {
+      console.log(`[audio-capture] Autres micros détectés (non retenus) : ${others.join(', ')}. ` +
+        'Pour en forcer un autre, définissez AUDIO_DEVICE dans .env avec son nom exact.');
+    }
+    if (auto.rejected.length > 0) {
+      console.log(`[audio-capture] Périphériques ignorés (boucle de retour/virtuel) : ${auto.rejected.join(', ')}`);
+    }
+  }
+
   return new Promise((resolve, reject) => {
-    if (STATE.isRecording) {
-      console.warn('[audio-capture] Enregistrement déjà en cours');
-      resolve();
-      return;
-    }
-
-    const config = { ...CONFIG, ...options };
-    initTempDir(config.tempDir);
-
-    if (!config.audioDevice) {
-      reject(new Error('Aucun micro configuré. Lancez "node list-audio-devices.js", puis définissez AUDIO_DEVICE avec le nom exact du micro.'));
-      return;
-    }
-
     console.log('[audio-capture] Démarrage de la capture audio...');
     console.log('[audio-capture] Configuration:', {
       sampleRate: config.sampleRate,
@@ -121,50 +239,14 @@ function startRecording(options = {}) {
       overlapDuration: config.overlapDuration + 'ms',
     });
 
-    STATE.activeConfig = config;
-    STATE.stopRequested = false;
-    STATE.reconnectAttempts = 0;
-    clearReconnectTimer();
-
-    spawnFfmpegProcess(config, { isReconnectAttempt: false })
-      .then(resolve)
-      .catch(reject);
-  });
-}
-
-/**
- * Vérifie FFmpeg puis lance le process de capture pour la config donnée.
- * Utilisé à la fois par le démarrage initial (startRecording) et par les
- * tentatives de reconnexion automatique (scheduleReconnect) — dans ce
- * dernier cas, aucune erreur n'est rejetée vers un appelant : on notifie
- * juste via les callbacks onDeviceLost/onReconnecting/onReconnected et on
- * replanifie une tentative.
- *
- * @param {Object} config
- * @param {Object} opts
- * @param {boolean} opts.isReconnectAttempt
- * @returns {Promise<void>}
- */
-function spawnFfmpegProcess(config, { isReconnectAttempt }) {
-  return new Promise((resolve, reject) => {
-    const failFast = (err) => {
-      if (isReconnectAttempt) {
-        // On ne rejette jamais côté appelant en reconnexion : on replanifie.
-        scheduleReconnect(config, err);
-        resolve(); // résout quand même la promesse interne (pas d'appelant en attente)
-      } else {
-        reject(err);
-      }
-    };
-
     // Vérifier si FFmpeg est disponible
     const ffmpegCheck = spawn(config.ffmpegPath, ['-version']);
     ffmpegCheck.on('error', () => {
-      failFast(new Error('FFmpeg n\'est pas installé ou non trouvé: ' + config.ffmpegPath));
+      reject(new Error('FFmpeg n\'est pas installé ou non trouvé: ' + config.ffmpegPath));
     });
     ffmpegCheck.on('close', (code) => {
       if (code !== 0) {
-        failFast(new Error('FFmpeg n\'est pas installé ou non trouvé dans PATH'));
+        reject(new Error('FFmpeg n\'est pas installé ou non trouvé dans PATH'));
         return;
       }
 
@@ -181,18 +263,8 @@ function spawnFfmpegProcess(config, { isReconnectAttempt }) {
       ];
 
       STATE.ffmpegProcess = spawn(config.ffmpegPath, ffmpegArgs);
-      STATE.hasReceivedDataThisSession = false;
 
       STATE.ffmpegProcess.stdout.on('data', (data) => {
-        if (!STATE.hasReceivedDataThisSession) {
-          STATE.hasReceivedDataThisSession = true;
-          // De la vraie donnée audio arrive : le micro répond bel et bien.
-          if (isReconnectAttempt) {
-            console.log('[audio-capture] ✅ Micro reconnecté — flux audio rétabli.');
-            STATE.reconnectAttempts = 0;
-            if (STATE.callbacks.onReconnected) STATE.callbacks.onReconnected();
-          }
-        }
         handleAudioData(data, config);
       });
 
@@ -203,31 +275,13 @@ function spawnFfmpegProcess(config, { isReconnectAttempt }) {
       STATE.ffmpegProcess.on('error', (err) => {
         console.error('[audio-capture] Erreur FFmpeg:', err.message);
         if (STATE.callbacks.onError) STATE.callbacks.onError(err);
-        failFast(err);
+        reject(err);
       });
 
       STATE.ffmpegProcess.on('close', (code) => {
         console.log(`[audio-capture] FFmpeg terminé avec code ${code}`);
-        const wasRecording = STATE.isRecording;
         STATE.isRecording = false;
         STATE.ffmpegProcess = null;
-
-        // Arrêt volontaire (stopRecording()) : rien à faire de plus, c'est
-        // stopRecording() elle-même qui gère la suite via son propre
-        // listener 'close'.
-        if (STATE.stopRequested) return;
-
-        // Coupure inattendue en cours de service (micro débranché, pilote
-        // qui plante, etc.) : on tente de se reconnecter automatiquement
-        // plutôt que de laisser le pipeline mort en silence.
-        if (wasRecording || isReconnectAttempt) {
-          const err = new Error(`FFmpeg s'est arrêté de façon inattendue (code ${code}) — micro probablement débranché.`);
-          if (!isReconnectAttempt) {
-            console.error('[audio-capture] 🔌 Perte du micro détectée — tentative de reconnexion automatique…');
-            if (STATE.callbacks.onDeviceLost) STATE.callbacks.onDeviceLost(err);
-          }
-          scheduleReconnect(config, err);
-        }
       });
 
       STATE.isRecording = true;
@@ -236,44 +290,6 @@ function spawnFfmpegProcess(config, { isReconnectAttempt }) {
       resolve();
     });
   });
-}
-
-/**
- * Planifie une nouvelle tentative de reconnexion avec backoff exponentiel
- * (2s, 4s, 8s, 16s, 30s, 30s, 30s…). Ne s'arrête jamais tant que
- * stopRecording() n'a pas été appelé explicitement — un service peut durer
- * des heures, mieux vaut continuer à réessayer que d'abandonner.
- */
-function scheduleReconnect(config, err) {
-  if (STATE.stopRequested) return;
-  clearReconnectTimer();
-
-  STATE.reconnectAttempts += 1;
-  const delayMs = Math.min(
-    RECONNECT_CONFIG.baseDelayMs * Math.pow(RECONNECT_CONFIG.factor, STATE.reconnectAttempts - 1),
-    RECONNECT_CONFIG.maxDelayMs
-  );
-
-  console.warn(
-    `[audio-capture] 🔄 Reconnexion micro : tentative #${STATE.reconnectAttempts} dans ${Math.round(delayMs / 1000)}s ` +
-    `(${err ? err.message : 'raison inconnue'})`
-  );
-  if (STATE.callbacks.onReconnecting) STATE.callbacks.onReconnecting(STATE.reconnectAttempts, delayMs);
-
-  STATE.reconnectTimer = setTimeout(() => {
-    if (STATE.stopRequested) return;
-    spawnFfmpegProcess(config, { isReconnectAttempt: true }).catch(() => {
-      // spawnFfmpegProcess ne rejette jamais en mode reconnexion (voir
-      // failFast ci-dessus) — ce .catch est juste une garde défensive.
-    });
-  }, delayMs);
-}
-
-function clearReconnectTimer() {
-  if (STATE.reconnectTimer) {
-    clearTimeout(STATE.reconnectTimer);
-    STATE.reconnectTimer = null;
-  }
 }
 
 /**
@@ -367,12 +383,6 @@ function createWavFile(pcmData, sampleRate, channels, bitDepth) {
  */
 function stopRecording() {
   return new Promise((resolve) => {
-    // v0.4.0 : empêche toute tentative de reconnexion automatique de
-    // redémarrer FFmpeg juste après un arrêt volontaire.
-    STATE.stopRequested = true;
-    clearReconnectTimer();
-    STATE.reconnectAttempts = 0;
-
     if (!STATE.ffmpegProcess) {
       console.warn('[audio-capture] Aucun enregistrement en cours');
       resolve();
@@ -405,8 +415,7 @@ function stopRecording() {
 
 /**
  * Enregistre les callbacks d'événements
- * @param {Object} callbacks - { onAudioSegment, onError, onDeviceLost,
- *        onReconnecting, onReconnected } (les 3 derniers : v0.4.0)
+ * @param {Object} callbacks - { onAudioSegment, onError }
  */
 function on(callbacks) {
   STATE.callbacks = { ...STATE.callbacks, ...callbacks };
@@ -485,4 +494,9 @@ module.exports = {
   isRecording,
   cleanupTempFiles,
   getConfig: () => ({ ...CONFIG }),
+  // Auto-détection micro — exposées pour list-audio-devices.js, l'assistant
+  // de setup Electron (main.js), et les tests.
+  listDevices,
+  pickBestDevice,
+  autoDetectDevice,
 };
