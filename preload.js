@@ -27,7 +27,10 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('churchOverlay', {
   // --- Écran de configuration initiale (setup.html) -----------------------
-  detectMicrophones: () => ipcRenderer.invoke('detect-microphones'),
+  // CORRECTIF : le paramètre force n'était jamais transmis, donc le bouton
+  // "Actualiser" de l'assistant de configuration relisait toujours le cache
+  // disque (jusqu'à 24h) au lieu de relancer un vrai scan FFmpeg.
+  detectMicrophones: (force) => ipcRenderer.invoke('detect-microphones', { force: !!force }),
   saveSetup: (audioDevice, groqApiKey, deepgramApiKey) =>
     ipcRenderer.invoke('save-setup', { audioDevice, groqApiKey, deepgramApiKey }),
 
