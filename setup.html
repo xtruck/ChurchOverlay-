@@ -386,7 +386,23 @@
       // lieu de relancer un vrai scan FFmpeg — le bouton semblait ne rien
       // faire, notamment si le cache avait été rempli par l'ancien bug de
       // parsing (liste vide).
-      const devices = await window.churchOverlay.detectMicrophones(force);
+      //
+      // CORRECTIF : l'appel IPC n'était entouré d'aucun try/catch. En cas
+      // d'erreur inattendue (IPC, FFmpeg introuvable de façon non gérée,
+      // etc.), la fonction s'arrêtait au milieu de son exécution et l'UI
+      // restait figée pour toujours sur "Recherche des microphones…", sans
+      // jamais afficher le moindre message à l'utilisateur.
+      let devices;
+      try {
+        devices = await window.churchOverlay.detectMicrophones(force);
+      } catch (err) {
+        elements.btnRefresh.disabled = false;
+        elements.micSelect.innerHTML = '<option value="">❌ Erreur de détection</option>';
+        elements.micStatus.className = 'status error';
+        elements.micStatus.textContent = `⚠️ Erreur : ${err && err.message ? err.message : err}. Cliquez sur Actualiser pour réessayer.`;
+        updateSaveEnabled();
+        return;
+      }
 
       elements.btnRefresh.disabled = false;
       elements.micSelect.innerHTML = '';
@@ -394,7 +410,7 @@
       if (!devices || devices.length === 0) {
         elements.micSelect.innerHTML = '<option value="">❌ Aucun microphone détecté</option>';
         elements.micStatus.className = 'status error';
-        elements.micStatus.textContent = '⚠️ Vérifiez qu\\'un micro est branché, puis cliquez sur Actualiser.';
+        elements.micStatus.textContent = "⚠️ Vérifiez qu'un micro est branché, puis cliquez sur Actualiser.";
         updateSaveEnabled();
         return;
       }
