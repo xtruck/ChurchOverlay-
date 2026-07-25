@@ -22,6 +22,7 @@
 
 const { spawn } = require('child_process');
 const { parseDshowAudioDevices } = require('./dshow-parser');
+const { pickBestDevice } = require('./audio-capture');
 const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
 
 console.log('=== Liste des périphériques audio DirectShow ===\n');
@@ -44,9 +45,24 @@ ffmpeg.on('close', () => {
     devices.forEach((name, i) => {
       console.log(`  ${i + 1}. "${name}"`);
     });
-    console.log('\nCopiez le nom EXACT (entre guillemets, sans les guillemets) du');
-    console.log('périphérique souhaité et utilisez-le comme valeur de AUDIO_DEVICE');
-    console.log('(fichier .env ou champ correspondant dans le tableau de bord).');
+
+    // CORRECTIF (auto-détection) : depuis que AUDIO_DEVICE peut rester vide
+    // (server.js/audio-capture.js choisissent alors automatiquement), on
+    // affiche ici ce que ce choix automatique donnerait, pour que
+    // l'utilisateur puisse vérifier/valider avant de lancer réellement.
+    const { chosen, rejected } = pickBestDevice(devices);
+    console.log('');
+    if (chosen) {
+      console.log(`→ Choix automatique (si AUDIO_DEVICE reste vide) : "${chosen}"`);
+    } else {
+      console.log('→ Choix automatique impossible : aucun candidat fiable (voir périphériques ignorés ci-dessous).');
+    }
+    if (rejected.length > 0) {
+      console.log(`  Périphériques ignorés d'office (boucle de retour/virtuel) : ${rejected.join(', ')}`);
+    }
+    console.log('\nSi ce choix ne convient pas, définissez AUDIO_DEVICE dans .env avec');
+    console.log('le nom EXACT (entre guillemets ci-dessus, sans les guillemets) du');
+    console.log('périphérique souhaité.');
   } else {
     console.error('Aucun microphone DirectShow détecté.');
     console.error('Vérifiez que :');
