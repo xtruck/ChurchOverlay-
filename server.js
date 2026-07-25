@@ -76,6 +76,18 @@ const groq = require('./groq-wrapper');
 const deepgram = require('./deepgram-wrapper');
 const audioCapture = require('./audio-capture');
 const detector = require('./detector');
+const detectorEn = require('./detector-en');
+
+// Détection bilingue : on essaie d'abord le FR (détecteur historique le plus
+// éprouvé), puis EN en fallback. Renvoie la première référence trouvée avec
+// la langue qui l'a captée (utile pour les logs et l'analytics).
+function detectBilingual(text) {
+  const fr = detector.detect(text);
+  if (fr) return { ...fr, detectedLang: 'fr' };
+  const en = detectorEn.detect(text);
+  if (en) return { ...en, detectedLang: 'en' };
+  return null;
+}
 const bibleLookup = require('./bible-lookup-with-api');
 const { createContextTracker } = require('./context-tracker');
 const { validateAndSanitize } = require('./validation');
@@ -186,9 +198,32 @@ validateSystemConfig()
     workerSafeExit(1);
   });
 
+// Langue d'affichage : 'fr', 'en', ou 'both' (FR + EN empilés dans l'overlay).
+// Piloté par le dashboard (message setLanguage) ; défaut = 'fr' pour rester
+// compatible avec l'existant. Peut aussi être forcé via variable d'env.
+let displayLanguage = (process.env.DISPLAY_LANGUAGE || 'fr').toLowerCase();
+if (!['fr', 'en', 'both'].includes(displayLanguage)) displayLanguage = 'fr';
+console.log(`[server] Langue d'affichage initiale : ${displayLanguage}`);
+
+// Historique en mémoire des N derniers versets diffusés (auto + manuel).
+// Utilisé par le dashboard pour la re-diffusion rapide ("rejouer un verset").
+// Non persisté sur disque : c'est un buffer volatil, cleared au restart, ce
+// qui évite de conserver du contenu bibliophonique après plusieurs services.
+const HISTORY_MAX = 30;
+const verseHistory = [];
+function pushHistory(entry) {
+  // Dédoublonnage : si la même référence est ajoutée coup sur coup on remonte
+  // simplement l'entrée existante en tête au lieu d'entasser des doublons.
+  const key = `${entry.reference}|${entry.langMode || 'fr'}`;
+  const idx = verseHistory.findIndex((e) => `${e.reference}|${e.langMode || 'fr'}` === key);
+  if (idx !== -1) verseHistory.splice(idx, 1);
+  verseHistory.unshift({ ...entry, id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` });
+  if (verseHistory.length > HISTORY_MAX) verseHistory.length = HISTORY_MAX;
+}
+
 async function processTranscript(text) {
   console.log('[server] Processing transcript:', text.substring(0, 100));
-  const reference = detector.detect(text);
+  const reference = detectBilingual(text);
   if (!reference) { console.log('[server] No reference detected in segment'); return; }
   console.log('[server] Reference detected:', JSON.stringify(reference));
 
@@ -197,12 +232,19 @@ async function processTranscript(text) {
   if (!verseTracker.shouldProcess(reference)) {
     console.log('[server] Reference already processed recently, skipping'); return;
   }
-  console.log('[server] Looking up:', bibleLookup.buildReferenceLabel(reference));
+  console.log('[server] Looking up:', bibleLookup.buildReferenceLabel(reference), 'lang:', displayLanguage);
 
   try {
-    const verse = await bibleLookup.getVerse(reference);
-    broadcast({ action: 'showVerse', ...verse, durationMs: 300000, autoDetected: true });
-    console.log('[server] Verse sent to overlay:', verse.reference);
+    const verse = await bibleLookup.getVerseMultilang(reference, displayLanguage);
+    const payload = { action: 'showVerse', ...verse, durationMs: 300000, autoDetected: true };
+    broadcast(payload);
+    pushHistory({
+      reference: verse.reference, text: verse.text,
+      text_fr: verse.text_fr, text_en: verse.text_en, langMode: verse.langMode,
+      provider: verse.provider, autoDetected: true, timestamp: Date.now(),
+    });
+    broadcast({ action: 'historyUpdated', history: verseHistory });
+    console.log('[server] Verse sent to overlay:', verse.reference, `(${displayLanguage})`);
     bibleLookup.resetFailedProviders();
   } catch (error) {
     console.warn('[server] Bible lookup unavailable:', error.message);
@@ -256,7 +298,7 @@ audioCapture.on({
 
       broadcast({ action: 'transcript', text: result.text || '', source: result.source, timestamp: Date.now() });
 
-      const windowed = pushToBuffer(result.text || '');
+const windowed = pushToBuffer(result.text || '');
       await processTranscript(windowed);
 
       safeUnlink(segmentFile);
@@ -389,15 +431,87 @@ function startServer(PORT) {
         return;
       }
 
+      if (sanitized.action === 'setLanguage') {
+        const requested = String(sanitized.language || '').toLowerCase();
+        if (!['fr', 'en', 'both'].includes(requested)) {
+          ws.send(JSON.stringify({ action: 'error', error: 'Langue invalide (fr | en | both).' }));
+          return;
+        }
+        displayLanguage = requested;
+        console.log(`[server] Langue d'affichage changée : ${displayLanguage}`);
+        broadcast({ action: 'languageChanged', language: displayLanguage, timestamp: Date.now() });
+        return;
+      }
+
+      if (sanitized.action === 'setTranslation') {
+        try {
+          const lang = String(sanitized.language).toLowerCase();
+          const code = String(sanitized.code);
+          const newId = bibleLookup.setTranslation(lang, code);
+          console.log(`[server] Traduction ${lang} changée : ${newId}`);
+          broadcast({
+            action: 'translationChanged', language: lang, code,
+            translationId: newId, translations: bibleLookup.listTranslations(),
+            timestamp: Date.now(),
+          });
+        } catch (e) {
+          ws.send(JSON.stringify({ action: 'error', error: e.message }));
+        }
+        return;
+      }
+
+      if (sanitized.action === 'getState') {
+        ws.send(JSON.stringify({
+          action: 'state',
+          language: displayLanguage,
+          translations: bibleLookup.listTranslations(),
+          history: verseHistory,
+        }));
+        return;
+      }
+
+      if (sanitized.action === 'getHistory') {
+        ws.send(JSON.stringify({ action: 'history', history: verseHistory }));
+        return;
+      }
+
+      if (sanitized.action === 'replayVerse') {
+        const entry = verseHistory.find((e) => e.id === sanitized.id);
+        if (!entry) {
+          ws.send(JSON.stringify({ action: 'error', error: 'Verset introuvable dans l\'historique.' }));
+          return;
+        }
+        // Rediffusion à l'identique — pas de nouvelle requête réseau (déjà en cache),
+        // et on ne re-pousse pas dans l'historique (ce serait un doublon).
+        broadcast({
+          action: 'showVerse',
+          reference: entry.reference, text: entry.text,
+          text_fr: entry.text_fr, text_en: entry.text_en, langMode: entry.langMode,
+          provider: entry.provider, durationMs: Number(sanitized.durationMs) || 300000,
+          replayed: true,
+        });
+        console.log('[server] Verset rejoué :', entry.reference);
+        return;
+      }
+
       if (sanitized.action === 'lookupReference') {
-        const reference = detector.detect(sanitized.reference || '');
+        const reference = detectBilingual(sanitized.reference || '');
         if (!reference) {
           ws.send(JSON.stringify({ action: 'lookupError', error: 'Référence biblique non reconnue.' }));
           return;
         }
         try {
-          const verse = await bibleLookup.getVerse(reference);
+          const lang = ['fr', 'en', 'both'].includes(String(sanitized.language || '').toLowerCase())
+            ? String(sanitized.language).toLowerCase()
+            : displayLanguage;
+          const verse = await bibleLookup.getVerseMultilang(reference, lang);
           broadcast({ action: 'showVerse', ...verse, durationMs: Number(sanitized.durationMs) || 300000 }, ws);
+          pushHistory({
+            reference: verse.reference, text: verse.text,
+            text_fr: verse.text_fr, text_en: verse.text_en, langMode: verse.langMode,
+            provider: verse.provider, autoDetected: false, timestamp: Date.now(),
+          });
+          broadcast({ action: 'historyUpdated', history: verseHistory });
         } catch (error) {
           ws.send(JSON.stringify({ action: 'lookupError', reference, error: error.message }));
         }
@@ -493,3 +607,4 @@ function workerSafeExit(code) {
   }
   process.exit(code);
 }
+
