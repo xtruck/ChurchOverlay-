@@ -1,0 +1,26 @@
+{
+  "design": {
+    "customThemesEnabled": true,
+    "activeTheme": "mesev-default",
+    "autoLiturgicalTheme": false,
+    "kineticTypography": false,
+    "aiGeneratedBackgrounds": false,
+    "ambientModes": {
+      "enabled": true,
+      "modes": ["preaching", "prayer", "worship", "silence", "communion"]
+    }
+  },
+  "ai": {
+    "themeDetection": { "enabled": false, "intervalSec": 60 },
+    "liveTranslation": { "enabled": false, "targetLangs": ["en", "es"] },
+    "sermonSummary": { "enabled": false, "intervalMin": 5 },
+    "postServiceRecap": { "enabled": false, "exportFormats": ["pdf", "png"] },
+    "crossReferences": { "enabled": false, "maxRefs": 3 }
+  },
+  "broadcast": {
+    "multiScene": { "enabled": false, "obsWebsocketUrl": "ws://localhost:4455", "password": "" },
+    "lowerThirds": { "enabled": false },
+    "serviceCountdown": { "enabled": false, "startTime": null },
+    "sessionStats": { "enabled": true }
+  }
+}
