@@ -110,8 +110,32 @@ const DISPLAY_NAMES = {
   '2jean': '2 Jean', '3jean': '3 Jean', jude: 'Jude', apocalypse: 'Apocalypse',
 };
 
-function label({ book, chapter, verseStart, verseEnd }) {
-  const name = DISPLAY_NAMES[book] || book;
+// Noms anglais officiels (utilisés pour l'affichage en mode 'en' seul).
+const DISPLAY_NAMES_EN = {
+  genese: 'Genesis', exode: 'Exodus', levitique: 'Leviticus', nombres: 'Numbers',
+  deuteronome: 'Deuteronomy', josue: 'Joshua', juges: 'Judges', ruth: 'Ruth',
+  '1samuel': '1 Samuel', '2samuel': '2 Samuel', '1rois': '1 Kings', '2rois': '2 Kings',
+  '1chroniques': '1 Chronicles', '2chroniques': '2 Chronicles', esdras: 'Ezra',
+  nehemie: 'Nehemiah', esther: 'Esther', job: 'Job', psaumes: 'Psalms',
+  proverbes: 'Proverbs', ecclesiaste: 'Ecclesiastes', cantiques: 'Song of Solomon',
+  esaie: 'Isaiah', jeremie: 'Jeremiah', lamentations: 'Lamentations',
+  ezechiel: 'Ezekiel', daniel: 'Daniel', osee: 'Hosea', joel: 'Joel', amos: 'Amos',
+  abdias: 'Obadiah', jonas: 'Jonah', michee: 'Micah', nahum: 'Nahum',
+  habacuc: 'Habakkuk', sophonie: 'Zephaniah', aggee: 'Haggai', zacharie: 'Zechariah',
+  malachie: 'Malachi', matthieu: 'Matthew', marc: 'Mark', luc: 'Luke', jean: 'John',
+  actes: 'Acts', romains: 'Romans', '1corinthiens': '1 Corinthians',
+  '2corinthiens': '2 Corinthians', galates: 'Galatians', ephesiens: 'Ephesians',
+  philippiens: 'Philippians', colossiens: 'Colossians',
+  '1thessaloniciens': '1 Thessalonians', '2thessaloniciens': '2 Thessalonians',
+  '1timothee': '1 Timothy', '2timothee': '2 Timothy', tite: 'Titus',
+  philemon: 'Philemon', hebreux: 'Hebrews', jacques: 'James',
+  '1pierre': '1 Peter', '2pierre': '2 Peter', '1jean': '1 John', '2jean': '2 John',
+  '3jean': '3 John', jude: 'Jude', apocalypse: 'Revelation',
+};
+
+function label({ book, chapter, verseStart, verseEnd }, lang = 'fr') {
+  const dict = lang === 'en' ? DISPLAY_NAMES_EN : DISPLAY_NAMES;
+  const name = dict[book] || DISPLAY_NAMES[book] || book;
   return !verseStart
     ? `${name} ${chapter}`
     : `${name} ${chapter}:${verseStart}${verseEnd && verseEnd !== verseStart ? `-${verseEnd}` : ''}`;
@@ -137,18 +161,69 @@ async function fetchJson(url, timeoutMs = 5000) {
 
 // --- Fournisseur : bible.helloao.org --------------------------------------
 
-async function helloaoFetchChapter(reference) {
+// Traductions supportées par helloao. Le code par langue peut être changé à
+// chaud via setTranslation() (dashboard).
+//  - fra_lsg  = Louis Segond 1910 (FR, domaine public)
+//  - eng_kjv  = King James Version (EN, domaine public)
+//  - eng_bsb  = Berean Standard Bible (EN moderne, domaine public)
+//  - eng_web  = World English Bible (EN moderne, domaine public)
+//  - eng_asv  = American Standard Version (EN, domaine public)
+// NB: NIV et ESV NE SONT PAS distribuables via API publique (licence),
+// on propose donc uniquement des traductions libres de droits.
+const AVAILABLE_TRANSLATIONS = {
+  fr: {
+    lsg: { id: 'fra_lsg', label: 'Louis Segond 1910' },
+  },
+  en: {
+    kjv: { id: 'eng_kjv', label: 'King James Version' },
+    web: { id: 'eng_web', label: 'World English Bible (moderne)' },
+    asv: { id: 'eng_asv', label: 'American Standard Version' },
+  },
+};
+
+// Sélection courante (mutable via setTranslation).
+const currentTranslation = { fr: 'fra_lsg', en: 'eng_kjv' };
+
+function getTranslationId(lang) {
+  return currentTranslation[lang] || (lang === 'en' ? 'eng_kjv' : 'fra_lsg');
+}
+
+function setTranslation(lang, code) {
+  const dict = AVAILABLE_TRANSLATIONS[lang];
+  if (!dict) throw new Error(`Langue inconnue: ${lang}`);
+  const found = dict[code] || Object.values(dict).find((t) => t.id === code);
+  if (!found) throw new Error(`Traduction inconnue pour ${lang}: ${code}`);
+  currentTranslation[lang] = found.id;
+  // On invalide le cache pour éviter que d'anciens versets d'une autre
+  // traduction persistent après un changement.
+  cache.clear();
+  chapterCache.clear();
+  return found.id;
+}
+
+function listTranslations() {
+  const out = {};
+  for (const lang of Object.keys(AVAILABLE_TRANSLATIONS)) {
+    out[lang] = Object.entries(AVAILABLE_TRANSLATIONS[lang]).map(([code, meta]) => ({
+      code, id: meta.id, label: meta.label, active: meta.id === currentTranslation[lang],
+    }));
+  }
+  return out;
+}
+
+async function helloaoFetchChapter(reference, lang = 'fr') {
   const bookCode = HELLOAO_BOOK_CODES[reference.book];
   if (!bookCode) {
     throw new Error(`Livre inconnu pour helloao: ${reference.book}`);
   }
-  const cacheKey = `helloao:${bookCode}:${reference.chapter}`;
+  const translation = getTranslationId(lang);
+  const cacheKey = `helloao:${translation}:${bookCode}:${reference.chapter}`;
   if (chapterCache.has(cacheKey)) {
     return chapterCache.get(cacheKey);
   }
 
-  const url = `https://bible.helloao.org/api/fra_lsg/${bookCode}/${reference.chapter}.json`;
-  console.log(`[bible-lookup] Téléchargement du chapitre ${reference.book} ${reference.chapter} via helloao...`);
+  const url = `https://bible.helloao.org/api/${translation}/${bookCode}/${reference.chapter}.json`;
+  console.log(`[bible-lookup] Téléchargement du chapitre ${reference.book} ${reference.chapter} (${translation}) via helloao...`);
   const data = await fetchJson(url);
 
   chapterCache.set(cacheKey, data);
@@ -164,6 +239,8 @@ function extractVerseText(content, contentItem) {
   return contentItem
     .map((part) => (typeof part === 'string' ? part : part.text || ''))
     .join(' ')
+    // Retire les marqueurs de paragraphe (¶) présents en KJV en début de verset.
+    .replace(/¶\s*/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -246,34 +323,37 @@ function getbibleParseVerse(chapterData, reference) {
 const BIBLE_PROVIDERS = [
   {
     name: 'helloao-lsg',
+    supportsLang: (lang) => lang === 'fr' || lang === 'en',
     fetchChapter: helloaoFetchChapter,
     parseVerse: helloaoParseVerse,
   },
   {
     name: 'getbible-ls1910',
+    supportsLang: (lang) => lang === 'fr',
     fetchChapter: getbibleFetchChapter,
     parseVerse: getbibleParseVerse,
   },
 ];
 
-async function fetchFromProvider(provider, reference) {
+async function fetchFromProvider(provider, reference, lang) {
   try {
-    console.log(`[bible-lookup] Tentative via ${provider.name}...`);
-    const chapterData = await provider.fetchChapter(reference);
+    if (provider.supportsLang && !provider.supportsLang(lang)) return null;
+    console.log(`[bible-lookup] Tentative via ${provider.name} (${lang})...`);
+    const chapterData = await provider.fetchChapter(reference, lang);
     const text = provider.parseVerse(chapterData, reference);
     if (!text) {
       throw new Error('Verset introuvable dans la réponse');
     }
-    console.log(`[bible-lookup] ✓ Verset obtenu via ${provider.name}`);
+    console.log(`[bible-lookup] ✓ Verset obtenu via ${provider.name} (${lang})`);
     return text;
   } catch (error) {
-    console.warn(`[bible-lookup] ✗ ${provider.name} a échoué: ${error.message}`);
+    console.warn(`[bible-lookup] ✗ ${provider.name} (${lang}) a échoué: ${error.message}`);
     return null;
   }
 }
 
-async function getVerse(reference) {
-  const cacheKey = `${reference.book}:${reference.chapter}:${reference.verseStart || ''}-${reference.verseEnd || ''}`;
+async function getVerse(reference, lang = 'fr') {
+  const cacheKey = `${lang}:${reference.book}:${reference.chapter}:${reference.verseStart || ''}-${reference.verseEnd || ''}`;
   if (cache.has(cacheKey)) {
     return cache.get(cacheKey);
   }
@@ -286,7 +366,7 @@ async function getVerse(reference) {
   let provider = null;
 
   for (const p of BIBLE_PROVIDERS) {
-    text = await fetchFromProvider(p, reference);
+    text = await fetchFromProvider(p, reference, lang);
     if (text) {
       provider = p.name;
       break;
@@ -298,9 +378,10 @@ async function getVerse(reference) {
   }
 
   const result = {
-    reference: label(reference),
+    reference: label(reference, lang),
     text: text.trim(),
     provider,
+    lang,
   };
 
   cache.set(cacheKey, result);
@@ -311,13 +392,58 @@ async function getVerse(reference) {
   return result;
 }
 
+/**
+ * Récupère le texte d'un verset dans une ou plusieurs langues.
+ * @param {Object} reference - référence biblique détectée
+ * @param {string} langMode - 'fr', 'en', ou 'both'
+ * @returns {Object} { reference, text_fr?, text_en?, text (langue primaire), langMode, provider }
+ */
+async function getVerseMultilang(reference, langMode = 'fr') {
+  if (langMode === 'both') {
+    const [frRes, enRes] = await Promise.allSettled([
+      getVerse(reference, 'fr'),
+      getVerse(reference, 'en'),
+    ]);
+    const frOk = frRes.status === 'fulfilled' ? frRes.value : null;
+    const enOk = enRes.status === 'fulfilled' ? enRes.value : null;
+    if (!frOk && !enOk) {
+      throw new Error('Verset introuvable en FR et en EN.');
+    }
+    // Réf bilingue : "Jean 3:16 · John 3:16" (identique si nom commun)
+    const refFr = label(reference, 'fr');
+    const refEn = label(reference, 'en');
+    const bilingualRef = refFr === refEn ? refFr : `${refFr} · ${refEn}`;
+    return {
+      reference: bilingualRef,
+      text_fr: frOk ? frOk.text : null,
+      text_en: enOk ? enOk.text : null,
+      text: frOk ? frOk.text : enOk.text,
+      langMode: 'both',
+      provider: frOk ? frOk.provider : enOk.provider,
+    };
+  }
+  const single = await getVerse(reference, langMode);
+  return {
+    reference: single.reference,
+    text: single.text,
+    text_fr: langMode === 'fr' ? single.text : null,
+    text_en: langMode === 'en' ? single.text : null,
+    langMode,
+    provider: single.provider,
+  };
+}
+
 module.exports = {
   getVerse,
+  getVerseMultilang,
   buildReferenceLabel: label,
   getProviders: () => BIBLE_PROVIDERS.map((p) => p.name),
   resetFailedProviders: () => {}, // Conservé pour compatibilité avec server.js
   getCacheSize: () => cache.size,
   clearCache: () => { cache.clear(); chapterCache.clear(); },
+  setTranslation,
+  listTranslations,
+  getTranslationId,
 };
 
 // Mode test : `node bible-lookup-with-api.js` (documenté dans SETUP.md).
@@ -354,3 +480,4 @@ if (require.main === module) {
     process.exit(failed > 0 ? 1 : 0);
   })();
 }
+
