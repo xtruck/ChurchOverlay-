@@ -34,7 +34,7 @@ jobs:
         run: npm ci
 
       - name: Construire l'installeur (electron-builder --win nsis)
-        run: npm run dist
+        run: npx electron-builder --win nsis --publish=never
 
       - name: Uploader l'installeur comme artifact
         uses: actions/upload-artifact@v4
