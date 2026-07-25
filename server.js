@@ -136,6 +136,21 @@ function isDuplicateSegment(segmentFile) {
   return false;
 }
 
+// CORRECTIF (audit) — Les erreurs (transcriptionError, pipelineError,
+// audioCaptureError, lookupError) n'étaient diffusées QUE vers les clients
+// WebSocket (overlay.html, test-envoi.js). Le tableau de bord (dashboard.html)
+// ne les recevait jamais autrement que noyées dans le flux de logs bruts —
+// invisibles en pratique pour l'équipe régie (non-technique). On notifie
+// maintenant explicitement main.js via l'IPC du Worker, qui pousse une
+// alerte visible (bannière) au tableau de bord. Sans effet si lancé en
+// standalone (`node server.js`), RUNNING_AS_WORKER étant alors false.
+function notifyAlert(code, severity, message) {
+  if (!RUNNING_AS_WORKER) return;
+  try {
+    parentPort.postMessage({ type: 'alert', code, severity, message, timestamp: Date.now() });
+  } catch (_) {}
+}
+
 function broadcast(payload, except) {
   if (!wss) return;
   const message = JSON.stringify(payload);
@@ -198,6 +213,7 @@ async function processTranscript(text) {
       provider: 'error', durationMs: 300000, autoDetected: true,
     });
     broadcast({ action: 'lookupError', reference, error: error.message, timestamp: Date.now() });
+    notifyAlert('lookupError', 'warning', `Verset introuvable (${bibleLookup.buildReferenceLabel(reference)}) : ${error.message}`);
   }
 }
 
@@ -216,6 +232,7 @@ function pipelineStartFailed(err) {
     console.error('[server] Le serveur continuera sans Speech-to-Text');
   }
   broadcast({ action: 'pipelineError', error: err.message, timestamp: Date.now() });
+  notifyAlert('pipelineError', 'error', `Le pipeline n'a pas démarré : ${err.message}`);
 }
 
 audioCapture.on({
@@ -246,12 +263,15 @@ audioCapture.on({
     } catch (error) {
       console.error('[server] Erreur lors de la transcription:', error.message);
       broadcast({ action: 'transcriptionError', error: error.message, timestamp: Date.now() });
+      notifyAlert('transcriptionError', 'warning',
+        `Transcription indisponible (Groq + Deepgram) : ${error.message}. La détection automatique de versets est interrompue jusqu'au retour du réseau.`);
       safeUnlink(segmentFile);
     }
   },
   onError: (error) => {
     console.error('[server] Erreur capture audio:', error.message);
     broadcast({ action: 'audioCaptureError', error: error.message, timestamp: Date.now() });
+    notifyAlert('audioCaptureError', 'error', `Problème micro/FFmpeg : ${error.message}`);
   },
 });
 
