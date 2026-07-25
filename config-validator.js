@@ -182,6 +182,31 @@ async function validateSystemConfig() {
   // 3. Vérifier les fichiers requis
   console.log('[config-validator] Vérification des fichiers requis...');
 
+  // CORRECTIF (audit production) — GROQ_API_KEY n'était vérifié nulle part
+  // dans ce module : en usage standalone (`node server.js` /
+  // `npm run server-only`, hors de l'assistant de setup Electron qui, lui,
+  // bloque déjà tant que la clé n'est pas saisie — voir isFirstRunNeeded()
+  // dans main.js), l'absence de GROQ_API_KEY passait totalement inaperçue.
+  // Le serveur démarrait, se déclarait "Configuration valide", et la
+  // transcription/détection automatique de versets restait silencieusement
+  // inopérante à chaque segment audio — sans qu'aucun avertissement ne le
+  // signale au démarrage. Comme il n'existe plus de filet de secours local
+  // depuis la suppression de Whisper (v0.3.0), Groq est désormais le seul
+  // fournisseur obligatoire ; Deepgram reste optionnel (fallback).
+  if (!process.env.GROQ_API_KEY) {
+    warnings.push(
+      "GROQ_API_KEY n'est pas défini. Aucun fournisseur de transcription " +
+      "principal n'est configuré : la détection automatique de versets ne " +
+      "fonctionnera pas tant que cette clé n'est pas renseignée (voir .env.example)."
+    );
+  }
+  if (!process.env.DEEPGRAM_API_KEY) {
+    warnings.push(
+      "DEEPGRAM_API_KEY n'est pas défini (optionnel) : pas de fournisseur de " +
+      "repli si Groq échoue ou est indisponible."
+    );
+  }
+
   // 4. Vérifier le périphérique audio si FFmpeg est disponible
   if (ffmpegCheck.available && envValidation.config.AUDIO_DEVICE) {
     console.log('[config-validator] Périphérique audio configuré:', envValidation.config.AUDIO_DEVICE);
