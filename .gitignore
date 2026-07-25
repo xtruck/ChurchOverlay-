@@ -1,6 +1,13 @@
-﻿node_modules/
+node_modules/
 whisper/
 *.wav
 .env
 .env.local
 *.log
+
+# Sortie de "npm run dist" (electron-builder) : .exe, .blockmap, dossier
+# win-unpacked/, etc. Ce sont des artefacts de build (~100 Mo), jamais du
+# code source — ils ne doivent jamais être commités. Le vrai .exe livré aux
+# utilisateurs vit dans les Releases GitHub (voir .github/workflows/
+# build-windows.yml), pas dans le dépôt git.
+dist/
