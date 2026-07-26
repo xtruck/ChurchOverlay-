@@ -57,13 +57,13 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, safeStorage, sessi
 const path = require('path');
 const fs = require('fs');
 const fsp = require('fs').promises;
-const { spawn } = require('child_process');
 const { Worker } = require('worker_threads');
 const os = require('os');
-const { ensureFfmpegInstalled, resolveFfmpegPath } = require('./setup-ffmpeg');
 const perfMonitor = require('./perf-monitor');
-const { parseDshowAudioDevices } = require('./dshow-parser');
 const themeLoader = require('./theme-loader');
+// CHANGELOG — FFmpeg/dshow (setup-ffmpeg.js, dshow-parser.js) retirés : la
+// capture micro se fait dans dashboard.html (getUserMedia/Web Audio), voir
+// audio-capture.js pour le détail du raisonnement.
 
 // main.js vit à la racine du projet (à côté de server.js, overlay.html, etc.),
 // donc APP_ROOT = __dirname.
