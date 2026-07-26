@@ -230,39 +230,56 @@ async function fetchJson(url, timeoutMs = 5000) {
 
 // --- Fournisseur : bible.helloao.org --------------------------------------
 
-// Traductions supportées par helloao. Le code par langue peut être changé à
-// chaud via setTranslation() (dashboard).
-//  - fra_lsg  = Louis Segond 1910 (FR, domaine public)
-//  - eng_kjv  = King James Version (EN, domaine public)
-//  - eng_bsb  = Berean Standard Bible (EN moderne, domaine public)
-//  - eng_web  = World English Bible (EN moderne, domaine public)
-//  - eng_asv  = American Standard Version (EN, domaine public)
-// NB: NIV et ESV NE SONT PAS distribuables via API publique (licence),
-// on propose donc uniquement des traductions libres de droits.
+// Traductions disponibles, par langue. Chaque entrée référence l'ID
+// spécifique à CHAQUE fournisseur séparément (helloaoId / getbibleId) car
+// un même "choix logique" (ex: Darby) peut être servi par un fournisseur et
+// pas l'autre — fetchFromProvider() essaie chaque fournisseur dans l'ordre
+// et celui qui n'a pas cette traduction échoue proprement (id absent),
+// laissant le fournisseur suivant prendre le relais.
+//  - lsg   = Louis Segond 1910 (FR, domaine public) — helloao ET getbible
+//  - darby = Darby (FR, domaine public, révision 2024) — getbible SEULEMENT
+//    (absente de helloao ; AJOUT (audit — inspiré de Rhema, changement de
+//    traduction à la voix) : avant, une seule traduction française
+//    existait, ce qui rendait un changement de traduction sans objet — deux
+//    choix réels suffisent pour que la fonctionnalité ait un sens.)
+//  - kjv/web/asv (EN, domaine public) — helloao seulement
+// NB: NIV, ESV, Segond 21, Semeur NE SONT PAS distribuables via API
+// publique (licence), on propose donc uniquement des traductions libres de
+// droits, françaises comme anglaises.
 const AVAILABLE_TRANSLATIONS = {
   fr: {
-    lsg: { id: 'fra_lsg', label: 'Louis Segond 1910' },
+    lsg: { helloaoId: 'fra_lsg', getbibleId: 'ls1910', label: 'Louis Segond 1910' },
+    darby: { helloaoId: null, getbibleId: 'darby', label: 'Darby' },
   },
   en: {
-    kjv: { id: 'eng_kjv', label: 'King James Version' },
-    web: { id: 'eng_web', label: 'World English Bible (moderne)' },
-    asv: { id: 'eng_asv', label: 'American Standard Version' },
+    kjv: { helloaoId: 'eng_kjv', getbibleId: null, label: 'King James Version' },
+    web: { helloaoId: 'eng_web', getbibleId: null, label: 'World English Bible (moderne)' },
+    asv: { helloaoId: 'eng_asv', getbibleId: null, label: 'American Standard Version' },
   },
 };
 
-// Sélection courante (mutable via setTranslation).
-const currentTranslation = { fr: 'fra_lsg', en: 'eng_kjv' };
+// Sélection courante (mutable via setTranslation) — stocke le CODE logique
+// (ex: 'lsg', 'darby'), pas un id spécifique à un fournisseur.
+const currentTranslation = { fr: 'lsg', en: 'kjv' };
 
+function getTranslationMeta(lang) {
+  const dict = AVAILABLE_TRANSLATIONS[lang] || AVAILABLE_TRANSLATIONS.fr;
+  const code = currentTranslation[lang] || Object.keys(dict)[0];
+  return dict[code] || Object.values(dict)[0];
+}
+
+// Conservée pour compatibilité (server.js l'utilise pour les diagnostics) :
+// renvoie l'id helloao de la traduction courante, si ce fournisseur la sert.
 function getTranslationId(lang) {
-  return currentTranslation[lang] || (lang === 'en' ? 'eng_kjv' : 'fra_lsg');
+  const meta = getTranslationMeta(lang);
+  return meta ? meta.helloaoId : null;
 }
 
 function setTranslation(lang, code) {
   const dict = AVAILABLE_TRANSLATIONS[lang];
   if (!dict) throw new Error(`Langue inconnue: ${lang}`);
-  const found = dict[code] || Object.values(dict).find((t) => t.id === code);
-  if (!found) throw new Error(`Traduction inconnue pour ${lang}: ${code}`);
-  currentTranslation[lang] = found.id;
+  if (!dict[code]) throw new Error(`Traduction inconnue pour ${lang}: ${code}`);
+  currentTranslation[lang] = code;
   // On invalide le cache pour éviter que d'anciens versets d'une autre
   // traduction persistent après un changement.
   cache.clear();
@@ -273,14 +290,15 @@ function setTranslation(lang, code) {
   if (diskCachePath) {
     scheduleDiskCacheSave();
   }
-  return found.id;
+  return code;
 }
 
 function listTranslations() {
   const out = {};
   for (const lang of Object.keys(AVAILABLE_TRANSLATIONS)) {
+    const activeCode = currentTranslation[lang];
     out[lang] = Object.entries(AVAILABLE_TRANSLATIONS[lang]).map(([code, meta]) => ({
-      code, id: meta.id, label: meta.label, active: meta.id === currentTranslation[lang],
+      code, label: meta.label, active: code === activeCode,
     }));
   }
   return out;
@@ -292,6 +310,14 @@ async function helloaoFetchChapter(reference, lang = 'fr') {
     throw new Error(`Livre inconnu pour helloao: ${reference.book}`);
   }
   const translation = getTranslationId(lang);
+  // AJOUT (audit — traductions multiples) : certaines traductions (ex.
+  // Darby) ne sont servies QUE par getbible, pas par helloao. On échoue
+  // clairement ici plutôt que d'interroger helloao avec un id manquant
+  // (undefined dans l'URL) — fetchFromProvider() passe alors proprement au
+  // fournisseur suivant, exactement comme pour toute autre panne réseau.
+  if (!translation) {
+    throw new Error(`Traduction non disponible sur helloao pour ${lang}`);
+  }
   const cacheKey = `helloao:${translation}:${bookCode}:${reference.chapter}`;
   if (chapterCache.has(cacheKey)) {
     return chapterCache.get(cacheKey);
@@ -350,13 +376,20 @@ async function getbibleFetchChapter(reference) {
   if (!bookNr) {
     throw new Error(`Livre inconnu pour getbible: ${reference.book}`);
   }
-  const cacheKey = `getbible:${bookNr}:${reference.chapter}`;
+  // AJOUT (audit — traductions multiples) : avant, l'URL pointait
+  // toujours vers 'ls1910' en dur, quelle que soit la traduction
+  // sélectionnée — changer pour Darby (setTranslation('fr','darby'))
+  // n'aurait donc rien changé pour ce fournisseur. On lit maintenant le
+  // getbibleId de la traduction courante (voir AVAILABLE_TRANSLATIONS).
+  const meta = getTranslationMeta('fr');
+  const translationSlug = (meta && meta.getbibleId) || 'ls1910';
+  const cacheKey = `getbible:${translationSlug}:${bookNr}:${reference.chapter}`;
   if (chapterCache.has(cacheKey)) {
     return chapterCache.get(cacheKey);
   }
 
-  const url = `https://api.getbible.net/v2/ls1910/${bookNr}/${reference.chapter}.json`;
-  console.log(`[bible-lookup] Téléchargement du chapitre ${reference.book} ${reference.chapter} via getbible...`);
+  const url = `https://api.getbible.net/v2/${translationSlug}/${bookNr}/${reference.chapter}.json`;
+  console.log(`[bible-lookup] Téléchargement du chapitre ${reference.book} ${reference.chapter} (${translationSlug}) via getbible...`);
   const data = await fetchJson(url);
 
   chapterCache.set(cacheKey, data);
@@ -425,6 +458,75 @@ async function fetchFromProvider(provider, reference, lang) {
     console.warn(`[bible-lookup] ✗ ${provider.name} (${lang}) a échoué: ${error.message}`);
     return null;
   }
+}
+
+// -----------------------------------------------------------------------
+// AJOUT (audit — inspiré de Rhema, détection par citation).
+// -----------------------------------------------------------------------
+// Rhema détecte un verset même quand il est lu SANS que sa référence soit
+// prononcée, en le comparant à sa base SQLite complète (recherche
+// sémantique par embeddings). ChurchOverlay reste volontairement sans base
+// de données complète — mais on peut retrouver une bonne partie du
+// bénéfice en comparant le texte transcrit aux versets DÉJÀ mis en cache
+// (via une référence explicite ou une citation précédente). Couverture
+// nécessairement partielle (un verset jamais vu avant reste invisible à ce
+// mécanisme), mais couvre le cas réel le plus fréquent : les versets
+// récurrents d'un culte à l'autre, désormais aussi reconnaissables sans
+// citer leur référence.
+function normalizeForMatch(text) {
+  return String(text || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function significantWordSet(text) {
+  // Mots de 3 lettres et plus seulement : élimine les articles/prépositions
+  // très fréquents (de, la, un, et...) qui gonfleraient artificiellement le
+  // score de similarité entre deux textes sans rapport.
+  return new Set(normalizeForMatch(text).split(' ').filter((w) => w.length > 2));
+}
+
+// Similarité = proportion des mots du texte le plus court retrouvée dans
+// l'autre — plus tolérante qu'un Jaccard classique face à une citation
+// partielle ou à une transcription vocale imparfaite (mots ratés/déformés).
+function wordOverlapSimilarity(a, b) {
+  const setA = significantWordSet(a);
+  const setB = significantWordSet(b);
+  if (setA.size === 0 || setB.size === 0) return 0;
+  const [smaller, larger] = setA.size <= setB.size ? [setA, setB] : [setB, setA];
+  let overlap = 0;
+  for (const w of smaller) if (larger.has(w)) overlap++;
+  return overlap / smaller.size;
+}
+
+const QUOTE_MATCH_THRESHOLD = 0.55;
+const QUOTE_MATCH_MIN_WORDS = 5; // segments trop courts = trop de faux positifs
+
+/**
+ * Cherche, parmi les versets déjà en cache (mémoire + disque), celui dont le
+ * texte ressemble le plus au segment transcrit fourni — SANS référence
+ * explicite prononcée.
+ * @param {string} spokenText - segment de transcription à comparer
+ * @returns {{ reference: string, text: string, provider: string, lang: string, score: number }|null}
+ */
+function findByQuotedText(spokenText) {
+  if (significantWordSet(spokenText).size < QUOTE_MATCH_MIN_WORDS) return null;
+
+  let best = null;
+  let bestScore = 0;
+  for (const entry of cache.values()) {
+    if (!entry || !entry.text) continue;
+    const score = wordOverlapSimilarity(spokenText, entry.text);
+    if (score > bestScore) {
+      bestScore = score;
+      best = entry;
+    }
+  }
+  if (!best || bestScore < QUOTE_MATCH_THRESHOLD) return null;
+  return { ...best, score: bestScore };
 }
 
 async function getVerse(reference, lang = 'fr') {
@@ -526,6 +628,7 @@ module.exports = {
   listTranslations,
   getTranslationId,
   setCacheDir, // AJOUT (audit) : cache de versets persistant sur disque
+  findByQuotedText, // AJOUT (audit) : détection par citation, inspirée de Rhema
 };
 
 // Mode test : `node bible-lookup-with-api.js` (documenté dans SETUP.md).
