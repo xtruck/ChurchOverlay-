@@ -66,6 +66,14 @@ if (RUNNING_AS_WORKER) {
       console.log('\n[server] Message d\'arrêt reçu du thread principal (IPC).');
       process.emit('SIGINT');
     }
+    // Ajouté à l'audit : theme-loader.js était déjà branché au dashboard
+    // (choix du thème), mais rien ne relayait le changement jusqu'à
+    // overlay.html en direct. main.js envoie ce message dès que
+    // themeLoader.setActiveTheme() réussit ; on le rediffuse tel quel à
+    // tous les overlays connectés (aucun redémarrage du pipeline requis).
+    if (msg && msg.type === 'theme-changed' && msg.css) {
+      broadcast({ action: 'applyTheme', ...msg.css });
+    }
   });
 }
 
@@ -93,6 +101,7 @@ const { createContextTracker } = require('./context-tracker');
 const { validateAndSanitize } = require('./validation');
 const { createRateLimiter } = require('./rate-limiter');
 const { validateSystemConfig, displayValidationResults } = require('./config-validator');
+const themeLoader = require('./theme-loader');
 
 const verseTracker = createContextTracker();
 const rateLimiter = createRateLimiter({
@@ -388,6 +397,16 @@ function startServer(PORT) {
     compteurClients++;
     const idClient = compteurClients;
     console.log('[server] Client #' + idClient + ' connecté. (' + wss.clients.size + ' client(s) au total)');
+
+    // Ajouté à l'audit : sans ça, un overlay qui se (re)connecte (ex: OBS
+    // relance la Source Navigateur) repartait toujours sur le thème CSS en
+    // dur d'overlay.html, pas sur le thème actif choisi dans le dashboard.
+    try {
+      const activeTheme = themeLoader.getActiveTheme();
+      ws.send(JSON.stringify({ action: 'applyTheme', ...themeLoader.themeToCss(activeTheme) }));
+    } catch (e) {
+      console.warn('[server] Impossible d\'envoyer le thème initial au client #' + idClient + ':', e.message);
+    }
 
     ws.on('message', async (data) => {
       const messageCheck = rateLimiter.checkMessage(ws);
