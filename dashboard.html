@@ -679,6 +679,55 @@
       </div>
     </div>
 
+    <!-- Thème de l'overlay -->
+    <!-- Ajouté à l'audit : theme-loader.js existait déjà (testé), jamais accessible depuis l'UI. -->
+    <div class="glass-card">
+      <div class="section-label">
+        <span>🎨</span> Thème de l'overlay
+      </div>
+      <select id="theme-select" data-testid="theme-select" style="width:100%; padding:10px; border-radius:10px; margin-bottom:8px;">
+        <option value="">Chargement des thèmes…</option>
+      </select>
+      <div class="lang-status">
+        <span class="lang-status-dot" id="theme-status-dot"></span>
+        <span id="theme-status-text">—</span>
+      </div>
+    </div>
+
+    <!-- Contrôle OBS multi-scènes -->
+    <!-- Ajouté à l'audit : obs-controller.js existait déjà (testé), jamais accessible depuis l'UI.
+         Entièrement optionnel : désactivé tant que la case n'est pas cochée. -->
+    <div class="glass-card">
+      <div class="section-label">
+        <span>🎬</span> Contrôle OBS (optionnel)
+      </div>
+      <label style="display:flex; align-items:center; gap:8px; margin-bottom:10px; cursor:pointer;">
+        <input type="checkbox" id="obs-enabled-checkbox" data-testid="obs-enabled-checkbox">
+        <span>Activer le contrôle OBS (scènes, enregistrement)</span>
+      </label>
+      <div id="obs-controls" style="display:none;">
+        <div style="display:flex; gap:8px; margin-bottom:8px;">
+          <input type="text" id="obs-url" placeholder="ws://localhost:4455" style="flex:1; padding:8px; border-radius:8px;">
+          <input type="password" id="obs-password" placeholder="Mot de passe (optionnel)" style="flex:1; padding:8px; border-radius:8px;">
+        </div>
+        <div class="actions-grid" style="margin-bottom:8px;">
+          <button class="btn btn-secondary" id="btn-obs-save" data-testid="obs-save-btn">💾 Enregistrer</button>
+          <button class="btn btn-secondary" id="btn-obs-connect" data-testid="obs-connect-btn">🔌 Connecter</button>
+        </div>
+        <select id="obs-scene-select" data-testid="obs-scene-select" style="width:100%; padding:10px; border-radius:10px; margin-bottom:8px;" disabled>
+          <option value="">— Connectez-vous pour voir les scènes —</option>
+        </select>
+        <div class="actions-grid">
+          <button class="btn btn-secondary" id="btn-obs-switch" data-testid="obs-switch-scene-btn" disabled>🎬 Changer de scène</button>
+          <button class="btn btn-secondary" id="btn-obs-record" data-testid="obs-toggle-record-btn" disabled>⏺️ Enregistrement</button>
+        </div>
+      </div>
+      <div class="lang-status">
+        <span class="lang-status-dot" id="obs-status-dot"></span>
+        <span id="obs-status-text">Désactivé</span>
+      </div>
+    </div>
+
     <!-- Actions -->
     <div class="actions-grid">
       <button class="btn btn-secondary" id="btn-change-mic" data-testid="open-setup-btn">
@@ -978,6 +1027,146 @@
       });
 
       connect();
+    })();
+
+    // --- Thème de l'overlay --------------------------------------------------
+    // Ajouté à l'audit : theme-loader.js/obs-controller.js existaient déjà
+    // (testés unitairement) mais n'étaient reliés à aucune fenêtre. IIFE
+    // séparée pour ne pas interférer avec la logique de langue ci-dessus.
+    (function initThemePanel() {
+      const select = document.getElementById('theme-select');
+      const statusDot = document.getElementById('theme-status-dot');
+      const statusText = document.getElementById('theme-status-text');
+      if (!select || !window.churchOverlay || !window.churchOverlay.listThemes) return;
+
+      async function refresh() {
+        const [listRes, activeRes] = await Promise.all([
+          window.churchOverlay.listThemes(),
+          window.churchOverlay.getActiveTheme(),
+        ]);
+        select.innerHTML = '';
+        if (!listRes.ok || !listRes.themes.length) {
+          select.innerHTML = '<option value="">Aucun thème disponible</option>';
+          statusDot.className = 'lang-status-dot error';
+          statusText.textContent = listRes.error || 'Impossible de charger les thèmes';
+          return;
+        }
+        listRes.themes.forEach((t) => {
+          const opt = document.createElement('option');
+          opt.value = t.id;
+          opt.textContent = t.name + (t.author === 'system' ? ' (défaut)' : '');
+          select.appendChild(opt);
+        });
+        if (activeRes.ok && activeRes.theme) {
+          select.value = activeRes.theme.id;
+          statusDot.className = 'lang-status-dot connected';
+          statusText.textContent = 'Thème actif : ' + activeRes.theme.name;
+        }
+      }
+
+      select.addEventListener('change', async () => {
+        const themeId = select.value;
+        if (!themeId) return;
+        statusText.textContent = 'Application en cours…';
+        const res = await window.churchOverlay.setActiveTheme(themeId);
+        if (res.ok) {
+          statusDot.className = 'lang-status-dot connected';
+          statusText.textContent = 'Thème actif : ' + res.theme.name + ' (appliqué en direct sur l\'overlay)';
+          showToast('🎨 Thème "' + res.theme.name + '" appliqué');
+        } else {
+          statusDot.className = 'lang-status-dot error';
+          statusText.textContent = 'Erreur : ' + res.error;
+          showToast('❌ ' + res.error);
+        }
+      });
+
+      refresh();
+    })();
+
+    // --- Contrôle OBS ---------------------------------------------------------
+    (function initObsPanel() {
+      const checkbox = document.getElementById('obs-enabled-checkbox');
+      const controls = document.getElementById('obs-controls');
+      const urlInput = document.getElementById('obs-url');
+      const passInput = document.getElementById('obs-password');
+      const btnSave = document.getElementById('btn-obs-save');
+      const btnConnect = document.getElementById('btn-obs-connect');
+      const sceneSelect = document.getElementById('obs-scene-select');
+      const btnSwitch = document.getElementById('btn-obs-switch');
+      const btnRecord = document.getElementById('btn-obs-record');
+      const statusDot = document.getElementById('obs-status-dot');
+      const statusText = document.getElementById('obs-status-text');
+      if (!checkbox || !window.churchOverlay || !window.churchOverlay.getObsConfig) return;
+
+      function setStatus(state, text) {
+        statusDot.className = 'lang-status-dot' + (state === 'connected' ? ' connected' : state === 'error' ? ' error' : '');
+        statusText.textContent = text;
+      }
+
+      async function loadConfig() {
+        const cfg = await window.churchOverlay.getObsConfig();
+        if (!cfg.ok) { setStatus('error', cfg.error); return; }
+        checkbox.checked = cfg.enabled;
+        controls.style.display = cfg.enabled ? 'block' : 'none';
+        urlInput.value = cfg.obsWebsocketUrl;
+        passInput.placeholder = cfg.hasPassword ? '•••••••• (déjà défini — laisser vide pour conserver)' : 'Mot de passe (optionnel)';
+        setStatus(cfg.enabled ? 'idle' : '', cfg.enabled ? 'Non connecté' : 'Désactivé');
+      }
+
+      checkbox.addEventListener('change', async () => {
+        controls.style.display = checkbox.checked ? 'block' : 'none';
+        const res = await window.churchOverlay.setObsConfig({ enabled: checkbox.checked });
+        setStatus(checkbox.checked ? 'idle' : '', checkbox.checked ? 'Non connecté' : 'Désactivé');
+        if (!res.ok) showToast('❌ ' + res.error);
+      });
+
+      btnSave.addEventListener('click', async () => {
+        const payload = { obsWebsocketUrl: urlInput.value.trim() };
+        if (passInput.value) payload.password = passInput.value; // vide = on ne touche pas au mot de passe existant
+        const res = await window.churchOverlay.setObsConfig(payload);
+        if (res.ok) { showToast('💾 Configuration OBS enregistrée'); passInput.value = ''; loadConfig(); }
+        else showToast('❌ ' + res.error);
+      });
+
+      btnConnect.addEventListener('click', async () => {
+        setStatus('idle', 'Connexion en cours…');
+        const res = await window.churchOverlay.obsConnect();
+        if (res.ok && res.connected) {
+          setStatus('connected', 'Connecté à OBS');
+          showToast('🎬 Connecté à OBS Studio');
+          const scenesRes = await window.churchOverlay.obsListScenes();
+          sceneSelect.innerHTML = '';
+          if (scenesRes.ok && scenesRes.scenes.length) {
+            scenesRes.scenes.forEach((name) => {
+              const opt = document.createElement('option');
+              opt.value = name; opt.textContent = name;
+              sceneSelect.appendChild(opt);
+            });
+            sceneSelect.disabled = false;
+            btnSwitch.disabled = false;
+          }
+          btnRecord.disabled = false;
+        } else {
+          setStatus('error', res.error || 'Connexion échouée');
+          showToast('❌ ' + (res.error || 'Connexion OBS échouée'));
+        }
+      });
+
+      btnSwitch.addEventListener('click', async () => {
+        const sceneName = sceneSelect.value;
+        if (!sceneName) return;
+        const res = await window.churchOverlay.obsSwitchScene(sceneName);
+        if (res.ok) showToast('🎬 Scène changée : ' + sceneName);
+        else showToast('❌ ' + (res.reason || 'Échec du changement de scène'));
+      });
+
+      btnRecord.addEventListener('click', async () => {
+        const res = await window.churchOverlay.obsToggleRecording();
+        if (res.ok) showToast(res.recording ? '⏺️ Enregistrement démarré' : '⏹️ Enregistrement arrêté');
+        else showToast('❌ ' + (res.reason || 'Échec'));
+      });
+
+      loadConfig();
     })();
   </script>
 </body>
