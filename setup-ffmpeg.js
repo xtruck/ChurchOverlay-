@@ -51,7 +51,52 @@ const path = require('path');
 const https = require('https');
 const { execFileSync } = require('child_process');
 
-const FFMPEG_DIR = path.join(__dirname, 'ffmpeg');
+/**
+ * CORRECTIF (audit — cause racine du bug "aucun microphone détecté" qui a
+ * survécu à tous les correctifs précédents) : `asar: true` a été activé
+ * dans package.json avec `asarUnpack: ["ffmpeg/**\/*"]`, qui copie bien
+ * ffmpeg.exe en dehors de l'archive à la construction — mais SANS que ce
+ * fichier ne soit mis à jour pour pointer vers ce chemin réel.
+ *
+ * Dans une app empaquetée, __dirname vaut ici quelque chose comme
+ * "...\resources\app.asar" : `path.join(__dirname, 'ffmpeg')` calculait donc
+ * "...\resources\app.asar\ffmpeg\ffmpeg.exe", un chemin À L'INTÉRIEUR de
+ * l'archive. `fs.existsSync()` répondait "true" sur ce chemin (Electron lit
+ * de façon transparente à travers app.asar, y compris pour les fichiers
+ * "asarUnpack"), donc ensureFfmpegInstalled() ne se déclenchait jamais et
+ * tout semblait normal — SAUF que `child_process.spawn()`, contrairement à
+ * `fs.*`, ne passe PAS par la couche de lecture transparente d'Electron : il
+ * appelle directement l'API Windows (CreateProcess), qui ne sait rien
+ * d'app.asar et ne peut PAS exécuter un binaire "situé" dedans. Le spawn
+ * échouait donc silencieusement à chaque tentative de détection de micro OU
+ * de capture audio, quel que soit l'état du parsing ou du cache — d'où
+ * l'échec systématique malgré tous les autres correctifs.
+ *
+ * On calcule donc explicitement le chemin RÉEL post-extraction
+ * (app.asar.unpacked, à côté de app.asar) quand on tourne depuis une
+ * archive. Ce fichier est aussi exécuté en CLI pur (`npm run setup-ffmpeg`,
+ * sur la machine du développeur, avant tout empaquetage) : dans ce cas
+ * __dirname ne contient jamais "app.asar" et la logique ci-dessous ne change
+ * rien, comme attendu.
+ */
+function resolveAppRoot() {
+  // CORRECTIF (robustesse) : on vérifie les deux séparateurs possibles
+  // ('/' et '\'), pas seulement path.sep du système courant — certains
+  // outils de packaging normalisent parfois les chemins avec des '/' même
+  // sur Windows, et ce fichier tourne aussi bien en CLI Node classique qu'à
+  // l'intérieur d'Electron.
+  for (const sep of ['\\', '/']) {
+    const marker = `${sep}app.asar`;
+    const idx = __dirname.indexOf(marker);
+    if (idx !== -1 && __dirname[idx + marker.length] !== '.') { // évite de re-matcher ".unpacked" lui-même
+      return __dirname.slice(0, idx) + `${marker}.unpacked` + __dirname.slice(idx + marker.length);
+    }
+  }
+  return __dirname; // dev / CLI hors app.asar : rien à changer
+}
+
+const APP_ROOT = resolveAppRoot();
+const FFMPEG_DIR = path.join(APP_ROOT, 'ffmpeg');
 const FFMPEG_EXE = path.join(FFMPEG_DIR, 'ffmpeg.exe');
 
 // Délai maximum sans octet reçu avant d'abandonner le téléchargement.
