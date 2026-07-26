@@ -111,6 +111,19 @@ function detectBilingual(text) {
   return null;
 }
 const bibleLookup = require('./bible-lookup-with-api');
+
+// AJOUT (audit — cache de versets persistant, inspiré de Rhema) : en mode
+// Worker (app Electron), on utilise le même dossier userData que le reste
+// de la config (config.json, audio-devices.cache.json). En usage standalone
+// (`node server.js` / `npm run server-only`, sans Electron), on retombe sur
+// un dossier caché dans le profil utilisateur — ce module ne doit dépendre
+// d'aucune API Electron pour rester utilisable hors app packagée.
+bibleLookup.setCacheDir(
+  RUNNING_AS_WORKER && workerData && workerData.userDataDir
+    ? workerData.userDataDir
+    : path.join(require('os').homedir(), '.churchoverlay')
+);
+
 const { createContextTracker } = require('./context-tracker');
 const { validateAndSanitize } = require('./validation');
 const { createRateLimiter } = require('./rate-limiter');
