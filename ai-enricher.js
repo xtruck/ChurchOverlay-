@@ -5,6 +5,21 @@
  * Chaque fonction IA est INDÉPENDANTE et désactivable via features.json.
  * Toutes utilisent Emergent LLM Key (gratuit) via emergentintegrations.
  * Aucun appel réseau si la feature est désactivée.
+ *
+ * ⚠️ NON INTÉGRÉ (trouvé lors de l'audit round 4) : ce module n'est
+ * `require()` par AUCUN autre fichier du dépôt (ni server.js, ni main.js),
+ * n'apparaît pas dans package.json > build.files (donc jamais empaqueté
+ * dans l'app livrée) et dépend du paquet npm `emergentintegrations` qui
+ * n'est déclaré ni dans "dependencies" ni dans "devDependencies" de
+ * package.json et n'est pas présent dans node_modules. Résultat : si ce
+ * fichier est un jour `require()` depuis un autre module (par ex. pour
+ * brancher la détection de thème ou la traduction live), l'appli plantera
+ * immédiatement avec `Cannot find module 'emergentintegrations'`.
+ * Avant d'activer une des features `ai.*` dans config/features.json,
+ * il faut : 1) `npm install emergentintegrations`, 2) ajouter la clé au
+ * package.json, 3) brancher les fonctions ci-dessous depuis server.js.
+ * En l'état actuel (non branché), ce fichier n'a aucun impact sur l'app —
+ * il est laissé ici comme brouillon d'une fonctionnalité future.
  */
 
 const { LlmChat, UserMessage } = require('emergentintegrations');
