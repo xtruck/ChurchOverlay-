@@ -578,6 +578,232 @@
     opacity: 1;
     transform: translateX(-50%) translateY(0);
   }
+
+  /* ==========================================================================
+     Recherche rapide + file d'attente + historique
+     Inspiré de Rhema (openbezal/rhema) : "Quick navigation" et "Verse queue".
+     xtruck n'a pas de concept de file côté serveur (un verset s'affiche dès
+     qu'on le déclenche, via lookupReference) — la "file" ci-dessous est donc
+     volontairement client-side : l'opérateur prépare une liste de versets à
+     l'avance, puis clique "Afficher" au bon moment pendant le culte. Aucun
+     nouveau protocole serveur : on réutilise lookupReference/replayVerse qui
+     existaient déjà côté server.js mais n'étaient jamais exposés dans l'UI.
+     ========================================================================== */
+  .quicknav-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .quicknav-input {
+    flex: 1;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--glass-border);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-primary);
+    font-size: 14px;
+    font-family: inherit;
+  }
+
+  .quicknav-input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .btn-icon {
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--glass-border);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-primary);
+    font-size: 15px;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease;
+    white-space: nowrap;
+  }
+
+  .btn-icon:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--accent);
+  }
+
+  .btn-icon:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .vqueue-list, .vhistory-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+
+  .vqueue-empty, .vhistory-empty {
+    color: var(--text-muted);
+    font-size: 12px;
+    text-align: center;
+    padding: 14px 0;
+  }
+
+  .vqueue-item, .vhistory-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--glass-border);
+  }
+
+  .vitem-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .vitem-ref {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-primary);
+  }
+
+  .vitem-text {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .vitem-badge {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(99, 102, 241, 0.15);
+    color: var(--accent-hover);
+    white-space: nowrap;
+  }
+
+  .vitem-badge.auto {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--success);
+  }
+
+  .vitem-badge.replayed {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--warning);
+  }
+
+  .vitem-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .vitem-actions button {
+    padding: 5px 8px;
+    border-radius: 7px;
+    border: 1px solid var(--glass-border);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  .vitem-actions button:hover {
+    color: var(--text-primary);
+    border-color: var(--accent);
+  }
+
+  .vitem-actions button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+
+  .vitem-actions button.primary:hover {
+    background: var(--accent-hover);
+  }
+
+  /* ==========================================================================
+     Onboarding (tour guidé) — inspiré de Rhema. Dépendance zéro : un simple
+     overlay + spotlight positionné sur les .glass-card dans l'ordre, avec
+     tooltip Suivant/Passer.
+     ========================================================================== */
+  #onboarding-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: none;
+    pointer-events: none;
+  }
+
+  #onboarding-overlay.active {
+    display: block;
+  }
+
+  #onboarding-spotlight {
+    position: absolute;
+    border-radius: 16px;
+    box-shadow: 0 0 0 9999px rgba(5, 7, 15, 0.78);
+    transition: all 0.3s ease;
+    pointer-events: none;
+  }
+
+  #onboarding-tooltip {
+    position: absolute;
+    max-width: 300px;
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+    padding: 16px;
+    box-shadow: var(--shadow);
+    pointer-events: all;
+    transition: all 0.3s ease;
+  }
+
+  #onboarding-tooltip .ob-step {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+
+  #onboarding-tooltip .ob-title {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  #onboarding-tooltip .ob-text {
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin-bottom: 14px;
+  }
+
+  #onboarding-tooltip .ob-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+  }
+
+  #onboarding-tooltip .ob-skip {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    padding: 6px 0;
+  }
+
+  #onboarding-tooltip .ob-skip:hover {
+    color: var(--text-secondary);
+  }
 </style>
 </head>
 <body>
@@ -726,6 +952,55 @@
         <span class="lang-status-dot" id="obs-status-dot"></span>
         <span id="obs-status-text">Désactivé</span>
       </div>
+    </div>
+
+    <!-- Recherche & file d'attente de versets -->
+    <!-- Ajouté (Rhema : "Quick navigation" + "Verse queue") : server.js
+         supportait déjà lookupReference/replayVerse côté WebSocket sans
+         aucune UI pour les déclencher. La "file" reste volontairement
+         côté client (localStorage) — xtruck n'a pas de concept de file
+         d'attente serveur, un verset s'affiche dès qu'on le déclenche. -->
+    <div class="glass-card">
+      <div class="section-label">
+        <span>🔎</span> Recherche & navigation rapide
+      </div>
+      <div class="quicknav-row">
+        <input
+          type="text"
+          class="quicknav-input"
+          id="quicknav-input"
+          list="quicknav-books"
+          placeholder="Ex : Jean 3:16, Genèse 1…"
+          data-testid="quicknav-input"
+        />
+        <button class="btn-icon" id="btn-quicknav-show" data-testid="quicknav-show-btn" title="Afficher immédiatement">▶️</button>
+        <button class="btn-icon" id="btn-quicknav-queue" data-testid="quicknav-queue-btn" title="Ajouter à la file d'attente">➕</button>
+      </div>
+      <datalist id="quicknav-books"></datalist>
+      <div id="quicknav-status" class="lang-status" style="margin-bottom:10px;">
+        <span class="lang-status-dot" id="quicknav-status-dot"></span>
+        <span id="quicknav-status-text">Tapez une référence, puis Entrée pour l'afficher.</span>
+      </div>
+      <div class="vqueue-list" id="vqueue-list" data-testid="verse-queue-list">
+        <div class="vqueue-empty">File d'attente vide — ajoutez des versets à préparer à l'avance.</div>
+      </div>
+    </div>
+
+    <!-- Historique des versets -->
+    <!-- Ajouté (Rhema : historique consultable) : server.js diffusait déjà
+         historyUpdated/replayVerse, jamais affiché dans le dashboard. -->
+    <div class="glass-card">
+      <div class="section-label">
+        <span>🕓</span> Historique des versets
+      </div>
+      <div class="vhistory-list" id="vhistory-list" data-testid="verse-history-list">
+        <div class="vhistory-empty">Aucun verset affiché pour l'instant.</div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="actions-grid">
+      <button class="btn btn-secondary" id="btn-restart-tour" data-testid="restart-tour-btn">🎓 Revoir le tutoriel</button>
     </div>
 
     <!-- Actions -->
@@ -1087,6 +1362,27 @@
       let socket = null;
       let modeEnCoursDEnvoi = null;
 
+      // Bus partagé minimal : les modules Recherche/File d'attente/
+      // Historique (voir plus bas) n'ouvrent pas leur propre WebSocket —
+      // ils réutilisent celle-ci via window.churchOverlayWs, pour éviter
+      // deux connexions concurrentes vers le même serveur (8765).
+      const extraMessageHandlers = [];
+      const openHandlers = [];
+      window.churchOverlayWs = {
+        send(obj) {
+          if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify(obj));
+            return true;
+          }
+          return false;
+        },
+        onMessage(fn) { extraMessageHandlers.push(fn); },
+        onOpen(fn) {
+          openHandlers.push(fn);
+          if (socket && socket.readyState === WebSocket.OPEN) fn();
+        },
+      };
+
       function setActiveMode(mode) {
         Object.entries(langButtons).forEach(([key, btn]) => {
           btn.classList.toggle('active', key === mode);
@@ -1109,6 +1405,7 @@
 
         socket.addEventListener('open', () => {
           setConnectionState('connected', 'Connecté — cliquez pour changer la langue affichée à l\'écran');
+          openHandlers.forEach((fn) => { try { fn(); } catch (e) { console.error(e); } });
         });
 
         socket.addEventListener('message', (event) => {
@@ -1129,6 +1426,7 @@
             setConnectionState('error', 'Changement refusé : ' + (data.error || 'erreur inconnue'));
             modeEnCoursDEnvoi = null;
           }
+          extraMessageHandlers.forEach((fn) => { try { fn(data); } catch (e) { console.error(e); } });
         });
 
         socket.addEventListener('close', () => {
@@ -1161,7 +1459,294 @@
       connect();
     })();
 
-    // --- Thème de l'overlay --------------------------------------------------
+    // --- Recherche rapide, file d'attente & historique des versets ---------
+    // Inspiré de Rhema (openbezal/rhema) : "Quick navigation" et "Verse
+    // queue". Contrairement à Rhema, xtruck n'a pas de file d'attente côté
+    // serveur — un verset s'affiche dès qu'on envoie lookupReference. La
+    // "file" ci-dessous est donc une simple liste préparée côté client
+    // (persistée en localStorage), que l'opérateur vide en cliquant
+    // "Afficher" au bon moment. L'historique, lui, réutilise entièrement
+    // les messages history/historyUpdated/replayVerse que server.js
+    // diffusait déjà sans qu'aucune fenêtre ne les affiche.
+    (function initQuickNavAndHistory() {
+      const QUEUE_STORAGE_KEY = 'xtruck_verse_queue_v1';
+
+      const input = document.getElementById('quicknav-input');
+      const btnShow = document.getElementById('btn-quicknav-show');
+      const btnQueue = document.getElementById('btn-quicknav-queue');
+      const statusDot = document.getElementById('quicknav-status-dot');
+      const statusText = document.getElementById('quicknav-status-text');
+      const queueList = document.getElementById('vqueue-list');
+      const historyList = document.getElementById('vhistory-list');
+      const booksDatalist = document.getElementById('quicknav-books');
+
+      if (!input || !btnShow || !btnQueue || !queueList || !historyList) return;
+
+      // Liste des 66 livres (noms français usuels) pour l'autocomplétion
+      // native du navigateur (<datalist>) — aucune dépendance ajoutée,
+      // contrairement à Fuse.js côté Rhema, pour rester fidèle à
+      // l'idéologie "léger, sans dépendance superflue" de xtruck.
+      const BIBLE_BOOKS_FR = [
+        'Genèse', 'Exode', 'Lévitique', 'Nombres', 'Deutéronome', 'Josué', 'Juges', 'Ruth',
+        '1 Samuel', '2 Samuel', '1 Rois', '2 Rois', '1 Chroniques', '2 Chroniques', 'Esdras',
+        'Néhémie', 'Esther', 'Job', 'Psaumes', 'Proverbes', 'Ecclésiaste', 'Cantique des cantiques',
+        'Ésaïe', 'Jérémie', 'Lamentations', 'Ézéchiel', 'Daniel', 'Osée', 'Joël', 'Amos', 'Abdias',
+        'Jonas', 'Michée', 'Nahum', 'Habacuc', 'Sophonie', 'Aggée', 'Zacharie', 'Malachie',
+        'Matthieu', 'Marc', 'Luc', 'Jean', 'Actes', 'Romains', '1 Corinthiens', '2 Corinthiens',
+        'Galates', 'Éphésiens', 'Philippiens', 'Colossiens', '1 Thessaloniciens', '2 Thessaloniciens',
+        '1 Timothée', '2 Timothée', 'Tite', 'Philémon', 'Hébreux', 'Jacques', '1 Pierre', '2 Pierre',
+        '1 Jean', '2 Jean', '3 Jean', 'Jude', 'Apocalypse',
+      ];
+      if (booksDatalist) {
+        booksDatalist.innerHTML = BIBLE_BOOKS_FR.map((b) => `<option value="${b}"></option>`).join('');
+      }
+
+      // --- File d'attente (client-side, persistée) --------------------------
+      let queue = [];
+      try {
+        queue = JSON.parse(localStorage.getItem(QUEUE_STORAGE_KEY) || '[]');
+        if (!Array.isArray(queue)) queue = [];
+      } catch (e) { queue = []; }
+
+      function saveQueue() {
+        try { localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(queue)); } catch (e) { /* quota plein, tant pis */ }
+      }
+
+      function escapeHtml(s) {
+        return String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      }
+
+      function renderQueue() {
+        if (queue.length === 0) {
+          queueList.innerHTML = '<div class="vqueue-empty">File d\'attente vide — ajoutez des versets à préparer à l\'avance.</div>';
+          return;
+        }
+        queueList.innerHTML = queue.map((item, i) => `
+          <div class="vqueue-item" data-idx="${i}">
+            <div class="vitem-info">
+              <div class="vitem-ref">${escapeHtml(item.reference)}</div>
+            </div>
+            <div class="vitem-actions">
+              <button data-act="up" ${i === 0 ? 'disabled' : ''} title="Monter">▲</button>
+              <button data-act="down" ${i === queue.length - 1 ? 'disabled' : ''} title="Descendre">▼</button>
+              <button data-act="show" class="primary" title="Afficher maintenant">▶️</button>
+              <button data-act="remove" title="Retirer">✕</button>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      queueList.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-act]');
+        if (!btn) return;
+        const itemEl = e.target.closest('.vqueue-item');
+        const idx = Number(itemEl.dataset.idx);
+        const act = btn.dataset.act;
+        if (act === 'remove') {
+          queue.splice(idx, 1);
+        } else if (act === 'up' && idx > 0) {
+          [queue[idx - 1], queue[idx]] = [queue[idx], queue[idx - 1]];
+        } else if (act === 'down' && idx < queue.length - 1) {
+          [queue[idx + 1], queue[idx]] = [queue[idx], queue[idx + 1]];
+        } else if (act === 'show') {
+          fireReference(queue[idx].reference);
+          queue.splice(idx, 1); // affiché = retiré de la file
+        }
+        saveQueue();
+        renderQueue();
+      });
+
+      function addToQueue(reference) {
+        queue.push({ reference, addedAt: Date.now() });
+        saveQueue();
+        renderQueue();
+      }
+
+      // --- Envoi effectif au serveur (lookupReference existait déjà côté
+      // server.js, jamais appelé depuis aucune UI avant cet ajout) ----------
+      function setStatus(kind, text) {
+        statusDot.className = 'lang-status-dot' + (kind === 'ok' ? ' connected' : kind === 'error' ? ' error' : '');
+        statusText.textContent = text;
+      }
+
+      function fireReference(reference) {
+        const ref = String(reference || '').trim();
+        if (!ref) return;
+        const sent = window.churchOverlayWs.send({ action: 'lookupReference', reference: ref, durationMs: 300000 });
+        if (!sent) {
+          setStatus('error', '❌ Pipeline non connecté — réessayez dans un instant.');
+          return;
+        }
+        setStatus('ok', `🔎 Recherche de « ${ref} »…`);
+      }
+
+      btnShow.addEventListener('click', () => {
+        fireReference(input.value);
+        input.value = '';
+        input.focus();
+      });
+      btnQueue.addEventListener('click', () => {
+        const ref = input.value.trim();
+        if (!ref) return;
+        addToQueue(ref);
+        input.value = '';
+        input.focus();
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          fireReference(input.value);
+          input.value = '';
+        }
+      });
+
+      // --- Historique ---------------------------------------------------------
+      function renderHistory(history) {
+        if (!history || history.length === 0) {
+          historyList.innerHTML = '<div class="vhistory-empty">Aucun verset affiché pour l\'instant.</div>';
+          return;
+        }
+        historyList.innerHTML = history.map((entry) => {
+          const badge = entry.autoDetected ? '<span class="vitem-badge auto">Auto</span>' : '<span class="vitem-badge">Manuel</span>';
+          const text = entry.text || entry.text_fr || entry.text_en || '';
+          return `
+            <div class="vhistory-item" data-id="${escapeHtml(entry.id)}">
+              <div class="vitem-info">
+                <div class="vitem-ref">${escapeHtml(entry.reference)} ${badge}</div>
+                <div class="vitem-text">${escapeHtml(text)}</div>
+              </div>
+              <div class="vitem-actions">
+                <button data-act="replay" class="primary" title="Rejouer à l'écran">🔁</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      historyList.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-act="replay"]');
+        if (!btn) return;
+        const id = e.target.closest('.vhistory-item').dataset.id;
+        const sent = window.churchOverlayWs.send({ action: 'replayVerse', id, durationMs: 300000 });
+        if (!sent) setStatus('error', '❌ Pipeline non connecté.');
+      });
+
+      window.churchOverlayWs.onMessage((data) => {
+        if (data.action === 'history' || data.action === 'historyUpdated') {
+          renderHistory(data.history);
+        } else if (data.action === 'showVerse' && !data.replayed) {
+          setStatus('ok', `✅ Affiché : ${data.reference}`);
+        } else if (data.action === 'lookupError') {
+          setStatus('error', `❌ Référence introuvable ou verset indisponible.`);
+        } else if (data.action === 'error') {
+          setStatus('error', `❌ ${data.error || 'Erreur'}`);
+        }
+      });
+
+      window.churchOverlayWs.onOpen(() => {
+        window.churchOverlayWs.send({ action: 'getHistory' });
+      });
+
+      renderQueue();
+    })();
+
+    // --- Onboarding (tour guidé) ---------------------------------------------
+    // Inspiré de Rhema ("Interactive onboarding tutorial"). Aucune dépendance
+    // ajoutée : un simple overlay + spotlight positionné sur chaque
+    // .glass-card dans l'ordre, avec tooltip Suivant/Passer. Se lance seul
+    // au tout premier démarrage (flag localStorage), et peut être relancé
+    // à tout moment via le bouton "🎓 Revoir le tutoriel".
+    (function initOnboarding() {
+      const DONE_KEY = 'xtruck_onboarding_done_v1';
+      const overlay = document.createElement('div');
+      overlay.id = 'onboarding-overlay';
+      overlay.innerHTML = '<div id="onboarding-spotlight"></div><div id="onboarding-tooltip"></div>';
+      document.body.appendChild(overlay);
+      const spotlight = overlay.querySelector('#onboarding-spotlight');
+      const tooltip = overlay.querySelector('#onboarding-tooltip');
+      const btnRestart = document.getElementById('btn-restart-tour');
+
+      const steps = [
+        { sel: '.status-card', title: 'État du pipeline', text: 'Ce bandeau indique si la capture micro et la transcription tournent normalement. Un clic sur "Redémarrer" relance tout le pipeline en cas de souci.' },
+        { sel: '.url-section', title: 'URL pour OBS', text: 'Copiez cette adresse dans une source "Navigateur" d\'OBS pour afficher les versets détectés par-dessus votre flux.' },
+        { sel: '.lang-selector', title: 'Langue affichée', text: 'Choisissez si les versets s\'affichent en français, en anglais, ou dans les deux langues empilées.' },
+        { sel: '#theme-select', title: 'Thème visuel', text: 'Changez l\'apparence des versets à l\'écran (couleurs, effets) sans toucher au code.' },
+        { sel: '#quicknav-input', title: 'Recherche rapide', text: 'Tapez une référence ("Jean 3:16") et appuyez sur Entrée pour l\'afficher immédiatement, même sans détection automatique.' },
+        { sel: '#vqueue-list', title: 'File d\'attente', text: 'Préparez plusieurs versets à l\'avance avec le bouton ➕, réordonnez-les, puis affichez-les au bon moment pendant le culte.' },
+        { sel: '#vhistory-list', title: 'Historique', text: 'Retrouvez les derniers versets affichés (automatiques ou manuels) et rejouez-en un à l\'écran en un clic.' },
+      ].filter((s) => document.querySelector(s.sel));
+
+      let current = -1;
+
+      function positionOn(el) {
+        const r = el.getBoundingClientRect();
+        const pad = 8;
+        spotlight.style.left = (r.left - pad) + 'px';
+        spotlight.style.top = (r.top - pad) + 'px';
+        spotlight.style.width = (r.width + pad * 2) + 'px';
+        spotlight.style.height = (r.height + pad * 2) + 'px';
+
+        const tooltipTop = Math.min(window.innerHeight - 220, r.bottom + 16);
+        tooltip.style.top = Math.max(16, tooltipTop) + 'px';
+        let left = r.left;
+        if (left + 300 > window.innerWidth - 16) left = window.innerWidth - 316;
+        tooltip.style.left = Math.max(16, left) + 'px';
+      }
+
+      function renderStep() {
+        const step = steps[current];
+        if (!step) { close(); return; }
+        const el = document.querySelector(step.sel);
+        if (!el) { next(); return; }
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Laisser le temps au scroll de s'installer avant de positionner
+        // le spotlight, sinon les coordonnées lues sont celles d'avant.
+        setTimeout(() => {
+          positionOn(el);
+          tooltip.innerHTML = `
+            <div class="ob-step">Étape ${current + 1} / ${steps.length}</div>
+            <div class="ob-title">${step.title}</div>
+            <div class="ob-text">${step.text}</div>
+            <div class="ob-actions">
+              <button class="ob-skip" id="ob-skip">Passer</button>
+              <button class="btn btn-primary" id="ob-next" style="padding:8px 16px;">
+                ${current === steps.length - 1 ? 'Terminer' : 'Suivant →'}
+              </button>
+            </div>
+          `;
+          document.getElementById('ob-next').addEventListener('click', next);
+          document.getElementById('ob-skip').addEventListener('click', close);
+        }, 220);
+      }
+
+      function next() {
+        current++;
+        if (current >= steps.length) { close(); return; }
+        renderStep();
+      }
+
+      function open() {
+        if (steps.length === 0) return;
+        current = -1;
+        overlay.classList.add('active');
+        next();
+      }
+
+      function close() {
+        overlay.classList.remove('active');
+        try { localStorage.setItem(DONE_KEY, '1'); } catch (e) { /* tant pis */ }
+      }
+
+      if (btnRestart) btnRestart.addEventListener('click', open);
+
+      let already = false;
+      try { already = localStorage.getItem(DONE_KEY) === '1'; } catch (e) { /* tant pis */ }
+      if (!already) {
+        // Léger délai : laisser le dashboard finir de se peupler (statut,
+        // thèmes…) pour que les cibles du tour existent déjà dans le DOM.
+        setTimeout(open, 900);
+      }
+    })();
     // Ajouté à l'audit : theme-loader.js/obs-controller.js existaient déjà
     // (testés unitairement) mais n'étaient reliés à aucune fenêtre. IIFE
     // séparée pour ne pas interférer avec la logique de langue ci-dessus.
