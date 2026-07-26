@@ -150,6 +150,27 @@ function cleanStaleArtifacts() {
   }
 }
 
+// CORRECTIF : ensureFfmpegInstalled() est appelée depuis deux endroits
+// indépendants (le handler IPC ensure-ffmpeg-ready, déclenché à l'ouverture
+// de l'écran de configuration, ET save-setup, déclenché au clic sur
+// "Enregistrer et démarrer"). Si l'utilisateur clique "Enregistrer" pendant
+// que le scan initial tourne encore, les deux appels lançaient chacun leur
+// propre téléchargement/extraction de ffmpeg.exe EN PARALLÈLE — deux
+// process PowerShell d'extraction se disputant le même fichier de
+// destination, avec un risque réel de ffmpeg.exe corrompu ou tronqué selon
+// l'ordre d'écriture. On sérialise maintenant tous les appels concurrents
+// sur une seule installation en cours, partagée : le premier appelant la
+// déclenche, tout appelant suivant pendant qu'elle tourne reçoit la MÊME
+// promesse (et sa propre callback onProgress est quand même notifiée).
+let inFlightInstall = null;
+const progressListeners = new Set();
+
+function broadcastProgress(msg) {
+  for (const listener of progressListeners) {
+    try { listener(msg); } catch (_) { /* un listener ne doit jamais faire échouer l'install */ }
+  }
+}
+
 /**
  * Télécharge et installe ffmpeg.exe s'il n'est pas déjà présent. Idempotent.
  * Ne fait rien si $env:FFMPEG_PATH pointe déjà vers un FFmpeg fonctionnel ou
@@ -160,8 +181,27 @@ function cleanStaleArtifacts() {
  * @param {(msg: string) => void} [opts.onProgress]
  * @returns {Promise<{ installed: boolean, skipped: boolean }>}
  */
-async function ensureFfmpegInstalled(opts = {}) {
-  const onProgress = opts.onProgress || (() => {});
+function ensureFfmpegInstalled(opts = {}) {
+  if (opts.onProgress) progressListeners.add(opts.onProgress);
+
+  if (inFlightInstall) {
+    // Une installation est déjà en cours (déclenchée par un autre appelant) :
+    // on s'y raccroche au lieu d'en démarrer une seconde.
+    return inFlightInstall.finally(() => {
+      if (opts.onProgress) progressListeners.delete(opts.onProgress);
+    });
+  }
+
+  inFlightInstall = ensureFfmpegInstalledImpl(broadcastProgress)
+    .finally(() => {
+      inFlightInstall = null;
+      progressListeners.clear();
+    });
+
+  return inFlightInstall;
+}
+
+async function ensureFfmpegInstalledImpl(onProgress) {
   const report = (msg) => { log(msg); onProgress(msg); };
 
   if (process.platform !== 'win32') {
