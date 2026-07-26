@@ -1,6 +1,14 @@
 @echo off
 REM ============================================================================
-REM  setup-microphone.bat - Find and configure your microphone
+REM  setup-microphone.bat - Configure your microphone
+REM ----------------------------------------------------------------------------
+REM  CHANGELOG v0.5.0 : ce script appelait auparavant `node list-audio-devices.js`
+REM  (backend FFmpeg/DirectShow), retire du projet. La liste des microphones
+REM  et le choix du peripherique se font desormais directement dans
+REM  l'application (fenetre de configuration au premier lancement, ou bouton
+REM  "changer de microphone" dans le tableau de bord) via getUserMedia — la
+REM  meme couche audio que Windows/Chromium. Il n'y a plus de nom de
+REM  peripherique a copier/coller dans .env.
 REM ============================================================================
 
 echo.
@@ -8,34 +16,15 @@ echo ===========================================================================
 echo   Church Overlay - Microphone Setup
 echo ============================================================================
 echo.
-echo Available audio devices:
+echo The microphone is now selected from inside the app itself, not from
+echo this script or the .env file.
 echo.
-
-REM Run the device lister
-node list-audio-devices.js
-
-if %errorlevel% neq 0 (
-    echo.
-    echo [ERROR] Could not list audio devices!
-    echo.
-    echo Make sure you've run install-dependencies.bat first.
-    echo.
-    pause
-    exit /b 1
-)
-
-echo.
-echo ============================================================================
-echo.
-echo Now edit the .env file:
-echo.
-echo 1. Open: .env (use Notepad or any text editor)
-echo 2. Find: AUDIO_DEVICE=
-echo 3. Replace the value with your microphone name (copy from list above)
-echo 4. Save the file
-echo.
-echo Example:
-echo   AUDIO_DEVICE=Microphone (High Definition Audio Device)
+echo 1. Run: npm start
+echo 2. On first launch, a setup window opens and lists your microphones
+echo    (the same list Windows Settings shows).
+echo 3. Pick your microphone, then your Groq API key, and confirm.
+echo 4. To change the microphone later, use the "Changer de micro" button
+echo    in the ChurchOverlay dashboard window.
 echo.
 echo ============================================================================
 echo.
