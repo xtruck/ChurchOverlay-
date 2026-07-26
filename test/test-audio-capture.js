@@ -1,78 +1,82 @@
 /**
  * ============================================================================
- *  test-audio-capture.js — Script de test pour audio-capture.js
+ *  test-audio-capture.js — Tests pour audio-capture.js
  * ----------------------------------------------------------------------------
- *  Teste la capture audio et la création de segments WAV.
- *
- *  PRÉREQUIS:
- *    - FFmpeg doit être installé et disponible dans PATH
- *    - Un micro doit être connecté
- *
- *  USAGE:
- *    node test-audio-capture.js
+ *  CHANGELOG v0.5.0 : l'ancien test exigeait FFmpeg installé + un micro
+ *  connecté + 10s d'attente réelle — inutilisable en CI et non automatisable.
+ *  pushAudioChunk() est une fonction pure (aucun matériel requis) : on
+ *  vérifie ici la segmentation/chevauchement en lui injectant des chunks
+ *  PCM16 synthétiques.
  * ============================================================================
  */
 
+'use strict';
+const assert = require('assert');
+const fs = require('fs');
 const audioCapture = require('../audio-capture');
 
-console.log('=== Test Audio Capture ===\n');
+console.log('=== Test Audio Capture (segmentation) ===\n');
 
-// Configuration des callbacks
-audioCapture.on({
-  onAudioSegment: (segmentFile) => {
-    console.log('[TEST] Segment audio créé:', segmentFile);
-    console.log('[TEST] Configuration:', audioCapture.getConfig());
-  },
-  onError: (error) => {
-    console.error('[TEST] Erreur capture audio:', error.message);
-  },
-});
+async function run() {
+  const config = audioCapture.getConfig();
+  const bytesPerSample = config.bitDepth / 8;
+  const samplesPerSecond = config.sampleRate * config.channels;
+  const segmentBytes = (config.segmentDuration / 1000) * samplesPerSecond * bytesPerSample;
 
-// Test 1: Démarrage de la capture audio
-console.log('[TEST] Test 1: Démarrage de la capture audio (10 secondes)...');
-audioCapture.startRecording()
-  .then(() => {
-    console.log('[TEST] ✓ Capture audio démarrée');
-    console.log('[TEST] État recording:', audioCapture.isRecording());
+  // Test 1 : pushAudioChunk() sans startRecording() ne fait rien (pas de crash)
+  console.log('[TEST] Test 1: pushAudioChunk() avant startRecording()...');
+  audioCapture.pushAudioChunk(Buffer.alloc(1000));
+  console.log('[TEST] ✓ Ignoré sans erreur\n');
 
-    // Arrêter après 10 secondes
-    setTimeout(() => {
-      console.log('\n[TEST] Test 2: Arrêt de la capture audio...');
-      audioCapture.stopRecording()
-        .then(() => {
-          console.log('[TEST] ✓ Capture audio arrêtée');
-          console.log('[TEST] État recording:', audioCapture.isRecording());
-          
-          // Nettoyer les fichiers temporaires
-          console.log('\n[TEST] Test 3: Nettoyage des fichiers temporaires...');
-          audioCapture.cleanupTempFiles();
-          console.log('[TEST] ✓ Nettoyage terminé');
-          
-          console.log('\n=== Tests terminés ===');
-          process.exit(0);
-        })
-        .catch((err) => {
-          console.error('[TEST] ✗ Erreur lors de l\'arrêt:', err.message);
-          process.exit(1);
-        });
-    }, 10000);
-  })
-  .catch((err) => {
-    console.error('[TEST] ✗ Erreur lors du démarrage:', err.message);
-    console.error('[TEST] Assurez-vous que FFmpeg est installé et dans PATH');
-    process.exit(1);
+  // Test 2 : un segment complet déclenche onAudioSegment()
+  console.log('[TEST] Test 2: segmentation déclenchée au bon seuil...');
+  let segments = [];
+  audioCapture.on({
+    onAudioSegment: (file) => segments.push(file),
+    onError: (err) => console.error('[TEST] onError inattendu:', err.message),
   });
 
-// Gestion Ctrl+C pour arrêt propre
-process.on('SIGINT', () => {
-  console.log('\n[TEST] Interruption détectée, arrêt de la capture...');
-  audioCapture.stopRecording()
-    .then(() => {
-      audioCapture.cleanupTempFiles();
-      console.log('[TEST] Capture arrêtée et nettoyée');
-      process.exit(0);
-    })
-    .catch(() => {
-      process.exit(1);
-    });
+  await audioCapture.startRecording();
+  assert.strictEqual(audioCapture.isRecording(), true, 'isRecording() devrait être true après startRecording()');
+
+  // Un seul chunk plus grand que segmentBytes doit produire exactement 1 segment
+  audioCapture.pushAudioChunk(Buffer.alloc(segmentBytes + 100));
+  assert.strictEqual(segments.length, 1, 'Un segment aurait dû être créé');
+  assert(fs.existsSync(segments[0]), 'Le fichier segment devrait exister sur disque');
+  const wav = fs.readFileSync(segments[0]);
+  assert.strictEqual(wav.toString('ascii', 0, 4), 'RIFF', 'En-tête WAV invalide (RIFF)');
+  assert.strictEqual(wav.toString('ascii', 8, 12), 'WAVE', 'En-tête WAV invalide (WAVE)');
+  console.log('[TEST] ✓ Segment WAV créé et bien formé:', segments[0]);
+
+  // Test 3 : plusieurs petits chunks cumulés déclenchent aussi un segment
+  console.log('\n[TEST] Test 3: accumulation de petits chunks...');
+  segments = [];
+  const smallChunk = Buffer.alloc(Math.ceil(segmentBytes / 4) + 10);
+  for (let i = 0; i < 5; i++) audioCapture.pushAudioChunk(smallChunk);
+  assert(segments.length >= 1, 'Au moins un segment aurait dû être créé après accumulation');
+  console.log('[TEST] ✓', segments.length, 'segment(s) créé(s) par accumulation');
+
+  // Test 4 : stopRecording() nettoie l'état
+  console.log('\n[TEST] Test 4: stopRecording()...');
+  await audioCapture.stopRecording();
+  assert.strictEqual(audioCapture.isRecording(), false, 'isRecording() devrait être false après stopRecording()');
+  console.log('[TEST] ✓ Capture arrêtée proprement');
+
+  // Test 5 : pickBestDevice() — heuristique pure de sélection de micro
+  console.log('\n[TEST] Test 5: pickBestDevice()...');
+  const r1 = audioCapture.pickBestDevice(['Stereo Mix (Realtek)', 'Microphone (USB Headset)']);
+  assert.strictEqual(r1.chosen, 'Microphone (USB Headset)', 'Devrait écarter Stereo Mix et choisir le micro');
+  const r2 = audioCapture.pickBestDevice(['Stereo Mix (Realtek)', 'CABLE Output (VB-Audio)']);
+  assert.strictEqual(r2.chosen, null, 'Ne devrait rien choisir si seuls des loopbacks sont détectés');
+  const r3 = audioCapture.pickBestDevice([]);
+  assert.strictEqual(r3.chosen, null, 'Liste vide devrait renvoyer chosen: null');
+  console.log('[TEST] ✓ pickBestDevice() se comporte comme attendu');
+
+  console.log('\n=== Tous les tests sont passés ===');
+  process.exit(0);
+}
+
+run().catch((err) => {
+  console.error('[TEST] ✗ Échec:', err.message);
+  process.exit(1);
 });
