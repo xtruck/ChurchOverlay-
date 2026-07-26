@@ -1,13 +1,35 @@
 /**
  * ============================================================================
- *  setup-ffmpeg.js — Installe automatiquement un binaire FFmpeg (Windows
- *  uniquement) et fournit sa résolution de chemin pour le reste de l'app.
+ *  setup-ffmpeg.js — Installe un binaire FFmpeg (Windows uniquement) et
+ *  fournit sa résolution de chemin pour le reste de l'app.
  * ----------------------------------------------------------------------------
- *  Le dépôt ne contient pas ffmpeg.exe (binaire tiers, plusieurs dizaines de
- *  Mo) : jusqu'ici l'app supposait FFmpeg déjà présent dans le PATH système
- *  ou pointé via $env:FFMPEG_PATH (voir QUICKSTART-WINDOWS.md). Sur le poste
- *  d'un volontaire non-technique, rien ne l'installait : detectAudioDevices()
- *  et audio-capture.js échouaient silencieusement (spawn ENOENT).
+ *  Le dépôt ne contient pas ffmpeg.exe (binaire tiers, ~140 Mo une fois
+ *  extrait — CORRECTIF audit : la doc disait auparavant "quelques dizaines
+ *  de Mo", très sous-estimé) : jusqu'ici l'app supposait FFmpeg déjà présent
+ *  dans le PATH système ou pointé via $env:FFMPEG_PATH (voir
+ *  QUICKSTART-WINDOWS.md). Sur le poste d'un volontaire non-technique, rien
+ *  ne l'installait : detectAudioDevices() et audio-capture.js échouaient
+ *  silencieusement (spawn ENOENT).
+ *
+ *  DÉCISION (audit) — installation au BUILD plutôt qu'au premier lancement :
+ *  Télécharger ~140 Mo sur le poste de l'utilisateur final au premier
+ *  lancement s'est révélé peu fiable (réseaux d'église restreints,
+ *  antivirus, proxy, coupures). Le téléchargement/l'extraction eux-mêmes
+ *  fonctionnent correctement (vérifié) — le vrai risque est l'environnement
+ *  réseau imprévisible de chaque utilisateur final, qu'on ne maîtrise pas.
+ *  `npm run dist` (voir package.json, script "predist") appelle donc
+ *  maintenant ce module AVANT electron-builder, sur la machine du
+ *  développeur : ffmpeg.exe est déjà présent dans ffmpeg/ et empaqueté tel
+ *  quel dans le .exe distribué (voir build.files dans package.json, qui
+ *  inclut déjà ffmpeg/**\/*). Aucun téléchargement n'est plus nécessaire sur
+ *  le poste de l'utilisateur final.
+ *  Le flux runtime (ensureFfmpegInstalled() appelé depuis main.js à
+ *  l'ouverture de l'assistant de configuration) reste en place comme filet
+ *  de sécurité pur : sur un build correctement packagé, il ne fait jamais
+ *  rien (ffmpeg.exe est déjà là, fs.existsSync court-circuite tout) ; il ne
+ *  se déclenche que si quelqu'un lance l'app non-packagée (`npm start`)
+ *  sans avoir exécuté `npm run setup-ffmpeg`/`npm run dist` au moins une
+ *  fois.
  *
  *  Ce qu'il fait :
  *    1. Télécharge le build statique Windows x64 officiel de BtbN
@@ -17,7 +39,8 @@
  *       auparavant `process.env.FFMPEG_PATH || 'ffmpeg'` en dur.
  *
  *  Usage :
- *    npm run setup-ffmpeg
+ *    npm run setup-ffmpeg   (manuel, une fois)
+ *    npm run dist           (l'exécute automatiquement via "predist")
  * ============================================================================
  */
 
@@ -30,6 +53,17 @@ const { execFileSync } = require('child_process');
 
 const FFMPEG_DIR = path.join(__dirname, 'ffmpeg');
 const FFMPEG_EXE = path.join(FFMPEG_DIR, 'ffmpeg.exe');
+
+// Délai maximum sans octet reçu avant d'abandonner le téléchargement.
+// CORRECTIF (audit) : aucun timeout n'existait auparavant — une connexion
+// qui stagne (réseau d'église capricieux, proxy silencieux) pouvait bloquer
+// le téléchargement indéfiniment SANS jamais lever d'erreur ni de message,
+// ce qui rendait le problème impossible à diagnostiquer côté utilisateur
+// ("j'ai essayé plein de fois, rien ne se passe"). Un délai d'inactivité
+// (et non un délai total, puisque ~140 Mo peut légitimement prendre
+// plusieurs minutes sur une connexion lente mais stable) permet de détecter
+// un blocage réel et d'afficher une erreur claire.
+const STALL_TIMEOUT_MS = 30000;
 
 // Tag "latest" de BtbN/FFmpeg-Builds : pointe toujours vers le build master
 // le plus récent, donc pas de numéro de version à maintenir ici. Si ce lien
@@ -45,10 +79,16 @@ function log(msg) {
 
 // Logique de téléchargement avec suivi de progression, dédiée à FFmpeg
 // (le téléchargement automatique de Whisper local a été retiré en v0.3.0).
+// CORRECTIF (audit) : ajout d'un timeout d'INACTIVITÉ (STALL_TIMEOUT_MS,
+// pas un timeout total — ~140 Mo peut légitimement prendre plusieurs
+// minutes sur une connexion lente mais stable). Si aucun octet n'arrive
+// pendant ce délai (connexion établie mais réponse gelée — proxy
+// silencieux, coupure réseau), le téléchargement est annulé avec une
+// erreur claire au lieu de rester bloqué indéfiniment sans retour.
 function download(url, destPath, onProgress = () => {}) {
   return new Promise((resolve, reject) => {
     const doRequest = (currentUrl, redirectsLeft) => {
-      https
+      const req = https
         .get(currentUrl, (res) => {
           if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
             if (redirectsLeft <= 0) {
@@ -66,24 +106,67 @@ function download(url, destPath, onProgress = () => {}) {
           const total = parseInt(res.headers['content-length'] || '0', 10);
           let downloaded = 0;
           let lastPct = -1;
+          let settled = false;
           const file = fs.createWriteStream(destPath);
+
+          let stallTimer;
+          const resetStallTimer = () => {
+            clearTimeout(stallTimer);
+            stallTimer = setTimeout(() => {
+              if (settled) return;
+              settled = true;
+              res.destroy();
+              file.close(() => {
+                fs.unlink(destPath, () => {});
+              });
+              reject(new Error(
+                `Téléchargement interrompu : aucune donnée reçue depuis ${STALL_TIMEOUT_MS / 1000}s ` +
+                '(connexion instable, proxy/pare-feu bloquant, ou réseau trop lent). ' +
+                'Vérifiez votre connexion internet et réessayez.'
+              ));
+            }, STALL_TIMEOUT_MS);
+          };
+          resetStallTimer();
+
           res.on('data', (chunk) => {
+            resetStallTimer();
             downloaded += chunk.length;
             if (total) {
               const pct = Math.floor((downloaded / total) * 100);
               if (pct !== lastPct) {
                 lastPct = pct;
-                onProgress(`Téléchargement... ${pct}%`);
+                // CORRECTIF (audit) : le pourcentage est maintenant transmis
+                // en second argument (numérique), en plus du message texte,
+                // pour que l'UI (setup.html) puisse afficher une vraie barre
+                // de progression sans avoir à re-parser "X%" dans le texte.
+                onProgress(`Téléchargement... ${pct}%`, pct);
               }
             }
           });
           res.pipe(file);
           file.on('finish', () => {
+            clearTimeout(stallTimer);
+            if (settled) return;
+            settled = true;
             file.close(() => resolve());
           });
-          file.on('error', reject);
+          file.on('error', (err) => {
+            clearTimeout(stallTimer);
+            if (settled) return;
+            settled = true;
+            reject(err);
+          });
         })
         .on('error', reject);
+
+      // Timeout de connexion initiale (le serveur ne répond pas du tout,
+      // avant même de recevoir un statusCode) — distinct du stall timer
+      // ci-dessus qui couvre le corps de la réponse une fois commencée.
+      req.setTimeout(STALL_TIMEOUT_MS, () => {
+        req.destroy(new Error(
+          `Connexion à ${currentUrl} sans réponse après ${STALL_TIMEOUT_MS / 1000}s.`
+        ));
+      });
     };
     doRequest(url, 5);
   });
@@ -116,105 +199,26 @@ function extractZipWindows(zipPath, destDir) {
  * @returns {string}
  */
 function resolveFfmpegPath() {
-  try {
-    if (fs.statSync(FFMPEG_EXE).isFile() && fs.statSync(FFMPEG_EXE).size > 0) return FFMPEG_EXE;
-  } catch (_) { /* n'existe pas ou inaccessible : on continue vers les autres options */ }
+  if (fs.existsSync(FFMPEG_EXE)) return FFMPEG_EXE;
   if (process.env.FFMPEG_PATH) return process.env.FFMPEG_PATH;
   return 'ffmpeg';
 }
 
 /**
- * Supprime les restes d'une tentative précédente interrompue (téléchargement
- * coupé, extraction interrompue par un antivirus, double-clic sur
- * "Actualiser" pendant qu'une installation était déjà en cours, etc.).
- *
- * BUG CORRIGÉ (round 2) : sans ce nettoyage préalable, un dossier
- * ffmpeg/_extract_tmp ou un fichier ffmpeg/_ffmpeg-win64.zip laissé dans un
- * état incohérent par une tentative avortée provoquait, à la tentative
- * suivante, une erreur Node « ENOTDIR: not a directory ».
- *
- * BUG CORRIGÉ (round 4) : ce nettoyage seul ne suffisait pas. Si
- * `fs.rmSync` échoue silencieusement sur l'ancien artefact (verrouillé
- * brièvement par un antivirus en train de scanner le .exe qu'il contient —
- * cas fréquent juste après un téléchargement), le nom FIXE (toujours
- * `_extract_tmp`, toujours `_ffmpeg-win64.zip`) faisait que la tentative
- * SUIVANTE retombait exactement sur le même artefact bloqué et échouait à
- * nouveau avec la même erreur ENOTDIR, en boucle, sans qu'aucun clic sur
- * "Actualiser" ne puisse s'en sortir. On nettoie maintenant TOUTE trace par
- * préfixe (pas seulement le nom exact) et, surtout, chaque tentative utilise
- * désormais un nom UNIQUE (voir ensureFfmpegInstalledImpl) : même si un
- * ancien artefact reste verrouillé et ne peut pas être supprimé, il ne peut
- * plus jamais entrer en collision avec la tentative en cours.
- */
-function cleanStaleArtifacts() {
-  let entries = [];
-  try {
-    entries = fs.readdirSync(FFMPEG_DIR);
-  } catch (_) {
-    return; // FFMPEG_DIR n'existe pas encore ou est inaccessible : rien à nettoyer.
-  }
-  for (const name of entries) {
-    if (/^_ffmpeg-win64.*\.zip$/.test(name) || /^_extract_tmp/.test(name)) {
-      try {
-        fs.rmSync(path.join(FFMPEG_DIR, name), { recursive: true, force: true });
-      } catch (_) { /* non-fatal : verrouillé, ignoré — ne bloquera plus la tentative suivante grâce aux noms uniques */ }
-    }
-  }
-}
-
-// CORRECTIF : ensureFfmpegInstalled() est appelée depuis deux endroits
-// indépendants (le handler IPC ensure-ffmpeg-ready, déclenché à l'ouverture
-// de l'écran de configuration, ET save-setup, déclenché au clic sur
-// "Enregistrer et démarrer"). Si l'utilisateur clique "Enregistrer" pendant
-// que le scan initial tourne encore, les deux appels lançaient chacun leur
-// propre téléchargement/extraction de ffmpeg.exe EN PARALLÈLE — deux
-// process PowerShell d'extraction se disputant le même fichier de
-// destination, avec un risque réel de ffmpeg.exe corrompu ou tronqué selon
-// l'ordre d'écriture. On sérialise maintenant tous les appels concurrents
-// sur une seule installation en cours, partagée : le premier appelant la
-// déclenche, tout appelant suivant pendant qu'elle tourne reçoit la MÊME
-// promesse (et sa propre callback onProgress est quand même notifiée).
-let inFlightInstall = null;
-const progressListeners = new Set();
-
-function broadcastProgress(msg) {
-  for (const listener of progressListeners) {
-    try { listener(msg); } catch (_) { /* un listener ne doit jamais faire échouer l'install */ }
-  }
-}
-
-/**
  * Télécharge et installe ffmpeg.exe s'il n'est pas déjà présent. Idempotent.
  * Ne fait rien si $env:FFMPEG_PATH pointe déjà vers un FFmpeg fonctionnel ou
- * si un FFmpeg système est disponible — inutile de retélécharger ~80 Mo si
+ * si un FFmpeg système est disponible — inutile de retélécharger ~140 Mo si
  * l'utilisateur en a déjà un.
  *
  * @param {Object} [opts]
- * @param {(msg: string) => void} [opts.onProgress]
+ * @param {(msg: string, percent?: number) => void} [opts.onProgress] -
+ *   percent est fourni (0-100) uniquement pendant la phase de
+ *   téléchargement ; absent pour les autres étapes (extraction, etc.).
  * @returns {Promise<{ installed: boolean, skipped: boolean }>}
  */
-function ensureFfmpegInstalled(opts = {}) {
-  if (opts.onProgress) progressListeners.add(opts.onProgress);
-
-  if (inFlightInstall) {
-    // Une installation est déjà en cours (déclenchée par un autre appelant) :
-    // on s'y raccroche au lieu d'en démarrer une seconde.
-    return inFlightInstall.finally(() => {
-      if (opts.onProgress) progressListeners.delete(opts.onProgress);
-    });
-  }
-
-  inFlightInstall = ensureFfmpegInstalledImpl(broadcastProgress)
-    .finally(() => {
-      inFlightInstall = null;
-      progressListeners.clear();
-    });
-
-  return inFlightInstall;
-}
-
-async function ensureFfmpegInstalledImpl(onProgress) {
-  const report = (msg) => { log(msg); onProgress(msg); };
+async function ensureFfmpegInstalled(opts = {}) {
+  const onProgress = opts.onProgress || (() => {});
+  const report = (msg, percent) => { log(msg); onProgress(msg, percent); };
 
   if (process.platform !== 'win32') {
     report(
@@ -225,106 +229,43 @@ async function ensureFfmpegInstalledImpl(onProgress) {
     return { installed: false, skipped: true };
   }
 
-  // CORRECTIF : `existsSync` seul ne garantit pas que FFMPEG_EXE est un
-  // fichier valide (il pourrait s'agir d'un dossier ou d'un fichier
-  // corrompu/tronqué laissé par une tentative précédente) — dans ce cas on
-  // le retire et on réinstalle plutôt que de faussement le considérer prêt.
   if (fs.existsSync(FFMPEG_EXE)) {
-    let isValidFile = false;
-    try { isValidFile = fs.statSync(FFMPEG_EXE).isFile() && fs.statSync(FFMPEG_EXE).size > 0; } catch (_) {}
-    if (isValidFile) {
-      report('ffmpeg.exe déjà présent dans ffmpeg/, téléchargement ignoré.');
-      return { installed: true, skipped: false };
-    }
-    report('ffmpeg.exe présent mais invalide (dossier ou fichier vide) — réinstallation.');
-    try { fs.rmSync(FFMPEG_EXE, { recursive: true, force: true }); } catch (_) {}
+    report('ffmpeg.exe déjà présent dans ffmpeg/, téléchargement ignoré.');
+    return { installed: true, skipped: false };
   }
 
-  // CORRECTIF : si FFMPEG_DIR lui-même existe déjà comme un FICHIER (et non
-  // un dossier) — par exemple suite à une corruption externe — mkdirSync
-  // recursive échoue avec EEXIST au lieu de simplement "déjà là". On
-  // normalise avant de continuer.
-  if (fs.existsSync(FFMPEG_DIR) && !fs.statSync(FFMPEG_DIR).isDirectory()) {
-    try { fs.rmSync(FFMPEG_DIR, { force: true }); } catch (_) {}
-  }
   fs.mkdirSync(FFMPEG_DIR, { recursive: true });
 
-  // Nettoie tout reste d'une tentative précédente avortée AVANT de
-  // commencer (best-effort — voir cleanStaleArtifacts pour pourquoi ce
-  // n'est plus la seule protection).
-  cleanStaleArtifacts();
+  const zipPath = path.join(FFMPEG_DIR, '_ffmpeg-win64.zip');
+  report('Téléchargement de FFmpeg (build Windows x64 statique)...', 0);
+  await download(FFMPEG_ZIP_URL, zipPath, onProgress);
 
-  // CORRECTIF (round 4) : ces deux chemins étaient des noms FIXES,
-  // partagés par toutes les tentatives passées et futures. Si un antivirus
-  // verrouille brièvement _extract_tmp (scan du .exe qu'il vient d'y voir
-  // apparaître) pile pendant que cleanStaleArtifacts() essaie de le
-  // supprimer, la suppression échoue silencieusement (catch avalé) ET la
-  // tentative suivante réutilise EXACTEMENT le même chemin encore
-  // verrouillé/incohérent -> `Expand-Archive`/`readdirSync` échouent avec
-  // ENOTDIR, en boucle, sans qu'aucun clic sur "Actualiser" ne s'en sorte.
-  // Un suffixe unique par tentative (timestamp + pid) élimine complètement
-  // ce risque de collision : même si un artefact précédent reste verrouillé
-  // pour de bon, il est simplement ignoré, jamais réutilisé.
-  const attemptSuffix = `${Date.now()}-${process.pid}`;
-  const zipPath = path.join(FFMPEG_DIR, `_ffmpeg-win64-${attemptSuffix}.zip`);
-  const extractTmpDir = path.join(FFMPEG_DIR, `_extract_tmp-${attemptSuffix}`);
+  const extractTmpDir = path.join(FFMPEG_DIR, '_extract_tmp');
+  report('Extraction de l\'archive...', 100);
+  extractZipWindows(zipPath, extractTmpDir);
 
-  try {
-    report('Téléchargement de FFmpeg (build Windows x64 statique)...');
-    await download(FFMPEG_ZIP_URL, zipPath, onProgress);
+  // L'archive contient un dossier versionné (ex.
+  // ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe) dont le nom exact change
+  // à chaque build : on le retrouve dynamiquement plutôt que de le coder en
+  // dur, puis on ne copie que ffmpeg.exe (ffplay.exe/ffprobe.exe ne sont pas
+  // utilisés par cette app, inutile d'alourdir le paquet).
+  const topLevelEntries = fs.readdirSync(extractTmpDir);
+  const versionedDir = topLevelEntries.length === 1
+    ? path.join(extractTmpDir, topLevelEntries[0])
+    : extractTmpDir;
+  const binDir = path.join(versionedDir, 'bin');
+  const sourceDir = fs.existsSync(binDir) ? binDir : versionedDir;
+  const sourceExe = path.join(sourceDir, 'ffmpeg.exe');
 
-    report('Extraction de l\'archive...');
-    extractZipWindows(zipPath, extractTmpDir);
-
-    // L'archive contient un dossier versionné (ex.
-    // ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe) dont le nom exact change
-    // à chaque build : on le retrouve dynamiquement plutôt que de le coder en
-    // dur, puis on ne copie que ffmpeg.exe (ffplay.exe/ffprobe.exe ne sont pas
-    // utilisés par cette app, inutile d'alourdir le paquet).
-    //
-    // CORRECTIF (round 4) : readdirSync ci-dessous est la ligne qui a produit
-    // l'ENOTDIR observé en usage réel. On l'entoure maintenant d'un message
-    // qui nomme explicitement le chemin en cause et son type réel — plutôt
-    // que de laisser remonter l'erreur Node brute, peu actionnable pour un
-    // utilisateur non-technique (et pas assez précise pour du support à
-    // distance non plus).
-    let topLevelEntries;
-    try {
-      topLevelEntries = fs.readdirSync(extractTmpDir);
-    } catch (err) {
-      let actual = 'introuvable';
-      try { actual = fs.statSync(extractTmpDir).isDirectory() ? 'dossier' : 'fichier'; } catch (_) { /* vraiment introuvable */ }
-      throw new Error(
-        `Lecture du dossier d'extraction impossible (${err.code || err.message} — ` +
-        `${extractTmpDir} est actuellement : ${actual}). L'extraction a peut-être été ` +
-        'interrompue par un antivirus. Réessayez ; si le problème persiste, mettez ' +
-        'temporairement une exception antivirus sur le dossier ffmpeg/ de l\'application.'
-      );
-    }
-    const versionedDir = topLevelEntries.length === 1
-      ? path.join(extractTmpDir, topLevelEntries[0])
-      : extractTmpDir;
-    const binDir = path.join(versionedDir, 'bin');
-    const sourceDir = fs.existsSync(binDir) ? binDir : versionedDir;
-    const sourceExe = path.join(sourceDir, 'ffmpeg.exe');
-
-    if (!fs.existsSync(sourceExe)) {
-      throw new Error(`ffmpeg.exe introuvable dans l'archive extraite (${sourceDir})`);
-    }
-    fs.copyFileSync(sourceExe, FFMPEG_EXE);
-  } catch (err) {
-    // Quel que soit l'échec (réseau, extraction, archive inattendue...), on
-    // nettoie systématiquement pour que la PROCHAINE tentative reparte d'un
-    // état propre au lieu d'accumuler des restes qui la feraient échouer
-    // différemment (c'était la source du bug ENOTDIR répété).
-    cleanStaleArtifacts();
-    throw new Error(
-      `Échec de l'installation de FFmpeg (${err.message}). ` +
-      'Les fichiers temporaires ont été nettoyés — cliquez sur Actualiser pour réessayer.'
-    );
+  if (!fs.existsSync(sourceExe)) {
+    fs.rmSync(extractTmpDir, { recursive: true, force: true });
+    fs.rmSync(zipPath, { force: true });
+    throw new Error(`ffmpeg.exe introuvable dans l'archive extraite (${sourceDir})`);
   }
+  fs.copyFileSync(sourceExe, FFMPEG_EXE);
 
-  cleanStaleArtifacts();
+  fs.rmSync(extractTmpDir, { recursive: true, force: true });
+  fs.rmSync(zipPath, { force: true });
   report('ffmpeg.exe installé dans ffmpeg/.');
 
   return { installed: true, skipped: false };
