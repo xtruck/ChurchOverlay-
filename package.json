@@ -32,8 +32,6 @@
     "files": [
       "main.js",
       "preload.js",
-      "capture.html",
-      "capture-preload.js",
       "perf-monitor.js",
       "setup.html",
       "dashboard.html",
