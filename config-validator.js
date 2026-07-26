@@ -8,7 +8,18 @@
  *  (test/test-config-validator.js) au lieu du vrai module — server.js
  *  plantait dès le démarrage car validateSystemConfig/displayValidationResults
  *  n'existaient plus. Restauré ici, ET nettoyé de toute référence à FFmpeg
- *  (capture audio désormais native via capture.html, voir audio-capture.js).
+ *  (capture audio désormais native via getUserMedia dans dashboard.html/
+ *  setup.html, voir audio-capture.js).
+ *
+ *  CORRECTIF (audit round 4) : ce fichier référençait encore capture.html /
+ *  capture-preload.js, des fichiers orphelins d'une architecture antérieure
+ *  (fenêtre Electron cachée dédiée à la capture) jamais reliés à main.js et
+ *  absents de package.json > build.files — donc jamais empaquetés. La
+ *  capture réelle passe par getUserMedia directement dans dashboard.html et
+ *  setup.html (fenêtres visibles), qui poussent des chunks PCM à main.js via
+ *  le canal IPC 'audio-pcm-chunk'. Les deux fichiers orphelins ont été
+ *  supprimés du dépôt ; les commentaires ci-dessous sont corrigés en
+ *  conséquence.
  * ============================================================================
  */
 
