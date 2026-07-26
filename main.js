@@ -67,6 +67,10 @@ const themeLoader = require('./theme-loader');
 // que Windows et Chromium. Voir audio-capture.js pour le détail du
 // raisonnement. pickBestDevice() est réutilisée pour choisir un micro par
 // défaut parmi les libellés renvoyés par cette fenêtre.
+// pickBestDevice() reste dans audio-capture.js (heuristique générique sur de
+// simples libellés, indépendante du backend de capture) et sert ici à
+// présélectionner un micro par défaut parmi les libellés renvoyés par la
+// fenêtre de capture (voir detectAudioDevices() ci-dessous).
 const { pickBestDevice } = require('./audio-capture');
 
 // main.js vit à la racine du projet (à côté de server.js, overlay.html, etc.),
@@ -258,10 +262,21 @@ function isFirstRunNeeded() {
 // ---------------------------------------------------------------------------
 let deviceCacheMem = null; // { ts, devices }
 
+// Calcule, à partir de la liste { deviceId, label } renvoyée par la fenêtre
+// de capture, quel micro pickBestDevice() choisirait automatiquement — pour
+// que setup.html puisse le présélectionner dans la liste déroulante plutôt
+// que de laisser l'utilisateur deviner lequel des N micros choisir.
+function withRecommendation(devices) {
+  const labels = (devices || []).map((d) => d.label);
+  const { chosen } = pickBestDevice(labels);
+  const match = chosen ? (devices || []).find((d) => d.label === chosen) : null;
+  return { devices: devices || [], recommendedDeviceId: match ? match.deviceId : null };
+}
+
 async function detectAudioDevices({ force = false } = {}) {
   // 1) cache mémoire
   if (!force && deviceCacheMem && (Date.now() - deviceCacheMem.ts) < DEVICE_CACHE_TTL_MS) {
-    return deviceCacheMem.devices;
+    return withRecommendation(deviceCacheMem.devices);
   }
   // 2) cache disque
   if (!force) {
@@ -271,7 +286,7 @@ async function detectAudioDevices({ force = false } = {}) {
       if (parsed && Array.isArray(parsed.devices) && Number.isFinite(parsed.ts) &&
           (Date.now() - parsed.ts) < DEVICE_CACHE_TTL_MS) {
         deviceCacheMem = parsed;
-        return parsed.devices;
+        return withRecommendation(parsed.devices);
       }
     } catch (_) { /* cache miss */ }
   }
@@ -283,7 +298,7 @@ async function detectAudioDevices({ force = false } = {}) {
   fsp.mkdir(path.dirname(DEVICE_CACHE_PATH()), { recursive: true })
     .then(() => fsp.writeFile(DEVICE_CACHE_PATH(), JSON.stringify(payload), 'utf8'))
     .catch(() => {}); // non-fatal
-  return devices;
+  return withRecommendation(devices);
 }
 
 // CHANGELOG v0.5.0 : remplace l'ancien enumerateDevicesLive() basé sur
