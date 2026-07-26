@@ -47,7 +47,6 @@
       "detector-en.js",
       "groq-wrapper.js",
       "deepgram-wrapper.js",
-      "list-audio-devices.js",
       "rate-limiter.js",
       "validation.js",
       "theme-loader.js",
