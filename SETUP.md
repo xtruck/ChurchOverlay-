@@ -1,5 +1,16 @@
 # Setup Guide - Church Overlay
 
+> ⚠️ **This guide is largely outdated.** It predates two major changes:
+> local Whisper was removed (v0.3.0 — transcription is now cloud-only via
+> Groq, with Deepgram as fallback), and FFmpeg was removed (v0.5.0 —
+> microphone capture now uses `getUserMedia` in a hidden Electron window,
+> see `capture.html`/`audio-capture.js`). You do **not** need to install
+> FFmpeg, and there is no `list-audio-devices.js` or `whisper-server.exe`
+> anymore. To set up the app: install Node.js, run `npm install`, then
+> `npm start` — the microphone and Groq key are configured from the
+> on-screen setup window on first launch. See `README.md` for the current
+> environment variables.
+
 ## Prerequisites
 
 Before running the system, ensure you have:
