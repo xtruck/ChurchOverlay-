@@ -60,14 +60,24 @@ function isFileWhitelisted(relPath, filesList) {
 // Suit récursivement les require('./xxx') ou require("../xxx") locaux
 // (analyse statique simple par regex — suffisant pour ce projet, pas de
 // require() dynamiques construits par concaténation de variables ici).
-function findLocalRequires(filePath, seen = new Set(), result = new Set()) {
+//
+// CORRECTIF AUDIT — un fichier require() par le code mais absent du disque
+// n'est PLUS un simple avertissement ignoré : il est collecté dans
+// `missingOnDisk` et fait échouer le script (voir main()). L'ancien
+// comportement ("avertissement, ignoré") a laissé passer sans broncher le
+// cas de setup-ffmpeg.js/dshow-parser.js — deux fichiers require()'d par
+// main.js mais supprimés du dépôt — alors que ce script existe précisément
+// pour intercepter ce genre de régression. Un fichier manquant sur disque
+// est même PIRE qu'un fichier manquant de build.files : ça casse aussi
+// `npm start` en dev, pas seulement le .exe packagé.
+function findLocalRequires(filePath, seen = new Set(), result = new Set(), missingOnDisk = new Set()) {
   const relFromRoot = path.relative(ROOT, filePath).replace(/\\/g, '/');
-  if (seen.has(relFromRoot)) return result;
+  if (seen.has(relFromRoot)) return { result, missingOnDisk };
   seen.add(relFromRoot);
 
   if (!fs.existsSync(filePath)) {
-    console.warn(`  (avertissement) fichier introuvable, ignoré : ${relFromRoot}`);
-    return result;
+    missingOnDisk.add(relFromRoot);
+    return { result, missingOnDisk };
   }
 
   result.add(relFromRoot);
@@ -78,10 +88,10 @@ function findLocalRequires(filePath, seen = new Set(), result = new Set()) {
   while ((match = requireRegex.exec(content)) !== null) {
     let resolved = path.resolve(path.dirname(filePath), match[1]);
     if (!path.extname(resolved)) resolved += '.js';
-    findLocalRequires(resolved, seen, result);
+    findLocalRequires(resolved, seen, result, missingOnDisk);
   }
 
-  return result;
+  return { result, missingOnDisk };
 }
 
 function main() {
@@ -96,10 +106,23 @@ function main() {
   console.log('=== Vérification de la liste blanche de packaging (build.files) ===\n');
 
   const allRequired = new Set();
+  const allMissingOnDisk = new Set();
   for (const entry of ENTRY_POINTS) {
     console.log(`Analyse depuis : ${entry}`);
-    const found = findLocalRequires(path.join(ROOT, entry));
-    found.forEach((f) => allRequired.add(f));
+    const { result, missingOnDisk } = findLocalRequires(path.join(ROOT, entry));
+    result.forEach((f) => allRequired.add(f));
+    missingOnDisk.forEach((f) => allMissingOnDisk.add(f));
+  }
+
+  if (allMissingOnDisk.size > 0) {
+    console.error('\n✗ ÉCHEC — les fichiers suivants sont require() par le code');
+    console.error('  (main.js/server.js ou l\'un de leurs require() locaux) mais');
+    console.error('  ABSENTS DU DISQUE. L\'app plante au lancement (MODULE_NOT_FOUND),');
+    console.error('  y compris en dev (npm start), pas seulement une fois packagée :\n');
+    allMissingOnDisk.forEach((f) => console.error(`    - ${f}`));
+    console.error('\n  Corrige en restaurant ce(s) fichier(s) ou en retirant le(s) require()');
+    console.error('  correspondant(s) si la fonctionnalité a été volontairement supprimée.');
+    process.exit(1);
   }
 
   const missing = [];
