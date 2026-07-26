@@ -23,12 +23,9 @@
  * ============================================================================
  */
 
-const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { parseDshowAudioDevices } = require('./dshow-parser');
-const { resolveFfmpegPath } = require('./setup-ffmpeg');
 
 // Configuration
 const CONFIG = {
@@ -50,23 +47,15 @@ const CONFIG = {
   // modes d'exécution (empaqueté, dev, `node server.js` standalone) sans
   // dépendre d'aucune configuration de packaging.
   tempDir: path.join(os.tmpdir(), 'churchoverlay-audio'),
-  // Configurables sans modifier le code : FFMPEG_PATH et AUDIO_DEVICE.
-  // AUDIO_DEVICE peut désormais rester VIDE : startRecording() détecte et
-  // choisit automatiquement un micro (voir autoDetectDevice() plus bas).
-  // CORRECTIF : dupliquait `process.env.FFMPEG_PATH || 'ffmpeg'` en dur,
-  // ignorant le binaire auto-installé dans ffmpeg/ffmpeg.exe. Fonctionnait
-  // par accident dans l'app Electron (main.js injecte FFMPEG_PATH=<chemin
-  // résolu> dans l'environnement du worker), mais cassait en usage
-  // standalone (`node server.js` / `npm run server-only`) sur un poste
-  // sans FFmpeg système.
-  ffmpegPath: resolveFfmpegPath(),
+  // AUDIO_DEVICE contient désormais un deviceId navigateur (voir setup.html),
+  // choisi manuellement — plus de détection automatique côté serveur
+  // puisqu'il n'y a plus de FFmpeg/dshow à interroger ici.
   audioDevice: process.env.AUDIO_DEVICE || '',
 };
 
 // État du module
 const STATE = {
   isRecording: false,
-  ffmpegProcess: null,
   audioBuffer: [],
   segmentCount: 0,
   // CORRECTIF (audit — remplacement de FFmpeg/dshow) : sur certains
@@ -97,59 +86,21 @@ function initTempDir(tempDir) {
 
 /**
  * ============================================================================
- *  AUTO-DÉTECTION DU MICRO (ajouté à la demande : AUDIO_DEVICE ne devrait
- *  plus être obligatoire à configurer à la main)
+ *  CHANGELOG — remplacement de FFmpeg par la capture navigateur
  * ----------------------------------------------------------------------------
- *  DirectShow (le backend Windows utilisé par FFmpeg ici, -f dshow) n'a
- *  PAS de notion native de "périphérique par défaut" — contrairement à
- *  WASAPI ou PulseAudio, chaque appel dshow doit nommer un périphérique
- *  précis (`audio=<nom exact>`). Il n'existe donc pas de flag FFmpeg du
- *  type `audio=default` qui fonctionne avec dshow : c'est une limite du
- *  backend, pas un bug de ce projet.
- *
- *  Ce qu'on peut automatiser, en revanche, c'est le CHOIX : lister tous
- *  les micros disponibles (comme list-audio-devices.js le fait déjà) puis
- *  choisir le plus probable automatiquement, sans obliger l'utilisateur à
- *  copier un nom depuis une commande. C'est ce que fait autoDetectDevice()
- *  ci-dessous, utilisé par startRecording() quand AUDIO_DEVICE est vide.
+ *  listDevices() et autoDetectDevice() (énumération DirectShow via FFmpeg)
+ *  sont retirées : elles n'étaient de toute façon plus appelées par
+ *  startPipeline() (voir server.js, qui appelle startBrowserCapture()), et
+ *  DirectShow ne voit tout simplement pas certains micros intégrés modernes
+ *  (Intel Smart Sound Technology ou équivalent) — 0 périphérique énuméré,
+ *  alors que ce même micro apparaît normalement dans Windows. Le choix du
+ *  micro se fait maintenant dans setup.html via navigator.mediaDevices
+ *  (même couche WASAPI que Windows), qui stocke un deviceId navigateur —
+ *  voir loadMicrophones() dans setup.html. pickBestDevice() est conservée :
+ *  son heuristique reste utile pour qui voudrait l'utiliser sur une liste
+ *  de libellés navigateur (elle ne dépend pas de FFmpeg elle-même).
  * ============================================================================
  */
-
-/**
- * Interroge FFmpeg pour lister les périphériques audio DirectShow.
- * @param {string} ffmpegPath
- * @param {number} timeoutMs
- * @returns {Promise<string[]>} Liste des noms de périphériques (peut être vide)
- */
-function listDevices(ffmpegPath = CONFIG.ffmpegPath, timeoutMs = 8000) {
-  return new Promise((resolve) => {
-    let ff;
-    try {
-      ff = spawn(ffmpegPath, ['-hide_banner', '-list_devices', 'true', '-f', 'dshow', '-i', 'dummy']);
-    } catch (_) {
-      resolve([]);
-      return;
-    }
-
-    let output = '';
-    let settled = false;
-    const finish = (devices) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(hardKill);
-      resolve(devices);
-    };
-
-    ff.stderr.on('data', (d) => { output += d.toString(); });
-    ff.on('close', () => finish(parseDshowAudioDevices(output)));
-    ff.on('error', () => finish([]));
-
-    const hardKill = setTimeout(() => {
-      try { ff.kill('SIGKILL'); } catch (_) { /* déjà terminé */ }
-      finish([]);
-    }, timeoutMs);
-  });
-}
 
 // Périphériques à écarter automatiquement : ce sont des boucles de retour
 // (ce que les haut-parleurs émettent, pas ce que le micro capte) ou des
@@ -189,37 +140,6 @@ function pickBestDevice(devices) {
 }
 
 /**
- * Détecte et choisit automatiquement un micro. Ne lève jamais d'exception :
- * en cas d'échec (FFmpeg absent, aucun périphérique, uniquement des
- * loopbacks), retourne { device: null, reason } pour que l'appelant puisse
- * afficher un message clair plutôt qu'un plantage silencieux.
- * @param {string} ffmpegPath
- * @returns {Promise<{ device: string|null, candidates: string[], rejected: string[], reason?: string }>}
- */
-async function autoDetectDevice(ffmpegPath = CONFIG.ffmpegPath) {
-  const devices = await listDevices(ffmpegPath);
-  if (devices.length === 0) {
-    return {
-      device: null,
-      candidates: [],
-      rejected: [],
-      reason: 'Aucun périphérique audio DirectShow détecté par FFmpeg (micro débranché, non autorisé dans Windows, ou pilote manquant).',
-    };
-  }
-
-  const { chosen, candidates, rejected } = pickBestDevice(devices);
-  if (!chosen) {
-    return {
-      device: null,
-      candidates,
-      rejected,
-      reason: `Seuls des périphériques de boucle de retour ont été détectés (${rejected.join(', ')}) — aucun micro physique fiable à choisir automatiquement.`,
-    };
-  }
-  return { device: chosen, candidates, rejected };
-}
-
-/**
  * CORRECTIF (audit — remplacement de FFmpeg par la capture navigateur) :
  * démarre une session de capture SANS lancer de processus FFmpeg. La
  * source des échantillons PCM est maintenant `dashboard.html` (Web Audio /
@@ -245,7 +165,6 @@ function startBrowserCapture(options = {}) {
   STATE.segmentCount = 0;
   STATE.audioBuffer = [];
   STATE.browserCaptureConfig = config;
-  STATE.ffmpegProcess = null; // pas de process FFmpeg dans ce mode
 
   console.log('[audio-capture] Capture navigateur (Web Audio, sans FFmpeg) démarrée — ' +
     'en attente de chunks PCM du renderer.');
@@ -266,110 +185,8 @@ function feedPcmChunk(buffer) {
 }
 
 /**
- * Démarre la capture audio via FFmpeg
- * @param {Object} options - Options de configuration (surcharge CONFIG)
- * @returns {Promise<void>}
- */
-async function startRecording(options = {}) {
-  if (STATE.isRecording) {
-    console.warn('[audio-capture] Enregistrement déjà en cours');
-    return;
-  }
-
-  const config = { ...CONFIG, ...options };
-  initTempDir(config.tempDir);
-
-  // AUDIO_DEVICE non défini : on détecte et choisit un micro automatiquement
-  // au lieu d'exiger une configuration manuelle (voir autoDetectDevice()).
-  if (!config.audioDevice) {
-    console.log('[audio-capture] AUDIO_DEVICE non défini — détection automatique du micro...');
-    const auto = await autoDetectDevice(config.ffmpegPath);
-
-    if (!auto.device) {
-      throw new Error(
-        `Détection automatique du micro impossible : ${auto.reason} ` +
-        'Lancez "node list-audio-devices.js" pour un diagnostic détaillé, ' +
-        'ou définissez AUDIO_DEVICE manuellement dans .env.'
-      );
-    }
-
-    config.audioDevice = auto.device;
-    console.log(`[audio-capture] Micro choisi automatiquement : "${auto.device}"`);
-    const others = auto.candidates.filter((d) => d !== auto.device);
-    if (others.length > 0) {
-      console.log(`[audio-capture] Autres micros détectés (non retenus) : ${others.join(', ')}. ` +
-        'Pour en forcer un autre, définissez AUDIO_DEVICE dans .env avec son nom exact.');
-    }
-    if (auto.rejected.length > 0) {
-      console.log(`[audio-capture] Périphériques ignorés (boucle de retour/virtuel) : ${auto.rejected.join(', ')}`);
-    }
-  }
-
-  return new Promise((resolve, reject) => {
-    console.log('[audio-capture] Démarrage de la capture audio...');
-    console.log('[audio-capture] Configuration:', {
-      sampleRate: config.sampleRate,
-      channels: config.channels,
-      segmentDuration: config.segmentDuration + 'ms',
-      overlapDuration: config.overlapDuration + 'ms',
-    });
-
-    // Vérifier si FFmpeg est disponible
-    const ffmpegCheck = spawn(config.ffmpegPath, ['-version']);
-    ffmpegCheck.on('error', () => {
-      reject(new Error('FFmpeg n\'est pas installé ou non trouvé: ' + config.ffmpegPath));
-    });
-    ffmpegCheck.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error('FFmpeg n\'est pas installé ou non trouvé dans PATH'));
-        return;
-      }
-
-      // Lancer FFmpeg pour capture audio
-      // Utilisation de dshow (DirectShow) sur Windows
-      const ffmpegArgs = [
-        '-f', 'dshow',           // DirectShow (Windows)
-        '-i', `audio=${config.audioDevice}`,
-        '-ar', config.sampleRate.toString(),
-        '-ac', config.channels.toString(),
-        '-f', 's16le',           // PCM 16-bit little-endian
-        '-loglevel', 'error',    // Réduire les logs
-        'pipe:1',                // Sortie vers stdout
-      ];
-
-      STATE.ffmpegProcess = spawn(config.ffmpegPath, ffmpegArgs);
-
-      STATE.ffmpegProcess.stdout.on('data', (data) => {
-        handleAudioData(data, config);
-      });
-
-      STATE.ffmpegProcess.stderr.on('data', (data) => {
-        console.error('[audio-capture FFmpeg]', data.toString());
-      });
-
-      STATE.ffmpegProcess.on('error', (err) => {
-        console.error('[audio-capture] Erreur FFmpeg:', err.message);
-        if (STATE.callbacks.onError) STATE.callbacks.onError(err);
-        reject(err);
-      });
-
-      STATE.ffmpegProcess.on('close', (code) => {
-        console.log(`[audio-capture] FFmpeg terminé avec code ${code}`);
-        STATE.isRecording = false;
-        STATE.ffmpegProcess = null;
-      });
-
-      STATE.isRecording = true;
-      STATE.segmentCount = 0;
-      console.log('[audio-capture] Capture audio démarrée');
-      resolve();
-    });
-  });
-}
-
-/**
- * Traite les données audio reçues de FFmpeg
- * @param {Buffer} data - Données audio brutes
+ * Traite les données audio reçues (segmentation, écriture WAV, callback).
+ * @param {Buffer} data - Données audio brutes (PCM16LE)
  * @param {Object} config - Configuration actuelle
  */
 function handleAudioData(data, config) {
@@ -453,49 +270,17 @@ function createWavFile(pcmData, sampleRate, channels, bitDepth) {
 }
 
 /**
- * Arrête la capture audio
+ * Arrête la capture audio (capture navigateur uniquement — plus de process
+ * FFmpeg à tuer depuis le remplacement par getUserMedia/Web Audio).
  * @returns {Promise<void>}
  */
 function stopRecording() {
-  return new Promise((resolve) => {
-    // CORRECTIF (audit — mode navigateur) : avant, l'absence de
-    // STATE.ffmpegProcess (toujours vrai en capture navigateur, puisqu'il
-    // n'y a jamais eu de process FFmpeg à tuer dans ce mode) faisait sortir
-    // ici sans jamais remettre STATE.isRecording à false ni nettoyer les
-    // fichiers temporaires — l'app restait bloquée en "enregistrement en
-    // cours" pour toujours après un arrêt.
-    if (!STATE.ffmpegProcess) {
-      STATE.isRecording = false;
-      STATE.browserCaptureConfig = null;
-      STATE.audioBuffer = [];
-      console.log('[audio-capture] Capture arrêtée (mode navigateur, aucun process FFmpeg à tuer).');
-      cleanupTempFiles({ force: true });
-      resolve();
-      return;
-    }
-
-    console.log('[audio-capture] Arrêt de la capture audio...');
-
-    STATE.ffmpegProcess.on('close', () => {
-      STATE.isRecording = false;
-      STATE.ffmpegProcess = null;
-      STATE.audioBuffer = [];
-      console.log('[audio-capture] Capture audio arrêtée');
-      // Nettoyer automatiquement les fichiers temporaires après l'arrêt
-      cleanupTempFiles({ force: true });
-      resolve();
-    });
-
-    // Tuer le processus FFmpeg
-    STATE.ffmpegProcess.kill('SIGTERM');
-
-    // Force kill après 5 secondes
-    setTimeout(() => {
-      if (STATE.ffmpegProcess) {
-        STATE.ffmpegProcess.kill('SIGKILL');
-      }
-    }, 5000);
-  });
+  STATE.isRecording = false;
+  STATE.browserCaptureConfig = null;
+  STATE.audioBuffer = [];
+  console.log('[audio-capture] Capture arrêtée.');
+  cleanupTempFiles({ force: true });
+  return Promise.resolve();
 }
 
 /**
@@ -573,7 +358,6 @@ function cleanupTempFiles(options = {}) {
 }
 
 module.exports = {
-  startRecording,
   startBrowserCapture,
   feedPcmChunk,
   stopRecording,
@@ -581,9 +365,7 @@ module.exports = {
   isRecording,
   cleanupTempFiles,
   getConfig: () => ({ ...CONFIG }),
-  // Auto-détection micro — exposées pour list-audio-devices.js, l'assistant
-  // de setup Electron (main.js), et les tests.
-  listDevices,
+  // Heuristique de choix de micro — pure, ne dépend plus de FFmpeg. Exposée
+  // pour les tests ; setup.html fait son propre choix manuel via l'UI.
   pickBestDevice,
-  autoDetectDevice,
 };
