@@ -10,9 +10,32 @@
  *   (déjà intégré depuis OBS 28+)
  */
 
+const { safeStorage } = require('electron');
 const features = require('./config/features.json');
 
 let obsClient = null;
+
+// CORRECTIF (audit round 4) — le mot de passe OBS est désormais chiffré par
+// main.js (safeStorage) avant d'être écrit dans config/features.json (voir
+// obs-set-config dans main.js). On le déchiffre ici avant de s'en servir ;
+// `cfg.password` en clair reste lu en repli uniquement pour une config
+// existante pas encore migrée (safeStorage indisponible au moment de la
+// sauvegarde) ou écrite avant ce correctif.
+function resolvePassword(cfg) {
+  if (cfg.passwordEncrypted) {
+    if (!safeStorage.isEncryptionAvailable()) {
+      console.error('[obs] Chiffrement système indisponible : impossible de lire le mot de passe OBS.');
+      return '';
+    }
+    try {
+      return safeStorage.decryptString(Buffer.from(cfg.passwordEncrypted, 'base64'));
+    } catch (e) {
+      console.error('[obs] Échec du déchiffrement du mot de passe OBS:', e.message);
+      return '';
+    }
+  }
+  return cfg.password || '';
+}
 
 async function connect() {
   if (!features.broadcast.multiScene.enabled) return null;
@@ -23,7 +46,7 @@ async function connect() {
 
   const cfg = features.broadcast.multiScene;
   try {
-    await obsClient.connect(cfg.obsWebsocketUrl, cfg.password);
+    await obsClient.connect(cfg.obsWebsocketUrl, resolvePassword(cfg));
     console.log('[obs] Connecté à OBS Studio');
     return obsClient;
   } catch (e) {
