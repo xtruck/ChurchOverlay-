@@ -12,8 +12,8 @@
     "test-envoi": "node test/test-envoi.js",
     "setup-ffmpeg": "node setup-ffmpeg.js",
     "check-files": "node scripts/check-build-files.js",
-    "test": "node scripts/check-build-files.js && node test/test-detector.js && node test/test-detector-en.js && node test/test-validation.js && node test/test-rate-limiter.js && node test/test-config-validator.js && node test/test-groq-fallback-race.js && node test/test-dshow-parser.js",
-    "test-all": "node test/test-detector.js && node test/test-validation.js && node test/test-rate-limiter.js && node test/test-config-validator.js && node test/test-groq-fallback-race.js && node test/test-dshow-parser.js && node test/test-audio-capture.js",
+    "test": "node scripts/check-build-files.js && node test/test-detector.js && node test/test-detector-en.js && node test/test-validation.js && node test/test-rate-limiter.js && node test/test-config-validator.js && node test/test-groq-fallback-race.js && node test/test-dshow-parser.js && node test/test-theme-loader.js",
+    "test-all": "node scripts/check-build-files.js && node test/test-detector.js && node test/test-detector-en.js && node test/test-validation.js && node test/test-rate-limiter.js && node test/test-config-validator.js && node test/test-groq-fallback-race.js && node test/test-dshow-parser.js && node test/test-theme-loader.js && node test/test-audio-capture.js",
     "dist": "electron-builder --win nsis"
   },
   "dependencies": {
