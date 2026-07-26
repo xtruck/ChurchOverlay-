@@ -255,83 +255,10 @@
     to { transform: rotate(360deg); }
   }
 
-  /* CORRECTIF (audit) : écran de progression FFmpeg dédié, affiché avant le
-     formulaire — voir #ffmpeg-panel plus bas. On veut que l'utilisateur voie
-     clairement "téléchargement en cours, X%" AVANT que la recherche de
-     micro ne démarre, plutôt qu'un message discret mêlé au statut micro. */
-  #ffmpeg-panel {
-    text-align: center;
-  }
-
-  #ffmpeg-panel .icon {
-    font-size: 40px;
-    margin-bottom: 16px;
-  }
-
-  #ffmpeg-panel h2 {
-    font-size: 17px;
-    font-weight: 600;
-    margin-bottom: 8px;
-  }
-
-  #ffmpeg-panel .sub {
-    color: var(--text-secondary);
-    font-size: 12px;
-    margin-bottom: 24px;
-    line-height: 1.6;
-  }
-
-  .progress-track {
-    width: 100%;
-    height: 10px;
-    background: rgba(255, 255, 255, 0.08);
-    border-radius: 999px;
-    overflow: hidden;
-    margin-bottom: 10px;
-  }
-
-  .progress-fill {
-    height: 100%;
-    width: 0%;
-    background: linear-gradient(135deg, var(--accent), var(--accent-hover));
-    border-radius: 999px;
-    transition: width 0.25s ease;
-  }
-
-  .progress-fill.indeterminate {
-    width: 30% !important;
-    animation: indeterminate 1.2s ease-in-out infinite;
-  }
-
-  @keyframes indeterminate {
-    0% { margin-left: 0%; }
-    50% { margin-left: 70%; }
-    100% { margin-left: 0%; }
-  }
-
-  #ffmpeg-percent {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: 4px;
-  }
-
-  #ffmpeg-message {
-    font-size: 12px;
-    color: var(--text-secondary);
-  }
-
-  #ffmpeg-panel.error .icon { color: var(--error); }
-  #ffmpeg-panel.error #ffmpeg-message { color: var(--error); }
-
-  #setup-form {
-    display: none;
-  }
-  #setup-form.visible {
-    display: block;
-    animation: slideIn 0.3s ease-out;
-  }
-</style>
+  /* CORRECTIF (audit) : écran de progression FFmpeg entièrement retiré —
+     preload.js n'expose plus ensureFfmpeg/onFfmpegSetupProgress/
+     onFfmpegStartupProgress (capture native, plus de binaire externe à
+     installer). Le formulaire (#setup-form) s'affiche directement. */
 </head>
 <body>
   <div class="container">
@@ -342,22 +269,6 @@
         Configurez votre micro et votre clé API Groq pour commencer. 
         Rien d'autre à installer, tout est prêt !
       </p>
-    </div>
-
-    <!-- CORRECTIF (audit) : écran affiché en premier, tant que FFmpeg n'est
-         pas prêt. La recherche de micro (juste après, dans #setup-form) ne
-         démarre qu'une fois ce panneau terminé et masqué. -->
-    <div id="ffmpeg-panel">
-      <div class="icon">⚙️</div>
-      <h2 id="ffmpeg-title">Préparation de FFmpeg…</h2>
-      <p class="sub" id="ffmpeg-sub">
-        Composant nécessaire à la capture audio, téléchargé une seule fois.
-      </p>
-      <div class="progress-track">
-        <div class="progress-fill indeterminate" id="ffmpeg-progress-fill"></div>
-      </div>
-      <div id="ffmpeg-percent">Démarrage…</div>
-      <div id="ffmpeg-message"></div>
     </div>
 
     <div id="setup-form">
@@ -430,13 +341,6 @@
       saveStatus: document.getElementById('save-status'),
       linkGroq: document.getElementById('link-groq'),
       linkDeepgram: document.getElementById('link-deepgram'),
-      // Écran de progression FFmpeg (affiché avant le formulaire)
-      ffmpegPanel: document.getElementById('ffmpeg-panel'),
-      ffmpegTitle: document.getElementById('ffmpeg-title'),
-      ffmpegSub: document.getElementById('ffmpeg-sub'),
-      ffmpegProgressFill: document.getElementById('ffmpeg-progress-fill'),
-      ffmpegPercent: document.getElementById('ffmpeg-percent'),
-      ffmpegMessage: document.getElementById('ffmpeg-message'),
       setupForm: document.getElementById('setup-form'),
     };
 
@@ -552,54 +456,17 @@
     elements.micSelect.addEventListener('change', updateSaveEnabled);
     elements.groqInput.addEventListener('input', updateSaveEnabled);
 
-    // Progression du téléchargement automatique de FFmpeg (si nécessaire)
-    window.churchOverlay.onFfmpegSetupProgress((payload) => {
-      const cls = payload.done ? (payload.ok === false ? 'error' : 'success') : 'warning';
-      elements.saveStatus.className = 'status ' + cls;
-
-      if (!payload.done) {
-        elements.saveStatus.innerHTML = '<span class=\"spinner\"></span> ' + (payload.message || '');
-      } else {
-        elements.saveStatus.textContent = (payload.ok === false ? '⚠️ ' : '✅ ') + (payload.message || '');
-      }
-
-      if (payload.done) {
-        setTimeout(() => window.close(), payload.ok === false ? 2500 : 1000);
-      }
-    });
-
-    // CORRECTIF (audit setup/preload/ffmpeg) : progression de l'installation
-    // FFmpeg AU CHARGEMENT de la fenêtre (avant le premier scan de micros).
-    // Ce canal ('ffmpeg-startup-progress') ne ferme jamais la fenêtre — il ne
-    // fait qu'informer, pendant que checkFfmpegThenLoadMicrophones() attend
-    // la fin de l'installation avant de lancer le scan. Pilote maintenant
-    // un vrai panneau de progression dédié (#ffmpeg-panel), avec barre et
-    // pourcentage réel — plus visible qu'un simple message dans mic-status.
-    window.churchOverlay.onFfmpegStartupProgress((payload) => {
-      if (typeof payload.percent === 'number') {
-        elements.ffmpegProgressFill.classList.remove('indeterminate');
-        elements.ffmpegProgressFill.style.width = payload.percent + '%';
-        elements.ffmpegPercent.textContent = payload.percent + '%';
-      } else {
-        // Étape sans pourcentage connu (vérification initiale, extraction) :
-        // barre animée indéterminée plutôt qu'un chiffre trompeur.
-        elements.ffmpegProgressFill.classList.add('indeterminate');
-        elements.ffmpegPercent.textContent = 'Préparation…';
-      }
-      elements.ffmpegMessage.textContent = payload.message || '';
-
-      if (payload.done) {
-        elements.ffmpegPanel.classList.toggle('error', payload.ok === false);
-        if (payload.ok === false) {
-          elements.ffmpegTitle.textContent = 'FFmpeg non installé automatiquement';
-          elements.ffmpegSub.textContent = 'On continue quand même — un FFmpeg déjà présent sur ce poste sera utilisé si possible.';
-        } else {
-          elements.ffmpegProgressFill.classList.remove('indeterminate');
-          elements.ffmpegProgressFill.style.width = '100%';
-          elements.ffmpegTitle.textContent = 'FFmpeg prêt ✓';
-        }
-      }
-    });
+    // CORRECTIF (audit) — bug bloquant trouvé : window.churchOverlay
+    // .onFfmpegSetupProgress()/.onFfmpegStartupProgress() étaient appelés
+    // ici SANS try/catch alors que preload.js ne les expose plus (capture
+    // native, plus de FFmpeg à télécharger). Un TypeError non rattrapé en
+    // plein milieu de ce <script> stoppait toute l'exécution restante :
+    // le bouton "Enregistrer" n'était jamais branché, et
+    // checkFfmpegThenLoadMicrophones() (plus bas) ne s'exécutait jamais —
+    // la fenêtre restait bloquée sur l'écran FFmpeg indéfiniment, sans même
+    // afficher le formulaire. Les deux appels et tout l'écran de
+    // progression associé (#ffmpeg-panel) ont été retirés ; voir
+    // loadMicrophones() ci-dessus, appelée directement plus bas.
 
     // Save configuration
     elements.btnSave.addEventListener('click', async () => {
@@ -609,14 +476,19 @@
       elements.saveStatus.textContent = '';
 
       try {
-        elements.saveStatus.className = 'status success';
-        elements.saveStatus.innerHTML = '<span class=\"spinner\"></span> Configuration enregistrée — vérification de FFmpeg…';
-
         await window.churchOverlay.saveSetup(
           elements.micSelect.value,
           elements.groqInput.value.trim(),
           elements.deepgramInput.value.trim()
         );
+        // CORRECTIF (audit) : la fenêtre se ferme désormais elle-même dès
+        // que saveSetup() est résolu, au lieu de dépendre d'un canal IPC
+        // ('ffmpeg-setup-progress') qui n'existe plus — sans ce correctif,
+        // la fenêtre restait ouverte indéfiniment sur "Enregistrement…"
+        // après un clic sur le bouton, même en cas de succès.
+        elements.saveStatus.className = 'status success';
+        elements.saveStatus.textContent = '✅ Configuration enregistrée.';
+        setTimeout(() => window.close(), 700);
       } catch (e) {
         elements.saveStatus.className = 'status error';
         elements.saveStatus.textContent = '❌ Erreur : ' + (e && e.message ? e.message : e);
@@ -626,50 +498,7 @@
     });
 
     // Initialize
-    // Initialize
-    // CORRECTIF (audit setup/preload/ffmpeg) : avant, loadMicrophones()
-    // était appelée seule ici. Sur un poste sans FFmpeg système déjà
-    // installé, ce premier scan échouait systématiquement (liste vide),
-    // laissant le bouton "Enregistrer" désactivé en permanence — verrou
-    // complet, puisque FFmpeg ne s'installait automatiquement QUE dans le
-    // handler de sauvegarde, jamais atteignable dans ce cas.
-    //
-    // Flux maintenant (demande explicite : voir la progression, PUIS
-    // chercher les micros dès que terminé) :
-    //   1. #ffmpeg-panel est affiché (formulaire masqué via #setup-form
-    //      sans classe .visible).
-    //   2. ensureFfmpeg() tourne ; onFfmpegStartupProgress met à jour la
-    //      barre en temps réel (pourcentage réel transmis par
-    //      setup-ffmpeg.js -> main.js -> preload.js).
-    //   3. Dès qu'ensureFfmpeg() est résolu (succès OU échec — jamais de
-    //      blocage indéfini sur un échec réseau), le panneau se masque, le
-    //      formulaire apparaît, ET loadMicrophones() démarre.
-    //      Note : un court délai (voir MIC_SCAN_START_DELAY_MS ci-dessous)
-    //      est volontairement ajouté pour laisser le message "FFmpeg prêt ✓"
-    //      visible un instant — retire-le si tu veux un enchaînement à 0ms.
-    const MIC_SCAN_START_DELAY_MS = { success: 500, error: 1200 };
-
-    async function checkFfmpegThenLoadMicrophones() {
-      try {
-        await window.churchOverlay.ensureFfmpeg();
-      } catch (e) {
-        // ensureFfmpeg() ne devrait normalement jamais rejeter (les erreurs
-        // sont capturées côté main.js et renvoyées via le canal de
-        // progression), mais on ne bloque pas le scan pour autant : il se
-        // peut qu'un FFmpeg système soit tout de même disponible.
-        console.warn('[setup] ensureFfmpeg a levé une erreur inattendue :', e);
-      }
-
-      const hadError = elements.ffmpegPanel.classList.contains('error');
-      await new Promise((r) => setTimeout(r, hadError ? MIC_SCAN_START_DELAY_MS.error : MIC_SCAN_START_DELAY_MS.success));
-
-      elements.ffmpegPanel.style.display = 'none';
-      elements.setupForm.classList.add('visible');
-
-      await loadMicrophones();
-    }
-
-    checkFfmpegThenLoadMicrophones();
+    loadMicrophones();
   </script>
 </body>
 </html>
