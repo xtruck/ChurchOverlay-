@@ -27,13 +27,15 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('churchOverlay', {
   // --- Écran de configuration initiale (setup.html) -----------------------
+  // CORRECTIF (audit) : installe FFmpeg automatiquement dès l'ouverture de
+  // l'assistant, AVANT le premier scan de micros (voir main.js/runEnsureFfmpeg)
+  // — sur un poste sans FFmpeg système, l'ancien flux bloquait le bouton
+  // "Enregistrer" indéfiniment car FFmpeg n'était installé qu'après lui.
+  ensureFfmpeg: () => ipcRenderer.invoke('ensure-ffmpeg'),
   // CORRECTIF : le paramètre force n'était jamais transmis, donc le bouton
   // "Actualiser" de l'assistant de configuration relisait toujours le cache
   // disque (jusqu'à 24h) au lieu de relancer un vrai scan FFmpeg.
   detectMicrophones: (force) => ipcRenderer.invoke('detect-microphones', { force: !!force }),
-  // CORRECTIF : installe FFmpeg (si absent) avant la toute première
-  // détection de micros — voir commentaire dans main.js.
-  ensureFfmpegReady: () => ipcRenderer.invoke('ensure-ffmpeg-ready'),
   saveSetup: (audioDevice, groqApiKey, deepgramApiKey) =>
     ipcRenderer.invoke('save-setup', { audioDevice, groqApiKey, deepgramApiKey }),
 
@@ -59,6 +61,16 @@ contextBridge.exposeInMainWorld('churchOverlay', {
     const listener = (_evt, payload) => callback(payload);
     ipcRenderer.on('perf-update', listener);
     return () => ipcRenderer.removeListener('perf-update', listener);
+  },
+
+  // --- Progression de l'installation automatique de FFmpeg au chargement --
+  // (avant le premier scan de micros — voir ensureFfmpeg ci-dessus). Canal
+  // distinct de onFfmpegSetupProgress pour ne pas déclencher la fermeture
+  // automatique de la fenêtre prévue après un save-setup réussi.
+  onFfmpegStartupProgress: (callback) => {
+    const listener = (_evt, payload) => callback(payload);
+    ipcRenderer.on('ffmpeg-startup-progress', listener);
+    return () => ipcRenderer.removeListener('ffmpeg-startup-progress', listener);
   },
 
   // --- Progression du téléchargement automatique de FFmpeg (setup.html) --
