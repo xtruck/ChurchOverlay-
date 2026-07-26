@@ -96,10 +96,13 @@
 **Problème** : Pas de validation des variables d'environnement
 **Solution** :
 - Validation des variables d'environnement au démarrage
-- Vérification de la disponibilité de FFmpeg
-- Vérification des fichiers requis (whisper-server.exe, modèles)
 - Messages d'erreur clairs et actionables
 - Arrêt gracieux si configuration invalide
+
+> Note (v0.5.0) : les vérifications de FFmpeg et de `whisper-server.exe`
+> décrites ici à l'origine ont depuis été retirées de `config-validator.js`
+> — FFmpeg et Whisper local ont tous les deux été supprimés du projet
+> (capture native + transcription cloud uniquement). Voir `README.md`.
 
 **Fichiers créés** :
 - `config-validator.js` - Module de validation de configuration
