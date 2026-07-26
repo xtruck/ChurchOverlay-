@@ -74,19 +74,18 @@ if (RUNNING_AS_WORKER) {
     if (msg && msg.type === 'theme-changed' && msg.css) {
       broadcast({ action: 'applyTheme', ...msg.css });
     }
-
-    // CORRECTIF v0.5.0 — main.js relaie chaque bloc PCM16 reçu de
-    // capture.html (getUserMedia/AudioWorklet, fenêtre Electron cachée) via
-    // worker.postMessage({type:'audio-chunk', buffer}). Ce message n'était
-    // jusqu'ici traité nulle part ici : audio-capture.js ne recevait donc
-    // jamais aucun échantillon audio malgré tout le reste du branchement
-    // déjà en place côté Electron. On le relaie à pushAudioChunk(), qui
-    // reprend la même logique de segmentation/chevauchement qu'avant.
-    if (msg && msg.type === 'audio-chunk' && msg.buffer) {
+    // CORRECTIF (audit — remplacement de FFmpeg par la capture navigateur) :
+    // dashboard.html capture le micro (getUserMedia + Web Audio, seul
+    // endroit avec un accès micro qui ne dépend pas de DirectShow) et pousse
+    // ses chunks PCM16LE ici via main.js. On les fait passer par exactement
+    // la même segmentation que l'ancien flux FFmpeg (voir feedPcmChunk()
+    // dans audio-capture.js) — aucune autre partie du pipeline (VAD, écriture
+    // WAV, transcription Groq/Deepgram) n'a besoin de changer.
+    if (msg && msg.type === 'audio-pcm-chunk' && msg.buffer) {
       try {
-        audioCapture.pushAudioChunk(msg.buffer);
-      } catch (e) {
-        console.error('[server] Erreur traitement chunk audio:', e.message);
+        audioCapture.feedPcmChunk(Buffer.from(msg.buffer));
+      } catch (err) {
+        console.error('[server] Erreur traitement chunk audio:', err.message);
       }
     }
   });
@@ -284,15 +283,36 @@ async function processTranscript(text) {
 }
 
 function startPipeline() {
-  console.log('[server] Démarrage de la capture audio…');
-  audioCapture.startRecording()
-    .then(() => console.log('[server] Capture audio démarrée - Pipeline opérationnel (Groq/Deepgram cloud)'))
-    .catch(pipelineStartFailed);
+  console.log('[server] Démarrage du pipeline audio (capture navigateur, sans FFmpeg)…');
+  // CORRECTIF (audit — remplacement de FFmpeg) : startRecording() (FFmpeg +
+  // DirectShow) échouait purement et simplement à trouver un micro sur
+  // certains portables (voir commentaire dans audio-capture.js), quel que
+  // soit l'état de FFmpeg lui-même. startBrowserCapture() ne lance plus
+  // aucun process externe : elle prépare juste la segmentation, qui
+  // recevra ses échantillons PCM du renderer (dashboard.html, via IPC —
+  // voir feedPcmChunk() et le message 'audio-pcm-chunk' plus bas) au lieu
+  // du stdout d'un ffmpeg -f dshow.
+  try {
+    audioCapture.startBrowserCapture();
+    console.log('[server] Pipeline prêt — en attente des chunks audio du renderer (Groq/Deepgram cloud).');
+    // Signale à main.js que le pipeline est prêt à recevoir de l'audio,
+    // pour que dashboard.html démarre getUserMedia() au bon moment (pas
+    // avant que feedPcmChunk() puisse effectivement traiter les chunks).
+    if (RUNNING_AS_WORKER) {
+      try { parentPort.postMessage({ type: 'audio-pipeline-ready' }); } catch (_) {}
+    }
+  } catch (err) {
+    pipelineStartFailed(err);
+  }
 }
 
 function pipelineStartFailed(err) {
   console.error('[server] Erreur lors du démarrage:', err.message);
-  console.error('[server] Le serveur continuera sans Speech-to-Text');
+  if (err.message.includes('FFmpeg')) {
+    console.error('[server] FFmpeg n\'est pas installé - Pipeline audio désactivé');
+  } else {
+    console.error('[server] Le serveur continuera sans Speech-to-Text');
+  }
   broadcast({ action: 'pipelineError', error: err.message, timestamp: Date.now() });
   notifyAlert('pipelineError', 'error', `Le pipeline n'a pas démarré : ${err.message}`);
 }
@@ -333,7 +353,7 @@ const windowed = pushToBuffer(result.text || '');
   onError: (error) => {
     console.error('[server] Erreur capture audio:', error.message);
     broadcast({ action: 'audioCaptureError', error: error.message, timestamp: Date.now() });
-    notifyAlert('audioCaptureError', 'error', `Problème micro : ${error.message}`);
+    notifyAlert('audioCaptureError', 'error', `Problème micro/FFmpeg : ${error.message}`);
   },
 });
 
