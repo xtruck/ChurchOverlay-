@@ -140,35 +140,17 @@ let wss = null;
 
 // --- Buffer de transcription glissant ---------------------------------
 // OPTIMISÉ v0.2.1 : 200 → 500 caractères pour meilleure détection
-let transcriptBuffer = '';
-const TRANSCRIPT_BUFFER_MAX_CHARS = 500;
+const { createSentenceBuffer } = require('./sentence-buffer');
 
-function pushToBuffer(text) {
-  if (!text) return transcriptBuffer;
-  const isContinuation = transcriptBuffer.length > 0 &&
-                         !transcriptBuffer.endsWith(' ') &&
-                         !transcriptBuffer.endsWith('.') &&
-                         !transcriptBuffer.endsWith(',');
-  if (isContinuation) {
-    transcriptBuffer += ' ' + text;
-  } else {
-    if (text.startsWith('.') || text.startsWith('!') || text.startsWith('?')) {
-      transcriptBuffer = text;
-    } else {
-      transcriptBuffer = (transcriptBuffer + ' ' + text).trim();
-    }
-  }
-  if (transcriptBuffer.length > TRANSCRIPT_BUFFER_MAX_CHARS) {
-    transcriptBuffer = transcriptBuffer.slice(-TRANSCRIPT_BUFFER_MAX_CHARS);
-    const firstSpace = transcriptBuffer.indexOf(' ');
-    if (firstSpace > 0 && firstSpace < 50) {
-      transcriptBuffer = transcriptBuffer.slice(firstSpace + 1);
-    }
-  }
-  return transcriptBuffer.trim();
-}
-
-function resetBuffer() { transcriptBuffer = ''; }
+// --- Buffer de transcription glissant ---------------------------------
+// OPTIMISÉ v0.2.1 : 200 → 500 caractères pour meilleure détection
+// CORRECTIF (chantier "sentence buffer") : voir sentence-buffer.js pour
+// l'historique du bug (reset systématique à chaque segment, qui annulait
+// l'accumulation glissante). Logique désormais extraite dans son propre
+// module, testable indépendamment de server.js.
+const transcript = createSentenceBuffer({ maxChars: 500, gapMs: 4000 });
+function pushToBuffer(text) { return transcript.push(text); }
+function resetBuffer() { transcript.reset(); }
 
 // --- Duplicate segment prevention --------------------------------------
 const processedSegments = new Set();
@@ -408,14 +390,9 @@ audioCapture.on({
       const result = await groq.transcribeWithFallback(segmentFile);
       console.log('[server] Transcription (%s):', result.source, result.text || '(sans texte)');
 
-      if (result.source === 'groq' || result.source === 'deepgram') {
-        console.log('[server] Résultat cloud (%s) - reset du buffer de transcription', result.source);
-        resetBuffer();
-      }
-
       broadcast({ action: 'transcript', text: result.text || '', source: result.source, timestamp: Date.now() });
 
-const windowed = pushToBuffer(result.text || '');
+      const windowed = pushToBuffer(result.text || '');
       await processTranscript(windowed);
 
       safeUnlink(segmentFile);
@@ -554,7 +531,7 @@ function startServer(PORT) {
           providers: bibleLookup.getProviders(),
           cacheSize: bibleLookup.getCacheSize ? bibleLookup.getCacheSize() : 'unknown',
           connections: wss.clients.size,
-          transcriptBuffer: transcriptBuffer.length,
+          transcriptBuffer: transcript.length(),
         };
         try {
           const testResult = await bibleLookup.getVerse({ book: 'jean', chapter: 3, verseStart: 16 });
