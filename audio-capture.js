@@ -25,6 +25,7 @@
 
 const { spawn } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { parseDshowAudioDevices } = require('./dshow-parser');
 const { resolveFfmpegPath } = require('./setup-ffmpeg');
@@ -38,7 +39,17 @@ const CONFIG = {
   overlapDuration: 400,   // 400ms de chevauchement (meilleur contexte)
   silenceThreshold: 0.3,  // Seuil de silence pour VAD (0-1)
   minSpeechDuration: 500, // Durée minimum de parole en ms
-  tempDir: path.join(__dirname, 'temp-audio'),
+  // CORRECTIF (audit — même famille de bug que ffmpeg.exe dans setup-ffmpeg.js) :
+  // était path.join(__dirname, 'temp-audio'). Dans l'app empaquetée
+  // (asar: true), __dirname pointe à l'intérieur de app.asar, un fichier
+  // archive à LECTURE SEULE — fs.mkdirSync() y échoue systématiquement avec
+  // "ENOTDIR: not a directory". Contrairement au cas ffmpeg.exe, il n'y a
+  // ici aucun binaire à exécuter (juste des fichiers .wav à écrire puis
+  // relire), donc pas besoin d'un chemin "asar.unpacked" spécifique : le
+  // dossier temporaire de l'OS (os.tmpdir()) est le bon choix dans TOUS les
+  // modes d'exécution (empaqueté, dev, `node server.js` standalone) sans
+  // dépendre d'aucune configuration de packaging.
+  tempDir: path.join(os.tmpdir(), 'churchoverlay-audio'),
   // Configurables sans modifier le code : FFMPEG_PATH et AUDIO_DEVICE.
   // AUDIO_DEVICE peut désormais rester VIDE : startRecording() détecte et
   // choisit automatiquement un micro (voir autoDetectDevice() plus bas).
