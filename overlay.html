@@ -989,9 +989,15 @@ barre.style.transform = 'scaleX(0)';
         window.ChurchOverlay.extendTime(Number(data.extraMs));
         break;
       case 'transcript':
-        // Afficher la transcription en temps réel (pour debug/futur détecteur de versets)
+        // Note (audit round 4) : ce TODO était obsolète — detector.js et
+        // detector-en.js sont déjà implémentés et tournent côté serveur
+        // (voir server.js, require('./detector') / require('./detector-en'))
+        // pour détecter les références bibliques dans chaque transcription
+        // et déclencher directement l'action 'showVerse' ci-dessus. Ce cas
+        // 'transcript' ne sert qu'à logger le texte brut reçu pour le debug
+        // en direct dans la console de l'overlay ; aucune détection
+        // supplémentaire n'est nécessaire ici.
         console.log('[ChurchOverlay/WS] Transcription reçue:', data.text);
-        // TODO: Implémenter detector.js pour analyser les transcriptions et détecter les versets
         break;
       case 'applyTheme':
         // Ajouté à l'audit : theme-loader.js (déjà testé côté backend)
