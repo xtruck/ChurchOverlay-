@@ -128,25 +128,37 @@ function resolveFfmpegPath() {
  * coupé, extraction interrompue par un antivirus, double-clic sur
  * "Actualiser" pendant qu'une installation était déjà en cours, etc.).
  *
- * BUG CORRIGÉ : sans ce nettoyage préalable, un dossier ffmpeg/_extract_tmp
- * ou un fichier ffmpeg/_ffmpeg-win64.zip laissé dans un état incohérent par
- * une tentative avortée provoquait, à la tentative suivante, une erreur
- * Node « ENOTDIR: not a directory » (un des éléments du chemin n'était plus
- * du tout ce que le code attendait) — et comme rien ne le nettoyait jamais,
- * l'app restait bloquée sur cette même erreur à chaque nouvel essai, sans
- * moyen de s'en sortir autrement qu'en supprimant le dossier à la main.
- * Si `fs.rmSync` échoue malgré tout (fichier verrouillé par l'antivirus,
- * permissions), on avale l'erreur ici : la suite de l'installation le
- * détectera et échouera avec un message clair plutôt que de planter cette
- * fonction de nettoyage elle-même.
+ * BUG CORRIGÉ (round 2) : sans ce nettoyage préalable, un dossier
+ * ffmpeg/_extract_tmp ou un fichier ffmpeg/_ffmpeg-win64.zip laissé dans un
+ * état incohérent par une tentative avortée provoquait, à la tentative
+ * suivante, une erreur Node « ENOTDIR: not a directory ».
+ *
+ * BUG CORRIGÉ (round 4) : ce nettoyage seul ne suffisait pas. Si
+ * `fs.rmSync` échoue silencieusement sur l'ancien artefact (verrouillé
+ * brièvement par un antivirus en train de scanner le .exe qu'il contient —
+ * cas fréquent juste après un téléchargement), le nom FIXE (toujours
+ * `_extract_tmp`, toujours `_ffmpeg-win64.zip`) faisait que la tentative
+ * SUIVANTE retombait exactement sur le même artefact bloqué et échouait à
+ * nouveau avec la même erreur ENOTDIR, en boucle, sans qu'aucun clic sur
+ * "Actualiser" ne puisse s'en sortir. On nettoie maintenant TOUTE trace par
+ * préfixe (pas seulement le nom exact) et, surtout, chaque tentative utilise
+ * désormais un nom UNIQUE (voir ensureFfmpegInstalledImpl) : même si un
+ * ancien artefact reste verrouillé et ne peut pas être supprimé, il ne peut
+ * plus jamais entrer en collision avec la tentative en cours.
  */
 function cleanStaleArtifacts() {
-  const zipPath = path.join(FFMPEG_DIR, '_ffmpeg-win64.zip');
-  const extractTmpDir = path.join(FFMPEG_DIR, '_extract_tmp');
-  for (const p of [zipPath, extractTmpDir]) {
-    try {
-      fs.rmSync(p, { recursive: true, force: true });
-    } catch (_) { /* non-fatal : au pire la tentative suivante échouera avec un message clair */ }
+  let entries = [];
+  try {
+    entries = fs.readdirSync(FFMPEG_DIR);
+  } catch (_) {
+    return; // FFMPEG_DIR n'existe pas encore ou est inaccessible : rien à nettoyer.
+  }
+  for (const name of entries) {
+    if (/^_ffmpeg-win64.*\.zip$/.test(name) || /^_extract_tmp/.test(name)) {
+      try {
+        fs.rmSync(path.join(FFMPEG_DIR, name), { recursive: true, force: true });
+      } catch (_) { /* non-fatal : verrouillé, ignoré — ne bloquera plus la tentative suivante grâce aux noms uniques */ }
+    }
   }
 }
 
@@ -238,11 +250,24 @@ async function ensureFfmpegInstalledImpl(onProgress) {
   fs.mkdirSync(FFMPEG_DIR, { recursive: true });
 
   // Nettoie tout reste d'une tentative précédente avortée AVANT de
-  // commencer — c'est ce qui manquait et causait l'erreur ENOTDIR en boucle.
+  // commencer (best-effort — voir cleanStaleArtifacts pour pourquoi ce
+  // n'est plus la seule protection).
   cleanStaleArtifacts();
 
-  const zipPath = path.join(FFMPEG_DIR, '_ffmpeg-win64.zip');
-  const extractTmpDir = path.join(FFMPEG_DIR, '_extract_tmp');
+  // CORRECTIF (round 4) : ces deux chemins étaient des noms FIXES,
+  // partagés par toutes les tentatives passées et futures. Si un antivirus
+  // verrouille brièvement _extract_tmp (scan du .exe qu'il vient d'y voir
+  // apparaître) pile pendant que cleanStaleArtifacts() essaie de le
+  // supprimer, la suppression échoue silencieusement (catch avalé) ET la
+  // tentative suivante réutilise EXACTEMENT le même chemin encore
+  // verrouillé/incohérent -> `Expand-Archive`/`readdirSync` échouent avec
+  // ENOTDIR, en boucle, sans qu'aucun clic sur "Actualiser" ne s'en sorte.
+  // Un suffixe unique par tentative (timestamp + pid) élimine complètement
+  // ce risque de collision : même si un artefact précédent reste verrouillé
+  // pour de bon, il est simplement ignoré, jamais réutilisé.
+  const attemptSuffix = `${Date.now()}-${process.pid}`;
+  const zipPath = path.join(FFMPEG_DIR, `_ffmpeg-win64-${attemptSuffix}.zip`);
+  const extractTmpDir = path.join(FFMPEG_DIR, `_extract_tmp-${attemptSuffix}`);
 
   try {
     report('Téléchargement de FFmpeg (build Windows x64 statique)...');
@@ -256,7 +281,26 @@ async function ensureFfmpegInstalledImpl(onProgress) {
     // à chaque build : on le retrouve dynamiquement plutôt que de le coder en
     // dur, puis on ne copie que ffmpeg.exe (ffplay.exe/ffprobe.exe ne sont pas
     // utilisés par cette app, inutile d'alourdir le paquet).
-    const topLevelEntries = fs.readdirSync(extractTmpDir);
+    //
+    // CORRECTIF (round 4) : readdirSync ci-dessous est la ligne qui a produit
+    // l'ENOTDIR observé en usage réel. On l'entoure maintenant d'un message
+    // qui nomme explicitement le chemin en cause et son type réel — plutôt
+    // que de laisser remonter l'erreur Node brute, peu actionnable pour un
+    // utilisateur non-technique (et pas assez précise pour du support à
+    // distance non plus).
+    let topLevelEntries;
+    try {
+      topLevelEntries = fs.readdirSync(extractTmpDir);
+    } catch (err) {
+      let actual = 'introuvable';
+      try { actual = fs.statSync(extractTmpDir).isDirectory() ? 'dossier' : 'fichier'; } catch (_) { /* vraiment introuvable */ }
+      throw new Error(
+        `Lecture du dossier d'extraction impossible (${err.code || err.message} — ` +
+        `${extractTmpDir} est actuellement : ${actual}). L'extraction a peut-être été ` +
+        'interrompue par un antivirus. Réessayez ; si le problème persiste, mettez ' +
+        'temporairement une exception antivirus sur le dossier ffmpeg/ de l\'application.'
+      );
+    }
     const versionedDir = topLevelEntries.length === 1
       ? path.join(extractTmpDir, topLevelEntries[0])
       : extractTmpDir;
