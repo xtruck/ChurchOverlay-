@@ -74,6 +74,21 @@ if (RUNNING_AS_WORKER) {
     if (msg && msg.type === 'theme-changed' && msg.css) {
       broadcast({ action: 'applyTheme', ...msg.css });
     }
+
+    // CORRECTIF v0.5.0 — main.js relaie chaque bloc PCM16 reçu de
+    // capture.html (getUserMedia/AudioWorklet, fenêtre Electron cachée) via
+    // worker.postMessage({type:'audio-chunk', buffer}). Ce message n'était
+    // jusqu'ici traité nulle part ici : audio-capture.js ne recevait donc
+    // jamais aucun échantillon audio malgré tout le reste du branchement
+    // déjà en place côté Electron. On le relaie à pushAudioChunk(), qui
+    // reprend la même logique de segmentation/chevauchement qu'avant.
+    if (msg && msg.type === 'audio-chunk' && msg.buffer) {
+      try {
+        audioCapture.pushAudioChunk(msg.buffer);
+      } catch (e) {
+        console.error('[server] Erreur traitement chunk audio:', e.message);
+      }
+    }
   });
 }
 
@@ -277,11 +292,7 @@ function startPipeline() {
 
 function pipelineStartFailed(err) {
   console.error('[server] Erreur lors du démarrage:', err.message);
-  if (err.message.includes('FFmpeg')) {
-    console.error('[server] FFmpeg n\'est pas installé - Pipeline audio désactivé');
-  } else {
-    console.error('[server] Le serveur continuera sans Speech-to-Text');
-  }
+  console.error('[server] Le serveur continuera sans Speech-to-Text');
   broadcast({ action: 'pipelineError', error: err.message, timestamp: Date.now() });
   notifyAlert('pipelineError', 'error', `Le pipeline n'a pas démarré : ${err.message}`);
 }
@@ -322,7 +333,7 @@ const windowed = pushToBuffer(result.text || '');
   onError: (error) => {
     console.error('[server] Erreur capture audio:', error.message);
     broadcast({ action: 'audioCaptureError', error: error.message, timestamp: Date.now() });
-    notifyAlert('audioCaptureError', 'error', `Problème micro/FFmpeg : ${error.message}`);
+    notifyAlert('audioCaptureError', 'error', `Problème micro : ${error.message}`);
   },
 });
 
