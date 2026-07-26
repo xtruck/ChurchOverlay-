@@ -227,7 +227,7 @@ Envoyé quand le pipeline audio rencontre une erreur.
 ```json
 {
   "action": "pipelineError",
-  "error": "FFmpeg n'est pas installé",
+  "error": "GROQ_API_KEY manquant",
   "timestamp": 1234567890
 }
 ```
@@ -376,8 +376,14 @@ ws.onmessage = (event) => {
 ### Variables d'environnement
 
 - `PORT`: Port du serveur WebSocket (défaut: 8765)
-- `AUDIO_DEVICE`: Nom du périphérique audio pour FFmpeg
-- `FFMPEG_PATH`: Chemin vers l'exécutable FFmpeg
+- `GROQ_API_KEY`: Clé API Groq pour la transcription cloud (fournisseur principal)
+- `DEEPGRAM_API_KEY`: Clé API Deepgram, utilisée en repli si Groq échoue (optionnel)
+- `NODE_ENV`: `development` / `production` / `test`
+
+Le microphone (`AUDIO_DEVICE`) n'est plus une variable d'environnement à
+éditer à la main depuis v0.5.0 : il est choisi dans la fenêtre de
+configuration de l'app (getUserMedia), qui écrit un `deviceId` dans
+`config.json`. FFmpeg n'est plus une dépendance du projet.
 
 ### Modification de la configuration
 
