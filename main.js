@@ -20,10 +20,6 @@
  *       services (>2h).
  *    8. FFmpeg device enumeration : soft-terminate at 10s, then hard-kill,
  *       with one retry on transient failure.
- *    (Points 4 et 8 ci-dessus décrivent des mécanismes FFmpeg entièrement
- *    retirés depuis — voir CORRECTIF (audit) plus bas dans ce fichier :
- *    detectAudioDevices()/enumerateDevicesLive() et resolveFfmpegPath()
- *    n'existent plus, la capture micro passe par dashboard.html.)
  *    9. Bounded log ring buffer with proper eviction (kept at 200; head
  *       eviction on every push, no periodic scan).
  *   10. Perf monitor exposes live CPU % / RSS MB to the dashboard.
@@ -61,13 +57,13 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, safeStorage, sessi
 const path = require('path');
 const fs = require('fs');
 const fsp = require('fs').promises;
+const { spawn } = require('child_process');
 const { Worker } = require('worker_threads');
 const os = require('os');
+const { ensureFfmpegInstalled, resolveFfmpegPath } = require('./setup-ffmpeg');
 const perfMonitor = require('./perf-monitor');
+const { parseDshowAudioDevices } = require('./dshow-parser');
 const themeLoader = require('./theme-loader');
-// CHANGELOG — FFmpeg/dshow (setup-ffmpeg.js, dshow-parser.js) retirés : la
-// capture micro se fait dans dashboard.html (getUserMedia/Web Audio), voir
-// audio-capture.js pour le détail du raisonnement.
 
 // main.js vit à la racine du projet (à côté de server.js, overlay.html, etc.),
 // donc APP_ROOT = __dirname.
@@ -83,10 +79,11 @@ const APP_ROOT = __dirname;
 app.disableHardwareAcceleration();
 const USER_DATA = () => app.getPath('userData');
 const CONFIG_PATH = () => path.join(USER_DATA(), 'config.json');
+const DEVICE_CACHE_PATH = () => path.join(USER_DATA(), 'audio-devices.cache.json');
+const DEVICE_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 
 // Worker memory ceiling (V8 --max-old-space-size, MB).
-// Cloud transcription (Groq/Deepgram) + capture navigateur + WS server sit
-// well under 512MB — plus de processus FFmpeg à budgétiser séparément.
+// tiny.en fallback + FFmpeg pipe + WS server sit well under 512MB.
 const WORKER_MAX_OLD_SPACE_MB = 512;
 
 // Auto-recycle the worker every 4 hours to defeat slow memory growth in
@@ -245,17 +242,85 @@ function isFirstRunNeeded() {
 }
 
 // ---------------------------------------------------------------------------
-// CORRECTIF (audit) — bloc détection micros FFmpeg supprimé
+// Détection micros — avec cache disque 24h + timeout robuste
 // ---------------------------------------------------------------------------
-// detectAudioDevices()/enumerateDevicesLive() appelaient resolveFfmpegPath()
-// et parseDshowAudioDevices(), tous deux définis dans setup-ffmpeg.js /
-// dshow-parser.js — fichiers supprimés du projet. Le handler IPC
-// 'detect-microphones' qui déclenchait ce code n'était plus appelé par
-// aucune fenêtre (setup.html énumère désormais les micros directement via
-// navigator.mediaDevices.enumerateDevices(), le même accès micro utilisé
-// pour la capture réelle) — mort, mais aurait levé une ReferenceError au
-// premier appel si jamais quelque chose l'avait encore déclenché.
+// v0.2.0 :
+//   - Cache 24h (in-memory + disque) : évite de relancer ffmpeg -list_devices
+//     à chaque ouverture de la fenêtre de setup (chaque appel forke ffmpeg
+//     et coûte 1-3s CPU sous Windows).
+//   - Timeout escaladé : 10s (au lieu de 6s), soft-terminate SIGTERM d'abord,
+//     puis hard-kill 2s plus tard. Retry unique sur transient failure.
 // ---------------------------------------------------------------------------
+let deviceCacheMem = null; // { ts, devices }
+
+async function detectAudioDevices({ force = false } = {}) {
+  // 1) cache mémoire
+  if (!force && deviceCacheMem && (Date.now() - deviceCacheMem.ts) < DEVICE_CACHE_TTL_MS) {
+    return deviceCacheMem.devices;
+  }
+  // 2) cache disque
+  if (!force) {
+    try {
+      const raw = await fsp.readFile(DEVICE_CACHE_PATH(), 'utf8');
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.devices) && Number.isFinite(parsed.ts) &&
+          (Date.now() - parsed.ts) < DEVICE_CACHE_TTL_MS) {
+        deviceCacheMem = parsed;
+        return parsed.devices;
+      }
+    } catch (_) { /* cache miss */ }
+  }
+
+  // 3) live enumeration
+  const devices = await enumerateDevicesLive();
+  const payload = { ts: Date.now(), devices };
+  deviceCacheMem = payload;
+  fsp.mkdir(path.dirname(DEVICE_CACHE_PATH()), { recursive: true })
+    .then(() => fsp.writeFile(DEVICE_CACHE_PATH(), JSON.stringify(payload), 'utf8'))
+    .catch(() => {}); // non-fatal
+  return devices;
+}
+
+function enumerateDevicesLive() {
+  const ffmpegPath = resolveFfmpegPath();
+
+  const attempt = () => new Promise((resolve) => {
+    let settled = false;
+    const finish = (devices) => { if (!settled) { settled = true; resolve(devices); } };
+
+    let ff;
+    try {
+      ff = spawn(ffmpegPath, ['-hide_banner', '-list_devices', 'true', '-f', 'dshow', '-i', 'dummy']);
+    } catch (_) {
+      finish(null);
+      return;
+    }
+
+    let output = '';
+    ff.stderr.on('data', (d) => { output += d.toString(); });
+
+    ff.on('close', () => {
+      // CORRECTIF : l'ancienne regex ne matchait que le format
+      // '"Nom" (audio)' inline, absent des builds FFmpeg Windows les plus
+      // courants (Gyan.dev/BtbN), qui utilisent un format à deux sections
+      // ("DirectShow audio devices" + noms sans suffixe). Résultat : la
+      // liste était systématiquement vide sur la majorité des machines.
+      finish(parseDshowAudioDevices(output));
+    });
+    ff.on('error', () => finish(null));
+
+    // Soft-terminate at 10s, hard-kill 2s later.
+    const softKill = setTimeout(() => { try { ff.kill('SIGTERM'); } catch (_) {} }, 10000);
+    const hardKill = setTimeout(() => { try { ff.kill('SIGKILL'); } catch (_) {} finish(null); }, 12000);
+    ff.on('close', () => { clearTimeout(softKill); clearTimeout(hardKill); });
+  });
+
+  return attempt().then((devices) => {
+    if (devices && devices.length >= 0 && devices !== null) return devices;
+    // one retry on transient failure
+    return attempt().then((d) => d || []);
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Fenêtres
@@ -343,6 +408,7 @@ function startServer() {
     AUDIO_DEVICE: config.audioDevice,
     GROQ_API_KEY: config.groqApiKey,
     NODE_ENV: 'production',
+    FFMPEG_PATH: resolveFfmpegPath(),
     APP_ROOT,
   });
   if (config.deepgramApiKey) {
@@ -355,7 +421,7 @@ function startServer() {
 
   try {
     worker = new Worker(path.join(APP_ROOT, 'server.js'), {
-      workerData: { runAsWorker: true, appRoot: APP_ROOT },
+      workerData: { runAsWorker: true, appRoot: APP_ROOT, userDataDir: USER_DATA() },
       env: workerEnv,
       // V8 memory ceiling — kills the worker before it can OOM the whole app.
       resourceLimits: {
@@ -482,8 +548,8 @@ let shuttingDownWorker = false;
 let onWorkerStopped = null;
 
 /**
- * Demande au worker server.js de s'arrêter proprement (arrêt de la capture
- * micro inclus) via postMessage, avec un repli sur .terminate() forcé si le
+ * Demande au worker server.js de s'arrêter proprement (arrêt de FFmpeg
+ * inclus) via postMessage, avec un repli sur .terminate() forcé si le
  * worker ne s'arrête pas de lui-même sous 5s.
  */
 function stopServerGracefully(cb) {
@@ -577,16 +643,66 @@ function flushDashboard() {
 // IPC
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// CORRECTIF (audit) — bloc FFmpeg mort supprimé
-// ---------------------------------------------------------------------------
-// runEnsureFfmpeg()/ensureFfmpegInstalled() (setup-ffmpeg.js, supprimé) et
-// les handlers IPC 'ensure-ffmpeg'/'detect-microphones' ont été retirés :
-// plus aucune fenêtre ne les appelle (setup.html scanne les micros via
-// navigator.mediaDevices.enumerateDevices() directement) et
-// ensureFfmpegInstalled n'était même plus importé nulle part — un appel
-// aurait levé une ReferenceError immédiate.
-// ---------------------------------------------------------------------------
+// CORRECTIF (audit setup/preload/ffmpeg) — factorisé hors de save-setup :
+// avant, ensureFfmpegInstalled() n'était appelé QU'APRÈS que l'utilisateur
+// clique "Enregistrer et démarrer". Mais setup.html scanne les micros dès
+// son ouverture (detectMicrophones), et cette détection utilise elle aussi
+// resolveFfmpegPath() (voir enumerateDevicesLive ci-dessus). Sur un poste
+// sans FFmpeg système déjà installé, ce premier scan échouait donc
+// systématiquement (liste vide), ce qui laisse le bouton "Enregistrer"
+// désactivé (il exige un micro sélectionné) — verrou complet : FFmpeg ne
+// pouvait jamais s'installer automatiquement puisque son seul déclencheur
+// dépendait d'une étape elle-même bloquée par son absence.
+// runEnsureFfmpeg() est maintenant appelée dès l'ouverture de l'assistant
+// de configuration (voir ipcMain.handle('ensure-ffmpeg', ...) ci-dessous et
+// setup.html), AVANT le premier scan de micros. L'appel dans save-setup est
+// conservé tel quel : ensureFfmpegInstalled() est idempotent (ne re-télécharge
+// rien si ffmpeg/ffmpeg.exe existe déjà), donc c'est un filet de sécurité
+// sans coût si la première tentative a échoué (pas de réseau au démarrage,
+// par exemple) et que l'utilisateur retente en cliquant Enregistrer.
+//
+// IMPORTANT : deux canaux IPC distincts sont utilisés (progressChannel en
+// paramètre) car setup.html ferme automatiquement sa fenêtre en recevant
+// 'ffmpeg-setup-progress' avec done:true (comportement voulu APRÈS
+// l'enregistrement réussi). Réutiliser ce même canal pour le scan initial
+// aurait fermé la fenêtre avant même que l'utilisateur ait vu le formulaire.
+async function runEnsureFfmpeg(sender, progressChannel) {
+  try {
+    await ensureFfmpegInstalled({
+      onProgress: (msg, percent) => {
+        if (!sender.isDestroyed()) {
+          sender.send(progressChannel, {
+            done: false,
+            message: msg,
+            // percent est fourni (0-100) uniquement pendant le téléchargement
+            // lui-même — undefined pour les autres étapes (extraction...).
+            percent: typeof percent === 'number' ? percent : undefined,
+          });
+        }
+      },
+    });
+    if (!sender.isDestroyed()) {
+      sender.send(progressChannel, { done: true, ok: true, message: 'Prêt.', percent: 100 });
+    }
+    return { ok: true };
+  } catch (err) {
+    console.error('[main] Échec du téléchargement automatique de FFmpeg:', err.message);
+    if (!sender.isDestroyed()) {
+      sender.send(progressChannel, {
+        done: true, ok: false,
+        message: 'Échec du téléchargement automatique de FFmpeg (' + err.message + '). ' +
+          'ChurchOverlay tentera d\'utiliser un FFmpeg déjà présent dans le PATH système.',
+      });
+    }
+    return { ok: false, error: err.message };
+  }
+}
+
+// Appelée par setup.html dès son ouverture, avant le premier scan de micros.
+// Canal 'ffmpeg-startup-progress' : ne déclenche PAS la fermeture de fenêtre.
+ipcMain.handle('ensure-ffmpeg', async (_evt) => runEnsureFfmpeg(_evt.sender, 'ffmpeg-startup-progress'));
+
+ipcMain.handle('detect-microphones', async (_evt, opts) => detectAudioDevices({ force: !!(opts && opts.force) }));
 
 // CORRECTIF (audit — remplacement de FFmpeg par la capture navigateur) :
 // dashboard.html capture le micro nativement (getUserMedia) et pousse ici
@@ -612,6 +728,12 @@ ipcMain.on('audio-pcm-chunk', (_evt, arrayBuffer) => {
 
 ipcMain.handle('save-setup', async (_evt, { audioDevice, groqApiKey, deepgramApiKey }) => {
   await saveConfigAsync({ audioDevice, groqApiKey, deepgramApiKey });
+  // Filet de sécurité : no-op si déjà installé au chargement de setup.html
+  // (cas normal) ; nouvelle tentative si la première avait échoué.
+  // Canal 'ffmpeg-setup-progress' : celui-ci déclenche bien la fermeture de
+  // la fenêtre côté setup.html une fois terminé (comportement existant,
+  // inchangé).
+  await runEnsureFfmpeg(_evt.sender, 'ffmpeg-setup-progress');
   return true;
 });
 
@@ -695,17 +817,11 @@ ipcMain.handle('obs-get-config', async () => {
     const cfg = (features.broadcast && features.broadcast.multiScene) || {};
     // Le mot de passe OBS ne remonte jamais au renderer en clair : on
     // renvoie seulement s'il est défini, jamais sa valeur.
-    // CORRECTIF (audit round 4) — le mot de passe était auparavant stocké
-    // en clair (features.password) alors que les clés Groq/Deepgram
-    // passent par safeStorage (config.json). Il est maintenant chiffré
-    // (features.passwordEncrypted, voir obs-set-config ci-dessous) ; on
-    // teste donc les deux champs pour rester compatible avec une config
-    // existante non encore migrée.
     return {
       ok: true,
       enabled: !!cfg.enabled,
       obsWebsocketUrl: cfg.obsWebsocketUrl || 'ws://localhost:4455',
-      hasPassword: !!cfg.passwordEncrypted || !!cfg.password,
+      hasPassword: !!cfg.password,
     };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -722,25 +838,9 @@ ipcMain.handle('obs-set-config', async (_evt, { enabled, obsWebsocketUrl, passwo
     if (typeof obsWebsocketUrl === 'string' && obsWebsocketUrl.trim()) {
       features.broadcast.multiScene.obsWebsocketUrl = obsWebsocketUrl.trim();
     }
-    // CORRECTIF (audit round 4) — mot de passe OBS en clair dans un fichier
-    // JSON non chiffré (config/features.json), alors que main.js chiffre
-    // déjà les clés Groq/Deepgram via safeStorage avant de les écrire sur
-    // disque (voir saveConfigAsync). Même traitement ici : chiffré si
-    // safeStorage est disponible, sinon avertissement explicite au lieu
-    // de l'écrire silencieusement en clair.
-    //   - Chaîne vide envoyée volontairement -> efface le mot de passe.
-    //   - `undefined` -> conserve l'existant (champ non touché par l'utilisateur).
-    if (typeof password === 'string') {
-      delete features.broadcast.multiScene.password; // purge un éventuel reliquat en clair
-      if (password === '') {
-        delete features.broadcast.multiScene.passwordEncrypted;
-      } else if (safeStorage.isEncryptionAvailable()) {
-        features.broadcast.multiScene.passwordEncrypted = safeStorage.encryptString(password).toString('base64');
-      } else {
-        console.warn('[main] Chiffrement système indisponible : mot de passe OBS stocké en clair.');
-        features.broadcast.multiScene.password = password;
-      }
-    }
+    // Chaîne vide envoyée volontairement -> efface le mot de passe.
+    // `undefined` -> conserve l'existant (l'utilisateur n'a pas touché au champ).
+    if (typeof password === 'string') features.broadcast.multiScene.password = password;
     fs.writeFileSync(featuresPath, JSON.stringify(features, null, 2), 'utf8');
     invalidateObsControllerCache();
     return { ok: true };
