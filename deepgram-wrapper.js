@@ -14,10 +14,15 @@
  */
 
 const fs = require('fs');
+const { buildDeepgramKeywords } = require('./bible-keyterms');
 
 const DEEPGRAM_ENDPOINT = 'https://api.deepgram.com/v1/listen';
 const DEEPGRAM_MODEL = 'nova-2';
 const DEEPGRAM_LANGUAGE = 'fr';
+
+// Construit une fois au chargement du module (liste statique, pas besoin de
+// la recalculer à chaque appel réseau).
+const KEYWORDS_PARAM = buildDeepgramKeywords();
 
 /**
  * Indique si une clé Deepgram est configurée (utilisé par server.js pour
@@ -43,7 +48,13 @@ async function transcribeFile(audioFilePath) {
   }
 
   const audioBuffer = fs.readFileSync(audioFilePath);
-  const url = `${DEEPGRAM_ENDPOINT}?model=${DEEPGRAM_MODEL}&language=${DEEPGRAM_LANGUAGE}&smart_format=true`;
+  // AJOUT (boosting vocabulaire) : `keywords` biaise Nova-2 vers le
+  // vocabulaire biblique/théologique (voir bible-keyterms.js), pour réduire
+  // le taux d'erreur de transcription sur les noms de livres à la source,
+  // plutôt que de compter uniquement sur la correction phonétique a
+  // posteriori dans detector.js (CHAPITRE_VARIANTS/VERSET_VARIANTS).
+  const keywordsQuery = KEYWORDS_PARAM.map((kw) => `keywords=${encodeURIComponent(kw)}`).join('&');
+  const url = `${DEEPGRAM_ENDPOINT}?model=${DEEPGRAM_MODEL}&language=${DEEPGRAM_LANGUAGE}&smart_format=true&${keywordsQuery}`;
 
   const response = await fetch(url, {
     method: 'POST',
