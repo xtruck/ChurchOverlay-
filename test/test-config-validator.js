@@ -82,7 +82,9 @@ console.log('[TEST] ✓ Variable non reconnue acceptée');
 console.log('[TEST] Test 10: Vérification des schémas...');
 assert(ENV_SCHEMA.PORT, 'Schéma PORT devrait exister');
 assert(ENV_SCHEMA.AUDIO_DEVICE, 'Schéma AUDIO_DEVICE devrait exister');
-assert(ENV_SCHEMA.FFMPEG_PATH, 'Schéma FFMPEG_PATH devrait exister');
+// FFMPEG_PATH retiré du schéma depuis la capture audio native (v0.5.0) —
+// voir CHANGELOG dans config-validator.js. Ne plus l'exiger ici.
+assert(!ENV_SCHEMA.FFMPEG_PATH, 'Schéma FFMPEG_PATH ne devrait plus exister (capture native)');
 assert(ENV_SCHEMA.NODE_ENV, 'Schéma NODE_ENV devrait exister');
 console.log('[TEST] ✓ Tous les schémas requis sont présents');
 
