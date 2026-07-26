@@ -9,12 +9,9 @@ cp .env.example .env
 # 2. Edit .env with your values
 code .env
 
-# 3. List your microphones
-node list-audio-devices.js
-
-# 4. Update AUDIO_DEVICE in .env
-
-# 5. Start server
+# 3. Start the app — the microphone is chosen from the on-screen
+#    setup window on first run (getUserMedia device picker), not
+#    from .env or a CLI tool.
 npm start
 ```
 
@@ -33,19 +30,13 @@ npm start
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AUDIO_DEVICE` | (required) | Microphone name from `node list-audio-devices.js` |
-| `FFMPEG_PATH` | (auto) | Path to FFmpeg if not in system PATH |
+| `AUDIO_DEVICE` | (auto) | Browser `deviceId` of the microphone, chosen from the setup window — not a device name, and not meant to be hand-edited |
 
-**Example:**
-```ini
-# Windows
-AUDIO_DEVICE=Microphone (High Definition Audio Device)
-FFMPEG_PATH=C:\ffmpeg\bin\ffmpeg.exe
-
-# Linux
-AUDIO_DEVICE=default
-FFMPEG_PATH=/usr/bin/ffmpeg
-```
+**Note:** since v0.5.0 audio capture uses `getUserMedia` inside a hidden
+Electron window (see `capture.html`/`audio-capture.js`), not FFmpeg. This
+only works through the packaged app (`npm start`) — running `node server.js`
+standalone has no Chromium context to request the microphone, so capture
+stays disabled in that mode.
 
 ### Speech-to-Text
 
@@ -55,9 +46,10 @@ FFMPEG_PATH=/usr/bin/ffmpeg
 | `NODE_ENV` | production | Environment (development/production/test) |
 
 **How it works:**
-- Without Groq: Uses local Whisper (fast, less accurate)
-- With Groq: Cloud API (slower, very accurate, free tier available)
-- If Groq times out (>5s): Falls back to local Whisper automatically
+- `GROQ_API_KEY` is the primary transcription provider (cloud, Whisper large-v3).
+- `DEEPGRAM_API_KEY` (optional) is used as a fallback if Groq fails or times out.
+- There is no local/offline transcription anymore (local Whisper was removed) —
+  at least `GROQ_API_KEY` should be set for verse detection to work.
 
 **Get Groq API Key:**
 1. Go to https://console.groq.com/keys
@@ -113,19 +105,15 @@ Then watch the console for detailed logs:
 
 ## Examples
 
-### Minimal Setup (Local Whisper Only)
+### Minimal Setup
 ```ini
 PORT=8765
-AUDIO_DEVICE=Microphone
-FFMPEG_PATH=C:\ffmpeg\bin\ffmpeg.exe
 NODE_ENV=production
 ```
 
 ### Full Setup (Cloud + Local Fallback)
 ```ini
 PORT=8765
-AUDIO_DEVICE=Microphone
-FFMPEG_PATH=C:\ffmpeg\bin\ffmpeg.exe
 GROQ_API_KEY=gsk_YOUR_KEY_HERE
 NODE_ENV=production
 DEBUG=false
@@ -134,8 +122,6 @@ DEBUG=false
 ### Development/Testing
 ```ini
 PORT=8765
-AUDIO_DEVICE=Microphone
-FFMPEG_PATH=C:\ffmpeg\bin\ffmpeg.exe
 NODE_ENV=development
 DEBUG=true
 ```
@@ -173,24 +159,11 @@ node tests/test-validation.js
 
 ## Troubleshooting
 
-### "AUDIO_DEVICE not found"
-```bash
-# List available devices:
-node list-audio-devices.js
-
-# Copy exact name from output
-# Update .env:
-AUDIO_DEVICE=Exact Name From List
-```
-
-### "FFmpeg not in PATH"
-```bash
-# Verify FFmpeg is installed:
-ffmpeg -version
-
-# If command not found, install from https://ffmpeg.org/download.html
-# Or set FFMPEG_PATH in .env to full path
-```
+### "No microphone selected" / wrong microphone
+Run the packaged app (`npm start`) and use the setup window (or the
+"change microphone" button on the dashboard) to pick a device — the list
+comes from the browser's own `enumerateDevices()`, the same one Windows
+Settings sees. There's no `.env` device name to edit anymore.
 
 ### "GROQ_API_KEY invalid"
 ```bash
