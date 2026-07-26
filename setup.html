@@ -254,6 +254,83 @@
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
+
+  /* CORRECTIF (audit) : écran de progression FFmpeg dédié, affiché avant le
+     formulaire — voir #ffmpeg-panel plus bas. On veut que l'utilisateur voie
+     clairement "téléchargement en cours, X%" AVANT que la recherche de
+     micro ne démarre, plutôt qu'un message discret mêlé au statut micro. */
+  #ffmpeg-panel {
+    text-align: center;
+  }
+
+  #ffmpeg-panel .icon {
+    font-size: 40px;
+    margin-bottom: 16px;
+  }
+
+  #ffmpeg-panel h2 {
+    font-size: 17px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  #ffmpeg-panel .sub {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin-bottom: 24px;
+    line-height: 1.6;
+  }
+
+  .progress-track {
+    width: 100%;
+    height: 10px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+
+  .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+    border-radius: 999px;
+    transition: width 0.25s ease;
+  }
+
+  .progress-fill.indeterminate {
+    width: 30% !important;
+    animation: indeterminate 1.2s ease-in-out infinite;
+  }
+
+  @keyframes indeterminate {
+    0% { margin-left: 0%; }
+    50% { margin-left: 70%; }
+    100% { margin-left: 0%; }
+  }
+
+  #ffmpeg-percent {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+
+  #ffmpeg-message {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  #ffmpeg-panel.error .icon { color: var(--error); }
+  #ffmpeg-panel.error #ffmpeg-message { color: var(--error); }
+
+  #setup-form {
+    display: none;
+  }
+  #setup-form.visible {
+    display: block;
+    animation: slideIn 0.3s ease-out;
+  }
 </style>
 </head>
 <body>
@@ -267,86 +344,80 @@
       </p>
     </div>
 
-    <!-- Microphone -->
-    <div class="form-group">
-      <label>
-        <span>🎤</span> Microphone
-      </label>
-      <div class="input-row">
-        <select id="mic-select">
-          <option value="">Recherche des microphones…</option>
-        </select>
-        <button class="btn btn-secondary" id="btn-refresh">
-          🔄 Actualiser
-        </button>
+    <!-- CORRECTIF (audit) : écran affiché en premier, tant que FFmpeg n'est
+         pas prêt. La recherche de micro (juste après, dans #setup-form) ne
+         démarre qu'une fois ce panneau terminé et masqué. -->
+    <div id="ffmpeg-panel">
+      <div class="icon">⚙️</div>
+      <h2 id="ffmpeg-title">Préparation de FFmpeg…</h2>
+      <p class="sub" id="ffmpeg-sub">
+        Composant nécessaire à la capture audio, téléchargé une seule fois.
+      </p>
+      <div class="progress-track">
+        <div class="progress-fill indeterminate" id="ffmpeg-progress-fill"></div>
       </div>
-      <div class="status" id="mic-status"></div>
+      <div id="ffmpeg-percent">Démarrage…</div>
+      <div id="ffmpeg-message"></div>
     </div>
 
-    <!-- Groq API Key -->
-    <div class="form-group">
-      <label>
-        <span>🔑</span> Clé API Groq
-      </label>
-      <input type="password" id="groq-key" placeholder="gsk_..." autocomplete="off" />
-      <button class="toggle-password" id="btn-toggle-groq">Afficher</button>
-      <div class="hint">
-        Obtenez une clé gratuite sur
-        <a id="link-groq" href="#">console.groq.com/keys</a>
-        (cliquez pour copier le lien)
+    <div id="setup-form">
+      <!-- Microphone -->
+      <div class="form-group">
+        <label>
+          <span>🎤</span> Microphone
+        </label>
+        <div class="input-row">
+          <select id="mic-select">
+            <option value="">Recherche des microphones…</option>
+          </select>
+          <button class="btn btn-secondary" id="btn-refresh">
+            🔄 Actualiser
+          </button>
+        </div>
+        <div class="status" id="mic-status"></div>
       </div>
-    </div>
 
-    <!-- Deepgram API Key (Optional) -->
-    <div class="form-group">
-      <label>
-        <span>🔐</span> Clé API Deepgram <span style="color: var(--text-muted); font-weight: 400;">(optionnel)</span>
-      </label>
-      <input type="password" id="deepgram-key" placeholder="Laisser vide si non utilisé" autocomplete="off" />
-      <button class="toggle-password" id="btn-toggle-deepgram">Afficher</button>
-      <div class="hint">
-        Secours automatique si Groq ne répond pas. Facultatif.
-        <a id="link-deepgram" href="#">console.deepgram.com</a>
+      <!-- Groq API Key -->
+      <div class="form-group">
+        <label>
+          <span>🔑</span> Clé API Groq
+        </label>
+        <input type="password" id="groq-key" placeholder="gsk_..." autocomplete="off" />
+        <button class="toggle-password" id="btn-toggle-groq">Afficher</button>
+        <div class="hint">
+          Obtenez une clé gratuite sur
+          <a id="link-groq" href="#">console.groq.com/keys</a>
+          (cliquez pour copier le lien)
+        </div>
       </div>
-    </div>
 
-    <!-- Save Button -->
-    <button class="btn btn-primary" id="btn-save" disabled>
-      🚀 Enregistrer et démarrer
-    </button>
-    <div class="status" id="save-status"></div>
+      <!-- Deepgram API Key (Optional) -->
+      <div class="form-group">
+        <label>
+          <span>🔐</span> Clé API Deepgram <span style="color: var(--text-muted); font-weight: 400;">(optionnel)</span>
+        </label>
+        <input type="password" id="deepgram-key" placeholder="Laisser vide si non utilisé" autocomplete="off" />
+        <button class="toggle-password" id="btn-toggle-deepgram">Afficher</button>
+        <div class="hint">
+          Secours automatique si Groq ne répond pas. Facultatif.
+          <a id="link-deepgram" href="#">console.deepgram.com</a>
+        </div>
+      </div>
 
-    <div class="footer">
-      🔒 Toutes ces informations restent sur votre ordinateur.
-      Vous pourrez les modifier depuis le tableau de bord.
+      <!-- Save Button -->
+      <button class="btn btn-primary" id="btn-save" disabled>
+        🚀 Enregistrer et démarrer
+      </button>
+      <div class="status" id="save-status"></div>
+
+      <div class="footer">
+        🔒 Toutes ces informations restent sur votre ordinateur.
+        Vous pourrez les modifier depuis le tableau de bord.
+      </div>
     </div>
   </div>
 
   <script>
-    // --- CORRECTIF (audit) : garde-fou preload — voir dashboard.html --------
-    if (!window.churchOverlay) {
-      document.body.innerHTML =
-        '<div style="font-family:sans-serif;padding:32px;color:#c0392b;' +
-        'max-width:480px;margin:0 auto;text-align:center;">' +
-        '<h2>Erreur critique — pont Electron indisponible</h2>' +
-        '<p><code>window.churchOverlay</code> est introuvable : le script ' +
-        'preload ne s\'est pas exécuté.</p>' +
-        '<p>Causes possibles :</p>' +
-        '<ul style="text-align:left;display:inline-block;">' +
-        '<li>setup.html ouvert directement dans un navigateur au lieu ' +
-        'd\'être lancé via l\'app Electron (npm start ou l\'exécutable) ;</li>' +
-        '<li>build packagé (.exe) plus ancien que le preload.js actuel — ' +
-        'refaites <code>npm run build</code> ;</li>' +
-        '<li>preload.js manquant ou en erreur — voir la console du ' +
-        'processus principal (terminal), pas seulement les DevTools.</li>' +
-        '</ul></div>';
-      throw new Error(
-        '[ChurchOverlay] window.churchOverlay est undefined : le preload ' +
-        'script ne s\'est pas chargé pour cette fenêtre. Arrêt du script ' +
-        'setup.html pour éviter une cascade d\'erreurs cryptiques.'
-      );
-    }
-
     const elements = {
       micSelect: document.getElementById('mic-select'),
       micStatus: document.getElementById('mic-status'),
@@ -359,6 +430,14 @@
       saveStatus: document.getElementById('save-status'),
       linkGroq: document.getElementById('link-groq'),
       linkDeepgram: document.getElementById('link-deepgram'),
+      // Écran de progression FFmpeg (affiché avant le formulaire)
+      ffmpegPanel: document.getElementById('ffmpeg-panel'),
+      ffmpegTitle: document.getElementById('ffmpeg-title'),
+      ffmpegSub: document.getElementById('ffmpeg-sub'),
+      ffmpegProgressFill: document.getElementById('ffmpeg-progress-fill'),
+      ffmpegPercent: document.getElementById('ffmpeg-percent'),
+      ffmpegMessage: document.getElementById('ffmpeg-message'),
+      setupForm: document.getElementById('setup-form'),
     };
 
     // Copy links
@@ -405,99 +484,21 @@
       elements.micSelect.innerHTML = '<option value="">🔍 Recherche des microphones…</option>';
       elements.btnRefresh.disabled = true;
 
-      // CORRECTIF : la détection de micros dépend de FFmpeg, qui n'était
-      // installé automatiquement qu'au clic sur "Enregistrer et démarrer" —
-      // trop tard, puisqu'il faut déjà avoir choisi un micro à ce moment-là.
-      // Sur un poste neuf (FFmpeg absent du PATH), ça produisait toujours
-      // "Aucun microphone détecté", même avec un micro branché. On installe
-      // maintenant FFmpeg (si besoin — no-op s'il est déjà présent) avant
-      // la toute première tentative de détection.
-      elements.micSelect.innerHTML = '<option value="">⬇️ Préparation de FFmpeg…</option>';
-      try {
-        const ffmpegResult = await window.churchOverlay.ensureFfmpegReady();
-        if (!ffmpegResult || ffmpegResult.ok === false) {
-          elements.btnRefresh.disabled = false;
-          elements.micSelect.innerHTML = '<option value="">❌ FFmpeg indisponible</option>';
-          elements.micStatus.className = 'status error';
-          elements.micStatus.textContent = '⚠️ Impossible d\'installer FFmpeg automatiquement' +
-            (ffmpegResult && ffmpegResult.error ? ` (${ffmpegResult.error})` : '') +
-            '. Vérifiez votre connexion internet, puis cliquez sur Actualiser.';
-          updateSaveEnabled();
-          micsLoaded = true;
-          return;
-        }
-      } catch (err) {
-        elements.btnRefresh.disabled = false;
-        elements.micSelect.innerHTML = '<option value="">❌ FFmpeg indisponible</option>';
-        elements.micStatus.className = 'status error';
-        elements.micStatus.textContent = `⚠️ Erreur FFmpeg : ${err && err.message ? err.message : err}. Cliquez sur Actualiser pour réessayer.`;
-        updateSaveEnabled();
-        micsLoaded = true;
-        return;
-      }
-      elements.micSelect.innerHTML = '<option value="">🔍 Recherche des microphones…</option>';
-
       // CORRECTIF : avant, "Actualiser" appelait detectMicrophones() sans
       // argument, donc rappelait toujours le cache disque (jusqu'à 24h) au
       // lieu de relancer un vrai scan FFmpeg — le bouton semblait ne rien
       // faire, notamment si le cache avait été rempli par l'ancien bug de
       // parsing (liste vide).
-      //
-      // CORRECTIF : l'appel IPC n'était entouré d'aucun try/catch. En cas
-      // d'erreur inattendue (IPC, FFmpeg introuvable de façon non gérée,
-      // etc.), la fonction s'arrêtait au milieu de son exécution et l'UI
-      // restait figée pour toujours sur "Recherche des microphones…", sans
-      // jamais afficher le moindre message à l'utilisateur.
-      let result;
-      try {
-        result = await window.churchOverlay.detectMicrophones(force);
-      } catch (err) {
-        elements.btnRefresh.disabled = false;
-        elements.micSelect.innerHTML = '<option value="">❌ Erreur de détection</option>';
-        elements.micStatus.className = 'status error';
-        elements.micStatus.textContent = `⚠️ Erreur : ${err && err.message ? err.message : err}. Cliquez sur Actualiser pour réessayer.`;
-        updateSaveEnabled();
-        micsLoaded = true;
-        return;
-      }
+      const devices = await window.churchOverlay.detectMicrophones(force);
 
       elements.btnRefresh.disabled = false;
       elements.micSelect.innerHTML = '';
 
-      // CORRECTIF (diagnostic précis) : le backend distingue maintenant
-      // POURQUOI la liste est vide (voir diagnoseEmptyResult() dans main.js)
-      // au lieu d'un unique message générique "vérifiez qu'un micro est
-      // branché" qui n'aidait pas quand la vraie cause était, par exemple,
-      // un échec d'énumération DirectShow (pilote audio cassé) — cas où
-      // brancher/débrancher un micro ne change strictement rien.
-      const devices = (result && result.devices) || [];
-      const diagnostic = result && result.diagnostic;
-
-      if (devices.length === 0) {
+      if (!devices || devices.length === 0) {
         elements.micSelect.innerHTML = '<option value="">❌ Aucun microphone détecté</option>';
         elements.micStatus.className = 'status error';
-        const messages = {
-          enumeration_failed:
-            "⚠️ Windows refuse l'énumération des périphériques audio (pilote audio " +
-            "potentiellement défaillant). Essayez : clic droit sur le son dans la barre " +
-            "des tâches → Paramètres son → Gérer les périphériques sonores, ou " +
-            "redémarrez le service audio Windows, puis cliquez sur Actualiser.",
-          com_failed:
-            "⚠️ L'API Windows utilisée pour lister les périphériques (DirectShow/COM) " +
-            "est indisponible. Un redémarrage de Windows résout généralement ce cas. " +
-            "Cliquez sur Actualiser après redémarrage.",
-          no_dshow_output:
-            '⚠️ FFmpeg a répondu, mais pas dans le format attendu (build FFmpeg ' +
-            'incompatible ?). Cliquez sur Actualiser pour réessayer ; si le problème ' +
-            'persiste, contactez le support avec ce message.',
-          zero_devices:
-            "⚠️ Vérifiez qu'un micro est branché et autorisé dans Windows " +
-            '(Paramètres → Confidentialité → Microphone → Autoriser les applications ' +
-            "de bureau à accéder au micro), puis cliquez sur Actualiser.",
-        };
-        elements.micStatus.textContent = messages[diagnostic] || messages.zero_devices;
+        elements.micStatus.textContent = '⚠️ Vérifiez qu\'un micro est branché, puis cliquez sur Actualiser.';
         updateSaveEnabled();
-        micsLoaded = true;
         return;
       }
 
@@ -510,7 +511,6 @@
       elements.micStatus.className = 'status success';
       elements.micStatus.textContent = `✅ ${devices.length} microphone(s) détecté(s)`;
       updateSaveEnabled();
-      micsLoaded = true;
     }
 
     // Event listeners
@@ -518,29 +518,52 @@
     elements.micSelect.addEventListener('change', updateSaveEnabled);
     elements.groqInput.addEventListener('input', updateSaveEnabled);
 
-    // Progression du téléchargement automatique de FFmpeg (si nécessaire).
-    // Utilisée à deux moments : au premier chargement (avant detect-microphones,
-    // voir loadMicrophones) et au clic sur "Enregistrer et démarrer". On route
-    // l'affichage vers micStatus tant que les micros ne sont pas encore chargés,
-    // vers saveStatus ensuite (pendant/à la sauvegarde).
-    let micsLoaded = false;
+    // Progression du téléchargement automatique de FFmpeg (si nécessaire)
     window.churchOverlay.onFfmpegSetupProgress((payload) => {
-      const target = micsLoaded ? elements.saveStatus : elements.micStatus;
       const cls = payload.done ? (payload.ok === false ? 'error' : 'success') : 'warning';
-      target.className = 'status ' + cls;
+      elements.saveStatus.className = 'status ' + cls;
 
       if (!payload.done) {
-        target.innerHTML = '<span class="spinner"></span> ' + (payload.message || '');
-      } else if (!micsLoaded) {
-        // Le message "done" pendant la phase de détection initiale est géré
-        // par loadMicrophones() elle-même (succès/échec de detectMicrophones) ;
-        // on évite de l'écraser ici.
+        elements.saveStatus.innerHTML = '<span class=\"spinner\"></span> ' + (payload.message || '');
       } else {
-        target.textContent = (payload.ok === false ? '⚠️ ' : '✅ ') + (payload.message || '');
+        elements.saveStatus.textContent = (payload.ok === false ? '⚠️ ' : '✅ ') + (payload.message || '');
       }
 
-      if (payload.done && micsLoaded) {
+      if (payload.done) {
         setTimeout(() => window.close(), payload.ok === false ? 2500 : 1000);
+      }
+    });
+
+    // CORRECTIF (audit setup/preload/ffmpeg) : progression de l'installation
+    // FFmpeg AU CHARGEMENT de la fenêtre (avant le premier scan de micros).
+    // Ce canal ('ffmpeg-startup-progress') ne ferme jamais la fenêtre — il ne
+    // fait qu'informer, pendant que checkFfmpegThenLoadMicrophones() attend
+    // la fin de l'installation avant de lancer le scan. Pilote maintenant
+    // un vrai panneau de progression dédié (#ffmpeg-panel), avec barre et
+    // pourcentage réel — plus visible qu'un simple message dans mic-status.
+    window.churchOverlay.onFfmpegStartupProgress((payload) => {
+      if (typeof payload.percent === 'number') {
+        elements.ffmpegProgressFill.classList.remove('indeterminate');
+        elements.ffmpegProgressFill.style.width = payload.percent + '%';
+        elements.ffmpegPercent.textContent = payload.percent + '%';
+      } else {
+        // Étape sans pourcentage connu (vérification initiale, extraction) :
+        // barre animée indéterminée plutôt qu'un chiffre trompeur.
+        elements.ffmpegProgressFill.classList.add('indeterminate');
+        elements.ffmpegPercent.textContent = 'Préparation…';
+      }
+      elements.ffmpegMessage.textContent = payload.message || '';
+
+      if (payload.done) {
+        elements.ffmpegPanel.classList.toggle('error', payload.ok === false);
+        if (payload.ok === false) {
+          elements.ffmpegTitle.textContent = 'FFmpeg non installé automatiquement';
+          elements.ffmpegSub.textContent = 'On continue quand même — un FFmpeg déjà présent sur ce poste sera utilisé si possible.';
+        } else {
+          elements.ffmpegProgressFill.classList.remove('indeterminate');
+          elements.ffmpegProgressFill.style.width = '100%';
+          elements.ffmpegTitle.textContent = 'FFmpeg prêt ✓';
+        }
       }
     });
 
@@ -569,7 +592,50 @@
     });
 
     // Initialize
-    loadMicrophones();
+    // Initialize
+    // CORRECTIF (audit setup/preload/ffmpeg) : avant, loadMicrophones()
+    // était appelée seule ici. Sur un poste sans FFmpeg système déjà
+    // installé, ce premier scan échouait systématiquement (liste vide),
+    // laissant le bouton "Enregistrer" désactivé en permanence — verrou
+    // complet, puisque FFmpeg ne s'installait automatiquement QUE dans le
+    // handler de sauvegarde, jamais atteignable dans ce cas.
+    //
+    // Flux maintenant (demande explicite : voir la progression, PUIS
+    // chercher les micros dès que terminé) :
+    //   1. #ffmpeg-panel est affiché (formulaire masqué via #setup-form
+    //      sans classe .visible).
+    //   2. ensureFfmpeg() tourne ; onFfmpegStartupProgress met à jour la
+    //      barre en temps réel (pourcentage réel transmis par
+    //      setup-ffmpeg.js -> main.js -> preload.js).
+    //   3. Dès qu'ensureFfmpeg() est résolu (succès OU échec — jamais de
+    //      blocage indéfini sur un échec réseau), le panneau se masque, le
+    //      formulaire apparaît, ET loadMicrophones() démarre.
+    //      Note : un court délai (voir MIC_SCAN_START_DELAY_MS ci-dessous)
+    //      est volontairement ajouté pour laisser le message "FFmpeg prêt ✓"
+    //      visible un instant — retire-le si tu veux un enchaînement à 0ms.
+    const MIC_SCAN_START_DELAY_MS = { success: 500, error: 1200 };
+
+    async function checkFfmpegThenLoadMicrophones() {
+      try {
+        await window.churchOverlay.ensureFfmpeg();
+      } catch (e) {
+        // ensureFfmpeg() ne devrait normalement jamais rejeter (les erreurs
+        // sont capturées côté main.js et renvoyées via le canal de
+        // progression), mais on ne bloque pas le scan pour autant : il se
+        // peut qu'un FFmpeg système soit tout de même disponible.
+        console.warn('[setup] ensureFfmpeg a levé une erreur inattendue :', e);
+      }
+
+      const hadError = elements.ffmpegPanel.classList.contains('error');
+      await new Promise((r) => setTimeout(r, hadError ? MIC_SCAN_START_DELAY_MS.error : MIC_SCAN_START_DELAY_MS.success));
+
+      elements.ffmpegPanel.style.display = 'none';
+      elements.setupForm.classList.add('visible');
+
+      await loadMicrophones();
+    }
+
+    checkFfmpegThenLoadMicrophones();
   </script>
 </body>
 </html>
