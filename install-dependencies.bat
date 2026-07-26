@@ -44,27 +44,12 @@ echo [OK] npm found:
 npm --version
 echo.
 
-REM Check if FFmpeg is installed
-where ffmpeg >nul 2>nul
-if %errorlevel% equ 0 (
-    echo [OK] FFmpeg found:
-    ffmpeg -version | findstr /B "ffmpeg version"
-    echo.
-) else (
-    echo [WARNING] FFmpeg not found in PATH
-    echo.
-    echo FFmpeg is needed for audio capture. Download from:
-    echo   https://ffmpeg.org/download.html
-    echo.
-    echo You can still use the server for manual verse entry,
-    echo but automatic audio capture will not work.
-    echo.
-    set /p CONTINUE="Continue anyway? (y/n): "
-    if /i not "%CONTINUE%"=="y" (
-        exit /b 1
-    )
-    echo.
-)
+REM NOTE (v0.5.0) : FFmpeg n'est plus une dependance. La capture micro
+REM utilise desormais getUserMedia (Web Audio) dans la fenetre Electron
+REM cachee de l'app (voir capture.html / audio-capture.js). Elle ne
+REM fonctionne QUE dans l'app Electron packagee (npm start), pas via
+REM "node server.js" en standalone : ce mode n'a pas de contexte Chromium
+REM pour appeler getUserMedia et la capture audio y restera indisponible.
 
 REM Install Node.js dependencies
 echo Installing Node.js dependencies...
@@ -92,16 +77,17 @@ if not exist ".env" (
     echo.
     echo NEXT STEPS:
     echo.
-    echo 1. Edit the .env file (open it with Notepad):
-    echo    - Find your microphone name:
-    echo      node list-audio-devices.js
-    echo    - Update AUDIO_DEVICE in .env with the exact name
+    echo 1. Run the app with: npm start
+    echo    - The microphone is now chosen from the on-screen setup
+    echo      window (first run), not from a command-line tool.
     echo.
     echo 2. Optional: Get Groq API key for better accuracy
     echo    - Go to: https://console.groq.com/keys
     echo    - Add to .env: GROQ_API_KEY=your_key_here
     echo.
-    echo 3. Run start-server.bat to start the server
+    echo 3. Audio capture only works via "npm start" (the Electron app).
+    echo    start-server.bat / "node server.js" run the server without
+    echo    a microphone.
     echo.
 ) else (
     echo [OK] .env already exists
