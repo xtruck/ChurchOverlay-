@@ -17,6 +17,20 @@
     --or-vif: #F4E3A6;
     --or-clair: #F3E4B8;
     --encre: #0B1220;
+
+    /* Ajouté à l'audit : ponts vers les noms génériques produits par
+       theme-loader.js::themeToCss() (--bg, --accent, --accent-bright...).
+       Valeurs par défaut = exactement l'ancien dégradé/palette en dur
+       ci-dessus, donc AUCUN changement visuel tant qu'aucun message
+       "applyTheme" n'a encore été reçu (ex: overlay ouvert hors app, ou
+       serveur pas encore connecté). Dès qu'un thème est appliqué, ces
+       variables sont réécrites directement sur :root par le script plus
+       bas (voir case 'applyTheme'), ce qui prend effet immédiatement
+       puisque tout le CSS ci-dessous les référence désormais.
+    */
+    --bg: linear-gradient(165deg, var(--nuit) 0%, var(--bleu-profond) 48%, var(--bleu) 88%, var(--bleu-clair) 120%);
+    --accent: var(--or);
+    --accent-bright: var(--or-vif);
   }
 
   html, body {
@@ -54,7 +68,7 @@
       radial-gradient(circle at 50% 30%, rgba(244,227,166,0.16) 0%, rgba(244,227,166,0) 46%),
       radial-gradient(ellipse 90% 70% at 50% 100%, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 60%),
       radial-gradient(ellipse 140% 90% at 50% 50%, transparent 40%, rgba(2,6,20,0.55) 100%),
-      linear-gradient(165deg, var(--nuit) 0%, var(--bleu-profond) 48%, var(--bleu) 88%, var(--bleu-clair) 120%);
+      var(--bg);
     opacity: 0;
     visibility: hidden;
     transform: scale(1.035);
@@ -204,7 +218,7 @@
     animation: apparition-douce 0.4s ease 0.15s forwards, lueur-croix 7s ease-in-out 1.6s infinite;
   }
   .croix path {
-    stroke: var(--or-vif);
+    stroke: var(--accent-bright);
     stroke-width: 1.7;
     stroke-linecap: round;
     fill: none;
@@ -236,7 +250,7 @@
     letter-spacing: 0.14em;
     text-transform: uppercase;
     font-size: clamp(1.25rem, 1.9vw, 1.9rem);
-    color: var(--or-vif);
+    color: var(--accent-bright);
     padding: 1em 1.9em;
 padding: 1em 1.9em;
     border: 1px solid rgba(244,227,166,0.45);
@@ -293,7 +307,7 @@ padding: 1em 1.9em;
     height: 2px;
     margin: 3vh 0 3.4vh 0;
     border-radius: 2px;
-    background: linear-gradient(90deg, transparent, var(--or) 15%, var(--or-vif) 50%, var(--or) 85%, transparent);
+    background: linear-gradient(90deg, transparent, var(--accent) 15%, var(--accent-bright) 50%, var(--accent) 85%, transparent);
     opacity: 0;
     background-size: 220% 100%;
     background-position: 100% 0;
@@ -303,7 +317,7 @@ padding: 1em 1.9em;
     position: absolute;
     top: 50%; left: 50%;
     width: 8px; height: 8px;
-    background: var(--or-vif);
+    background: var(--accent-bright);
     transform: translate(-50%, -50%) rotate(45deg);
     box-shadow: 0 0 10px rgba(244,227,166,0.8);
   }
@@ -374,7 +388,7 @@ padding: 1em 1.9em;
     position: absolute;
     left: 0; top: 0; bottom: 0;
     width: 100%;
-    background: linear-gradient(90deg, var(--or), var(--or-vif));
+    background: linear-gradient(90deg, var(--accent), var(--accent-bright));
     box-shadow: 0 0 14px rgba(244,227,166,0.55);
     transform-origin: left center;
     transform: scaleX(1);
@@ -979,6 +993,20 @@ barre.style.transform = 'scaleX(0)';
         console.log('[ChurchOverlay/WS] Transcription reçue:', data.text);
         // TODO: Implémenter detector.js pour analyser les transcriptions et détecter les versets
         break;
+      case 'applyTheme':
+        // Ajouté à l'audit : theme-loader.js (déjà testé côté backend)
+        // n'était jamais appliqué visuellement à l'overlay. Le serveur
+        // envoie { action: 'applyTheme', variables: {...}, ... } — voir
+        // theme-loader.js::themeToCss() pour la forme exacte du payload.
+        if (data.variables && typeof data.variables === 'object') {
+          const root = document.documentElement.style;
+          for (const [name, value] of Object.entries(data.variables)) {
+            if (value !== undefined && value !== null) {
+              root.setProperty(name, String(value));
+            }
+          }
+        }
+        break;
       default:
         console.warn('[ChurchOverlay/WS] Action inconnue reçue :', data.action);
     }
@@ -1012,4 +1040,3 @@ barre.style.transform = 'scaleX(0)';
 
 </body>
 </html>
-
