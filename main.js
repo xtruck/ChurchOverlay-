@@ -53,17 +53,21 @@
 
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, safeStorage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, safeStorage, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsp = require('fs').promises;
-const { spawn } = require('child_process');
 const { Worker } = require('worker_threads');
 const os = require('os');
-const { ensureFfmpegInstalled, resolveFfmpegPath } = require('./setup-ffmpeg');
 const perfMonitor = require('./perf-monitor');
-const { parseDshowAudioDevices } = require('./dshow-parser');
 const themeLoader = require('./theme-loader');
+// CHANGELOG v0.5.0 — FFmpeg/dshow (setup-ffmpeg.js, dshow-parser.js) retirés :
+// la capture micro passe désormais par une fenêtre Electron cachée
+// (capture.html) qui utilise getUserMedia/Web Audio, la même couche audio
+// que Windows et Chromium. Voir audio-capture.js pour le détail du
+// raisonnement. pickBestDevice() est réutilisée pour choisir un micro par
+// défaut parmi les libellés renvoyés par cette fenêtre.
+const { pickBestDevice } = require('./audio-capture');
 
 // main.js vit à la racine du projet (à côté de server.js, overlay.html, etc.),
 // donc APP_ROOT = __dirname.
@@ -104,6 +108,7 @@ const PERF_PUSH_MS = 2000;
 let mainWindow = null;
 let tray = null;
 let worker = null;
+let captureWindow = null; // fenêtre cachée : capture micro native (getUserMedia), voir createCaptureWindow()
 let workerStartedAt = 0;
 let workerRecycleTimer = null;
 let recentCrashes = [];
@@ -281,44 +286,41 @@ async function detectAudioDevices({ force = false } = {}) {
   return devices;
 }
 
+// CHANGELOG v0.5.0 : remplace l'ancien enumerateDevicesLive() basé sur
+// `ffmpeg -list_devices -f dshow` (backend DirectShow — voir audio-capture.js
+// pour le détail du problème que ça posait) par une requête à la fenêtre de
+// capture cachée, qui utilise navigator.mediaDevices.enumerateDevices() :
+// exactement la même liste de périphériques que celle que Windows et
+// Chromium voient. Renvoie un tableau de { deviceId, label } (et non plus de
+// simples chaînes de noms dshow).
 function enumerateDevicesLive() {
-  const ffmpegPath = resolveFfmpegPath();
-
-  const attempt = () => new Promise((resolve) => {
-    let settled = false;
-    const finish = (devices) => { if (!settled) { settled = true; resolve(devices); } };
-
-    let ff;
-    try {
-      ff = spawn(ffmpegPath, ['-hide_banner', '-list_devices', 'true', '-f', 'dshow', '-i', 'dummy']);
-    } catch (_) {
-      finish(null);
+  return new Promise((resolve) => {
+    if (!captureWindow || captureWindow.isDestroyed()) {
+      resolve([]);
       return;
     }
 
-    let output = '';
-    ff.stderr.on('data', (d) => { output += d.toString(); });
+    let settled = false;
+    const finish = (devices) => {
+      if (settled) return;
+      settled = true;
+      ipcMain.removeListener('capture:devices-result', onResult);
+      resolve(devices || []);
+    };
 
-    ff.on('close', () => {
-      // CORRECTIF : l'ancienne regex ne matchait que le format
-      // '"Nom" (audio)' inline, absent des builds FFmpeg Windows les plus
-      // courants (Gyan.dev/BtbN), qui utilisent un format à deux sections
-      // ("DirectShow audio devices" + noms sans suffixe). Résultat : la
-      // liste était systématiquement vide sur la majorité des machines.
-      finish(parseDshowAudioDevices(output));
-    });
-    ff.on('error', () => finish(null));
+    const onResult = (_evt, devices) => finish(devices);
+    ipcMain.on('capture:devices-result', onResult);
 
-    // Soft-terminate at 10s, hard-kill 2s later.
-    const softKill = setTimeout(() => { try { ff.kill('SIGTERM'); } catch (_) {} }, 10000);
-    const hardKill = setTimeout(() => { try { ff.kill('SIGKILL'); } catch (_) {} finish(null); }, 12000);
-    ff.on('close', () => { clearTimeout(softKill); clearTimeout(hardKill); });
-  });
+    try {
+      captureWindow.webContents.send('capture:list-devices');
+    } catch (_) {
+      finish([]);
+      return;
+    }
 
-  return attempt().then((devices) => {
-    if (devices && devices.length >= 0 && devices !== null) return devices;
-    // one retry on transient failure
-    return attempt().then((d) => d || []);
+    // Filet de sécurité : ne jamais bloquer indéfiniment si la fenêtre de
+    // capture ne répond pas (chargement pas terminé, permission bloquée...).
+    setTimeout(() => finish([]), 8000);
   });
 }
 
@@ -367,6 +369,47 @@ function createMainWindow() {
   });
 }
 
+// CHANGELOG v0.5.0 : fenêtre cachée dédiée à la capture micro native
+// (getUserMedia + Web Audio, voir capture.html). Ne s'affiche jamais
+// (show: false) — elle n'existe que pour donner à l'app un contexte
+// Chromium capable d'appeler getUserMedia, ce qu'un Worker Thread Node
+// (server.js) ne peut pas faire. Créée une seule fois au démarrage de
+// l'app et réutilisée pour toute la durée de vie du process (permission
+// micro accordée une seule fois, capture démarrée/arrêtée à la demande via
+// 'capture:start' / 'capture:stop').
+let captureWindowReady = Promise.resolve(); // remplacé ci-dessous par une vraie promesse d'attente
+
+function createCaptureWindow() {
+  captureWindow = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'capture-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  // did-finish-load garantit que le script de capture.html (et donc
+  // l'écoute ipcRenderer.on('capture:start'/'capture:stop'/'capture:list-devices'))
+  // est bien en place avant d'envoyer quoi que ce soit — un webContents.send()
+  // parti trop tôt serait silencieusement perdu (aucun listener côté page).
+  captureWindowReady = new Promise((resolve) => {
+    captureWindow.webContents.once('did-finish-load', () => resolve());
+  });
+
+  captureWindow.loadFile(path.join(__dirname, 'capture.html'));
+  captureWindow.webContents.on('destroyed', () => { captureWindow = null; });
+  return captureWindow;
+}
+
+function sendToCaptureWindow(channel, payload) {
+  captureWindowReady.then(() => {
+    if (captureWindow && !captureWindow.isDestroyed()) {
+      captureWindow.webContents.send(channel, payload);
+    }
+  });
+}
+
 function createTray() {
   const icon = nativeImage.createFromPath(path.join(__dirname, 'icon.png'));
   tray = new Tray(icon.resize({ width: 16, height: 16 }));
@@ -408,7 +451,6 @@ function startServer() {
     AUDIO_DEVICE: config.audioDevice,
     GROQ_API_KEY: config.groqApiKey,
     NODE_ENV: 'production',
-    FFMPEG_PATH: resolveFfmpegPath(),
     APP_ROOT,
   });
   if (config.deepgramApiKey) {
@@ -418,6 +460,14 @@ function startServer() {
   serverStatus = 'starting';
   refreshTrayMenu();
   scheduleDashboardFlush();
+
+  // CHANGELOG v0.5.0 : démarre la capture micro native dans la fenêtre
+  // cachée. config.audioDevice contient désormais un deviceId (navigateur),
+  // plus un nom dshow — voir setup.html. Envoyé même si captureWindow
+  // n'existe pas encore tout à fait (webContents bufferise rarement bien
+  // avant did-finish-load) : on protège avec un contrôle d'existence, et
+  // capture.html se met de toute façon en écoute dès son chargement.
+  sendToCaptureWindow('capture:start', { deviceId: config.audioDevice || null });
 
   try {
     worker = new Worker(path.join(APP_ROOT, 'server.js'), {
@@ -535,11 +585,13 @@ let shuttingDownWorker = false;
 let onWorkerStopped = null;
 
 /**
- * Demande au worker server.js de s'arrêter proprement (arrêt de FFmpeg
- * inclus) via postMessage, avec un repli sur .terminate() forcé si le
- * worker ne s'arrête pas de lui-même sous 5s.
+ * Demande au worker server.js de s'arrêter proprement (via postMessage),
+ * avec un repli sur .terminate() forcé si le worker ne s'arrête pas de
+ * lui-même sous 5s. Arrête aussi la capture micro native dans la fenêtre
+ * cachée (remplace l'ancien arrêt du process FFmpeg).
  */
 function stopServerGracefully(cb) {
+  sendToCaptureWindow('capture:stop');
   if (!worker) { cb && cb(); return; }
   shuttingDownWorker = true;
   onWorkerStopped = cb || null;
@@ -630,75 +682,15 @@ function flushDashboard() {
 // IPC
 // ---------------------------------------------------------------------------
 
-// CORRECTIF (audit setup/preload/ffmpeg) — factorisé hors de save-setup :
-// avant, ensureFfmpegInstalled() n'était appelé QU'APRÈS que l'utilisateur
-// clique "Enregistrer et démarrer". Mais setup.html scanne les micros dès
-// son ouverture (detectMicrophones), et cette détection utilise elle aussi
-// resolveFfmpegPath() (voir enumerateDevicesLive ci-dessus). Sur un poste
-// sans FFmpeg système déjà installé, ce premier scan échouait donc
-// systématiquement (liste vide), ce qui laisse le bouton "Enregistrer"
-// désactivé (il exige un micro sélectionné) — verrou complet : FFmpeg ne
-// pouvait jamais s'installer automatiquement puisque son seul déclencheur
-// dépendait d'une étape elle-même bloquée par son absence.
-// runEnsureFfmpeg() est maintenant appelée dès l'ouverture de l'assistant
-// de configuration (voir ipcMain.handle('ensure-ffmpeg', ...) ci-dessous et
-// setup.html), AVANT le premier scan de micros. L'appel dans save-setup est
-// conservé tel quel : ensureFfmpegInstalled() est idempotent (ne re-télécharge
-// rien si ffmpeg/ffmpeg.exe existe déjà), donc c'est un filet de sécurité
-// sans coût si la première tentative a échoué (pas de réseau au démarrage,
-// par exemple) et que l'utilisateur retente en cliquant Enregistrer.
-//
-// IMPORTANT : deux canaux IPC distincts sont utilisés (progressChannel en
-// paramètre) car setup.html ferme automatiquement sa fenêtre en recevant
-// 'ffmpeg-setup-progress' avec done:true (comportement voulu APRÈS
-// l'enregistrement réussi). Réutiliser ce même canal pour le scan initial
-// aurait fermé la fenêtre avant même que l'utilisateur ait vu le formulaire.
-async function runEnsureFfmpeg(sender, progressChannel) {
-  try {
-    await ensureFfmpegInstalled({
-      onProgress: (msg, percent) => {
-        if (!sender.isDestroyed()) {
-          sender.send(progressChannel, {
-            done: false,
-            message: msg,
-            // percent est fourni (0-100) uniquement pendant le téléchargement
-            // lui-même — undefined pour les autres étapes (extraction...).
-            percent: typeof percent === 'number' ? percent : undefined,
-          });
-        }
-      },
-    });
-    if (!sender.isDestroyed()) {
-      sender.send(progressChannel, { done: true, ok: true, message: 'Prêt.', percent: 100 });
-    }
-    return { ok: true };
-  } catch (err) {
-    console.error('[main] Échec du téléchargement automatique de FFmpeg:', err.message);
-    if (!sender.isDestroyed()) {
-      sender.send(progressChannel, {
-        done: true, ok: false,
-        message: 'Échec du téléchargement automatique de FFmpeg (' + err.message + '). ' +
-          'ChurchOverlay tentera d\'utiliser un FFmpeg déjà présent dans le PATH système.',
-      });
-    }
-    return { ok: false, error: err.message };
-  }
-}
-
-// Appelée par setup.html dès son ouverture, avant le premier scan de micros.
-// Canal 'ffmpeg-startup-progress' : ne déclenche PAS la fermeture de fenêtre.
-ipcMain.handle('ensure-ffmpeg', async (_evt) => runEnsureFfmpeg(_evt.sender, 'ffmpeg-startup-progress'));
+// CHANGELOG v0.5.0 : runEnsureFfmpeg() / l'IPC 'ensure-ffmpeg' sont retirés —
+// il n'y a plus de binaire externe à télécharger avant de pouvoir scanner
+// les micros ou démarrer le pipeline (capture native navigateur, prête dès
+// que la fenêtre de capture a fini de charger, voir createCaptureWindow()).
 
 ipcMain.handle('detect-microphones', async (_evt, opts) => detectAudioDevices({ force: !!(opts && opts.force) }));
 
 ipcMain.handle('save-setup', async (_evt, { audioDevice, groqApiKey, deepgramApiKey }) => {
   await saveConfigAsync({ audioDevice, groqApiKey, deepgramApiKey });
-  // Filet de sécurité : no-op si déjà installé au chargement de setup.html
-  // (cas normal) ; nouvelle tentative si la première avait échoué.
-  // Canal 'ffmpeg-setup-progress' : celui-ci déclenche bien la fermeture de
-  // la fenêtre côté setup.html une fois terminé (comportement existant,
-  // inchangé).
-  await runEnsureFfmpeg(_evt.sender, 'ffmpeg-setup-progress');
   return true;
 });
 
@@ -872,8 +864,45 @@ ipcMain.handle('get-perf-stats', async () => perfMonitor.getStats());
 // ---------------------------------------------------------------------------
 // Cycle de vie
 // ---------------------------------------------------------------------------
+// CHANGELOG v0.5.0 : la fenêtre de capture (Chromium) doit pouvoir appeler
+// getUserMedia sans jamais afficher de prompt de permission navigateur
+// (elle n'a pas d'UI visible pour que l'utilisateur puisse cliquer
+// "Autoriser") — on accorde donc automatiquement la permission 'media' à
+// TOUTES les fenêtres de l'app. Sans danger : ChurchOverlay ne charge que
+// ses propres pages locales (setup.html, dashboard.html, overlay.html,
+// capture.html), jamais de contenu web tiers.
+session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+  callback(permission === 'media');
+});
+if (session.defaultSession.setPermissionCheckHandler) {
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === 'media');
+}
+
+// Relaie chaque bloc PCM reçu du renderer de capture vers le worker
+// server.js, qui appelle audioCapture.pushAudioChunk() — voir server.js.
+// arrayBuffer transite par IPC (structured clone, une copie — un chunk de
+// ~4096 échantillons toutes les ~90ms au format PCM16 mono reste minime,
+// pas besoin d'optimiser par transfert zero-copy ici).
+ipcMain.on('capture:audio-chunk', (_evt, arrayBuffer) => {
+  if (worker) {
+    try { worker.postMessage({ type: 'audio-chunk', buffer: arrayBuffer }); } catch (_) {}
+  }
+});
+
+ipcMain.on('capture:error', (_evt, payload) => {
+  console.error('[main] Erreur capture micro:', payload && payload.message);
+  appendLog('Erreur micro: ' + (payload && payload.message), true);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('pipeline-alert', {
+      code: 'audioCaptureError', severity: 'error',
+      message: 'Problème micro : ' + (payload && payload.message), timestamp: Date.now(),
+    });
+  }
+});
+
 app.whenReady().then(async () => {
   createTray();
+  createCaptureWindow();
   perfMonitor.start(PERF_PUSH_MS);
 
   // Push perf samples to the dashboard on the same cadence.
