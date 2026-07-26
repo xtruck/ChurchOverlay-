@@ -254,72 +254,30 @@ let deviceCacheMem = null; // { ts, devices }
 
 async function detectAudioDevices({ force = false } = {}) {
   // 1) cache mémoire
-  // CORRECTIF (cache empoisonné) : on ne sert JAMAIS depuis le cache un
-  // résultat vide (0 micro). Avant ce correctif, une détection ratée (ex.
-  // FFmpeg absent/cassé au tout premier lancement) mettait "0 micro" en
-  // cache pour 24h, dans un fichier qui SURVIT à une réinstallation
-  // (userData n'est jamais touché par l'installeur NSIS). Résultat :
-  // même après avoir réparé FFmpeg et réinstallé l'appli, l'écran de
-  // configuration continuait de servir ce résultat périmé au premier
-  // chargement (qui n'utilise pas force=true), donnant l'impression que
-  // rien n'était réparé. Un résultat non-vide reste caché normalement
-  // (c'est un scan FFmpeg de ~1-2s à éviter de refaire à chaque ouverture).
-  if (!force && deviceCacheMem && deviceCacheMem.devices.length > 0 &&
-      (Date.now() - deviceCacheMem.ts) < DEVICE_CACHE_TTL_MS) {
-    return { devices: deviceCacheMem.devices, diagnostic: null, fromCache: true };
+  if (!force && deviceCacheMem && (Date.now() - deviceCacheMem.ts) < DEVICE_CACHE_TTL_MS) {
+    return deviceCacheMem.devices;
   }
   // 2) cache disque
   if (!force) {
     try {
       const raw = await fsp.readFile(DEVICE_CACHE_PATH(), 'utf8');
       const parsed = JSON.parse(raw);
-      if (parsed && Array.isArray(parsed.devices) && parsed.devices.length > 0 &&
-          Number.isFinite(parsed.ts) && (Date.now() - parsed.ts) < DEVICE_CACHE_TTL_MS) {
+      if (parsed && Array.isArray(parsed.devices) && Number.isFinite(parsed.ts) &&
+          (Date.now() - parsed.ts) < DEVICE_CACHE_TTL_MS) {
         deviceCacheMem = parsed;
-        return { devices: parsed.devices, diagnostic: null, fromCache: true };
+        return parsed.devices;
       }
     } catch (_) { /* cache miss */ }
   }
 
   // 3) live enumeration
-  const { devices, diagnostic } = await enumerateDevicesLive();
-  // On ne persiste QUE les résultats non-vides (voir commentaire ci-dessus) :
-  // un résultat vide reste toujours re-tenté au prochain appel, même sans
-  // clic explicite sur "Actualiser".
-  if (devices.length > 0) {
-    const payload = { ts: Date.now(), devices };
-    deviceCacheMem = payload;
-    fsp.mkdir(path.dirname(DEVICE_CACHE_PATH()), { recursive: true })
-      .then(() => fsp.writeFile(DEVICE_CACHE_PATH(), JSON.stringify(payload), 'utf8'))
-      .catch(() => {}); // non-fatal
-  }
-  return { devices, diagnostic, fromCache: false };
-}
-
-/**
- * CORRECTIF (diagnostic) : avant, un résultat vide affichait toujours le
- * même message générique "vérifiez qu'un micro est branché", qu'il
- * s'agisse (a) d'une machine sans aucun micro, (b) d'un FFmpeg qui ne sait
- * pas parler dshow (mauvais build/plateforme), ou (c) d'un échec
- * d'énumération DirectShow lui-même (ex. un pilote audio cassé fait
- * planter l'énumération COM — FFmpeg logue alors littéralement "Could not
- * enumerate audio devices", AVANT même d'afficher la moindre liste). Ces
- * trois cas demandent des solutions totalement différentes, mais
- * l'utilisateur n'avait aucun moyen de les distinguer. On les détecte
- * maintenant explicitement pour donner un message actionnable.
- */
-function diagnoseEmptyResult(rawOutput) {
-  const out = String(rawOutput || '');
-  if (/Could not enumerate audio devices/i.test(out)) {
-    return 'enumeration_failed'; // Windows/pilote a refusé l'énumération elle-même
-  }
-  if (/Could not enumerate system devices/i.test(out)) {
-    return 'com_failed'; // API COM DirectShow indisponible
-  }
-  if (!/dshow/i.test(out)) {
-    return 'no_dshow_output'; // FFmpeg n'a produit aucune sortie dshow reconnaissable
-  }
-  return 'zero_devices'; // énumération réussie, 0 micro physiquement présent
+  const devices = await enumerateDevicesLive();
+  const payload = { ts: Date.now(), devices };
+  deviceCacheMem = payload;
+  fsp.mkdir(path.dirname(DEVICE_CACHE_PATH()), { recursive: true })
+    .then(() => fsp.writeFile(DEVICE_CACHE_PATH(), JSON.stringify(payload), 'utf8'))
+    .catch(() => {}); // non-fatal
+  return devices;
 }
 
 function enumerateDevicesLive() {
@@ -327,15 +285,13 @@ function enumerateDevicesLive() {
 
   const attempt = () => new Promise((resolve) => {
     let settled = false;
-    const finish = (devices, rawOutput) => {
-      if (!settled) { settled = true; resolve({ devices, rawOutput }); }
-    };
+    const finish = (devices) => { if (!settled) { settled = true; resolve(devices); } };
 
     let ff;
     try {
       ff = spawn(ffmpegPath, ['-hide_banner', '-list_devices', 'true', '-f', 'dshow', '-i', 'dummy']);
-    } catch (err) {
-      finish(null, `spawn a échoué : ${err.message}`);
+    } catch (_) {
+      finish(null);
       return;
     }
 
@@ -348,62 +304,26 @@ function enumerateDevicesLive() {
       // courants (Gyan.dev/BtbN), qui utilisent un format à deux sections
       // ("DirectShow audio devices" + noms sans suffixe). Résultat : la
       // liste était systématiquement vide sur la majorité des machines.
-      finish(parseDshowAudioDevices(output), output);
+      finish(parseDshowAudioDevices(output));
     });
-    ff.on('error', (err) => finish(null, `erreur process : ${err.message}`));
+    ff.on('error', () => finish(null));
 
     // Soft-terminate at 10s, hard-kill 2s later.
     const softKill = setTimeout(() => { try { ff.kill('SIGTERM'); } catch (_) {} }, 10000);
-    const hardKill = setTimeout(() => { try { ff.kill('SIGKILL'); } catch (_) {} finish(null, 'délai dépassé (FFmpeg ne répond pas)'); }, 12000);
+    const hardKill = setTimeout(() => { try { ff.kill('SIGKILL'); } catch (_) {} finish(null); }, 12000);
     ff.on('close', () => { clearTimeout(softKill); clearTimeout(hardKill); });
   });
 
-  return attempt().then(({ devices, rawOutput }) => {
-    if (devices && devices.length > 0) return { devices, diagnostic: null };
-    // one retry on transient failure (devices === null, i.e. spawn/erreur —
-    // pas la peine de re-essayer si on a simplement trouvé 0 périphérique
-    // via une énumération qui a, elle, bien réussi)
-    if (devices === null) {
-      return attempt().then(({ devices: d2, rawOutput: raw2 }) => ({
-        devices: d2 || [],
-        diagnostic: (d2 && d2.length > 0) ? null : diagnoseEmptyResult(raw2),
-      }));
-    }
-    return { devices: [], diagnostic: diagnoseEmptyResult(rawOutput) };
+  return attempt().then((devices) => {
+    if (devices && devices.length >= 0 && devices !== null) return devices;
+    // one retry on transient failure
+    return attempt().then((d) => d || []);
   });
 }
 
 // ---------------------------------------------------------------------------
 // Fenêtres
 // ---------------------------------------------------------------------------
-// CORRECTIF (audit) : diagnostic du chargement du preload -------------------
-// Confirmé en runtime : window.churchOverlay est undefined côté renderer
-// (garde-fou déclenché sur setup.html). Ça peut venir soit du fichier
-// preload.js absent/introuvable au chemin résolu (problème de packaging),
-// soit d'une exception levée PENDANT l'exécution du preload (électron
-// n'expose alors jamais contextBridge). Electron notifie ce 2e cas via
-// l'événement webContents 'preload-error', qui n'était écouté nulle part
-// jusqu'ici — l'erreur partait donc uniquement dans les logs internes
-// d'Electron, invisibles en usage normal. On log désormais les deux cas
-// explicitement dans la console du PROCESS PRINCIPAL (le terminal si lancé
-// via `npm start` / `electron .` — pas les DevTools du renderer).
-function attachPreloadDiagnostics(win, preloadPath, label) {
-  const exists = fs.existsSync(preloadPath);
-  console.log(`[preload-diag] (${label}) chemin résolu : ${preloadPath}`);
-  console.log(`[preload-diag] (${label}) fichier présent sur disque : ${exists}`);
-  if (!exists) {
-    console.error(
-      `[preload-diag] (${label}) ERREUR : preload.js est introuvable à ce ` +
-      `chemin. Si l'app est packagée (.exe), vérifie que preload.js est ` +
-      `bien inclus dans le build (build.files de package.json) et que ` +
-      `l'asar n'est pas corrompu.`
-    );
-  }
-  win.webContents.on('preload-error', (_evt, path_, error) => {
-    console.error(`[preload-diag] (${label}) EXCEPTION dans preload.js (${path_}) :`, error);
-  });
-}
-
 function createSetupWindow() {
   const win = new BrowserWindow({
     width: 560,
@@ -417,7 +337,6 @@ function createSetupWindow() {
       nodeIntegration: false,
     },
   });
-  attachPreloadDiagnostics(win, path.join(__dirname, 'preload.js'), 'setup');
   win.setMenuBarVisibility(false);
   win.loadFile(path.join(__dirname, 'setup.html'));
   return win;
@@ -436,7 +355,6 @@ function createMainWindow() {
       nodeIntegration: false,
     },
   });
-  attachPreloadDiagnostics(mainWindow, path.join(__dirname, 'preload.js'), 'dashboard');
   mainWindow.setMenuBarVisibility(false);
   mainWindow.loadFile(path.join(__dirname, 'dashboard.html'));
 
@@ -710,52 +628,76 @@ function flushDashboard() {
 // ---------------------------------------------------------------------------
 // IPC
 // ---------------------------------------------------------------------------
-ipcMain.handle('detect-microphones', async (_evt, opts) => detectAudioDevices({ force: !!(opts && opts.force) }));
 
-// CORRECTIF : avant, FFmpeg n'était installé qu'au clic sur "Enregistrer et
-// démarrer" (save-setup), mais la détection des micros (appelée dès
-// l'ouverture de l'écran de configuration) en dépend déjà. Sur un poste
-// neuf, ça formait un cercle vicieux : pas de FFmpeg -> détection échoue en
-// silence -> "Aucun microphone détecté" affiché même quand un micro existe
-// bel et bien. setup.html appelle maintenant ceci AVANT detect-microphones.
-ipcMain.handle('ensure-ffmpeg-ready', async (_evt) => {
-  const sender = _evt.sender;
+// CORRECTIF (audit setup/preload/ffmpeg) — factorisé hors de save-setup :
+// avant, ensureFfmpegInstalled() n'était appelé QU'APRÈS que l'utilisateur
+// clique "Enregistrer et démarrer". Mais setup.html scanne les micros dès
+// son ouverture (detectMicrophones), et cette détection utilise elle aussi
+// resolveFfmpegPath() (voir enumerateDevicesLive ci-dessus). Sur un poste
+// sans FFmpeg système déjà installé, ce premier scan échouait donc
+// systématiquement (liste vide), ce qui laisse le bouton "Enregistrer"
+// désactivé (il exige un micro sélectionné) — verrou complet : FFmpeg ne
+// pouvait jamais s'installer automatiquement puisque son seul déclencheur
+// dépendait d'une étape elle-même bloquée par son absence.
+// runEnsureFfmpeg() est maintenant appelée dès l'ouverture de l'assistant
+// de configuration (voir ipcMain.handle('ensure-ffmpeg', ...) ci-dessous et
+// setup.html), AVANT le premier scan de micros. L'appel dans save-setup est
+// conservé tel quel : ensureFfmpegInstalled() est idempotent (ne re-télécharge
+// rien si ffmpeg/ffmpeg.exe existe déjà), donc c'est un filet de sécurité
+// sans coût si la première tentative a échoué (pas de réseau au démarrage,
+// par exemple) et que l'utilisateur retente en cliquant Enregistrer.
+//
+// IMPORTANT : deux canaux IPC distincts sont utilisés (progressChannel en
+// paramètre) car setup.html ferme automatiquement sa fenêtre en recevant
+// 'ffmpeg-setup-progress' avec done:true (comportement voulu APRÈS
+// l'enregistrement réussi). Réutiliser ce même canal pour le scan initial
+// aurait fermé la fenêtre avant même que l'utilisateur ait vu le formulaire.
+async function runEnsureFfmpeg(sender, progressChannel) {
   try {
     await ensureFfmpegInstalled({
-      onProgress: (msg) => {
-        if (!sender.isDestroyed()) sender.send('ffmpeg-setup-progress', { done: false, message: msg });
-      },
-    });
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-});
-
-ipcMain.handle('save-setup', async (_evt, { audioDevice, groqApiKey, deepgramApiKey }) => {
-  await saveConfigAsync({ audioDevice, groqApiKey, deepgramApiKey });
-
-  const sender = _evt.sender;
-
-  try {
-    await ensureFfmpegInstalled({
-      onProgress: (msg) => {
-        if (!sender.isDestroyed()) sender.send('ffmpeg-setup-progress', { done: false, message: msg });
+      onProgress: (msg, percent) => {
+        if (!sender.isDestroyed()) {
+          sender.send(progressChannel, {
+            done: false,
+            message: msg,
+            // percent est fourni (0-100) uniquement pendant le téléchargement
+            // lui-même — undefined pour les autres étapes (extraction...).
+            percent: typeof percent === 'number' ? percent : undefined,
+          });
+        }
       },
     });
     if (!sender.isDestroyed()) {
-      sender.send('ffmpeg-setup-progress', { done: true, ok: true, message: 'Prêt.' });
+      sender.send(progressChannel, { done: true, ok: true, message: 'Prêt.', percent: 100 });
     }
+    return { ok: true };
   } catch (err) {
     console.error('[main] Échec du téléchargement automatique de FFmpeg:', err.message);
     if (!sender.isDestroyed()) {
-      sender.send('ffmpeg-setup-progress', {
+      sender.send(progressChannel, {
         done: true, ok: false,
         message: 'Échec du téléchargement automatique de FFmpeg (' + err.message + '). ' +
           'ChurchOverlay tentera d\'utiliser un FFmpeg déjà présent dans le PATH système.',
       });
     }
+    return { ok: false, error: err.message };
   }
+}
+
+// Appelée par setup.html dès son ouverture, avant le premier scan de micros.
+// Canal 'ffmpeg-startup-progress' : ne déclenche PAS la fermeture de fenêtre.
+ipcMain.handle('ensure-ffmpeg', async (_evt) => runEnsureFfmpeg(_evt.sender, 'ffmpeg-startup-progress'));
+
+ipcMain.handle('detect-microphones', async (_evt, opts) => detectAudioDevices({ force: !!(opts && opts.force) }));
+
+ipcMain.handle('save-setup', async (_evt, { audioDevice, groqApiKey, deepgramApiKey }) => {
+  await saveConfigAsync({ audioDevice, groqApiKey, deepgramApiKey });
+  // Filet de sécurité : no-op si déjà installé au chargement de setup.html
+  // (cas normal) ; nouvelle tentative si la première avait échoué.
+  // Canal 'ffmpeg-setup-progress' : celui-ci déclenche bien la fermeture de
+  // la fenêtre côté setup.html une fois terminé (comportement existant,
+  // inchangé).
+  await runEnsureFfmpeg(_evt.sender, 'ffmpeg-setup-progress');
   return true;
 });
 
