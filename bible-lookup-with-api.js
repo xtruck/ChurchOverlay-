@@ -38,12 +38,81 @@
  */
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+
 // Cache du verset final déjà assemblé (clé -> { reference, text, provider })
 const cache = new Map();
 // Cache des chapitres bruts déjà téléchargés, pour éviter de re-télécharger
 // tout un chapitre à chaque verset demandé dedans.
 // clé: `${providerName}:${bookCode}:${chapter}` -> données JSON du chapitre
 const chapterCache = new Map();
+
+// -----------------------------------------------------------------------
+// AJOUT (audit — inspiré de Rhema) : cache de versets PERSISTANT SUR DISQUE.
+// -----------------------------------------------------------------------
+// Rhema embarque une base SQLite complète de 10 traductions pour ne
+// dépendre d'aucune API pendant un culte. Ce n'est pas l'architecture de
+// ChurchOverlay (qui reste volontairement léger et cloud-first pour la
+// transcription elle-même) — mais on peut récupérer une bonne partie du
+// bénéfice concret sans base complète : chaque verset RÉELLEMENT consulté
+// est écrit sur disque, et reste disponible aux services suivants (ou dans
+// la même soirée si la connexion coupe un instant) même après redémarrage
+// de l'app, sans attendre une nouvelle réponse réseau. Ce n'est PAS du
+// hors-ligne complet (un verset jamais consulté avant reste indisponible
+// sans réseau), mais ça couvre le cas réel le plus fréquent : les versets
+// récurrents d'un culte à l'autre.
+let diskCachePath = null;
+let diskCacheDirty = false;
+let diskCacheSaveTimer = null;
+
+function setCacheDir(dir) {
+  if (!dir) return;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch (err) {
+    console.warn(`[bible-lookup] Impossible de créer le dossier de cache (${dir}) : ${err.message}`);
+    return;
+  }
+  diskCachePath = path.join(dir, 'verse-cache.json');
+  loadDiskCache();
+}
+
+function loadDiskCache() {
+  if (!diskCachePath) return;
+  try {
+    const raw = fs.readFileSync(diskCachePath, 'utf8');
+    const entries = JSON.parse(raw);
+    if (Array.isArray(entries)) {
+      for (const [key, value] of entries) cache.set(key, value);
+      console.log(`[bible-lookup] Cache disque chargé : ${entries.length} verset(s).`);
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      console.warn(`[bible-lookup] Cache disque illisible, ignoré (${err.message}).`);
+    }
+  }
+}
+
+// Écriture différée (debounce 2s) : évite une écriture disque à CHAQUE
+// verset pendant une lecture suivie rapide (plusieurs versets/minute).
+function scheduleDiskCacheSave() {
+  diskCacheDirty = true;
+  if (diskCacheSaveTimer) return;
+  diskCacheSaveTimer = setTimeout(() => {
+    diskCacheSaveTimer = null;
+    if (!diskCacheDirty || !diskCachePath) return;
+    diskCacheDirty = false;
+    try {
+      // On plafonne à 500 versets sur disque (largement suffisant pour des
+      // années de cultes) pour ne pas laisser grossir le fichier sans fin.
+      const entries = Array.from(cache.entries()).slice(-500);
+      fs.writeFileSync(diskCachePath, JSON.stringify(entries), 'utf8');
+    } catch (err) {
+      console.warn(`[bible-lookup] Échec écriture cache disque : ${err.message}`);
+    }
+  }, 2000);
+}
 
 // Codes de livre au format USFM à 3 lettres utilisés par bible.helloao.org.
 // Ce sont EXACTEMENT les mêmes codes que ceux renvoyés par
@@ -198,6 +267,12 @@ function setTranslation(lang, code) {
   // traduction persistent après un changement.
   cache.clear();
   chapterCache.clear();
+  // AJOUT (audit — cache persistant) : sans ça, le fichier disque garderait
+  // les versets de l'ANCIENNE traduction et les re-servirait après un
+  // redémarrage, malgré le changement — silencieusement incohérent.
+  if (diskCachePath) {
+    scheduleDiskCacheSave();
+  }
   return found.id;
 }
 
@@ -354,6 +429,11 @@ async function fetchFromProvider(provider, reference, lang) {
 
 async function getVerse(reference, lang = 'fr') {
   const cacheKey = `${lang}:${reference.book}:${reference.chapter}:${reference.verseStart || ''}-${reference.verseEnd || ''}`;
+  // AJOUT (audit — cache persistant, inspiré de Rhema) : ce Map est aussi
+  // rempli au démarrage depuis le disque (voir loadDiskCache()/setCacheDir())
+  // — donc un verset déjà consulté lors d'un culte précédent répond ici
+  // instantanément, MÊME SANS RÉSEAU, sans code supplémentaire : c'est le
+  // même chemin que le cache mémoire classique de cette session.
   if (cache.has(cacheKey)) {
     return cache.get(cacheKey);
   }
@@ -388,6 +468,7 @@ async function getVerse(reference, lang = 'fr') {
   if (cache.size > 200) {
     cache.delete(cache.keys().next().value);
   }
+  scheduleDiskCacheSave(); // AJOUT (audit) : persiste pour les cultes/redémarrages suivants
 
   return result;
 }
@@ -444,6 +525,7 @@ module.exports = {
   setTranslation,
   listTranslations,
   getTranslationId,
+  setCacheDir, // AJOUT (audit) : cache de versets persistant sur disque
 };
 
 // Mode test : `node bible-lookup-with-api.js` (documenté dans SETUP.md).
