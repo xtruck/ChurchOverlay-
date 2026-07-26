@@ -4,9 +4,15 @@
  * ----------------------------------------------------------------------------
  *  CHANGELOG v0.5.0 : l'ancien test exigeait FFmpeg installé + un micro
  *  connecté + 10s d'attente réelle — inutilisable en CI et non automatisable.
- *  pushAudioChunk() est une fonction pure (aucun matériel requis) : on
+ *  feedPcmChunk() est une fonction pure (aucun matériel requis) : on
  *  vérifie ici la segmentation/chevauchement en lui injectant des chunks
  *  PCM16 synthétiques.
+ *
+ *  CORRECTIF : un commit ultérieur a renommé l'API du module
+ *  (startRecording -> startBrowserCapture, pushAudioChunk -> feedPcmChunk)
+ *  en cohérence avec server.js/main.js, mais ce test n'avait pas été mis à
+ *  jour — il appelait des noms de fonctions qui n'existaient plus, faisant
+ *  échouer `npm test` alors que le pipeline runtime réel fonctionnait.
  * ============================================================================
  */
 
@@ -23,9 +29,9 @@ async function run() {
   const samplesPerSecond = config.sampleRate * config.channels;
   const segmentBytes = (config.segmentDuration / 1000) * samplesPerSecond * bytesPerSample;
 
-  // Test 1 : pushAudioChunk() sans startRecording() ne fait rien (pas de crash)
-  console.log('[TEST] Test 1: pushAudioChunk() avant startRecording()...');
-  audioCapture.pushAudioChunk(Buffer.alloc(1000));
+  // Test 1 : feedPcmChunk() sans startBrowserCapture() ne fait rien (pas de crash)
+  console.log('[TEST] Test 1: feedPcmChunk() avant startBrowserCapture()...');
+  audioCapture.feedPcmChunk(Buffer.alloc(1000));
   console.log('[TEST] ✓ Ignoré sans erreur\n');
 
   // Test 2 : un segment complet déclenche onAudioSegment()
@@ -36,11 +42,11 @@ async function run() {
     onError: (err) => console.error('[TEST] onError inattendu:', err.message),
   });
 
-  await audioCapture.startRecording();
-  assert.strictEqual(audioCapture.isRecording(), true, 'isRecording() devrait être true après startRecording()');
+  await audioCapture.startBrowserCapture();
+  assert.strictEqual(audioCapture.isRecording(), true, 'isRecording() devrait être true après startBrowserCapture()');
 
   // Un seul chunk plus grand que segmentBytes doit produire exactement 1 segment
-  audioCapture.pushAudioChunk(Buffer.alloc(segmentBytes + 100));
+  audioCapture.feedPcmChunk(Buffer.alloc(segmentBytes + 100));
   assert.strictEqual(segments.length, 1, 'Un segment aurait dû être créé');
   assert(fs.existsSync(segments[0]), 'Le fichier segment devrait exister sur disque');
   const wav = fs.readFileSync(segments[0]);
@@ -52,7 +58,7 @@ async function run() {
   console.log('\n[TEST] Test 3: accumulation de petits chunks...');
   segments = [];
   const smallChunk = Buffer.alloc(Math.ceil(segmentBytes / 4) + 10);
-  for (let i = 0; i < 5; i++) audioCapture.pushAudioChunk(smallChunk);
+  for (let i = 0; i < 5; i++) audioCapture.feedPcmChunk(smallChunk);
   assert(segments.length >= 1, 'Au moins un segment aurait dû être créé après accumulation');
   console.log('[TEST] ✓', segments.length, 'segment(s) créé(s) par accumulation');
 
