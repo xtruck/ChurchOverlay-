@@ -34,8 +34,18 @@ const CONFIG = {
   bitDepth: 16,           // PCM 16-bit
   segmentDuration: 5000,  // 5 secondes (optimisé pour réactivité)
   overlapDuration: 400,   // 400ms de chevauchement (meilleur contexte)
-  silenceThreshold: 0.3,  // Seuil de silence pour VAD (0-1)
-  minSpeechDuration: 500, // Durée minimum de parole en ms
+  // CORRECTIF (VAD réel) : ces deux valeurs existaient déjà mais n'étaient
+  // lues nulle part dans ce fichier — la segmentation était purement
+  // temporelle, aucun filtrage de silence n'avait lieu malgré le commentaire
+  // d'en-tête "Segmentation intelligente (VAD)". 0.3 était un placeholder
+  // jamais calibré : pour une RMS normalisée par l'amplitude max int16
+  // (échelle 0-1, voir computeRms ci-dessous), la parole normale tourne
+  // plutôt autour de 0.01-0.08 selon le gain micro — 0.3 aurait classé
+  // quasiment tout en "silence". Valeur de départ raisonnable ; À CALIBRER
+  // avec de vrais enregistrements de culte (variation de gain micro d'un
+  // lieu à l'autre) avant de considérer ce seuil comme définitif.
+  silenceThreshold: 0.02, // Seuil RMS de silence pour VAD (0-1)
+  minSpeechDuration: 500, // Durée minimum de voix détectée dans un segment (ms) pour l'envoyer au STT
   // CORRECTIF (audit — même famille de bug que ffmpeg.exe dans setup-ffmpeg.js) :
   // était path.join(__dirname, 'temp-audio'). Dans l'app empaquetée
   // (asar: true), __dirname pointe à l'intérieur de app.asar, un fichier
@@ -185,6 +195,64 @@ function feedPcmChunk(buffer) {
 }
 
 /**
+ * Calcule le RMS (Root Mean Square) normalisé (0-1) d'un buffer PCM16LE.
+ * @param {Buffer} buffer - échantillons PCM16LE
+ * @returns {number} niveau RMS normalisé par l'amplitude max int16 (32768)
+ */
+function computeRms(buffer) {
+  const sampleCount = buffer.length / 2;
+  if (sampleCount === 0) return 0;
+  let sumSquares = 0;
+  for (let i = 0; i + 1 < buffer.length; i += 2) {
+    const sample = buffer.readInt16LE(i);
+    sumSquares += sample * sample;
+  }
+  return Math.sqrt(sumSquares / sampleCount) / 32768;
+}
+
+// Taille des sous-fenêtres utilisées pour l'analyse VAD à l'intérieur d'un
+// segment. 100ms est un bon compromis (assez court pour détecter des
+// silences internes, assez long pour rester rapide en JS pur, sans lib
+// externe).
+const VAD_FRAME_MS = 100;
+
+/**
+ * Analyse un segment PCM déjà assemblé et retourne la durée totale de voix
+ * détectée à l'intérieur, en découpant le segment en sous-fenêtres de
+ * VAD_FRAME_MS et en comptant celles qui dépassent config.silenceThreshold.
+ *
+ * Volontairement simple (RMS par sous-fenêtre, pas de state machine
+ * Silence/Speech/Trailing façon Rhema) : ici on ne fait QUE décider si un
+ * segment déjà découpé mérite d'être envoyé au STT, pas gater l'audio en
+ * temps réel frame par frame — donc pas besoin de la complexité d'un VAD
+ * "streaming".
+ * @param {Buffer} segmentBuffer - PCM16LE du segment complet
+ * @param {Object} config - config active (sampleRate, channels, bitDepth, silenceThreshold)
+ * @returns {{ voicedMs: number, totalMs: number }}
+ */
+function analyzeVoiceActivity(segmentBuffer, config) {
+  const bytesPerSample = config.bitDepth / 8;
+  const samplesPerSecond = config.sampleRate * config.channels;
+  const frameBytes = Math.floor((VAD_FRAME_MS / 1000) * samplesPerSecond * bytesPerSample);
+
+  if (frameBytes <= 0 || segmentBuffer.length < frameBytes) {
+    // Segment trop court pour être découpé : on l'analyse en un seul bloc.
+    const rms = computeRms(segmentBuffer);
+    const totalMs = (segmentBuffer.length / (samplesPerSecond * bytesPerSample)) * 1000;
+    return { voicedMs: rms >= config.silenceThreshold ? totalMs : 0, totalMs };
+  }
+
+  let voicedFrames = 0;
+  let totalFrames = 0;
+  for (let offset = 0; offset + frameBytes <= segmentBuffer.length; offset += frameBytes) {
+    const frame = segmentBuffer.slice(offset, offset + frameBytes);
+    if (computeRms(frame) >= config.silenceThreshold) voicedFrames++;
+    totalFrames++;
+  }
+  return { voicedMs: voicedFrames * VAD_FRAME_MS, totalMs: totalFrames * VAD_FRAME_MS };
+}
+
+/**
  * Traite les données audio reçues (segmentation, écriture WAV, callback).
  * @param {Buffer} data - Données audio brutes (PCM16LE)
  * @param {Object} config - Configuration actuelle
@@ -215,6 +283,21 @@ function handleAudioData(data, config) {
       STATE.audioBuffer = [];
     }
 
+    // AJOUT (VAD réel) : avant d'écrire le WAV et de déclencher le STT,
+    // on vérifie que le segment contient assez de voix détectée. Sans ce
+    // filtre, un segment de 5s de silence/musique (bruit de fond, temps
+    // de transition, chant) partait quand même vers Groq/Deepgram — coût
+    // API inutile et source de faux positifs de transcription.
+    const voiceInfo = analyzeVoiceActivity(segmentBuffer, config);
+    if (voiceInfo.voicedMs < config.minSpeechDuration) {
+      STATE.segmentCount++;
+      console.log(
+        `[audio-capture] Segment ${STATE.segmentCount} ignoré (silence — ` +
+        `${voiceInfo.voicedMs}ms de voix détectée < seuil ${config.minSpeechDuration}ms)`
+      );
+      return;
+    }
+
     // Créer le fichier WAV pour ce segment
     const wavBuffer = createWavFile(segmentBuffer, config.sampleRate, config.channels, config.bitDepth);
     
@@ -222,7 +305,7 @@ function handleAudioData(data, config) {
     const segmentFile = path.join(config.tempDir, `segment_${STATE.segmentCount}.wav`);
     fs.writeFileSync(segmentFile, wavBuffer);
 
-    console.log(`[audio-capture] Segment ${STATE.segmentCount} créé (${segmentBuffer.length} bytes)`);
+    console.log(`[audio-capture] Segment ${STATE.segmentCount} créé (${segmentBuffer.length} bytes, ${voiceInfo.voicedMs}ms de voix détectée)`);
 
     // Envoyer le segment au callback
     if (STATE.callbacks.onAudioSegment) {
@@ -368,4 +451,7 @@ module.exports = {
   // Heuristique de choix de micro — pure, ne dépend plus de FFmpeg. Exposée
   // pour les tests ; setup.html fait son propre choix manuel via l'UI.
   pickBestDevice,
+  // AJOUT (VAD réel) — exposées pour tests unitaires (test-audio-capture.js).
+  computeRms,
+  analyzeVoiceActivity,
 };
