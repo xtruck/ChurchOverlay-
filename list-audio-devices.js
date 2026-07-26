@@ -23,7 +23,13 @@
 const { spawn } = require('child_process');
 const { parseDshowAudioDevices } = require('./dshow-parser');
 const { pickBestDevice } = require('./audio-capture');
-const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
+const { resolveFfmpegPath } = require('./setup-ffmpeg');
+// CORRECTIF : dupliquait `process.env.FFMPEG_PATH || 'ffmpeg'` en dur,
+// ignorant le binaire auto-installé dans ffmpeg/ffmpeg.exe — ce script
+// (lancé en standalone via `node list-audio-devices.js`, hors app
+// Electron) échouait donc à trouver FFmpeg sur un poste sans installation
+// système, même quand ffmpeg/ffmpeg.exe était bel et bien présent.
+const ffmpegPath = resolveFfmpegPath();
 
 console.log('=== Liste des périphériques audio DirectShow ===\n');
 console.log('Interrogation de FFmpeg en cours...\n');
