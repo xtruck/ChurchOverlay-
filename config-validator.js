@@ -1,93 +1,231 @@
 /**
  * ============================================================================
- *  test-config-validator.js — Tests pour le module de validation de configuration
+ *  config-validator.js — Module de validation de la configuration
  * ----------------------------------------------------------------------------
- *  Teste la validation des variables d'environnement et de la configuration système
+ *  Valide les variables d'environnement et la configuration au démarrage
+ *
+ *  CORRECTIF CRITIQUE : ce fichier contenait par erreur le code du test
+ *  (test/test-config-validator.js) au lieu du vrai module — server.js
+ *  plantait dès le démarrage car validateSystemConfig/displayValidationResults
+ *  n'existaient plus. Restauré ici, ET nettoyé de toute référence à FFmpeg
+ *  (capture audio désormais native via capture.html, voir audio-capture.js).
  * ============================================================================
  */
 
 'use strict';
-const assert = require('assert');
-const { validateEnvVar, validateEnvironment, ENV_SCHEMA } = require('../config-validator');
 
-console.log('=== Test Config Validator Module ===\n');
+const fs = require('fs');
 
-// Test 1: Validation PORT valide
-console.log('[TEST] Test 1: Validation PORT valide...');
-const portResult = validateEnvVar('PORT', '8765');
-assert.strictEqual(portResult.valid, true, 'PORT valide devrait passer');
-assert.strictEqual(portResult.parsedValue, 8765, 'PORT devrait être converti en nombre');
-console.log('[TEST] ✓ PORT valide accepté');
+/**
+ * Schémas de validation pour les variables d'environnement
+ * NOTE : FFMPEG_PATH a été retiré (plus de binaire externe à configurer,
+ * la capture micro passe par getUserMedia dans une fenêtre Electron cachée).
+ */
+const ENV_SCHEMA = {
+  PORT: {
+    type: 'number',
+    required: false,
+    default: 8765,
+    validate: (value) => value > 0 && value < 65536,
+    errorMessage: 'PORT doit être un nombre entre 1 et 65535'
+  },
+  AUDIO_DEVICE: {
+    type: 'string',
+    required: false,
+    default: '',
+    validate: (value) => typeof value === 'string',
+    errorMessage: 'AUDIO_DEVICE doit être une chaîne de caractères'
+  },
+  NODE_ENV: {
+    type: 'string',
+    required: false,
+    default: 'development',
+    validate: (value) => ['development', 'production', 'test'].includes(value),
+    errorMessage: 'NODE_ENV doit être development, production ou test'
+  }
+};
 
-// Test 2: Validation PORT invalide
-console.log('[TEST] Test 2: Validation PORT invalide...');
-const invalidPort = validateEnvVar('PORT', '99999');
-assert.strictEqual(invalidPort.valid, false, 'PORT invalide devrait rejeté');
-assert(invalidPort.error.includes('entre 1 et 65535'), 'Erreur devrait mentionner la plage valide');
-console.log('[TEST] ✓ PORT invalide détecté');
+/**
+ * Valide une variable d'environnement
+ * @param {string} name - Nom de la variable
+ * @param {string} value - Valeur de la variable
+ * @returns {Object} - { valid: boolean, error: string|null, parsedValue: any }
+ */
+function validateEnvVar(name, value) {
+  const schema = ENV_SCHEMA[name];
+  if (!schema) {
+    // Variable non reconnue, on l'accepte mais on ne la valide pas
+    return { valid: true, error: null, parsedValue: value };
+  }
 
-// Test 3: Validation PORT avec valeur par défaut
-console.log('[TEST] Test 3: Validation PORT avec valeur par défaut...');
-const defaultPort = validateEnvVar('PORT', '');
-assert.strictEqual(defaultPort.valid, true, 'PORT vide devrait utiliser la valeur par défaut');
-assert.strictEqual(defaultPort.parsedValue, 8765, 'Valeur par défaut devrait être 8765');
-console.log('[TEST] ✓ Valeur par défaut utilisée');
+  // Si la variable n'est pas définie et n'est pas requise
+  if (value === undefined || value === null || value === '') {
+    if (schema.required) {
+      return { valid: false, error: `${name} est requis`, parsedValue: null };
+    }
+    return { valid: true, error: null, parsedValue: schema.default };
+  }
 
-// Test 4: Validation AUDIO_DEVICE
-console.log('[TEST] Test 4: Validation AUDIO_DEVICE...');
-const audioDevice = validateEnvVar('AUDIO_DEVICE', 'Microphone (Realtek)');
-assert.strictEqual(audioDevice.valid, true, 'AUDIO_DEVICE valide devrait passer');
-assert.strictEqual(audioDevice.parsedValue, 'Microphone (Realtek)', 'Valeur devrait être préservée');
-console.log('[TEST] ✓ AUDIO_DEVICE valide accepté');
+  // Conversion selon le type
+  let parsedValue = value;
+  if (schema.type === 'number') {
+    parsedValue = Number(value);
+    if (isNaN(parsedValue)) {
+      return { valid: false, error: `${name} doit être un nombre`, parsedValue: null };
+    }
+  }
 
-// Test 5: Validation NODE_ENV valide
-console.log('[TEST] Test 5: Validation NODE_ENV valide...');
-const nodeEnv = validateEnvVar('NODE_ENV', 'production');
-assert.strictEqual(nodeEnv.valid, true, 'NODE_ENV production devrait passer');
-console.log('[TEST] ✓ NODE_ENV production accepté');
+  // Validation personnalisée
+  if (schema.validate && !schema.validate(parsedValue)) {
+    return { valid: false, error: schema.errorMessage, parsedValue: null };
+  }
 
-// Test 6: Validation NODE_ENV invalide
-console.log('[TEST] Test 6: Validation NODE_ENV invalide...');
-const invalidNodeEnv = validateEnvVar('NODE_ENV', 'invalid');
-assert.strictEqual(invalidNodeEnv.valid, false, 'NODE_ENV invalide devrait rejeté');
-assert(invalidNodeEnv.error.includes('development, production ou test'), 'Erreur devrait mentionner les valeurs valides');
-console.log('[TEST] ✓ NODE_ENV invalide détecté');
+  return { valid: true, error: null, parsedValue };
+}
 
-// Test 7: Validation environnement complète
-console.log('[TEST] Test 7: Validation environnement complète...');
-process.env.PORT = '9000';
-process.env.NODE_ENV = 'test';
-const envValidation = validateEnvironment();
-assert.strictEqual(envValidation.valid, true, 'Validation environnement devrait passer');
-assert.strictEqual(envValidation.config.PORT, 9000, 'PORT devrait être 9000');
-assert.strictEqual(envValidation.config.NODE_ENV, 'test', 'NODE_ENV devrait être test');
-console.log('[TEST] ✓ Validation environnement réussie');
+/**
+ * Valide toutes les variables d'environnement
+ * @returns {Object} - { valid: boolean, errors: Array, config: Object }
+ */
+function validateEnvironment() {
+  const errors = [];
+  const config = {};
 
-// Test 8: Validation avec erreur
-console.log('[TEST] Test 8: Validation avec erreur...');
-process.env.PORT = 'invalid';
-const envValidationWithError = validateEnvironment();
-assert.strictEqual(envValidationWithError.valid, false, 'Validation avec PORT invalide devrait échouer');
-assert(envValidationWithError.errors.length > 0, 'Devrait avoir des erreurs');
-console.log('[TEST] ✓ Erreur détectée dans la validation');
+  for (const [name, schema] of Object.entries(ENV_SCHEMA)) {
+    const value = process.env[name];
+    const validation = validateEnvVar(name, value);
 
-// Test 9: Variable non reconnue
-console.log('[TEST] Test 9: Variable non reconnue...');
-const unknownVar = validateEnvVar('UNKNOWN_VAR', 'some_value');
-assert.strictEqual(unknownVar.valid, true, 'Variable non reconnue devrait être acceptée');
-assert.strictEqual(unknownVar.parsedValue, 'some_value', 'Valeur devrait être préservée');
-console.log('[TEST] ✓ Variable non reconnue acceptée');
+    if (!validation.valid) {
+      errors.push(validation.error);
+    } else {
+      config[name] = validation.parsedValue;
+    }
+  }
 
-// Test 10: Schémas disponibles
-console.log('[TEST] Test 10: Vérification des schémas...');
-assert(ENV_SCHEMA.PORT, 'Schéma PORT devrait exister');
-assert(ENV_SCHEMA.AUDIO_DEVICE, 'Schéma AUDIO_DEVICE devrait exister');
-assert(ENV_SCHEMA.NODE_ENV, 'Schéma NODE_ENV devrait exister');
-console.log('[TEST] ✓ Tous les schémas requis sont présents');
+  return {
+    valid: errors.length === 0,
+    errors,
+    config
+  };
+}
 
-// Nettoyage
-delete process.env.PORT;
-delete process.env.NODE_ENV;
+/**
+ * Vérifie si un fichier existe
+ * @param {string} filePath - Chemin du fichier
+ * @returns {Object} - { exists: boolean, error: string|null }
+ */
+function checkFileExists(filePath) {
+  try {
+    const exists = fs.existsSync(filePath);
+    return { exists, error: null };
+  } catch (error) {
+    return { exists: false, error: `Erreur lors de la vérification du fichier: ${error.message}` };
+  }
+}
 
-console.log('\n=== Tests terminés ===');
-console.log('[TEST] ✓ Tous les tests de validation de configuration sont passés');
+/**
+ * Valide la configuration complète du système
+ * @returns {Promise<Object>} - { valid: boolean, errors: Array, warnings: Array }
+ */
+async function validateSystemConfig() {
+  const errors = [];
+  const warnings = [];
+
+  // 1. Valider les variables d'environnement
+  console.log('[config-validator] Validation des variables d\'environnement...');
+  const envValidation = validateEnvironment();
+  if (!envValidation.valid) {
+    errors.push(...envValidation.errors);
+  }
+  console.log('[config-validator] Variables d\'environnement validées');
+
+  // 2. Clés de transcription cloud (aucun filet local depuis la suppression
+  // de Whisper — Groq est désormais le seul fournisseur obligatoire)
+  if (!process.env.GROQ_API_KEY) {
+    warnings.push(
+      "GROQ_API_KEY n'est pas défini. Aucun fournisseur de transcription " +
+      "principal n'est configuré : la détection automatique de versets ne " +
+      "fonctionnera pas tant que cette clé n'est pas renseignée (voir .env.example)."
+    );
+  }
+  if (!process.env.DEEPGRAM_API_KEY) {
+    warnings.push(
+      "DEEPGRAM_API_KEY n'est pas défini (optionnel) : pas de fournisseur de " +
+      "repli si Groq échoue ou est indisponible."
+    );
+  }
+
+  // 3. Capture audio native (getUserMedia)
+  // CORRECTIF (v0.5.0) : la capture micro passe désormais par une fenêtre
+  // Electron cachée (voir main.js/capture.html) — elle n'existe QUE dans
+  // l'app packagée/lancée via Electron. En usage standalone
+  // (`node server.js` / `npm run server-only`), il n'y a plus aucun
+  // contexte Chromium pour appeler getUserMedia : la capture audio est
+  // indisponible dans ce mode, contrairement à avant (FFmpeg tournait
+  // sans Electron). Ce n'est pas un bug de ce module — c'est une
+  // conséquence de l'architecture — mais mieux vaut le dire clairement
+  // au démarrage plutôt que de laisser le pipeline tourner à vide.
+  if (!process.workerData && !process.env.APP_ROOT) {
+    warnings.push(
+      "Capture audio : ce processus semble démarré hors de l'app Electron " +
+      "(node server.js direct). La capture micro native (getUserMedia) a " +
+      "besoin d'une fenêtre Chromium fournie par Electron et ne fonctionnera " +
+      "pas dans ce mode — utilisez l'application ChurchOverlay packagée."
+    );
+  }
+  if (envValidation.config.AUDIO_DEVICE) {
+    console.log('[config-validator] Périphérique audio configuré:', envValidation.config.AUDIO_DEVICE);
+  } else {
+    warnings.push(
+      "Aucun périphérique audio configuré (AUDIO_DEVICE) : un micro sera " +
+      "détecté et présélectionné automatiquement depuis l'écran de " +
+      "configuration (setup.html)."
+    );
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    config: envValidation.config
+  };
+}
+
+/**
+ * Affiche les résultats de validation
+ * @param {Object} result - Résultat de validateSystemConfig
+ */
+function displayValidationResults(result) {
+  console.log('\n=== Résultats de la validation ===');
+
+  if (result.valid) {
+    console.log('✓ Configuration valide');
+  } else {
+    console.log('✗ Configuration invalide');
+  }
+
+  if (result.errors.length > 0) {
+    console.log('\nErreurs:');
+    result.errors.forEach(error => console.log(`  - ${error}`));
+  }
+
+  if (result.warnings.length > 0) {
+    console.log('\nAvertissements:');
+    result.warnings.forEach(warning => console.log(`  - ${warning}`));
+  }
+
+  if (result.errors.length === 0 && result.warnings.length === 0) {
+    console.log('\n✓ Tout est correctement configuré');
+  }
+
+  console.log('================================\n');
+}
+
+module.exports = {
+  validateEnvVar,
+  validateEnvironment,
+  checkFileExists,
+  validateSystemConfig,
+  displayValidationResults,
+  ENV_SCHEMA
+};
