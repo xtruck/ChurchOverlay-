@@ -259,8 +259,72 @@ function pushHistory(entry) {
 
 async function processTranscript(text) {
   console.log('[server] Processing transcript:', text.substring(0, 100));
+
+  // AJOUT (audit — inspiré de Rhema, changement de traduction à la voix) :
+  // vérifié AVANT la détection de référence — une phrase comme "passons en
+  // Darby" ne doit jamais être interprétée comme une tentative (ratée) de
+  // citer un verset.
+  const translationSwitch = detector.detectTranslationSwitch(text);
+  if (translationSwitch) {
+    try {
+      bibleLookup.setTranslation('fr', translationSwitch.code);
+      const label = translationSwitch.code === 'darby' ? 'Darby' : 'Louis Segond 1910';
+      console.log(`[server] Traduction changée à la voix : ${label}`);
+      broadcast({
+        action: 'translationChanged', language: 'fr', code: translationSwitch.code,
+        translationId: bibleLookup.getTranslationId('fr'), translations: bibleLookup.listTranslations(),
+        triggeredByVoice: true, timestamp: Date.now(),
+      });
+    } catch (err) {
+      console.warn('[server] Échec changement de traduction à la voix:', err.message);
+    }
+    return; // une commande de changement de traduction n'est pas un verset
+  }
+
   const reference = detectBilingual(text);
-  if (!reference) { console.log('[server] No reference detected in segment'); return; }
+  if (!reference) {
+    // AJOUT (audit — inspiré de Rhema, détection par citation) : personne
+    // n'a cité de référence explicite ("Jean 3:16"), mais le texte lu
+    // correspond peut-être mot pour mot à un verset déjà vu par le passé
+    // (voir findByQuotedText()/cache disque persistant). Couverture
+    // nécessairement partielle : ne fonctionne QUE pour des versets déjà
+    // consultés une fois (via référence explicite ou citation précédente) —
+    // ce n'est pas une recherche sémantique sur toute la Bible comme Rhema,
+    // mais ça couvre le cas réel le plus fréquent (versets récurrents).
+    const quoted = bibleLookup.findByQuotedText(text);
+    if (!quoted) { console.log('[server] No reference detected in segment'); return; }
+
+    // Anti-répétition dédiée (indépendante de verseTracker, qui attend un
+    // objet {book,chapter,verseStart} — une citation ne fournit qu'un
+    // libellé de référence déjà résolu) : on ignore la même citation si
+    // elle a déjà été affichée il y a moins de 30s (lecture continue du
+    // même verset par le locuteur, par exemple en le répétant pour insister).
+    const now = Date.now();
+    if (lastQuoteMatch && lastQuoteMatch.reference === quoted.reference && (now - lastQuoteMatch.ts) < 30000) {
+      console.log('[server] Citation déjà affichée récemment, ignorée:', quoted.reference);
+      return;
+    }
+    lastQuoteMatch = { reference: quoted.reference, ts: now };
+
+    console.log(`[server] Citation détectée (score ${quoted.score.toFixed(2)}) :`, quoted.reference);
+    broadcast({ action: 'candidateVerse', reference: { label: quoted.reference }, transcript: text, matchedByQuote: true, timestamp: now });
+
+    const payload = {
+      action: 'showVerse', reference: quoted.reference, text: quoted.text,
+      text_fr: quoted.lang === 'fr' ? quoted.text : null, text_en: quoted.lang === 'en' ? quoted.text : null,
+      langMode: quoted.lang, provider: quoted.provider,
+      durationMs: 300000, autoDetected: true, matchedByQuote: true,
+    };
+    broadcast(payload);
+    pushHistory({
+      reference: quoted.reference, text: quoted.text,
+      text_fr: payload.text_fr, text_en: payload.text_en, langMode: quoted.lang,
+      provider: quoted.provider, autoDetected: true, matchedByQuote: true, timestamp: now,
+    });
+    broadcast({ action: 'historyUpdated', history: verseHistory });
+    console.log('[server] Verset (citation) envoyé à l\'overlay :', quoted.reference);
+    return;
+  }
   console.log('[server] Reference detected:', JSON.stringify(reference));
 
   broadcast({ action: 'candidateVerse', reference, transcript: text, timestamp: Date.now() });
