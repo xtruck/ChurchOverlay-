@@ -6,8 +6,13 @@ REM  This script starts the WebSocket server automatically with minimal setup.
 REM  Simply double-click this file to start!
 REM
 REM  Prerequisites (should already be installed):
-REM    - Node.js 16+ 
-REM    - FFmpeg (in PATH)
+REM    - Node.js 16+
+REM
+REM  IMPORTANT (v0.5.0): audio capture uses getUserMedia inside the
+REM  Electron app and needs a Chromium window to work. This script starts
+REM  server.js standalone (no Electron window), so the pipeline will run
+REM  but WITHOUT microphone capture. To get automatic verse detection
+REM  from the microphone, run the packaged app instead: npm start
 REM
 REM  Configuration:
 REM    - Edit .env file to set your microphone and other settings
@@ -40,12 +45,12 @@ if not exist ".env" (
     echo [WARNING] .env not found. Creating from .env.example...
     if exist ".env.example" (
         copy ".env.example" ".env" >nul
-        echo [OK] .env created - please edit it with your microphone name
+        echo [OK] .env created
         echo.
         echo Next steps:
-        echo 1. Run: node list-audio-devices.js (to find your microphone)
-        echo 2. Edit .env and set AUDIO_DEVICE to your microphone name
-        echo 3. Run this script again
+        echo 1. For automatic microphone capture, use: npm start
+        echo    (the microphone is picked from the setup window, not .env)
+        echo 2. This script (server.js standalone) runs without a microphone
         echo.
         pause
         exit /b 0
