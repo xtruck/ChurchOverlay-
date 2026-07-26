@@ -27,6 +27,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { parseDshowAudioDevices } = require('./dshow-parser');
+const { resolveFfmpegPath } = require('./setup-ffmpeg');
 
 // Configuration
 const CONFIG = {
@@ -41,7 +42,13 @@ const CONFIG = {
   // Configurables sans modifier le code : FFMPEG_PATH et AUDIO_DEVICE.
   // AUDIO_DEVICE peut désormais rester VIDE : startRecording() détecte et
   // choisit automatiquement un micro (voir autoDetectDevice() plus bas).
-  ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
+  // CORRECTIF : dupliquait `process.env.FFMPEG_PATH || 'ffmpeg'` en dur,
+  // ignorant le binaire auto-installé dans ffmpeg/ffmpeg.exe. Fonctionnait
+  // par accident dans l'app Electron (main.js injecte FFMPEG_PATH=<chemin
+  // résolu> dans l'environnement du worker), mais cassait en usage
+  // standalone (`node server.js` / `npm run server-only`) sur un poste
+  // sans FFmpeg système.
+  ffmpegPath: resolveFfmpegPath(),
   audioDevice: process.env.AUDIO_DEVICE || '',
 };
 
