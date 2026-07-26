@@ -1,5 +1,8 @@
 # 🪟 Windows Setup Guide - Church Overlay
 
+> Mise à jour v0.5.0 : FFmpeg n'est plus nécessaire. Le microphone se
+> choisit dans l'application (fenêtre de configuration), pas dans `.env`.
+
 ## 📥 Prerequisites (One Time)
 
 ### 1. Install Node.js
@@ -7,17 +10,9 @@
 - Run installer with default settings
 - Restart your computer
 
-### 2. Install FFmpeg (Optional but Recommended)
-- Download: https://ffmpeg.org/download.html
-- Extract to: `C:\ffmpeg`
-- Add to Windows PATH:
-  1. Press `Win + X` → System
-  2. Advanced system settings → Environment Variables
-  3. System variables → New
-     - Variable name: `Path`
-     - Variable value: `C:\ffmpeg\bin`
-  4. Click OK, OK, OK
-  5. Restart computer
+That's the only prerequisite — no FFmpeg, no separate speech-to-text
+model to download. Microphone capture uses the same audio layer as
+Windows Settings, built into the app itself.
 
 ---
 
@@ -26,15 +21,21 @@
 ### First Time Only
 ```
 Double-click: install-dependencies.bat
-Double-click: setup-microphone.bat
 ```
+Then run:
+```
+npm start
+```
+A setup window opens automatically: pick your microphone from the list
+and paste your Groq API key (get one free at https://console.groq.com/keys).
 
 ### Every Time You Use It
 ```
-Double-click: start-server.bat
+npm start
 ```
 
-That's it! ✨
+That's it! ✨ (`start-server.bat` also exists, but it runs the server
+without a microphone — see "Advanced Troubleshooting" below.)
 
 ---
 
@@ -63,16 +64,16 @@ That's it! ✨
 Before your first service, test the system:
 
 ### With Manual Test (No Microphone Needed)
-1. Make sure `start-server.bat` is running
+1. Make sure the app (`npm start`) is running
 2. Open OBS with overlay source
 3. Double-click: `test-overlay.bat`
 4. You should see "Jean 3:16" appear in OBS!
 
 ### With Your Microphone
-1. Make sure `start-server.bat` is running
+1. Make sure the app (`npm start`) is running
 2. Open OBS with overlay source
 3. Speak into microphone: **"Jean 3:16"**
-4. Wait ~4 seconds
+4. Wait a few seconds
 5. The verse should appear automatically!
 
 ---
@@ -102,22 +103,22 @@ To find your path:
 Edit `.env` file (open with Notepad) to customize:
 
 ```ini
-# Your microphone name (from setup-microphone.bat)
-AUDIO_DEVICE=Microphone (High Definition Audio Device)
+# WebSocket server port (keep default)
+PORT=8765
 
-# FFmpeg path (if not in system PATH)
-FFMPEG_PATH=C:\ffmpeg\bin\ffmpeg.exe
-
-# Optional: Groq API key for better accuracy
+# Optional: Groq API key for transcription (can also be set from the setup window)
 # Get from: https://console.groq.com/keys
 GROQ_API_KEY=
 
-# WebSocket server port (keep default)
-PORT=8765
+# Optional: Deepgram API key, used as a fallback if Groq fails
+DEEPGRAM_API_KEY=
 
 # Keep this for production
 NODE_ENV=production
 ```
+
+There is no `AUDIO_DEVICE` or `FFMPEG_PATH` to set here anymore — the
+microphone is chosen from the app's own setup window.
 
 ---
 
@@ -128,23 +129,15 @@ NODE_ENV=production
 - Restart your computer after installing Node.js
 - Or reinstall from: https://nodejs.org/
 
-### Issue: "FFmpeg not found"
+### Issue: "Microphone not working" / wrong microphone picked
 **Solution:**
-- Download from: https://ffmpeg.org/download.html
-- Extract to: `C:\ffmpeg`
-- Add to Windows PATH (see Prerequisites section)
-- Restart computer
-
-### Issue: "Microphone not working"
-**Solution:**
-1. Run: `setup-microphone.bat` to find correct name
-2. Edit `.env` with exact microphone name
-3. Verify microphone is default in Windows Sound settings
-4. Restart `start-server.bat`
+1. In the app dashboard, click "Changer de micro" to reopen the device picker
+2. Verify the microphone is not muted and is enabled in Windows Sound settings
+3. Restart the app (`npm start`)
 
 ### Issue: "OBS overlay shows nothing"
 **Solution:**
-1. Check `start-server.bat` console shows:
+1. Check the app dashboard/console shows:
    ```
    [server] Serveur WebSocket démarré sur ws://127.0.0.1:8765
    ```
@@ -155,10 +148,10 @@ NODE_ENV=production
 
 ### Issue: "Verses don't appear"
 **Solution:**
-1. Check internet connection (Bible APIs need it)
+1. Check internet connection (transcription and Bible APIs need it)
 2. Speak clearly: "Jean 3:16"
-3. Wait 4-5 seconds for Whisper to process
-4. Check console for errors
+3. Wait a few seconds for transcription to process
+4. Check the dashboard for a "Problème micro" alert
 5. Verify microphone is unmuted
 
 ---
@@ -166,18 +159,23 @@ NODE_ENV=production
 ## 📞 Advanced Troubleshooting
 
 ### Check Server Status
-Open PowerShell and run:
+Run the full app (recommended — includes microphone capture):
+```powershell
+npm start
+```
+
+Or run the server alone, without a microphone, for debugging only:
 ```powershell
 node server.js
 ```
 
-Watch for errors in console. Should see:
+Watch for errors in console. With `npm start` you should see:
 ```
 [server] Validation de la configuration...
 [server] Configuration validée
 [server] Serveur WebSocket démarré sur ws://127.0.0.1:8765
-[server] Whisper Speech-to-Text prêt et opérationnel
-[server] Capture audio démarrée
+[audio-capture] Prêt à recevoir des chunks audio (capture native).
+[capture.html] Capture démarrée.
 ```
 
 ### Test Bible API
@@ -201,7 +199,7 @@ All tests should pass (green checkmarks).
 Your Church Overlay is configured and ready to use:
 
 1. **Service Day:**
-   - Double-click `start-server.bat`
+   - Run `npm start`
    - Open OBS
    - Start streaming!
 
@@ -211,8 +209,7 @@ Your Church Overlay is configured and ready to use:
    - Operator can override if needed
 
 3. **After Service:**
-   - Press Ctrl+C in console to stop server
-   - Close the window
+   - Close the ChurchOverlay window (it stays in the system tray) or quit from the tray icon
 
 ---
 
@@ -228,7 +225,7 @@ Your Church Overlay is configured and ready to use:
 ## 🆘 Still Need Help?
 
 Check these files in order:
-1. `QUICKSTART-WINDOWS.md` (this file)
+1. `QUICKSTART-WINDOWS.md`
 2. `SETUP.md`
 3. `README-ENV.md`
 4. `ARCHITECTURE.md`
