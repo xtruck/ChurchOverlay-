@@ -2,17 +2,22 @@
  * ============================================================================
  *  electron/preload.js — Pont sécurisé renderer <-> main
  * ----------------------------------------------------------------------------
+ *  CORRECTIF (audit) — pont audio manquant
+ *    dashboard.html appelait déjà window.churchOverlay.sendAudioChunk() et
+ *    .onAudioPipelineReady(), mais rien ici ne les exposait : la capture
+ *    micro native (déjà câblée côté main.js/server.js/audio-capture.js)
+ *    était donc muette en silence (TypeError avalée par onaudioprocess).
+ *    Ajoutés ci-dessous. detectMicrophones() retiré : mort depuis que
+ *    setup.html énumère lui-même via navigator.mediaDevices.
+ *
  *  CHANGELOG v0.5.0 — Remplacement de FFmpeg par la capture audio native
  *    - ensureFfmpeg / onFfmpegStartupProgress / onFfmpegSetupProgress
  *      supprimés : plus de binaire externe à télécharger, la capture micro
- *      passe par une fenêtre Electron cachée (getUserMedia), voir
- *      audio-capture.js et capture.html pour le détail.
+ *      passe directement par dashboard.html/setup.html (getUserMedia).
  *
  *  CHANGELOG v0.3.0 — Suppression complète de Whisper local
  *    - setCloudOnlyMode / setWhisperGpu supprimés (plus de toggle : la
  *      transcription est désormais toujours 100% cloud, Groq -> Deepgram).
- *    - onWhisperSetupProgress renommé onFfmpegSetupProgress (seul FFmpeg
- *      est encore téléchargé automatiquement au premier lancement).
  *
  *  CHANGELOG v0.2.0
  *    + getPerfStats()              — CPU % / RSS MB polling for dashboard
@@ -33,10 +38,11 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('churchOverlay', {
   // --- Écran de configuration initiale (setup.html) -----------------------
-  // CHANGELOG v0.5.0 : ensureFfmpeg() retiré — plus de binaire externe à
-  // installer avant de pouvoir scanner les micros (capture native
-  // navigateur, prête dès le chargement de la fenêtre de capture cachée).
-  detectMicrophones: (force) => ipcRenderer.invoke('detect-microphones', { force: !!force }),
+  // CHANGELOG v0.5.0 : ensureFfmpeg()/detectMicrophones() retirés — plus de
+  // binaire externe, et plus de scan IPC des micros : setup.html énumère
+  // directement via navigator.mediaDevices.enumerateDevices() (le même accès
+  // micro que dashboard.html utilise pour la capture réelle), donc pas besoin
+  // de faire l'aller-retour par le process principal.
   saveSetup: (audioDevice, groqApiKey, deepgramApiKey) =>
     ipcRenderer.invoke('save-setup', { audioDevice, groqApiKey, deepgramApiKey }),
 
@@ -48,6 +54,24 @@ contextBridge.exposeInMainWorld('churchOverlay', {
   // --- v0.2.0 : réglages runtime exposés au dashboard ---------------------
   getSettings: () => ipcRenderer.invoke('get-settings'),
   getPerfStats: () => ipcRenderer.invoke('get-perf-stats'),
+
+  // --- CORRECTIF (audit) — capture micro native ---------------------------
+  // dashboard.html capture le micro lui-même (getUserMedia) et pousse ses
+  // chunks PCM16LE ici. main.js les relaie tels quels au Worker server.js
+  // via ipcMain.on('audio-pcm-chunk', ...) — ce canal existait déjà côté
+  // main.js, mais rien ne l'exposait ici : dashboard.html appelait
+  // window.churchOverlay.sendAudioChunk() qui n'existait pas (TypeError dès
+  // le premier chunk), et la capture ne démarrait jamais. Corrigé.
+  sendAudioChunk: (buffer) => ipcRenderer.send('audio-pcm-chunk', buffer),
+  // Signal envoyé par main.js quand le Worker (server.js) a confirmé que le
+  // pipeline audio est prêt à recevoir des chunks (voir audio-pipeline-ready
+  // dans server.js/main.js) — démarrer la capture avant perdrait les tout
+  // premiers instants sans que rien ne les traite.
+  onAudioPipelineReady: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('audio-pipeline-ready', listener);
+    return () => ipcRenderer.removeListener('audio-pipeline-ready', listener);
+  },
 
   // --- Mises à jour poussées depuis main.js (notifyDashboard) -------------
   onStatusUpdate: (callback) => {
