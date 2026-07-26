@@ -1,5 +1,14 @@
 # 🎯 Church Overlay - Files Location & What to Click
 
+> ⚠️ **Ce fichier est partiellement obsolète** (il liste encore
+> `whisper-wrapper.js`, retiré en v0.3.0, et certains passages plus bas
+> n'ont pas encore été mis à jour pour la capture native v0.5.0). Pour
+> une marche à suivre à jour, préférez `QUICKSTART-WINDOWS.md` ou
+> `README-WINDOWS.md`. En résumé : plus de FFmpeg à installer, plus de
+> `setup-microphone.bat` ni de nom de micro dans `.env` — lancez
+> simplement `npm start`, le micro se choisit dans la fenêtre de
+> configuration de l'app.
+
 ## 📁 Where Files Are Located
 
 After you clone/download the repository, you'll see all these files in your `xtruck` folder:
@@ -61,32 +70,23 @@ What it does:
 ✅ Checks if Node.js is installed
 ✅ Installs npm packages
 ✅ Creates .env file
-✅ Checks for FFmpeg
 ```
 
-**Then Double-click:** `setup-microphone.bat`
-
+Then run the app (no more `setup-microphone.bat` — the microphone is
+chosen inside the app itself):
 ```
-What it does:
-✅ Lists all your audio devices
-✅ Shows you what to put in .env
+npm start
 ```
 
 ### Step 2: Configure Your Microphone
 
-**Edit the `.env` file:**
-1. Right-click `→ Open with → Notepad`
-2. Find: `AUDIO_DEVICE=`
-3. Copy your microphone name from the list shown earlier
-4. Example:
-   ```
-   AUDIO_DEVICE=Microphone (High Definition Audio Device)
-   ```
-5. Save (Ctrl+S)
+On first launch, the app opens a setup window that lists your
+microphones (the same list Windows Settings shows) — pick one and paste
+your Groq API key. There is nothing to edit in `.env` for this anymore.
 
 ### Step 3: Every Time You Want to Use It
 
-**Double-click:** `start-server.bat`
+**Run:** `npm start`
 
 ```
 A console window will open showing:
