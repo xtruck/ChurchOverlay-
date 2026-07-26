@@ -11,6 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { resolveFfmpegPath } = require('./setup-ffmpeg');
 
 /**
  * Schémas de validation pour les variables d'environnement
@@ -171,7 +172,15 @@ async function validateSystemConfig() {
 
   // 2. Vérifier FFmpeg
   console.log('[config-validator] Vérification de FFmpeg...');
-  const ffmpegPath = envValidation.config.FFMPEG_PATH || 'ffmpeg';
+  // CORRECTIF : ce module dupliquait `envValidation.config.FFMPEG_PATH ||
+  // 'ffmpeg'` en dur, ignorant le binaire auto-installé par
+  // ensureFfmpegInstalled() dans ffmpeg/ffmpeg.exe. Ça marchait par
+  // accident dans l'app Electron (main.js injecte FFMPEG_PATH=<chemin
+  // résolu> dans l'environnement du worker avant de lancer server.js), mais
+  // en usage standalone (`node server.js` / `npm run server-only`) sur un
+  // poste sans FFmpeg système, cette vérification échouait alors même que
+  // le FFmpeg auto-installé était bel et bien présent et fonctionnel.
+  const ffmpegPath = resolveFfmpegPath();
   const ffmpegCheck = await checkFFmpeg(ffmpegPath);
   if (!ffmpegCheck.available) {
     warnings.push(`FFmpeg n'est pas disponible: ${ffmpegCheck.error}. La capture audio sera désactivée.`);
