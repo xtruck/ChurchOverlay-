@@ -27,10 +27,14 @@
 
 const fs = require('fs');
 const deepgram = require('./deepgram-wrapper');
+const { buildWhisperPrompt } = require('./bible-keyterms');
 
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/audio/transcriptions';
 const GROQ_MODEL = 'whisper-large-v3';
 const FALLBACK_TIMEOUT_MS = 5000; // 5 secondes, choisi comme équilibre
+
+// Construit une fois au chargement (liste statique de livres/vocabulaire).
+const WHISPER_PROMPT = buildWhisperPrompt();
 
 /**
  * Envoie le fichier audio à l'API Groq et retourne { text }.
@@ -52,6 +56,12 @@ async function transcribeFile(audioFilePath) {
   const formData = new FormData();
   formData.append('file', new Blob([audioBuffer]), 'audio.wav');
   formData.append('model', GROQ_MODEL);
+  // AJOUT (boosting vocabulaire) : `prompt` sert de contexte initial à
+  // Whisper pour biaiser son vocabulaire vers les livres bibliques et le
+  // vocabulaire théologique (voir bible-keyterms.js) — même logique que
+  // `keywords` côté Deepgram ci-dessous, adaptée à l'API Whisper qui n'a
+  // pas de paramètre de boosting dédié.
+  formData.append('prompt', WHISPER_PROMPT);
 
   const response = await fetch(GROQ_ENDPOINT, {
     method: 'POST',
