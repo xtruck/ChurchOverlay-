@@ -376,6 +376,34 @@ function enumerateDevicesLive() {
 // ---------------------------------------------------------------------------
 // Fenêtres
 // ---------------------------------------------------------------------------
+// CORRECTIF (audit) : diagnostic du chargement du preload -------------------
+// Confirmé en runtime : window.churchOverlay est undefined côté renderer
+// (garde-fou déclenché sur setup.html). Ça peut venir soit du fichier
+// preload.js absent/introuvable au chemin résolu (problème de packaging),
+// soit d'une exception levée PENDANT l'exécution du preload (électron
+// n'expose alors jamais contextBridge). Electron notifie ce 2e cas via
+// l'événement webContents 'preload-error', qui n'était écouté nulle part
+// jusqu'ici — l'erreur partait donc uniquement dans les logs internes
+// d'Electron, invisibles en usage normal. On log désormais les deux cas
+// explicitement dans la console du PROCESS PRINCIPAL (le terminal si lancé
+// via `npm start` / `electron .` — pas les DevTools du renderer).
+function attachPreloadDiagnostics(win, preloadPath, label) {
+  const exists = fs.existsSync(preloadPath);
+  console.log(`[preload-diag] (${label}) chemin résolu : ${preloadPath}`);
+  console.log(`[preload-diag] (${label}) fichier présent sur disque : ${exists}`);
+  if (!exists) {
+    console.error(
+      `[preload-diag] (${label}) ERREUR : preload.js est introuvable à ce ` +
+      `chemin. Si l'app est packagée (.exe), vérifie que preload.js est ` +
+      `bien inclus dans le build (build.files de package.json) et que ` +
+      `l'asar n'est pas corrompu.`
+    );
+  }
+  win.webContents.on('preload-error', (_evt, path_, error) => {
+    console.error(`[preload-diag] (${label}) EXCEPTION dans preload.js (${path_}) :`, error);
+  });
+}
+
 function createSetupWindow() {
   const win = new BrowserWindow({
     width: 560,
@@ -389,6 +417,7 @@ function createSetupWindow() {
       nodeIntegration: false,
     },
   });
+  attachPreloadDiagnostics(win, path.join(__dirname, 'preload.js'), 'setup');
   win.setMenuBarVisibility(false);
   win.loadFile(path.join(__dirname, 'setup.html'));
   return win;
@@ -407,6 +436,7 @@ function createMainWindow() {
       nodeIntegration: false,
     },
   });
+  attachPreloadDiagnostics(mainWindow, path.join(__dirname, 'preload.js'), 'dashboard');
   mainWindow.setMenuBarVisibility(false);
   mainWindow.loadFile(path.join(__dirname, 'dashboard.html'));
 
