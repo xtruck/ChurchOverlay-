@@ -858,7 +858,7 @@
     }
 
     // --- CORRECTIF (audit) : bannière d'alerte pipeline --------------------
-    // 'error' (micro/FFmpeg/démarrage) reste affichée jusqu'à fermeture
+    // 'error' (micro/démarrage) reste affichée jusqu'à fermeture
     // manuelle ou redémarrage réussi du pipeline (voir main.js : envoie
     // { clear: true } quand le statut repasse à 'running').
     // 'warning' (transcription/verset ponctuellement indisponible) s'efface
@@ -866,7 +866,7 @@
     // pas rester bloquée à l'écran après le retour à la normale.
     const ALERT_ICONS = { error: '🔴', warning: '⚠️' };
     const ALERT_TITLES = {
-      audioCaptureError: 'Problème micro / FFmpeg',
+      audioCaptureError: 'Problème micro',
       pipelineError: 'Le pipeline ne démarre pas',
       transcriptionError: 'Transcription indisponible',
       lookupError: 'Verset introuvable',
