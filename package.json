@@ -38,6 +38,7 @@
       "overlay.html",
       "server.js",
       "audio-capture.js",
+      "bible-keyterms.js",
       "bible-lookup-with-api.js",
       "config-validator.js",
       "context-tracker.js",
