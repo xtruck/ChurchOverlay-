@@ -88,4 +88,23 @@ contextBridge.exposeInMainWorld('churchOverlay', {
     ipcRenderer.on('pipeline-alert', listener);
     return () => ipcRenderer.removeListener('pipeline-alert', listener);
   },
+
+  // --- Thèmes de l'overlay (theme-loader.js) -------------------------------
+  // Ajouté à l'audit : theme-loader.js existait déjà et était entièrement
+  // testé, mais n'était branché à aucune fenêtre — impossible de changer de
+  // thème depuis l'app. Le changement est appliqué en direct sur
+  // overlay.html (voir server.js) sans avoir à redémarrer le pipeline.
+  listThemes: () => ipcRenderer.invoke('list-themes'),
+  getActiveTheme: () => ipcRenderer.invoke('get-active-theme'),
+  setActiveTheme: (themeId) => ipcRenderer.invoke('set-active-theme', { themeId }),
+
+  // --- Contrôle OBS multi-scènes (obs-controller.js) -----------------------
+  // Ajouté à l'audit, même constat que pour les thèmes : module prêt et
+  // testable, jamais exposé. Entièrement optionnel — n'agit que si activé.
+  getObsConfig: () => ipcRenderer.invoke('obs-get-config'),
+  setObsConfig: (cfg) => ipcRenderer.invoke('obs-set-config', cfg),
+  obsConnect: () => ipcRenderer.invoke('obs-connect'),
+  obsListScenes: () => ipcRenderer.invoke('obs-list-scenes'),
+  obsSwitchScene: (sceneName) => ipcRenderer.invoke('obs-switch-scene', { sceneName }),
+  obsToggleRecording: () => ipcRenderer.invoke('obs-toggle-recording'),
 });
