@@ -2,7 +2,7 @@
   "name": "churchoverlay",
   "productName": "ChurchOverlay",
   "version": "0.4.3",
-  "description": "Overlay de versets bibliques en direct — micro → FFmpeg → Groq/Deepgram (cloud) → detector → overlay.html, packagé en application Windows installable.",
+  "description": "Overlay de versets bibliques en direct — micro (capture native getUserMedia) → Groq/Deepgram (cloud) → detector → overlay.html, packagé en application Windows installable.",
   "author": "ChurchOverlay",
   "main": "main.js",
   "//": "CHANGELOG v0.3.0 — Suppression complète de Whisper local (plus gros consommateur CPU de l'app) : transcription 100% cloud (Groq -> Deepgram). CHANGELOG v0.2.0 — Performance & Stability Repair Plan | 1) asar:true (fast startup, smaller install, avoids per-file AV scans) 2) compression:'maximum' + nsis.differentialPackage:true 3) Exact versions pinned for electron & electron-builder (reproducible builds) 4) Tighter file excludes (.map/.md/tests/docs)",
@@ -10,10 +10,9 @@
     "start": "electron .",
     "server-only": "node server.js",
     "test-envoi": "node test/test-envoi.js",
-    "setup-ffmpeg": "node setup-ffmpeg.js",
     "check-files": "node scripts/check-build-files.js",
-    "test": "node scripts/check-build-files.js && node test/test-detector.js && node test/test-detector-en.js && node test/test-validation.js && node test/test-rate-limiter.js && node test/test-config-validator.js && node test/test-groq-fallback-race.js && node test/test-dshow-parser.js && node test/test-theme-loader.js",
-    "test-all": "node scripts/check-build-files.js && node test/test-detector.js && node test/test-detector-en.js && node test/test-validation.js && node test/test-rate-limiter.js && node test/test-config-validator.js && node test/test-groq-fallback-race.js && node test/test-dshow-parser.js && node test/test-theme-loader.js && node test/test-audio-capture.js",
+    "test": "node scripts/check-build-files.js && node test/test-detector.js && node test/test-detector-en.js && node test/test-validation.js && node test/test-rate-limiter.js && node test/test-config-validator.js && node test/test-groq-fallback-race.js && node test/test-theme-loader.js && node test/test-audio-capture.js",
+    "test-all": "node scripts/check-build-files.js && node test/test-detector.js && node test/test-detector-en.js && node test/test-validation.js && node test/test-rate-limiter.js && node test/test-config-validator.js && node test/test-groq-fallback-race.js && node test/test-theme-loader.js && node test/test-audio-capture.js",
     "dist": "electron-builder --win nsis"
   },
   "dependencies": {
@@ -29,13 +28,12 @@
     "appId": "com.mesev.churchoverlay",
     "productName": "ChurchOverlay",
     "asar": true,
-    "asarUnpack": [
-      "ffmpeg/**/*"
-    ],
     "compression": "maximum",
     "files": [
       "main.js",
       "preload.js",
+      "capture.html",
+      "capture-preload.js",
       "perf-monitor.js",
       "setup.html",
       "dashboard.html",
@@ -50,10 +48,7 @@
       "groq-wrapper.js",
       "deepgram-wrapper.js",
       "list-audio-devices.js",
-      "dshow-parser.js",
       "rate-limiter.js",
-      "setup-ffmpeg.js",
-      "ffmpeg/**/*",
       "validation.js",
       "theme-loader.js",
       "obs-controller.js",
