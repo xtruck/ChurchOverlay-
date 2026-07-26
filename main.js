@@ -879,24 +879,10 @@ ipcMain.handle('get-perf-stats', async () => perfMonitor.getStats());
 // ---------------------------------------------------------------------------
 // Cycle de vie
 // ---------------------------------------------------------------------------
-// CHANGELOG v0.5.0 : la fenêtre de capture (Chromium) doit pouvoir appeler
-// getUserMedia sans jamais afficher de prompt de permission navigateur
-// (elle n'a pas d'UI visible pour que l'utilisateur puisse cliquer
-// "Autoriser") — on accorde donc automatiquement la permission 'media' à
-// TOUTES les fenêtres de l'app. Sans danger : ChurchOverlay ne charge que
-// ses propres pages locales (setup.html, dashboard.html, overlay.html,
-// capture.html), jamais de contenu web tiers.
-session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-  callback(permission === 'media');
-});
-if (session.defaultSession.setPermissionCheckHandler) {
-  session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === 'media');
-}
-
 // Relaie chaque bloc PCM reçu du renderer de capture vers le worker
 // server.js, qui appelle audioCapture.pushAudioChunk() — voir server.js.
 // arrayBuffer transite par IPC (structured clone, une copie — un chunk de
-// ~4096 échantillons toutes les ~90ms au format PCM16 mono reste minime,
+// ~4096 échantillons toutes les ~256ms au format PCM16 mono reste minime,
 // pas besoin d'optimiser par transfert zero-copy ici).
 ipcMain.on('capture:audio-chunk', (_evt, arrayBuffer) => {
   if (worker) {
@@ -916,6 +902,24 @@ ipcMain.on('capture:error', (_evt, payload) => {
 });
 
 app.whenReady().then(async () => {
+  // CORRECTIF CRITIQUE (audit) — session.defaultSession n'est disponible
+  // qu'APRÈS l'événement 'ready' (documenté par Electron : "available
+  // after app.whenReady is called"). Ce bloc était exécuté au chargement
+  // du module, donc AVANT app.whenReady() plus bas dans ce fichier — accéder
+  // à session.defaultSession à ce moment-là est non défini et plante
+  // typiquement tout le process principal au démarrage (avant même
+  // l'ouverture d'une fenêtre). Déplacé ici, avant createCaptureWindow(),
+  // pour que la permission media soit bien accordée avant que capture.html
+  // (ou toute autre fenêtre) n'appelle getUserMedia. Sans danger : ChurchOverlay
+  // ne charge que ses propres pages locales (setup.html, dashboard.html,
+  // overlay.html, capture.html), jamais de contenu web tiers.
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(permission === 'media');
+  });
+  if (session.defaultSession.setPermissionCheckHandler) {
+    session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === 'media');
+  }
+
   createTray();
   createCaptureWindow();
   perfMonitor.start(PERF_PUSH_MS);
