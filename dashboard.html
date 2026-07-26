@@ -703,6 +703,37 @@
   <div class="toast" id="toast" data-testid="toast"></div>
 
   <script>
+    // --- CORRECTIF (audit) : garde-fou preload ------------------------------
+    // Sans ce garde-fou, si window.churchOverlay est undefined (preload non
+    // chargé — ex : dashboard.html ouvert hors Electron, ou .exe packagé
+    // avant l'ajout d'une fonction utilisée ici), la première ligne du script
+    // qui y touche plante avec "Cannot read properties of undefined
+    // (reading '...')", un message qui ne dit rien sur la cause réelle.
+    // On détecte l'absence du pont ICI, en premier, pour afficher un message
+    // exploitable et arrêter proprement l'exécution du reste du script.
+    if (!window.churchOverlay) {
+      document.body.innerHTML =
+        '<div style="font-family:sans-serif;padding:32px;color:#c0392b;' +
+        'max-width:480px;margin:0 auto;text-align:center;">' +
+        '<h2>Erreur critique — pont Electron indisponible</h2>' +
+        '<p><code>window.churchOverlay</code> est introuvable : le script ' +
+        'preload ne s\'est pas exécuté.</p>' +
+        '<p>Causes possibles :</p>' +
+        '<ul style="text-align:left;display:inline-block;">' +
+        '<li>dashboard.html ouvert directement dans un navigateur au lieu ' +
+        'd\'être lancé via l\'app Electron (npm start ou l\'exécutable) ;</li>' +
+        '<li>build packagé (.exe) plus ancien que le preload.js actuel — ' +
+        'refaites <code>npm run build</code> ;</li>' +
+        '<li>preload.js manquant ou en erreur — voir la console du ' +
+        'processus principal (terminal), pas seulement les DevTools.</li>' +
+        '</ul></div>';
+      throw new Error(
+        '[ChurchOverlay] window.churchOverlay est undefined : le preload ' +
+        'script ne s\'est pas chargé pour cette fenêtre. Arrêt du script ' +
+        'dashboard.html pour éviter une cascade d\'erreurs cryptiques.'
+      );
+    }
+
     const STATUS_CONFIG = {
       starting: { emoji: '⚙️', title: 'Démarrage', desc: 'Le pipeline audio se lance…', class: 'starting' },
       running: { emoji: '✅', title: 'En marche', desc: 'Pipeline opérationnel — Micro écouté', class: 'running' },
