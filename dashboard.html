@@ -858,7 +858,7 @@
     }
 
     // --- CORRECTIF (audit) : bannière d'alerte pipeline --------------------
-    // 'error' (micro/démarrage) reste affichée jusqu'à fermeture
+    // 'error' (micro/FFmpeg/démarrage) reste affichée jusqu'à fermeture
     // manuelle ou redémarrage réussi du pipeline (voir main.js : envoie
     // { clear: true } quand le statut repasse à 'running').
     // 'warning' (transcription/verset ponctuellement indisponible) s'efface
@@ -866,7 +866,7 @@
     // pas rester bloquée à l'écran après le retour à la normale.
     const ALERT_ICONS = { error: '🔴', warning: '⚠️' };
     const ALERT_TITLES = {
-      audioCaptureError: 'Problème micro',
+      audioCaptureError: 'Problème micro / FFmpeg',
       pipelineError: 'Le pipeline ne démarre pas',
       transcriptionError: 'Transcription indisponible',
       lookupError: 'Verset introuvable',
@@ -931,6 +931,138 @@
     window.churchOverlay.onStatusUpdate(render);
     window.churchOverlay.getPerfStats().then(renderPerf);
     window.churchOverlay.onPerfUpdate(renderPerf);
+
+    // -----------------------------------------------------------------
+    // CORRECTIF (audit — remplacement de FFmpeg par la capture navigateur)
+    // -----------------------------------------------------------------
+    // Contexte : FFmpeg (-f dshow) ne voit tout simplement pas certains
+    // micros intégrés modernes (typiquement pilotés par Intel Smart Sound
+    // Technology ou équivalent) — 0 périphérique énuméré, alors que ce même
+    // micro apparaît normalement dans Windows (Paramètres > Son). C'est une
+    // limite de l'API DirectShow elle-même, pas un bug de parsing/cache que
+    // du code pouvait corriger.
+    //
+    // Chromium (donc Electron) capture le micro via WASAPI en interne — la
+    // même couche que Windows lui-même — et voit donc les mêmes micros que
+    // les Paramètres Windows, sans jamais passer par dshow. On capture ici,
+    // dans ce renderer (le seul endroit de l'app avec un accès micro), et on
+    // pousse les échantillons PCM16LE vers le pipeline de transcription
+    // existant (segmentation, VAD, écriture WAV, Groq/Deepgram) — voir
+    // audio-capture.js/feedPcmChunk(), qui ne se soucie pas de savoir si les
+    // octets viennent de FFmpeg ou d'ici.
+    //
+    // Démarrage différé : on attend le signal 'audio-pipeline-ready' émis
+    // par server.js (voir main.js) une fois que le Worker est prêt à
+    // recevoir des chunks — capturer avant ferait perdre les tout premiers
+    // instants sans que rien ne les traite.
+    let micCaptureState = null; // { stream, audioCtx, sourceNode, processorNode, silentGain }
+
+    /**
+     * Convertit un buffer Float32 (sortie native de Web Audio, sample rate
+     * variable selon le périphérique — 48000Hz le plus souvent) vers le
+     * sample rate attendu par le pipeline (16000Hz, voir CONFIG.sampleRate
+     * dans audio-capture.js). Moyennage simple par blocs (pas de filtre
+     * anti-repliement élaboré) : qualité largement suffisante pour de la
+     * reconnaissance vocale, mais ne conviendrait pas à un usage musique/HiFi.
+     */
+    function downsampleBuffer(buffer, inputSampleRate, outputSampleRate) {
+      if (outputSampleRate === inputSampleRate) return buffer;
+      const sampleRateRatio = inputSampleRate / outputSampleRate;
+      const newLength = Math.round(buffer.length / sampleRateRatio);
+      const result = new Float32Array(newLength);
+      let offsetResult = 0;
+      let offsetBuffer = 0;
+      while (offsetResult < result.length) {
+        const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
+        let accum = 0, count = 0;
+        for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+          accum += buffer[i];
+          count++;
+        }
+        result[offsetResult] = count > 0 ? accum / count : 0;
+        offsetResult++;
+        offsetBuffer = nextOffsetBuffer;
+      }
+      return result;
+    }
+
+    /** Float32 [-1,1] -> PCM16LE, avec saturation (clamp) aux bornes. */
+    function floatTo16BitPCM(input) {
+      const output = new Int16Array(input.length);
+      for (let i = 0; i < input.length; i++) {
+        const s = Math.max(-1, Math.min(1, input[i]));
+        output[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      return output;
+    }
+
+    async function startBrowserAudioCapture() {
+      if (micCaptureState) return; // déjà démarré (ex: double signal ready)
+
+      try {
+        const settings = await window.churchOverlay.getSettings();
+        const deviceId = settings && settings.audioDevice;
+
+        // echoCancellation/noiseSuppression/autoGainControl désactivés :
+        // ces traitements Chromium sont pensés pour la visioconférence, pas
+        // pour maximiser la fidélité destinée à un moteur de transcription —
+        // autant transmettre le signal le plus brut possible à Whisper/Nova.
+        const audioConstraints = {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        };
+        if (deviceId) audioConstraints.deviceId = { exact: deviceId };
+
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const sourceNode = audioCtx.createMediaStreamSource(stream);
+
+        // ScriptProcessorNode : API dépréciée en faveur d'AudioWorklet, mais
+        // choisie ici volontairement — callback synchrone simple, pas de
+        // module externe à charger séparément (donc rien à ajouter à
+        // package.json/build.files), et largement suffisante pour de la
+        // voix (pas de contrainte de latence temps-réel stricte ici).
+        const processorNode = audioCtx.createScriptProcessor(4096, 1, 1);
+        processorNode.onaudioprocess = (event) => {
+          const input = event.inputBuffer.getChannelData(0);
+          const downsampled = downsampleBuffer(input, audioCtx.sampleRate, 16000);
+          const pcm16 = floatTo16BitPCM(downsampled);
+          window.churchOverlay.sendAudioChunk(pcm16.buffer);
+        };
+
+        // Un ScriptProcessorNode ne déclenche son callback que s'il est
+        // connecté à une destination (contrainte de la spec Web Audio) — un
+        // GainNode à volume 0 satisfait cette exigence sans renvoyer le son
+        // du micro vers les haut-parleurs (qui créerait un écho/larsen).
+        const silentGain = audioCtx.createGain();
+        silentGain.gain.value = 0;
+        sourceNode.connect(processorNode);
+        processorNode.connect(silentGain);
+        silentGain.connect(audioCtx.destination);
+
+        micCaptureState = { stream, audioCtx, sourceNode, processorNode, silentGain };
+        console.log('[dashboard] Capture micro (Web Audio, sans FFmpeg) démarrée.');
+      } catch (err) {
+        console.error('[dashboard] Échec démarrage capture micro:', err);
+        showToast('❌ Micro : ' + (err && err.message ? err.message : err));
+      }
+    }
+
+    function stopBrowserAudioCapture() {
+      if (!micCaptureState) return;
+      try {
+        micCaptureState.sourceNode.disconnect();
+        micCaptureState.processorNode.disconnect();
+        micCaptureState.silentGain.disconnect();
+        micCaptureState.stream.getTracks().forEach((t) => t.stop());
+        micCaptureState.audioCtx.close();
+      } catch (_) { /* nettoyage best-effort à la fermeture */ }
+      micCaptureState = null;
+    }
+
+    window.churchOverlay.onAudioPipelineReady(startBrowserAudioCapture);
+    window.addEventListener('beforeunload', stopBrowserAudioCapture);
 
     // -----------------------------------------------------------------
     // Sélecteur de langue d'affichage (FR / EN / FR+EN)
