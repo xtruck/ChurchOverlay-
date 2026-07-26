@@ -23,6 +23,24 @@ const audioCapture = require('../audio-capture');
 
 console.log('=== Test Audio Capture (segmentation) ===\n');
 
+/**
+ * Génère un buffer PCM16LE synthétique avec une amplitude donnée.
+ * AJOUT (VAD réel) : les tests de segmentation utilisaient auparavant
+ * Buffer.alloc() (silence pur, tout à zéro) — ça passait avant le filtre
+ * VAD, mais un vrai silence est désormais volontairement rejeté par
+ * handleAudioData(). On génère donc un signal avec une amplitude
+ * suffisante pour être classé "voix" par analyzeVoiceActivity().
+ * @param {number} byteLength - taille du buffer en octets (doit être pair)
+ * @param {number} [amplitude=6000] - amplitude int16 (silenceThreshold par défaut = 0.02 → seuil ≈ 655)
+ */
+function makeVoicedBuffer(byteLength, amplitude = 6000) {
+  const buf = Buffer.alloc(byteLength - (byteLength % 2));
+  for (let i = 0; i + 1 < buf.length; i += 2) {
+    buf.writeInt16LE(i % 4 === 0 ? amplitude : -amplitude, i);
+  }
+  return buf;
+}
+
 async function run() {
   const config = audioCapture.getConfig();
   const bytesPerSample = config.bitDepth / 8;
@@ -46,7 +64,9 @@ async function run() {
   assert.strictEqual(audioCapture.isRecording(), true, 'isRecording() devrait être true après startBrowserCapture()');
 
   // Un seul chunk plus grand que segmentBytes doit produire exactement 1 segment
-  audioCapture.feedPcmChunk(Buffer.alloc(segmentBytes + 100));
+  // (signal "voix" synthétique — voir makeVoicedBuffer, un silence pur serait
+  // désormais filtré par le VAD, voir Test 6 plus bas)
+  audioCapture.feedPcmChunk(makeVoicedBuffer(segmentBytes + 100));
   assert.strictEqual(segments.length, 1, 'Un segment aurait dû être créé');
   assert(fs.existsSync(segments[0]), 'Le fichier segment devrait exister sur disque');
   const wav = fs.readFileSync(segments[0]);
@@ -57,7 +77,7 @@ async function run() {
   // Test 3 : plusieurs petits chunks cumulés déclenchent aussi un segment
   console.log('\n[TEST] Test 3: accumulation de petits chunks...');
   segments = [];
-  const smallChunk = Buffer.alloc(Math.ceil(segmentBytes / 4) + 10);
+  const smallChunk = makeVoicedBuffer(Math.ceil(segmentBytes / 4) + 10);
   for (let i = 0; i < 5; i++) audioCapture.feedPcmChunk(smallChunk);
   assert(segments.length >= 1, 'Au moins un segment aurait dû être créé après accumulation');
   console.log('[TEST] ✓', segments.length, 'segment(s) créé(s) par accumulation');
@@ -77,6 +97,28 @@ async function run() {
   const r3 = audioCapture.pickBestDevice([]);
   assert.strictEqual(r3.chosen, null, 'Liste vide devrait renvoyer chosen: null');
   console.log('[TEST] ✓ pickBestDevice() se comporte comme attendu');
+
+  // Test 6 : VAD réel — un segment de silence pur est filtré, un segment
+  // "voisé" passe. AJOUT (chantier VAD).
+  console.log('\n[TEST] Test 6: filtrage VAD (analyzeVoiceActivity / computeRms)...');
+  const silentSegment = Buffer.alloc(segmentBytes);
+  const voicedSegment = makeVoicedBuffer(segmentBytes);
+  const vadConfig = { ...config };
+
+  const silentInfo = audioCapture.analyzeVoiceActivity(silentSegment, vadConfig);
+  assert.strictEqual(silentInfo.voicedMs, 0, 'Un segment de silence pur ne devrait avoir aucune ms voisée');
+
+  const voicedInfo = audioCapture.analyzeVoiceActivity(voicedSegment, vadConfig);
+  assert(voicedInfo.voicedMs >= vadConfig.minSpeechDuration, 'Un segment voisé devrait dépasser minSpeechDuration');
+
+  // Bout-en-bout : un segment de silence pur envoyé via feedPcmChunk() ne
+  // doit PAS déclencher onAudioSegment().
+  segments = [];
+  await audioCapture.startBrowserCapture();
+  audioCapture.feedPcmChunk(Buffer.alloc(segmentBytes + 100));
+  assert.strictEqual(segments.length, 0, 'Un segment de silence pur ne devrait pas être envoyé au STT');
+  await audioCapture.stopRecording();
+  console.log('[TEST] ✓ Silence correctement filtré avant envoi au STT');
 
   console.log('\n=== Tous les tests sont passés ===');
   process.exit(0);
