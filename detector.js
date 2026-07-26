@@ -223,4 +223,32 @@ if (require.main === module) {
   console.log(`=== Results: ${passed} passed, ${failed} failed ===`);
 }
 
-module.exports = { detect, normalize, numberWordsToDigits, BOOKS };
+/**
+ * AJOUT (audit — inspiré de Rhema, "changement de traduction à la voix").
+ * Détecte une phrase de commande demandant de changer de traduction
+ * biblique en cours de culte (ex: "passons en Darby", "lis en Segond"),
+ * distincte d'une référence de verset classique. Volontairement permissive
+ * sur le verbe déclencheur (la reconnaissance vocale ne rendra jamais
+ * exactement la même formulation deux fois), mais stricte sur le nom de
+ * traduction : seules 'segond' et 'darby' sont reconnues (les deux seules
+ * traductions françaises disponibles via des APIs libres de droits — voir
+ * bible-lookup-with-api.js/AVAILABLE_TRANSLATIONS).
+ * @param {string} text - Segment de transcription à analyser
+ * @returns {{ code: 'lsg'|'darby' }|null}
+ */
+function detectTranslationSwitch(text) {
+  const normalized = normalize(text);
+  // Verbe déclencheur, conjugué correctement (le français ne forme pas
+  // "nous passons" en collant "e"+"ons" à l'infinitif — piège sur lequel la
+  // première version de cette regex trébuchait). Prépositions optionnelles
+  // ("en", "à", "vers", "sur", "la", "le") car "utilisons la Darby" est tout
+  // aussi naturel que "passons en Darby" à l'oral.
+  const match = normalized.match(
+    /\b(?:lis(?:ons|ez)?|lire|lecture|passe(?:z)?|passons|repasse(?:z)?|repassons|retourne(?:z)?|retournons|change(?:z)?|changeons|utilise(?:z)?|utilisons)\b.{0,25}?\b(?:en|a|vers|sur|la|le)?\s*(segond|louis\s*segond|darby)\b/
+  );
+  if (!match) return null;
+  const code = match[1].startsWith('darby') ? 'darby' : 'lsg';
+  return { code };
+}
+
+module.exports = { detect, normalize, numberWordsToDigits, detectTranslationSwitch, BOOKS };
