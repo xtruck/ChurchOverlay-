@@ -695,11 +695,17 @@ ipcMain.handle('obs-get-config', async () => {
     const cfg = (features.broadcast && features.broadcast.multiScene) || {};
     // Le mot de passe OBS ne remonte jamais au renderer en clair : on
     // renvoie seulement s'il est défini, jamais sa valeur.
+    // CORRECTIF (audit round 4) — le mot de passe était auparavant stocké
+    // en clair (features.password) alors que les clés Groq/Deepgram
+    // passent par safeStorage (config.json). Il est maintenant chiffré
+    // (features.passwordEncrypted, voir obs-set-config ci-dessous) ; on
+    // teste donc les deux champs pour rester compatible avec une config
+    // existante non encore migrée.
     return {
       ok: true,
       enabled: !!cfg.enabled,
       obsWebsocketUrl: cfg.obsWebsocketUrl || 'ws://localhost:4455',
-      hasPassword: !!cfg.password,
+      hasPassword: !!cfg.passwordEncrypted || !!cfg.password,
     };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -716,9 +722,25 @@ ipcMain.handle('obs-set-config', async (_evt, { enabled, obsWebsocketUrl, passwo
     if (typeof obsWebsocketUrl === 'string' && obsWebsocketUrl.trim()) {
       features.broadcast.multiScene.obsWebsocketUrl = obsWebsocketUrl.trim();
     }
-    // Chaîne vide envoyée volontairement -> efface le mot de passe.
-    // `undefined` -> conserve l'existant (l'utilisateur n'a pas touché au champ).
-    if (typeof password === 'string') features.broadcast.multiScene.password = password;
+    // CORRECTIF (audit round 4) — mot de passe OBS en clair dans un fichier
+    // JSON non chiffré (config/features.json), alors que main.js chiffre
+    // déjà les clés Groq/Deepgram via safeStorage avant de les écrire sur
+    // disque (voir saveConfigAsync). Même traitement ici : chiffré si
+    // safeStorage est disponible, sinon avertissement explicite au lieu
+    // de l'écrire silencieusement en clair.
+    //   - Chaîne vide envoyée volontairement -> efface le mot de passe.
+    //   - `undefined` -> conserve l'existant (champ non touché par l'utilisateur).
+    if (typeof password === 'string') {
+      delete features.broadcast.multiScene.password; // purge un éventuel reliquat en clair
+      if (password === '') {
+        delete features.broadcast.multiScene.passwordEncrypted;
+      } else if (safeStorage.isEncryptionAvailable()) {
+        features.broadcast.multiScene.passwordEncrypted = safeStorage.encryptString(password).toString('base64');
+      } else {
+        console.warn('[main] Chiffrement système indisponible : mot de passe OBS stocké en clair.');
+        features.broadcast.multiScene.password = password;
+      }
+    }
     fs.writeFileSync(featuresPath, JSON.stringify(features, null, 2), 'utf8');
     invalidateObsControllerCache();
     return { ok: true };
