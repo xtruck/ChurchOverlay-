@@ -6,15 +6,26 @@
 > plus gros consommateur CPU de l'app). Le pipeline réel est maintenant :
 >
 > ```
-> Micro → audio-capture.js → groq-wrapper.js (cloud) → deepgram-wrapper.js
->       (repli, si configuré) → detector.js → bible-lookup-with-api.js
->       → server.js (WebSocket) → overlay.html (OBS)
+> Micro → capture.html (getUserMedia/AudioWorklet, fenêtre Electron cachée)
+>       → main.js → audio-capture.js → groq-wrapper.js (cloud)
+>       → deepgram-wrapper.js (repli, si configuré) → detector.js
+>       → bible-lookup-with-api.js → server.js (WebSocket) → overlay.html (OBS)
 > ```
 >
 > Tout ce qui suit ce bandeau concernant `whisper-wrapper.js`,
 > `whisper-server.exe`, ou les modèles `.bin` ne s'applique plus. Ce
 > fichier mériterait une réécriture complète — non faite ici pour rester
 > concentré sur la suppression de Whisper, le pipeline et les logs.
+>
+> **Mise à jour v0.5.0** : FFmpeg/DirectShow a lui aussi été retiré (voir
+> CHANGELOG en tête de `audio-capture.js` et de `main.js`). FFmpeg ne
+> voyait tout simplement pas certains micros — un problème de couche de
+> capture, indépendant du nom affiché. La capture micro passe désormais
+> par `capture.html`, une fenêtre Electron cachée qui utilise
+> `getUserMedia`/`AudioWorklet` (la même couche audio que Windows/Chromium).
+> Toutes les mentions de FFmpeg, DirectShow, `ffmpeg -list_devices`, ou
+> `list-audio-devices.js` plus bas dans ce document sont également
+> obsolètes.
 
 ## Vue d'ensemble
 
