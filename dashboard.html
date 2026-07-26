@@ -858,7 +858,7 @@
     // Connexion WebSocket légère et dédiée au tableau de bord — dashboard.html
     // tourne dans une fenêtre Electron séparée d'overlay.html (pas de partage
     // possible du socket entre les deux), donc on ouvre notre propre client
-    // WS pour envoyer/recevoir setLanguageMode / languageModeChanged.
+    // WS pour envoyer/recevoir setLanguage / languageChanged.
     // Se reconnecte automatiquement (le pipeline peut démarrer après le
     // dashboard, ou redémarrer pendant que le dashboard reste ouvert).
     (function () {
@@ -902,10 +902,16 @@
         socket.addEventListener('message', (event) => {
           let data;
           try { data = JSON.parse(event.data); } catch (e) { return; }
-          if (data.action === 'languageModeChanged') {
-            setActiveMode(data.mode);
+          // CORRECTIF : le dashboard écoutait 'languageModeChanged' et lisait
+          // `data.mode`, mais server.js diffuse en réalité 'languageChanged'
+          // avec un champ `language` (voir setLanguage plus bas et
+          // validation.js). Résultat avant correctif : ce bloc ne
+          // correspondait JAMAIS, et le dashboard ne recevait jamais la
+          // confirmation d'un changement de langue.
+          if (data.action === 'languageChanged') {
+            setActiveMode(data.language);
             setConnectionState('connected', 'Langue active : ' +
-              (data.mode === 'fr' ? 'Français seul' : data.mode === 'en' ? 'English seul' : 'Français + English'));
+              (data.language === 'fr' ? 'Français seul' : data.language === 'en' ? 'English seul' : 'Français + English'));
             modeEnCoursDEnvoi = null;
           } else if (data.action === 'error' && modeEnCoursDEnvoi) {
             setConnectionState('error', 'Changement refusé : ' + (data.error || 'erreur inconnue'));
@@ -932,7 +938,11 @@
           }
           modeEnCoursDEnvoi = mode;
           setConnectionState('connected', 'Changement en cours…');
-          socket.send(JSON.stringify({ action: 'setLanguageMode', mode }));
+          // CORRECTIF : envoyait { action: 'setLanguageMode', mode }, une
+          // action que validation.js/server.js ne reconnaissent pas (le
+          // seul schéma existant est 'setLanguage' + champ `language`) —
+          // chaque clic était donc systématiquement rejeté par le serveur.
+          socket.send(JSON.stringify({ action: 'setLanguage', language: mode }));
         });
       });
 
