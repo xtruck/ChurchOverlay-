@@ -63,6 +63,7 @@ const os = require('os');
 const { ensureFfmpegInstalled, resolveFfmpegPath } = require('./setup-ffmpeg');
 const perfMonitor = require('./perf-monitor');
 const { parseDshowAudioDevices } = require('./dshow-parser');
+const themeLoader = require('./theme-loader');
 
 // main.js vit à la racine du projet (à côté de server.js, overlay.html, etc.),
 // donc APP_ROOT = __dirname.
@@ -708,6 +709,149 @@ ipcMain.handle('get-status', async () => ({
 }));
 
 ipcMain.handle('request-restart', async () => restartServer());
+
+// --- Thèmes de l'overlay (theme-loader.js) ---------------------------------
+// Ajouté à l'audit : module déjà écrit et testé (test/test-theme-loader.js),
+// mais jamais branché à l'UI. On applique le changement en direct sur
+// overlay.html en le relayant au worker server.js, qui broadcast le CSS à
+// tous les clients WebSocket connectés (voir server.js, message
+// 'theme-changed' + broadcast de l'action 'applyTheme').
+ipcMain.handle('list-themes', async () => {
+  try {
+    return { ok: true, themes: themeLoader.listThemes() };
+  } catch (e) {
+    return { ok: false, error: e.message, themes: [] };
+  }
+});
+
+ipcMain.handle('get-active-theme', async () => {
+  try {
+    return { ok: true, theme: themeLoader.getActiveTheme() };
+  } catch (e) {
+    return { ok: false, error: e.message, theme: null };
+  }
+});
+
+ipcMain.handle('set-active-theme', async (_evt, { themeId }) => {
+  try {
+    const theme = themeLoader.setActiveTheme(themeId);
+    // Le pipeline (worker server.js) n'est pas toujours en cours d'exécution
+    // (ex: avant "Enregistrer et démarrer") — on relaie le changement
+    // uniquement s'il tourne. overlay.html reçoit de toute façon le thème
+    // actif à jour dès sa prochaine connexion, via server.js.
+    if (worker) {
+      try {
+        worker.postMessage({ type: 'theme-changed', css: themeLoader.themeToCss(theme) });
+      } catch (_) { /* worker en cours d'arrêt : sans effet, non bloquant */ }
+    }
+    return { ok: true, theme };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// --- Contrôle OBS multi-scènes (obs-controller.js) --------------------------
+// Même constat que pour les thèmes : module écrit, jamais branché.
+// Entièrement optionnel (features.broadcast.multiScene.enabled) — n'agit
+// que si l'utilisateur active la fonctionnalité depuis le dashboard.
+//
+// obs-controller.js lit config/features.json une seule fois, au moment du
+// premier require() (`const features = require('./config/features.json')`
+// en haut du fichier), ET conserve la connexion établie (`obsClient`) dans
+// une variable de module tant qu'il reste en cache. Deux conséquences :
+//   1) setObsConfig() doit vider le cache pour que le prochain connect()
+//      relise la config à jour (voir invalidateObsControllerCache ci-dessous).
+//   2) Les actions (connect/listScenes/switchScene/toggleRecording) ne
+//      doivent JAMAIS vider le cache entre elles, sous peine de perdre la
+//      connexion établie à l'étape précédente à chaque appel — on se
+//      contente donc d'un require() normal, qui réutilise l'instance déjà
+//      en mémoire.
+function getObsController() {
+  return require('./obs-controller');
+}
+
+function invalidateObsControllerCache() {
+  try { delete require.cache[require.resolve('./config/features.json')]; } catch (_) {}
+  try { delete require.cache[require.resolve('./obs-controller')]; } catch (_) {}
+}
+
+ipcMain.handle('obs-get-config', async () => {
+  try {
+    const raw = fs.readFileSync(path.join(APP_ROOT, 'config', 'features.json'), 'utf8');
+    const features = JSON.parse(raw);
+    const cfg = (features.broadcast && features.broadcast.multiScene) || {};
+    // Le mot de passe OBS ne remonte jamais au renderer en clair : on
+    // renvoie seulement s'il est défini, jamais sa valeur.
+    return {
+      ok: true,
+      enabled: !!cfg.enabled,
+      obsWebsocketUrl: cfg.obsWebsocketUrl || 'ws://localhost:4455',
+      hasPassword: !!cfg.password,
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('obs-set-config', async (_evt, { enabled, obsWebsocketUrl, password }) => {
+  try {
+    const featuresPath = path.join(APP_ROOT, 'config', 'features.json');
+    const features = JSON.parse(fs.readFileSync(featuresPath, 'utf8'));
+    features.broadcast = features.broadcast || {};
+    features.broadcast.multiScene = features.broadcast.multiScene || {};
+    if (typeof enabled === 'boolean') features.broadcast.multiScene.enabled = enabled;
+    if (typeof obsWebsocketUrl === 'string' && obsWebsocketUrl.trim()) {
+      features.broadcast.multiScene.obsWebsocketUrl = obsWebsocketUrl.trim();
+    }
+    // Chaîne vide envoyée volontairement -> efface le mot de passe.
+    // `undefined` -> conserve l'existant (l'utilisateur n'a pas touché au champ).
+    if (typeof password === 'string') features.broadcast.multiScene.password = password;
+    fs.writeFileSync(featuresPath, JSON.stringify(features, null, 2), 'utf8');
+    invalidateObsControllerCache();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('obs-connect', async () => {
+  try {
+    const obs = getObsController();
+    const client = await obs.connect();
+    return client
+      ? { ok: true, connected: true }
+      : { ok: false, connected: false, error: 'Connexion impossible — vérifiez qu\'OBS tourne, que obs-websocket est activé (Outils → obs-websocket → Activer serveur WebSocket), et que l\'URL/mot de passe sont corrects.' };
+  } catch (e) {
+    return { ok: false, connected: false, error: e.message };
+  }
+});
+
+ipcMain.handle('obs-list-scenes', async () => {
+  try {
+    const obs = getObsController();
+    return { ok: true, scenes: await obs.listScenes() };
+  } catch (e) {
+    return { ok: false, error: e.message, scenes: [] };
+  }
+});
+
+ipcMain.handle('obs-switch-scene', async (_evt, { sceneName }) => {
+  try {
+    const obs = getObsController();
+    return await obs.switchScene(sceneName);
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+});
+
+ipcMain.handle('obs-toggle-recording', async () => {
+  try {
+    const obs = getObsController();
+    return await obs.toggleRecording();
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+});
 
 ipcMain.handle('open-setup', async () => {
   createSetupWindow();
