@@ -101,13 +101,37 @@ const aliases = Object.entries(BOOKS).flatMap(([book, names]) => names.map((name
 function matchAgainstAliases(normalized) {
   for (const { book, name } of aliases) {
     const escaped = escapeRegExp(name).replace(/\s+/g, '\\s+');
-    
+
+    // CORRECTIF (audit — faux positifs découverts en test d'intégration
+    // Reading Mode). Les alias très courts (<=2 lettres : "es" pour Ésaïe,
+    // "mc" pour Marc, "ac" pour Actes, "jn" pour Jean...) collisionnent
+    // avec des mots français très courants ("tu es", "vous êtes"...).
+    // Combiné à numberWordsToDigits() (qui convertit "un/deux/trois" en
+    // chiffres), une phrase ordinaire comme "nous savons que tu es un
+    // docteur" se lisait comme "es 1" et déclenchait une fausse détection
+    // "Ésaïe 1" — reproduit et vérifié en test.
+    //
+    // Pour CES alias seulement, on exige le mot "chapitre" explicitement
+    // écrit (au lieu de le laisser optionnel comme pour tous les autres
+    // livres) : une phrase ordinaire ne contient quasiment jamais "es"/
+    // "mc"/"ac" immédiatement suivi du mot "chapitre", alors qu'une vraie
+    // citation le contient souvent ("Es chapitre 6, verset 1"). Le prix à
+    // payer est qu'un format court sans "chapitre" ("Es 6:1") ne matche
+    // plus pour CES alias précis — acceptable ici car ce sont des
+    // abréviations essentiellement écrites/lues, rarement prononcées
+    // telles quelles à voix haute pendant une prédication. Les alias plus
+    // longs (3 lettres et plus : "gen", "jos", "dan"...) gardent le
+    // comportement existant, leur risque de collision étant bien plus
+    // faible.
+    const requireExplicitChapitre = name.length <= 2;
+    const chapitreKeyword = requireExplicitChapitre ? `chapitre\\s+` : `(?:chapitre\\s+)?`;
+
     // Pattern that handles ALL formats:
     // "Jean 3:4", "Jean chapitre 3, verset 4", "Jean 3 4", "Jean 3:4-6",
     // "Jean chapitre 3 versets 16 à 18", "Jean 3, verset 4"
     const pattern = new RegExp(
       `(?:^|\\s)${escaped}\\s+` +                    // Book name
-      `(?:chapitre\\s+)?` +                          // Optional "chapitre"
+      chapitreKeyword +                              // "chapitre" (obligatoire si alias <=2 lettres, sinon optionnel)
       `(\\d{1,3})` +                                 // Chapter (group 1)
       `(?:` +                                        // Start optional verse group
         `\\s*` +                                     // Optional whitespace
@@ -188,12 +212,38 @@ function detect(text) {
   if (!corrected) return null;
 
   const fuzzyMatch = matchAgainstAliases(corrected.text);
-  if (fuzzyMatch) {
+  if (!fuzzyMatch) return null;
+
+  // CORRECTIF (audit — faux positif résiduel découvert après le correctif
+  // sur les alias courts ci-dessus) : "vous êtes deux témoins" (aucune
+  // référence biblique) se faisait corriger en "vous actes 2 témoins" par
+  // le fuzzy matching ("etes" ~ "actes", distance 2, alias de 5 lettres —
+  // donc non couvert par la garde "chapitre obligatoire" qui ne vise que
+  // les alias <=2 lettres), puis matchait le format le plus faible
+  // possible : "livre + numéro nu", sans "chapitre" ni verset. Ce format
+  // est acceptable pour un match EXACT (le nom du livre est alors une
+  // preuve suffisante à lui seul), mais beaucoup trop faible pour un match
+  // FUZZY, où l'identité même du livre est déjà une supposition. On exige
+  // donc, uniquement sur ce chemin fuzzy, une preuve contextuelle
+  // supplémentaire : soit le mot "chapitre" est explicitement présent,
+  // soit un verset est spécifié (":16", ", verset 16"...). C'est déjà le
+  // cas de tous les tests fuzzy existants ("Filipiens 2:5", "Jan 3:16"...
+  // — tous au format deux-points+verset), donc cette garde ne change rien
+  // pour eux.
+  const hasChapitreKeyword = /\bchapitre\b/i.test(fuzzyMatch.raw);
+  const hasVerseSpecified = fuzzyMatch.verseStart !== undefined;
+  if (!hasChapitreKeyword && !hasVerseSpecified) {
     console.log(
-      `[detector] Correspondance floue : "${corrected.original}" → "${corrected.name}" ` +
-      `(distance ${corrected.distance})`
+      `[detector] Correspondance floue rejetée (preuve insuffisante — ni "chapitre" ni verset) : ` +
+      `"${corrected.original}" → "${corrected.name}"`
     );
+    return null;
   }
+
+  console.log(
+    `[detector] Correspondance floue : "${corrected.original}" → "${corrected.name}" ` +
+    `(distance ${corrected.distance})`
+  );
   return fuzzyMatch;
 }
 
