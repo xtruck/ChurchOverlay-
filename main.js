@@ -708,7 +708,19 @@ ipcMain.handle('obs-set-config', async (_evt, { enabled, obsWebsocketUrl, passwo
 ipcMain.handle('obs-connect', async () => {
   try {
     const obs = getObsController();
-    const client = await obs.connect();
+    // AJOUT (audit — gating par état OBS, inspiré du protocole
+    // obs-websocket) : relaie chaque changement OUVERT/FERMÉ au worker
+    // server.js, qui applique réellement la pause avant l'appel Groq/
+    // Deepgram (voir server.js, parentPort.on('message'), type
+    // 'obs-gate-changed'). Suit exactement le même pattern que le relais
+    // 'theme-changed' déjà en place plus haut dans ce fichier.
+    const client = await obs.connect((open, reason, state) => {
+      if (worker) {
+        try {
+          worker.postMessage({ type: 'obs-gate-changed', open, reason, state });
+        } catch (_) { /* worker en cours d'arrêt : sans effet, non bloquant */ }
+      }
+    });
     return client
       ? { ok: true, connected: true }
       : { ok: false, connected: false, error: 'Connexion impossible — vérifiez qu\'OBS tourne, que obs-websocket est activé (Outils → obs-websocket → Activer serveur WebSocket), et que l\'URL/mot de passe sont corrects.' };
