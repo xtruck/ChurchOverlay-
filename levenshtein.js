@@ -74,6 +74,27 @@ function tokenize(text) {
 }
 
 /**
+ * Longueur minimale d'un alias pour être éligible à la correspondance floue.
+ *
+ * CORRECTIF (audit — faux positifs découverts via test d'intégration
+ * end-to-end du Reading Mode) : plusieurs livres ont des alias très courts
+ * (2-3 lettres : "es" pour Ésaïe, "mc" pour Marc, "ps" pour Psaumes...). Sur
+ * un alias aussi court, une tolérance de distance 1 (voir
+ * toleranceForLength) capte quasiment n'importe quel mot français courant
+ * de longueur voisine — "es" matche "est", "ses", "les", "mes", "tes"...
+ * Exemple réel reproduit en test : la phrase "nous savons que tu es un
+ * docteur" (aucune référence biblique) était faussement détectée comme
+ * "Ésaïe 1" (le "es" de "tu es" + le "un" converti en chiffre "1" par
+ * numberWordsToDigits). Le match EXACT sur ces alias courts reste inchangé
+ * (une abréviation délibérée comme "Mc 3:5" doit continuer à fonctionner) —
+ * seule la tolérance aux erreurs de transcription est désactivée en
+ * dessous de ce seuil, car son bénéfice (rattraper une vraie faute de
+ * Whisper/Groq sur un nom de livre) est largement dépassé par son coût
+ * (déclencher sur du langage courant) pour des alias aussi courts.
+ */
+const MIN_FUZZY_ALIAS_LENGTH = 4;
+
+/**
  * Cherche, dans un texte déjà normalisé, la fenêtre de mots la plus proche
  * (au sens Levenshtein) d'un alias de livre connu, et propose une correction.
  *
@@ -98,6 +119,8 @@ function correctBookNameFuzzy(normalizedText, aliasEntries) {
   let best = null;
 
   for (const { book, name } of aliasEntries) {
+    if (name.length < MIN_FUZZY_ALIAS_LENGTH) continue; // voir note ci-dessus
+
     const nameWordCount = name.split(/\s+/).length;
     const threshold = toleranceForLength(name.length);
 
