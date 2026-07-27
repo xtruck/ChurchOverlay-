@@ -1,24 +1,16 @@
 # Setup Guide - Church Overlay
 
-> ⚠️ **This guide is largely outdated.** It predates two major changes:
-> local Whisper was removed (v0.3.0 — transcription is now cloud-only via
-> Groq, with Deepgram as fallback), and FFmpeg was removed (v0.5.0 —
-> microphone capture now uses `getUserMedia` in a hidden Electron window,
-> see `capture.html`/`audio-capture.js`). You do **not** need to install
-> FFmpeg, and there is no `list-audio-devices.js` or `whisper-server.exe`
-> anymore. To set up the app: install Node.js, run `npm install`, then
-> `npm start` — the microphone and Groq key are configured from the
-> on-screen setup window on first launch. See `README.md` for the current
-> environment variables.
-
 ## Prerequisites
 
-Before running the system, ensure you have:
+Before running the app, ensure you have:
 
-- **Node.js 16+** ([Download](https://nodejs.org/))
-- **FFmpeg** ([Download](https://ffmpeg.org/download.html))
+- **Node.js 18+** ([Download](https://nodejs.org/))
 - **Git** (to clone this repo)
-- **Windows/Linux/Mac** (tested on Windows 10+)
+- **Windows/Linux/Mac** (packaged builds target Windows 10+)
+
+No FFmpeg, no local Whisper binaries, no `list-audio-devices.js` — the
+microphone is captured natively via `getUserMedia` and configured from the
+app's own on-screen setup window.
 
 ## Step 1: Clone & Install
 
@@ -28,7 +20,7 @@ cd xtruck
 npm install
 ```
 
-## Step 2: Configure Environment
+## Step 2: Configure Environment (API keys only)
 
 ### Copy the example config:
 
@@ -43,178 +35,122 @@ cp .env.example .env
 code .env  # or use any text editor
 ```
 
-### Find your microphone:
-
-```bash
-node list-audio-devices.js
-```
-
-Example output:
-```
-0: Microphone (High Definition Audio Device)
-1: Speakers (High Definition Audio Device)
-```
-
-### Update `.env`:
-
 ```ini
-# Use the exact name from the list above
-AUDIO_DEVICE=Microphone (High Definition Audio Device)
+# Recommended primary transcription provider
+GROQ_API_KEY=gsk_YOUR_KEY_HERE
 
-# Optional: If FFmpeg is not in your PATH
-FFMPEG_PATH=C:\ffmpeg\bin\ffmpeg.exe
-
-# Optional: Get from https://console.groq.com/keys for better accuracy
-GROQ_API_KEY=
+# Optional fallback if Groq fails or times out
+DEEPGRAM_API_KEY=YOUR_DEEPGRAM_KEY_HERE
 ```
+
+You do not need to configure a microphone here — that happens in Step 4,
+from the app itself.
 
 ## Step 3: Verify Your Setup
 
 ```bash
-# Test configuration
+# Full test suite (syntax, detector, validation, rate limiter, audio
+# segmentation, reading mode, OBS gating, live integration...)
 npm test
 
-# Test Bible lookup (uses free API)
-node bible-lookup-with-api.js
-
-# Test manual overlay
-node tests/test-envoi.js
+# Send a manual test verse to a running server via WebSocket
+node test/test-envoi.js
 ```
 
-Expected output:
-```
-✅ Bible loaded successfully
-✅ Rate limiter OK
-✅ Validation OK
-```
+`npm test` should finish with every suite passing and no failed assertions.
 
-## Step 4: Start the Server
+## Step 4: Start the App and Configure the Microphone
 
 ```bash
 npm start
 ```
 
-Expected output:
-```
-[server] Configuration validée, démarrage sur le port 8765
-[server] Serveur WebSocket démarré sur ws://127.0.0.1:8765
-[server] Démarrage du serveur Whisper Speech-to-Text...
-[server] Whisper Speech-to-Text prêt et opérationnel
-[server] Démarrage de la capture audio...
-[server] Capture audio démarrée - Pipeline complet opérationnel
-```
+On first launch, the setup window opens:
+1. It lists available microphones via `getUserMedia` — pick yours from the dropdown.
+2. Paste your Groq (and optionally Deepgram) API key if you didn't set them in `.env`.
+3. Click "Enregistrer et démarrer".
+
+The dashboard then shows the pipeline status and the WebSocket server
+starts on `ws://127.0.0.1:8765` (or the `PORT` you configured).
 
 ## Step 5: Configure OBS
 
 1. **Open OBS Studio**
-2. **Create a new Scene** (or use existing one)
+2. **Create a new Scene** (or use an existing one)
 3. **Add a Browser Source**:
    - Click `+` under Sources
    - Select "Browser"
    - Name it "Bible Overlay"
-4. **Set the URL**:
+4. **Set the URL** (the dashboard shows you the exact path to use):
    ```
    file:///C:/xtruck/overlay.html
    ```
-   (Replace `C:/xtruck` with your actual path)
-
+   (Replace `C:/xtruck` with your actual install path)
 5. **Set Size**:
    - Width: 1920
    - Height: 1080
-
 6. **Position** it on your scene (usually full screen)
 
 ## Step 6: Test the Full Pipeline
 
-1. **Start the server**: `npm start` (or it's already running)
+1. **Start the app**: `npm start` (or it's already running)
 2. **Open OBS** and make sure the Bible Overlay source is visible
-3. **Test manually**:
+3. **Test manually**, in a new terminal:
    ```bash
-   # In a new terminal/PowerShell window:
-   node tests/test-envoi.js
+   node test/test-envoi.js
    ```
    You should see "Jean 3:16" appear in your OBS overlay!
-
-4. **Test with audio** (when ready for live sermon):
+4. **Test with audio** (when ready for a live sermon):
    - Speak into your microphone: "Jean 3:16"
-   - Wait ~4 seconds for Whisper to transcribe
+   - Wait a couple of seconds for cloud transcription (Groq)
    - The verse should appear automatically
 
 ## Troubleshooting
 
-### `FFmpeg not found`
+### No microphone appears in the setup window
 
-```bash
-# Verify FFmpeg is installed:
-ffmpeg -version
-
-# If not in PATH, set it in .env:
-FFMPEG_PATH=C:\ffmpeg\bin\ffmpeg.exe
-```
-
-### `Whisper server not found`
-
-```bash
-# Verify whisper-server.exe exists:
-ls whisper/whisper-server.exe
-
-# If missing, download it or run:
-npm run setup-whisper  # (if script exists)
-```
+- Check your OS microphone permissions (Windows: Settings → Privacy →
+  Microphone → "Allow desktop apps to access your microphone").
+- Click "Actualiser" in the setup window to re-scan devices.
+- Make sure a microphone is physically plugged in and not muted.
 
 ### `Bible verse not found`
 
-The system uses free Bible APIs. If they're down:
+The app uses free Bible APIs. If they're down:
 
 1. **Check internet connection**
 2. **Wait a few seconds** (API might be temporarily slow)
 3. **Check console for errors**:
-   ```bash
-   # Look for messages like:
-   # [bible-lookup] ✗ helloao-lsg a échoué: ...
-   # [bible-lookup] ✗ getbible-ls1910 a échoué: ...
+   ```
+   [bible-lookup] ✗ helloao-lsg a échoué: ...
+   [bible-lookup] ✗ getbible-ls1910 a échoué: ...
    ```
    The app tries `bible.helloao.org` first, then falls back to
    `api.getbible.net` automatically — you only need to worry if *both* fail.
 
 ### OBS overlay shows nothing
 
-1. **Verify server is running**:
-   ```bash
-   # Should see:
-   # [server] Serveur WebSocket démarré sur ws://127.0.0.1:8765
+1. **Verify the server is running** — the dashboard status indicator
+   should show "En ligne", and the console should show:
    ```
-
+   [server] Serveur WebSocket démarré sur ws://127.0.0.1:8765
+   ```
 2. **Check OBS browser console**:
    - Right-click the Bible Overlay source
    - Select "Interact"
    - Press F12 to open console
    - Look for errors
-
-3. **Verify file path**:
+3. **Verify the file path**:
    ```bash
-   # Make sure overlay.html exists:
+   # Make sure overlay.html exists at the path you set in OBS:
    ls overlay.html
    ```
 
-### Audio not being captured
+### `GROQ_API_KEY invalid` / no automatic detection
 
-1. **Check microphone in .env**:
-   ```bash
-   node list-audio-devices.js
-   # Copy the exact name
-   ```
-
-2. **Verify FFmpeg can access it**:
-   ```bash
-   # If you know FFmpeg is installed:
-   ffmpeg -list_devices true -f dshow -i dummy
-   ```
-
-3. **Check Windows audio settings**:
-   - Go to Settings → Sound
-   - Verify microphone is not muted
-   - Set it as default device
+- Check the key format: it should start with `gsk_`.
+- Get a new key from https://console.groq.com/keys.
+- Make sure you copied the full key, no trailing spaces.
 
 ## Getting Help
 
@@ -227,13 +163,13 @@ npm start > server.log 2>&1
 ```
 
 **Read the docs:**
-- `README.md` - Quick start
+- `README.md` - Environment variables reference
 - `ARCHITECTURE.md` - Technical overview
 - `API.md` - WebSocket protocol
 - `SECURITY_IMPROVEMENTS.md` - Security features
 
-**Still stuck?** Create an issue on GitHub with:
+**Still stuck?** Open an issue on GitHub with:
 1. Your Node version: `node --version`
 2. Your OS
 3. Console output from `npm start`
-4. `.env` settings (without API keys!)
+4. Your `.env` settings (without API keys!)
