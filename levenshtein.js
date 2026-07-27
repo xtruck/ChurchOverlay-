@@ -1,21 +1,53 @@
-// levenshtein.js
+/**
+ * ============================================================================
+ *  levenshtein.js — Correction floue des noms de livres bibliques
+ * ----------------------------------------------------------------------------
+ *  AJOUT (audit — inspiré de Rhema, correspondance floue sur les noms de
+ *  livres). Rhema calcule une distance de Levenshtein entre ce que
+ *  Whisper/Groq a transcrit et les noms de livres connus, avec un seuil qui
+ *  s'adapte à la longueur du nom, ce qui absorbe les erreurs de transcription
+ *  courantes ("Filipiens" → "Philippiens", "Gen" → "Jean", ...).
+ *
+ *  detector.js et detector-en.js n'avaient jusqu'ici AUCUNE tolérance de ce
+ *  type : un livre mal transcrit par Groq/Deepgram = détection ratée, quelle
+ *  que soit la qualité du reste de la phrase (chapitre/verset corrects).
+ *
+ *  Ce module est volontairement générique et sans dépendance aux deux
+ *  détecteurs (FR/EN) : il prend en entrée la liste d'alias déjà construite
+ *  par chacun d'eux (`{ book, name }[]`, triée par longueur décroissante) et
+ *  ne connaît donc aucun nom de livre en dur — il est réutilisable tel quel
+ *  pour n'importe quelle langue ajoutée plus tard.
+ * ============================================================================
+ */
+'use strict';
+
+/**
+ * Distance de Levenshtein classique (nombre minimal d'insertions,
+ * suppressions ou substitutions pour passer de `a` à `b`).
+ * Implémentation en deux lignes de tableau (O(n) mémoire au lieu de O(m*n)).
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
 function levenshteinDistance(a, b) {
-  a = a.toLowerCase();
-  b = b.toLowerCase();
-  const m = a.length, n = b.length;
+  a = String(a || '').toLowerCase();
+  b = String(b || '').toLowerCase();
+  const m = a.length;
+  const n = b.length;
   if (m === 0) return n;
   if (n === 0) return m;
 
-  let prev = Array.from({ length: n + 1 }, (_, i) => i);
-  let curr = new Array(n + 1).fill(0);
+  let prev = new Array(n + 1);
+  let curr = new Array(n + 1);
+  for (let j = 0; j <= n; j++) prev[j] = j;
 
   for (let i = 1; i <= m; i++) {
     curr[0] = i;
     for (let j = 1; j <= n; j++) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
       curr[j] = Math.min(
-        prev[j] + 1,      // suppression
-        curr[j - 1] + 1,  // insertion
+        prev[j] + 1,       // suppression
+        curr[j - 1] + 1,   // insertion
         prev[j - 1] + cost // substitution
       );
     }
@@ -24,43 +56,81 @@ function levenshteinDistance(a, b) {
   return prev[n];
 }
 
-// Seuil adaptatif : plus le nom est long, plus on tolère d'erreurs
+/**
+ * Seuil de tolérance adaptatif : plus le nom de livre est long, plus on
+ * accepte d'erreurs de transcription sans risquer de faux positifs entre
+ * deux noms de livres différents mais courts (ex: "job" / "joel").
+ * @param {number} len - longueur du nom canonique (alias)
+ * @returns {number}
+ */
 function toleranceForLength(len) {
-  if (len <= 4) return 1;   // "Marc", "Ruth", "Jean"
-  if (len <= 8) return 2;   // "Matthieu", "Éphésiens"
-  return 3;                 // "Philippiens", "Deutéronome"
+  if (len <= 4) return 1;  // "marc", "ruth", "jean", "john"
+  if (len <= 8) return 2;  // "matthieu", "ephesiens", "matthew"
+  return 3;                // "philippiens", "deuteronome", "philippians"
+}
+
+function tokenize(text) {
+  return String(text || '').split(/\s+/).filter(Boolean);
 }
 
 /**
- * Trouve le meilleur nom de livre correspondant à un mot transcrit,
- * en tolérant les fautes de transcription Whisper/Groq.
- * @param {string} word - mot transcrit (ex: "Filipiens")
- * @param {string[]} knownBooks - liste des noms canoniques (ex: bookAliases)
- * @returns {{ book: string, distance: number } | null}
+ * Cherche, dans un texte déjà normalisé, la fenêtre de mots la plus proche
+ * (au sens Levenshtein) d'un alias de livre connu, et propose une correction.
+ *
+ * Ne renvoie une correction QUE si la distance est strictement positive :
+ * une correspondance exacte (distance 0) est déjà couverte par la détection
+ * regex classique — inutile de la retraiter ici. C'est un filet de secours,
+ * pas un remplacement du chemin rapide existant.
+ *
+ * @param {string} normalizedText - texte déjà passé par normalize()
+ * @param {{book: string, name: string}[]} aliasEntries - alias déjà triés
+ *   par longueur de `name` décroissante (comme construit par detector.js)
+ * @returns {{ text: string, book: string, name: string, original: string, distance: number }|null}
+ *   `text` est le texte corrigé (fenêtre remplacée par le nom canonique),
+ *   prêt à être repassé dans le même moteur de détection par référence.
  */
-function fuzzyMatchBook(word, knownBooks) {
-  if (!word || word.length < 2) return null;
+function correctBookNameFuzzy(normalizedText, aliasEntries) {
+  const tokens = tokenize(normalizedText);
+  if (tokens.length === 0 || !Array.isArray(aliasEntries) || aliasEntries.length === 0) {
+    return null;
+  }
 
   let best = null;
-  let bestDist = Infinity;
 
-  for (const book of knownBooks) {
-    // Filtre rapide : évite de calculer Levenshtein sur des mots
-    // de longueur totalement incompatible (perf)
-    if (Math.abs(book.length - word.length) > toleranceForLength(book.length) + 1) {
-      continue;
-    }
+  for (const { book, name } of aliasEntries) {
+    const nameWordCount = name.split(/\s+/).length;
+    const threshold = toleranceForLength(name.length);
 
-    const dist = levenshteinDistance(word, book);
-    const threshold = toleranceForLength(book.length);
+    for (let i = 0; i + nameWordCount <= tokens.length; i++) {
+      const window = tokens.slice(i, i + nameWordCount).join(' ');
 
-    if (dist <= threshold && dist < bestDist) {
-      bestDist = dist;
-      best = book;
+      // Filtre rapide : évite de calculer Levenshtein sur des fenêtres dont
+      // la longueur est de toute façon hors de portée du seuil (perf — la
+      // boucle complète est alias × position, potentiellement des milliers
+      // d'itérations par segment transcrit).
+      if (Math.abs(window.length - name.length) > threshold + 1) continue;
+
+      const dist = levenshteinDistance(window, name);
+      if (dist === 0) continue; // déjà géré par la détection exacte
+      if (dist <= threshold && (!best || dist < best.distance)) {
+        best = { start: i, end: i + nameWordCount, name, book, distance: dist };
+      }
     }
   }
 
-  return best ? { book: best, distance: bestDist } : null;
+  if (!best) return null;
+
+  const correctedTokens = tokens.slice();
+  const original = tokens.slice(best.start, best.end).join(' ');
+  correctedTokens.splice(best.start, best.end - best.start, ...best.name.split(/\s+/));
+
+  return {
+    text: correctedTokens.join(' '),
+    book: best.book,
+    name: best.name,
+    original,
+    distance: best.distance,
+  };
 }
 
-module.exports = { levenshteinDistance, fuzzyMatchBook, toleranceForLength };
+module.exports = { levenshteinDistance, toleranceForLength, correctBookNameFuzzy };
