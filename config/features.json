@@ -18,7 +18,7 @@
     "crossReferences": { "enabled": false, "maxRefs": 3 }
   },
   "broadcast": {
-    "multiScene": { "enabled": false, "obsWebsocketUrl": "ws://localhost:4455", "password": "" },
+    "multiScene": { "enabled": false, "obsWebsocketUrl": "ws://localhost:4455", "password": "", "gating": { "enabled": false, "liveSceneNames": [], "requireStreamingOrRecording": false } },
     "lowerThirds": { "enabled": false },
     "serviceCountdown": { "enabled": false, "startTime": null },
     "sessionStats": { "enabled": true }
