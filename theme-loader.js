@@ -2,9 +2,60 @@
 const fs = require('fs');
 const path = require('path');
 
+const featuresStore = require('./features-store');
+
 const THEMES_DIR = path.join(__dirname, 'config', 'themes');
-const FEATURES_FILE = path.join(__dirname, 'config', 'features.json');
 const DEFAULT_THEME_ID = 'nuit';
+
+// CORRECTIF (audit round 5) : les thèmes livrés vivent dans app.asar, en
+// lecture seule une fois l'app packagée — créer/dupliquer/supprimer un
+// thème depuis le tableau de bord y échouait toujours. Les thèmes créés
+// par l'utilisateur sont donc écrits dans <userData>/themes, et lus en
+// priorité sur ceux livrés avec l'app. Sans setUserDataDir() (tests,
+// standalone), le comportement historique est conservé.
+let userThemesDir = null;
+
+/** @param {string} dir - app.getPath('userData') côté Electron */
+function setUserDataDir(dir) {
+  userThemesDir = dir ? path.join(dir, 'themes') : null;
+  featuresStore.setUserDataDir(dir);
+}
+
+/** Dossier où écrire un thème utilisateur (userData si dispo, sinon app). */
+function writableThemesDir() {
+  if (!userThemesDir) return THEMES_DIR;
+  fs.mkdirSync(userThemesDir, { recursive: true });
+  return userThemesDir;
+}
+
+/** Chemin du fichier d'un thème, thèmes utilisateur prioritaires. */
+function themeFile(themeId) {
+  if (userThemesDir) {
+    const userPath = path.join(userThemesDir, `${themeId}.json`);
+    if (fs.existsSync(userPath)) return userPath;
+  }
+  return path.join(THEMES_DIR, `${themeId}.json`);
+}
+
+function themeExists(themeId) {
+  return fs.existsSync(themeFile(themeId));
+}
+
+function listThemeIds() {
+  const ids = new Set();
+  for (const dir of [THEMES_DIR, userThemesDir].filter(Boolean)) {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir);
+    } catch (_) {
+      continue; // dossier utilisateur pas encore créé
+    }
+    for (const f of entries) {
+      if (f.endsWith('.json')) ids.add(f.replace(/\.json$/, ''));
+    }
+  }
+  return [...ids];
+}
 
 /**
  * Charge un thème depuis JSON et retourne les CSS variables à injecter.
@@ -13,7 +64,7 @@ const DEFAULT_THEME_ID = 'nuit';
  * défaut (nuit) au moment de la conversion CSS (voir themeToCss).
  */
 function loadTheme(themeId) {
-  const file = path.join(THEMES_DIR, `${themeId}.json`);
+  const file = themeFile(themeId);
   if (!fs.existsSync(file)) {
     throw new Error(`Thème introuvable : ${themeId}`);
   }
@@ -21,12 +72,10 @@ function loadTheme(themeId) {
 }
 
 function listThemes() {
-  return fs.readdirSync(THEMES_DIR)
-    .filter(f => f.endsWith('.json'))
-    .map(f => {
-      const t = loadTheme(f.replace('.json', ''));
-      return { id: t.id, name: t.name, author: t.author };
-    });
+  return listThemeIds().map((id) => {
+    const t = loadTheme(id);
+    return { id: t.id, name: t.name, author: t.author };
+  });
 }
 
 function saveTheme(theme) {
@@ -36,13 +85,11 @@ function saveTheme(theme) {
   if (!theme.name || !String(theme.name).trim()) {
     throw new Error('Nom de thème requis (non vide).');
   }
-  const existing = fs.existsSync(path.join(THEMES_DIR, `${theme.id}.json`))
-    ? loadTheme(theme.id)
-    : null;
+  const existing = themeExists(theme.id) ? loadTheme(theme.id) : null;
   if (existing && existing.readonly) {
     throw new Error(`Le thème par défaut (${theme.id}) est en lecture seule et ne peut pas être écrasé.`);
   }
-  const file = path.join(THEMES_DIR, `${theme.id}.json`);
+  const file = path.join(writableThemesDir(), `${theme.id}.json`);
   fs.writeFileSync(file, JSON.stringify(theme, null, 2), 'utf8');
 }
 
@@ -51,7 +98,7 @@ function deleteTheme(themeId) {
   if (theme.readonly) {
     throw new Error(`Le thème par défaut (${themeId}) ne peut pas être supprimé.`);
   }
-  fs.unlinkSync(path.join(THEMES_DIR, `${themeId}.json`));
+  fs.unlinkSync(themeFile(themeId));
 }
 
 /**
@@ -63,7 +110,7 @@ function duplicateTheme(sourceId, newId, newName) {
   if (!newId || !/^[a-z0-9-_]+$/i.test(newId)) {
     throw new Error('ID de thème invalide (a-z, 0-9, -, _ uniquement)');
   }
-  if (fs.existsSync(path.join(THEMES_DIR, `${newId}.json`))) {
+  if (themeExists(newId)) {
     throw new Error(`Un thème avec l'id "${newId}" existe déjà.`);
   }
   const source = loadTheme(sourceId);
@@ -80,15 +127,9 @@ function duplicateTheme(sourceId, newId, newName) {
 
 /** Renvoie l'id du thème actif configuré dans config/features.json. */
 function getActiveThemeId() {
-  try {
-    const features = JSON.parse(fs.readFileSync(FEATURES_FILE, 'utf8'));
-    const id = features.design && features.design.activeTheme;
-    if (id && fs.existsSync(path.join(THEMES_DIR, `${id}.json`))) {
-      return id;
-    }
-  } catch (_) {
-    // features.json absent/corrompu : fallback silencieux ci-dessous.
-  }
+  const features = featuresStore.readFeatures();
+  const id = features.design && features.design.activeTheme;
+  if (id && themeExists(id)) return id;
   return DEFAULT_THEME_ID;
 }
 
@@ -105,15 +146,10 @@ function getActiveTheme() {
 /** Change le thème actif (persisté dans config/features.json). */
 function setActiveTheme(themeId) {
   loadTheme(themeId); // lève si le thème n'existe pas
-  let features;
-  try {
-    features = JSON.parse(fs.readFileSync(FEATURES_FILE, 'utf8'));
-  } catch (e) {
-    throw new Error(`Impossible de lire config/features.json : ${e.message}`);
-  }
+  const features = featuresStore.readFeatures();
   features.design = features.design || {};
   features.design.activeTheme = themeId;
-  fs.writeFileSync(FEATURES_FILE, JSON.stringify(features, null, 2), 'utf8');
+  featuresStore.writeFeatures(features);
   return getActiveTheme();
 }
 
@@ -171,6 +207,7 @@ function themeToCss(theme) {
 }
 
 module.exports = {
+  setUserDataDir, // AJOUT (audit round 5) : thèmes/config inscriptibles hors app.asar
   loadTheme,
   listThemes,
   saveTheme,

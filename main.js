@@ -62,6 +62,7 @@ const { Worker } = require('worker_threads');
 const os = require('os');
 const perfMonitor = require('./perf-monitor');
 const themeLoader = require('./theme-loader');
+const featuresStore = require('./features-store');
 
 // main.js vit à la racine du projet (à côté de server.js, overlay.html, etc.),
 // donc APP_ROOT = __dirname.
@@ -325,10 +326,20 @@ function startServer() {
   // directement dans le renderer (dashboard.html/setup.html) via
   // config.audioDevice, sans transiter par l'environnement du worker.
   const workerEnv = Object.assign({}, process.env, {
-    GROQ_API_KEY: config.groqApiKey,
     NODE_ENV: 'production',
     APP_ROOT,
   });
+  // CORRECTIF (audit round 5) : `GROQ_API_KEY: config.groqApiKey` était posé
+  // inconditionnellement ; quand la clé était absente ou indéchiffrable
+  // (safeStorage indisponible), la variable valait la CHAÎNE "null" côté
+  // worker — le validateur la voyait donc comme configurée et chaque
+  // segment partait vers Groq pour revenir en 401, au lieu de l'avertissement
+  // clair "clé non configurée".
+  if (config.groqApiKey) {
+    workerEnv.GROQ_API_KEY = config.groqApiKey;
+  } else {
+    delete workerEnv.GROQ_API_KEY;
+  }
   if (config.deepgramApiKey) {
     workerEnv.DEEPGRAM_API_KEY = config.deepgramApiKey;
   }
@@ -650,38 +661,26 @@ ipcMain.handle('set-active-theme', async (_evt, { themeId }) => {
 // Entièrement optionnel (features.broadcast.multiScene.enabled) — n'agit
 // que si l'utilisateur active la fonctionnalité depuis le dashboard.
 //
-// obs-controller.js lit config/features.json une seule fois, au moment du
-// premier require() (`const features = require('./config/features.json')`
-// en haut du fichier), ET conserve la connexion établie (`obsClient`) dans
-// une variable de module tant qu'il reste en cache. Deux conséquences :
-//   1) setObsConfig() doit vider le cache pour que le prochain connect()
-//      relise la config à jour (voir invalidateObsControllerCache ci-dessous).
-//   2) Les actions (connect/listScenes/switchScene/toggleRecording) ne
-//      doivent JAMAIS vider le cache entre elles, sous peine de perdre la
-//      connexion établie à l'étape précédente à chaque appel — on se
-//      contente donc d'un require() normal, qui réutilise l'instance déjà
-//      en mémoire.
+// obs-controller.js conserve la connexion établie (`obsClient`) dans une
+// variable de module : les actions (connect/listScenes/switchScene/
+// toggleRecording) doivent donc TOUJOURS réutiliser la même instance en
+// cache, sans jamais la recharger entre deux appels. La config, elle, est
+// relue à chaque connect() depuis features-store (voir obs-controller.js) :
+// enregistrer de nouveaux réglages ne demande plus de vider le cache.
 function getObsController() {
   return require('./obs-controller');
 }
 
-function invalidateObsControllerCache() {
-  try { delete require.cache[require.resolve('./config/features.json')]; } catch (_) {}
-  try { delete require.cache[require.resolve('./obs-controller')]; } catch (_) {}
-}
-
 ipcMain.handle('obs-get-config', async () => {
   try {
-    const raw = fs.readFileSync(path.join(APP_ROOT, 'config', 'features.json'), 'utf8');
-    const features = JSON.parse(raw);
-    const cfg = (features.broadcast && features.broadcast.multiScene) || {};
+    const cfg = (featuresStore.readFeatures().broadcast || {}).multiScene || {};
     // Le mot de passe OBS ne remonte jamais au renderer en clair : on
     // renvoie seulement s'il est défini, jamais sa valeur.
     return {
       ok: true,
       enabled: !!cfg.enabled,
       obsWebsocketUrl: cfg.obsWebsocketUrl || 'ws://localhost:4455',
-      hasPassword: !!cfg.password,
+      hasPassword: !!(cfg.passwordEncrypted || cfg.password),
     };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -690,19 +689,35 @@ ipcMain.handle('obs-get-config', async () => {
 
 ipcMain.handle('obs-set-config', async (_evt, { enabled, obsWebsocketUrl, password }) => {
   try {
-    const featuresPath = path.join(APP_ROOT, 'config', 'features.json');
-    const features = JSON.parse(fs.readFileSync(featuresPath, 'utf8'));
+    const features = featuresStore.readFeatures();
     features.broadcast = features.broadcast || {};
-    features.broadcast.multiScene = features.broadcast.multiScene || {};
-    if (typeof enabled === 'boolean') features.broadcast.multiScene.enabled = enabled;
+    const multiScene = features.broadcast.multiScene || {};
+    features.broadcast.multiScene = multiScene;
+    if (typeof enabled === 'boolean') multiScene.enabled = enabled;
     if (typeof obsWebsocketUrl === 'string' && obsWebsocketUrl.trim()) {
-      features.broadcast.multiScene.obsWebsocketUrl = obsWebsocketUrl.trim();
+      multiScene.obsWebsocketUrl = obsWebsocketUrl.trim();
     }
     // Chaîne vide envoyée volontairement -> efface le mot de passe.
     // `undefined` -> conserve l'existant (l'utilisateur n'a pas touché au champ).
-    if (typeof password === 'string') features.broadcast.multiScene.password = password;
-    fs.writeFileSync(featuresPath, JSON.stringify(features, null, 2), 'utf8');
-    invalidateObsControllerCache();
+    //
+    // CORRECTIF (audit round 5) : le mot de passe était écrit EN CLAIR dans
+    // features.json alors qu'obs-controller.js sait déjà lire un champ
+    // `passwordEncrypted` (safeStorage). On chiffre donc ici, et on efface
+    // systématiquement l'ancien champ en clair (y compris celui laissé par
+    // une version précédente) dès que le chiffrement est disponible.
+    if (typeof password === 'string') {
+      delete multiScene.password;
+      delete multiScene.passwordEncrypted;
+      if (password) {
+        if (safeStorage.isEncryptionAvailable()) {
+          multiScene.passwordEncrypted = safeStorage.encryptString(password).toString('base64');
+        } else {
+          console.warn('[main] Chiffrement système indisponible : mot de passe OBS stocké en clair.');
+          multiScene.password = password;
+        }
+      }
+    }
+    featuresStore.writeFeatures(features);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -785,6 +800,11 @@ ipcMain.handle('get-perf-stats', async () => perfMonitor.getStats());
 // Cycle de vie
 // ---------------------------------------------------------------------------
 app.whenReady().then(async () => {
+  // CORRECTIF (audit round 5) : thèmes utilisateur et réglages (thème actif,
+  // config OBS) écrits dans userData plutôt que dans app.asar, en lecture
+  // seule une fois l'app installée. À faire avant toute lecture de config.
+  themeLoader.setUserDataDir(USER_DATA());
+
   // CORRECTIF (audit — remplacement de FFmpeg par la capture navigateur) :
   // setup.html et dashboard.html appellent maintenant getUserMedia() pour
   // capturer/énumérer le micro (voir commentaires dans ces fichiers).
