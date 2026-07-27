@@ -74,8 +74,10 @@ class ReadingMode {
       return { command: 'nextChapter' };
     }
 
-    // "verset 17" dit seul après navigation manuelle
-    const verseOnlyMatch = text.match(/^verset\s+(\d+)$/i) || text.match(/^v(?:erse)?\.?\s*(\d+)$/i);
+    // Un numéro de verset dit seul après navigation ("verset 17", "v17",
+    // ou juste "17") — cas fréquent quand quelqu'un annonce le numéro
+    // avant de reprendre la lecture, sans répéter livre+chapitre.
+    const verseOnlyMatch = text.match(/^(?:verset\s+|v(?:erse)?\.?\s*)?(\d{1,3})$/i);
     if (verseOnlyMatch) {
       const num = parseInt(verseOnlyMatch[1], 10);
       const idx = this.verses.findIndex(v => v.num === num);
