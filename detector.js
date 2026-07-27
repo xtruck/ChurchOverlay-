@@ -1,6 +1,11 @@
 /** Détecte les références bibliques citées en français dans une transcription. */
 'use strict';
 
+// AJOUT (audit — inspiré de Rhema, correspondance floue sur les noms de
+// livres). Voir levenshtein.js pour le détail : ce module ne connaît aucun
+// nom de livre, il ne fait que comparer des chaînes.
+const { correctBookNameFuzzy } = require('./levenshtein');
+
 const BOOKS = {
   genese: ['genese', 'gen'], exode: ['exode', 'exo'], levitique: ['levitique', 'lev'],
   nombres: ['nombres', 'nom'], deuteronome: ['deuteronome', 'deut'], josue: ['josue', 'jos'],
@@ -90,9 +95,10 @@ function numberWordsToDigits(text) {
 const aliases = Object.entries(BOOKS).flatMap(([book, names]) => names.map((name) => ({ book, name })))
   .sort((a, b) => b.name.length - a.name.length);
 
-function detect(text) {
-  const normalized = numberWordsToDigits(normalize(text));
-  
+// Boucle de détection exacte (regex par alias), extraite de detect() pour
+// pouvoir être rejouée une seconde fois sur un texte corrigé par la
+// correspondance floue (voir detect() ci-dessous) sans dupliquer la logique.
+function matchAgainstAliases(normalized) {
   for (const { book, name } of aliases) {
     const escaped = escapeRegExp(name).replace(/\s+/g, '\\s+');
     
@@ -165,6 +171,32 @@ function detect(text) {
   return null;
 }
 
+function detect(text) {
+  const normalized = numberWordsToDigits(normalize(text));
+
+  const exact = matchAgainstAliases(normalized);
+  if (exact) return exact;
+
+  // AJOUT (audit — inspiré de Rhema, correspondance floue). Aucune
+  // correspondance exacte : peut-être que Whisper/Groq a mal transcrit le
+  // nom du livre ("Filipiens" au lieu de "Philippiens", "Gen" déformé en
+  // "Jan"...) alors que le reste de la phrase (chapitre/verset) est correct.
+  // On tente une seule correction, on rejoue la même détection dessus, et on
+  // s'arrête là : ce n'est qu'un filet de secours ciblé, pas une boucle de
+  // réessais illimitée.
+  const corrected = correctBookNameFuzzy(normalized, aliases);
+  if (!corrected) return null;
+
+  const fuzzyMatch = matchAgainstAliases(corrected.text);
+  if (fuzzyMatch) {
+    console.log(
+      `[detector] Correspondance floue : "${corrected.original}" → "${corrected.name}" ` +
+      `(distance ${corrected.distance})`
+    );
+  }
+  return fuzzyMatch;
+}
+
 // Quick test when run directly
 if (require.main === module) {
   console.log('=== Testing detector.js ===\n');
@@ -190,7 +222,15 @@ if (require.main === module) {
     // Phonetic variations (Whisper errors)
     { text: 'Jean chappitois 3, vece 4', expected: true },
     { text: 'Jean sapitois 3, vsc 4', expected: true },
-    
+
+    // AJOUT (audit — correspondance floue Levenshtein, inspirée de Rhema) :
+    // erreurs de transcription sur le NOM DU LIVRE lui-même (distinct des
+    // variantes phonétiques "chapitre"/"verset" testées ci-dessus).
+    { text: 'Filipiens 2:5', expected: true },      // Philippiens mal transcrit
+    { text: 'Ruthe 1:16', expected: true },         // Ruth + résidu
+    { text: 'Efesiens 4:32', expected: true },      // Éphésiens mal transcrit
+    { text: 'Jan 3:16', expected: true },           // Jean mal transcrit
+
     // Should NOT match
     { text: "Ce qu'il va manger", expected: false },
     { text: 'Merci beaucoup', expected: false },
