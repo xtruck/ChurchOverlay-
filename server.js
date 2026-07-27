@@ -514,11 +514,7 @@ function startPipeline() {
 
 function pipelineStartFailed(err) {
   console.error('[server] Erreur lors du démarrage:', err.message);
-  if (err.message.includes('FFmpeg')) {
-    console.error('[server] FFmpeg n\'est pas installé - Pipeline audio désactivé');
-  } else {
-    console.error('[server] Le serveur continuera sans Speech-to-Text');
-  }
+  console.error('[server] Le serveur continuera sans Speech-to-Text');
   broadcast({ action: 'pipelineError', error: err.message, timestamp: Date.now() });
   notifyAlert('pipelineError', 'error', `Le pipeline n'a pas démarré : ${err.message}`);
 }
@@ -561,10 +557,16 @@ audioCapture.on({
       safeUnlink(segmentFile);
     }
   },
+  // NOTE (audit backend/pipeline) : audio-capture.js n'appelle plus jamais
+  // ce callback depuis le passage à la capture navigateur (getUserMedia) —
+  // startBrowserCapture()/feedPcmChunk() ne lèvent aucune erreur applicative
+  // aujourd'hui. On le garde branché par sécurité (filet de secours si un
+  // futur chemin d'erreur y était rajouté dans audio-capture.js), avec un
+  // message qui ne présuppose plus FFmpeg.
   onError: (error) => {
     console.error('[server] Erreur capture audio:', error.message);
     broadcast({ action: 'audioCaptureError', error: error.message, timestamp: Date.now() });
-    notifyAlert('audioCaptureError', 'error', `Problème micro/FFmpeg : ${error.message}`);
+    notifyAlert('audioCaptureError', 'error', `Problème de capture audio : ${error.message}`);
   },
 });
 
