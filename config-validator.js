@@ -40,13 +40,6 @@ const ENV_SCHEMA = {
     validate: (value) => value > 0 && value < 65536,
     errorMessage: 'PORT doit être un nombre entre 1 et 65535'
   },
-  AUDIO_DEVICE: {
-    type: 'string',
-    required: false,
-    default: '',
-    validate: (value) => typeof value === 'string',
-    errorMessage: 'AUDIO_DEVICE doit être une chaîne de caractères'
-  },
   NODE_ENV: {
     type: 'string',
     required: false,
@@ -167,30 +160,20 @@ async function validateSystemConfig() {
   }
 
   // 3. Capture audio native (getUserMedia)
-  // CORRECTIF (v0.5.0) : la capture micro passe désormais par une fenêtre
-  // Electron cachée (voir main.js/capture.html) — elle n'existe QUE dans
-  // l'app packagée/lancée via Electron. En usage standalone
-  // (`node server.js` / `npm run server-only`), il n'y a plus aucun
-  // contexte Chromium pour appeler getUserMedia : la capture audio est
-  // indisponible dans ce mode, contrairement à avant (FFmpeg tournait
-  // sans Electron). Ce n'est pas un bug de ce module — c'est une
-  // conséquence de l'architecture — mais mieux vaut le dire clairement
-  // au démarrage plutôt que de laisser le pipeline tourner à vide.
+  // La capture micro se fait directement dans les fenêtres visibles
+  // dashboard.html / setup.html (getUserMedia), qui poussent les chunks PCM
+  // à main.js via IPC ('audio-pcm-chunk') — voir audio-capture.js. Il n'y a
+  // plus de fenêtre Electron cachée dédiée ni de sélection de périphérique
+  // par variable d'environnement : le micro est choisi depuis l'écran de
+  // configuration (setup.html). En usage standalone (`node server.js` /
+  // `npm run server-only`), il n'y a aucun contexte Chromium disponible :
+  // la capture audio est indisponible dans ce mode.
   if (!process.workerData && !process.env.APP_ROOT) {
     warnings.push(
       "Capture audio : ce processus semble démarré hors de l'app Electron " +
       "(node server.js direct). La capture micro native (getUserMedia) a " +
       "besoin d'une fenêtre Chromium fournie par Electron et ne fonctionnera " +
       "pas dans ce mode — utilisez l'application ChurchOverlay packagée."
-    );
-  }
-  if (envValidation.config.AUDIO_DEVICE) {
-    console.log('[config-validator] Périphérique audio configuré:', envValidation.config.AUDIO_DEVICE);
-  } else {
-    warnings.push(
-      "Aucun périphérique audio configuré (AUDIO_DEVICE) : un micro sera " +
-      "détecté et présélectionné automatiquement depuis l'écran de " +
-      "configuration (setup.html)."
     );
   }
 
