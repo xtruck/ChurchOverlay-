@@ -88,6 +88,18 @@ if (RUNNING_AS_WORKER) {
         console.error('[server] Erreur traitement chunk audio:', err.message);
       }
     }
+    // AJOUT (audit — gating par état OBS, inspiré du protocole
+    // obs-websocket). Relayé par main.js (voir obs-controller.js /
+    // setupGating) chaque fois que la scène OBS en direct ou l'état
+    // stream/enregistrement change. `obsGateOpen` est lu juste avant
+    // l'appel Groq/Deepgram dans audioCapture.on({ onAudioSegment }) plus
+    // bas — fermé, le segment audio est jeté SANS appel API (c'est
+    // l'économie réelle recherchée, pas seulement l'affichage).
+    if (msg && msg.type === 'obs-gate-changed') {
+      obsGateOpen = !!msg.open;
+      console.log(`[server] Gating OBS : transcription ${obsGateOpen ? 'RÉACTIVÉE' : 'MISE EN PAUSE'} (${msg.reason || ''})`);
+      broadcast({ action: 'obsGateChanged', open: obsGateOpen, reason: msg.reason || null, timestamp: Date.now() });
+    }
   });
 }
 
@@ -521,6 +533,16 @@ audioCapture.on({
       return;
     }
 
+    // AJOUT (audit — gating par état OBS, inspiré du protocole
+    // obs-websocket). Vérifié ICI, avant l'appel Groq/Deepgram — pas après
+    // coup sur le texte transcrit — car c'est l'appel API lui-même (payant,
+    // par segment) que l'on veut éviter, pas seulement son affichage.
+    if (!obsGateOpen) {
+      console.log('[server] Segment ignoré (transcription en pause — gating OBS).');
+      safeUnlink(segmentFile);
+      return;
+    }
+
     try {
       const result = await groq.transcribeWithFallback(segmentFile);
       console.log('[server] Transcription (%s):', result.source, result.text || '(sans texte)');
@@ -550,6 +572,12 @@ audioCapture.on({
 function safeUnlink(file) {
   try { fs.unlinkSync(file); } catch (_) { /* already gone or locked */ }
 }
+
+// AJOUT (audit — gating par état OBS). `true` par défaut : sans OBS
+// connecté ou sans gating.enabled dans la config, la transcription tourne
+// exactement comme avant cet ajout — aucun changement de comportement pour
+// qui n'a pas explicitement configuré cette fonctionnalité optionnelle.
+let obsGateOpen = true;
 
 let compteurClients = 0;
 
