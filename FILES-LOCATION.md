@@ -30,7 +30,7 @@ xtruck/
 │   ├── README.md
 │   ├── QUICKSTART-WINDOWS.md
 │   ├── README-WINDOWS.md
-│   ├── README-ENV.md
+│   ├── README.md
 │   ├── SETUP.md
 │   └── ARCHITECTURE.md
 │
@@ -155,7 +155,7 @@ You should see "Jean 3:16" appear in OBS!
 |------|----------------|
 | `README-WINDOWS.md` | **START HERE** - Full setup guide for Windows |
 | `QUICKSTART-WINDOWS.md` | Quick overview of what to click |
-| `README-ENV.md` | Environment variables explained |
+| `README.md` | Environment variables explained |
 | `SETUP.md` | Detailed setup steps |
 | `ARCHITECTURE.md` | How the system works (technical) |
 | `API.md` | WebSocket API reference (technical) |
