@@ -57,10 +57,6 @@ const CONFIG = {
   // modes d'exécution (empaqueté, dev, `node server.js` standalone) sans
   // dépendre d'aucune configuration de packaging.
   tempDir: path.join(os.tmpdir(), 'churchoverlay-audio'),
-  // AUDIO_DEVICE contient désormais un deviceId navigateur (voir setup.html),
-  // choisi manuellement — plus de détection automatique côté serveur
-  // puisqu'il n'y a plus de FFmpeg/dshow à interroger ici.
-  audioDevice: process.env.AUDIO_DEVICE || '',
 };
 
 // État du module
