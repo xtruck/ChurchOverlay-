@@ -319,8 +319,12 @@ function startServer() {
   const config = loadConfig();
   if (!config) return;
 
+  // NOTE (audit backend/pipeline) : AUDIO_DEVICE n'est plus transmis ici.
+  // Le worker (server.js/audio-capture.js) ne lit plus cette variable depuis
+  // le passage à la capture native (getUserMedia) — le micro est choisi
+  // directement dans le renderer (dashboard.html/setup.html) via
+  // config.audioDevice, sans transiter par l'environnement du worker.
   const workerEnv = Object.assign({}, process.env, {
-    AUDIO_DEVICE: config.audioDevice,
     GROQ_API_KEY: config.groqApiKey,
     NODE_ENV: 'production',
     APP_ROOT,
