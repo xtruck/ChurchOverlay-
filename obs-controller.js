@@ -39,7 +39,7 @@
  */
 
 const { safeStorage } = require('electron');
-const features = require('./config/features.json');
+const featuresStore = require('./features-store');
 
 let obsClient = null;
 let gatingConfig = null;
@@ -76,13 +76,19 @@ function resolvePassword(cfg) {
  *   features.broadcast.multiScene.gating.enabled = true dans la config.
  */
 async function connect(onGateChange) {
-  if (!features.broadcast.multiScene.enabled) return null;
+  // CORRECTIF (audit round 5) : la config est relue à CHAQUE connexion (via
+  // features-store, qui fusionne la config livrée et les réglages
+  // utilisateur écrits dans userData). Avant, elle était figée au premier
+  // require() du fichier JSON, ce qui obligeait main.js à vider le cache de
+  // modules après chaque enregistrement pour que le changement soit pris en
+  // compte — et faisait perdre la connexion OBS déjà établie au passage.
+  const cfg = (featuresStore.readFeatures().broadcast || {}).multiScene || {};
+  if (!cfg.enabled) return null;
 
   // Import dynamique — n'installe la dépendance que si feature activée
   const { OBSWebSocket } = await import('obs-websocket-js');
   obsClient = new OBSWebSocket();
 
-  const cfg = features.broadcast.multiScene;
   gatingConfig = cfg.gating || { enabled: false, liveSceneNames: [], requireStreamingOrRecording: false };
 
   try {

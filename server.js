@@ -141,6 +141,13 @@ const { validateAndSanitize } = require('./validation');
 const { createRateLimiter } = require('./rate-limiter');
 const { validateSystemConfig, displayValidationResults } = require('./config-validator');
 const themeLoader = require('./theme-loader');
+// CORRECTIF (audit round 5) : le worker doit lire le thème actif choisi par
+// l'utilisateur (écrit dans userData par main.js), pas seulement celui livré
+// dans app.asar — sinon l'overlay repartait sur le thème d'origine à chaque
+// (re)connexion, même après un changement depuis le tableau de bord.
+if (RUNNING_AS_WORKER && workerData && workerData.userDataDir) {
+  themeLoader.setUserDataDir(workerData.userDataDir);
+}
 const { ReadingMode } = require('./reading-mode'); // AJOUT (audit — inspiré de Rhema)
 
 const verseTracker = createContextTracker();
@@ -291,6 +298,11 @@ async function handleReadingModeAdvance(verse) {
   broadcast({ action: 'historyUpdated', history: verseHistory });
   console.log(`[server] Reading mode — avancée automatique : ${refLabel}`);
 }
+
+// Dernière citation reconnue par findByQuotedText() (référence + horodatage),
+// utilisée par processTranscript() pour ignorer la même citation répétée à
+// moins de 30s d'intervalle.
+let lastQuoteMatch = null;
 
 const readingMode = new ReadingMode({
   // Un seul appel réseau par chapitre : getChapterVerses() réutilise le

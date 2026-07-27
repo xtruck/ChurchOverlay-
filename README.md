@@ -2,17 +2,29 @@
 
 ## Quick Start
 
+Requires **Node.js 20.12+**, **Node 22 recommended** (Electron 43's installer
+fails to load `@electron/get` on some Node 20 releases).
+
 ```bash
-# 1. Copy example to .env (never commit .env!)
-cp .env.example .env
+npm install
 
-# 2. Edit .env with your values (Groq/Deepgram API keys)
-code .env
-
-# 3. Start the app — the microphone is picked from the in-app setup screen
-#    (getUserMedia), not from an environment variable.
+# Full desktop app: the Groq/Deepgram keys and the microphone are entered in
+# the in-app setup screen and stored encrypted in Electron's userData folder.
+# No .env needed.
 npm start
+
+# WebSocket server alone (no microphone: browser capture needs Electron).
+# This mode reads .env if present — useful to test the pipeline headless.
+cp .env.example .env   # then fill in GROQ_API_KEY
+npm run server-only
 ```
+
+**Where do the API keys live?**
+
+| How you run it | Source of `GROQ_API_KEY` / `DEEPGRAM_API_KEY` |
+|----------------|-----------------------------------------------|
+| `npm start` / installed `.exe` | Setup window → encrypted in `userData/config.json` (`safeStorage`) |
+| `npm run server-only` | Real environment variables, or `.env` at the repo root |
 
 ## Configuration Reference
 
@@ -48,7 +60,7 @@ directly from the app's setup screen.
 1. Go to https://console.groq.com/keys
 2. Sign up or log in
 3. Create new API key
-4. Paste into `.env`: `GROQ_API_KEY=gsk_xxxxxx...`
+4. Paste it into the app's setup window (or into `.env` for `npm run server-only`)
 
 ### Bible Content
 
