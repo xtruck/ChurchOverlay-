@@ -216,7 +216,7 @@ Your Church Overlay is configured and ready to use:
 ## 📖 More Information
 
 - **Detailed Setup:** Read `SETUP.md`
-- **Configuration Options:** Read `README-ENV.md`
+- **Configuration Options:** Read `README.md`
 - **Technical Details:** Read `ARCHITECTURE.md`
 - **API Reference:** Read `API.md`
 
@@ -227,7 +227,7 @@ Your Church Overlay is configured and ready to use:
 Check these files in order:
 1. `QUICKSTART-WINDOWS.md`
 2. `SETUP.md`
-3. `README-ENV.md`
+3. `README.md`
 4. `ARCHITECTURE.md`
 
 Or create an issue on GitHub with:
