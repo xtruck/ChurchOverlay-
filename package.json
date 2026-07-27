@@ -11,8 +11,8 @@
     "server-only": "node server.js",
     "test-envoi": "node test/test-envoi.js",
     "check-files": "node scripts/check-build-files.js",
-    "test": "node scripts/check-build-files.js && node test/test-detector.js && node test/test-detector-en.js && node test/test-validation.js && node test/test-rate-limiter.js && node test/test-config-validator.js && node test/test-groq-fallback-race.js && node test/test-theme-loader.js && node test/test-audio-capture.js && node test/test-sentence-buffer.js && node test/test-reading-mode.js",
-    "test-all": "node scripts/check-build-files.js && node test/test-detector.js && node test/test-detector-en.js && node test/test-validation.js && node test/test-rate-limiter.js && node test/test-config-validator.js && node test/test-groq-fallback-race.js && node test/test-theme-loader.js && node test/test-audio-capture.js && node test/test-sentence-buffer.js && node test/test-reading-mode.js",
+    "test": "node scripts/check-build-files.js && node test/test-detector.js && node test/test-detector-en.js && node test/test-validation.js && node test/test-rate-limiter.js && node test/test-config-validator.js && node test/test-groq-fallback-race.js && node test/test-theme-loader.js && node test/test-audio-capture.js && node test/test-sentence-buffer.js && node test/test-reading-mode.js && node test/test-obs-gating.js",
+    "test-all": "node scripts/check-build-files.js && node test/test-detector.js && node test/test-detector-en.js && node test/test-validation.js && node test/test-rate-limiter.js && node test/test-config-validator.js && node test/test-groq-fallback-race.js && node test/test-theme-loader.js && node test/test-audio-capture.js && node test/test-sentence-buffer.js && node test/test-reading-mode.js && node test/test-obs-gating.js",
     "dist": "electron-builder --win nsis"
   },
   "dependencies": {
