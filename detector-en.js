@@ -14,6 +14,10 @@
  */
 'use strict';
 
+// AJOUT (audit — inspiré de Rhema, correspondance floue sur les noms de
+// livres). Miroir du même ajout dans detector.js — voir levenshtein.js.
+const { correctBookNameFuzzy } = require('./levenshtein');
+
 // Alias EN → clé interne FR (identique à detector.js).
 const BOOKS = {
   genese: ['genesis', 'gen'], exode: ['exodus', 'exod', 'exo'], levitique: ['leviticus', 'lev'],
@@ -116,9 +120,9 @@ function normalizeKeywords(text) {
   return out;
 }
 
-function detect(text) {
-  const normalized = numberWordsToDigits(normalizeKeywords(normalize(text)));
-
+// Boucle de détection exacte, extraite pour pouvoir être rejouée sur un
+// texte corrigé par la correspondance floue (voir detect() ci-dessous).
+function matchAgainstAliases(normalized) {
   for (const { book, name } of aliases) {
     const escaped = escapeRegExp(name).replace(/\s+/g, '\\s+');
 
@@ -163,5 +167,26 @@ function detect(text) {
   return null;
 }
 
-module.exports = { detect, normalize, numberWordsToDigits, BOOKS };
+function detect(text) {
+  const normalized = numberWordsToDigits(normalizeKeywords(normalize(text)));
 
+  const exact = matchAgainstAliases(normalized);
+  if (exact) return exact;
+
+  // AJOUT (audit — inspiré de Rhema, correspondance floue). Filet de
+  // secours ciblé, identique en principe à celui de detector.js (FR) :
+  // un seul essai de correction, rejoué une seule fois.
+  const corrected = correctBookNameFuzzy(normalized, aliases);
+  if (!corrected) return null;
+
+  const fuzzyMatch = matchAgainstAliases(corrected.text);
+  if (fuzzyMatch) {
+    console.log(
+      `[detector-en] Fuzzy match: "${corrected.original}" → "${corrected.name}" ` +
+      `(distance ${corrected.distance})`
+    );
+  }
+  return fuzzyMatch;
+}
+
+module.exports = { detect, normalize, numberWordsToDigits, BOOKS };
