@@ -6,15 +6,11 @@
 # 1. Copy example to .env (never commit .env!)
 cp .env.example .env
 
-# 2. Edit .env with your values
+# 2. Edit .env with your values (Groq/Deepgram API keys)
 code .env
 
-# 3. List your microphones
-node list-audio-devices.js
-
-# 4. Update AUDIO_DEVICE in .env
-
-# 5. Start server
+# 3. Start the app — the microphone is picked from the in-app setup screen
+#    (getUserMedia), not from an environment variable.
 npm start
 ```
 
@@ -29,37 +25,26 @@ npm start
 
 **Security Note:** Keep `WS_HOST=127.0.0.1` to prevent remote connections. Only change to `0.0.0.0` for testing.
 
-### Audio & Capture
+### Audio Capture
+
+Microphone capture is done natively in the renderer via `getUserMedia`
+(`dashboard.html` / `setup.html`) — there is no FFmpeg dependency and no
+`AUDIO_DEVICE` environment variable. The microphone is listed and selected
+directly from the app's setup screen.
+
+### Speech-to-Text (cloud-only)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AUDIO_DEVICE` | (required) | Microphone name from `node list-audio-devices.js` |
-| `FFMPEG_PATH` | (auto) | Path to FFmpeg if not in system PATH |
-
-**Example:**
-```ini
-# Windows
-AUDIO_DEVICE=Microphone (High Definition Audio Device)
-FFMPEG_PATH=C:\ffmpeg\bin\ffmpeg.exe
-
-# Linux
-AUDIO_DEVICE=default
-FFMPEG_PATH=/usr/bin/ffmpeg
-```
-
-### Speech-to-Text
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GROQ_API_KEY` | (optional) | Cloud transcription key from https://console.groq.com/keys |
+| `GROQ_API_KEY` | (recommended) | Cloud transcription key from https://console.groq.com/keys |
+| `DEEPGRAM_API_KEY` | (optional) | Fallback transcription key from https://console.deepgram.com/ |
 | `NODE_ENV` | production | Environment (development/production/test) |
 
 **How it works:**
-- Without Groq: Uses local Whisper (fast, less accurate)
-- With Groq: Cloud API (slower, very accurate, free tier available)
-- If Groq times out (>5s): Falls back to local Whisper automatically
+- Transcription is 100% cloud-based: Groq first, Deepgram as fallback if Groq fails or times out.
+- There is no local Whisper fallback (removed in v0.3.0) and no FFmpeg dependency (removed since the getUserMedia migration).
 
-**Get Groq API Key:**
+**Get a Groq API Key:**
 1. Go to https://console.groq.com/keys
 2. Sign up or log in
 3. Create new API key
@@ -67,17 +52,9 @@ FFMPEG_PATH=/usr/bin/ffmpeg
 
 ### Bible Content
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `BIBLE_PROVIDER` | both | Source (local/api/both) |
-| `BIBLE_API_KEY` | (optional) | For premium Bible APIs |
-
-**How it works:**
-- `local`: Uses `bible-lsg.json` if available (fastest)
-- `api`: Uses free online Bible APIs (no key needed)
-- `both`: Tries local first, falls back to API
-
-**Note:** System uses FREE Bible APIs by default. No API key needed!
+Verse text is fetched directly from two independent free providers with
+automatic fallback: `bible.helloao.org` (Louis Segond 1910), then
+`api.getbible.net`. No API key or provider configuration is needed.
 
 ### Logging & Debug
 
@@ -113,20 +90,18 @@ Then watch the console for detailed logs:
 
 ## Examples
 
-### Minimal Setup (Local Whisper Only)
+### Minimal Setup (Groq only)
 ```ini
 PORT=8765
-AUDIO_DEVICE=Microphone
-FFMPEG_PATH=C:\ffmpeg\bin\ffmpeg.exe
+GROQ_API_KEY=gsk_YOUR_KEY_HERE
 NODE_ENV=production
 ```
 
-### Full Setup (Cloud + Local Fallback)
+### Full Setup (Groq + Deepgram fallback)
 ```ini
 PORT=8765
-AUDIO_DEVICE=Microphone
-FFMPEG_PATH=C:\ffmpeg\bin\ffmpeg.exe
 GROQ_API_KEY=gsk_YOUR_KEY_HERE
+DEEPGRAM_API_KEY=YOUR_DEEPGRAM_KEY_HERE
 NODE_ENV=production
 DEBUG=false
 ```
@@ -134,8 +109,7 @@ DEBUG=false
 ### Development/Testing
 ```ini
 PORT=8765
-AUDIO_DEVICE=Microphone
-FFMPEG_PATH=C:\ffmpeg\bin\ffmpeg.exe
+GROQ_API_KEY=gsk_YOUR_KEY_HERE
 NODE_ENV=development
 DEBUG=true
 ```
@@ -150,6 +124,10 @@ DEBUG=true
 3. For servers, use environment variables directly (Heroku, Docker, etc.)
 4. For GitHub secrets, use the Secrets UI (not the repo)
 
+Note: inside the packaged app, Groq/Deepgram keys entered via the setup
+screen are encrypted at rest using Electron's `safeStorage` — they are not
+stored in plain text in `config.json`.
+
 ## Validation
 
 **Check your setup:**
@@ -158,7 +136,7 @@ DEBUG=true
 node -e "console.log(process.env)"
 
 # Test a specific variable
-node -e "console.log('AUDIO_DEVICE:', process.env.AUDIO_DEVICE)"
+node -e "console.log('GROQ_API_KEY set:', !!process.env.GROQ_API_KEY)"
 ```
 
 **Run tests:**
@@ -167,30 +145,11 @@ node -e "console.log('AUDIO_DEVICE:', process.env.AUDIO_DEVICE)"
 npm test
 
 # Individual tests
-node tests/test-config-validator.js
-node tests/test-validation.js
+node test/test-config-validator.js
+node test/test-validation.js
 ```
 
 ## Troubleshooting
-
-### "AUDIO_DEVICE not found"
-```bash
-# List available devices:
-node list-audio-devices.js
-
-# Copy exact name from output
-# Update .env:
-AUDIO_DEVICE=Exact Name From List
-```
-
-### "FFmpeg not in PATH"
-```bash
-# Verify FFmpeg is installed:
-ffmpeg -version
-
-# If command not found, install from https://ffmpeg.org/download.html
-# Or set FFMPEG_PATH in .env to full path
-```
 
 ### "GROQ_API_KEY invalid"
 ```bash
@@ -199,6 +158,12 @@ ffmpeg -version
 # Get new key from https://console.groq.com/keys
 # Make sure you copied the FULL key
 ```
+
+### No microphone detected
+Open the app's setup screen and click "Refresh" — it lists microphones via
+`getUserMedia`. If none appear, check your OS microphone permissions
+(Windows: Settings → Privacy → Microphone → "Allow desktop apps to access
+your microphone").
 
 ## Next Steps
 
