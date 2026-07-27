@@ -164,7 +164,7 @@ node server.js
 
 1. Check the error messages in the console / dashboard
 2. Read `SETUP.md` for detailed explanations
-3. Read `README-ENV.md` for configuration options
+3. Read `README.md` for configuration options
 4. Check `ARCHITECTURE.md` for technical details
 
 ---
