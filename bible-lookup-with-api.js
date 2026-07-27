@@ -346,6 +346,22 @@ function extractVerseText(content, contentItem) {
     .trim();
 }
 
+// AJOUT (audit — Reading Mode, inspiré de Rhema) : contrairement à
+// helloaoParseVerse (qui ne renvoie QUE le texte joint du verset/plage
+// demandé), le Reading Mode a besoin de la liste complète des versets du
+// chapitre, individuellement adressables par leur numéro, pour comparer
+// chaque nouveau fragment transcrit au verset suivant. Réutilise la même
+// donnée déjà en cache (chapterCache) — aucun appel réseau supplémentaire
+// si le chapitre a déjà été consulté via une référence explicite.
+function helloaoParseChapterVerses(chapterData) {
+  const content = chapterData?.chapter?.content;
+  if (!Array.isArray(content)) return null;
+  const verses = content.filter((item) => item.type === 'verse');
+  return verses
+    .map((v) => ({ num: v.number, text: extractVerseText(v.content, v.content) }))
+    .filter((v) => Number.isInteger(v.num) && v.text);
+}
+
 function helloaoParseVerse(chapterData, reference) {
   const content = chapterData?.chapter?.content;
   if (!Array.isArray(content)) return null;
@@ -407,6 +423,19 @@ function stripStrongNumbers(text) {
   return text.replace(/(\p{L})\d{1,5}(?=[\s,.;:!?»)]|$)/gu, '$1');
 }
 
+// AJOUT (audit — Reading Mode). Équivalent getbible de
+// helloaoParseChapterVerses() ci-dessus : liste complète des versets du
+// chapitre, utilisée en secours si helloao est indisponible (voir
+// getChapterVerses() plus bas, qui parcourt BIBLE_PROVIDERS dans le même
+// ordre que fetchFromProvider()).
+function getbibleParseChapterVerses(chapterData) {
+  const verses = chapterData?.verses;
+  if (!Array.isArray(verses)) return null;
+  return verses
+    .map((v) => ({ num: v.verse, text: stripStrongNumbers(String(v.text || '')).trim() }))
+    .filter((v) => Number.isInteger(v.num) && v.text);
+}
+
 function getbibleParseVerse(chapterData, reference) {
   const verses = chapterData?.verses;
   if (!Array.isArray(verses)) return null;
@@ -434,12 +463,14 @@ const BIBLE_PROVIDERS = [
     supportsLang: (lang) => lang === 'fr' || lang === 'en',
     fetchChapter: helloaoFetchChapter,
     parseVerse: helloaoParseVerse,
+    parseChapterVerses: helloaoParseChapterVerses, // AJOUT (audit — Reading Mode)
   },
   {
     name: 'getbible-ls1910',
     supportsLang: (lang) => lang === 'fr',
     fetchChapter: getbibleFetchChapter,
     parseVerse: getbibleParseVerse,
+    parseChapterVerses: getbibleParseChapterVerses, // AJOUT (audit — Reading Mode)
   },
 ];
 
@@ -616,9 +647,52 @@ async function getVerseMultilang(reference, langMode = 'fr') {
   };
 }
 
+// -----------------------------------------------------------------------
+// AJOUT (audit — Reading Mode, inspiré de Rhema).
+// -----------------------------------------------------------------------
+// Récupère TOUS les versets d'un chapitre (pas une plage isolée), triés
+// par numéro, pour que reading-mode.js puisse comparer chaque nouveau
+// fragment transcrit aux versets suivants sans redemander la référence
+// exacte à chaque fois. Parcourt les mêmes fournisseurs, dans le même
+// ordre, que fetchFromProvider() — mais un seul appel réseau par chapitre
+// (grâce à chapterCache, déjà partagé avec getVerse()/helloaoFetchChapter()
+// : si le chapitre a déjà été consulté via "Jean 3:16", ce chapitre est
+// déjà en cache et cet appel ne coûte rien).
+// @param {string} book - clé de livre normalisée (même format que reference.book)
+// @param {number} chapter
+// @param {string} lang - 'fr' ou 'en' (pas de mode 'both' ici : le Reading
+//   Mode affiche une seule langue à la fois pendant la lecture continue)
+// @returns {Promise<{num:number, text:string}[]>} versets triés par numéro
+async function getChapterVerses(book, chapter, lang = 'fr') {
+  const reference = { book, chapter };
+  let lastError = null;
+
+  for (const p of BIBLE_PROVIDERS) {
+    if (p.supportsLang && !p.supportsLang(lang)) continue;
+    if (typeof p.parseChapterVerses !== 'function') continue;
+    try {
+      console.log(`[bible-lookup] Reading Mode : chargement chapitre ${book} ${chapter} via ${p.name} (${lang})...`);
+      const chapterData = await p.fetchChapter(reference, lang);
+      const verses = p.parseChapterVerses(chapterData);
+      if (verses && verses.length > 0) {
+        verses.sort((a, b) => a.num - b.num);
+        return verses;
+      }
+    } catch (error) {
+      lastError = error;
+      console.warn(`[bible-lookup] Reading Mode : ${p.name} a échoué pour ${book} ${chapter}: ${error.message}`);
+    }
+  }
+
+  throw new Error(
+    lastError ? `Chapitre ${book} ${chapter} introuvable : ${lastError.message}` : `Chapitre ${book} ${chapter} introuvable`
+  );
+}
+
 module.exports = {
   getVerse,
   getVerseMultilang,
+  getChapterVerses, // AJOUT (audit) : Reading Mode, inspiré de Rhema
   buildReferenceLabel: label,
   getProviders: () => BIBLE_PROVIDERS.map((p) => p.name),
   resetFailedProviders: () => {}, // Conservé pour compatibilité avec server.js
