@@ -129,6 +129,7 @@ const { validateAndSanitize } = require('./validation');
 const { createRateLimiter } = require('./rate-limiter');
 const { validateSystemConfig, displayValidationResults } = require('./config-validator');
 const themeLoader = require('./theme-loader');
+const { ReadingMode } = require('./reading-mode'); // AJOUT (audit — inspiré de Rhema)
 
 const verseTracker = createContextTracker();
 const rateLimiter = createRateLimiter({
@@ -239,6 +240,67 @@ function pushHistory(entry) {
   if (verseHistory.length > HISTORY_MAX) verseHistory.length = HISTORY_MAX;
 }
 
+// -----------------------------------------------------------------------
+// AJOUT (audit — Reading Mode, inspiré de Rhema).
+// -----------------------------------------------------------------------
+// Une fois une référence explicite détectée ("Jean 3, verset 16"), on
+// charge tout le chapitre et on compare ensuite chaque nouveau fragment
+// transcrit (chevauchement de mots) aux versets suivants — l'affichage
+// avance donc automatiquement pendant la lecture d'un passage à voix
+// haute, sans qu'il faille répéter la référence à chaque verset.
+//
+// Diffuse le même format de payload ({action:'showVerse', ...}) que le
+// chemin de détection classique (processTranscript ci-dessous), pour que
+// overlay.html et dashboard.html n'aient RIEN à changer pour en bénéficier.
+async function handleReadingModeAdvance(verse) {
+  const refLabel = bibleLookup.buildReferenceLabel(
+    { book: readingMode.book, chapter: readingMode.chapter, verseStart: verse.num },
+    displayLanguage === 'en' ? 'en' : 'fr'
+  );
+  const lang = displayLanguage === 'en' ? 'en' : 'fr'; // voir note sur getChapterVerses() : pas de mode 'both' en reading mode
+  const payload = {
+    action: 'showVerse',
+    reference: refLabel,
+    text: verse.text,
+    text_fr: lang === 'fr' ? verse.text : null,
+    text_en: lang === 'en' ? verse.text : null,
+    langMode: lang,
+    provider: 'reading-mode',
+    durationMs: 300000,
+    autoDetected: true,
+    readingMode: true, // permet à l'overlay de distinguer une avancée automatique d'une nouvelle citation, si besoin
+  };
+  broadcast(payload);
+  pushHistory({
+    reference: refLabel, text: verse.text,
+    text_fr: payload.text_fr, text_en: payload.text_en, langMode: lang,
+    provider: 'reading-mode', autoDetected: true, timestamp: Date.now(),
+  });
+  broadcast({ action: 'historyUpdated', history: verseHistory });
+  console.log(`[server] Reading mode — avancée automatique : ${refLabel}`);
+}
+
+const readingMode = new ReadingMode({
+  // Un seul appel réseau par chapitre : getChapterVerses() réutilise le
+  // même chapterCache que la détection classique (voir bible-lookup-with-api.js).
+  getChapterVerses: (book, chapter) => bibleLookup.getChapterVerses(book, chapter, displayLanguage === 'en' ? 'en' : 'fr'),
+  onVerseAdvance: handleReadingModeAdvance,
+});
+
+// Désactivation automatique après une période d'inactivité (pause du
+// prédicateur, changement de sujet non annoncé...) pour éviter que le mode
+// reste "collé" sur un ancien chapitre et fausse la comparaison par
+// chevauchement de mots sur un texte sans rapport.
+const READING_MODE_IDLE_TIMEOUT_MS = 90 * 1000;
+let readingModeLastActivity = 0;
+function touchReadingModeActivity() { readingModeLastActivity = Date.now(); }
+setInterval(() => {
+  if (readingMode.active && Date.now() - readingModeLastActivity > READING_MODE_IDLE_TIMEOUT_MS) {
+    console.log('[server] Reading mode désactivé (inactivité)');
+    readingMode.stop();
+  }
+}, 15000);
+
 async function processTranscript(text) {
   console.log('[server] Processing transcript:', text.substring(0, 100));
 
@@ -273,6 +335,48 @@ async function processTranscript(text) {
     // consultés une fois (via référence explicite ou citation précédente) —
     // ce n'est pas une recherche sémantique sur toute la Bible comme Rhema,
     // mais ça couvre le cas réel le plus fréquent (versets récurrents).
+    // AJOUT (audit — Reading Mode, inspiré de Rhema) : aucune référence
+    // explicite dans ce segment — si un chapitre est en cours de lecture
+    // suivie, on tente d'abord l'avancement automatique verset par verset
+    // (chevauchement de mots) avant de retomber sur la détection par
+    // citation ci-dessous (qui, elle, ne reconnaît que des versets déjà
+    // vus une fois via une référence explicite précédente).
+    if (readingMode.active) {
+      touchReadingModeActivity();
+      const rm = readingMode.processFragment(text);
+
+      if (rm && rm.command === 'nextChapter') {
+        resetBuffer(); // fragment "chapitre suivant" consommé, voir note plus bas
+        try {
+          const book = readingMode.book;
+          const nextChapter = readingMode.chapter + 1;
+          await readingMode.start(book, nextChapter);
+          await handleReadingModeAdvance(readingMode.verses[readingMode.currentIndex]);
+        } catch (err) {
+          console.warn('[server] Reading mode : impossible de charger le chapitre suivant:', err.message);
+        }
+        return;
+      }
+
+      if (rm) {
+        // Verset avancé (diffusion déjà faite par onVerseAdvance) ou
+        // toujours sur le même verset (rien de nouveau à diffuser) : dans
+        // les deux cas ce fragment est "consommé" par le reading mode, on
+        // ne retombe pas sur la détection par citation plus bas.
+        // CORRECTIF (audit — même bug que ci-dessus pour la détection
+        // explicite) : sans ce reset, le texte déjà consommé par le
+        // reading mode resterait dans la fenêtre glissante et fausserait
+        // la comparaison par chevauchement de mots du fragment SUIVANT
+        // (le nouveau texte se retrouverait mélangé à l'ancien).
+        resetBuffer();
+        return;
+      }
+      // rm === null : aucun chevauchement suffisant avec les versets
+      // suivants pour ce fragment — on laisse une chance à la détection
+      // par citation ci-dessous (le locuteur a peut-être changé de sujet
+      // sans le signaler explicitement).
+    }
+
     const quoted = bibleLookup.findByQuotedText(text);
     if (!quoted) { console.log('[server] No reference detected in segment'); return; }
 
@@ -289,6 +393,7 @@ async function processTranscript(text) {
     lastQuoteMatch = { reference: quoted.reference, ts: now };
 
     console.log(`[server] Citation détectée (score ${quoted.score.toFixed(2)}) :`, quoted.reference);
+    resetBuffer(); // CORRECTIF (audit) : même raison que pour la détection explicite ci-dessous
     broadcast({ action: 'candidateVerse', reference: { label: quoted.reference }, transcript: text, matchedByQuote: true, timestamp: now });
 
     const payload = {
@@ -309,6 +414,21 @@ async function processTranscript(text) {
   }
   console.log('[server] Reference detected:', JSON.stringify(reference));
 
+  // CORRECTIF (audit — bug latent révélé par l'intégration du Reading Mode) :
+  // resetBuffer() existait mais n'était jamais appelé. Le buffer glissant
+  // (transcript.js, fenêtre ~500 caractères / 4s) gardait donc le texte
+  // "Jean chapitre 3, verset 1" en mémoire APRÈS sa détection, et
+  // detectBilingual() le re-matchait à chaque segment suivant tant que la
+  // fenêtre ne s'était pas naturellement vidée par silence — bloquant
+  // silencieusement toute la branche "aucune référence explicite" (donc le
+  // Reading Mode) pendant toute la durée de la fenêtre. Sans effet visible
+  // avant le Reading Mode (verseTracker.shouldProcess() absorbait déjà les
+  // re-détections en double), mais bloquant maintenant que cette branche a
+  // un rôle actif. Une fois une référence complète reconnue, son texte n'a
+  // plus rien à apporter à la fenêtre : on la vide pour repartir sur une
+  // base propre au prochain segment.
+  resetBuffer();
+
   broadcast({ action: 'candidateVerse', reference, transcript: text, timestamp: Date.now() });
 
   if (!verseTracker.shouldProcess(reference)) {
@@ -328,6 +448,21 @@ async function processTranscript(text) {
     broadcast({ action: 'historyUpdated', history: verseHistory });
     console.log('[server] Verse sent to overlay:', verse.reference, `(${displayLanguage})`);
     bibleLookup.resetFailedProviders();
+
+    // AJOUT (audit — Reading Mode, inspiré de Rhema) : référence explicite
+    // confirmée -> on (ré)active le suivi de lecture continue sur ce
+    // chapitre. N'importe quelle nouvelle citation "réarme" ainsi le
+    // reading mode, y compris pour changer de passage en cours de culte.
+    try {
+      await readingMode.start(reference.book, reference.chapter, reference.verseStart);
+      touchReadingModeActivity();
+      console.log(`[server] Reading mode activé : ${reference.book} ${reference.chapter}`);
+    } catch (err) {
+      // Non bloquant : le verset a quand même été affiché normalement,
+      // seul le suivi automatique des versets suivants ne sera pas actif
+      // pour ce chapitre (ex: chapitre indisponible chez les 2 fournisseurs).
+      console.warn('[server] Reading mode : activation impossible:', err.message);
+    }
   } catch (error) {
     console.warn('[server] Bible lookup unavailable:', error.message);
     broadcast({
