@@ -54,7 +54,8 @@ const { AIThemeGenerator } = require('./ai-theme-generator');
 // WebSocket server
 // ---------------------------------------------------------------------------
 const WebSocket = require('ws');
-const wss = new WebSocket.Server({ port: 8765 });
+const SERVER_PORT = parseInt(process.env.PORT, 10) || 8765;
+const wss = new WebSocket.Server({ port: SERVER_PORT });
 
 // ---------------------------------------------------------------------------
 // State
