@@ -7,7 +7,7 @@
  *   1. FAST: Dictionary-based replacement (local, instant)
  *   2. SMART: Groq LLM correction for ambiguous cases
  * 
- * Integration: Call after groq.transcribeWithFallback(), before detector.
+ * BULLETPROOF: Handles missing/invalid groq wrapper gracefully.
  * ============================================================================
  */
 
@@ -15,10 +15,8 @@
 
 // -----------------------------------------------------------------------
 // Dictionary of common STT errors → correct biblical terms
-// Generated from real-world church transcription logs
 // -----------------------------------------------------------------------
 const CORRECTIONS = {
-  // French biblical names & places
   'jean le baptiseur': 'Jean-Baptiste',
   'jean baptiseur': 'Jean-Baptiste',
   'jean baptist': 'Jean-Baptiste',
@@ -29,46 +27,44 @@ const CORRECTIONS = {
   'saint paul': 'Saint Paul',
   'saint pierre': 'Saint Pierre',
   'saint jacques': 'Saint Jacques',
-  'saint andré': 'Saint André',
+  'saint andre': 'Saint André',
   'saint thomas': 'Saint Thomas',
-
-  // Book name corrections
-  'genèse': 'Genèse',
+  'genese': 'Genèse',
   'exode': 'Exode',
-  'lévitique': 'Lévitique',
+  'levitique': 'Lévitique',
   'nombres': 'Nombres',
-  'deutéronome': 'Deutéronome',
+  'deuteronome': 'Deutéronome',
   'josue': 'Josué',
   'juges': 'Juges',
   'ruth': 'Ruth',
   'esdras': 'Esdras',
-  'néhémie': 'Néhémie',
+  'nehemie': 'Néhémie',
   'esther': 'Esther',
   'job': 'Job',
   'psaumes': 'Psaumes',
   'psaume': 'Psaume',
   'proverbes': 'Proverbes',
-  'ecclésiaste': 'Ecclésiaste',
+  'ecclesiaste': 'Ecclésiaste',
   'cantique': 'Cantique',
   'cantiques': 'Cantique',
-  'ésaïe': 'Ésaïe',
   'esaie': 'Ésaïe',
-  'jérémie': 'Jérémie',
+  'esaie': 'Ésaïe',
+  'jeremie': 'Jérémie',
   'lamentations': 'Lamentations',
-  'ézéchiel': 'Ézéchiel',
+  'ezechiel': 'Ézéchiel',
   'ezechiel': 'Ézéchiel',
   'daniel': 'Daniel',
-  'osée': 'Osée',
-  'joël': 'Joël',
+  'osee': 'Osée',
+  'joel': 'Joël',
   'joel': 'Joël',
   'amos': 'Amos',
   'abdias': 'Abdias',
   'jonas': 'Jonas',
-  'michée': 'Michée',
+  'michee': 'Michée',
   'nahum': 'Nahum',
   'habacuc': 'Habacuc',
   'sophonie': 'Sophonie',
-  'aggée': 'Aggée',
+  'aggee': 'Aggée',
   'aggee': 'Aggée',
   'zacharie': 'Zacharie',
   'malachie': 'Malachie',
@@ -81,26 +77,24 @@ const CORRECTIONS = {
   'romains': 'Romains',
   'corinthiens': 'Corinthiens',
   'galates': 'Galates',
-  'éphésiens': 'Éphésiens',
+  'ephesiens': 'Éphésiens',
   'ephesiens': 'Éphésiens',
   'philippiens': 'Philippiens',
   'philipiens': 'Philippiens',
   'colossiens': 'Colossiens',
   'thessaloniciens': 'Thessaloniciens',
-  'timothée': 'Timothée',
+  'timothee': 'Timothée',
   'timothee': 'Timothée',
   'tite': 'Tite',
-  'philémon': 'Philémon',
   'philemon': 'Philémon',
-  'hébreux': 'Hébreux',
+  'philemon': 'Philémon',
+  'hebreux': 'Hébreux',
   'hebreux': 'Hébreux',
   'jacques': 'Jacques',
   'pierre': 'Pierre',
   'jude': 'Jude',
   'apocalypse': 'Apocalypse',
-
-  // People & places
-  'moïse': 'Moïse',
+  'moise': 'Moïse',
   'moise': 'Moïse',
   'abraham': 'Abraham',
   'isaac': 'Isaac',
@@ -108,29 +102,29 @@ const CORRECTIONS = {
   'joseph': 'Joseph',
   'david': 'David',
   'salomon': 'Salomon',
-  'élie': 'Élie',
   'elie': 'Élie',
-  'élise': 'Élisée',
+  'elie': 'Élie',
+  'elisee': 'Élisée',
   'elisée': 'Élisée',
   'samuel': 'Samuel',
-  'saül': 'Saül',
+  'saul': 'Saül',
   'saul': 'Saül',
   'jonathan': 'Jonathan',
   'goliath': 'Goliath',
-  'bathsheba': 'Bethsabée',
-  'bethsabée': 'Bethsabée',
+  'bethsheba': 'Bethsabée',
+  'bethsabee': 'Bethsabée',
   'esther': 'Esther',
   'job': 'Job',
   'jonas': 'Jonas',
   'marie': 'Marie',
   'marie madeleine': 'Marie Madeleine',
   'lazare': 'Lazare',
-  'zachée': 'Zachée',
+  'zachee': 'Zachée',
   'zachee': 'Zachée',
   'barnabas': 'Barnabé',
-  'barnabé': 'Barnabé',
+  'barnabe': 'Barnabé',
   'silas': 'Silas',
-  'timothée': 'Timothée',
+  'timothee': 'Timothée',
   'apollos': 'Apollos',
   'luc': 'Luc',
   'marc': 'Marc',
@@ -138,167 +132,146 @@ const CORRECTIONS = {
   'judas': 'Judas',
   'thomas': 'Thomas',
   'philippe': 'Philippe',
-  'andré': 'André',
+  'andre': 'André',
   'jacques': 'Jacques',
-  'barthélemy': 'Barthélemy',
+  'barthelemy': 'Barthélemy',
   'barthelemy': 'Barthélemy',
   'matthias': 'Matthias',
   'simon': 'Simon',
-  'jésus': 'Jésus',
+  'jesus': 'Jésus',
   'jesus': 'Jésus',
   'christ': 'Christ',
   'emmanuel': 'Emmanuel',
   'messie': 'Messie',
-
-  // Places
-  'jérusalem': 'Jérusalem',
+  'jerusalem': 'Jérusalem',
   'jerusalem': 'Jérusalem',
   'nazareth': 'Nazareth',
-  'bethléem': 'Bethléem',
   'bethleem': 'Bethléem',
-  'galilée': 'Galilée',
+  'bethleem': 'Bethléem',
   'galilee': 'Galilée',
-  'judée': 'Judée',
+  'galilee': 'Galilée',
+  'judee': 'Judée',
   'judee': 'Judée',
   'samarie': 'Samarie',
   'damas': 'Damas',
   'antioche': 'Antioche',
   'corinthe': 'Corinthe',
-  'ephèse': 'Ephèse',
+  'ephese': 'Ephèse',
   'ephese': 'Ephèse',
   'philippi': 'Philippi',
   'colosses': 'Colosses',
   'thessalonique': 'Thessalonique',
   'rome': 'Rome',
   'egypte': 'Égypte',
-  'égypte': 'Égypte',
+  'egypte': 'Égypte',
   'babylone': 'Babylone',
   'ninive': 'Ninive',
   'sodome': 'Sodome',
   'gomorrhe': 'Gomorrhe',
   'canaan': 'Canaan',
-  'sinaï': 'Sinaï',
+  'sinai': 'Sinaï',
   'sinai': 'Sinaï',
   'temple': 'Temple',
   'synagogue': 'Synagogue',
   'mont des oliviers': 'Mont des Oliviers',
   'golgotha': 'Golgotha',
   'calvaire': 'Calvaire',
-  'jardin de gethsemané': 'Jardin de Gethsémané',
-  'gethsemané': 'Gethsémané',
+  'jardin de gethsemane': 'Jardin de Gethsémané',
   'gethsemane': 'Gethsémané',
-  'mer de galilée': 'Mer de Galilée',
-  'lac de tibériade': 'Lac de Tibériade',
+  'gethsemane': 'Gethsémané',
+  'mer de galilee': 'Mer de Galilée',
+  'lac de tiberiade': 'Lac de Tibériade',
   'jourdain': 'Jourdain',
   'jordan': 'Jourdain',
-
-  // Theological terms
-  'péché': 'Péché',
   'peche': 'Péché',
-  'péchés': 'Péchés',
+  'peche': 'Péché',
   'peches': 'Péchés',
-  'rédemption': 'Rédemption',
+  'peches': 'Péchés',
+  'redemption': 'Rédemption',
   'redemption': 'Rédemption',
   'racheter': 'Racheter',
   'justification': 'Justification',
   'sanctification': 'Sanctification',
-  'régénération': 'Régénération',
+  'regeneration': 'Régénération',
   'regeneration': 'Régénération',
   'conversion': 'Conversion',
   'repentance': 'Repentance',
   'foi': 'Foi',
-  'grâce': 'Grâce',
+  'grace': 'Grâce',
   'grace': 'Grâce',
   'salut': 'Salut',
-  'délivrance': 'Délivrance',
   'delivrance': 'Délivrance',
-  'guérison': 'Guérison',
+  'delivrance': 'Délivrance',
+  'guerison': 'Guérison',
   'guerison': 'Guérison',
   'miracle': 'Miracle',
-  'bénédiction': 'Bénédiction',
+  'benediction': 'Bénédiction',
   'benediction': 'Bénédiction',
   'alliance': 'Alliance',
   'covenant': 'Alliance',
   'sacrifice': 'Sacrifice',
   'expiation': 'Expiation',
   'propitiation': 'Propitiation',
-  'résurrection': 'Résurrection',
+  'resurrection': 'Résurrection',
   'resurrection': 'Résurrection',
   'ascension': 'Ascension',
-  'pentecôte': 'Pentecôte',
+  'pentecote': 'Pentecôte',
   'pentecote': 'Pentecôte',
   'paraclet': 'Paraclet',
   'consolateur': 'Consolateur',
   'esprit saint': 'Esprit Saint',
   'saint esprit': 'Saint-Esprit',
-  'père éternel': 'Père Éternel',
+  'pere eternel': 'Père Éternel',
   'fils unique': 'Fils Unique',
   'parole de dieu': 'Parole de Dieu',
   'parole vivante': 'Parole Vivante',
-  'évangile': 'Évangile',
+  'evangile': 'Évangile',
   'evangile': 'Évangile',
   'bonne nouvelle': 'Bonne Nouvelle',
   'nouveau testament': 'Nouveau Testament',
   'ancien testament': 'Ancien Testament',
-  'loi de moïse': 'Loi de Moïse',
+  'loi de moise': 'Loi de Moïse',
   'dix commandements': 'Dix Commandements',
   'sermon sur la montagne': 'Sermon sur la Montagne',
-  'béatitudes': 'Béatitudes',
   'beatitudes': 'Béatitudes',
-  'fruits de l esprit': 'Fruits de l\'Esprit',
-  "fruits de l'esprit": 'Fruits de l\'Esprit',
-  'don du spirit': 'Don de l\'Esprit',
+  'beatitudes': 'Béatitudes',
+  'fruits de l esprit': "Fruits de l'Esprit",
+  'don du spirit': "Don de l'Esprit",
+  'armure de dieu': 'Armure de Dieu',
+  'fruits de l\'esprit': "Fruits de l'Esprit",
+  'don du spirit': "Don de l'Esprit",
   'armure de dieu': 'Armure de Dieu',
 };
-
-// Build a fast lookup trie for prefix matching
-function buildCorrectionTrie() {
-  const trie = {};
-  for (const [key, value] of Object.entries(CORRECTIONS)) {
-    let node = trie;
-    const words = key.split(/\s+/);
-    for (let i = 0; i < words.length; i++) {
-      const w = words[i];
-      if (!node[w]) node[w] = {};
-      node = node[w];
-      if (i === words.length - 1) node._value = value;
-    }
-  }
-  return trie;
-}
-
-const correctionTrie = buildCorrectionTrie();
 
 // -----------------------------------------------------------------------
 // FAST mode: Dictionary-based replacement
 // -----------------------------------------------------------------------
 function correctFast(text) {
   let result = text;
-  const words = text.toLowerCase().split(/(\s+)/);
-
-  // Multi-word phrase matching (longest match first)
   const phrases = Object.keys(CORRECTIONS).sort((a, b) => b.length - a.length);
   for (const phrase of phrases) {
     const regex = new RegExp(`\b${phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\b`, 'gi');
     result = result.replace(regex, (match) => {
-      // Preserve original casing style
       const correction = CORRECTIONS[phrase.toLowerCase()];
       if (match === match.toUpperCase()) return correction.toUpperCase();
       if (match[0] === match[0].toUpperCase()) return correction;
       return correction.toLowerCase();
     });
   }
-
   return result;
 }
 
 // -----------------------------------------------------------------------
-// SMART mode: Groq LLM correction for ambiguous biblical names
-// Only runs when FAST mode detects potential biblical content
+// SMART mode: Groq LLM correction
+// BULLETPROOF: Returns original text if groq is unavailable
 // -----------------------------------------------------------------------
 async function correctSmart(text, groqWrapper) {
-  // Skip if no biblical terms detected
-  const hasBiblicalTerm = /\b(?:jesus|christ|dieu|seigneur|bible|evangile|apôtre|prophète|moïse|david|paul|pierre|marie|esprit|temple|église|verset|chapitre|psaume|jean|luc|marc|matthieu|romains|corinthiens|galates|ephésiens|philippiens|colossiens|hébreux|jacques|apocalypse)\b/i.test(text);
+  // Defensive: check groq wrapper is valid
+  if (!groqWrapper || typeof groqWrapper.chatCompletion !== 'function') {
+    return text;
+  }
+
+  const hasBiblicalTerm = /(?:jesus|christ|dieu|seigneur|bible|evangile|apôtre|prophète|moïse|david|paul|pierre|marie|esprit|temple|église|verset|chapitre|psaume|jean|luc|marc|matthieu|romains|corinthiens|galates|ephesiens|philippiens|colossiens|hebreux|jacques|apocalypse)/i.test(text);
   if (!hasBiblicalTerm) return text;
 
   try {
@@ -311,14 +284,7 @@ Rules:
 2. Do NOT rephrase, summarize, or change the speaker's wording
 3. Do NOT add content that wasn't transcribed
 4. If unsure, leave the text unchanged
-5. Output ONLY the corrected text, nothing else
-
-Examples of fixes:
-- "jean le baptiseur" → "Jean-Baptiste"
-- "philipiens" → "Philippiens"  
-- "ephese" → "Ephèse"
-- "moise" → "Moïse"
-- "gethsemane" → "Gethsémané"`;
+5. Output ONLY the corrected text, nothing else`;
 
     const response = await groqWrapper.chatCompletion(prompt, {
       model: 'llama-3.1-8b-instant',
@@ -327,8 +293,6 @@ Examples of fixes:
     });
 
     const corrected = (response.text || response).trim();
-
-    // Safety: if LLM returns something wildly different, reject it
     const similarity = calculateSimilarity(text, corrected);
     if (similarity < 0.7) {
       console.log('[corrector] Smart correction rejected (too different):', similarity);
@@ -345,7 +309,6 @@ Examples of fixes:
   }
 }
 
-// Simple word-based similarity
 function calculateSimilarity(a, b) {
   const wordsA = new Set(a.toLowerCase().split(/\s+/));
   const wordsB = new Set(b.toLowerCase().split(/\s+/));
@@ -371,8 +334,8 @@ class TranscriptionCorrector {
       this.stats.fastCorrections++;
     }
 
-    // Run SMART mode if available and mode is auto/smart
-    if ((mode === 'auto' || mode === 'smart') && this.groq) {
+    // Run SMART mode only if groq is available and mode allows
+    if ((mode === 'auto' || mode === 'smart') && this.groq && typeof this.groq.chatCompletion === 'function') {
       const smartResult = await correctSmart(result, this.groq);
       if (smartResult !== result) {
         this.stats.smartCorrections++;
