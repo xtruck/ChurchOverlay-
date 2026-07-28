@@ -246,9 +246,7 @@ const CORRECTIONS = {
   'béatitudes': 'Béatitudes',
   'beatitudes': 'Béatitudes',
   'fruits de l esprit': 'Fruits de l\'Esprit',
-  'don du spirit': 'Don de l\'Esprit',
-  'armure de dieu': 'Armure de Dieu',
-  'fruits de l'esprit': 'Fruits de l\'Esprit',
+  "fruits de l'esprit": 'Fruits de l\'Esprit',
   'don du spirit': 'Don de l\'Esprit',
   'armure de dieu': 'Armure de Dieu',
 };
