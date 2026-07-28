@@ -36,12 +36,34 @@ const COMMANDS = [
   },
 
   // --- READING MODE ---
+  // CORRECTIF : nextChapter est désormais vérifié AVANT nextVerse, et les
+  // motifs génériques /(?:next|suivant)/i et /(?:previous|précédent)/i ont
+  // été retirés. Deux problèmes réels avec l'ancien code :
+  //  1. "chapitre suivant" matchait le motif générique de nextVerse (placé
+  //     avant nextChapter dans la liste, donc gagnant), donc la commande
+  //     vocale "chapitre suivant" ne changeait jamais de chapitre.
+  //  2. Ces motifs bruts (juste "suivant"/"next"/"previous"/"précédent")
+  //     matchent N'IMPORTE QUELLE phrase du sermon contenant ce mot — ex.
+  //     "le point suivant de mon message", "previous experience taught
+  //     us..." — ce qui interceptait silencieusement le segment AVANT la
+  //     détection de verset (voir processTranscript : un match ici court-
+  //     circuite tout le reste). Un sermon normal aurait perdu des
+  //     versets entiers sans qu'aucune erreur ne soit visible.
+  {
+    id: 'nextChapter',
+    patterns: [
+      /(?:chapitre)\s+suivant/i,
+      /(?:passe|avance)\s+(?:au\s+)?chapitre\s+suivant/i,
+      /next\s+chapter/i,
+    ],
+    extract: () => ({ action: 'nextChapter' }),
+  },
   {
     id: 'nextVerse',
     patterns: [
       /(?:verset|passage)\s+suivant/i,
       /(?:passe|avance)\s+(?:au\s+)?(?:verset|passage)\s+suivant/i,
-      /(?:next|suivant)/i,
+      /next\s+verse/i,
     ],
     extract: () => ({ action: 'nextVerse' }),
   },
@@ -50,18 +72,9 @@ const COMMANDS = [
     patterns: [
       /(?:verset|passage)\s+(?:précédent|précédant|d'avant)/i,
       /(?:retourne|reviens)\s+(?:au\s+)?(?:verset|passage)\s+(?:précédent|d'avant)/i,
-      /(?:previous|précédent)/i,
+      /previous\s+verse/i,
     ],
     extract: () => ({ action: 'previousVerse' }),
-  },
-  {
-    id: 'nextChapter',
-    patterns: [
-      /(?:chapitre)\s+suivant/i,
-      /(?:passe|avance)\s+(?:au\s+)?chapitre\s+suivant/i,
-      /(?:next\s+chapter|chapitre\s+suivant)/i,
-    ],
-    extract: () => ({ action: 'nextChapter' }),
   },
 
   // --- THEME ---
@@ -164,8 +177,14 @@ const COMMANDS = [
   // --- EMERGENCY ---
   {
     id: 'emergencyClear',
+    // CORRECTIF : "urgence"/"panic" seuls étaient trop génériques (ex. un
+    // prédicateur disant "en cas d'urgence, Dieu répond" effaçait tout
+    // l'overlay). On exige désormais une expression de commande complète.
     patterns: [
-      /(?:urgence|emergency|panic|clear\s+all|tout\s+effacer)/i,
+      /(?:effacement|arrêt)\s+d['’]urgence/i,
+      /emergency\s+clear/i,
+      /clear\s+all/i,
+      /tout\s+effacer/i,
     ],
     extract: () => ({ action: 'emergencyClear' }),
   },
