@@ -753,6 +753,47 @@ select.input {
 }
 
 /* ==========================================================================
+   Candidate Verse (correspondance floue à confirmer)
+   ========================================================================== */
+.candidate-verse-card {
+  border-color: var(--warning);
+  animation: candidatePulse 1.6s ease-in-out infinite;
+}
+
+@keyframes candidatePulse {
+  0%, 100% { box-shadow: var(--shadow); }
+  50% { box-shadow: 0 4px 20px rgba(255, 165, 0, 0.35); }
+}
+
+.candidate-verse-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.candidate-verse-ref {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--warning);
+}
+
+.candidate-verse-detail {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.candidate-verse-detail b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.candidate-verse-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ==========================================================================
    Responsive
    ========================================================================== */
 @media (max-width: 600px) {
@@ -902,6 +943,19 @@ select.input {
     </div>
   </div>
 
+  <!-- Candidate Verse (correspondance floue à confirmer) -->
+  <div class="card candidate-verse-card" id="candidate-verse-card" style="margin-top:16px; display:none;">
+    <h2>⚠️ Correspondance incertaine — confirmation requise</h2>
+    <div class="candidate-verse-body">
+      <div class="candidate-verse-ref" id="candidate-verse-ref">—</div>
+      <div class="candidate-verse-detail" id="candidate-verse-detail"></div>
+      <div class="candidate-verse-actions">
+        <button class="btn btn-primary" onclick="confirmCandidateVerse()">✅ Afficher quand même</button>
+        <button class="btn btn-secondary" onclick="dismissCandidateVerse()">✖️ Ignorer</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Transcript Preview -->
   <div class="card" style="margin-top:16px;">
     <h2>🎤 Transcription en direct</h2>
@@ -1019,6 +1073,7 @@ let scriptProcessor = null;
 let isAudioStarted = false;
 let verseQueue = [];
 let currentLanguage = 'fr';
+let pendingCandidateReference = null;
 
 /* ==========================================================================
    WebSocket
@@ -1111,9 +1166,21 @@ function handleWebSocketMessage(msg) {
       if (msg.plugins) updatePlugins(msg.plugins);
       break;
 
+    case 'candidateVerse':
+      showCandidateVerse(msg);
+      updateTranscript(`[À CONFIRMER] ${formatReference(msg.reference)} (transcrit: "${msg.spokenAs || ''}")`);
+      break;
+
+    case 'candidateVerseDismissed':
+      hideCandidateVerse();
+      break;
+
     case 'showVerse':
       addToHistory(msg);
       updateTranscript(`[AFFICHÉ] ${msg.reference}`);
+      // Un verset vient de s'afficher (confirmé ou non) : la proposition
+      // en attente, si elle existe encore, ne correspond plus à l'écran.
+      hideCandidateVerse();
       break;
 
     case 'hideVerse':
@@ -1353,6 +1420,56 @@ function updateTranscript(text, isCorrection = false) {
     el.textContent = text;
     el.style.color = isCorrection ? 'var(--info)' : 'var(--text-muted)';
   }
+}
+
+/* ==========================================================================
+   Candidate Verse (correspondance floue à confirmer)
+   ========================================================================== */
+function formatReference(ref) {
+  if (!ref || !ref.book) return '—';
+  const name = ref.book.charAt(0).toUpperCase() + ref.book.slice(1);
+  let out = `${name} ${ref.chapter}`;
+  if (ref.verseStart) {
+    out += `:${ref.verseStart}`;
+    if (ref.verseEnd && ref.verseEnd !== ref.verseStart) out += `-${ref.verseEnd}`;
+  }
+  return out;
+}
+
+function showCandidateVerse(msg) {
+  pendingCandidateReference = msg.reference || null;
+  const card = document.getElementById('candidate-verse-card');
+  const refEl = document.getElementById('candidate-verse-ref');
+  const detailEl = document.getElementById('candidate-verse-detail');
+  if (!card || !refEl || !detailEl) return;
+
+  refEl.textContent = formatReference(msg.reference);
+  const spokenAs = msg.spokenAs ? `"${msg.spokenAs}"` : 'texte transcrit';
+  const distance = typeof msg.distance === 'number' ? msg.distance : null;
+  detailEl.innerHTML =
+    `Transcription entendue : <b>${spokenAs}</b>` +
+    (distance !== null ? ` (écart de ${distance} caractère${distance > 1 ? 's' : ''} avec le nom du livre)` : '') +
+    `.<br>Le nom du livre a été deviné par tolérance aux erreurs de transcription — vérifiez avant d'afficher à l'écran.`;
+  card.style.display = 'block';
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function hideCandidateVerse() {
+  pendingCandidateReference = null;
+  const card = document.getElementById('candidate-verse-card');
+  if (card) card.style.display = 'none';
+}
+
+function confirmCandidateVerse() {
+  if (!pendingCandidateReference) return;
+  sendWs({ action: 'confirmCandidateVerse' });
+  hideCandidateVerse();
+}
+
+function dismissCandidateVerse() {
+  if (!pendingCandidateReference) { hideCandidateVerse(); return; }
+  sendWs({ action: 'dismissCandidateVerse' });
+  hideCandidateVerse();
 }
 
 /* ==========================================================================
