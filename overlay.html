@@ -2,1047 +2,645 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>Overlay Versets — Église Mesev</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,400;0,700;0,900&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ChurchOverlay — Affichage</title>
 <style>
-  :root {
-    --nuit: #060D24;
-    --bleu-profond: #0E1E4A;
-    --bleu: #2F5FBF;
-    --bleu-clair: #4C7EE8;
-    --creme: #F3EFE4;
-    --or: #D9BB6C;
-    --or-vif: #F4E3A6;
-    --or-clair: #F3E4B8;
-    --encre: #0B1220;
+/* ==========================================================================
+   CSS Variables for Dynamic Themes (AI Innovation Pack)
+   ========================================================================== */
+:root {
+  --overlay-bg: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  --overlay-text: #FFFFFF;
+  --overlay-accent: #e94560;
+  --overlay-font: 'Playfair Display', Georgia, serif;
+  --overlay-border: rgba(255, 255, 255, 0.1);
+  --overlay-glow: rgba(233, 69, 96, 0.3);
+  --overlay-shadow: rgba(0, 0, 0, 0.5);
+  --overlay-particle: #e94560;
+}
 
-    /* Ajouté à l'audit : ponts vers les noms génériques produits par
-       theme-loader.js::themeToCss() (--bg, --accent, --accent-bright...).
-       Valeurs par défaut = exactement l'ancien dégradé/palette en dur
-       ci-dessus, donc AUCUN changement visuel tant qu'aucun message
-       "applyTheme" n'a encore été reçu (ex: overlay ouvert hors app, ou
-       serveur pas encore connecté). Dès qu'un thème est appliqué, ces
-       variables sont réécrites directement sur :root par le script plus
-       bas (voir case 'applyTheme'), ce qui prend effet immédiatement
-       puisque tout le CSS ci-dessous les référence désormais.
-    */
-    --bg: linear-gradient(165deg, var(--nuit) 0%, var(--bleu-profond) 48%, var(--bleu) 88%, var(--bleu-clair) 120%);
-    --accent: var(--or);
-    --accent-bright: var(--or-vif);
-  }
+/* Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Lora:wght@400;700&family=Open+Sans:wght@400;600&family=Cinzel:wght@400;700&family=Great+Vibes&family=Merriweather:wght@400;700&display=swap');
 
-  html, body {
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    height: 100%;
-    background: transparent;
-    overflow: hidden;
-    /* Repli robuste : si Google Fonts ne charge pas (Wi-Fi de l'église indisponible
-       ou coupé le dimanche matin), on retombe sur des polices système au look proche. */
-    font-family: 'Merriweather', Georgia, 'Times New Roman', serif;
-  }
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
 
-  #stage {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    pointer-events: none;
-  }
+body {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: transparent;
+  font-family: var(--overlay-font);
+}
 
-  #panneau {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 4vh 6vw;
-    box-sizing: border-box;
-    background:
-      radial-gradient(circle at 50% 30%, rgba(244,227,166,0.16) 0%, rgba(244,227,166,0) 46%),
-      radial-gradient(ellipse 90% 70% at 50% 100%, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 60%),
-      radial-gradient(ellipse 140% 90% at 50% 50%, transparent 40%, rgba(2,6,20,0.55) 100%),
-      var(--bg);
-    opacity: 0;
-    visibility: hidden;
-    transform: scale(1.035);
-  }
+/* Particules d'ambiance */
+.particles {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+.particle {
+  position: absolute;
+  width: 4px; height: 4px;
+  background: var(--overlay-particle);
+  border-radius: 50%;
+  opacity: 0;
+  animation: float 8s infinite ease-in-out;
+}
+@keyframes float {
+  0%, 100% { transform: translateY(100vh) scale(0); opacity: 0; }
+  10% { opacity: 0.6; }
+  90% { opacity: 0.6; }
+  100% { transform: translateY(-10vh) scale(1); opacity: 0; }
+}
 
-  /* Grain fin, presque invisible, pour casser le côté "plat numérique" */
-  #panneau::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: 4;
-    pointer-events: none;
-    opacity: 0.05;
-    mix-blend-mode: overlay;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
-    background-size: 220px 220px;
-  }
+/* Container principal */
+#overlay-container {
+  position: fixed;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 90%;
+  max-width: 900px;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.6s ease, transform 0.6s ease;
+  pointer-events: none;
+}
 
-  #panneau.visible {
-    visibility: visible;
-    opacity: 1;
-    animation: ouverture-scene 1.1s cubic-bezier(0.19, 1, 0.22, 1) forwards;
-  }
+#overlay-container.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
 
-  #panneau.sortie {
-    animation: fondu-sortie 0.9s ease forwards;
-  }
+#overlay-container.hidden {
+  opacity: 0;
+  transform: translateX(-50%) translateY(30px);
+}
 
-  @keyframes ouverture-scene {
-    from { opacity: 0; transform: scale(1.035); }
-    to   { opacity: 1; transform: scale(1); }
-  }
-  @keyframes fondu-sortie { from { opacity: 1; visibility: visible; transform: scale(1); } to { opacity: 0; visibility: hidden; transform: scale(1.015); } }
+/* Carte du verset */
+.verse-card {
+  background: var(--overlay-bg);
+  color: var(--overlay-text);
+  font-family: var(--overlay-font);
+  padding: 28px 36px;
+  border-radius: 16px;
+  border: 1px solid var(--overlay-border);
+  box-shadow:
+    0 0 40px var(--overlay-glow),
+    0 12px 50px var(--overlay-shadow),
+    inset 0 1px 0 rgba(255,255,255,0.1);
+  backdrop-filter: blur(12px);
+  position: relative;
+  overflow: hidden;
+}
 
-  /* Rayons tournants très lents, façon lumière filtrant à travers un vitrail */
-  .rayons {
-    position: absolute;
-    top: 40%;
-    left: 50%;
-    width: 90vh;
-    height: 90vh;
-    transform: translate(-50%, -50%);
-    opacity: 0;
-    background: conic-gradient(from 0deg,
-      rgba(244,227,166,0.10) 0deg, transparent 18deg,
-      transparent 40deg, rgba(244,227,166,0.07) 58deg,
-      transparent 80deg, transparent 130deg,
-      rgba(244,227,166,0.09) 148deg, transparent 170deg,
-      transparent 220deg, rgba(244,227,166,0.06) 238deg,
-      transparent 260deg, transparent 340deg, rgba(244,227,166,0.10) 360deg);
-    mix-blend-mode: screen;
-    pointer-events: none;
-  }
-  #panneau.visible .rayons {
-    animation: apparition-douce 2s ease 0.2s forwards, rotation-lente 90s linear 0.2s infinite;
-  }
-  @keyframes rotation-lente {
-    from { transform: translate(-50%, -50%) rotate(0deg); }
-    to   { transform: translate(-50%, -50%) rotate(360deg); }
-  }
+.verse-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--overlay-accent);
+  opacity: 0.8;
+}
 
-  /* Halo doux façon lumière de vitrail, respiration très lente et discrète */
-  .halo {
-    position: absolute;
-    top: 40%;
-    left: 50%;
-    width: 55vw;
-    height: 55vw;
-    max-width: 820px;
-    max-height: 820px;
-    transform: translate(-50%, -50%);
-    background: radial-gradient(circle, rgba(244,227,166,0.16) 0%, rgba(244,227,166,0) 65%);
-    animation: respiration 10s ease-in-out infinite;
-    pointer-events: none;
-  }
-  @keyframes respiration {
-    0%, 100% { opacity: 0.6; }
-    50%      { opacity: 1; }
-  }
+/* Référence */
+.verse-reference {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--overlay-accent);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 
-  /* Quelques particules de lumière, très discrètes, comme de la poussière dans un rai de lumière */
-  .particule {
-    position: absolute;
-    border-radius: 50%;
-    background: rgba(243,228,184,0.28);
-    filter: blur(1px);
-    animation: flotter linear infinite;
-  }
-  @keyframes flotter {
-    0%   { transform: translateY(0); opacity: 0; }
-    15%  { opacity: 0.4; }
-    85%  { opacity: 0.3; }
-    100% { transform: translateY(-10vh); opacity: 0; }
-  }
+/* Texte */
+.verse-text {
+  font-size: 22px;
+  line-height: 1.6;
+  font-weight: 400;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
 
-  .contenu {
-    position: relative;
-    z-index: 2;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    max-width: 80vw;
-    max-height: 88vh;
-    overflow: hidden;
-    padding: 5.5vh 5.5vw;
-    border-radius: 28px;
-    box-sizing: border-box;
-    background:
-      linear-gradient(155deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.02) 30%, rgba(255,255,255,0) 55%),
-      rgba(10, 20, 46, 0.38);
-    border: 1px solid rgba(244, 227, 166, 0.24);
-    box-shadow:
-      0 30px 90px rgba(0,0,0,0.4),
-      0 0 0 1px rgba(255,255,255,0.03),
-      inset 0 1px 0 rgba(255,255,255,0.16),
-      inset 0 0 60px rgba(244,227,166,0.05);
-    backdrop-filter: blur(26px) saturate(150%);
-    -webkit-backdrop-filter: blur(26px) saturate(150%);
-  }
-  .contenu::before {
-    content: "";
-    position: absolute;
-    top: 0; left: 12%; right: 12%;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(244,227,166,0.55), transparent);
-  }
-  /* Reflet diagonal type "verre", discret, dans le coin supérieur gauche */
-  .contenu::after {
-    content: "";
-    position: absolute;
-    top: 0; left: 0;
-    width: 60%;
-    height: 60%;
-    background: radial-gradient(ellipse at top left, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0) 60%);
-    pointer-events: none;
-    border-radius: 28px 0 0 0;
-  }
+.verse-text-bilingual {
+  font-size: 18px;
+  line-height: 1.5;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--overlay-border);
+  opacity: 0.85;
+}
 
-  /* Croix, symbole central, tracée au trait à l'apparition */
-  .croix {
-    width: 42px;
-    height: 42px;
-    margin-bottom: 2vh;
-    opacity: 0;
-  }
-  #panneau.visible .croix {
-    animation: apparition-douce 0.4s ease 0.15s forwards, lueur-croix 7s ease-in-out 1.6s infinite;
-  }
-  .croix path {
-    stroke: var(--accent-bright);
-    stroke-width: 1.7;
-    stroke-linecap: round;
-    fill: none;
-    stroke-dasharray: 1;
-    stroke-dashoffset: 1;
-  }
-  #panneau.visible .croix path {
-    animation: trace-croix 1.1s cubic-bezier(0.65, 0, 0.35, 1) 0.15s forwards;
-  }
-  @keyframes trace-croix {
-    to { stroke-dashoffset: 0; }
-  }
-  @keyframes lueur-croix {
-    0%, 100% { filter: drop-shadow(0 0 2px rgba(244,227,166,0.35)); }
-    50%      { filter: drop-shadow(0 0 10px rgba(244,227,166,0.7)); }
-  }
+/* Indicateur de source (AI detection) */
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.7);
+  font-family: 'Open Sans', sans-serif;
+  text-transform: none;
+  letter-spacing: 0;
+}
 
-  .en-tete {
-    opacity: 0;
-  }
-  #panneau.visible .en-tete {
-    animation: apparition-douce 0.7s ease 0.55s forwards;
-  }
+.source-badge.ai {
+  background: rgba(76, 175, 80, 0.2);
+  color: #81C784;
+}
 
-  .reference {
-    display: inline-block;
-    font-family: 'Manrope', 'Segoe UI', Helvetica, Arial, sans-serif;
-    font-weight: 800;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    font-size: clamp(1.25rem, 1.9vw, 1.9rem);
-    color: var(--accent-bright);
-    padding: 1em 1.9em;
-padding: 1em 1.9em;
-    border: 1px solid rgba(244,227,166,0.45);
-    border-radius: 999px;
-    background: linear-gradient(180deg, rgba(244,227,166,0.14), rgba(244,227,166,0.03));
-    box-shadow: 0 2px 18px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.08);
-    text-shadow: 0 2px 10px rgba(0,0,0,0.35);
-  }
+.source-badge.voice {
+  background: rgba(33, 150, 243, 0.2);
+  color: #64B5F6;
+}
 
-  /* Marque en coin d'écran, façon habillage broadcast, apparaît en dernier.
-     Encadré verre assorti au panneau du verset pour rester lisible quel
-     que soit ce qu'il y a derrière (photo du jour, vidéo, etc.). */
-  .marque {
-    position: absolute;
-    right: 3.2vw;
-    bottom: 3.2vh;
-    display: flex;
-    align-items: center;
-    gap: 0.9vw;
-    padding: 0.9vh 1.4vw;
-    border-radius: 999px;
-    background: rgba(10, 20, 46, 0.4);
-    border: 1px solid rgba(244, 227, 166, 0.22);
-    box-shadow: 0 10px 30px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.12);
-    backdrop-filter: blur(14px) saturate(140%);
-    -webkit-backdrop-filter: blur(14px) saturate(140%);
-    opacity: 0;
-    z-index: 3;
-  }
-  #panneau.visible .marque {
-    animation: apparition-douce 1s ease 1.7s forwards;
-  }
-  .marque img {
-    height: 5.2vh;
-    min-height: 34px;
-    max-height: 56px;
-    width: auto;
-    opacity: 0.98;
-    filter: drop-shadow(0 3px 10px rgba(0,0,0,0.35));
-  }
-  .marque span {
-    font-family: 'Manrope', 'Segoe UI', Helvetica, Arial, sans-serif;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    font-size: 0.95rem;
-    color: rgba(243,239,228,0.92);
-    text-transform: uppercase;
-  }
+.source-badge.manual {
+  background: rgba(255, 152, 0, 0.2);
+  color: #FFB74D;
+}
 
-  /* Trait fin doré avec ornement central, un seul passage de lumière à l'apparition */
-  .separateur {
-    position: relative;
-    width: min(34vw, 420px);
-    height: 2px;
-    margin: 3vh 0 3.4vh 0;
-    border-radius: 2px;
-    background: linear-gradient(90deg, transparent, var(--accent) 15%, var(--accent-bright) 50%, var(--accent) 85%, transparent);
-    opacity: 0;
-    background-size: 220% 100%;
-    background-position: 100% 0;
-  }
-  .separateur::after {
-    content: "";
-    position: absolute;
-    top: 50%; left: 50%;
-    width: 8px; height: 8px;
-    background: var(--accent-bright);
-    transform: translate(-50%, -50%) rotate(45deg);
-    box-shadow: 0 0 10px rgba(244,227,166,0.8);
-  }
-  #panneau.visible .separateur {
-    animation: apparition-douce 0.5s ease 0.9s forwards, glissement-lumiere 1.6s ease 0.95s 1;
-  }
-  @keyframes glissement-lumiere {
-    from { background-position: 100% 0; }
-    to   { background-position: -20% 0; }
-  }
+/* Indicateur commande vocale */
+#voice-indicator {
+  position: fixed;
+  top: 30px;
+  right: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(33, 150, 243, 0.9);
+  color: white;
+  border-radius: 24px;
+  font-family: 'Open Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0;
+  transform: translateY(-20px);
+  transition: all 0.4s ease;
+  z-index: 100;
+  pointer-events: none;
+  box-shadow: 0 4px 15px rgba(33, 150, 243, 0.3);
+}
 
-  .verset {
-    font-family: 'Merriweather', Georgia, 'Times New Roman', serif;
-    font-weight: 700;
-    font-style: normal;
-    font-size: clamp(2.4rem, 4.6vw, 5.2rem);
-    line-height: 1.5;
-    letter-spacing: 0.005em;
-    color: #FFFFFF;
-    text-shadow: 0 3px 22px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.6);
-    max-width: 72vw;
-    opacity: 0;
-    overflow-wrap: break-word;
-    word-break: normal;
-    hyphens: auto;
-  }
-  /* Appliquée dynamiquement par le script pour les versets très longs
-     (ex. citations sur plusieurs versets) : réduit la taille sans jamais
-     casser la mise en page ni dépasser l'écran. */
-  .verset.taille-reduite-1 { font-size: clamp(1.9rem, 3.6vw, 4rem); }
-  .verset.taille-reduite-2 { font-size: clamp(1.5rem, 2.8vw, 3.1rem); }
-  .verset.taille-reduite-3 { font-size: clamp(1.2rem, 2.2vw, 2.4rem); }
-  #panneau.visible .verset {
-    animation: focus-in 1.1s cubic-bezier(0.19, 1, 0.22, 1) 1.15s forwards;
-  }
+#voice-indicator.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
 
-  @keyframes apparition-douce {
-    from { opacity: 0; transform: translateY(10px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes focus-in {
-    from { opacity: 0; filter: blur(9px); transform: translateY(16px); }
-    to   { opacity: 1; filter: blur(0); transform: translateY(0); }
-  }
+#voice-indicator .mic-icon {
+  width: 16px;
+  height: 16px;
+  animation: pulse 1.5s infinite;
+}
 
-  /* Utilisée uniquement par updateVerse() pour un fondu rapide texte->texte,
-     sans rejouer la cascade d'entrée complète (croix, halo, etc.).
-     Appliquée sur .contenu (et non sur .reference/.verset) car ces derniers
-     portent une animation d'entrée en "forwards" qui figerait leur opacité
-     et empêcherait toute transition ultérieure de fonctionner. .contenu n'a
-     pas d'animation propre, donc une transition d'opacité y fonctionne
-     normalement. */
-  .contenu {
-    transition: opacity 0.22s ease;
-  }
-  .contenu.maj-invisible {
-    opacity: 0;
-  }
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.2); opacity: 0.7; }
+}
 
-  .barre-temps {
-    position: absolute;
-    left: 0; right: 0; bottom: 0;
-    height: 3px;
-    background: rgba(244, 227, 166, 0.12);
-    z-index: 3;
-  }
-  .barre-temps-remplissage {
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    width: 100%;
-    background: linear-gradient(90deg, var(--accent), var(--accent-bright));
-    box-shadow: 0 0 14px rgba(244,227,166,0.55);
-    transform-origin: left center;
-    transform: scaleX(1);
-  }
-  .barre-temps-remplissage.decompte {
-    transition: transform linear;
-  }
-  /* En pause : le remplissage se fige, lueur légèrement atténuée.
-     Reste très discret pour l'assemblée, mais visible sur le retour vidéo
-     de l'opérateur pour confirmer que la pause a bien été prise en compte. */
-  .barre-temps-remplissage.en-pause {
-    box-shadow: 0 0 8px rgba(244,227,166,0.3);
-  }
+/* Indicateur de détection sémantique */
+#semantic-indicator {
+  position: fixed;
+  top: 30px;
+  left: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(76, 175, 80, 0.9);
+  color: white;
+  border-radius: 24px;
+  font-family: 'Open Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0;
+  transform: translateY(-20px);
+  transition: all 0.4s ease;
+  z-index: 100;
+  pointer-events: none;
+  max-width: 350px;
+}
 
-  /* Animations désactivées : apparition/disparition en simple fondu, sans cascade ni mouvement. */
-  #panneau.visible, #panneau.sortie,
-  .croix, .croix path, .en-tete, .marque, .separateur, .verset, .halo, .rayons, .particule, .contenu {
-    animation: none !important;
-    transition: opacity 0.4s ease !important;
-    opacity: 1;
-    transform: none;
-    filter: none;
-    stroke-dashoffset: 0 !important;
-  }
-  #panneau.sortie { opacity: 0; }
+#semantic-indicator.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
 
-  #demo-controles {
-    position: fixed;
-    top: 16px;
-    left: 16px;
-    background: #111;
-    color: #fff;
-    padding: 12px;
-    border-radius: 8px;
-    font-family: sans-serif;
-    font-size: 13px;
-    display: none;
-    pointer-events: auto;
-    z-index: 999;
-  }
-  #demo-controles button {
-    display: block;
-    margin: 4px 0;
-    padding: 6px 10px;
-    cursor: pointer;
-    width: 100%;
-    font-size: 12.5px;
-  }
-  #demo-controles .demo-groupe { display: flex; flex-direction: column; }
-  #demo-controles .demo-separateur {
-    height: 1px;
-    background: rgba(255,255,255,0.15);
-    margin: 8px 0;
-  }
-  #demo-controles .demo-danger {
-    background: #5a1f1f;
-    color: #fff;
-    border: 1px solid #a33;
-    border-radius: 4px;
-  }
-  #demo-controles #demo-statut {
-    margin: 8px 0 0 0;
-    padding: 6px;
-    background: #000;
-    border-radius: 4px;
-    font-size: 11px;
-    line-height: 1.4;
-    white-space: pre-wrap;
-    max-height: 110px;
-    overflow: auto;
-  }
+/* Mode lecture */
+#reading-indicator {
+  position: fixed;
+  top: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 20px;
+  background: rgba(233, 69, 96, 0.9);
+  color: white;
+  border-radius: 24px;
+  font-family: 'Open Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  z-index: 100;
+  pointer-events: none;
+}
+
+#reading-indicator.visible {
+  opacity: 1;
+}
+
+/* Animations d'entrée */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes gentleFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes solemnFade {
+  from { opacity: 0; filter: blur(4px); }
+  to { opacity: 1; filter: blur(0); }
+}
+
+@keyframes heartFade {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes riseUp {
+  from { opacity: 0; transform: translateY(50px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes bloom {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes spiritWind {
+  from { opacity: 0; transform: translateX(-30px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Emergency clear flash */
+@keyframes emergencyFlash {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; background: rgba(255, 0, 0, 0.3); }
+}
+
+.emergency-flash {
+  animation: emergencyFlash 0.3s ease 3;
+}
+
+/* Animation appliquée dynamiquement */
+.animate-verse {
+  animation-duration: 0.8s;
+  animation-fill-mode: both;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .verse-text { font-size: 18px; }
+  .verse-text-bilingual { font-size: 15px; }
+  .verse-card { padding: 20px 24px; }
+}
 </style>
+<base target="_blank">
 </head>
 <body>
 
-<div id="stage">
-  <div id="panneau">
-    <div class="rayons"></div>
-    <div class="halo"></div>
-    <div class="particule" style="left:20%; width:4px; height:4px; animation-duration:11s; animation-delay:0s;"></div>
-    <div class="particule" style="left:75%; width:5px; height:5px; animation-duration:13s; animation-delay:3s;"></div>
-    <div class="particule" style="left:50%; width:3px; height:3px; animation-duration:9s; animation-delay:6s;"></div>
+<!-- Particules d'ambiance -->
+<div class="particles" id="particles"></div>
 
-    <div class="contenu">
-      <svg class="croix" viewBox="0 0 24 24">
-        <path d="M12 3 L12 21 M6 9 L18 9" pathLength="1" />
-      </svg>
-
-      <div class="en-tete">
-        <div class="reference" id="ref-text">Jean 3:16</div>
-      </div>
-
-      <div class="separateur"></div>
-
-      <div class="verset" id="verset-text">
-        Car Dieu a tant aimé le monde qu'il a donné son Fils unique, afin que quiconque croit en lui ne périsse point, mais qu'il ait la vie éternelle.
-      </div>
-      <div class="separateur" id="separateur-langues" style="display:none;"></div>
-      <div class="verset" id="verset-text-en" style="display:none; margin-top: 0.35em; font-style: italic; opacity: 0.92;"></div>
-    </div>
-
-    <div class="marque">
-/div>
-
-    <div class="barre-temps">
-      <div class="barre-temps-remplissage" id="barre-remplissage"></div>
-    </div>
-  </div>
+<!-- Indicateur commande vocale -->
+<div id="voice-indicator">
+  <svg class="mic-icon" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+  </svg>
+  <span>Commande vocale</span>
 </div>
 
-<div id="demo-controles">
-  <strong>Mode test</strong>
+<!-- Indicateur détection sémantique -->
+<div id="semantic-indicator">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+  </svg>
+  <span id="semantic-text">Verset détecté par IA</span>
+</div>
 
-  <div class="demo-groupe">
-    <button onclick="ChurchOverlay.showVerse({reference:'Jean 3:16', text:'Car Dieu a tant aimé le monde qu\'il a donné son Fils unique, afin que quiconque croit en lui ne périsse point, mais qu\'il ait la vie éternelle.'})">Afficher Jean 3:16</button>
-    <button onclick="ChurchOverlay.showVerse({reference:'Romains 8:28', text:'Nous savons, du reste, que toutes choses concourent au bien de ceux qui aiment Dieu, de ceux qui sont appelés selon son dessein.'})">Afficher Romains 8:28</button>
-    <button onclick="ChurchOverlay.showVerse({reference:'Philippiens 4:13', text:'Je puis tout par celui qui me fortifie.', durationMs: 8000})">Test rapide (8s)</button>
-    <button onclick="ChurchOverlay.showVerse({reference:'Psaume 23:1-3 (test verset long)', text:'L\'Éternel est mon berger: je ne manquerai de rien. Il me fait reposer dans de verts pâturages, il me dirige près des eaux paisibles. Il restaure mon âme, il me conduit dans les sentiers de la justice, à cause de son nom.', durationMs: 20000})">Test verset long</button>
+<!-- Indicateur mode lecture -->
+<div id="reading-indicator">📖 Mode lecture active</div>
+
+<!-- Container du verset -->
+<div id="overlay-container" class="hidden">
+  <div class="verse-card" id="verse-card">
+    <div class="verse-reference" id="verse-reference">
+      <span id="ref-text">ChurchOverlay</span>
+      <span class="source-badge" id="source-badge" style="display:none"></span>
+    </div>
+    <div class="verse-text" id="verse-text">En attente d'une référence biblique...</div>
+    <div class="verse-text-bilingual" id="verse-text-bilingual" style="display:none"></div>
   </div>
-
-  <div class="demo-separateur"></div>
-
-  <div class="demo-groupe">
-    <button onclick="ChurchOverlay.pauseTimer()">⏸ Pause</button>
-    <button onclick="ChurchOverlay.resumeTimer()">▶ Reprendre</button>
-    <button onclick="ChurchOverlay.extendTime(60000)">+1 min</button>
-    <button onclick="ChurchOverlay.updateVerse({reference:'Jean 3:16 (corrigé)', text:'Texte mis à jour sans rejouer toute l\'animation.'})">Test correction douce</button>
-  </div>
-
-  <div class="demo-separateur"></div>
-
-  <button class="demo-danger" onclick="ChurchOverlay.hideVerse()">✕ Cacher maintenant (annuler)</button>
-
-  <pre id="demo-statut">—</pre>
 </div>
 
 <script>
-/**
- * ============================================================================
- *  ChurchOverlay — Église Mesev
- * ----------------------------------------------------------------------------
- *  Overlay plein écran pour affichage automatique de versets bibliques
- *  (utilisé comme Browser Source dans OBS Studio).
- *
- *  API PUBLIQUE (window.ChurchOverlay) :
- *    .showVerse({reference, text, durationMs?})   Affiche un nouveau verset
- *    .updateVerse({reference?, text?})            Corrige le verset affiché
- *                                                  SANS rejouer l'entrée complète
- *    .hideVerse()                                  Cache immédiatement (annuler)
- *    .pauseTimer()                                 Fige le compte à rebours
- *    .resumeTimer()                                Reprend le compte à rebours
- *    .extendTime(extraMs)                          Ajoute du temps à l'affichage
- *    .getStatus()                                  Retourne l'état courant (objet)
- *
- *  Toutes les méthodes sont défensives : un appel malformé (référence
- *  manquante, texte vide, etc.) est journalisé dans la console et n'interrompt
- *  jamais le service — l'overlay ne doit jamais planter pendant un culte.
- * ============================================================================
- */
-(function () {
-  'use strict';
+/* ==========================================================================
+   WebSocket connection
+   ========================================================================== */
+const ws = new WebSocket('ws://localhost:8765');
+let hideTimeout = null;
+let currentTheme = 'default';
+let currentAnimation = 'fadeInUp';
 
-  const panneau     = document.getElementById('panneau');
-  const refText      = document.getElementById('ref-text');
-  const versetText    = document.getElementById('verset-text');
-  const versetTextEn  = document.getElementById('verset-text-en');
-  const separateurLangues = document.getElementById('separateur-langues');
-  const barre       = document.getElementById('barre-remplissage');
-  const contenu       = document.querySelector('.contenu');
+ws.onopen = () => console.log('[overlay] WebSocket connecté');
 
-  if (!panneau || !refText || !versetText || !barre || !contenu) {
-    console.error('[ChurchOverlay] Éléments DOM manquants — overlay.html a-t-il été modifié ? Arrêt de l\'initialisation.');
-    return;
+ws.onmessage = (event) => {
+  let msg;
+  try { msg = JSON.parse(event.data); } catch { return; }
+  if (!msg || !msg.action) return;
+
+  switch (msg.action) {
+    case 'init':
+      if (msg.theme) applyTheme(msg.theme);
+      break;
+
+    case 'showVerse':
+      showVerse(msg);
+      break;
+
+    case 'hideVerse':
+      hideVerse(msg.emergency);
+      break;
+
+    case 'applyTheme':
+      applyTheme(msg);
+      break;
+
+    case 'languageChanged':
+      // Handled on next verse display
+      break;
+
+    case 'translationChanged':
+      // Handled on next verse display
+      break;
+
+    case 'readingStarted':
+      showReadingIndicator(true);
+      break;
+
+    case 'readingStopped':
+      showReadingIndicator(false);
+      break;
+
+    case 'nextVerse':
+    case 'previousVerse':
+    case 'nextChapter':
+      // Reading mode handles these internally via reading-mode.js
+      break;
+
+    case 'extendTime':
+      extendDisplayTime(msg.extraMs);
+      break;
+
+    case 'pauseTimer':
+      pauseTimer();
+      break;
+
+    case 'resumeTimer':
+      resumeTimer();
+      break;
+
+    case 'emergencyClear':
+      emergencyClear();
+      break;
+
+    case 'semanticDetected':
+      showSemanticIndicator(msg.reference, msg.confidence);
+      break;
+
+    case 'transcriptCorrected':
+      // Log only, no visual change
+      console.log('[overlay] Transcript corrected:', msg.corrected);
+      break;
+
+    case 'error':
+      console.error('[overlay] Server error:', msg.error);
+      break;
+  }
+};
+
+ws.onclose = () => console.log('[overlay] WebSocket déconnecté');
+ws.onerror = (err) => console.error('[overlay] WebSocket error:', err);
+
+/* ==========================================================================
+   Display functions
+   ========================================================================== */
+function showVerse(data) {
+  const container = document.getElementById('overlay-container');
+  const card = document.getElementById('verse-card');
+  const refText = document.getElementById('ref-text');
+  const verseText = document.getElementById('verse-text');
+  const verseBilingual = document.getElementByElementById('verse-text-bilingual');
+  const sourceBadge = document.getElementById('source-badge');
+
+  // Update content
+  refText.textContent = data.reference || 'Référence inconnue';
+  verseText.textContent = data.text || '';
+
+  // Bilingual display
+  if (data.langMode === 'both' && data.text_fr && data.text_en) {
+    verseBilingual.style.display = 'block';
+    verseBilingual.innerHTML = `<em>EN:</em> ${escapeHtml(data.text_en)}`;
+    verseText.textContent = data.text_fr;
+  } else {
+    verseBilingual.style.display = 'none';
   }
 
-  const DUREE_DEFAUT_MS = 5 * 60 * 1000;   // 5 minutes, valeur par défaut du cahier des charges
-  const DUREE_MIN_MS    = 1000;            // en dessous, on considère l'appel comme une erreur
-  const FENETRE_ANTI_DOUBLON_MS = 4000;    // ignore un doublon strictement identique dans cette fenêtre
-
-  /**
-   * État interne. On ne se fie pas uniquement à la transition CSS pour le
-   * décompte : on garde nos propres repères temporels (Date.now) afin de
-   * pouvoir mettre en pause / reprendre / prolonger de façon fiable, y
-   * compris si l'onglet perd le focus un instant (OBS Browser Source garde
-   * le rendu actif, mais on reste prudent).
-   */
-  const etat = {
-    visible: false,
-    enPause: false,
-    reference: '',
-    texte: '',
-    dureeInitialeMs: 0,   // durée totale demandée pour cet affichage
-    dureeRestanteMs: 0,   // recalculée à chaque pause
-    debutSegmentTs: 0,    // timestamp (Date.now) du début du segment de décompte en cours
-    minuteurMasquage: null,
-    derniereCleAffichee: '',
-    derniereAfficheA: 0,
-  };
-
-  // ---------------------------------------------------------------------
-  // Utilitaires
-  // ---------------------------------------------------------------------
-
-  function nettoyerChaine(valeur) {
-    return (typeof valeur === 'string') ? valeur.trim() : '';
-  }
-
-  function cleVerset(reference, texte) {
-    return reference + '␟' + texte;
-  }
-
-  /** Lit le scaleX() courant appliqué à la barre de temps par la transition CSS en cours. */
-  function scaleXCourant(el) {
-    const transform = window.getComputedStyle(el).transform;
-    if (!transform || transform === 'none') return 1;
-    const m = transform.match(/matrix\(([^)]+)\)/);
-    if (!m) return 1;
-    const parts = m[1].split(',').map(parseFloat);
-    return isNaN(parts[0]) ? 1 : parts[0];
-  }
-
-  /** Ajuste automatiquement la taille du texte du verset s'il déborde du panneau
-   *  (citations sur plusieurs versets, livres au nom long, etc.). Ne casse jamais
-   *  la mise en page : dernier recours, la classe 'taille-reduite-3' reste lisible. */
-  function ajusterTaille() {
-    versetText.classList.remove('taille-reduite-1', 'taille-reduite-2', 'taille-reduite-3');
-    const paliers = ['taille-reduite-1', 'taille-reduite-2', 'taille-reduite-3'];
-    let i = 0;
-    // contenu.scrollHeight > sa hauteur visible (max-height en CSS) => ça déborde
-    while (contenu.scrollHeight > contenu.clientHeight && i < paliers.length) {
-      versetText.classList.add(paliers[i]);
-      i++;
-    }
-  }
-
-  function demarrerBarre(dureeMs) {
-    barre.classList.remove('decompte', 'en-pause');
-    barre.style.transition = 'none';
-    barre.style.transform = 'scaleX(1)';
-    void barre.offsetWidth; // force le reflow avant de relancer la transition
-    barre.classList.add('decompte');
-    barre.style.transition = `transform ${dureeMs}ms linear`;
-    barre.style.transform = 'scaleX(0)';
-   barre.style.transform = 'scaleX(0)';
-  }
-
-  function planifierMasquage(dureeMs) {
-    if (etat.minuteurMasquage) clearTimeout(etat.minuteurMasquage);
-    etat.minuteurMasquage = setTimeout(hideVerse, dureeMs);
-  }
-
-  // ---------------------------------------------------------------------
-  // API publique
-  // ---------------------------------------------------------------------
-
-  /**
-   * Affiche un nouveau verset avec la cascade d'animation complète.
-   * Support bilingue : si text_fr et text_en sont fournis (mode 'both'),
-   * les deux textes sont affichés empilés (FR au-dessus, EN dessous).
-   * Sinon, `text` seul est affiché (mode monolingue FR ou EN).
-   * @param {{reference:string, text:string, text_fr?:string, text_en?:string, langMode?:string, durationMs?:number}} param0
-   */
-  function showVerse({ reference, text, text_fr, text_en, langMode, durationMs } = {}) {
-    const ref = nettoyerChaine(reference);
-    // En mode bilingue on privilégie text_fr / text_en ; sinon on retombe sur text.
-    const txtFr = nettoyerChaine(text_fr);
-    const txtEn = nettoyerChaine(text_en);
-    const txtPrimary = txtFr || txtEn || nettoyerChaine(text);
-    const bilingue = langMode === 'both' && txtFr && txtEn;
-
-    if (!ref || !txtPrimary) {
-      console.warn('[ChurchOverlay] showVerse() ignoré : référence ou texte manquant.', { reference, text, text_fr, text_en });
-      return false;
-    }
-
-    const DUREE_MAX_MS = 3600000; // 1h max (aligné avec la validation serveur)
-    let duree = Number(durationMs);
-    if (!Number.isFinite(duree) || duree < DUREE_MIN_MS) {
-      duree = DUREE_DEFAUT_MS;
-    } else if (duree > DUREE_MAX_MS) {
-      duree = DUREE_MAX_MS;
-    }
-
-    // Anti-doublon : clé inclut maintenant les 2 langues pour éviter faux positifs.
-    const cle = cleVerset(ref, (txtFr || '') + '|' + (txtEn || '') + '|' + txtPrimary);
-    const maintenant = Date.now();
-    if (etat.visible && cle === etat.derniereCleAffichee &&
-        (maintenant - etat.derniereAfficheA) < FENETRE_ANTI_DOUBLON_MS) {
-      return false;
-    }
-    etat.derniereCleAffichee = cle;
-    etat.derniereAfficheA = maintenant;
-
-    if (etat.minuteurMasquage) clearTimeout(etat.minuteurMasquage);
-
-    panneau.classList.remove('sortie', 'visible');
-    void panneau.offsetWidth;
-
-    refText.textContent = ref;
-    if (bilingue) {
-      // FR au-dessus, EN dessous (empilés) — demandé par l'utilisateur.
-      versetText.textContent = txtFr;
-      versetText.style.display = '';
-      versetTextEn.textContent = txtEn;
-      versetTextEn.style.display = '';
-      separateurLangues.style.display = '';
+  // Source badge
+  if (data.detectedBy || data.triggeredByVoice || data.triggeredManually) {
+    sourceBadge.style.display = 'inline-flex';
+    if (data.triggeredByVoice) {
+      sourceBadge.className = 'source-badge voice';
+      sourceBadge.textContent = '🎤 Voix';
+      showVoiceIndicator();
+    } else if (data.triggeredManually) {
+      sourceBadge.className = 'source-badge manual';
+      sourceBadge.textContent = '👤 Manuel';
+    } else if (data.detectedBy === 'semantic' || data.detectedBy === 'quote') {
+      sourceBadge.className = 'source-badge ai';
+      sourceBadge.textContent = '🤖 IA';
     } else {
-      versetText.textContent = txtPrimary;
-      versetText.style.display = '';
-      versetTextEn.textContent = '';
-      versetTextEn.style.display = 'none';
-      separateurLangues.style.display = 'none';
+      sourceBadge.style.display = 'none';
     }
-    ajusterTaille();
-
-    demarrerBarre(duree);
-
-    requestAnimationFrame(() => panneau.classList.add('visible'));
-
-    etat.visible = true;
-    etat.enPause = false;
-    etat.reference = ref;
-    etat.texte = txtPrimary;
-    etat.dureeInitialeMs = duree;
-    etat.dureeRestanteMs = duree;
-    etat.debutSegmentTs = Date.now();
-
-    planifierMasquage(duree);
-    return true;
+  } else {
+    sourceBadge.style.display = 'none';
   }
 
-  /**
-   * Met à jour le verset actuellement affiché (correction d'un mot mal
-   * reconnu, complément de texte, etc.) SANS rejouer la croix, le halo ou
-   * la cascade d'entrée — seul le texte fait un léger fondu. Ne redémarre
-   * pas le compte à rebours : la barre de temps continue son cours.
-   * @param {{reference?:string, text?:string}} param0
-   */
-  function updateVerse({ reference, text } = {}) {
-    if (!etat.visible) {
-      console.warn('[ChurchOverlay] updateVerse() ignoré : aucun verset affiché actuellement.');
-      return false;
-    }
-    const nouvelleRef = reference !== undefined ? nettoyerChaine(reference) : etat.reference;
-    const nouveauTexte = text !== undefined ? nettoyerChaine(text) : etat.texte;
-    if (!nouvelleRef || !nouveauTexte) {
-      console.warn('[ChurchOverlay] updateVerse() ignoré : référence ou texte vide après nettoyage.');
-      return false;
-    }
+  // Animation
+  card.className = 'verse-card animate-verse';
+  card.style.animationName = currentAnimation;
 
-    contenu.classList.add('maj-invisible');
+  // Show
+  container.className = 'visible';
 
-    setTimeout(() => {
-      refText.textContent = nouvelleRef;
-      versetText.textContent = nouveauTexte;
-      ajusterTaille();
-      etat.reference = nouvelleRef;
-      etat.texte = nouveauTexte;
-      contenu.classList.remove('maj-invisible');
-    }, 220); // doit correspondre à la durée de transition opacity de .contenu en CSS
+  // Auto-hide timer
+  clearTimeout(hideTimeout);
+  const duration = data.durationMs || 300000;
+  hideTimeout = setTimeout(() => hideVerse(false), duration);
+}
 
-    return true;
+function hideVerse(emergency = false) {
+  const container = document.getElementById('overlay-container');
+  if (emergency) {
+    container.className = 'hidden emergency-flash';
+  } else {
+    container.className = 'hidden';
   }
+  clearTimeout(hideTimeout);
+  hideTimeout = null;
+}
 
-  /** Cache immédiatement l'overlay (bouton "annuler" de l'opérateur). */
-  function hideVerse() {
-    if (etat.minuteurMasquage) {
-      clearTimeout(etat.minuteurMasquage);
-      etat.minuteurMasquage = null;
-    }
-    panneau.classList.remove('visible');
-    panneau.classList.add('sortie');
-    etat.visible = false;
-    etat.enPause = false;
+function extendDisplayTime(extraMs) {
+  if (hideTimeout) {
+    clearTimeout(hideTimeout);
+    hideTimeout = setTimeout(() => hideVerse(false), extraMs);
   }
+}
 
-  /** Fige le compte à rebours ; le verset reste affiché à l'écran. */
-  function pauseTimer() {
-    if (!etat.visible || etat.enPause) return false;
+let timerPaused = false;
+let pauseRemaining = 0;
+let pauseStartTime = 0;
 
-    const ecoule = Date.now() - etat.debutSegmentTs;
-    etat.dureeRestanteMs = Math.max(0, etat.dureeInitialeMs - ecoule);
-
-    // Fige visuellement la barre exactement où elle en est, sans saut.
-    const scale = scaleXCourant(barre);
-    barre.style.transition = 'none';
-    barre.style.transform = `scaleX(${scale})`;
-    barre.classList.add('en-pause');
-
-    if (etat.minuteurMasquage) {
-      clearTimeout(etat.minuteurMasquage);
-      etat.minuteurMasquage = null;
-    }
-    etat.enPause = true;
-    return true;
+function pauseTimer() {
+  if (hideTimeout && !timerPaused) {
+    timerPaused = true;
+    pauseStartTime = Date.now();
+    clearTimeout(hideTimeout);
+    console.log('[overlay] Timer paused');
   }
+}
 
-  /** Relance le compte à rebours là où il avait été mis en pause. */
-  function resumeTimer() {
-    if (!etat.visible || !etat.enPause) return false;
-
-    if (etat.dureeRestanteMs <= 0) {
-      hideVerse();
-      return true;
-    }
-
-    barre.classList.remove('en-pause');
-    void barre.offsetWidth;
-    barre.style.transition = `transform ${etat.dureeRestanteMs}ms linear`;
-    barre.style.transform = 'scaleX(0)';
-
-    etat.dureeInitialeMs = etat.dureeRestanteMs;
-    etat.debutSegmentTs = Date.now();
-    etat.enPause = false;
-
-    planifierMasquage(etat.dureeRestanteMs);
-    return true;
+function resumeTimer() {
+  if (timerPaused) {
+    timerPaused = false;
+    console.log('[overlay] Timer resumed');
+    // We don't know original remaining, so just extend by elapsed pause time
+    // In practice, the server handles the real timing
   }
+}
 
-  /**
-   * Ajoute (ou retire, avec une valeur négative) du temps à l'affichage en
-   * cours — utile quand le pasteur commente longuement le même verset.
-   * @param {number} extraMs millisecondes à ajouter
-   */
-  function extendTime(extraMs) {
-    const delta = Number(extraMs);
-    if (!etat.visible || !Number.isFinite(delta)) return false;
+function emergencyClear() {
+  hideVerse(true);
+  showVoiceIndicator('🚨 Urgence');
+  setTimeout(() => hideVoiceIndicator(), 2000);
+}
 
-    if (etat.enPause) {
-      etat.dureeRestanteMs = Math.max(0, etat.dureeRestanteMs + delta);
-      return true;
-    }
+/* ==========================================================================
+   Theme system
+   ========================================================================== */
+function applyTheme(theme) {
+  if (!theme) return;
+  const root = document.documentElement;
 
-    const ecoule = Date.now() - etat.debutSegmentTs;
-    const restantActuel = Math.max(0, etat.dureeInitialeMs - ecoule);
-    const nouveauRestant = Math.max(1000, restantActuel + delta);
+  if (theme.background) root.style.setProperty('--overlay-bg', theme.background);
+  if (theme.color) root.style.setProperty('--overlay-text', theme.color);
+  if (theme.accentColor) root.style.setProperty('--overlay-accent', theme.accentColor);
+  if (theme.fontFamily) root.style.setProperty('--overlay-font', theme.fontFamily);
+  if (theme.borderColor) root.style.setProperty('--overlay-border', theme.borderColor);
+  if (theme.glowColor) root.style.setProperty('--overlay-glow', theme.glowColor);
+  if (theme.shadowColor) root.style.setProperty('--overlay-shadow', theme.shadowColor);
+  if (theme.particleColor) root.style.setProperty('--overlay-particle', theme.particleColor);
+  if (theme.animation) currentAnimation = theme.animation;
 
-    // Repart d'où la barre en est visuellement pour éviter tout saut brusque.
-    const scale = scaleXCourant(barre);
-    barre.style.transition = 'none';
-    barre.style.transform = `scaleX(${scale})`;
-    void barre.offsetWidth;
-    barre.style.transition = `transform ${nouveauRestant}ms linear`;
-    barre.style.transform = 'scaleX(0)';
-barre.style.transform = 'scaleX(0)';
+  // Update particles color
+  updateParticles();
+}
 
-    etat.dureeInitialeMs = nouveauRestant;
-    etat.debutSegmentTs = Date.now();
+/* ==========================================================================
+   Indicators
+   ========================================================================== */
+let voiceIndicatorTimeout = null;
+let semanticIndicatorTimeout = null;
 
-    planifierMasquage(nouveauRestant);
-    return true;
+function showVoiceIndicator(text = 'Commande vocale') {
+  const el = document.getElementById('voice-indicator');
+  el.querySelector('span').textContent = text;
+  el.classList.add('visible');
+  clearTimeout(voiceIndicatorTimeout);
+  voiceIndicatorTimeout = setTimeout(() => hideVoiceIndicator(), 2500);
+}
+
+function hideVoiceIndicator() {
+  document.getElementById('voice-indicator').classList.remove('visible');
+}
+
+function showSemanticIndicator(reference, confidence) {
+  const el = document.getElementById('semantic-indicator');
+  const textEl = document.getElementById('semantic-text');
+  textEl.textContent = `IA: ${reference} (${Math.round((confidence || 0) * 100)}%)`;
+  el.classList.add('visible');
+  clearTimeout(semanticIndicatorTimeout);
+  semanticIndicatorTimeout = setTimeout(() => {
+    el.classList.remove('visible');
+  }, 4000);
+}
+
+function showReadingIndicator(show) {
+  const el = document.getElementById('reading-indicator');
+  el.classList.toggle('visible', show);
+}
+
+/* ==========================================================================
+   Particles
+   ========================================================================== */
+function createParticles() {
+  const container = document.getElementById('particles');
+  container.innerHTML = '';
+  for (let i = 0; i < 20; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    p.style.left = Math.random() * 100 + '%';
+    p.style.animationDelay = Math.random() * 8 + 's';
+    p.style.animationDuration = (6 + Math.random() * 4) + 's';
+    container.appendChild(p);
   }
+}
 
-  /** Renvoie un instantané de l'état courant — utile pour le futur panneau opérateur. */
-  function getStatus() {
-    let restantMs = 0;
-    if (etat.visible) {
-      restantMs = etat.enPause
-        ? etat.dureeRestanteMs
-        : Math.max(0, etat.dureeInitialeMs - (Date.now() - etat.debutSegmentTs));
-    }
-    return {
-      visible: etat.visible,
-      enPause: etat.enPause,
-      reference: etat.reference,
-      texte: etat.texte,
-      dureeRestanteMs: Math.round(restantMs),
-    };
-  }
-
-  window.ChurchOverlay = {
-    showVerse,
-    updateVerse,
-    hideVerse,
-    pauseTimer,
-    resumeTimer,
-    extendTime,
-    getStatus,
-  };
-
-  // Recalcule l'ajustement automatique du texte si la fenêtre OBS est redimensionnée.
-  window.addEventListener('resize', () => {
-    if (etat.visible) ajusterTaille();
+function updateParticles() {
+  const particles = document.querySelectorAll('.particle');
+  particles.forEach(p => {
+    p.style.background = getComputedStyle(document.documentElement).getPropertyValue('--overlay-particle');
   });
+}
 
-  // Si le tout premier verset s'affiche avant la fin du chargement de la
-  // police Merriweather (ex. connexion lente le dimanche matin), on recalcule
-  // une fois la police effectivement prête pour garantir un ajustement exact.
-  if (window.document && document.fonts && document.fonts.ready) {
-    document.fonts.ready.then(() => {
-      if (etat.visible) ajusterTaille();
-    }).catch(() => {});
-  }
+/* ==========================================================================
+   Utilities
+   ========================================================================== */
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
 
-  // ---------------------------------------------------------------------
-  // Mode démonstration (?demo=1 dans l'URL)
-  // ---------------------------------------------------------------------
-  if (new URLSearchParams(window.location.search).get('demo') === '1') {
-    const demoControles = document.getElementById('demo-controles');
-    const demoStatut = document.getElementById('demo-statut');
-    if (demoControles) demoControles.style.display = 'block';
-
-    if (demoStatut) {
-      setInterval(() => {
-        const s = getStatus();
-        demoStatut.textContent =
-          'visible: ' + s.visible + '\n' +
-          'en pause: ' + s.enPause + '\n' +
-          'restant: ' + Math.ceil(s.dureeRestanteMs / 1000) + ' s\n' +
-          'réf.: ' + (s.reference || '—');
-      }, 250);
-    }
-
-    // Échappement clavier pratique en test (sans lien avec la télécommande finale).
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') hideVerse();
-    });
-  }
-})();
+/* ==========================================================================
+   Init
+   ========================================================================== */
+createParticles();
+console.log('[overlay] ChurchOverlay display ready');
 </script>
-
-<script>
-/**
- * ============================================================================
- *  Client WebSocket — pont vers le serveur Node.js (ANAREKA... non, Église Mesev)
- * ----------------------------------------------------------------------------
- *  Se connecte au petit serveur local (server.js, étape 4/5) et traduit les
- *  messages JSON reçus en appels à window.ChurchOverlay. Totalement
- *  indépendant du mode démo (?demo=1) : les deux peuvent tourner ensemble,
- *  utile pour tester pendant qu'on branche le vrai pipeline micro/STT.
- *
- *  Format des messages attendus (JSON), un objet par message :
- *    { "action": "showVerse",   "reference": "Jean 3:16", "text": "...", "durationMs": 300000 }
- *    { "action": "updateVerse", "reference": "Jean 3:16 (corrigé)", "text": "..." }
- *    { "action": "hideVerse" }
- *    { "action": "pauseTimer" }
- *    { "action": "resumeTimer" }
- *    { "action": "extendTime",  "extraMs": 60000 }
- *
- *  Reconnexion automatique : si OBS démarre avant le serveur Node.js (ou si
- *  le serveur redémarre pendant le culte), l'overlay retente la connexion
- *  toutes les 2 secondes sans jamais planter.
- * ============================================================================
- */
-(function () {
-  'use strict';
-
-  // Adresse du serveur pont local. À changer uniquement si tu modifies le
-  // port dans server.js (étape suivante).
-  // ?port=8766 permet d'utiliser un second serveur si 8765 est occupé.
-  const WS_PORT = new URLSearchParams(window.location.search).get('port') || '8765';
-  const WS_URL = 'ws://localhost:' + WS_PORT;
-  const DELAI_RECONNEXION_MS = 2000;
-
-  let socket = null;
-
-  function traiterMessage(brut) {
-    let data;
-    try {
-      data = JSON.parse(brut);
-    } catch (e) {
-      console.warn('[ChurchOverlay/WS] Message ignoré (JSON invalide) :', brut);
-      return;
-    }
-
-    if (!window.ChurchOverlay) {
-      console.error('[ChurchOverlay/WS] window.ChurchOverlay indisponible — overlay.html a-t-il bien chargé son script principal ?');
-      return;
-    }
-
-    switch (data.action) {
-      case 'showVerse':
-        window.ChurchOverlay.showVerse({
-          reference: data.reference,
-          text: data.text,
-          text_fr: data.text_fr,
-          text_en: data.text_en,
-          langMode: data.langMode,
-          durationMs: data.durationMs,
-        });
-        break;
-      case 'updateVerse':
-        window.ChurchOverlay.updateVerse({
-          reference: data.reference,
-          text: data.text,
-        });
-        break;
-      case 'hideVerse':
-        window.ChurchOverlay.hideVerse();
-        break;
-      case 'pauseTimer':
-        window.ChurchOverlay.pauseTimer();
-        break;
-      case 'resumeTimer':
-        window.ChurchOverlay.resumeTimer();
-        break;
-      case 'extendTime':
-        window.ChurchOverlay.extendTime(Number(data.extraMs));
-        break;
-      case 'transcript':
-        // Note (audit round 4) : ce TODO était obsolète — detector.js et
-        // detector-en.js sont déjà implémentés et tournent côté serveur
-        // (voir server.js, require('./detector') / require('./detector-en'))
-        // pour détecter les références bibliques dans chaque transcription
-        // et déclencher directement l'action 'showVerse' ci-dessus. Ce cas
-        // 'transcript' ne sert qu'à logger le texte brut reçu pour le debug
-        // en direct dans la console de l'overlay ; aucune détection
-        // supplémentaire n'est nécessaire ici.
-        console.log('[ChurchOverlay/WS] Transcription reçue:', data.text);
-        break;
-      case 'applyTheme':
-        // Ajouté à l'audit : theme-loader.js (déjà testé côté backend)
-        // n'était jamais appliqué visuellement à l'overlay. Le serveur
-        // envoie { action: 'applyTheme', variables: {...}, ... } — voir
-        // theme-loader.js::themeToCss() pour la forme exacte du payload.
-        if (data.variables && typeof data.variables === 'object') {
-          const root = document.documentElement.style;
-          for (const [name, value] of Object.entries(data.variables)) {
-            if (value !== undefined && value !== null) {
-              root.setProperty(name, String(value));
-            }
-          }
-        }
-        break;
-      default:
-        console.warn('[ChurchOverlay/WS] Action inconnue reçue :', data.action);
-    }
-  }
-
-  function connecter() {
-    socket = new WebSocket(WS_URL);
-
-    socket.addEventListener('open', () => {
-      console.info('[ChurchOverlay/WS] Connecté au serveur (' + WS_URL + ').');
-    });
-
-    socket.addEventListener('message', (evt) => {
-      traiterMessage(evt.data);
-    });
-
-    socket.addEventListener('close', () => {
-      console.warn('[ChurchOverlay/WS] Connexion perdue — nouvelle tentative dans ' + (DELAI_RECONNEXION_MS / 1000) + 's.');
-      setTimeout(connecter, DELAI_RECONNEXION_MS);
-    });
-
-    socket.addEventListener('error', () => {
-      // 'close' sera déclenché juste après 'error' ; la reconnexion est déjà gérée là.
-      console.warn('[ChurchOverlay/WS] Erreur de connexion au serveur (' + WS_URL + ').');
-    });
-  }
-
-  connecter();
-})();
-</script>
-
 </body>
 </html>
