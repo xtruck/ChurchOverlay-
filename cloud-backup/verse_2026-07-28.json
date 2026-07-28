@@ -1,0 +1,15 @@
+{
+  "type": "verse",
+  "data": {
+    "type": "verse",
+    "data": {
+      "reference": "Jean 3:16",
+      "text": "Car Dieu a tant aimé le monde...",
+      "timestamp": 1785249040622
+    },
+    "timestamp": 1785249040622
+  },
+  "timestamp": 1785249040623,
+  "syncedAt": 1785249040625,
+  "provider": "local"
+}

@@ -1,0 +1,17 @@
+{
+  "popularVerses": [],
+  "popularBooks": [],
+  "languageDistribution": [],
+  "totalSessions": 0,
+  "totalVersesDisplayed": 0,
+  "totalTranscriptions": 0,
+  "totalVoiceCommands": 0,
+  "averageTranscriptionLatency": 0,
+  "averageDetectionConfidence": 0,
+  "systemUptime": 0,
+  "sessionDuration": [],
+  "peakConcurrentUsers": 0,
+  "transcriptionErrors": 0,
+  "detectionErrors": 0,
+  "networkErrors": 0
+}

@@ -1,0 +1,15 @@
+{
+  "type": "sermon",
+  "data": {
+    "type": "sermon",
+    "data": {
+      "summary": "Sermon sur l'amour",
+      "duration": 3600000,
+      "timestamp": 1785249040628
+    },
+    "timestamp": 1785249040629
+  },
+  "timestamp": 1785249040629,
+  "syncedAt": 1785249040629,
+  "provider": "local"
+}

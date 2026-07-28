@@ -8,7 +8,14 @@
     "setup": "node setup.js",
     "test-envoi": "node tests/test-envoi.js",
     "test": "node tests/test-detector.js && node tests/test-validation.js && node tests/test-rate-limiter.js && node tests/test-config-validator.js",
-    "test-all": "node tests/test-detector.js && node tests/test-validation.js && node tests/test-rate-limiter.js && node tests/test-config-validator.js && node tests/test-audio-capture.js && node tests/test-whisper.js && node tests/test-pipeline-complet.js"
+    "test-all": "node tests/test-detector.js && node tests/test-validation.js && node tests/test-rate-limiter.js && node tests/test-config-validator.js && node tests/test-audio-capture.js && node tests/test-whisper.js && node tests/test-pipeline-complet.js",
+    "test-ml": "node tests/test-ml-detector.js",
+    "test-sermon": "node tests/test-sermon-analyzer.js",
+    "test-multilang": "node tests/test-multi-language.js",
+    "test-voice": "node tests/test-voice-commands.js",
+    "test-analytics": "node tests/test-analytics.js",
+    "test-cloud": "node tests/test-cloud-sync.js",
+    "test-new-features": "node tests/test-ml-detector.js && node tests/test-sermon-analyzer.js && node tests/test-multi-language.js && node tests/test-voice-commands.js && node tests/test-analytics.js && node tests/test-cloud-sync.js"
   },
   "dependencies": {
     "ws": "^8.18.0",

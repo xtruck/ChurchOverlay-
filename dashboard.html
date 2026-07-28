@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>xtruck Operator Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --secondary: #64748b;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --background: #0f172a;
+            --surface: #1e293b;
+            --surface-light: #334155;
+            --text: #f1f5f9;
+            --text-muted: #94a3b8;
+            --border: #334155;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--background);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .nav {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .nav-item {
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .nav-item:hover, .nav-item.active {
+            background: var(--surface-light);
+            color: var(--text);
+        }
+
+        .nav-item.active {
+            background: var(--primary);
+        }
+
+        /* Main Content */
+        .main-content {
+            padding: 2rem;
+            overflow-y: auto;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .header h1 {
+            font-size: 1.875rem;
+            font-weight: 600;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--surface);
+            border-radius: 2rem;
+            font-size: 0.875rem;
+        }
+
+        .status-dot {
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Grid Layout */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            padding: 1.5rem;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .card-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+
+        .card-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .card-subtitle {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        /* Controls */
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .control-btn {
+            padding: 0.75rem 1rem;
+            border: none;
+            border-radius: 0.5rem;
+            font-family: inherit;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .control-btn.primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .control-btn.primary:hover {
+            background: var(--primary-dark);
+        }
+
+        .control-btn.secondary {
+            background: var(--surface-light);
+            color: var(--text);
+        }
+
+        .control-btn.secondary:hover {
+            background: var(--border);
+        }
+
+        .control-btn.danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .control-btn.danger:hover {
+            background: #dc2626;
+        }
+
+        /* Transcript Feed */
+        .transcript-feed {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .transcript-item {
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--border);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.875rem;
+        }
+
+        .transcript-item:last-child {
+            border-bottom: none;
+        }
+
+        .transcript-time {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+        }
+
+        .transcript-text {
+            margin-top: 0.25rem;
+        }
+
+        /* Verse Display */
+        .verse-display {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            padding: 2rem;
+            text-align: center;
+        }
+
+        .verse-reference {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--primary);
+            margin-bottom: 1rem;
+        }
+
+        .verse-text {
+            font-size: 1.125rem;
+            line-height: 1.8;
+            font-style: italic;
+        }
+
+        /* Statistics */
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .stat-row:last-child {
+            border-bottom: none;
+        }
+
+        .stat-label {
+            color: var(--text-muted);
+        }
+
+        .stat-value {
+            font-weight: 600;
+        }
+
+        /* Language Selector */
+        .language-selector {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .lang-btn {
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            background: var(--surface);
+            color: var(--text);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .lang-btn:hover, .lang-btn.active {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        /* Progress Bar */
+        .progress-bar {
+            height: 0.5rem;
+            background: var(--surface-light);
+            border-radius: 0.25rem;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--primary);
+            transition: width 0.3s;
+        }
+
+        /* Confidence Indicator */
+        .confidence {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .confidence.high {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--success);
+        }
+
+        .confidence.medium {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--warning);
+        }
+
+        .confidence.low {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                display: none;
+            }
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.3s ease-out;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                </svg>
+                xtruck
+            </div>
+            <nav class="nav">
+                <div class="nav-item active" data-section="overview">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"/>
+                        <rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/>
+                        <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                    Overview
+                </div>
+                <div class="nav-item" data-section="controls">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                    Controls
+                </div>
+                <div class="nav-item" data-section="transcript">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    Transcript
+                </div>
+                <div class="nav-item" data-section="analysis">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="20" x2="18" y2="10"/>
+                        <line x1="12" y1="20" x2="12" y2="4"/>
+                        <line x1="6" y1="20" x2="6" y2="14"/>
+                    </svg>
+                    Analysis
+                </div>
+                <div class="nav-item" data-section="settings">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                    Settings
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="header">
+                <h1>Operator Dashboard</h1>
+                <div class="status">
+                    <div class="status-dot"></div>
+                    <span>Connected</span>
+                </div>
+            </div>
+
+            <!-- Overview Section -->
+            <section id="overview" class="section">
+                <div class="grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Total Verses</div>
+                        </div>
+                        <div class="card-value" id="totalVerses">0</div>
+                        <div class="card-subtitle">This session</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Detection Rate</div>
+                        </div>
+                        <div class="card-value" id="detectionRate">0%</div>
+                        <div class="card-subtitle">Accuracy</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Active Language</div>
+                        </div>
+                        <div class="card-value" id="activeLanguage">FR</div>
+                        <div class="card-subtitle">Auto-detected</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Session Duration</div>
+                        </div>
+                        <div class="card-value" id="sessionDuration">00:00</div>
+                        <div class="card-subtitle">Time elapsed</div>
+                    </div>
+                </div>
+
+                <div class="card verse-display" id="verseDisplay">
+                    <div class="verse-reference" id="verseReference">No verse displayed</div>
+                    <div class="verse-text" id="verseText">Versets will appear here when detected</div>
+                </div>
+            </section>
+
+            <!-- Controls Section -->
+            <section id="controls" class="section" style="display: none;">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Manual Controls</div>
+                    </div>
+                    <div class="controls">
+                        <button class="control-btn primary" onclick="showManualVerse()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 5v14M5 12h14"/>
+                            </svg>
+                            Show Verse
+                        </button>
+                        <button class="control-btn secondary" onclick="hideVerse()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="18" y1="6" x2="6" y2="18"/>
+                                <line x1="6" y1="6" x2="18" y2="18"/>
+                            </svg>
+                            Hide Verse
+                        </button>
+                        <button class="control-btn secondary" onclick="pauseTimer()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="6" y="4" width="4" height="16"/>
+                                <rect x="14" y="4" width="4" height="16"/>
+                            </svg>
+                            Pause Timer
+                        </button>
+                        <button class="control-btn secondary" onclick="resumeTimer()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="5 3 19 12 5 21 5 3"/>
+                            </svg>
+                            Resume Timer
+                        </button>
+                        <button class="control-btn danger" onclick="emergencyStop()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <line x1="15" y1="9" x2="9" y2="15"/>
+                                <line x1="9" y1="9" x2="15" y2="15"/>
+                            </svg>
+                            Emergency Stop
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top: 1.5rem;">
+                    <div class="card-header">
+                        <div class="card-title">Language Selection</div>
+                    </div>
+                    <div class="language-selector">
+                        <button class="lang-btn active" onclick="setLanguage('fr')">Français</button>
+                        <button class="lang-btn" onclick="setLanguage('en')">English</button>
+                        <button class="lang-btn" onclick="setLanguage('es')">Español</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Transcript Section -->
+            <section id="transcript" class="section" style="display: none;">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Live Transcript</div>
+                        <button class="control-btn secondary" onclick="clearTranscript()">Clear</button>
+                    </div>
+                    <div class="transcript-feed" id="transcriptFeed">
+                        <div class="transcript-item">
+                            <div class="transcript-time">Waiting for audio...</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Analysis Section -->
+            <section id="analysis" class="section" style="display: none;">
+                <div class="grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Sermon Analysis</div>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Word Count</span>
+                            <span class="stat-value" id="wordCount">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Key Points</span>
+                            <span class="stat-value" id="keyPoints">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Themes Identified</span>
+                            <span class="stat-value" id="themesCount">0</span>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">ML Detection Stats</div>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Total Detections</span>
+                            <span class="stat-value" id="totalDetections">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">High Confidence</span>
+                            <span class="stat-value" id="highConfidence">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Average Confidence</span>
+                            <span class="stat-value" id="avgConfidence">0%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top: 1.5rem;">
+                    <div class="card-header">
+                        <div class="card-title">Top Themes</div>
+                    </div>
+                    <div id="themesList">
+                        <div class="stat-row">
+                            <span class="stat-label">No themes detected yet</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Settings Section -->
+            <section id="settings" class="section" style="display: none;">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">System Settings</div>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">WebSocket Port</span>
+                        <span class="stat-value">8765</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Whisper Model</span>
+                        <span class="stat-value">ggml-tiny.bin</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Audio Sample Rate</span>
+                        <span class="stat-value">16000 Hz</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">VAD Threshold</span>
+                        <span class="stat-value">0.5</span>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        // WebSocket connection
+        const ws = new WebSocket('ws://localhost:8765');
+        
+        // State
+        let state = {
+            totalVerses: 0,
+            detectionRate: 0,
+            activeLanguage: 'FR',
+            sessionStartTime: Date.now(),
+            transcripts: [],
+            currentVerse: null
+        };
+
+        // Navigation
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', () => {
+                document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+                item.classList.add('active');
+                
+                document.querySelectorAll('.section').forEach(s => s.style.display = 'none');
+                document.getElementById(item.dataset.section).style.display = 'block';
+            });
+        });
+
+        // WebSocket event handlers
+        ws.onopen = () => {
+            console.log('Connected to xtruck server');
+            updateStatus(true);
+        };
+
+        ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            handleMessage(message);
+        };
+
+        ws.onclose = () => {
+            console.log('Disconnected from xtruck server');
+            updateStatus(false);
+        };
+
+        function handleMessage(message) {
+            switch (message.action) {
+                case 'showVerse':
+                    displayVerse(message);
+                    state.totalVerses++;
+                    updateDashboard();
+                    break;
+                case 'hideVerse':
+                    hideVerseDisplay();
+                    break;
+                case 'transcript':
+                    addTranscript(message);
+                    break;
+                case 'candidateVerse':
+                    showCandidateVerse(message);
+                    break;
+                case 'sermonAnalysis':
+                    updateAnalysis(message);
+                    break;
+                case 'statistics':
+                    updateMLStats(message);
+                    break;
+                case 'voiceCommand':
+                    handleVoiceCommand(message);
+                    break;
+            }
+        }
+
+        function displayVerse(message) {
+            document.getElementById('verseReference').textContent = message.reference;
+            document.getElementById('verseText').textContent = message.text;
+            state.currentVerse = message;
+            
+            if (message.confidence) {
+                const confidenceEl = document.createElement('span');
+                confidenceEl.className = `confidence ${message.confidence >= 0.8 ? 'high' : message.confidence >= 0.5 ? 'medium' : 'low'}`;
+                confidenceEl.textContent = `${Math.round(message.confidence * 100)}% confidence`;
+                document.getElementById('verseReference').appendChild(confidenceEl);
+            }
+        }
+
+        function hideVerseDisplay() {
+            document.getElementById('verseReference').textContent = 'No verse displayed';
+            document.getElementById('verseText').textContent = 'Versets will appear here when detected';
+            state.currentVerse = null;
+        }
+
+        function addTranscript(message) {
+            const feed = document.getElementById('transcriptFeed');
+            const item = document.createElement('div');
+            item.className = 'transcript-item fade-in';
+            
+            const time = new Date(message.timestamp).toLocaleTimeString();
+            item.innerHTML = `
+                <div class="transcript-time">${time}</div>
+                <div class="transcript-text">${message.text}</div>
+            `;
+            
+            feed.insertBefore(item, feed.firstChild);
+            
+            // Keep only last 50 transcripts
+            while (feed.children.length > 50) {
+                feed.removeChild(feed.lastChild);
+            }
+            
+            state.transcripts.unshift(message);
+            if (state.transcripts.length > 50) state.transcripts.pop();
+        }
+
+        function showCandidateVerse(message) {
+            console.log('Candidate verse detected:', message.reference);
+        }
+
+        function updateAnalysis(message) {
+            document.getElementById('wordCount').textContent = message.wordCount;
+            document.getElementById('keyPoints').textContent = message.keyPoints.length;
+            document.getElementById('themesCount').textContent = message.themes.length;
+            
+            // Update themes list
+            const themesList = document.getElementById('themesList');
+            themesList.innerHTML = '';
+            message.themes.slice(0, 5).forEach(theme => {
+                const row = document.createElement('div');
+                row.className = 'stat-row';
+                row.innerHTML = `
+                    <span class="stat-label">${theme.name}</span>
+                    <span class="stat-value">${theme.strength}</span>
+                `;
+                themesList.appendChild(row);
+            });
+        }
+
+        function updateMLStats(message) {
+            document.getElementById('totalDetections').textContent = message.totalDetections;
+            document.getElementById('highConfidence').textContent = message.highConfidence;
+            document.getElementById('avgConfidence').textContent = `${Math.round(message.avgConfidence * 100)}%`;
+            
+            state.detectionRate = message.totalDetections > 0 
+                ? Math.round((message.highConfidence / message.totalDetections) * 100) 
+                : 0;
+            updateDashboard();
+        }
+
+        function handleVoiceCommand(message) {
+            console.log('Voice command detected:', message.action);
+        }
+
+        function updateDashboard() {
+            document.getElementById('totalVerses').textContent = state.totalVerses;
+            document.getElementById('detectionRate').textContent = `${state.detectionRate}%`;
+            document.getElementById('activeLanguage').textContent = state.activeLanguage;
+            
+            // Update session duration
+            const elapsed = Math.floor((Date.now() - state.sessionStartTime) / 1000);
+            const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
+            const seconds = (elapsed % 60).toString().padStart(2, '0');
+            document.getElementById('sessionDuration').textContent = `${minutes}:${seconds}`;
+        }
+
+        function updateStatus(connected) {
+            const status = document.querySelector('.status');
+            const dot = status.querySelector('.status-dot');
+            const text = status.querySelector('span');
+            
+            if (connected) {
+                dot.style.background = 'var(--success)';
+                dot.style.animation = 'pulse 2s infinite';
+                text.textContent = 'Connected';
+            } else {
+                dot.style.background = 'var(--danger)';
+                dot.style.animation = 'none';
+                text.textContent = 'Disconnected';
+            }
+        }
+
+        // Control functions
+        function showManualVerse() {
+            const reference = prompt('Enter Bible reference (e.g., Jean 3:16):');
+            if (reference) {
+                ws.send(JSON.stringify({
+                    action: 'lookupReference',
+                    reference: reference,
+                    durationMs: 300000
+                }));
+            }
+        }
+
+        function hideVerse() {
+            ws.send(JSON.stringify({ action: 'hideVerse' }));
+        }
+
+        function pauseTimer() {
+            ws.send(JSON.stringify({ action: 'pauseTimer' }));
+        }
+
+        function resumeTimer() {
+            ws.send(JSON.stringify({ action: 'resumeTimer' }));
+        }
+
+        function emergencyStop() {
+            if (confirm('Are you sure you want to emergency stop?')) {
+                hideVerse();
+                ws.send(JSON.stringify({ action: 'endSermonAnalysis' }));
+            }
+        }
+
+        function setLanguage(lang) {
+            ws.send(JSON.stringify({ action: 'setLanguage', language: lang }));
+            state.activeLanguage = lang.toUpperCase();
+            updateDashboard();
+            
+            document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+
+        function clearTranscript() {
+            document.getElementById('transcriptFeed').innerHTML = `
+                <div class="transcript-item">
+                    <div class="transcript-time">Waiting for audio...</div>
+                </div>
+            `;
+            state.transcripts = [];
+        }
+
+        // Update session duration every second
+        setInterval(updateDashboard, 1000);
+
+        // Request statistics on connection
+        ws.onopen = () => {
+            setTimeout(() => {
+                ws.send(JSON.stringify({ action: 'getStatistics' }));
+                ws.send(JSON.stringify({ action: 'getSermonAnalysis' }));
+            }, 1000);
+        };
+    </script>
+</body>
+</html>

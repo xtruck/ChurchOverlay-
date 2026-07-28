@@ -48,6 +48,162 @@ const SCHEMAS = {
       reference: (value) => typeof value === 'string' && value.length > 0 && value.length <= 200,
       durationMs: (value) => typeof value === 'number' && value > 0 && value <= 3600000
     }
+  },
+  getStatistics: {
+    required: ['action'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'getStatistics'
+    }
+  },
+  confirmVerse: {
+    required: ['action', 'reference'],
+    optional: ['durationMs'],
+    validators: {
+      action: (value) => value === 'confirmVerse',
+      reference: (value) => typeof value === 'string' && value.length > 0 && value.length <= 200,
+      durationMs: (value) => typeof value === 'number' && value > 0 && value <= 3600000
+    }
+  },
+  startSermonAnalysis: {
+    required: ['action'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'startSermonAnalysis'
+    }
+  },
+  getSermonAnalysis: {
+    required: ['action'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'getSermonAnalysis'
+    }
+  },
+  getSermonSummary: {
+    required: ['action'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'getSermonSummary'
+    }
+  },
+  endSermonAnalysis: {
+    required: ['action'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'endSermonAnalysis'
+    }
+  },
+  setLanguage: {
+    required: ['action', 'language'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'setLanguage',
+      language: (value) => typeof value === 'string' && value.length === 2 && ['fr', 'en', 'es'].includes(value)
+    }
+  },
+  getLanguage: {
+    required: ['action'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'getLanguage'
+    }
+  },
+  getSupportedLanguages: {
+    required: ['action'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'getSupportedLanguages'
+    }
+  },
+  getVoiceCommands: {
+    required: ['action'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'getVoiceCommands'
+    }
+  },
+  getVoiceCommandHistory: {
+    required: ['action'],
+    optional: ['limit'],
+    validators: {
+      action: (value) => value === 'getVoiceCommandHistory',
+      limit: (value) => typeof value === 'number' && value > 0 && value <= 100
+    }
+  },
+  getVoiceStatistics: {
+    required: ['action'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'getVoiceStatistics'
+    }
+  },
+  getAnalyticsReport: {
+    required: ['action'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'getAnalyticsReport'
+    }
+  },
+  getAnalyticsInsights: {
+    required: ['action'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'getAnalyticsInsights'
+    }
+  },
+  exportAnalytics: {
+    required: ['action'],
+    optional: ['format'],
+    validators: {
+      action: (value) => value === 'exportAnalytics',
+      format: (value) => typeof value === 'string' && ['json', 'csv'].includes(value)
+    }
+  },
+  getCloudSyncStatus: {
+    required: ['action'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'getCloudSyncStatus'
+    }
+  },
+  getCloudBackups: {
+    required: ['action'],
+    optional: ['type'],
+    validators: {
+      action: (value) => value === 'getCloudBackups',
+      type: (value) => typeof value === 'string' && ['sermon', 'verse', 'analytics'].includes(value)
+    }
+  },
+  restoreFromBackup: {
+    required: ['action', 'backupId'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'restoreFromBackup',
+      backupId: (value) => typeof value === 'number' && value > 0
+    }
+  },
+  cleanupCloudBackups: {
+    required: ['action'],
+    optional: ['days'],
+    validators: {
+      action: (value) => value === 'cleanupCloudBackups',
+      days: (value) => typeof value === 'number' && value > 0
+    }
+  },
+  exportCloudData: {
+    required: ['action'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'exportCloudData'
+    }
+  },
+  importCloudData: {
+    required: ['action', 'data'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'importCloudData',
+      data: (value) => typeof value === 'object' && value !== null
+    }
   }
 };
 

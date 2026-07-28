@@ -1,0 +1,15 @@
+{
+  "type": "analytics",
+  "data": {
+    "type": "analytics",
+    "data": {
+      "totalVerses": 10,
+      "averageConfidence": 0.85,
+      "timestamp": 1785249040631
+    },
+    "timestamp": 1785249040631
+  },
+  "timestamp": 1785249040631,
+  "syncedAt": 1785249040631,
+  "provider": "local"
+}

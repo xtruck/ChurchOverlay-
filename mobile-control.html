@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>xtruck Mobile Control</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --secondary: #64748b;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --background: #0f172a;
+            --surface: #1e293b;
+            --surface-light: #334155;
+            --text: #f1f5f9;
+            --text-muted: #94a3b8;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--background);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 1rem;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .logo {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.25rem 0.75rem;
+            background: var(--surface);
+            border-radius: 1rem;
+            font-size: 0.75rem;
+        }
+
+        .status-dot {
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            padding: 1.25rem;
+            margin-bottom: 1rem;
+        }
+
+        .card-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .verse-display {
+            text-align: center;
+            padding: 1.5rem;
+            background: var(--surface-light);
+            border-radius: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .verse-reference {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--primary);
+            margin-bottom: 0.75rem;
+        }
+
+        .verse-text {
+            font-size: 1rem;
+            line-height: 1.6;
+            font-style: italic;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.75rem;
+        }
+
+        .control-btn {
+            padding: 1rem;
+            border: none;
+            border-radius: 0.75rem;
+            font-family: inherit;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            color: white;
+        }
+
+        .control-btn:active {
+            transform: scale(0.95);
+        }
+
+        .control-btn.primary {
+            background: var(--primary);
+        }
+
+        .control-btn.primary:active {
+            background: var(--primary-dark);
+        }
+
+        .control-btn.secondary {
+            background: var(--surface-light);
+        }
+
+        .control-btn.secondary:active {
+            background: var(--border);
+        }
+
+        .control-btn.danger {
+            background: var(--danger);
+        }
+
+        .control-btn.danger:active {
+            background: #dc2626;
+        }
+
+        .control-btn.success {
+            background: var(--success);
+        }
+
+        .control-btn.success:active {
+            background: #059669;
+        }
+
+        .control-btn svg {
+            width: 24px;
+            height: 24px;
+        }
+
+        .full-width {
+            grid-column: span 2;
+        }
+
+        .quick-actions {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0.5rem;
+        }
+
+        .quick-btn {
+            padding: 0.75rem;
+            border: none;
+            border-radius: 0.5rem;
+            background: var(--surface-light);
+            color: var(--text);
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .quick-btn:active {
+            background: var(--border);
+        }
+
+        .transcript {
+            max-height: 200px;
+            overflow-y: auto;
+            background: var(--surface-light);
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+            font-size: 0.875rem;
+        }
+
+        .transcript-item {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .transcript-item:last-child {
+            border-bottom: none;
+        }
+
+        .transcript-time {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+        }
+
+        .language-selector {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .lang-btn {
+            flex: 1;
+            padding: 0.5rem;
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            background: var(--surface);
+            color: var(--text);
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .lang-btn.active {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .timer-display {
+            text-align: center;
+            padding: 1rem;
+            background: var(--surface-light);
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .timer-value {
+            font-size: 2rem;
+            font-weight: 700;
+            font-family: monospace;
+        }
+
+        .timer-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .notification {
+            position: fixed;
+            bottom: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            font-size: 0.875rem;
+            z-index: 1000;
+            animation: slideUp 0.3s ease-out;
+        }
+
+        @keyframes slideUp {
+            from { transform: translateX(-50%) translateY(100%); opacity: 0; }
+            to { transform: translateX(-50%) translateY(0); opacity: 1; }
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--text-muted);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .hide {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                </svg>
+                xtruck
+            </div>
+            <div class="status">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Connecting...</span>
+            </div>
+        </div>
+
+        <!-- Current Verse -->
+        <div class="card">
+            <div class="card-title">
+                Current Verse
+                <button class="quick-btn" onclick="hideVerse()">Hide</button>
+            </div>
+            <div class="verse-display" id="verseDisplay">
+                <div class="verse-reference" id="verseReference">No verse displayed</div>
+                <div class="verse-text" id="verseText">Versets will appear here when detected</div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="card">
+            <div class="card-title">Quick Actions</div>
+            <div class="quick-actions">
+                <button class="quick-btn" onclick="showQuickVerse('Jean 3:16')">Jean 3:16</button>
+                <button class="quick-btn" onclick="showQuickVerse('Matthieu 5:9')">Matt 5:9</button>
+                <button class="quick-btn" onclick="showQuickVerse('Psaumes 23')">Ps 23</button>
+                <button class="quick-btn" onclick="showQuickVerse('Philippiens 4:13')">Phil 4:13</button>
+            </div>
+        </div>
+
+        <!-- Main Controls -->
+        <div class="card">
+            <div class="card-title">Controls</div>
+            <div class="controls">
+                <button class="control-btn primary" onclick="showManualVerse()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 5v14M5 12h14"/>
+                    </svg>
+                    Show Verse
+                </button>
+                <button class="control-btn secondary" onclick="hideVerse()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                    Hide
+                </button>
+                <button class="control-btn secondary" onclick="pauseTimer()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="6" y="4" width="4" height="16"/>
+                        <rect x="14" y="4" width="4" height="16"/>
+                    </svg>
+                    Pause
+                </button>
+                <button class="control-btn success" onclick="resumeTimer()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="5 3 19 12 5 21 5 3"/>
+                    </svg>
+                    Resume
+                </button>
+                <button class="control-btn secondary full-width" onclick="extendTime()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    Add 30 Seconds
+                </button>
+            </div>
+        </div>
+
+        <!-- Language Selection -->
+        <div class="card">
+            <div class="card-title">Language</div>
+            <div class="language-selector">
+                <button class="lang-btn active" onclick="setLanguage('fr')">Français</button>
+                <button class="lang-btn" onclick="setLanguage('en')">English</button>
+                <button class="lang-btn" onclick="setLanguage('es')">Español</button>
+            </div>
+        </div>
+
+        <!-- Timer -->
+        <div class="card">
+            <div class="card-title">Timer</div>
+            <div class="timer-display">
+                <div class="timer-value" id="timerValue">00:00</div>
+                <div class="timer-label">Time Remaining</div>
+            </div>
+        </div>
+
+        <!-- Live Transcript -->
+        <div class="card">
+            <div class="card-title">
+                Live Transcript
+                <button class="quick-btn" onclick="clearTranscript()">Clear</button>
+            </div>
+            <div class="transcript" id="transcript">
+                <div class="transcript-item">
+                    <div class="transcript-time">Waiting for audio...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Emergency Stop -->
+        <div class="card">
+            <button class="control-btn danger full-width" onclick="emergencyStop()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="15" y1="9" x2="9" y2="15"/>
+                    <line x1="9" y1="9" x2="15" y2="15"/>
+                </svg>
+                Emergency Stop
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // WebSocket connection
+        const ws = new WebSocket('ws://localhost:8765');
+        
+        // State
+        let state = {
+            connected: false,
+            currentVerse: null,
+            timerRunning: false,
+            timerValue: 0
+        };
+
+        // WebSocket event handlers
+        ws.onopen = () => {
+            console.log('Connected to xtruck server');
+            state.connected = true;
+            updateStatus(true);
+        };
+
+        ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            handleMessage(message);
+        };
+
+        ws.onclose = () => {
+            console.log('Disconnected from xtruck server');
+            state.connected = false;
+            updateStatus(false);
+        };
+
+        function handleMessage(message) {
+            switch (message.action) {
+                case 'showVerse':
+                    displayVerse(message);
+                    break;
+                case 'hideVerse':
+                    hideVerseDisplay();
+                    break;
+                case 'transcript':
+                    addTranscript(message);
+                    break;
+                case 'voiceCommand':
+                    showNotification(`Voice command: ${message.action}`);
+                    break;
+            }
+        }
+
+        function displayVerse(message) {
+            document.getElementById('verseReference').textContent = message.reference;
+            document.getElementById('verseText').textContent = message.text;
+            state.currentVerse = message;
+            
+            if (message.durationMs) {
+                startTimer(message.durationMs);
+            }
+        }
+
+        function hideVerseDisplay() {
+            document.getElementById('verseReference').textContent = 'No verse displayed';
+            document.getElementById('verseText').textContent = 'Versets will appear here when detected';
+            state.currentVerse = null;
+            stopTimer();
+        }
+
+        function addTranscript(message) {
+            const transcript = document.getElementById('transcript');
+            const item = document.createElement('div');
+            item.className = 'transcript-item';
+            
+            const time = new Date(message.timestamp).toLocaleTimeString();
+            item.innerHTML = `
+                <div class="transcript-time">${time}</div>
+                <div>${message.text}</div>
+            `;
+            
+            transcript.insertBefore(item, transcript.firstChild);
+            
+            // Keep only last 20 transcripts
+            while (transcript.children.length > 20) {
+                transcript.removeChild(transcript.lastChild);
+            }
+        }
+
+        function updateStatus(connected) {
+            const dot = document.getElementById('statusDot');
+            const text = document.getElementById('statusText');
+            
+            if (connected) {
+                dot.style.background = 'var(--success)';
+                dot.style.animation = 'pulse 2s infinite';
+                text.textContent = 'Connected';
+            } else {
+                dot.style.background = 'var(--danger)';
+                dot.style.animation = 'none';
+                text.textContent = 'Disconnected';
+            }
+        }
+
+        function showNotification(message) {
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+
+        // Timer functions
+        function startTimer(durationMs) {
+            state.timerValue = durationMs;
+            state.timerRunning = true;
+            updateTimerDisplay();
+        }
+
+        function stopTimer() {
+            state.timerRunning = false;
+            state.timerValue = 0;
+            updateTimerDisplay();
+        }
+
+        function updateTimerDisplay() {
+            const seconds = Math.floor(state.timerValue / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = seconds % 60;
+            
+            document.getElementById('timerValue').textContent = 
+                `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+        }
+
+        // Control functions
+        function showManualVerse() {
+            const reference = prompt('Enter Bible reference (e.g., Jean 3:16):');
+            if (reference) {
+                ws.send(JSON.stringify({
+                    action: 'lookupReference',
+                    reference: reference,
+                    durationMs: 300000
+                }));
+            }
+        }
+
+        function showQuickVerse(reference) {
+            ws.send(JSON.stringify({
+                action: 'lookupReference',
+                reference: reference,
+                durationMs: 300000
+            }));
+        }
+
+        function hideVerse() {
+            ws.send(JSON.stringify({ action: 'hideVerse' }));
+        }
+
+        function pauseTimer() {
+            ws.send(JSON.stringify({ action: 'pauseTimer' }));
+            state.timerRunning = false;
+        }
+
+        function resumeTimer() {
+            ws.send(JSON.stringify({ action: 'resumeTimer' }));
+            state.timerRunning = true;
+        }
+
+        function extendTime() {
+            ws.send(JSON.stringify({ action: 'extendTime', extraMs: 30000 }));
+            state.timerValue += 30000;
+            updateTimerDisplay();
+        }
+
+        function setLanguage(lang) {
+            ws.send(JSON.stringify({ action: 'setLanguage', language: lang }));
+            
+            document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+
+        function clearTranscript() {
+            document.getElementById('transcript').innerHTML = `
+                <div class="transcript-item">
+                    <div class="transcript-time">Waiting for audio...</div>
+                </div>
+            `;
+        }
+
+        function emergencyStop() {
+            if (confirm('Are you sure you want to emergency stop?')) {
+                hideVerse();
+                ws.send(JSON.stringify({ action: 'endSermonAnalysis' }));
+                stopTimer();
+            }
+        }
+
+        // Timer countdown
+        setInterval(() => {
+            if (state.timerRunning && state.timerValue > 0) {
+                state.timerValue -= 1000;
+                updateTimerDisplay();
+                
+                if (state.timerValue <= 0) {
+                    hideVerse();
+                }
+            }
+        }, 1000);
+
+        // Handle visibility change
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && !state.connected) {
+                // Try to reconnect when app becomes visible
+                console.log('Attempting to reconnect...');
+            }
+        });
+    </script>
+</body>
+</html>

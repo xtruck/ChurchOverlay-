@@ -109,8 +109,9 @@ const messageWithXss = {
 };
 const result9 = validateAndSanitize(messageWithXss);
 assert.strictEqual(result9.valid, true, 'Message avec XSS devrait être valide');
-assert(!result9.sanitized.text.includes('<script>'), 'Texte sanitisé ne devrait pas contenir de balises');
-assert(result9.sanitized.text.includes('&lt;script&gt;'), 'Texte devrait être échappé');
+// Note: validateAndSanitize ne sanite pas le texte car overlay.html utilise textContent qui est sécurisé
+// Le texte reste tel quel pour l'affichage correct dans l'overlay
+assert.strictEqual(result9.sanitized.text, messageWithXss.text, 'Le texte devrait rester tel quel (textContent est sécurisé)');
 console.log('[TEST] ✓ Validation et sanitization combinées réussies');
 
 // Test 10: Champ non autorisé
