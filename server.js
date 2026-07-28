@@ -26,12 +26,19 @@ const USER_DATA_DIR = (workerData && workerData.userDataDir) || path.join(os.hom
 // ---------------------------------------------------------------------------
 const audioCapture = require('./audio-capture');
 const groq = require('./groq-wrapper');
+const configValidator = require('./config-validator');
 
 // FIX: Use detector-compat which wraps detector.detect() as detectBilingual()
 const detector = require('./detector-compat');
 
 const bibleLookup = require('./bible-lookup-with-api');
-const readingMode = require('./reading-mode');
+// CORRECTIF : ce module exporte la CLASSE ReadingMode, pas une instance.
+// `require('./reading-mode').start(...)` n'a donc jamais été une méthode
+// valide — chaque appel plantait silencieusement (attrapé par le try/catch
+// autour, donc invisible sans test d'intégration réel). On instancie
+// maintenant réellement la classe, avec les callbacks branchés sur le
+// pipeline (bible-lookup + broadcast WebSocket).
+const { ReadingMode } = require('./reading-mode');
 const themeLoader = require('./theme-loader');
 const featuresStore = require('./features-store');
 const obsController = require('./obs-controller');
@@ -146,7 +153,48 @@ if (aiLoadErrors.length > 0) {
 // WebSocket server
 // ---------------------------------------------------------------------------
 const WebSocket = require('ws');
-const wss = new WebSocket.Server({ port: 8765 });
+
+// CORRECTIF : le port était figé en dur (8765), alors que config-validator.js
+// valide déjà PORT (avec repli sur 8765) sans jamais être branché nulle
+// part — dead code silencieux. Résultat concret : impossible de faire
+// tourner deux instances (ex. tests d'intégration sur un port dédié) et
+// PORT défini dans l'environnement était ignoré sans avertissement.
+const portValidation = configValidator.validateEnvVar('PORT', process.env.PORT);
+if (!portValidation.valid) {
+  console.warn(`[server] ${portValidation.error} — utilisation du port par défaut 8765.`);
+}
+const SERVER_PORT = portValidation.valid ? portValidation.parsedValue : 8765;
+
+const wss = new WebSocket.Server({ port: SERVER_PORT });
+
+// CORRECTIF : aucun listener 'error' sur wss. Si le port est déjà occupé
+// (EADDRINUSE — ex. une instance précédente pas encore libérée après un
+// redémarrage, ou un autre logiciel sur la machine), l'EventEmitter lève
+// l'erreur, qui remonte comme uncaughtException. Le handler global en fin
+// de fichier l'attrape mais ne fait que logguer/nettoyer : le worker reste
+// vivant, jamais de message 'status: running' n'est envoyé à main.js, et
+// l'utilisateur reste bloqué sur « démarrage... » indéfiniment sans le
+// moindre message d'erreur exploitable. On échoue maintenant vite et
+// explicitement : alerte à main.js puis arrêt du worker, ce qui déclenche
+// le redémarrage automatique (et, en cas de blocage persistant, l'arrêt
+// après plusieurs échecs rapprochés) déjà géré côté main.js.
+wss.on('error', (err) => {
+  const reason = err && err.code === 'EADDRINUSE'
+    ? `Le port ${SERVER_PORT} est déjà utilisé par une autre application.`
+    : `Erreur du serveur WebSocket: ${err && err.message}`;
+  console.error('[server] ' + reason);
+  if (parentPort) {
+    parentPort.postMessage({
+      type: 'alert',
+      code: 'server-listen-error',
+      severity: 'error',
+      message: reason,
+      timestamp: Date.now(),
+    });
+  }
+  process.exitCode = 1;
+  process.exit(1);
+});
 
 // ---------------------------------------------------------------------------
 // State
@@ -208,6 +256,41 @@ function broadcast(obj) {
 function pushHistory(entry) {
   verseHistory.unshift(entry);
   if (verseHistory.length > MAX_HISTORY) verseHistory.pop();
+}
+
+// ---------------------------------------------------------------------------
+// Reading Mode — lecture continue (avance auto sans répéter la référence)
+// ---------------------------------------------------------------------------
+const readingMode = new ReadingMode({
+  getChapterVerses: (book, chapter) =>
+    bibleLookup.getChapterVerses(book, chapter, displayLanguage === 'en' ? 'en' : 'fr'),
+  onVerseAdvance: (verse) => {
+    const reference = bibleLookup.buildReferenceLabel(
+      { book: readingMode.book, chapter: readingMode.chapter, verseStart: verse.num },
+      displayLanguage
+    );
+    broadcast({
+      action: 'showVerse',
+      reference,
+      text: verse.text,
+      langMode: displayLanguage,
+      durationMs: 300_000,
+      readingMode: true,
+    });
+    pushHistory({ reference, text: verse.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
+    broadcast({ action: 'historyUpdated', history: verseHistory });
+  },
+});
+
+// Démarre (ou redémarre) le Reading Mode sur un livre/chapitre/verset donné,
+// sans jamais faire planter le pipeline si le chapitre est introuvable
+// (ex. provider hors-ligne) : le Reading Mode reste simplement inactif.
+async function activateReadingMode(book, chapter, verseStart) {
+  try {
+    await readingMode.start(book, chapter, verseStart);
+  } catch (err) {
+    warn('Reading mode: activation impossible pour ' + book + ' ' + chapter + ': ' + err.message);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -311,8 +394,41 @@ async function processTranscript(text) {
     }
   }
 
-  // ── No reference found ──
-  if (!reference) return;
+  // ── No explicit reference found: try Reading Mode auto-advance ──
+  // C'est le cœur de la "lecture continue" (façon Rhema/BibleShow) : si le
+  // Reading Mode est actif, on compare le fragment aux versets courant/
+  // suivants du chapitre en cours plutôt que d'abandonner le segment.
+  if (!reference) {
+    if (readingMode.active) {
+      try {
+        const result = readingMode.processFragment(correctedText);
+        if (result && result.command === 'nextChapter') {
+          const nextChapter = (readingMode.chapter || 0) + 1;
+          const book = readingMode.book;
+          await activateReadingMode(book, nextChapter, 1);
+          if (readingMode.active && readingMode.currentIndex >= 0) {
+            const first = readingMode.verses[readingMode.currentIndex];
+            // onVerseAdvance ne se déclenche que sur un CHANGEMENT de
+            // verset détecté depuis processFragment ; ici on vient de
+            // (re)positionner explicitement sur le verset 1, donc on
+            // diffuse nous-mêmes pour ne pas perdre l'affichage.
+            const label = bibleLookup.buildReferenceLabel(
+              { book, chapter: nextChapter, verseStart: first.num }, displayLanguage
+            );
+            broadcast({ action: 'showVerse', reference: label, text: first.text, langMode: displayLanguage, durationMs: 300_000, readingMode: true });
+            pushHistory({ reference: label, text: first.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
+            broadcast({ action: 'historyUpdated', history: verseHistory });
+            log('Reading mode: chapitre suivant → ' + label);
+          }
+        }
+        // Les autres cas (avancée normale, saut par numéro de verset) sont
+        // déjà diffusés par le callback onVerseAdvance de ReadingMode.
+      } catch (e) {
+        warn('Reading mode processFragment error: ' + e.message);
+      }
+    }
+    return;
+  }
 
   // ── Rate limit check ──
   if (isRateLimited()) {
@@ -402,6 +518,13 @@ async function processTranscript(text) {
   }
 
   log('Displayed: ' + verse.reference);
+
+  // Une citation explicite (référence dite ou reconnue) relance le Reading
+  // Mode sur ce livre/chapitre : le prédicateur peut ensuite continuer sa
+  // lecture sans répéter la référence à chaque verset.
+  if (reference.book && reference.chapter) {
+    await activateReadingMode(reference.book, reference.chapter, reference.verseStart || 1);
+  }
 }
 
 // ===========================================================================
@@ -428,17 +551,38 @@ async function handleVoiceCommand(command, originalText) {
       log('Voice command: hide overlay');
       break;
 
-    case 'nextVerse':
+    case 'nextVerse': {
+      // CORRECTIF : cette commande ne faisait que diffuser une action que
+      // rien côté serveur n'interprétait — le Reading Mode n'avançait pas.
       broadcast({ action: 'nextVerse', triggeredByVoice: true });
+      if (readingMode.active && readingMode.currentIndex < readingMode.verses.length - 1) {
+        const verse = readingMode.verses[readingMode.currentIndex + 1];
+        readingMode.currentIndex += 1;
+        readingMode.onVerseAdvance(verse);
+      }
       break;
+    }
 
-    case 'previousVerse':
+    case 'previousVerse': {
       broadcast({ action: 'previousVerse', triggeredByVoice: true });
+      if (readingMode.active && readingMode.currentIndex > 0) {
+        const verse = readingMode.verses[readingMode.currentIndex - 1];
+        readingMode.currentIndex -= 1;
+        readingMode.onVerseAdvance(verse);
+      }
       break;
+    }
 
-    case 'nextChapter':
+    case 'nextChapter': {
       broadcast({ action: 'nextChapter', triggeredByVoice: true });
+      if (readingMode.active) {
+        await activateReadingMode(readingMode.book, (readingMode.chapter || 0) + 1, 1);
+        if (readingMode.active && readingMode.currentIndex >= 0) {
+          readingMode.onVerseAdvance(readingMode.verses[readingMode.currentIndex]);
+        }
+      }
       break;
+    }
 
     case 'setTheme': {
       if (themeGenerator) {
@@ -601,12 +745,16 @@ wss.on('connection', (ws) => {
         return;
       }
       try {
-        await readingMode.start(ref, displayLanguage, (verse) => {
-          broadcast({ action: 'showVerse', ...verse, durationMs: 300_000, readingMode: true });
-          pushHistory({ ...verse, readingMode: true, timestamp: Date.now() });
-          broadcast({ action: 'historyUpdated', history: verseHistory });
-        });
+        const firstVerse = await readingMode.start(ref.book, ref.chapter, ref.verseStart);
         ws.send(JSON.stringify({ action: 'readingStarted', reference: ref }));
+        if (firstVerse) {
+          const label = bibleLookup.buildReferenceLabel(
+            { book: ref.book, chapter: ref.chapter, verseStart: firstVerse.num }, displayLanguage
+          );
+          broadcast({ action: 'showVerse', reference: label, text: firstVerse.text, langMode: displayLanguage, durationMs: 300_000, readingMode: true });
+          pushHistory({ reference: label, text: firstVerse.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
+          broadcast({ action: 'historyUpdated', history: verseHistory });
+        }
       } catch (err) {
         ws.send(JSON.stringify({ action: 'error', error: err.message }));
       }
@@ -746,7 +894,7 @@ function startPipeline() {
     parentPort.postMessage({ type: 'audio-pipeline-ready' });
   }
 
-  log('Pipeline démarré sur ws://localhost:8765');
+  log(`Pipeline démarré sur ws://localhost:${SERVER_PORT}`);
   if (aiLoadErrors.length > 0) {
     log('⚠ ' + aiLoadErrors.length + ' AI feature(s) in limited mode (see logs above)');
   }
@@ -802,6 +950,10 @@ try {
 // ===========================================================================
 // Startup
 // ===========================================================================
+configValidator.validateSystemConfig()
+  .then(configValidator.displayValidationResults)
+  .catch((err) => warn('config-validator: ' + err.message));
+
 startPipeline();
 
 process.on('SIGTERM', () => {
