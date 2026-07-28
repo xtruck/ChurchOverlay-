@@ -2,11 +2,7 @@
  * ============================================================================
  * electron/main.js — Coquille application pour ChurchOverlay
  * ----------------------------------------------------------------------------
- * CHANGELOG v1.0.0 — AI Innovation Pack
- * - Auto-updater integration (electron-updater) with GitHub Releases
- * - French UI dialogs for update notifications
- * - All existing features preserved: Worker Thread, single-instance lock,
- *   safeStorage, theme loader, OBS control, perf monitoring, etc.
+ * v1.0.1 — FIXED: auto-updater is optional (won't crash if not installed)
  * ============================================================================
  */
 
@@ -22,8 +18,14 @@ const perfMonitor = require('./perf-monitor');
 const themeLoader = require('./theme-loader');
 const featuresStore = require('./features-store');
 
-// NEW: Auto-updater
-const { initAutoUpdater } = require('./auto-updater');
+// NEW: Auto-updater (optional — won't crash if not installed)
+let autoUpdaterModule = null;
+try {
+  autoUpdaterModule = require('./auto-updater');
+  console.log('[main] Auto-updater loaded');
+} catch (e) {
+  console.warn('[main] Auto-updater not available:', e.message);
+}
 
 const APP_ROOT = __dirname;
 const USER_DATA = () => app.getPath('userData');
@@ -630,12 +632,18 @@ app.whenReady().then(async () => {
   }, PERF_PUSH_MS);
   perfTimer.unref?.();
 
-  // NEW: Initialize auto-updater
-  initAutoUpdater(mainWindow, {
-    SILENT_INSTALL: false,
-    SHOW_NOTIFICATION: true,
-    ALLOW_PRERELEASE: false,
-  });
+  // NEW: Initialize auto-updater (optional)
+  if (autoUpdaterModule && autoUpdaterModule.initAutoUpdater) {
+    try {
+      autoUpdaterModule.initAutoUpdater(mainWindow, {
+        SILENT_INSTALL: false,
+        SHOW_NOTIFICATION: true,
+        ALLOW_PRERELEASE: false,
+      });
+    } catch (e) {
+      console.warn('[main] Auto-updater init failed:', e.message);
+    }
+  }
 
   if (isFirstRunNeeded()) {
     const setupWin = createSetupWindow();
