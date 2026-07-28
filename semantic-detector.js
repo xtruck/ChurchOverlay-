@@ -246,4 +246,30 @@ class SemanticDetector {
         console.log(`[semantic] Detected: ${result.raw} (confidence: ${result.confidence.toFixed(2)}) — ${result.reasoning}`);
         setCached(cacheKey, result);
       } else {
-       <response clipped><NOTE>Result is longer than **10000 characters**, will be **truncated**.</NOTE>
+        // Cache negative results too (avoid re-querying)
+        setCached(cacheKey, null);
+      }
+
+      return result;
+    } catch (err) {
+      console.error('[semantic] LLM detection failed:', err.message);
+      return null;
+    }
+  }
+
+  getStats() {
+    return {
+      cacheSize: semanticCache.size,
+      recentCalls: recentCalls.length,
+      contextWindow: this.contextHistory.length,
+    };
+  }
+
+  clearCache() {
+    semanticCache.clear();
+    this.contextHistory = [];
+    recentCalls.length = 0;
+  }
+}
+
+module.exports = { SemanticDetector, CONFIG };
