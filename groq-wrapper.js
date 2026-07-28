@@ -32,7 +32,7 @@ const WHISPER_PROMPT = buildWhisperPrompt();
 async function transcribeFile(audioFilePath) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
-    throw new Error('GROQ_API_KEY non défini dans l'environnement.');
+    throw new Error("GROQ_API_KEY non défini dans l'environnement.");
   }
   if (!fs.existsSync(audioFilePath)) {
     throw new Error(`Fichier audio non trouvé: ${audioFilePath}`);
@@ -128,7 +128,7 @@ async function transcribeWithFallback(audioFilePath, timeoutMs = FALLBACK_TIMEOU
 async function chatCompletion(prompt, options = {}) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
-    throw new Error('GROQ_API_KEY non défini dans l'environnement.');
+    throw new Error("GROQ_API_KEY non défini dans l'environnement.");
   }
 
   const {
