@@ -157,4 +157,104 @@ class BibleSemanticSearch {
         console.log('[semantic-search] Loaded local index:', data.verses?.length || 0, 'verses');
         return;
       } catch (err) {
-        console.warn('[semantic-search] Failed to load local index:', err.message)<response clipped><NOTE>Result is longer than **10000 characters**, will be **truncated**.</NOTE>
+        console.warn('[semantic-search] Failed to load local index:', err.message);
+      }
+    }
+
+    // Try downloading (optional — app works without it via keyword fallback)
+    console.log('[semantic-search] No vector index found. Using keyword fallback.');
+    this.loaded = false;
+  }
+
+  /**
+   * Search by topic/query string
+   * Returns array of { reference, text, score }
+   */
+  async search(query, topK = CONFIG.TOP_K) {
+    const normalizedQuery = query.toLowerCase().trim();
+
+    // 1. Check keyword index first (instant, works offline)
+    const keywordResults = this.searchByKeyword(normalizedQuery);
+    if (keywordResults.length > 0) {
+      return keywordResults.slice(0, topK);
+    }
+
+    // 2. If vector index loaded, do semantic search
+    if (this.loaded && this.vectorIndex) {
+      return await this.searchByVector(normalizedQuery, topK);
+    }
+
+    // 3. Fallback: try to parse as a reference
+    return [];
+  }
+
+  searchByKeyword(query) {
+    // Direct topic match
+    for (const [topic, refs] of Object.entries(TOPIC_INDEX)) {
+      if (query.includes(topic) || topic.includes(query)) {
+        return refs.map(ref => ({
+          reference: ref,
+          text: `[Topic: ${topic}]`,
+          score: 1.0,
+          source: 'keyword',
+        }));
+      }
+    }
+
+    // Partial keyword matching
+    const queryWords = query.split(/\s+/);
+    const matches = [];
+    for (const [topic, refs] of Object.entries(TOPIC_INDEX)) {
+      const topicWords = topic.split(/\s+/);
+      const overlap = queryWords.filter(w => topicWords.some(tw => tw.includes(w) || w.includes(tw)));
+      if (overlap.length > 0) {
+        const score = overlap.length / Math.max(queryWords.length, topicWords.length);
+        if (score > 0.3) {
+          refs.forEach(ref => {
+            if (!matches.find(m => m.reference === ref)) {
+              matches.push({ reference: ref, text: `[Topic: ${topic}]`, score, source: 'keyword-fuzzy' });
+            }
+          });
+        }
+      }
+    }
+    return matches.sort((a, b) => b.score - a.score);
+  }
+
+  async searchByVector(query, topK) {
+    // This would use the pre-computed embeddings
+    // For now, return empty — the index generation is a build-time step
+    console.log('[semantic-search] Vector search not yet implemented (index required)');
+    return [];
+  }
+
+  /**
+   * Get all available topics (for UI autocomplete)
+   */
+  getTopics() {
+    return Object.keys(TOPIC_INDEX).sort();
+  }
+
+  /**
+   * Download pre-computed index from remote
+   */
+  async downloadIndex() {
+    return new Promise((resolve, reject) => {
+      const file = fs.createWriteStream(CONFIG.INDEX_PATH + '.tmp');
+      https.get(CONFIG.INDEX_URL, (res) => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`HTTP ${res.statusCode}`));
+          return;
+        }
+        res.pipe(file);
+        file.on('finish', () => {
+          file.close();
+          fs.renameSync(CONFIG.INDEX_PATH + '.tmp', CONFIG.INDEX_PATH);
+          resolve();
+        });
+      }).on('error', reject);
+    });
+  }
+}
+
+module.exports = { BibleSemanticSearch, TOPIC_INDEX };
