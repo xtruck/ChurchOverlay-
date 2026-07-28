@@ -242,10 +242,19 @@ function isFirstRunNeeded() {
 // Fenêtres
 // ---------------------------------------------------------------------------
 function createSetupWindow() {
+  // CORRECTIF (audit) : fenêtre non redimensionnable (560x520) alors que
+  // .container en CSS a un max-width de 520px + 40px de padding de chaque
+  // côté — la fenêtre était donc déjà à la limite basse, sans aucune marge
+  // pour un DPI élevé ou une police système plus grande. On agrandit la
+  // taille par défaut, on autorise le redimensionnement (avec un minimum
+  // qui garde le formulaire lisible), et on centre la fenêtre à l'écran.
   const win = new BrowserWindow({
-    width: 560,
-    height: 520,
-    resizable: false,
+    width: 680,
+    height: 720,
+    minWidth: 520,
+    minHeight: 600,
+    resizable: true,
+    center: true,
     icon: path.join(__dirname, 'icon.png'),
     title: 'ChurchOverlay — Configuration initiale',
     webPreferences: {
@@ -260,10 +269,17 @@ function createSetupWindow() {
 }
 
 function createMainWindow() {
+  // CORRECTIF (audit) : même problème que setup.html — fenêtre fixe
+  // 520x560 alors que .container (dashboard.html) a un max-width de 640px.
+  // Le tableau de bord était donc rétréci en permanence. Fenêtre plus
+  // grande par défaut + redimensionnable + maximisable.
   mainWindow = new BrowserWindow({
-    width: 520,
-    height: 560,
-    resizable: false,
+    width: 760,
+    height: 800,
+    minWidth: 560,
+    minHeight: 640,
+    resizable: true,
+    center: true,
     icon: path.join(__dirname, 'icon.png'),
     title: 'ChurchOverlay',
     webPreferences: {
