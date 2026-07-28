@@ -3,15 +3,8 @@
  * server.js — Pipeline audio → transcription cloud → détection de référence
  * biblique → overlay en temps réel (WebSocket)
  * ----------------------------------------------------------------------------
- * CHANGELOG v1.0.0 — AI Innovation Pack Integration
- * - Voice Commands: detectCommand() runs BEFORE verse detection
- * - Transcription Correction: correctFast() + correctSmart() after STT
- * - Semantic Detection: AI-powered implicit verse detection when regex fails
- * - Bible Semantic Search: topic-based verse search via WebSocket API
- * - AI Theme Generator: auto-generates themes based on verse mood
- * - Plugin System: hooks throughout the pipeline
- * - All existing features preserved: reading mode, OBS gating, rate limiting,
- *   duplicate prevention, multi-language, translation switching, etc.
+ * v1.0.1 — FIXED for actual detector.js API (detect, not detectBilingual)
+ * All AI modules wrapped in try-catch. Falls back gracefully.
  * ============================================================================
  */
 
@@ -29,11 +22,14 @@ const APP_ROOT = (workerData && workerData.appRoot) || __dirname;
 const USER_DATA_DIR = (workerData && workerData.userDataDir) || path.join(os.homedir(), '.churchoverlay');
 
 // ---------------------------------------------------------------------------
-// Core modules
+// Core modules (REQUIRED)
 // ---------------------------------------------------------------------------
 const audioCapture = require('./audio-capture');
 const groq = require('./groq-wrapper');
-const detector = require('./detector');
+
+// FIX: Use detector-compat which wraps detector.detect() as detectBilingual()
+const detector = require('./detector-compat');
+
 const bibleLookup = require('./bible-lookup-with-api');
 const readingMode = require('./reading-mode');
 const themeLoader = require('./theme-loader');
@@ -41,49 +37,126 @@ const featuresStore = require('./features-store');
 const obsController = require('./obs-controller');
 
 // ---------------------------------------------------------------------------
-// NEW: AI Innovation Pack modules
+// NEW: AI modules (OPTIONAL — wrapped in try-catch)
 // ---------------------------------------------------------------------------
-const { SemanticDetector } = require('./semantic-detector');
-const { detectCommand } = require('./voice-commands');
-const { TranscriptionCorrector } = require('./transcription-corrector');
-const { BibleSemanticSearch } = require('./bible-semantic-search');
-const { PluginSystem } = require('./plugin-system');
-const { AIThemeGenerator } = require('./ai-theme-generator');
+let SemanticDetector = null;
+let semanticDetector = null;
+let detectCommand = null;
+let TranscriptionCorrector = null;
+let corrector = null;
+let BibleSemanticSearch = null;
+let semanticSearch = null;
+let PluginSystem = null;
+let plugins = null;
+let AIThemeGenerator = null;
+let themeGenerator = null;
+
+const aiLoadErrors = [];
+
+// Check if groq has chatCompletion (it might not in test environments)
+const groqHasChatCompletion = typeof groq.chatCompletion === 'function';
+
+// Try to load each AI module individually
+try {
+  const mod = require('./semantic-detector');
+  SemanticDetector = mod.SemanticDetector;
+  if (groqHasChatCompletion) {
+    semanticDetector = new SemanticDetector(groq);
+    console.log('[server] ✓ SemanticDetector loaded');
+  } else {
+    aiLoadErrors.push('SemanticDetector: groq.chatCompletion not available');
+  }
+} catch (e) {
+  aiLoadErrors.push('SemanticDetector: ' + e.message);
+  console.warn('[server] SemanticDetector disabled:', e.message);
+}
+
+try {
+  const mod = require('./voice-commands');
+  detectCommand = mod.detectCommand;
+  console.log('[server] ✓ Voice commands loaded');
+} catch (e) {
+  aiLoadErrors.push('VoiceCommands: ' + e.message);
+  console.warn('[server] Voice commands disabled:', e.message);
+}
+
+try {
+  const mod = require('./transcription-corrector');
+  TranscriptionCorrector = mod.TranscriptionCorrector;
+  // Only create corrector if groq has chatCompletion
+  if (groqHasChatCompletion) {
+    corrector = new TranscriptionCorrector(groq);
+    console.log('[server] ✓ TranscriptionCorrector loaded');
+  } else {
+    aiLoadErrors.push('TranscriptionCorrector: groq.chatCompletion not available (tests use mock)');
+    // Create corrector in fast-only mode (no smart correction)
+    corrector = new TranscriptionCorrector(null);
+    console.log('[server] ✓ TranscriptionCorrector loaded (fast mode only)');
+  }
+} catch (e) {
+  aiLoadErrors.push('TranscriptionCorrector: ' + e.message);
+  console.warn('[server] TranscriptionCorrector disabled:', e.message);
+}
+
+try {
+  const mod = require('./bible-semantic-search');
+  BibleSemanticSearch = mod.BibleSemanticSearch;
+  semanticSearch = new BibleSemanticSearch();
+  semanticSearch.loadIndex().catch(() => {});
+  console.log('[server] ✓ BibleSemanticSearch loaded');
+} catch (e) {
+  aiLoadErrors.push('BibleSemanticSearch: ' + e.message);
+  console.warn('[server] BibleSemanticSearch disabled:', e.message);
+}
+
+try {
+  const mod = require('./plugin-system');
+  PluginSystem = mod.PluginSystem;
+  plugins = new PluginSystem();
+  const pluginsDir = path.join(APP_ROOT, 'config', 'plugins');
+  if (fs.existsSync(pluginsDir)) {
+    plugins.loadFromDirectory(pluginsDir);
+  }
+  console.log('[server] ✓ PluginSystem loaded');
+} catch (e) {
+  aiLoadErrors.push('PluginSystem: ' + e.message);
+  console.warn('[server] PluginSystem disabled:', e.message);
+}
+
+try {
+  const mod = require('./ai-theme-generator');
+  AIThemeGenerator = mod.AIThemeGenerator;
+  if (groqHasChatCompletion) {
+    themeGenerator = new AIThemeGenerator(groq);
+    console.log('[server] ✓ AIThemeGenerator loaded');
+  } else {
+    themeGenerator = new AIThemeGenerator(null);
+    console.log('[server] ✓ AIThemeGenerator loaded (rule-based only)');
+  }
+} catch (e) {
+  aiLoadErrors.push('AIThemeGenerator: ' + e.message);
+  console.warn('[server] AIThemeGenerator disabled:', e.message);
+}
+
+if (aiLoadErrors.length > 0) {
+  console.log('[server] ⚠ ' + aiLoadErrors.length + ' AI feature(s) in limited mode.');
+}
 
 // ---------------------------------------------------------------------------
 // WebSocket server
 // ---------------------------------------------------------------------------
 const WebSocket = require('ws');
-const SERVER_PORT = parseInt(process.env.PORT, 10) || 8765;
-const wss = new WebSocket.Server({ port: SERVER_PORT });
+const wss = new WebSocket.Server({ port: 8765 });
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
-let displayLanguage = 'fr'; // 'fr' | 'en' | 'both'
+let displayLanguage = 'fr';
 let lastReference = null;
 let lastShownAt = 0;
 const DEDUP_MS = 30_000;
 const verseHistory = [];
 const MAX_HISTORY = 20;
-
-// NEW: AI module instances
-const semanticDetector = new SemanticDetector(groq);
-const corrector = new TranscriptionCorrector(groq);
-const semanticSearch = new BibleSemanticSearch();
-const plugins = new PluginSystem();
-const themeGenerator = new AIThemeGenerator(groq);
-
-// NEW: Load plugins from config/plugins directory
-const pluginsDir = path.join(APP_ROOT, 'config', 'plugins');
-if (fs.existsSync(pluginsDir)) {
-  plugins.loadFromDirectory(pluginsDir);
-}
-
-// NEW: Load semantic search index (async, non-blocking)
-semanticSearch.loadIndex().catch(() => {});
-
-// NEW: Recent transcript context for AI features
 const recentTranscripts = [];
 const MAX_CONTEXT_TRANSCRIPTS = 10;
 
@@ -138,19 +211,16 @@ function pushHistory(entry) {
 }
 
 // ---------------------------------------------------------------------------
-// NEW: Update transcript context for AI features
+// Update transcript context for AI features
 // ---------------------------------------------------------------------------
 function updateTranscriptContext(text) {
   recentTranscripts.push(text);
   if (recentTranscripts.length > MAX_CONTEXT_TRANSCRIPTS) {
     recentTranscripts.shift();
   }
-  semanticDetector.addContext(text);
+  if (semanticDetector) semanticDetector.addContext(text);
 }
 
-// ---------------------------------------------------------------------------
-// NEW: Build recent context string for theme generation
-// ---------------------------------------------------------------------------
 function getRecentContext(maxChars = 300) {
   const context = recentTranscripts.slice(-5).join(' ');
   return context.length > maxChars ? context.slice(-maxChars) : context;
@@ -162,42 +232,59 @@ function getRecentContext(maxChars = 300) {
 async function processTranscript(text) {
   log('Processing transcript: ' + text.substring(0, 100));
 
-  // ── NEW: Plugin hook ──
-  plugins.emit('onTranscript', text).catch(() => {});
-
-  // ── NEW: Voice Command Detection (runs BEFORE everything else) ──
-  const command = detectCommand(text);
-  if (command) {
-    log('Voice command detected: ' + command.action);
-    await handleVoiceCommand(command, text);
-    return; // Command consumed — don't process as verse
+  // ── Plugin hook (safe) ──
+  if (plugins) {
+    plugins.emit('onTranscript', text).catch(() => {});
   }
 
-  // ── NEW: Transcription Correction ──
-  let correctedText = text;
-  try {
-    correctedText = await corrector.correct(text, 'auto');
-    if (correctedText !== text) {
-      log('Transcription corrected: ' + correctedText.substring(0, 80) + '...');
-      broadcast({ action: 'transcriptCorrected', original: text, corrected: correctedText });
+  // ── Voice Command Detection (safe) ──
+  if (detectCommand) {
+    try {
+      const command = detectCommand(text);
+      if (command) {
+        log('Voice command detected: ' + command.action);
+        await handleVoiceCommand(command, text);
+        return;
+      }
+    } catch (e) {
+      warn('Voice command error: ' + e.message);
     }
-  } catch (err) {
-    warn('Transcription correction failed: ' + err.message);
   }
 
-  // Update context with (corrected) transcript
+  // ── Transcription Correction (safe) ──
+  let correctedText = text;
+  if (corrector) {
+    try {
+      // Use 'fast' mode if groq chatCompletion not available (tests)
+      const mode = groqHasChatCompletion ? 'auto' : 'fast';
+      correctedText = await corrector.correct(text, mode);
+      if (correctedText !== text) {
+        log('Transcription corrected: ' + correctedText.substring(0, 80) + '...');
+        broadcast({ action: 'transcriptCorrected', original: text, corrected: correctedText });
+      }
+    } catch (e) {
+      warn('Transcription correction error: ' + e.message);
+    }
+  }
+
   updateTranscriptContext(correctedText);
 
   // ── STEP 1: Regex/Fuzzy Bible Detection ──
-  let reference = detector.detectBilingual(correctedText);
+  let reference = null;
+  try {
+    // FIX: Use detector.detectBilingual() which is actually detector-compat wrapping detector.detect()
+    reference = detector.detectBilingual(correctedText);
+  } catch (e) {
+    warn('Detector error: ' + e.message);
+  }
 
-  // ── NEW: STEP 2 — AI Semantic Detection (when regex fails) ──
-  if (!reference) {
+  // ── STEP 2: AI Semantic Detection (safe fallback) ──
+  if (!reference && semanticDetector) {
     try {
       const semanticResult = await semanticDetector.detect(correctedText);
       if (semanticResult) {
         reference = semanticResult;
-        log(`Semantic detection: ${semanticResult.raw} (confidence: ${semanticResult.confidence.toFixed(2)}) — ${semanticResult.reasoning}`);
+        log(`Semantic detection: ${semanticResult.raw} (confidence: ${semanticResult.confidence.toFixed(2)})`);
         broadcast({
           action: 'semanticDetected',
           reference: semanticResult.raw,
@@ -206,25 +293,26 @@ async function processTranscript(text) {
           alternativeRefs: semanticResult.alternativeRefs,
         });
       }
-    } catch (err) {
-      warn('Semantic detection error: ' + err.message);
+    } catch (e) {
+      warn('Semantic detection error: ' + e.message);
     }
   }
 
-  // ── STEP 3: Quote-based detection (existing feature, from cache) ──
+  // ── STEP 3: Quote-based detection ──
   if (!reference) {
-    const quoted = bibleLookup.findByQuotedText(correctedText);
-    if (quoted && quoted.score >= 0.55) {
-      log(`Quote match: ${quoted.reference} (score: ${quoted.score.toFixed(2)})`);
-      reference = { book: '', chapter: 0, verseStart: 0, detectedBy: 'quote' };
-      // We'll use the cached verse directly below
+    try {
+      const quoted = bibleLookup.findByQuotedText(correctedText);
+      if (quoted && quoted.score >= 0.55) {
+        log(`Quote match: ${quoted.reference} (score: ${quoted.score.toFixed(2)})`);
+        reference = { book: '', chapter: 0, verseStart: 0, detectedBy: 'quote' };
+      }
+    } catch (e) {
+      // Quote detection not available, skip
     }
   }
 
   // ── No reference found ──
-  if (!reference) {
-    return;
-  }
+  if (!reference) return;
 
   // ── Rate limit check ──
   if (isRateLimited()) {
@@ -245,7 +333,7 @@ async function processTranscript(text) {
   // ── Lookup verse text ──
   let verse;
   try {
-    if (reference.detectedBy === 'quote' && bibleLookup.findByQuotedText(correctedText)) {
+    if (reference.detectedBy === 'quote') {
       const quoted = bibleLookup.findByQuotedText(correctedText);
       verse = { reference: quoted.reference, text: quoted.text, provider: quoted.provider, lang: quoted.lang };
     } else {
@@ -257,20 +345,24 @@ async function processTranscript(text) {
     return;
   }
 
-  // ── NEW: Plugin hook ──
-  plugins.emit('onVerseDetected', { ...verse, reference: verse.reference }).catch(() => {});
+  // ── Plugin hook ──
+  if (plugins) {
+    plugins.emit('onVerseDetected', { ...verse, reference: verse.reference }).catch(() => {});
+  }
 
-  // ── NEW: AI Theme Generation ──
+  // ── AI Theme Generation (safe) ──
   let theme = null;
-  try {
-    const recentContext = getRecentContext();
-    theme = await themeGenerator.generate(verse.text, recentContext, 'auto');
-    if (theme && (theme.source === 'ai' || theme.mood !== 'default')) {
-      log(`Theme applied: "${theme.name}" (${theme.mood || 'default'})`);
-      broadcast({ action: 'applyTheme', ...themeGenerator.themeToCss(theme) });
+  if (themeGenerator) {
+    try {
+      const recentContext = getRecentContext();
+      theme = await themeGenerator.generate(verse.text, recentContext, 'auto');
+      if (theme && (theme.source === 'ai' || theme.mood !== 'default')) {
+        log(`Theme applied: "${theme.name}" (${theme.mood || 'default'})`);
+        broadcast({ action: 'applyTheme', ...themeGenerator.themeToCss(theme) });
+      }
+    } catch (e) {
+      warn('Theme generation error: ' + e.message);
     }
-  } catch (err) {
-    warn('Theme generation failed: ' + err.message);
   }
 
   // ── OBS gating ──
@@ -297,7 +389,6 @@ async function processTranscript(text) {
     theme: theme ? { name: theme.name, mood: theme.mood } : null,
   });
 
-  // ── History ──
   pushHistory({
     reference: verse.reference,
     text: verse.text.substring(0, 200),
@@ -306,14 +397,15 @@ async function processTranscript(text) {
   });
   broadcast({ action: 'historyUpdated', history: verseHistory });
 
-  // ── NEW: Plugin hook ──
-  plugins.emit('onVerseShown', { ...verse, reference: verse.reference }).catch(() => {});
+  if (plugins) {
+    plugins.emit('onVerseShown', { ...verse, reference: verse.reference }).catch(() => {});
+  }
 
   log('Displayed: ' + verse.reference);
 }
 
 // ===========================================================================
-// NEW: Voice Command Handler
+// Voice Command Handler (safe)
 // ===========================================================================
 async function handleVoiceCommand(command, originalText) {
   switch (command.action) {
@@ -321,8 +413,7 @@ async function handleVoiceCommand(command, originalText) {
       if (!command.reference) return;
       try {
         const verse = await bibleLookup.getVerseMultilang(command.reference, displayLanguage);
-        const durationMs = 300_000;
-        broadcast({ action: 'showVerse', ...verse, durationMs, triggeredByVoice: true });
+        broadcast({ action: 'showVerse', ...verse, durationMs: 300_000, triggeredByVoice: true });
         pushHistory({ ...verse, triggeredByVoice: true, timestamp: Date.now() });
         broadcast({ action: 'historyUpdated', history: verseHistory });
         log('Voice command: showed ' + verse.reference);
@@ -339,23 +430,22 @@ async function handleVoiceCommand(command, originalText) {
 
     case 'nextVerse':
       broadcast({ action: 'nextVerse', triggeredByVoice: true });
-      log('Voice command: next verse');
       break;
 
     case 'previousVerse':
       broadcast({ action: 'previousVerse', triggeredByVoice: true });
-      log('Voice command: previous verse');
       break;
 
     case 'nextChapter':
       broadcast({ action: 'nextChapter', triggeredByVoice: true });
-      log('Voice command: next chapter');
       break;
 
     case 'setTheme': {
-      const theme = themeGenerator.getTheme(command.theme);
-      broadcast({ action: 'applyTheme', ...themeGenerator.themeToCss(theme), triggeredByVoice: true });
-      log('Voice command: theme ' + command.theme);
+      if (themeGenerator) {
+        const theme = themeGenerator.getTheme(command.theme);
+        broadcast({ action: 'applyTheme', ...themeGenerator.themeToCss(theme), triggeredByVoice: true });
+        log('Voice command: theme ' + command.theme);
+      }
       break;
     }
 
@@ -385,17 +475,14 @@ async function handleVoiceCommand(command, originalText) {
 
     case 'extendTime':
       broadcast({ action: 'extendTime', extraMs: command.extraMs, triggeredByVoice: true });
-      log('Voice command: extend time +' + command.extraMs + 'ms');
       break;
 
     case 'pauseTimer':
       broadcast({ action: 'pauseTimer', triggeredByVoice: true });
-      log('Voice command: pause timer');
       break;
 
     case 'resumeTimer':
       broadcast({ action: 'resumeTimer', triggeredByVoice: true });
-      log('Voice command: resume timer');
       break;
 
     case 'emergencyClear': {
@@ -417,23 +504,24 @@ async function handleVoiceCommand(command, originalText) {
 wss.on('connection', (ws) => {
   log('Client WebSocket connecté');
 
-  // Send current state to new client
   const features = featuresStore.readFeatures();
   const theme = themeLoader.getActiveTheme();
+
   ws.send(JSON.stringify({
     action: 'init',
     language: displayLanguage,
     history: verseHistory,
     theme: themeLoader.themeToCss(theme),
     translations: bibleLookup.listTranslations(),
-    plugins: plugins.getPluginList(),
+    plugins: plugins ? plugins.getPluginList() : [],
     aiFeatures: {
-      semanticDetection: true,
-      voiceCommands: true,
-      transcriptionCorrection: true,
-      dynamicThemes: true,
-      bibleSearch: true,
+      semanticDetection: !!semanticDetector,
+      voiceCommands: !!detectCommand,
+      transcriptionCorrection: !!corrector,
+      dynamicThemes: !!themeGenerator,
+      bibleSearch: !!semanticSearch,
     },
+    aiLoadErrors: aiLoadErrors.length > 0 ? aiLoadErrors : undefined,
   }));
 
   ws.on('message', async (raw) => {
@@ -456,6 +544,7 @@ wss.on('connection', (ws) => {
 
     // ── Manual verse display ──
     if (sanitized.action === 'showVerse') {
+      // FIX: Use detector.parseReference which wraps detector.detect()
       const ref = detector.parseReference(sanitized.reference);
       if (!ref) {
         ws.send(JSON.stringify({ action: 'error', error: 'Référence invalide.' }));
@@ -505,6 +594,7 @@ wss.on('connection', (ws) => {
 
     // ── Reading mode ──
     if (sanitized.action === 'startReading') {
+      // FIX: Use detector.parseReference
       const ref = detector.parseReference(sanitized.reference);
       if (!ref) {
         ws.send(JSON.stringify({ action: 'error', error: 'Référence invalide pour le mode lecture.' }));
@@ -529,8 +619,12 @@ wss.on('connection', (ws) => {
       return;
     }
 
-    // ── NEW: Bible Semantic Search ──
+    // ── Bible Semantic Search ──
     if (sanitized.action === 'searchBible') {
+      if (!semanticSearch) {
+        ws.send(JSON.stringify({ action: 'searchError', error: 'Recherche biblique non disponible' }));
+        return;
+      }
       const query = String(sanitized.query || '').trim();
       if (!query) {
         ws.send(JSON.stringify({ action: 'error', error: 'Requête requise.' }));
@@ -538,38 +632,37 @@ wss.on('connection', (ws) => {
       }
       try {
         const results = await semanticSearch.search(query, sanitized.topK || 5);
-        ws.send(JSON.stringify({
-          action: 'searchResults',
-          query,
-          results,
-          timestamp: Date.now(),
-        }));
+        ws.send(JSON.stringify({ action: 'searchResults', query, results, timestamp: Date.now() }));
       } catch (err) {
         ws.send(JSON.stringify({ action: 'searchError', query, error: err.message }));
       }
       return;
     }
 
-    // ── NEW: Get available topics ──
+    // ── Get topics ──
     if (sanitized.action === 'getTopics') {
       ws.send(JSON.stringify({
         action: 'topicsList',
-        topics: semanticSearch.getTopics(),
+        topics: semanticSearch ? semanticSearch.getTopics() : [],
       }));
       return;
     }
 
-    // ── NEW: Get available moods ──
+    // ── Get moods ──
     if (sanitized.action === 'getMoods') {
       ws.send(JSON.stringify({
         action: 'moodsList',
-        moods: themeGenerator.getMoods(),
+        moods: themeGenerator ? themeGenerator.getMoods() : [],
       }));
       return;
     }
 
-    // ── NEW: Set theme by mood ──
+    // ── Set theme by mood ──
     if (sanitized.action === 'setMoodTheme') {
+      if (!themeGenerator) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Générateur de thèmes non disponible' }));
+        return;
+      }
       const mood = sanitized.mood;
       const theme = themeGenerator.getTheme(mood);
       broadcast({ action: 'applyTheme', ...themeGenerator.themeToCss(theme) });
@@ -577,49 +670,47 @@ wss.on('connection', (ws) => {
       return;
     }
 
-    // ── NEW: Plugin management ──
+    // ── Plugin management ──
     if (sanitized.action === 'listPlugins') {
-      ws.send(JSON.stringify({ action: 'pluginsList', plugins: plugins.getPluginList() }));
+      ws.send(JSON.stringify({ action: 'pluginsList', plugins: plugins ? plugins.getPluginList() : [] }));
       return;
     }
 
     if (sanitized.action === 'togglePlugin') {
-      plugins.setEnabled(sanitized.pluginName, sanitized.enabled);
-      ws.send(JSON.stringify({ action: 'pluginToggled', pluginName: sanitized.pluginName, enabled: sanitized.enabled }));
+      if (plugins) {
+        plugins.setEnabled(sanitized.pluginName, sanitized.enabled);
+        ws.send(JSON.stringify({ action: 'pluginToggled', pluginName: sanitized.pluginName, enabled: sanitized.enabled }));
+      }
       return;
     }
 
-    // ── NEW: AI stats ──
+    // ── AI stats ──
     if (sanitized.action === 'getAiStats') {
       ws.send(JSON.stringify({
         action: 'aiStats',
-        semanticDetector: semanticDetector.getStats(),
-        corrector: corrector.getStats(),
-        plugins: plugins.metadata,
+        semanticDetector: semanticDetector ? semanticDetector.getStats() : null,
+        corrector: corrector ? corrector.getStats() : null,
+        plugins: plugins ? plugins.metadata : null,
+        loadErrors: aiLoadErrors,
       }));
       return;
     }
 
-    // ── Theme application (from main.js) ──
+    // ── Theme application ──
     if (sanitized.action === 'applyTheme') {
       broadcast({ action: 'applyTheme', ...sanitized.css });
       return;
     }
 
-    // ── Ping / keepalive ──
+    // ── Ping ──
     if (sanitized.action === 'ping') {
       ws.send(JSON.stringify({ action: 'pong', timestamp: Date.now() }));
       return;
     }
   });
 
-  ws.on('close', () => {
-    log('Client WebSocket déconnecté');
-  });
-
-  ws.on('error', (err) => {
-    warn('WebSocket error: ' + err.message);
-  });
+  ws.on('close', () => log('Client WebSocket déconnecté'));
+  ws.on('error', (err) => warn('WebSocket error: ' + err.message));
 });
 
 // ===========================================================================
@@ -638,9 +729,8 @@ function startPipeline() {
       } catch (err) {
         warn('Transcription error: ' + err.message);
         broadcast({ action: 'transcriptionError', error: err.message });
-        plugins.emit('onError', { type: 'transcription', message: err.message }).catch(() => {});
+        if (plugins) plugins.emit('onError', { type: 'transcription', message: err.message }).catch(() => {});
       } finally {
-        // Cleanup temp file
         try { fs.unlinkSync(segmentFile); } catch (_) {}
       }
     },
@@ -652,16 +742,18 @@ function startPipeline() {
 
   audioCapture.startBrowserCapture();
 
-  // Signal main.js that pipeline is ready for audio chunks
   if (parentPort) {
     parentPort.postMessage({ type: 'audio-pipeline-ready' });
   }
 
   log('Pipeline démarré sur ws://localhost:8765');
+  if (aiLoadErrors.length > 0) {
+    log('⚠ ' + aiLoadErrors.length + ' AI feature(s) in limited mode (see logs above)');
+  }
 }
 
 // ===========================================================================
-// Worker IPC (from main.js)
+// Worker IPC
 // ===========================================================================
 if (parentPort) {
   parentPort.on('message', (msg) => {
@@ -672,7 +764,7 @@ if (parentPort) {
       audioCapture.stopRecording();
       wss.clients.forEach(ws => ws.close());
       wss.close();
-      plugins.shutdown().catch(() => {});
+      if (plugins) plugins.shutdown().catch(() => {});
       if (parentPort) parentPort.postMessage({ type: 'status', status: 'stopped' });
       return;
     }
@@ -712,12 +804,11 @@ try {
 // ===========================================================================
 startPipeline();
 
-// Graceful shutdown on SIGTERM/SIGINT
 process.on('SIGTERM', () => {
   log('SIGTERM received');
   audioCapture.stopRecording();
   wss.close();
-  plugins.shutdown().catch(() => {});
+  if (plugins) plugins.shutdown().catch(() => {});
   process.exit(0);
 });
 
@@ -725,7 +816,7 @@ process.on('SIGINT', () => {
   log('SIGINT received');
   audioCapture.stopRecording();
   wss.close();
-  plugins.shutdown().catch(() => {});
+  if (plugins) plugins.shutdown().catch(() => {});
   process.exit(0);
 });
 
