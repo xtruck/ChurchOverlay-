@@ -244,7 +244,16 @@ function detect(text) {
     `[detector] Correspondance floue : "${corrected.original}" → "${corrected.name}" ` +
     `(distance ${corrected.distance})`
   );
-  return fuzzyMatch;
+  // CORRECTIF : une correspondance floue (nom de livre deviné, pas certain)
+  // était renvoyée avec exactement la même forme qu'une correspondance
+  // exacte — server.js n'avait donc aucun moyen de la traiter différemment
+  // (ex. demander confirmation avant affichage). On l'annote.
+  return {
+    ...fuzzyMatch,
+    fuzzy: true,
+    fuzzyDistance: corrected.distance,
+    fuzzyOriginal: corrected.original,
+  };
 }
 
 // Quick test when run directly
