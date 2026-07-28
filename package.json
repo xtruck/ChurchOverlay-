@@ -1,11 +1,10 @@
 {
   "name": "churchoverlay",
   "productName": "ChurchOverlay",
-  "version": "0.4.3",
-  "description": "Overlay de versets bibliques en direct — micro (capture native getUserMedia) → Groq/Deepgram (cloud) → detector → overlay.html, packagé en application Windows installable.",
+  "version": "0.5.0",
+  "description": "Overlay de versets bibliques en direct avec IA — détection sémantique, commandes vocales, thèmes dynamiques et recherche biblique par sujet.",
   "author": "ChurchOverlay",
   "main": "main.js",
-  "//": "CHANGELOG v0.3.0 — Suppression complète de Whisper local (plus gros consommateur CPU de l'app) : transcription 100% cloud (Groq -> Deepgram). CHANGELOG v0.2.0 — Performance & Stability Repair Plan | 1) asar:true (fast startup, smaller install, avoids per-file AV scans) 2) compression:'maximum' + nsis.differentialPackage:true 3) Exact versions pinned for electron & electron-builder (reproducible builds) 4) Tighter file excludes (.map/.md/tests/docs)",
   "scripts": {
     "start": "electron .",
     "server-only": "node --env-file-if-exists=.env server.js",
@@ -18,7 +17,8 @@
   "dependencies": {
     "form-data": "^4.0.6",
     "ws": "^8.21.1",
-    "obs-websocket-js": "^5.0.6"
+    "obs-websocket-js": "^5.0.6",
+    "electron-updater": "^6.3.0"
   },
   "devDependencies": {
     "electron": "43.2.0",
@@ -45,6 +45,7 @@
       "context-tracker.js",
       "detector.js",
       "detector-en.js",
+      "detector-compat.js",
       "levenshtein.js",
       "reading-mode.js",
       "groq-wrapper.js",
@@ -63,6 +64,7 @@
       "ai-theme-generator.js",
       "config/themes/**/*",
       "config/features.json",
+      "config/plugins/**/*",
       "icon.png",
       "icon.ico",
       "package.json",
@@ -100,6 +102,12 @@
       "createStartMenuShortcut": true,
       "shortcutName": "ChurchOverlay",
       "differentialPackage": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "xtruck",
+      "repo": "xtruck",
+      "releaseType": "release"
     }
   }
 }
