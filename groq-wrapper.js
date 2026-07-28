@@ -1,27 +1,16 @@
 /**
  * ============================================================================
- *  groq-wrapper.js — Transcription cloud Groq (Whisper large-v3), fournisseur
- *  principal, avec repli en parallèle sur Deepgram (Nova-2) si configuré
+ * groq-wrapper.js — Transcription cloud Groq (Whisper large-v3), fournisseur
+ * principal, avec repli en parallèle sur Deepgram (Nova-2) si configuré
+ * + NOUVEAU : Chat Completion API pour les features IA (semantic detection,
+ * transcription correction, theme generation)
  * ----------------------------------------------------------------------------
- *  CHANGELOG v0.3.0 — Suppression du 3e niveau (Whisper local)
- *    whisper-server.exe était le plus gros consommateur CPU de l'app
- *    (~40-70% d'un cœur en continu). Il a été retiré entièrement du
- *    projet : plus de filet de secours hors-ligne. Sans internet (ou si
- *    Groq ET Deepgram échouent/expirent), la transcription du segment
- *    échoue et server.js diffuse un événement transcriptionError —
- *    l'overlay reste affiché, seule la détection auto s'interrompt tant
- *    que la connexion n'est pas rétablie.
- *
- *  LOGIQUE RETENUE :
- *    - Le système ATTEND Groq avant d'afficher (précision > vitesse).
- *    - Groq et Deepgram (si configuré) sont lancés EN PARALLÈLE dès la
- *      réception du segment audio (pas de perte de temps à attendre un
- *      timeout avant de démarrer l'autre).
- *    - Si Groq ne répond pas dans les 5 secondes (ou échoue), on bascule
- *      sur Deepgram s'il a déjà répondu ou répond à temps.
- *
- *  Prérequis : GROQ_API_KEY doit être défini en variable d'environnement.
- *  Ne jamais coder la clé en dur ni la committer.
+ * CHANGELOG v0.4.0 — Ajout Chat Completion
+ * - chatCompletion() : appel à l'API Groq Chat Completions pour les
+ *   features IA (semantic-detector.js, transcription-corrector.js,
+ *   ai-theme-generator.js). Supporte json_mode, temperature, max_tokens.
+ * - quickCompletion() : wrapper court pour les corrections rapides.
+ * - Gestion unifiée des erreurs API (rate limit, timeout, clé invalide).
  * ============================================================================
  */
 
@@ -29,24 +18,21 @@ const fs = require('fs');
 const deepgram = require('./deepgram-wrapper');
 const { buildWhisperPrompt } = require('./bible-keyterms');
 
-const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/audio/transcriptions';
-const GROQ_MODEL = 'whisper-large-v3';
-const FALLBACK_TIMEOUT_MS = 5000; // 5 secondes, choisi comme équilibre
+const GROQ_ENDPOINT_TRANSCRIBE = 'https://api.groq.com/openai/v1/audio/transcriptions';
+const GROQ_ENDPOINT_CHAT = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_MODEL_TRANSCRIBE = 'whisper-large-v3';
+const GROQ_MODEL_CHAT = 'llama-3.1-8b-instant';
+const FALLBACK_TIMEOUT_MS = 5000;
 
-// Construit une fois au chargement (liste statique de livres/vocabulaire).
 const WHISPER_PROMPT = buildWhisperPrompt();
 
 /**
  * Envoie le fichier audio à l'API Groq et retourne { text }.
- * Même forme de résultat que whisper-wrapper.js (result.text), pour que
- * server.js puisse traiter les deux sources de façon identique.
- * @param {string} audioFilePath
- * @returns {Promise<{ text: string }>}
  */
 async function transcribeFile(audioFilePath) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
-    throw new Error('GROQ_API_KEY non défini dans l\'environnement.');
+    throw new Error('GROQ_API_KEY non défini dans l'environnement.');
   }
   if (!fs.existsSync(audioFilePath)) {
     throw new Error(`Fichier audio non trouvé: ${audioFilePath}`);
@@ -55,15 +41,10 @@ async function transcribeFile(audioFilePath) {
   const audioBuffer = fs.readFileSync(audioFilePath);
   const formData = new FormData();
   formData.append('file', new Blob([audioBuffer]), 'audio.wav');
-  formData.append('model', GROQ_MODEL);
-  // AJOUT (boosting vocabulaire) : `prompt` sert de contexte initial à
-  // Whisper pour biaiser son vocabulaire vers les livres bibliques et le
-  // vocabulaire théologique (voir bible-keyterms.js) — même logique que
-  // `keywords` côté Deepgram ci-dessous, adaptée à l'API Whisper qui n'a
-  // pas de paramètre de boosting dédié.
+  formData.append('model', GROQ_MODEL_TRANSCRIBE);
   formData.append('prompt', WHISPER_PROMPT);
 
-  const response = await fetch(GROQ_ENDPOINT, {
+  const response = await fetch(GROQ_ENDPOINT_TRANSCRIBE, {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}` },
     body: formData,
@@ -79,31 +60,11 @@ async function transcribeFile(audioFilePath) {
 }
 
 /**
- * Lance Groq et Deepgram (si DEEPGRAM_API_KEY est configuré) EN PARALLÈLE
- * pour un même segment audio, dès la réception du segment — Deepgram
- * n'attend pas que Groq échoue avant de démarrer son propre travail.
- *
- * Ordre de préférence : Groq → Deepgram.
- *   1. On attend Groq jusqu'à timeoutMs.
- *   2. S'il n'a pas répondu (timeout) ou a échoué, on regarde Deepgram :
- *      s'il a déjà un résultat, on l'utilise immédiatement ; sinon on
- *      l'attend jusqu'au même timeoutMs (mesuré depuis le début, pas
- *      redémarré à zéro — Deepgram tourne depuis le début lui aussi).
- *   3. Si ni Groq ni Deepgram n'aboutissent (pas de clé Deepgram, panne,
- *      pas d'internet), l'erreur Groq (ou Deepgram si Groq a réussi à
- *      répondre avec une erreur non-réseau) remonte à l'appelant, qui
- *      diffuse un événement transcriptionError — sans filet de secours
- *      hors-ligne (Whisper local a été retiré, voir CHANGELOG v0.3.0).
- *
- * @param {string} audioFilePath - chemin du segment audio
- * @param {number} [timeoutMs=FALLBACK_TIMEOUT_MS]
- * @returns {Promise<{ text: string, source: 'groq' | 'deepgram' }>}
+ * Lance Groq et Deepgram EN PARALLÈLE.
  */
 async function transcribeWithFallback(audioFilePath, timeoutMs = FALLBACK_TIMEOUT_MS) {
   const deepgramEnabled = deepgram.isConfigured();
 
-  // Démarrer les deux (ou un seul, si Deepgram n'est pas configuré) en
-  // parallèle dès maintenant.
   const groqPromise = transcribeFile(audioFilePath).catch((err) => ({ error: err }));
   const deepgramPromise = deepgramEnabled
     ? deepgram.transcribeFile(audioFilePath).catch((err) => ({ error: err }))
@@ -114,7 +75,6 @@ async function transcribeWithFallback(audioFilePath, timeoutMs = FALLBACK_TIMEOU
     setTimeout(() => resolve({ timedOut: true }), timeoutMs);
   });
 
-  // --- Étape 1 : attendre Groq (jusqu'à timeoutMs) -----------------------
   const groqRace = await Promise.race([groqPromise, timeoutPromise]);
 
   if (groqRace && !groqRace.timedOut && !groqRace.error) {
@@ -129,7 +89,6 @@ async function transcribeWithFallback(audioFilePath, timeoutMs = FALLBACK_TIMEOU
     console.warn('[groq-wrapper] Échec Groq (%s) — bascule sur Deepgram.', groqRace.error.message);
   }
 
-  // --- Étape 2 : Deepgram, s'il est configuré -----------------------------
   if (deepgramEnabled) {
     const remainingMs = Math.max(0, timeoutMs - (Date.now() - startedAt));
     const deepgramTimeoutPromise = new Promise((resolve) => {
@@ -148,8 +107,107 @@ async function transcribeWithFallback(audioFilePath, timeoutMs = FALLBACK_TIMEOU
     throw deepgramRace.error;
   }
 
-  // Ni Groq ni Deepgram (non configuré) n'ont abouti.
   throw groqError || new Error('Échec de la transcription (Groq)');
 }
 
-module.exports = { transcribeFile, transcribeWithFallback };
+// ============================================================================
+// NOUVEAU : Chat Completion API (pour les features IA)
+// ============================================================================
+
+/**
+ * Appelle l'API Groq Chat Completions.
+ * @param {string} prompt - Le prompt utilisateur
+ * @param {Object} options - Options
+ * @param {string} [options.model='llama-3.1-8b-instant'] - Modèle
+ * @param {number} [options.temperature=0.1] - Température
+ * @param {number} [options.max_tokens=256] - Max tokens
+ * @param {boolean} [options.json_mode=false] - Forcer JSON output
+ * @param {number} [options.timeoutMs=8000] - Timeout
+ * @returns {Promise<{text: string, model: string, usage: Object}>}
+ */
+async function chatCompletion(prompt, options = {}) {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    throw new Error('GROQ_API_KEY non défini dans l'environnement.');
+  }
+
+  const {
+    model = GROQ_MODEL_CHAT,
+    temperature = 0.1,
+    max_tokens = 256,
+    json_mode = false,
+    timeoutMs = 8000,
+  } = options;
+
+  const body = {
+    model,
+    messages: [
+      { role: 'system', content: 'You are a helpful assistant for a church sermon transcription system. Be concise and accurate.' },
+      { role: 'user', content: prompt },
+    ],
+    temperature,
+    max_tokens,
+  };
+
+  if (json_mode) {
+    body.response_format = { type: 'json_object' };
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(GROQ_ENDPOINT_CHAT, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      if (response.status === 429) {
+        throw new Error('Rate limit Groq atteint — réessayez dans quelques secondes.');
+      }
+      throw new Error(`Groq Chat API a répondu ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    const text = data.choices?.[0]?.message?.content || '';
+
+    return {
+      text,
+      model: data.model,
+      usage: data.usage || {},
+    };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new Error(`Timeout Groq Chat (${timeoutMs}ms)`);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Wrapper court pour les corrections rapides (transcription-corrector.js).
+ * @param {string} prompt
+ * @param {Object} options
+ * @returns {Promise<string>} - Le texte de réponse uniquement
+ */
+async function quickCompletion(prompt, options = {}) {
+  const result = await chatCompletion(prompt, {
+    temperature: 0.05,
+    max_tokens: 500,
+    timeoutMs: 5000,
+    ...options,
+  });
+  return result.text;
+}
+
+module.exports = { transcribeFile, transcribeWithFallback, chatCompletion, quickCompletion };
