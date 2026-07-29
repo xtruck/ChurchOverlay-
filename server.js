@@ -153,6 +153,7 @@ if (aiLoadErrors.length > 0) {
 // WebSocket server
 // ---------------------------------------------------------------------------
 const WebSocket = require('ws');
+const { createRateLimiter } = require('./rate-limiter');
 
 // CORRECTIF : le port était figé en dur (8765), alors que config-validator.js
 // valide déjà PORT (avec repli sur 8765) sans jamais être branché nulle
@@ -165,7 +166,34 @@ if (!portValidation.valid) {
 }
 const SERVER_PORT = portValidation.valid ? portValidation.parsedValue : 8765;
 
-const wss = new WebSocket.Server({ port: SERVER_PORT });
+// CORRECTIF (audit) : le serveur ne précisait jamais de `host` à
+// WebSocket.Server, qui délègue à http.Server.listen(port) — sous Node.js,
+// omettre `host` lie le serveur sur TOUTES les interfaces réseau (0.0.0.0),
+// pas seulement en local. N'importe quel appareil du même réseau Wi-Fi/LAN
+// pouvait donc se connecter au flux WebSocket pendant un culte, sans la
+// moindre authentification. WS_HOST était déjà documenté dans .env.example
+// ("127.0.0.1 pour la sécurité") mais jamais lu par le code — corrigé ici.
+const hostValidation = configValidator.validateEnvVar('WS_HOST', process.env.WS_HOST);
+const WS_HOST = hostValidation.valid ? hostValidation.parsedValue : '127.0.0.1';
+
+const maxConnValidation = configValidator.validateEnvVar('MAX_CONNECTIONS', process.env.MAX_CONNECTIONS);
+const MAX_CONNECTIONS = maxConnValidation.valid ? maxConnValidation.parsedValue : 10;
+
+const maxMsgValidation = configValidator.validateEnvVar('MAX_MESSAGES_PER_MINUTE', process.env.MAX_MESSAGES_PER_MINUTE);
+const MAX_MESSAGES_PER_MINUTE = maxMsgValidation.valid ? maxMsgValidation.parsedValue : 60;
+
+// CORRECTIF (audit) : rate-limiter.js existait déjà (avec ses propres tests)
+// mais n'était require() nulle part — code mort. Branché ici pour appliquer
+// une vraie limite de connexions/messages par IP, au lieu de se reposer
+// uniquement sur le rate limiter global de détection de versets plus bas
+// (qui protège contre l'emballement de la détection, pas contre un client
+// distant malveillant).
+const connRateLimiter = createRateLimiter({
+  maxConnections: MAX_CONNECTIONS,
+  maxMessagesPerMinute: MAX_MESSAGES_PER_MINUTE,
+});
+
+const wss = new WebSocket.Server({ port: SERVER_PORT, host: WS_HOST });
 
 // CORRECTIF : aucun listener 'error' sur wss. Si le port est déjà occupé
 // (EADDRINUSE — ex. une instance précédente pas encore libérée après un
@@ -666,7 +694,28 @@ async function handleVoiceCommand(command, originalText) {
 // ===========================================================================
 // WebSocket handlers
 // ===========================================================================
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
+  // CORRECTIF (audit) : aucune vérification d'origine à la connexion.
+  // Le client attendu est une fenêtre Electron chargée via file:// (l'app
+  // elle-même) ou OBS Browser Source, qui n'envoient pas d'en-tête Origin
+  // "http(s)://" — contrairement à une page web ouverte dans un navigateur
+  // normal. On rejette donc toute connexion annonçant une origine
+  // http(s)://, ce qui bloque le détournement de WebSocket inter-site
+  // (CSWH) depuis une page malveillante ouverte sur la même machine/réseau.
+  const origin = req && req.headers && req.headers.origin;
+  if (origin && /^https?:\/\//i.test(origin)) {
+    warn(`Connexion refusée — origine non autorisée : ${origin}`);
+    ws.close(1008, 'Origine non autorisée');
+    return;
+  }
+
+  const connCheck = connRateLimiter.checkConnection(ws);
+  if (!connCheck.allowed) {
+    warn(`Connexion refusée — ${connCheck.reason}`);
+    ws.close(1008, connCheck.reason);
+    return;
+  }
+
   log('Client WebSocket connecté');
 
   const features = featuresStore.readFeatures();
@@ -690,6 +739,12 @@ wss.on('connection', (ws) => {
   }));
 
   ws.on('message', async (raw) => {
+    const msgCheck = connRateLimiter.checkMessage(ws);
+    if (!msgCheck.allowed) {
+      warn(`Message rejeté — ${msgCheck.reason}`);
+      return;
+    }
+
     let msg;
     try {
       msg = JSON.parse(String(raw));
@@ -878,7 +933,10 @@ wss.on('connection', (ws) => {
     }
   });
 
-  ws.on('close', () => log('Client WebSocket déconnecté'));
+  ws.on('close', () => {
+    connRateLimiter.removeConnection(ws);
+    log('Client WebSocket déconnecté');
+  });
   ws.on('error', (err) => warn('WebSocket error: ' + err.message));
 });
 
