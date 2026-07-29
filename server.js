@@ -400,11 +400,13 @@ async function processTranscript(text) {
   }
 
   // ── STEP 3: Quote-based detection ──
+  let quotedMatch = null;
   if (!reference) {
     try {
       const quoted = bibleLookup.findByQuotedText(correctedText);
       if (quoted && quoted.score >= 0.55) {
         log(`Quote match: ${quoted.reference} (score: ${quoted.score.toFixed(2)})`);
+        quotedMatch = quoted;
         reference = { book: '', chapter: 0, verseStart: 0, detectedBy: 'quote' };
       }
     } catch (e) {
@@ -468,7 +470,7 @@ async function processTranscript(text) {
   let verse;
   try {
     if (reference.detectedBy === 'quote') {
-      const quoted = bibleLookup.findByQuotedText(correctedText);
+      const quoted = quotedMatch || bibleLookup.findByQuotedText(correctedText);
       verse = { reference: quoted.reference, text: quoted.text, provider: quoted.provider, lang: quoted.lang };
     } else {
       verse = await bibleLookup.getVerseMultilang(reference, displayLanguage);
@@ -520,6 +522,7 @@ async function processTranscript(text) {
     provider: verse.provider,
     durationMs,
     detectedBy: reference.detectedBy || 'regex',
+    matchedByQuote: reference.detectedBy === 'quote',
     theme: theme ? { name: theme.name, mood: theme.mood } : null,
   });
 
