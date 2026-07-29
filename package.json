@@ -15,14 +15,18 @@
     "dist": "electron-builder --win nsis"
   },
   "dependencies": {
+    "electron-updater": "^6.3.0",
     "form-data": "^4.0.6",
-    "ws": "^8.21.1",
     "obs-websocket-js": "^5.0.6",
-    "electron-updater": "^6.3.0"
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "electron": "43.2.0",
-    "electron-builder": "26.15.3"
+    "electron-builder": "^26.15.7"
+  },
+  "overrides": {
+    "brace-expansion": "^5.0.8",
+    "minimatch": "^10.2.6"
   },
   "build": {
     "appId": "com.mesev.churchoverlay",
