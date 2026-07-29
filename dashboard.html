@@ -1,1804 +1,1699 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ChurchOverlay — Tableau de bord</title>
-<style>
-/* ==========================================================================
-   Base & Reset
-   ========================================================================== */
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-:root {
-  --bg: #0f0f1a;
-  --bg-card: #1a1a2e;
-  --bg-hover: #252540;
-  --border: #2a2a45;
-  --text: #e0e0e0;
-  --text-muted: #8888aa;
-  --accent: #e94560;
-  --accent-hover: #ff6b6b;
-  --success: #4CAF50;
-  --warning: #FFA500;
-  --error: #f44336;
-  --info: #2196F3;
-  --ai: #9C27B0;
-  --radius: 12px;
-  --shadow: 0 4px 20px rgba(0,0,0,0.3);
-}
-
-body {
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  min-height: 100vh;
-  padding: 20px;
-  line-height: 1.5;
-}
-
-/* ==========================================================================
-   Layout
-   ========================================================================== */
-.container {
-  max-width: 900px;
-  margin: 0 auto;
-}
-
-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-header h1 {
-  font-size: 24px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-header h1 .icon {
-  font-size: 28px;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
-}
-
-@media (min-width: 700px) {
-  .grid-2 {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-/* ==========================================================================
-   Cards
-   ========================================================================== */
-.card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 20px;
-  box-shadow: var(--shadow);
-}
-
-.card h2 {
-  font-size: 15px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--text-muted);
-  margin-bottom: 16px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* ==========================================================================
-   Status & Alert
-   ========================================================================== */
-.status-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.status-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--text-muted);
-  animation: pulse-dot 2s infinite;
-}
-
-.status-dot.running { background: var(--success); }
-.status-dot.error { background: var(--error); animation: none; }
-.status-dot.starting { background: var(--warning); }
-
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-.status-text {
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.alert-banner {
-  background: linear-gradient(135deg, rgba(244,67,54,0.15), rgba(255,87,34,0.1));
-  border: 1px solid rgba(244,67,54,0.3);
-  border-radius: var(--radius);
-  padding: 14px 18px;
-  margin-bottom: 16px;
-  display: none;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.alert-banner.visible { display: flex; }
-
-.alert-banner .alert-icon {
-  font-size: 20px;
-  flex-shrink: 0;
-}
-
-.alert-banner .alert-content {
-  flex: 1;
-}
-
-.alert-banner .alert-title {
-  font-weight: 700;
-  margin-bottom: 4px;
-}
-
-.alert-banner .alert-message {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-.alert-banner .alert-close {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 18px;
-  padding: 0;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-}
-
-.alert-banner .alert-close:hover {
-  background: rgba(255,255,255,0.1);
-  color: var(--text);
-}
-
-/* ==========================================================================
-   Update Notification
-   ========================================================================== */
-.update-banner {
-  background: linear-gradient(135deg, rgba(33,150,243,0.15), rgba(76,175,80,0.1));
-  border: 1px solid rgba(33,150,243,0.3);
-  border-radius: var(--radius);
-  padding: 14px 18px;
-  margin-bottom: 16px;
-  display: none;
-  align-items: center;
-  gap: 12px;
-}
-
-.update-banner.visible { display: flex; }
-
-.update-banner .update-text {
-  flex: 1;
-  font-size: 14px;
-}
-
-.update-banner .update-actions {
-  display: flex;
-  gap: 8px;
-}
-
-/* ==========================================================================
-   Buttons
-   ========================================================================== */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 18px;
-  border: none;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-family: inherit;
-  white-space: nowrap;
-}
-
-.btn:hover { transform: translateY(-1px); }
-
-.btn-primary {
-  background: var(--accent);
-  color: white;
-}
-
-.btn-primary:hover { background: var(--accent-hover); }
-
-.btn-secondary {
-  background: var(--bg-hover);
-  color: var(--text);
-  border: 1px solid var(--border);
-}
-
-.btn-secondary:hover { background: #303055; }
-
-.btn-sm { padding: 6px 12px; font-size: 12px; }
-
-.btn-danger { background: var(--error); color: white; }
-
-.btn-success { background: var(--success); color: white; }
-
-.btn-info { background: var(--info); color: white; }
-
-/* ==========================================================================
-   Inputs
-   ========================================================================== */
-.input-group {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.input {
-  flex: 1;
-  padding: 10px 14px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text);
-  font-size: 14px;
-  font-family: inherit;
-  transition: border-color 0.2s;
-}
-
-.input:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.input::placeholder { color: var(--text-muted); }
-
-select.input {
-  cursor: pointer;
-}
-
-/* ==========================================================================
-   URL Display
-   ========================================================================== */
-.url-box {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 14px;
-  font-family: 'SF Mono', monospace;
-  font-size: 12px;
-  color: var(--text-muted);
-  word-break: break-all;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.url-box .copy-btn {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
-  font-size: 16px;
-}
-
-.url-box .copy-btn:hover {
-  background: rgba(255,255,255,0.1);
-  color: var(--text);
-}
-
-/* ==========================================================================
-   Perf Stats
-   ========================================================================== */
-.perf-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-}
-
-@media (min-width: 500px) {
-  .perf-grid { grid-template-columns: repeat(4, 1fr); }
-}
-
-.perf-item {
-  text-align: center;
-  padding: 12px;
-  background: var(--bg);
-  border-radius: 8px;
-}
-
-.perf-item .perf-value {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--accent);
-}
-
-.perf-item .perf-label {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-/* ==========================================================================
-   Language & Theme Selectors
-   ========================================================================== */
-.selector-row {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.selector-row select {
-  min-width: 140px;
-}
-
-/* ==========================================================================
-   Bible Search
-   ========================================================================== */
-.search-section {
-  margin-bottom: 12px;
-}
-
-.search-results {
-  max-height: 200px;
-  overflow-y: auto;
-  margin-top: 10px;
-}
-
-.search-result-item {
-  padding: 10px 14px;
-  background: var(--bg);
-  border-radius: 8px;
-  margin-bottom: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-  border: 1px solid transparent;
-}
-
-.search-result-item:hover {
-  background: var(--bg-hover);
-  border-color: var(--accent);
-}
-
-.search-result-item .result-ref {
-  font-weight: 600;
-  color: var(--accent);
-  font-size: 13px;
-  margin-bottom: 4px;
-}
-
-.search-result-item .result-text {
-  font-size: 13px;
-  color: var(--text-muted);
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.search-result-item .result-meta {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 4px;
-  opacity: 0.7;
-}
-
-/* ==========================================================================
-   Queue
-   ========================================================================== */
-.queue-list {
-  max-height: 150px;
-  overflow-y: auto;
-}
-
-.queue-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  background: var(--bg);
-  border-radius: 6px;
-  margin-bottom: 6px;
-  font-size: 13px;
-}
-
-.queue-item .queue-ref {
-  font-weight: 600;
-  color: var(--accent);
-}
-
-.queue-item .queue-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.queue-empty {
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 13px;
-  padding: 20px;
-}
-
-/* ==========================================================================
-   History
-   ========================================================================== */
-.history-list {
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-.history-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
-  background: var(--bg);
-  border-radius: 6px;
-  margin-bottom: 6px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.history-item:hover {
-  background: var(--bg-hover);
-}
-
-.history-item .history-time {
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.history-item .history-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.history-item .history-ref {
-  font-weight: 600;
-  color: var(--accent);
-  margin-bottom: 2px;
-}
-
-.history-item .history-text {
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.history-item .history-badge {
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(233,69,96,0.15);
-  color: var(--accent);
-  flex-shrink: 0;
-}
-
-.history-item .history-badge.ai {
-  background: rgba(156,39,176,0.15);
-  color: #BA68C8;
-}
-
-.history-item .history-badge.voice {
-  background: rgba(33,150,243,0.15);
-  color: #64B5F6;
-}
-
-/* ==========================================================================
-   Logs
-   ========================================================================== */
-.logs-container {
-  max-height: 200px;
-  overflow-y: auto;
-  font-family: 'SF Mono', monospace;
-  font-size: 11px;
-  line-height: 1.6;
-}
-
-.log-entry {
-  padding: 2px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.03);
-}
-
-.log-entry.error { color: var(--error); }
-
-.log-entry .log-time {
-  color: var(--text-muted);
-  margin-right: 8px;
-  font-size: 10px;
-}
-
-/* ==========================================================================
-   AI Stats Panel
-   ========================================================================== */
-.ai-stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-}
-
-.ai-stat-item {
-  background: var(--bg);
-  padding: 12px;
-  border-radius: 8px;
-  text-align: center;
-}
-
-.ai-stat-item .ai-stat-value {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--ai);
-}
-
-.ai-stat-item .ai-stat-label {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 4px;
-}
-
-/* ==========================================================================
-   Plugin List
-   ========================================================================== */
-.plugin-list {
-  max-height: 150px;
-  overflow-y: auto;
-}
-
-.plugin-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  background: var(--bg);
-  border-radius: 6px;
-  margin-bottom: 6px;
-  font-size: 13px;
-}
-
-.plugin-item .plugin-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.plugin-item .plugin-name {
-  font-weight: 600;
-  color: var(--text);
-}
-
-.plugin-item .plugin-meta {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.plugin-item .plugin-toggle {
-  appearance: none;
-  width: 36px;
-  height: 20px;
-  background: var(--text-muted);
-  border-radius: 10px;
-  position: relative;
-  cursor: pointer;
-  transition: background 0.2s;
-  flex-shrink: 0;
-}
-
-.plugin-item .plugin-toggle:checked {
-  background: var(--success);
-}
-
-.plugin-item .plugin-toggle::after {
-  content: '';
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  background: white;
-  border-radius: 50%;
-  top: 2px;
-  left: 2px;
-  transition: transform 0.2s;
-}
-
-.plugin-item .plugin-toggle:checked::after {
-  transform: translateX(16px);
-}
-
-/* ==========================================================================
-   Voice Command Reference
-   ========================================================================== */
-.voice-commands-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
-  font-size: 12px;
-}
-
-@media (min-width: 500px) {
-  .voice-commands-grid { grid-template-columns: 1fr 1fr; }
-}
-
-.voice-cmd {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: var(--bg);
-  border-radius: 6px;
-}
-
-.voice-cmd .cmd-phrase {
-  font-style: italic;
-  color: var(--info);
-}
-
-.voice-cmd .cmd-action {
-  color: var(--text-muted);
-}
-
-/* ==========================================================================
-   Mood Theme Selector
-   ========================================================================== */
-.mood-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-}
-
-.mood-btn {
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  text-align: center;
-}
-
-.mood-btn:hover {
-  border-color: var(--accent);
-  transform: translateY(-1px);
-}
-
-.mood-btn.active {
-  border-color: var(--accent);
-  background: rgba(233,69,96,0.1);
-}
-
-/* ==========================================================================
-   Connection State
-   ========================================================================== */
-.connection-state {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-.connection-state.connected { color: var(--success); }
-.connection-state.disconnected { color: var(--error); }
-
-/* ==========================================================================
-   Scrollbar
-   ========================================================================== */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
-
-/* ==========================================================================
-   Transcript Preview
-   ========================================================================== */
-.transcript-preview {
-  background: var(--bg);
-  border-radius: 8px;
-  padding: 10px 14px;
-  font-size: 13px;
-  color: var(--text-muted);
-  min-height: 40px;
-  font-style: italic;
-}
-
-.transcript-preview .transcript-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-muted);
-  margin-bottom: 4px;
-  font-style: normal;
-  font-weight: 600;
-}
-
-/* ==========================================================================
-   Candidate Verse (correspondance floue à confirmer)
-   ========================================================================== */
-.candidate-verse-card {
-  border-color: var(--warning);
-  animation: candidatePulse 1.6s ease-in-out infinite;
-}
-
-@keyframes candidatePulse {
-  0%, 100% { box-shadow: var(--shadow); }
-  50% { box-shadow: 0 4px 20px rgba(255, 165, 0, 0.35); }
-}
-
-.candidate-verse-body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.candidate-verse-ref {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--warning);
-}
-
-.candidate-verse-detail {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-.candidate-verse-detail b {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.candidate-verse-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-/* ==========================================================================
-   Responsive
-   ========================================================================== */
-@media (max-width: 600px) {
-  body { padding: 12px; }
-  header h1 { font-size: 18px; }
-  .card { padding: 14px; }
-  .mood-grid { grid-template-columns: repeat(2, 1fr); }
-}
-</style>
-<base target="_blank">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>xtruck Operator Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --primary-dark: #2563eb;
+            --primary-light: #60a5fa;
+            --secondary: #64748b;
+            --success: #10b981;
+            --success-light: #34d399;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --danger-light: #f87171;
+            --background: #0f172a;
+            --background-light: #1e293b;
+            --surface: #1e293b;
+            --surface-light: #334155;
+            --surface-lighter: #475569;
+            --text: #f1f5f9;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --border-light: #475569;
+            --shadow: rgba(0, 0, 0, 0.3);
+            --shadow-lg: rgba(0, 0, 0, 0.5);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--background);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--success) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .nav {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .nav-item {
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .nav-item:hover, .nav-item.active {
+            background: var(--surface-light);
+            color: var(--text);
+        }
+
+        .nav-item.active {
+            background: var(--primary);
+        }
+
+        /* Main Content */
+        .main-content {
+            padding: 2rem;
+            overflow-y: auto;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .header h1 {
+            font-size: 1.875rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--text) 0%, var(--text-muted) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--surface);
+            border-radius: 2rem;
+            font-size: 0.875rem;
+        }
+
+        .status-dot {
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Grid Layout */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            padding: 1.5rem;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .card-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+
+        .card-value {
+            font-size: 2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--success) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .card-subtitle {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        /* Controls */
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .control-btn {
+            padding: 0.75rem 1rem;
+            border: none;
+            border-radius: 0.5rem;
+            font-family: inherit;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .control-btn.primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .control-btn.primary:hover {
+            background: var(--primary-dark);
+        }
+
+        .control-btn.secondary {
+            background: var(--surface-light);
+            color: var(--text);
+        }
+
+        .control-btn.secondary:hover {
+            background: var(--border);
+        }
+
+        .control-btn.danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .control-btn.danger:hover {
+            background: #dc2626;
+        }
+
+        /* Transcript Feed */
+        .transcript-feed {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .transcript-item {
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--border);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.875rem;
+        }
+
+        .transcript-item:last-child {
+            border-bottom: none;
+        }
+
+        .transcript-time {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+        }
+
+        .transcript-text {
+            margin-top: 0.25rem;
+        }
+
+        /* Verse Display */
+        .verse-display {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            padding: 2rem;
+            text-align: center;
+        }
+
+        .verse-reference {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--primary);
+            margin-bottom: 1rem;
+        }
+
+        .verse-text {
+            font-size: 1.125rem;
+            line-height: 1.8;
+            font-style: italic;
+        }
+
+        /* Statistics */
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .stat-row:last-child {
+            border-bottom: none;
+        }
+
+        .stat-label {
+            color: var(--text-muted);
+        }
+
+        .stat-value {
+            font-weight: 600;
+        }
+
+        /* Language Selector */
+        .language-selector {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .lang-btn {
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            background: var(--surface);
+            color: var(--text);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .lang-btn:hover, .lang-btn.active {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        /* Progress Bar */
+        .progress-bar {
+            height: 0.5rem;
+            background: var(--surface-light);
+            border-radius: 0.25rem;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--primary);
+            transition: width 0.3s;
+        }
+
+        /* Confidence Indicator */
+        .confidence {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .confidence.high {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--success);
+        }
+
+        .confidence.medium {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--warning);
+        }
+
+        .confidence.low {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                display: none;
+            }
+
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                padding: 1rem;
+            }
+
+            .header h1 {
+                font-size: 1.5rem;
+            }
+
+            .controls {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--surface);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--surface-lighter);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--border-light);
+        }
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .toast {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 1rem 1.5rem;
+            box-shadow: 0 4px 12px var(--shadow);
+            animation: slideIn 0.3s ease-out;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            min-width: 300px;
+        }
+
+        .toast.success {
+            border-left: 4px solid var(--success);
+        }
+
+        .toast.error {
+            border-left: 4px solid var(--danger);
+        }
+
+        .toast.warning {
+            border-left: 4px solid var(--warning);
+        }
+
+        .toast.info {
+            border-left: 4px solid var(--primary);
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+
+        /* Quick Actions Bar */
+        .quick-actions {
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .quick-action-btn {
+            padding: 0.625rem 1.25rem;
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            background: var(--surface);
+            color: var(--text);
+            font-family: inherit;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .quick-action-btn:hover {
+            background: var(--surface-light);
+            border-color: var(--border-light);
+            transform: translateY(-1px);
+        }
+
+        .quick-action-btn.primary {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: white;
+        }
+
+        .quick-action-btn.primary:hover {
+            background: var(--primary-dark);
+        }
+
+        /* Activity Feed */
+        .activity-feed {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .activity-item {
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 0.75rem;
+            align-items: flex-start;
+        }
+
+        .activity-item:last-child {
+            border-bottom: none;
+        }
+
+        .activity-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .activity-icon.success {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--success);
+        }
+
+        .activity-icon.error {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+        }
+
+        .activity-icon.info {
+            background: rgba(59, 130, 246, 0.2);
+            color: var(--primary);
+        }
+
+        .activity-content {
+            flex: 1;
+        }
+
+        .activity-title {
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+        }
+
+        .activity-time {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        /* Speech Recognition Button */
+        .speech-btn {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 0.5rem;
+            font-family: inherit;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .speech-btn.inactive {
+            background: var(--surface-light);
+            color: var(--text);
+        }
+
+        .speech-btn.inactive:hover {
+            background: var(--border);
+        }
+
+        .speech-btn.active {
+            background: var(--danger);
+            color: white;
+            animation: pulse 1.5s infinite;
+        }
+
+        .speech-indicator {
+            width: 0.75rem;
+            height: 0.75rem;
+            border-radius: 50%;
+            background: var(--success);
+        }
+
+        .speech-btn.active .speech-indicator {
+            background: white;
+            animation: pulse 1s infinite;
+        }
+
+        /* Overlay Preview */
+        .overlay-preview {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .overlay-preview iframe {
+            width: 100%;
+            height: 400px;
+            border: none;
+            background: transparent;
+        }
+
+        .overlay-preview-header {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .overlay-preview-title {
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        /* Live Audio Visualizer */
+        .audio-visualizer {
+            height: 60px;
+            background: var(--surface-light);
+            border-radius: 0.5rem;
+            overflow: hidden;
+            margin-top: 1rem;
+        }
+
+        .audio-visualizer canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Modern Card Enhancements */
+        .card {
+            backdrop-filter: blur(10px);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Gradient Text */
+        .gradient-text {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--success) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* Status Badge */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 1rem;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .status-badge.success {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--success);
+        }
+
+        .status-badge.warning {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--warning);
+        }
+
+        .status-badge.error {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+        }
+    </style>
 </head>
 <body>
+    <div class="dashboard">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                </svg>
+                xtruck
+            </div>
+            <nav class="nav">
+                <div class="nav-item active" data-section="overview">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"/>
+                        <rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/>
+                        <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                    Overview
+                </div>
+                <div class="nav-item" data-section="controls">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                    Controls
+                </div>
+                <div class="nav-item" data-section="transcript">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    Transcript
+                </div>
+                <div class="nav-item" data-section="analysis">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="20" x2="18" y2="10"/>
+                        <line x1="12" y1="20" x2="12" y2="4"/>
+                        <line x1="6" y1="20" x2="6" y2="14"/>
+                    </svg>
+                    Analysis
+                </div>
+                <div class="nav-item" data-section="settings">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                    Settings
+                </div>
+                <div class="nav-item" data-section="overlay">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                        <line x1="8" y1="21" x2="16" y2="21"/>
+                        <line x1="12" y1="17" x2="12" y2="21"/>
+                    </svg>
+                    Overlay Preview
+                </div>
+            </nav>
+        </aside>
 
-<div class="container">
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="header">
+                <h1>Operator Dashboard</h1>
+                <div class="status">
+                    <div class="status-dot"></div>
+                    <span>Connected</span>
+                </div>
+            </div>
 
-  <!-- Header -->
-  <header>
-    <h1><span class="icon">✝️</span> ChurchOverlay</h1>
-    <div class="connection-state" id="connection-state">
-      <span id="conn-dot">●</span>
-      <span id="conn-text">Connexion au pipeline…</span>
+            <!-- Overview Section -->
+            <section id="overview" class="section">
+                <div class="quick-actions">
+                    <button class="quick-action-btn primary" onclick="showManualVerse()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 5v14M5 12h14"/>
+                        </svg>
+                        Quick Verse
+                    </button>
+                    <button class="quick-action-btn" onclick="hideVerse()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"/>
+                            <line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                        Hide Verse
+                    </button>
+                    <button class="quick-action-btn" onclick="toggleSpeechRecognition()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                            <line x1="12" y1="19" x2="12" y2="23"/>
+                            <line x1="8" y1="23" x2="16" y2="23"/>
+                        </svg>
+                        Toggle Speech
+                    </button>
+                    <button class="quick-action-btn" onclick="emergencyStop()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="15" y1="9" x2="9" y2="15"/>
+                            <line x1="9" y1="9" x2="15" y2="15"/>
+                        </svg>
+                        Emergency Stop
+                    </button>
+                </div>
+
+                <div class="grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Total Verses</div>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2">
+                                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                            </svg>
+                        </div>
+                        <div class="card-value" id="totalVerses">0</div>
+                        <div class="card-subtitle">This session</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Detection Rate</div>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                                <polyline points="22 4 12 14.01 9 11.01"/>
+                            </svg>
+                        </div>
+                        <div class="card-value" id="detectionRate">0%</div>
+                        <div class="card-subtitle">Accuracy</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Active Language</div>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <line x1="2" y1="12" x2="22" y2="12"/>
+                                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                            </svg>
+                        </div>
+                        <div class="card-value" id="activeLanguage">FR</div>
+                        <div class="card-subtitle">Auto-detected</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Session Duration</div>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary-light)" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                        </div>
+                        <div class="card-value" id="sessionDuration">00:00</div>
+                        <div class="card-subtitle">Time elapsed</div>
+                    </div>
+                </div>
+
+                <div class="grid" style="grid-template-columns: 2fr 1fr;">
+                    <div class="card verse-display" id="verseDisplay">
+                        <div class="verse-reference" id="verseReference">No verse displayed</div>
+                        <div class="verse-text" id="verseText">Versets will appear here when detected</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Recent Activity</div>
+                        </div>
+                        <div class="activity-feed" id="activityFeed">
+                            <div class="activity-item">
+                                <div class="activity-icon info">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="10"/>
+                                        <line x1="12" y1="16" x2="12" y2="12"/>
+                                        <line x1="12" y1="8" x2="12.01" y2="8"/>
+                                    </svg>
+                                </div>
+                                <div class="activity-content">
+                                    <div class="activity-title">System started</div>
+                                    <div class="activity-time">Just now</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Controls Section -->
+            <section id="controls" class="section" style="display: none;">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Manual Controls</div>
+                    </div>
+                    <div class="controls">
+                        <button class="control-btn primary" onclick="showManualVerse()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 5v14M5 12h14"/>
+                            </svg>
+                            Show Verse
+                        </button>
+                        <button class="control-btn secondary" onclick="hideVerse()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="18" y1="6" x2="6" y2="18"/>
+                                <line x1="6" y1="6" x2="18" y2="18"/>
+                            </svg>
+                            Hide Verse
+                        </button>
+                        <button class="control-btn secondary" onclick="pauseTimer()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="6" y="4" width="4" height="16"/>
+                                <rect x="14" y="4" width="4" height="16"/>
+                            </svg>
+                            Pause Timer
+                        </button>
+                        <button class="control-btn secondary" onclick="resumeTimer()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="5 3 19 12 5 21 5 3"/>
+                            </svg>
+                            Resume Timer
+                        </button>
+                        <button class="control-btn danger" onclick="emergencyStop()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <line x1="15" y1="9" x2="9" y2="15"/>
+                                <line x1="9" y1="9" x2="15" y2="15"/>
+                            </svg>
+                            Emergency Stop
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top: 1.5rem;">
+                    <div class="card-header">
+                        <div class="card-title">Language Selection</div>
+                    </div>
+                    <div class="language-selector">
+                        <button class="lang-btn active" onclick="setLanguage('fr')">Français</button>
+                        <button class="lang-btn" onclick="setLanguage('en')">English</button>
+                        <button class="lang-btn" onclick="setLanguage('es')">Español</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Transcript Section -->
+            <section id="transcript" class="section" style="display: none;">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Live Transcript</div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button class="speech-btn inactive" id="speechBtn" onclick="toggleSpeechRecognition()">
+                                <div class="speech-indicator"></div>
+                                <span id="speechBtnText">Start Speech</span>
+                            </button>
+                            <button class="control-btn secondary" onclick="clearTranscript()">Clear</button>
+                        </div>
+                    </div>
+                    <div class="audio-visualizer">
+                        <canvas id="audioVisualizer"></canvas>
+                    </div>
+                    <div class="transcript-feed" id="transcriptFeed">
+                        <div class="transcript-item">
+                            <div class="transcript-time">Waiting for audio...</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Analysis Section -->
+            <section id="analysis" class="section" style="display: none;">
+                <div class="grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Sermon Analysis</div>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Word Count</span>
+                            <span class="stat-value" id="wordCount">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Key Points</span>
+                            <span class="stat-value" id="keyPoints">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Themes Identified</span>
+                            <span class="stat-value" id="themesCount">0</span>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">ML Detection Stats</div>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Total Detections</span>
+                            <span class="stat-value" id="totalDetections">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">High Confidence</span>
+                            <span class="stat-value" id="highConfidence">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Average Confidence</span>
+                            <span class="stat-value" id="avgConfidence">0%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top: 1.5rem;">
+                    <div class="card-header">
+                        <div class="card-title">Top Themes</div>
+                    </div>
+                    <div id="themesList">
+                        <div class="stat-row">
+                            <span class="stat-label">No themes detected yet</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Settings Section -->
+            <section id="settings" class="section" style="display: none;">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">System Settings</div>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">WebSocket Port</span>
+                        <span class="stat-value">8765</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Whisper Model</span>
+                        <span class="stat-value">ggml-tiny.bin</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Audio Sample Rate</span>
+                        <span class="stat-value">16000 Hz</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">VAD Threshold</span>
+                        <span class="stat-value">0.5</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Speech Recognition</span>
+                        <span class="status-badge" id="speechStatus">Not Available</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Overlay Preview Section -->
+            <section id="overlay" class="section" style="display: none;">
+                <div class="overlay-preview">
+                    <div class="overlay-preview-header">
+                        <div class="overlay-preview-title">Overlay Preview</div>
+                        <button class="control-btn secondary" onclick="refreshOverlay()">Refresh</button>
+                    </div>
+                    <iframe id="overlayFrame" src="overlay.html"></iframe>
+                </div>
+            </section>
+        </main>
     </div>
-  </header>
-
-  <!-- Update Banner -->
-  <div class="update-banner" id="update-banner">
-    <span>🎉</span>
-    <span class="update-text" id="update-text">Une mise à jour est disponible !</span>
-    <div class="update-actions">
-      <button class="btn btn-sm btn-success" onclick="downloadUpdate()">Télécharger</button>
-      <button class="btn btn-sm btn-secondary" onclick="dismissUpdate()">Plus tard</button>
-    </div>
-  </div>
-
-  <!-- Alert Banner -->
-  <div class="alert-banner" id="alert-banner">
-    <span class="alert-icon">⚠️</span>
-    <div class="alert-content">
-      <div class="alert-title" id="alert-title">Alerte</div>
-      <div class="alert-message" id="alert-message"></div>
-    </div>
-    <button class="alert-close" onclick="clearAlert()">×</button>
-  </div>
-
-  <!-- Status & URL -->
-  <div class="grid">
-    <div class="card">
-      <h2>🔗 URL Overlay pour OBS</h2>
-      <div class="url-box" id="url-box">
-        <span id="overlay-url">—</span>
-        <button class="copy-btn" onclick="copyUrl()" title="Copier">📋</button>
-      </div>
-      <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
-        <button class="btn btn-primary" onclick="requestRestart()">🔄 Redémarrer le pipeline</button>
-        <button class="btn btn-secondary" onclick="openSetup()">⚙️ Configuration</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>📊 Performances en temps réel</h2>
-      <div class="perf-grid" id="perf-grid">
-        <div class="perf-item"><div class="perf-value" id="perf-cpu">—</div><div class="perf-label">CPU</div></div>
-        <div class="perf-item"><div class="perf-value" id="perf-ram">—</div><div class="perf-label">RAM</div></div>
-        <div class="perf-item"><div class="perf-value" id="perf-heap">—</div><div class="perf-label">Heap</div></div>
-        <div class="perf-item"><div class="perf-value" id="perf-uptime">—</div><div class="perf-label">Uptime</div></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Controls Row -->
-  <div class="grid grid-2" style="margin-top:16px;">
-    <div class="card">
-      <h2>🌍 Langue d'affichage</h2>
-      <div class="selector-row">
-        <select class="input" id="lang-select" onchange="changeLanguage(this.value)">
-          <option value="fr">🇫🇷 Français</option>
-          <option value="en">🇬🇧 English</option>
-          <option value="both">🌐 Bilingue</option>
-        </select>
-        <select class="input" id="translation-select" onchange="changeTranslation(this.value)">
-          <option value="fr:lsg">Louis Segond 1910</option>
-          <option value="fr:darby">Darby</option>
-          <option value="en:kjv">King James Version</option>
-          <option value="en:web">World English Bible</option>
-          <option value="en:asv">American Standard Version</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>🎨 Thème de l'overlay</h2>
-      <div class="selector-row">
-        <select class="input" id="theme-select" onchange="changeTheme(this.value)">
-          <option value="">— Thèmes statiques —</option>
-        </select>
-        <button class="btn btn-secondary btn-sm" onclick="refreshThemes()">🔄</button>
-      </div>
-      <div style="margin-top:10px;">
-        <div style="font-size:11px; color:var(--text-muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px;">Thème dynamique par humeur</div>
-        <div class="mood-grid" id="mood-grid">
-          <button class="mood-btn" onclick="setMood('default')" data-mood="default">Défaut</button>
-          <button class="mood-btn" onclick="setMood('joy')" data-mood="joy">😊 Joie</button>
-          <button class="mood-btn" onclick="setMood('peace')" data-mood="peace">☮️ Paix</button>
-          <button class="mood-btn" onclick="setMood('love')" data-mood="love">❤️ Amour</button>
-          <button class="mood-btn" onclick="setMood('faith')" data-mood="faith">🙏 Foi</button>
-          <button class="mood-btn" onclick="setMood('hope')" data-mood="hope">🌟 Espoir</button>
-          <button class="mood-btn" onclick="setMood('repentance')" data-mood="repentance">🕯️ Repentance</button>
-          <button class="mood-btn" onclick="setMood('spirit')" data-mood="spirit">🔥 Esprit Saint</button>
-          <button class="mood-btn" onclick="setMood('sacrifice')" data-mood="sacrifice">✝️ Sacrifice</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Bible Search -->
-  <div class="card" style="margin-top:16px;">
-    <h2>🔎 Recherche biblique par sujet (IA)</h2>
-    <div class="search-section">
-      <div class="input-group">
-        <input type="text" class="input" id="bible-search" placeholder="Ex: pardon, amour, espoir, guérison, mariage..." onkeypress="if(event.key==='Enter') searchBible()">
-        <button class="btn btn-primary" onclick="searchBible()">🔍 Rechercher</button>
-      </div>
-      <div class="search-results" id="search-results" style="display:none;"></div>
-    </div>
-  </div>
-
-  <!-- Manual Entry & Queue -->
-  <div class="grid grid-2" style="margin-top:16px;">
-    <div class="card">
-      <h2>🎯 Affichage manuel</h2>
-      <div class="input-group">
-        <input type="text" class="input" id="manual-ref" placeholder="Jean 3:16" onkeypress="if(event.key==='Enter') showManualVerse()">
-        <button class="btn btn-primary" onclick="showManualVerse()">Afficher</button>
-      </div>
-      <div class="input-group">
-        <input type="text" class="input" id="reading-ref" placeholder="Mode lecture: Jean 3" onkeypress="if(event.key==='Enter') startReadingMode()">
-        <button class="btn btn-secondary" onclick="startReadingMode()">📖 Lecture</button>
-        <button class="btn btn-danger btn-sm" onclick="stopReadingMode()">Arrêter</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>📋 File d'attente</h2>
-      <div class="queue-list" id="queue-list">
-        <div class="queue-empty">File d'attente vide</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Candidate Verse (correspondance floue à confirmer) -->
-  <div class="card candidate-verse-card" id="candidate-verse-card" style="margin-top:16px; display:none;">
-    <h2>⚠️ Correspondance incertaine — confirmation requise</h2>
-    <div class="candidate-verse-body">
-      <div class="candidate-verse-ref" id="candidate-verse-ref">—</div>
-      <div class="candidate-verse-detail" id="candidate-verse-detail"></div>
-      <div class="candidate-verse-actions">
-        <button class="btn btn-primary" onclick="confirmCandidateVerse()">✅ Afficher quand même</button>
-        <button class="btn btn-secondary" onclick="dismissCandidateVerse()">✖️ Ignorer</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Transcript Preview -->
-  <div class="card" style="margin-top:16px;">
-    <h2>🎤 Transcription en direct</h2>
-    <div class="transcript-preview" id="transcript-preview">
-      <div class="transcript-label">Dernière transcription</div>
-      <span id="transcript-text">En attente...</span>
-    </div>
-    <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-      <span style="font-size:12px; color:var(--text-muted);">🎤 Commandes vocales disponibles:</span>
-      <span style="font-size:11px; color:var(--info); font-style:italic;">"Montre [référence]" · "Verset suivant" · "Cache l'overlay" · "Thème sombre"</span>
-    </div>
-  </div>
-
-  <!-- AI Stats & Plugins -->
-  <div class="grid grid-2" style="margin-top:16px;">
-    <div class="card">
-      <h2>🤖 Statistiques IA</h2>
-      <div class="ai-stats-grid" id="ai-stats">
-        <div class="ai-stat-item">
-          <div class="ai-stat-value" id="stat-semantic">—</div>
-          <div class="ai-stat-label">Détections sémantiques</div>
-        </div>
-        <div class="ai-stat-item">
-          <div class="ai-stat-value" id="stat-cache">—</div>
-          <div class="ai-stat-label">Cache IA</div>
-        </div>
-        <div class="ai-stat-item">
-          <div class="ai-stat-value" id="stat-corrected">—</div>
-          <div class="ai-stat-label">Corrections STT</div>
-        </div>
-        <div class="ai-stat-item">
-          <div class="ai-stat-value" id="stat-plugins">—</div>
-          <div class="ai-stat-label">Plugins actifs</div>
-        </div>
-      </div>
-      <div style="margin-top:12px; text-align:center;">
-        <button class="btn btn-sm btn-secondary" onclick="refreshAiStats()">🔄 Actualiser</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>🔌 Plugins</h2>
-      <div class="plugin-list" id="plugin-list">
-        <div class="queue-empty">Aucun plugin chargé</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Voice Commands Reference -->
-  <div class="card" style="margin-top:16px;">
-    <h2>🎤 Référence des commandes vocales</h2>
-    <div class="voice-commands-grid">
-      <div class="voice-cmd"><span class="cmd-phrase">"Montre Jean 3:16"</span><span class="cmd-action">→ Affiche le verset</span></div>
-      <div class="voice-cmd"><span class="cmd-phrase">"Verset suivant"</span><span class="cmd-action">→ Verset suivant</span></div>
-      <div class="voice-cmd"><span class="cmd-phrase">"Verset précédent"</span><span class="cmd-action">→ Verset précédent</span></div>
-      <div class="voice-cmd"><span class="cmd-phrase">"Cache l'overlay"</span><span class="cmd-action">→ Masque l'overlay</span></div>
-      <div class="voice-cmd"><span class="cmd-phrase">"Thème sombre/clair/or"</span><span class="cmd-action">→ Change le thème</span></div>
-      <div class="voice-cmd"><span class="cmd-phrase">"Passons en Darby"</span><span class="cmd-action">→ Change traduction</span></div>
-      <div class="voice-cmd"><span class="cmd-phrase">"Langue français/anglais"</span><span class="cmd-action">→ Change langue</span></div>
-      <div class="voice-cmd"><span class="cmd-phrase">"Urgence"</span><span class="cmd-action">→ Efface tout</span></div>
-    </div>
-  </div>
-
-  <!-- OBS Control -->
-  <div class="card" style="margin-top:16px;">
-    <h2>🎬 Contrôle OBS (optionnel)</h2>
-    <div id="obs-section">
-      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
-        <button class="btn btn-secondary" onclick="toggleObsConfig()">⚙️ Configurer OBS</button>
-        <button class="btn btn-info" onclick="connectObs()">🔗 Connecter</button>
-        <button class="btn btn-secondary" onclick="listObsScenes()">🎬 Scènes</button>
-        <button class="btn btn-secondary" onclick="toggleObsRecording()">⏺️ Enregistrement</button>
-      </div>
-      <div id="obs-config" style="display:none; margin-top:12px; padding:12px; background:var(--bg); border-radius:8px;">
-        <div class="input-group">
-          <input type="text" class="input" id="obs-url" placeholder="ws://localhost:4455" value="ws://localhost:4455">
-          <input type="password" class="input" id="obs-password" placeholder="Mot de passe OBS">
-          <button class="btn btn-primary" onclick="saveObsConfig()">Enregistrer</button>
-        </div>
-        <label style="display:flex; align-items:center; gap:8px; margin-top:8px; font-size:13px;">
-          <input type="checkbox" id="obs-enabled" onchange="saveObsConfig()"> Activer le contrôle OBS
-        </label>
-      </div>
-      <div id="obs-scenes" style="margin-top:10px; display:none;"></div>
-    </div>
-  </div>
-
-  <!-- History -->
-  <div class="card" style="margin-top:16px;">
-    <h2>🕓 Historique des versets</h2>
-    <div class="history-list" id="history-list">
-      <div class="queue-empty">Aucun verset affiché pour l'instant.</div>
-    </div>
-  </div>
-
-  <!-- Logs -->
-  <div class="card" style="margin-top:16px;">
-    <h2>📝 Journal d'activité</h2>
-    <div class="logs-container" id="logs-container">
-      <div class="log-entry" style="color:var(--text-muted);">En attente d'activité…</div>
-    </div>
-  </div>
-
-</div><!-- /.container -->
-
-<script>
-/* ==========================================================================
-   State
-   ========================================================================== */
-let ws = null;
-let reconnectTimer = null;
-let audioContext = null;
-let mediaStream = null;
-let scriptProcessor = null;
-let isAudioStarted = false;
-let verseQueue = [];
-let currentLanguage = 'fr';
-let pendingCandidateReference = null;
-
-/* ==========================================================================
-   WebSocket
-   ========================================================================== */
-function connectWebSocket() {
-  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-
-  try {
-    ws = new WebSocket('ws://localhost:8765');
-  } catch (e) {
-    console.error('[dashboard] WebSocket connection failed:', e);
-    scheduleReconnect();
-    return;
-  }
-
-  ws.onopen = () => {
-    console.log('[dashboard] WebSocket connecté');
-    clearReconnect();
-    updateConnectionState(true);
-    requestAiStats();
-    requestPluginsList();
-  };
-
-  ws.onmessage = (event) => {
-    let msg;
-    try { msg = JSON.parse(event.data); } catch { return; }
-    if (!msg || !msg.action) return;
-    handleWebSocketMessage(msg);
-  };
-
-  ws.onclose = () => {
-    console.log('[dashboard] WebSocket déconnecté');
-    updateConnectionState(false);
-    scheduleReconnect();
-  };
-
-  ws.onerror = (err) => {
-    console.error('[dashboard] WebSocket error:', err);
-    updateConnectionState(false);
-  };
-}
-
-function scheduleReconnect() {
-  if (reconnectTimer) return;
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    connectWebSocket();
-  }, 2000);
-}
-
-function clearReconnect() {
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  }
-}
-
-function updateConnectionState(connected) {
-  const dot = document.getElementById('conn-dot');
-  const text = document.getElementById('conn-text');
-  const state = document.getElementById('connection-state');
-  if (connected) {
-    dot.style.color = 'var(--success)';
-    text.textContent = 'Connecté au pipeline';
-    state.classList.add('connected');
-    state.classList.remove('disconnected');
-  } else {
-    dot.style.color = 'var(--error)';
-    text.textContent = 'Déconnecté — reconnexion…';
-    state.classList.add('disconnected');
-    state.classList.remove('connected');
-  }
-}
-
-function sendWs(data) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(data));
-  }
-}
-
-/* ==========================================================================
-   Message Handlers
-   ========================================================================== */
-function handleWebSocketMessage(msg) {
-  switch (msg.action) {
-    case 'init':
-      if (msg.language) currentLanguage = msg.language;
-      if (msg.history) updateHistory(msg.history);
-      if (msg.translations) populateTranslations(msg.translations);
-      if (msg.plugins) updatePlugins(msg.plugins);
-      break;
-
-    case 'candidateVerse':
-      showCandidateVerse(msg);
-      updateTranscript(`[À CONFIRMER] ${formatReference(msg.reference)} (transcrit: "${msg.spokenAs || ''}")`);
-      break;
-
-    case 'candidateVerseDismissed':
-      hideCandidateVerse();
-      break;
-
-    case 'showVerse':
-      addToHistory(msg);
-      updateTranscript(`[AFFICHÉ] ${msg.reference}`);
-      // Un verset vient de s'afficher (confirmé ou non) : la proposition
-      // en attente, si elle existe encore, ne correspond plus à l'écran.
-      hideCandidateVerse();
-      break;
-
-    case 'hideVerse':
-      updateTranscript('[MASQUÉ]');
-      break;
-
-    case 'historyUpdated':
-      updateHistory(msg.history);
-      break;
-
-    case 'transcript':
-      updateTranscript(msg.text);
-      break;
-
-    case 'transcriptCorrected':
-      updateTranscript(`[CORRIGÉ] ${msg.corrected}`, true);
-      break;
-
-    case 'semanticDetected':
-      updateTranscript(`[IA] Détecté: ${msg.reference} (${Math.round(msg.confidence * 100)}%)`);
-      break;
-
-    case 'searchResults':
-      displaySearchResults(msg.results, msg.query);
-      break;
-
-    case 'searchError':
-      displaySearchError(msg.error);
-      break;
-
-    case 'topicsList':
-      // Could populate autocomplete
-      break;
-
-    case 'moodsList':
-      // Already populated statically
-      break;
-
-    case 'themeApplied':
-      console.log('[dashboard] Theme applied:', msg.themeName);
-      highlightMoodButton(msg.mood);
-      break;
-
-    case 'pluginsList':
-      updatePlugins(msg.plugins);
-      break;
-
-    case 'pluginToggled':
-      console.log('[dashboard] Plugin toggled:', msg.pluginName, msg.enabled);
-      break;
-
-    case 'aiStats':
-      updateAiStats(msg);
-      break;
-
-    case 'languageChanged':
-      currentLanguage = msg.language;
-      document.getElementById('lang-select').value = msg.language;
-      break;
-
-    case 'translationChanged':
-      console.log('[dashboard] Translation changed:', msg.language, msg.code);
-      break;
-
-    case 'readingStarted':
-      updateTranscript('[MODE LECTURE] Démarré: ' + (msg.reference ? JSON.stringify(msg.reference) : ''));
-      break;
-
-    case 'readingStopped':
-      updateTranscript('[MODE LECTURE] Arrêté');
-      break;
-
-    case 'error':
-      console.error('[dashboard] Server error:', msg.error);
-      break;
-
-    case 'pong':
-      break;
-  }
-}
-
-/* ==========================================================================
-   Status from main.js (Electron IPC)
-   ========================================================================== */
-if (window.churchOverlay) {
-  // Status updates
-  window.churchOverlay.onStatusUpdate((payload) => {
-    if (payload.overlayUrl) {
-      document.getElementById('overlay-url').textContent = payload.overlayUrl;
-    }
-    if (payload.logs) {
-      updateLogs(payload.logs);
-    }
-    if (payload.status) {
-      updateStatus(payload.status);
-    }
-  });
-
-  // Perf updates
-  window.churchOverlay.onPerfUpdate((stats) => {
-    if (stats) {
-      document.getElementById('perf-cpu').textContent = (stats.cpuPercent || 0).toFixed(1) + '%';
-      document.getElementById('perf-ram').textContent = Math.round(stats.rssMb || 0) + 'Mo';
-      document.getElementById('perf-heap').textContent = Math.round(stats.heapMb || 0) + 'Mo';
-      document.getElementById('perf-uptime').textContent = formatDuration(stats.uptimeSec || 0);
-    }
-  });
-
-  // Pipeline alerts
-  window.churchOverlay.onPipelineAlert((alert) => {
-    if (alert.clear) {
-      clearAlert();
-    } else {
-      showAlert(alert.message, alert.severity, alert.code);
-    }
-  });
-
-  // Audio pipeline ready
-  window.churchOverlay.onAudioPipelineReady(() => {
-    console.log('[dashboard] Audio pipeline ready — starting capture');
-    startAudioCapture();
-  });
-}
-
-/* ==========================================================================
-   Audio Capture (getUserMedia)
-   ========================================================================== */
-async function startAudioCapture() {
-  if (isAudioStarted) return;
-
-  try {
-    const settings = await window.churchOverlay.getSettings();
-    const constraints = {
-      audio: {
-        deviceId: settings.audioDevice ? { exact: settings.audioDevice } : undefined,
-        sampleRate: 16000,
-        channelCount: 1,
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-      },
-      video: false,
-    };
-
-    mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-    audioContext = new AudioContext({ sampleRate: 16000 });
-    const source = audioContext.createMediaStreamSource(mediaStream);
-    scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
-
-    scriptProcessor.onaudioprocess = (event) => {
-      const floatData = event.inputBuffer.getChannelData(0);
-      const int16Data = new Int16Array(floatData.length);
-      for (let i = 0; i < floatData.length; i++) {
-        int16Data[i] = Math.max(-32768, Math.min(32767, floatData[i] * 32767));
-      }
-      const buffer = int16Data.buffer;
-      if (window.churchOverlay) {
-        window.churchOverlay.sendAudioChunk(buffer);
-      }
-    };
-
-    source.connect(scriptProcessor);
-    scriptProcessor.connect(audioContext.destination);
-    isAudioStarted = true;
-    console.log('[dashboard] Audio capture started');
-  } catch (err) {
-    console.error('[dashboard] Audio capture failed:', err);
-    showAlert('Impossible d\'accéder au micro: ' + err.message, 'error', 'audio-error');
-  }
-}
-
-/* ==========================================================================
-   UI Functions
-   ========================================================================== */
-function updateStatus(status) {
-  const dot = document.getElementById('conn-dot');
-  if (!dot) return;
-  dot.className = 'status-dot ' + status;
-}
-
-function updateLogs(logs) {
-  const container = document.getElementById('logs-container');
-  if (!container || !logs || logs.length === 0) return;
-
-  const html = logs.map(log => {
-    const time = new Date(log.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    return `<div class="log-entry ${log.isError ? 'error' : ''}"><span class="log-time">${time}</span>${escapeHtml(log.text)}</div>`;
-  }).join('');
-
-  container.innerHTML = html;
-  container.scrollTop = container.scrollHeight;
-}
-
-function updateHistory(history) {
-  const container = document.getElementById('history-list');
-  if (!history || history.length === 0) {
-    container.innerHTML = '<div class="queue-empty">Aucun verset affiché pour l\'instant.</div>';
-    return;
-  }
-
-  container.innerHTML = history.map((item, i) => {
-    const time = new Date(item.timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-    let badgeClass = '';
-    let badgeText = 'Auto';
-    if (item.detectedBy === 'semantic' || item.detectedBy === 'quote') {
-      badgeClass = 'ai';
-      badgeText = 'IA';
-    } else if (item.triggeredByVoice) {
-      badgeClass = 'voice';
-      badgeText = 'Voix';
-    } else if (item.triggeredManually) {
-      badgeText = 'Manuel';
-    } else if (item.readingMode) {
-      badgeText = 'Lecture';
-    }
-
-    return `
-      <div class="history-item" onclick="requeueVerse('${escapeHtml(item.reference)}')">
-        <span class="history-time">${time}</span>
-        <div class="history-content">
-          <div class="history-ref">${escapeHtml(item.reference)}</div>
-          <div class="history-text">${escapeHtml(item.text || '')}</div>
-        </div>
-        <span class="history-badge ${badgeClass}">${badgeText}</span>
-      </div>
-    `;
-  }).join('');
-}
-
-function addToHistory(verse) {
-  // Handled by historyUpdated broadcast
-}
-
-function updateTranscript(text, isCorrection = false) {
-  const el = document.getElementById('transcript-text');
-  if (el) {
-    el.textContent = text;
-    el.style.color = isCorrection ? 'var(--info)' : 'var(--text-muted)';
-  }
-}
-
-/* ==========================================================================
-   Candidate Verse (correspondance floue à confirmer)
-   ========================================================================== */
-function formatReference(ref) {
-  if (!ref || !ref.book) return '—';
-  const name = ref.book.charAt(0).toUpperCase() + ref.book.slice(1);
-  let out = `${name} ${ref.chapter}`;
-  if (ref.verseStart) {
-    out += `:${ref.verseStart}`;
-    if (ref.verseEnd && ref.verseEnd !== ref.verseStart) out += `-${ref.verseEnd}`;
-  }
-  return out;
-}
-
-function showCandidateVerse(msg) {
-  pendingCandidateReference = msg.reference || null;
-  const card = document.getElementById('candidate-verse-card');
-  const refEl = document.getElementById('candidate-verse-ref');
-  const detailEl = document.getElementById('candidate-verse-detail');
-  if (!card || !refEl || !detailEl) return;
-
-  refEl.textContent = formatReference(msg.reference);
-  const spokenAs = msg.spokenAs ? `"${msg.spokenAs}"` : 'texte transcrit';
-  const distance = typeof msg.distance === 'number' ? msg.distance : null;
-  detailEl.innerHTML =
-    `Transcription entendue : <b>${spokenAs}</b>` +
-    (distance !== null ? ` (écart de ${distance} caractère${distance > 1 ? 's' : ''} avec le nom du livre)` : '') +
-    `.<br>Le nom du livre a été deviné par tolérance aux erreurs de transcription — vérifiez avant d'afficher à l'écran.`;
-  card.style.display = 'block';
-  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
-
-function hideCandidateVerse() {
-  pendingCandidateReference = null;
-  const card = document.getElementById('candidate-verse-card');
-  if (card) card.style.display = 'none';
-}
-
-function confirmCandidateVerse() {
-  if (!pendingCandidateReference) return;
-  sendWs({ action: 'confirmCandidateVerse' });
-  hideCandidateVerse();
-}
-
-function dismissCandidateVerse() {
-  if (!pendingCandidateReference) { hideCandidateVerse(); return; }
-  sendWs({ action: 'dismissCandidateVerse' });
-  hideCandidateVerse();
-}
-
-/* ==========================================================================
-   Manual Controls
-   ========================================================================== */
-function showManualVerse() {
-  const ref = document.getElementById('manual-ref').value.trim();
-  if (!ref) return;
-  sendWs({ action: 'showVerse', reference: ref });
-  document.getElementById('manual-ref').value = '';
-}
-
-function startReadingMode() {
-  const ref = document.getElementById('reading-ref').value.trim();
-  if (!ref) return;
-  sendWs({ action: 'startReading', reference: ref });
-  document.getElementById('reading-ref').value = '';
-}
-
-function stopReadingMode() {
-  sendWs({ action: 'stopReading' });
-}
-
-function requeueVerse(ref) {
-  if (!ref) return;
-  verseQueue.push(ref);
-  updateQueueDisplay();
-}
-
-function updateQueueDisplay() {
-  const container = document.getElementById('queue-list');
-  if (verseQueue.length === 0) {
-    container.innerHTML = '<div class="queue-empty">File d\'attente vide</div>';
-    return;
-  }
-  container.innerHTML = verseQueue.map((ref, i) => `
-    <div class="queue-item">
-      <span class="queue-ref">${escapeHtml(ref)}</span>
-      <div class="queue-actions">
-        <button class="btn btn-sm btn-primary" onclick="sendWs({action:'showVerse',reference:'${escapeHtml(ref)}'}); removeFromQueue(${i})">Afficher</button>
-        <button class="btn btn-sm btn-secondary" onclick="removeFromQueue(${i})">✕</button>
-      </div>
-    </div>
-  `).join('');
-}
-
-function removeFromQueue(index) {
-  verseQueue.splice(index, 1);
-  updateQueueDisplay();
-}
-
-/* ==========================================================================
-   Language & Translation
-   ========================================================================== */
-function changeLanguage(lang) {
-  sendWs({ action: 'setLanguage', language: lang });
-}
-
-function changeTranslation(value) {
-  const [lang, code] = value.split(':');
-  if (lang && code) {
-    sendWs({ action: 'setTranslation', language: lang, code });
-  }
-}
-
-function populateTranslations(translations) {
-  const select = document.getElementById('translation-select');
-  if (!select || !translations) return;
-  // Keep existing options, they match the server codes
-}
-
-/* ==========================================================================
-   Themes
-   ========================================================================== */
-async function refreshThemes() {
-  if (!window.churchOverlay) return;
-  const result = await window.churchOverlay.listThemes();
-  if (result.ok && result.themes) {
-    const select = document.getElementById('theme-select');
-    const current = select.value;
-    select.innerHTML = '<option value="">— Thèmes statiques —</option>' +
-      result.themes.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
-    select.value = current;
-  }
-}
-
-async function changeTheme(themeId) {
-  if (!themeId) return;
-  if (!window.churchOverlay) return;
-  await window.churchOverlay.setActiveTheme(themeId);
-}
-
-function setMood(mood) {
-  sendWs({ action: 'setMoodTheme', mood });
-  highlightMoodButton(mood);
-}
-
-function highlightMoodButton(mood) {
-  document.querySelectorAll('.mood-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.mood === mood);
-  });
-}
-
-/* ==========================================================================
-   Bible Search
-   ========================================================================== */
-function searchBible() {
-  const query = document.getElementById('bible-search').value.trim();
-  if (!query) return;
-  const resultsEl = document.getElementById('search-results');
-  resultsEl.style.display = 'block';
-  resultsEl.innerHTML = '<div class="queue-empty">Recherche en cours...</div>';
-  sendWs({ action: 'searchBible', query, topK: 5 });
-}
-
-function displaySearchResults(results, query) {
-  const container = document.getElementById('search-results');
-  if (!results || results.length === 0) {
-    container.innerHTML = `<div class="queue-empty">Aucun résultat pour "${escapeHtml(query)}"</div>`;
-    return;
-  }
-
-  container.innerHTML = results.map(r => `
-    <div class="search-result-item" onclick="sendWs({action:'showVerse',reference:'${escapeHtml(r.reference)}'}); addToQueue('${escapeHtml(r.reference)}')">
-      <div class="result-ref">${escapeHtml(r.reference)}</div>
-      <div class="result-text">${escapeHtml(r.text || '')}</div>
-      ${r.source ? `<div class="result-meta">Source: ${r.source}${r.score ? ` · Score: ${Math.round(r.score * 100)}%` : ''}</div>` : ''}
-    </div>
-  `).join('');
-}
-
-function displaySearchError(error) {
-  document.getElementById('search-results').innerHTML = `<div class="queue-empty" style="color:var(--error)">Erreur: ${escapeHtml(error)}</div>`;
-}
-
-function addToQueue(ref) {
-  requeueVerse(ref);
-}
-
-/* ==========================================================================
-   AI Stats
-   ========================================================================== */
-function requestAiStats() {
-  sendWs({ action: 'getAiStats' });
-}
-
-function refreshAiStats() {
-  requestAiStats();
-}
-
-function updateAiStats(stats) {
-  if (stats.semanticDetector) {
-    document.getElementById('stat-semantic').textContent = stats.semanticDetector.cacheSize || 0;
-    document.getElementById('stat-cache').textContent = (stats.semanticDetector.cacheSize || 0) + ' entrées';
-  }
-  if (stats.corrector) {
-    const total = (stats.corrector.fastCorrections || 0) + (stats.corrector.smartCorrections || 0);
-    document.getElementById('stat-corrected').textContent = total;
-  }
-  if (stats.plugins) {
-    document.getElementById('stat-plugins').textContent = stats.plugins.pluginCount || 0;
-  }
-}
-
-/* ==========================================================================
-   Plugins
-   ========================================================================== */
-function requestPluginsList() {
-  sendWs({ action: 'listPlugins' });
-}
-
-function updatePlugins(plugins) {
-  const container = document.getElementById('plugin-list');
-  if (!plugins || plugins.length === 0) {
-    container.innerHTML = '<div class="queue-empty">Aucun plugin chargé</div>';
-    return;
-  }
-
-  container.innerHTML = plugins.map(p => `
-    <div class="plugin-item">
-      <div class="plugin-info">
-        <div class="plugin-name">${escapeHtml(p.name)} ${p.version ? `<span style="color:var(--text-muted);font-size:11px;">v${p.version}</span>` : ''}</div>
-        <div class="plugin-meta">${escapeHtml(p.type || 'generic')} · ${p.hooks ? p.hooks.join(', ') : 'no hooks'}</div>
-      </div>
-      <input type="checkbox" class="plugin-toggle" ${p.enabled ? 'checked' : ''} onchange="togglePlugin('${escapeHtml(p.name)}', this.checked)">
-    </div>
-  `).join('');
-}
-
-function togglePlugin(name, enabled) {
-  sendWs({ action: 'togglePlugin', pluginName: name, enabled });
-}
-
-/* ==========================================================================
-   OBS Control
-   ========================================================================== */
-function toggleObsConfig() {
-  const el = document.getElementById('obs-config');
-  el.style.display = el.style.display === 'none' ? 'block' : 'none';
-}
-
-async function saveObsConfig() {
-  if (!window.churchOverlay) return;
-  const enabled = document.getElementById('obs-enabled').checked;
-  const url = document.getElementById('obs-url').value;
-  const password = document.getElementById('obs-password').value;
-  await window.churchOverlay.setObsConfig({ enabled, obsWebsocketUrl: url, password });
-}
-
-async function connectObs() {
-  if (!window.churchOverlay) return;
-  const result = await window.churchOverlay.obsConnect();
-  alert(result.ok ? 'Connecté à OBS !' : 'Erreur: ' + (result.error || 'Inconnue'));
-}
-
-async function listObsScenes() {
-  if (!window.churchOverlay) return;
-  const result = await window.churchOverlay.obsListScenes();
-  if (result.ok && result.scenes) {
-    const container = document.getElementById('obs-scenes');
-    container.style.display = 'block';
-    container.innerHTML = result.scenes.map(s => `
-      <button class="btn btn-sm btn-secondary" onclick="switchObsScene('${escapeHtml(s.sceneName)}')" style="margin:4px;">${escapeHtml(s.sceneName)}</button>
-    `).join('');
-  }
-}
-
-async function switchObsScene(name) {
-  if (!window.churchOverlay) return;
-  await window.churchOverlay.obsSwitchScene(name);
-}
-
-async function toggleObsRecording() {
-  if (!window.churchOverlay) return;
-  const result = await window.churchOverlay.obsToggleRecording();
-  console.log('Recording toggled:', result);
-}
-
-/* ==========================================================================
-   Alerts
-   ========================================================================== */
-function showAlert(message, severity = 'warning', code = '') {
-  const banner = document.getElementById('alert-banner');
-  const title = document.getElementById('alert-title');
-  const msg = document.getElementById('alert-message');
-  title.textContent = severity === 'error' ? 'Erreur' : 'Alerte';
-  msg.textContent = message;
-  banner.classList.add('visible');
-}
-
-function clearAlert() {
-  document.getElementById('alert-banner').classList.remove('visible');
-}
-
-/* ==========================================================================
-   Auto-updater
-   ========================================================================== */
-function showUpdateBanner(text) {
-  const banner = document.getElementById('update-banner');
-  document.getElementById('update-text').textContent = text;
-  banner.classList.add('visible');
-}
-
-function dismissUpdate() {
-  document.getElementById('update-banner').classList.remove('visible');
-}
-
-function downloadUpdate() {
-  if (window.churchOverlay) {
-    // This would trigger the auto-updater download
-    console.log('[dashboard] Download update requested');
-  }
-  dismissUpdate();
-}
-
-/* ==========================================================================
-   Main.js IPC Helpers
-   ========================================================================== */
-function requestRestart() {
-  if (window.churchOverlay) window.churchOverlay.requestRestart();
-}
-
-function openSetup() {
-  if (window.churchOverlay) window.churchOverlay.openSetup();
-}
-
-function copyUrl() {
-  const url = document.getElementById('overlay-url').textContent;
-  if (url && url !== '—') {
-    navigator.clipboard.writeText(url).then(() => {
-      const btn = document.querySelector('.copy-btn');
-      btn.textContent = '✓';
-      setTimeout(() => btn.textContent = '📋', 1500);
-    });
-  }
-}
-
-/* ==========================================================================
-   Utilities
-   ========================================================================== */
-function escapeHtml(text) {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-function formatDuration(seconds) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  if (h > 0) return `${h}h${m}m`;
-  if (m > 0) return `${m}m${s}s`;
-  return `${s}s`;
-}
-
-/* ==========================================================================
-   Init
-   ========================================================================== */
-connectWebSocket();
-refreshThemes();
-
-// Periodic AI stats refresh
-setInterval(requestAiStats, 30000);
-
-// Keepalive ping
-setInterval(() => sendWs({ action: 'ping' }), 30000);
-
-console.log('[dashboard] ChurchOverlay dashboard ready');
-</script>
+
+    <script>
+        // WebSocket connection
+        const ws = new WebSocket('ws://localhost:8765');
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 5;
+        
+        // State
+        let state = {
+            totalVerses: 0,
+            detectionRate: 0,
+            activeLanguage: 'FR',
+            sessionStartTime: Date.now(),
+            transcripts: [],
+            currentVerse: null
+        };
+
+        // Navigation
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', () => {
+                document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+                item.classList.add('active');
+                
+                document.querySelectorAll('.section').forEach(s => s.style.display = 'none');
+                document.getElementById(item.dataset.section).style.display = 'block';
+            });
+        });
+
+        // WebSocket event handlers
+        ws.onopen = () => {
+            console.log('Connected to xtruck server');
+            updateStatus(true);
+            reconnectAttempts = 0;
+            
+            // Request statistics on connection
+            setTimeout(() => {
+                ws.send(JSON.stringify({ action: 'getStatistics' }));
+                ws.send(JSON.stringify({ action: 'getSermonAnalysis' }));
+            }, 1000);
+        };
+
+        ws.onmessage = (event) => {
+            try {
+                const message = JSON.parse(event.data);
+                handleMessage(message);
+            } catch (e) {
+                console.error('Failed to parse WebSocket message:', e);
+            }
+        };
+
+        ws.onclose = () => {
+            console.log('Disconnected from xtruck server');
+            updateStatus(false);
+            
+            // Attempt to reconnect
+            if (reconnectAttempts < maxReconnectAttempts) {
+                reconnectAttempts++;
+                console.log(`Reconnection attempt ${reconnectAttempts}/${maxReconnectAttempts}...`);
+                setTimeout(() => {
+                    try {
+                        ws.close();
+                        const newWs = new WebSocket('ws://localhost:8765');
+                        // Reassign event handlers
+                        newWs.onopen = ws.onopen;
+                        newWs.onmessage = ws.onmessage;
+                        newWs.onclose = ws.onclose;
+                        newWs.onerror = ws.onerror;
+                        Object.assign(ws, newWs);
+                    } catch (e) {
+                        console.error('Reconnection failed:', e);
+                    }
+                }, 3000 * reconnectAttempts);
+            } else {
+                console.error('Max reconnection attempts reached. Please refresh the page.');
+            }
+        };
+
+        function handleMessage(message) {
+            switch (message.action) {
+                case 'showVerse':
+                    displayVerse(message);
+                    state.totalVerses++;
+                    updateDashboard();
+                    break;
+                case 'hideVerse':
+                    hideVerseDisplay();
+                    break;
+                case 'transcript':
+                    addTranscript(message);
+                    break;
+                case 'candidateVerse':
+                    showCandidateVerse(message);
+                    break;
+                case 'sermonAnalysis':
+                    updateAnalysis(message);
+                    break;
+                case 'statistics':
+                    updateMLStats(message);
+                    break;
+                case 'voiceCommand':
+                    handleVoiceCommand(message);
+                    break;
+            }
+        }
+
+        function displayVerse(message) {
+            document.getElementById('verseReference').textContent = message.reference;
+            document.getElementById('verseText').textContent = message.text;
+            state.currentVerse = message;
+            
+            if (message.confidence) {
+                const confidenceEl = document.createElement('span');
+                confidenceEl.className = `confidence ${message.confidence >= 0.8 ? 'high' : message.confidence >= 0.5 ? 'medium' : 'low'}`;
+                confidenceEl.textContent = `${Math.round(message.confidence * 100)}% confidence`;
+                document.getElementById('verseReference').appendChild(confidenceEl);
+            }
+        }
+
+        function hideVerseDisplay() {
+            document.getElementById('verseReference').textContent = 'No verse displayed';
+            document.getElementById('verseText').textContent = 'Versets will appear here when detected';
+            state.currentVerse = null;
+        }
+
+        function addTranscript(message) {
+            const feed = document.getElementById('transcriptFeed');
+            const item = document.createElement('div');
+            item.className = 'transcript-item fade-in';
+            
+            const time = new Date(message.timestamp).toLocaleTimeString();
+            item.innerHTML = `
+                <div class="transcript-time">${time}</div>
+                <div class="transcript-text">${message.text}</div>
+            `;
+            
+            feed.insertBefore(item, feed.firstChild);
+            
+            // Keep only last 50 transcripts
+            while (feed.children.length > 50) {
+                feed.removeChild(feed.lastChild);
+            }
+            
+            state.transcripts.unshift(message);
+            if (state.transcripts.length > 50) state.transcripts.pop();
+        }
+
+        function showCandidateVerse(message) {
+            console.log('Candidate verse detected:', message.reference);
+        }
+
+        function updateAnalysis(message) {
+            document.getElementById('wordCount').textContent = message.wordCount;
+            document.getElementById('keyPoints').textContent = message.keyPoints.length;
+            document.getElementById('themesCount').textContent = message.themes.length;
+            
+            // Update themes list
+            const themesList = document.getElementById('themesList');
+            themesList.innerHTML = '';
+            message.themes.slice(0, 5).forEach(theme => {
+                const row = document.createElement('div');
+                row.className = 'stat-row';
+                row.innerHTML = `
+                    <span class="stat-label">${theme.name}</span>
+                    <span class="stat-value">${theme.strength}</span>
+                `;
+                themesList.appendChild(row);
+            });
+        }
+
+        function updateMLStats(message) {
+            document.getElementById('totalDetections').textContent = message.totalDetections;
+            document.getElementById('highConfidence').textContent = message.highConfidence;
+            document.getElementById('avgConfidence').textContent = `${Math.round(message.avgConfidence * 100)}%`;
+            
+            state.detectionRate = message.totalDetections > 0 
+                ? Math.round((message.highConfidence / message.totalDetections) * 100) 
+                : 0;
+            updateDashboard();
+        }
+
+        function handleVoiceCommand(message) {
+            console.log('Voice command detected:', message.action);
+        }
+
+        function updateDashboard() {
+            document.getElementById('totalVerses').textContent = state.totalVerses;
+            document.getElementById('detectionRate').textContent = `${state.detectionRate}%`;
+            document.getElementById('activeLanguage').textContent = state.activeLanguage;
+            
+            // Update session duration
+            const elapsed = Math.floor((Date.now() - state.sessionStartTime) / 1000);
+            const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
+            const seconds = (elapsed % 60).toString().padStart(2, '0');
+            document.getElementById('sessionDuration').textContent = `${minutes}:${seconds}`;
+        }
+
+        function updateStatus(connected) {
+            const status = document.querySelector('.status');
+            const dot = status.querySelector('.status-dot');
+            const text = status.querySelector('span');
+            
+            if (connected) {
+                dot.style.background = 'var(--success)';
+                dot.style.animation = 'pulse 2s infinite';
+                text.textContent = 'Connected';
+            } else {
+                dot.style.background = 'var(--danger)';
+                dot.style.animation = 'none';
+                text.textContent = 'Disconnected';
+            }
+        }
+
+        // Control functions
+        function showManualVerse() {
+            const reference = prompt('Enter Bible reference (e.g., Jean 3:16):');
+            if (reference) {
+                ws.send(JSON.stringify({
+                    action: 'lookupReference',
+                    reference: reference,
+                    durationMs: 300000
+                }));
+            }
+        }
+
+        function hideVerse() {
+            ws.send(JSON.stringify({ action: 'hideVerse' }));
+        }
+
+        function pauseTimer() {
+            ws.send(JSON.stringify({ action: 'pauseTimer' }));
+        }
+
+        function resumeTimer() {
+            ws.send(JSON.stringify({ action: 'resumeTimer' }));
+        }
+
+        function emergencyStop() {
+            if (confirm('Are you sure you want to emergency stop?')) {
+                hideVerse();
+                ws.send(JSON.stringify({ action: 'endSermonAnalysis' }));
+            }
+        }
+
+        function setLanguage(lang) {
+            ws.send(JSON.stringify({ action: 'setLanguage', language: lang }));
+            state.activeLanguage = lang.toUpperCase();
+            updateDashboard();
+            
+            document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+
+        function clearTranscript() {
+            document.getElementById('transcriptFeed').innerHTML = `
+                <div class="transcript-item">
+                    <div class="transcript-time">Waiting for audio...</div>
+                </div>
+            `;
+            state.transcripts = [];
+        }
+
+        // Update session duration every second
+        setInterval(updateDashboard, 1000);
+
+        // WebSocket error handler
+        ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+            updateStatus(false);
+        };
+
+        // Speech Recognition Setup
+        let recognition = null;
+        let isListening = false;
+        let audioContext = null;
+        let analyser = null;
+        let microphone = null;
+        let animationId = null;
+
+        // Check browser support for speech recognition
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const speechStatus = document.getElementById('speechStatus');
+        
+        if (SpeechRecognition) {
+            speechStatus.textContent = 'Available';
+            speechStatus.className = 'status-badge success';
+            
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'fr-FR';
+            
+            recognition.onresult = (event) => {
+                let finalTranscript = '';
+                let interimTranscript = '';
+                
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcript;
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+                
+                if (finalTranscript) {
+                    // Send transcript to server
+                    ws.send(JSON.stringify({
+                        action: 'transcript',
+                        text: finalTranscript,
+                        timestamp: Date.now(),
+                        source: 'browser'
+                    }));
+                    
+                    // Add to local transcript feed
+                    addTranscript({
+                        text: finalTranscript,
+                        timestamp: Date.now()
+                    });
+                }
+            };
+            
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                if (event.error === 'not-allowed') {
+                    speechStatus.textContent = 'Permission Denied';
+                    speechStatus.className = 'status-badge error';
+                    stopSpeechRecognition();
+                }
+            };
+            
+            recognition.onend = () => {
+                if (isListening) {
+                    // Restart if still supposed to be listening
+                    recognition.start();
+                }
+            };
+        } else {
+            speechStatus.textContent = 'Not Supported';
+            speechStatus.className = 'status-badge error';
+            document.getElementById('speechBtn').disabled = true;
+        }
+
+        function toggleSpeechRecognition() {
+            if (isListening) {
+                stopSpeechRecognition();
+            } else {
+                startSpeechRecognition();
+            }
+        }
+
+        async function startSpeechRecognition() {
+            if (!recognition) {
+                alert('Speech recognition is not supported in your browser.');
+                return;
+            }
+            
+            try {
+                // Request microphone access for visualization
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // Setup audio visualization
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                microphone = audioContext.createMediaStreamSource(stream);
+                microphone.connect(analyser);
+                analyser.fftSize = 256;
+                
+                // Start visualization
+                visualizeAudio();
+                
+                // Start speech recognition
+                recognition.start();
+                isListening = true;
+                
+                // Update UI
+                const btn = document.getElementById('speechBtn');
+                btn.classList.remove('inactive');
+                btn.classList.add('active');
+                document.getElementById('speechBtnText').textContent = 'Stop Speech';
+                
+            } catch (error) {
+                console.error('Error starting speech recognition:', error);
+                alert('Could not access microphone. Please check permissions.');
+            }
+        }
+
+        function stopSpeechRecognition() {
+            if (recognition) {
+                recognition.stop();
+            }
+            
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+            
+            isListening = false;
+            
+            // Update UI
+            const btn = document.getElementById('speechBtn');
+            btn.classList.remove('active');
+            btn.classList.add('inactive');
+            document.getElementById('speechBtnText').textContent = 'Start Speech';
+            
+            // Clear visualizer
+            const canvas = document.getElementById('audioVisualizer');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function visualizeAudio() {
+            const canvas = document.getElementById('audioVisualizer');
+            const ctx = canvas.getContext('2d');
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+            
+            function draw() {
+                animationId = requestAnimationFrame(draw);
+                
+                analyser.getByteFrequencyData(dataArray);
+                
+                ctx.fillStyle = 'rgba(30, 41, 59, 0.3)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                const barWidth = (canvas.width / bufferLength) * 2.5;
+                let barHeight;
+                let x = 0;
+                
+                for (let i = 0; i < bufferLength; i++) {
+                    barHeight = dataArray[i] / 2;
+                    
+                    const gradient = ctx.createLinearGradient(0, canvas.height, 0, canvas.height - barHeight);
+                    gradient.addColorStop(0, '#2563eb');
+                    gradient.addColorStop(1, '#10b981');
+                    
+                    ctx.fillStyle = gradient;
+                    ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+                    
+                    x += barWidth + 1;
+                }
+            }
+            
+            draw();
+        }
+
+        // Overlay Preview Functions
+        function refreshOverlay() {
+            const frame = document.getElementById('overlayFrame');
+            frame.src = frame.src;
+        }
+
+        // Toast Notification System
+        function showToast(message, type = 'info', duration = 3000) {
+            const container = document.querySelector('.toast-container') || createToastContainer();
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            
+            let icon = '';
+            switch (type) {
+                case 'success':
+                    icon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
+                    break;
+                case 'error':
+                    icon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
+                    break;
+                case 'warning':
+                    icon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+                    break;
+                default:
+                    icon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
+            }
+            
+            toast.innerHTML = `${icon}<span>${message}</span>`;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.animation = 'slideOut 0.3s ease-out forwards';
+                setTimeout(() => toast.remove(), 300);
+            }, duration);
+        }
+
+        function createToastContainer() {
+            const container = document.createElement('div');
+            container.className = 'toast-container';
+            document.body.appendChild(container);
+            return container;
+        }
+
+        // Activity Feed
+        function addActivity(title, type = 'info') {
+            const feed = document.getElementById('activityFeed');
+            if (!feed) return;
+            
+            const item = document.createElement('div');
+            item.className = 'activity-item fade-in';
+            
+            const time = new Date().toLocaleTimeString();
+            
+            let icon = '';
+            switch (type) {
+                case 'success':
+                    icon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
+                    break;
+                case 'error':
+                    icon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
+                    break;
+                default:
+                    icon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
+            }
+            
+            item.innerHTML = `
+                <div class="activity-icon ${type}">
+                    ${icon}
+                </div>
+                <div class="activity-content">
+                    <div class="activity-title">${title}</div>
+                    <div class="activity-time">${time}</div>
+                </div>
+            `;
+            
+            feed.insertBefore(item, feed.firstChild);
+            
+            // Keep only last 20 activities
+            while (feed.children.length > 20) {
+                feed.removeChild(feed.lastChild);
+            }
+        }
+
+        // Enhanced control functions with toast notifications
+        const originalShowManualVerse = showManualVerse;
+        showManualVerse = function() {
+            const reference = prompt('Enter Bible reference (e.g., Jean 3:16):');
+            if (reference) {
+                ws.send(JSON.stringify({
+                    action: 'lookupReference',
+                    reference: reference,
+                    durationMs: 300000
+                }));
+                addActivity(`Looking up: ${reference}`, 'info');
+                showToast(`Looking up ${reference}...`, 'info');
+            }
+        };
+
+        const originalHideVerse = hideVerse;
+        hideVerse = function() {
+            ws.send(JSON.stringify({ action: 'hideVerse' }));
+            addActivity('Verse hidden', 'info');
+            showToast('Verse hidden', 'info');
+        };
+
+        const originalEmergencyStop = emergencyStop;
+        emergencyStop = function() {
+            if (confirm('Are you sure you want to emergency stop?')) {
+                hideVerse();
+                ws.send(JSON.stringify({ action: 'endSermonAnalysis' }));
+                addActivity('Emergency stop activated', 'error');
+                showToast('Emergency stop activated', 'error');
+            }
+        };
+
+        const originalSetLanguage = setLanguage;
+        setLanguage = function(lang) {
+            ws.send(JSON.stringify({ action: 'setLanguage', language: lang }));
+            state.activeLanguage = lang.toUpperCase();
+            updateDashboard();
+            
+            document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            addActivity(`Language changed to ${lang.toUpperCase()}`, 'success');
+            showToast(`Language set to ${lang.toUpperCase()}`, 'success');
+        };
+
+        // Enhanced message handler with activity feed
+        const originalHandleMessage = handleMessage;
+        handleMessage = function(message) {
+            switch (message.action) {
+                case 'showVerse':
+                    displayVerse(message);
+                    state.totalVerses++;
+                    updateDashboard();
+                    addActivity(`Verse displayed: ${message.reference}`, 'success');
+                    showToast(`Verse: ${message.reference}`, 'success');
+                    break;
+                case 'hideVerse':
+                    hideVerseDisplay();
+                    addActivity('Verse hidden automatically', 'info');
+                    break;
+                case 'transcript':
+                    addTranscript(message);
+                    if (message.source === 'browser') {
+                        addActivity('Speech transcript received', 'info');
+                    }
+                    break;
+                case 'candidateVerse':
+                    showCandidateVerse(message);
+                    addActivity(`Candidate verse: ${message.reference}`, 'warning');
+                    break;
+                case 'sermonAnalysis':
+                    updateAnalysis(message);
+                    break;
+                case 'statistics':
+                    updateMLStats(message);
+                    break;
+                case 'voiceCommand':
+                    handleVoiceCommand(message);
+                    addActivity(`Voice command: ${message.action}`, 'success');
+                    showToast(`Voice command: ${message.action}`, 'success');
+                    break;
+                case 'error':
+                    addActivity(`Error: ${message.error}`, 'error');
+                    showToast(`Error: ${message.error}`, 'error');
+                    break;
+            }
+        };
+    </script>
 </body>
 </html>
