@@ -361,6 +361,24 @@ async function processTranscript(text) {
     warn('Detector error: ' + e.message);
   }
 
+  // CORRECTIF (audit) : detector.js annote depuis un moment les correspondances
+  // floues (reference.fuzzy / fuzzyDistance / fuzzyOriginal) — ex. "Filipiens"
+  // corrigé en "philippiens" — mais server.js ne le signalait jamais à
+  // l'interface : le tableau de bord affiche déjà un traitement dédié pour
+  // 'candidateVerse' (showCandidateVerse), resté sans émetteur côté serveur.
+  // On informe l'opérateur qu'une correction a été appliquée, tout en
+  // continuant à diffuser le verset deviné (ne pas bloquer l'affichage en
+  // plein culte pour une confirmation manuelle).
+  if (reference && reference.fuzzy) {
+    log(`Fuzzy match: "${reference.fuzzyOriginal}" → "${reference.book}" (distance ${reference.fuzzyDistance})`);
+    broadcast({
+      action: 'candidateVerse',
+      reference: { book: reference.book, chapter: reference.chapter, verseStart: reference.verseStart },
+      original: reference.fuzzyOriginal,
+      distance: reference.fuzzyDistance,
+    });
+  }
+
   // ── STEP 2: AI Semantic Detection (safe fallback) ──
   if (!reference && semanticDetector) {
     try {
