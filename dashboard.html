@@ -1,1712 +1,999 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tableau de bord opérateur xtruck</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --primary: #3b82f6;
-            --primary-dark: #2563eb;
-            --primary-light: #60a5fa;
-            --secondary: #64748b;
-            --success: #10b981;
-            --success-light: #34d399;
-            --warning: #f59e0b;
-            --danger: #ef4444;
-            --danger-light: #f87171;
-            --background: #0f172a;
-            --background-light: #1e293b;
-            --surface: #1e293b;
-            --surface-light: #334155;
-            --surface-lighter: #475569;
-            --text: #f1f5f9;
-            --text-muted: #94a3b8;
-            --border: #334155;
-            --border-light: #475569;
-            --shadow: rgba(0, 0, 0, 0.3);
-            --shadow-lg: rgba(0, 0, 0, 0.5);
-        }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background: var(--background);
-            color: var(--text);
-            line-height: 1.6;
-            min-height: 100vh;
-        }
-
-        .dashboard {
-            display: grid;
-            grid-template-columns: 280px 1fr;
-            min-height: 100vh;
-        }
-
-        /* Sidebar */
-        .sidebar {
-            background: var(--surface);
-            border-right: 1px solid var(--border);
-            padding: 1.5rem;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .logo {
-            font-size: 1.5rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, var(--primary) 0%, var(--success) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            margin-bottom: 2rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .nav {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-
-        .nav-item {
-            padding: 0.75rem 1rem;
-            border-radius: 0.5rem;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            color: var(--text-muted);
-        }
-
-        .nav-item:hover, .nav-item.active {
-            background: var(--surface-light);
-            color: var(--text);
-        }
-
-        .nav-item.active {
-            background: var(--primary);
-        }
-
-        /* Main Content */
-        .main-content {
-            padding: 2rem;
-            overflow-y: auto;
-        }
-
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 2rem;
-        }
-
-        .header h1 {
-            font-size: 1.875rem;
-            font-weight: 600;
-            background: linear-gradient(135deg, var(--text) 0%, var(--text-muted) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .status {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.5rem 1rem;
-            background: var(--surface);
-            border-radius: 2rem;
-            font-size: 0.875rem;
-        }
-
-        .status-dot {
-            width: 0.5rem;
-            height: 0.5rem;
-            border-radius: 50%;
-            background: var(--success);
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        /* Grid Layout */
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }
-
-        .card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 1rem;
-            padding: 1.5rem;
-        }
-
-        .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1rem;
-        }
-
-        .card-title {
-            font-size: 1.125rem;
-            font-weight: 600;
-        }
-
-        .card-value {
-            font-size: 2rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, var(--primary) 0%, var(--success) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .card-subtitle {
-            color: var(--text-muted);
-            font-size: 0.875rem;
-        }
-
-        /* Controls */
-        .controls {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-        }
-
-        .control-btn {
-            padding: 0.75rem 1rem;
-            border: none;
-            border-radius: 0.5rem;
-            font-family: inherit;
-            font-size: 0.875rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-        }
-
-        .control-btn.primary {
-            background: var(--primary);
-            color: white;
-        }
-
-        .control-btn.primary:hover {
-            background: var(--primary-dark);
-        }
-
-        .control-btn.secondary {
-            background: var(--surface-light);
-            color: var(--text);
-        }
-
-        .control-btn.secondary:hover {
-            background: var(--border);
-        }
-
-        .control-btn.danger {
-            background: var(--danger);
-            color: white;
-        }
-
-        .control-btn.danger:hover {
-            background: #dc2626;
-        }
-
-        /* Transcript Feed */
-        .transcript-feed {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 1rem;
-            padding: 1.5rem;
-            max-height: 400px;
-            overflow-y: auto;
-        }
-
-        .transcript-item {
-            padding: 0.75rem 0;
-            border-bottom: 1px solid var(--border);
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.875rem;
-        }
-
-        .transcript-item:last-child {
-            border-bottom: none;
-        }
-
-        .transcript-time {
-            color: var(--text-muted);
-            font-size: 0.75rem;
-        }
-
-        .transcript-text {
-            margin-top: 0.25rem;
-        }
-
-        /* Verse Display */
-        .verse-display {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 1rem;
-            padding: 2rem;
-            text-align: center;
-        }
-
-        .verse-reference {
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: var(--primary);
-            margin-bottom: 1rem;
-        }
-
-        .verse-text {
-            font-size: 1.125rem;
-            line-height: 1.8;
-            font-style: italic;
-        }
-
-        /* Statistics */
-        .stat-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 0.75rem 0;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .stat-row:last-child {
-            border-bottom: none;
-        }
-
-        .stat-label {
-            color: var(--text-muted);
-        }
-
-        .stat-value {
-            font-weight: 600;
-        }
-
-        /* Language Selector */
-        .language-selector {
-            display: flex;
-            gap: 0.5rem;
-        }
-
-        .lang-btn {
-            padding: 0.5rem 1rem;
-            border: 1px solid var(--border);
-            border-radius: 0.5rem;
-            background: var(--surface);
-            color: var(--text);
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .lang-btn:hover, .lang-btn.active {
-            background: var(--primary);
-            border-color: var(--primary);
-        }
-
-        /* Progress Bar */
-        .progress-bar {
-            height: 0.5rem;
-            background: var(--surface-light);
-            border-radius: 0.25rem;
-            overflow: hidden;
-            margin-top: 0.5rem;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: var(--primary);
-            transition: width 0.3s;
-        }
-
-        /* Confidence Indicator */
-        .confidence {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.25rem;
-            padding: 0.25rem 0.5rem;
-            border-radius: 0.25rem;
-            font-size: 0.75rem;
-            font-weight: 500;
-        }
-
-        .confidence.high {
-            background: rgba(16, 185, 129, 0.2);
-            color: var(--success);
-        }
-
-        .confidence.medium {
-            background: rgba(245, 158, 11, 0.2);
-            color: var(--warning);
-        }
-
-        .confidence.low {
-            background: rgba(239, 68, 68, 0.2);
-            color: var(--danger);
-        }
-
-        /* Responsive */
-        @media (max-width: 1024px) {
-            .dashboard {
-                grid-template-columns: 1fr;
-            }
-
-            .sidebar {
-                display: none;
-            }
-
-            .grid {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        @media (max-width: 768px) {
-            .main-content {
-                padding: 1rem;
-            }
-
-            .header h1 {
-                font-size: 1.5rem;
-            }
-
-            .controls {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        /* Scrollbar Styling */
-        ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: var(--surface);
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: var(--surface-lighter);
-            border-radius: 4px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--border-light);
-        }
-
-        /* Toast Notifications */
-        .toast-container {
-            position: fixed;
-            top: 1rem;
-            right: 1rem;
-            z-index: 1000;
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-
-        .toast {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 0.5rem;
-            padding: 1rem 1.5rem;
-            box-shadow: 0 4px 12px var(--shadow);
-            animation: slideIn 0.3s ease-out;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            min-width: 300px;
-        }
-
-        .toast.success {
-            border-left: 4px solid var(--success);
-        }
-
-        .toast.error {
-            border-left: 4px solid var(--danger);
-        }
-
-        .toast.warning {
-            border-left: 4px solid var(--warning);
-        }
-
-        .toast.info {
-            border-left: 4px solid var(--primary);
-        }
-
-        @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-
-        @keyframes slideOut {
-            from {
-                transform: translateX(0);
-                opacity: 1;
-            }
-            to {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-        }
-
-        /* Quick Actions Bar */
-        .quick-actions {
-            display: flex;
-            gap: 0.75rem;
-            margin-bottom: 1.5rem;
-            flex-wrap: wrap;
-        }
-
-        .quick-action-btn {
-            padding: 0.625rem 1.25rem;
-            border: 1px solid var(--border);
-            border-radius: 0.5rem;
-            background: var(--surface);
-            color: var(--text);
-            font-family: inherit;
-            font-size: 0.875rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .quick-action-btn:hover {
-            background: var(--surface-light);
-            border-color: var(--border-light);
-            transform: translateY(-1px);
-        }
-
-        .quick-action-btn.primary {
-            background: var(--primary);
-            border-color: var(--primary);
-            color: white;
-        }
-
-        .quick-action-btn.primary:hover {
-            background: var(--primary-dark);
-        }
-
-        /* Activity Feed */
-        .activity-feed {
-            max-height: 300px;
-            overflow-y: auto;
-        }
-
-        .activity-item {
-            padding: 0.75rem 0;
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            gap: 0.75rem;
-            align-items: flex-start;
-        }
-
-        .activity-item:last-child {
-            border-bottom: none;
-        }
-
-        .activity-icon {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-        }
-
-        .activity-icon.success {
-            background: rgba(16, 185, 129, 0.2);
-            color: var(--success);
-        }
-
-        .activity-icon.error {
-            background: rgba(239, 68, 68, 0.2);
-            color: var(--danger);
-        }
-
-        .activity-icon.info {
-            background: rgba(59, 130, 246, 0.2);
-            color: var(--primary);
-        }
-
-        .activity-content {
-            flex: 1;
-        }
-
-        .activity-title {
-            font-size: 0.875rem;
-            font-weight: 500;
-            margin-bottom: 0.25rem;
-        }
-
-        .activity-time {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-        }
-
-        /* Animations */
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .fade-in {
-            animation: fadeIn 0.3s ease-out;
-        }
-
-        /* Speech Recognition Button */
-        .speech-btn {
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-            padding: 0.75rem 1.5rem;
-            border: none;
-            border-radius: 0.5rem;
-            font-family: inherit;
-            font-size: 0.875rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .speech-btn.inactive {
-            background: var(--surface-light);
-            color: var(--text);
-        }
-
-        .speech-btn.inactive:hover {
-            background: var(--border);
-        }
-
-        .speech-btn.active {
-            background: var(--danger);
-            color: white;
-            animation: pulse 1.5s infinite;
-        }
-
-        .speech-indicator {
-            width: 0.75rem;
-            height: 0.75rem;
-            border-radius: 50%;
-            background: var(--success);
-        }
-
-        .speech-btn.active .speech-indicator {
-            background: white;
-            animation: pulse 1s infinite;
-        }
-
-        /* Overlay Preview */
-        .overlay-preview {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 1rem;
-            overflow: hidden;
-            position: relative;
-        }
-
-        .overlay-preview iframe {
-            width: 100%;
-            height: 400px;
-            border: none;
-            background: transparent;
-        }
-
-        .overlay-preview-header {
-            padding: 1rem 1.5rem;
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .overlay-preview-title {
-            font-size: 1rem;
-            font-weight: 600;
-        }
-
-        /* Live Audio Visualizer */
-        .audio-visualizer {
-            height: 60px;
-            background: var(--surface-light);
-            border-radius: 0.5rem;
-            overflow: hidden;
-            margin-top: 1rem;
-        }
-
-        .audio-visualizer canvas {
-            width: 100%;
-            height: 100%;
-        }
-
-        /* Modern Card Enhancements */
-        .card {
-            backdrop-filter: blur(10px);
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-        }
-
-        /* Gradient Text */
-        .gradient-text {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--success) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        /* Status Badge */
-        .status-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.25rem;
-            padding: 0.25rem 0.75rem;
-            border-radius: 1rem;
-            font-size: 0.75rem;
-            font-weight: 500;
-        }
-
-        .status-badge.success {
-            background: rgba(16, 185, 129, 0.2);
-            color: var(--success);
-        }
-
-        .status-badge.warning {
-            background: rgba(245, 158, 11, 0.2);
-            color: var(--warning);
-        }
-
-        .status-badge.error {
-            background: rgba(239, 68, 68, 0.2);
-            color: var(--danger);
-        }
-    </style>
-</head>
-<body>
-    <div class="dashboard">
-        <!-- Sidebar -->
-        <aside class="sidebar">
-            <div class="logo">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                </svg>
-                xtruck
-            </div>
-            <nav class="nav">
-                <div class="nav-item active" data-section="overview">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="3" y="3" width="7" height="7"/>
-                        <rect x="14" y="3" width="7" height="7"/>
-                        <rect x="14" y="14" width="7" height="7"/>
-                        <rect x="3" y="14" width="7" height="7"/>
-                    </svg>
-                    Vue d'ensemble
-                </div>
-                <div class="nav-item" data-section="controls">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="3"/>
-                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-                    </svg>
-                    Contrôles
-                </div>
-                <div class="nav-item" data-section="transcript">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                    </svg>
-                    Transcription
-                </div>
-                <div class="nav-item" data-section="analysis">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="20" x2="18" y2="10"/>
-                        <line x1="12" y1="20" x2="12" y2="4"/>
-                        <line x1="6" y1="20" x2="6" y2="14"/>
-                    </svg>
-                    Analyse
-                </div>
-                <div class="nav-item" data-section="settings">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="3"/>
-                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-                    </svg>
-                    Paramètres
-                </div>
-                <div class="nav-item" data-section="overlay">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-                        <line x1="8" y1="21" x2="16" y2="21"/>
-                        <line x1="12" y1="17" x2="12" y2="21"/>
-                    </svg>
-                    Aperçu de l'overlay
-                </div>
-            </nav>
-        </aside>
-
-        <!-- Main Content -->
-        <main class="main-content">
-            <div class="header">
-                <h1>Tableau de bord opérateur</h1>
-                <div class="status">
-                    <div class="status-dot"></div>
-                    <span>Connecté</span>
-                </div>
-            </div>
-
-            <!-- Overview Section -->
-            <section id="overview" class="section">
-                <div class="quick-actions">
-                    <button class="quick-action-btn primary" onclick="showManualVerse()">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 5v14M5 12h14"/>
-                        </svg>
-                        Verset rapide
-                    </button>
-                    <button class="quick-action-btn" onclick="hideVerse()">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="18" y1="6" x2="6" y2="18"/>
-                            <line x1="6" y1="6" x2="18" y2="18"/>
-                        </svg>
-                        Masquer le verset
-                    </button>
-                    <button class="quick-action-btn" onclick="toggleSpeechRecognition()">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                            <line x1="12" y1="19" x2="12" y2="23"/>
-                            <line x1="8" y1="23" x2="16" y2="23"/>
-                        </svg>
-                        Activer/désactiver la voix
-                    </button>
-                    <button class="quick-action-btn" onclick="emergencyStop()">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="10"/>
-                            <line x1="15" y1="9" x2="9" y2="15"/>
-                            <line x1="9" y1="9" x2="15" y2="15"/>
-                        </svg>
-                        Arrêt d'urgence
-                    </button>
-                </div>
-
-                <div class="grid">
-                    <div class="card">
-                        <div class="card-header">
-                            <div class="card-title">Versets totaux</div>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2">
-                                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-                                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-                            </svg>
-                        </div>
-                        <div class="card-value" id="totalVerses">0</div>
-                        <div class="card-subtitle">Cette session</div>
-                    </div>
-                    <div class="card">
-                        <div class="card-header">
-                            <div class="card-title">Taux de détection</div>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2">
-                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                                <polyline points="22 4 12 14.01 9 11.01"/>
-                            </svg>
-                        </div>
-                        <div class="card-value" id="detectionRate">0%</div>
-                        <div class="card-subtitle">Précision</div>
-                    </div>
-                    <div class="card">
-                        <div class="card-header">
-                            <div class="card-title">Langue active</div>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2">
-                                <circle cx="12" cy="12" r="10"/>
-                                <line x1="2" y1="12" x2="22" y2="12"/>
-                                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-                            </svg>
-                        </div>
-                        <div class="card-value" id="activeLanguage">FR</div>
-                        <div class="card-subtitle">Détectée automatiquement</div>
-                    </div>
-                    <div class="card">
-                        <div class="card-header">
-                            <div class="card-title">Durée de la session</div>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary-light)" stroke-width="2">
-                                <circle cx="12" cy="12" r="10"/>
-                                <polyline points="12 6 12 12 16 14"/>
-                            </svg>
-                        </div>
-                        <div class="card-value" id="sessionDuration">00:00</div>
-                        <div class="card-subtitle">Temps écoulé</div>
-                    </div>
-                </div>
-
-                <div id="fuzzyMatchNotice" style="display:none; margin-bottom: 10px; padding: 8px 12px; border-radius: 6px; background: rgba(255,193,7,0.15); border: 1px solid rgba(255,193,7,0.4); color: #ffc107; font-size: 0.85rem;"></div>
-                <div class="grid" style="grid-template-columns: 2fr 1fr;">
-                    <div class="card verse-display" id="verseDisplay">
-                        <div class="verse-reference" id="verseReference">Aucun verset affiché</div>
-                        <div class="verse-text" id="verseText">Les versets apparaîtront ici une fois détectés</div>
-                    </div>
-                    <div class="card">
-                        <div class="card-header">
-                            <div class="card-title">Activité récente</div>
-                        </div>
-                        <div class="activity-feed" id="activityFeed">
-                            <div class="activity-item">
-                                <div class="activity-icon info">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <circle cx="12" cy="12" r="10"/>
-                                        <line x1="12" y1="16" x2="12" y2="12"/>
-                                        <line x1="12" y1="8" x2="12.01" y2="8"/>
-                                    </svg>
-                                </div>
-                                <div class="activity-content">
-                                    <div class="activity-title">Système démarré</div>
-                                    <div class="activity-time">À l'instant</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Controls Section -->
-            <section id="controls" class="section" style="display: none;">
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Contrôles manuels</div>
-                    </div>
-                    <div class="controls">
-                        <button class="control-btn primary" onclick="showManualVerse()">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M12 5v14M5 12h14"/>
-                            </svg>
-                            Afficher le verset
-                        </button>
-                        <button class="control-btn secondary" onclick="hideVerse()">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <line x1="18" y1="6" x2="6" y2="18"/>
-                                <line x1="6" y1="6" x2="18" y2="18"/>
-                            </svg>
-                            Masquer le verset
-                        </button>
-                        <button class="control-btn secondary" onclick="pauseTimer()">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="6" y="4" width="4" height="16"/>
-                                <rect x="14" y="4" width="4" height="16"/>
-                            </svg>
-                            Mettre en pause
-                        </button>
-                        <button class="control-btn secondary" onclick="resumeTimer()">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <polygon points="5 3 19 12 5 21 5 3"/>
-                            </svg>
-                            Reprendre
-                        </button>
-                        <button class="control-btn danger" onclick="emergencyStop()">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="12" cy="12" r="10"/>
-                                <line x1="15" y1="9" x2="9" y2="15"/>
-                                <line x1="9" y1="9" x2="15" y2="15"/>
-                            </svg>
-                            Arrêt d'urgence
-                        </button>
-                    </div>
-                </div>
-
-                <div class="card" style="margin-top: 1.5rem;">
-                    <div class="card-header">
-                        <div class="card-title">Sélection de la langue</div>
-                    </div>
-                    <div class="language-selector">
-                        <button class="lang-btn active" onclick="setLanguage('fr')">Français</button>
-                        <button class="lang-btn" onclick="setLanguage('en')">English</button>
-                        <button class="lang-btn" onclick="setLanguage('es')">Español</button>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Transcript Section -->
-            <section id="transcript" class="section" style="display: none;">
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Transcription en direct</div>
-                        <div style="display: flex; gap: 0.5rem;">
-                            <button class="speech-btn inactive" id="speechBtn" onclick="toggleSpeechRecognition()">
-                                <div class="speech-indicator"></div>
-                                <span id="speechBtnText">Démarrer la reconnaissance</span>
-                            </button>
-                            <button class="control-btn secondary" onclick="clearTranscript()">Effacer</button>
-                        </div>
-                    </div>
-                    <div class="audio-visualizer">
-                        <canvas id="audioVisualizer"></canvas>
-                    </div>
-                    <div class="transcript-feed" id="transcriptFeed">
-                        <div class="transcript-item">
-                            <div class="transcript-time">En attente d'audio...</div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Analysis Section -->
-            <section id="analysis" class="section" style="display: none;">
-                <div class="grid">
-                    <div class="card">
-                        <div class="card-header">
-                            <div class="card-title">Analyse du sermon</div>
-                        </div>
-                        <div class="stat-row">
-                            <span class="stat-label">Nombre de mots</span>
-                            <span class="stat-value" id="wordCount">0</span>
-                        </div>
-                        <div class="stat-row">
-                            <span class="stat-label">Points clés</span>
-                            <span class="stat-value" id="keyPoints">0</span>
-                        </div>
-                        <div class="stat-row">
-                            <span class="stat-label">Thèmes identifiés</span>
-                            <span class="stat-value" id="themesCount">0</span>
-                        </div>
-                    </div>
-                    <div class="card">
-                        <div class="card-header">
-                            <div class="card-title">Statistiques de détection ML</div>
-                        </div>
-                        <div class="stat-row">
-                            <span class="stat-label">Détections totales</span>
-                            <span class="stat-value" id="totalDetections">0</span>
-                        </div>
-                        <div class="stat-row">
-                            <span class="stat-label">Haute confiance</span>
-                            <span class="stat-value" id="highConfidence">0</span>
-                        </div>
-                        <div class="stat-row">
-                            <span class="stat-label">Confiance moyenne</span>
-                            <span class="stat-value" id="avgConfidence">0%</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="card" style="margin-top: 1.5rem;">
-                    <div class="card-header">
-                        <div class="card-title">Thèmes principaux</div>
-                    </div>
-                    <div id="themesList">
-                        <div class="stat-row">
-                            <span class="stat-label">Aucun thème détecté pour l'instant</span>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Settings Section -->
-            <section id="settings" class="section" style="display: none;">
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">Paramètres système</div>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Port WebSocket</span>
-                        <span class="stat-value">8765</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Reconnaissance vocale</span>
-                        <span class="stat-value">Groq (Cloud)</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Repli reconnaissance vocale</span>
-                        <span class="stat-value">Deepgram (Cloud)</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Capture audio</span>
-                        <span class="stat-value">getUserMedia (Navigateur)</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Reconnaissance vocale (navigateur)</span>
-                        <span class="status-badge" id="speechStatus">Non disponible</span>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Overlay Preview Section -->
-            <section id="overlay" class="section" style="display: none;">
-                <div class="overlay-preview">
-                    <div class="overlay-preview-header">
-                        <div class="overlay-preview-title">Aperçu de l'overlay</div>
-                        <button class="control-btn secondary" onclick="refreshOverlay()">Actualiser</button>
-                    </div>
-                    <iframe id="overlayFrame" src="overlay.html"></iframe>
-                </div>
-            </section>
-        </main>
-    </div>
-
-    <script>
-        // WebSocket connection
-        const ws = new WebSocket('ws://localhost:8765');
-        let reconnectAttempts = 0;
-        const maxReconnectAttempts = 5;
-
-        // State
-        let state = {
-            totalVerses: 0,
-            detectionRate: 0,
-            activeLanguage: 'FR',
-            sessionStartTime: Date.now(),
-            transcripts: [],
-            currentVerse: null
-        };
-
-        // Navigation
-        document.querySelectorAll('.nav-item').forEach(item => {
-            item.addEventListener('click', () => {
-                document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-                item.classList.add('active');
-
-                document.querySelectorAll('.section').forEach(s => s.style.display = 'none');
-                document.getElementById(item.dataset.section).style.display = 'block';
-            });
+/**
+ * ============================================================================
+ * server.js — Pipeline audio → transcription cloud → détection de référence
+ * biblique → overlay en temps réel (WebSocket)
+ * ----------------------------------------------------------------------------
+ * v1.0.1 — FIXED for actual detector.js API (detect, not detectBilingual)
+ * All AI modules wrapped in try-catch. Falls back gracefully.
+ * ============================================================================
+ */
+
+'use strict';
+
+const { parentPort, workerData } = require('worker_threads');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+
+// ---------------------------------------------------------------------------
+// Environment & paths
+// ---------------------------------------------------------------------------
+const APP_ROOT = (workerData && workerData.appRoot) || __dirname;
+const USER_DATA_DIR = (workerData && workerData.userDataDir) || path.join(os.homedir(), '.churchoverlay');
+
+// ---------------------------------------------------------------------------
+// Core modules (REQUIRED)
+// ---------------------------------------------------------------------------
+const audioCapture = require('./audio-capture');
+const groq = require('./groq-wrapper');
+const configValidator = require('./config-validator');
+
+// FIX: Use detector-compat which wraps detector.detect() as detectBilingual()
+const detector = require('./detector-compat');
+
+const bibleLookup = require('./bible-lookup-with-api');
+// CORRECTIF : ce module exporte la CLASSE ReadingMode, pas une instance.
+// `require('./reading-mode').start(...)` n'a donc jamais été une méthode
+// valide — chaque appel plantait silencieusement (attrapé par le try/catch
+// autour, donc invisible sans test d'intégration réel). On instancie
+// maintenant réellement la classe, avec les callbacks branchés sur le
+// pipeline (bible-lookup + broadcast WebSocket).
+const { ReadingMode } = require('./reading-mode');
+const themeLoader = require('./theme-loader');
+const featuresStore = require('./features-store');
+const obsController = require('./obs-controller');
+
+// ---------------------------------------------------------------------------
+// NEW: AI modules (OPTIONAL — wrapped in try-catch)
+// ---------------------------------------------------------------------------
+let SemanticDetector = null;
+let semanticDetector = null;
+let detectCommand = null;
+let TranscriptionCorrector = null;
+let corrector = null;
+let BibleSemanticSearch = null;
+let semanticSearch = null;
+let PluginSystem = null;
+let plugins = null;
+let AIThemeGenerator = null;
+let themeGenerator = null;
+
+const aiLoadErrors = [];
+
+// Check if groq has chatCompletion (it might not in test environments)
+const groqHasChatCompletion = typeof groq.chatCompletion === 'function';
+
+// Try to load each AI module individually
+try {
+  const mod = require('./semantic-detector');
+  SemanticDetector = mod.SemanticDetector;
+  if (groqHasChatCompletion) {
+    semanticDetector = new SemanticDetector(groq);
+    console.log('[server] ✓ SemanticDetector loaded');
+  } else {
+    aiLoadErrors.push('SemanticDetector: groq.chatCompletion not available');
+  }
+} catch (e) {
+  aiLoadErrors.push('SemanticDetector: ' + e.message);
+  console.warn('[server] SemanticDetector disabled:', e.message);
+}
+
+try {
+  const mod = require('./voice-commands');
+  detectCommand = mod.detectCommand;
+  console.log('[server] ✓ Voice commands loaded');
+} catch (e) {
+  aiLoadErrors.push('VoiceCommands: ' + e.message);
+  console.warn('[server] Voice commands disabled:', e.message);
+}
+
+try {
+  const mod = require('./transcription-corrector');
+  TranscriptionCorrector = mod.TranscriptionCorrector;
+  // Only create corrector if groq has chatCompletion
+  if (groqHasChatCompletion) {
+    corrector = new TranscriptionCorrector(groq);
+    console.log('[server] ✓ TranscriptionCorrector loaded');
+  } else {
+    aiLoadErrors.push('TranscriptionCorrector: groq.chatCompletion not available (tests use mock)');
+    // Create corrector in fast-only mode (no smart correction)
+    corrector = new TranscriptionCorrector(null);
+    console.log('[server] ✓ TranscriptionCorrector loaded (fast mode only)');
+  }
+} catch (e) {
+  aiLoadErrors.push('TranscriptionCorrector: ' + e.message);
+  console.warn('[server] TranscriptionCorrector disabled:', e.message);
+}
+
+try {
+  const mod = require('./bible-semantic-search');
+  BibleSemanticSearch = mod.BibleSemanticSearch;
+  semanticSearch = new BibleSemanticSearch();
+  semanticSearch.loadIndex().catch(() => {});
+  console.log('[server] ✓ BibleSemanticSearch loaded');
+} catch (e) {
+  aiLoadErrors.push('BibleSemanticSearch: ' + e.message);
+  console.warn('[server] BibleSemanticSearch disabled:', e.message);
+}
+
+try {
+  const mod = require('./plugin-system');
+  PluginSystem = mod.PluginSystem;
+  plugins = new PluginSystem();
+  const pluginsDir = path.join(APP_ROOT, 'config', 'plugins');
+  if (fs.existsSync(pluginsDir)) {
+    plugins.loadFromDirectory(pluginsDir);
+  }
+  console.log('[server] ✓ PluginSystem loaded');
+} catch (e) {
+  aiLoadErrors.push('PluginSystem: ' + e.message);
+  console.warn('[server] PluginSystem disabled:', e.message);
+}
+
+try {
+  const mod = require('./ai-theme-generator');
+  AIThemeGenerator = mod.AIThemeGenerator;
+  if (groqHasChatCompletion) {
+    themeGenerator = new AIThemeGenerator(groq);
+    console.log('[server] ✓ AIThemeGenerator loaded');
+  } else {
+    themeGenerator = new AIThemeGenerator(null);
+    console.log('[server] ✓ AIThemeGenerator loaded (rule-based only)');
+  }
+} catch (e) {
+  aiLoadErrors.push('AIThemeGenerator: ' + e.message);
+  console.warn('[server] AIThemeGenerator disabled:', e.message);
+}
+
+if (aiLoadErrors.length > 0) {
+  console.log('[server] ⚠ ' + aiLoadErrors.length + ' AI feature(s) in limited mode.');
+}
+
+// ---------------------------------------------------------------------------
+// WebSocket server
+// ---------------------------------------------------------------------------
+const WebSocket = require('ws');
+
+// CORRECTIF : le port était figé en dur (8765), alors que config-validator.js
+// valide déjà PORT (avec repli sur 8765) sans jamais être branché nulle
+// part — dead code silencieux. Résultat concret : impossible de faire
+// tourner deux instances (ex. tests d'intégration sur un port dédié) et
+// PORT défini dans l'environnement était ignoré sans avertissement.
+const portValidation = configValidator.validateEnvVar('PORT', process.env.PORT);
+if (!portValidation.valid) {
+  console.warn(`[server] ${portValidation.error} — utilisation du port par défaut 8765.`);
+}
+const SERVER_PORT = portValidation.valid ? portValidation.parsedValue : 8765;
+
+const wss = new WebSocket.Server({ port: SERVER_PORT });
+
+// CORRECTIF : aucun listener 'error' sur wss. Si le port est déjà occupé
+// (EADDRINUSE — ex. une instance précédente pas encore libérée après un
+// redémarrage, ou un autre logiciel sur la machine), l'EventEmitter lève
+// l'erreur, qui remonte comme uncaughtException. Le handler global en fin
+// de fichier l'attrape mais ne fait que logguer/nettoyer : le worker reste
+// vivant, jamais de message 'status: running' n'est envoyé à main.js, et
+// l'utilisateur reste bloqué sur « démarrage... » indéfiniment sans le
+// moindre message d'erreur exploitable. On échoue maintenant vite et
+// explicitement : alerte à main.js puis arrêt du worker, ce qui déclenche
+// le redémarrage automatique (et, en cas de blocage persistant, l'arrêt
+// après plusieurs échecs rapprochés) déjà géré côté main.js.
+wss.on('error', (err) => {
+  const reason = err && err.code === 'EADDRINUSE'
+    ? `Le port ${SERVER_PORT} est déjà utilisé par une autre application.`
+    : `Erreur du serveur WebSocket: ${err && err.message}`;
+  console.error('[server] ' + reason);
+  if (parentPort) {
+    parentPort.postMessage({
+      type: 'alert',
+      code: 'server-listen-error',
+      severity: 'error',
+      message: reason,
+      timestamp: Date.now(),
+    });
+  }
+  process.exitCode = 1;
+  process.exit(1);
+});
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+let displayLanguage = 'fr';
+let lastReference = null;
+let lastShownAt = 0;
+const DEDUP_MS = 30_000;
+const verseHistory = [];
+const MAX_HISTORY = 20;
+const recentTranscripts = [];
+const MAX_CONTEXT_TRANSCRIPTS = 10;
+
+// ---------------------------------------------------------------------------
+// OBS gating state
+// ---------------------------------------------------------------------------
+let obsGateOpen = true;
+let obsGateReason = '';
+
+// ---------------------------------------------------------------------------
+// Rate limiter
+// ---------------------------------------------------------------------------
+const rateLimiter = { timestamps: [], windowMs: 60_000, max: 50 };
+function isRateLimited() {
+  const now = Date.now();
+  rateLimiter.timestamps = rateLimiter.timestamps.filter(t => now - t < rateLimiter.windowMs);
+  if (rateLimiter.timestamps.length >= rateLimiter.max) return true;
+  rateLimiter.timestamps.push(now);
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Logging helpers
+// ---------------------------------------------------------------------------
+function log(msg) {
+  const line = `[server] ${msg}`;
+  console.log(line);
+  if (parentPort) parentPort.postMessage({ type: 'log', text: line, isError: false });
+}
+function warn(msg) {
+  const line = `[server] ${msg}`;
+  console.warn(line);
+  if (parentPort) parentPort.postMessage({ type: 'log', text: line, isError: true });
+}
+
+// ---------------------------------------------------------------------------
+// Broadcast to all WebSocket clients
+// ---------------------------------------------------------------------------
+function broadcast(obj) {
+  const json = JSON.stringify(obj);
+  wss.clients.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(json);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Push to verse history
+// ---------------------------------------------------------------------------
+function pushHistory(entry) {
+  verseHistory.unshift(entry);
+  if (verseHistory.length > MAX_HISTORY) verseHistory.pop();
+}
+
+// ---------------------------------------------------------------------------
+// Reading Mode — lecture continue (avance auto sans répéter la référence)
+// ---------------------------------------------------------------------------
+const readingMode = new ReadingMode({
+  getChapterVerses: (book, chapter) =>
+    bibleLookup.getChapterVerses(book, chapter, displayLanguage === 'en' ? 'en' : 'fr'),
+  onVerseAdvance: (verse) => {
+    const reference = bibleLookup.buildReferenceLabel(
+      { book: readingMode.book, chapter: readingMode.chapter, verseStart: verse.num },
+      displayLanguage
+    );
+    broadcast({
+      action: 'showVerse',
+      reference,
+      text: verse.text,
+      langMode: displayLanguage,
+      durationMs: 300_000,
+      readingMode: true,
+    });
+    pushHistory({ reference, text: verse.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
+    broadcast({ action: 'historyUpdated', history: verseHistory });
+  },
+});
+
+// Démarre (ou redémarre) le Reading Mode sur un livre/chapitre/verset donné,
+// sans jamais faire planter le pipeline si le chapitre est introuvable
+// (ex. provider hors-ligne) : le Reading Mode reste simplement inactif.
+async function activateReadingMode(book, chapter, verseStart) {
+  try {
+    await readingMode.start(book, chapter, verseStart);
+  } catch (err) {
+    warn('Reading mode: activation impossible pour ' + book + ' ' + chapter + ': ' + err.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Update transcript context for AI features
+// ---------------------------------------------------------------------------
+function updateTranscriptContext(text) {
+  recentTranscripts.push(text);
+  if (recentTranscripts.length > MAX_CONTEXT_TRANSCRIPTS) {
+    recentTranscripts.shift();
+  }
+  if (semanticDetector) semanticDetector.addContext(text);
+}
+
+function getRecentContext(maxChars = 300) {
+  const context = recentTranscripts.slice(-5).join(' ');
+  return context.length > maxChars ? context.slice(-maxChars) : context;
+}
+
+// ===========================================================================
+// MAIN PIPELINE: processTranscript
+// ===========================================================================
+async function processTranscript(text) {
+  log('Processing transcript: ' + text.substring(0, 100));
+
+  // ── Plugin hook (safe) ──
+  if (plugins) {
+    plugins.emit('onTranscript', text).catch(() => {});
+  }
+
+  // ── Voice Command Detection (safe) ──
+  if (detectCommand) {
+    try {
+      const command = detectCommand(text);
+      if (command) {
+        log('Voice command detected: ' + command.action);
+        await handleVoiceCommand(command, text);
+        return;
+      }
+    } catch (e) {
+      warn('Voice command error: ' + e.message);
+    }
+  }
+
+  // ── Transcription Correction (safe) ──
+  let correctedText = text;
+  if (corrector) {
+    try {
+      // Use 'fast' mode if groq chatCompletion not available (tests)
+      const mode = groqHasChatCompletion ? 'auto' : 'fast';
+      correctedText = await corrector.correct(text, mode);
+      if (correctedText !== text) {
+        log('Transcription corrected: ' + correctedText.substring(0, 80) + '...');
+        broadcast({ action: 'transcriptCorrected', original: text, corrected: correctedText });
+      }
+    } catch (e) {
+      warn('Transcription correction error: ' + e.message);
+    }
+  }
+
+  updateTranscriptContext(correctedText);
+
+  // ── STEP 1: Regex/Fuzzy Bible Detection ──
+  let reference = null;
+  try {
+    // FIX: Use detector.detectBilingual() which is actually detector-compat wrapping detector.detect()
+    reference = detector.detectBilingual(correctedText);
+  } catch (e) {
+    warn('Detector error: ' + e.message);
+  }
+
+  // CORRECTIF (audit) : detector.js annote depuis un moment les correspondances
+  // floues (reference.fuzzy / fuzzyDistance / fuzzyOriginal) — ex. "Filipiens"
+  // corrigé en "philippiens" — mais server.js ne le signalait jamais à
+  // l'interface : le tableau de bord affiche déjà un traitement dédié pour
+  // 'candidateVerse' (showCandidateVerse), resté sans émetteur côté serveur.
+  // On informe l'opérateur qu'une correction a été appliquée, tout en
+  // continuant à diffuser le verset deviné (ne pas bloquer l'affichage en
+  // plein culte pour une confirmation manuelle).
+  if (reference && reference.fuzzy) {
+    log(`Fuzzy match: "${reference.fuzzyOriginal}" → "${reference.book}" (distance ${reference.fuzzyDistance})`);
+    broadcast({
+      action: 'candidateVerse',
+      reference: { book: reference.book, chapter: reference.chapter, verseStart: reference.verseStart },
+      original: reference.fuzzyOriginal,
+      distance: reference.fuzzyDistance,
+    });
+  }
+
+  // ── STEP 2: AI Semantic Detection (safe fallback) ──
+  if (!reference && semanticDetector) {
+    try {
+      const semanticResult = await semanticDetector.detect(correctedText);
+      if (semanticResult) {
+        reference = semanticResult;
+        log(`Semantic detection: ${semanticResult.raw} (confidence: ${semanticResult.confidence.toFixed(2)})`);
+        broadcast({
+          action: 'semanticDetected',
+          reference: semanticResult.raw,
+          confidence: semanticResult.confidence,
+          reasoning: semanticResult.reasoning,
+          alternativeRefs: semanticResult.alternativeRefs,
         });
+      }
+    } catch (e) {
+      warn('Semantic detection error: ' + e.message);
+    }
+  }
 
-        // WebSocket event handlers
-        ws.onopen = () => {
-            console.log('Connecté au serveur xtruck');
-            updateStatus(true);
-            reconnectAttempts = 0;
+  // ── STEP 3: Quote-based detection ──
+  let quotedMatch = null;
+  if (!reference) {
+    try {
+      const quoted = bibleLookup.findByQuotedText(correctedText);
+      if (quoted && quoted.score >= 0.55) {
+        log(`Quote match: ${quoted.reference} (score: ${quoted.score.toFixed(2)})`);
+        quotedMatch = quoted;
+        reference = { book: '', chapter: 0, verseStart: 0, detectedBy: 'quote' };
+      }
+    } catch (e) {
+      // Quote detection not available, skip
+    }
+  }
 
-            // Request statistics on connection
-            setTimeout(() => {
-                ws.send(JSON.stringify({ action: 'getStatistics' }));
-                ws.send(JSON.stringify({ action: 'getSermonAnalysis' }));
-            }, 1000);
-        };
-
-        ws.onmessage = (event) => {
-            try {
-                const message = JSON.parse(event.data);
-                handleMessage(message);
-            } catch (e) {
-                console.error('Échec de l\'analyse du message WebSocket :', e);
-            }
-        };
-
-        ws.onclose = () => {
-            console.log('Déconnecté du serveur xtruck');
-            updateStatus(false);
-
-            // Attempt to reconnect
-            if (reconnectAttempts < maxReconnectAttempts) {
-                reconnectAttempts++;
-                console.log(`Tentative de reconnexion ${reconnectAttempts}/${maxReconnectAttempts}...`);
-                setTimeout(() => {
-                    try {
-                        ws.close();
-                        const newWs = new WebSocket('ws://localhost:8765');
-                        // Reassign event handlers
-                        newWs.onopen = ws.onopen;
-                        newWs.onmessage = ws.onmessage;
-                        newWs.onclose = ws.onclose;
-                        newWs.onerror = ws.onerror;
-                        Object.assign(ws, newWs);
-                    } catch (e) {
-                        console.error('Échec de la reconnexion :', e);
-                    }
-                }, 3000 * reconnectAttempts);
-            } else {
-                console.error('Nombre maximal de tentatives de reconnexion atteint. Veuillez actualiser la page.');
-            }
-        };
-
-        function handleMessage(message) {
-            switch (message.action) {
-                case 'showVerse':
-                    displayVerse(message);
-                    state.totalVerses++;
-                    updateDashboard();
-                    break;
-                case 'hideVerse':
-                    hideVerseDisplay();
-                    break;
-                case 'transcript':
-                    addTranscript(message);
-                    break;
-                case 'candidateVerse':
-                    showCandidateVerse(message);
-                    break;
-                case 'sermonAnalysis':
-                    updateAnalysis(message);
-                    break;
-                case 'statistics':
-                    updateMLStats(message);
-                    break;
-                case 'voiceCommand':
-                    handleVoiceCommand(message);
-                    break;
-            }
+  // ── No explicit reference found: try Reading Mode auto-advance ──
+  // C'est le cœur de la "lecture continue" (façon Rhema/BibleShow) : si le
+  // Reading Mode est actif, on compare le fragment aux versets courant/
+  // suivants du chapitre en cours plutôt que d'abandonner le segment.
+  if (!reference) {
+    if (readingMode.active) {
+      try {
+        const result = readingMode.processFragment(correctedText);
+        if (result && result.command === 'nextChapter') {
+          const nextChapter = (readingMode.chapter || 0) + 1;
+          const book = readingMode.book;
+          await activateReadingMode(book, nextChapter, 1);
+          if (readingMode.active && readingMode.currentIndex >= 0) {
+            const first = readingMode.verses[readingMode.currentIndex];
+            // onVerseAdvance ne se déclenche que sur un CHANGEMENT de
+            // verset détecté depuis processFragment ; ici on vient de
+            // (re)positionner explicitement sur le verset 1, donc on
+            // diffuse nous-mêmes pour ne pas perdre l'affichage.
+            const label = bibleLookup.buildReferenceLabel(
+              { book, chapter: nextChapter, verseStart: first.num }, displayLanguage
+            );
+            broadcast({ action: 'showVerse', reference: label, text: first.text, langMode: displayLanguage, durationMs: 300_000, readingMode: true });
+            pushHistory({ reference: label, text: first.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
+            broadcast({ action: 'historyUpdated', history: verseHistory });
+            log('Reading mode: chapitre suivant → ' + label);
+          }
         }
+        // Les autres cas (avancée normale, saut par numéro de verset) sont
+        // déjà diffusés par le callback onVerseAdvance de ReadingMode.
+      } catch (e) {
+        warn('Reading mode processFragment error: ' + e.message);
+      }
+    }
+    return;
+  }
 
-        function displayVerse(message) {
-            document.getElementById('verseReference').textContent = message.reference;
-            document.getElementById('verseText').textContent = message.text;
-            state.currentVerse = message;
+  // ── Rate limit check ──
+  if (isRateLimited()) {
+    warn('Rate limit hit — verse display skipped');
+    return;
+  }
 
-            if (message.confidence) {
-                const confidenceEl = document.createElement('span');
-                confidenceEl.className = `confidence ${message.confidence >= 0.8 ? 'high' : message.confidence >= 0.5 ? 'medium' : 'low'}`;
-                confidenceEl.textContent = `${Math.round(message.confidence * 100)}% de confiance`;
-                document.getElementById('verseReference').appendChild(confidenceEl);
-            }
+  // ── Duplicate prevention ──
+  const refKey = `${reference.book}:${reference.chapter}:${reference.verseStart || ''}`;
+  const now = Date.now();
+  if (lastReference === refKey && now - lastShownAt < DEDUP_MS) {
+    log('Duplicate suppressed: ' + refKey);
+    return;
+  }
+  lastReference = refKey;
+  lastShownAt = now;
+
+  // ── Lookup verse text ──
+  let verse;
+  try {
+    if (reference.detectedBy === 'quote') {
+      const quoted = quotedMatch || bibleLookup.findByQuotedText(correctedText);
+      verse = { reference: quoted.reference, text: quoted.text, provider: quoted.provider, lang: quoted.lang };
+    } else {
+      verse = await bibleLookup.getVerseMultilang(reference, displayLanguage);
+    }
+  } catch (err) {
+    warn('Bible lookup failed: ' + err.message);
+    broadcast({ action: 'error', error: 'Verset introuvable : ' + err.message });
+    return;
+  }
+
+  // ── Plugin hook ──
+  if (plugins) {
+    plugins.emit('onVerseDetected', { ...verse, reference: verse.reference }).catch(() => {});
+  }
+
+  // ── AI Theme Generation (safe) ──
+  let theme = null;
+  if (themeGenerator) {
+    try {
+      const recentContext = getRecentContext();
+      theme = await themeGenerator.generate(verse.text, recentContext, 'auto');
+      if (theme && (theme.source === 'ai' || theme.mood !== 'default')) {
+        log(`Theme applied: "${theme.name}" (${theme.mood || 'default'})`);
+        broadcast({ action: 'applyTheme', ...themeGenerator.themeToCss(theme) });
+      }
+    } catch (e) {
+      warn('Theme generation error: ' + e.message);
+    }
+  }
+
+  // ── OBS gating ──
+  const features = featuresStore.readFeatures();
+  const multiScene = (features.broadcast || {}).multiScene || {};
+  if (multiScene.enabled && !obsGateOpen) {
+    log('OBS gate closed — verse buffered: ' + verse.reference);
+    broadcast({ action: 'verseBuffered', reference: verse.reference, reason: obsGateReason });
+    return;
+  }
+
+  // ── Display verse ──
+  const durationMs = (features.display || {}).verseDurationMs || 300_000;
+  broadcast({
+    action: 'showVerse',
+    reference: verse.reference,
+    text: verse.text,
+    text_fr: verse.text_fr || null,
+    text_en: verse.text_en || null,
+    langMode: verse.langMode,
+    provider: verse.provider,
+    durationMs,
+    detectedBy: reference.detectedBy || 'regex',
+    matchedByQuote: reference.detectedBy === 'quote',
+    theme: theme ? { name: theme.name, mood: theme.mood } : null,
+  });
+
+  pushHistory({
+    reference: verse.reference,
+    text: verse.text.substring(0, 200),
+    timestamp: now,
+    detectedBy: reference.detectedBy || 'regex',
+  });
+  broadcast({ action: 'historyUpdated', history: verseHistory });
+
+  if (plugins) {
+    plugins.emit('onVerseShown', { ...verse, reference: verse.reference }).catch(() => {});
+  }
+
+  log('Displayed: ' + verse.reference);
+
+  // Une citation explicite (référence dite ou reconnue) relance le Reading
+  // Mode sur ce livre/chapitre : le prédicateur peut ensuite continuer sa
+  // lecture sans répéter la référence à chaque verset.
+  if (reference.book && reference.chapter) {
+    await activateReadingMode(reference.book, reference.chapter, reference.verseStart || 1);
+  }
+}
+
+// ===========================================================================
+// Voice Command Handler (safe)
+// ===========================================================================
+async function handleVoiceCommand(command, originalText) {
+  switch (command.action) {
+    case 'showVerse': {
+      if (!command.reference) return;
+      try {
+        const verse = await bibleLookup.getVerseMultilang(command.reference, displayLanguage);
+        broadcast({ action: 'showVerse', ...verse, durationMs: 300_000, triggeredByVoice: true });
+        pushHistory({ ...verse, triggeredByVoice: true, timestamp: Date.now() });
+        broadcast({ action: 'historyUpdated', history: verseHistory });
+        log('Voice command: showed ' + verse.reference);
+      } catch (err) {
+        warn('Voice command verse lookup failed: ' + err.message);
+      }
+      break;
+    }
+
+    case 'hideVerse':
+      broadcast({ action: 'hideVerse', triggeredByVoice: true });
+      log('Voice command: hide overlay');
+      break;
+
+    case 'nextVerse': {
+      // CORRECTIF : cette commande ne faisait que diffuser une action que
+      // rien côté serveur n'interprétait — le Reading Mode n'avançait pas.
+      broadcast({ action: 'nextVerse', triggeredByVoice: true });
+      if (readingMode.active && readingMode.currentIndex < readingMode.verses.length - 1) {
+        const verse = readingMode.verses[readingMode.currentIndex + 1];
+        readingMode.currentIndex += 1;
+        readingMode.onVerseAdvance(verse);
+      }
+      break;
+    }
+
+    case 'previousVerse': {
+      broadcast({ action: 'previousVerse', triggeredByVoice: true });
+      if (readingMode.active && readingMode.currentIndex > 0) {
+        const verse = readingMode.verses[readingMode.currentIndex - 1];
+        readingMode.currentIndex -= 1;
+        readingMode.onVerseAdvance(verse);
+      }
+      break;
+    }
+
+    case 'nextChapter': {
+      broadcast({ action: 'nextChapter', triggeredByVoice: true });
+      if (readingMode.active) {
+        await activateReadingMode(readingMode.book, (readingMode.chapter || 0) + 1, 1);
+        if (readingMode.active && readingMode.currentIndex >= 0) {
+          readingMode.onVerseAdvance(readingMode.verses[readingMode.currentIndex]);
         }
+      }
+      break;
+    }
 
-        function hideVerseDisplay() {
-            document.getElementById('verseReference').textContent = 'Aucun verset affiché';
-            document.getElementById('verseText').textContent = 'Les versets apparaîtront ici une fois détectés';
-            state.currentVerse = null;
+    case 'setTheme': {
+      if (themeGenerator) {
+        const theme = themeGenerator.getTheme(command.theme);
+        broadcast({ action: 'applyTheme', ...themeGenerator.themeToCss(theme), triggeredByVoice: true });
+        log('Voice command: theme ' + command.theme);
+      }
+      break;
+    }
+
+    case 'setLanguage': {
+      displayLanguage = command.language;
+      broadcast({ action: 'languageChanged', language: displayLanguage, triggeredByVoice: true });
+      log('Voice command: language ' + command.language);
+      break;
+    }
+
+    case 'setTranslation': {
+      try {
+        const newId = bibleLookup.setTranslation(command.language, command.code);
+        broadcast({
+          action: 'translationChanged',
+          language: command.language,
+          code: command.code,
+          translationId: newId,
+          triggeredByVoice: true,
+        });
+        log(`Voice command: translation ${command.language} → ${command.code}`);
+      } catch (err) {
+        warn('Voice command translation failed: ' + err.message);
+      }
+      break;
+    }
+
+    case 'extendTime':
+      broadcast({ action: 'extendTime', extraMs: command.extraMs, triggeredByVoice: true });
+      break;
+
+    case 'pauseTimer':
+      broadcast({ action: 'pauseTimer', triggeredByVoice: true });
+      break;
+
+    case 'resumeTimer':
+      broadcast({ action: 'resumeTimer', triggeredByVoice: true });
+      break;
+
+    case 'emergencyClear': {
+      broadcast({ action: 'hideVerse', emergency: true });
+      broadcast({ action: 'emergencyClear' });
+      lastReference = null;
+      log('Voice command: EMERGENCY CLEAR');
+      break;
+    }
+
+    default:
+      warn('Unknown voice command action: ' + command.action);
+  }
+}
+
+// ===========================================================================
+// WebSocket handlers
+// ===========================================================================
+wss.on('connection', (ws) => {
+  log('Client WebSocket connecté');
+
+  const features = featuresStore.readFeatures();
+  const theme = themeLoader.getActiveTheme();
+
+  ws.send(JSON.stringify({
+    action: 'init',
+    language: displayLanguage,
+    history: verseHistory,
+    theme: themeLoader.themeToCss(theme),
+    translations: bibleLookup.listTranslations(),
+    plugins: plugins ? plugins.getPluginList() : [],
+    aiFeatures: {
+      semanticDetection: !!semanticDetector,
+      voiceCommands: !!detectCommand,
+      transcriptionCorrection: !!corrector,
+      dynamicThemes: !!themeGenerator,
+      bibleSearch: !!semanticSearch,
+    },
+    aiLoadErrors: aiLoadErrors.length > 0 ? aiLoadErrors : undefined,
+  }));
+
+  ws.on('message', async (raw) => {
+    let msg;
+    try {
+      msg = JSON.parse(String(raw));
+    } catch {
+      return;
+    }
+    if (!msg || typeof msg !== 'object') return;
+
+    const sanitized = {};
+    for (const k of Object.keys(msg)) {
+      if (typeof msg[k] === 'string') {
+        sanitized[k] = msg[k].replace(/[<>"']/g, '');
+      } else {
+        sanitized[k] = msg[k];
+      }
+    }
+
+    // ── Manual verse display ──
+    if (sanitized.action === 'showVerse') {
+      // FIX: Use detector.parseReference which wraps detector.detect()
+      const ref = detector.parseReference(sanitized.reference);
+      if (!ref) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Référence invalide.' }));
+        return;
+      }
+      try {
+        const verse = await bibleLookup.getVerseMultilang(ref, displayLanguage);
+        const durationMs = sanitized.durationMs || 300_000;
+        broadcast({ action: 'showVerse', ...verse, durationMs, triggeredManually: true });
+        pushHistory({ ...verse, triggeredManually: true, timestamp: Date.now() });
+        broadcast({ action: 'historyUpdated', history: verseHistory });
+      } catch (err) {
+        ws.send(JSON.stringify({ action: 'error', error: err.message }));
+      }
+      return;
+    }
+
+    // ── Hide overlay ──
+    if (sanitized.action === 'hideVerse') {
+      broadcast({ action: 'hideVerse' });
+      lastReference = null;
+      return;
+    }
+
+    // ── Language switch ──
+    if (sanitized.action === 'setLanguage') {
+      const lang = sanitized.language;
+      if (['fr', 'en', 'both'].includes(lang)) {
+        displayLanguage = lang;
+        broadcast({ action: 'languageChanged', language: lang });
+        log('Language changed: ' + lang);
+      }
+      return;
+    }
+
+    // ── Translation switch ──
+    if (sanitized.action === 'setTranslation') {
+      try {
+        const newId = bibleLookup.setTranslation(sanitized.language, sanitized.code);
+        broadcast({ action: 'translationChanged', language: sanitized.language, code: sanitized.code, translationId: newId });
+        log(`Translation: ${sanitized.language} → ${sanitized.code}`);
+      } catch (err) {
+        ws.send(JSON.stringify({ action: 'error', error: err.message }));
+      }
+      return;
+    }
+
+    // ── Reading mode ──
+    if (sanitized.action === 'startReading') {
+      // FIX: Use detector.parseReference
+      const ref = detector.parseReference(sanitized.reference);
+      if (!ref) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Référence invalide pour le mode lecture.' }));
+        return;
+      }
+      try {
+        const firstVerse = await readingMode.start(ref.book, ref.chapter, ref.verseStart);
+        ws.send(JSON.stringify({ action: 'readingStarted', reference: ref }));
+        if (firstVerse) {
+          const label = bibleLookup.buildReferenceLabel(
+            { book: ref.book, chapter: ref.chapter, verseStart: firstVerse.num }, displayLanguage
+          );
+          broadcast({ action: 'showVerse', reference: label, text: firstVerse.text, langMode: displayLanguage, durationMs: 300_000, readingMode: true });
+          pushHistory({ reference: label, text: firstVerse.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
+          broadcast({ action: 'historyUpdated', history: verseHistory });
         }
+      } catch (err) {
+        ws.send(JSON.stringify({ action: 'error', error: err.message }));
+      }
+      return;
+    }
 
-        function addTranscript(message) {
-            const feed = document.getElementById('transcriptFeed');
-            const item = document.createElement('div');
-            item.className = 'transcript-item fade-in';
+    if (sanitized.action === 'stopReading') {
+      readingMode.stop();
+      broadcast({ action: 'readingStopped' });
+      return;
+    }
 
-            const time = new Date(message.timestamp).toLocaleTimeString();
-            item.innerHTML = `
-                <div class="transcript-time">${time}</div>
-                <div class="transcript-text">${message.text}</div>
-            `;
+    // ── Bible Semantic Search ──
+    if (sanitized.action === 'searchBible') {
+      if (!semanticSearch) {
+        ws.send(JSON.stringify({ action: 'searchError', error: 'Recherche biblique non disponible' }));
+        return;
+      }
+      const query = String(sanitized.query || '').trim();
+      if (!query) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Requête requise.' }));
+        return;
+      }
+      try {
+        const results = await semanticSearch.search(query, sanitized.topK || 5);
+        ws.send(JSON.stringify({ action: 'searchResults', query, results, timestamp: Date.now() }));
+      } catch (err) {
+        ws.send(JSON.stringify({ action: 'searchError', query, error: err.message }));
+      }
+      return;
+    }
 
-            feed.insertBefore(item, feed.firstChild);
+    // ── Get topics ──
+    if (sanitized.action === 'getTopics') {
+      ws.send(JSON.stringify({
+        action: 'topicsList',
+        topics: semanticSearch ? semanticSearch.getTopics() : [],
+      }));
+      return;
+    }
 
-            // Keep only last 50 transcripts
-            while (feed.children.length > 50) {
-                feed.removeChild(feed.lastChild);
-            }
+    // ── Get moods ──
+    if (sanitized.action === 'getMoods') {
+      ws.send(JSON.stringify({
+        action: 'moodsList',
+        moods: themeGenerator ? themeGenerator.getMoods() : [],
+      }));
+      return;
+    }
 
-            state.transcripts.unshift(message);
-            if (state.transcripts.length > 50) state.transcripts.pop();
+    // ── Set theme by mood ──
+    if (sanitized.action === 'setMoodTheme') {
+      if (!themeGenerator) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Générateur de thèmes non disponible' }));
+        return;
+      }
+      const mood = sanitized.mood;
+      const theme = themeGenerator.getTheme(mood);
+      broadcast({ action: 'applyTheme', ...themeGenerator.themeToCss(theme) });
+      ws.send(JSON.stringify({ action: 'themeApplied', mood, themeName: theme.name }));
+      return;
+    }
+
+    // ── Plugin management ──
+    if (sanitized.action === 'listPlugins') {
+      ws.send(JSON.stringify({ action: 'pluginsList', plugins: plugins ? plugins.getPluginList() : [] }));
+      return;
+    }
+
+    if (sanitized.action === 'togglePlugin') {
+      if (plugins) {
+        plugins.setEnabled(sanitized.pluginName, sanitized.enabled);
+        ws.send(JSON.stringify({ action: 'pluginToggled', pluginName: sanitized.pluginName, enabled: sanitized.enabled }));
+      }
+      return;
+    }
+
+    // ── AI stats ──
+    if (sanitized.action === 'getAiStats') {
+      ws.send(JSON.stringify({
+        action: 'aiStats',
+        semanticDetector: semanticDetector ? semanticDetector.getStats() : null,
+        corrector: corrector ? corrector.getStats() : null,
+        plugins: plugins ? plugins.metadata : null,
+        loadErrors: aiLoadErrors,
+      }));
+      return;
+    }
+
+    // ── Theme application ──
+    if (sanitized.action === 'applyTheme') {
+      broadcast({ action: 'applyTheme', ...sanitized.css });
+      return;
+    }
+
+    // ── Ping ──
+    if (sanitized.action === 'ping') {
+      ws.send(JSON.stringify({ action: 'pong', timestamp: Date.now() }));
+      return;
+    }
+  });
+
+  ws.on('close', () => log('Client WebSocket déconnecté'));
+  ws.on('error', (err) => warn('WebSocket error: ' + err.message));
+});
+
+// ===========================================================================
+// Audio pipeline
+// ===========================================================================
+function startPipeline() {
+  audioCapture.on({
+    onAudioSegment: async (segmentFile) => {
+      try {
+        const result = await groq.transcribeWithFallback(segmentFile);
+        if (result && result.text && result.text.trim()) {
+          log(`Transcription [${result.source}]: ${result.text.substring(0, 80)}`);
+          broadcast({ action: 'transcript', text: result.text, source: result.source });
+          await processTranscript(result.text);
         }
-
-        function showCandidateVerse(message) {
-            // CORRECTIF (audit) : le serveur émet désormais 'candidateVerse'
-            // quand le nom du livre a été deviné par correspondance floue
-            // (ex. transcription "Filipiens" -> livre "philippiens"). On
-            // affiche un avertissement discret à l'opérateur — le verset
-            // deviné est déjà diffusé sur l'overlay, ceci sert juste à
-            // signaler qu'une correction automatique a eu lieu.
-            console.log('Verset candidat (correspondance floue) détecté :', message);
-            const el = document.getElementById('fuzzyMatchNotice');
-            if (el && message.original) {
-                el.textContent = `Correction automatique : "${message.original}" → livre "${message.reference.book}" (distance ${message.distance})`;
-                el.style.display = 'block';
-                clearTimeout(el._hideTimer);
-                el._hideTimer = setTimeout(() => { el.style.display = 'none'; }, 8000);
-            }
-        }
-
-        function updateAnalysis(message) {
-            document.getElementById('wordCount').textContent = message.wordCount;
-            document.getElementById('keyPoints').textContent = message.keyPoints.length;
-            document.getElementById('themesCount').textContent = message.themes.length;
-
-            // Update themes list
-            const themesList = document.getElementById('themesList');
-            themesList.innerHTML = '';
-            message.themes.slice(0, 5).forEach(theme => {
-                const row = document.createElement('div');
-                row.className = 'stat-row';
-                row.innerHTML = `
-                    <span class="stat-label">${theme.name}</span>
-                    <span class="stat-value">${theme.strength}</span>
-                `;
-                themesList.appendChild(row);
-            });
-        }
-
-        function updateMLStats(message) {
-            document.getElementById('totalDetections').textContent = message.totalDetections;
-            document.getElementById('highConfidence').textContent = message.highConfidence;
-            document.getElementById('avgConfidence').textContent = `${Math.round(message.avgConfidence * 100)}%`;
-
-            state.detectionRate = message.totalDetections > 0 
-                ? Math.round((message.highConfidence / message.totalDetections) * 100) 
-                : 0;
-            updateDashboard();
-        }
-
-        function handleVoiceCommand(message) {
-            console.log('Commande vocale détectée :', message.action);
-        }
-
-        function updateDashboard() {
-            document.getElementById('totalVerses').textContent = state.totalVerses;
-            document.getElementById('detectionRate').textContent = `${state.detectionRate}%`;
-            document.getElementById('activeLanguage').textContent = state.activeLanguage;
-
-            // Update session duration
-            const elapsed = Math.floor((Date.now() - state.sessionStartTime) / 1000);
-            const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
-            const seconds = (elapsed % 60).toString().padStart(2, '0');
-            document.getElementById('sessionDuration').textContent = `${minutes}:${seconds}`;
-        }
-
-        function updateStatus(connected) {
-            const status = document.querySelector('.status');
-            const dot = status.querySelector('.status-dot');
-            const text = status.querySelector('span');
-
-            if (connected) {
-                dot.style.background = 'var(--success)';
-                dot.style.animation = 'pulse 2s infinite';
-                text.textContent = 'Connecté';
-            } else {
-                dot.style.background = 'var(--danger)';
-                dot.style.animation = 'none';
-                text.textContent = 'Déconnecté';
-            }
-        }
-
-        // Control functions
-        function showManualVerse() {
-            const reference = prompt('Entrez une référence biblique (ex. Jean 3:16) :');
-            if (reference) {
-                ws.send(JSON.stringify({
-                    action: 'lookupReference',
-                    reference: reference,
-                    durationMs: 300000
-                }));
-            }
-        }
-
-        function hideVerse() {
-            ws.send(JSON.stringify({ action: 'hideVerse' }));
-        }
-
-        function pauseTimer() {
-            ws.send(JSON.stringify({ action: 'pauseTimer' }));
-        }
-
-        function resumeTimer() {
-            ws.send(JSON.stringify({ action: 'resumeTimer' }));
-        }
-
-        function emergencyStop() {
-            if (confirm('Confirmez-vous l\'arrêt d\'urgence ?')) {
-                hideVerse();
-                ws.send(JSON.stringify({ action: 'endSermonAnalysis' }));
-            }
-        }
-
-        function setLanguage(lang) {
-            ws.send(JSON.stringify({ action: 'setLanguage', language: lang }));
-            state.activeLanguage = lang.toUpperCase();
-            updateDashboard();
-
-            document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
-            event.target.classList.add('active');
-        }
-
-        function clearTranscript() {
-            document.getElementById('transcriptFeed').innerHTML = `
-                <div class="transcript-item">
-                    <div class="transcript-time">En attente d'audio...</div>
-                </div>
-            `;
-            state.transcripts = [];
-        }
-
-        // Update session duration every second
-        setInterval(updateDashboard, 1000);
-
-        // WebSocket error handler
-        ws.onerror = (error) => {
-            console.error('Erreur WebSocket :', error);
-            updateStatus(false);
-        };
-
-        // Speech Recognition Setup
-        let recognition = null;
-        let isListening = false;
-        let audioContext = null;
-        let analyser = null;
-        let microphone = null;
-        let animationId = null;
-
-        // Check browser support for speech recognition
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        const speechStatus = document.getElementById('speechStatus');
-
-        if (SpeechRecognition) {
-            speechStatus.textContent = 'Disponible';
-            speechStatus.className = 'status-badge success';
-
-            recognition = new SpeechRecognition();
-            recognition.continuous = true;
-            recognition.interimResults = true;
-            recognition.lang = 'fr-FR';
-
-            recognition.onresult = (event) => {
-                let finalTranscript = '';
-                let interimTranscript = '';
-
-                for (let i = event.resultIndex; i < event.results.length; i++) {
-                    const transcript = event.results[i][0].transcript;
-                    if (event.results[i].isFinal) {
-                        finalTranscript += transcript;
-                    } else {
-                        interimTranscript += transcript;
-                    }
-                }
-
-                if (finalTranscript) {
-                    // Send transcript to server
-                    ws.send(JSON.stringify({
-                        action: 'transcript',
-                        text: finalTranscript,
-                        timestamp: Date.now(),
-                        source: 'browser'
-                    }));
-
-                    // Add to local transcript feed
-                    addTranscript({
-                        text: finalTranscript,
-                        timestamp: Date.now()
-                    });
-                }
-            };
-
-            recognition.onerror = (event) => {
-                console.error('Erreur de reconnaissance vocale :', event.error);
-                if (event.error === 'not-allowed') {
-                    speechStatus.textContent = 'Permission refusée';
-                    speechStatus.className = 'status-badge error';
-                    stopSpeechRecognition();
-                }
-            };
-
-            recognition.onend = () => {
-                if (isListening) {
-                    // Restart if still supposed to be listening
-                    recognition.start();
-                }
-            };
-        } else {
-            speechStatus.textContent = 'Non prise en charge';
-            speechStatus.className = 'status-badge error';
-            document.getElementById('speechBtn').disabled = true;
-        }
-
-        function toggleSpeechRecognition() {
-            if (isListening) {
-                stopSpeechRecognition();
-            } else {
-                startSpeechRecognition();
-            }
-        }
-
-        async function startSpeechRecognition() {
-            if (!recognition) {
-                alert('La reconnaissance vocale n\'est pas prise en charge par votre navigateur.');
-                return;
-            }
-
-            try {
-                // Request microphone access for visualization
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-                // Setup audio visualization
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                analyser = audioContext.createAnalyser();
-                microphone = audioContext.createMediaStreamSource(stream);
-                microphone.connect(analyser);
-                analyser.fftSize = 256;
-
-                // Start visualization
-                visualizeAudio();
-
-                // Start speech recognition
-                recognition.start();
-                isListening = true;
-
-                // Update UI
-                const btn = document.getElementById('speechBtn');
-                btn.classList.remove('inactive');
-                btn.classList.add('active');
-                document.getElementById('speechBtnText').textContent = 'Arrêter la reconnaissance';
-
-            } catch (error) {
-                console.error('Erreur au démarrage de la reconnaissance vocale :', error);
-                alert('Impossible d\'accéder au microphone. Vérifiez les autorisations.');
-            }
-        }
-
-        function stopSpeechRecognition() {
-            if (recognition) {
-                recognition.stop();
-            }
-
-            if (audioContext) {
-                audioContext.close();
-                audioContext = null;
-            }
-
-            if (animationId) {
-                cancelAnimationFrame(animationId);
-                animationId = null;
-            }
-
-            isListening = false;
-
-            // Update UI
-            const btn = document.getElementById('speechBtn');
-            btn.classList.remove('active');
-            btn.classList.add('inactive');
-            document.getElementById('speechBtnText').textContent = 'Démarrer la reconnaissance';
-
-            // Clear visualizer
-            const canvas = document.getElementById('audioVisualizer');
-            const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-        }
-
-        function visualizeAudio() {
-            const canvas = document.getElementById('audioVisualizer');
-            const ctx = canvas.getContext('2d');
-            const bufferLength = analyser.frequencyBinCount;
-            const dataArray = new Uint8Array(bufferLength);
-
-            canvas.width = canvas.offsetWidth;
-            canvas.height = canvas.offsetHeight;
-
-            function draw() {
-                animationId = requestAnimationFrame(draw);
-
-                analyser.getByteFrequencyData(dataArray);
-
-                ctx.fillStyle = 'rgba(30, 41, 59, 0.3)';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-                const barWidth = (canvas.width / bufferLength) * 2.5;
-                let barHeight;
-                let x = 0;
-
-                for (let i = 0; i < bufferLength; i++) {
-                    barHeight = dataArray[i] / 2;
-
-                    const gradient = ctx.createLinearGradient(0, canvas.height, 0, canvas.height - barHeight);
-                    gradient.addColorStop(0, '#2563eb');
-                    gradient.addColorStop(1, '#10b981');
-
-                    ctx.fillStyle = gradient;
-                    ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
-
-                    x += barWidth + 1;
-                }
-            }
-
-            draw();
-        }
-
-        // Overlay Preview Functions
-        function refreshOverlay() {
-            const frame = document.getElementById('overlayFrame');
-            frame.src = frame.src;
-        }
-
-        // Toast Notification System
-        function showToast(message, type = 'info', duration = 3000) {
-            const container = document.querySelector('.toast-container') || createToastContainer();
-            const toast = document.createElement('div');
-            toast.className = `toast ${type}`;
-
-            let icon = '';
-            switch (type) {
-                case 'success':
-                    icon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
-                    break;
-                case 'error':
-                    icon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
-                    break;
-                case 'warning':
-                    icon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
-                    break;
-                default:
-                    icon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
-            }
-
-            toast.innerHTML = `${icon}<span>${message}</span>`;
-            container.appendChild(toast);
-
-            setTimeout(() => {
-                toast.style.animation = 'slideOut 0.3s ease-out forwards';
-                setTimeout(() => toast.remove(), 300);
-            }, duration);
-        }
-
-        function createToastContainer() {
-            const container = document.createElement('div');
-            container.className = 'toast-container';
-            document.body.appendChild(container);
-            return container;
-        }
-
-        // Activity Feed
-        function addActivity(title, type = 'info') {
-            const feed = document.getElementById('activityFeed');
-            if (!feed) return;
-
-            const item = document.createElement('div');
-            item.className = 'activity-item fade-in';
-            const time = new Date().toLocaleTimeString();
-
-            let icon = '';
-            switch (type) {
-                case 'success':
-                    icon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
-                    break;
-                case 'error':
-                    icon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
-                    break;
-                default:
-                    icon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
-            }
-
-            item.innerHTML = `
-                <div class="activity-icon ${type}">
-                    ${icon}
-                </div>
-                <div class="activity-content">
-                    <div class="activity-title">${title}</div>
-                    <div class="activity-time">${time}</div>
-                </div>
-            `;
-
-            feed.insertBefore(item, feed.firstChild);
-
-            // Keep only last 20 activities
-            while (feed.children.length > 20) {
-                feed.removeChild(feed.lastChild);
-            }
-        }
-
-        // Enhanced control functions with toast notifications
-        const originalShowManualVerse = showManualVerse;
-        showManualVerse = function() {
-            const reference = prompt('Entrez une référence biblique (ex. Jean 3:16) :');
-            if (reference) {
-                ws.send(JSON.stringify({
-                    action: 'lookupReference',
-                    reference: reference,
-                    durationMs: 300000
-                }));
-                addActivity(`Recherche en cours : ${reference}`, 'info');
-                showToast(`Recherche de ${reference}...`, 'info');
-            }
-        };
-
-        const originalHideVerse = hideVerse;
-        hideVerse = function() {
-            ws.send(JSON.stringify({ action: 'hideVerse' }));
-            addActivity('Verset masqué', 'info');
-            showToast('Verset masqué', 'info');
-        };
-
-        const originalEmergencyStop = emergencyStop;
-        emergencyStop = function() {
-            if (confirm('Confirmez-vous l\'arrêt d\'urgence ?')) {
-                hideVerse();
-                ws.send(JSON.stringify({ action: 'endSermonAnalysis' }));
-                addActivity('Arrêt d\'urgence activé', 'error');
-                showToast('Arrêt d\'urgence activé', 'error');
-            }
-        };
-
-        const originalSetLanguage = setLanguage;
-        setLanguage = function(lang) {
-            ws.send(JSON.stringify({ action: 'setLanguage', language: lang }));
-            state.activeLanguage = lang.toUpperCase();
-            updateDashboard();
-
-            document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
-            event.target.classList.add('active');
-
-            addActivity(`Langue changée en ${lang.toUpperCase()}`, 'success');
-            showToast(`Langue définie sur ${lang.toUpperCase()}`, 'success');
-        };
-
-        // Enhanced message handler with activity feed
-        const originalHandleMessage = handleMessage;
-        handleMessage = function(message) {
-            switch (message.action) {
-                case 'showVerse':
-                    displayVerse(message);
-                    state.totalVerses++;
-                    updateDashboard();
-                    addActivity(`Verset affiché : ${message.reference}`, 'success');
-                    showToast(`Verset : ${message.reference}`, 'success');
-                    break;
-                case 'hideVerse':
-                    hideVerseDisplay();
-                    addActivity('Verset masqué automatiquement', 'info');
-                    break;
-                case 'transcript':
-                    addTranscript(message);
-                    if (message.source === 'browser') {
-                        addActivity('Transcription vocale reçue', 'info');
-                    }
-                    break;
-                case 'candidateVerse':
-                    showCandidateVerse(message);
-                    addActivity(`Verset candidat : ${message.reference}`, 'warning');
-                    break;
-                case 'sermonAnalysis':
-                    updateAnalysis(message);
-                    break;
-                case 'statistics':
-                    updateMLStats(message);
-                    break;
-                case 'voiceCommand':
-                    handleVoiceCommand(message);
-                    addActivity(`Commande vocale : ${message.action}`, 'success');
-                    showToast(`Commande vocale : ${message.action}`, 'success');
-                    break;
-                case 'error':
-                    addActivity(`Erreur : ${message.error}`, 'error');
-                    showToast(`Erreur : ${message.error}`, 'error');
-                    break;
-            }
-        };
-    </script>
-</body>
-</html>
+      } catch (err) {
+        warn('Transcription error: ' + err.message);
+        broadcast({ action: 'transcriptionError', error: err.message });
+        if (plugins) plugins.emit('onError', { type: 'transcription', message: err.message }).catch(() => {});
+      } finally {
+        try { fs.unlinkSync(segmentFile); } catch (_) {}
+      }
+    },
+    onError: (err) => {
+      warn('Audio capture error: ' + err.message);
+      broadcast({ action: 'audioError', error: err.message });
+    },
+  });
+
+  audioCapture.startBrowserCapture();
+
+  if (parentPort) {
+    parentPort.postMessage({ type: 'audio-pipeline-ready' });
+  }
+
+  log(`Pipeline démarré sur ws://localhost:${SERVER_PORT}`);
+  if (aiLoadErrors.length > 0) {
+    log('⚠ ' + aiLoadErrors.length + ' AI feature(s) in limited mode (see logs above)');
+  }
+}
+
+// ===========================================================================
+// Worker IPC
+// ===========================================================================
+if (parentPort) {
+  parentPort.on('message', (msg) => {
+    if (!msg || typeof msg !== 'object') return;
+
+    if (msg.type === 'shutdown') {
+      log('Shutdown requested by main process');
+      audioCapture.stopRecording();
+      wss.clients.forEach(ws => ws.close());
+      wss.close();
+      if (plugins) plugins.shutdown().catch(() => {});
+      if (parentPort) parentPort.postMessage({ type: 'status', status: 'stopped' });
+      return;
+    }
+
+    if (msg.type === 'theme-changed') {
+      broadcast({ action: 'applyTheme', ...msg.css });
+      return;
+    }
+
+    if (msg.type === 'obs-gate-changed') {
+      obsGateOpen = msg.open;
+      obsGateReason = msg.reason || '';
+      log(`OBS gate: ${obsGateOpen ? 'OPEN' : 'CLOSED'} (${obsGateReason})`);
+      return;
+    }
+
+    if (msg.type === 'audio-pcm-chunk') {
+      audioCapture.feedPcmChunk(Buffer.from(msg.buffer));
+      return;
+    }
+  });
+
+  parentPort.postMessage({ type: 'status', status: 'running' });
+}
+
+// ===========================================================================
+// Bible lookup cache directory
+// ===========================================================================
+try {
+  bibleLookup.setCacheDir(USER_DATA_DIR);
+} catch (err) {
+  warn('Failed to set Bible cache dir: ' + err.message);
+}
+
+// ===========================================================================
+// Startup
+// ===========================================================================
+configValidator.validateSystemConfig()
+  .then(configValidator.displayValidationResults)
+  .catch((err) => warn('config-validator: ' + err.message));
+
+startPipeline();
+
+process.on('SIGTERM', () => {
+  log('SIGTERM received');
+  audioCapture.stopRecording();
+  wss.close();
+  if (plugins) plugins.shutdown().catch(() => {});
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  log('SIGINT received');
+  audioCapture.stopRecording();
+  wss.close();
+  if (plugins) plugins.shutdown().catch(() => {});
+  process.exit(0);
+});
+
+process.on('uncaughtException', (err) => {
+  warn('Uncaught exception: ' + (err && err.stack || err.message));
+  audioCapture.cleanupTempFiles({ force: true });
+});
