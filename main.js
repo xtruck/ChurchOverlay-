@@ -610,6 +610,25 @@ ipcMain.handle('get-settings', async () => {
 ipcMain.handle('get-perf-stats', async () => perfMonitor.getStats());
 
 // ---------------------------------------------------------------------------
+// Auto-updater (optional — won't crash if not installed)
+// ---------------------------------------------------------------------------
+let autoUpdaterInitialized = false;
+function initAutoUpdater() {
+  if (autoUpdaterInitialized) return;
+  if (!autoUpdaterModule || !autoUpdaterModule.initAutoUpdater) return;
+  autoUpdaterInitialized = true;
+  try {
+    autoUpdaterModule.initAutoUpdater(mainWindow, {
+      SILENT_INSTALL: false,
+      SHOW_NOTIFICATION: true,
+      ALLOW_PRERELEASE: false,
+    });
+  } catch (e) {
+    console.warn('[main] Auto-updater init failed:', e.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
 app.disableHardwareAcceleration();
@@ -632,28 +651,17 @@ app.whenReady().then(async () => {
   }, PERF_PUSH_MS);
   perfTimer.unref?.();
 
-  // NEW: Initialize auto-updater (optional)
-  if (autoUpdaterModule && autoUpdaterModule.initAutoUpdater) {
-    try {
-      autoUpdaterModule.initAutoUpdater(mainWindow, {
-        SILENT_INSTALL: false,
-        SHOW_NOTIFICATION: true,
-        ALLOW_PRERELEASE: false,
-      });
-    } catch (e) {
-      console.warn('[main] Auto-updater init failed:', e.message);
-    }
-  }
-
   if (isFirstRunNeeded()) {
     const setupWin = createSetupWindow();
     setupWin.on('closed', () => {
       if (isFirstRunNeeded()) { app.quit(); return; }
       createMainWindow();
+      initAutoUpdater();
       startServer();
     });
   } else {
     createMainWindow();
+    initAutoUpdater();
     startServer();
   }
 });
