@@ -26,7 +26,9 @@ const USER_DATA_DIR = (workerData && workerData.userDataDir) || path.join(os.hom
 // ---------------------------------------------------------------------------
 const audioCapture = require('./audio-capture');
 const groq = require('./groq-wrapper');
+const deepgramWrapper = require('./deepgram-wrapper');
 const configValidator = require('./config-validator');
+const { createFileLogger } = require('./logger');
 
 // FIX: Use detector-compat which wraps detector.detect() as detectBilingual()
 const detector = require('./detector-compat');
@@ -173,7 +175,24 @@ if (!portValidation.valid) {
 const SERVER_PORT = portValidation.valid ? portValidation.parsedValue : 3000;
 
 const hostValidation = configValidator.validateEnvVar('WS_HOST', process.env.WS_HOST);
-const WS_HOST = hostValidation.valid ? hostValidation.parsedValue : '0.0.0.0';
+// CORRECTIF (checklist mise en production, point 2) : une valeur WS_HOST
+// invalide (ex: variable renseignée avec des espaces) retombait auparavant
+// sur '0.0.0.0' — donc une simple erreur de configuration EXPOSAIT le
+// serveur à tout le réseau au lieu de le protéger. Le repli sûr est
+// désormais '127.0.0.1' (identique à la valeur par défaut du schéma quand
+// la variable est absente), donc une config invalide ne peut plus jamais
+// ouvrir le serveur plus largement que prévu.
+const WS_HOST = hostValidation.valid ? hostValidation.parsedValue : '127.0.0.1';
+
+// CORRECTIF (checklist mise en production, point 1) : jeton partagé optionnel
+// pour l'authentification des connexions WebSocket. Généré et injecté par
+// main.js (variable d'environnement du Worker) en mode Electron ; à définir
+// manuellement dans .env pour `npm run server-only`. Si absent, aucune
+// authentification n'est appliquée (comportement historique, avec
+// avertissement — voir config-validator.js) : c'est sans risque tant que
+// WS_HOST reste 127.0.0.1 (uniquement local), mais devient nécessaire dès
+// que WS_HOST est ouvert au reste du réseau.
+const WS_AUTH_TOKEN = (process.env.WS_AUTH_TOKEN || '').trim() || null;
 
 const maxConnValidation = configValidator.validateEnvVar('MAX_CONNECTIONS', process.env.MAX_CONNECTIONS);
 const MAX_CONNECTIONS = maxConnValidation.valid ? maxConnValidation.parsedValue : 10;
@@ -209,7 +228,11 @@ app.get('/api/health', (req, res) => {
 });
 
 const httpServer = http.createServer(app);
-const wss = new WebSocket.Server({ server: httpServer });
+// CORRECTIF (checklist mise en production, point 3) : sans maxPayload, un
+// message WebSocket volontairement énorme (ou un bug côté client) peut
+// consommer toute la mémoire du process. 64 Ko est largement suffisant pour
+// les messages échangés ici (transcriptions, commandes, config JSON).
+const wss = new WebSocket.Server({ server: httpServer, maxPayload: 64 * 1024 });
 
 httpServer.listen(SERVER_PORT, WS_HOST, () => {
   console.log(`[server] Serveur HTTP & WebSocket démarré sur http://${WS_HOST}:${SERVER_PORT}`);
@@ -252,28 +275,51 @@ let obsGateOpen = true;
 let obsGateReason = '';
 
 // ---------------------------------------------------------------------------
-// Rate limiter
+// Rate limiter (diffusion de versets)
 // ---------------------------------------------------------------------------
-const rateLimiter = { timestamps: [], windowMs: 60_000, max: 50 };
+// CORRECTIF (checklist mise en production, point 7) : ce module maintenait
+// jusqu'ici DEUX limiteurs de taux indépendants qui ne se parlaient pas —
+// `connRateLimiter` (ci-dessus, testé, par IP : connexions/messages) ET un
+// second limiteur fait main ici (tableau de timestamps) pour la fréquence de
+// diffusion des versets, rendant le comportement réel difficile à prévoir
+// sous charge. On réutilise maintenant le même module `rate-limiter.js`
+// (déjà couvert par test/test-rate-limiter.js) pour les deux usages, via une
+// instance dédiée à la diffusion : même limite qu'avant (50/minute), mais
+// une seule implémentation testée au lieu de deux.
+const broadcastRateLimiter = createRateLimiter({
+  maxConnections: 1,
+  maxMessagesPerMinute: 50,
+  connectionWindowMs: 60_000,
+});
+// Clé factice : la limite de diffusion est globale au process, pas par IP —
+// on la fait donc porter sur une seule "connexion" interne constante plutôt
+// que sur chaque client WebSocket.
+const BROADCAST_LIMIT_KEY = { _socket: { remoteAddress: 'internal-broadcast' } };
 function isRateLimited() {
-  const now = Date.now();
-  rateLimiter.timestamps = rateLimiter.timestamps.filter(t => now - t < rateLimiter.windowMs);
-  if (rateLimiter.timestamps.length >= rateLimiter.max) return true;
-  rateLimiter.timestamps.push(now);
-  return false;
+  return !broadcastRateLimiter.checkMessage(BROADCAST_LIMIT_KEY).allowed;
 }
 
 // ---------------------------------------------------------------------------
 // Logging helpers
 // ---------------------------------------------------------------------------
+// CORRECTIF (checklist mise en production, point 6) : les logs ne vivaient
+// qu'en mémoire/console — si un problème survenait un dimanche et que
+// personne ne regardait l'écran au bon moment, aucune trace n'en subsistait.
+// USER_DATA_DIR est déjà un dossier inscriptible (jamais dans l'app.asar en
+// lecture seule, voir plus haut) ; on y ajoute un sous-dossier logs/ avec
+// rotation quotidienne et purge automatique au-delà de 30 jours.
+const fileLogger = createFileLogger(path.join(USER_DATA_DIR, 'logs'));
+
 function log(msg) {
   const line = `[server] ${msg}`;
   console.log(line);
+  fileLogger.append(line, false);
   if (parentPort) parentPort.postMessage({ type: 'log', text: line, isError: false });
 }
 function warn(msg) {
   const line = `[server] ${msg}`;
   console.warn(line);
+  fileLogger.append(line, true);
   if (parentPort) parentPort.postMessage({ type: 'log', text: line, isError: true });
 }
 
@@ -717,6 +763,30 @@ wss.on('connection', (ws, req) => {
     return;
   }
 
+  // CORRECTIF (checklist mise en production, point 1) : n'importe qui sur le
+  // même réseau pouvait auparavant ouvrir le WebSocket et envoyer des
+  // commandes (afficher un faux verset, effacer l'affichage en plein culte).
+  // Vérifié APRÈS la limite de connexions par IP (ci-dessus) et non avant,
+  // pour que même les tentatives de devinette du jeton restent limitées en
+  // débit par IP. Le jeton voyage en paramètre de requête (?token=...) car
+  // c'est la seule option praticable pour un client WebSocket de navigateur
+  // (overlay.html collé tel quel comme URL dans OBS) ou une page chargée en
+  // file:// (dashboard.html) — voir main.js pour la génération/l'injection.
+  if (WS_AUTH_TOKEN) {
+    let providedToken = null;
+    try {
+      providedToken = new URL(req.url, 'http://internal').searchParams.get('token');
+    } catch (_) {
+      // req.url invalide/absent -> aucun jeton fourni, traité comme non autorisé ci-dessous
+    }
+    if (providedToken !== WS_AUTH_TOKEN) {
+      warn('Connexion WebSocket refusée — jeton d\'authentification invalide ou manquant.');
+      connRateLimiter.removeConnection(ws);
+      ws.close(1008, 'Non autorisé');
+      return;
+    }
+  }
+
   log('Client WebSocket connecté');
 
   const features = featuresStore.readFeatures();
@@ -798,6 +868,34 @@ wss.on('connection', (ws, req) => {
     if (sanitized.action === 'hideVerse') {
       broadcast({ action: 'hideVerse' });
       lastReference = null;
+      return;
+    }
+
+    // ── Pre-service test (checklist mise en production, point 9) ──
+    // Vérifie en une fois : connexion WebSocket (implicite, on répond donc
+    // qu'elle est OK), validité des clés Groq/Deepgram (appel réseau léger,
+    // sans frais de transcription — voir *-wrapper.js checkKey()), et l'état
+    // de l'authentification WS. Le micro n'est PAS vérifié ici : c'est du
+    // ressort exclusif du navigateur (getUserMedia), le serveur n'y a jamais
+    // accès — le dashboard le teste lui-même côté client.
+    if (sanitized.action === 'preServiceCheck') {
+      try {
+        const [groqResult, deepgramResult] = await Promise.all([
+          groq.checkKey(),
+          deepgramWrapper.checkKey(),
+        ]);
+        ws.send(JSON.stringify({
+          action: 'preServiceCheckResult',
+          wsConnected: true,
+          wsAuthEnabled: !!WS_AUTH_TOKEN,
+          wsHost: WS_HOST,
+          groq: groqResult,
+          deepgram: deepgramResult,
+          timestamp: Date.now(),
+        }));
+      } catch (err) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Échec de la vérification pré-culte : ' + err.message }));
+      }
       return;
     }
 
@@ -1122,7 +1220,23 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
+// CORRECTIF (checklist mise en production, point 4) : le process continuait
+// à tourner après une exception non gérée, dans un état "à moitié planté" —
+// pire qu'un crash net en plein culte (le serveur répond peut-être encore,
+// mais plus correctement). On journalise, on nettoie, puis on quitte avec un
+// code non-nul : main.js (voir worker.on('exit', ...)) détecte déjà cette
+// sortie et redémarre automatiquement le pipeline (avec protection anti
+// boucle de crash) — ce mécanisme existait mais n'était jamais déclenché
+// tant que le process ne quittait pas réellement.
 process.on('uncaughtException', (err) => {
-  warn('Uncaught exception: ' + (err && err.stack || err.message));
-  audioCapture.cleanupTempFiles({ force: true });
+  warn('Uncaught exception (arrêt du serveur): ' + (err && err.stack || err.message));
+  try { audioCapture.cleanupTempFiles({ force: true }); } catch (_) { /* ignorer, on quitte de toute façon */ }
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  const message = (reason && reason.stack) || (reason && reason.message) || String(reason);
+  warn('Unhandled promise rejection (arrêt du serveur): ' + message);
+  try { audioCapture.cleanupTempFiles({ force: true }); } catch (_) { /* ignorer, on quitte de toute façon */ }
+  process.exit(1);
 });
