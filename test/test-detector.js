@@ -8,6 +8,12 @@ const cases = [
   ['Psaume 23', { book: 'psaumes', chapter: 23, verseStart: undefined, verseEnd: undefined }],
   ['Jean chapitre trois verset seize', { book: 'jean', chapter: 3, verseStart: 16, verseEnd: 16 }],
   ['premier Corinthiens treize versets quatre à sept', { book: '1corinthiens', chapter: 13, verseStart: 4, verseEnd: 7 }],
+  // CORRECTIF (audit — Ole, 2026-07-30) : "versus" est une déformation ASR
+  // réelle de "verset" (reproduite en conditions réelles) — sans variante
+  // phonétique enregistrée, le verset était perdu et le chapitre entier
+  // s'affichait à la place du seul verset demandé.
+  ['Jean 1 versus 1', { book: 'jean', chapter: 1, verseStart: 1, verseEnd: 1 }],
+  ['Jean chapitre 1 versus 1', { book: 'jean', chapter: 1, verseStart: 1, verseEnd: 1 }],
 ];
 for (const [input, expected] of cases) {
   const actual = detect(input);
