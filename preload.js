@@ -46,6 +46,10 @@ contextBridge.exposeInMainWorld('churchOverlay', {
   saveSetup: (audioDevice, groqApiKey, deepgramApiKey) =>
     ipcRenderer.invoke('save-setup', { audioDevice, groqApiKey, deepgramApiKey }),
 
+  // Retrait explicite d'une clé (bouton dédié) — distinct d'un champ vide
+  // lors d'un saveSetup(), qui préserve désormais la clé déjà enregistrée.
+  clearApiKey: (provider) => ipcRenderer.invoke('clear-api-key', { provider }),
+
   // --- Tableau de bord (dashboard.html) ------------------------------------
   getStatus: () => ipcRenderer.invoke('get-status'),
   requestRestart: () => ipcRenderer.invoke('request-restart'),
