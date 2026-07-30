@@ -18,6 +18,19 @@ const os = require('os');
 const tmpFile = path.join(os.tmpdir(), 'test-groq-fallback-race.wav');
 fs.writeFileSync(tmpFile, Buffer.from('RIFF....WAVEfmt '));
 
+// Parsing d'URL structuré plutôt qu'un test de sous-chaîne (CodeQL alert #5 :
+// "Incomplete URL substring sanitization" — url.includes('groq.com') matcherait
+// aussi https://evil.com/groq.com). On compare le hostname réellement résolu.
+function hostMatches(url, domain) {
+  let hostname;
+  try {
+    hostname = new URL(String(url)).hostname;
+  } catch {
+    return false;
+  }
+  return hostname === domain || hostname.endsWith('.' + domain);
+}
+
 function withMockedFetch(responderFn, fn) {
   const originalFetch = global.fetch;
   global.fetch = responderFn;
@@ -30,7 +43,7 @@ async function run() {
   delete process.env.DEEPGRAM_API_KEY;
 
   await withMockedFetch(async (url) => {
-    if (String(url).includes('groq.com')) {
+    if (hostMatches(url, 'groq.com')) {
       return {
         ok: true,
         json: async () => ({ text: 'Jean 3 16' }),
@@ -52,10 +65,10 @@ async function run() {
   process.env.DEEPGRAM_API_KEY = 'test-deepgram-key';
 
   await withMockedFetch(async (url) => {
-    if (String(url).includes('groq.com')) {
+    if (hostMatches(url, 'groq.com')) {
       return { ok: false, status: 500, text: async () => 'erreur serveur' };
     }
-    if (String(url).includes('deepgram.com')) {
+    if (hostMatches(url, 'deepgram.com')) {
       return {
         ok: true,
         json: async () => ({
@@ -100,7 +113,7 @@ async function run() {
   delete process.env.DEEPGRAM_API_KEY;
 
   await withMockedFetch(async (url) => {
-    if (String(url).includes('groq.com')) {
+    if (hostMatches(url, 'groq.com')) {
       return { ok: false, status: 429, text: async () => 'rate limited' };
     }
     throw new Error('fetch inattendu (Deepgram ne doit pas être appelé): ' + url);
