@@ -317,8 +317,16 @@ body {
   .verse-text-bilingual { font-size: 15px; }
   .verse-card { padding: 20px 24px; }
 }
+
+/* Advanced particle system */
+.advanced-particle {
+  position: absolute;
+  pointer-events: none;
+  z-index: 1;
+}
 </style>
 <base target="_blank">
+<script src="animation-library.js"></script>
 </head>
 <body>
 
@@ -373,7 +381,9 @@ let ws = null;
 let hideTimeout = null;
 let currentTheme = 'default';
 let currentAnimation = 'fadeInUp';
+let currentMood = 'peace';
 let reconnectTimer = null;
+let animationLibrary = null;
 
 function connectWs() {
   if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
@@ -402,6 +412,7 @@ function connectWs() {
     switch (msg.action) {
       case 'init':
         if (msg.theme) applyTheme(msg.theme);
+        if (msg.mood) setMood(msg.mood);
         break;
       case 'showVerse':
         showVerse(msg);
@@ -411,6 +422,12 @@ function connectWs() {
         break;
       case 'applyTheme':
         applyTheme(msg);
+        break;
+      case 'applyAnimation':
+        applyAnimation(msg.animation, msg.options);
+        break;
+      case 'setMood':
+        setMood(msg.mood);
         break;
       case 'languageChanged':
         break;
@@ -515,9 +532,14 @@ function showVerse(data) {
     sourceBadge.style.display = 'none';
   }
 
-  // Animation
-  card.className = 'verse-card animate-verse';
-  card.style.animationName = currentAnimation;
+  // Use animation library if available, otherwise fallback to legacy
+  if (animationLibrary && data.animation) {
+    applyAnimation(data.animation, data.animationOptions);
+  } else {
+    // Legacy animation
+    card.className = 'verse-card animate-verse';
+    card.style.animationName = currentAnimation;
+  }
 
   // Show
   container.className = 'visible';
@@ -596,6 +618,35 @@ function applyTheme(theme) {
 }
 
 /* ==========================================================================
+   Animation system
+   ========================================================================== */
+function applyAnimation(animationKey, options = {}) {
+  if (!animationLibrary) return;
+  
+  const card = document.getElementById('verse-card');
+  animationLibrary.applyAnimation(card, animationKey, options);
+}
+
+function setMood(mood) {
+  if (!animationLibrary) return;
+  
+  currentMood = mood;
+  const container = document.getElementById('overlay-container');
+  
+  // Clear old advanced particles
+  const oldParticles = container.querySelectorAll('.advanced-particle');
+  oldParticles.forEach(p => p.remove());
+  
+  // Create new particle system based on mood
+  animationLibrary.createParticleSystem(container, mood);
+  
+  // Also update basic particles color
+  updateParticles();
+  
+  console.log('[overlay] Mood set to:', mood);
+}
+
+/* ==========================================================================
    Indicators
    ========================================================================== */
 let voiceIndicatorTimeout = null;
@@ -665,6 +716,16 @@ function escapeHtml(text) {
    Init
    ========================================================================== */
 createParticles();
+
+// Initialize animation library
+if (typeof AnimationLibrary !== 'undefined') {
+  animationLibrary = AnimationLibrary;
+  animationLibrary.init();
+  console.log('[overlay] Animation library initialized');
+} else {
+  console.warn('[overlay] Animation library not available');
+}
+
 console.log('[overlay] ChurchOverlay display ready');
 </script>
 </body>
