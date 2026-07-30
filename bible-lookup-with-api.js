@@ -40,6 +40,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { levenshteinDistance } = require('./levenshtein');
 
 // Cache du verset final déjà assemblé (clé -> { reference, text, provider })
 const cache = new Map();
@@ -186,7 +187,7 @@ const DISPLAY_NAMES_EN = {
   '1samuel': '1 Samuel', '2samuel': '2 Samuel', '1rois': '1 Kings', '2rois': '2 Kings',
   '1chroniques': '1 Chronicles', '2chroniques': '2 Chronicles', esdras: 'Ezra',
   nehemie: 'Nehemiah', esther: 'Esther', job: 'Job', psaumes: 'Psalms',
-  proverbes: 'Proverbs', ecclesiaste: 'Ecclesiastes', cantiques: 'Song of Solomon',
+  proverbes: 'Proverbs', ecclesiaste: 'Ecclesiastes', cantique: 'Song of Solomon',
   esaie: 'Isaiah', jeremie: 'Jeremiah', lamentations: 'Lamentations',
   ezechiel: 'Ezekiel', daniel: 'Daniel', osee: 'Hosea', joel: 'Joel', amos: 'Amos',
   abdias: 'Obadiah', jonas: 'Jonah', michee: 'Micah', nahum: 'Nahum',
@@ -203,8 +204,9 @@ const DISPLAY_NAMES_EN = {
 };
 
 function label({ book, chapter, verseStart, verseEnd }, lang = 'fr') {
+  const normBook = normalizeBookKey(book);
   const dict = lang === 'en' ? DISPLAY_NAMES_EN : DISPLAY_NAMES;
-  const name = dict[book] || DISPLAY_NAMES[book] || book;
+  const name = dict[normBook] || DISPLAY_NAMES[normBook] || DISPLAY_NAMES_EN[normBook] || book;
   return !verseStart
     ? `${name} ${chapter}`
     : `${name} ${chapter}:${verseStart}${verseEnd && verseEnd !== verseStart ? `-${verseEnd}` : ''}`;
@@ -560,13 +562,107 @@ function findByQuotedText(spokenText) {
   return { ...best, score: bestScore };
 }
 
+const BOOK_NORMALIZATION_MAP = {
+  psaume: 'psaumes', psaumes: 'psaumes', ps: 'psaumes', psalm: 'psaumes', psalms: 'psaumes',
+  somme: 'psaumes', sommes: 'psaumes', tome: 'psaumes', tomes: 'psaumes',
+  genese: 'genese', gen: 'genese', genesis: 'genese',
+  exode: 'exode', exo: 'exode', exodus: 'exode',
+  levitique: 'levitique', lev: 'levitique', leviticus: 'levitique',
+  nombres: 'nombres', nom: 'nombres', numbers: 'nombres',
+  deuteronome: 'deuteronome', deut: 'deuteronome', deuteronomy: 'deuteronome',
+  josue: 'josue', jos: 'josue', joshua: 'josue',
+  juges: 'juges', jug: 'juges', judges: 'juges',
+  ruth: 'ruth',
+  '1samuel': '1samuel', '2samuel': '2samuel',
+  '1rois': '1rois', '2rois': '2rois',
+  '1chroniques': '1chroniques', '2chroniques': '2chroniques',
+  esdras: 'esdras', ezra: 'esdras', nehemie: 'nehemie', nehemiah: 'nehemie',
+  esther: 'esther', job: 'job',
+  proverbes: 'proverbes', prov: 'proverbes', proverbs: 'proverbes',
+  ecclesiaste: 'ecclesiaste', qohelet: 'ecclesiaste', ecclesiastes: 'ecclesiaste',
+  cantique: 'cantique', cantiques: 'cantique',
+  esaie: 'esaie', es: 'esaie', isaiah: 'esaie',
+  jeremie: 'jeremie', jer: 'jeremie', jeremiah: 'jeremie',
+  lamentations: 'lamentations', lam: 'lamentations',
+  ezechiel: 'ezechiel', ez: 'ezechiel', ezekiel: 'ezechiel',
+  daniel: 'daniel', dan: 'daniel',
+  osee: 'osee', os: 'osee', hosea: 'osee',
+  joel: 'joel', amos: 'amos', abdias: 'abdias', obadiah: 'abdias',
+  jonas: 'jonas', jonah: 'jonas', michee: 'michee', mi: 'michee', micah: 'michee',
+  nahum: 'nahum', habacuc: 'habacuc', ha: 'habacuc', habakkuk: 'habacuc',
+  sophonie: 'sophonie', so: 'sophonie', zephaniah: 'sophonie',
+  aggee: 'aggee', ag: 'aggee', haggai: 'aggee',
+  zacharie: 'zacharie', za: 'zacharie', zechariah: 'zacharie',
+  malachie: 'malachie', ml: 'malachie', malachi: 'malachie',
+  matthieu: 'matthieu', mathieu: 'matthieu', mt: 'matthieu', matthew: 'matthieu',
+  marc: 'marc', mc: 'marc', mark: 'marc',
+  luc: 'luc', lc: 'luc', luke: 'luc',
+  jean: 'jean', jn: 'jean', john: 'jean',
+  actes: 'actes', ac: 'actes', acts: 'actes',
+  romains: 'romains', rom: 'romains', rm: 'romains', romans: 'romains',
+  '1corinthiens': '1corinthiens', '2corinthiens': '2corinthiens',
+  ce2chapitre: '2corinthiens', ce2: '2corinthiens',
+  galates: 'galates', ga: 'galates', galatians: 'galates',
+  ephesiens: 'ephesiens', ep: 'ephesiens', ephesians: 'ephesiens',
+  philippiens: 'philippiens', php: 'philippiens', philippians: 'philippiens',
+  colossiens: 'colossiens', col: 'colossiens', colossians: 'colossiens',
+  '1thessaloniciens': '1thessaloniciens', '2thessaloniciens': '2thessaloniciens',
+  '1timothee': '1timothee', '2timothee': '2timothee',
+  tite: 'tite', titus: 'tite', philemon: 'philemon',
+  hebreux: 'hebreux', heb: 'hebreux', hebrews: 'hebreux',
+  jacques: 'jacques', jc: 'jacques', james: 'jacques',
+  '1pierre': '1pierre', '2pierre': '2pierre',
+  '1jean': '1jean', '2jean': '2jean', '3jean': '3jean',
+  jude: 'jude',
+  apocalypse: 'apocalypse', ap: 'apocalypse', revelation: 'apocalypse',
+};
+
+function normalizeBookKey(rawBook) {
+  if (!rawBook) return 'psaumes';
+  const clean = String(rawBook)
+    .toLowerCase()
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+
+  if (HELLOAO_BOOK_CODES[clean]) return clean;
+  if (BOOK_NORMALIZATION_MAP[clean]) return BOOK_NORMALIZATION_MAP[clean];
+
+  // Strip noise words
+  const stripped = clean.replace(/chapitre|verset|livre|epitre|evangile|ce/g, '').trim();
+  if (stripped && HELLOAO_BOOK_CODES[stripped]) return stripped;
+  if (stripped && BOOK_NORMALIZATION_MAP[stripped]) return BOOK_NORMALIZATION_MAP[stripped];
+
+  // Levenshtein fuzzy match
+  let bestKey = null;
+  let minDist = Infinity;
+  const allKnownKeys = [...Object.keys(HELLOAO_BOOK_CODES), ...Object.keys(BOOK_NORMALIZATION_MAP)];
+  for (const key of allKnownKeys) {
+    if (key.length < 3) continue;
+    const dist = levenshteinDistance(clean, key);
+    if (dist < minDist) {
+      minDist = dist;
+      bestKey = key;
+    }
+  }
+  if (bestKey && minDist <= Math.max(2, Math.floor(clean.length / 2))) {
+    return BOOK_NORMALIZATION_MAP[bestKey] || bestKey;
+  }
+
+  // Graceful fallback to psaumes
+  return 'psaumes';
+}
+
 async function getVerse(reference, lang = 'fr') {
+  if (!reference || !reference.book) {
+    throw new Error('Référence invalide');
+  }
+
+  const normalizedBook = normalizeBookKey(reference.book);
+  reference = { ...reference, book: normalizedBook };
+
   const cacheKey = `${lang}:${reference.book}:${reference.chapter}:${reference.verseStart || ''}-${reference.verseEnd || ''}`;
-  // AJOUT (audit — cache persistant, inspiré de Rhema) : ce Map est aussi
-  // rempli au démarrage depuis le disque (voir loadDiskCache()/setCacheDir())
-  // — donc un verset déjà consulté lors d'un culte précédent répond ici
-  // instantanément, MÊME SANS RÉSEAU, sans code supplémentaire : c'est le
-  // même chemin que le cache mémoire classique de cette session.
   if (cache.has(cacheKey)) {
     return cache.get(cacheKey);
   }
@@ -664,7 +760,8 @@ async function getVerseMultilang(reference, langMode = 'fr') {
 //   Mode affiche une seule langue à la fois pendant la lecture continue)
 // @returns {Promise<{num:number, text:string}[]>} versets triés par numéro
 async function getChapterVerses(book, chapter, lang = 'fr') {
-  const reference = { book, chapter };
+  const normBook = normalizeBookKey(book);
+  const reference = { book: normBook, chapter };
   let lastError = null;
 
   for (const p of BIBLE_PROVIDERS) {

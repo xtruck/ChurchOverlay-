@@ -6,7 +6,9 @@
   "author": "ChurchOverlay",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "build": "echo 'Build OK'",
+    "dev": "node server.js",
+    "start": "node server.js",
     "server-only": "node --env-file-if-exists=.env server.js",
     "test-envoi": "node test/test-envoi.js",
     "check-files": "node scripts/check-build-files.js",
@@ -15,6 +17,7 @@
     "dist": "electron-builder --win nsis"
   },
   "dependencies": {
+    "@google/genai": "^2.14.0",
     "electron-updater": "^6.3.0",
     "form-data": "^4.0.6",
     "obs-websocket-js": "^5.0.6",

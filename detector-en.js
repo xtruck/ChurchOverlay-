@@ -80,6 +80,11 @@ const NUMBER_WORDS = {
   fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18,
   nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60,
   seventy: 70, eighty: 80, ninety: 90, hundred: 100,
+  first: 1, '1st': 1, second: 2, '2nd': 2, third: 3, '3rd': 3, fourth: 4, '4th': 4,
+  fifth: 5, '5th': 5, sixth: 6, '6th': 6, seventh: 7, '7th': 7, eighth: 8, '8th': 8,
+  ninth: 9, '9th': 9, tenth: 10, '10th': 10, eleventh: 11, '11th': 11, twelfth: 12, '12th': 12,
+  thirteenth: 13, fourteenth: 14, fifteenth: 15, sixteenth: 16, seventeenth: 17, eighteenth: 18,
+  nineteenth: 19, twentieth: 20, thirtieth: 30, fortieth: 40, fiftieth: 50,
 };
 const NUMBER_WORD_PATTERN = Object.keys(NUMBER_WORDS).join('|');
 
@@ -126,6 +131,51 @@ function matchAgainstAliases(normalized) {
   for (const { book, name } of aliases) {
     const escaped = escapeRegExp(name).replace(/\s+/g, '\\s+');
 
+    // Inverted Spoken Pattern 1: "verse 16 of chapter 3 of John" / "verse 16 of John chapter 3"
+    const invPattern1 = new RegExp(
+      `\\bverse(?:s)?\\s+(\\d{1,3})(?:\\s*(?:-|to|through)\\s*(\\d{1,3}))?\\s+(?:of|in)?\\s*chapter\\s+(\\d{1,3})\\s+(?:of|in)?\\s*${escaped}\\b`,
+      'i'
+    );
+    const mInv1 = normalized.match(invPattern1);
+    if (mInv1) {
+      const vStart = Number(mInv1[1]);
+      const vEnd = mInv1[2] ? Number(mInv1[2]) : vStart;
+      const ch = Number(mInv1[3]);
+      if (ch > 0 && ch <= 150 && vStart > 0 && vStart <= 200 && vEnd >= vStart && vEnd <= 200) {
+        return { book, chapter: ch, verseStart: vStart, verseEnd: vEnd, raw: mInv1[0].trim() };
+      }
+    }
+
+    // Inverted Spoken Pattern 2: "chapter 3 of John verse 16"
+    const invPattern2 = new RegExp(
+      `\\bchapter\\s+(\\d{1,3})\\s+(?:of|in)?\\s*${escaped}\\s+(?:verse(?:s)?\\s+)?(\\d{1,3})(?:\\s*(?:-|to|through)\\s*(\\d{1,3}))?\\b`,
+      'i'
+    );
+    const mInv2 = normalized.match(invPattern2);
+    if (mInv2) {
+      const ch = Number(mInv2[1]);
+      const vStart = Number(mInv2[2]);
+      const vEnd = mInv2[3] ? Number(mInv2[3]) : vStart;
+      if (ch > 0 && ch <= 150 && vStart > 0 && vStart <= 200 && vEnd >= vStart && vEnd <= 200) {
+        return { book, chapter: ch, verseStart: vStart, verseEnd: vEnd, raw: mInv2[0].trim() };
+      }
+    }
+
+    // Inverted Spoken Pattern 3: "verse 16 of John 3"
+    const invPattern3 = new RegExp(
+      `\\bverse(?:s)?\\s+(\\d{1,3})(?:\\s*(?:-|to|through)\\s*(\\d{1,3}))?\\s+(?:of|in)?\\s*${escaped}\\s+(?:chapter\\s+)?(\\d{1,3})\\b`,
+      'i'
+    );
+    const mInv3 = normalized.match(invPattern3);
+    if (mInv3) {
+      const vStart = Number(mInv3[1]);
+      const vEnd = mInv3[2] ? Number(mInv3[2]) : vStart;
+      const ch = Number(mInv3[3]);
+      if (ch > 0 && ch <= 150 && vStart > 0 && vStart <= 200 && vEnd >= vStart && vEnd <= 200) {
+        return { book, chapter: ch, verseStart: vStart, verseEnd: vEnd, raw: mInv3[0].trim() };
+      }
+    }
+
     // "John 3:16" | "John chapter 3 verse 16" | "John 3 verse 16" |
     // "John 3, 16" | "John 3:16-18" | "John chapter 3 verses 16 to 18"
     const pattern = new RegExp(
@@ -167,9 +217,13 @@ function matchAgainstAliases(normalized) {
   return null;
 }
 
+function detectExact(text) {
+  const normalized = numberWordsToDigits(normalizeKeywords(normalize(text)));
+  return matchAgainstAliases(normalized);
+}
+
 function detect(text) {
   const normalized = numberWordsToDigits(normalizeKeywords(normalize(text)));
-
   const exact = matchAgainstAliases(normalized);
   if (exact) return exact;
 
@@ -189,4 +243,4 @@ function detect(text) {
   return fuzzyMatch;
 }
 
-module.exports = { detect, normalize, numberWordsToDigits, BOOKS };
+module.exports = { detect, detectExact, normalize, numberWordsToDigits, BOOKS };

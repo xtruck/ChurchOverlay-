@@ -361,90 +361,115 @@ body {
 /* ==========================================================================
    WebSocket connection
    ========================================================================== */
-const ws = new WebSocket('ws://localhost:8765');
+const getWsUrl = () => {
+  if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${window.location.host}`;
+  }
+  return 'ws://localhost:3000';
+};
+
+let ws = null;
 let hideTimeout = null;
 let currentTheme = 'default';
 let currentAnimation = 'fadeInUp';
+let reconnectTimer = null;
 
-ws.onopen = () => console.log('[overlay] WebSocket connecté');
+function connectWs() {
+  if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
 
-ws.onmessage = (event) => {
-  let msg;
-  try { msg = JSON.parse(event.data); } catch { return; }
-  if (!msg || !msg.action) return;
-
-  switch (msg.action) {
-    case 'init':
-      if (msg.theme) applyTheme(msg.theme);
-      break;
-
-    case 'showVerse':
-      showVerse(msg);
-      break;
-
-    case 'hideVerse':
-      hideVerse(msg.emergency);
-      break;
-
-    case 'applyTheme':
-      applyTheme(msg);
-      break;
-
-    case 'languageChanged':
-      // Handled on next verse display
-      break;
-
-    case 'translationChanged':
-      // Handled on next verse display
-      break;
-
-    case 'readingStarted':
-      showReadingIndicator(true);
-      break;
-
-    case 'readingStopped':
-      showReadingIndicator(false);
-      break;
-
-    case 'nextVerse':
-    case 'previousVerse':
-    case 'nextChapter':
-      // Reading mode handles these internally via reading-mode.js
-      break;
-
-    case 'extendTime':
-      extendDisplayTime(msg.extraMs);
-      break;
-
-    case 'pauseTimer':
-      pauseTimer();
-      break;
-
-    case 'resumeTimer':
-      resumeTimer();
-      break;
-
-    case 'emergencyClear':
-      emergencyClear();
-      break;
-
-    case 'semanticDetected':
-      showSemanticIndicator(msg.reference, msg.confidence);
-      break;
-
-    case 'transcriptCorrected':
-      // Log only, no visual change
-      console.log('[overlay] Transcript corrected:', msg.corrected);
-      break;
-
-    case 'error':
-      console.error('[overlay] Server error:', msg.error);
-      break;
+  try {
+    ws = new WebSocket(getWsUrl());
+  } catch (e) {
+    console.error('[overlay] Error creating WS:', e);
+    scheduleOverlayReconnect();
+    return;
   }
-};
 
-ws.onclose = () => console.log('[overlay] WebSocket déconnecté');
-ws.onerror = (err) => console.error('[overlay] WebSocket error:', err);
+  ws.onopen = () => {
+    console.log('[overlay] WebSocket connecté');
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+  };
+
+  ws.onmessage = (event) => {
+    let msg;
+    try { msg = JSON.parse(event.data); } catch { return; }
+    if (!msg || !msg.action) return;
+
+    switch (msg.action) {
+      case 'init':
+        if (msg.theme) applyTheme(msg.theme);
+        break;
+      case 'showVerse':
+        showVerse(msg);
+        break;
+      case 'hideVerse':
+        hideVerse(msg.emergency);
+        break;
+      case 'applyTheme':
+        applyTheme(msg);
+        break;
+      case 'languageChanged':
+        break;
+      case 'translationChanged':
+        break;
+      case 'readingStarted':
+        showReadingIndicator(true);
+        break;
+      case 'readingStopped':
+        showReadingIndicator(false);
+        break;
+      case 'nextVerse':
+      case 'previousVerse':
+      case 'nextChapter':
+        break;
+      case 'extendTime':
+        extendDisplayTime(msg.extraMs);
+        break;
+      case 'pauseTimer':
+        pauseTimer();
+        break;
+      case 'resumeTimer':
+        resumeTimer();
+        break;
+      case 'emergencyClear':
+        emergencyClear();
+        break;
+      case 'semanticDetected':
+        showSemanticIndicator(msg.reference, msg.confidence);
+        break;
+      case 'transcriptCorrected':
+        console.log('[overlay] Transcript corrected:', msg.corrected);
+        break;
+      case 'error':
+        console.error('[overlay] Server error:', msg.error);
+        break;
+    }
+  };
+
+  ws.onclose = () => {
+    console.log('[overlay] WebSocket déconnecté');
+    scheduleOverlayReconnect();
+  };
+
+  ws.onerror = (err) => {
+    console.error('[overlay] WebSocket error:', err);
+  };
+}
+
+function scheduleOverlayReconnect() {
+  if (!reconnectTimer) {
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connectWs();
+    }, 3000);
+  }
+}
+
+connectWs();
 
 /* ==========================================================================
    Display functions

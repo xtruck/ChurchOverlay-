@@ -2,21 +2,14 @@
  * ============================================================================
  * groq-wrapper.js — Transcription cloud Groq (Whisper large-v3), fournisseur
  * principal, avec repli en parallèle sur Deepgram (Nova-2) si configuré
- * + NOUVEAU : Chat Completion API pour les features IA (semantic detection,
- * transcription correction, theme generation)
- * ----------------------------------------------------------------------------
- * CHANGELOG v0.4.0 — Ajout Chat Completion
- * - chatCompletion() : appel à l'API Groq Chat Completions pour les
- *   features IA (semantic-detector.js, transcription-corrector.js,
- *   ai-theme-generator.js). Supporte json_mode, temperature, max_tokens.
- * - quickCompletion() : wrapper court pour les corrections rapides.
- * - Gestion unifiée des erreurs API (rate limit, timeout, clé invalide).
+ * + Chat Completion API pour les features IA (Gemini 3.6 Flash / Groq)
  * ============================================================================
  */
 
 const fs = require('fs');
 const deepgram = require('./deepgram-wrapper');
 const { buildWhisperPrompt } = require('./bible-keyterms');
+const { GoogleGenAI } = require('@google/genai');
 
 const GROQ_ENDPOINT_TRANSCRIBE = 'https://api.groq.com/openai/v1/audio/transcriptions';
 const GROQ_ENDPOINT_CHAT = 'https://api.groq.com/openai/v1/chat/completions';
@@ -126,10 +119,8 @@ async function transcribeWithFallback(audioFilePath, timeoutMs = FALLBACK_TIMEOU
  * @returns {Promise<{text: string, model: string, usage: Object}>}
  */
 async function chatCompletion(prompt, options = {}) {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) {
-    throw new Error("GROQ_API_KEY non défini dans l'environnement.");
-  }
+  const geminiApiKey = process.env.GEMINI_API_KEY;
+  const groqApiKey = process.env.GROQ_API_KEY;
 
   const {
     model = GROQ_MODEL_CHAT,
@@ -138,6 +129,40 @@ async function chatCompletion(prompt, options = {}) {
     json_mode = false,
     timeoutMs = 8000,
   } = options;
+
+  // Try Google Gemini if key is provided
+  if (geminiApiKey) {
+    try {
+      const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+      const geminiModel = 'gemini-2.5-flash';
+      const config = {
+        temperature,
+        maxOutputTokens: max_tokens,
+      };
+      if (json_mode) {
+        config.responseMimeType = 'application/json';
+      }
+      const res = await ai.models.generateContent({
+        model: geminiModel,
+        contents: prompt,
+        config,
+      });
+      return {
+        text: res.text || '',
+        model: geminiModel,
+        usage: {},
+      };
+    } catch (geminiErr) {
+      console.warn('[ai-wrapper] Échec Gemini API (repli Groq):', geminiErr.status || geminiErr.message?.substring(0, 100));
+      if (!groqApiKey) {
+        throw geminiErr;
+      }
+    }
+  }
+
+  if (!groqApiKey) {
+    throw new Error("Ni GEMINI_API_KEY ni GROQ_API_KEY ne sont définis dans l'environnement.");
+  }
 
   const body = {
     model,
@@ -160,7 +185,7 @@ async function chatCompletion(prompt, options = {}) {
     const response = await fetch(GROQ_ENDPOINT_CHAT, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${groqApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),

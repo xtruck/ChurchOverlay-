@@ -36,7 +36,7 @@ const ENV_SCHEMA = {
   PORT: {
     type: 'number',
     required: false,
-    default: 8765,
+    default: 3000,
     validate: (value) => value > 0 && value < 65536,
     errorMessage: 'PORT doit être un nombre entre 1 et 65535'
   },
@@ -47,19 +47,12 @@ const ENV_SCHEMA = {
     validate: (value) => ['development', 'production', 'test'].includes(value),
     errorMessage: 'NODE_ENV doit être development, production ou test'
   },
-  // CORRECTIF (audit) : WS_HOST, MAX_CONNECTIONS et MAX_MESSAGES_PER_MINUTE
-  // étaient documentés dans .env.example ("liaison locale uniquement, pour
-  // la sécurité") mais n'étaient validés ni utilisés nulle part — server.js
-  // démarrait toujours avec new WebSocket.Server({ port }) sans host, ce qui
-  // lie le serveur sur TOUTES les interfaces réseau (0.0.0.0) par défaut sous
-  // Node.js, et sans aucune limite de connexions/messages par IP. Ajoutés ici
-  // pour que la config documentée soit réellement appliquée par server.js.
   WS_HOST: {
     type: 'string',
     required: false,
-    default: '127.0.0.1',
+    default: '0.0.0.0',
     validate: (value) => typeof value === 'string' && value.trim().length > 0,
-    errorMessage: 'WS_HOST doit être une adresse non vide (ex: 127.0.0.1)'
+    errorMessage: 'WS_HOST doit être une adresse non vide (ex: 0.0.0.0)'
   },
   MAX_CONNECTIONS: {
     type: 'number',

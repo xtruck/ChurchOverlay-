@@ -6,10 +6,13 @@
  *  server.js puisse traiter les deux sources de façon identique dans la
  *  course à 2 niveaux (Groq → Deepgram).
  *
+ *  Paramètres optimisés pour environnements bruyants (lieux de culte, musique,
+ *  écho) :
+ *  - denoise=true : Suppression active du bruit ambiant.
+ *  - filler_words=false : Élimination des bruits de remplissage vocaux.
+ *  - Filtrage par seuil de confiance au niveau des mots (DEFAULT_WORD_CONFIDENCE_THRESHOLD).
+ *
  *  Prérequis : DEEPGRAM_API_KEY doit être défini en variable d'environnement.
- *  Optionnel : si absent, ce module reste inerte (transcribeFile rejette
- *  immédiatement) — Deepgram est un fournisseur additionnel, pas obligatoire.
- *  Ne jamais coder la clé en dur ni la committer.
  * ============================================================================
  */
 
@@ -19,14 +22,13 @@ const { buildDeepgramKeywords } = require('./bible-keyterms');
 const DEEPGRAM_ENDPOINT = 'https://api.deepgram.com/v1/listen';
 const DEEPGRAM_MODEL = 'nova-2';
 const DEEPGRAM_LANGUAGE = 'fr';
+const DEFAULT_WORD_CONFIDENCE_THRESHOLD = 0.40;
 
-// Construit une fois au chargement du module (liste statique, pas besoin de
-// la recalculer à chaque appel réseau).
+// Construit une fois au chargement du module (liste statique)
 const KEYWORDS_PARAM = buildDeepgramKeywords();
 
 /**
- * Indique si une clé Deepgram est configurée (utilisé par server.js pour
- * savoir si ce fournisseur doit entrer dans la course en parallèle).
+ * Indique si une clé Deepgram est configurée (utilisé par server.js).
  * @returns {boolean}
  */
 function isConfigured() {
@@ -34,9 +36,9 @@ function isConfigured() {
 }
 
 /**
- * Envoie le fichier audio à l'API Deepgram et retourne { text }.
+ * Envoie le fichier audio à l'API Deepgram et retourne { text, confidence }.
  * @param {string} audioFilePath
- * @returns {Promise<{ text: string }>}
+ * @returns {Promise<{ text: string, confidence?: number }>}
  */
 async function transcribeFile(audioFilePath) {
   const apiKey = process.env.DEEPGRAM_API_KEY;
@@ -48,13 +50,23 @@ async function transcribeFile(audioFilePath) {
   }
 
   const audioBuffer = fs.readFileSync(audioFilePath);
-  // AJOUT (boosting vocabulaire) : `keywords` biaise Nova-2 vers le
-  // vocabulaire biblique/théologique (voir bible-keyterms.js), pour réduire
-  // le taux d'erreur de transcription sur les noms de livres à la source,
-  // plutôt que de compter uniquement sur la correction phonétique a
-  // posteriori dans detector.js (CHAPITRE_VARIANTS/VERSET_VARIANTS).
+  
+  // Boosting vocabulaire biblique
   const keywordsQuery = KEYWORDS_PARAM.map((kw) => `keywords=${encodeURIComponent(kw)}`).join('&');
-  const url = `${DEEPGRAM_ENDPOINT}?model=${DEEPGRAM_MODEL}&language=${DEEPGRAM_LANGUAGE}&smart_format=true&${keywordsQuery}`;
+
+  // Paramètres optimisés pour la réduction de bruit de fond et la précision en milieu bruyant
+  const queryParams = [
+    `model=${DEEPGRAM_MODEL}`,
+    `language=${DEEPGRAM_LANGUAGE}`,
+    'smart_format=true',
+    'denoise=true',
+    'punctuate=true',
+    'filler_words=false',
+    'endpointing=300',
+    keywordsQuery,
+  ].filter(Boolean).join('&');
+
+  const url = `${DEEPGRAM_ENDPOINT}?${queryParams}`;
 
   const response = await fetch(url, {
     method: 'POST',
@@ -71,16 +83,45 @@ async function transcribeFile(audioFilePath) {
   }
 
   const data = await response.json();
-  const text = data
+  const alternative = data
     && data.results
     && data.results.channels
     && data.results.channels[0]
     && data.results.channels[0].alternatives
-    && data.results.channels[0].alternatives[0]
-    && data.results.channels[0].alternatives[0].transcript
-    || '';
+    && data.results.channels[0].alternatives[0];
 
-  return { text };
+  if (!alternative) {
+    return { text: '', confidence: 0 };
+  }
+
+  const rawTranscript = alternative.transcript || '';
+  const wordConfidenceThreshold = Number(process.env.DEEPGRAM_WORD_CONFIDENCE_THRESHOLD) || DEFAULT_WORD_CONFIDENCE_THRESHOLD;
+
+  let text = rawTranscript;
+  let overallConfidence = typeof alternative.confidence === 'number' ? alternative.confidence : 0;
+
+  // Optimisation par seuil de confiance au niveau des mots
+  if (Array.isArray(alternative.words) && alternative.words.length > 0) {
+    const validWords = alternative.words.filter((w) => {
+      if (typeof w.confidence === 'number') {
+        return w.confidence >= wordConfidenceThreshold;
+      }
+      return true;
+    });
+
+    if (validWords.length > 0) {
+      text = validWords.map((w) => w.punctuated_word || w.word || '').join(' ').trim();
+      const totalConf = validWords.reduce((sum, w) => sum + (typeof w.confidence === 'number' ? w.confidence : 1), 0);
+      overallConfidence = totalConf / validWords.length;
+    } else {
+      // Si aucun mot ne dépasse le seuil, il s'agit de bruit de fond parasite
+      text = '';
+      overallConfidence = 0;
+    }
+  }
+
+  return { text, confidence: overallConfidence };
 }
 
-module.exports = { transcribeFile, isConfigured };
+module.exports = { transcribeFile, isConfigured, DEFAULT_WORD_CONFIDENCE_THRESHOLD };
+

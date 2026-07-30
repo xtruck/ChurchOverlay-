@@ -1,0 +1,10 @@
+{
+  "name": "ChurchOverlay",
+  "description": "ChurchOverlay — Overlay biblique intelligent avec reconnaissance vocale et détection de versets en direct",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

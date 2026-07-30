@@ -7,27 +7,61 @@
 const { correctBookNameFuzzy } = require('./levenshtein');
 
 const BOOKS = {
-  genese: ['genese', 'gen'], exode: ['exode', 'exo'], levitique: ['levitique', 'lev'],
-  nombres: ['nombres', 'nom'], deuteronome: ['deuteronome', 'deut'], josue: ['josue', 'jos'],
-  juges: ['juges', 'jug'], ruth: ['ruth'], '1samuel': ['1 samuel', 'premier samuel'],
-  '2samuel': ['2 samuel', 'deuxieme samuel'], '1rois': ['1 rois', 'premier rois'],
-  '2rois': ['2 rois', 'deuxieme rois'], '1chroniques': ['1 chroniques', 'premier chroniques'],
-  '2chroniques': ['2 chroniques', 'deuxieme chroniques'], esdras: ['esdras'], nehemie: ['nehemie'],
-  esther: ['esther'], job: ['job'], psaumes: ['psaumes', 'psaume', 'ps'], proverbes: ['proverbes', 'prov'],
-  ecclesiaste: ['ecclesiaste', 'qohélet', 'qohelet'], cantique: ['cantique'], esaie: ['esaie', 'es'],
-  jeremie: ['jeremie', 'jer'], lamentations: ['lamentations', 'lam'], ezechiel: ['ezechiel', 'ez'],
-  daniel: ['daniel', 'dan'], osee: ['osee', 'os'], joel: ['joel'], amos: ['amos'], abdias: ['abdias'],
-  jonas: ['jonas'], michee: ['michee', 'mi'], nahum: ['nahum'], habacuc: ['habacuc', 'ha'],
-  sophonie: ['sophonie', 'so'], aggee: ['aggee', 'ag'], zacharie: ['zacharie', 'za'], malachie: ['malachie', 'ml'],
-  matthieu: ['matthieu', 'mathieu', 'mt'], marc: ['marc', 'mc'], luc: ['luc', 'lc'], jean: ['jean', 'jn'],
-  actes: ['actes', 'ac'], romains: ['romains', 'rom', 'rm'], '1corinthiens': ['1 corinthiens', 'premier corinthiens'],
-  '2corinthiens': ['2 corinthiens', 'deuxieme corinthiens'], galates: ['galates', 'ga'], ephesiens: ['ephesiens', 'ep'],
-  philippiens: ['philippiens', 'php'], colossiens: ['colossiens', 'col'], '1thessaloniciens': ['1 thessaloniciens', 'premier thessaloniciens'],
-  '2thessaloniciens': ['2 thessaloniciens', 'deuxieme thessaloniciens'], '1timothee': ['1 timothee', 'premier timothee'],
-  '2timothee': ['2 timothee', 'deuxieme timothee'], tite: ['tite'], philemon: ['philemon'], hebreux: ['hebreux', 'heb'],
-  jacques: ['jacques', 'jc'], '1pierre': ['1 pierre', 'premier pierre'], '2pierre': ['2 pierre', 'deuxieme pierre'],
-  '1jean': ['1 jean', 'premier jean'], '2jean': ['2 jean', 'deuxieme jean'], '3jean': ['3 jean', 'troisieme jean'],
-  jude: ['jude'], apocalypse: ['apocalypse', 'ap']
+  genese: ['genese', 'gen', 'livre de la genese', 'livre de genese'],
+  exode: ['exode', 'exo', 'livre de l exode', 'livre d exode'],
+  levitique: ['levitique', 'lev', 'livre du levitique'],
+  nombres: ['nombres', 'nom', 'livre des nombres'],
+  deuteronome: ['deuteronome', 'deut', 'livre du deuteronome'],
+  josue: ['josue', 'jos', 'livre de josue'],
+  juges: ['juges', 'jug', 'livre des juges'],
+  ruth: ['ruth', 'livre de ruth'],
+  '1samuel': ['1 samuel', '1er samuel', '1ere samuel', 'premier samuel', 'premier livre de samuel', '1 livre de samuel', 'i samuel'],
+  '2samuel': ['2 samuel', '2eme samuel', 'deuxieme samuel', 'second samuel', 'deuxieme livre de samuel', '2 livre de samuel', 'ii samuel'],
+  '1rois': ['1 rois', '1er rois', 'premier rois', 'premier livre des rois', '1 livre des rois', 'i rois'],
+  '2rois': ['2 rois', '2eme rois', 'deuxieme rois', 'second rois', 'deuxieme livre des rois', '2 livre des rois', 'ii rois'],
+  '1chroniques': ['1 chroniques', '1er chroniques', 'premier chroniques', 'premier livre des chroniques', 'i chroniques'],
+  '2chroniques': ['2 chroniques', '2eme chroniques', 'deuxieme chroniques', 'second chroniques', 'deuxieme livre des chroniques', 'ii chroniques'],
+  esdras: ['esdras', 'livre d esdras'], nehemie: ['nehemie', 'livre de nehemie'],
+  esther: ['esther', 'livre d esther'], job: ['job', 'livre de job'],
+  psaumes: ['psaumes', 'psaume', 'ps', 'livre des psaumes', 'somme', 'sommes', 'tome', 'tomes'],
+  proverbes: ['proverbes', 'prov', 'livre des proverbes'],
+  ecclesiaste: ['ecclesiaste', 'qohélet', 'qohelet', 'livre de l ecclesiaste'],
+  cantique: ['cantique des cantiques', 'cantique'],
+  esaie: ['esaie', 'es', 'livre d esaie', 'prophete esaie'],
+  jeremie: ['jeremie', 'jer', 'livre de jeremie', 'prophete jeremie'],
+  lamentations: ['lamentations', 'lam', 'lamentations de jeremie'],
+  ezechiel: ['ezechiel', 'ez', 'livre d ezechiel', 'prophete ezechiel'],
+  daniel: ['daniel', 'dan', 'livre de daniel', 'prophete daniel'],
+  osee: ['osee', 'os'], joel: ['joel'], amos: ['amos'], abdias: ['abdias'],
+  jonas: ['jonas', 'livre de jonas'], michee: ['michee', 'mi'], nahum: ['nahum'],
+  habacuc: ['habacuc', 'ha'], sophonie: ['sophonie', 'so'], aggee: ['aggee', 'ag'],
+  zacharie: ['zacharie', 'za'], malachie: ['malachie', 'ml'],
+  matthieu: ['matthieu', 'mathieu', 'mt', 'evangile de matthieu', 'evangile selon matthieu', 'evangile selon saint matthieu'],
+  marc: ['marc', 'mc', 'evangile de marc', 'evangile selon marc', 'evangile selon saint marc'],
+  luc: ['luc', 'lc', 'evangile de luc', 'evangile selon luc', 'evangile selon saint luc'],
+  jean: ['jean', 'jn', 'evangile de jean', 'evangile selon jean', 'evangile selon saint jean'],
+  actes: ['actes des apotres', 'actes', 'ac', 'livre des actes'],
+  romains: ['romains', 'rom', 'rm', 'epitre aux romains', 'lettre aux romains'],
+  '1corinthiens': ['1 corinthiens', '1er corinthiens', 'premier corinthiens', 'premiere aux corinthiens', '1ere aux corinthiens', 'premiere lettre aux corinthiens', 'premiere epitre aux corinthiens', 'i corinthiens'],
+  '2corinthiens': ['2 corinthiens', '2eme corinthiens', 'deuxieme corinthiens', 'seconde aux corinthiens', 'deuxieme aux corinthiens', '2ere aux corinthiens', 'deuxieme lettre aux corinthiens', 'deuxieme epitre aux corinthiens', 'ii corinthiens'],
+  galates: ['galates', 'ga', 'epitre aux galates', 'lettre aux galates'],
+  ephesiens: ['ephesiens', 'ep', 'epitre aux ephesiens', 'lettre aux ephesiens'],
+  philippiens: ['philippiens', 'php', 'epitre aux philippiens', 'lettre aux philippiens'],
+  colossiens: ['colossiens', 'col', 'epitre aux colossiens', 'lettre aux colossiens'],
+  '1thessaloniciens': ['1 thessaloniciens', '1er thessaloniciens', 'premier thessaloniciens', 'premiere aux thessaloniciens', 'premiere epitre aux thessaloniciens', 'i thessaloniciens'],
+  '2thessaloniciens': ['2 thessaloniciens', '2eme thessaloniciens', 'deuxieme thessaloniciens', 'deuxieme aux thessaloniciens', 'deuxieme epitre aux thessaloniciens', 'ii thessaloniciens'],
+  '1timothee': ['1 timothee', '1er timothee', 'premier timothee', 'premiere a timothee', 'premiere epitre a timothee', 'i timothee'],
+  '2timothee': ['2 timothee', '2eme timothee', 'deuxieme timothee', 'deuxieme a timothee', 'deuxieme epitre a timothee', 'ii timothee'],
+  tite: ['tite', 'epitre a tite'], philemon: ['philemon', 'epitre a philemon'],
+  hebreux: ['hebreux', 'heb', 'epitre aux hebreux', 'lettre aux hebreux'],
+  jacques: ['jacques', 'jc', 'epitre de jacques'],
+  '1pierre': ['1 pierre', '1er pierre', 'premier pierre', 'premiere de pierre', 'premiere epitre de pierre', 'i pierre'],
+  '2pierre': ['2 pierre', '2eme pierre', 'deuxieme pierre', 'seconde de pierre', 'deuxieme de pierre', 'deuxieme epitre de pierre', 'ii pierre'],
+  '1jean': ['1 jean', '1er jean', 'premier jean', 'premiere de jean', 'premiere epitre de jean', 'i jean'],
+  '2jean': ['2 jean', '2eme jean', 'deuxieme jean', 'deuxieme de jean', 'deuxieme epitre de jean', 'ii jean'],
+  '3jean': ['3 jean', '3eme jean', 'troisieme jean', 'troisieme de jean', 'troisieme epitre de jean', 'iii jean'],
+  jude: ['jude', 'epitre de jude'],
+  apocalypse: ['apocalypse', 'ap', 'livre de l apocalypse', 'revelation']
 };
 
 // Corrige les déformations phonétiques courantes produites par Whisper
@@ -47,6 +81,9 @@ const VERSET_VARIANTS = [
 
 function correctPhoneticNoise(text) {
   let result = text;
+  result = result.replace(/\bce\s*(\d{1,3})\s*(?:eme|e)?\s*chapitre\b/gi, 'chapitre $1');
+  result = result.replace(/\bce2chapitre\b/gi, 'chapitre 2');
+  result = result.replace(/\bce\s*chapitre\b/gi, 'chapitre');
   for (const variant of CHAPITRE_VARIANTS) {
     if (variant === 'chapitre') continue;
     result = result.replace(new RegExp(`\\b${escapeRegExp(variant)}\\b`, 'gi'), 'chapitre');
@@ -69,11 +106,19 @@ function normalize(value) {
 }
 
 const NUMBER_WORDS = {
-  zero: 0, un: 1, une: 1, premier: 1, premiere: 1, deux: 2, trois: 3,
-  quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, neuf: 9, dix: 10,
-  onze: 11, douze: 12, treize: 13, quatorze: 14, quinze: 15, seize: 16,
-  dixsept: 17, dixhuit: 18, dixneuf: 19, vingt: 20, trente: 30,
-  quarante: 40, cinquante: 50, soixante: 60, cent: 100, cents: 100,
+  zero: 0, un: 1, une: 1, premier: 1, premiere: 1, '1er': 1, '1ere': 1, '1st': 1, first: 1,
+  deux: 2, deuxieme: 2, second: 2, seconde: 2, '2eme': 2, '2ere': 2, '2nd': 2,
+  trois: 3, troisieme: 3, '3eme': 3, '3rd': 3,
+  quatre: 4, quatrieme: 4, '4eme': 4, '4th': 4,
+  cinq: 5, cinquieme: 5, '5eme': 5, '5th': 5,
+  six: 6, sixieme: 6, '6eme': 6, '6th': 6,
+  sept: 7, septieme: 7, '7eme': 7, '7th': 7,
+  huit: 8, huitieme: 8, '8eme': 8, '8th': 8,
+  neuf: 9, neuvieme: 9, '9eme': 9, '9th': 9,
+  dix: 10, dixieme: 10, '10eme': 10, '10th': 10,
+  onze: 11, onzieme: 11, onzeieme: 11, douze: 12, douzieme: 12, treize: 13, treizieme: 13, quatorze: 14, quatorzieme: 14, quinze: 15, quinzieme: 15, seize: 16, seizieme: 16,
+  dixsept: 17, dixseptieme: 17, dixhuit: 18, dixhuitieme: 18, dixneuf: 19, dixneuvieme: 19, vingt: 20, vingtieme: 20, trente: 30, trentieme: 30,
+  quarante: 40, quarantieme: 40, cinquante: 50, cinquantieme: 50, soixante: 60, cent: 100, cents: 100, centieme: 100,
 };
 const NUMBER_WORD_PATTERN = Object.keys(NUMBER_WORDS).join('|');
 
@@ -84,6 +129,7 @@ function numberWordsToDigits(text) {
     let current = 0;
     for (const token of tokens) {
       const value = NUMBER_WORDS[token];
+      if (value === undefined) continue;
       if (value === 100) current = Math.max(1, current) * 100;
       else if (value === 20 && current === 4) current = 80; // quatre-vingt
       else current += value;
@@ -102,49 +148,71 @@ function matchAgainstAliases(normalized) {
   for (const { book, name } of aliases) {
     const escaped = escapeRegExp(name).replace(/\s+/g, '\\s+');
 
-    // CORRECTIF (audit — faux positifs découverts en test d'intégration
-    // Reading Mode). Les alias très courts (<=2 lettres : "es" pour Ésaïe,
-    // "mc" pour Marc, "ac" pour Actes, "jn" pour Jean...) collisionnent
-    // avec des mots français très courants ("tu es", "vous êtes"...).
-    // Combiné à numberWordsToDigits() (qui convertit "un/deux/trois" en
-    // chiffres), une phrase ordinaire comme "nous savons que tu es un
-    // docteur" se lisait comme "es 1" et déclenchait une fausse détection
-    // "Ésaïe 1" — reproduit et vérifié en test.
-    //
-    // Pour CES alias seulement, on exige le mot "chapitre" explicitement
-    // écrit (au lieu de le laisser optionnel comme pour tous les autres
-    // livres) : une phrase ordinaire ne contient quasiment jamais "es"/
-    // "mc"/"ac" immédiatement suivi du mot "chapitre", alors qu'une vraie
-    // citation le contient souvent ("Es chapitre 6, verset 1"). Le prix à
-    // payer est qu'un format court sans "chapitre" ("Es 6:1") ne matche
-    // plus pour CES alias précis — acceptable ici car ce sont des
-    // abréviations essentiellement écrites/lues, rarement prononcées
-    // telles quelles à voix haute pendant une prédication. Les alias plus
-    // longs (3 lettres et plus : "gen", "jos", "dan"...) gardent le
-    // comportement existant, leur risque de collision étant bien plus
-    // faible.
+    // Inverted Spoken Pattern 1: "verset 16 du chapitre 3 de Jean"
+    const invPattern1 = new RegExp(
+      `\\bverset(?:s)?\\s+(\\d{1,3})(?:\\s*(?:-|a|à|au)\\s*(\\d{1,3}))?\\s+(?:du|de|dans|au)?\\s*chapitre\\s+(\\d{1,3})\\s+(?:de|du|dans|de\\s+l|d|sur)?\\s*${escaped}\\b`,
+      'i'
+    );
+    const mInv1 = normalized.match(invPattern1);
+    if (mInv1) {
+      const vStart = Number(mInv1[1]);
+      const vEnd = mInv1[2] ? Number(mInv1[2]) : vStart;
+      const ch = Number(mInv1[3]);
+      if (ch > 0 && ch <= 150 && vStart > 0 && vStart <= 200 && vEnd >= vStart && vEnd <= 200) {
+        return { book, chapter: ch, verseStart: vStart, verseEnd: vEnd, raw: mInv1[0].trim() };
+      }
+    }
+
+    // Inverted Spoken Pattern 2: "chapitre 3 de Jean verset 16"
+    const invPattern2 = new RegExp(
+      `\\bchapitre\\s+(\\d{1,3})\\s+(?:de|du|dans|de\\s+l|d|sur)?\\s*${escaped}\\s+(?:au\\s+|le\\s+|les\\s+)?verset(?:s)?\\s+(\\d{1,3})(?:\\s*(?:-|a|à|au)\\s*(\\d{1,3}))?\\b`,
+      'i'
+    );
+    const mInv2 = normalized.match(invPattern2);
+    if (mInv2) {
+      const ch = Number(mInv2[1]);
+      const vStart = Number(mInv2[2]);
+      const vEnd = mInv2[3] ? Number(mInv2[3]) : vStart;
+      if (ch > 0 && ch <= 150 && vStart > 0 && vStart <= 200 && vEnd >= vStart && vEnd <= 200) {
+        return { book, chapter: ch, verseStart: vStart, verseEnd: vEnd, raw: mInv2[0].trim() };
+      }
+    }
+
+    // Inverted Spoken Pattern 3: "verset 16 de Jean 3"
+    const invPattern3 = new RegExp(
+      `\\bverset(?:s)?\\s+(\\d{1,3})(?:\\s*(?:-|a|à|au)\\s*(\\d{1,3}))?\\s+(?:dans|de|du)?\\s*${escaped}\\s+(?:chapitre\\s+)?(\\d{1,3})\\b`,
+      'i'
+    );
+    const mInv3 = normalized.match(invPattern3);
+    if (mInv3) {
+      const vStart = Number(mInv3[1]);
+      const vEnd = mInv3[2] ? Number(mInv3[2]) : vStart;
+      const ch = Number(mInv3[3]);
+      if (ch > 0 && ch <= 150 && vStart > 0 && vStart <= 200 && vEnd >= vStart && vEnd <= 200) {
+        return { book, chapter: ch, verseStart: vStart, verseEnd: vEnd, raw: mInv3[0].trim() };
+      }
+    }
+
     const requireExplicitChapitre = name.length <= 2;
     const chapitreKeyword = requireExplicitChapitre ? `chapitre\\s+` : `(?:chapitre\\s+)?`;
 
-    // Pattern that handles ALL formats:
-    // "Jean 3:4", "Jean chapitre 3, verset 4", "Jean 3 4", "Jean 3:4-6",
-    // "Jean chapitre 3 versets 16 à 18", "Jean 3, verset 4"
+    // Standard Pattern
     const pattern = new RegExp(
       `(?:^|\\s)${escaped}\\s+` +                    // Book name
-      chapitreKeyword +                              // "chapitre" (obligatoire si alias <=2 lettres, sinon optionnel)
+      chapitreKeyword +                              // "chapitre"
       `(\\d{1,3})` +                                 // Chapter (group 1)
       `(?:` +                                        // Start optional verse group
         `\\s*` +                                     // Optional whitespace
         `(?:` +
           `[:,]\\s*` +                               // Colon or comma
           `(?:verset(?:s)?\\s+)?` +                  // Optional "verset" after colon/comma
-          `(\\d{1,3})` +                             // Verse start (group 2) - colon/comma format
+          `(\\d{1,3})` +                             // Verse start (group 2)
           `|` +
           `\\s+verset(?:s)?\\s+` +                   // " verset "
-          `(\\d{1,3})` +                             // Verse start (group 3) - "verset" format
+          `(\\d{1,3})` +                             // Verse start (group 3)
           `|` +
           `\\s+` +                                   // Just whitespace
-          `(\\d{1,3})` +                             // Verse start (group 4) - space format
+          `(\\d{1,3})` +                             // Verse start (group 4)
         `)` +
         `(?:` +                                      // Optional verse range
           `\\s*` +
@@ -152,10 +220,7 @@ function matchAgainstAliases(normalized) {
           `\\s*` +
           `(\\d{1,3})` +                             // Verse end (group 5)
         `)?` +
-      `)?` +                                         // Verse group optional: "Psaume 23" (chapitre
-                                                       // seul, sans verset) doit rester détecté —
-                                                       // voir tests/test-detector.js (suite
-                                                       // officielle exécutée par `npm test`).
+      `)?` +
       `(?=$|[\\s,.;!?)])`,                           // Word boundary
       'i'
     );
@@ -195,9 +260,13 @@ function matchAgainstAliases(normalized) {
   return null;
 }
 
+function detectExact(text) {
+  const normalized = numberWordsToDigits(normalize(text));
+  return matchAgainstAliases(normalized);
+}
+
 function detect(text) {
   const normalized = numberWordsToDigits(normalize(text));
-
   const exact = matchAgainstAliases(normalized);
   if (exact) return exact;
 
@@ -350,4 +419,4 @@ function detectTranslationSwitch(text) {
   return { code };
 }
 
-module.exports = { detect, normalize, numberWordsToDigits, detectTranslationSwitch, BOOKS };
+module.exports = { detect, detectExact, normalize, numberWordsToDigits, detectTranslationSwitch, BOOKS };

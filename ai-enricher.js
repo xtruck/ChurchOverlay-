@@ -3,49 +3,43 @@
  * ai-enricher.js — Enrichissements IA pour ChurchOverlay
  *
  * Chaque fonction IA est INDÉPENDANTE et désactivable via features.json.
- * Toutes utilisent Emergent LLM Key (gratuit) via emergentintegrations.
- * Aucun appel réseau si la feature est désactivée.
- *
- * ⚠️ NON INTÉGRÉ (trouvé lors de l'audit round 4) : ce module n'est
- * `require()` par AUCUN autre fichier du dépôt (ni server.js, ni main.js),
- * n'apparaît pas dans package.json > build.files (donc jamais empaqueté
- * dans l'app livrée) et dépend du paquet npm `emergentintegrations` qui
- * n'est déclaré ni dans "dependencies" ni dans "devDependencies" de
- * package.json et n'est pas présent dans node_modules. Résultat : si ce
- * fichier est un jour `require()` depuis un autre module (par ex. pour
- * brancher la détection de thème ou la traduction live), l'appli plantera
- * immédiatement avec `Cannot find module 'emergentintegrations'`.
- * Avant d'activer une des features `ai.*` dans config/features.json,
- * il faut : 1) `npm install emergentintegrations`, 2) ajouter la clé au
- * package.json, 3) brancher les fonctions ci-dessous depuis server.js.
- * En l'état actuel (non branché), ce fichier n'a aucun impact sur l'app —
- * il est laissé ici comme brouillon d'une fonctionnalité future.
+ * Utilise Google GenAI (gemini-3.6-flash) ou Groq via groq-wrapper.js.
  */
 
-const { LlmChat, UserMessage } = require('emergentintegrations');
-const features = require('./config/features.json');
+const { chatCompletion } = require('./groq-wrapper');
 
-const EMERGENT_KEY = process.env.EMERGENT_LLM_KEY;
+let features = {
+  ai: {
+    themeDetection: { enabled: true, intervalSec: 60 },
+    liveTranslation: { enabled: true, targetLangs: ["en", "es"] },
+    sermonSummary: { enabled: true, intervalMin: 5 },
+    postServiceRecap: { enabled: true, exportFormats: ["pdf", "png"] },
+    crossReferences: { enabled: true, maxRefs: 3 }
+  }
+};
+
+try {
+  features = require('./config/features.json');
+} catch (e) {
+  // Use default fallback config
+}
 
 // ---------------------------------------------------------------------
 // 1) DÉTECTION DU THÈME DU SERMON
 // ---------------------------------------------------------------------
 async function detectSermonTheme(transcriptBuffer) {
-  if (!features.ai.themeDetection.enabled) return null;
-  if (transcriptBuffer.length < 200) return null;
+  if (features.ai?.themeDetection?.enabled === false) return null;
+  if (!transcriptBuffer || transcriptBuffer.length < 50) return null;
 
-  const chat = new LlmChat({
-    api_key: EMERGENT_KEY,
-    session_id: 'theme-detect',
-    system_message: `Tu analyses des extraits de sermon en français.
+  const prompt = `Tu analyses des extraits de sermon en français.
 Extrais LE THÈME PRINCIPAL en 2-4 mots maximum + 3 mots-clés.
-Réponds uniquement en JSON: {"theme":"...","keywords":["...","...","..."]}`
-  }).with_model('gemini', 'gemini-2.0-flash');
+Transcription: "${transcriptBuffer.slice(-2000)}"
+Réponds uniquement en JSON valide: {"theme":"...","keywords":["...","...","..."]}`;
 
   try {
-    const response = await chat.send_message(new UserMessage(transcriptBuffer.slice(-2000)));
-    const parsed = JSON.parse(response);
-    return { theme: parsed.theme, keywords: parsed.keywords };
+    const res = await chatCompletion(prompt, { json_mode: true, temperature: 0.2 });
+    const parsed = JSON.parse(res.text);
+    return { theme: parsed.theme, keywords: parsed.keywords || [] };
   } catch (e) {
     console.warn('[ai-enricher] Détection thème échouée:', e.message);
     return null;
@@ -53,86 +47,91 @@ Réponds uniquement en JSON: {"theme":"...","keywords":["...","...","..."]}`
 }
 
 // ---------------------------------------------------------------------
-// 2) TRADUCTION LIVE (pour app compagnon)
+// 2) TRADUCTION LIVE
 // ---------------------------------------------------------------------
-async function translateSegment(text, targetLang) {
-  if (!features.ai.liveTranslation.enabled) return null;
+async function translateSegment(text, targetLang = 'en') {
+  if (features.ai?.liveTranslation?.enabled === false) return null;
+  if (!text || !text.trim()) return null;
 
-  const chat = new LlmChat({
-    api_key: EMERGENT_KEY,
-    session_id: `translate-${targetLang}`,
-    system_message: `You are a live sermon translator. Translate the following French text into ${targetLang}. Preserve the spiritual tone. Reply with the translation ONLY, no explanations.`
-  }).with_model('claude', 'claude-haiku-4-5');
+  const prompt = `You are a live sermon translator. Translate the following French text into ${targetLang}. Preserve the spiritual tone. Reply with the translation ONLY, no explanations or quotes:
+"${text}"`;
 
   try {
-    return await chat.send_message(new UserMessage(text));
+    const res = await chatCompletion(prompt, { temperature: 0.1, max_tokens: 200 });
+    return res.text ? res.text.trim() : null;
   } catch (e) {
+    console.warn('[ai-enricher] Traduction live échouée:', e.message);
     return null;
   }
 }
 
 // ---------------------------------------------------------------------
-// 3) RÉSUMÉ DU SERMON EN TEMPS RÉEL (pour retardataires)
+// 3) RÉSUMÉ DU SERMON EN TEMPS RÉEL
 // ---------------------------------------------------------------------
 async function generateLiveSummary(fullTranscript) {
-  if (!features.ai.sermonSummary.enabled) return null;
+  if (features.ai?.sermonSummary?.enabled === false) return null;
+  if (!fullTranscript || fullTranscript.length < 100) return null;
 
-  const chat = new LlmChat({
-    api_key: EMERGENT_KEY,
-    session_id: 'live-summary',
-    system_message: `Tu résumes des sermons en cours de prédication.
-Produis un résumé de MAX 20 mots en français, à la 3e personne.
-Format: "Le pasteur explique que..."`
-  }).with_model('gemini', 'gemini-2.0-flash');
+  const prompt = `Tu résumes un sermon en cours de prédication.
+Produis un résumé concis de MAX 25 mots en français.
+Format: "Le prédicateur explique que..."
+Transcription récente: "${fullTranscript.slice(-4000)}"`;
 
-  return await chat.send_message(new UserMessage(fullTranscript.slice(-4000)));
+  try {
+    const res = await chatCompletion(prompt, { temperature: 0.3, max_tokens: 100 });
+    return res.text ? res.text.trim() : null;
+  } catch (e) {
+    console.warn('[ai-enricher] Résumé live échoué:', e.message);
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------
 // 4) POST-SERVICE : RECAP AUTO
 // ---------------------------------------------------------------------
-async function generatePostServiceRecap(fullTranscript, versesShown) {
-  if (!features.ai.postServiceRecap.enabled) return null;
+async function generatePostServiceRecap(fullTranscript, versesShown = []) {
+  if (features.ai?.postServiceRecap?.enabled === false) return null;
 
-  const chat = new LlmChat({
-    api_key: EMERGENT_KEY,
-    session_id: 'post-service',
-    system_message: `Tu es assistant pastoral. À partir de la transcription
-complète d'un sermon et de la liste des versets cités, produis:
-1. Un titre accrocheur (max 8 mots)
-2. Un résumé en 5 points-clés
-3. Une application pratique pour la semaine
-4. Un verset à mémoriser (choisi parmi ceux cités)
-Format: JSON strict.`
-  }).with_model('claude', 'claude-sonnet-4-5');
+  const verseList = Array.isArray(versesShown) ? versesShown.map(v => typeof v === 'string' ? v : (v.reference || v.raw || '')).join(', ') : '';
 
-  const prompt = `TRANSCRIPTION:\n${fullTranscript.slice(0, 15000)}
-\n\nVERSETS CITÉS: ${versesShown.map(v => v.reference).join(', ')}`;
+  const prompt = `Tu es assistant pastoral. À partir de la transcription du sermon et des versets affichés, produis un récapitulatif.
+TRANSCRIPTION:
+"${(fullTranscript || '').slice(0, 10000)}"
 
-  const response = await chat.send_message(new UserMessage(prompt));
-  return JSON.parse(response);
+VERSETS CITÉS: ${verseList || 'Aucun verset enregistré'}
+
+Réponds uniquement en JSON avec cette structure exacte:
+{
+  "title": "Titre du sermon (max 8 mots)",
+  "keyPoints": ["Point 1", "Point 2", "Point 3", "Point 4", "Point 5"],
+  "application": "Application pratique pour la semaine",
+  "memoryVerse": "Verset marquant à mémoriser"
+}`;
+
+  try {
+    const res = await chatCompletion(prompt, { json_mode: true, temperature: 0.3, max_tokens: 600 });
+    return JSON.parse(res.text);
+  } catch (e) {
+    console.warn('[ai-enricher] Récapitulatif post-service échoué:', e.message);
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------
 // 5) CROSS-REFERENCES (renvois croisés automatiques)
 // ---------------------------------------------------------------------
 async function findCrossReferences(verseRef, verseText) {
-  if (!features.ai.crossReferences.enabled) return [];
+  if (features.ai?.crossReferences?.enabled === false) return [];
 
-  const chat = new LlmChat({
-    api_key: EMERGENT_KEY,
-    session_id: 'cross-refs',
-    system_message: `Tu es un exégète biblique. Pour un verset donné,
-identifie 2-3 versets liés (parallèles, thèmes similaires, prophéties/accomplissements).
-Réponds en JSON: [{"ref":"...","reason":"..."}, ...]`
-  }).with_model('claude', 'claude-haiku-4-5');
+  const prompt = `Tu es un exégète biblique. Pour le verset "${verseRef}: ${verseText || ''}", identifie 2 à 3 versets bibliques liés (thèmes similaires ou parallèles).
+Réponds uniquement en JSON: [{"ref": "Livre Chapitre:Verset", "reason": "Brève explication en français"}]`;
 
   try {
-    const response = await chat.send_message(
-      new UserMessage(`${verseRef}: "${verseText}"`)
-    );
-    return JSON.parse(response).slice(0, features.ai.crossReferences.maxRefs);
+    const res = await chatCompletion(prompt, { json_mode: true, temperature: 0.2, max_tokens: 300 });
+    const parsed = JSON.parse(res.text);
+    return Array.isArray(parsed) ? parsed.slice(0, features.ai?.crossReferences?.maxRefs || 3) : [];
   } catch (e) {
+    console.warn('[ai-enricher] Cross-references échouées:', e.message);
     return [];
   }
 }

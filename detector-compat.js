@@ -11,22 +11,43 @@
 'use strict';
 
 const detector = require('./detector');
-
-/**
- * detectBilingual — wrapper around detector.detect()
- * The original detect() handles French references. For English, we would
- * need detector-en.js, but for now we just delegate to detect().
- */
-function detectBilingual(text) {
-  return detector.detect(text);
+let detectorEn = null;
+try {
+  detectorEn = require('./detector-en');
+} catch (e) {
+  // English detector optional
 }
 
 /**
- * parseReference — try to parse a manual reference string like "Jean 3:16"
- * Uses detector.detect() which handles all the regex parsing.
+ * detectBilingual — tries exact matches first (FR then EN), then fuzzy matches (FR then EN).
+ */
+function detectBilingual(text) {
+  // Step 1: Exact FR match
+  const frExact = detector.detectExact ? detector.detectExact(text) : null;
+  if (frExact) return frExact;
+
+  // Step 2: Exact EN match
+  const enExact = detectorEn && detectorEn.detectExact ? detectorEn.detectExact(text) : null;
+  if (enExact) return enExact;
+
+  // Step 3: Fuzzy FR match
+  const frFuzzy = detector.detect(text);
+  if (frFuzzy) return frFuzzy;
+
+  // Step 4: Fuzzy EN match
+  if (detectorEn) {
+    const enFuzzy = detectorEn.detect(text);
+    if (enFuzzy) return enFuzzy;
+  }
+
+  return null;
+}
+
+/**
+ * parseReference — try to parse a manual reference string in FR or EN.
  */
 function parseReference(text) {
-  return detector.detect(text);
+  return detectBilingual(text);
 }
 
 module.exports = {
