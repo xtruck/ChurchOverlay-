@@ -546,7 +546,7 @@ function showVerse(data) {
 
   // Auto-hide timer
   clearTimeout(hideTimeout);
-  const duration = data.durationMs || 300000;
+  const duration = sanitizeDurationMs(data.durationMs);
   hideTimeout = setTimeout(() => hideVerse(false), duration);
 }
 
@@ -564,8 +564,20 @@ function hideVerse(emergency = false) {
 function extendDisplayTime(extraMs) {
   if (hideTimeout) {
     clearTimeout(hideTimeout);
-    hideTimeout = setTimeout(() => hideVerse(false), extraMs);
+    hideTimeout = setTimeout(() => hideVerse(false), sanitizeDurationMs(extraMs));
   }
+}
+
+// Borne strictement toute durée de timer venant du réseau (WebSocket) avant
+// de la passer à setTimeout : évite qu'une valeur non finie, négative ou
+// démesurée (accidentelle ou malveillante) ne cause un épuisement de
+// ressources côté overlay. Alignée avec le plafond serveur (1h = 3600000 ms).
+const MAX_DISPLAY_DURATION_MS = 3600000;
+const DEFAULT_DISPLAY_DURATION_MS = 300000;
+function sanitizeDurationMs(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_DISPLAY_DURATION_MS;
+  return Math.min(n, MAX_DISPLAY_DURATION_MS);
 }
 
 let timerPaused = false;
