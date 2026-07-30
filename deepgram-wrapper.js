@@ -20,9 +20,11 @@ const fs = require('fs');
 const { buildDeepgramKeywords } = require('./bible-keyterms');
 
 const DEEPGRAM_ENDPOINT = 'https://api.deepgram.com/v1/listen';
+const DEEPGRAM_PROJECTS_ENDPOINT = 'https://api.deepgram.com/v1/projects';
 const DEEPGRAM_MODEL = 'nova-2';
 const DEEPGRAM_LANGUAGE = 'fr';
 const DEFAULT_WORD_CONFIDENCE_THRESHOLD = 0.40;
+const CHECK_KEY_TIMEOUT_MS = 5000;
 
 // Construit une fois au chargement du module (liste statique)
 const KEYWORDS_PARAM = buildDeepgramKeywords();
@@ -33,6 +35,38 @@ const KEYWORDS_PARAM = buildDeepgramKeywords();
  */
 function isConfigured() {
   return !!process.env.DEEPGRAM_API_KEY;
+}
+
+/**
+ * Vérification légère de la validité de la clé Deepgram, sans frais de
+ * transcription : liste les projets accessibles avec cette clé. Utilisé par
+ * le bouton "Tester avant le culte" du tableau de bord (checklist mise en
+ * production, point 9).
+ * @returns {Promise<{configured: boolean, ok: boolean, error: string|null}>}
+ */
+async function checkKey(timeoutMs = CHECK_KEY_TIMEOUT_MS) {
+  const apiKey = process.env.DEEPGRAM_API_KEY;
+  if (!apiKey) {
+    return { configured: false, ok: false, error: 'DEEPGRAM_API_KEY non défini (optionnel).' };
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(DEEPGRAM_PROJECTS_ENDPOINT, {
+      headers: { Authorization: `Token ${apiKey}` },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      return { configured: true, ok: false, error: `Deepgram a répondu ${response.status}` };
+    }
+    return { configured: true, ok: true, error: null };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    const message = err && err.name === 'AbortError' ? `Timeout (${timeoutMs}ms)` : (err && err.message) || 'Erreur inconnue';
+    return { configured: true, ok: false, error: message };
+  }
 }
 
 /**
@@ -123,5 +157,4 @@ async function transcribeFile(audioFilePath) {
   return { text, confidence: overallConfidence };
 }
 
-module.exports = { transcribeFile, isConfigured, DEFAULT_WORD_CONFIDENCE_THRESHOLD };
-
+module.exports = { transcribeFile, isConfigured, checkKey, DEFAULT_WORD_CONFIDENCE_THRESHOLD };
