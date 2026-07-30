@@ -59,6 +59,7 @@
       "groq-wrapper.js",
       "deepgram-wrapper.js",
       "rate-limiter.js",
+      "logger.js",
       "validation.js",
       "theme-loader.js",
       "features-store.js",
