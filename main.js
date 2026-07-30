@@ -114,10 +114,40 @@ function loadConfig() {
   };
 }
 
-async function saveConfigAsync(config) {
-  await fsp.mkdir(path.dirname(CONFIG_PATH()), { recursive: true });
+function readRawConfig() {
+  try {
+    if (fs.existsSync(CONFIG_PATH())) {
+      return JSON.parse(fs.readFileSync(CONFIG_PATH(), 'utf8')) || {};
+    }
+  } catch (e) {
+    console.error('[main] Config illisible pendant la fusion, ignorée:', e.message);
+  }
+  return {};
+}
 
-  const toWrite = { audioDevice: config.audioDevice };
+async function writeRawConfig(raw) {
+  await fsp.mkdir(path.dirname(CONFIG_PATH()), { recursive: true });
+  const tmp = CONFIG_PATH() + '.tmp';
+  await fsp.writeFile(tmp, JSON.stringify(raw, null, 2), 'utf8');
+  await fsp.rename(tmp, CONFIG_PATH());
+}
+
+async function saveConfigAsync(config) {
+  // CORRECTIF (dashboard settings) : cette fonction écrivait auparavant un
+  // fichier config.json entièrement neuf à chaque appel. Depuis que les
+  // clés API peuvent être modifiées une par une depuis le tableau de bord
+  // (au lieu du seul écran de setup initial qui envoyait toujours les deux
+  // champs), un champ laissé vide par l'utilisateur (« je ne veux changer
+  // que Deepgram ») effaçait silencieusement la clé Groq déjà enregistrée.
+  // On repart donc de la config existante et on ne touche que les champs
+  // explicitement fournis (chaîne non vide) ; le retrait volontaire d'une
+  // clé passe par l'IPC dédié 'clear-api-key' (voir plus bas).
+  const existingRaw = readRawConfig();
+  const toWrite = {
+    audioDevice: config.audioDevice !== undefined && config.audioDevice !== null
+      ? config.audioDevice
+      : existingRaw.audioDevice,
+  };
 
   if (config.groqApiKey) {
     if (safeStorage.isEncryptionAvailable()) {
@@ -126,7 +156,11 @@ async function saveConfigAsync(config) {
       console.warn('[main] Chiffrement système indisponible : clé Groq stockée en clair.');
       toWrite.groqApiKey = config.groqApiKey;
     }
+  } else {
+    if (existingRaw.groqApiKeyEncrypted) toWrite.groqApiKeyEncrypted = existingRaw.groqApiKeyEncrypted;
+    if (existingRaw.groqApiKey) toWrite.groqApiKey = existingRaw.groqApiKey;
   }
+
   if (config.deepgramApiKey) {
     if (safeStorage.isEncryptionAvailable()) {
       toWrite.deepgramApiKeyEncrypted = safeStorage.encryptString(config.deepgramApiKey).toString('base64');
@@ -134,12 +168,17 @@ async function saveConfigAsync(config) {
       console.warn('[main] Chiffrement système indisponible : clé Deepgram stockée en clair.');
       toWrite.deepgramApiKey = config.deepgramApiKey;
     }
+  } else {
+    if (existingRaw.deepgramApiKeyEncrypted) toWrite.deepgramApiKeyEncrypted = existingRaw.deepgramApiKeyEncrypted;
+    if (existingRaw.deepgramApiKey) toWrite.deepgramApiKey = existingRaw.deepgramApiKey;
   }
-  if (Number.isFinite(config.logBatchInterval)) toWrite.logBatchInterval = config.logBatchInterval;
 
-  const tmp = CONFIG_PATH() + '.tmp';
-  await fsp.writeFile(tmp, JSON.stringify(toWrite, null, 2), 'utf8');
-  await fsp.rename(tmp, CONFIG_PATH());
+  toWrite.logBatchInterval = Number.isFinite(config.logBatchInterval)
+    ? config.logBatchInterval
+    : existingRaw.logBatchInterval;
+  if (!Number.isFinite(toWrite.logBatchInterval)) delete toWrite.logBatchInterval;
+
+  await writeRawConfig(toWrite);
 }
 
 function isFirstRunNeeded() {
@@ -460,6 +499,40 @@ ipcMain.on('audio-pcm-chunk', (_evt, arrayBuffer) => {
 
 ipcMain.handle('save-setup', async (_evt, { audioDevice, groqApiKey, deepgramApiKey }) => {
   await saveConfigAsync({ audioDevice, groqApiKey, deepgramApiKey });
+  // Démarre ou redémarre le pipeline avec la config à jour — que ce soit le
+  // tout premier enregistrement (aucun worker actif) ou une mise à jour des
+  // clés depuis le tableau de bord en cours de session (ex: rotation d'une
+  // clé). Auparavant seul l'écran de setup initial déclenchait startServer().
+  if (worker) {
+    restartServer();
+  } else if (!isFirstRunNeeded()) {
+    startServer();
+  }
+  return true;
+});
+
+// Retrait explicite d'une clé API (bouton « Retirer la clé » du tableau de
+// bord) — distinct d'un champ simplement laissé vide lors d'un
+// enregistrement, qui doit préserver la clé existante (voir saveConfigAsync).
+ipcMain.handle('clear-api-key', async (_evt, { provider }) => {
+  const raw = readRawConfig();
+  if (provider === 'groq') {
+    delete raw.groqApiKey;
+    delete raw.groqApiKeyEncrypted;
+  } else if (provider === 'deepgram') {
+    delete raw.deepgramApiKey;
+    delete raw.deepgramApiKeyEncrypted;
+  } else {
+    throw new Error('Fournisseur de clé API inconnu : ' + provider);
+  }
+  await writeRawConfig(raw);
+  if (provider === 'groq' && worker) {
+    // Sans clé Groq le pipeline ne peut plus transcrire : on l'arrête plutôt
+    // que de le laisser tourner en boucle d'erreurs.
+    stopServerGracefully();
+    serverStatus = 'stopped';
+    refreshTrayMenu();
+  }
   return true;
 });
 
@@ -604,6 +677,7 @@ ipcMain.handle('get-settings', async () => {
     hasGroqKey: !!cfg.groqApiKey,
     hasDeepgramKey: !!cfg.deepgramApiKey,
     audioDevice: cfg.audioDevice || null,
+    needsSetup: isFirstRunNeeded(),
   };
 });
 
@@ -651,18 +725,20 @@ app.whenReady().then(async () => {
   }, PERF_PUSH_MS);
   perfTimer.unref?.();
 
-  if (isFirstRunNeeded()) {
-    const setupWin = createSetupWindow();
-    setupWin.on('closed', () => {
-      if (isFirstRunNeeded()) { app.quit(); return; }
-      createMainWindow();
-      initAutoUpdater();
-      startServer();
-    });
-  } else {
-    createMainWindow();
-    initAutoUpdater();
+  // CORRECTIF (config API sur le tableau de bord) : la fenêtre de setup
+  // séparée (setup.html) n'est plus ouverte automatiquement au premier
+  // lancement. Le tableau de bord se charge toujours en premier ; s'il
+  // manque un micro ou une clé Groq, son panneau « Paramètres » s'ouvre
+  // de lui-même (voir dashboard.html → initApiSettingsPanel) et
+  // 'save-setup' démarre le pipeline dès l'enregistrement. La fonction
+  // createSetupWindow()/l'IPC 'open-setup' restent disponibles pour un
+  // usage manuel éventuel mais ne sont plus appelés au démarrage.
+  createMainWindow();
+  initAutoUpdater();
+  if (!isFirstRunNeeded()) {
     startServer();
+  } else {
+    appendLog('Configuration requise : microphone et/ou clé API Groq manquants. Ouvrez Paramètres dans le tableau de bord.', false);
   }
 });
 
