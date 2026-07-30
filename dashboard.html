@@ -108,6 +108,7 @@
             letter-spacing: -0.02em;
             background: linear-gradient(135deg, #ffffff 30%, var(--text-muted) 100%);
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
@@ -1030,7 +1031,7 @@
                             </div>
                         </div>
 
-                        <div style="display: flex; justify-content: space-between; align-items: center; pt: 1rem; border-top: 1px solid var(--border-subtle); margin-top: 1rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 1rem; border-top: 1px solid var(--border-subtle); margin-top: 1rem;">
                             <span style="font-size: 0.78rem; color: var(--text-dim);">Source: Louis Segond (LSG) & World English Bible</span>
                             <button class="btn btn-secondary" onclick="emergencyStop()" style="font-size: 0.78rem; color: var(--accent-rose);">
                                 🛑 Arrêt d'Urgence
@@ -1094,6 +1095,47 @@
                         <button class="lang-btn active" onclick="setLanguage('fr')">Français (LSG)</button>
                         <button class="lang-btn" onclick="setLanguage('en')">English (WEB)</button>
                         <button class="lang-btn" onclick="setLanguage('es')">Español (RVR)</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Contrôles d'Animation Avancés</span>
+                    </div>
+                    <div style="padding: 1rem;">
+                        <div style="margin-bottom: 1rem;">
+                            <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; font-weight: 600;">Animation de Révélation</label>
+                            <select id="animationSelect" onchange="setAnimation(this.value)" style="width: 100%; padding: 0.6rem; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); background: var(--bg-input); color: var(--text-main); font-family: inherit;">
+                                <option value="cinematicFadeIn">Cinematic Fade</option>
+                                <option value="dramaticZoom">Dramatic Zoom</option>
+                                <option value="elegantSlide">Elegant Slide</option>
+                                <option value="spiritualGlow">Spiritual Glow</option>
+                                <option value="holyLight">Holy Light</option>
+                                <option value="divinePresence">Divine Presence</option>
+                            </select>
+                        </div>
+                        <div style="margin-bottom: 1rem;">
+                            <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; font-weight: 600;">Ambiance (Particules)</label>
+                            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;">
+                                <button class="btn btn-secondary mood-btn" onclick="setMood('joy')" data-mood="joy">Joie</button>
+                                <button class="btn btn-secondary mood-btn" onclick="setMood('peace')" data-mood="peace">Paix</button>
+                                <button class="btn btn-secondary mood-btn" onclick="setMood('worship')" data-mood="worship">Adoration</button>
+                                <button class="btn btn-secondary mood-btn" onclick="setMood('repentance')" data-mood="repentance">Repentance</button>
+                                <button class="btn btn-secondary mood-btn" onclick="setMood('celebration')" data-mood="celebration">Fête</button>
+                                <button class="btn btn-secondary mood-btn" onclick="setMood('reflection')" data-mood="reflection">Réflexion</button>
+                                <button class="btn btn-secondary mood-btn" onclick="setMood('inspiration')" data-mood="inspiration">Inspiration</button>
+                                <button class="btn btn-secondary mood-btn" onclick="setMood('solemnity')" data-mood="solemnity">Solennité</button>
+                            </div>
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; font-weight: 600;">Durée d'Animation (ms)</label>
+                            <input type="range" id="animationDuration" min="500" max="3000" value="1200" step="100" onchange="setAnimationDuration(this.value)" style="width: 100%;">
+                            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-dim); margin-top: 0.25rem;">
+                                <span>500ms</span>
+                                <span id="durationValue">1200ms</span>
+                                <span>3000ms</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -1597,12 +1639,39 @@
             }
             state.activeLanguage = lang.toUpperCase();
             updateDashboard();
+        }
 
-            document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
-            if (event && event.target) event.target.classList.add('active');
+        function setAnimation(animation) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ 
+                    action: 'applyAnimation', 
+                    animation: animation,
+                    options: { duration: parseInt(document.getElementById('animationDuration').value) }
+                }));
+            }
+            addActivity(`Animation changée: ${animation}`, 'info');
+            showToast(`Animation: ${animation}`, 'success');
+        }
 
-            addActivity(`Langue définie sur ${lang.toUpperCase()}`, 'success');
-            showToast(`Langue changée : ${lang.toUpperCase()}`, 'success');
+        function setMood(mood) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action: 'setMood', mood: mood }));
+            }
+            
+            // Update active button state
+            document.querySelectorAll('.mood-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.mood === mood) {
+                    btn.classList.add('active');
+                }
+            });
+            
+            addActivity(`Ambiance changée: ${mood}`, 'info');
+            showToast(`Ambiance: ${mood}`, 'success');
+        }
+
+        function setAnimationDuration(duration) {
+            document.getElementById('durationValue').textContent = `${duration}ms`;
         }
 
         function clearTranscript() {
