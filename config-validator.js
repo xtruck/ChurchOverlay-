@@ -36,7 +36,7 @@ const ENV_SCHEMA = {
   PORT: {
     type: 'number',
     required: false,
-    default: 3000,
+    default: 8765,
     validate: (value) => value > 0 && value < 65536,
     errorMessage: 'PORT doit être un nombre entre 1 et 65535'
   },
@@ -50,9 +50,9 @@ const ENV_SCHEMA = {
   WS_HOST: {
     type: 'string',
     required: false,
-    default: '0.0.0.0',
+    default: '127.0.0.1',
     validate: (value) => typeof value === 'string' && value.trim().length > 0,
-    errorMessage: 'WS_HOST doit être une adresse non vide (ex: 0.0.0.0)'
+    errorMessage: 'WS_HOST doit être une adresse non vide (ex: 127.0.0.1)'
   },
   MAX_CONNECTIONS: {
     type: 'number',
