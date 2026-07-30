@@ -13,11 +13,53 @@ const { GoogleGenAI } = require('@google/genai');
 
 const GROQ_ENDPOINT_TRANSCRIBE = 'https://api.groq.com/openai/v1/audio/transcriptions';
 const GROQ_ENDPOINT_CHAT = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_ENDPOINT_MODELS = 'https://api.groq.com/openai/v1/models';
 const GROQ_MODEL_TRANSCRIBE = 'whisper-large-v3';
 const GROQ_MODEL_CHAT = 'llama-3.1-8b-instant';
 const FALLBACK_TIMEOUT_MS = 5000;
+const CHECK_KEY_TIMEOUT_MS = 5000;
 
 const WHISPER_PROMPT = buildWhisperPrompt();
+
+/**
+ * Indique si une clé Groq est configurée (utilisé par server.js).
+ * @returns {boolean}
+ */
+function isConfigured() {
+  return !!process.env.GROQ_API_KEY;
+}
+
+/**
+ * Vérification légère de la validité de la clé Groq, sans frais de
+ * transcription : appelle la liste des modèles disponibles. Utilisé par le
+ * bouton "Tester avant le culte" du tableau de bord (checklist mise en
+ * production, point 9).
+ * @returns {Promise<{configured: boolean, ok: boolean, error: string|null}>}
+ */
+async function checkKey(timeoutMs = CHECK_KEY_TIMEOUT_MS) {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    return { configured: false, ok: false, error: 'GROQ_API_KEY non défini.' };
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(GROQ_ENDPOINT_MODELS, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      return { configured: true, ok: false, error: `Groq a répondu ${response.status}` };
+    }
+    return { configured: true, ok: true, error: null };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    const message = err && err.name === 'AbortError' ? `Timeout (${timeoutMs}ms)` : (err && err.message) || 'Erreur inconnue';
+    return { configured: true, ok: false, error: message };
+  }
+}
 
 /**
  * Envoie le fichier audio à l'API Groq et retourne { text }.
@@ -235,4 +277,4 @@ async function quickCompletion(prompt, options = {}) {
   return result.text;
 }
 
-module.exports = { transcribeFile, transcribeWithFallback, chatCompletion, quickCompletion };
+module.exports = { transcribeFile, transcribeWithFallback, chatCompletion, quickCompletion, isConfigured, checkKey };
