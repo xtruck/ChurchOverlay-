@@ -67,6 +67,19 @@ const ENV_SCHEMA = {
     default: 60,
     validate: (value) => value > 0 && value <= 10000,
     errorMessage: 'MAX_MESSAGES_PER_MINUTE doit être un nombre entre 1 et 10000'
+  },
+  // CORRECTIF (checklist mise en production, point 1) : jeton partagé exigé
+  // pour ouvrir une connexion WebSocket (voir server.js, wss.on('connection')).
+  // Pas de contrainte de format : c'est un secret opaque, comparé tel quel.
+  // Pas de valeur par défaut : si absent, l'authentification WS reste
+  // désactivée (comportement historique, avec avertissement — voir
+  // validateSystemConfig ci-dessous).
+  WS_AUTH_TOKEN: {
+    type: 'string',
+    required: false,
+    default: undefined,
+    validate: (value) => typeof value === 'string' && value.trim().length > 0,
+    errorMessage: 'WS_AUTH_TOKEN ne doit pas être une chaîne vide ou composée uniquement d\'espaces'
   }
 };
 
@@ -177,6 +190,16 @@ async function validateSystemConfig() {
     warnings.push(
       "DEEPGRAM_API_KEY n'est pas défini (optionnel) : pas de fournisseur de " +
       "repli si Groq échoue ou est indisponible."
+    );
+  }
+
+  // 2bis. Authentification WebSocket (checklist mise en production, point 1)
+  if (!process.env.WS_AUTH_TOKEN) {
+    warnings.push(
+      "WS_AUTH_TOKEN n'est pas défini : le serveur WebSocket accepte toute " +
+      "connexion sans authentification. Sans risque tant que WS_HOST=127.0.0.1 " +
+      "(par défaut), mais à définir avant d'exposer le serveur au-delà de cet " +
+      "ordinateur (WS_HOST=0.0.0.0 ou équivalent) — voir README.md."
     );
   }
 
