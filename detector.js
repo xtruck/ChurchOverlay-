@@ -77,6 +77,13 @@ const CHAPITRE_VARIANTS = [
 const VERSET_VARIANTS = [
   'verset', 'versets', 'vecc', 'vece', 'vsc', 'vc', 'veille',
   'versai', 'verse', 'verce', 'vercet', 'versait',
+  // CORRECTIF (audit — Ole, 2026-07-30) : "versus" reproduit en conditions
+  // réelles — la reconnaissance vocale (Web Speech API comme un simple
+  // dictaphone) transforme parfois "verset" en "versus" ("Jean 1 versus 1").
+  // Sans cette entrée, le mot "verset" n'était jamais reconnu : le chapitre
+  // entier de Jean 1 s'affichait au lieu du seul verset 1, la référence
+  // retombant sur le format le plus faible ("livre + chapitre" seul).
+  'versus',
 ];
 
 function correctPhoneticNoise(text) {
