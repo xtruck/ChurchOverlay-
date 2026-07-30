@@ -722,6 +722,94 @@
         ::-webkit-scrollbar-track { background: var(--bg-base); }
         ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.25); }
+        /* --- Panneau Clés API & Microphone (section Paramètres) ------------ */
+        .setup-banner {
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.35);
+            border-radius: var(--radius-md);
+            padding: 0.9rem 1.1rem;
+            margin-bottom: 1rem;
+            color: var(--text-main);
+        }
+
+        .form-group {
+            margin-bottom: 1.35rem;
+        }
+
+        .form-group label {
+            display: flex;
+            align-items: center;
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: var(--text-main);
+            margin-bottom: 0.5rem;
+        }
+
+        .input-row {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .form-group select,
+        .form-group input[type="password"],
+        .form-group input[type="text"] {
+            flex: 1;
+            width: 100%;
+            background: var(--bg-input);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-main);
+            border-radius: var(--radius-sm);
+            padding: 0.65rem 0.85rem;
+            font-size: 0.85rem;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.2s ease;
+        }
+
+        .form-group select:focus,
+        .form-group input:focus {
+            border-color: var(--border-active);
+        }
+
+        .field-hint {
+            color: var(--text-dim);
+            font-size: 0.78rem;
+            margin-top: 0.5rem;
+            line-height: 1.5;
+        }
+
+        .field-hint a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .field-hint a:hover {
+            text-decoration: underline;
+        }
+
+        .link-btn {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            font-size: 0.78rem;
+            text-decoration: underline;
+            cursor: pointer;
+            padding: 0;
+            margin-left: 0.75rem;
+            font-family: inherit;
+        }
+
+        .link-btn:hover {
+            color: var(--accent-rose);
+        }
+
+        #apiSettingsCard.needs-setup {
+            border-color: rgba(245, 158, 11, 0.4);
+            box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.15);
+        }
     </style>
 </head>
 <body>
@@ -1087,6 +1175,82 @@
 
             <!-- Settings Section -->
             <section id="settings" class="section" style="display: none;">
+                <div id="setupBanner" class="setup-banner" style="display: none;">
+                    <span style="font-size:1.3rem;">⚠️</span>
+                    <div>
+                        <strong>Configuration requise pour démarrer</strong>
+                        <div style="font-size:0.8rem; color:var(--text-muted); margin-top:2px;">
+                            Choisissez un microphone et renseignez au moins la clé API Groq ci-dessous.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card" id="apiSettingsCard" style="margin-bottom: 1.25rem;">
+                    <div class="card-header">
+                        <span class="card-title">Clés API & Microphone</span>
+                        <div id="setupRequiredBadge" class="status-badge warning" style="display:none;">Configuration requise</div>
+                    </div>
+
+                    <!-- Affiché uniquement si la page est ouverte hors de l'app Electron
+                         (ex: mode "serveur seul" dans un navigateur) : window.churchOverlay
+                         n'existe alors pas, le pont IPC n'étant fourni que par preload.js. -->
+                    <div id="apiSettingsUnavailable" style="display:none; color: var(--text-muted); font-size:0.82rem; line-height:1.6;">
+                        La configuration des clés API n'est possible que depuis l'application de bureau
+                        ChurchOverlay (elle passe par le pont sécurisé Electron). En mode « serveur seul »
+                        dans un navigateur, définissez <code>GROQ_API_KEY</code> / <code>DEEPGRAM_API_KEY</code>
+                        dans un fichier <code>.env.local</code> à la racine de l'application.
+                    </div>
+
+                    <form id="apiSettingsForm" style="display:none;">
+                        <div class="form-group">
+                            <label for="settingsMicSelect">🎤 Microphone</label>
+                            <div class="input-row">
+                                <select id="settingsMicSelect"><option value="">Recherche des microphones…</option></select>
+                                <button type="button" class="btn btn-secondary" id="settingsBtnRefreshMic">🔄 Actualiser</button>
+                            </div>
+                            <div class="field-hint" id="settingsMicStatus"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="settingsGroqKey">
+                                🔑 Clé API Groq
+                                <span class="status-badge" id="groqKeyBadge" style="margin-left:8px;"></span>
+                            </label>
+                            <div class="input-row">
+                                <input type="password" id="settingsGroqKey" placeholder="gsk_… (laisser vide pour conserver la clé actuelle)" autocomplete="off" />
+                                <button type="button" class="btn btn-secondary btn-toggle-pass" data-target="settingsGroqKey">Afficher</button>
+                            </div>
+                            <div class="field-hint">
+                                Clé gratuite sur <a href="#" class="settings-copy-link" data-url="https://console.groq.com/keys">console.groq.com/keys</a>.
+                                <button type="button" class="link-btn" id="settingsClearGroq">Retirer la clé</button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="settingsDeepgramKey">
+                                🔐 Clé API Deepgram <span style="color:var(--text-dim); font-weight:400;">(optionnel, secours)</span>
+                                <span class="status-badge" id="deepgramKeyBadge" style="margin-left:8px;"></span>
+                            </label>
+                            <div class="input-row">
+                                <input type="password" id="settingsDeepgramKey" placeholder="Laisser vide pour conserver la clé actuelle" autocomplete="off" />
+                                <button type="button" class="btn btn-secondary btn-toggle-pass" data-target="settingsDeepgramKey">Afficher</button>
+                            </div>
+                            <div class="field-hint">
+                                Secours automatique si Groq ne répond pas. <a href="#" class="settings-copy-link" data-url="https://console.deepgram.com">console.deepgram.com</a>.
+                                <button type="button" class="link-btn" id="settingsClearDeepgram">Retirer la clé</button>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary" id="settingsBtnSave">💾 Enregistrer</button>
+                        <span class="field-hint" id="settingsSaveStatus" style="margin-left:10px;"></span>
+                    </form>
+
+                    <div class="field-hint" style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border-subtle);">
+                        🔒 Les clés sont chiffrées sur cet ordinateur (Electron safeStorage) et ne sont jamais
+                        renvoyées en clair à cet écran — un champ laissé vide conserve la clé déjà enregistrée.
+                    </div>
+                </div>
+
                 <div class="card">
                     <div class="card-header">
                         <span class="card-title">Informations Système & Connexion</span>
@@ -1697,6 +1861,212 @@
                 feed.removeChild(feed.lastChild);
             }
         }
+
+        // ---------------------------------------------------------------
+        // Paramètres — Clés API & Microphone
+        // ---------------------------------------------------------------
+        // window.churchOverlay n'existe que dans la fenêtre Electron (exposé
+        // par preload.js). Si ce fichier est ouvert directement dans un
+        // navigateur (mode "serveur seul"), le panneau se désactive proprement
+        // au lieu d'échouer silencieusement sur des appels IPC inexistants.
+        (function initApiSettingsPanel() {
+            const els = {
+                unavailable: document.getElementById('apiSettingsUnavailable'),
+                form: document.getElementById('apiSettingsForm'),
+                card: document.getElementById('apiSettingsCard'),
+                banner: document.getElementById('setupBanner'),
+                requiredBadge: document.getElementById('setupRequiredBadge'),
+                micSelect: document.getElementById('settingsMicSelect'),
+                micStatus: document.getElementById('settingsMicStatus'),
+                btnRefreshMic: document.getElementById('settingsBtnRefreshMic'),
+                groqInput: document.getElementById('settingsGroqKey'),
+                groqBadge: document.getElementById('groqKeyBadge'),
+                deepgramInput: document.getElementById('settingsDeepgramKey'),
+                deepgramBadge: document.getElementById('deepgramKeyBadge'),
+                btnSave: document.getElementById('settingsBtnSave'),
+                saveStatus: document.getElementById('settingsSaveStatus'),
+                btnClearGroq: document.getElementById('settingsClearGroq'),
+                btnClearDeepgram: document.getElementById('settingsClearDeepgram'),
+            };
+
+            if (!els.form) return; // section absente de ce build, rien à faire
+
+            if (!window.churchOverlay) {
+                if (els.unavailable) els.unavailable.style.display = 'block';
+                return;
+            }
+
+            function setBadge(el, configured) {
+                if (!el) return;
+                el.style.display = 'inline-block';
+                el.textContent = configured ? '✓ Configurée' : 'Non configurée';
+                el.className = 'status-badge ' + (configured ? 'success' : 'warning');
+            }
+
+            async function loadMicrophones(preselectId) {
+                els.micStatus.className = 'field-hint';
+                els.micStatus.textContent = '';
+                els.micSelect.innerHTML = '<option value="">🔍 Recherche des microphones…</option>';
+                els.btnRefreshMic.disabled = true;
+
+                let devices = [];
+                try {
+                    const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    tempStream.getTracks().forEach((t) => t.stop());
+                    const allDevices = await navigator.mediaDevices.enumerateDevices();
+                    devices = allDevices
+                        .filter((d) => d.kind === 'audioinput')
+                        .map((d) => ({ id: d.deviceId, label: d.label || 'Microphone (nom indisponible)' }));
+                } catch (err) {
+                    els.btnRefreshMic.disabled = false;
+                    els.micSelect.innerHTML = '<option value="">❌ Accès micro refusé</option>';
+                    els.micStatus.className = 'field-hint';
+                    els.micStatus.style.color = 'var(--accent-rose)';
+                    const isPermissionError = err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError');
+                    els.micStatus.textContent = isPermissionError
+                        ? '⚠️ Autorisation micro refusée (Windows → Confidentialité → Microphone). Cliquez sur Actualiser après avoir autorisé l\'accès.'
+                        : `⚠️ Erreur : ${err && err.message ? err.message : err}`;
+                    return;
+                }
+
+                els.btnRefreshMic.disabled = false;
+                els.micSelect.innerHTML = '';
+
+                if (devices.length === 0) {
+                    els.micSelect.innerHTML = '<option value="">❌ Aucun microphone détecté</option>';
+                    els.micStatus.style.color = 'var(--accent-rose)';
+                    els.micStatus.textContent = "⚠️ Vérifiez qu'un micro est branché, puis cliquez sur Actualiser.";
+                    return;
+                }
+
+                devices.forEach(({ id, label }) => {
+                    const opt = document.createElement('option');
+                    opt.value = id;
+                    opt.textContent = label;
+                    els.micSelect.appendChild(opt);
+                });
+
+                if (preselectId && devices.some((d) => d.id === preselectId)) {
+                    els.micSelect.value = preselectId;
+                }
+
+                els.micStatus.style.color = 'var(--accent-emerald)';
+                els.micStatus.textContent = `✅ ${devices.length} microphone(s) détecté(s)`;
+            }
+
+            async function refreshSettingsUi() {
+                const settings = await window.churchOverlay.getSettings();
+                setBadge(els.groqBadge, settings.hasGroqKey);
+                setBadge(els.deepgramBadge, settings.hasDeepgramKey);
+
+                const needsSetup = !!settings.needsSetup;
+                els.card.classList.toggle('needs-setup', needsSetup);
+                els.requiredBadge.style.display = needsSetup ? 'inline-block' : 'none';
+                els.banner.style.display = needsSetup ? 'flex' : 'none';
+
+                await loadMicrophones(settings.audioDevice);
+
+                // Au premier lancement (ou tant qu'il manque le micro/la clé
+                // Groq), on ouvre directement l'onglet Paramètres pour que la
+                // configuration soit visible sans action supplémentaire —
+                // qu'elle soit ensuite complétée manuellement par la personne
+                // ou déjà pré-remplie automatiquement par une config existante.
+                if (needsSetup) {
+                    const settingsNav = document.querySelector('.nav-item[data-section="settings"]');
+                    if (settingsNav) settingsNav.click();
+                }
+
+                return settings;
+            }
+
+            els.form.style.display = 'block';
+
+            els.btnRefreshMic.addEventListener('click', () => loadMicrophones(els.micSelect.value));
+
+            document.querySelectorAll('.settings-copy-link').forEach((link) => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const url = link.dataset.url;
+                    navigator.clipboard.writeText(url).then(() => {
+                        const original = link.textContent;
+                        link.textContent = 'Lien copié ✓';
+                        setTimeout(() => { link.textContent = original; }, 2000);
+                    });
+                });
+            });
+
+            document.querySelectorAll('.btn-toggle-pass').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const target = document.getElementById(btn.dataset.target);
+                    if (!target) return;
+                    const show = target.type === 'password';
+                    target.type = show ? 'text' : 'password';
+                    btn.textContent = show ? 'Masquer' : 'Afficher';
+                });
+            });
+
+            async function clearKey(provider, inputEl, badgeEl) {
+                const label = provider === 'groq' ? 'Groq' : 'Deepgram';
+                if (!confirm(`Retirer la clé API ${label} enregistrée ?`)) return;
+                try {
+                    await window.churchOverlay.clearApiKey(provider);
+                    inputEl.value = '';
+                    setBadge(badgeEl, false);
+                    showToast(`Clé ${label} retirée`, 'info');
+                    if (provider === 'groq') await refreshSettingsUi();
+                } catch (e) {
+                    showToast(`Erreur lors du retrait de la clé ${label}`, 'error');
+                }
+            }
+
+            if (els.btnClearGroq) {
+                els.btnClearGroq.addEventListener('click', () => clearKey('groq', els.groqInput, els.groqBadge));
+            }
+            if (els.btnClearDeepgram) {
+                els.btnClearDeepgram.addEventListener('click', () => clearKey('deepgram', els.deepgramInput, els.deepgramBadge));
+            }
+
+            els.form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                const mic = els.micSelect.value;
+                if (!mic) {
+                    els.saveStatus.style.color = 'var(--accent-rose)';
+                    els.saveStatus.textContent = '⚠️ Sélectionnez un microphone avant d\'enregistrer.';
+                    return;
+                }
+
+                els.btnSave.disabled = true;
+                const originalLabel = els.btnSave.textContent;
+                els.btnSave.textContent = '⏳ Enregistrement…';
+                els.saveStatus.textContent = '';
+
+                try {
+                    // Champs laissés vides = conserver la clé déjà enregistrée
+                    // (voir saveConfigAsync côté main.js) ; utiliser « Retirer
+                    // la clé » pour un retrait volontaire.
+                    await window.churchOverlay.saveSetup(
+                        mic,
+                        els.groqInput.value.trim(),
+                        els.deepgramInput.value.trim()
+                    );
+                    els.groqInput.value = '';
+                    els.deepgramInput.value = '';
+                    els.saveStatus.style.color = 'var(--accent-emerald)';
+                    els.saveStatus.textContent = '✅ Configuration enregistrée — pipeline (re)démarré.';
+                    showToast('Configuration API enregistrée', 'success');
+                    await refreshSettingsUi();
+                } catch (err) {
+                    els.saveStatus.style.color = 'var(--accent-rose)';
+                    els.saveStatus.textContent = '❌ Erreur : ' + (err && err.message ? err.message : err);
+                } finally {
+                    els.btnSave.disabled = false;
+                    els.btnSave.textContent = originalLabel;
+                }
+            });
+
+            refreshSettingsUi();
+        })();
     </script>
 </body>
 </html>
