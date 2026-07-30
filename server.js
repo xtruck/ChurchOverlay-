@@ -145,36 +145,35 @@ try {
   console.warn('[server] AIThemeGenerator disabled:', e.message);
 }
 
+let aiEnricher = null;
+try {
+  aiEnricher = require('./ai-enricher');
+  console.log('[server] ✓ AI Enricher loaded (sermon summary, translation, cross-refs, theme detection)');
+} catch (e) {
+  aiLoadErrors.push('AIEnricher: ' + e.message);
+  console.warn('[server] AIEnricher disabled:', e.message);
+}
+
 if (aiLoadErrors.length > 0) {
   console.log('[server] ⚠ ' + aiLoadErrors.length + ' AI feature(s) in limited mode.');
 }
 
 // ---------------------------------------------------------------------------
-// WebSocket server
+// HTTP & WebSocket server
 // ---------------------------------------------------------------------------
+const express = require('express');
+const http = require('http');
 const WebSocket = require('ws');
 const { createRateLimiter } = require('./rate-limiter');
 
-// CORRECTIF : le port était figé en dur (8765), alors que config-validator.js
-// valide déjà PORT (avec repli sur 8765) sans jamais être branché nulle
-// part — dead code silencieux. Résultat concret : impossible de faire
-// tourner deux instances (ex. tests d'intégration sur un port dédié) et
-// PORT défini dans l'environnement était ignoré sans avertissement.
 const portValidation = configValidator.validateEnvVar('PORT', process.env.PORT);
 if (!portValidation.valid) {
-  console.warn(`[server] ${portValidation.error} — utilisation du port par défaut 8765.`);
+  console.warn(`[server] ${portValidation.error} — utilisation du port par défaut 3000.`);
 }
-const SERVER_PORT = portValidation.valid ? portValidation.parsedValue : 8765;
+const SERVER_PORT = portValidation.valid ? portValidation.parsedValue : 3000;
 
-// CORRECTIF (audit) : le serveur ne précisait jamais de `host` à
-// WebSocket.Server, qui délègue à http.Server.listen(port) — sous Node.js,
-// omettre `host` lie le serveur sur TOUTES les interfaces réseau (0.0.0.0),
-// pas seulement en local. N'importe quel appareil du même réseau Wi-Fi/LAN
-// pouvait donc se connecter au flux WebSocket pendant un culte, sans la
-// moindre authentification. WS_HOST était déjà documenté dans .env.example
-// ("127.0.0.1 pour la sécurité") mais jamais lu par le code — corrigé ici.
 const hostValidation = configValidator.validateEnvVar('WS_HOST', process.env.WS_HOST);
-const WS_HOST = hostValidation.valid ? hostValidation.parsedValue : '127.0.0.1';
+const WS_HOST = hostValidation.valid ? hostValidation.parsedValue : '0.0.0.0';
 
 const maxConnValidation = configValidator.validateEnvVar('MAX_CONNECTIONS', process.env.MAX_CONNECTIONS);
 const MAX_CONNECTIONS = maxConnValidation.valid ? maxConnValidation.parsedValue : 10;
@@ -182,34 +181,44 @@ const MAX_CONNECTIONS = maxConnValidation.valid ? maxConnValidation.parsedValue 
 const maxMsgValidation = configValidator.validateEnvVar('MAX_MESSAGES_PER_MINUTE', process.env.MAX_MESSAGES_PER_MINUTE);
 const MAX_MESSAGES_PER_MINUTE = maxMsgValidation.valid ? maxMsgValidation.parsedValue : 60;
 
-// CORRECTIF (audit) : rate-limiter.js existait déjà (avec ses propres tests)
-// mais n'était require() nulle part — code mort. Branché ici pour appliquer
-// une vraie limite de connexions/messages par IP, au lieu de se reposer
-// uniquement sur le rate limiter global de détection de versets plus bas
-// (qui protège contre l'emballement de la détection, pas contre un client
-// distant malveillant).
 const connRateLimiter = createRateLimiter({
   maxConnections: MAX_CONNECTIONS,
   maxMessagesPerMinute: MAX_MESSAGES_PER_MINUTE,
 });
 
-const wss = new WebSocket.Server({ port: SERVER_PORT, host: WS_HOST });
+const app = express();
 
-// CORRECTIF : aucun listener 'error' sur wss. Si le port est déjà occupé
-// (EADDRINUSE — ex. une instance précédente pas encore libérée après un
-// redémarrage, ou un autre logiciel sur la machine), l'EventEmitter lève
-// l'erreur, qui remonte comme uncaughtException. Le handler global en fin
-// de fichier l'attrape mais ne fait que logguer/nettoyer : le worker reste
-// vivant, jamais de message 'status: running' n'est envoyé à main.js, et
-// l'utilisateur reste bloqué sur « démarrage... » indéfiniment sans le
-// moindre message d'erreur exploitable. On échoue maintenant vite et
-// explicitement : alerte à main.js puis arrêt du worker, ce qui déclenche
-// le redémarrage automatique (et, en cas de blocage persistant, l'arrêt
-// après plusieurs échecs rapprochés) déjà géré côté main.js.
-wss.on('error', (err) => {
+// Serve static assets from project root
+app.use(express.static(APP_ROOT));
+
+// HTML routes
+app.get('/', (req, res) => {
+  res.sendFile(path.join(APP_ROOT, 'dashboard.html'));
+});
+app.get('/dashboard', (req, res) => {
+  res.sendFile(path.join(APP_ROOT, 'dashboard.html'));
+});
+app.get('/overlay', (req, res) => {
+  res.sendFile(path.join(APP_ROOT, 'overlay.html'));
+});
+app.get('/setup', (req, res) => {
+  res.sendFile(path.join(APP_ROOT, 'setup.html'));
+});
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', port: SERVER_PORT, service: 'ChurchOverlay' });
+});
+
+const httpServer = http.createServer(app);
+const wss = new WebSocket.Server({ server: httpServer });
+
+httpServer.listen(SERVER_PORT, WS_HOST, () => {
+  console.log(`[server] Serveur HTTP & WebSocket démarré sur http://${WS_HOST}:${SERVER_PORT}`);
+});
+
+httpServer.on('error', (err) => {
   const reason = err && err.code === 'EADDRINUSE'
     ? `Le port ${SERVER_PORT} est déjà utilisé par une autre application.`
-    : `Erreur du serveur WebSocket: ${err && err.message}`;
+    : `Erreur du serveur HTTP/WebSocket: ${err && err.message}`;
   console.error('[server] ' + reason);
   if (parentPort) {
     parentPort.postMessage({
@@ -695,18 +704,10 @@ async function handleVoiceCommand(command, originalText) {
 // WebSocket handlers
 // ===========================================================================
 wss.on('connection', (ws, req) => {
-  // CORRECTIF (audit) : aucune vérification d'origine à la connexion.
-  // Le client attendu est une fenêtre Electron chargée via file:// (l'app
-  // elle-même) ou OBS Browser Source, qui n'envoient pas d'en-tête Origin
-  // "http(s)://" — contrairement à une page web ouverte dans un navigateur
-  // normal. On rejette donc toute connexion annonçant une origine
-  // http(s)://, ce qui bloque le détournement de WebSocket inter-site
-  // (CSWH) depuis une page malveillante ouverte sur la même machine/réseau.
+  // Allow Web clients, OBS Browser Sources, and local/Electron windows
   const origin = req && req.headers && req.headers.origin;
-  if (origin && /^https?:\/\//i.test(origin)) {
-    warn(`Connexion refusée — origine non autorisée : ${origin}`);
-    ws.close(1008, 'Origine non autorisée');
-    return;
+  if (origin) {
+    log(`Connexion WebSocket acceptée depuis l'origine : ${origin}`);
   }
 
   const connCheck = connRateLimiter.checkConnection(ws);
@@ -760,6 +761,17 @@ wss.on('connection', (ws, req) => {
       } else {
         sanitized[k] = msg[k];
       }
+    }
+
+    // ── Speech or audio transcript input ──
+    if (sanitized.action === 'transcript') {
+      const text = String(sanitized.text || '').trim();
+      if (text) {
+        log(`WebSocket transcript received: "${text.substring(0, 80)}"`);
+        broadcast({ action: 'transcript', text, timestamp: Date.now(), source: sanitized.source || 'browser' });
+        await processTranscript(text);
+      }
+      return;
     }
 
     // ── Manual verse display ──
@@ -915,8 +927,67 @@ wss.on('connection', (ws, req) => {
         semanticDetector: semanticDetector ? semanticDetector.getStats() : null,
         corrector: corrector ? corrector.getStats() : null,
         plugins: plugins ? plugins.metadata : null,
+        aiEnricher: !!aiEnricher,
         loadErrors: aiLoadErrors,
       }));
+      return;
+    }
+
+    // ── AI Live Summary ──
+    if (sanitized.action === 'getLiveSummary') {
+      if (!aiEnricher) {
+        ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
+        return;
+      }
+      const fullTranscript = recentTranscripts.join(' ');
+      const summary = await aiEnricher.generateLiveSummary(fullTranscript);
+      ws.send(JSON.stringify({ action: 'liveSummary', summary, timestamp: Date.now() }));
+      return;
+    }
+
+    // ── AI Sermon Theme ──
+    if (sanitized.action === 'getSermonTheme') {
+      if (!aiEnricher) {
+        ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
+        return;
+      }
+      const fullTranscript = recentTranscripts.join(' ');
+      const themeData = await aiEnricher.detectSermonTheme(fullTranscript);
+      ws.send(JSON.stringify({ action: 'sermonTheme', ...themeData, timestamp: Date.now() }));
+      return;
+    }
+
+    // ── AI Post-Service Recap ──
+    if (sanitized.action === 'getPostServiceRecap') {
+      if (!aiEnricher) {
+        ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
+        return;
+      }
+      const fullTranscript = recentTranscripts.join(' ');
+      const recap = await aiEnricher.generatePostServiceRecap(fullTranscript, verseHistory);
+      ws.send(JSON.stringify({ action: 'postServiceRecap', recap, timestamp: Date.now() }));
+      return;
+    }
+
+    // ── AI Cross References ──
+    if (sanitized.action === 'getCrossReferences') {
+      if (!aiEnricher) {
+        ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
+        return;
+      }
+      const refs = await aiEnricher.findCrossReferences(sanitized.reference || '', sanitized.text || '');
+      ws.send(JSON.stringify({ action: 'crossReferences', reference: sanitized.reference, results: refs }));
+      return;
+    }
+
+    // ── AI Live Translation ──
+    if (sanitized.action === 'translateText') {
+      if (!aiEnricher) {
+        ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
+        return;
+      }
+      const translation = await aiEnricher.translateSegment(sanitized.text || '', sanitized.targetLang || 'en');
+      ws.send(JSON.stringify({ action: 'textTranslated', original: sanitized.text, targetLang: sanitized.targetLang || 'en', translation }));
       return;
     }
 
