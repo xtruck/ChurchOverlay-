@@ -14,11 +14,11 @@
     "verseDurationMs": 120000
   },
   "ai": {
-    "themeDetection": { "enabled": false, "intervalSec": 60 },
-    "liveTranslation": { "enabled": false, "targetLangs": ["en", "es"] },
-    "sermonSummary": { "enabled": false, "intervalMin": 5 },
-    "postServiceRecap": { "enabled": false, "exportFormats": ["pdf", "png"] },
-    "crossReferences": { "enabled": false, "maxRefs": 3 }
+    "themeDetection": { "enabled": true, "intervalSec": 60 },
+    "liveTranslation": { "enabled": true, "targetLangs": ["en", "es"] },
+    "sermonSummary": { "enabled": true, "intervalMin": 5 },
+    "postServiceRecap": { "enabled": true, "exportFormats": ["pdf", "png"] },
+    "crossReferences": { "enabled": true, "maxRefs": 3 }
   },
   "broadcast": {
     "multiScene": { "enabled": false, "obsWebsocketUrl": "ws://localhost:4455", "password": "", "gating": { "enabled": false, "liveSceneNames": [], "requireStreamingOrRecording": false } },
