@@ -35,6 +35,23 @@ const COMMANDS = [
     extract: () => ({ action: 'hideVerse' }),
   },
 
+  // --- RECALL LAST VERSE ---
+  // AJOUT (demande initiale, section 9 — jamais construite jusqu'ici) :
+  // permet à un prédicateur de redemander l'affichage du DERNIER verset
+  // pertinent sans le reciter, ex. après avoir enchaîné sur autre chose.
+  // Volontairement distinct de showVerse (qui exige une référence explicite
+  // dans la phrase) : ici aucune référence n'est demandée, donc le handler
+  // côté server.js doit puiser dans lastDetectedVerse/verseHistory.
+  {
+    id: 'recallLastVerse',
+    patterns: [
+      /(?:ramene|reviens|remets|reaffiche)[- ]?(?:moi|nous)?.{0,15}(?:sur\s+|au\s+|le\s+)?verset/i,
+      /affiche[- ]?(?:le\s+)?(?:encore|a\s+nouveau|de\s+nouveau)/i,
+      /(?:remontre|montre[- ]?(?:moi|nous)?\s+encore).{0,10}verset/i,
+    ],
+    extract: () => ({ action: 'recallLastVerse' }),
+  },
+
   // --- READING MODE ---
   // CORRECTIF : nextChapter est désormais vérifié AVANT nextVerse, et les
   // motifs génériques /(?:next|suivant)/i et /(?:previous|précédent)/i ont
@@ -195,7 +212,14 @@ const COMMANDS = [
  * Returns command object or null.
  */
 function detectCommand(text) {
-  const normalized = text.toLowerCase().normalize('NFD').replace(/\u0300-\u036f/g, '');
+  // CORRECTIF (audit round 6) : le regex `/\u0300-\u036f/g` (sans crochets)
+  // ne supprimait en réalité AUCUN accent — un tiret hors classe de
+  // caractères est un caractère littéral, donc cette expression cherchait
+  // la séquence littérale improbable "\u0300-\u036f" au lieu de la plage de
+  // marques diacritiques combinantes. Résultat : "Ramène" décomposé en NFD
+  // restait "rame" + accent combinant + "ne" au lieu de "ramene", faisant
+  // échouer silencieusement tout motif écrit sans accent (et inversement).
+  const normalized = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
   for (const cmd of COMMANDS) {
     for (const pattern of cmd.patterns) {
