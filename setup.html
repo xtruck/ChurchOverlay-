@@ -1,1285 +1,504 @@
-/**
- * ============================================================================
- * server.js — Pipeline audio → transcription cloud → détection de référence
- * biblique → overlay en temps réel (WebSocket)
- * ----------------------------------------------------------------------------
- * v1.0.1 — FIXED for actual detector.js API (detect, not detectBilingual)
- * All AI modules wrapped in try-catch. Falls back gracefully.
- * ============================================================================
- */
-
-'use strict';
-
-const { parentPort, workerData } = require('worker_threads');
-const path = require('path');
-const fs = require('fs');
-const os = require('os');
-
-// ---------------------------------------------------------------------------
-// Environment & paths
-// ---------------------------------------------------------------------------
-const APP_ROOT = (workerData && workerData.appRoot) || __dirname;
-const USER_DATA_DIR = (workerData && workerData.userDataDir) || path.join(os.homedir(), '.churchoverlay');
-
-// ---------------------------------------------------------------------------
-// Core modules (REQUIRED)
-// ---------------------------------------------------------------------------
-const audioCapture = require('./audio-capture');
-const groq = require('./groq-wrapper');
-const deepgramWrapper = require('./deepgram-wrapper');
-const configValidator = require('./config-validator');
-const { createFileLogger } = require('./logger');
-
-// FIX: Use detector-compat which wraps detector.detect() as detectBilingual()
-const detector = require('./detector-compat');
-
-const bibleLookup = require('./bible-lookup-with-api');
-// CORRECTIF : ce module exporte la CLASSE ReadingMode, pas une instance.
-// `require('./reading-mode').start(...)` n'a donc jamais été une méthode
-// valide — chaque appel plantait silencieusement (attrapé par le try/catch
-// autour, donc invisible sans test d'intégration réel). On instancie
-// maintenant réellement la classe, avec les callbacks branchés sur le
-// pipeline (bible-lookup + broadcast WebSocket).
-const { ReadingMode } = require('./reading-mode');
-const themeLoader = require('./theme-loader');
-const featuresStore = require('./features-store');
-const obsController = require('./obs-controller');
-
-// ---------------------------------------------------------------------------
-// Durée d'affichage des versets — source unique de vérité
-// ---------------------------------------------------------------------------
-// CORRECTIF (audit round 6) : la durée par défaut était codée en dur à
-// 300_000 ms (5 min) à 6 endroits différents du fichier, alors que la valeur
-// par défaut voulue est 120_000 ms (2 min), configurable via
-// config/features.json (display.verseDurationMs). Un seul point d'accès
-// (getVerseDurationMs) remplace désormais toutes les occurrences codées en
-// dur, pour qu'un changement de configuration s'applique partout — y compris
-// dans le Reading Mode et les commandes vocales, qui ignoraient jusqu'ici la
-// config et gardaient toujours 5 minutes.
-const DEFAULT_VERSE_DURATION_MS = 120_000;
-function getVerseDurationMs() {
-  const features = featuresStore.readFeatures();
-  return (features.display || {}).verseDurationMs || DEFAULT_VERSE_DURATION_MS;
-}
-
-// ---------------------------------------------------------------------------
-// NEW: AI modules (OPTIONAL — wrapped in try-catch)
-// ---------------------------------------------------------------------------
-let SemanticDetector = null;
-let semanticDetector = null;
-let detectCommand = null;
-let TranscriptionCorrector = null;
-let corrector = null;
-let BibleSemanticSearch = null;
-let semanticSearch = null;
-let PluginSystem = null;
-let plugins = null;
-let AIThemeGenerator = null;
-let themeGenerator = null;
-
-const aiLoadErrors = [];
-
-// Check if groq has chatCompletion (it might not in test environments)
-const groqHasChatCompletion = typeof groq.chatCompletion === 'function';
-
-// Try to load each AI module individually
-try {
-  const mod = require('./semantic-detector');
-  SemanticDetector = mod.SemanticDetector;
-  if (groqHasChatCompletion) {
-    semanticDetector = new SemanticDetector(groq);
-    console.log('[server] ✓ SemanticDetector loaded');
-  } else {
-    aiLoadErrors.push('SemanticDetector: groq.chatCompletion not available');
-  }
-} catch (e) {
-  aiLoadErrors.push('SemanticDetector: ' + e.message);
-  console.warn('[server] SemanticDetector disabled:', e.message);
-}
-
-try {
-  const mod = require('./voice-commands');
-  detectCommand = mod.detectCommand;
-  console.log('[server] ✓ Voice commands loaded');
-} catch (e) {
-  aiLoadErrors.push('VoiceCommands: ' + e.message);
-  console.warn('[server] Voice commands disabled:', e.message);
-}
-
-try {
-  const mod = require('./transcription-corrector');
-  TranscriptionCorrector = mod.TranscriptionCorrector;
-  // Only create corrector if groq has chatCompletion
-  if (groqHasChatCompletion) {
-    corrector = new TranscriptionCorrector(groq);
-    console.log('[server] ✓ TranscriptionCorrector loaded');
-  } else {
-    aiLoadErrors.push('TranscriptionCorrector: groq.chatCompletion not available (tests use mock)');
-    // Create corrector in fast-only mode (no smart correction)
-    corrector = new TranscriptionCorrector(null);
-    console.log('[server] ✓ TranscriptionCorrector loaded (fast mode only)');
-  }
-} catch (e) {
-  aiLoadErrors.push('TranscriptionCorrector: ' + e.message);
-  console.warn('[server] TranscriptionCorrector disabled:', e.message);
-}
-
-try {
-  const mod = require('./bible-semantic-search');
-  BibleSemanticSearch = mod.BibleSemanticSearch;
-  semanticSearch = new BibleSemanticSearch();
-  semanticSearch.loadIndex().catch(() => {});
-  console.log('[server] ✓ BibleSemanticSearch loaded');
-} catch (e) {
-  aiLoadErrors.push('BibleSemanticSearch: ' + e.message);
-  console.warn('[server] BibleSemanticSearch disabled:', e.message);
-}
-
-try {
-  const mod = require('./plugin-system');
-  PluginSystem = mod.PluginSystem;
-  plugins = new PluginSystem();
-  const pluginsDir = path.join(APP_ROOT, 'config', 'plugins');
-  if (fs.existsSync(pluginsDir)) {
-    plugins.loadFromDirectory(pluginsDir);
-  }
-  console.log('[server] ✓ PluginSystem loaded');
-} catch (e) {
-  aiLoadErrors.push('PluginSystem: ' + e.message);
-  console.warn('[server] PluginSystem disabled:', e.message);
-}
-
-try {
-  const mod = require('./ai-theme-generator');
-  AIThemeGenerator = mod.AIThemeGenerator;
-  if (groqHasChatCompletion) {
-    themeGenerator = new AIThemeGenerator(groq);
-    console.log('[server] ✓ AIThemeGenerator loaded');
-  } else {
-    themeGenerator = new AIThemeGenerator(null);
-    console.log('[server] ✓ AIThemeGenerator loaded (rule-based only)');
-  }
-} catch (e) {
-  aiLoadErrors.push('AIThemeGenerator: ' + e.message);
-  console.warn('[server] AIThemeGenerator disabled:', e.message);
-}
-
-let aiEnricher = null;
-try {
-  aiEnricher = require('./ai-enricher');
-  console.log('[server] ✓ AI Enricher loaded (sermon summary, translation, cross-refs, theme detection)');
-} catch (e) {
-  aiLoadErrors.push('AIEnricher: ' + e.message);
-  console.warn('[server] AIEnricher disabled:', e.message);
-}
-
-if (aiLoadErrors.length > 0) {
-  console.log('[server] ⚠ ' + aiLoadErrors.length + ' AI feature(s) in limited mode.');
-}
-
-// ---------------------------------------------------------------------------
-// HTTP & WebSocket server
-// ---------------------------------------------------------------------------
-const express = require('express');
-const http = require('http');
-const WebSocket = require('ws');
-const { createRateLimiter } = require('./rate-limiter');
-
-const portValidation = configValidator.validateEnvVar('PORT', process.env.PORT);
-if (!portValidation.valid) {
-  console.warn(`[server] ${portValidation.error} — utilisation du port par défaut 3000.`);
-}
-const SERVER_PORT = portValidation.valid ? portValidation.parsedValue : 3000;
-
-const hostValidation = configValidator.validateEnvVar('WS_HOST', process.env.WS_HOST);
-// CORRECTIF (checklist mise en production, point 2) : une valeur WS_HOST
-// invalide (ex: variable renseignée avec des espaces) retombait auparavant
-// sur '0.0.0.0' — donc une simple erreur de configuration EXPOSAIT le
-// serveur à tout le réseau au lieu de le protéger. Le repli sûr est
-// désormais '127.0.0.1' (identique à la valeur par défaut du schéma quand
-// la variable est absente), donc une config invalide ne peut plus jamais
-// ouvrir le serveur plus largement que prévu.
-const WS_HOST = hostValidation.valid ? hostValidation.parsedValue : '127.0.0.1';
-
-// CORRECTIF (checklist mise en production, point 1) : jeton partagé optionnel
-// pour l'authentification des connexions WebSocket. Généré et injecté par
-// main.js (variable d'environnement du Worker) en mode Electron ; à définir
-// manuellement dans .env pour `npm run server-only`. Si absent, aucune
-// authentification n'est appliquée (comportement historique, avec
-// avertissement — voir config-validator.js) : c'est sans risque tant que
-// WS_HOST reste 127.0.0.1 (uniquement local), mais devient nécessaire dès
-// que WS_HOST est ouvert au reste du réseau.
-const WS_AUTH_TOKEN = (process.env.WS_AUTH_TOKEN || '').trim() || null;
-
-const maxConnValidation = configValidator.validateEnvVar('MAX_CONNECTIONS', process.env.MAX_CONNECTIONS);
-const MAX_CONNECTIONS = maxConnValidation.valid ? maxConnValidation.parsedValue : 10;
-
-const maxMsgValidation = configValidator.validateEnvVar('MAX_MESSAGES_PER_MINUTE', process.env.MAX_MESSAGES_PER_MINUTE);
-const MAX_MESSAGES_PER_MINUTE = maxMsgValidation.valid ? maxMsgValidation.parsedValue : 60;
-
-const connRateLimiter = createRateLimiter({
-  maxConnections: MAX_CONNECTIONS,
-  maxMessagesPerMinute: MAX_MESSAGES_PER_MINUTE,
-});
-
-const app = express();
-
-// Serve static assets from project root
-app.use(express.static(APP_ROOT));
-
-// HTML routes
-app.get('/', (req, res) => {
-  res.sendFile(path.join(APP_ROOT, 'dashboard.html'));
-});
-app.get('/dashboard', (req, res) => {
-  res.sendFile(path.join(APP_ROOT, 'dashboard.html'));
-});
-app.get('/overlay', (req, res) => {
-  res.sendFile(path.join(APP_ROOT, 'overlay.html'));
-});
-app.get('/setup', (req, res) => {
-  res.sendFile(path.join(APP_ROOT, 'setup.html'));
-});
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', port: SERVER_PORT, service: 'ChurchOverlay' });
-});
-
-const httpServer = http.createServer(app);
-// CORRECTIF (checklist mise en production, point 3) : sans maxPayload, un
-// message WebSocket volontairement énorme (ou un bug côté client) peut
-// consommer toute la mémoire du process. 64 Ko est largement suffisant pour
-// les messages échangés ici (transcriptions, commandes, config JSON).
-const wss = new WebSocket.Server({ server: httpServer, maxPayload: 64 * 1024 });
-
-httpServer.listen(SERVER_PORT, WS_HOST, () => {
-  console.log(`[server] Serveur HTTP & WebSocket démarré sur http://${WS_HOST}:${SERVER_PORT}`);
-});
-
-httpServer.on('error', (err) => {
-  const reason = err && err.code === 'EADDRINUSE'
-    ? `Le port ${SERVER_PORT} est déjà utilisé par une autre application.`
-    : `Erreur du serveur HTTP/WebSocket: ${err && err.message}`;
-  console.error('[server] ' + reason);
-  if (parentPort) {
-    parentPort.postMessage({
-      type: 'alert',
-      code: 'server-listen-error',
-      severity: 'error',
-      message: reason,
-      timestamp: Date.now(),
-    });
-  }
-  process.exitCode = 1;
-  process.exit(1);
-});
-
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
-let displayLanguage = 'fr';
-let lastReference = null;
-let lastShownAt = 0;
-const DEDUP_MS = 30_000;
-const verseHistory = [];
-const MAX_HISTORY = 20;
-const recentTranscripts = [];
-const MAX_CONTEXT_TRANSCRIPTS = 10;
-
-// ---------------------------------------------------------------------------
-// OBS gating state
-// ---------------------------------------------------------------------------
-let obsGateOpen = true;
-let obsGateReason = '';
-
-// ---------------------------------------------------------------------------
-// Rate limiter (diffusion de versets)
-// ---------------------------------------------------------------------------
-// CORRECTIF (checklist mise en production, point 7) : ce module maintenait
-// jusqu'ici DEUX limiteurs de taux indépendants qui ne se parlaient pas —
-// `connRateLimiter` (ci-dessus, testé, par IP : connexions/messages) ET un
-// second limiteur fait main ici (tableau de timestamps) pour la fréquence de
-// diffusion des versets, rendant le comportement réel difficile à prévoir
-// sous charge. On réutilise maintenant le même module `rate-limiter.js`
-// (déjà couvert par test/test-rate-limiter.js) pour les deux usages, via une
-// instance dédiée à la diffusion : même limite qu'avant (50/minute), mais
-// une seule implémentation testée au lieu de deux.
-const broadcastRateLimiter = createRateLimiter({
-  maxConnections: 1,
-  maxMessagesPerMinute: 50,
-  connectionWindowMs: 60_000,
-});
-// Clé factice : la limite de diffusion est globale au process, pas par IP —
-// on la fait donc porter sur une seule "connexion" interne constante plutôt
-// que sur chaque client WebSocket.
-const BROADCAST_LIMIT_KEY = { _socket: { remoteAddress: 'internal-broadcast' } };
-function isRateLimited() {
-  return !broadcastRateLimiter.checkMessage(BROADCAST_LIMIT_KEY).allowed;
-}
-
-// ---------------------------------------------------------------------------
-// Logging helpers
-// ---------------------------------------------------------------------------
-// CORRECTIF (checklist mise en production, point 6) : les logs ne vivaient
-// qu'en mémoire/console — si un problème survenait un dimanche et que
-// personne ne regardait l'écran au bon moment, aucune trace n'en subsistait.
-// USER_DATA_DIR est déjà un dossier inscriptible (jamais dans l'app.asar en
-// lecture seule, voir plus haut) ; on y ajoute un sous-dossier logs/ avec
-// rotation quotidienne et purge automatique au-delà de 30 jours.
-const fileLogger = createFileLogger(path.join(USER_DATA_DIR, 'logs'));
-
-function log(msg) {
-  const line = `[server] ${msg}`;
-  console.log(line);
-  fileLogger.append(line, false);
-  if (parentPort) parentPort.postMessage({ type: 'log', text: line, isError: false });
-}
-function warn(msg) {
-  const line = `[server] ${msg}`;
-  console.warn(line);
-  fileLogger.append(line, true);
-  if (parentPort) parentPort.postMessage({ type: 'log', text: line, isError: true });
-}
-
-// ---------------------------------------------------------------------------
-// Broadcast to all WebSocket clients
-// ---------------------------------------------------------------------------
-function broadcast(obj) {
-  const json = JSON.stringify(obj);
-  wss.clients.forEach(ws => {
-    if (ws.readyState === WebSocket.OPEN) ws.send(json);
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Push to verse history
-// ---------------------------------------------------------------------------
-function pushHistory(entry) {
-  verseHistory.unshift(entry);
-  if (verseHistory.length > MAX_HISTORY) verseHistory.pop();
-}
-
-// ---------------------------------------------------------------------------
-// Reading Mode — lecture continue (avance auto sans répéter la référence)
-// ---------------------------------------------------------------------------
-const readingMode = new ReadingMode({
-  getChapterVerses: (book, chapter) =>
-    bibleLookup.getChapterVerses(book, chapter, displayLanguage === 'en' ? 'en' : 'fr'),
-  onVerseAdvance: (verse) => {
-    const reference = bibleLookup.buildReferenceLabel(
-      { book: readingMode.book, chapter: readingMode.chapter, verseStart: verse.num },
-      displayLanguage
-    );
-    broadcast({
-      action: 'showVerse',
-      reference,
-      text: verse.text,
-      langMode: displayLanguage,
-      durationMs: getVerseDurationMs(),
-      readingMode: true,
-    });
-    pushHistory({ reference, text: verse.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
-    broadcast({ action: 'historyUpdated', history: verseHistory });
-  },
-});
-
-// Démarre (ou redémarre) le Reading Mode sur un livre/chapitre/verset donné,
-// sans jamais faire planter le pipeline si le chapitre est introuvable
-// (ex. provider hors-ligne) : le Reading Mode reste simplement inactif.
-async function activateReadingMode(book, chapter, verseStart) {
-  try {
-    await readingMode.start(book, chapter, verseStart);
-  } catch (err) {
-    warn('Reading mode: activation impossible pour ' + book + ' ' + chapter + ': ' + err.message);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Update transcript context for AI features
-// ---------------------------------------------------------------------------
-function updateTranscriptContext(text) {
-  recentTranscripts.push(text);
-  if (recentTranscripts.length > MAX_CONTEXT_TRANSCRIPTS) {
-    recentTranscripts.shift();
-  }
-  if (semanticDetector) semanticDetector.addContext(text);
-}
-
-function getRecentContext(maxChars = 300) {
-  const context = recentTranscripts.slice(-5).join(' ');
-  return context.length > maxChars ? context.slice(-maxChars) : context;
-}
-
-// ===========================================================================
-// MAIN PIPELINE: processTranscript
-// ===========================================================================
-async function processTranscript(text) {
-  log('Processing transcript: ' + text.substring(0, 100));
-
-  // ── Plugin hook (safe) ──
-  if (plugins) {
-    plugins.emit('onTranscript', text).catch(() => {});
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<title>ChurchOverlay — Configuration initiale</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  
+  :root {
+    --bg-primary: #0a0e1a;
+    --glass-bg: rgba(17, 24, 39, 0.8);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --text-primary: #f9fafb;
+    --text-secondary: #9ca3af;
+    --text-muted: #6b7280;
+    --accent: #6366f1;
+    --accent-hover: #818cf8;
+    --success: #10b981;
+    --error: #ef4444;
+    --warning: #f59e0b;
   }
 
-  // ── Voice Command Detection (safe) ──
-  if (detectCommand) {
-    try {
-      const command = detectCommand(text);
-      if (command) {
-        log('Voice command detected: ' + command.action);
-        await handleVoiceCommand(command, text);
-        return;
-      }
-    } catch (e) {
-      warn('Voice command error: ' + e.message);
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #0a0e1a 0%, #1a1f3a 100%);
+    color: var(--text-primary);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .container {
+    position: relative;
+    width: 100%;
+    max-width: 520px;
+    background: var(--glass-bg);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    padding: 40px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+    animation: slideIn 0.4s ease-out;
+  }
+
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
     }
   }
 
-  // ── Transcription Correction (safe) ──
-  let correctedText = text;
-  if (corrector) {
-    try {
-      // Use 'fast' mode if groq chatCompletion not available (tests)
-      const mode = groqHasChatCompletion ? 'auto' : 'fast';
-      correctedText = await corrector.correct(text, mode);
-      if (correctedText !== text) {
-        log('Transcription corrected: ' + correctedText.substring(0, 80) + '...');
-        broadcast({ action: 'transcriptCorrected', original: text, corrected: correctedText });
-      }
-    } catch (e) {
-      warn('Transcription correction error: ' + e.message);
-    }
+  .header {
+    text-align: center;
+    margin-bottom: 32px;
   }
 
-  updateTranscriptContext(correctedText);
-
-  // ── STEP 1: Regex/Fuzzy Bible Detection ──
-  let reference = null;
-  try {
-    // FIX: Use detector.detectBilingual() which is actually detector-compat wrapping detector.detect()
-    reference = detector.detectBilingual(correctedText);
-  } catch (e) {
-    warn('Detector error: ' + e.message);
+  .logo {
+    font-size: 48px;
+    margin-bottom: 12px;
+    animation: float 3s ease-in-out infinite;
   }
 
-  // CORRECTIF (audit) : detector.js annote depuis un moment les correspondances
-  // floues (reference.fuzzy / fuzzyDistance / fuzzyOriginal) — ex. "Filipiens"
-  // corrigé en "philippiens" — mais server.js ne le signalait jamais à
-  // l'interface : le tableau de bord affiche déjà un traitement dédié pour
-  // 'candidateVerse' (showCandidateVerse), resté sans émetteur côté serveur.
-  // On informe l'opérateur qu'une correction a été appliquée, tout en
-  // continuant à diffuser le verset deviné (ne pas bloquer l'affichage en
-  // plein culte pour une confirmation manuelle).
-  if (reference && reference.fuzzy) {
-    log(`Fuzzy match: "${reference.fuzzyOriginal}" → "${reference.book}" (distance ${reference.fuzzyDistance})`);
-    broadcast({
-      action: 'candidateVerse',
-      reference: { book: reference.book, chapter: reference.chapter, verseStart: reference.verseStart },
-      original: reference.fuzzyOriginal,
-      distance: reference.fuzzyDistance,
-    });
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
   }
 
-  // ── STEP 2: AI Semantic Detection (safe fallback) ──
-  if (!reference && semanticDetector) {
-    try {
-      const semanticResult = await semanticDetector.detect(correctedText);
-      if (semanticResult) {
-        reference = semanticResult;
-        log(`Semantic detection: ${semanticResult.raw} (confidence: ${semanticResult.confidence.toFixed(2)})`);
-        broadcast({
-          action: 'semanticDetected',
-          reference: semanticResult.raw,
-          confidence: semanticResult.confidence,
-          reasoning: semanticResult.reasoning,
-          alternativeRefs: semanticResult.alternativeRefs,
-        });
-      }
-    } catch (e) {
-      warn('Semantic detection error: ' + e.message);
-    }
+  h1 {
+    font-size: 26px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, var(--accent), var(--success));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
 
-  // ── STEP 3: Quote-based detection ──
-  let quotedMatch = null;
-  if (!reference) {
-    try {
-      const quoted = bibleLookup.findByQuotedText(correctedText);
-      if (quoted && quoted.score >= 0.55) {
-        log(`Quote match: ${quoted.reference} (score: ${quoted.score.toFixed(2)})`);
-        quotedMatch = quoted;
-        reference = { book: '', chapter: 0, verseStart: 0, detectedBy: 'quote' };
-      }
-    } catch (e) {
-      // Quote detection not available, skip
-    }
+  .subtitle {
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.6;
   }
 
-  // ── No explicit reference found: try Reading Mode auto-advance ──
-  // C'est le cœur de la "lecture continue" (façon Rhema/BibleShow) : si le
-  // Reading Mode est actif, on compare le fragment aux versets courant/
-  // suivants du chapitre en cours plutôt que d'abandonner le segment.
-  if (!reference) {
-    if (readingMode.active) {
-      try {
-        const result = readingMode.processFragment(correctedText);
-        if (result && result.command === 'nextChapter') {
-          const nextChapter = (readingMode.chapter || 0) + 1;
-          const book = readingMode.book;
-          await activateReadingMode(book, nextChapter, 1);
-          if (readingMode.active && readingMode.currentIndex >= 0) {
-            const first = readingMode.verses[readingMode.currentIndex];
-            // onVerseAdvance ne se déclenche que sur un CHANGEMENT de
-            // verset détecté depuis processFragment ; ici on vient de
-            // (re)positionner explicitement sur le verset 1, donc on
-            // diffuse nous-mêmes pour ne pas perdre l'affichage.
-            const label = bibleLookup.buildReferenceLabel(
-              { book, chapter: nextChapter, verseStart: first.num }, displayLanguage
-            );
-            broadcast({ action: 'showVerse', reference: label, text: first.text, langMode: displayLanguage, durationMs: getVerseDurationMs(), readingMode: true });
-            pushHistory({ reference: label, text: first.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
-            broadcast({ action: 'historyUpdated', history: verseHistory });
-            log('Reading mode: chapitre suivant → ' + label);
-          }
-        }
-        // Les autres cas (avancée normale, saut par numéro de verset) sont
-        // déjà diffusés par le callback onVerseAdvance de ReadingMode.
-      } catch (e) {
-        warn('Reading mode processFragment error: ' + e.message);
-      }
-    }
-    return;
+  .form-group {
+    margin-bottom: 24px;
   }
 
-  // ── Rate limit check ──
-  if (isRateLimited()) {
-    warn('Rate limit hit — verse display skipped');
-    return;
+  label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    color: var(--text-primary);
+    font-size: 14px;
   }
 
-  // ── Duplicate prevention ──
-  const refKey = `${reference.book}:${reference.chapter}:${reference.verseStart || ''}`;
-  const now = Date.now();
-  if (lastReference === refKey && now - lastShownAt < DEDUP_MS) {
-    log('Duplicate suppressed: ' + refKey);
-    return;
-  }
-  lastReference = refKey;
-  lastShownAt = now;
-
-  // ── Lookup verse text ──
-  let verse;
-  try {
-    if (reference.detectedBy === 'quote') {
-      const quoted = quotedMatch || bibleLookup.findByQuotedText(correctedText);
-      verse = { reference: quoted.reference, text: quoted.text, provider: quoted.provider, lang: quoted.lang };
-    } else {
-      verse = await bibleLookup.getVerseMultilang(reference, displayLanguage);
-    }
-  } catch (err) {
-    warn('Bible lookup failed: ' + err.message);
-    broadcast({ action: 'error', error: 'Verset introuvable : ' + err.message });
-    return;
+  .input-row {
+    display: flex;
+    gap: 10px;
   }
 
-  // ── Plugin hook ──
-  if (plugins) {
-    plugins.emit('onVerseDetected', { ...verse, reference: verse.reference }).catch(() => {});
+  select, input {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--glass-border);
+    color: var(--text-primary);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 13px;
+    font-family: inherit;
+    transition: all 0.2s ease;
   }
 
-  // ── AI Theme Generation (safe) ──
-  let theme = null;
-  if (themeGenerator) {
-    try {
-      const recentContext = getRecentContext();
-      theme = await themeGenerator.generate(verse.text, recentContext, 'auto');
-      if (theme && (theme.source === 'ai' || theme.mood !== 'default')) {
-        log(`Theme applied: "${theme.name}" (${theme.mood || 'default'})`);
-        broadcast({ action: 'applyTheme', ...themeGenerator.themeToCss(theme) });
-      }
-    } catch (e) {
-      warn('Theme generation error: ' + e.message);
-    }
+  select:focus, input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
   }
 
-  // ── OBS gating ──
-  const features = featuresStore.readFeatures();
-  const multiScene = (features.broadcast || {}).multiScene || {};
-  if (multiScene.enabled && !obsGateOpen) {
-    log('OBS gate closed — verse buffered: ' + verse.reference);
-    broadcast({ action: 'verseBuffered', reference: verse.reference, reason: obsGateReason });
-    return;
+  .btn {
+    cursor: pointer;
+    border: none;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 12px 18px;
+    transition: all 0.2s ease;
+    white-space: nowrap;
   }
 
-  // ── Display verse ──
-  const durationMs = getVerseDurationMs();
-  broadcast({
-    action: 'showVerse',
-    reference: verse.reference,
-    text: verse.text,
-    text_fr: verse.text_fr || null,
-    text_en: verse.text_en || null,
-    langMode: verse.langMode,
-    provider: verse.provider,
-    durationMs,
-    detectedBy: reference.detectedBy || 'regex',
-    matchedByQuote: reference.detectedBy === 'quote',
-    theme: theme ? { name: theme.name, mood: theme.mood } : null,
-  });
-
-  pushHistory({
-    reference: verse.reference,
-    text: verse.text.substring(0, 200),
-    timestamp: now,
-    detectedBy: reference.detectedBy || 'regex',
-  });
-  broadcast({ action: 'historyUpdated', history: verseHistory });
-
-  if (plugins) {
-    plugins.emit('onVerseShown', { ...verse, reference: verse.reference }).catch(() => {});
+  .btn-secondary {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+    border: 1px solid var(--glass-border);
   }
 
-  log('Displayed: ' + verse.reference);
-
-  // Une citation explicite (référence dite ou reconnue) relance le Reading
-  // Mode sur ce livre/chapitre : le prédicateur peut ensuite continuer sa
-  // lecture sans répéter la référence à chaque verset.
-  if (reference.book && reference.chapter) {
-    await activateReadingMode(reference.book, reference.chapter, reference.verseStart || 1);
+  .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: var(--accent);
   }
-}
 
-// ===========================================================================
-// Voice Command Handler (safe)
-// ===========================================================================
-async function handleVoiceCommand(command, originalText) {
-  switch (command.action) {
-    case 'showVerse': {
-      if (!command.reference) return;
-      try {
-        const verse = await bibleLookup.getVerseMultilang(command.reference, displayLanguage);
-        broadcast({ action: 'showVerse', ...verse, durationMs: getVerseDurationMs(), triggeredByVoice: true });
-        pushHistory({ ...verse, triggeredByVoice: true, timestamp: Date.now() });
-        broadcast({ action: 'historyUpdated', history: verseHistory });
-        log('Voice command: showed ' + verse.reference);
-      } catch (err) {
-        warn('Voice command verse lookup failed: ' + err.message);
-      }
-      break;
-    }
+  .btn-primary {
+    width: 100%;
+    background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+    color: white;
+    padding: 14px 20px;
+    font-size: 14px;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  }
 
-    case 'hideVerse':
-      broadcast({ action: 'hideVerse', triggeredByVoice: true });
-      log('Voice command: hide overlay');
-      break;
+  .btn-primary:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+  }
 
-    case 'recallLastVerse': {
-      // AJOUT (demande initiale, section 9) : "ramène-moi le verset" —
-      // rediffuse le dernier verset affiché (verseHistory[0], le plus
-      // récent car pushHistory fait un unshift), sans exiger que le
-      // prédicateur ait cité une référence. Si l'historique est vide
-      // (aucun verset affiché depuis le démarrage), ignore proprement.
-      const last = verseHistory[0];
-      if (!last || !last.reference) {
-        warn('Voice command "recallLastVerse" : aucun verset dans l\'historique.');
-        break;
-      }
-      broadcast({
-        action: 'showVerse',
-        reference: last.reference,
-        text: last.text,
-        langMode: displayLanguage,
-        durationMs: getVerseDurationMs(),
-        triggeredByVoice: true,
-        recalled: true,
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .hint {
+    color: var(--text-muted);
+    font-size: 11px;
+    margin-top: 8px;
+    line-height: 1.5;
+  }
+
+  .hint a {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .hint a:hover {
+    text-decoration: underline;
+  }
+
+  .status {
+    margin-top: 8px;
+    font-size: 12px;
+    min-height: 18px;
+    padding: 4px 0;
+  }
+
+  .status.success {
+    color: var(--success);
+  }
+
+  .status.error {
+    color: var(--error);
+  }
+
+  .status.warning {
+    color: var(--warning);
+  }
+
+  .toggle-password {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 11px;
+    padding: 4px 0;
+    margin-top: 6px;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+
+  .toggle-password:hover {
+    color: var(--accent);
+  }
+
+  .footer {
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px solid var(--glass-border);
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.6;
+    text-align: center;
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* CORRECTIF (audit) : écran de progression FFmpeg entièrement retiré —
+     preload.js n'expose plus ensureFfmpeg/onFfmpegSetupProgress/
+     onFfmpegStartupProgress (capture native, plus de binaire externe à
+     installer). Le formulaire (#setup-form) s'affiche directement. */
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">✝️</div>
+      <h1>Configuration Initiale</h1>
+      <p class="subtitle">
+        Configurez votre micro et votre clé API Groq pour commencer. 
+        Rien d'autre à installer, tout est prêt !
+      </p>
+    </div>
+
+    <div id="setup-form">
+      <!-- Microphone -->
+      <div class="form-group">
+        <label>
+          <span>🎤</span> Microphone
+        </label>
+        <div class="input-row">
+          <select id="mic-select">
+            <option value="">Recherche des microphones…</option>
+          </select>
+          <button class="btn btn-secondary" id="btn-refresh">
+            🔄 Actualiser
+          </button>
+        </div>
+        <div class="status" id="mic-status"></div>
+      </div>
+
+      <!-- Groq API Key -->
+      <div class="form-group">
+        <label>
+          <span>🔑</span> Clé API Groq
+        </label>
+        <input type="password" id="groq-key" placeholder="gsk_..." autocomplete="off" />
+        <button class="toggle-password" id="btn-toggle-groq">Afficher</button>
+        <div class="hint">
+          Obtenez une clé gratuite sur
+          <a id="link-groq" href="#">console.groq.com/keys</a>
+          (cliquez pour copier le lien)
+        </div>
+      </div>
+
+      <!-- Deepgram API Key (Optional) -->
+      <div class="form-group">
+        <label>
+          <span>🔐</span> Clé API Deepgram <span style="color: var(--text-muted); font-weight: 400;">(optionnel)</span>
+        </label>
+        <input type="password" id="deepgram-key" placeholder="Laisser vide si non utilisé" autocomplete="off" />
+        <button class="toggle-password" id="btn-toggle-deepgram">Afficher</button>
+        <div class="hint">
+          Secours automatique si Groq ne répond pas. Facultatif.
+          <a id="link-deepgram" href="#">console.deepgram.com</a>
+        </div>
+      </div>
+
+      <!-- Save Button -->
+      <button class="btn btn-primary" id="btn-save" disabled>
+        🚀 Enregistrer et démarrer
+      </button>
+      <div class="status" id="save-status"></div>
+
+      <div class="footer">
+        🔒 Toutes ces informations restent sur votre ordinateur.
+        Vous pourrez les modifier depuis le tableau de bord.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const elements = {
+      micSelect: document.getElementById('mic-select'),
+      micStatus: document.getElementById('mic-status'),
+      btnRefresh: document.getElementById('btn-refresh'),
+      groqInput: document.getElementById('groq-key'),
+      btnToggleGroq: document.getElementById('btn-toggle-groq'),
+      deepgramInput: document.getElementById('deepgram-key'),
+      btnToggleDeepgram: document.getElementById('btn-toggle-deepgram'),
+      btnSave: document.getElementById('btn-save'),
+      saveStatus: document.getElementById('save-status'),
+      linkGroq: document.getElementById('link-groq'),
+      linkDeepgram: document.getElementById('link-deepgram'),
+      setupForm: document.getElementById('setup-form'),
+    };
+
+    // Copy links
+    elements.linkGroq.addEventListener('click', (e) => {
+      e.preventDefault();
+      navigator.clipboard.writeText('https://console.groq.com/keys').then(() => {
+        elements.linkGroq.textContent = 'Lien copié ✓';
+        setTimeout(() => { elements.linkGroq.textContent = 'console.groq.com/keys'; }, 2000);
       });
-      pushHistory({ reference: last.reference, text: last.text, triggeredByVoice: true, recalled: true, timestamp: Date.now() });
-      broadcast({ action: 'historyUpdated', history: verseHistory });
-      log('Voice command: recalled last verse ' + last.reference);
-      break;
+    });
+
+    elements.linkDeepgram.addEventListener('click', (e) => {
+      e.preventDefault();
+      navigator.clipboard.writeText('https://console.deepgram.com').then(() => {
+        elements.linkDeepgram.textContent = 'Lien copié ✓';
+        setTimeout(() => { elements.linkDeepgram.textContent = 'console.deepgram.com'; }, 2000);
+      });
+    });
+
+    // Toggle password visibility
+    elements.btnToggleGroq.addEventListener('click', () => {
+      const show = elements.groqInput.type === 'password';
+      elements.groqInput.type = show ? 'text' : 'password';
+      elements.btnToggleGroq.textContent = show ? 'Masquer' : 'Afficher';
+    });
+
+    elements.btnToggleDeepgram.addEventListener('click', () => {
+      const show = elements.deepgramInput.type === 'password';
+      elements.deepgramInput.type = show ? 'text' : 'password';
+      elements.btnToggleDeepgram.textContent = show ? 'Masquer' : 'Afficher';
+    });
+
+    // Update save button state
+    function updateSaveEnabled() {
+      const hasMic = !!elements.micSelect.value;
+      const hasKey = elements.groqInput.value.trim().length > 0;
+      elements.btnSave.disabled = !(hasMic && hasKey);
     }
 
-    case 'nextVerse': {
-      // CORRECTIF : cette commande ne faisait que diffuser une action que
-      // rien côté serveur n'interprétait — le Reading Mode n'avançait pas.
-      broadcast({ action: 'nextVerse', triggeredByVoice: true });
-      if (readingMode.active && readingMode.currentIndex < readingMode.verses.length - 1) {
-        const verse = readingMode.verses[readingMode.currentIndex + 1];
-        readingMode.currentIndex += 1;
-        readingMode.onVerseAdvance(verse);
-      }
-      break;
-    }
+    // Load microphones
+    // CORRECTIF (audit — remplacement de FFmpeg par la capture navigateur) :
+    // window.churchOverlay.detectMicrophones() (FFmpeg + DirectShow) ne
+    // trouve tout simplement AUCUN périphérique sur certains portables —
+    // le micro intégré y est piloté par un pilote qui n'expose pas d'API
+    // DirectShow (Intel Smart Sound Technology ou équivalent), alors qu'il
+    // apparaît normalement dans Windows (Paramètres > Son). C'était donc
+    // un problème irréparable côté code tant qu'on restait sur FFmpeg pour
+    // l'énumération. navigator.mediaDevices est l'API native du navigateur
+    // (Chromium, donc Electron) : elle passe par WASAPI, la même couche que
+    // les Paramètres Windows utilisent — elle voit donc les mêmes micros.
+    // On stocke maintenant le `deviceId` du navigateur (pas un nom dshow) :
+    // dashboard.html l'utilisera directement pour getUserMedia() au moment
+    // de la capture réelle (plus besoin d'un nom "compatible ffmpeg").
+    async function loadMicrophones(force = false) {
+      elements.micStatus.className = 'status';
+      elements.micStatus.textContent = '';
+      elements.micSelect.innerHTML = '<option value="">🔍 Recherche des microphones…</option>';
+      elements.btnRefresh.disabled = true;
 
-    case 'previousVerse': {
-      broadcast({ action: 'previousVerse', triggeredByVoice: true });
-      if (readingMode.active && readingMode.currentIndex > 0) {
-        const verse = readingMode.verses[readingMode.currentIndex - 1];
-        readingMode.currentIndex -= 1;
-        readingMode.onVerseAdvance(verse);
-      }
-      break;
-    }
-
-    case 'nextChapter': {
-      broadcast({ action: 'nextChapter', triggeredByVoice: true });
-      if (readingMode.active) {
-        await activateReadingMode(readingMode.book, (readingMode.chapter || 0) + 1, 1);
-        if (readingMode.active && readingMode.currentIndex >= 0) {
-          readingMode.onVerseAdvance(readingMode.verses[readingMode.currentIndex]);
-        }
-      }
-      break;
-    }
-
-    case 'setTheme': {
-      if (themeGenerator) {
-        const theme = themeGenerator.getTheme(command.theme);
-        broadcast({ action: 'applyTheme', ...themeGenerator.themeToCss(theme), triggeredByVoice: true });
-        log('Voice command: theme ' + command.theme);
-      }
-      break;
-    }
-
-    case 'setLanguage': {
-      displayLanguage = command.language;
-      broadcast({ action: 'languageChanged', language: displayLanguage, triggeredByVoice: true });
-      log('Voice command: language ' + command.language);
-      break;
-    }
-
-    case 'setTranslation': {
+      let devices = [];
       try {
-        const newId = bibleLookup.setTranslation(command.language, command.code);
-        broadcast({
-          action: 'translationChanged',
-          language: command.language,
-          code: command.code,
-          translationId: newId,
-          triggeredByVoice: true,
-        });
-        log(`Voice command: translation ${command.language} → ${command.code}`);
+        // Sans getUserMedia préalable, enumerateDevices() renvoie des
+        // labels vides (protection vie privée du navigateur tant qu'aucune
+        // permission micro n'a été accordée à cette origine) — on demande
+        // donc l'accès UNE fois ici pour débloquer les vrais noms, avant
+        // d'énumérer. `force` n'a plus d'utilité ici (plus de cache 24h
+        // côté FFmpeg à contourner) mais reste accepté pour compatibilité
+        // avec le bouton "Actualiser".
+        const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        tempStream.getTracks().forEach((t) => t.stop()); // on ne voulait que la permission, pas un flux ouvert
+        const allDevices = await navigator.mediaDevices.enumerateDevices();
+        devices = allDevices
+          .filter((d) => d.kind === 'audioinput')
+          .map((d) => ({ id: d.deviceId, label: d.label || 'Microphone (nom indisponible)' }));
       } catch (err) {
-        warn('Voice command translation failed: ' + err.message);
-      }
-      break;
-    }
-
-    case 'extendTime':
-      broadcast({ action: 'extendTime', extraMs: command.extraMs, triggeredByVoice: true });
-      break;
-
-    case 'pauseTimer':
-      broadcast({ action: 'pauseTimer', triggeredByVoice: true });
-      break;
-
-    case 'resumeTimer':
-      broadcast({ action: 'resumeTimer', triggeredByVoice: true });
-      break;
-
-    case 'emergencyClear': {
-      broadcast({ action: 'hideVerse', emergency: true });
-      broadcast({ action: 'emergencyClear' });
-      lastReference = null;
-      log('Voice command: EMERGENCY CLEAR');
-      break;
-    }
-
-    default:
-      warn('Unknown voice command action: ' + command.action);
-  }
-}
-
-// ===========================================================================
-// WebSocket handlers
-// ===========================================================================
-wss.on('connection', (ws, req) => {
-  // Allow Web clients, OBS Browser Sources, and local/Electron windows
-  const origin = req && req.headers && req.headers.origin;
-  if (origin) {
-    log(`Connexion WebSocket acceptée depuis l'origine : ${origin}`);
-  }
-
-  const connCheck = connRateLimiter.checkConnection(ws);
-  if (!connCheck.allowed) {
-    warn(`Connexion refusée — ${connCheck.reason}`);
-    ws.close(1008, connCheck.reason);
-    return;
-  }
-
-  // CORRECTIF (checklist mise en production, point 1) : n'importe qui sur le
-  // même réseau pouvait auparavant ouvrir le WebSocket et envoyer des
-  // commandes (afficher un faux verset, effacer l'affichage en plein culte).
-  // Vérifié APRÈS la limite de connexions par IP (ci-dessus) et non avant,
-  // pour que même les tentatives de devinette du jeton restent limitées en
-  // débit par IP. Le jeton voyage en paramètre de requête (?token=...) car
-  // c'est la seule option praticable pour un client WebSocket de navigateur
-  // (overlay.html collé tel quel comme URL dans OBS) ou une page chargée en
-  // file:// (dashboard.html) — voir main.js pour la génération/l'injection.
-  if (WS_AUTH_TOKEN) {
-    let providedToken = null;
-    try {
-      providedToken = new URL(req.url, 'http://internal').searchParams.get('token');
-    } catch (_) {
-      // req.url invalide/absent -> aucun jeton fourni, traité comme non autorisé ci-dessous
-    }
-    if (providedToken !== WS_AUTH_TOKEN) {
-      warn('Connexion WebSocket refusée — jeton d\'authentification invalide ou manquant.');
-      connRateLimiter.removeConnection(ws);
-      ws.close(1008, 'Non autorisé');
-      return;
-    }
-  }
-
-  log('Client WebSocket connecté');
-
-  const features = featuresStore.readFeatures();
-  const theme = themeLoader.getActiveTheme();
-
-  ws.send(JSON.stringify({
-    action: 'init',
-    language: displayLanguage,
-    history: verseHistory,
-    theme: themeLoader.themeToCss(theme),
-    translations: bibleLookup.listTranslations(),
-    plugins: plugins ? plugins.getPluginList() : [],
-    aiFeatures: {
-      semanticDetection: !!semanticDetector,
-      voiceCommands: !!detectCommand,
-      transcriptionCorrection: !!corrector,
-      dynamicThemes: !!themeGenerator,
-      bibleSearch: !!semanticSearch,
-    },
-    aiLoadErrors: aiLoadErrors.length > 0 ? aiLoadErrors : undefined,
-  }));
-
-  ws.on('message', async (raw) => {
-    const msgCheck = connRateLimiter.checkMessage(ws);
-    if (!msgCheck.allowed) {
-      warn(`Message rejeté — ${msgCheck.reason}`);
-      return;
-    }
-
-    let msg;
-    try {
-      msg = JSON.parse(String(raw));
-    } catch {
-      return;
-    }
-    if (!msg || typeof msg !== 'object') return;
-
-    const sanitized = {};
-    for (const k of Object.keys(msg)) {
-      if (typeof msg[k] === 'string') {
-        sanitized[k] = msg[k].replace(/[<>"']/g, '');
-      } else {
-        sanitized[k] = msg[k];
-      }
-    }
-
-    // ── Speech or audio transcript input ──
-    if (sanitized.action === 'transcript') {
-      const text = String(sanitized.text || '').trim();
-      if (text) {
-        log(`WebSocket transcript received: "${text.substring(0, 80)}"`);
-        broadcast({ action: 'transcript', text, timestamp: Date.now(), source: sanitized.source || 'browser' });
-        await processTranscript(text);
-      }
-      return;
-    }
-
-    // ── Manual verse display ──
-    if (sanitized.action === 'showVerse') {
-      // FIX: Use detector.parseReference which wraps detector.detect()
-      const ref = detector.parseReference(sanitized.reference);
-      if (!ref) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Référence invalide.' }));
+        elements.btnRefresh.disabled = false;
+        elements.micSelect.innerHTML = '<option value="">❌ Accès micro refusé</option>';
+        elements.micStatus.className = 'status error';
+        const isPermissionError = err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError');
+        elements.micStatus.textContent = isPermissionError
+          ? "⚠️ Autorisation micro refusée. Vérifiez Windows → Confidentialité → Microphone → " +
+            "\"Autoriser les applications de bureau à accéder au microphone\", puis cliquez sur Actualiser."
+          : `⚠️ Erreur : ${err && err.message ? err.message : err}. Cliquez sur Actualiser pour réessayer.`;
+        updateSaveEnabled();
         return;
       }
+
+      elements.btnRefresh.disabled = false;
+      elements.micSelect.innerHTML = '';
+
+      if (devices.length === 0) {
+        elements.micSelect.innerHTML = '<option value="">❌ Aucun microphone détecté</option>';
+        elements.micStatus.className = 'status error';
+        elements.micStatus.textContent = "⚠️ Vérifiez qu'un micro est branché, puis cliquez sur Actualiser.";
+        updateSaveEnabled();
+        return;
+      }
+
+      devices.forEach(({ id, label }) => {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = label;
+        elements.micSelect.appendChild(opt);
+      });
+      elements.micStatus.className = 'status success';
+      elements.micStatus.textContent = `✅ ${devices.length} microphone(s) détecté(s)`;
+      updateSaveEnabled();
+    }
+
+    // Event listeners
+    elements.btnRefresh.addEventListener('click', () => loadMicrophones(true));
+    elements.micSelect.addEventListener('change', updateSaveEnabled);
+    elements.groqInput.addEventListener('input', updateSaveEnabled);
+
+    // CORRECTIF (audit) — bug bloquant trouvé : window.churchOverlay
+    // .onFfmpegSetupProgress()/.onFfmpegStartupProgress() étaient appelés
+    // ici SANS try/catch alors que preload.js ne les expose plus (capture
+    // native, plus de FFmpeg à télécharger). Un TypeError non rattrapé en
+    // plein milieu de ce <script> stoppait toute l'exécution restante :
+    // le bouton "Enregistrer" n'était jamais branché, et
+    // checkFfmpegThenLoadMicrophones() (plus bas) ne s'exécutait jamais —
+    // la fenêtre restait bloquée sur l'écran FFmpeg indéfiniment, sans même
+    // afficher le formulaire. Les deux appels et tout l'écran de
+    // progression associé (#ffmpeg-panel) ont été retirés ; voir
+    // loadMicrophones() ci-dessus, appelée directement plus bas.
+
+    // Save configuration
+    elements.btnSave.addEventListener('click', async () => {
+      elements.btnSave.disabled = true;
+      elements.btnSave.innerHTML = '<span class=\"spinner\"></span> Enregistrement…';
+      elements.saveStatus.className = 'status';
+      elements.saveStatus.textContent = '';
+
       try {
-        const verse = await bibleLookup.getVerseMultilang(ref, displayLanguage);
-        const durationMs = sanitized.durationMs || getVerseDurationMs();
-        broadcast({ action: 'showVerse', ...verse, durationMs, triggeredManually: true });
-        pushHistory({ ...verse, triggeredManually: true, timestamp: Date.now() });
-        broadcast({ action: 'historyUpdated', history: verseHistory });
-      } catch (err) {
-        ws.send(JSON.stringify({ action: 'error', error: err.message }));
+        await window.churchOverlay.saveSetup(
+          elements.micSelect.value,
+          elements.groqInput.value.trim(),
+          elements.deepgramInput.value.trim()
+        );
+        // CORRECTIF (audit) : la fenêtre se ferme désormais elle-même dès
+        // que saveSetup() est résolu, au lieu de dépendre d'un canal IPC
+        // ('ffmpeg-setup-progress') qui n'existe plus — sans ce correctif,
+        // la fenêtre restait ouverte indéfiniment sur "Enregistrement…"
+        // après un clic sur le bouton, même en cas de succès.
+        elements.saveStatus.className = 'status success';
+        elements.saveStatus.textContent = '✅ Configuration enregistrée.';
+        setTimeout(() => window.close(), 700);
+      } catch (e) {
+        elements.saveStatus.className = 'status error';
+        elements.saveStatus.textContent = '❌ Erreur : ' + (e && e.message ? e.message : e);
+        elements.btnSave.disabled = false;
+        elements.btnSave.innerHTML = '🚀 Enregistrer et démarrer';
       }
-      return;
-    }
+    });
 
-    // ── Hide overlay ──
-    if (sanitized.action === 'hideVerse') {
-      broadcast({ action: 'hideVerse' });
-      lastReference = null;
-      return;
-    }
-
-    // ── Pre-service test (checklist mise en production, point 9) ──
-    // Vérifie en une fois : connexion WebSocket (implicite, on répond donc
-    // qu'elle est OK), validité des clés Groq/Deepgram (appel réseau léger,
-    // sans frais de transcription — voir *-wrapper.js checkKey()), et l'état
-    // de l'authentification WS. Le micro n'est PAS vérifié ici : c'est du
-    // ressort exclusif du navigateur (getUserMedia), le serveur n'y a jamais
-    // accès — le dashboard le teste lui-même côté client.
-    if (sanitized.action === 'preServiceCheck') {
-      try {
-        const [groqResult, deepgramResult] = await Promise.all([
-          groq.checkKey(),
-          deepgramWrapper.checkKey(),
-        ]);
-        ws.send(JSON.stringify({
-          action: 'preServiceCheckResult',
-          wsConnected: true,
-          wsAuthEnabled: !!WS_AUTH_TOKEN,
-          wsHost: WS_HOST,
-          groq: groqResult,
-          deepgram: deepgramResult,
-          timestamp: Date.now(),
-        }));
-      } catch (err) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Échec de la vérification pré-culte : ' + err.message }));
-      }
-      return;
-    }
-
-    // ── Language switch ──
-    if (sanitized.action === 'setLanguage') {
-      const lang = sanitized.language;
-      if (['fr', 'en', 'both'].includes(lang)) {
-        displayLanguage = lang;
-        broadcast({ action: 'languageChanged', language: lang });
-        log('Language changed: ' + lang);
-      }
-      return;
-    }
-
-    // ── Translation switch ──
-    if (sanitized.action === 'setTranslation') {
-      try {
-        const newId = bibleLookup.setTranslation(sanitized.language, sanitized.code);
-        broadcast({ action: 'translationChanged', language: sanitized.language, code: sanitized.code, translationId: newId });
-        log(`Translation: ${sanitized.language} → ${sanitized.code}`);
-      } catch (err) {
-        ws.send(JSON.stringify({ action: 'error', error: err.message }));
-      }
-      return;
-    }
-
-    // ── Reading mode ──
-    if (sanitized.action === 'startReading') {
-      // FIX: Use detector.parseReference
-      const ref = detector.parseReference(sanitized.reference);
-      if (!ref) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Référence invalide pour le mode lecture.' }));
-        return;
-      }
-      try {
-        const firstVerse = await readingMode.start(ref.book, ref.chapter, ref.verseStart);
-        ws.send(JSON.stringify({ action: 'readingStarted', reference: ref }));
-        if (firstVerse) {
-          const label = bibleLookup.buildReferenceLabel(
-            { book: ref.book, chapter: ref.chapter, verseStart: firstVerse.num }, displayLanguage
-          );
-          broadcast({ action: 'showVerse', reference: label, text: firstVerse.text, langMode: displayLanguage, durationMs: getVerseDurationMs(), readingMode: true });
-          pushHistory({ reference: label, text: firstVerse.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
-          broadcast({ action: 'historyUpdated', history: verseHistory });
-        }
-      } catch (err) {
-        ws.send(JSON.stringify({ action: 'error', error: err.message }));
-      }
-      return;
-    }
-
-    if (sanitized.action === 'stopReading') {
-      readingMode.stop();
-      broadcast({ action: 'readingStopped' });
-      return;
-    }
-
-    // ── Bible Semantic Search ──
-    if (sanitized.action === 'searchBible') {
-      if (!semanticSearch) {
-        ws.send(JSON.stringify({ action: 'searchError', error: 'Recherche biblique non disponible' }));
-        return;
-      }
-      const query = String(sanitized.query || '').trim();
-      if (!query) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Requête requise.' }));
-        return;
-      }
-      try {
-        const results = await semanticSearch.search(query, sanitized.topK || 5);
-        ws.send(JSON.stringify({ action: 'searchResults', query, results, timestamp: Date.now() }));
-      } catch (err) {
-        ws.send(JSON.stringify({ action: 'searchError', query, error: err.message }));
-      }
-      return;
-    }
-
-    // ── Get topics ──
-    if (sanitized.action === 'getTopics') {
-      ws.send(JSON.stringify({
-        action: 'topicsList',
-        topics: semanticSearch ? semanticSearch.getTopics() : [],
-      }));
-      return;
-    }
-
-    // ── Get moods ──
-    if (sanitized.action === 'getMoods') {
-      ws.send(JSON.stringify({
-        action: 'moodsList',
-        moods: themeGenerator ? themeGenerator.getMoods() : [],
-      }));
-      return;
-    }
-
-    // ── Set theme by mood ──
-    if (sanitized.action === 'setMoodTheme') {
-      if (!themeGenerator) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Générateur de thèmes non disponible' }));
-        return;
-      }
-      const mood = sanitized.mood;
-      const theme = themeGenerator.getTheme(mood);
-      broadcast({ action: 'applyTheme', ...themeGenerator.themeToCss(theme) });
-      ws.send(JSON.stringify({ action: 'themeApplied', mood, themeName: theme.name }));
-      return;
-    }
-
-    // ── Plugin management ──
-    if (sanitized.action === 'listPlugins') {
-      ws.send(JSON.stringify({ action: 'pluginsList', plugins: plugins ? plugins.getPluginList() : [] }));
-      return;
-    }
-
-    if (sanitized.action === 'togglePlugin') {
-      if (plugins) {
-        plugins.setEnabled(sanitized.pluginName, sanitized.enabled);
-        ws.send(JSON.stringify({ action: 'pluginToggled', pluginName: sanitized.pluginName, enabled: sanitized.enabled }));
-      }
-      return;
-    }
-
-    // ── AI stats ──
-    if (sanitized.action === 'getAiStats') {
-      ws.send(JSON.stringify({
-        action: 'aiStats',
-        semanticDetector: semanticDetector ? semanticDetector.getStats() : null,
-        corrector: corrector ? corrector.getStats() : null,
-        plugins: plugins ? plugins.metadata : null,
-        aiEnricher: !!aiEnricher,
-        loadErrors: aiLoadErrors,
-      }));
-      return;
-    }
-
-    // ── AI Live Summary ──
-    if (sanitized.action === 'getLiveSummary') {
-      if (!aiEnricher) {
-        ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
-        return;
-      }
-      const fullTranscript = recentTranscripts.join(' ');
-      const summary = await aiEnricher.generateLiveSummary(fullTranscript);
-      ws.send(JSON.stringify({ action: 'liveSummary', summary, timestamp: Date.now() }));
-      return;
-    }
-
-    // ── AI Sermon Theme ──
-    if (sanitized.action === 'getSermonTheme') {
-      if (!aiEnricher) {
-        ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
-        return;
-      }
-      const fullTranscript = recentTranscripts.join(' ');
-      const themeData = await aiEnricher.detectSermonTheme(fullTranscript);
-      ws.send(JSON.stringify({ action: 'sermonTheme', ...themeData, timestamp: Date.now() }));
-      return;
-    }
-
-    // ── AI Post-Service Recap ──
-    if (sanitized.action === 'getPostServiceRecap') {
-      if (!aiEnricher) {
-        ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
-        return;
-      }
-      const fullTranscript = recentTranscripts.join(' ');
-      const recap = await aiEnricher.generatePostServiceRecap(fullTranscript, verseHistory);
-      ws.send(JSON.stringify({ action: 'postServiceRecap', recap, timestamp: Date.now() }));
-      return;
-    }
-
-    // ── AI Cross References ──
-    if (sanitized.action === 'getCrossReferences') {
-      if (!aiEnricher) {
-        ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
-        return;
-      }
-      const refs = await aiEnricher.findCrossReferences(sanitized.reference || '', sanitized.text || '');
-      ws.send(JSON.stringify({ action: 'crossReferences', reference: sanitized.reference, results: refs }));
-      return;
-    }
-
-    // ── AI Live Translation ──
-    if (sanitized.action === 'translateText') {
-      if (!aiEnricher) {
-        ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
-        return;
-      }
-      const translation = await aiEnricher.translateSegment(sanitized.text || '', sanitized.targetLang || 'en');
-      ws.send(JSON.stringify({ action: 'textTranslated', original: sanitized.text, targetLang: sanitized.targetLang || 'en', translation }));
-      return;
-    }
-
-    // ── Theme application ──
-    if (sanitized.action === 'applyTheme') {
-      broadcast({ action: 'applyTheme', ...sanitized.css });
-      return;
-    }
-
-    // ── Ping ──
-    if (sanitized.action === 'ping') {
-      ws.send(JSON.stringify({ action: 'pong', timestamp: Date.now() }));
-      return;
-    }
-  });
-
-  ws.on('close', () => {
-    connRateLimiter.removeConnection(ws);
-    log('Client WebSocket déconnecté');
-  });
-  ws.on('error', (err) => warn('WebSocket error: ' + err.message));
-});
-
-// ===========================================================================
-// Audio pipeline
-// ===========================================================================
-function startPipeline() {
-  audioCapture.on({
-    onAudioSegment: async (segmentFile) => {
-      try {
-        const result = await groq.transcribeWithFallback(segmentFile);
-        if (result && result.text && result.text.trim()) {
-          log(`Transcription [${result.source}]: ${result.text.substring(0, 80)}`);
-          broadcast({ action: 'transcript', text: result.text, source: result.source });
-          await processTranscript(result.text);
-        }
-      } catch (err) {
-        warn('Transcription error: ' + err.message);
-        broadcast({ action: 'transcriptionError', error: err.message });
-        if (plugins) plugins.emit('onError', { type: 'transcription', message: err.message }).catch(() => {});
-      } finally {
-        try { fs.unlinkSync(segmentFile); } catch (_) {}
-      }
-    },
-    onError: (err) => {
-      warn('Audio capture error: ' + err.message);
-      broadcast({ action: 'audioError', error: err.message });
-    },
-  });
-
-  audioCapture.startBrowserCapture();
-
-  if (parentPort) {
-    parentPort.postMessage({ type: 'audio-pipeline-ready' });
-  }
-
-  log(`Pipeline démarré sur ws://localhost:${SERVER_PORT}`);
-  if (aiLoadErrors.length > 0) {
-    log('⚠ ' + aiLoadErrors.length + ' AI feature(s) in limited mode (see logs above)');
-  }
-}
-
-// ===========================================================================
-// Worker IPC
-// ===========================================================================
-if (parentPort) {
-  parentPort.on('message', (msg) => {
-    if (!msg || typeof msg !== 'object') return;
-
-    if (msg.type === 'shutdown') {
-      log('Shutdown requested by main process');
-      audioCapture.stopRecording();
-      wss.clients.forEach(ws => ws.close());
-      wss.close();
-      if (plugins) plugins.shutdown().catch(() => {});
-      if (parentPort) parentPort.postMessage({ type: 'status', status: 'stopped' });
-      return;
-    }
-
-    if (msg.type === 'theme-changed') {
-      broadcast({ action: 'applyTheme', ...msg.css });
-      return;
-    }
-
-    if (msg.type === 'obs-gate-changed') {
-      obsGateOpen = msg.open;
-      obsGateReason = msg.reason || '';
-      log(`OBS gate: ${obsGateOpen ? 'OPEN' : 'CLOSED'} (${obsGateReason})`);
-      return;
-    }
-
-    if (msg.type === 'audio-pcm-chunk') {
-      audioCapture.feedPcmChunk(Buffer.from(msg.buffer));
-      return;
-    }
-  });
-
-  parentPort.postMessage({ type: 'status', status: 'running' });
-}
-
-// ===========================================================================
-// Bible lookup cache directory
-// ===========================================================================
-try {
-  bibleLookup.setCacheDir(USER_DATA_DIR);
-} catch (err) {
-  warn('Failed to set Bible cache dir: ' + err.message);
-}
-
-// ===========================================================================
-// Startup
-// ===========================================================================
-configValidator.validateSystemConfig()
-  .then(configValidator.displayValidationResults)
-  .catch((err) => warn('config-validator: ' + err.message));
-
-startPipeline();
-
-process.on('SIGTERM', () => {
-  log('SIGTERM received');
-  audioCapture.stopRecording();
-  wss.close();
-  if (plugins) plugins.shutdown().catch(() => {});
-  process.exit(0);
-});
-
-process.on('SIGINT', () => {
-  log('SIGINT received');
-  audioCapture.stopRecording();
-  wss.close();
-  if (plugins) plugins.shutdown().catch(() => {});
-  process.exit(0);
-});
-
-// CORRECTIF (checklist mise en production, point 4) : le process continuait
-// à tourner après une exception non gérée, dans un état "à moitié planté" —
-// pire qu'un crash net en plein culte (le serveur répond peut-être encore,
-// mais plus correctement). On journalise, on nettoie, puis on quitte avec un
-// code non-nul : main.js (voir worker.on('exit', ...)) détecte déjà cette
-// sortie et redémarre automatiquement le pipeline (avec protection anti
-// boucle de crash) — ce mécanisme existait mais n'était jamais déclenché
-// tant que le process ne quittait pas réellement.
-process.on('uncaughtException', (err) => {
-  warn('Uncaught exception (arrêt du serveur): ' + (err && err.stack || err.message));
-  try { audioCapture.cleanupTempFiles({ force: true }); } catch (_) { /* ignorer, on quitte de toute façon */ }
-  process.exit(1);
-});
-
-process.on('unhandledRejection', (reason) => {
-  const message = (reason && reason.stack) || (reason && reason.message) || String(reason);
-  warn('Unhandled promise rejection (arrêt du serveur): ' + message);
-  try { audioCapture.cleanupTempFiles({ force: true }); } catch (_) { /* ignorer, on quitte de toute façon */ }
-  process.exit(1);
-});
+    // Initialize
+    loadMicrophones();
+  </script>
+</body>
+</html>
