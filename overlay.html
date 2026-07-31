@@ -395,12 +395,20 @@ body {
 /* ==========================================================================
    WebSocket connection
    ========================================================================== */
+// CORRECTIF (bug "serveur tout le temps hors ligne") : server.js rejette
+// (code 1008) toute connexion sans ?token=WS_AUTH_TOKEN dès que cette
+// variable est définie côté serveur. Cette fonction ne l'ajoutait jamais à
+// l'URL WebSocket -> boucle infinie rejet/reconnexion. Le token voyage dans
+// la query string de la page overlay elle-même (celle collée dans OBS,
+// ex. http://127.0.0.1:8765/overlay?token=...), on le relaie tel quel ici.
 const getWsUrl = () => {
+  const token = new URLSearchParams(window.location.search).get('token');
+  const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
   if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${proto}//${window.location.host}`;
+    return `${proto}//${window.location.host}${tokenParam}`;
   }
-  return 'ws://localhost:3000';
+  return `ws://localhost:3000${tokenParam}`;
 };
 
 let ws = null;
