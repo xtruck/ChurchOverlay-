@@ -1213,6 +1213,27 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- CORRECTIF (audit round 6) : ai-enricher.js était entièrement codé et
+                     câblé côté serveur (getLiveSummary / getSermonTheme / getCrossReferences /
+                     translateText / getPostServiceRecap) mais sans aucun bouton pour les
+                     déclencher — les modules IA étaient donc invisibles et inutilisables
+                     malgré l'activation dans config/features.json. -->
+                <div class="card" style="margin-top: 1.5rem;">
+                    <div class="card-header">
+                        <span class="card-title">Fonctions IA Avancées</span>
+                    </div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem;">
+                        <button class="btn btn-secondary" onclick="requestSermonTheme()">Détecter le thème</button>
+                        <button class="btn btn-secondary" onclick="requestLiveSummary()">Résumé en direct</button>
+                        <button class="btn btn-secondary" onclick="requestCrossReferences()">Références croisées</button>
+                        <button class="btn btn-secondary" onclick="requestLiveTranslation()">Traduire (EN)</button>
+                        <button class="btn btn-secondary" onclick="requestPostServiceRecap()">Récap fin de culte</button>
+                    </div>
+                    <div id="aiEnricherOutput" class="stat-row" style="display: block;">
+                        <span class="stat-label">Aucune analyse IA lancée pour le moment.</span>
+                    </div>
+                </div>
             </section>
 
             <!-- Settings Section -->
@@ -1375,7 +1396,16 @@
 
         let ws = null;
         let reconnectAttempts = 0;
-        const maxReconnectAttempts = 10;
+        // CORRECTIF (bug de production signalé — "l'application reste
+        // déconnectée et je ne peux rien faire") : `maxReconnectAttempts`
+        // faisait ABANDONNER toute tentative de reconnexion après 10 essais
+        // (~90s de backoff cumulé), contrairement à overlay.html qui retente
+        // indéfiniment toutes les 3s. Si le serveur redémarrait ou avait un
+        // simple hoquet de plus de 90s (mise à jour, redémarrage Electron,
+        // pic de charge), le dashboard restait bloqué déconnecté pour de bon
+        // — seul un rechargement manuel de la page pouvait le réparer.
+        // On retente maintenant indéfiniment, avec le même backoff plafonné
+        // à 10s qu'avant, sans jamais s'arrêter.
         let reconnectTimer = null;
 
         function initWebSocket() {
@@ -1425,14 +1455,13 @@
         function scheduleReconnect() {
             if (reconnectTimer) return;
 
-            if (reconnectAttempts < maxReconnectAttempts) {
-                reconnectAttempts++;
-                const delay = Math.min(2000 * reconnectAttempts, 10000);
-                reconnectTimer = setTimeout(() => {
-                    reconnectTimer = null;
-                    initWebSocket();
-                }, delay);
-            }
+            reconnectAttempts++;
+            const delay = Math.min(2000 * reconnectAttempts, 10000);
+            updateStatus(false, reconnectAttempts);
+            reconnectTimer = setTimeout(() => {
+                reconnectTimer = null;
+                initWebSocket();
+            }, delay);
         }
 
         initWebSocket();
@@ -1464,6 +1493,36 @@
                 case 'preServiceCheckResult':
                     renderPreServiceCheckResult(message);
                     break;
+                // CORRECTIF (audit round 6) : réponses des modules ai-enricher.js,
+                // jusqu'ici sans destination côté dashboard (les WS envoyaient bien
+                // ces actions, mais rien n'écoutait la réponse).
+                case 'sermonTheme':
+                    renderAiEnricherOutput(
+                        message.theme ? `Thème détecté : ${message.theme}${message.keywords ? ' — mots-clés : ' + message.keywords.join(', ') : ''}` : 'Aucun thème identifiable pour le moment (transcription encore trop courte).'
+                    );
+                    break;
+                case 'liveSummary':
+                    renderAiEnricherOutput(message.summary ? `Résumé : ${message.summary}` : 'Résumé indisponible pour le moment.');
+                    break;
+                case 'crossReferences':
+                    renderAiEnricherOutput(
+                        message.results && message.results.length
+                            ? `Références croisées pour ${message.reference} : ` +
+                              message.results.map(r => `${r.ref}${r.reason ? ' (' + r.reason + ')' : ''}`).join(' · ')
+                            : `Aucune référence croisée trouvée pour ${message.reference || 'ce verset'}.`
+                    );
+                    break;
+                case 'textTranslated':
+                    renderAiEnricherOutput(`Traduction (${message.targetLang}) : ${message.translation}`);
+                    break;
+                case 'postServiceRecap':
+                    renderAiEnricherOutput(
+                        message.recap
+                            ? `${message.recap.title || 'Récap du culte'} — Points clés : ${(message.recap.keyPoints || []).join(', ')}. ` +
+                              `Application : ${message.recap.application || '—'}. Verset à retenir : ${message.recap.memoryVerse || '—'}.`
+                            : 'Récap indisponible.'
+                    );
+                    break;
             }
         }
 
@@ -1481,6 +1540,62 @@
             if (btn) { btn.disabled = true; btn.textContent = '⏳ Vérification en cours...'; }
             if (resultsEl) { resultsEl.style.display = 'none'; }
             ws.send(JSON.stringify({ action: 'preServiceCheck' }));
+        }
+
+        // CORRECTIF (audit round 6) : déclencheurs des fonctions IA avancées
+        // (ai-enricher.js) — le backend existait déjà pour toutes ces actions,
+        // il manquait uniquement le bouton et l'affichage du résultat.
+        function renderAiEnricherOutput(text) {
+            const el = document.getElementById('aiEnricherOutput');
+            if (el) el.innerHTML = `<span class="stat-label">${text}</span>`;
+        }
+
+        function requireWsOrWarn() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                showToast('Non connecté au serveur — impossible de lancer l\'analyse IA.', 'error');
+                return false;
+            }
+            return true;
+        }
+
+        function requestSermonTheme() {
+            if (!requireWsOrWarn()) return;
+            renderAiEnricherOutput('⏳ Analyse du thème en cours...');
+            ws.send(JSON.stringify({ action: 'getSermonTheme' }));
+        }
+
+        function requestLiveSummary() {
+            if (!requireWsOrWarn()) return;
+            renderAiEnricherOutput('⏳ Génération du résumé en cours...');
+            ws.send(JSON.stringify({ action: 'getLiveSummary' }));
+        }
+
+        function requestCrossReferences() {
+            if (!requireWsOrWarn()) return;
+            const verse = state.currentVerse;
+            if (!verse || !verse.reference) {
+                renderAiEnricherOutput('Aucun verset affiché récemment — affiche un verset avant de demander des références croisées.');
+                return;
+            }
+            renderAiEnricherOutput('⏳ Recherche de références croisées...');
+            ws.send(JSON.stringify({ action: 'getCrossReferences', reference: verse.reference, text: verse.text || '' }));
+        }
+
+        function requestLiveTranslation() {
+            if (!requireWsOrWarn()) return;
+            const verse = state.currentVerse;
+            if (!verse || !verse.text) {
+                renderAiEnricherOutput('Aucun texte de verset à traduire pour le moment.');
+                return;
+            }
+            renderAiEnricherOutput('⏳ Traduction en cours...');
+            ws.send(JSON.stringify({ action: 'translateText', text: verse.text, targetLang: 'en' }));
+        }
+
+        function requestPostServiceRecap() {
+            if (!requireWsOrWarn()) return;
+            renderAiEnricherOutput('⏳ Génération du récapitulatif...');
+            ws.send(JSON.stringify({ action: 'getPostServiceRecap' }));
         }
 
         function renderPreServiceCheckResult(message) {
@@ -1620,7 +1735,7 @@
             if (document.getElementById('sessionDuration')) document.getElementById('sessionDuration').textContent = `${minutes}:${seconds}`;
         }
 
-        function updateStatus(connected) {
+        function updateStatus(connected, reconnectAttempt) {
             const statusEls = document.querySelectorAll('.status');
             statusEls.forEach(status => {
                 const dot = status.querySelector('.status-dot');
@@ -1630,7 +1745,9 @@
                     if (text) text.textContent = 'Connecté';
                 } else {
                     if (dot) dot.style.background = 'var(--accent-rose)';
-                    if (text) text.textContent = 'Déconnecté';
+                    if (text) text.textContent = reconnectAttempt
+                        ? `Déconnecté — reconnexion en cours (tentative ${reconnectAttempt})...`
+                        : 'Déconnecté';
                 }
             });
             const sidebarText = document.getElementById('sidebarStatusText');
