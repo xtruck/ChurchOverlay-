@@ -459,6 +459,22 @@ function clearWorkerRecycle() {
 // Logs
 // ---------------------------------------------------------------------------
 const MAX_LOG_LINES = 200;
+
+// CORRECTIF (bug "overlay/OBS tout le temps hors ligne" quand WS_AUTH_TOKEN
+// est défini) : dashboard.html et setup.html reçoivent désormais le token
+// via l'option `query` de loadFile (voir createMainWindow), mais l'URL
+// overlayUrl envoyée au tableau de bord — celle que l'utilisateur copie
+// dans OBS comme Browser Source — était générée sans ?token=.... overlay.html
+// (getWsUrl) relit pourtant le token depuis window.location.search : sans
+// lui, chaque connexion WebSocket de l'overlay est rejetée (code 1008) et
+// retente indéfiniment, donc le verset ne s'affiche jamais dans OBS même
+// si le tableau de bord se montre "Serveur En Ligne". Centralise la
+// construction de l'URL ici pour que le token soit toujours ajouté.
+function getOverlayUrl() {
+  const base = 'file:///' + path.join(APP_ROOT, 'overlay.html').replace(/\\/g, '/');
+  const token = (process.env.WS_AUTH_TOKEN || '').trim();
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+}
 let recentLogs = [];
 let dashboardFlushTimer = null;
 let dashboardDirty = false;
@@ -489,7 +505,7 @@ function flushDashboard() {
   mainWindow.webContents.send('status-update', {
     status: serverStatus,
     logs: recentLogs.slice(-30),
-    overlayUrl: 'file:///' + path.join(APP_ROOT, 'overlay.html').replace(/\\/g, '/'),
+    overlayUrl: getOverlayUrl(),
   });
 }
 
@@ -548,7 +564,7 @@ ipcMain.handle('clear-api-key', async (_evt, { provider }) => {
 ipcMain.handle('get-status', async () => ({
   status: serverStatus,
   logs: recentLogs.slice(-30),
-  overlayUrl: 'file:///' + path.join(APP_ROOT, 'overlay.html').replace(/\\/g, '/'),
+  overlayUrl: getOverlayUrl(),
 }));
 
 ipcMain.handle('request-restart', async () => restartServer());
