@@ -1662,8 +1662,7 @@
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
                         action: 'showVerse',
-                        reference: reference,
-                        durationMs: 300000
+                        reference: reference
                     }));
                     addActivity(`Recherche manuelle : ${reference}`, 'info');
                     showToast(`Affichage de ${reference}...`, 'info');
