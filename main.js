@@ -227,7 +227,16 @@ function createMainWindow() {
     },
   });
   mainWindow.setMenuBarVisibility(false);
-  mainWindow.loadFile(path.join(__dirname, 'dashboard.html'));
+  // CORRECTIF (bug "app tout le temps déconnectée") : server.js exige un
+  // ?token=WS_AUTH_TOKEN sur chaque connexion WebSocket dès que la variable
+  // est définie, mais dashboard.html est chargé ici en file:// sans aucune
+  // query string — le token n'atteignait donc jamais le renderer, chaque
+  // connexion était rejetée (1008) et retentait en boucle. On le passe
+  // désormais explicitement via l'option `query` de loadFile ; dashboard.html
+  // le relit dans getWsUrl() via window.location.search.
+  mainWindow.loadFile(path.join(__dirname, 'dashboard.html'), {
+    query: process.env.WS_AUTH_TOKEN ? { token: process.env.WS_AUTH_TOKEN } : {},
+  });
 
   mainWindow.on('close', (e) => {
     if (!app.isQuitting) {
