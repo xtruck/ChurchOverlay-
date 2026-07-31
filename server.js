@@ -46,6 +46,23 @@ const featuresStore = require('./features-store');
 const obsController = require('./obs-controller');
 
 // ---------------------------------------------------------------------------
+// Durée d'affichage des versets — source unique de vérité
+// ---------------------------------------------------------------------------
+// CORRECTIF (audit round 6) : la durée par défaut était codée en dur à
+// 300_000 ms (5 min) à 6 endroits différents du fichier, alors que la valeur
+// par défaut voulue est 120_000 ms (2 min), configurable via
+// config/features.json (display.verseDurationMs). Un seul point d'accès
+// (getVerseDurationMs) remplace désormais toutes les occurrences codées en
+// dur, pour qu'un changement de configuration s'applique partout — y compris
+// dans le Reading Mode et les commandes vocales, qui ignoraient jusqu'ici la
+// config et gardaient toujours 5 minutes.
+const DEFAULT_VERSE_DURATION_MS = 120_000;
+function getVerseDurationMs() {
+  const features = featuresStore.readFeatures();
+  return (features.display || {}).verseDurationMs || DEFAULT_VERSE_DURATION_MS;
+}
+
+// ---------------------------------------------------------------------------
 // NEW: AI modules (OPTIONAL — wrapped in try-catch)
 // ---------------------------------------------------------------------------
 let SemanticDetector = null;
@@ -357,7 +374,7 @@ const readingMode = new ReadingMode({
       reference,
       text: verse.text,
       langMode: displayLanguage,
-      durationMs: 300_000,
+      durationMs: getVerseDurationMs(),
       readingMode: true,
     });
     pushHistory({ reference, text: verse.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
@@ -518,7 +535,7 @@ async function processTranscript(text) {
             const label = bibleLookup.buildReferenceLabel(
               { book, chapter: nextChapter, verseStart: first.num }, displayLanguage
             );
-            broadcast({ action: 'showVerse', reference: label, text: first.text, langMode: displayLanguage, durationMs: 300_000, readingMode: true });
+            broadcast({ action: 'showVerse', reference: label, text: first.text, langMode: displayLanguage, durationMs: getVerseDurationMs(), readingMode: true });
             pushHistory({ reference: label, text: first.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
             broadcast({ action: 'historyUpdated', history: verseHistory });
             log('Reading mode: chapitre suivant → ' + label);
@@ -594,7 +611,7 @@ async function processTranscript(text) {
   }
 
   // ── Display verse ──
-  const durationMs = (features.display || {}).verseDurationMs || 300_000;
+  const durationMs = getVerseDurationMs();
   broadcast({
     action: 'showVerse',
     reference: verse.reference,
@@ -640,7 +657,7 @@ async function handleVoiceCommand(command, originalText) {
       if (!command.reference) return;
       try {
         const verse = await bibleLookup.getVerseMultilang(command.reference, displayLanguage);
-        broadcast({ action: 'showVerse', ...verse, durationMs: 300_000, triggeredByVoice: true });
+        broadcast({ action: 'showVerse', ...verse, durationMs: getVerseDurationMs(), triggeredByVoice: true });
         pushHistory({ ...verse, triggeredByVoice: true, timestamp: Date.now() });
         broadcast({ action: 'historyUpdated', history: verseHistory });
         log('Voice command: showed ' + verse.reference);
@@ -854,7 +871,7 @@ wss.on('connection', (ws, req) => {
       }
       try {
         const verse = await bibleLookup.getVerseMultilang(ref, displayLanguage);
-        const durationMs = sanitized.durationMs || 300_000;
+        const durationMs = sanitized.durationMs || getVerseDurationMs();
         broadcast({ action: 'showVerse', ...verse, durationMs, triggeredManually: true });
         pushHistory({ ...verse, triggeredManually: true, timestamp: Date.now() });
         broadcast({ action: 'historyUpdated', history: verseHistory });
@@ -937,7 +954,7 @@ wss.on('connection', (ws, req) => {
           const label = bibleLookup.buildReferenceLabel(
             { book: ref.book, chapter: ref.chapter, verseStart: firstVerse.num }, displayLanguage
           );
-          broadcast({ action: 'showVerse', reference: label, text: firstVerse.text, langMode: displayLanguage, durationMs: 300_000, readingMode: true });
+          broadcast({ action: 'showVerse', reference: label, text: firstVerse.text, langMode: displayLanguage, durationMs: getVerseDurationMs(), readingMode: true });
           pushHistory({ reference: label, text: firstVerse.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
           broadcast({ action: 'historyUpdated', history: verseHistory });
         }
