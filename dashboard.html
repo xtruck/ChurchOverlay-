@@ -1386,12 +1386,20 @@
         });
 
         // Dynamic WebSocket connection URL
+        // CORRECTIF (bug "app tout le temps déconnectée") : même cause que
+        // pour overlay.html — le token n'était jamais transmis à la connexion
+        // WebSocket. En Electron, main.js injecte désormais ?token=... via
+        // l'option `query` de loadFile() ; on le relit ici. En navigateur
+        // classique (http://host:port/dashboard?token=...), il vient
+        // directement de l'URL.
         const getWsUrl = () => {
+            const token = new URLSearchParams(window.location.search).get('token');
+            const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
             if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
                 const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                return `${proto}//${window.location.host}`;
+                return `${proto}//${window.location.host}${tokenParam}`;
             }
-            return 'ws://localhost:3000';
+            return `ws://localhost:3000${tokenParam}`;
         };
 
         let ws = null;
