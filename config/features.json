@@ -10,6 +10,9 @@
       "modes": ["preaching", "prayer", "worship", "silence", "communion"]
     }
   },
+  "display": {
+    "verseDurationMs": 120000
+  },
   "ai": {
     "themeDetection": { "enabled": false, "intervalSec": 60 },
     "liveTranslation": { "enabled": false, "targetLangs": ["en", "es"] },
