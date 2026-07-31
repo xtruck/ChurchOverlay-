@@ -573,7 +573,11 @@ function extendDisplayTime(extraMs) {
 // démesurée (accidentelle ou malveillante) ne cause un épuisement de
 // ressources côté overlay. Alignée avec le plafond serveur (1h = 3600000 ms).
 const MAX_DISPLAY_DURATION_MS = 3600000;
-const DEFAULT_DISPLAY_DURATION_MS = 300000;
+// Filet de sécurité uniquement (si le serveur envoie une valeur invalide/
+// absente) : aligné sur le défaut serveur de 120s (config/features.json
+// display.verseDurationMs). Le serveur envoie normalement toujours une
+// durée valide via getVerseDurationMs().
+const DEFAULT_DISPLAY_DURATION_MS = 120000;
 function sanitizeDurationMs(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_DISPLAY_DURATION_MS;
