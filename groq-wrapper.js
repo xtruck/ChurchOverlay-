@@ -63,8 +63,15 @@ async function checkKey(timeoutMs = CHECK_KEY_TIMEOUT_MS) {
 
 /**
  * Envoie le fichier audio à l'API Groq et retourne { text }.
+ * CORRECTIF (audit round 7) : `signal` optionnel pour permettre l'annulation
+ * — voir transcribeWithFallback ci-dessous, qui abandonnait auparavant la
+ * requête fetch en arrière-plan (sans jamais l'annuler) dès que le budget de
+ * 5s expirait et que le relais passait à Deepgram. Sur un service de
+ * plusieurs heures avec un réseau instable, chaque segment en timeout
+ * laissait une requête HTTP orpheline ouverte (parfois plusieurs minutes,
+ * le temps du timeout TCP par défaut), accumulant des connexions inutiles.
  */
-async function transcribeFile(audioFilePath) {
+async function transcribeFile(audioFilePath, signal) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     throw new Error("GROQ_API_KEY non défini dans l'environnement.");
@@ -83,6 +90,7 @@ async function transcribeFile(audioFilePath) {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}` },
     body: formData,
+    signal,
   });
 
   if (!response.ok) {
@@ -100,9 +108,11 @@ async function transcribeFile(audioFilePath) {
 async function transcribeWithFallback(audioFilePath, timeoutMs = FALLBACK_TIMEOUT_MS) {
   const deepgramEnabled = deepgram.isConfigured();
 
-  const groqPromise = transcribeFile(audioFilePath).catch((err) => ({ error: err }));
+  const groqAbort = new AbortController();
+  const deepgramAbort = new AbortController();
+  const groqPromise = transcribeFile(audioFilePath, groqAbort.signal).catch((err) => ({ error: err }));
   const deepgramPromise = deepgramEnabled
-    ? deepgram.transcribeFile(audioFilePath).catch((err) => ({ error: err }))
+    ? deepgram.transcribeFile(audioFilePath, deepgramAbort.signal).catch((err) => ({ error: err }))
     : Promise.resolve({ error: new Error('Deepgram non configuré') });
 
   const startedAt = Date.now();
@@ -113,10 +123,12 @@ async function transcribeWithFallback(audioFilePath, timeoutMs = FALLBACK_TIMEOU
   const groqRace = await Promise.race([groqPromise, timeoutPromise]);
 
   if (groqRace && !groqRace.timedOut && !groqRace.error) {
+    if (deepgramEnabled) deepgramAbort.abort();
     return { text: groqRace.text, source: 'groq' };
   }
   let groqError = null;
   if (groqRace && groqRace.timedOut) {
+    groqAbort.abort();
     groqError = new Error(`Timeout Groq (${timeoutMs}ms)`);
     console.warn('[groq-wrapper] Timeout Groq (%dms) — bascule sur Deepgram.', timeoutMs);
   } else if (groqRace && groqRace.error) {
