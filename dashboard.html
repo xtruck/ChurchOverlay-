@@ -916,6 +916,25 @@
                 </div>
             </header>
 
+            <!-- Pipeline alert banner (crashes / erreurs du worker server.js) -->
+            <!-- CORRECTIF : main.js capturait déjà les erreurs du pipeline via
+                 appendLog()/pipeline-alert et les exposait dans preload.js
+                 (onPipelineAlert, requestRestart), mais dashboard.html
+                 n'écoutait jamais ce canal : en cas de crash-loop du worker
+                 (3 échecs en 60s -> pipeline arrêté), l'utilisateur ne voyait
+                 que "Déconnecté — reconnexion en cours" indéfiniment, sans
+                 raison ni moyen de le relancer depuis la fenêtre principale
+                 (seule l'icône de la zone de notification l'avait). -->
+            <div id="pipelineAlertBanner" style="display:none; margin: 0 0 1.25rem 0; padding: 0.85rem 1.1rem; border-radius: 10px; align-items: center; justify-content: space-between; gap: 1rem;">
+                <div style="display:flex; align-items:center; gap:0.6rem;">
+                    <span id="pipelineAlertIcon">⚠️</span>
+                    <span id="pipelineAlertMessage" style="font-size: 0.9rem;"></span>
+                </div>
+                <button class="btn btn-secondary" onclick="restartPipeline()" style="flex-shrink:0;">
+                    Redémarrer le pipeline
+                </button>
+            </div>
+
             <!-- Overview Section -->
             <section id="overview" class="section">
                 <!-- Search & Quick Detect Bar -->
@@ -1473,6 +1492,58 @@
         }
 
         initWebSocket();
+
+        // --- Bannière d'erreur pipeline (voir CORRECTIF plus haut dans le HTML) ---
+        function setPipelineAlert(payload) {
+            const banner = document.getElementById('pipelineAlertBanner');
+            const icon = document.getElementById('pipelineAlertIcon');
+            const msg = document.getElementById('pipelineAlertMessage');
+            if (!banner || !msg) return;
+
+            if (!payload || payload.clear) {
+                banner.style.display = 'none';
+                return;
+            }
+
+            const isError = (payload.severity || 'warning') === 'error';
+            banner.style.background = isError ? 'rgba(244, 63, 94, 0.12)' : 'rgba(245, 158, 11, 0.12)';
+            banner.style.border = `1px solid ${isError ? 'var(--accent-rose)' : '#f59e0b'}`;
+            banner.style.display = 'flex';
+            if (icon) icon.textContent = isError ? '⛔' : '⚠️';
+            msg.textContent = payload.message || 'Le pipeline a rencontré un problème.';
+        }
+
+        if (window.churchOverlay && window.churchOverlay.onPipelineAlert) {
+            window.churchOverlay.onPipelineAlert(setPipelineAlert);
+        }
+
+        // Au chargement, on récupère aussi l'état courant (utile si l'alerte a
+        // été émise avant que le tableau de bord ait fini de charger).
+        if (window.churchOverlay && window.churchOverlay.getStatus) {
+            window.churchOverlay.getStatus().then((s) => {
+                if (s && s.status === 'error') {
+                    setPipelineAlert({
+                        severity: 'error',
+                        message: 'Le pipeline audio est arrêté après plusieurs erreurs. Cliquez sur "Redémarrer le pipeline".',
+                    });
+                }
+            }).catch(() => {});
+        }
+
+        let restartInFlight = false;
+        async function restartPipeline() {
+            if (restartInFlight || !window.churchOverlay || !window.churchOverlay.requestRestart) return;
+            restartInFlight = true;
+            showToast('Redémarrage du pipeline en cours...', 'info');
+            try {
+                await window.churchOverlay.requestRestart();
+                showToast('Pipeline redémarré', 'success');
+            } catch (e) {
+                showToast('Échec du redémarrage : ' + (e && e.message ? e.message : e), 'error');
+            } finally {
+                restartInFlight = false;
+            }
+        }
 
         function handleMessage(message) {
             switch (message.action) {
