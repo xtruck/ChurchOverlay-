@@ -38,7 +38,7 @@
  * Groq/Deepgram, dans audioCapture.on({ onAudioSegment })).
  */
 
-const { safeStorage } = require('electron');
+function getSafeStorage() {   return require('electron').safeStorage; }
 const featuresStore = require('./features-store');
 
 let obsClient = null;
