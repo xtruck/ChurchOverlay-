@@ -173,6 +173,11 @@ function createRateLimiter(options = {}) {
   function startCleanup() {
     if (cleanupInterval) return;
     cleanupInterval = setInterval(cleanup, config.cleanupIntervalMs);
+    // CORRECTIF (audit round 7) : unref() défensif — ce timer ne doit jamais
+    // à lui seul empêcher le process/worker qui l'a créé de s'arrêter
+    // naturellement, même sur un chemin de sortie qui aurait oublié
+    // d'appeler stopCleanup().
+    cleanupInterval.unref?.();
   }
 
   /**
