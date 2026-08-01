@@ -1177,8 +1177,22 @@ if (parentPort) {
       audioCapture.stopRecording();
       wss.clients.forEach(ws => ws.close());
       wss.close();
-      if (plugins) plugins.shutdown().catch(() => {});
+      // CORRECTIF (audit round 7) : connRateLimiter.startCleanup() lance un
+      // setInterval (5 min) jamais arrêté ni unref()'d. Sans stopCleanup()
+      // ici, ce timer maintenait le worker vivant indéfiniment après un
+      // arrêt "gracieux" : main.js attendait ensuite 5s (voir
+      // stopServerGracefully) avant de forcer un terminate() — donc CHAQUE
+      // redémarrage/fermeture de l'app subissait 5s de délai inutile et ne
+      // se terminait jamais vraiment proprement.
+      connRateLimiter.stopCleanup();
       if (parentPort) parentPort.postMessage({ type: 'status', status: 'stopped' });
+      const finish = () => process.exit(0);
+      if (plugins) {
+        plugins.shutdown().catch(() => {}).finally(finish);
+        setTimeout(finish, 2000).unref?.();
+      } else {
+        finish();
+      }
       return;
     }
 
@@ -1225,6 +1239,7 @@ process.on('SIGTERM', () => {
   log('SIGTERM received');
   audioCapture.stopRecording();
   wss.close();
+  connRateLimiter.stopCleanup();
   if (plugins) plugins.shutdown().catch(() => {});
   process.exit(0);
 });
