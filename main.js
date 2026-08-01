@@ -44,6 +44,17 @@ let worker = null;
 let workerStartedAt = 0;
 let workerRecycleTimer = null;
 let recentCrashes = [];
+// CORRECTIF (audit round 7) : le worker retentait automatiquement à chaque
+// sortie (toutes les ~500ms) sans distinguer la cause. Pour un port déjà
+// occupé (EADDRINUSE — l'app précédente n'a pas complètement fermé, ou un
+// `node server.js` manuel tourne encore), retenter est inutile : le port ne
+// se libère pas tout seul en 500ms, donc les 3 tentatives échouaient
+// systématiquement en ~1,5s, épuisant le budget de crashes et affichant un
+// message générique ("après 4 crashes") au lieu de la vraie cause pourtant
+// déjà connue du worker. On mémorise la dernière alerte reçue pour réagir
+// spécifiquement à ce cas dans le handler 'exit' ci-dessous.
+let lastAlertCode = null;
+let lastAlertMessage = '';
 let serverStatus = 'starting';
 
 // ---------------------------------------------------------------------------
@@ -283,6 +294,14 @@ function startServer() {
   const config = loadConfig();
   if (!config) return;
 
+  // CORRECTIF (audit round 7) : lastAlertCode ne doit refléter que la
+  // tentative de démarrage en cours — sans ce reset, une ancienne alerte
+  // 'server-listen-error' (port occupé) pouvait survivre à un redémarrage
+  // réussi puis faire croire, à tort, qu'un crash sans rapport plus tard
+  // était encore un problème de port.
+  lastAlertCode = null;
+  lastAlertMessage = '';
+
   const workerEnv = Object.assign({}, process.env, {
     NODE_ENV: 'production',
     APP_ROOT,
@@ -334,6 +353,8 @@ function startServer() {
       scheduleDashboardFlush();
       if (msg.status === 'running' && mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('pipeline-alert', { clear: true });
+        lastAlertCode = null;
+        lastAlertMessage = '';
       }
       return;
     }
@@ -346,6 +367,8 @@ function startServer() {
     }
 
     if (msg.type === 'alert') {
+      lastAlertCode = msg.code || null;
+      lastAlertMessage = msg.message || '';
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('pipeline-alert', {
           code: msg.code,
@@ -384,6 +407,21 @@ function startServer() {
 
     recentCrashes = recentCrashes.filter((t) => Date.now() - t < WORKER_CRASH_WINDOW_MS);
     recentCrashes.push(Date.now());
+
+    // CORRECTIF (audit round 7) : EADDRINUSE ne se résout pas en 500ms — le
+    // port ne se libère pas tout seul. Retenter automatiquement ne fait que
+    // gaspiller le budget de crashes pour rien et retarde un message clair
+    // de plusieurs secondes. On coupe court immédiatement, avec le message
+    // déjà précis envoyé par server.js (voir alert 'server-listen-error').
+    if (lastAlertCode === 'server-listen-error') {
+      console.error('[main] Port déjà utilisé — pas de nouvelle tentative automatique.');
+      appendLog(lastAlertMessage || 'Le port du serveur est déjà utilisé par une autre application.', true);
+      serverStatus = 'error';
+      refreshTrayMenu();
+      scheduleDashboardFlush();
+      return;
+    }
+
     if (recentCrashes.length > WORKER_MAX_CRASHES) {
       console.error('[main] Trop de crashes worker (%d en %ds) — arrêt du pipeline.',
         recentCrashes.length, WORKER_CRASH_WINDOW_MS / 1000);
