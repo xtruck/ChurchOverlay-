@@ -71,10 +71,15 @@ async function checkKey(timeoutMs = CHECK_KEY_TIMEOUT_MS) {
 
 /**
  * Envoie le fichier audio à l'API Deepgram et retourne { text, confidence }.
+ * CORRECTIF (audit round 7) : `signal` optionnel — même correctif que
+ * groq-wrapper.transcribeFile, pour permettre à transcribeWithFallback
+ * d'annuler la requête Deepgram encore en vol si Groq répond entre-temps
+ * (au lieu de la laisser tourner en arrière-plan pour rien).
  * @param {string} audioFilePath
+ * @param {AbortSignal} [signal]
  * @returns {Promise<{ text: string, confidence?: number }>}
  */
-async function transcribeFile(audioFilePath) {
+async function transcribeFile(audioFilePath, signal) {
   const apiKey = process.env.DEEPGRAM_API_KEY;
   if (!apiKey) {
     throw new Error('DEEPGRAM_API_KEY non défini dans l\'environnement.');
@@ -109,6 +114,7 @@ async function transcribeFile(audioFilePath) {
       'Content-Type': 'audio/wav',
     },
     body: audioBuffer,
+    signal,
   });
 
   if (!response.ok) {
