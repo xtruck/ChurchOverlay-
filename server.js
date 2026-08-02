@@ -763,6 +763,20 @@ wss.on('connection', (ws, req) => {
       }
     }
 
+    // CORRECTIF (audit sécurité — flood par type de message) : la vérif
+    // globale ci-dessus (checkMessage(ws)) protège contre un flood générique
+    // par IP, mais pas contre un client autorisé qui enverrait uniquement
+    // des `showVerse` en rafale (jamais assez pour la limite globale, mais
+    // assez pour perturber l'affichage devant l'assemblée). On ajoute donc
+    // une seconde vérification, spécifique à l'action, maintenant que
+    // `sanitized.action` est connu (le JSON est parsé au-dessus).
+    const actionCheck = connRateLimiter.checkMessage(ws, sanitized.action);
+    if (!actionCheck.allowed) {
+      warn(`Action '${sanitized.action}' rejetée — ${actionCheck.reason}`);
+      ws.send(JSON.stringify({ action: 'error', error: actionCheck.reason }));
+      return;
+    }
+
     // RBAC: viewer connections cannot send operator actions
     if (ws.clientRole === 'viewer' && OPERATOR_ACTIONS.has(sanitized.action)) {
       warn(`Action '${sanitized.action}' refusée — rôle 'viewer' insuffisant`);
