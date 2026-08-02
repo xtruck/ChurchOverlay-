@@ -18,6 +18,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { sanitizeForPrompt } = require('./prompt-sanitizer');
 
 // -----------------------------------------------------------------------
 // Configuration
@@ -111,9 +112,15 @@ function setCached(hash, result) {
 // Build the LLM prompt
 // -----------------------------------------------------------------------
 function buildPrompt(text, contextHistory) {
+  // CORRECTIF (audit sécurité — injection de prompt) : `text` et
+  // `contextHistory` proviennent tous les deux de la transcription vocale
+  // en direct, donc du contrôle de l'intervenant au micro. Sans nettoyage,
+  // une phrase ressemblant à une instruction système pourrait influencer
+  // la détection de référence biblique elle-même.
+  const safeText = sanitizeForPrompt(text);
   const context = contextHistory.length > 0
     ? `Recent sermon context (last ${contextHistory.length} fragments):\n` +
-      contextHistory.map((t, i) => `${i + 1}. "${t}"`).join('\n')
+      contextHistory.map((t, i) => `${i + 1}. "${sanitizeForPrompt(t)}"`).join('\n')
     : 'No prior context available.';
 
   return `You are a biblical reference detector for a live church sermon transcription system.
@@ -122,7 +129,7 @@ TASK: Analyze the following sermon transcript fragment and determine if the spea
 
 ${context}
 
-Current fragment to analyze: "${text}"
+Current fragment to analyze: "${safeText}"
 
 RULES:
 1. If the speaker mentions a specific Bible reference (e.g., "Jean 3:16", "Romains 8"), extract it precisely.
