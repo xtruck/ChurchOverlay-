@@ -1068,7 +1068,10 @@ wss.on('connection', (ws, req) => {
       }
       const fullTranscript = recentTranscripts.join(' ');
       const themeData = await aiEnricher.detectSermonTheme(fullTranscript);
-      ws.send(JSON.stringify({ action: 'sermonTheme', ...themeData, timestamp: Date.now() }));
+      // AJOUT (mode culte auto-détecté) : `silent` est renvoyé tel quel pour que
+      // le dashboard sache distinguer une requête auto (badge discret, toutes les
+      // 2 min) d'un clic manuel de l'opérateur (affichage complet du résultat).
+      ws.send(JSON.stringify({ action: 'sermonTheme', ...themeData, silent: !!sanitized.silent, timestamp: Date.now() }));
       return;
     }
 
@@ -1101,8 +1104,23 @@ wss.on('connection', (ws, req) => {
         ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
         return;
       }
-      const translation = await aiEnricher.translateSegment(sanitized.text || '', sanitized.targetLang || 'en');
-      ws.send(JSON.stringify({ action: 'textTranslated', original: sanitized.text, targetLang: sanitized.targetLang || 'en', translation }));
+      const targetLang = sanitized.targetLang || 'en';
+      const translation = await aiEnricher.translateSegment(sanitized.text || '', targetLang);
+      // AJOUT (traduction live overlay) : quand la requête vient du mode auto
+      // (autoTranslateEnabled côté dashboard), on diffuse directement le résultat
+      // à tous les clients (overlay inclus) via `showTranslation`, en plus de la
+      // réponse individuelle au demandeur — pas besoin d'un aller-retour dashboard
+      // -> overlay bricolé à la main.
+      if (sanitized.autoBroadcast) {
+        broadcast({ action: 'showTranslation', translation, targetLang, reference: sanitized.reference || null });
+      }
+      ws.send(JSON.stringify({ action: 'textTranslated', original: sanitized.text, targetLang, translation, autoBroadcast: !!sanitized.autoBroadcast }));
+      return;
+    }
+
+    // ── Live translation off (auto mode disabled) ──
+    if (sanitized.action === 'hideTranslation') {
+      broadcast({ action: 'hideTranslation' });
       return;
     }
 
