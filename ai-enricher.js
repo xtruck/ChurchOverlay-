@@ -7,6 +7,7 @@
  */
 
 const { chatCompletion } = require('./groq-wrapper');
+const { sanitizeForPrompt } = require('./prompt-sanitizer');
 
 let features = {
   ai: {
@@ -33,7 +34,7 @@ async function detectSermonTheme(transcriptBuffer) {
 
   const prompt = `Tu analyses des extraits de sermon en français.
 Extrais LE THÈME PRINCIPAL en 2-4 mots maximum + 3 mots-clés.
-Transcription: "${transcriptBuffer.slice(-2000)}"
+Transcription: "${sanitizeForPrompt(transcriptBuffer.slice(-2000))}"
 Réponds uniquement en JSON valide: {"theme":"...","keywords":["...","...","..."]}`;
 
   try {
@@ -54,7 +55,7 @@ async function translateSegment(text, targetLang = 'en') {
   if (!text || !text.trim()) return null;
 
   const prompt = `You are a live sermon translator. Translate the following French text into ${targetLang}. Preserve the spiritual tone. Reply with the translation ONLY, no explanations or quotes:
-"${text}"`;
+"${sanitizeForPrompt(text)}"`;
 
   try {
     const res = await chatCompletion(prompt, { temperature: 0.1, max_tokens: 200 });
@@ -75,7 +76,7 @@ async function generateLiveSummary(fullTranscript) {
   const prompt = `Tu résumes un sermon en cours de prédication.
 Produis un résumé concis de MAX 25 mots en français.
 Format: "Le prédicateur explique que..."
-Transcription récente: "${fullTranscript.slice(-4000)}"`;
+Transcription récente: "${sanitizeForPrompt(fullTranscript.slice(-4000))}"`;
 
   try {
     const res = await chatCompletion(prompt, { temperature: 0.3, max_tokens: 100 });
@@ -96,9 +97,9 @@ async function generatePostServiceRecap(fullTranscript, versesShown = []) {
 
   const prompt = `Tu es assistant pastoral. À partir de la transcription du sermon et des versets affichés, produis un récapitulatif.
 TRANSCRIPTION:
-"${(fullTranscript || '').slice(0, 10000)}"
+"${sanitizeForPrompt((fullTranscript || '').slice(0, 10000))}"
 
-VERSETS CITÉS: ${verseList || 'Aucun verset enregistré'}
+VERSETS CITÉS: ${sanitizeForPrompt(verseList) || 'Aucun verset enregistré'}
 
 Réponds uniquement en JSON avec cette structure exacte:
 {
@@ -123,7 +124,7 @@ Réponds uniquement en JSON avec cette structure exacte:
 async function findCrossReferences(verseRef, verseText) {
   if (features.ai?.crossReferences?.enabled === false) return [];
 
-  const prompt = `Tu es un exégète biblique. Pour le verset "${verseRef}: ${verseText || ''}", identifie 2 à 3 versets bibliques liés (thèmes similaires ou parallèles).
+  const prompt = `Tu es un exégète biblique. Pour le verset "${sanitizeForPrompt(verseRef)}: ${sanitizeForPrompt(verseText || '')}", identifie 2 à 3 versets bibliques liés (thèmes similaires ou parallèles).
 Réponds uniquement en JSON: [{"ref": "Livre Chapitre:Verset", "reason": "Brève explication en français"}]`;
 
   try {
