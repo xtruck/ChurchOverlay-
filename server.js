@@ -41,6 +41,7 @@ const { ReadingMode } = require('./reading-mode');
 const themeLoader = require('./theme-loader');
 const featuresStore = require('./features-store');
 const obsController = require('./obs-controller');
+const validation = require('./validation');
 
 // ---------------------------------------------------------------------------
 // Durée d'affichage des versets — source unique de vérité
@@ -184,6 +185,12 @@ if (WS_AUTH_TOKEN && WS_AUTH_TOKEN.length < 16) {
   console.error('[server] WS_AUTH_TOKEN too short (minimum 16 characters). Authentication disabled.');
   WS_AUTH_TOKEN = null;
 }
+
+// Active par défaut (recommandé) ; VALIDATE_MESSAGES=false ou 0 désactive
+// le contrôle strict de validation.js pour les actions qu'il couvre.
+const VALIDATE_MESSAGES_ENABLED = !['false', '0'].includes(
+  (process.env.VALIDATE_MESSAGES || '').trim().toLowerCase()
+);
 
 const maxConnValidation = configValidator.validateEnvVar('MAX_CONNECTIONS', process.env.MAX_CONNECTIONS);
 const MAX_CONNECTIONS = maxConnValidation.valid ? maxConnValidation.parsedValue : 10;
@@ -782,6 +789,25 @@ wss.on('connection', (ws, req) => {
       warn(`Action '${sanitized.action}' refusée — rôle 'viewer' insuffisant`);
       ws.send(JSON.stringify({ action: 'error', error: 'Action réservée aux opérateurs.' }));
       return;
+    }
+
+    // CORRECTIF (audit backend — validation.js jamais branché) : pour les
+    // actions déjà couvertes par validation.SCHEMAS (showVerse, hideVerse,
+    // updateVerse, lookupReference, setLanguage, setTranslation, getState,
+    // getHistory, replayVerse, diagnostic), on applique en plus le contrôle
+    // strict de type/longueur/valeurs autorisées de ce module — jusqu'ici
+    // testé en isolation (test-validation.js) mais jamais appelé ici. Fait
+    // volontairement de façon additive : les actions plus récentes non
+    // couvertes par SCHEMAS (transcript, preServiceCheck, startReading,
+    // applyTheme, obs-*, etc.) ne passent pas par ce gate et continuent de
+    // fonctionner exactement comme avant.
+    if (VALIDATE_MESSAGES_ENABLED && validation.SCHEMAS[sanitized.action]) {
+      const strict = validation.validateMessage(sanitized);
+      if (!strict.valid) {
+        warn(`Message '${sanitized.action}' rejeté par validation.js — ${strict.error}`);
+        ws.send(JSON.stringify({ action: 'error', error: strict.error }));
+        return;
+      }
     }
 
     // --- Speech or audio transcript input ---
