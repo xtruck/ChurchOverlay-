@@ -30,6 +30,21 @@ function createRateLimiter(options = {}) {
     ...options
   };
 
+  // CORRECTIF (audit sécurité — flood par type de message) : la limite
+  // globale ci-dessus (maxMessagesPerMinute, 60/min) protège contre un flood
+  // générique, mais un client autorisé à envoyer des messages "operator"
+  // pouvait auparavant envoyer 60 `showVerse` en 1 minute et perturber
+  // l'affichage devant l'assemblée sans jamais dépasser la limite globale.
+  // On ajoute des limites SPÉCIFIQUES par type d'action, en plus (pas à la
+  // place) de la limite globale par IP.
+  const PER_ACTION_LIMITS = {
+    showVerse: { max: 5, windowMs: 60000 },
+    emergencyClear: { max: 3, windowMs: 60000 },
+    applyTheme: { max: 5, windowMs: 60000 },
+  };
+  // IP -> Map(actionType -> Array de timestamps)
+  const actionHistory = new Map();
+
   // Stockage des connexions par IP
   const connections = new Map(); // IP -> Set de WebSocket connections
   
@@ -52,6 +67,26 @@ function createRateLimiter(options = {}) {
         messageHistory.delete(ip);
       } else {
         messageHistory.set(ip, recent);
+      }
+    }
+
+    // CORRECTIF (audit sécurité) : actionHistory grandit avec le temps
+    // exactement comme messageHistory (une entrée par IP x type d'action) —
+    // même stratégie de purge nécessaire pour ne pas réintroduire une fuite
+    // mémoire déjà corrigée ailleurs dans le projet (voir round 7).
+    for (const [ip, perIpActions] of actionHistory.entries()) {
+      for (const [actionType, timestamps] of perIpActions.entries()) {
+        const limit = PER_ACTION_LIMITS[actionType];
+        const windowMs = limit ? limit.windowMs : config.connectionWindowMs;
+        const recent = timestamps.filter(time => now - time < windowMs);
+        if (recent.length === 0) {
+          perIpActions.delete(actionType);
+        } else {
+          perIpActions.set(actionType, recent);
+        }
+      }
+      if (perIpActions.size === 0) {
+        actionHistory.delete(ip);
       }
     }
     
@@ -126,7 +161,7 @@ function createRateLimiter(options = {}) {
    * @param {WebSocket} ws - Connexion WebSocket
    * @returns {Object} - { allowed: boolean, reason: string|null }
    */
-  function checkMessage(ws) {
+  function checkMessage(ws, actionType) {
     const ip = getClientIP(ws);
     const now = Date.now();
     
@@ -142,6 +177,29 @@ function createRateLimiter(options = {}) {
         allowed: false, 
         reason: `Trop de messages (${recent.length}/${config.maxMessagesPerMinute} par minute)` 
       };
+    }
+
+    // CORRECTIF (audit sécurité) : vérification supplémentaire par type
+    // d'action, en plus de la limite globale ci-dessus. `actionType` est
+    // optionnel — les appelants existants qui font checkMessage(ws) sans
+    // deuxième argument gardent exactement l'ancien comportement (limite
+    // globale uniquement), donc rien ne casse en amont.
+    if (actionType && PER_ACTION_LIMITS[actionType]) {
+      const limit = PER_ACTION_LIMITS[actionType];
+      const perIpActions = actionHistory.get(ip) || new Map();
+      const actionTimestamps = perIpActions.get(actionType) || [];
+      const recentActions = actionTimestamps.filter(time => now - time < limit.windowMs);
+
+      if (recentActions.length >= limit.max) {
+        return {
+          allowed: false,
+          reason: `Too many ${actionType} messages per minute (${recentActions.length}/${limit.max})`
+        };
+      }
+
+      recentActions.push(now);
+      perIpActions.set(actionType, recentActions);
+      actionHistory.set(ip, perIpActions);
     }
     
     // Ajouter le message actuel
