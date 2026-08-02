@@ -1499,6 +1499,10 @@
                 <div class="card" style="margin-top: 1.5rem;">
                     <div class="card-header">
                         <span class="card-title">Fonctions IA Avancées</span>
+                        <!-- AJOUT : badge de mode de culte auto-détecté (rafraîchi en tâche de
+                             fond, sans action de l'opérateur). Reste discret tant qu'aucune
+                             détection n'a encore eu lieu. -->
+                        <span id="sermonModeBadge" class="status-badge" style="display:none;"></span>
                     </div>
                     <div style="display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem;">
                         <button class="btn btn-secondary" onclick="requestSermonTheme()">Détecter le thème</button>
@@ -1506,7 +1510,24 @@
                         <button class="btn btn-secondary" onclick="requestCrossReferences()">Références croisées</button>
                         <button class="btn btn-secondary" onclick="requestLiveTranslation()">Traduire (EN)</button>
                         <button class="btn btn-secondary" onclick="requestPostServiceRecap()">Récap fin de culte</button>
+                        <button class="btn btn-secondary" onclick="exportPostServiceRecap()" title="Génère d'abord le récap si nécessaire">📄 Exporter le récap (.txt)</button>
                     </div>
+
+                    <!-- AJOUT : traduction live automatique — quand activé, chaque verset
+                         affiché est traduit automatiquement et envoyé à l'overlay (double
+                         affichage FR/langue cible), sans clic manuel par verset. -->
+                    <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap; margin-bottom:1rem; padding:0.6rem 0.8rem; border:1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius:8px;">
+                        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; user-select:none;">
+                            <input type="checkbox" id="autoTranslateToggle" onchange="onAutoTranslateToggle()">
+                            <span>Traduction live sur l'overlay</span>
+                        </label>
+                        <select id="autoTranslateLang" onchange="onAutoTranslateLangChange()" style="margin-left:auto;">
+                            <option value="en">Anglais</option>
+                            <option value="es">Espagnol</option>
+                            <option value="dyu">Dioula</option>
+                        </select>
+                    </div>
+
                     <div id="aiEnricherOutput" class="stat-row" style="display: block;">
                         <span class="stat-label">Aucune analyse IA lancée pour le moment.</span>
                     </div>
@@ -1647,8 +1668,33 @@
             activeLanguage: 'FR',
             sessionStartTime: Date.now(),
             transcripts: [],
-            currentVerse: null
+            currentVerse: null,
+            // AJOUT (mode culte + traduction live + export récap)
+            autoTranslateEnabled: false,
+            autoTranslateLang: 'en',
+            lastPostServiceRecap: null
         };
+
+        // AJOUT : intervalle d'auto-détection du mode de culte (louange, prédication,
+        // prière, annonces...). Tourne toutes les 2 minutes en tâche de fond une fois
+        // le WebSocket connecté ; volontairement peu fréquent pour ne pas multiplier
+        // les appels IA inutilement. unref() n'existe pas côté navigateur (pas besoin :
+        // la page se ferme avec l'onglet, pas de process Node à libérer ici).
+        const SERMON_MODE_INTERVAL_MS = 120000;
+        let sermonModeTimer = null;
+
+        function startSermonModeAutoDetect() {
+            if (sermonModeTimer) return;
+            sermonModeTimer = setInterval(() => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ action: 'getSermonTheme', silent: true }));
+                }
+            }, SERMON_MODE_INTERVAL_MS);
+        }
+
+        function stopSermonModeAutoDetect() {
+            if (sermonModeTimer) { clearInterval(sermonModeTimer); sermonModeTimer = null; }
+        }
 
         // Navigation tab switching
         document.querySelectorAll('.nav-item').forEach(item => {
@@ -1714,6 +1760,10 @@
                     clearTimeout(reconnectTimer);
                     reconnectTimer = null;
                 }
+                // AJOUT : (re)démarre l'auto-détection du mode de culte à chaque
+                // connexion/reconnexion — pas d'effet si déjà démarré (voir
+                // startSermonModeAutoDetect, protégé contre le double-démarrage).
+                startSermonModeAutoDetect();
             };
 
             ws.onmessage = (event) => {
@@ -1733,6 +1783,7 @@
             ws.onclose = () => {
                 console.log('Déconnecté du serveur ChurchOverlay');
                 updateStatus(false);
+                stopSermonModeAutoDetect();
                 scheduleReconnect();
             };
         }
@@ -1811,6 +1862,11 @@
                     updateDashboard();
                     addActivity(`Verset affiché : ${message.reference}`, 'success');
                     showToast(`Verset : ${message.reference}`, 'success');
+                    // AJOUT : traduction live automatique si le toggle est activé —
+                    // chaque nouveau verset déclenche translateText sans action manuelle.
+                    if (state.autoTranslateEnabled && message.text) {
+                        requestAutoTranslation(message);
+                    }
                     break;
                 case 'hideVerse':
                     hideVerseDisplay();
@@ -1834,9 +1890,15 @@
                 // jusqu'ici sans destination côté dashboard (les WS envoyaient bien
                 // ces actions, mais rien n'écoutait la réponse).
                 case 'sermonTheme':
-                    renderAiEnricherOutput(
-                        message.theme ? `Thème détecté : ${message.theme}${message.keywords ? ' — mots-clés : ' + message.keywords.join(', ') : ''}` : 'Aucun thème identifiable pour le moment (transcription encore trop courte).'
-                    );
+                    // AJOUT : les requêtes auto (silent:true, voir startSermonModeAutoDetect)
+                    // mettent seulement à jour le badge, sans polluer le panneau de sortie
+                    // manuel avec un texte qui change toutes les 2 minutes.
+                    updateSermonModeBadge(message);
+                    if (!message.silent) {
+                        renderAiEnricherOutput(
+                            message.theme ? `Thème détecté : ${message.theme}${message.keywords ? ' — mots-clés : ' + message.keywords.join(', ') : ''}` : 'Aucun thème identifiable pour le moment (transcription encore trop courte).'
+                        );
+                    }
                     break;
                 case 'liveSummary':
                     renderAiEnricherOutput(message.summary ? `Résumé : ${message.summary}` : 'Résumé indisponible pour le moment.');
@@ -1850,9 +1912,18 @@
                     );
                     break;
                 case 'textTranslated':
-                    renderAiEnricherOutput(`Traduction (${message.targetLang}) : ${message.translation}`);
+                    // Le broadcast vers l'overlay (action showTranslation) est fait
+                    // directement par le serveur quand autoBroadcast est vrai (voir
+                    // requestAutoTranslation) — ici on ne fait qu'afficher côté dashboard.
+                    if (!message.autoBroadcast) {
+                        renderAiEnricherOutput(`Traduction (${message.targetLang}) : ${message.translation}`);
+                    }
                     break;
                 case 'postServiceRecap':
+                    // AJOUT : on garde le dernier récap en mémoire pour permettre
+                    // l'export en .txt sans le régénérer si l'opérateur clique export
+                    // juste après avoir cliqué "Récap fin de culte".
+                    state.lastPostServiceRecap = message.recap || null;
                     renderAiEnricherOutput(
                         message.recap
                             ? `${message.recap.title || 'Récap du culte'} — Points clés : ${(message.recap.keyPoints || []).join(', ')}. ` +
@@ -1933,6 +2004,96 @@
             if (!requireWsOrWarn()) return;
             renderAiEnricherOutput('⏳ Génération du récapitulatif...');
             ws.send(JSON.stringify({ action: 'getPostServiceRecap' }));
+        }
+
+        // AJOUT : badge de mode de culte auto-détecté (Louange / Prédication /
+        // Prière / Annonces...). Le texte de `theme` provient de detectSermonTheme
+        // côté ai-enricher.js ; on l'affiche tel quel sans le réinterpréter pour
+        // rester cohérent avec ce que l'IA a réellement détecté.
+        function updateSermonModeBadge(message) {
+            const badge = document.getElementById('sermonModeBadge');
+            if (!badge) return;
+            if (!message || !message.theme) {
+                badge.style.display = 'none';
+                return;
+            }
+            badge.textContent = `Mode détecté : ${message.theme}`;
+            badge.className = 'status-badge success';
+            badge.style.display = 'inline-flex';
+        }
+
+        // AJOUT : toggle "Traduction live sur l'overlay" — active/désactive
+        // l'auto-détection et déclenche/arrête immédiatement selon le verset
+        // actuellement affiché.
+        function onAutoTranslateToggle() {
+            const checkbox = document.getElementById('autoTranslateToggle');
+            state.autoTranslateEnabled = !!(checkbox && checkbox.checked);
+            if (state.autoTranslateEnabled) {
+                showToast('Traduction live activée sur l\'overlay.', 'success');
+                if (state.currentVerse && state.currentVerse.text) {
+                    requestAutoTranslation(state.currentVerse);
+                }
+            } else {
+                showToast('Traduction live désactivée.', 'info');
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ action: 'hideTranslation' }));
+                }
+            }
+        }
+
+        function onAutoTranslateLangChange() {
+            const select = document.getElementById('autoTranslateLang');
+            state.autoTranslateLang = select ? select.value : 'en';
+            if (state.autoTranslateEnabled && state.currentVerse && state.currentVerse.text) {
+                requestAutoTranslation(state.currentVerse);
+            }
+        }
+
+        function requestAutoTranslation(verse) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            ws.send(JSON.stringify({
+                action: 'translateText',
+                text: verse.text,
+                targetLang: state.autoTranslateLang,
+                reference: verse.reference || null,
+                autoBroadcast: true
+            }));
+        }
+
+        // AJOUT : export du dernier récap de fin de culte en fichier .txt
+        // téléchargeable, pour le partager sans avoir à copier-coller le texte
+        // affiché dans le panneau IA.
+        function exportPostServiceRecap() {
+            if (!state.lastPostServiceRecap) {
+                if (!requireWsOrWarn()) return;
+                renderAiEnricherOutput('⏳ Génération du récapitulatif avant export...');
+                ws.send(JSON.stringify({ action: 'getPostServiceRecap' }));
+                showToast('Récap en cours de génération — cliquez à nouveau sur Exporter dans quelques secondes.', 'info');
+                return;
+            }
+            const r = state.lastPostServiceRecap;
+            const lines = [
+                r.title || 'Récap du culte',
+                '='.repeat((r.title || 'Récap du culte').length),
+                '',
+                'Points clés :',
+                ...(r.keyPoints || []).map(p => `- ${p}`),
+                '',
+                `Application : ${r.application || '—'}`,
+                `Verset à retenir : ${r.memoryVerse || '—'}`,
+                '',
+                `Exporté le ${new Date().toLocaleString()}`
+            ];
+            const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `recap-culte-${new Date().toISOString().slice(0, 10)}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('Récap exporté.', 'success');
         }
 
         function renderPreServiceCheckResult(message) {
@@ -2371,12 +2532,25 @@
             canvas.width = canvas.offsetWidth;
             canvas.height = canvas.offsetHeight;
 
+            // CORRECTIF (lenteur UI signalée) : le dégradé était recréé avec
+            // ctx.createLinearGradient() pour CHAQUE barre, à CHAQUE frame
+            // (~128 barres x 60fps = plusieurs milliers d'allocations/seconde).
+            // Ce churn saturait le garbage collector du processus Electron en
+            // continu, ce qui rendait tout le thread principal saccadé —
+            // dashboard ET overlay, qui partagent le même processus.
+            // Le dégradé ne dépend que de la hauteur du canvas (fixe), donc
+            // on le calcule une seule fois hors de la boucle de dessin.
+            const barGradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
+            barGradient.addColorStop(0, '#6366f1');
+            barGradient.addColorStop(1, '#06b6d4');
+
             function draw() {
                 animationId = requestAnimationFrame(draw);
                 analyser.getByteFrequencyData(dataArray);
 
                 ctx.fillStyle = 'rgba(17, 24, 39, 0.4)';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = barGradient;
 
                 const barWidth = (canvas.width / bufferLength) * 2.2;
                 let barHeight;
@@ -2384,14 +2558,7 @@
 
                 for (let i = 0; i < bufferLength; i++) {
                     barHeight = dataArray[i] / 2.5;
-
-                    const gradient = ctx.createLinearGradient(0, canvas.height, 0, canvas.height - barHeight);
-                    gradient.addColorStop(0, '#6366f1');
-                    gradient.addColorStop(1, '#06b6d4');
-
-                    ctx.fillStyle = gradient;
                     ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
-
                     x += barWidth + 1;
                 }
             }
