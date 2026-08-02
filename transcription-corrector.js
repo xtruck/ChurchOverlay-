@@ -16,6 +16,10 @@
 // -----------------------------------------------------------------------
 // Dictionary of common STT errors → correct biblical terms
 // -----------------------------------------------------------------------
+'use strict';
+
+const { sanitizeForPrompt } = require('./prompt-sanitizer');
+
 const CORRECTIONS = {
   'jean le baptiseur': 'Jean-Baptiste',
   'jean baptiseur': 'Jean-Baptiste',
@@ -275,9 +279,14 @@ async function correctSmart(text, groqWrapper) {
   if (!hasBiblicalTerm) return text;
 
   try {
+    // CORRECTIF (audit sécurité — injection de prompt) : on sanitize une
+    // COPIE pour le prompt uniquement (`safeText`) — `text` original reste
+    // intact car il est retourné tel quel en cas d'échec/rejet plus bas
+    // (fallback bulletproof : ne jamais perdre la transcription réelle).
+    const safeText = sanitizeForPrompt(text);
     const prompt = `You are a biblical transcription corrector. Fix ONLY obvious biblical name/term errors in this French sermon transcript. Keep everything else identical.
 
-Transcript: "${text}"
+Transcript: "${safeText}"
 
 Rules:
 1. Only fix clear STT errors on biblical names, places, or theological terms
