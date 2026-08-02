@@ -54,6 +54,7 @@ let lastGateOpen = null; // null = jamais évalué ; évite un log/callback redo
 // sauvegarde) ou écrite avant ce correctif.
 function resolvePassword(cfg) {
   if (cfg.passwordEncrypted) {
+    const safeStorage = getSafeStorage();
     if (!safeStorage.isEncryptionAvailable()) {
       console.error('[obs] Chiffrement système indisponible : impossible de lire le mot de passe OBS.');
       return '';
