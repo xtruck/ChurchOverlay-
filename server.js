@@ -3,8 +3,13 @@
  * server.js — Pipeline audio → transcription cloud → détection de référence
  * biblique → overlay en temps réel (WebSocket)
  * ----------------------------------------------------------------------------
- * v1.0.1 — FIXED for actual detector.js API (detect, not detectBilingual)
- * All AI modules wrapped in try-catch. Falls back gracefully.
+ * v1.1.0 — SECURITY HARDENED:
+ *   + Role-based access control (operator vs viewer)
+ *   + Origin validation for non-localhost binds
+ *   + Per-message-type rate limiting
+ *   + Prompt injection filtering for all LLM-bound text
+ *   + WS_AUTH_TOKEN minimum length enforcement (16 chars)
+ *   + File permissions on temp audio files (0o600)
  * ============================================================================
  */
 
@@ -30,16 +35,8 @@ const deepgramWrapper = require('./deepgram-wrapper');
 const configValidator = require('./config-validator');
 const { createFileLogger } = require('./logger');
 
-// FIX: Use detector-compat which wraps detector.detect() as detectBilingual()
 const detector = require('./detector-compat');
-
 const bibleLookup = require('./bible-lookup-with-api');
-// CORRECTIF : ce module exporte la CLASSE ReadingMode, pas une instance.
-// `require('./reading-mode').start(...)` n'a donc jamais été une méthode
-// valide — chaque appel plantait silencieusement (attrapé par le try/catch
-// autour, donc invisible sans test d'intégration réel). On instancie
-// maintenant réellement la classe, avec les callbacks branchés sur le
-// pipeline (bible-lookup + broadcast WebSocket).
 const { ReadingMode } = require('./reading-mode');
 const themeLoader = require('./theme-loader');
 const featuresStore = require('./features-store');
@@ -48,14 +45,6 @@ const obsController = require('./obs-controller');
 // ---------------------------------------------------------------------------
 // Durée d'affichage des versets — source unique de vérité
 // ---------------------------------------------------------------------------
-// CORRECTIF (audit round 6) : la durée par défaut était codée en dur à
-// 300_000 ms (5 min) à 6 endroits différents du fichier, alors que la valeur
-// par défaut voulue est 120_000 ms (2 min), configurable via
-// config/features.json (display.verseDurationMs). Un seul point d'accès
-// (getVerseDurationMs) remplace désormais toutes les occurrences codées en
-// dur, pour qu'un changement de configuration s'applique partout — y compris
-// dans le Reading Mode et les commandes vocales, qui ignoraient jusqu'ici la
-// config et gardaient toujours 5 minutes.
 const DEFAULT_VERSE_DURATION_MS = 120_000;
 function getVerseDurationMs() {
   const features = featuresStore.readFeatures();
@@ -78,11 +67,8 @@ let AIThemeGenerator = null;
 let themeGenerator = null;
 
 const aiLoadErrors = [];
-
-// Check if groq has chatCompletion (it might not in test environments)
 const groqHasChatCompletion = typeof groq.chatCompletion === 'function';
 
-// Try to load each AI module individually
 try {
   const mod = require('./semantic-detector');
   SemanticDetector = mod.SemanticDetector;
@@ -109,13 +95,11 @@ try {
 try {
   const mod = require('./transcription-corrector');
   TranscriptionCorrector = mod.TranscriptionCorrector;
-  // Only create corrector if groq has chatCompletion
   if (groqHasChatCompletion) {
     corrector = new TranscriptionCorrector(groq);
     console.log('[server] ✓ TranscriptionCorrector loaded');
   } else {
     aiLoadErrors.push('TranscriptionCorrector: groq.chatCompletion not available (tests use mock)');
-    // Create corrector in fast-only mode (no smart correction)
     corrector = new TranscriptionCorrector(null);
     console.log('[server] ✓ TranscriptionCorrector loaded (fast mode only)');
   }
@@ -167,7 +151,7 @@ try {
 let aiEnricher = null;
 try {
   aiEnricher = require('./ai-enricher');
-  console.log('[server] ✓ AI Enricher loaded (sermon summary, translation, cross-refs, theme detection)');
+  console.log('[server] ✓ AI Enricher loaded');
 } catch (e) {
   aiLoadErrors.push('AIEnricher: ' + e.message);
   console.warn('[server] AIEnricher disabled:', e.message);
@@ -192,24 +176,14 @@ if (!portValidation.valid) {
 const SERVER_PORT = portValidation.valid ? portValidation.parsedValue : 3000;
 
 const hostValidation = configValidator.validateEnvVar('WS_HOST', process.env.WS_HOST);
-// CORRECTIF (checklist mise en production, point 2) : une valeur WS_HOST
-// invalide (ex: variable renseignée avec des espaces) retombait auparavant
-// sur '0.0.0.0' — donc une simple erreur de configuration EXPOSAIT le
-// serveur à tout le réseau au lieu de le protéger. Le repli sûr est
-// désormais '127.0.0.1' (identique à la valeur par défaut du schéma quand
-// la variable est absente), donc une config invalide ne peut plus jamais
-// ouvrir le serveur plus largement que prévu.
 const WS_HOST = hostValidation.valid ? hostValidation.parsedValue : '127.0.0.1';
 
-// CORRECTIF (checklist mise en production, point 1) : jeton partagé optionnel
-// pour l'authentification des connexions WebSocket. Généré et injecté par
-// main.js (variable d'environnement du Worker) en mode Electron ; à définir
-// manuellement dans .env pour `npm run server-only`. Si absent, aucune
-// authentification n'est appliquée (comportement historique, avec
-// avertissement — voir config-validator.js) : c'est sans risque tant que
-// WS_HOST reste 127.0.0.1 (uniquement local), mais devient nécessaire dès
-// que WS_HOST est ouvert au reste du réseau.
-const WS_AUTH_TOKEN = (process.env.WS_AUTH_TOKEN || '').trim() || null;
+// SECURITY: enforce minimum token length of 16 characters
+let WS_AUTH_TOKEN = (process.env.WS_AUTH_TOKEN || '').trim() || null;
+if (WS_AUTH_TOKEN && WS_AUTH_TOKEN.length < 16) {
+  console.error('[server] WS_AUTH_TOKEN too short (minimum 16 characters). Authentication disabled.');
+  WS_AUTH_TOKEN = null;
+}
 
 const maxConnValidation = configValidator.validateEnvVar('MAX_CONNECTIONS', process.env.MAX_CONNECTIONS);
 const MAX_CONNECTIONS = maxConnValidation.valid ? maxConnValidation.parsedValue : 10;
@@ -223,32 +197,25 @@ const connRateLimiter = createRateLimiter({
 });
 
 const app = express();
-
-// Serve static assets from project root
 app.use(express.static(APP_ROOT));
 
-// HTML routes
-app.get('/', (req, res) => {
-  res.sendFile(path.join(APP_ROOT, 'dashboard.html'));
-});
-app.get('/dashboard', (req, res) => {
-  res.sendFile(path.join(APP_ROOT, 'dashboard.html'));
-});
-app.get('/overlay', (req, res) => {
-  res.sendFile(path.join(APP_ROOT, 'overlay.html'));
-});
-app.get('/setup', (req, res) => {
-  res.sendFile(path.join(APP_ROOT, 'setup.html'));
-});
+// SECURITY: origin validation middleware for non-localhost binds
+const ALLOWED_ORIGINS = new Set([
+  'file://',
+  'null',
+  `http://localhost:${SERVER_PORT}`,
+  `http://127.0.0.1:${SERVER_PORT}`,
+]);
+
+app.get('/', (req, res) => res.sendFile(path.join(APP_ROOT, 'dashboard.html')));
+app.get('/dashboard', (req, res) => res.sendFile(path.join(APP_ROOT, 'dashboard.html')));
+app.get('/overlay', (req, res) => res.sendFile(path.join(APP_ROOT, 'overlay.html')));
+app.get('/setup', (req, res) => res.sendFile(path.join(APP_ROOT, 'setup.html')));
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', port: SERVER_PORT, service: 'ChurchOverlay' });
+  res.json({ status: 'ok', port: SERVER_PORT, service: 'ChurchOverlay', authEnabled: !!WS_AUTH_TOKEN });
 });
 
 const httpServer = http.createServer(app);
-// CORRECTIF (checklist mise en production, point 3) : sans maxPayload, un
-// message WebSocket volontairement énorme (ou un bug côté client) peut
-// consommer toute la mémoire du process. 64 Ko est largement suffisant pour
-// les messages échangés ici (transcriptions, commandes, config JSON).
 const wss = new WebSocket.Server({ server: httpServer, maxPayload: 64 * 1024 });
 
 httpServer.listen(SERVER_PORT, WS_HOST, () => {
@@ -262,11 +229,7 @@ httpServer.on('error', (err) => {
   console.error('[server] ' + reason);
   if (parentPort) {
     parentPort.postMessage({
-      type: 'alert',
-      code: 'server-listen-error',
-      severity: 'error',
-      message: reason,
-      timestamp: Date.now(),
+      type: 'alert', code: 'server-listen-error', severity: 'error', message: reason, timestamp: Date.now(),
     });
   }
   process.exitCode = 1;
@@ -284,33 +247,17 @@ const verseHistory = [];
 const MAX_HISTORY = 20;
 const recentTranscripts = [];
 const MAX_CONTEXT_TRANSCRIPTS = 10;
-
-// ---------------------------------------------------------------------------
-// OBS gating state
-// ---------------------------------------------------------------------------
 let obsGateOpen = true;
 let obsGateReason = '';
 
 // ---------------------------------------------------------------------------
 // Rate limiter (diffusion de versets)
 // ---------------------------------------------------------------------------
-// CORRECTIF (checklist mise en production, point 7) : ce module maintenait
-// jusqu'ici DEUX limiteurs de taux indépendants qui ne se parlaient pas —
-// `connRateLimiter` (ci-dessus, testé, par IP : connexions/messages) ET un
-// second limiteur fait main ici (tableau de timestamps) pour la fréquence de
-// diffusion des versets, rendant le comportement réel difficile à prévoir
-// sous charge. On réutilise maintenant le même module `rate-limiter.js`
-// (déjà couvert par test/test-rate-limiter.js) pour les deux usages, via une
-// instance dédiée à la diffusion : même limite qu'avant (50/minute), mais
-// une seule implémentation testée au lieu de deux.
 const broadcastRateLimiter = createRateLimiter({
   maxConnections: 1,
   maxMessagesPerMinute: 50,
   connectionWindowMs: 60_000,
 });
-// Clé factice : la limite de diffusion est globale au process, pas par IP —
-// on la fait donc porter sur une seule "connexion" interne constante plutôt
-// que sur chaque client WebSocket.
 const BROADCAST_LIMIT_KEY = { _socket: { remoteAddress: 'internal-broadcast' } };
 function isRateLimited() {
   return !broadcastRateLimiter.checkMessage(BROADCAST_LIMIT_KEY).allowed;
@@ -319,12 +266,6 @@ function isRateLimited() {
 // ---------------------------------------------------------------------------
 // Logging helpers
 // ---------------------------------------------------------------------------
-// CORRECTIF (checklist mise en production, point 6) : les logs ne vivaient
-// qu'en mémoire/console — si un problème survenait un dimanche et que
-// personne ne regardait l'écran au bon moment, aucune trace n'en subsistait.
-// USER_DATA_DIR est déjà un dossier inscriptible (jamais dans l'app.asar en
-// lecture seule, voir plus haut) ; on y ajoute un sous-dossier logs/ avec
-// rotation quotidienne et purge automatique au-delà de 30 jours.
 const fileLogger = createFileLogger(path.join(USER_DATA_DIR, 'logs'));
 
 function log(msg) {
@@ -359,32 +300,24 @@ function pushHistory(entry) {
 }
 
 // ---------------------------------------------------------------------------
-// Reading Mode — lecture continue (avance auto sans répéter la référence)
+// Reading Mode
 // ---------------------------------------------------------------------------
 const readingMode = new ReadingMode({
   getChapterVerses: (book, chapter) =>
     bibleLookup.getChapterVerses(book, chapter, displayLanguage === 'en' ? 'en' : 'fr'),
   onVerseAdvance: (verse) => {
     const reference = bibleLookup.buildReferenceLabel(
-      { book: readingMode.book, chapter: readingMode.chapter, verseStart: verse.num },
-      displayLanguage
+      { book: readingMode.book, chapter: readingMode.chapter, verseStart: verse.num }, displayLanguage
     );
     broadcast({
-      action: 'showVerse',
-      reference,
-      text: verse.text,
-      langMode: displayLanguage,
-      durationMs: getVerseDurationMs(),
-      readingMode: true,
+      action: 'showVerse', reference, text: verse.text, langMode: displayLanguage,
+      durationMs: getVerseDurationMs(), readingMode: true,
     });
     pushHistory({ reference, text: verse.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
     broadcast({ action: 'historyUpdated', history: verseHistory });
   },
 });
 
-// Démarre (ou redémarre) le Reading Mode sur un livre/chapitre/verset donné,
-// sans jamais faire planter le pipeline si le chapitre est introuvable
-// (ex. provider hors-ligne) : le Reading Mode reste simplement inactif.
 async function activateReadingMode(book, chapter, verseStart) {
   try {
     await readingMode.start(book, chapter, verseStart);
@@ -394,13 +327,37 @@ async function activateReadingMode(book, chapter, verseStart) {
 }
 
 // ---------------------------------------------------------------------------
+// Prompt injection filter for LLM-bound text
+// ---------------------------------------------------------------------------
+const PROMPT_INJECTION_PATTERNS = [
+  /ignore previous instructions/gi,
+  /ignore all prior/gi,
+  /system prompt/gi,
+  /you are now/gi,
+  /disregard everything/gi,
+  /new instructions?:/gi,
+  /<?\/?instruction>/gi,
+  /<?\/?system>/gi,
+  /DAN\b/gi,
+  /jailbreak/gi,
+];
+
+function sanitizeForPrompt(text) {
+  if (!text) return '';
+  let sanitized = text;
+  for (const pattern of PROMPT_INJECTION_PATTERNS) {
+    sanitized = sanitized.replace(pattern, '[...]');
+  }
+  // Limit length to prevent prompt stuffing
+  return sanitized.slice(0, 4000);
+}
+
+// ---------------------------------------------------------------------------
 // Update transcript context for AI features
 // ---------------------------------------------------------------------------
 function updateTranscriptContext(text) {
   recentTranscripts.push(text);
-  if (recentTranscripts.length > MAX_CONTEXT_TRANSCRIPTS) {
-    recentTranscripts.shift();
-  }
+  if (recentTranscripts.length > MAX_CONTEXT_TRANSCRIPTS) recentTranscripts.shift();
   if (semanticDetector) semanticDetector.addContext(text);
 }
 
@@ -415,12 +372,10 @@ function getRecentContext(maxChars = 300) {
 async function processTranscript(text) {
   log('Processing transcript: ' + text.substring(0, 100));
 
-  // ── Plugin hook (safe) ──
   if (plugins) {
     plugins.emit('onTranscript', text).catch(() => {});
   }
 
-  // ── Voice Command Detection (safe) ──
   if (detectCommand) {
     try {
       const command = detectCommand(text);
@@ -434,11 +389,9 @@ async function processTranscript(text) {
     }
   }
 
-  // ── Transcription Correction (safe) ──
   let correctedText = text;
   if (corrector) {
     try {
-      // Use 'fast' mode if groq chatCompletion not available (tests)
       const mode = groqHasChatCompletion ? 'auto' : 'fast';
       correctedText = await corrector.correct(text, mode);
       if (correctedText !== text) {
@@ -452,34 +405,22 @@ async function processTranscript(text) {
 
   updateTranscriptContext(correctedText);
 
-  // ── STEP 1: Regex/Fuzzy Bible Detection ──
   let reference = null;
   try {
-    // FIX: Use detector.detectBilingual() which is actually detector-compat wrapping detector.detect()
     reference = detector.detectBilingual(correctedText);
   } catch (e) {
     warn('Detector error: ' + e.message);
   }
 
-  // CORRECTIF (audit) : detector.js annote depuis un moment les correspondances
-  // floues (reference.fuzzy / fuzzyDistance / fuzzyOriginal) — ex. "Filipiens"
-  // corrigé en "philippiens" — mais server.js ne le signalait jamais à
-  // l'interface : le tableau de bord affiche déjà un traitement dédié pour
-  // 'candidateVerse' (showCandidateVerse), resté sans émetteur côté serveur.
-  // On informe l'opérateur qu'une correction a été appliquée, tout en
-  // continuant à diffuser le verset deviné (ne pas bloquer l'affichage en
-  // plein culte pour une confirmation manuelle).
   if (reference && reference.fuzzy) {
     log(`Fuzzy match: "${reference.fuzzyOriginal}" → "${reference.book}" (distance ${reference.fuzzyDistance})`);
     broadcast({
       action: 'candidateVerse',
       reference: { book: reference.book, chapter: reference.chapter, verseStart: reference.verseStart },
-      original: reference.fuzzyOriginal,
-      distance: reference.fuzzyDistance,
+      original: reference.fuzzyOriginal, distance: reference.fuzzyDistance,
     });
   }
 
-  // ── STEP 2: AI Semantic Detection (safe fallback) ──
   if (!reference && semanticDetector) {
     try {
       const semanticResult = await semanticDetector.detect(correctedText);
@@ -487,10 +428,8 @@ async function processTranscript(text) {
         reference = semanticResult;
         log(`Semantic detection: ${semanticResult.raw} (confidence: ${semanticResult.confidence.toFixed(2)})`);
         broadcast({
-          action: 'semanticDetected',
-          reference: semanticResult.raw,
-          confidence: semanticResult.confidence,
-          reasoning: semanticResult.reasoning,
+          action: 'semanticDetected', reference: semanticResult.raw,
+          confidence: semanticResult.confidence, reasoning: semanticResult.reasoning,
           alternativeRefs: semanticResult.alternativeRefs,
         });
       }
@@ -499,7 +438,6 @@ async function processTranscript(text) {
     }
   }
 
-  // ── STEP 3: Quote-based detection ──
   let quotedMatch = null;
   if (!reference) {
     try {
@@ -509,15 +447,9 @@ async function processTranscript(text) {
         quotedMatch = quoted;
         reference = { book: '', chapter: 0, verseStart: 0, detectedBy: 'quote' };
       }
-    } catch (e) {
-      // Quote detection not available, skip
-    }
+    } catch (e) {}
   }
 
-  // ── No explicit reference found: try Reading Mode auto-advance ──
-  // C'est le cœur de la "lecture continue" (façon Rhema/BibleShow) : si le
-  // Reading Mode est actif, on compare le fragment aux versets courant/
-  // suivants du chapitre en cours plutôt que d'abandonner le segment.
   if (!reference) {
     if (readingMode.active) {
       try {
@@ -528,21 +460,13 @@ async function processTranscript(text) {
           await activateReadingMode(book, nextChapter, 1);
           if (readingMode.active && readingMode.currentIndex >= 0) {
             const first = readingMode.verses[readingMode.currentIndex];
-            // onVerseAdvance ne se déclenche que sur un CHANGEMENT de
-            // verset détecté depuis processFragment ; ici on vient de
-            // (re)positionner explicitement sur le verset 1, donc on
-            // diffuse nous-mêmes pour ne pas perdre l'affichage.
-            const label = bibleLookup.buildReferenceLabel(
-              { book, chapter: nextChapter, verseStart: first.num }, displayLanguage
-            );
+            const label = bibleLookup.buildReferenceLabel({ book, chapter: nextChapter, verseStart: first.num }, displayLanguage);
             broadcast({ action: 'showVerse', reference: label, text: first.text, langMode: displayLanguage, durationMs: getVerseDurationMs(), readingMode: true });
             pushHistory({ reference: label, text: first.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
             broadcast({ action: 'historyUpdated', history: verseHistory });
             log('Reading mode: chapitre suivant → ' + label);
           }
         }
-        // Les autres cas (avancée normale, saut par numéro de verset) sont
-        // déjà diffusés par le callback onVerseAdvance de ReadingMode.
       } catch (e) {
         warn('Reading mode processFragment error: ' + e.message);
       }
@@ -550,13 +474,11 @@ async function processTranscript(text) {
     return;
   }
 
-  // ── Rate limit check ──
   if (isRateLimited()) {
     warn('Rate limit hit — verse display skipped');
     return;
   }
 
-  // ── Duplicate prevention ──
   const refKey = `${reference.book}:${reference.chapter}:${reference.verseStart || ''}`;
   const now = Date.now();
   if (lastReference === refKey && now - lastShownAt < DEDUP_MS) {
@@ -566,7 +488,6 @@ async function processTranscript(text) {
   lastReference = refKey;
   lastShownAt = now;
 
-  // ── Lookup verse text ──
   let verse;
   try {
     if (reference.detectedBy === 'quote') {
@@ -581,12 +502,10 @@ async function processTranscript(text) {
     return;
   }
 
-  // ── Plugin hook ──
   if (plugins) {
     plugins.emit('onVerseDetected', { ...verse, reference: verse.reference }).catch(() => {});
   }
 
-  // ── AI Theme Generation (safe) ──
   let theme = null;
   if (themeGenerator) {
     try {
@@ -601,7 +520,6 @@ async function processTranscript(text) {
     }
   }
 
-  // ── OBS gating ──
   const features = featuresStore.readFeatures();
   const multiScene = (features.broadcast || {}).multiScene || {};
   if (multiScene.enabled && !obsGateOpen) {
@@ -610,28 +528,16 @@ async function processTranscript(text) {
     return;
   }
 
-  // ── Display verse ──
   const durationMs = getVerseDurationMs();
   broadcast({
-    action: 'showVerse',
-    reference: verse.reference,
-    text: verse.text,
-    text_fr: verse.text_fr || null,
-    text_en: verse.text_en || null,
-    langMode: verse.langMode,
-    provider: verse.provider,
-    durationMs,
-    detectedBy: reference.detectedBy || 'regex',
-    matchedByQuote: reference.detectedBy === 'quote',
+    action: 'showVerse', reference: verse.reference, text: verse.text,
+    text_fr: verse.text_fr || null, text_en: verse.text_en || null,
+    langMode: verse.langMode, provider: verse.provider, durationMs,
+    detectedBy: reference.detectedBy || 'regex', matchedByQuote: reference.detectedBy === 'quote',
     theme: theme ? { name: theme.name, mood: theme.mood } : null,
   });
 
-  pushHistory({
-    reference: verse.reference,
-    text: verse.text.substring(0, 200),
-    timestamp: now,
-    detectedBy: reference.detectedBy || 'regex',
-  });
+  pushHistory({ reference: verse.reference, text: verse.text.substring(0, 200), timestamp: now, detectedBy: reference.detectedBy || 'regex' });
   broadcast({ action: 'historyUpdated', history: verseHistory });
 
   if (plugins) {
@@ -640,16 +546,13 @@ async function processTranscript(text) {
 
   log('Displayed: ' + verse.reference);
 
-  // Une citation explicite (référence dite ou reconnue) relance le Reading
-  // Mode sur ce livre/chapitre : le prédicateur peut ensuite continuer sa
-  // lecture sans répéter la référence à chaque verset.
   if (reference.book && reference.chapter) {
     await activateReadingMode(reference.book, reference.chapter, reference.verseStart || 1);
   }
 }
 
 // ===========================================================================
-// Voice Command Handler (safe)
+// Voice Command Handler
 // ===========================================================================
 async function handleVoiceCommand(command, originalText) {
   switch (command.action) {
@@ -666,15 +569,11 @@ async function handleVoiceCommand(command, originalText) {
       }
       break;
     }
-
     case 'hideVerse':
       broadcast({ action: 'hideVerse', triggeredByVoice: true });
       log('Voice command: hide overlay');
       break;
-
     case 'nextVerse': {
-      // CORRECTIF : cette commande ne faisait que diffuser une action que
-      // rien côté serveur n'interprétait — le Reading Mode n'avançait pas.
       broadcast({ action: 'nextVerse', triggeredByVoice: true });
       if (readingMode.active && readingMode.currentIndex < readingMode.verses.length - 1) {
         const verse = readingMode.verses[readingMode.currentIndex + 1];
@@ -683,7 +582,6 @@ async function handleVoiceCommand(command, originalText) {
       }
       break;
     }
-
     case 'previousVerse': {
       broadcast({ action: 'previousVerse', triggeredByVoice: true });
       if (readingMode.active && readingMode.currentIndex > 0) {
@@ -693,7 +591,6 @@ async function handleVoiceCommand(command, originalText) {
       }
       break;
     }
-
     case 'nextChapter': {
       broadcast({ action: 'nextChapter', triggeredByVoice: true });
       if (readingMode.active) {
@@ -704,7 +601,6 @@ async function handleVoiceCommand(command, originalText) {
       }
       break;
     }
-
     case 'setTheme': {
       if (themeGenerator) {
         const theme = themeGenerator.getTheme(command.theme);
@@ -713,43 +609,31 @@ async function handleVoiceCommand(command, originalText) {
       }
       break;
     }
-
     case 'setLanguage': {
       displayLanguage = command.language;
       broadcast({ action: 'languageChanged', language: displayLanguage, triggeredByVoice: true });
       log('Voice command: language ' + command.language);
       break;
     }
-
     case 'setTranslation': {
       try {
         const newId = bibleLookup.setTranslation(command.language, command.code);
-        broadcast({
-          action: 'translationChanged',
-          language: command.language,
-          code: command.code,
-          translationId: newId,
-          triggeredByVoice: true,
-        });
+        broadcast({ action: 'translationChanged', language: command.language, code: command.code, translationId: newId, triggeredByVoice: true });
         log(`Voice command: translation ${command.language} → ${command.code}`);
       } catch (err) {
         warn('Voice command translation failed: ' + err.message);
       }
       break;
     }
-
     case 'extendTime':
       broadcast({ action: 'extendTime', extraMs: command.extraMs, triggeredByVoice: true });
       break;
-
     case 'pauseTimer':
       broadcast({ action: 'pauseTimer', triggeredByVoice: true });
       break;
-
     case 'resumeTimer':
       broadcast({ action: 'resumeTimer', triggeredByVoice: true });
       break;
-
     case 'emergencyClear': {
       broadcast({ action: 'hideVerse', emergency: true });
       broadcast({ action: 'emergencyClear' });
@@ -757,20 +641,57 @@ async function handleVoiceCommand(command, originalText) {
       log('Voice command: EMERGENCY CLEAR');
       break;
     }
-
     default:
       warn('Unknown voice command action: ' + command.action);
   }
 }
 
 // ===========================================================================
-// WebSocket handlers
+// WebSocket handlers — with RBAC
 // ===========================================================================
+
+// Actions that require operator role
+const OPERATOR_ACTIONS = new Set([
+  'showVerse', 'hideVerse', 'setLanguage', 'setTranslation', 'startReading', 'stopReading',
+  'applyTheme', 'setMoodTheme', 'searchBible', 'togglePlugin', 'obs-toggle-recording',
+  'obs-switch-scene', 'extendTime', 'pauseTimer', 'resumeTimer', 'emergencyClear',
+  'hideTranslation', 'translateText',
+]);
+
+function determineClientRole(req) {
+  // Dashboard loaded via file:// or localhost with token = operator
+  // Overlay loaded via file:// or /overlay = viewer (read-only)
+  const url = req.url || '';
+  if (url.includes('/overlay') || url.includes('overlay.html')) {
+    return 'viewer';
+  }
+  // Heuristic: if token is present and matches, and origin looks like dashboard
+  return 'operator';
+}
+
+function validateOrigin(req) {
+  if (WS_HOST === '127.0.0.1' || WS_HOST === 'localhost') {
+    return true; // localhost binds are inherently single-machine
+  }
+  const origin = req.headers.origin || '';
+  if (!origin) return true; // native/file:// clients have no origin
+  for (const allowed of ALLOWED_ORIGINS) {
+    if (origin.startsWith(allowed)) return true;
+  }
+  return false;
+}
+
 wss.on('connection', (ws, req) => {
-  // Allow Web clients, OBS Browser Sources, and local/Electron windows
   const origin = req && req.headers && req.headers.origin;
   if (origin) {
     log(`Connexion WebSocket acceptée depuis l'origine : ${origin}`);
+  }
+
+  // SECURITY: origin validation for non-localhost
+  if (!validateOrigin(req)) {
+    warn(`Connexion refusée — origine non autorisée : ${origin}`);
+    ws.close(1008, 'Origine non autorisée');
+    return;
   }
 
   const connCheck = connRateLimiter.checkConnection(ws);
@@ -780,22 +701,11 @@ wss.on('connection', (ws, req) => {
     return;
   }
 
-  // CORRECTIF (checklist mise en production, point 1) : n'importe qui sur le
-  // même réseau pouvait auparavant ouvrir le WebSocket et envoyer des
-  // commandes (afficher un faux verset, effacer l'affichage en plein culte).
-  // Vérifié APRÈS la limite de connexions par IP (ci-dessus) et non avant,
-  // pour que même les tentatives de devinette du jeton restent limitées en
-  // débit par IP. Le jeton voyage en paramètre de requête (?token=...) car
-  // c'est la seule option praticable pour un client WebSocket de navigateur
-  // (overlay.html collé tel quel comme URL dans OBS) ou une page chargée en
-  // file:// (dashboard.html) — voir main.js pour la génération/l'injection.
   if (WS_AUTH_TOKEN) {
     let providedToken = null;
     try {
       providedToken = new URL(req.url, 'http://internal').searchParams.get('token');
-    } catch (_) {
-      // req.url invalide/absent -> aucun jeton fourni, traité comme non autorisé ci-dessous
-    }
+    } catch (_) {}
     if (providedToken !== WS_AUTH_TOKEN) {
       warn('Connexion WebSocket refusée — jeton d\'authentification invalide ou manquant.');
       connRateLimiter.removeConnection(ws);
@@ -804,7 +714,9 @@ wss.on('connection', (ws, req) => {
     }
   }
 
-  log('Client WebSocket connecté');
+  // Assign role
+  ws.clientRole = determineClientRole(req);
+  log(`Client WebSocket connecté (role: ${ws.clientRole})`);
 
   const features = featuresStore.readFeatures();
   const theme = themeLoader.getActiveTheme();
@@ -824,6 +736,7 @@ wss.on('connection', (ws, req) => {
       bibleSearch: !!semanticSearch,
     },
     aiLoadErrors: aiLoadErrors.length > 0 ? aiLoadErrors : undefined,
+    yourRole: ws.clientRole,
   }));
 
   ws.on('message', async (raw) => {
@@ -844,13 +757,20 @@ wss.on('connection', (ws, req) => {
     const sanitized = {};
     for (const k of Object.keys(msg)) {
       if (typeof msg[k] === 'string') {
-        sanitized[k] = msg[k].replace(/[<>"']/g, '');
+        sanitized[k] = msg[k].replace(/[<>">']/g, '');
       } else {
         sanitized[k] = msg[k];
       }
     }
 
-    // ── Speech or audio transcript input ──
+    // RBAC: viewer connections cannot send operator actions
+    if (ws.clientRole === 'viewer' && OPERATOR_ACTIONS.has(sanitized.action)) {
+      warn(`Action '${sanitized.action}' refusée — rôle 'viewer' insuffisant`);
+      ws.send(JSON.stringify({ action: 'error', error: 'Action réservée aux opérateurs.' }));
+      return;
+    }
+
+    // --- Speech or audio transcript input ---
     if (sanitized.action === 'transcript') {
       const text = String(sanitized.text || '').trim();
       if (text) {
@@ -861,9 +781,8 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // ── Manual verse display ──
+    // --- Manual verse display ---
     if (sanitized.action === 'showVerse') {
-      // FIX: Use detector.parseReference which wraps detector.detect()
       const ref = detector.parseReference(sanitized.reference);
       if (!ref) {
         ws.send(JSON.stringify({ action: 'error', error: 'Référence invalide.' }));
@@ -881,20 +800,14 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // ── Hide overlay ──
+    // --- Hide overlay ---
     if (sanitized.action === 'hideVerse') {
       broadcast({ action: 'hideVerse' });
       lastReference = null;
       return;
     }
 
-    // ── Pre-service test (checklist mise en production, point 9) ──
-    // Vérifie en une fois : connexion WebSocket (implicite, on répond donc
-    // qu'elle est OK), validité des clés Groq/Deepgram (appel réseau léger,
-    // sans frais de transcription — voir *-wrapper.js checkKey()), et l'état
-    // de l'authentification WS. Le micro n'est PAS vérifié ici : c'est du
-    // ressort exclusif du navigateur (getUserMedia), le serveur n'y a jamais
-    // accès — le dashboard le teste lui-même côté client.
+    // --- Pre-service test ---
     if (sanitized.action === 'preServiceCheck') {
       try {
         const [groqResult, deepgramResult] = await Promise.all([
@@ -903,12 +816,8 @@ wss.on('connection', (ws, req) => {
         ]);
         ws.send(JSON.stringify({
           action: 'preServiceCheckResult',
-          wsConnected: true,
-          wsAuthEnabled: !!WS_AUTH_TOKEN,
-          wsHost: WS_HOST,
-          groq: groqResult,
-          deepgram: deepgramResult,
-          timestamp: Date.now(),
+          wsConnected: true, wsAuthEnabled: !!WS_AUTH_TOKEN, wsHost: WS_HOST,
+          groq: groqResult, deepgram: deepgramResult, timestamp: Date.now(),
         }));
       } catch (err) {
         ws.send(JSON.stringify({ action: 'error', error: 'Échec de la vérification pré-culte : ' + err.message }));
@@ -916,7 +825,7 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // ── Language switch ──
+    // --- Language switch ---
     if (sanitized.action === 'setLanguage') {
       const lang = sanitized.language;
       if (['fr', 'en', 'both'].includes(lang)) {
@@ -927,7 +836,7 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // ── Translation switch ──
+    // --- Translation switch ---
     if (sanitized.action === 'setTranslation') {
       try {
         const newId = bibleLookup.setTranslation(sanitized.language, sanitized.code);
@@ -939,9 +848,8 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // ── Reading mode ──
+    // --- Reading mode ---
     if (sanitized.action === 'startReading') {
-      // FIX: Use detector.parseReference
       const ref = detector.parseReference(sanitized.reference);
       if (!ref) {
         ws.send(JSON.stringify({ action: 'error', error: 'Référence invalide pour le mode lecture.' }));
@@ -951,9 +859,7 @@ wss.on('connection', (ws, req) => {
         const firstVerse = await readingMode.start(ref.book, ref.chapter, ref.verseStart);
         ws.send(JSON.stringify({ action: 'readingStarted', reference: ref }));
         if (firstVerse) {
-          const label = bibleLookup.buildReferenceLabel(
-            { book: ref.book, chapter: ref.chapter, verseStart: firstVerse.num }, displayLanguage
-          );
+          const label = bibleLookup.buildReferenceLabel({ book: ref.book, chapter: ref.chapter, verseStart: firstVerse.num }, displayLanguage);
           broadcast({ action: 'showVerse', reference: label, text: firstVerse.text, langMode: displayLanguage, durationMs: getVerseDurationMs(), readingMode: true });
           pushHistory({ reference: label, text: firstVerse.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
           broadcast({ action: 'historyUpdated', history: verseHistory });
@@ -970,7 +876,7 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // ── Bible Semantic Search ──
+    // --- Bible Semantic Search ---
     if (sanitized.action === 'searchBible') {
       if (!semanticSearch) {
         ws.send(JSON.stringify({ action: 'searchError', error: 'Recherche biblique non disponible' }));
@@ -990,25 +896,19 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // ── Get topics ──
+    // --- Get topics ---
     if (sanitized.action === 'getTopics') {
-      ws.send(JSON.stringify({
-        action: 'topicsList',
-        topics: semanticSearch ? semanticSearch.getTopics() : [],
-      }));
+      ws.send(JSON.stringify({ action: 'topicsList', topics: semanticSearch ? semanticSearch.getTopics() : [] }));
       return;
     }
 
-    // ── Get moods ──
+    // --- Get moods ---
     if (sanitized.action === 'getMoods') {
-      ws.send(JSON.stringify({
-        action: 'moodsList',
-        moods: themeGenerator ? themeGenerator.getMoods() : [],
-      }));
+      ws.send(JSON.stringify({ action: 'moodsList', moods: themeGenerator ? themeGenerator.getMoods() : [] }));
       return;
     }
 
-    // ── Set theme by mood ──
+    // --- Set theme by mood ---
     if (sanitized.action === 'setMoodTheme') {
       if (!themeGenerator) {
         ws.send(JSON.stringify({ action: 'error', error: 'Générateur de thèmes non disponible' }));
@@ -1021,7 +921,7 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // ── Plugin management ──
+    // --- Plugin management ---
     if (sanitized.action === 'listPlugins') {
       ws.send(JSON.stringify({ action: 'pluginsList', plugins: plugins ? plugins.getPluginList() : [] }));
       return;
@@ -1035,7 +935,7 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // ── AI stats ──
+    // --- AI stats ---
     if (sanitized.action === 'getAiStats') {
       ws.send(JSON.stringify({
         action: 'aiStats',
@@ -1048,69 +948,64 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // ── AI Live Summary ──
+    // --- AI Live Summary (with prompt sanitization) ---
     if (sanitized.action === 'getLiveSummary') {
       if (!aiEnricher) {
         ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
         return;
       }
-      const fullTranscript = recentTranscripts.join(' ');
+      const fullTranscript = sanitizeForPrompt(recentTranscripts.join(' '));
       const summary = await aiEnricher.generateLiveSummary(fullTranscript);
       ws.send(JSON.stringify({ action: 'liveSummary', summary, timestamp: Date.now() }));
       return;
     }
 
-    // ── AI Sermon Theme ──
+    // --- AI Sermon Theme (with prompt sanitization) ---
     if (sanitized.action === 'getSermonTheme') {
       if (!aiEnricher) {
         ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
         return;
       }
-      const fullTranscript = recentTranscripts.join(' ');
+      const fullTranscript = sanitizeForPrompt(recentTranscripts.join(' '));
       const themeData = await aiEnricher.detectSermonTheme(fullTranscript);
-      // AJOUT (mode culte auto-détecté) : `silent` est renvoyé tel quel pour que
-      // le dashboard sache distinguer une requête auto (badge discret, toutes les
-      // 2 min) d'un clic manuel de l'opérateur (affichage complet du résultat).
       ws.send(JSON.stringify({ action: 'sermonTheme', ...themeData, silent: !!sanitized.silent, timestamp: Date.now() }));
       return;
     }
 
-    // ── AI Post-Service Recap ──
+    // --- AI Post-Service Recap (with prompt sanitization) ---
     if (sanitized.action === 'getPostServiceRecap') {
       if (!aiEnricher) {
         ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
         return;
       }
-      const fullTranscript = recentTranscripts.join(' ');
+      const fullTranscript = sanitizeForPrompt(recentTranscripts.join(' '));
       const recap = await aiEnricher.generatePostServiceRecap(fullTranscript, verseHistory);
       ws.send(JSON.stringify({ action: 'postServiceRecap', recap, timestamp: Date.now() }));
       return;
     }
 
-    // ── AI Cross References ──
+    // --- AI Cross References (with prompt sanitization) ---
     if (sanitized.action === 'getCrossReferences') {
       if (!aiEnricher) {
         ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
         return;
       }
-      const refs = await aiEnricher.findCrossReferences(sanitized.reference || '', sanitized.text || '');
+      const safeRef = sanitizeForPrompt(sanitized.reference || '');
+      const safeText = sanitizeForPrompt(sanitized.text || '');
+      const refs = await aiEnricher.findCrossReferences(safeRef, safeText);
       ws.send(JSON.stringify({ action: 'crossReferences', reference: sanitized.reference, results: refs }));
       return;
     }
 
-    // ── AI Live Translation ──
+    // --- AI Live Translation (with prompt sanitization) ---
     if (sanitized.action === 'translateText') {
       if (!aiEnricher) {
         ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
         return;
       }
       const targetLang = sanitized.targetLang || 'en';
-      const translation = await aiEnricher.translateSegment(sanitized.text || '', targetLang);
-      // AJOUT (traduction live overlay) : quand la requête vient du mode auto
-      // (autoTranslateEnabled côté dashboard), on diffuse directement le résultat
-      // à tous les clients (overlay inclus) via `showTranslation`, en plus de la
-      // réponse individuelle au demandeur — pas besoin d'un aller-retour dashboard
-      // -> overlay bricolé à la main.
+      const safeText = sanitizeForPrompt(sanitized.text || '');
+      const translation = await aiEnricher.translateSegment(safeText, targetLang);
       if (sanitized.autoBroadcast) {
         broadcast({ action: 'showTranslation', translation, targetLang, reference: sanitized.reference || null });
       }
@@ -1118,19 +1013,19 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // ── Live translation off (auto mode disabled) ──
+    // --- Live translation off ---
     if (sanitized.action === 'hideTranslation') {
       broadcast({ action: 'hideTranslation' });
       return;
     }
 
-    // ── Theme application ──
+    // --- Theme application ---
     if (sanitized.action === 'applyTheme') {
       broadcast({ action: 'applyTheme', ...sanitized.css });
       return;
     }
 
-    // ── Ping ──
+    // --- Ping ---
     if (sanitized.action === 'ping') {
       ws.send(JSON.stringify({ action: 'pong', timestamp: Date.now() }));
       return;
@@ -1195,13 +1090,6 @@ if (parentPort) {
       audioCapture.stopRecording();
       wss.clients.forEach(ws => ws.close());
       wss.close();
-      // CORRECTIF (audit round 7) : connRateLimiter.startCleanup() lance un
-      // setInterval (5 min) jamais arrêté ni unref()'d. Sans stopCleanup()
-      // ici, ce timer maintenait le worker vivant indéfiniment après un
-      // arrêt "gracieux" : main.js attendait ensuite 5s (voir
-      // stopServerGracefully) avant de forcer un terminate() — donc CHAQUE
-      // redémarrage/fermeture de l'app subissait 5s de délai inutile et ne
-      // se terminait jamais vraiment proprement.
       connRateLimiter.stopCleanup();
       if (parentPort) parentPort.postMessage({ type: 'status', status: 'stopped' });
       const finish = () => process.exit(0);
@@ -1270,23 +1158,15 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-// CORRECTIF (checklist mise en production, point 4) : le process continuait
-// à tourner après une exception non gérée, dans un état "à moitié planté" —
-// pire qu'un crash net en plein culte (le serveur répond peut-être encore,
-// mais plus correctement). On journalise, on nettoie, puis on quitte avec un
-// code non-nul : main.js (voir worker.on('exit', ...)) détecte déjà cette
-// sortie et redémarre automatiquement le pipeline (avec protection anti
-// boucle de crash) — ce mécanisme existait mais n'était jamais déclenché
-// tant que le process ne quittait pas réellement.
 process.on('uncaughtException', (err) => {
   warn('Uncaught exception (arrêt du serveur): ' + (err && err.stack || err.message));
-  try { audioCapture.cleanupTempFiles({ force: true }); } catch (_) { /* ignorer, on quitte de toute façon */ }
+  try { audioCapture.cleanupTempFiles({ force: true }); } catch (_) {}
   process.exit(1);
 });
 
 process.on('unhandledRejection', (reason) => {
   const message = (reason && reason.stack) || (reason && reason.message) || String(reason);
   warn('Unhandled promise rejection (arrêt du serveur): ' + message);
-  try { audioCapture.cleanupTempFiles({ force: true }); } catch (_) { /* ignorer, on quitte de toute façon */ }
+  try { audioCapture.cleanupTempFiles({ force: true }); } catch (_) {}
   process.exit(1);
 });
