@@ -47,6 +47,7 @@
       "server.js",
       "sentence-buffer.js",
       "audio-capture.js",
+      "prompt-sanitizer.js",
       "bible-keyterms.js",
       "bible-lookup-with-api.js",
       "config-validator.js",
