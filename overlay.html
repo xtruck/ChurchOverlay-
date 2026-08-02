@@ -408,7 +408,7 @@ const getWsUrl = () => {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${proto}//${window.location.host}${tokenParam}`;
   }
-  return `ws://localhost:3000${tokenParam}`;
+  return `ws://localhost:8765${tokenParam}`;
 };
 
 let ws = null;
@@ -418,9 +418,6 @@ let currentAnimation = 'fadeInUp';
 let currentMood = 'peace';
 let reconnectTimer = null;
 let animationLibrary = null;
-// AJOUT (traduction live) : dernière traduction reçue du dashboard, affichée
-// sous le texte principal tant qu'elle correspond au verset courant.
-let liveTranslationText = null;
 
 function connectWs() {
   if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
@@ -456,16 +453,6 @@ function connectWs() {
         break;
       case 'hideVerse':
         hideVerse(msg.emergency);
-        break;
-      // AJOUT (traduction live) : affichage dynamique d'une traduction sous le
-      // texte principal, indépendamment du champ langMode='both' déjà géré par
-      // showVerse (qui, lui, ne couvre que le FR/EN fixe envoyé par le serveur
-      // au moment de la détection). Réutilise le même bloc bilingue existant.
-      case 'showTranslation':
-        showLiveTranslation(msg);
-        break;
-      case 'hideTranslation':
-        hideLiveTranslation();
         break;
       case 'applyTheme':
         applyTheme(msg);
@@ -550,14 +537,6 @@ function showVerse(data) {
   refText.textContent = data.reference || 'Référence inconnue';
   verseText.textContent = data.text || '';
 
-  // AJOUT : un nouveau verset invalide la traduction live précédente — elle
-  // ne correspondrait plus au texte affiché. Le dashboard réenverra une
-  // traduction à jour via showTranslation si le mode auto est toujours actif ;
-  // en attendant, on masque l'ancienne pour ne jamais afficher un texte
-  // traduit qui ne correspond pas au verset courant.
-  liveTranslationText = null;
-  updateLiveTranslationDisplay();
-
   // Bilingual display
   if (data.langMode === 'both' && data.text_fr && data.text_en) {
     verseBilingual.style.display = 'block';
@@ -614,40 +593,6 @@ function hideVerse(emergency = false) {
   }
   clearTimeout(hideTimeout);
   hideTimeout = null;
-  // AJOUT : le verset disparaît, la traduction live associée disparaît aussi.
-  liveTranslationText = null;
-  updateLiveTranslationDisplay();
-}
-
-// AJOUT (traduction live) : affiche/masque une traduction reçue du dashboard
-// dans le même bloc bilingue que langMode='both' (élément déjà présent dans
-// le HTML), pour éviter de dupliquer le style et la mise en page.
-function showLiveTranslation(data) {
-  if (!data || typeof data.translation !== 'string' || !data.translation.trim()) return;
-  liveTranslationText = data.translation;
-  updateLiveTranslationDisplay();
-}
-
-function hideLiveTranslation() {
-  liveTranslationText = null;
-  updateLiveTranslationDisplay();
-}
-
-function updateLiveTranslationDisplay() {
-  const verseBilingual = document.getElementById('verse-text-bilingual');
-  if (!verseBilingual) return;
-  // Ne pas écraser un affichage bilingue FR/EN déjà géré par showVerse
-  // (langMode='both') — la traduction live est un ajout, pas un remplacement.
-  if (!liveTranslationText) {
-    if (verseBilingual.dataset.liveTranslation === 'true') {
-      verseBilingual.style.display = 'none';
-      verseBilingual.dataset.liveTranslation = 'false';
-    }
-    return;
-  }
-  verseBilingual.style.display = 'block';
-  verseBilingual.dataset.liveTranslation = 'true';
-  verseBilingual.innerHTML = `<em>Traduction :</em> ${escapeHtml(liveTranslationText)}`;
 }
 
 function extendDisplayTime(extraMs) {
@@ -785,53 +730,3 @@ function showReadingIndicator(show) {
   el.classList.toggle('visible', show);
 }
 
-/* ==========================================================================
-   Particles
-   ========================================================================== */
-function createParticles() {
-  const container = document.getElementById('particles');
-  container.innerHTML = '';
-  for (let i = 0; i < 20; i++) {
-    const p = document.createElement('div');
-    p.className = 'particle';
-    p.style.left = Math.random() * 100 + '%';
-    p.style.animationDelay = Math.random() * 8 + 's';
-    p.style.animationDuration = (6 + Math.random() * 4) + 's';
-    container.appendChild(p);
-  }
-}
-
-function updateParticles() {
-  const particles = document.querySelectorAll('.particle');
-  particles.forEach(p => {
-    p.style.background = getComputedStyle(document.documentElement).getPropertyValue('--overlay-particle');
-  });
-}
-
-/* ==========================================================================
-   Utilities
-   ========================================================================== */
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-/* ==========================================================================
-   Init
-   ========================================================================== */
-createParticles();
-
-// Initialize animation library
-if (typeof AnimationLibrary !== 'undefined') {
-  animationLibrary = AnimationLibrary;
-  animationLibrary.init();
-  console.log('[overlay] Animation library initialized');
-} else {
-  console.warn('[overlay] Animation library not available');
-}
-
-console.log('[overlay] ChurchOverlay display ready');
-</script>
-</body>
-</html>
