@@ -315,6 +315,19 @@
         </div>
       </div>
 
+      <!-- Gemini API Key (Optional) -->
+      <div class="form-group">
+        <label>
+          <span>✨</span> Clé API Gemini <span style="color: var(--text-muted); font-weight: 400;">(optionnel)</span>
+        </label>
+        <input type="password" id="gemini-key" placeholder="Laisser vide si non utilisé" autocomplete="off" />
+        <button class="toggle-password" id="btn-toggle-gemini">Afficher</button>
+        <div class="hint">
+          Améliore les fonctionnalités IA (thèmes, enrichissement). Repli automatique sur Groq si absente. Facultatif.
+          <a id="link-gemini" href="#">aistudio.google.com/apikey</a>
+        </div>
+      </div>
+
       <!-- Save Button -->
       <button class="btn btn-primary" id="btn-save" disabled>
         🚀 Enregistrer et démarrer
@@ -337,10 +350,13 @@
       btnToggleGroq: document.getElementById('btn-toggle-groq'),
       deepgramInput: document.getElementById('deepgram-key'),
       btnToggleDeepgram: document.getElementById('btn-toggle-deepgram'),
+      geminiInput: document.getElementById('gemini-key'),
+      btnToggleGemini: document.getElementById('btn-toggle-gemini'),
       btnSave: document.getElementById('btn-save'),
       saveStatus: document.getElementById('save-status'),
       linkGroq: document.getElementById('link-groq'),
       linkDeepgram: document.getElementById('link-deepgram'),
+      linkGemini: document.getElementById('link-gemini'),
       setupForm: document.getElementById('setup-form'),
     };
 
@@ -361,6 +377,14 @@
       });
     });
 
+    elements.linkGemini.addEventListener('click', (e) => {
+      e.preventDefault();
+      navigator.clipboard.writeText('https://aistudio.google.com/apikey').then(() => {
+        elements.linkGemini.textContent = 'Lien copié ✓';
+        setTimeout(() => { elements.linkGemini.textContent = 'aistudio.google.com/apikey'; }, 2000);
+      });
+    });
+
     // Toggle password visibility
     elements.btnToggleGroq.addEventListener('click', () => {
       const show = elements.groqInput.type === 'password';
@@ -372,6 +396,12 @@
       const show = elements.deepgramInput.type === 'password';
       elements.deepgramInput.type = show ? 'text' : 'password';
       elements.btnToggleDeepgram.textContent = show ? 'Masquer' : 'Afficher';
+    });
+
+    elements.btnToggleGemini.addEventListener('click', () => {
+      const show = elements.geminiInput.type === 'password';
+      elements.geminiInput.type = show ? 'text' : 'password';
+      elements.btnToggleGemini.textContent = show ? 'Masquer' : 'Afficher';
     });
 
     // Update save button state
@@ -479,7 +509,8 @@
         await window.churchOverlay.saveSetup(
           elements.micSelect.value,
           elements.groqInput.value.trim(),
-          elements.deepgramInput.value.trim()
+          elements.deepgramInput.value.trim(),
+          elements.geminiInput.value.trim()
         );
         // CORRECTIF (audit) : la fenêtre se ferme désormais elle-même dès
         // que saveSetup() est résolu, au lieu de dépendre d'un canal IPC
