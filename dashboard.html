@@ -487,6 +487,146 @@
             transform: translateY(-1px);
         }
 
+        /* AJOUT (innovation frontend) : sélecteur d'ambiances — même famille
+           visuelle que .chip-btn pour rester cohérent avec le reste du
+           tableau de bord, mais avec un état actif marqué (bordure/texte or)
+           pour que l'opérateur voie d'un coup d'œil l'ambiance en cours. */
+        .mood-picker-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .mood-btn {
+            background: rgba(255, 255, 255, 0.045);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-muted);
+            padding: 0.45rem 0.95rem;
+            border-radius: var(--radius-full);
+            font-size: 0.8rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+        }
+
+        .mood-btn:hover {
+            background: var(--gold-soft);
+            border-color: rgba(220, 180, 106, 0.45);
+            color: var(--text-main);
+            transform: translateY(-1px);
+        }
+
+        .mood-btn.active {
+            background: var(--gold-soft);
+            border-color: var(--gold);
+            color: var(--gold);
+            box-shadow: 0 0 0 1px var(--gold) inset;
+        }
+
+        /* AJOUT (innovation frontend) : file d'attente de versets. */
+        .queue-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.85rem;
+        }
+
+        .queue-add-row {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 0.85rem;
+        }
+
+        .queue-add-row input {
+            flex: 1;
+            background: var(--bg-input);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            padding: 0.55rem 0.85rem;
+            color: var(--text-main);
+            font-family: inherit;
+            font-size: 0.9rem;
+            outline: none;
+        }
+
+        .queue-add-row input:focus {
+            border-color: var(--primary);
+        }
+
+        .queue-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            max-height: 260px;
+            overflow-y: auto;
+        }
+
+        .queue-item {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            padding: 0.5rem 0.75rem;
+        }
+
+        .queue-item-position {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            width: 1.2rem;
+            text-align: center;
+        }
+
+        .queue-item-ref {
+            flex: 1;
+            font-size: 0.88rem;
+            color: var(--text-main);
+        }
+
+        .queue-item-actions {
+            display: flex;
+            gap: 0.3rem;
+        }
+
+        .queue-icon-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-muted);
+            width: 26px;
+            height: 26px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 0.8rem;
+            line-height: 1;
+            transition: all 0.15s ease;
+        }
+
+        .queue-icon-btn:hover:not(:disabled) {
+            background: var(--bg-card-hover);
+            color: var(--text-main);
+        }
+
+        .queue-icon-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .queue-icon-btn.queue-send:hover:not(:disabled) {
+            background: var(--sapphire-soft);
+            border-color: var(--sapphire);
+            color: #9db1ec;
+        }
+
+        .queue-icon-btn.queue-remove:hover:not(:disabled) {
+            background: var(--garnet-soft);
+            border-color: var(--garnet);
+            color: #f4a3b3;
+        }
+
         /* Grid Layouts */
         .metrics-grid {
             display: grid;
@@ -1238,6 +1378,36 @@
                     <button class="chip-btn" onclick="sendCustomSpeechText('Esaie 40 verset 31')">🦅 Ésaïe 40:31</button>
                 </div>
 
+                <!-- AJOUT (innovation frontend) : sélecteur d'ambiances + file
+                     d'attente de versets. config/features.json exposait déjà
+                     design.ambientModes et le serveur savait déjà répondre à
+                     getMoods/setMoodTheme (ai-theme-generator.js), mais rien
+                     dans le tableau de bord ne le rendait accessible. La file
+                     d'attente est une nouveauté côté client (aucune modif.
+                     serveur), inspirée des apps concurrentes comme Rhema. -->
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 1.75rem;">
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">Ambiance</span>
+                        </div>
+                        <div class="mood-picker-row" id="moodPicker">
+                            <span style="font-size:0.8rem; color:var(--text-dim);">Connexion au serveur en cours...</span>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="queue-panel-header">
+                            <span class="card-title">File d'attente (<span id="queueCount">0</span>)</span>
+                            <button class="btn btn-secondary" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" onclick="sendNextInQueue()">▶ Suivant</button>
+                        </div>
+                        <div class="queue-add-row">
+                            <input type="text" id="queueRefInput" placeholder="Référence (ex. Romains 8:28)" onkeydown="if(event.key==='Enter') addToQueue()">
+                            <button class="btn btn-secondary" style="padding: 0.55rem 0.9rem;" onclick="addToQueue()">+ Ajouter</button>
+                        </div>
+                        <div class="queue-list" id="queueList"></div>
+                    </div>
+                </div>
+
                 <!-- Metrics Grid -->
                 <div class="metrics-grid">
                     <div class="card">
@@ -1785,6 +1955,14 @@
                 // connexion/reconnexion — pas d'effet si déjà démarré (voir
                 // startSermonModeAutoDetect, protégé contre le double-démarrage).
                 startSermonModeAutoDetect();
+                // AJOUT (innovation frontend — sélecteur d'ambiances) : le serveur
+                // sait déjà répondre à 'getMoods' (ai-theme-generator.js) mais rien
+                // côté dashboard ne le demandait jusqu'ici. On récupère la liste à
+                // chaque connexion pour peupler les boutons dynamiquement plutôt
+                // que de coder les moods en dur (ils pourraient changer côté serveur).
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ action: 'getMoods' }));
+                }
             };
 
             ws.onmessage = (event) => {
@@ -1952,8 +2130,138 @@
                             : 'Récap indisponible.'
                     );
                     break;
+                // AJOUT (innovation frontend — sélecteur d'ambiances) : le serveur
+                // envoyait déjà ces deux réponses (server.js: 'moodsList' sur
+                // getMoods, 'themeApplied' sur setMoodTheme) mais aucun cas ne les
+                // traitait ici — le générateur de thèmes IA restait invisible et
+                // inutilisable depuis le tableau de bord.
+                case 'moodsList':
+                    renderMoodPicker(message.moods || []);
+                    break;
+                case 'themeApplied':
+                    setActiveMoodButton(message.mood);
+                    addActivity(`Ambiance changée : ${message.themeName || message.mood}`, 'info');
+                    showToast(`Ambiance : ${message.themeName || message.mood}`, 'success');
+                    break;
             }
         }
+
+        /* ======================================================================
+           Sélecteur d'ambiances (moods)
+           ====================================================================== */
+        function renderMoodPicker(moods) {
+            const container = document.getElementById('moodPicker');
+            if (!container) return;
+            if (!moods.length) {
+                container.innerHTML = '<span style="font-size:0.8rem; color:var(--text-dim);">Générateur d\'ambiances indisponible.</span>';
+                return;
+            }
+            container.innerHTML = moods.map(m => `
+                <button class="mood-btn" id="mood-btn-${m.id}" onclick="setMoodTheme('${m.id}')" title="${m.name}">
+                    ${m.name}
+                </button>
+            `).join('');
+        }
+
+        function setMoodTheme(mood) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                showToast('Non connecté au serveur — impossible de changer l\'ambiance.', 'error');
+                return;
+            }
+            ws.send(JSON.stringify({ action: 'setMoodTheme', mood }));
+        }
+
+        function setActiveMoodButton(mood) {
+            document.querySelectorAll('.mood-btn').forEach(btn => btn.classList.remove('active'));
+            const active = document.getElementById(`mood-btn-${mood}`);
+            if (active) active.classList.add('active');
+        }
+
+        /* ======================================================================
+           File d'attente de versets (innovation frontend, inspirée de Rhema) :
+           permet à l'opérateur de préparer à l'avance les versets d'une
+           prédication (recherche manuelle) et de les envoyer un par un au bon
+           moment, plutôt que de taper chaque référence en direct. Purement
+           côté dashboard — réutilise l'action 'showVerse' déjà supportée par
+           le serveur, aucun changement serveur nécessaire.
+           ====================================================================== */
+        const verseQueue = [];
+
+        function addToQueue() {
+            const input = document.getElementById('queueRefInput');
+            const reference = input ? input.value.trim() : '';
+            if (!reference) return;
+            verseQueue.push({ id: Date.now() + Math.random(), reference });
+            if (input) input.value = '';
+            renderQueue();
+        }
+
+        function removeFromQueue(id) {
+            const idx = verseQueue.findIndex(v => v.id === id);
+            if (idx !== -1) verseQueue.splice(idx, 1);
+            renderQueue();
+        }
+
+        function moveQueueItem(id, direction) {
+            const idx = verseQueue.findIndex(v => v.id === id);
+            const target = idx + direction;
+            if (idx === -1 || target < 0 || target >= verseQueue.length) return;
+            [verseQueue[idx], verseQueue[target]] = [verseQueue[target], verseQueue[idx]];
+            renderQueue();
+        }
+
+        function sendQueueItem(id) {
+            const item = verseQueue.find(v => v.id === id);
+            if (!item) return;
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                showToast('Non connecté au serveur — impossible d\'envoyer le verset.', 'error');
+                return;
+            }
+            ws.send(JSON.stringify({ action: 'showVerse', reference: item.reference }));
+            addActivity(`Verset envoyé depuis la file : ${item.reference}`, 'info');
+            removeFromQueue(id);
+        }
+
+        function sendNextInQueue() {
+            if (verseQueue.length === 0) {
+                showToast('File d\'attente vide.', 'info');
+                return;
+            }
+            sendQueueItem(verseQueue[0].id);
+        }
+
+        function renderQueue() {
+            const list = document.getElementById('queueList');
+            const countEl = document.getElementById('queueCount');
+            if (countEl) countEl.textContent = verseQueue.length;
+            if (!list) return;
+
+            if (verseQueue.length === 0) {
+                list.innerHTML = '<div style="font-size:0.8rem; color:var(--text-dim); padding: 0.5rem 0;">Aucun verset en attente. Ajoutez une référence ci-dessus.</div>';
+                return;
+            }
+
+            list.innerHTML = verseQueue.map((item, i) => `
+                <div class="queue-item">
+                    <span class="queue-item-position">${i + 1}</span>
+                    <span class="queue-item-ref">${escapeHtmlDashboard(item.reference)}</span>
+                    <div class="queue-item-actions">
+                        <button class="queue-icon-btn" onclick="moveQueueItem(${item.id}, -1)" title="Monter" ${i === 0 ? 'disabled' : ''}>↑</button>
+                        <button class="queue-icon-btn" onclick="moveQueueItem(${item.id}, 1)" title="Descendre" ${i === verseQueue.length - 1 ? 'disabled' : ''}>↓</button>
+                        <button class="queue-icon-btn queue-send" onclick="sendQueueItem(${item.id})" title="Envoyer maintenant">▶</button>
+                        <button class="queue-icon-btn queue-remove" onclick="removeFromQueue(${item.id})" title="Retirer">✕</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function escapeHtmlDashboard(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        renderQueue();
 
         // CORRECTIF (checklist mise en production, point 9) : bouton "Tester avant
         // le culte" — envoie une demande de vérification au serveur (connexion WS,
