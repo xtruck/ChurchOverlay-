@@ -9,18 +9,25 @@
    CSS Variables for Dynamic Themes (AI Innovation Pack)
    ========================================================================== */
 :root {
-  --overlay-bg: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-  --overlay-text: #FFFFFF;
-  --overlay-accent: #e94560;
-  --overlay-font: 'Playfair Display', Georgia, serif;
-  --overlay-border: rgba(255, 255, 255, 0.1);
-  --overlay-glow: rgba(233, 69, 96, 0.3);
-  --overlay-shadow: rgba(0, 0, 0, 0.5);
-  --overlay-particle: #e94560;
+  /* Même identité "verrière nocturne" que le tableau de bord : bleu-nuit
+     profond en fond, lumière de cierge (or) en accent unique. Avant, ce
+     fichier tournait sur un thème générique bleu marine/rose sans rapport
+     avec le dashboard — l'opérateur voyait deux apps différentes. */
+  --overlay-bg: linear-gradient(160deg, #0a0e1c 0%, #0d1226 55%, #10152b 100%);
+  --overlay-text: #f6f3ec;
+  --overlay-text-muted: #a8adc9;
+  --overlay-accent: #d9bb6c;
+  --overlay-font: 'Cormorant Garamond', Georgia, serif;
+  --overlay-font-ui: 'Plus Jakarta Sans', 'Open Sans', sans-serif;
+  --overlay-border: rgba(220, 180, 106, 0.20);
+  --overlay-glow: rgba(220, 180, 106, 0.32);
+  --overlay-shadow: rgba(0, 0, 0, 0.55);
+  --overlay-particle: #dcb46a;
 }
 
-/* Google Fonts */
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Lora:wght@400;700&family=Open+Sans:wght@400;600&family=Cinzel:wght@400;700&family=Great+Vibes&family=Merriweather:wght@400;700&display=swap');
+/* Google Fonts — Cormorant Garamond (référence du verset, cohérent avec le
+   dashboard) + Plus Jakarta Sans (badges/indicateurs, lisible en petit) */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
 * {
   margin: 0;
@@ -45,16 +52,15 @@ body {
   width: 100%; height: 100%;
   pointer-events: none;
   z-index: -1;
-  opacity: 0.5;
-  background:
-    radial-gradient(ellipse 60% 40% at 50% 100%, var(--overlay-glow) 0%, transparent 70%),
-    radial-gradient(ellipse 30% 50% at 20% 0%, var(--overlay-glow) 0%, transparent 60%),
-    radial-gradient(ellipse 30% 50% at 80% 0%, var(--overlay-glow) 0%, transparent 60%);
-  animation: ambientPulse 10s ease-in-out infinite;
+  opacity: 0.4;
+  /* Une seule respiration, centrée sous la carte — plus de trois halos
+     concurrents qui tiraient l'œil loin du texte du verset. */
+  background: radial-gradient(ellipse 55% 35% at 50% 100%, var(--overlay-glow) 0%, transparent 70%);
+  animation: ambientPulse 12s ease-in-out infinite;
 }
 @keyframes ambientPulse {
-  0%, 100% { opacity: 0.35; }
-  50% { opacity: 0.6; }
+  0%, 100% { opacity: 0.28; }
+  50% { opacity: 0.44; }
 }
 
 /* Particules d'ambiance */
@@ -67,15 +73,12 @@ body {
 }
 .particle {
   position: absolute;
-  width: 4px; height: 4px;
+  width: 3px; height: 3px;
   background: var(--overlay-particle);
   border-radius: 50%;
   opacity: 0;
-  /* AJOUT (audit round 6 — style "église moderne") : halo lumineux doux
-     autour de chaque particule, façon poussière de lumière, au lieu d'un
-     simple point plat. */
-  box-shadow: 0 0 8px 2px var(--overlay-particle), 0 0 16px 4px var(--overlay-glow);
-  animation: float 8s infinite ease-in-out;
+  box-shadow: 0 0 6px 1px var(--overlay-particle), 0 0 12px 3px var(--overlay-glow);
+  animation: float 11s infinite ease-in-out;
 }
 @keyframes float {
   0%, 100% { transform: translateY(100vh) scale(0); opacity: 0; }
@@ -113,14 +116,14 @@ body {
   background: var(--overlay-bg);
   color: var(--overlay-text);
   font-family: var(--overlay-font);
-  padding: 28px 36px;
-  border-radius: 16px;
+  padding: clamp(24px, 3vw, 40px) clamp(28px, 4vw, 52px);
+  border-radius: 18px;
   border: 1px solid var(--overlay-border);
   box-shadow:
-    0 0 40px var(--overlay-glow),
-    0 12px 50px var(--overlay-shadow),
-    inset 0 1px 0 rgba(255,255,255,0.1);
-  backdrop-filter: blur(12px);
+    0 0 46px var(--overlay-glow),
+    0 14px 54px var(--overlay-shadow),
+    inset 0 1px 0 rgba(255,255,255,0.08);
+  backdrop-filter: blur(14px);
   position: relative;
   overflow: hidden;
 }
@@ -130,38 +133,44 @@ body {
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 3px;
-  background: var(--overlay-accent);
-  opacity: 0.8;
+  background: linear-gradient(90deg, transparent, var(--overlay-accent), transparent);
 }
 
-/* Référence */
+/* Référence — c'est le premier repère pour quiconque arrive au milieu de la
+   lecture ; elle doit primer visuellement sur le corps du texte, pas
+   l'inverse. Taille fluide + police UI (pas la serif du corps) pour rester
+   nette même projetée en grand. */
 .verse-reference {
-  font-size: 15px;
-  font-weight: 600;
+  font-family: var(--overlay-font-ui);
+  font-size: clamp(14px, 1.3vw, 19px);
+  font-weight: 700;
   color: var(--overlay-accent);
   text-transform: uppercase;
-  letter-spacing: 2px;
-  margin-bottom: 12px;
+  letter-spacing: 2.5px;
+  margin-bottom: clamp(10px, 1.4vw, 18px);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
-/* Texte */
+/* Texte — taille fluide calée sur la largeur de projection, pour rester
+   lisible au fond d'une salle sur grand écran (22px fixe était illisible
+   projeté ; clamp() adapte à toute résolution OBS/vidéoprojecteur). */
 .verse-text {
-  font-size: 22px;
-  line-height: 1.6;
-  font-weight: 400;
-  text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  font-size: clamp(28px, 3.2vw, 46px);
+  line-height: 1.35;
+  font-weight: 500;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.4);
 }
 
 .verse-text-bilingual {
-  font-size: 18px;
-  line-height: 1.5;
-  margin-top: 14px;
-  padding-top: 14px;
+  font-family: var(--overlay-font);
+  font-size: clamp(20px, 2.1vw, 30px);
+  line-height: 1.4;
+  margin-top: clamp(12px, 1.6vw, 20px);
+  padding-top: clamp(12px, 1.6vw, 20px);
   border-top: 1px solid var(--overlay-border);
-  opacity: 0.85;
+  color: var(--overlay-text-muted);
 }
 
 /* Indicateur de source (AI detection) */
@@ -170,28 +179,29 @@ body {
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  padding: 2px 8px;
+  padding: 3px 9px;
   border-radius: 12px;
-  background: rgba(255,255,255,0.1);
-  color: rgba(255,255,255,0.7);
-  font-family: 'Open Sans', sans-serif;
+  background: rgba(255,255,255,0.08);
+  color: var(--overlay-text-muted);
+  font-family: var(--overlay-font-ui);
   text-transform: none;
   letter-spacing: 0;
+  font-weight: 500;
 }
 
 .source-badge.ai {
-  background: rgba(76, 175, 80, 0.2);
-  color: #81C784;
+  background: rgba(52, 211, 153, 0.16);
+  color: #6ee7b7;
 }
 
 .source-badge.voice {
-  background: rgba(33, 150, 243, 0.2);
-  color: #64B5F6;
+  background: rgba(78, 111, 216, 0.20);
+  color: #9db1ec;
 }
 
 .source-badge.manual {
-  background: rgba(255, 152, 0, 0.2);
-  color: #FFB74D;
+  background: rgba(220, 180, 106, 0.18);
+  color: var(--overlay-accent);
 }
 
 /* Indicateur commande vocale */
@@ -203,10 +213,11 @@ body {
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  background: rgba(33, 150, 243, 0.9);
-  color: white;
+  background: rgba(20, 26, 48, 0.92);
+  border: 1px solid rgba(78, 111, 216, 0.4);
+  color: #cdd6f5;
   border-radius: 24px;
-  font-family: 'Open Sans', sans-serif;
+  font-family: var(--overlay-font-ui);
   font-size: 13px;
   font-weight: 600;
   opacity: 0;
@@ -214,7 +225,8 @@ body {
   transition: all 0.4s ease;
   z-index: 100;
   pointer-events: none;
-  box-shadow: 0 4px 15px rgba(33, 150, 243, 0.3);
+  box-shadow: 0 4px 18px rgba(78, 111, 216, 0.25);
+  backdrop-filter: blur(8px);
 }
 
 #voice-indicator.visible {
@@ -242,10 +254,11 @@ body {
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  background: rgba(76, 175, 80, 0.9);
-  color: white;
+  background: rgba(20, 26, 48, 0.92);
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  color: #a7f3d0;
   border-radius: 24px;
-  font-family: 'Open Sans', sans-serif;
+  font-family: var(--overlay-font-ui);
   font-size: 12px;
   font-weight: 600;
   opacity: 0;
@@ -254,6 +267,8 @@ body {
   z-index: 100;
   pointer-events: none;
   max-width: 350px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 18px rgba(52, 211, 153, 0.2);
 }
 
 #semantic-indicator.visible {
@@ -268,16 +283,19 @@ body {
   left: 50%;
   transform: translateX(-50%);
   padding: 8px 20px;
-  background: rgba(233, 69, 96, 0.9);
-  color: white;
+  background: rgba(20, 26, 48, 0.92);
+  border: 1px solid var(--overlay-border);
+  color: var(--overlay-accent);
   border-radius: 24px;
-  font-family: 'Open Sans', sans-serif;
+  font-family: var(--overlay-font-ui);
   font-size: 13px;
   font-weight: 600;
   opacity: 0;
   transition: opacity 0.4s ease;
   z-index: 100;
   pointer-events: none;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 18px rgba(220, 180, 106, 0.2);
 }
 
 #reading-indicator.visible {
@@ -729,4 +747,3 @@ function showReadingIndicator(show) {
   const el = document.getElementById('reading-indicator');
   el.classList.toggle('visible', show);
 }
-
