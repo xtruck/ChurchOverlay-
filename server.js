@@ -104,8 +104,7 @@ try {
 }
 
 try {
-  const mod = require('./bible-semantic-search');
-  BibleSemanticSearch = mod.BibleSemanticSearch;
+  const { BibleSemanticSearch } = require('./bible-semantic-search');
   semanticSearch = new BibleSemanticSearch();
   semanticSearch.loadIndex().catch(() => {});
   console.log('[server] ✓ BibleSemanticSearch loaded');
@@ -115,8 +114,7 @@ try {
 }
 
 try {
-  const mod = require('./plugin-system');
-  PluginSystem = mod.PluginSystem;
+  const { PluginSystem } = require('./plugin-system');
   plugins = new PluginSystem();
   const pluginsDir = path.join(APP_ROOT, 'config', 'plugins');
   if (fs.existsSync(pluginsDir)) {
@@ -129,8 +127,7 @@ try {
 }
 
 try {
-  const mod = require('./ai-theme-generator');
-  AIThemeGenerator = mod.AIThemeGenerator;
+  const { AIThemeGenerator } = require('./ai-theme-generator');
   if (groqHasChatCompletion) {
     themeGenerator = new AIThemeGenerator(groq);
     console.log('[server] ✓ AIThemeGenerator loaded');
