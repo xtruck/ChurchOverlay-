@@ -1760,8 +1760,8 @@
                     <div id="apiSettingsUnavailable" style="display:none; color: var(--text-muted); font-size:0.82rem; line-height:1.6;">
                         La configuration des clés API n'est possible que depuis l'application de bureau
                         ChurchOverlay (elle passe par le pont sécurisé Electron). En mode « serveur seul »
-                        dans un navigateur, définissez <code>GROQ_API_KEY</code> / <code>DEEPGRAM_API_KEY</code>
-                        dans un fichier <code>.env.local</code> à la racine de l'application.
+                        dans un navigateur, définissez <code>GROQ_API_KEY</code> / <code>DEEPGRAM_API_KEY</code> /
+                        <code>GEMINI_API_KEY</code> dans un fichier <code>.env.local</code> à la racine de l'application.
                     </div>
 
                     <form id="apiSettingsForm" style="display:none;">
@@ -1801,6 +1801,21 @@
                             <div class="field-hint">
                                 Secours automatique si Groq ne répond pas. <a href="#" class="settings-copy-link" data-url="https://console.deepgram.com">console.deepgram.com</a>.
                                 <button type="button" class="link-btn" id="settingsClearDeepgram">Retirer la clé</button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="settingsGeminiKey">
+                                ✨ Clé API Gemini <span style="color:var(--text-dim); font-weight:400;">(optionnel, features IA)</span>
+                                <span class="status-badge" id="geminiKeyBadge" style="margin-left:8px;"></span>
+                            </label>
+                            <div class="input-row">
+                                <input type="password" id="settingsGeminiKey" placeholder="Laisser vide pour conserver la clé actuelle" autocomplete="off" />
+                                <button type="button" class="btn btn-secondary btn-toggle-pass" data-target="settingsGeminiKey">Afficher</button>
+                            </div>
+                            <div class="field-hint">
+                                Améliore les thèmes et l'enrichissement IA. Repli automatique sur Groq si absente. <a href="#" class="settings-copy-link" data-url="https://aistudio.google.com/apikey">aistudio.google.com/apikey</a>.
+                                <button type="button" class="link-btn" id="settingsClearGemini">Retirer la clé</button>
                             </div>
                         </div>
 
@@ -2985,10 +3000,13 @@
                 groqBadge: document.getElementById('groqKeyBadge'),
                 deepgramInput: document.getElementById('settingsDeepgramKey'),
                 deepgramBadge: document.getElementById('deepgramKeyBadge'),
+                geminiInput: document.getElementById('settingsGeminiKey'),
+                geminiBadge: document.getElementById('geminiKeyBadge'),
                 btnSave: document.getElementById('settingsBtnSave'),
                 saveStatus: document.getElementById('settingsSaveStatus'),
                 btnClearGroq: document.getElementById('settingsClearGroq'),
                 btnClearDeepgram: document.getElementById('settingsClearDeepgram'),
+                btnClearGemini: document.getElementById('settingsClearGemini'),
             };
 
             if (!els.form) return; // section absente de ce build, rien à faire
@@ -3060,6 +3078,7 @@
                 const settings = await window.churchOverlay.getSettings();
                 setBadge(els.groqBadge, settings.hasGroqKey);
                 setBadge(els.deepgramBadge, settings.hasDeepgramKey);
+                setBadge(els.geminiBadge, settings.hasGeminiKey);
 
                 const needsSetup = !!settings.needsSetup;
                 els.card.classList.toggle('needs-setup', needsSetup);
@@ -3108,7 +3127,7 @@
             });
 
             async function clearKey(provider, inputEl, badgeEl) {
-                const label = provider === 'groq' ? 'Groq' : 'Deepgram';
+                const label = provider === 'groq' ? 'Groq' : (provider === 'deepgram' ? 'Deepgram' : 'Gemini');
                 if (!confirm(`Retirer la clé API ${label} enregistrée ?`)) return;
                 try {
                     await window.churchOverlay.clearApiKey(provider);
@@ -3126,6 +3145,9 @@
             }
             if (els.btnClearDeepgram) {
                 els.btnClearDeepgram.addEventListener('click', () => clearKey('deepgram', els.deepgramInput, els.deepgramBadge));
+            }
+            if (els.btnClearGemini) {
+                els.btnClearGemini.addEventListener('click', () => clearKey('gemini', els.geminiInput, els.geminiBadge));
             }
 
             els.form.addEventListener('submit', async (e) => {
@@ -3150,10 +3172,12 @@
                     await window.churchOverlay.saveSetup(
                         mic,
                         els.groqInput.value.trim(),
-                        els.deepgramInput.value.trim()
+                        els.deepgramInput.value.trim(),
+                        els.geminiInput.value.trim()
                     );
                     els.groqInput.value = '';
                     els.deepgramInput.value = '';
+                    els.geminiInput.value = '';
                     els.saveStatus.style.color = 'var(--accent-emerald)';
                     els.saveStatus.textContent = '✅ Configuration enregistrée — pipeline (re)démarré.';
                     showToast('Configuration API enregistrée', 'success');
