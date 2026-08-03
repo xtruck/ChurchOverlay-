@@ -127,9 +127,20 @@
                 var(--gold-soft) 55%,
                 var(--garnet-soft) 78%,
                 transparent 100%);
-            filter: blur(70px);
-            mix-blend-mode: screen;
+            /* CORRECTIF PERF (audit CPU) : ce halo est plein écran (170vh /
+               170vw) et tournait en continu pendant toute la durée d'ouverture
+               du dashboard. blur(70px) sur une surface de cette taille force
+               le compositeur à retraiter une zone énorme à chaque frame — le
+               coût d'un flou croît avec le carré du rayon, donc 70px est
+               nettement plus cher que nécessaire pour un effet "doux".
+               mix-blend-mode: screen ajoutait en plus une couche de
+               compositing séparée obligatoire. Résultat : blur réduit à 36px
+               (effet visuel quasi identique à distance d'écran normale) et
+               mix-blend-mode retiré ; l'opacité de la dégradé fait le même
+               travail de fondu sans le coût de compositing du blend mode. */
+            filter: blur(36px);
             animation: sacred-breathe 22s var(--ease-silk) infinite;
+            will-change: opacity, transform;
         }
 
         /* Barre verticale de la croix */
