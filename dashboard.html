@@ -2755,6 +2755,7 @@
             recognition.lang = 'fr-FR';
 
             recognition.onresult = (event) => {
+                networkErrorStreak = 0;
                 let finalTranscript = '';
                 for (let i = event.resultIndex; i < event.results.length; i++) {
                     const transcript = event.results[i][0].transcript;
@@ -2780,14 +2781,48 @@
             };
 
             let restartTimeout = null;
+            // Nombre d'échecs 'network' consécutifs. Dans Electron, le
+            // moteur webkitSpeechRecognition de Chromium n'a pas la clé
+            // API Google interne dont il a besoin pour joindre le service
+            // en ligne : l'erreur 'network' y est donc permanente, pas un
+            // problème de connexion passager (voir electron/electron#46143
+            // et issues similaires ouvertes depuis 2016, jamais résolues).
+            // Sans ce compteur, onend relançait recognition.start() toutes
+            // les secondes indéfiniment dès que "Arrêter le Micro" n'était
+            // pas cliqué — boucle infinie inutile qui consommait du CPU en
+            // arrière-plan pour un badge qui n'aurait jamais annoncé autre
+            // chose que "tentative...".
+            let networkErrorStreak = 0;
+            const NETWORK_ERROR_GIVE_UP = 3;
+
             recognition.onerror = (event) => {
                 if (event.error === 'no-speech' || event.error === 'aborted') return;
                 if (event.error === 'network') {
+                    networkErrorStreak++;
                     console.warn('Reconnaissance vocale : problème de connexion réseau.');
-                    if (speechStatus) {
-                        speechStatus.textContent = 'Réseau (tentative...)';
-                        speechStatus.className = 'status-badge warning';
+                    if (networkErrorStreak < NETWORK_ERROR_GIVE_UP) {
+                        if (speechStatus) {
+                            speechStatus.textContent = 'Réseau (tentative...)';
+                            speechStatus.className = 'status-badge warning';
+                        }
+                        return;
                     }
+                    console.error(
+                        "Reconnaissance vocale du navigateur indisponible dans l'application " +
+                        "(limitation connue d'Electron : le moteur de dictée intégré à Chromium " +
+                        "n'a pas accès au service en ligne de Google). Utilisez le pipeline " +
+                        "micro → Whisper/Groq/Deepgram intégré à ChurchOverlay à la place."
+                    );
+                    if (speechStatus) {
+                        speechStatus.textContent = 'Indisponible dans l\'app';
+                        speechStatus.className = 'status-badge error';
+                    }
+                    showToast(
+                        "La dictée du navigateur ne fonctionne pas dans ChurchOverlay (limitation " +
+                        "Electron). Utilisez le pipeline micro intégré (Whisper/Groq/Deepgram).",
+                        'error'
+                    );
+                    stopSpeechRecognition();
                     return;
                 }
                 console.error('Erreur de reconnaissance vocale :', event.error);
