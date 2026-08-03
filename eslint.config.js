@@ -21,13 +21,7 @@ const globals = require('globals');
 
 module.exports = [
   {
-    ignores: [
-      'dist/**',
-      'node_modules/**',
-      'config/**',
-      'test/**',
-      '*.min.js',
-    ],
+  ignores: ['dist/**', 'node_modules/**', 'config/**', 'test/**', '*.min.js'],
   },
   js.configs.recommended,
   {
