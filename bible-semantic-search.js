@@ -56,7 +56,7 @@ function dotProduct(a, b) {
 function magnitude(v) {
   return Math.sqrt(v.reduce((sum, x) => sum + x * x, 0));
 }
-
+// eslint-disable-next-line no-unused-vars -- réservée à searchByVector(), pas encore implémentée (voir plus bas)
 function cosineSimilarity(a, b) {
   return dotProduct(a, b) / (magnitude(a) * magnitude(b));
 }
