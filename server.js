@@ -56,24 +56,18 @@ function getVerseDurationMs() {
 // ---------------------------------------------------------------------------
 // NEW: AI modules (OPTIONAL — wrapped in try-catch)
 // ---------------------------------------------------------------------------
-let SemanticDetector = null;
 let semanticDetector = null;
 let detectCommand = null;
-let TranscriptionCorrector = null;
 let corrector = null;
-let BibleSemanticSearch = null;
 let semanticSearch = null;
-let PluginSystem = null;
 let plugins = null;
-let AIThemeGenerator = null;
 let themeGenerator = null;
 
 const aiLoadErrors = [];
 const groqHasChatCompletion = typeof groq.chatCompletion === 'function';
 
 try {
-  const mod = require('./semantic-detector');
-  SemanticDetector = mod.SemanticDetector;
+  const { SemanticDetector } = require('./semantic-detector');
   if (groqHasChatCompletion) {
     semanticDetector = new SemanticDetector(groq);
     console.log('[server] ✓ SemanticDetector loaded');
@@ -95,8 +89,7 @@ try {
 }
 
 try {
-  const mod = require('./transcription-corrector');
-  TranscriptionCorrector = mod.TranscriptionCorrector;
+  const { TranscriptionCorrector } = require('./transcription-corrector');
   if (groqHasChatCompletion) {
     corrector = new TranscriptionCorrector(groq);
     console.log('[server] ✓ TranscriptionCorrector loaded');
