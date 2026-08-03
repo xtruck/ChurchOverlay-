@@ -21,7 +21,7 @@ let features = {
 
 try {
   features = require('./config/features.json');
-} catch (e) {
+} catch (_e) {
   // Use default fallback config
 }
 
