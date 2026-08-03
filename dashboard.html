@@ -18,27 +18,32 @@
 
             --border-subtle: rgba(255, 255, 255, 0.10);
             --border-light: rgba(255, 255, 255, 0.22);
-            --border-active: var(--gold);
+            --border-active: var(--primary);
 
-            /* --- Verrière : violet-bleu (vitrail) -------------------------- */
+            /* --- Couleur unique de l'app (demande : "one color", plus de
+               jaune/or) : violet-bleu, seule couleur d'accent utilisée
+               partout où l'ancien thème multicolore (or/garnet/saphir/cyan)
+               était purement décoratif. --gold/--garnet/--sapphire sont
+               conservés ci-dessous (au lieu d'être supprimés) pour ne pas
+               casser les dizaines d'usages existants dans la feuille de
+               style : ils pointent maintenant tous vers cette même couleur. */
             --primary: #7c8cf5;
             --primary-hover: #6274f0;
             --primary-glow: rgba(124, 140, 245, 0.38);
 
-            --accent-cyan: #52d0e6;
+            --accent-cyan: var(--primary);
             --accent-emerald: #34d399;
-            --accent-amber: #f2b544;
+            --accent-amber: var(--primary);
             --accent-rose: #f4607a;
 
-            /* --- Lumière de cierge : couleur signature ---------------------- */
-            --gold: #dcb46a;
-            --gold-soft: rgba(220, 180, 106, 0.20);
-            --gold-glow: rgba(220, 180, 106, 0.45);
+            --gold: var(--primary);
+            --gold-soft: rgba(124, 140, 245, 0.20);
+            --gold-glow: rgba(124, 140, 245, 0.45);
 
-            --garnet: #c8546f;
-            --garnet-soft: rgba(200, 84, 111, 0.16);
-            --sapphire: #4e6fd8;
-            --sapphire-soft: rgba(78, 111, 216, 0.16);
+            --garnet: var(--primary);
+            --garnet-soft: rgba(124, 140, 245, 0.16);
+            --sapphire: var(--primary);
+            --sapphire-soft: rgba(124, 140, 245, 0.16);
 
             --text-main: #f6f3ec;
             --text-muted: #a8adc9;
@@ -55,7 +60,7 @@
             --radius-lg: 22px;
             --radius-full: 9999px;
 
-            --glass-blur: 10px;
+            --glass-blur: 18px;
             --ease-silk: cubic-bezier(0.19, 1, 0.22, 1);
         }
 
@@ -85,6 +90,28 @@
             }
         }
 
+        /* CORRECTIF PERF (audit CPU, 03/08/2026) : les animations "infinite"
+           décoratives (croix de lumière, poussière de lumière, halo tournant,
+        /* CORRECTIF PERF (audit CPU, 03/08/2026) : les animations "infinite"
+           décoratives (croix de lumière, halo tournant, pastilles de
+           pulsation) tournaient en continu 24h/24 même quand la fenêtre du
+           tableau de bord était minimisée ou masquée derrière OBS pendant
+           tout un culte — le compositeur continuait de repeindre ces
+           calques sans que personne ne les regarde. La classe
+           .animations-paused est ajoutée/retirée en JS via
+           document.visibilitychange (voir en bas du script) : elle met en
+           pause les animations restantes tant que la fenêtre n'est pas
+           visible, sans rien changer à leur rendu quand elle l'est.
+           (La croix de lumière/poussières ambiantes ont depuis été
+           retirées entièrement — demande explicite de suppression des
+           animations non essentielles — donc ce sélecteur ne couvre plus
+           que les indicateurs de statut fonctionnels.) */
+        body.animations-paused .live-status-pill.offline,
+        body.animations-paused .status-dot,
+        body.animations-paused .speech-trigger-btn.active {
+            animation-play-state: paused !important;
+        }
+
         body {
             font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
             background-color: var(--bg-base);
@@ -95,94 +122,7 @@
             position: relative;
             background-image:
                 radial-gradient(circle at 12% 8%, rgba(124, 140, 245, 0.16) 0%, transparent 42%),
-                radial-gradient(circle at 88% 6%, rgba(220, 180, 106, 0.13) 0%, transparent 38%),
-                radial-gradient(circle at 90% 92%, rgba(82, 208, 230, 0.10) 0%, transparent 42%),
                 linear-gradient(180deg, #0a0e1c 0%, #0d1226 55%, #0a0e1c 100%);
-        }
-
-        /* ------------------------------------------------------------------
-           Verrière ambiante : une croix de lumière très douce, comme le
-           soleil filtré par un vitrail, respire lentement derrière tout le
-           tableau de bord. Purement décoratif (pointer-events: none), pour
-           ne jamais gêner la lecture des données pendant un culte.
-        ------------------------------------------------------------------ */
-        .sacred-light {
-            position: fixed;
-            inset: 0;
-            z-index: 0;
-            pointer-events: none;
-            overflow: hidden;
-        }
-
-        .sacred-light::before,
-        .sacred-light::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            background: linear-gradient(90deg,
-                transparent 0%,
-                var(--sapphire-soft) 18%,
-                rgba(124, 140, 245, 0.18) 40%,
-                var(--gold-soft) 55%,
-                var(--garnet-soft) 78%,
-                transparent 100%);
-            /* CORRECTIF PERF (audit CPU) : ce halo est plein écran (170vh /
-               170vw) et tournait en continu pendant toute la durée d'ouverture
-               du dashboard. blur(70px) sur une surface de cette taille force
-               le compositeur à retraiter une zone énorme à chaque frame — le
-               coût d'un flou croît avec le carré du rayon, donc 70px est
-               nettement plus cher que nécessaire pour un effet "doux".
-               mix-blend-mode: screen ajoutait en plus une couche de
-               compositing séparée obligatoire. Résultat : blur réduit à 36px
-               (effet visuel quasi identique à distance d'écran normale) et
-               mix-blend-mode retiré ; l'opacité de la dégradé fait le même
-               travail de fondu sans le coût de compositing du blend mode. */
-            filter: blur(36px);
-            animation: sacred-breathe 22s var(--ease-silk) infinite;
-            will-change: opacity, transform;
-        }
-
-        /* Barre verticale de la croix */
-        .sacred-light::before {
-            width: 280px;
-            height: 170vh;
-            transform: translate(-50%, -50%) rotate(0deg);
-            transform-origin: center;
-        }
-
-        /* Barre horizontale de la croix */
-        .sacred-light::after {
-            width: 170vw;
-            height: 240px;
-            transform: translate(-50%, -50%) rotate(90deg) scaleX(0.62);
-            animation-delay: -9s;
-        }
-
-        /* Poussière de lumière : petits éclats qui montent très lentement,
-           comme de l'encens ou de la poussière prise dans un rai de lumière. */
-        .sacred-light .mote {
-            position: absolute;
-            bottom: -10%;
-            width: 3px;
-            height: 3px;
-            border-radius: 50%;
-            background: var(--gold);
-            box-shadow: 0 0 8px 2px var(--gold-glow);
-            opacity: 0;
-            animation: mote-rise linear infinite;
-        }
-
-        @keyframes sacred-breathe {
-            0%, 100% { opacity: 0.32; transform: translate(-50%, -50%) rotate(var(--rot, 0deg)) scale(1); }
-            50% { opacity: 0.62; transform: translate(-50%, -50%) rotate(var(--rot, 0deg)) scale(1.04); }
-        }
-
-        @keyframes mote-rise {
-            0% { transform: translateY(0) translateX(0); opacity: 0; }
-            10% { opacity: 0.8; }
-            90% { opacity: 0.4; }
-            100% { transform: translateY(-115vh) translateX(30px); opacity: 0; }
         }
 
         .dashboard {
@@ -243,18 +183,13 @@
             position: absolute;
             inset: -3px;
             border-radius: var(--radius-full);
-            background: conic-gradient(from 0deg, var(--gold) 0deg, var(--sapphire) 90deg, transparent 160deg, transparent 260deg, var(--garnet) 320deg, var(--gold) 360deg);
+            background: conic-gradient(from 0deg, var(--primary) 0deg, var(--primary) 90deg, transparent 160deg, transparent 260deg, var(--primary) 320deg, var(--primary) 360deg);
             opacity: 0.6;
-            animation: halo-spin 14s linear infinite;
             -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
             mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
         }
 
         .brand-icon svg { filter: drop-shadow(0 0 4px var(--gold-glow)); }
-
-        @keyframes halo-spin {
-            to { transform: rotate(360deg); }
-        }
 
         .brand-title {
             font-size: 1.15rem;
@@ -669,6 +604,30 @@
             background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
         }
 
+        /* AJOUT (effet verre + JS "gratuit" en CPU) : reflet spéculaire qui
+           suit le curseur, comme une vraie surface de verre qui accroche la
+           lumière selon l'angle de vue. --mx/--my sont deux variables CSS
+           (0-100%) mises à jour par un seul écouteur `pointermove` délégué
+           (voir le script en bas de page), throttlé par requestAnimationFrame
+           : au repos (souris immobile ou ailleurs), ce calque ne coûte
+           strictement rien — ni animation "infinite", ni JS qui tourne en
+           boucle, juste un dégradé statique tant que la position ne change
+           pas. */
+        .card::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(480px circle at var(--mx, 50%) var(--my, 50%),
+                rgba(255, 255, 255, 0.10), transparent 55%);
+            opacity: 0;
+            transition: opacity 0.35s ease;
+            pointer-events: none;
+        }
+
+        .card:hover::after {
+            opacity: 1;
+        }
+
         .card:hover {
             border-color: var(--border-light);
             background: var(--bg-card-hover);
@@ -735,6 +694,25 @@
             transition: box-shadow 0.4s var(--ease-silk), border-color 0.4s var(--ease-silk);
         }
 
+        /* Même reflet spéculaire suivant le curseur que .card::after — voir
+           le commentaire à côté de .card::after pour le détail du coût CPU
+           (nul au repos). */
+        .hero-verse-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            background: radial-gradient(560px circle at var(--mx, 50%) var(--my, 50%),
+                rgba(255, 255, 255, 0.09), transparent 55%);
+            opacity: 0;
+            transition: opacity 0.35s ease;
+            pointer-events: none;
+        }
+
+        .hero-verse-card:hover::before {
+            opacity: 1;
+        }
+
         .hero-verse-card:hover {
             border-color: rgba(220, 180, 106, 0.4);
             box-shadow: var(--shadow-glow), var(--shadow-gold), inset 0 1px 0 rgba(255, 255, 255, 0.1);
@@ -755,12 +733,6 @@
                 linear-gradient(180deg, transparent, var(--gold) 20%, var(--gold) 80%, transparent) center / 2px 100% no-repeat,
                 linear-gradient(90deg, transparent, var(--gold) 20%, var(--gold) 80%, transparent) center 34% / 100% 2px no-repeat;
             filter: drop-shadow(0 0 8px var(--gold-glow));
-            animation: filigree-glow 5s ease-in-out infinite;
-        }
-
-        @keyframes filigree-glow {
-            0%, 100% { opacity: 0.4; }
-            50% { opacity: 0.8; }
         }
 
         @media (max-width: 1200px) {
@@ -830,6 +802,8 @@
             gap: 0.5rem;
             border: 1px solid transparent;
             outline: none;
+            position: relative;
+            overflow: hidden;
         }
 
         .btn-primary {
@@ -953,7 +927,7 @@
         .activity-icon.success { background: rgba(52, 211, 153, 0.15); color: var(--accent-emerald); }
         .activity-icon.error { background: rgba(244, 96, 122, 0.15); color: var(--accent-rose); }
         .activity-icon.info { background: rgba(124, 140, 245, 0.15); color: var(--primary); }
-        .activity-icon.warning { background: rgba(242, 181, 68, 0.15); color: var(--accent-amber); }
+        .activity-icon.warning { background: rgba(124, 140, 245, 0.15); color: var(--accent-amber); }
 
         .activity-content { flex: 1; }
         .activity-title { font-size: 0.85rem; font-weight: 600; color: var(--text-main); }
@@ -1057,7 +1031,7 @@
         }
 
         .status-badge.success { background: rgba(52, 211, 153, 0.15); color: var(--accent-emerald); }
-        .status-badge.warning { background: rgba(242, 181, 68, 0.15); color: var(--accent-amber); }
+        .status-badge.warning { background: rgba(124, 140, 245, 0.15); color: var(--accent-amber); }
         .status-badge.error { background: rgba(244, 96, 122, 0.15); color: var(--accent-rose); }
 
         /* Toast Notifications */
@@ -1092,11 +1066,29 @@
 
         .toast.success { border-color: rgba(52, 211, 153, 0.4); }
         .toast.error { border-color: rgba(244, 96, 122, 0.4); }
-        .toast.warning { border-color: rgba(242, 181, 68, 0.4); }
+        .toast.warning { border-color: rgba(124, 140, 245, 0.4); }
 
         @keyframes slideInRight {
             from { transform: translateX(100%); opacity: 0; }
             to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* AJOUT (effet JS "gratuit" en CPU) : onde au clic sur les boutons.
+           Élément unique créé par clic, animation "forwards" d'environ
+           600ms, puis retiré du DOM (voir script en bas de page) — zéro
+           coût entre deux clics, contrairement à une animation "infinite". */
+        .btn-ripple {
+            position: absolute;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.35);
+            transform: scale(0);
+            opacity: 0.6;
+            pointer-events: none;
+            animation: btnRipple 0.6s ease-out forwards;
+        }
+
+        @keyframes btnRipple {
+            to { transform: scale(1); opacity: 0; }
         }
 
         /* Responsive */
@@ -1116,9 +1108,9 @@
             display: flex;
             align-items: center;
             gap: 0.85rem;
-            background: rgba(242, 181, 68, 0.10);
+            background: rgba(124, 140, 245, 0.10);
             backdrop-filter: blur(var(--glass-blur));
-            border: 1px solid rgba(242, 181, 68, 0.35);
+            border: 1px solid rgba(124, 140, 245, 0.35);
             border-radius: var(--radius-md);
             padding: 0.9rem 1.1rem;
             margin-bottom: 1rem;
@@ -1198,8 +1190,8 @@
         }
 
         #apiSettingsCard.needs-setup {
-            border-color: rgba(242, 181, 68, 0.4);
-            box-shadow: 0 0 0 1px rgba(242, 181, 68, 0.18);
+            border-color: rgba(124, 140, 245, 0.4);
+            box-shadow: 0 0 0 1px rgba(124, 140, 245, 0.18);
         }
 
         /* Bannière d'alerte pipeline (voir dashboard.js) */
@@ -1235,14 +1227,6 @@
     </style>
 </head>
 <body>
-    <!-- Verrière ambiante : croix de lumière décorative, voir .sacred-light -->
-    <div class="sacred-light" aria-hidden="true">
-        <div class="mote" style="left:22%; animation-duration:26s; animation-delay:-2s;"></div>
-        <div class="mote" style="left:48%; animation-duration:33s; animation-delay:-14s;"></div>
-        <div class="mote" style="left:68%; animation-duration:29s; animation-delay:-8s;"></div>
-        <div class="mote" style="left:80%; animation-duration:24s; animation-delay:-20s;"></div>
-        <div class="mote" style="left:35%; animation-duration:31s; animation-delay:-5s;"></div>
-    </div>
     <div class="grain" aria-hidden="true"></div>
     <div class="dashboard">
         <!-- Sidebar Navigation -->
@@ -1479,7 +1463,7 @@
                 </div>
 
                 <!-- Fuzzy match notice element -->
-                <div id="fuzzyMatchNotice" style="display:none; margin-bottom: 1.25rem; padding: 0.85rem 1.25rem; border-radius: var(--radius-md); background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); color: var(--accent-amber); font-weight: 600; font-size: 0.88rem;"></div>
+                <div id="fuzzyMatchNotice" style="display:none; margin-bottom: 1.25rem; padding: 0.85rem 1.25rem; border-radius: var(--radius-md); background: rgba(124, 140, 245, 0.15); border: 1px solid rgba(124, 140, 245, 0.3); color: var(--accent-amber); font-weight: 600; font-size: 0.88rem;"></div>
 
                 <!-- Main Display Row -->
                 <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem;">
@@ -2040,8 +2024,8 @@
             }
 
             const isError = (payload.severity || 'warning') === 'error';
-            banner.style.background = isError ? 'rgba(244, 63, 94, 0.12)' : 'rgba(245, 158, 11, 0.12)';
-            banner.style.border = `1px solid ${isError ? 'var(--accent-rose)' : '#f59e0b'}`;
+            banner.style.background = isError ? 'rgba(244, 63, 94, 0.12)' : 'rgba(124, 140, 245, 0.12)';
+            banner.style.border = `1px solid ${isError ? 'var(--accent-rose)' : '#7c8cf5'}`;
             banner.style.display = 'flex';
             if (icon) icon.textContent = isError ? '⛔' : '⚠️';
             msg.textContent = payload.message || 'Le pipeline a rencontré un problème.';
@@ -2459,7 +2443,7 @@
 
             function row(label, ok, detail) {
                 const icon = ok ? '✅' : '⚠️';
-                const color = ok ? 'var(--accent-emerald, #10b981)' : 'var(--accent-amber, #f59e0b)';
+                const color = ok ? 'var(--accent-emerald, #10b981)' : 'var(--accent-amber, #7c8cf5)';
                 return `<div style="display:flex; justify-content:space-between; gap:0.75rem; padding: 0.35rem 0;">
                     <span>${icon} ${label}</span>
                     <span style="color:${color}; text-align:right;">${detail || (ok ? 'OK' : 'Problème')}</span>
@@ -2566,9 +2550,42 @@
             }
         }
 
+        // AJOUT (effet JS "gratuit" en CPU) : petite animation de comptage
+        // quand un chiffre de métrique change, plutôt qu'un saut sec. Se
+        // déclenche uniquement sur un vrai changement de valeur (pas à
+        // chaque appel de updateDashboard), dure ~350ms via requestAnimationFrame,
+        // puis s'arrête complètement d'elle-même — aucun coût entre deux
+        // mises à jour de données.
+        const _metricAnimState = new Map();
+        function setMetricValue(id, value, suffix = '') {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const numeric = typeof value === 'number' ? value : parseFloat(value);
+            if (Number.isNaN(numeric)) {
+                el.textContent = value;
+                return;
+            }
+            const prev = _metricAnimState.has(id) ? _metricAnimState.get(id) : numeric;
+            _metricAnimState.set(id, numeric);
+            if (prev === numeric) {
+                el.textContent = `${numeric}${suffix}`;
+                return;
+            }
+            const start = performance.now();
+            const duration = 350;
+            function step(now) {
+                const t = Math.min(1, (now - start) / duration);
+                const eased = 1 - Math.pow(1 - t, 3);
+                const current = Math.round(prev + (numeric - prev) * eased);
+                el.textContent = `${current}${suffix}`;
+                if (t < 1) requestAnimationFrame(step);
+            }
+            requestAnimationFrame(step);
+        }
+
         function updateMLStats(message) {
-            if (document.getElementById('totalDetections')) document.getElementById('totalDetections').textContent = message.totalDetections;
-            if (document.getElementById('highConfidence')) document.getElementById('highConfidence').textContent = message.highConfidence;
+            setMetricValue('totalDetections', message.totalDetections);
+            setMetricValue('highConfidence', message.highConfidence);
             if (document.getElementById('avgConfidence')) document.getElementById('avgConfidence').textContent = `${Math.round(message.avgConfidence * 100)}%`;
 
             state.detectionRate = message.totalDetections > 0 
@@ -2578,8 +2595,8 @@
         }
 
         function updateDashboard() {
-            if (document.getElementById('totalVerses')) document.getElementById('totalVerses').textContent = state.totalVerses;
-            if (document.getElementById('detectionRate')) document.getElementById('detectionRate').textContent = `${state.detectionRate}%`;
+            setMetricValue('totalVerses', state.totalVerses);
+            setMetricValue('detectionRate', state.detectionRate, '%');
             if (document.getElementById('activeLanguage')) document.getElementById('activeLanguage').textContent = state.activeLanguage;
 
             const elapsed = Math.floor((Date.now() - state.sessionStartTime) / 1000);
@@ -3227,6 +3244,76 @@
             });
 
             refreshSettingsUi();
+        })();
+
+        // CORRECTIF PERF (audit CPU, 03/08/2026) : voir le commentaire CSS sur
+        // .animations-paused plus haut dans <style>. On considère la fenêtre
+        // "au repos" dès qu'elle est masquée (onglet caché / minimisée) OU
+        // qu'elle perd le focus (opérateur basculé sur OBS pendant tout le
+        // culte) — les deux cas sont fréquents en régie et n'ont aucune
+        // raison de garder des animations décoratives actives en continu.
+        (function setupAmbientAnimationThrottle() {
+            function applyState() {
+                const shouldPause = document.hidden || !document.hasFocus();
+                document.body.classList.toggle('animations-paused', shouldPause);
+            }
+            document.addEventListener('visibilitychange', applyState);
+            window.addEventListener('blur', applyState);
+            window.addEventListener('focus', applyState);
+            applyState();
+        })();
+
+        // AJOUT (plus d'effet verre + JS, sans charger le CPU) : reflet
+        // spéculaire qui suit le curseur sur .card/.hero-verse-card (voir
+        // .card::after / .hero-verse-card::before dans <style>). Un seul
+        // écouteur `pointermove` délégué sur tout le document, throttlé par
+        // requestAnimationFrame (au plus une mise à jour par frame, jamais
+        // plus vite que l'écran ne peut afficher) — et qui ne fait
+        // strictement rien tant que la souris ne bouge pas. Coût au repos :
+        // nul.
+        (function setupGlassCursorGlow() {
+            let scheduled = false;
+            let lastEvent = null;
+
+            function apply() {
+                scheduled = false;
+                if (!lastEvent) return;
+                const target = lastEvent.target.closest('.card, .hero-verse-card');
+                if (!target) return;
+                const rect = target.getBoundingClientRect();
+                const mx = ((lastEvent.clientX - rect.left) / rect.width) * 100;
+                const my = ((lastEvent.clientY - rect.top) / rect.height) * 100;
+                target.style.setProperty('--mx', `${mx}%`);
+                target.style.setProperty('--my', `${my}%`);
+            }
+
+            document.addEventListener('pointermove', (e) => {
+                lastEvent = e;
+                if (!scheduled) {
+                    scheduled = true;
+                    requestAnimationFrame(apply);
+                }
+            }, { passive: true });
+        })();
+
+        // AJOUT : onde au clic (voir .btn-ripple dans <style>). Délégué sur
+        // le document, ne crée un élément que sur un vrai clic, et le
+        // retire dès que l'animation "forwards" se termine (aucun élément
+        // ni timer qui s'accumule au fil d'un long culte).
+        (function setupButtonRipple() {
+            document.addEventListener('click', (e) => {
+                const btn = e.target.closest('.btn');
+                if (!btn) return;
+                const rect = btn.getBoundingClientRect();
+                const size = Math.max(rect.width, rect.height) * 1.4;
+                const ripple = document.createElement('span');
+                ripple.className = 'btn-ripple';
+                ripple.style.width = ripple.style.height = `${size}px`;
+                ripple.style.left = `${e.clientX - rect.left - size / 2}px`;
+                ripple.style.top = `${e.clientY - rect.top - size / 2}px`;
+                btn.appendChild(ripple);
+                ripple.addEventListener('animationend', () => ripple.remove(), { once: true });
+            });
         })();
     </script>
 </body>
