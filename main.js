@@ -23,7 +23,6 @@ const fs = require('fs');
 const fsp = require('fs').promises;
 const { Worker } = require('worker_threads');
 const crypto = require('crypto');
-const os = require('os');
 const perfMonitor = require('./perf-monitor');
 const themeLoader = require('./theme-loader');
 const featuresStore = require('./features-store');
