@@ -14,7 +14,7 @@ const detector = require('./detector');
 let detectorEn = null;
 try {
   detectorEn = require('./detector-en');
-} catch (e) {
+} catch (_e) {
   // English detector optional
 }
 
