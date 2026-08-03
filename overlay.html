@@ -801,8 +801,13 @@ function applyTheme(theme) {
   if (theme.particleColor) root.style.setProperty('--overlay-particle', theme.particleColor);
   if (theme.animation) currentAnimation = theme.animation;
 
-  // Update particles color
-  updateParticles();
+  // CORRECTIF PERF (audit CPU) : updateParticles() était appelée mais
+  // jamais définie nulle part dans ce fichier -> ReferenceError silencieuse
+  // à chaque changement de thème, qui interrompait applyTheme() en plein
+  // milieu. La couleur des particules est une variable CSS (--overlay-particle,
+  // déjà positionnée ci-dessus) : le navigateur la propage tout seul à tous
+  // les éléments .particle/.advanced-particle existants, aucune fonction
+  // JS n'est nécessaire ici.
 }
 
 /* ==========================================================================
@@ -827,9 +832,6 @@ function setMood(mood) {
   
   // Create new particle system based on mood
   animationLibrary.createParticleSystem(container, mood);
-  
-  // Also update basic particles color
-  updateParticles();
   
   console.log('[overlay] Mood set to:', mood);
 }
