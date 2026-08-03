@@ -15,7 +15,10 @@ function createContextTracker({ cooldownMs = 45000 } = {}) {
       lastAt = now;
       return true;
     },
-    reset() { lastKey = null; lastAt = 0; },
+    reset() {
+      lastKey = null;
+      lastAt = 0;
+    },
   };
 }
 

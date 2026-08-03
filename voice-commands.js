@@ -3,10 +3,10 @@
  * voice-commands.js — Hands-Free Voice Control for ChurchOverlay
  * ============================================================================
  * Allows pastors/operators to control the overlay by speaking commands.
- * 
+ *
  * Commands detected BEFORE verse detection, so they don't interfere with
  * normal transcription flow.
- * 
+ *
  * Integration: Add to server.js pipeline, call before detectBilingual().
  * ============================================================================
  */
@@ -23,7 +23,11 @@ const COMMANDS = [
     ],
     extract: (match) => ({
       action: 'showVerse',
-      reference: { book: match[1].toLowerCase(), chapter: parseInt(match[2]), verseStart: parseInt(match[3]) },
+      reference: {
+        book: match[1].toLowerCase(),
+        chapter: parseInt(match[2]),
+        verseStart: parseInt(match[3]),
+      },
     }),
   },
   {
@@ -185,9 +189,7 @@ const COMMANDS = [
   },
   {
     id: 'resumeTimer',
-    patterns: [
-      /(?:reprends|continue|resume|redémarre).*(?:temps|timer|chrono|décompte)/i,
-    ],
+    patterns: [/(?:reprends|continue|resume|redémarre).*(?:temps|timer|chrono|décompte)/i],
     extract: () => ({ action: 'resumeTimer' }),
   },
 
@@ -219,7 +221,10 @@ function detectCommand(text) {
   // marques diacritiques combinantes. Résultat : "Ramène" décomposé en NFD
   // restait "rame" + accent combinant + "ne" au lieu de "ramene", faisant
   // échouer silencieusement tout motif écrit sans accent (et inversement).
-  const normalized = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const normalized = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
 
   for (const cmd of COMMANDS) {
     for (const pattern of cmd.patterns) {
@@ -238,9 +243,9 @@ function detectCommand(text) {
  * Get list of all available commands (for documentation/UI)
  */
 function getAvailableCommands() {
-  return COMMANDS.map(c => ({
+  return COMMANDS.map((c) => ({
     id: c.id,
-    description: c.patterns.map(p => p.toString()).join(' | '),
+    description: c.patterns.map((p) => p.toString()).join(' | '),
   }));
 }
 

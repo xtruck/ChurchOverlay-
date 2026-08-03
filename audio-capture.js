@@ -29,11 +29,11 @@ const path = require('path');
 
 // Configuration
 const CONFIG = {
-  sampleRate: 16000,      // recommandé pour Whisper large-v3 (Groq)
-  channels: 1,            // Mono
-  bitDepth: 16,           // PCM 16-bit
-  segmentDuration: 5000,  // 5 secondes (optimisé pour réactivité)
-  overlapDuration: 400,   // 400ms de chevauchement (meilleur contexte)
+  sampleRate: 16000, // recommandé pour Whisper large-v3 (Groq)
+  channels: 1, // Mono
+  bitDepth: 16, // PCM 16-bit
+  segmentDuration: 5000, // 5 secondes (optimisé pour réactivité)
+  overlapDuration: 400, // 400ms de chevauchement (meilleur contexte)
   // CORRECTIF (VAD réel) : ces deux valeurs existaient déjà mais n'étaient
   // lues nulle part dans ce fichier — la segmentation était purement
   // temporelle, aucun filtrage de silence n'avait lieu malgré le commentaire
@@ -111,7 +111,8 @@ function initTempDir(tempDir) {
 // Périphériques à écarter automatiquement : ce sont des boucles de retour
 // (ce que les haut-parleurs émettent, pas ce que le micro capte) ou des
 // "câbles" virtuels de routage audio — jamais un micro physique.
-const LOOPBACK_PATTERNS = /stereo mix|what u hear|wave ?out|loopback|cable output|mix st[ée]r[ée]o|virtual cable/i;
+const LOOPBACK_PATTERNS =
+  /stereo mix|what u hear|wave ?out|loopback|cable output|mix st[ée]r[ée]o|virtual cable/i;
 
 // Mots qui indiquent fortement un vrai micro.
 const MIC_HINT_PATTERNS = /micro|mic\b|headset|casque|webcam/i;
@@ -172,8 +173,10 @@ function startBrowserCapture(options = {}) {
   STATE.audioBuffer = [];
   STATE.browserCaptureConfig = config;
 
-  console.log('[audio-capture] Capture navigateur (Web Audio, sans FFmpeg) démarrée — ' +
-    'en attente de chunks PCM du renderer.');
+  console.log(
+    '[audio-capture] Capture navigateur (Web Audio, sans FFmpeg) démarrée — ' +
+      'en attente de chunks PCM du renderer.'
+  );
 }
 
 /**
@@ -264,15 +267,15 @@ function handleAudioData(data, config) {
 
   // Si le buffer est assez grand, créer un segment
   let bufferSize = STATE.audioBuffer.reduce((sum, buf) => sum + buf.length, 0);
-  
+
   if (bufferSize >= segmentSize) {
     // Concaténer le buffer
     const segmentBuffer = Buffer.concat(STATE.audioBuffer);
-    
+
     // Garder le chevauchement pour le prochain segment
     const overlapSize = (config.overlapDuration / 1000) * samplesPerSecond * bytesPerSample;
     const keepSize = Math.max(0, segmentBuffer.length - overlapSize);
-    
+
     if (keepSize > 0) {
       STATE.audioBuffer = [segmentBuffer.slice(keepSize)];
     } else {
@@ -289,19 +292,26 @@ function handleAudioData(data, config) {
       STATE.segmentCount++;
       console.log(
         `[audio-capture] Segment ${STATE.segmentCount} ignoré (silence — ` +
-        `${voiceInfo.voicedMs}ms de voix détectée < seuil ${config.minSpeechDuration}ms)`
+          `${voiceInfo.voicedMs}ms de voix détectée < seuil ${config.minSpeechDuration}ms)`
       );
       return;
     }
 
     // Créer le fichier WAV pour ce segment
-    const wavBuffer = createWavFile(segmentBuffer, config.sampleRate, config.channels, config.bitDepth);
-    
+    const wavBuffer = createWavFile(
+      segmentBuffer,
+      config.sampleRate,
+      config.channels,
+      config.bitDepth
+    );
+
     STATE.segmentCount++;
     const segmentFile = path.join(config.tempDir, `segment_${STATE.segmentCount}.wav`);
     fs.writeFileSync(segmentFile, wavBuffer);
 
-    console.log(`[audio-capture] Segment ${STATE.segmentCount} créé (${segmentBuffer.length} bytes, ${voiceInfo.voicedMs}ms de voix détectée)`);
+    console.log(
+      `[audio-capture] Segment ${STATE.segmentCount} créé (${segmentBuffer.length} bytes, ${voiceInfo.voicedMs}ms de voix détectée)`
+    );
 
     // Envoyer le segment au callback
     if (STATE.callbacks.onAudioSegment) {
@@ -325,12 +335,12 @@ function createWavFile(pcmData, sampleRate, channels, bitDepth) {
   const fileSize = 36 + dataSize;
 
   const header = Buffer.alloc(44);
-  
+
   // RIFF header
   header.write('RIFF', 0);
   header.writeUInt32LE(fileSize, 4);
   header.write('WAVE', 8);
-  
+
   // fmt chunk
   header.write('fmt ', 12);
   header.writeUInt32LE(16, 16); // Chunk size
@@ -340,7 +350,7 @@ function createWavFile(pcmData, sampleRate, channels, bitDepth) {
   header.writeUInt32LE(byteRate, 28);
   header.writeUInt16LE(blockAlign, 32);
   header.writeUInt16LE(bitDepth, 34);
-  
+
   // data chunk
   header.write('data', 36);
   header.writeUInt32LE(dataSize, 40);
@@ -386,7 +396,7 @@ function isRecording() {
  */
 function cleanupTempFiles(options = {}) {
   const { force = false, maxAgeMs = 180000 } = options; // 3 minutes par défaut (optimisé)
-  
+
   if (!fs.existsSync(CONFIG.tempDir)) {
     return;
   }
@@ -403,11 +413,11 @@ function cleanupTempFiles(options = {}) {
 
   files.forEach((file) => {
     const filePath = path.join(CONFIG.tempDir, file);
-    
+
     try {
       const stats = fs.statSync(filePath);
       const fileAge = now - stats.mtimeMs;
-      
+
       // Nettoyer les fichiers plus vieux que maxAgeMs ou si force=true
       if (fileAge > maxAgeMs || force) {
         fs.unlinkSync(filePath);
@@ -421,9 +431,11 @@ function cleanupTempFiles(options = {}) {
   });
 
   if (cleanedCount > 0) {
-    console.log(`[audio-capture] ${cleanedCount} fichier(s) temporaire(s) nettoyé(s)${keptCount > 0 ? `, ${keptCount} conservé(s)` : ''}`);
+    console.log(
+      `[audio-capture] ${cleanedCount} fichier(s) temporaire(s) nettoyé(s)${keptCount > 0 ? `, ${keptCount} conservé(s)` : ''}`
+    );
   }
-  
+
   // Tenter de supprimer le répertoire temporaire s'il est vide
   try {
     const remainingFiles = fs.readdirSync(CONFIG.tempDir);

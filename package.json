@@ -14,10 +14,19 @@
     "check-files": "node scripts/check-build-files.js",
     "test": "node scripts/check-build-files.js && node test/test-detector.js && node test/test-detector-en.js && node test/test-validation.js && node test/test-rate-limiter.js && node test/test-config-validator.js && node test/test-groq-fallback-race.js && node test/test-theme-loader.js && node test/test-features-store.js && node test/test-audio-capture.js && node test/test-sentence-buffer.js && node test/test-reading-mode.js && node test/test-obs-gating.js && node test/integration-reading-mode-live.js && node test/integration-quote-match.js",
     "test-all": "node scripts/check-build-files.js && node test/test-detector.js && node test/test-detector-en.js && node test/test-validation.js && node test/test-rate-limiter.js && node test/test-config-validator.js && node test/test-groq-fallback-race.js && node test/test-theme-loader.js && node test/test-features-store.js && node test/test-audio-capture.js && node test/test-sentence-buffer.js && node test/test-reading-mode.js && node test/test-obs-gating.js && node test/integration-reading-mode-live.js && node test/integration-quote-match.js",
-    "dist": "electron-builder --win nsis"
+    "dist": "electron-builder --win nsis",
+    "lint": "eslint . --ext .ts,.js",
+    "lint:fix": "eslint . --ext .ts,.js --fix",
+    "format": "prettier --write \"**/*.{ts,js,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,js,json,md}\"",
+    "type-check": "tsc --noEmit",
+    "build:ts": "tsc",
+    "security:audit": "npm audit",
+    "security:fix": "npm audit fix"
   },
   "dependencies": {
     "@google/genai": "^2.14.0",
+    "@sentry/node": "^10.69.0",
     "electron-updater": "^6.3.0",
     "express": "^4.18.2",
     "form-data": "^4.0.6",
@@ -25,8 +34,19 @@
     "ws": "^8.21.1"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.1.2",
+    "@types/ws": "^8.18.1",
+    "@typescript-eslint/eslint-plugin": "^8.66.0",
+    "@typescript-eslint/parser": "^8.66.0",
     "electron": "43.2.0",
-    "electron-builder": "^26.15.7"
+    "electron-builder": "^26.15.7",
+    "eslint": "^10.8.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.6",
+    "prettier": "^3.9.6",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
   },
   "overrides": {
     "brace-expansion": "^5.0.8",
@@ -74,6 +94,12 @@
       "ai-theme-generator.js",
       "ai-enricher.js",
       "animation-library.js",
+      "validation.ts",
+      "rate-limiter.ts",
+      "sentry-integration.ts",
+      "types/index.ts",
+      "global.d.ts",
+      "tsconfig.json",
       "node_modules/express/**/*",
       "config/themes/**/*",
       "config/features.json",
@@ -89,6 +115,7 @@
       "!**/*.log",
       "!**/*.test.js",
       "!**/.DS_Store",
+      "!dist/**",
       "!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,readme.markdown}",
       "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
       "!**/node_modules/.cache"

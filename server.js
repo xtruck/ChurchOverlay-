@@ -24,7 +24,8 @@ const os = require('os');
 // Environment & paths
 // ---------------------------------------------------------------------------
 const APP_ROOT = (workerData && workerData.appRoot) || __dirname;
-const USER_DATA_DIR = (workerData && workerData.userDataDir) || path.join(os.homedir(), '.churchoverlay');
+const USER_DATA_DIR =
+  (workerData && workerData.userDataDir) || path.join(os.homedir(), '.churchoverlay');
 
 // ---------------------------------------------------------------------------
 // Core modules (REQUIRED)
@@ -182,7 +183,9 @@ const WS_HOST = hostValidation.valid ? hostValidation.parsedValue : '127.0.0.1';
 // SECURITY: enforce minimum token length of 16 characters
 let WS_AUTH_TOKEN = (process.env.WS_AUTH_TOKEN || '').trim() || null;
 if (WS_AUTH_TOKEN && WS_AUTH_TOKEN.length < 16) {
-  console.error('[server] WS_AUTH_TOKEN too short (minimum 16 characters). Authentication disabled.');
+  console.error(
+    '[server] WS_AUTH_TOKEN too short (minimum 16 characters). Authentication disabled.'
+  );
   WS_AUTH_TOKEN = null;
 }
 
@@ -192,10 +195,16 @@ const VALIDATE_MESSAGES_ENABLED = !['false', '0'].includes(
   (process.env.VALIDATE_MESSAGES || '').trim().toLowerCase()
 );
 
-const maxConnValidation = configValidator.validateEnvVar('MAX_CONNECTIONS', process.env.MAX_CONNECTIONS);
+const maxConnValidation = configValidator.validateEnvVar(
+  'MAX_CONNECTIONS',
+  process.env.MAX_CONNECTIONS
+);
 const MAX_CONNECTIONS = maxConnValidation.valid ? maxConnValidation.parsedValue : 10;
 
-const maxMsgValidation = configValidator.validateEnvVar('MAX_MESSAGES_PER_MINUTE', process.env.MAX_MESSAGES_PER_MINUTE);
+const maxMsgValidation = configValidator.validateEnvVar(
+  'MAX_MESSAGES_PER_MINUTE',
+  process.env.MAX_MESSAGES_PER_MINUTE
+);
 const MAX_MESSAGES_PER_MINUTE = maxMsgValidation.valid ? maxMsgValidation.parsedValue : 60;
 
 const connRateLimiter = createRateLimiter({
@@ -219,7 +228,12 @@ app.get('/dashboard', (req, res) => res.sendFile(path.join(APP_ROOT, 'dashboard.
 app.get('/overlay', (req, res) => res.sendFile(path.join(APP_ROOT, 'overlay.html')));
 app.get('/setup', (req, res) => res.sendFile(path.join(APP_ROOT, 'setup.html')));
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', port: SERVER_PORT, service: 'ChurchOverlay', authEnabled: !!WS_AUTH_TOKEN });
+  res.json({
+    status: 'ok',
+    port: SERVER_PORT,
+    service: 'ChurchOverlay',
+    authEnabled: !!WS_AUTH_TOKEN,
+  });
 });
 
 const httpServer = http.createServer(app);
@@ -230,13 +244,18 @@ httpServer.listen(SERVER_PORT, WS_HOST, () => {
 });
 
 httpServer.on('error', (err) => {
-  const reason = err && err.code === 'EADDRINUSE'
-    ? `Le port ${SERVER_PORT} est déjà utilisé par une autre application.`
-    : `Erreur du serveur HTTP/WebSocket: ${err && err.message}`;
+  const reason =
+    err && err.code === 'EADDRINUSE'
+      ? `Le port ${SERVER_PORT} est déjà utilisé par une autre application.`
+      : `Erreur du serveur HTTP/WebSocket: ${err && err.message}`;
   console.error('[server] ' + reason);
   if (parentPort) {
     parentPort.postMessage({
-      type: 'alert', code: 'server-listen-error', severity: 'error', message: reason, timestamp: Date.now(),
+      type: 'alert',
+      code: 'server-listen-error',
+      severity: 'error',
+      message: reason,
+      timestamp: Date.now(),
     });
   }
   process.exitCode = 1;
@@ -293,7 +312,7 @@ function warn(msg) {
 // ---------------------------------------------------------------------------
 function broadcast(obj) {
   const json = JSON.stringify(obj);
-  wss.clients.forEach(ws => {
+  wss.clients.forEach((ws) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(json);
   });
 }
@@ -314,13 +333,23 @@ const readingMode = new ReadingMode({
     bibleLookup.getChapterVerses(book, chapter, displayLanguage === 'en' ? 'en' : 'fr'),
   onVerseAdvance: (verse) => {
     const reference = bibleLookup.buildReferenceLabel(
-      { book: readingMode.book, chapter: readingMode.chapter, verseStart: verse.num }, displayLanguage
+      { book: readingMode.book, chapter: readingMode.chapter, verseStart: verse.num },
+      displayLanguage
     );
     broadcast({
-      action: 'showVerse', reference, text: verse.text, langMode: displayLanguage,
-      durationMs: getVerseDurationMs(), readingMode: true,
+      action: 'showVerse',
+      reference,
+      text: verse.text,
+      langMode: displayLanguage,
+      durationMs: getVerseDurationMs(),
+      readingMode: true,
     });
-    pushHistory({ reference, text: verse.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
+    pushHistory({
+      reference,
+      text: verse.text.substring(0, 200),
+      readingMode: true,
+      timestamp: Date.now(),
+    });
     broadcast({ action: 'historyUpdated', history: verseHistory });
   },
 });
@@ -420,11 +449,18 @@ async function processTranscript(text) {
   }
 
   if (reference && reference.fuzzy) {
-    log(`Fuzzy match: "${reference.fuzzyOriginal}" → "${reference.book}" (distance ${reference.fuzzyDistance})`);
+    log(
+      `Fuzzy match: "${reference.fuzzyOriginal}" → "${reference.book}" (distance ${reference.fuzzyDistance})`
+    );
     broadcast({
       action: 'candidateVerse',
-      reference: { book: reference.book, chapter: reference.chapter, verseStart: reference.verseStart },
-      original: reference.fuzzyOriginal, distance: reference.fuzzyDistance,
+      reference: {
+        book: reference.book,
+        chapter: reference.chapter,
+        verseStart: reference.verseStart,
+      },
+      original: reference.fuzzyOriginal,
+      distance: reference.fuzzyDistance,
     });
   }
 
@@ -433,10 +469,14 @@ async function processTranscript(text) {
       const semanticResult = await semanticDetector.detect(correctedText);
       if (semanticResult) {
         reference = semanticResult;
-        log(`Semantic detection: ${semanticResult.raw} (confidence: ${semanticResult.confidence.toFixed(2)})`);
+        log(
+          `Semantic detection: ${semanticResult.raw} (confidence: ${semanticResult.confidence.toFixed(2)})`
+        );
         broadcast({
-          action: 'semanticDetected', reference: semanticResult.raw,
-          confidence: semanticResult.confidence, reasoning: semanticResult.reasoning,
+          action: 'semanticDetected',
+          reference: semanticResult.raw,
+          confidence: semanticResult.confidence,
+          reasoning: semanticResult.reasoning,
           alternativeRefs: semanticResult.alternativeRefs,
         });
       }
@@ -467,9 +507,24 @@ async function processTranscript(text) {
           await activateReadingMode(book, nextChapter, 1);
           if (readingMode.active && readingMode.currentIndex >= 0) {
             const first = readingMode.verses[readingMode.currentIndex];
-            const label = bibleLookup.buildReferenceLabel({ book, chapter: nextChapter, verseStart: first.num }, displayLanguage);
-            broadcast({ action: 'showVerse', reference: label, text: first.text, langMode: displayLanguage, durationMs: getVerseDurationMs(), readingMode: true });
-            pushHistory({ reference: label, text: first.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
+            const label = bibleLookup.buildReferenceLabel(
+              { book, chapter: nextChapter, verseStart: first.num },
+              displayLanguage
+            );
+            broadcast({
+              action: 'showVerse',
+              reference: label,
+              text: first.text,
+              langMode: displayLanguage,
+              durationMs: getVerseDurationMs(),
+              readingMode: true,
+            });
+            pushHistory({
+              reference: label,
+              text: first.text.substring(0, 200),
+              readingMode: true,
+              timestamp: Date.now(),
+            });
             broadcast({ action: 'historyUpdated', history: verseHistory });
             log('Reading mode: chapitre suivant → ' + label);
           }
@@ -499,7 +554,12 @@ async function processTranscript(text) {
   try {
     if (reference.detectedBy === 'quote') {
       const quoted = quotedMatch || bibleLookup.findByQuotedText(correctedText);
-      verse = { reference: quoted.reference, text: quoted.text, provider: quoted.provider, lang: quoted.lang };
+      verse = {
+        reference: quoted.reference,
+        text: quoted.text,
+        provider: quoted.provider,
+        lang: quoted.lang,
+      };
     } else {
       verse = await bibleLookup.getVerseMultilang(reference, displayLanguage);
     }
@@ -537,14 +597,25 @@ async function processTranscript(text) {
 
   const durationMs = getVerseDurationMs();
   broadcast({
-    action: 'showVerse', reference: verse.reference, text: verse.text,
-    text_fr: verse.text_fr || null, text_en: verse.text_en || null,
-    langMode: verse.langMode, provider: verse.provider, durationMs,
-    detectedBy: reference.detectedBy || 'regex', matchedByQuote: reference.detectedBy === 'quote',
+    action: 'showVerse',
+    reference: verse.reference,
+    text: verse.text,
+    text_fr: verse.text_fr || null,
+    text_en: verse.text_en || null,
+    langMode: verse.langMode,
+    provider: verse.provider,
+    durationMs,
+    detectedBy: reference.detectedBy || 'regex',
+    matchedByQuote: reference.detectedBy === 'quote',
     theme: theme ? { name: theme.name, mood: theme.mood } : null,
   });
 
-  pushHistory({ reference: verse.reference, text: verse.text.substring(0, 200), timestamp: now, detectedBy: reference.detectedBy || 'regex' });
+  pushHistory({
+    reference: verse.reference,
+    text: verse.text.substring(0, 200),
+    timestamp: now,
+    detectedBy: reference.detectedBy || 'regex',
+  });
   broadcast({ action: 'historyUpdated', history: verseHistory });
 
   if (plugins) {
@@ -567,7 +638,12 @@ async function handleVoiceCommand(command, originalText) {
       if (!command.reference) return;
       try {
         const verse = await bibleLookup.getVerseMultilang(command.reference, displayLanguage);
-        broadcast({ action: 'showVerse', ...verse, durationMs: getVerseDurationMs(), triggeredByVoice: true });
+        broadcast({
+          action: 'showVerse',
+          ...verse,
+          durationMs: getVerseDurationMs(),
+          triggeredByVoice: true,
+        });
         pushHistory({ ...verse, triggeredByVoice: true, timestamp: Date.now() });
         broadcast({ action: 'historyUpdated', history: verseHistory });
         log('Voice command: showed ' + verse.reference);
@@ -611,7 +687,11 @@ async function handleVoiceCommand(command, originalText) {
     case 'setTheme': {
       if (themeGenerator) {
         const theme = themeGenerator.getTheme(command.theme);
-        broadcast({ action: 'applyTheme', ...themeGenerator.themeToCss(theme), triggeredByVoice: true });
+        broadcast({
+          action: 'applyTheme',
+          ...themeGenerator.themeToCss(theme),
+          triggeredByVoice: true,
+        });
         log('Voice command: theme ' + command.theme);
       }
       break;
@@ -625,7 +705,13 @@ async function handleVoiceCommand(command, originalText) {
     case 'setTranslation': {
       try {
         const newId = bibleLookup.setTranslation(command.language, command.code);
-        broadcast({ action: 'translationChanged', language: command.language, code: command.code, translationId: newId, triggeredByVoice: true });
+        broadcast({
+          action: 'translationChanged',
+          language: command.language,
+          code: command.code,
+          translationId: newId,
+          triggeredByVoice: true,
+        });
         log(`Voice command: translation ${command.language} → ${command.code}`);
       } catch (err) {
         warn('Voice command translation failed: ' + err.message);
@@ -659,10 +745,24 @@ async function handleVoiceCommand(command, originalText) {
 
 // Actions that require operator role
 const OPERATOR_ACTIONS = new Set([
-  'showVerse', 'hideVerse', 'setLanguage', 'setTranslation', 'startReading', 'stopReading',
-  'applyTheme', 'setMoodTheme', 'searchBible', 'togglePlugin', 'obs-toggle-recording',
-  'obs-switch-scene', 'extendTime', 'pauseTimer', 'resumeTimer', 'emergencyClear',
-  'hideTranslation', 'translateText',
+  'showVerse',
+  'hideVerse',
+  'setLanguage',
+  'setTranslation',
+  'startReading',
+  'stopReading',
+  'applyTheme',
+  'setMoodTheme',
+  'searchBible',
+  'togglePlugin',
+  'obs-toggle-recording',
+  'obs-switch-scene',
+  'extendTime',
+  'pauseTimer',
+  'resumeTimer',
+  'emergencyClear',
+  'hideTranslation',
+  'translateText',
 ]);
 
 function determineClientRole(req) {
@@ -714,7 +814,7 @@ wss.on('connection', (ws, req) => {
       providedToken = new URL(req.url, 'http://internal').searchParams.get('token');
     } catch (_) {}
     if (providedToken !== WS_AUTH_TOKEN) {
-      warn('Connexion WebSocket refusée — jeton d\'authentification invalide ou manquant.');
+      warn("Connexion WebSocket refusée — jeton d'authentification invalide ou manquant.");
       connRateLimiter.removeConnection(ws);
       ws.close(1008, 'Non autorisé');
       return;
@@ -728,23 +828,25 @@ wss.on('connection', (ws, req) => {
   const features = featuresStore.readFeatures();
   const theme = themeLoader.getActiveTheme();
 
-  ws.send(JSON.stringify({
-    action: 'init',
-    language: displayLanguage,
-    history: verseHistory,
-    theme: themeLoader.themeToCss(theme),
-    translations: bibleLookup.listTranslations(),
-    plugins: plugins ? plugins.getPluginList() : [],
-    aiFeatures: {
-      semanticDetection: !!semanticDetector,
-      voiceCommands: !!detectCommand,
-      transcriptionCorrection: !!corrector,
-      dynamicThemes: !!themeGenerator,
-      bibleSearch: !!semanticSearch,
-    },
-    aiLoadErrors: aiLoadErrors.length > 0 ? aiLoadErrors : undefined,
-    yourRole: ws.clientRole,
-  }));
+  ws.send(
+    JSON.stringify({
+      action: 'init',
+      language: displayLanguage,
+      history: verseHistory,
+      theme: themeLoader.themeToCss(theme),
+      translations: bibleLookup.listTranslations(),
+      plugins: plugins ? plugins.getPluginList() : [],
+      aiFeatures: {
+        semanticDetection: !!semanticDetector,
+        voiceCommands: !!detectCommand,
+        transcriptionCorrection: !!corrector,
+        dynamicThemes: !!themeGenerator,
+        bibleSearch: !!semanticSearch,
+      },
+      aiLoadErrors: aiLoadErrors.length > 0 ? aiLoadErrors : undefined,
+      yourRole: ws.clientRole,
+    })
+  );
 
   ws.on('message', async (raw) => {
     const msgCheck = connRateLimiter.checkMessage(ws);
@@ -815,7 +917,12 @@ wss.on('connection', (ws, req) => {
       const text = String(sanitized.text || '').trim();
       if (text) {
         log(`WebSocket transcript received: "${text.substring(0, 80)}"`);
-        broadcast({ action: 'transcript', text, timestamp: Date.now(), source: sanitized.source || 'browser' });
+        broadcast({
+          action: 'transcript',
+          text,
+          timestamp: Date.now(),
+          source: sanitized.source || 'browser',
+        });
         await processTranscript(text);
       }
       return;
@@ -854,13 +961,24 @@ wss.on('connection', (ws, req) => {
           groq.checkKey(),
           deepgramWrapper.checkKey(),
         ]);
-        ws.send(JSON.stringify({
-          action: 'preServiceCheckResult',
-          wsConnected: true, wsAuthEnabled: !!WS_AUTH_TOKEN, wsHost: WS_HOST,
-          groq: groqResult, deepgram: deepgramResult, timestamp: Date.now(),
-        }));
+        ws.send(
+          JSON.stringify({
+            action: 'preServiceCheckResult',
+            wsConnected: true,
+            wsAuthEnabled: !!WS_AUTH_TOKEN,
+            wsHost: WS_HOST,
+            groq: groqResult,
+            deepgram: deepgramResult,
+            timestamp: Date.now(),
+          })
+        );
       } catch (err) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Échec de la vérification pré-culte : ' + err.message }));
+        ws.send(
+          JSON.stringify({
+            action: 'error',
+            error: 'Échec de la vérification pré-culte : ' + err.message,
+          })
+        );
       }
       return;
     }
@@ -880,7 +998,12 @@ wss.on('connection', (ws, req) => {
     if (sanitized.action === 'setTranslation') {
       try {
         const newId = bibleLookup.setTranslation(sanitized.language, sanitized.code);
-        broadcast({ action: 'translationChanged', language: sanitized.language, code: sanitized.code, translationId: newId });
+        broadcast({
+          action: 'translationChanged',
+          language: sanitized.language,
+          code: sanitized.code,
+          translationId: newId,
+        });
         log(`Translation: ${sanitized.language} → ${sanitized.code}`);
       } catch (err) {
         ws.send(JSON.stringify({ action: 'error', error: err.message }));
@@ -892,16 +1015,33 @@ wss.on('connection', (ws, req) => {
     if (sanitized.action === 'startReading') {
       const ref = detector.parseReference(sanitized.reference);
       if (!ref) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Référence invalide pour le mode lecture.' }));
+        ws.send(
+          JSON.stringify({ action: 'error', error: 'Référence invalide pour le mode lecture.' })
+        );
         return;
       }
       try {
         const firstVerse = await readingMode.start(ref.book, ref.chapter, ref.verseStart);
         ws.send(JSON.stringify({ action: 'readingStarted', reference: ref }));
         if (firstVerse) {
-          const label = bibleLookup.buildReferenceLabel({ book: ref.book, chapter: ref.chapter, verseStart: firstVerse.num }, displayLanguage);
-          broadcast({ action: 'showVerse', reference: label, text: firstVerse.text, langMode: displayLanguage, durationMs: getVerseDurationMs(), readingMode: true });
-          pushHistory({ reference: label, text: firstVerse.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
+          const label = bibleLookup.buildReferenceLabel(
+            { book: ref.book, chapter: ref.chapter, verseStart: firstVerse.num },
+            displayLanguage
+          );
+          broadcast({
+            action: 'showVerse',
+            reference: label,
+            text: firstVerse.text,
+            langMode: displayLanguage,
+            durationMs: getVerseDurationMs(),
+            readingMode: true,
+          });
+          pushHistory({
+            reference: label,
+            text: firstVerse.text.substring(0, 200),
+            readingMode: true,
+            timestamp: Date.now(),
+          });
           broadcast({ action: 'historyUpdated', history: verseHistory });
         }
       } catch (err) {
@@ -919,7 +1059,9 @@ wss.on('connection', (ws, req) => {
     // --- Bible Semantic Search ---
     if (sanitized.action === 'searchBible') {
       if (!semanticSearch) {
-        ws.send(JSON.stringify({ action: 'searchError', error: 'Recherche biblique non disponible' }));
+        ws.send(
+          JSON.stringify({ action: 'searchError', error: 'Recherche biblique non disponible' })
+        );
         return;
       }
       const query = String(sanitized.query || '').trim();
@@ -938,13 +1080,23 @@ wss.on('connection', (ws, req) => {
 
     // --- Get topics ---
     if (sanitized.action === 'getTopics') {
-      ws.send(JSON.stringify({ action: 'topicsList', topics: semanticSearch ? semanticSearch.getTopics() : [] }));
+      ws.send(
+        JSON.stringify({
+          action: 'topicsList',
+          topics: semanticSearch ? semanticSearch.getTopics() : [],
+        })
+      );
       return;
     }
 
     // --- Get moods ---
     if (sanitized.action === 'getMoods') {
-      ws.send(JSON.stringify({ action: 'moodsList', moods: themeGenerator ? themeGenerator.getMoods() : [] }));
+      ws.send(
+        JSON.stringify({
+          action: 'moodsList',
+          moods: themeGenerator ? themeGenerator.getMoods() : [],
+        })
+      );
       return;
     }
 
@@ -963,28 +1115,38 @@ wss.on('connection', (ws, req) => {
 
     // --- Plugin management ---
     if (sanitized.action === 'listPlugins') {
-      ws.send(JSON.stringify({ action: 'pluginsList', plugins: plugins ? plugins.getPluginList() : [] }));
+      ws.send(
+        JSON.stringify({ action: 'pluginsList', plugins: plugins ? plugins.getPluginList() : [] })
+      );
       return;
     }
 
     if (sanitized.action === 'togglePlugin') {
       if (plugins) {
         plugins.setEnabled(sanitized.pluginName, sanitized.enabled);
-        ws.send(JSON.stringify({ action: 'pluginToggled', pluginName: sanitized.pluginName, enabled: sanitized.enabled }));
+        ws.send(
+          JSON.stringify({
+            action: 'pluginToggled',
+            pluginName: sanitized.pluginName,
+            enabled: sanitized.enabled,
+          })
+        );
       }
       return;
     }
 
     // --- AI stats ---
     if (sanitized.action === 'getAiStats') {
-      ws.send(JSON.stringify({
-        action: 'aiStats',
-        semanticDetector: semanticDetector ? semanticDetector.getStats() : null,
-        corrector: corrector ? corrector.getStats() : null,
-        plugins: plugins ? plugins.metadata : null,
-        aiEnricher: !!aiEnricher,
-        loadErrors: aiLoadErrors,
-      }));
+      ws.send(
+        JSON.stringify({
+          action: 'aiStats',
+          semanticDetector: semanticDetector ? semanticDetector.getStats() : null,
+          corrector: corrector ? corrector.getStats() : null,
+          plugins: plugins ? plugins.metadata : null,
+          aiEnricher: !!aiEnricher,
+          loadErrors: aiLoadErrors,
+        })
+      );
       return;
     }
 
@@ -1008,7 +1170,14 @@ wss.on('connection', (ws, req) => {
       }
       const fullTranscript = sanitizeForPrompt(recentTranscripts.join(' '));
       const themeData = await aiEnricher.detectSermonTheme(fullTranscript);
-      ws.send(JSON.stringify({ action: 'sermonTheme', ...themeData, silent: !!sanitized.silent, timestamp: Date.now() }));
+      ws.send(
+        JSON.stringify({
+          action: 'sermonTheme',
+          ...themeData,
+          silent: !!sanitized.silent,
+          timestamp: Date.now(),
+        })
+      );
       return;
     }
 
@@ -1033,7 +1202,9 @@ wss.on('connection', (ws, req) => {
       const safeRef = sanitizeForPrompt(sanitized.reference || '');
       const safeText = sanitizeForPrompt(sanitized.text || '');
       const refs = await aiEnricher.findCrossReferences(safeRef, safeText);
-      ws.send(JSON.stringify({ action: 'crossReferences', reference: sanitized.reference, results: refs }));
+      ws.send(
+        JSON.stringify({ action: 'crossReferences', reference: sanitized.reference, results: refs })
+      );
       return;
     }
 
@@ -1047,9 +1218,22 @@ wss.on('connection', (ws, req) => {
       const safeText = sanitizeForPrompt(sanitized.text || '');
       const translation = await aiEnricher.translateSegment(safeText, targetLang);
       if (sanitized.autoBroadcast) {
-        broadcast({ action: 'showTranslation', translation, targetLang, reference: sanitized.reference || null });
+        broadcast({
+          action: 'showTranslation',
+          translation,
+          targetLang,
+          reference: sanitized.reference || null,
+        });
       }
-      ws.send(JSON.stringify({ action: 'textTranslated', original: sanitized.text, targetLang, translation, autoBroadcast: !!sanitized.autoBroadcast }));
+      ws.send(
+        JSON.stringify({
+          action: 'textTranslated',
+          original: sanitized.text,
+          targetLang,
+          translation,
+          autoBroadcast: !!sanitized.autoBroadcast,
+        })
+      );
       return;
     }
 
@@ -1095,9 +1279,12 @@ function startPipeline() {
       } catch (err) {
         warn('Transcription error: ' + err.message);
         broadcast({ action: 'transcriptionError', error: err.message });
-        if (plugins) plugins.emit('onError', { type: 'transcription', message: err.message }).catch(() => {});
+        if (plugins)
+          plugins.emit('onError', { type: 'transcription', message: err.message }).catch(() => {});
       } finally {
-        try { fs.unlinkSync(segmentFile); } catch (_) {}
+        try {
+          fs.unlinkSync(segmentFile);
+        } catch (_) {}
       }
     },
     onError: (err) => {
@@ -1128,13 +1315,16 @@ if (parentPort) {
     if (msg.type === 'shutdown') {
       log('Shutdown requested by main process');
       audioCapture.stopRecording();
-      wss.clients.forEach(ws => ws.close());
+      wss.clients.forEach((ws) => ws.close());
       wss.close();
       connRateLimiter.stopCleanup();
       if (parentPort) parentPort.postMessage({ type: 'status', status: 'stopped' });
       const finish = () => process.exit(0);
       if (plugins) {
-        plugins.shutdown().catch(() => {}).finally(finish);
+        plugins
+          .shutdown()
+          .catch(() => {})
+          .finally(finish);
         setTimeout(finish, 2000).unref?.();
       } else {
         finish();
@@ -1175,7 +1365,8 @@ try {
 // ===========================================================================
 // Startup
 // ===========================================================================
-configValidator.validateSystemConfig()
+configValidator
+  .validateSystemConfig()
   .then(configValidator.displayValidationResults)
   .catch((err) => warn('config-validator: ' + err.message));
 
@@ -1199,14 +1390,18 @@ process.on('SIGINT', () => {
 });
 
 process.on('uncaughtException', (err) => {
-  warn('Uncaught exception (arrêt du serveur): ' + (err && err.stack || err.message));
-  try { audioCapture.cleanupTempFiles({ force: true }); } catch (_) {}
+  warn('Uncaught exception (arrêt du serveur): ' + ((err && err.stack) || err.message));
+  try {
+    audioCapture.cleanupTempFiles({ force: true });
+  } catch (_) {}
   process.exit(1);
 });
 
 process.on('unhandledRejection', (reason) => {
   const message = (reason && reason.stack) || (reason && reason.message) || String(reason);
   warn('Unhandled promise rejection (arrêt du serveur): ' + message);
-  try { audioCapture.cleanupTempFiles({ force: true }); } catch (_) {}
+  try {
+    audioCapture.cleanupTempFiles({ force: true });
+  } catch (_) {}
   process.exit(1);
 });

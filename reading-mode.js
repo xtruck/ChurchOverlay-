@@ -4,7 +4,7 @@ const { levenshteinDistance } = require('./levenshtein');
 class ReadingMode {
   constructor({ getChapterVerses, onVerseAdvance }) {
     this.getChapterVerses = getChapterVerses; // (book, chapter) => Promise<[{num, text}]>
-    this.onVerseAdvance = onVerseAdvance;      // callback(verseObj) appelé quand on avance
+    this.onVerseAdvance = onVerseAdvance; // callback(verseObj) appelé quand on avance
 
     this.active = false;
     this.book = null;
@@ -18,7 +18,7 @@ class ReadingMode {
     this.book = book;
     this.chapter = chapter;
     this.verses = await this.getChapterVerses(book, chapter);
-    this.currentIndex = this.verses.findIndex(v => v.num === startVerseNumber);
+    this.currentIndex = this.verses.findIndex((v) => v.num === startVerseNumber);
     if (this.currentIndex === -1) this.currentIndex = 0;
     this.active = true;
     return this.verses[this.currentIndex];
@@ -33,10 +33,12 @@ class ReadingMode {
   }
 
   _wordOverlapScore(transcriptFragment, verseText) {
-    const norm = (s) => s.toLowerCase()
-      .replace(/[.,;:!?«»"']/g, '')
-      .split(/\s+/)
-      .filter(w => w.length > 2); // ignore mots trop courts (bruit)
+    const norm = (s) =>
+      s
+        .toLowerCase()
+        .replace(/[.,;:!?«»"']/g, '')
+        .split(/\s+/)
+        .filter((w) => w.length > 2); // ignore mots trop courts (bruit)
 
     const fragWords = new Set(norm(transcriptFragment));
     const verseWords = norm(verseText);
@@ -80,7 +82,7 @@ class ReadingMode {
     const verseOnlyMatch = text.match(/^(?:verset\s+|v(?:erse)?\.?\s*)?(\d{1,3})$/i);
     if (verseOnlyMatch) {
       const num = parseInt(verseOnlyMatch[1], 10);
-      const idx = this.verses.findIndex(v => v.num === num);
+      const idx = this.verses.findIndex((v) => v.num === num);
       if (idx !== -1) {
         this.currentIndex = idx;
         const verse = this.verses[idx];
@@ -90,11 +92,9 @@ class ReadingMode {
     }
 
     // Comparaison au verset courant ET aux 2 suivants (tolère un saut de ligne manqué)
-    const candidates = [
-      this.currentIndex,
-      this.currentIndex + 1,
-      this.currentIndex + 2,
-    ].filter(i => i >= 0 && i < this.verses.length);
+    const candidates = [this.currentIndex, this.currentIndex + 1, this.currentIndex + 2].filter(
+      (i) => i >= 0 && i < this.verses.length
+    );
 
     let best = null;
     let bestScore = 0;

@@ -3,14 +3,14 @@
  * auto-updater.js — Automatic Update System for ChurchOverlay
  * ============================================================================
  * Checks for updates on startup and installs them silently.
- * 
+ *
  * Uses electron-updater with GitHub Releases as the update source.
- * 
+ *
  * Setup required:
  *   1. Set up GitHub Releases with .exe and latest.yml
  *   2. Add GH_TOKEN to build environment
  *   3. Publish with: npm run dist -- --publish always
- * 
+ *
  * Integration: Require in main.js, call initAutoUpdater() after app ready.
  * ============================================================================
  */
@@ -187,7 +187,7 @@ function showInstallDialog(info) {
     type: 'info',
     title: 'Mise à jour prête',
     message: `ChurchOverlay ${info.version} est téléchargée`,
-    detail: 'L\'application doit redémarrer pour installer la mise à jour.',
+    detail: "L'application doit redémarrer pour installer la mise à jour.",
     buttons: ['Redémarrer maintenant', 'Redémarrer plus tard'],
     defaultId: 0,
     cancelId: 1,

@@ -21,18 +21,18 @@ npm run server-only
 
 **Where do the API keys live?**
 
-| How you run it | Source of `GROQ_API_KEY` / `DEEPGRAM_API_KEY` |
-|----------------|-----------------------------------------------|
+| How you run it                 | Source of `GROQ_API_KEY` / `DEEPGRAM_API_KEY`                      |
+| ------------------------------ | ------------------------------------------------------------------ |
 | `npm start` / installed `.exe` | Setup window → encrypted in `userData/config.json` (`safeStorage`) |
-| `npm run server-only` | Real environment variables, or `.env` at the repo root |
+| `npm run server-only`          | Real environment variables, or `.env` at the repo root             |
 
 ## Configuration Reference
 
 ### WebSocket Server
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | 8765 | WebSocket server port |
+| Variable  | Default   | Description                              |
+| --------- | --------- | ---------------------------------------- |
+| `PORT`    | 8765      | WebSocket server port                    |
 | `WS_HOST` | 127.0.0.1 | Binding address (127.0.0.1 = local only) |
 
 **Security Note:** Keep `WS_HOST=127.0.0.1` to prevent remote connections. Only change to `0.0.0.0` for testing.
@@ -46,17 +46,19 @@ directly from the app's setup screen.
 
 ### Speech-to-Text (cloud-only)
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GROQ_API_KEY` | (recommended) | Cloud transcription key from https://console.groq.com/keys |
-| `DEEPGRAM_API_KEY` | (optional) | Fallback transcription key from https://console.deepgram.com/ |
-| `NODE_ENV` | production | Environment (development/production/test) |
+| Variable           | Default       | Description                                                   |
+| ------------------ | ------------- | ------------------------------------------------------------- |
+| `GROQ_API_KEY`     | (recommended) | Cloud transcription key from https://console.groq.com/keys    |
+| `DEEPGRAM_API_KEY` | (optional)    | Fallback transcription key from https://console.deepgram.com/ |
+| `NODE_ENV`         | production    | Environment (development/production/test)                     |
 
 **How it works:**
+
 - Transcription is 100% cloud-based: Groq first, Deepgram as fallback if Groq fails or times out.
 - There is no local Whisper fallback (removed in v0.3.0) and no FFmpeg dependency (removed since the getUserMedia migration).
 
 **Get a Groq API Key:**
+
 1. Go to https://console.groq.com/keys
 2. Sign up or log in
 3. Create new API key
@@ -70,16 +72,18 @@ automatic fallback: `bible.helloao.org` (Louis Segond 1910), then
 
 ### Logging & Debug
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DEBUG` | false | Verbose logging (true/false) |
+| Variable | Default | Description                  |
+| -------- | ------- | ---------------------------- |
+| `DEBUG`  | false   | Verbose logging (true/false) |
 
 **Enable debug:**
+
 ```ini
 DEBUG=true
 ```
 
 Then watch the console for detailed logs:
+
 ```
 [server] Message validated from client #1: showVerse
 [detector] Detected: jean 3:16
@@ -89,13 +93,14 @@ Then watch the console for detailed logs:
 
 ### Security
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MAX_CONNECTIONS` | 10 | Max WebSocket connections per IP |
-| `MAX_MESSAGES_PER_MINUTE` | 60 | Max messages per IP per minute |
-| `VALIDATE_MESSAGES` | true | Enable message validation |
+| Variable                  | Default | Description                      |
+| ------------------------- | ------- | -------------------------------- |
+| `MAX_CONNECTIONS`         | 10      | Max WebSocket connections per IP |
+| `MAX_MESSAGES_PER_MINUTE` | 60      | Max messages per IP per minute   |
+| `VALIDATE_MESSAGES`       | true    | Enable message validation        |
 
 **For production (church service):**
+
 - Keep defaults
 - `VALIDATE_MESSAGES=true` (prevent XSS attacks)
 - `MAX_CONNECTIONS=10` (prevents DDoS)
@@ -103,6 +108,7 @@ Then watch the console for detailed logs:
 ## Examples
 
 ### Minimal Setup (Groq only)
+
 ```ini
 PORT=8765
 GROQ_API_KEY=gsk_YOUR_KEY_HERE
@@ -110,6 +116,7 @@ NODE_ENV=production
 ```
 
 ### Full Setup (Groq + Deepgram fallback)
+
 ```ini
 PORT=8765
 GROQ_API_KEY=gsk_YOUR_KEY_HERE
@@ -119,6 +126,7 @@ DEBUG=false
 ```
 
 ### Development/Testing
+
 ```ini
 PORT=8765
 GROQ_API_KEY=gsk_YOUR_KEY_HERE
@@ -131,6 +139,7 @@ DEBUG=true
 **NEVER commit `.env` to git!** It's already in `.gitignore`.
 
 **Safe way to store production keys:**
+
 1. Use `.env.example` for documentation
 2. Create `.env` locally (git-ignored)
 3. For servers, use environment variables directly (Heroku, Docker, etc.)
@@ -143,6 +152,7 @@ stored in plain text in `config.json`.
 ## Validation
 
 **Check your setup:**
+
 ```bash
 # Lists all current environment variables
 node -e "console.log(process.env)"
@@ -152,6 +162,7 @@ node -e "console.log('GROQ_API_KEY set:', !!process.env.GROQ_API_KEY)"
 ```
 
 **Run tests:**
+
 ```bash
 # Full test suite
 npm test
@@ -164,6 +175,7 @@ node test/test-validation.js
 ## Troubleshooting
 
 ### "GROQ_API_KEY invalid"
+
 ```bash
 # Check key format:
 # Should start with "gsk_"
@@ -172,6 +184,7 @@ node test/test-validation.js
 ```
 
 ### No microphone detected
+
 Open the app's setup screen and click "Refresh" — it lists microphones via
 `getUserMedia`. If none appear, check your OS microphone permissions
 (Windows: Settings → Privacy → Microphone → "Allow desktop apps to access

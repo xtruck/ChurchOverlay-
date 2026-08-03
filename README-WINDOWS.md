@@ -6,6 +6,7 @@
 ## 📥 Prerequisites (One Time)
 
 ### 1. Install Node.js
+
 - Download: https://nodejs.org/ (LTS version recommended)
 - Run installer with default settings
 - Restart your computer
@@ -19,17 +20,22 @@ Windows Settings, built into the app itself.
 ## 🚀 Quick Start (Every Time)
 
 ### First Time Only
+
 ```
 Double-click: install-dependencies.bat
 ```
+
 Then run:
+
 ```
 npm start
 ```
+
 A setup window opens automatically: pick your microphone from the list
 and paste your Groq API key (get one free at https://console.groq.com/keys).
 
 ### Every Time You Use It
+
 ```
 npm start
 ```
@@ -64,12 +70,14 @@ without a microphone — see "Advanced Troubleshooting" below.)
 Before your first service, test the system:
 
 ### With Manual Test (No Microphone Needed)
+
 1. Make sure the app (`npm start`) is running
 2. Open OBS with overlay source
 3. Double-click: `test-overlay.bat`
 4. You should see "Jean 3:16" appear in OBS!
 
 ### With Your Microphone
+
 1. Make sure the app (`npm start`) is running
 2. Open OBS with overlay source
 3. Speak into microphone: **"Jean 3:16"**
@@ -87,10 +95,12 @@ file:///C:/Users/YourUsername/Documents/xtruck/overlay.html
 ```
 
 Replace:
+
 - `YourUsername` with your Windows username
 - `xtruck` with your actual folder name
 
 To find your path:
+
 1. Open File Explorer
 2. Navigate to your xtruck folder
 3. Look at the address bar
@@ -125,18 +135,24 @@ microphone is chosen from the app's own setup window.
 ## 🆘 Common Issues
 
 ### Issue: "Node.js not found"
+
 **Solution:**
+
 - Restart your computer after installing Node.js
 - Or reinstall from: https://nodejs.org/
 
 ### Issue: "Microphone not working" / wrong microphone picked
+
 **Solution:**
+
 1. In the app dashboard, click "Changer de micro" to reopen the device picker
 2. Verify the microphone is not muted and is enabled in Windows Sound settings
 3. Restart the app (`npm start`)
 
 ### Issue: "OBS overlay shows nothing"
+
 **Solution:**
+
 1. Check the app dashboard/console shows:
    ```
    [server] Serveur WebSocket démarré sur ws://127.0.0.1:8765
@@ -147,7 +163,9 @@ microphone is chosen from the app's own setup window.
 5. Look for error messages
 
 ### Issue: "Verses don't appear"
+
 **Solution:**
+
 1. Check internet connection (transcription and Bible APIs need it)
 2. Speak clearly: "Jean 3:16"
 3. Wait a few seconds for transcription to process
@@ -159,17 +177,21 @@ microphone is chosen from the app's own setup window.
 ## 📞 Advanced Troubleshooting
 
 ### Check Server Status
+
 Run the full app (recommended — includes microphone capture):
+
 ```powershell
 npm start
 ```
 
 Or run the server alone, without a microphone, for debugging only:
+
 ```powershell
 node server.js
 ```
 
 Watch for errors in console. With `npm start` you should see:
+
 ```
 [server] Validation de la configuration...
 [server] Configuration validée
@@ -179,6 +201,7 @@ Watch for errors in console. With `npm start` you should see:
 ```
 
 ### Test Bible API
+
 ```powershell
 node bible-lookup-with-api.js
 ```
@@ -186,6 +209,7 @@ node bible-lookup-with-api.js
 Should return a verse without errors.
 
 ### Run Full Test Suite
+
 ```powershell
 npm test
 ```
@@ -225,12 +249,14 @@ Your Church Overlay is configured and ready to use:
 ## 🆘 Still Need Help?
 
 Check these files in order:
+
 1. `QUICKSTART-WINDOWS.md`
 2. `SETUP.md`
 3. `README.md`
 4. `ARCHITECTURE.md`
 
 Or create an issue on GitHub with:
+
 - Your Windows version
 - Error message from console
 - Which `.bat` file failed

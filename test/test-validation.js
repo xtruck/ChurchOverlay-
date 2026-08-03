@@ -18,18 +18,18 @@ const validShowVerse = {
   action: 'showVerse',
   reference: 'Jean 3:16',
   text: 'Car Dieu a tant aimé le monde',
-  durationMs: 300000
+  durationMs: 300000,
 };
 const result1 = validateMessage(validShowVerse);
 assert.strictEqual(result1.valid, true, 'showVerse valide devrait passer');
-assert.strictEqual(result1.error, null, 'Pas d\'erreur pour message valide');
+assert.strictEqual(result1.error, null, "Pas d'erreur pour message valide");
 console.log('[TEST] ✓ showVerse valide accepté');
 
 // Test 2: Validation avec champ manquant
 console.log('[TEST] Test 2: Validation avec champ manquant...');
 const missingField = {
   action: 'showVerse',
-  reference: 'Jean 3:16'
+  reference: 'Jean 3:16',
   // text manquant
 };
 const result2 = validateMessage(missingField);
@@ -42,7 +42,7 @@ console.log('[TEST] Test 3: Validation avec action invalide...');
 const invalidAction = {
   action: 'invalidAction',
   reference: 'Jean 3:16',
-  text: 'Test'
+  text: 'Test',
 };
 const result3 = validateMessage(invalidAction);
 assert.strictEqual(result3.valid, false, 'Action invalide devrait rejeté');
@@ -55,7 +55,7 @@ const tooLongText = {
   action: 'showVerse',
   reference: 'Jean 3:16',
   text: 'a'.repeat(5001), // Dépasse la limite de 5000
-  durationMs: 300000
+  durationMs: 300000,
 };
 const result4 = validateMessage(tooLongText);
 assert.strictEqual(result4.valid, false, 'Texte trop long devrait rejeté');
@@ -67,7 +67,7 @@ const tooLongDuration = {
   action: 'showVerse',
   reference: 'Jean 3:16',
   text: 'Test',
-  durationMs: 3600001 // Dépasse 1 heure
+  durationMs: 3600001, // Dépasse 1 heure
 };
 const result5 = validateMessage(tooLongDuration);
 assert.strictEqual(result5.valid, false, 'Durée trop longue devrait rejeté');
@@ -85,7 +85,7 @@ console.log('[TEST] Test 7: Validation lookupReference...');
 const validLookup = {
   action: 'lookupReference',
   reference: 'Jean 3:16',
-  durationMs: 300000
+  durationMs: 300000,
 };
 const result7 = validateMessage(validLookup);
 assert.strictEqual(result7.valid, true, 'lookupReference valide devrait passer');
@@ -111,12 +111,22 @@ const messageWithXss = {
   action: 'showVerse',
   reference: 'Jean 3:16',
   text: '<script>alert("xss")</script> Car Dieu a tant aimé',
-  durationMs: 300000
+  durationMs: 300000,
 };
 const result9 = validateAndSanitize(messageWithXss);
-assert.strictEqual(result9.valid, true, 'Message avec XSS devrait être valide (validation de structure uniquement)');
-assert.strictEqual(result9.sanitized.text, messageWithXss.text, 'Le texte ne doit pas être altéré : overlay.html neutralise via textContent');
-console.log('[TEST] ✓ Validation et sanitization combinées réussies (texte non altéré, sécurité déléguée à textContent côté overlay)');
+assert.strictEqual(
+  result9.valid,
+  true,
+  'Message avec XSS devrait être valide (validation de structure uniquement)'
+);
+assert.strictEqual(
+  result9.sanitized.text,
+  messageWithXss.text,
+  'Le texte ne doit pas être altéré : overlay.html neutralise via textContent'
+);
+console.log(
+  '[TEST] ✓ Validation et sanitization combinées réussies (texte non altéré, sécurité déléguée à textContent côté overlay)'
+);
 
 // Test 10: Champ non autorisé
 console.log('[TEST] Test 10: Champ non autorisé...');
@@ -125,16 +135,19 @@ const unauthorizedField = {
   reference: 'Jean 3:16',
   text: 'Test',
   durationMs: 300000,
-  unauthorizedField: 'should not be here'
+  unauthorizedField: 'should not be here',
 };
 const result10 = validateMessage(unauthorizedField);
 assert.strictEqual(result10.valid, false, 'Champ non autorisé devrait rejeté');
-assert(result10.error.includes('Champ non autorisé'), 'Erreur devrait mentionner champ non autorisé');
+assert(
+  result10.error.includes('Champ non autorisé'),
+  'Erreur devrait mentionner champ non autorisé'
+);
 console.log('[TEST] ✓ Champ non autorisé détecté');
 
 // Test 11: Message non-objet
 console.log('[TEST] Test 11: Message non-objet...');
-const result11 = validateMessage("not an object");
+const result11 = validateMessage('not an object');
 assert.strictEqual(result11.valid, false, 'Non-objet devrait rejeté');
 assert(result11.error.includes('objet'), 'Erreur devrait mentionner objet');
 console.log('[TEST] ✓ Non-objet détecté');

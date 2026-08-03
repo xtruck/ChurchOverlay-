@@ -16,7 +16,7 @@ console.log('=== Test Rate Limiter Module ===\n');
 console.log('[TEST] Test 1: Création du rate limiter...');
 const rateLimiter = createRateLimiter({
   maxConnections: 5,
-  maxMessagesPerMinute: 10
+  maxMessagesPerMinute: 10,
 });
 assert(rateLimiter, 'Rate limiter devrait être créé');
 console.log('[TEST] ✓ Rate limiter créé');
@@ -25,7 +25,7 @@ console.log('[TEST] ✓ Rate limiter créé');
 console.log('[TEST] Test 2: Vérification des connexions...');
 const mockWs = {
   _socket: { remoteAddress: '127.0.0.1' },
-  readyState: 1 // OPEN
+  readyState: 1, // OPEN
 };
 
 const connectionCheck1 = rateLimiter.checkConnection(mockWs);
@@ -40,8 +40,15 @@ for (let i = 0; i < 5; i++) {
 }
 const sixthConnection = { _socket: { remoteAddress: '192.168.1.1' }, readyState: 1 };
 const connectionCheck3 = rateLimiter.checkConnection(sixthConnection);
-assert.strictEqual(connectionCheck3.allowed, false, 'Connexion au-delà de la limite devrait rejetée');
-assert(connectionCheck3.reason.includes('Trop de connexions'), 'Raison devrait mentionner trop de connexions');
+assert.strictEqual(
+  connectionCheck3.allowed,
+  false,
+  'Connexion au-delà de la limite devrait rejetée'
+);
+assert(
+  connectionCheck3.reason.includes('Trop de connexions'),
+  'Raison devrait mentionner trop de connexions'
+);
 console.log('[TEST] ✓ Limite de connexions respectée');
 
 // Test 4: Vérification des messages
@@ -57,7 +64,10 @@ for (let i = 0; i < 10; i++) {
 }
 const eleventhMessage = rateLimiter.checkMessage(mockWs);
 assert.strictEqual(eleventhMessage.allowed, false, 'Message au-delà de la limite devrait rejeté');
-assert(eleventhMessage.reason.includes('Trop de messages'), 'Raison devrait mentionner trop de messages');
+assert(
+  eleventhMessage.reason.includes('Trop de messages'),
+  'Raison devrait mentionner trop de messages'
+);
 console.log('[TEST] ✓ Limite de messages respectée');
 
 // Test 6: Statistiques

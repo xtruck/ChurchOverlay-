@@ -38,35 +38,35 @@ const ENV_SCHEMA = {
     required: false,
     default: 8765,
     validate: (value) => value > 0 && value < 65536,
-    errorMessage: 'PORT doit être un nombre entre 1 et 65535'
+    errorMessage: 'PORT doit être un nombre entre 1 et 65535',
   },
   NODE_ENV: {
     type: 'string',
     required: false,
     default: 'development',
     validate: (value) => ['development', 'production', 'test'].includes(value),
-    errorMessage: 'NODE_ENV doit être development, production ou test'
+    errorMessage: 'NODE_ENV doit être development, production ou test',
   },
   WS_HOST: {
     type: 'string',
     required: false,
     default: '127.0.0.1',
     validate: (value) => typeof value === 'string' && value.trim().length > 0,
-    errorMessage: 'WS_HOST doit être une adresse non vide (ex: 127.0.0.1)'
+    errorMessage: 'WS_HOST doit être une adresse non vide (ex: 127.0.0.1)',
   },
   MAX_CONNECTIONS: {
     type: 'number',
     required: false,
     default: 10,
     validate: (value) => value > 0 && value <= 1000,
-    errorMessage: 'MAX_CONNECTIONS doit être un nombre entre 1 et 1000'
+    errorMessage: 'MAX_CONNECTIONS doit être un nombre entre 1 et 1000',
   },
   MAX_MESSAGES_PER_MINUTE: {
     type: 'number',
     required: false,
     default: 60,
     validate: (value) => value > 0 && value <= 10000,
-    errorMessage: 'MAX_MESSAGES_PER_MINUTE doit être un nombre entre 1 et 10000'
+    errorMessage: 'MAX_MESSAGES_PER_MINUTE doit être un nombre entre 1 et 10000',
   },
   // CORRECTIF (checklist mise en production, point 1) : jeton partagé exigé
   // pour ouvrir une connexion WebSocket (voir server.js, wss.on('connection')).
@@ -79,8 +79,8 @@ const ENV_SCHEMA = {
     required: false,
     default: undefined,
     validate: (value) => typeof value === 'string' && value.trim().length > 0,
-    errorMessage: 'WS_AUTH_TOKEN ne doit pas être une chaîne vide ou composée uniquement d\'espaces'
-  }
+    errorMessage: "WS_AUTH_TOKEN ne doit pas être une chaîne vide ou composée uniquement d'espaces",
+  },
 };
 
 /**
@@ -143,7 +143,7 @@ function validateEnvironment() {
   return {
     valid: errors.length === 0,
     errors,
-    config
+    config,
   };
 }
 
@@ -170,26 +170,26 @@ async function validateSystemConfig() {
   const warnings = [];
 
   // 1. Valider les variables d'environnement
-  console.log('[config-validator] Validation des variables d\'environnement...');
+  console.log("[config-validator] Validation des variables d'environnement...");
   const envValidation = validateEnvironment();
   if (!envValidation.valid) {
     errors.push(...envValidation.errors);
   }
-  console.log('[config-validator] Variables d\'environnement validées');
+  console.log("[config-validator] Variables d'environnement validées");
 
   // 2. Clés de transcription cloud (aucun filet local depuis la suppression
   // de Whisper — Groq est désormais le seul fournisseur obligatoire)
   if (!process.env.GROQ_API_KEY) {
     warnings.push(
       "GROQ_API_KEY n'est pas défini. Aucun fournisseur de transcription " +
-      "principal n'est configuré : la détection automatique de versets ne " +
-      "fonctionnera pas tant que cette clé n'est pas renseignée (voir .env.example)."
+        "principal n'est configuré : la détection automatique de versets ne " +
+        "fonctionnera pas tant que cette clé n'est pas renseignée (voir .env.example)."
     );
   }
   if (!process.env.DEEPGRAM_API_KEY) {
     warnings.push(
       "DEEPGRAM_API_KEY n'est pas défini (optionnel) : pas de fournisseur de " +
-      "repli si Groq échoue ou est indisponible."
+        'repli si Groq échoue ou est indisponible.'
     );
   }
 
@@ -197,9 +197,9 @@ async function validateSystemConfig() {
   if (!process.env.WS_AUTH_TOKEN) {
     warnings.push(
       "WS_AUTH_TOKEN n'est pas défini : le serveur WebSocket accepte toute " +
-      "connexion sans authentification. Sans risque tant que WS_HOST=127.0.0.1 " +
-      "(par défaut), mais à définir avant d'exposer le serveur au-delà de cet " +
-      "ordinateur (WS_HOST=0.0.0.0 ou équivalent) — voir README.md."
+        'connexion sans authentification. Sans risque tant que WS_HOST=127.0.0.1 ' +
+        "(par défaut), mais à définir avant d'exposer le serveur au-delà de cet " +
+        'ordinateur (WS_HOST=0.0.0.0 ou équivalent) — voir README.md.'
     );
   }
 
@@ -215,9 +215,9 @@ async function validateSystemConfig() {
   if (!process.workerData && !process.env.APP_ROOT) {
     warnings.push(
       "Capture audio : ce processus semble démarré hors de l'app Electron " +
-      "(node server.js direct). La capture micro native (getUserMedia) a " +
-      "besoin d'une fenêtre Chromium fournie par Electron et ne fonctionnera " +
-      "pas dans ce mode — utilisez l'application ChurchOverlay packagée."
+        '(node server.js direct). La capture micro native (getUserMedia) a ' +
+        "besoin d'une fenêtre Chromium fournie par Electron et ne fonctionnera " +
+        "pas dans ce mode — utilisez l'application ChurchOverlay packagée."
     );
   }
 
@@ -225,7 +225,7 @@ async function validateSystemConfig() {
     valid: errors.length === 0,
     errors,
     warnings,
-    config: envValidation.config
+    config: envValidation.config,
   };
 }
 
@@ -244,12 +244,12 @@ function displayValidationResults(result) {
 
   if (result.errors.length > 0) {
     console.log('\nErreurs:');
-    result.errors.forEach(error => console.log(`  - ${error}`));
+    result.errors.forEach((error) => console.log(`  - ${error}`));
   }
 
   if (result.warnings.length > 0) {
     console.log('\nAvertissements:');
-    result.warnings.forEach(warning => console.log(`  - ${warning}`));
+    result.warnings.forEach((warning) => console.log(`  - ${warning}`));
   }
 
   if (result.errors.length === 0 && result.warnings.length === 0) {
@@ -265,5 +265,5 @@ module.exports = {
   checkFileExists,
   validateSystemConfig,
   displayValidationResults,
-  ENV_SCHEMA
+  ENV_SCHEMA,
 };

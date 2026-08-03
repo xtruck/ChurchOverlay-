@@ -21,7 +21,7 @@ const AnimationLibrary = {
     TRANSITION: 'transition',
     TEXT: 'text',
     PARTICLE: 'particle',
-    SPECIAL: 'special'
+    SPECIAL: 'special',
   },
 
   // Animation presets
@@ -36,7 +36,7 @@ const AnimationLibrary = {
         0% { opacity: 0; transform: scale(0.95) translateY(20px); filter: blur(8px); }
         50% { opacity: 0.7; transform: scale(0.98) translateY(5px); filter: blur(2px); }
         100% { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); }
-      `
+      `,
     },
 
     dramaticZoom: {
@@ -48,7 +48,7 @@ const AnimationLibrary = {
         0% { opacity: 0; transform: scale(0.5) rotateX(15deg); }
         60% { transform: scale(1.05) rotateX(-2deg); }
         100% { opacity: 1; transform: scale(1) rotateX(0deg); }
-      `
+      `,
     },
 
     elegantSlide: {
@@ -59,7 +59,7 @@ const AnimationLibrary = {
       keyframes: `
         0% { opacity: 0; transform: translateX(-100px) skewX(-5deg); }
         100% { opacity: 1; transform: translateX(0) skewX(0deg); }
-      `
+      `,
     },
 
     spiritualGlow: {
@@ -71,7 +71,7 @@ const AnimationLibrary = {
         0% { opacity: 0; transform: scale(0.8); filter: brightness(0.5) blur(10px); }
         50% { filter: brightness(1.5) blur(2px); box-shadow: 0 0 60px var(--overlay-glow); }
         100% { opacity: 1; transform: scale(1); filter: brightness(1) blur(0); box-shadow: 0 0 40px var(--overlay-glow); }
-      `
+      `,
     },
 
     // Transition Animations
@@ -84,7 +84,7 @@ const AnimationLibrary = {
         0% { opacity: 1; transform: scale(1); }
         50% { opacity: 0.5; transform: scale(0.98); }
         100% { opacity: 1; transform: scale(1); }
-      `
+      `,
     },
 
     cinematicWipe: {
@@ -95,7 +95,7 @@ const AnimationLibrary = {
       keyframes: `
         0% { clip-path: inset(0 100% 0 0); opacity: 0; }
         100% { clip-path: inset(0 0 0 0); opacity: 1; }
-      `
+      `,
     },
 
     // Text Reveal Animations
@@ -107,7 +107,7 @@ const AnimationLibrary = {
       keyframes: `
         0% { width: 0; }
         100% { width: 100%; }
-      `
+      `,
     },
 
     wordByWord: {
@@ -118,7 +118,7 @@ const AnimationLibrary = {
       keyframes: `
         0% { opacity: 0; transform: translateY(10px); }
         100% { opacity: 1; transform: translateY(0); }
-      `
+      `,
     },
 
     characterReveal: {
@@ -129,7 +129,7 @@ const AnimationLibrary = {
       keyframes: `
         0% { opacity: 0; transform: translateY(5px) rotateX(90deg); }
         100% { opacity: 1; transform: translateY(0) rotateX(0deg); }
-      `
+      `,
     },
 
     // Special Effects
@@ -142,7 +142,7 @@ const AnimationLibrary = {
         0% { opacity: 0; transform: translateY(-50px); filter: brightness(2) drop-shadow(0 0 30px white); }
         30% { filter: brightness(3) drop-shadow(0 0 50px white); }
         100% { opacity: 1; transform: translateY(0); filter: brightness(1) drop-shadow(0 0 20px var(--overlay-glow)); }
-      `
+      `,
     },
 
     divinePresence: {
@@ -154,7 +154,7 @@ const AnimationLibrary = {
         0% { opacity: 0; transform: scale(0.3) rotate(180deg); filter: hue-rotate(180deg); }
         50% { filter: hue-rotate(90deg); }
         100% { opacity: 1; transform: scale(1) rotate(0deg); filter: hue-rotate(0deg); }
-      `
+      `,
     },
 
     // Particle Effects
@@ -168,7 +168,7 @@ const AnimationLibrary = {
         10% { opacity: 1; }
         90% { opacity: 0.8; }
         100% { transform: translateY(-10vh) scale(1); opacity: 0; }
-      `
+      `,
     },
 
     fallingGrace: {
@@ -181,7 +181,7 @@ const AnimationLibrary = {
         10% { opacity: 1; }
         90% { opacity: 0.7; }
         100% { transform: translateY(100vh) rotate(360deg); opacity: 0; }
-      `
+      `,
     },
 
     divineSparkles: {
@@ -193,8 +193,8 @@ const AnimationLibrary = {
         0% { transform: scale(0) rotate(0deg); opacity: 0; }
         50% { transform: scale(1.5) rotate(180deg); opacity: 1; }
         100% { transform: scale(0) rotate(360deg); opacity: 0; }
-      `
-    }
+      `,
+    },
   },
 
   // Mood-based animation recommendations
@@ -206,7 +206,7 @@ const AnimationLibrary = {
     celebration: ['elegantSlide', 'divineSparkles', 'holyLight'],
     reflection: ['smoothCrossfade', 'fallingGrace', 'wordByWord'],
     inspiration: ['cinematicFadeIn', 'risingEmbers', 'characterReveal'],
-    solemnity: ['solemnFade', 'smoothCrossfade', 'typewriter']
+    solemnity: ['solemnFade', 'smoothCrossfade', 'typewriter'],
   },
 
   // Initialize animation library
@@ -218,7 +218,7 @@ const AnimationLibrary = {
   // Inject CSS keyframes into the page
   injectStyles() {
     let css = '';
-    
+
     for (const [key, preset] of Object.entries(this.presets)) {
       const animationName = `anim-${key}`;
       css += `
@@ -246,24 +246,24 @@ const AnimationLibrary = {
 
     const animationName = `anim-${animationKey}`;
     element.classList.remove(animationName);
-    
+
     // Trigger reflow to restart animation
     void element.offsetWidth;
-    
+
     element.classList.add(animationName);
-    
+
     // Apply custom duration if provided
     if (options.duration) {
       element.style.animationDuration = `${options.duration}ms`;
     }
-    
+
     // Apply custom easing if provided
     if (options.easing) {
       element.style.animationTimingFunction = options.easing;
     }
 
     // Return promise for animation completion
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       const duration = options.duration || preset.duration;
       setTimeout(resolve, duration);
     });
@@ -291,10 +291,10 @@ const AnimationLibrary = {
   createParticleSystem(container, mood = 'peace') {
     const particleType = this.getRecommendation(mood);
     const preset = this.presets[particleType];
-    
+
     // Remove existing particles
     const existingParticles = container.querySelectorAll('.advanced-particle');
-    existingParticles.forEach(p => p.remove());
+    existingParticles.forEach((p) => p.remove());
 
     // Create new particles (réduit de 30 à 12 pour la charge CPU/GPU)
     const particleCount = 12;
@@ -306,7 +306,7 @@ const AnimationLibrary = {
       celebration: '#FFA726',
       reflection: '#78909C',
       inspiration: '#42A5F5',
-      solemnity: '#5D4037'
+      solemnity: '#5D4037',
     };
     const color = colors[mood] || colors.peace;
 
@@ -359,7 +359,7 @@ const AnimationLibrary = {
   // Text reveal effect
   revealText(element, text, animationType = 'wordByWord') {
     element.innerHTML = '';
-    
+
     if (animationType === 'wordByWord') {
       const words = text.split(' ');
       words.forEach((word, index) => {
@@ -369,7 +369,7 @@ const AnimationLibrary = {
         span.style.display = 'inline-block';
         span.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
         element.appendChild(span);
-        
+
         setTimeout(() => {
           span.style.opacity = '1';
           span.style.transform = 'translateY(0)';
@@ -384,7 +384,7 @@ const AnimationLibrary = {
         span.style.display = 'inline-block';
         span.style.transition = 'opacity 0.05s ease';
         element.appendChild(span);
-        
+
         setTimeout(() => {
           span.style.opacity = '1';
         }, index * 30);
@@ -396,7 +396,7 @@ const AnimationLibrary = {
 
   // Smooth transition between verses
   transitionVerse(oldElement, newElement, transitionType = 'smoothCrossfade') {
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       const preset = this.presets[transitionType];
       if (!preset) {
         console.warn(`[animation-library] Transition "${transitionType}" not found`);
@@ -407,18 +407,18 @@ const AnimationLibrary = {
       // Fade out old
       oldElement.style.transition = `opacity ${preset.duration / 2}ms ${preset.easing}`;
       oldElement.style.opacity = '0';
-      
+
       setTimeout(() => {
         // Swap elements
         oldElement.style.display = 'none';
         newElement.style.display = 'block';
         newElement.style.opacity = '0';
-        
+
         // Fade in new
         setTimeout(() => {
           newElement.style.transition = `opacity ${preset.duration / 2}ms ${preset.easing}`;
           newElement.style.opacity = '1';
-          
+
           setTimeout(resolve, preset.duration / 2);
         }, 50);
       }, preset.duration / 2);
@@ -435,7 +435,7 @@ const AnimationLibrary = {
   // Get all available moods
   getAvailableMoods() {
     return Object.keys(this.moodRecommendations);
-  }
+  },
 };
 
 // Export for use in overlay.html

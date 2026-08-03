@@ -46,8 +46,8 @@ function levenshteinDistance(a, b) {
     for (let j = 1; j <= n; j++) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
       curr[j] = Math.min(
-        prev[j] + 1,       // suppression
-        curr[j - 1] + 1,   // insertion
+        prev[j] + 1, // suppression
+        curr[j - 1] + 1, // insertion
         prev[j - 1] + cost // substitution
       );
     }
@@ -64,13 +64,15 @@ function levenshteinDistance(a, b) {
  * @returns {number}
  */
 function toleranceForLength(len) {
-  if (len <= 4) return 1;  // "marc", "ruth", "jean", "john"
-  if (len <= 8) return 2;  // "matthieu", "ephesiens", "matthew"
-  return 3;                // "philippiens", "deuteronome", "philippians"
+  if (len <= 4) return 1; // "marc", "ruth", "jean", "john"
+  if (len <= 8) return 2; // "matthieu", "ephesiens", "matthew"
+  return 3; // "philippiens", "deuteronome", "philippians"
 }
 
 function tokenize(text) {
-  return String(text || '').split(/\s+/).filter(Boolean);
+  return String(text || '')
+    .split(/\s+/)
+    .filter(Boolean);
 }
 
 /**

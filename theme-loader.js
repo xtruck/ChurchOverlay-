@@ -87,7 +87,9 @@ function saveTheme(theme) {
   }
   const existing = themeExists(theme.id) ? loadTheme(theme.id) : null;
   if (existing && existing.readonly) {
-    throw new Error(`Le thème par défaut (${theme.id}) est en lecture seule et ne peut pas être écrasé.`);
+    throw new Error(
+      `Le thème par défaut (${theme.id}) est en lecture seule et ne peut pas être écrasé.`
+    );
   }
   const file = path.join(writableThemesDir(), `${theme.id}.json`);
   fs.writeFileSync(file, JSON.stringify(theme, null, 2), 'utf8');
@@ -172,7 +174,7 @@ function themeToCss(theme) {
   const bg = c.background || fc.background || {};
   let bgCss = 'transparent';
   if (bg.type === 'gradient' && Array.isArray(bg.stops)) {
-    const stops = bg.stops.map(s => `${s.color} ${s.position}%`).join(', ');
+    const stops = bg.stops.map((s) => `${s.color} ${s.position}%`).join(', ');
     bgCss = `linear-gradient(${bg.angle || 165}deg, ${stops})`;
   } else if (bg.type === 'solid') {
     bgCss = bg.color;
@@ -191,7 +193,8 @@ function themeToCss(theme) {
       '--accent': c.accent || fc.accent || '#D9BB6C',
       '--accent-bright': c.accentBright || fc.accentBright || '#F4E3A6',
       '--text': c.text || fc.text || '#FFFFFF',
-      '--reference-color': c.reference || c.accentBright || fc.reference || fc.accentBright || '#F4E3A6',
+      '--reference-color':
+        c.reference || c.accentBright || fc.reference || fc.accentBright || '#F4E3A6',
       '--verse-font': typo.verseFontFamily || ftypo.verseFontFamily || 'Merriweather',
       '--verse-size': typo.verseFontSize || ftypo.verseFontSize || 'clamp(2.4rem, 4.6vw, 5.2rem)',
       '--verse-weight': typo.verseFontWeight || ftypo.verseFontWeight || 700,

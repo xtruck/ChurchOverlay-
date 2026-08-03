@@ -21,7 +21,12 @@
     "crossReferences": { "enabled": true, "maxRefs": 3 }
   },
   "broadcast": {
-    "multiScene": { "enabled": false, "obsWebsocketUrl": "ws://localhost:4455", "password": "", "gating": { "enabled": false, "liveSceneNames": [], "requireStreamingOrRecording": false } },
+    "multiScene": {
+      "enabled": false,
+      "obsWebsocketUrl": "ws://localhost:4455",
+      "password": "",
+      "gating": { "enabled": false, "liveSceneNames": [], "requireStreamingOrRecording": false }
+    },
     "lowerThirds": { "enabled": false },
     "serviceCountdown": { "enabled": false, "startTime": null },
     "sessionStats": { "enabled": true }

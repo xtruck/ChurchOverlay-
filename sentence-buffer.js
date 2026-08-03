@@ -54,10 +54,8 @@ function createSentenceBuffer({ maxChars = 500, gapMs = 4000 } = {}) {
 
     if (!text) return buffer.trim();
 
-    const isContinuation = buffer.length > 0 &&
-                           !buffer.endsWith(' ') &&
-                           !buffer.endsWith('.') &&
-                           !buffer.endsWith(',');
+    const isContinuation =
+      buffer.length > 0 && !buffer.endsWith(' ') && !buffer.endsWith('.') && !buffer.endsWith(',');
     if (isContinuation) {
       buffer += ' ' + text;
     } else if (text.startsWith('.') || text.startsWith('!') || text.startsWith('?')) {

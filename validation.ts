@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- *  validation.js — Module de validation des messages WebSocket
+ *  validation.ts — Module de validation des messages WebSocket
  * ----------------------------------------------------------------------------
  *  Valide les messages entrants pour prévenir les injections et garantir
  *  l'intégrité des données.
@@ -9,10 +9,26 @@
 
 'use strict';
 
+import { ValidationResult, WebSocketMessage } from './types';
+
+interface ValidatorFunction {
+  (value: any): boolean;
+}
+
+interface Schema {
+  required: string[];
+  optional: string[];
+  validators: Record<string, ValidatorFunction>;
+}
+
+interface Schemas {
+  [action: string]: Schema;
+}
+
 /**
  * Schémas de validation pour les différentes actions
  */
-const SCHEMAS = {
+const SCHEMAS: Schemas = {
   showVerse: {
     required: ['action', 'reference', 'text'],
     optional: ['durationMs', 'text_fr', 'text_en', 'langMode', 'provider', 'lang', 'autoDetected'],
@@ -105,10 +121,10 @@ const SCHEMAS = {
 
 /**
  * Valide un message WebSocket
- * @param {Object} message - Le message à valider
- * @returns {Object} - { valid: boolean, error: string|null }
+ * @param message - Le message à valider
+ * @returns - { valid: boolean, error: string|null }
  */
-function validateMessage(message) {
+function validateMessage(message: WebSocketMessage): ValidationResult {
   // Vérifier que c'est un objet
   if (!message || typeof message !== 'object') {
     return { valid: false, error: 'Message doit être un objet JSON' };
@@ -139,7 +155,7 @@ function validateMessage(message) {
         if (!validator(message[field])) {
           return { valid: false, error: `Valeur invalide pour le champ: ${field}` };
         }
-      } catch (error) {
+      } catch (error: any) {
         return { valid: false, error: `Erreur de validation pour ${field}: ${error.message}` };
       }
     }
@@ -158,11 +174,11 @@ function validateMessage(message) {
 
 /**
  * Nettoie les données pour prévenir les injections XSS
- * @param {string} text - Texte à nettoyer
- * @returns {string} - Texte nettoyé
+ * @param text - Texte à nettoyer
+ * @returns - Texte nettoyé
  */
-function sanitizeText(text) {
-  if (typeof text !== 'string') return text;
+function sanitizeText(text: string | null): string {
+  if (typeof text !== 'string') return String(text || '');
 
   // Échapper les caractères HTML dangereux
   return text
@@ -176,10 +192,12 @@ function sanitizeText(text) {
 
 /**
  * Valide et nettoie un message complet
- * @param {Object} message - Message à valider et nettoyer
- * @returns {Object} - { valid: boolean, error: string|null, sanitized: Object|null }
+ * @param message - Message à valider et nettoyer
+ * @returns - { valid: boolean, error: string|null, sanitized: Object|null }
  */
-function validateAndSanitize(message) {
+function validateAndSanitize(
+  message: WebSocketMessage
+): ValidationResult & { sanitized?: WebSocketMessage } {
   const validation = validateMessage(message);
   if (!validation.valid) {
     return validation;
@@ -189,12 +207,9 @@ function validateAndSanitize(message) {
   // qui neutralise déjà tout risque d'injection. Échapper en plus les
   // entités (&, ', etc.) afficherait à l'écran des versets pollués par
   // du texte du type "qu&#x27;il" au lieu de "qu'il".
-  return { valid: true, error: null, sanitized: { ...message } };
+  return { valid: true, error: undefined, sanitized: { ...message } } as ValidationResult & {
+    sanitized: WebSocketMessage;
+  };
 }
 
-module.exports = {
-  validateMessage,
-  sanitizeText,
-  validateAndSanitize,
-  SCHEMAS,
-};
+export { validateMessage, sanitizeText, validateAndSanitize, SCHEMAS };

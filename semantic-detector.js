@@ -4,10 +4,10 @@
  * ============================================================================
  * Detects when a speaker references a Bible passage IMPLICITLY
  * (e.g. "that passage where Jesus calms the storm" → Mark 4:39)
- * 
+ *
  * Uses Groq LLM (llama-3.1-8b-instant) with smart caching and confidence scoring.
  * Falls back gracefully when offline or API limits hit.
- * 
+ *
  * Integration: Drop into your project, require in server.js, call after
  * detectBilingual() returns null.
  * ============================================================================
@@ -28,17 +28,82 @@ const CONFIG = {
   MODEL: 'llama-3.1-8b-instant',
   // Only run semantic detection if regex fails AND text looks "biblical"
   BIBLICAL_KEYWORDS: [
-    'jesus', 'christ', 'dieu', 'god', 'seigneur', 'lord', 'esprit', 'spirit',
-    'bible', 'ecriture', 'scripture', 'evangile', 'gospel', 'apôtre', 'apostle',
-    'prophète', 'prophet', 'moïse', 'moses', 'abraham', 'david', 'paul', 'pierre',
-    'marie', 'mary', 'ciel', 'heaven', 'enfer', 'hell', 'péché', 'sin',
-    'salut', 'salvation', 'foi', 'faith', 'amour', 'love', 'grâce', 'grace',
-    'passage', 'histoire', 'story', 'verset', 'verse', 'chapitre', 'chapter',
-    'parole', 'word', 'promesse', 'promise', 'miracle', 'miracle', 'guérison',
-    'healing', 'résurrection', 'resurrection', 'croix', 'cross', 'temple',
-    'église', 'church', 'sacrifice', 'sacrifice', 'alliance', 'covenant',
-    'délivrance', 'deliverance', 'repentance', 'repentance', 'baptême',
-    'baptism', 'mariage', 'marriage', 'dix', 'commandements', 'commandments'
+    'jesus',
+    'christ',
+    'dieu',
+    'god',
+    'seigneur',
+    'lord',
+    'esprit',
+    'spirit',
+    'bible',
+    'ecriture',
+    'scripture',
+    'evangile',
+    'gospel',
+    'apôtre',
+    'apostle',
+    'prophète',
+    'prophet',
+    'moïse',
+    'moses',
+    'abraham',
+    'david',
+    'paul',
+    'pierre',
+    'marie',
+    'mary',
+    'ciel',
+    'heaven',
+    'enfer',
+    'hell',
+    'péché',
+    'sin',
+    'salut',
+    'salvation',
+    'foi',
+    'faith',
+    'amour',
+    'love',
+    'grâce',
+    'grace',
+    'passage',
+    'histoire',
+    'story',
+    'verset',
+    'verse',
+    'chapitre',
+    'chapter',
+    'parole',
+    'word',
+    'promesse',
+    'promise',
+    'miracle',
+    'miracle',
+    'guérison',
+    'healing',
+    'résurrection',
+    'resurrection',
+    'croix',
+    'cross',
+    'temple',
+    'église',
+    'church',
+    'sacrifice',
+    'sacrifice',
+    'alliance',
+    'covenant',
+    'délivrance',
+    'deliverance',
+    'repentance',
+    'repentance',
+    'baptême',
+    'baptism',
+    'mariage',
+    'marriage',
+    'dix',
+    'commandements',
+    'commandments',
   ],
   // Confidence threshold — below this, we don't trust the LLM
   MIN_CONFIDENCE: 0.75,
@@ -61,8 +126,11 @@ const recentCalls = []; // timestamps of recent API calls
 // Biblical keyword pre-filter
 // -----------------------------------------------------------------------
 function looksBiblical(text) {
-  const normalized = text.toLowerCase().normalize('NFD').replace(/\u0300-\u036f/g, '');
-  return CONFIG.BIBLICAL_KEYWORDS.some(kw => normalized.includes(kw));
+  const normalized = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\u0300-\u036f/g, '');
+  return CONFIG.BIBLICAL_KEYWORDS.some((kw) => normalized.includes(kw));
 }
 
 // -----------------------------------------------------------------------
@@ -118,10 +186,11 @@ function buildPrompt(text, contextHistory) {
   // une phrase ressemblant à une instruction système pourrait influencer
   // la détection de référence biblique elle-même.
   const safeText = sanitizeForPrompt(text);
-  const context = contextHistory.length > 0
-    ? `Recent sermon context (last ${contextHistory.length} fragments):\n` +
-      contextHistory.map((t, i) => `${i + 1}. "${sanitizeForPrompt(t)}"`).join('\n')
-    : 'No prior context available.';
+  const context =
+    contextHistory.length > 0
+      ? `Recent sermon context (last ${contextHistory.length} fragments):\n` +
+        contextHistory.map((t, i) => `${i + 1}. "${sanitizeForPrompt(t)}"`).join('\n')
+      : 'No prior context available.';
 
   return `You are a biblical reference detector for a live church sermon transcription system.
 
@@ -250,7 +319,9 @@ class SemanticDetector {
       const result = parseResponse(response.text || response);
 
       if (result) {
-        console.log(`[semantic] Detected: ${result.raw} (confidence: ${result.confidence.toFixed(2)}) — ${result.reasoning}`);
+        console.log(
+          `[semantic] Detected: ${result.raw} (confidence: ${result.confidence.toFixed(2)}) — ${result.reasoning}`
+        );
         setCached(cacheKey, result);
       } else {
         // Cache negative results too (avoid re-querying)

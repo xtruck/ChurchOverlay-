@@ -33,7 +33,7 @@ socket.on('open', () => {
       action: 'showVerse',
       reference: 'Jean 3:16 (test intégration OBS)',
       text: "Car Dieu a tant aimé le monde qu'il a donné son Fils unique, afin que quiconque croit en lui ne périsse point, mais qu'il ait la vie éternelle.",
-      durationMs: 300000,  // 5 minutes
+      durationMs: 300000, // 5 minutes
     };
   }
 
@@ -48,7 +48,9 @@ socket.on('open', () => {
 });
 
 socket.on('error', (err) => {
-  console.error('[test-envoi] Impossible de se connecter à ' + WS_URL + ' — server.js est-il lancé ?');
+  console.error(
+    '[test-envoi] Impossible de se connecter à ' + WS_URL + ' — server.js est-il lancé ?'
+  );
   console.error('[test-envoi] Détail :', err.message);
   process.exit(1);
 });

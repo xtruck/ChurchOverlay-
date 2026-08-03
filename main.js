@@ -8,7 +8,16 @@
 
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, safeStorage, session } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  Tray,
+  Menu,
+  ipcMain,
+  nativeImage,
+  safeStorage,
+  session,
+} = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsp = require('fs').promises;
@@ -151,7 +160,10 @@ function ensureWsAuthToken() {
       fs.mkdirSync(path.dirname(CONFIG_PATH()), { recursive: true });
       fs.writeFileSync(CONFIG_PATH(), JSON.stringify(toWrite, null, 2), 'utf8');
     } catch (e) {
-      console.error('[main] Impossible de persister le jeton WS généré (nouveau jeton à chaque démarrage):', e.message);
+      console.error(
+        '[main] Impossible de persister le jeton WS généré (nouveau jeton à chaque démarrage):',
+        e.message
+      );
     }
   }
 
@@ -172,7 +184,7 @@ function loadConfig() {
 
   const groqApiKey = raw.groqApiKeyEncrypted
     ? decryptKey(raw.groqApiKeyEncrypted, 'Groq')
-    : (raw.groqApiKey || null);
+    : raw.groqApiKey || null;
   const deepgramApiKey = decryptKey(raw.deepgramApiKeyEncrypted, 'Deepgram');
 
   if (raw.groqApiKey && !raw.groqApiKeyEncrypted) {
@@ -188,7 +200,9 @@ function loadConfig() {
     audioDevice: raw.audioDevice,
     groqApiKey,
     deepgramApiKey,
-    logBatchInterval: Number.isFinite(raw.logBatchInterval) ? raw.logBatchInterval : DASHBOARD_FLUSH_MS,
+    logBatchInterval: Number.isFinite(raw.logBatchInterval)
+      ? raw.logBatchInterval
+      : DASHBOARD_FLUSH_MS,
   };
 }
 
@@ -222,9 +236,10 @@ async function saveConfigAsync(config) {
   // clé passe par l'IPC dédié 'clear-api-key' (voir plus bas).
   const existingRaw = readRawConfig();
   const toWrite = {
-    audioDevice: config.audioDevice !== undefined && config.audioDevice !== null
-      ? config.audioDevice
-      : existingRaw.audioDevice,
+    audioDevice:
+      config.audioDevice !== undefined && config.audioDevice !== null
+        ? config.audioDevice
+        : existingRaw.audioDevice,
   };
 
   if (config.groqApiKey) {
@@ -235,19 +250,23 @@ async function saveConfigAsync(config) {
       toWrite.groqApiKey = config.groqApiKey;
     }
   } else {
-    if (existingRaw.groqApiKeyEncrypted) toWrite.groqApiKeyEncrypted = existingRaw.groqApiKeyEncrypted;
+    if (existingRaw.groqApiKeyEncrypted)
+      toWrite.groqApiKeyEncrypted = existingRaw.groqApiKeyEncrypted;
     if (existingRaw.groqApiKey) toWrite.groqApiKey = existingRaw.groqApiKey;
   }
 
   if (config.deepgramApiKey) {
     if (safeStorage.isEncryptionAvailable()) {
-      toWrite.deepgramApiKeyEncrypted = safeStorage.encryptString(config.deepgramApiKey).toString('base64');
+      toWrite.deepgramApiKeyEncrypted = safeStorage
+        .encryptString(config.deepgramApiKey)
+        .toString('base64');
     } else {
       console.warn('[main] Chiffrement système indisponible : clé Deepgram stockée en clair.');
       toWrite.deepgramApiKey = config.deepgramApiKey;
     }
   } else {
-    if (existingRaw.deepgramApiKeyEncrypted) toWrite.deepgramApiKeyEncrypted = existingRaw.deepgramApiKeyEncrypted;
+    if (existingRaw.deepgramApiKeyEncrypted)
+      toWrite.deepgramApiKeyEncrypted = existingRaw.deepgramApiKeyEncrypted;
     if (existingRaw.deepgramApiKey) toWrite.deepgramApiKey = existingRaw.deepgramApiKey;
   }
 
@@ -330,7 +349,10 @@ function createTray() {
   tray.setToolTip('ChurchOverlay');
   refreshTrayMenu();
   tray.on('click', () => {
-    if (mainWindow) { mainWindow.show(); mainWindow.focus(); }
+    if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
   });
 }
 
@@ -346,10 +368,24 @@ function refreshTrayMenu() {
   const menu = Menu.buildFromTemplate([
     { label: statusLabel, enabled: false },
     { type: 'separator' },
-    { label: 'Ouvrir ChurchOverlay', click: () => { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } } },
+    {
+      label: 'Ouvrir ChurchOverlay',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      },
+    },
     { label: 'Redémarrer le pipeline', click: () => restartServer() },
     { type: 'separator' },
-    { label: 'Quitter', click: () => { app.isQuitting = true; app.quit(); } },
+    {
+      label: 'Quitter',
+      click: () => {
+        app.isQuitting = true;
+        app.quit();
+      },
+    },
   ]);
   tray.setContextMenu(menu);
 }
@@ -467,7 +503,8 @@ function startServer() {
       serverStatus = 'stopped';
       refreshTrayMenu();
       scheduleDashboardFlush();
-      const cb = onWorkerStopped; onWorkerStopped = null;
+      const cb = onWorkerStopped;
+      onWorkerStopped = null;
       if (cb) cb();
       return;
     }
@@ -482,7 +519,10 @@ function startServer() {
     // déjà précis envoyé par server.js (voir alert 'server-listen-error').
     if (lastAlertCode === 'server-listen-error') {
       console.error('[main] Port déjà utilisé — pas de nouvelle tentative automatique.');
-      appendLog(lastAlertMessage || 'Le port du serveur est déjà utilisé par une autre application.', true);
+      appendLog(
+        lastAlertMessage || 'Le port du serveur est déjà utilisé par une autre application.',
+        true
+      );
       serverStatus = 'error';
       refreshTrayMenu();
       scheduleDashboardFlush();
@@ -490,10 +530,16 @@ function startServer() {
     }
 
     if (recentCrashes.length > WORKER_MAX_CRASHES) {
-      console.error('[main] Trop de crashes worker (%d en %ds) — arrêt du pipeline.',
-        recentCrashes.length, WORKER_CRASH_WINDOW_MS / 1000);
-      appendLog(`Pipeline arrêté après ${recentCrashes.length} crashes rapprochés (code ${code}). ` +
-        'Cliquez sur Redémarrer.', true);
+      console.error(
+        '[main] Trop de crashes worker (%d en %ds) — arrêt du pipeline.',
+        recentCrashes.length,
+        WORKER_CRASH_WINDOW_MS / 1000
+      );
+      appendLog(
+        `Pipeline arrêté après ${recentCrashes.length} crashes rapprochés (code ${code}). ` +
+          'Cliquez sur Redémarrer.',
+        true
+      );
       serverStatus = 'error';
       refreshTrayMenu();
       scheduleDashboardFlush();
@@ -513,7 +559,10 @@ let shuttingDownWorker = false;
 let onWorkerStopped = null;
 
 function stopServerGracefully(cb) {
-  if (!worker) { cb && cb(); return; }
+  if (!worker) {
+    cb && cb();
+    return;
+  }
   shuttingDownWorker = true;
   onWorkerStopped = cb || null;
 
@@ -521,20 +570,27 @@ function stopServerGracefully(cb) {
     worker.postMessage({ type: 'shutdown' });
   } catch (e) {
     console.warn('[main] postMessage shutdown a échoué, terminate forcé:', e.message);
-    try { worker.terminate(); } catch (_) {}
+    try {
+      worker.terminate();
+    } catch (_) {}
     return;
   }
 
   setTimeout(() => {
     if (worker && shuttingDownWorker) {
       console.warn('[main] Arrêt gracieux du pipeline expiré (5s) — terminate forcé.');
-      try { worker.terminate(); } catch (_) {}
+      try {
+        worker.terminate();
+      } catch (_) {}
     }
   }, 5000);
 }
 
 function restartServer() {
-  if (!worker) { startServer(); return; }
+  if (!worker) {
+    startServer();
+    return;
+  }
   stopServerGracefully(() => setTimeout(startServer, 500));
 }
 
@@ -545,7 +601,7 @@ function scheduleWorkerRecycle() {
     if (shuttingDownWorker) return;
     const uptime = Date.now() - workerStartedAt;
     if (uptime >= WORKER_MAX_UPTIME_MS) {
-      console.log('[main] Recyclage du worker après %d min d\'uptime.', Math.round(uptime / 60000));
+      console.log("[main] Recyclage du worker après %d min d'uptime.", Math.round(uptime / 60000));
       appendLog('Recyclage préventif du pipeline (uptime > 4h).', false);
       restartServer();
     }
@@ -739,7 +795,9 @@ ipcMain.handle('obs-set-config', async (_evt, { enabled, obsWebsocketUrl, passwo
         if (safeStorage.isEncryptionAvailable()) {
           multiScene.passwordEncrypted = safeStorage.encryptString(password).toString('base64');
         } else {
-          console.warn('[main] Chiffrement système indisponible : mot de passe OBS stocké en clair.');
+          console.warn(
+            '[main] Chiffrement système indisponible : mot de passe OBS stocké en clair.'
+          );
           multiScene.password = password;
         }
       }
@@ -763,7 +821,7 @@ ipcMain.handle('obs-connect', async () => {
     });
     return client
       ? { ok: true, connected: true }
-      : { ok: false, connected: false, error: 'Connexion impossible — vérifiez qu\'OBS tourne.' };
+      : { ok: false, connected: false, error: "Connexion impossible — vérifiez qu'OBS tourne." };
   } catch (e) {
     return { ok: false, connected: false, error: e.message };
   }
@@ -844,7 +902,9 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(permission === 'media');
   });
-  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => permission === 'media');
+  session.defaultSession.setPermissionCheckHandler(
+    (_webContents, permission) => permission === 'media'
+  );
 
   createTray();
   perfMonitor.start(PERF_PUSH_MS);
@@ -869,7 +929,10 @@ app.whenReady().then(async () => {
   if (!isFirstRunNeeded()) {
     startServer();
   } else {
-    appendLog('Configuration requise : microphone et/ou clé API Groq manquants. Ouvrez Paramètres dans le tableau de bord.', false);
+    appendLog(
+      'Configuration requise : microphone et/ou clé API Groq manquants. Ouvrez Paramètres dans le tableau de bord.',
+      false
+    );
   }
 });
 
@@ -888,6 +951,6 @@ app.on('before-quit', (event) => {
 });
 
 process.on('uncaughtException', (err) => {
-  console.error('[main] Uncaught exception:', err && err.stack || err);
+  console.error('[main] Uncaught exception:', (err && err.stack) || err);
   appendLog('Erreur non gérée: ' + (err && err.message), true);
 });

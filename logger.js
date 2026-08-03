@@ -53,7 +53,9 @@ function createFileLogger(logsDir) {
   function safeWarnOnce(err) {
     if (warnedOnce) return;
     warnedOnce = true;
-    console.warn(`[logger] Journalisation fichier désactivée (erreur non bloquante) : ${err && err.message}`);
+    console.warn(
+      `[logger] Journalisation fichier désactivée (erreur non bloquante) : ${err && err.message}`
+    );
   }
 
   function ensureDir() {

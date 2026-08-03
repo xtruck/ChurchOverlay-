@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- *  rate-limiter.js — Module de limitation de taux (Rate Limiting)
+ *  rate-limiter.ts — Module de limitation de taux (Rate Limiting)
  * ----------------------------------------------------------------------------
  *  Limite le nombre de connexions et messages pour prévenir les abus et
  *  les attaques par déni de service.
@@ -9,60 +9,82 @@
 
 'use strict';
 
+import { RateLimitConfig } from './types';
+
+interface WebSocketConnection {
+  readyState: number;
+  _socket?: {
+    remoteAddress?: string;
+  };
+}
+
+interface ConnectionCheckResult {
+  allowed: boolean;
+  reason: string | null;
+}
+
+interface ActionLimit {
+  max: number;
+  windowMs: number;
+}
+
+interface RateLimiterOptions extends RateLimitConfig {
+  maxConnections?: number;
+  maxMessagesPerMinute?: number;
+  connectionWindowMs?: number;
+  cleanupIntervalMs?: number;
+}
+
+const WS_READY_STATE = {
+  CONNECTING: 0,
+  OPEN: 1,
+  CLOSING: 2,
+  CLOSED: 3,
+};
+
+const PER_ACTION_LIMITS: Record<string, ActionLimit> = {
+  showVerse: { max: 5, windowMs: 60000 },
+  emergencyClear: { max: 3, windowMs: 60000 },
+  applyTheme: { max: 5, windowMs: 60000 },
+};
+
 /**
  * Crée un limiteur de taux pour les connexions
- * @param {Object} options - Options de configuration
- * @returns {Object} - Limiteur de taux avec méthodes checkConnection, checkMessage, cleanup
+ * @param options - Options de configuration
+ * @returns - Limiteur de taux avec méthodes checkConnection, checkMessage, cleanup
  */
-function createRateLimiter(options = {}) {
-  // Constants pour WebSocket readyState
-  const WS_READY_STATE = {
-    CONNECTING: 0,
-    OPEN: 1,
-    CLOSING: 2,
-    CLOSED: 3,
-  };
+function createRateLimiter(options: RateLimiterOptions = {}) {
   const config = {
-    maxConnections: options.maxConnections || 10, // Max connexions simultanées
-    maxMessagesPerMinute: options.maxMessagesPerMinute || 60, // Max messages par minute par IP
-    connectionWindowMs: options.connectionWindowMs || 60000, // Fenêtre de temps pour les messages
-    cleanupIntervalMs: options.cleanupIntervalMs || 300000, // Intervalle de nettoyage (5 min)
+    maxConnections: options.maxConnections || 10,
+    maxMessagesPerMinute: options.maxMessagesPerMinute || 60,
+    connectionWindowMs: options.connectionWindowMs || 60000,
+    cleanupIntervalMs: options.cleanupIntervalMs || 300000,
     ...options,
   };
 
-  // CORRECTIF (audit sécurité — flood par type de message) : la limite
-  // globale ci-dessus (maxMessagesPerMinute, 60/min) protège contre un flood
-  // générique, mais un client autorisé à envoyer des messages "operator"
-  // pouvait auparavant envoyer 60 `showVerse` en 1 minute et perturber
-  // l'affichage devant l'assemblée sans jamais dépasser la limite globale.
-  // On ajoute des limites SPÉCIFIQUES par type d'action, en plus (pas à la
-  // place) de la limite globale par IP.
-  const PER_ACTION_LIMITS = {
-    showVerse: { max: 5, windowMs: 60000 },
-    emergencyClear: { max: 3, windowMs: 60000 },
-    applyTheme: { max: 5, windowMs: 60000 },
-  };
   // IP -> Map(actionType -> Array de timestamps)
-  const actionHistory = new Map();
+  const actionHistory = new Map<string, Map<string, number[]>>();
 
   // Stockage des connexions par IP
-  const connections = new Map(); // IP -> Set de WebSocket connections
+  const connections = new Map<string, Set<WebSocketConnection>>();
 
   // Stockage des messages par IP
-  const messageHistory = new Map(); // IP -> Array de timestamps
+  const messageHistory = new Map<string, number[]>();
 
   // Interval de nettoyage
-  let cleanupInterval;
+  let cleanupInterval: NodeJS.Timeout | null = null;
 
   /**
    * Nettoie les anciennes entrées
    */
-  function cleanup() {
+  function cleanup(): void {
     const now = Date.now();
 
     // Nettoyer l'historique des messages
     for (const [ip, timestamps] of messageHistory.entries()) {
-      const recent = timestamps.filter((time) => now - time < config.connectionWindowMs);
+      const recent = timestamps.filter(
+        (time: number) => now - time < (config.connectionWindowMs || 60000)
+      );
       if (recent.length === 0) {
         messageHistory.delete(ip);
       } else {
@@ -70,10 +92,7 @@ function createRateLimiter(options = {}) {
       }
     }
 
-    // CORRECTIF (audit sécurité) : actionHistory grandit avec le temps
-    // exactement comme messageHistory (une entrée par IP x type d'action) —
-    // même stratégie de purge nécessaire pour ne pas réintroduire une fuite
-    // mémoire déjà corrigée ailleurs dans le projet (voir round 7).
+    // Nettoyer l'historique des actions
     for (const [ip, perIpActions] of actionHistory.entries()) {
       for (const [actionType, timestamps] of perIpActions.entries()) {
         const limit = PER_ACTION_LIMITS[actionType];
@@ -92,7 +111,7 @@ function createRateLimiter(options = {}) {
 
     // Nettoyer les connexions fermées
     for (const [ip, socketSet] of connections.entries()) {
-      const activeSockets = new Set();
+      const activeSockets = new Set<WebSocketConnection>();
       for (const socket of socketSet) {
         if (socket.readyState === WS_READY_STATE.OPEN) {
           activeSockets.add(socket);
@@ -108,10 +127,10 @@ function createRateLimiter(options = {}) {
 
   /**
    * Extrait l'IP d'une connexion WebSocket
-   * @param {WebSocket} ws - Connexion WebSocket
-   * @returns {string} - Adresse IP
+   * @param ws - Connexion WebSocket
+   * @returns - Adresse IP
    */
-  function getClientIP(ws) {
+  function getClientIP(ws: WebSocketConnection): string {
     // Essayer de récupérer l'IP depuis différentes sources
     if (ws._socket && ws._socket.remoteAddress) {
       return ws._socket.remoteAddress;
@@ -121,10 +140,10 @@ function createRateLimiter(options = {}) {
 
   /**
    * Vérifie si une nouvelle connexion est autorisée
-   * @param {WebSocket} ws - Connexion WebSocket
-   * @returns {Object} - { allowed: boolean, reason: string|null }
+   * @param ws - Connexion WebSocket
+   * @returns - { allowed: boolean, reason: string|null }
    */
-  function checkConnection(ws) {
+  function checkConnection(ws: WebSocketConnection): ConnectionCheckResult {
     const ip = getClientIP(ws);
     const currentConnections = connections.get(ip) || new Set();
 
@@ -143,7 +162,6 @@ function createRateLimiter(options = {}) {
     }
 
     if (totalConnections >= config.maxConnections * 2) {
-      // Limite globale plus souple
       return {
         allowed: false,
         reason: 'Nombre maximum de connexions atteint sur le serveur',
@@ -159,10 +177,11 @@ function createRateLimiter(options = {}) {
 
   /**
    * Vérifie si un message est autorisé
-   * @param {WebSocket} ws - Connexion WebSocket
-   * @returns {Object} - { allowed: boolean, reason: string|null }
+   * @param ws - Connexion WebSocket
+   * @param actionType - Type d'action optionnel pour limite spécifique
+   * @returns - { allowed: boolean, reason: string|null }
    */
-  function checkMessage(ws, actionType) {
+  function checkMessage(ws: WebSocketConnection, actionType?: string): ConnectionCheckResult {
     const ip = getClientIP(ws);
     const now = Date.now();
 
@@ -180,16 +199,12 @@ function createRateLimiter(options = {}) {
       };
     }
 
-    // CORRECTIF (audit sécurité) : vérification supplémentaire par type
-    // d'action, en plus de la limite globale ci-dessus. `actionType` est
-    // optionnel — les appelants existants qui font checkMessage(ws) sans
-    // deuxième argument gardent exactement l'ancien comportement (limite
-    // globale uniquement), donc rien ne casse en amont.
+    // Vérification supplémentaire par type d'action
     if (actionType && PER_ACTION_LIMITS[actionType]) {
       const limit = PER_ACTION_LIMITS[actionType];
       const perIpActions = actionHistory.get(ip) || new Map();
       const actionTimestamps = perIpActions.get(actionType) || [];
-      const recentActions = actionTimestamps.filter((time) => now - time < limit.windowMs);
+      const recentActions = actionTimestamps.filter((time: number) => now - time < limit.windowMs);
 
       if (recentActions.length >= limit.max) {
         return {
@@ -212,9 +227,9 @@ function createRateLimiter(options = {}) {
 
   /**
    * Supprime une connexion du suivi
-   * @param {WebSocket} ws - Connexion WebSocket
+   * @param ws - Connexion WebSocket
    */
-  function removeConnection(ws) {
+  function removeConnection(ws: WebSocketConnection): void {
     const ip = getClientIP(ws);
     const socketSet = connections.get(ip);
 
@@ -229,20 +244,18 @@ function createRateLimiter(options = {}) {
   /**
    * Démarre le nettoyage automatique
    */
-  function startCleanup() {
+  function startCleanup(): void {
     if (cleanupInterval) return;
     cleanupInterval = setInterval(cleanup, config.cleanupIntervalMs);
-    // CORRECTIF (audit round 7) : unref() défensif — ce timer ne doit jamais
-    // à lui seul empêcher le process/worker qui l'a créé de s'arrêter
-    // naturellement, même sur un chemin de sortie qui aurait oublié
-    // d'appeler stopCleanup().
-    cleanupInterval.unref?.();
+    if (cleanupInterval.unref) {
+      cleanupInterval.unref();
+    }
   }
 
   /**
    * Arrête le nettoyage automatique
    */
-  function stopCleanup() {
+  function stopCleanup(): void {
     if (cleanupInterval) {
       clearInterval(cleanupInterval);
       cleanupInterval = null;
@@ -250,20 +263,30 @@ function createRateLimiter(options = {}) {
   }
 
   /**
-   * Obtient des statistiques
-   * @returns {Object} - Statistiques actuelles
+   * Retourne les statistiques actuelles
    */
-  function getStats() {
+  function getStats(): Record<string, any> {
     let totalConnections = 0;
     for (const socketSet of connections.values()) {
       totalConnections += socketSet.size;
     }
 
-    return {
+    const stats = {
       totalConnections,
       uniqueIPs: connections.size,
-      messageHistorySize: messageHistory.size,
+      totalMessages: 0,
+      connectionsPerIP: {} as Record<string, number>,
     };
+
+    for (const [ip, socketSet] of connections.entries()) {
+      stats.connectionsPerIP[ip] = socketSet.size;
+    }
+
+    for (const timestamps of messageHistory.values()) {
+      stats.totalMessages += timestamps.length;
+    }
+
+    return stats;
   }
 
   // Démarrer le nettoyage automatique
@@ -273,9 +296,11 @@ function createRateLimiter(options = {}) {
     checkConnection,
     checkMessage,
     removeConnection,
-    getStats,
     stopCleanup,
+    getStats,
+    cleanup,
   };
 }
 
-module.exports = { createRateLimiter };
+export { createRateLimiter };
+export type { ConnectionCheckResult, RateLimiterOptions };

@@ -62,7 +62,7 @@ test('WS_HOST: accepte une valeur personnalisée', () => {
   assert.strictEqual(r.parsedValue, '0.0.0.0');
 });
 
-test('WS_HOST: rejette une chaîne composée uniquement d\'espaces', () => {
+test("WS_HOST: rejette une chaîne composée uniquement d'espaces", () => {
   const r = configValidator.validateEnvVar('WS_HOST', '   ');
   assert.strictEqual(r.valid, false);
 });
@@ -114,7 +114,7 @@ test('validateSystemConfig: avertit si GROQ_API_KEY absent', async () => {
   delete process.env.GROQ_API_KEY;
   try {
     const result = await configValidator.validateSystemConfig();
-    assert.ok(result.warnings.some(w => w.includes('GROQ_API_KEY')));
+    assert.ok(result.warnings.some((w) => w.includes('GROQ_API_KEY')));
   } finally {
     if (original !== undefined) process.env.GROQ_API_KEY = original;
   }

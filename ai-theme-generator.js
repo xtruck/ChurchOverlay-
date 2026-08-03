@@ -3,11 +3,11 @@
  * ai-theme-generator.js — Dynamic Theme Generation for ChurchOverlay
  * ============================================================================
  * Generates CSS themes based on sermon content, verse text, or mood.
- * 
+ *
  * Two modes:
  *   1. RULE-BASED: Maps keywords to predefined color palettes (instant, offline)
  *   2. AI-POWERED: Uses Groq LLM to generate custom themes (requires API)
- * 
+ *
  * Integration: Call when verse is detected, apply result to overlay via
  * broadcast({ action: 'applyTheme', ...theme }).
  * ============================================================================
@@ -150,25 +150,151 @@ const MOOD_THEMES = {
 // Keyword → mood mapping
 // -----------------------------------------------------------------------
 const MOOD_KEYWORDS = {
-  joy: ['joie', 'joy', 'rejouis', 'alléluia', 'alleluia', 'hallelujah', 'louange', 'gloire', 'célébrer', 'celebrate', 'fête', 'fete', 'triomphe', 'victoire', 'victory', 'exulte', 'chantez', 'sing'],
-  peace: ['paix', 'peace', 'calme', 'calm', 'tranquille', 'repos', 'rest', 'sérénité', 'serenity', 'silence', 'quiet', 'refuge', 'abri', 'shelter'],
-  repentance: ['repentance', 'repentir', 'péché', 'peche', 'sin', 'jugement', 'judgment', 'sérieux', 'serious', 'grave', 'somber', 'sombre', 'ténèbres', 'darkness', 'deuil', 'mourning'],
-  love: ['amour', 'love', 'charité', 'charity', 'grâce', 'grace', 'miséricorde', 'mercy', 'compassion', 'tendresse', 'tenderness', 'bienveillance', 'kindness'],
-  faith: ['foi', 'faith', 'confiance', 'trust', 'croire', 'believe', 'croyance', 'conviction', 'assurance', 'ferme', 'steadfast'],
-  hope: ['espoir', 'hope', 'avenir', 'future', 'attendre', 'wait', 'patience', 'patient', 'promesse', 'promise', 'renouveau', 'renewal', 'restauration', 'restoration'],
-  spirit: ['esprit saint', 'holy spirit', 'pentecôte', 'pentecost', 'feu', 'fire', 'vent', 'wind', 'puissance', 'power', 'onction', 'anointing', 'miracle', 'gloire', 'glory'],
-  sacrifice: ['croix', 'cross', 'sacrifice', 'sang', 'blood', 'agonie', 'agony', 'passion', 'crucifié', 'crucified', 'rédemption', 'redemption', 'expiation', 'atonement'],
+  joy: [
+    'joie',
+    'joy',
+    'rejouis',
+    'alléluia',
+    'alleluia',
+    'hallelujah',
+    'louange',
+    'gloire',
+    'célébrer',
+    'celebrate',
+    'fête',
+    'fete',
+    'triomphe',
+    'victoire',
+    'victory',
+    'exulte',
+    'chantez',
+    'sing',
+  ],
+  peace: [
+    'paix',
+    'peace',
+    'calme',
+    'calm',
+    'tranquille',
+    'repos',
+    'rest',
+    'sérénité',
+    'serenity',
+    'silence',
+    'quiet',
+    'refuge',
+    'abri',
+    'shelter',
+  ],
+  repentance: [
+    'repentance',
+    'repentir',
+    'péché',
+    'peche',
+    'sin',
+    'jugement',
+    'judgment',
+    'sérieux',
+    'serious',
+    'grave',
+    'somber',
+    'sombre',
+    'ténèbres',
+    'darkness',
+    'deuil',
+    'mourning',
+  ],
+  love: [
+    'amour',
+    'love',
+    'charité',
+    'charity',
+    'grâce',
+    'grace',
+    'miséricorde',
+    'mercy',
+    'compassion',
+    'tendresse',
+    'tenderness',
+    'bienveillance',
+    'kindness',
+  ],
+  faith: [
+    'foi',
+    'faith',
+    'confiance',
+    'trust',
+    'croire',
+    'believe',
+    'croyance',
+    'conviction',
+    'assurance',
+    'ferme',
+    'steadfast',
+  ],
+  hope: [
+    'espoir',
+    'hope',
+    'avenir',
+    'future',
+    'attendre',
+    'wait',
+    'patience',
+    'patient',
+    'promesse',
+    'promise',
+    'renouveau',
+    'renewal',
+    'restauration',
+    'restoration',
+  ],
+  spirit: [
+    'esprit saint',
+    'holy spirit',
+    'pentecôte',
+    'pentecost',
+    'feu',
+    'fire',
+    'vent',
+    'wind',
+    'puissance',
+    'power',
+    'onction',
+    'anointing',
+    'miracle',
+    'gloire',
+    'glory',
+  ],
+  sacrifice: [
+    'croix',
+    'cross',
+    'sacrifice',
+    'sang',
+    'blood',
+    'agonie',
+    'agony',
+    'passion',
+    'crucifié',
+    'crucified',
+    'rédemption',
+    'redemption',
+    'expiation',
+    'atonement',
+  ],
 };
 
 // -----------------------------------------------------------------------
 // Detect mood from text
 // -----------------------------------------------------------------------
 function detectMood(text) {
-  const normalized = text.toLowerCase().normalize('NFD').replace(/\u0300-\u036f/g, '');
+  const normalized = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\u0300-\u036f/g, '');
   const scores = {};
 
   for (const [mood, keywords] of Object.entries(MOOD_KEYWORDS)) {
-    scores[mood] = keywords.filter(kw => normalized.includes(kw)).length;
+    scores[mood] = keywords.filter((kw) => normalized.includes(kw)).length;
   }
 
   const bestMood = Object.entries(scores)

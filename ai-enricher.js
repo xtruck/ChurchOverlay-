@@ -12,11 +12,11 @@ const { sanitizeForPrompt } = require('./prompt-sanitizer');
 let features = {
   ai: {
     themeDetection: { enabled: true, intervalSec: 60 },
-    liveTranslation: { enabled: true, targetLangs: ["en", "es"] },
+    liveTranslation: { enabled: true, targetLangs: ['en', 'es'] },
     sermonSummary: { enabled: true, intervalMin: 5 },
-    postServiceRecap: { enabled: true, exportFormats: ["pdf", "png"] },
-    crossReferences: { enabled: true, maxRefs: 3 }
-  }
+    postServiceRecap: { enabled: true, exportFormats: ['pdf', 'png'] },
+    crossReferences: { enabled: true, maxRefs: 3 },
+  },
 };
 
 try {
@@ -93,7 +93,9 @@ Transcription récente: "${sanitizeForPrompt(fullTranscript.slice(-4000))}"`;
 async function generatePostServiceRecap(fullTranscript, versesShown = []) {
   if (features.ai?.postServiceRecap?.enabled === false) return null;
 
-  const verseList = Array.isArray(versesShown) ? versesShown.map(v => typeof v === 'string' ? v : (v.reference || v.raw || '')).join(', ') : '';
+  const verseList = Array.isArray(versesShown)
+    ? versesShown.map((v) => (typeof v === 'string' ? v : v.reference || v.raw || '')).join(', ')
+    : '';
 
   const prompt = `Tu es assistant pastoral. À partir de la transcription du sermon et des versets affichés, produis un récapitulatif.
 TRANSCRIPTION:
@@ -110,7 +112,11 @@ Réponds uniquement en JSON avec cette structure exacte:
 }`;
 
   try {
-    const res = await chatCompletion(prompt, { json_mode: true, temperature: 0.3, max_tokens: 600 });
+    const res = await chatCompletion(prompt, {
+      json_mode: true,
+      temperature: 0.3,
+      max_tokens: 600,
+    });
     return JSON.parse(res.text);
   } catch (e) {
     console.warn('[ai-enricher] Récapitulatif post-service échoué:', e.message);
@@ -128,7 +134,11 @@ async function findCrossReferences(verseRef, verseText) {
 Réponds uniquement en JSON: [{"ref": "Livre Chapitre:Verset", "reason": "Brève explication en français"}]`;
 
   try {
-    const res = await chatCompletion(prompt, { json_mode: true, temperature: 0.2, max_tokens: 300 });
+    const res = await chatCompletion(prompt, {
+      json_mode: true,
+      temperature: 0.2,
+      max_tokens: 300,
+    });
     const parsed = JSON.parse(res.text);
     return Array.isArray(parsed) ? parsed.slice(0, features.ai?.crossReferences?.maxRefs || 3) : [];
   } catch (e) {

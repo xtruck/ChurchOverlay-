@@ -47,6 +47,7 @@ Affiche un verset biblique sur l'overlay.
 ```
 
 **Champs**:
+
 - `action` (string, requis): "showVerse"
 - `reference` (string, requis): Référence du verset (max 200 caractères)
 - `text` (string, requis): Texte du verset (max 5000 caractères)
@@ -65,6 +66,7 @@ Masque le verset actuellement affiché.
 ```
 
 **Champs**:
+
 - `action` (string, requis): "hideVerse"
 
 **Réponse**: Le message est relayé à tous les autres clients connectés.
@@ -83,6 +85,7 @@ Met à jour le verset actuellement affiché.
 ```
 
 **Champs**:
+
 - `action` (string, requis): "updateVerse"
 - `reference` (string, requis): Nouvelle référence (max 200 caractères)
 - `text` (string, requis): Nouveau texte (max 5000 caractères)
@@ -103,11 +106,13 @@ Recherche un verset à partir de sa référence biblique.
 ```
 
 **Champs**:
+
 - `action` (string, requis): "lookupReference"
 - `reference` (string, requis): Référence à rechercher (max 200 caractères)
 - `durationMs` (number, optionnel): Durée d'affichage (max 3600000)
 
-**Réponse**: 
+**Réponse**:
+
 - Succès: Message `showVerse` avec le texte du verset
 - Erreur: Message `lookupError` avec le détail de l'erreur
 
@@ -129,6 +134,7 @@ Envoyé quand un verset doit être affiché (manuel ou automatique).
 ```
 
 **Champs supplémentaires**:
+
 - `autoDetected` (boolean, optionnel): `true` si détecté automatiquement par transcription
 - `provider` (string, optionnel): Provider API utilisé pour la recherche
 
@@ -168,6 +174,7 @@ Envoyé quand une transcription audio est reçue de Whisper.
 ```
 
 **Champs**:
+
 - `action` (string): "transcript"
 - `text` (string): Texte transcrit
 - `timestamp` (number): Timestamp de la transcription
@@ -265,7 +272,7 @@ Tous les messages clients sont validés selon les règles suivantes :
 1. **Format JSON**: Tous les messages doivent être du JSON valide
 2. **Action requise**: Le champ `action` doit être présent et valide
 3. **Types de données**: Les champs doivent respecter les types attendus
-4. **Longueurs maximales**: 
+4. **Longueurs maximales**:
    - `reference`: max 200 caractères
    - `text`: max 5000 caractères
    - `durationMs`: max 3600000 (1 heure)
@@ -291,21 +298,22 @@ En cas de dépassement, le message d'erreur suivant est envoyé :
 ### Sanitization
 
 Les champs texte sont automatiquement nettoyés pour prévenir les injections XSS :
+
 - Les caractères HTML dangereux sont échappés
 - Les références et textes sont validés avant traitement
 
 ## Codes d'erreur
 
-| Erreur | Description |
-|--------|-------------|
-| `Format JSON invalide` | Le message n'est pas du JSON valide |
-| `Action manquante ou invalide` | Le champ action est manquant ou inconnu |
-| `Champ requis manquant: X` | Un champ requis est absent |
-| `Valeur invalide pour le champ: X` | La valeur d'un champ n'est pas valide |
-| `Champ non autorisé: X` | Un champ non défini est présent |
-| `Trop de connexions depuis cette IP` | Limite de connexions dépassée |
-| `Trop de messages` | Limite de messages dépassée |
-| `Référence biblique non reconnue` | La référence n'a pas pu être détectée |
+| Erreur                               | Description                             |
+| ------------------------------------ | --------------------------------------- |
+| `Format JSON invalide`               | Le message n'est pas du JSON valide     |
+| `Action manquante ou invalide`       | Le champ action est manquant ou inconnu |
+| `Champ requis manquant: X`           | Un champ requis est absent              |
+| `Valeur invalide pour le champ: X`   | La valeur d'un champ n'est pas valide   |
+| `Champ non autorisé: X`              | Un champ non défini est présent         |
+| `Trop de connexions depuis cette IP` | Limite de connexions dépassée           |
+| `Trop de messages`                   | Limite de messages dépassée             |
+| `Référence biblique non reconnue`    | La référence n'a pas pu être détectée   |
 
 ## Exemples d'utilisation
 
@@ -319,7 +327,7 @@ ws.onopen = () => {
     action: 'showVerse',
     reference: 'Jean 3:16',
     text: "Car Dieu a tant aimé le monde qu'il a donné son Fils unique...",
-    durationMs: 300000 // 5 minutes
+    durationMs: 300000, // 5 minutes
   };
   ws.send(JSON.stringify(message));
 };
@@ -334,7 +342,7 @@ ws.onopen = () => {
   const message = {
     action: 'lookupReference',
     reference: 'Jean 3:16',
-    durationMs: 300000
+    durationMs: 300000,
   };
   ws.send(JSON.stringify(message));
 };
@@ -356,7 +364,7 @@ const ws = new WebSocket('ws://localhost:8765');
 
 ws.onmessage = (event) => {
   const message = JSON.parse(event.data);
-  
+
   switch (message.action) {
     case 'transcript':
       console.log('Transcription:', message.text);
@@ -391,8 +399,8 @@ Pour modifier les limites de rate limiting, éditez le fichier `server.js` :
 
 ```javascript
 const rateLimiter = createRateLimiter({
-  maxConnections: 10,           // Modifier selon vos besoins
-  maxMessagesPerMinute: 60     // Modifier selon vos besoins
+  maxConnections: 10, // Modifier selon vos besoins
+  maxMessagesPerMinute: 60, // Modifier selon vos besoins
 });
 ```
 
@@ -401,6 +409,7 @@ const rateLimiter = createRateLimiter({
 ### Connexion refusée
 
 Si vous recevez une erreur de connexion :
+
 1. Vérifiez que `server.js` est en cours d'exécution
 2. Vérifiez que le port 8765 n'est pas utilisé par une autre application
 3. Vérifiez que vous n'avez pas dépassé la limite de connexions
@@ -408,6 +417,7 @@ Si vous recevez une erreur de connexion :
 ### Messages rejetés
 
 Si vos messages sont rejetés :
+
 1. Vérifiez le format JSON
 2. Vérifiez que tous les champs requis sont présents
 3. Vérifiez que les valeurs respectent les limites de taille
@@ -416,6 +426,7 @@ Si vos messages sont rejetés :
 ### Erreur de recherche Bible
 
 Si la recherche échoue :
+
 1. Vérifiez votre connexion internet
 2. Vérifiez que la référence biblique est valide
 3. Les providers API peuvent être temporairement indisponibles
