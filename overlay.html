@@ -25,6 +25,35 @@
   --overlay-particle: #dcb46a;
 }
 
+/* AJOUT (innovation frontend — ambiances vivantes) : enregistrer les
+   variables de couleur du thème via @property permet au navigateur
+   d'interpoler leur changement en douceur (Chromium d'Electron le
+   supporte pleinement). Sans ça, changer --overlay-glow via JS
+   (applyTheme) faisait sauter instantanément la couleur du halo et de
+   la carte d'un mood à l'autre — correct fonctionnellement, mais
+   brutal visuellement pour un lieu de culte où la transition doit
+   rester discrète. */
+@property --overlay-glow {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(220, 180, 106, 0.32);
+}
+@property --overlay-accent {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #d9bb6c;
+}
+@property --overlay-border {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(220, 180, 106, 0.20);
+}
+@property --overlay-particle {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #dcb46a;
+}
+
 /* Google Fonts — Cormorant Garamond (référence du verset, cohérent avec le
    dashboard) + Plus Jakarta Sans (badges/indicateurs, lisible en petit) */
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
@@ -57,6 +86,10 @@ body {
      concurrents qui tiraient l'œil loin du texte du verset. */
   background: radial-gradient(ellipse 55% 35% at 50% 100%, var(--overlay-glow) 0%, transparent 70%);
   animation: ambientPulse 12s ease-in-out infinite;
+  /* AJOUT : transition de couleur du halo quand l'ambiance change
+     (setMoodTheme côté dashboard) — grâce à @property ci-dessus, le
+     dégradé lui-même s'anime au lieu de sauter d'une teinte à l'autre. */
+  transition: background 2.2s ease;
 }
 @keyframes ambientPulse {
   0%, 100% { opacity: 0.28; }
@@ -126,6 +159,9 @@ body {
   backdrop-filter: blur(14px);
   position: relative;
   overflow: hidden;
+  /* AJOUT : accompagne le changement d'ambiance (mood) en douceur au
+     lieu d'un saut de couleur instantané sur border/glow. */
+  transition: background 2.2s ease, border-color 2.2s ease, box-shadow 2.2s ease;
 }
 
 .verse-card::before {
@@ -361,6 +397,38 @@ body {
   .verse-card { padding: 20px 24px; }
 }
 
+/* ==========================================================================
+   Typographie cinétique (innovation frontend — features.json:
+   design.kineticTypography, prévu mais jamais construit : la config
+   existait, aucune UI/rendu ne l'exploitait). Chaque mot du verset
+   apparaît en cascade au lieu du fondu global de la carte entière —
+   effet "lecture qui se dévoile", plus vivant à l'écran de projection.
+   ========================================================================== */
+.verse-text .kinetic-word {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(14px);
+  filter: blur(3px);
+  animation: kineticWordIn 0.7s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+  animation-delay: var(--word-delay, 0ms);
+}
+
+@keyframes kineticWordIn {
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+
+/* Respecte les préférences d'accessibilité : pas de cascade de mots
+   pour qui a demandé de réduire les animations — le texte apparaît
+   directement, complet. */
+@media (prefers-reduced-motion: reduce) {
+  .verse-text .kinetic-word {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
 /* Advanced particle system */
 .advanced-particle {
   position: absolute;
@@ -428,6 +496,17 @@ const getWsUrl = () => {
   }
   return `ws://localhost:8765${tokenParam}`;
 };
+
+// CORRECTIF (trouvé en marge de l'innovation frontend) : escapeHtml était
+// appelé dans showVerse() pour le texte bilingue (EN) mais n'était défini
+// nulle part dans ce fichier -> ReferenceError silencieuse dès qu'un verset
+// avec langMode 'both' s'affichait (le crash arrêtait tout le script, donc
+// aussi le WebSocket et les timers).
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML;
+}
 
 let ws = null;
 let hideTimeout = null;
@@ -541,6 +620,44 @@ function scheduleOverlayReconnect() {
 connectWs();
 
 /* ==========================================================================
+   Typographie cinétique
+   ========================================================================== */
+// Active la config config/features.json -> design.kineticTypography (elle
+// existait déjà côté config mais n'avait aucun effet visuel réel jusqu'ici :
+// applyAnimation('wordByWord') n'animait que la carte entière, pas les mots).
+// Passages trop longs (> 55 mots) : la cascade deviendrait plus distrayante
+// que lisible sur un plan large, donc on retombe sur un affichage direct.
+const KINETIC_MAX_WORDS = 55;
+const KINETIC_WORD_STEP_MS = 55;
+
+function renderVerseTextContent(el, text) {
+  el.classList.remove('kinetic-mode');
+  const words = (text || '').split(/(\s+)/).filter(Boolean);
+  const wordCount = words.filter(w => !/^\s+$/.test(w)).length;
+
+  if (wordCount === 0 || wordCount > KINETIC_MAX_WORDS) {
+    el.textContent = text || '';
+    return;
+  }
+
+  el.innerHTML = '';
+  el.classList.add('kinetic-mode');
+  let wordIndex = 0;
+  words.forEach((token) => {
+    if (/^\s+$/.test(token)) {
+      el.appendChild(document.createTextNode(token));
+      return;
+    }
+    const span = document.createElement('span');
+    span.className = 'kinetic-word';
+    span.textContent = token;
+    span.style.setProperty('--word-delay', `${wordIndex * KINETIC_WORD_STEP_MS}ms`);
+    el.appendChild(span);
+    wordIndex++;
+  });
+}
+
+/* ==========================================================================
    Display functions
    ========================================================================== */
 function showVerse(data) {
@@ -553,16 +670,19 @@ function showVerse(data) {
 
   // Update content
   refText.textContent = data.reference || 'Référence inconnue';
-  verseText.textContent = data.text || '';
 
-  // Bilingual display
+  // Bilingual display — on détermine d'abord le texte principal réel
+  // (le français prend le pas sur le texte brut si bilingue), puis on
+  // ne fait le rendu (cinétique ou direct) qu'une seule fois dessus.
+  let mainText = data.text || '';
   if (data.langMode === 'both' && data.text_fr && data.text_en) {
     verseBilingual.style.display = 'block';
     verseBilingual.innerHTML = `<em>EN:</em> ${escapeHtml(data.text_en)}`;
-    verseText.textContent = data.text_fr;
+    mainText = data.text_fr;
   } else {
     verseBilingual.style.display = 'none';
   }
+  renderVerseTextContent(verseText, mainText);
 
   // Source badge
   if (data.detectedBy || data.triggeredByVoice || data.triggeredManually) {
