@@ -19,9 +19,9 @@
     "noUnusedParameters": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
-    "allowJs": true,
+    "allowJs": false,
     "checkJs": false
   },
-  "include": ["*.js", "test/**/*.js"],
+  "include": ["*.ts", "types/**/*.ts", "test/**/*.ts"],
   "exclude": ["node_modules", "dist", "config"]
 }
