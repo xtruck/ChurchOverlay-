@@ -55,7 +55,7 @@
             --radius-lg: 22px;
             --radius-full: 9999px;
 
-            --glass-blur: 22px;
+            --glass-blur: 10px;
             --ease-silk: cubic-bezier(0.19, 1, 0.22, 1);
         }
 
@@ -340,6 +340,24 @@
             color: var(--accent-emerald);
             font-weight: 600;
             backdrop-filter: blur(8px);
+            transition: background var(--ease-silk) 0.3s, border-color var(--ease-silk) 0.3s, color var(--ease-silk) 0.3s;
+        }
+
+        /* CORRECTIF (UX) : avant, seul le petit point changeait de couleur —
+           le fond/bordure restaient calmes (verts) même en pleine coupure.
+           En régie sous stress, ce détail seul se perd ; toute la pastille
+           doit basculer pour que la perte de connexion soit impossible à
+           manquer. */
+        .live-status-pill.offline {
+            background: rgba(244, 96, 122, 0.14);
+            border-color: rgba(244, 96, 122, 0.4);
+            color: var(--accent-rose);
+            animation: offlineAttention 1.6s ease-in-out infinite;
+        }
+
+        @keyframes offlineAttention {
+            0%, 100% { box-shadow: 0 0 0 rgba(244, 96, 122, 0); }
+            50% { box-shadow: 0 0 14px rgba(244, 96, 122, 0.35); }
         }
 
         .status-dot {
@@ -832,6 +850,9 @@
             height: 500px;
             border: none;
             background: #000;
+            isolation: isolate;
+            will-change: transform;
+            transform: translateZ(0);
         }
 
         /* Language Buttons */
@@ -1158,7 +1179,7 @@
                 </div>
 
                 <div class="header-actions">
-                    <div class="live-status-pill status" style="padding: 0.65rem 1.1rem; background: rgba(255,255,255,0.04); border-color: var(--border-subtle);">
+                    <div class="live-status-pill status" style="padding: 0.65rem 1.1rem;">
                         <div class="status-dot"></div>
                         <span>Connecté</span>
                     </div>
@@ -1618,7 +1639,7 @@
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">Canal WebSocket</span>
-                        <span class="stat-value">Port 3000 / Reverse Proxy</span>
+                        <span class="stat-value">Port 8765 / Reverse Proxy</span>
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">Moteur de Reconnaissance Vocale</span>
@@ -1722,7 +1743,7 @@
                 const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 return `${proto}//${window.location.host}${tokenParam}`;
             }
-            return `ws://localhost:3000${tokenParam}`;
+            return `ws://localhost:8765${tokenParam}`;
         };
 
         let ws = null;
@@ -2238,11 +2259,14 @@
             statusEls.forEach(status => {
                 const dot = status.querySelector('.status-dot');
                 const text = status.querySelector('span');
+                status.classList.toggle('offline', !connected);
                 if (connected) {
                     if (dot) dot.style.background = 'var(--accent-emerald)';
+                    if (dot) dot.style.boxShadow = '0 0 8px var(--accent-emerald)';
                     if (text) text.textContent = 'Connecté';
                 } else {
                     if (dot) dot.style.background = 'var(--accent-rose)';
+                    if (dot) dot.style.boxShadow = '0 0 8px var(--accent-rose)';
                     if (text) text.textContent = reconnectAttempt
                         ? `Déconnecté — reconnexion en cours (tentative ${reconnectAttempt})...`
                         : 'Déconnecté';
@@ -2250,6 +2274,8 @@
             });
             const sidebarText = document.getElementById('sidebarStatusText');
             if (sidebarText) sidebarText.textContent = connected ? 'Serveur En Ligne' : 'Serveur Hors Ligne';
+            const sidebarPill = sidebarText ? sidebarText.closest('.live-status-pill') : null;
+            if (sidebarPill) sidebarPill.classList.toggle('offline', !connected);
         }
 
         // Control Actions
