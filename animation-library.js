@@ -276,6 +276,18 @@ const AnimationLibrary = {
   },
 
   // Create particle system
+  // CORRECTIF PERF (audit CPU) : cette fonction tourne pendant TOUTE la durée
+  // du culte (appelée une fois par changement d'ambiance, puis les particules
+  // restent animées à l'infini jusqu'au prochain changement). Avant :
+  // 30 éléments DOM, chacun avec une animation "infinite" ET un box-shadow
+  // à deux couches -> chaque frame, le compositeur doit repeindre 30 ombres
+  // portées floutées en continu. C'était la source principale de la
+  // consommation CPU/GPU signalée. Deux changements :
+  //  1) particleCount 30 -> 12 (le rendu visuel reste "ambiant", pas dense)
+  //  2) box-shadow supprimé du style inline (déjà présent sur .advanced-particle
+  //     si besoin visuel, mais on le laisse volontairement absent ici : un
+  //     halo lumineux sur un point de 2-6px n'est perceptible qu'à courte
+  //     distance de l'écran, alors que son coût de rendu est élevé partout).
   createParticleSystem(container, mood = 'peace') {
     const particleType = this.getRecommendation(mood);
     const preset = this.presets[particleType];
@@ -284,49 +296,64 @@ const AnimationLibrary = {
     const existingParticles = container.querySelectorAll('.advanced-particle');
     existingParticles.forEach(p => p.remove());
 
-    // Create new particles
-    const particleCount = 30;
+    // Create new particles (réduit de 30 à 12 pour la charge CPU/GPU)
+    const particleCount = 12;
+    const colors = {
+      joy: '#FFD700',
+      peace: '#00ACC1',
+      worship: '#FF6B6B',
+      repentance: '#9C27B0',
+      celebration: '#FFA726',
+      reflection: '#78909C',
+      inspiration: '#42A5F5',
+      solemnity: '#5D4037'
+    };
+    const color = colors[mood] || colors.peace;
+
+    // On construit tout dans un fragment hors DOM, puis on l'insère en un
+    // seul appendChild : évite 12 reflows séparés (un par particule).
+    const fragment = document.createDocumentFragment();
+
     for (let i = 0; i < particleCount; i++) {
       const particle = document.createElement('div');
       particle.className = 'advanced-particle';
-      
+
       // Random positioning
       particle.style.left = Math.random() * 100 + '%';
       particle.style.top = Math.random() * 100 + '%';
-      
+
       // Random size
       const size = 2 + Math.random() * 4;
       particle.style.width = `${size}px`;
       particle.style.height = `${size}px`;
-      
+
       // Random delay
       particle.style.animationDelay = `${Math.random() * 3000}ms`;
       particle.style.animationDuration = `${preset.duration + Math.random() * 2000}ms`;
-      
+
       // Apply animation
       particle.style.animationName = `anim-${particleType}`;
       particle.style.animationTimingFunction = preset.easing;
       particle.style.animationIterationCount = 'infinite';
-      
-      // Color based on mood
-      const colors = {
-        joy: '#FFD700',
-        peace: '#00ACC1',
-        worship: '#FF6B6B',
-        repentance: '#9C27B0',
-        celebration: '#FFA726',
-        reflection: '#78909C',
-        inspiration: '#42A5F5',
-        solemnity: '#5D4037'
-      };
-      particle.style.background = colors[mood] || colors.peace;
+
+      // CORRECTIF PERF : plus de box-shadow par particule (coûteux à
+      // repeindre en continu sur 12 éléments animés). background + opacity
+      // suffisent pour un effet ambiant discret.
+      particle.style.background = color;
       particle.style.borderRadius = '50%';
       particle.style.position = 'absolute';
       particle.style.pointerEvents = 'none';
       particle.style.opacity = '0';
-      
-      container.appendChild(particle);
+      // Indique au navigateur de préparer une couche composite dédiée pour
+      // cet élément (transform/opacity uniquement) au lieu de repeindre le
+      // parent à chaque frame — nettement moins cher sur des animations
+      // longue durée comme celle-ci.
+      particle.style.willChange = 'transform, opacity';
+
+      fragment.appendChild(particle);
     }
+
+    container.appendChild(fragment);
   },
 
   // Text reveal effect
