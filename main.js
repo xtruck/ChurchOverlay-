@@ -13,6 +13,7 @@ const path = require('path');
 const fs = require('fs');
 const fsp = require('fs').promises;
 const { Worker } = require('worker_threads');
+const crypto = require('crypto');
 const os = require('os');
 const perfMonitor = require('./perf-monitor');
 const themeLoader = require('./theme-loader');
@@ -89,6 +90,72 @@ function decryptKey(encryptedBase64, label) {
     console.error(`[main] Échec du déchiffrement de la clé ${label}:`, e.message);
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// WS_AUTH_TOKEN — généré et persisté automatiquement pour l'app packagée
+// ---------------------------------------------------------------------------
+// AMÉLIORATION (audit) : jusqu'ici WS_AUTH_TOKEN n'existait que si un
+// utilisateur avancé le définissait lui-même via une vraie variable
+// d'environnement — dans l'app packagée (`npm start` / l'exe installé),
+// ce n'était donc quasiment jamais le cas, et server.js se contentait
+// d'un avertissement en log. Concrètement, le serveur WebSocket tournait
+// sans authentification par défaut : tant que WS_HOST=127.0.0.1 (le
+// défaut), le risque reste faible, mais un opérateur qui change WS_HOST
+// pour exposer le pipeline sur le réseau de l'église (cas documenté dans
+// le README) se retrouvait protégé uniquement par une case à cocher
+// qu'il faut lire et remplir soi-même.
+//
+// On génère désormais un jeton aléatoire (32 octets, encodage base64url)
+// au premier démarrage de l'app installée, on le persiste chiffré dans
+// config.json (même mécanisme que les clés Groq/Deepgram via safeStorage),
+// et on l'injecte dans process.env.WS_AUTH_TOKEN avant que quoi que ce
+// soit d'autre (fenêtre principale, worker server.js, URL overlay pour
+// OBS) ne soit créé. Tout le reste du code (server.js, dashboard.html,
+// overlay.html, getOverlayUrl()) lisait déjà process.env.WS_AUTH_TOKEN /
+// le paramètre ?token= — aucun de ces fichiers n'a besoin de changer.
+//
+// Un utilisateur avancé qui définit lui-même WS_AUTH_TOKEN dans son
+// environnement (mode `server-only`, ou lancement Electron depuis un
+// script) garde la main : on ne touche jamais à une valeur déjà présente.
+function ensureWsAuthToken() {
+  if ((process.env.WS_AUTH_TOKEN || '').trim()) {
+    return; // valeur explicite fournie par l'utilisateur : on ne l'écrase pas
+  }
+
+  const existingRaw = readRawConfig();
+  let token = null;
+
+  if (existingRaw.wsAuthTokenEncrypted && safeStorage.isEncryptionAvailable()) {
+    try {
+      token = safeStorage.decryptString(Buffer.from(existingRaw.wsAuthTokenEncrypted, 'base64'));
+    } catch (e) {
+      console.error('[main] Échec du déchiffrement du jeton WS existant, régénération:', e.message);
+    }
+  } else if (existingRaw.wsAuthToken) {
+    // Ancien format non chiffré (chiffrement indisponible lors de la génération) : réutilisé tel quel.
+    token = existingRaw.wsAuthToken;
+  }
+
+  if (!token || token.length < 16) {
+    token = crypto.randomBytes(32).toString('base64url');
+    const toWrite = Object.assign({}, existingRaw);
+    delete toWrite.wsAuthToken;
+    if (safeStorage.isEncryptionAvailable()) {
+      toWrite.wsAuthTokenEncrypted = safeStorage.encryptString(token).toString('base64');
+    } else {
+      console.warn('[main] Chiffrement système indisponible : jeton WS stocké en clair.');
+      toWrite.wsAuthToken = token;
+    }
+    try {
+      fs.mkdirSync(path.dirname(CONFIG_PATH()), { recursive: true });
+      fs.writeFileSync(CONFIG_PATH(), JSON.stringify(toWrite, null, 2), 'utf8');
+    } catch (e) {
+      console.error('[main] Impossible de persister le jeton WS généré (nouveau jeton à chaque démarrage):', e.message);
+    }
+  }
+
+  process.env.WS_AUTH_TOKEN = token;
 }
 
 function loadConfig() {
@@ -771,6 +838,7 @@ function initAutoUpdater() {
 app.disableHardwareAcceleration();
 
 app.whenReady().then(async () => {
+  ensureWsAuthToken();
   themeLoader.setUserDataDir(USER_DATA());
 
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
