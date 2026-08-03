@@ -893,7 +893,18 @@ function initAutoUpdater() {
 // ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
-app.disableHardwareAcceleration();
+// NOTE (audit CPU) : app.disableHardwareAcceleration() a été retiré ici.
+// L'intention d'origine ("l'app n'affiche que du texte/CSS, pas de rendu
+// 3D") ne correspond plus à dashboard.html : il contient 21 panneaux avec
+// backdrop-filter: blur()/saturate(), un halo conic-gradient, un dégradé
+// plein écran et 7 animations CSS en boucle infinie (halo-spin, mote-rise,
+// sacred-breathe, filigree-glow, mic-pulse, pulse-ring, offlineAttention),
+// plus le visualiseur audio en canvas/requestAnimationFrame. Sans
+// accélération matérielle, Chromium doit calculer tout ça en logiciel
+// (SwiftShader) sur le CPU à chaque frame — c'est la cause la plus probable
+// des ralentissements/CPU élevé signalés, précisément à cause de ces effets
+// de flou qui sont eux beaucoup plus coûteux sans GPU. Laisser Electron
+// utiliser l'accélération matérielle par défaut.
 
 app.whenReady().then(async () => {
   ensureWsAuthToken();
