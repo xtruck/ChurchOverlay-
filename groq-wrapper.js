@@ -282,7 +282,7 @@ async function chatCompletion(prompt, options = {}) {
   } catch (err) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
-      throw new Error(`Timeout Groq Chat (${timeoutMs}ms)`);
+      throw new Error(`Timeout Groq Chat (${timeoutMs}ms)`, { cause: err });
     }
     throw err;
   }

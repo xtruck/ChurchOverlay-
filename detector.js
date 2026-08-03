@@ -375,7 +375,6 @@ function numberWordsToDigits(text) {
         .replace(/-/g, ' ')
         .split(/\s+/)
         .filter((token) => token !== 'et');
-      let total = 0;
       let current = 0;
       for (const token of tokens) {
         const value = NUMBER_WORDS[token];
@@ -385,7 +384,7 @@ function numberWordsToDigits(text) {
           current = 80; // quatre-vingt
         else current += value;
       }
-      return String(total + current);
+      return String(current);
     }
   );
 }

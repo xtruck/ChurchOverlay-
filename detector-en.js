@@ -187,7 +187,6 @@ function numberWordsToDigits(text) {
         .replace(/-/g, ' ')
         .split(/\s+/)
         .filter((t) => t !== 'and');
-      let total = 0;
       let current = 0;
       for (const tok of tokens) {
         const v = NUMBER_WORDS[tok];
@@ -195,7 +194,7 @@ function numberWordsToDigits(text) {
         if (v === 100) current = Math.max(1, current) * 100;
         else current += v;
       }
-      return String(total + current);
+      return String(current);
     }
   );
 }

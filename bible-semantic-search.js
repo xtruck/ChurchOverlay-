@@ -42,6 +42,11 @@ const CONFIG = {
 // -----------------------------------------------------------------------
 // Simple in-memory vector operations (no external ML libraries needed)
 // -----------------------------------------------------------------------
+// cosineSimilarity/dotProduct/magnitude : utilisés par searchByVector()
+// ci-dessous une fois l'index vectoriel pré-calculé disponible (étape de
+// build non encore implémentée — voir downloadIndex()). Conservé tel quel,
+// pas du code mort à supprimer : c'est l'infrastructure prête pour cette
+// fonctionnalité.
 function dotProduct(a, b) {
   let sum = 0;
   for (let i = 0; i < a.length; i++) sum += a[i] * b[i];
@@ -349,9 +354,10 @@ class BibleSemanticSearch {
     return matches.sort((a, b) => b.score - a.score);
   }
 
-  async searchByVector(query, topK) {
-    // This would use the pre-computed embeddings
+  async searchByVector(_query, _topK) {
+    // This would use the pre-computed embeddings (via cosineSimilarity()).
     // For now, return empty — the index generation is a build-time step
+    // not yet implemented.
     console.log('[semantic-search] Vector search not yet implemented (index required)');
     return [];
   }

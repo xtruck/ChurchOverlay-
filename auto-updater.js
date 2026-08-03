@@ -18,8 +18,7 @@
 'use strict';
 
 const { autoUpdater } = require('electron-updater');
-const { dialog, BrowserWindow } = require('electron');
-const path = require('path');
+const { dialog } = require('electron');
 
 // -----------------------------------------------------------------------
 // Configuration
@@ -37,7 +36,6 @@ const CONFIG = {
   // UPDATE_URL: 'https://your-update-server.com',
 };
 
-let updateWindow = null;
 let mainWindow = null;
 
 // -----------------------------------------------------------------------
