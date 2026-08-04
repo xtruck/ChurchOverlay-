@@ -93,6 +93,7 @@ jobs:
         run: npm ci
 
       - name: List test directory
+        shell: bash
         run: |
           echo "CWD: $(pwd)"
           ls -la .
