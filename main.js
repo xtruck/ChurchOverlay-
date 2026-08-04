@@ -38,6 +38,22 @@ try {
 
 const APP_ROOT = __dirname;
 const USER_DATA = () => app.getPath('userData');
+
+// CORRECTIF (bug "serveur hors ligne" / reconnexion en boucle) : server.js
+// écoute sur process.env.PORT si défini, sinon sur 3000 par défaut (voir
+// env.example). dashboard.html et overlay.html sont chargés en file:// et
+// ne peuvent donc pas déduire le port depuis window.location.host ; ils
+// retombaient sur un port 8765 codé en dur qui ne correspond à rien.
+// On calcule ici la même valeur que server.js et on la transmet aux deux
+// pages via la query string, exactement comme WS_AUTH_TOKEN /
+// WS_VIEWER_TOKEN.
+function resolveServerPort() {
+  const raw = (process.env.PORT || '').trim();
+  if (!raw) return 3000;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : 3000;
+}
+const SERVER_PORT = resolveServerPort();
 const CONFIG_PATH = () => path.join(USER_DATA(), 'config.json');
 
 const WORKER_MAX_OLD_SPACE_MB = 512;
@@ -345,7 +361,10 @@ function createMainWindow() {
   // désormais explicitement via l'option `query` de loadFile ; dashboard.html
   // le relit dans getWsUrl() via window.location.search.
   mainWindow.loadFile(path.join(__dirname, 'dashboard.html'), {
-    query: process.env.WS_AUTH_TOKEN ? { token: process.env.WS_AUTH_TOKEN } : {},
+    query: {
+      ...(process.env.WS_AUTH_TOKEN ? { token: process.env.WS_AUTH_TOKEN } : {}),
+      port: String(SERVER_PORT),
+    },
   });
 
   mainWindow.on('close', (e) => {
@@ -654,7 +673,10 @@ const MAX_LOG_LINES = 200;
 function getOverlayUrl() {
   const base = 'file:///' + path.join(APP_ROOT, 'overlay.html').replace(/\\/g, '/');
   const token = (process.env.WS_VIEWER_TOKEN || '').trim();
-  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+  const params = new URLSearchParams();
+  if (token) params.set('token', token);
+  params.set('port', String(SERVER_PORT));
+  return `${base}?${params.toString()}`;
 }
 const recentLogs = [];
 let dashboardFlushTimer = null;
