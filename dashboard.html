@@ -1923,12 +1923,21 @@
         // Sec-WebSocket-Protocol (2e argument du constructeur WebSocket),
         // que les proxys ne journalisent pas par défaut.
         const getWsToken = () => new URLSearchParams(window.location.search).get('token');
+        // CORRECTIF (bug "serveur hors ligne" / reconnexion en boucle) :
+        // en file:// (mode Electron packagé, cas réel en production), il
+        // n'y a pas de window.location.host à réutiliser. Le port codé en
+        // dur ici (8765) ne correspondait à aucun port réellement utilisé
+        // par server.js (qui écoute sur 3000 par défaut, voir env.example).
+        // main.js transmet désormais le port réel via ?port=... au
+        // chargement de la page (voir createMainWindow / SERVER_PORT) ;
+        // on le relit ici avec 3000 comme repli si absent.
+        const getWsPort = () => new URLSearchParams(window.location.search).get('port') || '3000';
         const getWsUrl = () => {
             if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
                 const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 return `${proto}//${window.location.host}`;
             }
-            return `ws://localhost:8765`;
+            return `ws://localhost:${getWsPort()}`;
         };
 
         let ws = null;
