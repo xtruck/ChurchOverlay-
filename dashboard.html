@@ -1910,20 +1910,25 @@
         });
 
         // Dynamic WebSocket connection URL
-        // CORRECTIF (bug "app tout le temps déconnectée") : même cause que
-        // pour overlay.html — le token n'était jamais transmis à la connexion
-        // WebSocket. En Electron, main.js injecte désormais ?token=... via
-        // l'option `query` de loadFile() ; on le relit ici. En navigateur
-        // classique (http://host:port/dashboard?token=...), il vient
-        // directement de l'URL.
+        // CORRECTIF (bug "app tout le temps déconnectée") : le token n'était
+        // jamais transmis à la connexion WebSocket. En Electron, main.js
+        // injecte ?token=... via l'option `query` de loadFile() ; on le
+        // relit ici depuis l'URL de la PAGE (pas celle du WebSocket).
+        //
+        // SECURITY (backend audit) : le token n'est plus ajouté en ?token=
+        // sur l'URL WebSocket elle-même — un reverse proxy / CDN placé
+        // devant un serveur exposé au réseau journalise typiquement l'URI
+        // de requête, ce qui aurait exposé le jeton en clair dans ces logs.
+        // Il voyage maintenant via l'en-tête de handshake
+        // Sec-WebSocket-Protocol (2e argument du constructeur WebSocket),
+        // que les proxys ne journalisent pas par défaut.
+        const getWsToken = () => new URLSearchParams(window.location.search).get('token');
         const getWsUrl = () => {
-            const token = new URLSearchParams(window.location.search).get('token');
-            const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
             if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
                 const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                return `${proto}//${window.location.host}${tokenParam}`;
+                return `${proto}//${window.location.host}`;
             }
-            return `ws://localhost:8765${tokenParam}`;
+            return `ws://localhost:8765`;
         };
 
         let ws = null;
@@ -1946,7 +1951,8 @@
             }
 
             try {
-                ws = new WebSocket(getWsUrl());
+                const token = getWsToken();
+                ws = token ? new WebSocket(getWsUrl(), [token]) : new WebSocket(getWsUrl());
             } catch (e) {
                 console.error('Erreur création WebSocket :', e);
                 scheduleReconnect();

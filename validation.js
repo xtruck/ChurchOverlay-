@@ -98,7 +98,44 @@ const SCHEMAS = {
     validators: {
       action: (value) => value === 'diagnostic'
     }
-  }
+  },
+  applyTheme: {
+    // SECURITY (backend audit): `css` values previously reached
+    // overlay.html's `root.style.setProperty(...)` completely unvalidated
+    // — any string-typed field of any length, from any operator client.
+    // Not script-executable (CSS custom property values aren't parsed as
+    // code), but unbounded/malformed values could deface or crash the
+    // live projector display mid-service. Each field is capped and
+    // restricted to a plausible CSS-value shape.
+    required: ['action', 'css'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'applyTheme',
+      css: (value) => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+        const allowedCssFields = new Set([
+          'background',
+          'color',
+          'accentColor',
+          'fontFamily',
+          'borderColor',
+          'glowColor',
+          'shadowColor',
+          'particleColor',
+          'animation',
+        ]);
+        for (const [k, v] of Object.entries(value)) {
+          if (!allowedCssFields.has(k)) return false;
+          if (typeof v !== 'string' || v.length === 0 || v.length > 300) return false;
+          // Reject characters with no legitimate use in a CSS value/keyword
+          // (blocks stylesheet/selector breakout attempts and control chars).
+          // eslint-disable-next-line no-control-regex -- intentional: blocking raw control bytes is the point.
+          if (/[{};\\]|[\x00-\x1f]/.test(v)) return false;
+        }
+        return true;
+      },
+    },
+  },
 };
 
 /**
@@ -161,7 +198,7 @@ function validateMessage(message) {
  */
 function sanitizeText(text) {
   if (typeof text !== 'string') return text;
-  
+
   // Échapper les caractères HTML dangereux
   return text
     .replace(/&/g, '&amp;')
@@ -194,5 +231,5 @@ module.exports = {
   validateMessage,
   sanitizeText,
   validateAndSanitize,
-  SCHEMAS
+  SCHEMAS,
 };

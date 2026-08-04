@@ -81,6 +81,20 @@ const ENV_SCHEMA = {
     validate: (value) => typeof value === 'string' && value.trim().length > 0,
     errorMessage: "WS_AUTH_TOKEN ne doit pas être une chaîne vide ou composée uniquement d'espaces",
   },
+  // SECURITY (backend audit) : jeton distinct pour les clients en lecture
+  // seule (overlay affiché dans OBS). Avant, l'overlay se connectait avec
+  // WS_AUTH_TOKEN — le même jeton "plein pouvoir" que le tableau de bord —
+  // donc toute fuite de l'URL overlay (collée dans OBS comme Browser
+  // Source, exportable avec une scène OBS) donnait un contrôle opérateur
+  // complet, pas un accès lecture seule.
+  WS_VIEWER_TOKEN: {
+    type: 'string',
+    required: false,
+    default: undefined,
+    validate: (value) => typeof value === 'string' && value.trim().length > 0,
+    errorMessage:
+      "WS_VIEWER_TOKEN ne doit pas être une chaîne vide ou composée uniquement d'espaces",
+  },
 };
 
 /**
@@ -198,8 +212,16 @@ async function validateSystemConfig() {
     warnings.push(
       "WS_AUTH_TOKEN n'est pas défini : le serveur WebSocket accepte toute " +
         'connexion sans authentification. Sans risque tant que WS_HOST=127.0.0.1 ' +
-        "(par défaut), mais à définir avant d'exposer le serveur au-delà de cet " +
-        'ordinateur (WS_HOST=0.0.0.0 ou équivalent) — voir README.md.'
+        '(par défaut) — server.js refuse désormais de démarrer sur un WS_HOST ' +
+        'non local sans ce jeton (voir README.md).'
+    );
+  } else if (!process.env.WS_VIEWER_TOKEN) {
+    warnings.push(
+      "WS_VIEWER_TOKEN n'est pas défini : l'overlay OBS devra utiliser le " +
+        'jeton opérateur (WS_AUTH_TOKEN) pour se connecter, ce qui lui donne ' +
+        "un contrôle complet du pipeline au lieu d'un accès lecture seule. " +
+        'Définir WS_VIEWER_TOKEN (≥16 caractères, différent de WS_AUTH_TOKEN) ' +
+        'pour un vrai cloisonnement — voir README.md.'
     );
   }
 

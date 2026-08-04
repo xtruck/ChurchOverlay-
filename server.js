@@ -168,15 +168,48 @@ if (!portValidation.valid) {
 const SERVER_PORT = portValidation.valid ? portValidation.parsedValue : 3000;
 
 const hostValidation = configValidator.validateEnvVar('WS_HOST', process.env.WS_HOST);
-const WS_HOST = hostValidation.valid ? hostValidation.parsedValue : '127.0.0.1';
+let WS_HOST = hostValidation.valid ? hostValidation.parsedValue : '127.0.0.1';
 
-// SECURITY: enforce minimum token length of 16 characters
-let WS_AUTH_TOKEN = (process.env.WS_AUTH_TOKEN || '').trim() || null;
-if (WS_AUTH_TOKEN && WS_AUTH_TOKEN.length < 16) {
-  console.error(
-    '[server] WS_AUTH_TOKEN too short (minimum 16 characters). Authentication disabled.'
+// SECURITY: enforce minimum token length of 16 characters.
+// Two independent tokens: WS_AUTH_TOKEN (operator, full control) and
+// WS_VIEWER_TOKEN (read-only overlay display). A client's role is now
+// determined by WHICH token it presents, not by which URL path it hits —
+// the path was previously just a client hint and gave no real isolation.
+function loadToken(envVar) {
+  let token = (process.env[envVar] || '').trim() || null;
+  if (token && token.length < 16) {
+    console.error(`[server] ${envVar} too short (minimum 16 characters). Ignored.`);
+    token = null;
+  }
+  return token;
+}
+const WS_AUTH_TOKEN = loadToken('WS_AUTH_TOKEN');
+let WS_VIEWER_TOKEN = loadToken('WS_VIEWER_TOKEN');
+if (WS_VIEWER_TOKEN && WS_AUTH_TOKEN && WS_VIEWER_TOKEN === WS_AUTH_TOKEN) {
+  console.error('[server] WS_VIEWER_TOKEN must differ from WS_AUTH_TOKEN. Viewer token disabled.');
+  WS_VIEWER_TOKEN = null;
+}
+// Once an operator token is configured, requiring a distinct viewer token
+// stops a leaked/shared display-page token from granting operator control.
+if (WS_AUTH_TOKEN && !WS_VIEWER_TOKEN && WS_HOST !== '127.0.0.1' && WS_HOST !== 'localhost') {
+  console.warn(
+    '[server] WS_AUTH_TOKEN is set without WS_VIEWER_TOKEN on a non-local bind — ' +
+      'the overlay page will need the operator token to connect, which over-privileges it.'
   );
-  WS_AUTH_TOKEN = null;
+}
+
+// SECURITY (fail-safe, not just advisory): a non-local WS_HOST with no
+// operator token would previously start up "open" — any device on the LAN
+// could connect with full operator control (broadcast arbitrary verses,
+// clear the display mid-service, hit AI/OBS actions) with zero credential.
+// Refuse to bind non-locally without a token instead of just warning.
+if (WS_HOST !== '127.0.0.1' && WS_HOST !== 'localhost' && !WS_AUTH_TOKEN) {
+  console.error(
+    `[server] WS_HOST=${WS_HOST} was requested but WS_AUTH_TOKEN is not set (or is too short). ` +
+      'Refusing to expose the WebSocket server without authentication — falling back to ' +
+      '127.0.0.1. Set WS_AUTH_TOKEN (>=16 chars) to allow LAN/remote access.'
+  );
+  WS_HOST = '127.0.0.1';
 }
 
 // Active par défaut (recommandé) ; VALIDATE_MESSAGES=false ou 0 désactive
@@ -227,7 +260,23 @@ app.get('/api/health', (req, res) => {
 });
 
 const httpServer = http.createServer(app);
-const wss = new WebSocket.Server({ server: httpServer, maxPayload: 64 * 1024 });
+// SECURITY: auth tokens travel via the Sec-WebSocket-Protocol handshake
+// header instead of the ?token= query string. Query strings routinely end
+// up in reverse-proxy / CDN access logs, browser process lists, and referer
+// headers; the WebSocket subprotocol header does not. `handleProtocols`
+// must echo back one of the client-offered values or browsers abort the
+// handshake, so we echo whichever of the two known tokens was offered (or
+// the first offered value, harmlessly, if auth is disabled).
+const wss = new WebSocket.Server({
+  server: httpServer,
+  maxPayload: 64 * 1024,
+  handleProtocols: (protocols) => {
+    const offered = Array.from(protocols);
+    if (offered.includes(WS_AUTH_TOKEN)) return WS_AUTH_TOKEN;
+    if (offered.includes(WS_VIEWER_TOKEN)) return WS_VIEWER_TOKEN;
+    return offered[0] || false;
+  },
+});
 
 httpServer.listen(SERVER_PORT, WS_HOST, () => {
   console.log(`[server] Serveur HTTP & WebSocket démarré sur http://${WS_HOST}:${SERVER_PORT}`);
@@ -755,17 +804,25 @@ const OPERATOR_ACTIONS = new Set([
   'translateText',
 ]);
 
-function determineClientRole(req) {
-  // Dashboard loaded via file:// or localhost with token = operator
-  // Overlay loaded via file:// or /overlay = viewer (read-only)
-  const url = req.url || '';
-  if (url.includes('/overlay') || url.includes('overlay.html')) {
-    return 'viewer';
-  }
-  // Heuristic: if token is present and matches, and origin looks like dashboard
-  return 'operator';
+// SECURITY: role is derived from WHICH token the client authenticated with
+// (ws.protocol, set by the handshake), never from the request path. The old
+// path-based heuristic let any client asking for `/` get 'operator' — the
+// shared WS_AUTH_TOKEN was the only real gate, so a leaked/observed overlay
+// URL (meant to be read-only, e.g. displayed on a public projector machine)
+// still granted full operator control once WS_AUTH_TOKEN was known.
+function determineClientRole(ws) {
+  if (WS_AUTH_TOKEN && ws.protocol === WS_AUTH_TOKEN) return 'operator';
+  if (WS_VIEWER_TOKEN && ws.protocol === WS_VIEWER_TOKEN) return 'viewer';
+  if (!WS_AUTH_TOKEN) return 'operator'; // no auth configured (local-only default): unrestricted, as before
+  return 'viewer'; // authenticated with neither known token shouldn't reach here (connection is closed earlier)
 }
 
+// SECURITY NOTE: this is defense-in-depth against browser-based cross-site
+// WebSocket hijacking, not the primary access control — a non-browser
+// client can set (or omit) any Origin header it likes, so `!origin` and
+// the 'null'/'file://' allowances below are trivially satisfied by a
+// deliberate attacker. The real gate for non-local binds is the mandatory
+// WS_AUTH_TOKEN/WS_VIEWER_TOKEN check enforced right after this call.
 function validateOrigin(req) {
   if (WS_HOST === '127.0.0.1' || WS_HOST === 'localhost') {
     return true; // localhost binds are inherently single-machine
@@ -798,12 +855,14 @@ wss.on('connection', (ws, req) => {
     return;
   }
 
-  if (WS_AUTH_TOKEN) {
-    let providedToken = null;
-    try {
-      providedToken = new URL(req.url, 'http://internal').searchParams.get('token');
-    } catch (_) {}
-    if (providedToken !== WS_AUTH_TOKEN) {
+  // SECURITY: token now comes from the Sec-WebSocket-Protocol handshake
+  // header (see `handleProtocols` above), resolved by the `ws` library into
+  // `ws.protocol`, not from a `?token=` query string — this keeps it out of
+  // proxy/CDN access logs and server request-URL logging.
+  if (WS_AUTH_TOKEN || WS_VIEWER_TOKEN) {
+    const presented = ws.protocol || null;
+    const validTokens = [WS_AUTH_TOKEN, WS_VIEWER_TOKEN].filter(Boolean);
+    if (!presented || !validTokens.includes(presented)) {
       warn("Connexion WebSocket refusée — jeton d'authentification invalide ou manquant.");
       connRateLimiter.removeConnection(ws);
       ws.close(1008, 'Non autorisé');
@@ -812,7 +871,7 @@ wss.on('connection', (ws, req) => {
   }
 
   // Assign role
-  ws.clientRole = determineClientRole(req);
+  ws.clientRole = determineClientRole(ws);
   log(`Client WebSocket connecté (role: ${ws.clientRole})`);
 
   const features = featuresStore.readFeatures();
@@ -891,8 +950,9 @@ wss.on('connection', (ws, req) => {
     // testé en isolation (test-validation.js) mais jamais appelé ici. Fait
     // volontairement de façon additive : les actions plus récentes non
     // couvertes par SCHEMAS (transcript, preServiceCheck, startReading,
-    // applyTheme, obs-*, etc.) ne passent pas par ce gate et continuent de
-    // fonctionner exactement comme avant.
+    // obs-*, etc.) ne passent pas par ce gate et continuent de fonctionner
+    // exactement comme avant. `applyTheme` a été ajouté à SCHEMAS (audit
+    // backend) car son payload `css` était diffusé sans aucune validation.
     if (VALIDATE_MESSAGES_ENABLED && validation.SCHEMAS[sanitized.action]) {
       const strict = validation.validateMessage(sanitized);
       if (!strict.valid) {

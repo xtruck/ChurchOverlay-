@@ -482,19 +482,24 @@ body {
    WebSocket connection
    ========================================================================== */
 // CORRECTIF (bug "serveur tout le temps hors ligne") : server.js rejette
-// (code 1008) toute connexion sans ?token=WS_AUTH_TOKEN dès que cette
-// variable est définie côté serveur. Cette fonction ne l'ajoutait jamais à
-// l'URL WebSocket -> boucle infinie rejet/reconnexion. Le token voyage dans
-// la query string de la page overlay elle-même (celle collée dans OBS,
-// ex. http://127.0.0.1:8765/overlay?token=...), on le relaie tel quel ici.
+// (code 1008) toute connexion sans jeton dès que l'authentification est
+// activée côté serveur. Le token voyage dans la query string de la page
+// overlay elle-même (celle collée dans OBS, ex.
+// http://127.0.0.1:8765/overlay?token=...) — main.js y place désormais
+// WS_VIEWER_TOKEN (accès lecture seule), pas le jeton opérateur.
+//
+// SECURITY (backend audit) : le token n'est plus rajouté en ?token= sur
+// l'URL WebSocket elle-même (un reverse proxy exposant le serveur au LAN
+// journalise typiquement l'URI de requête, exposant le jeton en clair).
+// Il voyage maintenant via l'en-tête de handshake Sec-WebSocket-Protocol
+// (2e argument du constructeur WebSocket).
+const getWsToken = () => new URLSearchParams(window.location.search).get('token');
 const getWsUrl = () => {
-  const token = new URLSearchParams(window.location.search).get('token');
-  const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
   if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${proto}//${window.location.host}${tokenParam}`;
+    return `${proto}//${window.location.host}`;
   }
-  return `ws://localhost:8765${tokenParam}`;
+  return `ws://localhost:8765`;
 };
 
 // CORRECTIF (trouvé en marge de l'innovation frontend) : escapeHtml était
@@ -520,7 +525,8 @@ function connectWs() {
   if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
 
   try {
-    ws = new WebSocket(getWsUrl());
+    const token = getWsToken();
+    ws = token ? new WebSocket(getWsUrl(), [token]) : new WebSocket(getWsUrl());
   } catch (e) {
     console.error('[overlay] Error creating WS:', e);
     scheduleOverlayReconnect();

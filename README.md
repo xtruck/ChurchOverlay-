@@ -98,12 +98,17 @@ Then watch the console for detailed logs:
 | `MAX_CONNECTIONS`         | 10      | Max WebSocket connections per IP |
 | `MAX_MESSAGES_PER_MINUTE` | 60      | Max messages per IP per minute   |
 | `VALIDATE_MESSAGES`       | true    | Enable message validation        |
+| `WS_AUTH_TOKEN`           | (none)  | Operator credential — full control (verses, themes, AI, OBS). Required (≥16 chars) if `WS_HOST` is anything other than `127.0.0.1`/`localhost`; the server refuses to bind non-locally without it. |
+| `WS_VIEWER_TOKEN`         | (none)  | Read-only credential for the overlay (OBS Browser Source). Must differ from `WS_AUTH_TOKEN`. If unset while `WS_AUTH_TOKEN` is set, the overlay falls back to needing the operator token, which over-privileges it — set both when exposing beyond localhost. |
+
+**How the two tokens work:** a client's role (`operator` vs `viewer`) is determined by *which* token it presents during the WebSocket handshake — sent via the `Sec-WebSocket-Protocol` header, not a `?token=` URL parameter, so it doesn't end up in reverse-proxy/CDN access logs. The packaged Electron app generates and encrypts both tokens automatically on first run (`safeStorage`); you only need to set these manually for `npm run server-only` or a custom deployment.
 
 **For production (church service):**
 
 - Keep defaults
 - `VALIDATE_MESSAGES=true` (prevent XSS attacks)
 - `MAX_CONNECTIONS=10` (prevents DDoS)
+- If the server needs to be reachable from other devices on the church LAN (`WS_HOST=0.0.0.0` or similar), set both `WS_AUTH_TOKEN` and `WS_VIEWER_TOKEN` (≥16 random characters each, e.g. `openssl rand -base64 32`) — otherwise the server now refuses to start on a non-local `WS_HOST`.
 
 ## Examples
 

@@ -126,47 +126,61 @@ function decryptKey(encryptedBase64, label) {
 // Un utilisateur avancé qui définit lui-même WS_AUTH_TOKEN dans son
 // environnement (mode `server-only`, ou lancement Electron depuis un
 // script) garde la main : on ne touche jamais à une valeur déjà présente.
-function ensureWsAuthToken() {
-  if ((process.env.WS_AUTH_TOKEN || '').trim()) {
-    return; // valeur explicite fournie par l'utilisateur : on ne l'écrase pas
+// SECURITY (backend audit): originally generated only WS_AUTH_TOKEN, which
+// server.js treated as a single shared operator+viewer credential — role
+// was assigned by request path, not by which token a client held, so any
+// holder of the one token (including the OBS overlay URL, meant to be
+// read-only) got full operator control. Generalized to also mint an
+// independent WS_VIEWER_TOKEN so the overlay can hold a strictly
+// read-only credential.
+function ensureWsToken(envVar, encryptedField, plaintextField) {
+  const existing = (process.env[envVar] || '').trim();
+  if (existing) {
+    return existing; // valeur explicite fournie par l'utilisateur : on ne l'écrase pas
   }
 
   const existingRaw = readRawConfig();
   let token = null;
 
-  if (existingRaw.wsAuthTokenEncrypted && safeStorage.isEncryptionAvailable()) {
+  if (existingRaw[encryptedField] && safeStorage.isEncryptionAvailable()) {
     try {
-      token = safeStorage.decryptString(Buffer.from(existingRaw.wsAuthTokenEncrypted, 'base64'));
+      token = safeStorage.decryptString(Buffer.from(existingRaw[encryptedField], 'base64'));
     } catch (e) {
-      console.error('[main] Échec du déchiffrement du jeton WS existant, régénération:', e.message);
+      console.error(`[main] Échec du déchiffrement de ${envVar}, régénération:`, e.message);
     }
-  } else if (existingRaw.wsAuthToken) {
+  } else if (existingRaw[plaintextField]) {
     // Ancien format non chiffré (chiffrement indisponible lors de la génération) : réutilisé tel quel.
-    token = existingRaw.wsAuthToken;
+    token = existingRaw[plaintextField];
   }
 
   if (!token || token.length < 16) {
     token = crypto.randomBytes(32).toString('base64url');
-    const toWrite = Object.assign({}, existingRaw);
-    delete toWrite.wsAuthToken;
+    const toWrite = Object.assign({}, readRawConfig());
+    delete toWrite[plaintextField];
     if (safeStorage.isEncryptionAvailable()) {
-      toWrite.wsAuthTokenEncrypted = safeStorage.encryptString(token).toString('base64');
+      toWrite[encryptedField] = safeStorage.encryptString(token).toString('base64');
     } else {
-      console.warn('[main] Chiffrement système indisponible : jeton WS stocké en clair.');
-      toWrite.wsAuthToken = token;
+      console.warn(`[main] Chiffrement système indisponible : ${envVar} stocké en clair.`);
+      toWrite[plaintextField] = token;
     }
     try {
       fs.mkdirSync(path.dirname(CONFIG_PATH()), { recursive: true });
       fs.writeFileSync(CONFIG_PATH(), JSON.stringify(toWrite, null, 2), 'utf8');
     } catch (e) {
       console.error(
-        '[main] Impossible de persister le jeton WS généré (nouveau jeton à chaque démarrage):',
+        `[main] Impossible de persister ${envVar} généré (nouveau jeton à chaque démarrage):`,
         e.message
       );
     }
   }
 
-  process.env.WS_AUTH_TOKEN = token;
+  process.env[envVar] = token;
+  return token;
+}
+
+function ensureWsAuthToken() {
+  ensureWsToken('WS_AUTH_TOKEN', 'wsAuthTokenEncrypted', 'wsAuthToken');
+  ensureWsToken('WS_VIEWER_TOKEN', 'wsViewerTokenEncrypted', 'wsViewerToken');
 }
 
 function loadConfig() {
@@ -630,9 +644,17 @@ const MAX_LOG_LINES = 200;
 // retente indéfiniment, donc le verset ne s'affiche jamais dans OBS même
 // si le tableau de bord se montre "Serveur En Ligne". Centralise la
 // construction de l'URL ici pour que le token soit toujours ajouté.
+//
+// SECURITY (backend audit): this URL is the one meant to be pasted into
+// OBS as a Browser Source and is inherently more exposed than the
+// dashboard (visible in OBS scene/source settings, sharable by accident
+// when someone exports/shares an OBS scene collection). It now carries
+// WS_VIEWER_TOKEN, a credential that only grants read-only overlay access
+// server-side, instead of the operator token — so leaking this URL no
+// longer hands out full control of the live pipeline.
 function getOverlayUrl() {
   const base = 'file:///' + path.join(APP_ROOT, 'overlay.html').replace(/\\/g, '/');
-  const token = (process.env.WS_AUTH_TOKEN || '').trim();
+  const token = (process.env.WS_VIEWER_TOKEN || '').trim();
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 let recentLogs = [];
