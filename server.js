@@ -782,7 +782,31 @@ async function handleVoiceCommand(command, _originalText) {
 // ===========================================================================
 
 // Actions that require operator role
+//
+// CORRECTIF (audit round 8) : cette liste ne couvrait pas toutes les
+// actions qui donnent en pratique un contrôle équivalent à l'opérateur, ou
+// qui consomment du quota IA payant / exposent le contenu de la
+// prédication. Un client connecté avec seulement WS_VIEWER_TOKEN (le jeton
+// prévu pour être collé, en lecture seule, dans une source navigateur OBS —
+// donc plus exposé qu'un poste opérateur, voir commentaires plus haut) et
+// utilisant le protocole WebSocket brut (pas overlay.html, qui n'envoie
+// jamais ces actions, mais un client fait à la main) pouvait :
+//  - envoyer `transcript` directement : traité exactement comme un vrai
+//    segment audio par processTranscript(), donc afficher n'importe quel
+//    verset, changer de thème, avancer/reculer en mode lecture, etc. — un
+//    contournement complet du RBAC via un chemin détourné.
+//  - appeler `preServiceCheck` : révèle wsHost et si l'authentification est
+//    activée, en plus de solliciter les API Groq/Deepgram.
+//  - appeler getLiveSummary / getSermonTheme / getPostServiceRecap /
+//    getCrossReferences : déclenchent des appels IA payants (Groq/Gemini)
+//    et renvoient un résumé du contenu de la prédication en cours.
+// Toutes ajoutées ci-dessous. Les actions restées hors de cette liste
+// (getTopics, getMoods, listPlugins, getAiStats, ping, setTranslation en
+// lecture via 'getState'…) restent volontairement accessibles aux viewers
+// : elles ne renvoient que des données statiques/publiques ou des
+// métadonnées déjà visibles côté overlay.
 const OPERATOR_ACTIONS = new Set([
+  'transcript',
   'showVerse',
   'hideVerse',
   'setLanguage',
@@ -801,6 +825,11 @@ const OPERATOR_ACTIONS = new Set([
   'emergencyClear',
   'hideTranslation',
   'translateText',
+  'preServiceCheck',
+  'getLiveSummary',
+  'getSermonTheme',
+  'getPostServiceRecap',
+  'getCrossReferences',
 ]);
 
 // SECURITY: role is derived from WHICH token the client authenticated with
@@ -1435,6 +1464,14 @@ process.on('SIGINT', () => {
   log('SIGINT received');
   audioCapture.stopRecording();
   wss.close();
+  // CORRECTIF (audit round 8) : le handler SIGTERM juste au-dessus arrête
+  // connRateLimiter (voir round 7), mais ce handler SIGINT — le chemin pris
+  // par un simple Ctrl+C en lancement manuel (`node server.js` / `npm run
+  // server-only`) — avait été oublié. Sans réel impact fonctionnel puisque
+  // le timer est unref()é par défaut, mais incohérent avec l'arrêt
+  // "propre" documenté au round 7 ; corrigé pour rester symétrique avec
+  // SIGTERM.
+  connRateLimiter.stopCleanup();
   if (plugins) plugins.shutdown().catch(() => {});
   process.exit(0);
 });
