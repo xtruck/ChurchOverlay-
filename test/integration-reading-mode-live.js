@@ -71,6 +71,21 @@ injectFakeModule('bible-lookup-with-api.js', {
     if (book === 'jean' && chapter === 4) return FAKE_JEAN_4;
     throw new Error(`Chapitre factice non défini pour le test: ${book} ${chapter}`);
   },
+  // server.js appelle désormais ceci (au lieu de getChapterVerses) pour le
+  // Reading Mode, afin de pouvoir passer en bilingue. Ce test ne couvre que
+  // le cas mono-langue (langMode 'fr'), donc on retombe simplement sur les
+  // mêmes chapitres factices, avec text_fr rempli et text_en à null.
+  async getChapterVersesMultilang(book, chapter) {
+    bibleLookupCalls.getChapterVerses.push({ book, chapter });
+    const verses =
+      book === 'jean' && chapter === 3
+        ? FAKE_JEAN_3
+        : book === 'jean' && chapter === 4
+          ? FAKE_JEAN_4
+          : null;
+    if (!verses) throw new Error(`Chapitre factice non défini pour le test: ${book} ${chapter}`);
+    return verses.map((v) => ({ ...v, text_fr: v.text, text_en: null }));
+  },
   async getVerseMultilang(reference, langMode) {
     bibleLookupCalls.getVerseMultilang.push({ reference, langMode });
     const verse = FAKE_JEAN_3.find((v) => v.num === reference.verseStart) || FAKE_JEAN_3[0];
