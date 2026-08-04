@@ -95,7 +95,6 @@
       "plugin-system.js",
       "ai-theme-generator.js",
       "ai-enricher.js",
-      "animation-library.js",
       "global.d.ts",
       "tsconfig.json",
       "node_modules/express/**/*",
