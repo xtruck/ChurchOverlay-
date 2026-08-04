@@ -266,7 +266,7 @@ function handleAudioData(data, config) {
   const segmentSize = (config.segmentDuration / 1000) * samplesPerSecond * bytesPerSample;
 
   // Si le buffer est assez grand, créer un segment
-  let bufferSize = STATE.audioBuffer.reduce((sum, buf) => sum + buf.length, 0);
+  const bufferSize = STATE.audioBuffer.reduce((sum, buf) => sum + buf.length, 0);
 
   if (bufferSize >= segmentSize) {
     // Concaténer le buffer
@@ -443,7 +443,7 @@ function cleanupTempFiles(options = {}) {
       fs.rmdirSync(CONFIG.tempDir);
       console.log('[audio-capture] Répertoire temporaire supprimé (vide)');
     }
-  } catch (error) {
+  } catch (_error) {
     // Le répertoire n'est pas vide ou ne peut pas être supprimé
   }
 }

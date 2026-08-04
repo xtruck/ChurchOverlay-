@@ -509,7 +509,6 @@ function startServer() {
     clearWorkerRecycle();
     const wasIntentional = shuttingDownWorker;
     shuttingDownWorker = false;
-    const dead = worker;
     worker = null;
 
     if (wasIntentional) {
@@ -657,7 +656,7 @@ function getOverlayUrl() {
   const token = (process.env.WS_VIEWER_TOKEN || '').trim();
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
-let recentLogs = [];
+const recentLogs = [];
 let dashboardFlushTimer = null;
 let dashboardDirty = false;
 

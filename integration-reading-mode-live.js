@@ -20,7 +20,6 @@
  */
 'use strict';
 const path = require('path');
-const assert = require('assert');
 const Module = require('module');
 
 function injectFakeModule(relativePath, exportsObj) {
@@ -73,17 +72,9 @@ injectFakeModule('bible-lookup-with-api.js', {
   },
   async getVerseMultilang(reference, langMode) {
     bibleLookupCalls.getVerseMultilang.push({ reference, langMode });
-    // CORRECTIF : le mock ignorait reference.book et renvoyait toujours
-    // "Jean X:Y", même pour une référence résolue vers un autre livre
-    // (ex. correspondance floue "Filipiens" -> "philippiens"). Le libellé
-    // doit refléter le livre réellement détecté.
-    const bookLabel =
-      reference.book === 'jean'
-        ? 'Jean'
-        : reference.book.charAt(0).toUpperCase() + reference.book.slice(1);
     const verse = FAKE_JEAN_3.find((v) => v.num === reference.verseStart) || FAKE_JEAN_3[0];
     return {
-      reference: `${bookLabel} ${reference.chapter}:${reference.verseStart || verse.num}`,
+      reference: `Jean ${reference.chapter}:${reference.verseStart || verse.num}`,
       text: verse.text,
       text_fr: verse.text,
       text_en: null,

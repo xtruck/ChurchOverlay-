@@ -20,14 +20,14 @@ function createRateLimiter(options = {}) {
     CONNECTING: 0,
     OPEN: 1,
     CLOSING: 2,
-    CLOSED: 3
+    CLOSED: 3,
   };
   const config = {
-    maxConnections: options.maxConnections || 10,           // Max connexions simultanées
+    maxConnections: options.maxConnections || 10, // Max connexions simultanées
     maxMessagesPerMinute: options.maxMessagesPerMinute || 60, // Max messages par minute par IP
     connectionWindowMs: options.connectionWindowMs || 60000, // Fenêtre de temps pour les messages
-    cleanupIntervalMs: options.cleanupIntervalMs || 300000,  // Intervalle de nettoyage (5 min)
-    ...options
+    cleanupIntervalMs: options.cleanupIntervalMs || 300000, // Intervalle de nettoyage (5 min)
+    ...options,
   };
 
   // CORRECTIF (audit sécurité — flood par type de message) : la limite
@@ -47,10 +47,10 @@ function createRateLimiter(options = {}) {
 
   // Stockage des connexions par IP
   const connections = new Map(); // IP -> Set de WebSocket connections
-  
+
   // Stockage des messages par IP
   const messageHistory = new Map(); // IP -> Array de timestamps
-  
+
   // Interval de nettoyage
   let cleanupInterval;
 
@@ -59,10 +59,10 @@ function createRateLimiter(options = {}) {
    */
   function cleanup() {
     const now = Date.now();
-    
+
     // Nettoyer l'historique des messages
     for (const [ip, timestamps] of messageHistory.entries()) {
-      const recent = timestamps.filter(time => now - time < config.connectionWindowMs);
+      const recent = timestamps.filter((time) => now - time < config.connectionWindowMs);
       if (recent.length === 0) {
         messageHistory.delete(ip);
       } else {
@@ -78,7 +78,7 @@ function createRateLimiter(options = {}) {
       for (const [actionType, timestamps] of perIpActions.entries()) {
         const limit = PER_ACTION_LIMITS[actionType];
         const windowMs = limit ? limit.windowMs : config.connectionWindowMs;
-        const recent = timestamps.filter(time => now - time < windowMs);
+        const recent = timestamps.filter((time) => now - time < windowMs);
         if (recent.length === 0) {
           perIpActions.delete(actionType);
         } else {
@@ -89,7 +89,7 @@ function createRateLimiter(options = {}) {
         actionHistory.delete(ip);
       }
     }
-    
+
     // Nettoyer les connexions fermées
     for (const [ip, socketSet] of connections.entries()) {
       const activeSockets = new Set();
@@ -127,32 +127,33 @@ function createRateLimiter(options = {}) {
   function checkConnection(ws) {
     const ip = getClientIP(ws);
     const currentConnections = connections.get(ip) || new Set();
-    
+
     // Vérifier le nombre maximum de connexions par IP
     if (currentConnections.size >= config.maxConnections) {
-      return { 
-        allowed: false, 
-        reason: `Trop de connexions depuis cette IP (${currentConnections.size}/${config.maxConnections})` 
+      return {
+        allowed: false,
+        reason: `Trop de connexions depuis cette IP (${currentConnections.size}/${config.maxConnections})`,
       };
     }
-    
+
     // Vérifier le nombre total de connexions
     let totalConnections = 0;
     for (const socketSet of connections.values()) {
       totalConnections += socketSet.size;
     }
-    
-    if (totalConnections >= config.maxConnections * 2) { // Limite globale plus souple
-      return { 
-        allowed: false, 
-        reason: 'Nombre maximum de connexions atteint sur le serveur' 
+
+    if (totalConnections >= config.maxConnections * 2) {
+      // Limite globale plus souple
+      return {
+        allowed: false,
+        reason: 'Nombre maximum de connexions atteint sur le serveur',
       };
     }
-    
+
     // Ajouter la connexion
     currentConnections.add(ws);
     connections.set(ip, currentConnections);
-    
+
     return { allowed: true, reason: null };
   }
 
@@ -164,18 +165,18 @@ function createRateLimiter(options = {}) {
   function checkMessage(ws, actionType) {
     const ip = getClientIP(ws);
     const now = Date.now();
-    
+
     // Récupérer ou créer l'historique des messages
     const timestamps = messageHistory.get(ip) || [];
-    
+
     // Nettoyer les anciens messages
-    const recent = timestamps.filter(time => now - time < config.connectionWindowMs);
-    
+    const recent = timestamps.filter((time) => now - time < config.connectionWindowMs);
+
     // Vérifier la limite
     if (recent.length >= config.maxMessagesPerMinute) {
-      return { 
-        allowed: false, 
-        reason: `Trop de messages (${recent.length}/${config.maxMessagesPerMinute} par minute)` 
+      return {
+        allowed: false,
+        reason: `Trop de messages (${recent.length}/${config.maxMessagesPerMinute} par minute)`,
       };
     }
 
@@ -188,12 +189,12 @@ function createRateLimiter(options = {}) {
       const limit = PER_ACTION_LIMITS[actionType];
       const perIpActions = actionHistory.get(ip) || new Map();
       const actionTimestamps = perIpActions.get(actionType) || [];
-      const recentActions = actionTimestamps.filter(time => now - time < limit.windowMs);
+      const recentActions = actionTimestamps.filter((time) => now - time < limit.windowMs);
 
       if (recentActions.length >= limit.max) {
         return {
           allowed: false,
-          reason: `Too many ${actionType} messages per minute (${recentActions.length}/${limit.max})`
+          reason: `Too many ${actionType} messages per minute (${recentActions.length}/${limit.max})`,
         };
       }
 
@@ -201,11 +202,11 @@ function createRateLimiter(options = {}) {
       perIpActions.set(actionType, recentActions);
       actionHistory.set(ip, perIpActions);
     }
-    
+
     // Ajouter le message actuel
     recent.push(now);
     messageHistory.set(ip, recent);
-    
+
     return { allowed: true, reason: null };
   }
 
@@ -216,7 +217,7 @@ function createRateLimiter(options = {}) {
   function removeConnection(ws) {
     const ip = getClientIP(ws);
     const socketSet = connections.get(ip);
-    
+
     if (socketSet) {
       socketSet.delete(ws);
       if (socketSet.size === 0) {
@@ -257,11 +258,11 @@ function createRateLimiter(options = {}) {
     for (const socketSet of connections.values()) {
       totalConnections += socketSet.size;
     }
-    
+
     return {
       totalConnections,
       uniqueIPs: connections.size,
-      messageHistorySize: messageHistory.size
+      messageHistorySize: messageHistory.size,
     };
   }
 
@@ -273,7 +274,7 @@ function createRateLimiter(options = {}) {
     checkMessage,
     removeConnection,
     getStats,
-    stopCleanup
+    stopCleanup,
   };
 }
 

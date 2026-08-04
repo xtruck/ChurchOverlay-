@@ -41,7 +41,6 @@ const bibleLookup = require('./bible-lookup-with-api');
 const { ReadingMode } = require('./reading-mode');
 const themeLoader = require('./theme-loader');
 const featuresStore = require('./features-store');
-const obsController = require('./obs-controller');
 const validation = require('./validation');
 
 // ---------------------------------------------------------------------------
@@ -533,7 +532,7 @@ async function processTranscript(text) {
         quotedMatch = quoted;
         reference = { book: '', chapter: 0, verseStart: 0, detectedBy: 'quote' };
       }
-    } catch (e) {}
+    } catch (_e) {}
   }
 
   if (!reference) {
@@ -671,7 +670,7 @@ async function processTranscript(text) {
 // ===========================================================================
 // Voice Command Handler
 // ===========================================================================
-async function handleVoiceCommand(command, originalText) {
+async function handleVoiceCommand(command, _originalText) {
   switch (command.action) {
     case 'showVerse': {
       if (!command.reference) return;
@@ -883,6 +882,7 @@ wss.on('connection', (ws, req) => {
       language: displayLanguage,
       history: verseHistory,
       theme: themeLoader.themeToCss(theme),
+      features,
       translations: bibleLookup.listTranslations(),
       plugins: plugins ? plugins.getPluginList() : [],
       aiFeatures: {

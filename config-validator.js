@@ -143,7 +143,7 @@ function validateEnvironment() {
   const errors = [];
   const config = {};
 
- for (const name of Object.keys(ENV_SCHEMA)) {
+  for (const name of Object.keys(ENV_SCHEMA)) {
     const value = process.env[name];
     const validation = validateEnvVar(name, value);
 

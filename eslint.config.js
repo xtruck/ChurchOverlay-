@@ -21,7 +21,7 @@ const globals = require('globals');
 
 module.exports = [
   {
-  ignores: ['dist/**', 'node_modules/**', 'config/**', 'test/**', '*.min.js'],
+    ignores: ['dist/**', 'node_modules/**', 'config/**', 'test/**', '*.min.js'],
   },
   js.configs.recommended,
   {
@@ -40,10 +40,7 @@ module.exports = [
       'no-console': ['warn', { allow: ['warn', 'error'] }],
       'prefer-const': 'error',
       'no-var': 'error',
-      'no-unused-vars': [
-        'error',
-        { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
-      ],
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
       // catch (_) {} : rejet volontaire "best effort" (nettoyage optionnel
       // qui ne doit jamais faire planter l'app) — motif intentionnel
       // répété ~14 fois dans le code, pas une erreur à corriger au cas par

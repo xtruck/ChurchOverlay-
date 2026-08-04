@@ -45,7 +45,7 @@ const featuresStore = require('./features-store');
 
 let obsClient = null;
 let gatingConfig = null;
-let currentObsState = { sceneName: null, streaming: false, recording: false };
+const currentObsState = { sceneName: null, streaming: false, recording: false };
 let lastGateOpen = null; // null = jamais évalué ; évite un log/callback redondant
 
 // CORRECTIF (audit round 4) — le mot de passe OBS est désormais chiffré par

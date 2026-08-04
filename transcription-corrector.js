@@ -243,7 +243,7 @@ async function correctSmart(text, groqWrapper) {
   }
 
   const hasBiblicalTerm =
-    /(?:jesus|christ|dieu|seigneur|bible|evangile|apôtre|prophète|moïse|david|paul|pierre|marie|esprit|temple|église|verset|chapitre|psaume|jean|luc|marc|matthieu|romains|corinthiens|galates|ephesiens|philippiens|colossiens|hebreux|jacques|apocalypse)/i.test(
+    /\b(?:jesus|christ|dieu|seigneur|bible|evangile|apôtre|prophète|moïse|david|paul|pierre|marie|esprit|temple|église|verset|chapitre|psaume|jean|luc|marc|matthieu|romains|corinthiens|galates|ephesiens|philippiens|colossiens|hebreux|jacques|apocalypse)\b/i.test(
       text
     );
   if (!hasBiblicalTerm) return text;

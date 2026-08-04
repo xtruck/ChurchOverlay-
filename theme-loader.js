@@ -44,7 +44,7 @@ function themeExists(themeId) {
 function listThemeIds() {
   const ids = new Set();
   for (const dir of [THEMES_DIR, userThemesDir].filter(Boolean)) {
-    let entries = [];
+    let entries;
     try {
       entries = fs.readdirSync(dir);
     } catch (_) {
