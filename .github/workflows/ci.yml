@@ -8,6 +8,10 @@ on:
   release:
     types: [ published ]
 
+permissions:
+  contents: read
+  security-events: read
+
 jobs:
   # Security and Dependency Scanning
   security-scan:
@@ -38,10 +42,19 @@ jobs:
         with:
           args: --severity-threshold=high
 
-      - name: CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
         with:
           languages: javascript
+
+      - name: Build for CodeQL analysis
+        run: |
+          # Ensure project is built so CodeQL can analyze artifacts/dependencies
+          npm ci
+          npm run build || echo "No build step defined"
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
 
   # Linting and Code Quality
   lint:
