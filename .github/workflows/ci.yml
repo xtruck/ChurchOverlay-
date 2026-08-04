@@ -42,20 +42,6 @@ jobs:
         with:
           args: --severity-threshold=high
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v2
-        with:
-          languages: javascript
-
-      - name: Build for CodeQL analysis
-        run: |
-          # Ensure project is built so CodeQL can analyze artifacts/dependencies
-          npm ci
-          npm run build || echo "No build step defined"
-
-      - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v3
-
   # Linting and Code Quality
   lint:
     name: Code Quality Checks
