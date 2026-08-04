@@ -8,15 +8,12 @@ on:
   release:
     types: [ published ]
 
+permissions:
+  contents: read
+  security-events: read
+
 jobs:
   # Security and Dependency Scanning
-  # NOTE: CodeQL analysis was removed from this job — it called
-  # `codeql-action/analyze` directly with no preceding `codeql-action/init`,
-  # which always fails ("Config file could not be found... Has the 'init'
-  # action been called?") and also passed `languages`, an input `analyze`
-  # doesn't accept. CodeQL is already run correctly, end-to-end, by the
-  # dedicated .github/workflows/codeql.yml workflow — no need to duplicate
-  # it here.
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
@@ -94,6 +91,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: List test directory
+        run: |
+          echo "CWD: $(pwd)"
+          ls -la .
+          ls -la test || true
 
       - name: Run tests
         run: npm test
