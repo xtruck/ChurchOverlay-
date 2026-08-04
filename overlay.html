@@ -437,7 +437,12 @@ body {
 }
 </style>
 <base target="_blank">
-<script src="animation-library.js"></script>
+<!-- CORRECTIF (audit) : animation-library.js a été retiré du dépôt lors du
+     passage à une palette unique (voir historique du projet) mais cette
+     balise <script> y faisait toujours référence, provoquant une erreur
+     404 au chargement de chaque overlay. animationLibrary reste `null`
+     (voir plus bas) et tout le code qui l'utilise est déjà protégé par
+     des gardes — comportement inchangé, juste plus d'erreur en console. -->
 </head>
 <body>
 
@@ -494,12 +499,20 @@ body {
 // Il voyage maintenant via l'en-tête de handshake Sec-WebSocket-Protocol
 // (2e argument du constructeur WebSocket).
 const getWsToken = () => new URLSearchParams(window.location.search).get('token');
+// CORRECTIF (bug "serveur hors ligne" / reconnexion en boucle) : en
+// file:// (cas réel, cette page est chargée depuis disque et collée dans
+// OBS), il n'y a pas de window.location.host à réutiliser. Le port codé
+// en dur ici (8765) ne correspondait à aucun port réellement utilisé par
+// server.js (3000 par défaut, voir env.example). main.js transmet
+// désormais le port réel via ?port=... dans getOverlayUrl() ; on le relit
+// ici avec 3000 comme repli si absent.
+const getWsPort = () => new URLSearchParams(window.location.search).get('port') || '3000';
 const getWsUrl = () => {
   if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${proto}//${window.location.host}`;
   }
-  return `ws://localhost:8765`;
+  return `ws://localhost:${getWsPort()}`;
 };
 
 // CORRECTIF (trouvé en marge de l'innovation frontend) : escapeHtml était
