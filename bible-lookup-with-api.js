@@ -1106,10 +1106,57 @@ async function getChapterVerses(book, chapter, lang = 'fr') {
   );
 }
 
+/**
+ * Équivalent chapitre de getVerseMultilang() : récupère TOUS les versets
+ * d'un chapitre dans une ou deux langues, pour que le Reading Mode (lecture
+ * continue) puisse afficher le FR et l'EN simultanément quand langMode
+ * vaut 'both' — jusqu'ici seul le mode "un verset détecté explicitement"
+ * (getVerseMultilang) supportait le bilingue ; le Reading Mode retombait
+ * silencieusement sur une seule langue.
+ * @param {string} book
+ * @param {number} chapter
+ * @param {string} langMode - 'fr', 'en', ou 'both'
+ * @returns {Promise<{num:number, text:string, text_fr:?string, text_en:?string}[]>}
+ *   `text` reste la langue principale (FR par défaut en mode 'both'), pour
+ *   que le matching de mots du Reading Mode (basé sur ce que dit l'orateur,
+ *   en général en français) continue à fonctionner sans changement ailleurs.
+ */
+async function getChapterVersesMultilang(book, chapter, langMode = 'fr') {
+  if (langMode === 'both') {
+    const [frRes, enRes] = await Promise.allSettled([
+      getChapterVerses(book, chapter, 'fr'),
+      getChapterVerses(book, chapter, 'en'),
+    ]);
+    const frVerses = frRes.status === 'fulfilled' ? frRes.value : null;
+    const enVerses = enRes.status === 'fulfilled' ? enRes.value : null;
+    if (!frVerses && !enVerses) {
+      // On relance l'erreur d'origine (FR en priorité) pour un message utile.
+      throw frRes.reason || enRes.reason || new Error(`Chapitre ${book} ${chapter} introuvable.`);
+    }
+    const enByNum = new Map((enVerses || []).map((v) => [v.num, v.text]));
+    const frByNum = new Map((frVerses || []).map((v) => [v.num, v.text]));
+    const base = frVerses || enVerses;
+    return base.map((v) => ({
+      num: v.num,
+      text: frByNum.get(v.num) || enByNum.get(v.num) || v.text,
+      text_fr: frByNum.get(v.num) || null,
+      text_en: enByNum.get(v.num) || null,
+    }));
+  }
+  const verses = await getChapterVerses(book, chapter, langMode);
+  return verses.map((v) => ({
+    num: v.num,
+    text: v.text,
+    text_fr: langMode === 'fr' ? v.text : null,
+    text_en: langMode === 'en' ? v.text : null,
+  }));
+}
+
 module.exports = {
   getVerse,
   getVerseMultilang,
   getChapterVerses, // AJOUT (audit) : Reading Mode, inspiré de Rhema
+  getChapterVersesMultilang, // AJOUT : Reading Mode bilingue FR+EN
   buildReferenceLabel: label,
   getProviders: () => BIBLE_PROVIDERS.map((p) => p.name),
   resetFailedProviders: () => {}, // Conservé pour compatibilité avec server.js

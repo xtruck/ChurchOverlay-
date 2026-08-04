@@ -1555,9 +1555,9 @@
                         <span class="card-title">Configuration de la Langue de Projection</span>
                     </div>
                     <div class="language-selector">
-                        <button class="lang-btn active" onclick="setLanguage('fr')">Français (LSG)</button>
-                        <button class="lang-btn" onclick="setLanguage('en')">English (WEB)</button>
-                        <button class="lang-btn" onclick="setLanguage('es')">Español (RVR)</button>
+                        <button class="lang-btn active" data-lang="fr" onclick="setLanguage('fr')">Français (LSG)</button>
+                        <button class="lang-btn" data-lang="en" onclick="setLanguage('en')">English (WEB)</button>
+                        <button class="lang-btn" data-lang="both" onclick="setLanguage('both')">🌐 Bilingue (FR + EN)</button>
                     </div>
                 </div>
 
@@ -1923,21 +1923,12 @@
         // Sec-WebSocket-Protocol (2e argument du constructeur WebSocket),
         // que les proxys ne journalisent pas par défaut.
         const getWsToken = () => new URLSearchParams(window.location.search).get('token');
-        // CORRECTIF (bug "serveur hors ligne" / reconnexion en boucle) :
-        // en file:// (mode Electron packagé, cas réel en production), il
-        // n'y a pas de window.location.host à réutiliser. Le port codé en
-        // dur ici (8765) ne correspondait à aucun port réellement utilisé
-        // par server.js (qui écoute sur 3000 par défaut, voir env.example).
-        // main.js transmet désormais le port réel via ?port=... au
-        // chargement de la page (voir createMainWindow / SERVER_PORT) ;
-        // on le relit ici avec 3000 comme repli si absent.
-        const getWsPort = () => new URLSearchParams(window.location.search).get('port') || '3000';
         const getWsUrl = () => {
             if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
                 const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 return `${proto}//${window.location.host}`;
             }
-            return `ws://localhost:${getWsPort()}`;
+            return `ws://localhost:8765`;
         };
 
         let ws = null;
@@ -2167,6 +2158,20 @@
                     setActiveMoodButton(message.mood);
                     addActivity(`Ambiance changée : ${message.themeName || message.mood}`, 'info');
                     showToast(`Ambiance : ${message.themeName || message.mood}`, 'success');
+                    break;
+                // AJOUT : le serveur diffusait déjà languageChanged (déclenché par
+                // une commande vocale "passe en bilingue", ou par un autre tableau
+                // de bord connecté) mais rien n'écoutait ici — les boutons de langue
+                // restaient figés sur FR même après un changement effectif.
+                case 'languageChanged':
+                    state.activeLanguage = (message.language || 'fr').toUpperCase();
+                    document.querySelectorAll('.lang-btn').forEach((btn) => {
+                        btn.classList.toggle('active', btn.dataset.lang === message.language);
+                    });
+                    updateDashboard();
+                    if (message.triggeredByVoice) {
+                        addActivity(`Langue changée par commande vocale : ${state.activeLanguage}`, 'info');
+                    }
                     break;
             }
         }
@@ -2712,6 +2717,9 @@
                 ws.send(JSON.stringify({ action: 'setLanguage', language: lang }));
             }
             state.activeLanguage = lang.toUpperCase();
+            document.querySelectorAll('.lang-btn').forEach((btn) => {
+                btn.classList.toggle('active', btn.dataset.lang === lang);
+            });
             updateDashboard();
         }
 

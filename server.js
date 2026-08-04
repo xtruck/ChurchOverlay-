@@ -368,7 +368,7 @@ function pushHistory(entry) {
 // ---------------------------------------------------------------------------
 const readingMode = new ReadingMode({
   getChapterVerses: (book, chapter) =>
-    bibleLookup.getChapterVerses(book, chapter, displayLanguage === 'en' ? 'en' : 'fr'),
+    bibleLookup.getChapterVersesMultilang(book, chapter, displayLanguage),
   onVerseAdvance: (verse) => {
     const reference = bibleLookup.buildReferenceLabel(
       { book: readingMode.book, chapter: readingMode.chapter, verseStart: verse.num },
@@ -378,6 +378,8 @@ const readingMode = new ReadingMode({
       action: 'showVerse',
       reference,
       text: verse.text,
+      text_fr: verse.text_fr || null,
+      text_en: verse.text_en || null,
       langMode: displayLanguage,
       durationMs: getVerseDurationMs(),
       readingMode: true,
@@ -553,6 +555,8 @@ async function processTranscript(text) {
               action: 'showVerse',
               reference: label,
               text: first.text,
+              text_fr: first.text_fr || null,
+              text_en: first.text_en || null,
               langMode: displayLanguage,
               durationMs: getVerseDurationMs(),
               readingMode: true,
@@ -597,7 +601,23 @@ async function processTranscript(text) {
         text: quoted.text,
         provider: quoted.provider,
         lang: quoted.lang,
+        text_fr: quoted.lang === 'fr' ? quoted.text : null,
+        text_en: quoted.lang === 'en' ? quoted.text : null,
+        langMode: displayLanguage,
       };
+      // Le quote-match ne connaît que le texte tel qu'il a été indexé
+      // (une seule langue). En mode bilingue, on retente une résolution
+      // structurée de la référence pour obtenir le FR + EN complets.
+      if (displayLanguage === 'both') {
+        const parsedRef = detector.parseReference(quoted.reference);
+        if (parsedRef) {
+          try {
+            verse = await bibleLookup.getVerseMultilang(parsedRef, 'both');
+          } catch (_e) {
+            // Garde le fallback mono-langue construit ci-dessus.
+          }
+        }
+      }
     } else {
       verse = await bibleLookup.getVerseMultilang(reference, displayLanguage);
     }
@@ -1111,6 +1131,8 @@ wss.on('connection', (ws, req) => {
             action: 'showVerse',
             reference: label,
             text: firstVerse.text,
+            text_fr: firstVerse.text_fr || null,
+            text_en: firstVerse.text_en || null,
             langMode: displayLanguage,
             durationMs: getVerseDurationMs(),
             readingMode: true,
