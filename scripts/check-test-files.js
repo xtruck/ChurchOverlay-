@@ -6,7 +6,7 @@ const required = [
   // Add other required test files here if needed
 ];
 
-let missing = [];
+const missing = [];
 for (const f of required) {
   if (!fs.existsSync(path.join(__dirname, '..', f))) {
     missing.push(f);
