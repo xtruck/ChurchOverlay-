@@ -260,9 +260,8 @@ function drawRealAudioVisualizer() {
   canvas.width = canvas.offsetWidth;
   canvas.height = canvas.offsetHeight;
 
-  // Dégradé calculé une seule fois (voir correctif de lenteur UI
-  // plus bas dans le fichier pour visualizeAudio() — même piège
-  // évité ici : pas de createLinearGradient() par frame).
+  // Dégradé calculé une seule fois (évite de recréer un
+  // ctx.createLinearGradient() à chaque frame, coûteux en continu).
   const barGradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
   barGradient.addColorStop(0, '#6366f1');
   barGradient.addColorStop(1, '#06b6d4');
@@ -345,9 +344,11 @@ async function startRealAudioCapture() {
     console.log('[dashboard] Capture micro réelle démarrée automatiquement (pipeline prêt).');
     addActivity('Capture micro démarrée automatiquement', 'success');
     drawRealAudioVisualizer();
+    updateMicButtonUI();
   } catch (err) {
     console.error('[dashboard] Échec démarrage capture micro réelle:', err);
     showToast('❌ Micro : ' + (err && err.message ? err.message : err), 'error');
+    updateMicButtonUI();
   }
 }
 
@@ -910,7 +911,7 @@ function renderPreServiceCheckResult(message) {
     ) +
     row('Authentification WebSocket', true, authDetail) +
     `<div style="font-size:0.75rem; color: var(--text-dim); margin-top:0.5rem;">
-                    ⚠️ Le microphone n'est pas vérifié ici — voir "Statut Reconnaissance Vocale" ci-dessus.
+                    ⚠️ Le microphone n'est pas vérifié ici — voir "Statut Capture Micro" ci-dessus.
                 </div>`;
   resultsEl.style.display = 'block';
 
@@ -1240,241 +1241,49 @@ function clearTranscript() {
 
 setInterval(updateDashboard, 1000);
 
-// Speech Recognition setup
-let recognition = null;
-let isListening = false;
-let audioContext = null;
-let analyser = null;
-let microphone = null;
-let animationId = null;
-
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const speechStatus = document.getElementById('speechStatus');
-
-if (SpeechRecognition) {
-  if (speechStatus) {
-    speechStatus.textContent = 'Disponible';
-    speechStatus.className = 'status-badge success';
-  }
-
-  recognition = new SpeechRecognition();
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  recognition.lang = 'fr-FR';
-
-  recognition.onresult = (event) => {
-    networkErrorStreak = 0;
-    let finalTranscript = '';
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const transcript = event.results[i][0].transcript;
-      if (event.results[i].isFinal) {
-        finalTranscript += transcript;
-      }
-    }
-
-    if (finalTranscript) {
-      ws.send(
-        JSON.stringify({
-          action: 'transcript',
-          text: finalTranscript,
-          timestamp: Date.now(),
-          source: 'browser',
-        })
-      );
-
-      addTranscript({
-        text: finalTranscript,
-        timestamp: Date.now(),
-        source: 'Voix',
-      });
-    }
-  };
-
-  let restartTimeout = null;
-  // Nombre d'échecs 'network' consécutifs. Dans Electron, le
-  // moteur webkitSpeechRecognition de Chromium n'a pas la clé
-  // API Google interne dont il a besoin pour joindre le service
-  // en ligne : l'erreur 'network' y est donc permanente, pas un
-  // problème de connexion passager (voir electron/electron#46143
-  // et issues similaires ouvertes depuis 2016, jamais résolues).
-  // Sans ce compteur, onend relançait recognition.start() toutes
-  // les secondes indéfiniment dès que "Arrêter le Micro" n'était
-  // pas cliqué — boucle infinie inutile qui consommait du CPU en
-  // arrière-plan pour un badge qui n'aurait jamais annoncé autre
-  // chose que "tentative...".
-  let networkErrorStreak = 0;
-  const NETWORK_ERROR_GIVE_UP = 3;
-
-  recognition.onerror = (event) => {
-    if (event.error === 'no-speech' || event.error === 'aborted') return;
-    if (event.error === 'network') {
-      networkErrorStreak++;
-      console.warn('Reconnaissance vocale : problème de connexion réseau.');
-      if (networkErrorStreak < NETWORK_ERROR_GIVE_UP) {
-        if (speechStatus) {
-          speechStatus.textContent = 'Réseau (tentative...)';
-          speechStatus.className = 'status-badge warning';
-        }
-        return;
-      }
-      console.error(
-        "Reconnaissance vocale du navigateur indisponible dans l'application " +
-          "(limitation connue d'Electron : le moteur de dictée intégré à Chromium " +
-          "n'a pas accès au service en ligne de Google). Utilisez le pipeline " +
-          'micro → Whisper/Groq/Deepgram intégré à ChurchOverlay à la place.'
-      );
-      if (speechStatus) {
-        speechStatus.textContent = "Indisponible dans l'app";
-        speechStatus.className = 'status-badge error';
-      }
-      showToast(
-        'La dictée du navigateur ne fonctionne pas dans ChurchOverlay (limitation ' +
-          'Electron). Utilisez le pipeline micro intégré (Whisper/Groq/Deepgram).',
-        'error'
-      );
-      stopSpeechRecognition();
-      return;
-    }
-    console.error('Erreur de reconnaissance vocale :', event.error);
-    if (event.error === 'not-allowed') {
-      if (speechStatus) {
-        speechStatus.textContent = 'Permission refusée';
-        speechStatus.className = 'status-badge error';
-      }
-      stopSpeechRecognition();
-    }
-  };
-
-  recognition.onend = () => {
-    if (isListening) {
-      clearTimeout(restartTimeout);
-      restartTimeout = setTimeout(() => {
-        if (isListening) {
-          try {
-            recognition.start();
-          } catch (e) {}
-        }
-      }, 1000);
-    }
-  };
-} else {
-  if (speechStatus) {
-    speechStatus.textContent = 'Non prise en charge';
-    speechStatus.className = 'status-badge error';
-  }
+// CORRECTIF (bug signalé — "quand j'active le micro ça se désactive
+// seul et les mêmes messages d'erreurs reviennent") : le bouton "Démarrer
+// le Micro" en haut du tableau de bord appelait toggleSpeechRecognition(),
+// qui pilotait l'ancienne dictée du navigateur (webkitSpeechRecognition) —
+// PAS le vrai pipeline micro (Whisper/Groq/Deepgram, voir
+// startRealAudioCapture() plus haut, qui démarre automatiquement et n'a
+// besoin d'aucun bouton). Cette dictée navigateur est cassée de façon
+// permanente dans Electron (le moteur de Chromium embarqué n'a pas la clé
+// API Google interne nécessaire — voir electron/electron#46143, jamais
+// résolu depuis 2016) : elle échouait avec une erreur réseau après 3
+// tentatives, puis s'arrêtait d'elle-même — exactement le comportement
+// "s'active puis se désactive tout seul" avec les mêmes messages
+// d'erreur à chaque fois. Le bouton ne servait donc à rien d'utile et ne
+// faisait que semer la confusion : rien n'indiquait qu'il ne contrôlait
+// pas le vrai micro. Supprimé (avec toute la dictée navigateur associée,
+// ~235 lignes de code mort) et remplacé par un vrai statut/contrôle du
+// pipeline réel.
+function updateMicButtonUI() {
   const btn = document.getElementById('speechBtn');
-  if (btn) btn.disabled = true;
-}
-
-function toggleSpeechRecognition() {
-  if (isListening) {
-    stopSpeechRecognition();
-  } else {
-    startSpeechRecognition();
-  }
-}
-
-async function startSpeechRecognition() {
-  if (!recognition) {
-    alert("La reconnaissance vocale n'est pas prise en charge par votre navigateur.");
-    return;
-  }
-
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    analyser = audioContext.createAnalyser();
-    microphone = audioContext.createMediaStreamSource(stream);
-    microphone.connect(analyser);
-    analyser.fftSize = 256;
-
-    visualizeAudio();
-
-    recognition.start();
-    isListening = true;
-
-    const btn = document.getElementById('speechBtn');
-    if (btn) btn.classList.add('active');
-    const btnText = document.getElementById('speechBtnText');
-    if (btnText) btnText.textContent = 'Arrêter le Micro';
-
-    addActivity('Microphone activé', 'success');
-    showToast('Écoute vocale démarrée', 'success');
-  } catch (error) {
-    console.error('Erreur microphone :', error);
-    showToast("Impossible d'accéder au microphone", 'error');
-  }
-}
-
-function stopSpeechRecognition() {
-  if (recognition) recognition.stop();
-  if (audioContext) {
-    audioContext.close();
-    audioContext = null;
-  }
-  if (animationId) {
-    cancelAnimationFrame(animationId);
-    animationId = null;
-  }
-
-  isListening = false;
-
-  const btn = document.getElementById('speechBtn');
-  if (btn) btn.classList.remove('active');
   const btnText = document.getElementById('speechBtnText');
-  if (btnText) btnText.textContent = 'Démarrer le Micro';
-
-  const canvas = document.getElementById('audioVisualizer');
-  if (canvas) {
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const badge = document.getElementById('speechStatus');
+  const active = !!realMicCaptureState;
+  if (btnText) btnText.textContent = active ? 'Arrêter le Micro' : 'Démarrer le Micro';
+  if (btn) btn.classList.toggle('btn-active', active);
+  if (badge) {
+    badge.textContent = active ? 'Capture active (Whisper/Groq/Deepgram)' : 'Capture arrêtée';
+    badge.className = 'status-badge ' + (active ? 'success' : 'warning');
   }
-
-  addActivity('Microphone désactivé', 'info');
-  showToast('Écoute vocale arrêtée', 'info');
 }
 
-function visualizeAudio() {
-  const canvas = document.getElementById('audioVisualizer');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const bufferLength = analyser.frequencyBinCount;
-  const dataArray = new Uint8Array(bufferLength);
-
-  canvas.width = canvas.offsetWidth;
-  canvas.height = canvas.offsetHeight;
-
-  // CORRECTIF (lenteur UI signalée) : le dégradé était recréé avec
-  // ctx.createLinearGradient() pour CHAQUE barre, à CHAQUE frame
-  // (~128 barres x 60fps = plusieurs milliers d'allocations/seconde).
-  // Ce churn saturait le garbage collector du processus Electron en
-  // continu, ce qui rendait tout le thread principal saccadé —
-  // dashboard ET overlay, qui partagent le même processus.
-  // Le dégradé ne dépend que de la hauteur du canvas (fixe), donc
-  // on le calcule une seule fois hors de la boucle de dessin.
-  const barGradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
-  barGradient.addColorStop(0, '#6366f1');
-  barGradient.addColorStop(1, '#06b6d4');
-
-  function draw() {
-    animationId = requestAnimationFrame(draw);
-    analyser.getByteFrequencyData(dataArray);
-
-    ctx.fillStyle = 'rgba(17, 24, 39, 0.4)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = barGradient;
-
-    const barWidth = (canvas.width / bufferLength) * 2.2;
-    let barHeight;
-    let x = 0;
-
-    for (let i = 0; i < bufferLength; i++) {
-      barHeight = dataArray[i] / 2.5;
-      ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
-      x += barWidth + 1;
-    }
+async function toggleRealMicCapture() {
+  if (realMicCaptureState) {
+    stopRealAudioCapture();
+    addActivity('Capture micro arrêtée manuellement', 'info');
+    showToast('Micro arrêté', 'info');
+  } else {
+    await startRealAudioCapture();
+    showToast(
+      realMicCaptureState ? 'Micro démarré' : 'Échec du démarrage du micro',
+      realMicCaptureState ? 'success' : 'error'
+    );
   }
-  draw();
+  updateMicButtonUI();
 }
 
 function refreshOverlay() {
