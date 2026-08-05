@@ -2268,6 +2268,14 @@
                     addActivity(`Erreur : ${message.error}`, 'error');
                     showToast(`Erreur : ${message.error}`, 'error');
                     break;
+                case 'transcriptionError':
+                    addActivity(`Transcription indisponible : ${message.error}`, 'error');
+                    showToast(`Transcription en échec — vérifier la connexion internet`, 'error');
+                    break;
+                case 'audioError':
+                    addActivity(`Capture audio interrompue : ${message.error}`, 'error');
+                    showToast(`Micro/audio en échec — vérifier la capture`, 'error');
+                    break;
                 case 'preServiceCheckResult':
                     renderPreServiceCheckResult(message);
                     break;
