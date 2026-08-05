@@ -66,6 +66,7 @@
       "perf-monitor.js",
       "setup.html",
       "dashboard.html",
+      "dashboard.js",
       "overlay.html",
       "server.js",
       "ai-modules-loader.js",
