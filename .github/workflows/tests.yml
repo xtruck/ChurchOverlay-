@@ -31,6 +31,13 @@ jobs:
       - name: Installer les dépendances
         run: npm ci
 
+      # CORRECTIF (segfault CI 2026-08-05, voir ci.yml pour le détail) :
+      # better-sqlite3 n'a pas de binaire prébuilt — force une recompilation
+      # native pour l'ABI Node exacte de ce job avant d'exécuter les tests,
+      # qui chargent ce module via server.js/session-store.js.
+      - name: Recompiler les modules natifs (better-sqlite3)
+        run: npm rebuild better-sqlite3 --build-from-source
+
       - name: Vérifier la syntaxe de tous les fichiers .js
         run: |
           for f in $(git ls-files '*.js'); do
