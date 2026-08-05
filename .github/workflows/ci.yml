@@ -92,6 +92,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # CORRECTIF (segfault CI 2026-08-05) : le job "Run Tests" plantait en
+      # "Segmentation fault (core dumped)" sur ubuntu-latest/Node 20.x, au
+      # moment précis où server.js (via session-store.js) charge le binaire
+      # natif de better-sqlite3. Ce module n'a pas de binaire prébuilt
+      # (pas de champ "binary" dans son package.json — il compile via
+      # node-gyp) : un binaire natif compilé pour une ABI Node différente
+      # (ex. un artefact de cache réutilisé entre jobs de la matrice) plante
+      # au chargement plutôt que de lever une erreur JS propre. On force ici
+      # une recompilation depuis les sources pour l'ABI Node exacte de CE
+      # job, quel que soit ce que `npm ci` a pu récupérer par ailleurs.
+      - name: Rebuild native modules (better-sqlite3)
+        run: npm rebuild better-sqlite3 --build-from-source
+
       - name: List test directory
         shell: bash
         run: |
