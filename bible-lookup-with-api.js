@@ -410,7 +410,7 @@ function label({ book, chapter, verseStart, verseEnd }, lang = 'fr') {
     : `${name} ${chapter}:${verseStart}${verseEnd && verseEnd !== verseStart ? `-${verseEnd}` : ''}`;
 }
 
-async function fetchJson(url, timeoutMs = 5000) {
+async function fetchJson(url, timeoutMs = 8000) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -1029,9 +1029,44 @@ async function getVerseMultilang(reference, langMode = 'fr') {
       getVerse(reference, 'en'),
     ]);
     const frOk = frRes.status === 'fulfilled' ? frRes.value : null;
-    const enOk = enRes.status === 'fulfilled' ? enRes.value : null;
+    let enOk = enRes.status === 'fulfilled' ? enRes.value : null;
+    // CORRECTIF (signalé — mode bilingue : seule la référence était traduite,
+    // pas le verset) : le français a un double avantage structurel sur
+    // l'anglais dans cette course Promise.allSettled — il est presque
+    // toujours déjà en cache (langue par défaut, chapitre déjà téléchargé
+    // lors d'un usage précédent) ET dispose de 2 fournisseurs de repli
+    // (helloao + getbible), alors que l'anglais n'a NI cache chaud NI
+    // fournisseur de secours (seul helloao sert l'anglais). Sur un réseau
+    // d'église chargé, le premier téléchargement du chapitre anglais dépasse
+    // facilement le timeout de 5s (fetchJson) pendant que le français,
+    // déjà en cache, répond instantanément — d'où le symptôme observé :
+    // la référence bilingue s'affiche toujours (calculée localement, sans
+    // réseau) mais le texte anglais du verset manque silencieusement.
+    // Un seul nouvel essai (chapitre probablement déjà en cache navigateur/
+    // CDN côté helloao au 2e essai, et le timeout initial a pu suffire à
+    // amorcer la connexion) résout la grande majorité des cas transitoires
+    // sans complexifier le fournisseur unique existant.
+    if (!enOk) {
+      console.warn(
+        `[bible-lookup] Texte anglais manquant en mode bilingue pour ${reference.book} ${reference.chapter} — nouvelle tentative...`
+      );
+      try {
+        enOk = await getVerse(reference, 'en');
+      } catch (_e) {
+        // Toujours en échec après le second essai — voir l'avertissement
+        // ci-dessous, la référence bilingue reste affichée, le texte
+        // anglais restera absent pour ce verset précis.
+      }
+    }
     if (!frOk && !enOk) {
       throw new Error('Verset introuvable en FR et en EN.');
+    }
+    if (!enOk) {
+      console.warn(
+        `[bible-lookup] ⚠ Texte anglais indisponible pour ${reference.book} ${reference.chapter} ` +
+          'après 2 tentatives (réseau lent ou API anglaise indisponible) — ' +
+          'le verset s\'affichera en français uniquement malgré le mode bilingue.'
+      );
     }
     // Réf bilingue : "Jean 3:16 · John 3:16" (identique si nom commun)
     const refFr = label(reference, 'fr');
