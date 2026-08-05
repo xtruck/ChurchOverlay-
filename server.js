@@ -146,6 +146,18 @@ const maxMsgValidation = configValidator.validateEnvVar(
 );
 const MAX_MESSAGES_PER_MINUTE = maxMsgValidation.valid ? maxMsgValidation.parsedValue : 60;
 
+// CORRECTIF (problème récurrent — transcription qui ne démarre jamais
+// malgré des clés API valides) : voir config-validator.js pour le détail.
+// Réglable via .env sans toucher au code, pour s'adapter au micro réel du
+// lieu de culte plutôt que de garder une valeur jamais calibrée.
+const micThresholdValidation = configValidator.validateEnvVar(
+  'MIC_SILENCE_THRESHOLD',
+  process.env.MIC_SILENCE_THRESHOLD
+);
+const MIC_SILENCE_THRESHOLD = micThresholdValidation.valid
+  ? micThresholdValidation.parsedValue
+  : 0.02;
+
 const connRateLimiter = createRateLimiter({
   maxConnections: MAX_CONNECTIONS,
   maxMessagesPerMinute: MAX_MESSAGES_PER_MINUTE,
@@ -1276,8 +1288,22 @@ wss.on('connection', (ws, req) => {
 // Audio pipeline
 // ===========================================================================
 function startPipeline() {
+  // CORRECTIF (problème récurrent — transcription qui ne démarre jamais) :
+  // compte les segments rejetés consécutivement pour silence (voir
+  // audio-capture.js). Un silence isolé est normal (temps mort entre deux
+  // prises de parole) ; ALERT_AFTER_CONSECUTIVE_SKIPS segments rejetés
+  // d'affilée (~1 minute à 5s/segment) signale plutôt un micro trop
+  // silencieux (mauvais périphérique, gain trop bas) — dans ce cas, sans
+  // cette alerte, l'opérateur voit juste "en attente" indéfiniment sans
+  // jamais savoir pourquoi.
+  const ALERT_AFTER_CONSECUTIVE_SKIPS = 12;
+  let consecutiveSkips = 0;
+  let alertedForCurrentSilence = false;
+
   audioCapture.on({
     onAudioSegment: async (segmentFile) => {
+      consecutiveSkips = 0;
+      alertedForCurrentSilence = false;
       try {
         const result = await groq.transcribeWithFallback(segmentFile);
         if (result && result.text && result.text.trim()) {
@@ -1297,6 +1323,16 @@ function startPipeline() {
         } catch (_) {}
       }
     },
+    onSegmentSkipped: (info) => {
+      consecutiveSkips++;
+      if (consecutiveSkips >= ALERT_AFTER_CONSECUTIVE_SKIPS && !alertedForCurrentSilence) {
+        alertedForCurrentSilence = true;
+        const message = `Aucune voix détectée depuis ~${Math.round((consecutiveSkips * 5000) / 1000)}s (niveau micro sous le seuil ${info.threshold}) — vérifiez le périphérique sélectionné et son gain.`;
+        warn('Silence prolongé : ' + message);
+        broadcast({ action: 'audioSilenceWarning', message, ...info });
+        sessionStore.recordPipelineError('audio-silence', message);
+      }
+    },
     onError: (err) => {
       warn('Audio capture error: ' + err.message);
       broadcast({ action: 'audioError', error: err.message });
@@ -1304,7 +1340,7 @@ function startPipeline() {
     },
   });
 
-  audioCapture.startBrowserCapture();
+  audioCapture.startBrowserCapture({ silenceThreshold: MIC_SILENCE_THRESHOLD });
 
   if (parentPort) {
     parentPort.postMessage({ type: 'audio-pipeline-ready' });

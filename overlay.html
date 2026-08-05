@@ -661,6 +661,10 @@ function connectWs() {
         console.error('[overlay] Audio capture error:', msg.error);
         showPipelineAlert('Capture audio interrompue — vérifier le micro');
         break;
+      case 'audioSilenceWarning':
+        console.warn('[overlay] Silence prolongé:', msg.message);
+        showPipelineAlert('Aucune voix détectée — vérifiez le micro');
+        break;
     }
   };
 

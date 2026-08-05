@@ -1,0 +1,384 @@
+diff --git a/.env.example b/.env.example
+index f34274c..e6653a2 100644
+--- a/.env.example
++++ b/.env.example
+@@ -1,11 +1,58 @@
++# Copiez ce fichier en .env puis renseignez au minimum GROQ_API_KEY.
++
++# Active les logs de debug détaillés (laisser vide en production)
+ DEBUG=
++
++# Fournisseur de transcription de repli si Groq échoue/timeout (optionnel)
+ DEEPGRAM_API_KEY=
++
++# Clé Google Gemini pour les fonctionnalités IA (thèmes, enrichissement).
++# Repli automatique sur GROQ_API_KEY (Llama) si absente.
+ GEMINI_API_KEY=
++
++# Fournisseur principal de transcription (Whisper via Groq). Obligatoire
++# pour que la détection automatique de versets fonctionne.
+ GROQ_API_KEY=
++
++# Nombre max de connexions WebSocket simultanées (défaut interne si vide)
+ MAX_CONNECTIONS=
++
++# Nombre max de messages WebSocket par minute et par connexion (anti-abus)
+ MAX_MESSAGES_PER_MINUTE=
++
++# Seuil de détection de voix (RMS, entre 0 et 1) sous lequel un segment
++# audio est considéré comme du silence et n'est PAS envoyé à Groq/Deepgram
++# (économie de coût API + évite les faux positifs sur du bruit de fond).
++# Défaut : 0.02 — une valeur jamais calibrée avec un vrai micro de culte.
++# SI LA TRANSCRIPTION NE DÉMARRE JAMAIS malgré des clés API valides et un
++# micro qui fonctionne, ce seuil est probablement trop élevé pour votre
++# micro (moins sensible que celui utilisé pour choisir 0.02) : baissez-le
++# (ex. 0.005) et relancez. À 0, le filtre de silence est désactivé (tout
++# segment est envoyé, y compris les silences — utile pour diagnostiquer).
++MIC_SILENCE_THRESHOLD=
++
++# Port HTTP/WebSocket du serveur (défaut : 3000 si vide)
+ PORT=
++
++# Active la validation stricte des messages WebSocket entrants (recommandé)
+ VALIDATE_MESSAGES=
++
++# Interface d'écoute du serveur. Laisser 127.0.0.1 (défaut) tant que le
++# serveur ne doit être accessible que depuis cet ordinateur.
+ WS_HOST=
++
++# Jeton d'authentification WebSocket, rôle opérateur (16 caractères
++# minimum). Obligatoire dès que WS_HOST est changé pour accepter des
++# connexions distantes (ex. 0.0.0.0) — le serveur refuse de démarrer sur un
++# WS_HOST non local sans ce jeton. Donne un contrôle complet du pipeline
++# (versets, thèmes, IA, OBS) : à réserver au tableau de bord opérateur.
+ WS_AUTH_TOKEN=
++
++# Jeton d'authentification WebSocket, rôle lecture seule (16 caractères
++# minimum, DIFFÉRENT de WS_AUTH_TOKEN). À utiliser pour l'overlay collé
++# dans OBS comme Browser Source : cette URL est plus exposée que le
++# tableau de bord (visible dans les paramètres de la source OBS,
++# potentiellement partagée avec une scène OBS exportée), donc lui donner
++# le jeton opérateur reviendrait à distribuer un contrôle complet du
++# pipeline avec l'URL de l'overlay.
+ WS_VIEWER_TOKEN=
+\ No newline at end of file
+diff --git a/audio-capture.js b/audio-capture.js
+index 6f27bba..08c9d1a 100644
+--- a/audio-capture.js
++++ b/audio-capture.js
+@@ -294,6 +294,24 @@ function handleAudioData(data, config) {
+         `[audio-capture] Segment ${STATE.segmentCount} ignoré (silence — ` +
+           `${voiceInfo.voicedMs}ms de voix détectée < seuil ${config.minSpeechDuration}ms)`
+       );
++      // CORRECTIF (problème récurrent — transcription qui ne démarre jamais
++      // sans qu'aucune erreur ne soit visible) : ce rejet était auparavant
++      // silencieux (console.log uniquement, jamais vu en usage normal). Si
++      // le micro reste durablement sous silenceThreshold (mauvais gain,
++      // mauvais périphérique sélectionné...), CHAQUE segment est rejeté et
++      // rien n'apparaît jamais côté opérateur, sans qu'aucun message
++      // n'explique pourquoi. Rendu visible via ce callback ; server.js
++      // limite lui-même la fréquence d'alerte pour ne pas spammer le
++      // dashboard si le silence est normal (temps mort entre deux prises
++      // de parole).
++      if (STATE.callbacks.onSegmentSkipped) {
++        STATE.callbacks.onSegmentSkipped({
++          voicedMs: voiceInfo.voicedMs,
++          totalMs: voiceInfo.totalMs,
++          threshold: config.silenceThreshold,
++          minSpeechDuration: config.minSpeechDuration,
++        });
++      }
+       return;
+     }
+ 
+diff --git a/config-validator.js b/config-validator.js
+index c139899..9b3b7d7 100644
+--- a/config-validator.js
++++ b/config-validator.js
+@@ -95,6 +95,25 @@ const ENV_SCHEMA = {
+     errorMessage:
+       "WS_VIEWER_TOKEN ne doit pas être une chaîne vide ou composée uniquement d'espaces",
+   },
++  // CORRECTIF (problème récurrent signalé par Ole — transcription qui ne
++  // démarre jamais malgré des clés API valides) : audio-capture.js rejette
++  // silencieusement (console.log uniquement, jamais vu en usage normal)
++  // tout segment dont le niveau de voix détecté (RMS) reste sous ce seuil.
++  // La valeur par défaut (0.02) n'a jamais été calibrée avec un vrai micro
++  // de culte — un micro moins sensible que celui utilisé pour la choisir
++  // peut ne JAMAIS dépasser ce seuil, et donc ne jamais rien envoyer à
++  // Groq/Deepgram, sans qu'aucune erreur ne soit visible côté opérateur.
++  // Rendu réglable ici pour permettre un ajustement sans toucher au code ;
++  // voir aussi le nouvel événement WS 'segmentSkipped' (server.js) qui
++  // rend maintenant ces rejets visibles dans le tableau de bord.
++  MIC_SILENCE_THRESHOLD: {
++    type: 'number',
++    required: false,
++    default: 0.02,
++    validate: (value) => value >= 0 && value <= 1,
++    errorMessage:
++      'MIC_SILENCE_THRESHOLD doit être un nombre entre 0 et 1 (0 = désactive le filtre de silence)',
++  },
+ };
+ 
+ /**
+@@ -225,6 +244,20 @@ async function validateSystemConfig() {
+     );
+   }
+ 
++  // 2ter. Seuil de silence micro (voir server.js/audio-capture.js) — n'émet
++  // une info que si explicitement personnalisé, pour ne pas ajouter de
++  // bruit au démarrage dans le cas courant (valeur par défaut). Un
++  // opérateur qui vient de l'ajuster pour résoudre un problème de
++  // transcription voit ainsi immédiatement, à chaque démarrage, quelle
++  // valeur est réellement active.
++  if (process.env.MIC_SILENCE_THRESHOLD) {
++    warnings.push(
++      `MIC_SILENCE_THRESHOLD personnalisé actif : ${process.env.MIC_SILENCE_THRESHOLD} ` +
++        '(défaut : 0.02). Si la transcription ne démarre toujours pas, essayez ' +
++        'une valeur plus basse, ou 0 pour désactiver temporairement le filtre de silence.'
++    );
++  }
++
+   // 3. Capture audio native (getUserMedia)
+   // La capture micro se fait directement dans les fenêtres visibles
+   // dashboard.html / setup.html (getUserMedia), qui poussent les chunks PCM
+diff --git a/dashboard.js b/dashboard.js
+index ebe0766..3cafd77 100644
+--- a/dashboard.js
++++ b/dashboard.js
+@@ -462,6 +462,10 @@ function handleMessage(message) {
+       addActivity(`Capture audio interrompue : ${message.error}`, 'error');
+       showToast(`Micro/audio en échec — vérifier la capture`, 'error');
+       break;
++    case 'audioSilenceWarning':
++      addActivity(message.message, 'warning');
++      showToast(`⚠️ ${message.message}`, 'error');
++      break;
+     case 'preServiceCheckResult':
+       renderPreServiceCheckResult(message);
+       break;
+diff --git a/env.example b/env.example
+index 2fba235..e6653a2 100644
+--- a/env.example
++++ b/env.example
+@@ -20,6 +20,17 @@ MAX_CONNECTIONS=
+ # Nombre max de messages WebSocket par minute et par connexion (anti-abus)
+ MAX_MESSAGES_PER_MINUTE=
+ 
++# Seuil de détection de voix (RMS, entre 0 et 1) sous lequel un segment
++# audio est considéré comme du silence et n'est PAS envoyé à Groq/Deepgram
++# (économie de coût API + évite les faux positifs sur du bruit de fond).
++# Défaut : 0.02 — une valeur jamais calibrée avec un vrai micro de culte.
++# SI LA TRANSCRIPTION NE DÉMARRE JAMAIS malgré des clés API valides et un
++# micro qui fonctionne, ce seuil est probablement trop élevé pour votre
++# micro (moins sensible que celui utilisé pour choisir 0.02) : baissez-le
++# (ex. 0.005) et relancez. À 0, le filtre de silence est désactivé (tout
++# segment est envoyé, y compris les silences — utile pour diagnostiquer).
++MIC_SILENCE_THRESHOLD=
++
+ # Port HTTP/WebSocket du serveur (défaut : 3000 si vide)
+ PORT=
+ 
+diff --git a/overlay.html b/overlay.html
+index 207d02a..1a4c42c 100644
+--- a/overlay.html
++++ b/overlay.html
+@@ -661,6 +661,10 @@ function connectWs() {
+         console.error('[overlay] Audio capture error:', msg.error);
+         showPipelineAlert('Capture audio interrompue — vérifier le micro');
+         break;
++      case 'audioSilenceWarning':
++        console.warn('[overlay] Silence prolongé:', msg.message);
++        showPipelineAlert('Aucune voix détectée — vérifiez le micro');
++        break;
+     }
+   };
+ 
+diff --git a/server.js b/server.js
+index 92dc09b..9ff721f 100644
+--- a/server.js
++++ b/server.js
+@@ -146,6 +146,18 @@ const maxMsgValidation = configValidator.validateEnvVar(
+ );
+ const MAX_MESSAGES_PER_MINUTE = maxMsgValidation.valid ? maxMsgValidation.parsedValue : 60;
+ 
++// CORRECTIF (problème récurrent — transcription qui ne démarre jamais
++// malgré des clés API valides) : voir config-validator.js pour le détail.
++// Réglable via .env sans toucher au code, pour s'adapter au micro réel du
++// lieu de culte plutôt que de garder une valeur jamais calibrée.
++const micThresholdValidation = configValidator.validateEnvVar(
++  'MIC_SILENCE_THRESHOLD',
++  process.env.MIC_SILENCE_THRESHOLD
++);
++const MIC_SILENCE_THRESHOLD = micThresholdValidation.valid
++  ? micThresholdValidation.parsedValue
++  : 0.02;
++
+ const connRateLimiter = createRateLimiter({
+   maxConnections: MAX_CONNECTIONS,
+   maxMessagesPerMinute: MAX_MESSAGES_PER_MINUTE,
+@@ -1276,8 +1288,22 @@ wss.on('connection', (ws, req) => {
+ // Audio pipeline
+ // ===========================================================================
+ function startPipeline() {
++  // CORRECTIF (problème récurrent — transcription qui ne démarre jamais) :
++  // compte les segments rejetés consécutivement pour silence (voir
++  // audio-capture.js). Un silence isolé est normal (temps mort entre deux
++  // prises de parole) ; ALERT_AFTER_CONSECUTIVE_SKIPS segments rejetés
++  // d'affilée (~1 minute à 5s/segment) signale plutôt un micro trop
++  // silencieux (mauvais périphérique, gain trop bas) — dans ce cas, sans
++  // cette alerte, l'opérateur voit juste "en attente" indéfiniment sans
++  // jamais savoir pourquoi.
++  const ALERT_AFTER_CONSECUTIVE_SKIPS = 12;
++  let consecutiveSkips = 0;
++  let alertedForCurrentSilence = false;
++
+   audioCapture.on({
+     onAudioSegment: async (segmentFile) => {
++      consecutiveSkips = 0;
++      alertedForCurrentSilence = false;
+       try {
+         const result = await groq.transcribeWithFallback(segmentFile);
+         if (result && result.text && result.text.trim()) {
+@@ -1297,6 +1323,16 @@ function startPipeline() {
+         } catch (_) {}
+       }
+     },
++    onSegmentSkipped: (info) => {
++      consecutiveSkips++;
++      if (consecutiveSkips >= ALERT_AFTER_CONSECUTIVE_SKIPS && !alertedForCurrentSilence) {
++        alertedForCurrentSilence = true;
++        const message = `Aucune voix détectée depuis ~${Math.round((consecutiveSkips * 5000) / 1000)}s (niveau micro sous le seuil ${info.threshold}) — vérifiez le périphérique sélectionné et son gain.`;
++        warn('Silence prolongé : ' + message);
++        broadcast({ action: 'audioSilenceWarning', message, ...info });
++        sessionStore.recordPipelineError('audio-silence', message);
++      }
++    },
+     onError: (err) => {
+       warn('Audio capture error: ' + err.message);
+       broadcast({ action: 'audioError', error: err.message });
+@@ -1304,7 +1340,7 @@ function startPipeline() {
+     },
+   });
+ 
+-  audioCapture.startBrowserCapture();
++  audioCapture.startBrowserCapture({ silenceThreshold: MIC_SILENCE_THRESHOLD });
+ 
+   if (parentPort) {
+     parentPort.postMessage({ type: 'audio-pipeline-ready' });
+diff --git a/test/test-audio-capture.js b/test/test-audio-capture.js
+index 87d220b..1e3a41d 100644
+--- a/test/test-audio-capture.js
++++ b/test/test-audio-capture.js
+@@ -137,6 +137,14 @@ async function run() {
+   // Bout-en-bout : un segment de silence pur envoyé via feedPcmChunk() ne
+   // doit PAS déclencher onAudioSegment().
+   segments = [];
++  let skippedInfo = null;
++  audioCapture.on({
++    onAudioSegment: (file) => segments.push(file),
++    onSegmentSkipped: (info) => {
++      skippedInfo = info;
++    },
++    onError: (err) => console.error('[TEST] onError inattendu:', err.message),
++  });
+   await audioCapture.startBrowserCapture();
+   audioCapture.feedPcmChunk(Buffer.alloc(segmentBytes + 100));
+   assert.strictEqual(
+@@ -147,6 +155,54 @@ async function run() {
+   await audioCapture.stopRecording();
+   console.log('[TEST] ✓ Silence correctement filtré avant envoi au STT');
+ 
++  // CORRECTIF (problème récurrent — transcription qui ne démarre jamais
++  // sans aucune erreur visible) : le rejet d'un segment pour silence doit
++  // désormais déclencher onSegmentSkipped(), pas rester un simple
++  // console.log invisible en usage normal.
++  console.log('\n[TEST] Test 7: onSegmentSkipped() se déclenche bien sur un rejet...');
++  assert(
++    skippedInfo !== null,
++    'onSegmentSkipped() aurait dû être appelé pour le segment silencieux'
++  );
++  assert.strictEqual(skippedInfo.voicedMs, 0, 'voicedMs devrait être 0 pour un silence pur');
++  assert.strictEqual(
++    skippedInfo.threshold,
++    config.silenceThreshold,
++    'threshold rapporté devrait correspondre à la config active'
++  );
++  console.log('[TEST] ✓ onSegmentSkipped() rapporte les bonnes informations');
++
++  // CORRECTIF : silenceThreshold doit être réglable via startBrowserCapture(),
++  // pour que MIC_SILENCE_THRESHOLD (server.js/config-validator.js) ait un
++  // effet réel. À threshold=0, même un signal très faible doit passer.
++  console.log('\n[TEST] Test 8: silenceThreshold personnalisé via startBrowserCapture()...');
++  segments = [];
++  skippedInfo = null;
++  audioCapture.on({
++    onAudioSegment: (file) => segments.push(file),
++    onSegmentSkipped: (info) => {
++      skippedInfo = info;
++    },
++    onError: (err) => console.error('[TEST] onError inattendu:', err.message),
++  });
++  await audioCapture.startBrowserCapture({ silenceThreshold: 0 });
++  // Un signal quasi silencieux (amplitude très faible) — rejeté avec le
++  // seuil par défaut (0.02), mais devrait passer avec silenceThreshold: 0.
++  const quietSegment = makeVoicedBuffer(segmentBytes, 50);
++  audioCapture.feedPcmChunk(quietSegment);
++  assert.strictEqual(
++    segments.length,
++    1,
++    'Avec silenceThreshold: 0, un signal faible devrait quand même être envoyé au STT'
++  );
++  assert.strictEqual(
++    skippedInfo,
++    null,
++    'onSegmentSkipped() ne devrait pas se déclencher quand silenceThreshold: 0'
++  );
++  await audioCapture.stopRecording();
++  console.log('[TEST] ✓ silenceThreshold: 0 désactive bien le filtre de silence');
++
+   console.log('\n=== Tous les tests sont passés ===');
+   process.exit(0);
+ }
+diff --git a/test/test-config-validator.js b/test/test-config-validator.js
+index 5011903..3145882 100644
+--- a/test/test-config-validator.js
++++ b/test/test-config-validator.js
+@@ -85,6 +85,37 @@ test('MAX_MESSAGES_PER_MINUTE: défaut à 60 si non défini', () => {
+   assert.strictEqual(r.parsedValue, 60);
+ });
+ 
++// ── MIC_SILENCE_THRESHOLD (CORRECTIF — problème récurrent où la
++// transcription ne démarre jamais malgré des clés API valides, causé par
++// un seuil VAD jamais calibré et jusque-là non réglable) ──
++test('MIC_SILENCE_THRESHOLD: défaut à 0.02 si non défini', () => {
++  const r = configValidator.validateEnvVar('MIC_SILENCE_THRESHOLD', undefined);
++  assert.strictEqual(r.valid, true);
++  assert.strictEqual(r.parsedValue, 0.02);
++});
++
++test('MIC_SILENCE_THRESHOLD: accepte une valeur décimale personnalisée', () => {
++  const r = configValidator.validateEnvVar('MIC_SILENCE_THRESHOLD', '0.005');
++  assert.strictEqual(r.valid, true);
++  assert.strictEqual(r.parsedValue, 0.005);
++});
++
++test('MIC_SILENCE_THRESHOLD: accepte 0 (désactive le filtre de silence)', () => {
++  const r = configValidator.validateEnvVar('MIC_SILENCE_THRESHOLD', '0');
++  assert.strictEqual(r.valid, true);
++  assert.strictEqual(r.parsedValue, 0);
++});
++
++test('MIC_SILENCE_THRESHOLD: rejette une valeur hors plage (>1)', () => {
++  const r = configValidator.validateEnvVar('MIC_SILENCE_THRESHOLD', '1.5');
++  assert.strictEqual(r.valid, false);
++});
++
++test('MIC_SILENCE_THRESHOLD: rejette une valeur négative', () => {
++  const r = configValidator.validateEnvVar('MIC_SILENCE_THRESHOLD', '-0.01');
++  assert.strictEqual(r.valid, false);
++});
++
+ // ── NODE_ENV ──
+ test('NODE_ENV: rejette une valeur non reconnue', () => {
+   const r = configValidator.validateEnvVar('NODE_ENV', 'staging');

@@ -294,6 +294,24 @@ function handleAudioData(data, config) {
         `[audio-capture] Segment ${STATE.segmentCount} ignoré (silence — ` +
           `${voiceInfo.voicedMs}ms de voix détectée < seuil ${config.minSpeechDuration}ms)`
       );
+      // CORRECTIF (problème récurrent — transcription qui ne démarre jamais
+      // sans qu'aucune erreur ne soit visible) : ce rejet était auparavant
+      // silencieux (console.log uniquement, jamais vu en usage normal). Si
+      // le micro reste durablement sous silenceThreshold (mauvais gain,
+      // mauvais périphérique sélectionné...), CHAQUE segment est rejeté et
+      // rien n'apparaît jamais côté opérateur, sans qu'aucun message
+      // n'explique pourquoi. Rendu visible via ce callback ; server.js
+      // limite lui-même la fréquence d'alerte pour ne pas spammer le
+      // dashboard si le silence est normal (temps mort entre deux prises
+      // de parole).
+      if (STATE.callbacks.onSegmentSkipped) {
+        STATE.callbacks.onSegmentSkipped({
+          voicedMs: voiceInfo.voicedMs,
+          totalMs: voiceInfo.totalMs,
+          threshold: config.silenceThreshold,
+          minSpeechDuration: config.minSpeechDuration,
+        });
+      }
       return;
     }
 

@@ -462,6 +462,10 @@ function handleMessage(message) {
       addActivity(`Capture audio interrompue : ${message.error}`, 'error');
       showToast(`Micro/audio en échec — vérifier la capture`, 'error');
       break;
+    case 'audioSilenceWarning':
+      addActivity(message.message, 'warning');
+      showToast(`⚠️ ${message.message}`, 'error');
+      break;
     case 'preServiceCheckResult':
       renderPreServiceCheckResult(message);
       break;

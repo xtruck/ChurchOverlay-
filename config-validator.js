@@ -95,6 +95,25 @@ const ENV_SCHEMA = {
     errorMessage:
       "WS_VIEWER_TOKEN ne doit pas être une chaîne vide ou composée uniquement d'espaces",
   },
+  // CORRECTIF (problème récurrent signalé par Ole — transcription qui ne
+  // démarre jamais malgré des clés API valides) : audio-capture.js rejette
+  // silencieusement (console.log uniquement, jamais vu en usage normal)
+  // tout segment dont le niveau de voix détecté (RMS) reste sous ce seuil.
+  // La valeur par défaut (0.02) n'a jamais été calibrée avec un vrai micro
+  // de culte — un micro moins sensible que celui utilisé pour la choisir
+  // peut ne JAMAIS dépasser ce seuil, et donc ne jamais rien envoyer à
+  // Groq/Deepgram, sans qu'aucune erreur ne soit visible côté opérateur.
+  // Rendu réglable ici pour permettre un ajustement sans toucher au code ;
+  // voir aussi le nouvel événement WS 'segmentSkipped' (server.js) qui
+  // rend maintenant ces rejets visibles dans le tableau de bord.
+  MIC_SILENCE_THRESHOLD: {
+    type: 'number',
+    required: false,
+    default: 0.02,
+    validate: (value) => value >= 0 && value <= 1,
+    errorMessage:
+      'MIC_SILENCE_THRESHOLD doit être un nombre entre 0 et 1 (0 = désactive le filtre de silence)',
+  },
 };
 
 /**
@@ -222,6 +241,20 @@ async function validateSystemConfig() {
         "un contrôle complet du pipeline au lieu d'un accès lecture seule. " +
         'Définir WS_VIEWER_TOKEN (≥16 caractères, différent de WS_AUTH_TOKEN) ' +
         'pour un vrai cloisonnement — voir README.md.'
+    );
+  }
+
+  // 2ter. Seuil de silence micro (voir server.js/audio-capture.js) — n'émet
+  // une info que si explicitement personnalisé, pour ne pas ajouter de
+  // bruit au démarrage dans le cas courant (valeur par défaut). Un
+  // opérateur qui vient de l'ajuster pour résoudre un problème de
+  // transcription voit ainsi immédiatement, à chaque démarrage, quelle
+  // valeur est réellement active.
+  if (process.env.MIC_SILENCE_THRESHOLD) {
+    warnings.push(
+      `MIC_SILENCE_THRESHOLD personnalisé actif : ${process.env.MIC_SILENCE_THRESHOLD} ` +
+        '(défaut : 0.02). Si la transcription ne démarre toujours pas, essayez ' +
+        'une valeur plus basse, ou 0 pour désactiver temporairement le filtre de silence.'
     );
   }
 
