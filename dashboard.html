@@ -2005,6 +2005,188 @@
 
         initWebSocket();
 
+        // ==================================================================
+        // CORRECTIF (problème signalé — "parler sans appuyer sur activer le
+        // micro ne bougeait pas et ne passait pas") : la capture micro
+        // RÉELLE qui alimente le pipeline de détection (Web Audio -> PCM16
+        // -> window.churchOverlay.sendAudioChunk() -> worker -> Whisper/
+        // Groq/Deepgram -> detector.js -> bible-lookup) avait été introduite
+        // le 26/07/2026 (commit 44f2000) puis intégralement supprimée trois
+        // jours plus tard lors d'une grosse réécriture du fichier (commit
+        // 890dde9), sans que rien ne la remplace depuis. Résultat : aucun
+        // bouton de ce dashboard ne déclenchait plus la capture réelle —
+        // parler au micro ne "passait" plus du tout, peu importe le bouton
+        // pressé, car rien n'appelait plus sendAudioChunk().
+        //
+        // Comme à l'origine, cette capture démarre AUTOMATIQUEMENT dès que
+        // le pipeline serveur signale qu'il est prêt (onAudioPipelineReady)
+        // — ce n'est PAS un bouton à activer manuellement, exactement comme
+        // avant la régression.
+        //
+        // Le graphique de flux audio disparu en même temps est restauré ici
+        // aussi (canvas #audioVisualizer déjà présent dans le HTML), mais
+        // branché sur ce VRAI flux micro plutôt que sur l'ancienne dictée
+        // du navigateur (bouton "Démarrer le Micro" ci-dessous) qui, elle,
+        // ne fonctionne pas dans Electron (voir commentaire plus bas sur
+        // recognition.onerror : limitation connue de Chromium embarqué,
+        // sans lien avec le pipeline réel de détection de versets).
+        // ==================================================================
+        let realMicCaptureState = null; // { stream, audioCtx, sourceNode, processorNode, silentGain, analyser }
+        let realVisualizerAnimId = null;
+
+        function downsampleBuffer(buffer, sampleRate, outSampleRate) {
+            if (outSampleRate === sampleRate) return buffer;
+            const sampleRateRatio = sampleRate / outSampleRate;
+            const newLength = Math.round(buffer.length / sampleRateRatio);
+            const result = new Float32Array(newLength);
+            let offsetResult = 0;
+            let offsetBuffer = 0;
+            while (offsetResult < result.length) {
+                const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
+                let accum = 0;
+                let count = 0;
+                for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+                    accum += buffer[i];
+                    count++;
+                }
+                result[offsetResult] = count > 0 ? accum / count : 0;
+                offsetResult++;
+                offsetBuffer = nextOffsetBuffer;
+            }
+            return result;
+        }
+
+        function floatTo16BitPCM(input) {
+            const output = new Int16Array(input.length);
+            for (let i = 0; i < input.length; i++) {
+                const s = Math.max(-1, Math.min(1, input[i]));
+                output[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+            }
+            return output;
+        }
+
+        function drawRealAudioVisualizer() {
+            const canvas = document.getElementById('audioVisualizer');
+            if (!canvas || !realMicCaptureState) return;
+            const ctx = canvas.getContext('2d');
+            const analyserNode = realMicCaptureState.analyser;
+            const bufferLength = analyserNode.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+
+            // Dégradé calculé une seule fois (voir correctif de lenteur UI
+            // plus bas dans le fichier pour visualizeAudio() — même piège
+            // évité ici : pas de createLinearGradient() par frame).
+            const barGradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
+            barGradient.addColorStop(0, '#6366f1');
+            barGradient.addColorStop(1, '#06b6d4');
+
+            function draw() {
+                if (!realMicCaptureState) return; // capture arrêtée entre-temps
+                realVisualizerAnimId = requestAnimationFrame(draw);
+                analyserNode.getByteFrequencyData(dataArray);
+
+                ctx.fillStyle = 'rgba(17, 24, 39, 0.4)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = barGradient;
+
+                const barWidth = (canvas.width / bufferLength) * 2.2;
+                let barHeight;
+                let x = 0;
+                for (let i = 0; i < bufferLength; i++) {
+                    barHeight = dataArray[i] / 2.5;
+                    ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+                    x += barWidth + 1;
+                }
+            }
+            draw();
+        }
+
+        async function startRealAudioCapture() {
+            if (realMicCaptureState) return; // déjà démarrée (ex: double signal ready)
+
+            try {
+                const settings = window.churchOverlay ? await window.churchOverlay.getSettings() : null;
+                const deviceId = settings && settings.audioDevice;
+
+                // echoCancellation/noiseSuppression/autoGainControl désactivés :
+                // ces traitements Chromium visent la visioconférence, pas la
+                // fidélité maximale attendue par un moteur de transcription —
+                // signal le plus brut possible vers Whisper/Groq/Deepgram.
+                const audioConstraints = {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
+                };
+                if (deviceId) audioConstraints.deviceId = { exact: deviceId };
+
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const sourceNode = audioCtx.createMediaStreamSource(stream);
+
+                const processorNode = audioCtx.createScriptProcessor(4096, 1, 1);
+                processorNode.onaudioprocess = (event) => {
+                    const input = event.inputBuffer.getChannelData(0);
+                    const downsampled = downsampleBuffer(input, audioCtx.sampleRate, 16000);
+                    const pcm16 = floatTo16BitPCM(downsampled);
+                    if (window.churchOverlay) window.churchOverlay.sendAudioChunk(pcm16.buffer);
+                };
+
+                // Un ScriptProcessorNode ne déclenche son callback que s'il
+                // est connecté à une destination — un GainNode à volume 0
+                // satisfait cette exigence sans renvoyer le son du micro
+                // vers les haut-parleurs (pas d'écho/larsen).
+                const silentGain = audioCtx.createGain();
+                silentGain.gain.value = 0;
+                sourceNode.connect(processorNode);
+                processorNode.connect(silentGain);
+                silentGain.connect(audioCtx.destination);
+
+                // AnalyserNode dédié pour le graphique de flux — branché sur
+                // le vrai signal micro, pas sur la dictée navigateur.
+                const analyserNode = audioCtx.createAnalyser();
+                analyserNode.fftSize = 256;
+                sourceNode.connect(analyserNode);
+
+                realMicCaptureState = { stream, audioCtx, sourceNode, processorNode, silentGain, analyser: analyserNode };
+                console.log('[dashboard] Capture micro réelle démarrée automatiquement (pipeline prêt).');
+                addActivity('Capture micro démarrée automatiquement', 'success');
+                drawRealAudioVisualizer();
+            } catch (err) {
+                console.error('[dashboard] Échec démarrage capture micro réelle:', err);
+                showToast('❌ Micro : ' + (err && err.message ? err.message : err), 'error');
+            }
+        }
+
+        function stopRealAudioCapture() {
+            if (realVisualizerAnimId) {
+                cancelAnimationFrame(realVisualizerAnimId);
+                realVisualizerAnimId = null;
+            }
+            if (!realMicCaptureState) return;
+            try {
+                realMicCaptureState.sourceNode.disconnect();
+                realMicCaptureState.processorNode.disconnect();
+                realMicCaptureState.silentGain.disconnect();
+                realMicCaptureState.analyser.disconnect();
+                realMicCaptureState.stream.getTracks().forEach((t) => t.stop());
+                realMicCaptureState.audioCtx.close();
+            } catch (_) { /* nettoyage best-effort à la fermeture */ }
+            realMicCaptureState = null;
+            const canvas = document.getElementById('audioVisualizer');
+            if (canvas) {
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+        }
+
+        if (window.churchOverlay && window.churchOverlay.onAudioPipelineReady) {
+            window.churchOverlay.onAudioPipelineReady(startRealAudioCapture);
+        }
+        window.addEventListener('beforeunload', stopRealAudioCapture);
+
         // --- Bannière d'erreur pipeline (voir CORRECTIF plus haut dans le HTML) ---
         function setPipelineAlert(payload) {
             const banner = document.getElementById('pipelineAlertBanner');
