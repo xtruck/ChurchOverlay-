@@ -35,6 +35,7 @@ const groq = require('./groq-wrapper');
 const deepgramWrapper = require('./deepgram-wrapper');
 const configValidator = require('./config-validator');
 const { createFileLogger } = require('./logger');
+const sessionStore = require('./session-store');
 
 const detector = require('./detector-compat');
 const bibleLookup = require('./bible-lookup-with-api');
@@ -269,6 +270,7 @@ function broadcast(obj) {
 // ---------------------------------------------------------------------------
 function pushHistory(entry) {
   sessionState.pushHistory(entry);
+  sessionStore.recordVerseShown(entry);
 }
 
 // ---------------------------------------------------------------------------
@@ -1286,6 +1288,7 @@ function startPipeline() {
       } catch (err) {
         warn('Transcription error: ' + err.message);
         broadcast({ action: 'transcriptionError', error: err.message });
+        sessionStore.recordPipelineError('transcription', err.message);
         if (plugins)
           plugins.emit('onError', { type: 'transcription', message: err.message }).catch(() => {});
       } finally {
@@ -1297,6 +1300,7 @@ function startPipeline() {
     onError: (err) => {
       warn('Audio capture error: ' + err.message);
       broadcast({ action: 'audioError', error: err.message });
+      sessionStore.recordPipelineError('audio', err.message);
     },
   });
 
@@ -1325,6 +1329,7 @@ if (parentPort) {
       wss.clients.forEach((ws) => ws.close());
       wss.close();
       connRateLimiter.stopCleanup();
+      sessionStore.close();
       if (parentPort) parentPort.postMessage({ type: 'status', status: 'stopped' });
       const finish = () => process.exit(0);
       if (plugins) {
@@ -1369,6 +1374,11 @@ try {
 }
 
 // ===========================================================================
+// Session store (persistance SQLite — voir session-store.js)
+// ===========================================================================
+sessionStore.init(USER_DATA_DIR, { onError: warn });
+
+// ===========================================================================
 // Startup
 // ===========================================================================
 configValidator
@@ -1383,6 +1393,7 @@ process.on('SIGTERM', () => {
   audioCapture.stopRecording();
   wss.close();
   connRateLimiter.stopCleanup();
+  sessionStore.close();
   if (plugins) plugins.shutdown().catch(() => {});
   process.exit(0);
 });
@@ -1399,6 +1410,7 @@ process.on('SIGINT', () => {
   // "propre" documenté au round 7 ; corrigé pour rester symétrique avec
   // SIGTERM.
   connRateLimiter.stopCleanup();
+  sessionStore.close();
   if (plugins) plugins.shutdown().catch(() => {});
   process.exit(0);
 });
