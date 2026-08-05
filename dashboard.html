@@ -750,6 +750,25 @@
             border-left: 3px solid var(--gold);
         }
 
+        /* AJOUT (correctif bilingue dashboard) : ligne EN sous le texte FR
+           quand langMode === 'both'. Même logique que verse-text-bilingual
+           dans overlay.html, adaptée au style du dashboard. Masquée par
+           défaut ; affichée uniquement par displayVerse() si un texte
+           anglais est disponible. */
+        .verse-body-bilingual {
+            font-family: 'Cormorant Garamond', 'Plus Jakarta Sans', serif;
+            font-size: 1.15rem;
+            line-height: 1.6;
+            color: var(--text-dim);
+            font-style: italic;
+            font-weight: 400;
+            margin: 0 0 1rem 0;
+            padding-left: 1.25rem;
+            padding-top: 0.6rem;
+            border-left: 3px solid var(--border-subtle);
+            border-top: 1px dashed var(--border-subtle);
+        }
+
         /* Buttons */
         .btn {
             padding: 0.65rem 1.25rem;
@@ -1455,6 +1474,12 @@
                             <div class="verse-body-large" id="verseText">
                                 Les versets bibliques apparaîtront ici automatiquement dès qu'ils seront prononcés au microphone ou saisis manuellement.
                             </div>
+
+                            <!-- AJOUT (correctif bilingue dashboard) : jusqu'ici seule
+                                 la référence était bilingue (ex. "Jean 3:16 · John 3:16"),
+                                 le verset lui-même ne montrait que le FR même en mode
+                                 'both'. displayVerse() y insère message.text_en. -->
+                            <div class="verse-body-bilingual" id="verseTextBilingual" style="display:none;"></div>
                         </div>
 
                         <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 1rem; border-top: 1px solid var(--border-subtle); margin-top: 1rem;">
@@ -2458,8 +2483,23 @@
         function displayVerse(message) {
             const refEl = document.getElementById('verseReference');
             const textEl = document.getElementById('verseText');
+            const bilingualEl = document.getElementById('verseTextBilingual');
             if (refEl) refEl.textContent = message.reference;
             if (textEl) textEl.textContent = message.text;
+            // CORRECTIF (bilingue dashboard) : jusqu'ici seule verseReference
+            // recevait le texte bilingue ("Jean 3:16 · John 3:16") construit
+            // côté serveur ; verseText n'affichait que message.text (FR), et
+            // message.text_en n'était jamais lu. Même condition que
+            // overlay.html : langMode === 'both' ET texte EN réellement reçu.
+            if (bilingualEl) {
+                if (message.langMode === 'both' && message.text_en) {
+                    bilingualEl.textContent = 'EN: ' + message.text_en;
+                    bilingualEl.style.display = 'block';
+                } else {
+                    bilingualEl.textContent = '';
+                    bilingualEl.style.display = 'none';
+                }
+            }
             state.currentVerse = message;
 
             if (message.confidence && refEl) {
@@ -2474,8 +2514,13 @@
         function hideVerseDisplay() {
             const refEl = document.getElementById('verseReference');
             const textEl = document.getElementById('verseText');
+            const bilingualEl = document.getElementById('verseTextBilingual');
             if (refEl) refEl.textContent = 'Aucun verset affiché';
             if (textEl) textEl.textContent = 'Les versets apparaîtront ici une fois détectés';
+            if (bilingualEl) {
+                bilingualEl.textContent = '';
+                bilingualEl.style.display = 'none';
+            }
             state.currentVerse = null;
         }
 
