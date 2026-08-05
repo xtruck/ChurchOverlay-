@@ -1065,7 +1065,7 @@ async function getVerseMultilang(reference, langMode = 'fr') {
       console.warn(
         `[bible-lookup] ⚠ Texte anglais indisponible pour ${reference.book} ${reference.chapter} ` +
           'après 2 tentatives (réseau lent ou API anglaise indisponible) — ' +
-          'le verset s\'affichera en français uniquement malgré le mode bilingue.'
+          "le verset s'affichera en français uniquement malgré le mode bilingue."
       );
     }
     // Réf bilingue : "Jean 3:16 · John 3:16" (identique si nom commun)
