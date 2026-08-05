@@ -1301,7 +1301,7 @@
                         <span>Connecté</span>
                     </div>
 
-                    <button class="btn btn-secondary" onclick="toggleSpeechRecognition()" id="speechBtn">
+                    <button class="btn btn-secondary" onclick="toggleRealMicCapture()" id="speechBtn">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
                             <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
@@ -1810,23 +1810,23 @@
                         <span class="stat-value">Port 8765 / Reverse Proxy</span>
                     </div>
                     <div class="stat-row">
-                        <span class="stat-label">Moteur de Reconnaissance Vocale</span>
-                        <span class="stat-value">Web Speech API (FR / EN)</span>
+                        <span class="stat-label">Moteur de Transcription</span>
+                        <span class="stat-value">Whisper large-v3 (Groq), repli Deepgram</span>
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">APIs Bibliques Intégrées</span>
                         <span class="stat-value">HelloAO, Bible-API, Bolls Life</span>
                     </div>
                     <div class="stat-row">
-                        <span class="stat-label">Statut Reconnaissance Vocale</span>
-                        <span class="status-badge success" id="speechStatus">Disponible</span>
+                        <span class="stat-label">Statut Capture Micro (Whisper/Groq/Deepgram)</span>
+                        <span class="status-badge warning" id="speechStatus">Capture arrêtée</span>
                     </div>
 
                     <!-- CORRECTIF (checklist mise en production, point 9) : vérification
                          en une fois avant de démarrer un culte — connexion WebSocket,
                          validité des clés Groq/Deepgram, état de l'authentification WS.
                          Le micro n'est pas testé ici (accès navigateur uniquement) : voir
-                         le statut "Reconnaissance Vocale" ci-dessus pour ça. -->
+                         le statut "Statut Capture Micro" ci-dessus pour ça. -->
                     <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-subtle);">
                         <button type="button" class="btn btn-primary" id="preServiceCheckBtn" onclick="runPreServiceCheck()" style="width: 100%;">
                             ✅ Tester avant le culte
