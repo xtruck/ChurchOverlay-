@@ -85,6 +85,37 @@ test('MAX_MESSAGES_PER_MINUTE: défaut à 60 si non défini', () => {
   assert.strictEqual(r.parsedValue, 60);
 });
 
+// ── MIC_SILENCE_THRESHOLD (CORRECTIF — problème récurrent où la
+// transcription ne démarre jamais malgré des clés API valides, causé par
+// un seuil VAD jamais calibré et jusque-là non réglable) ──
+test('MIC_SILENCE_THRESHOLD: défaut à 0.02 si non défini', () => {
+  const r = configValidator.validateEnvVar('MIC_SILENCE_THRESHOLD', undefined);
+  assert.strictEqual(r.valid, true);
+  assert.strictEqual(r.parsedValue, 0.02);
+});
+
+test('MIC_SILENCE_THRESHOLD: accepte une valeur décimale personnalisée', () => {
+  const r = configValidator.validateEnvVar('MIC_SILENCE_THRESHOLD', '0.005');
+  assert.strictEqual(r.valid, true);
+  assert.strictEqual(r.parsedValue, 0.005);
+});
+
+test('MIC_SILENCE_THRESHOLD: accepte 0 (désactive le filtre de silence)', () => {
+  const r = configValidator.validateEnvVar('MIC_SILENCE_THRESHOLD', '0');
+  assert.strictEqual(r.valid, true);
+  assert.strictEqual(r.parsedValue, 0);
+});
+
+test('MIC_SILENCE_THRESHOLD: rejette une valeur hors plage (>1)', () => {
+  const r = configValidator.validateEnvVar('MIC_SILENCE_THRESHOLD', '1.5');
+  assert.strictEqual(r.valid, false);
+});
+
+test('MIC_SILENCE_THRESHOLD: rejette une valeur négative', () => {
+  const r = configValidator.validateEnvVar('MIC_SILENCE_THRESHOLD', '-0.01');
+  assert.strictEqual(r.valid, false);
+});
+
 // ── NODE_ENV ──
 test('NODE_ENV: rejette une valeur non reconnue', () => {
   const r = configValidator.validateEnvVar('NODE_ENV', 'staging');
