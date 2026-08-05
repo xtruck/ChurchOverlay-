@@ -2,7 +2,7 @@
   "name": "churchoverlay",
   "productName": "ChurchOverlay",
   "version": "0.5.0",
-  "description": "Overlay de versets bibliques en direct avec IA \u2014 d\u00e9tection s\u00e9mantique, commandes vocales, th\u00e8mes dynamiques et recherche biblique par sujet.",
+  "description": "Overlay de versets bibliques en direct avec IA — détection sémantique, commandes vocales, thèmes dynamiques et recherche biblique par sujet.",
   "author": "ChurchOverlay",
   "main": "main.js",
   "scripts": {
@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "@google/genai": "^2.14.0",
-    "better-sqlite3": "^13.0.3",
+    "better-sqlite3": "^12.11.1",
     "electron-updater": "^6.3.0",
     "express": "^4.18.2",
     "form-data": "^4.0.6",
