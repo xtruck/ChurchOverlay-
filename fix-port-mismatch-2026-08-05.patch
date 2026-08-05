@@ -1,0 +1,135 @@
+diff --git a/.env.example b/.env.example
+index e6653a2..177e5be 100644
+--- a/.env.example
++++ b/.env.example
+@@ -31,7 +31,7 @@ MAX_MESSAGES_PER_MINUTE=
+ # segment est envoyé, y compris les silences — utile pour diagnostiquer).
+ MIC_SILENCE_THRESHOLD=
+ 
+-# Port HTTP/WebSocket du serveur (défaut : 3000 si vide)
++# Port HTTP/WebSocket du serveur (défaut : 8765 si vide)
+ PORT=
+ 
+ # Active la validation stricte des messages WebSocket entrants (recommandé)
+diff --git a/dashboard.js b/dashboard.js
+index 3cafd77..902bf51 100644
+--- a/dashboard.js
++++ b/dashboard.js
+@@ -84,12 +84,23 @@ document.querySelectorAll('.nav-item').forEach((item) => {
+ // Sec-WebSocket-Protocol (2e argument du constructeur WebSocket),
+ // que les proxys ne journalisent pas par défaut.
+ const getWsToken = () => new URLSearchParams(window.location.search).get('token');
++// CORRECTIF (bug "overlay hors ligne par défaut" — même famille pour le
++// dashboard) : ce port était codé en dur (8765) et ignorait le paramètre
++// ?port=... que main.js transmet pourtant via l'option `query` de
++// loadFile() (voir main.js > mainWindow.loadFile). Ça fonctionnait par
++// coïncidence tant que PORT restait à sa valeur par défaut (8765,
++// justement), mais silencieusement plus dès que PORT était personnalisé
++// dans .env — le dashboard tentait alors de se connecter au mauvais port
++// sans qu'aucune erreur explicite n'indique pourquoi. Aligné sur le même
++// pattern que overlay.html (getWsPort()), qui lisait déjà correctement ce
++// paramètre.
++const getWsPort = () => new URLSearchParams(window.location.search).get('port') || '8765';
+ const getWsUrl = () => {
+   if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+     return `${proto}//${window.location.host}`;
+   }
+-  return `ws://localhost:8765`;
++  return `ws://localhost:${getWsPort()}`;
+ };
+ 
+ let ws = null;
+diff --git a/env.example b/env.example
+index e6653a2..177e5be 100644
+--- a/env.example
++++ b/env.example
+@@ -31,7 +31,7 @@ MAX_MESSAGES_PER_MINUTE=
+ # segment est envoyé, y compris les silences — utile pour diagnostiquer).
+ MIC_SILENCE_THRESHOLD=
+ 
+-# Port HTTP/WebSocket du serveur (défaut : 3000 si vide)
++# Port HTTP/WebSocket du serveur (défaut : 8765 si vide)
+ PORT=
+ 
+ # Active la validation stricte des messages WebSocket entrants (recommandé)
+diff --git a/main.js b/main.js
+index ae528f7..961da3b 100644
+--- a/main.js
++++ b/main.js
+@@ -39,19 +39,22 @@ try {
+ const APP_ROOT = __dirname;
+ const USER_DATA = () => app.getPath('userData');
+ 
+-// CORRECTIF (bug "serveur hors ligne" / reconnexion en boucle) : server.js
+-// écoute sur process.env.PORT si défini, sinon sur 3000 par défaut (voir
+-// env.example). dashboard.html et overlay.html sont chargés en file:// et
+-// ne peuvent donc pas déduire le port depuis window.location.host ; ils
+-// retombaient sur un port 8765 codé en dur qui ne correspond à rien.
+-// On calcule ici la même valeur que server.js et on la transmet aux deux
+-// pages via la query string, exactement comme WS_AUTH_TOKEN /
+-// WS_VIEWER_TOKEN.
++// CORRECTIF (bug "overlay hors ligne par défaut") : un correctif précédent
++// avait déjà identifié que dashboard.html/overlay.html ne pouvaient pas
++// déduire le port depuis window.location.host (chargés en file://) et
++// avait tenté d'harmoniser ça avec server.js — mais avait fixé la valeur
++// par défaut à 3000, alors que le VRAI défaut de server.js (voir
++// config-validator.js > ENV_SCHEMA.PORT, couvert par
++// test-config-validator.js) est 8765. Résultat : quand PORT n'est pas
++// défini (cas par défaut), server.js écoutait sur 8765 mais main.js
++// transmettait 3000 à overlay.html — qui ne pouvait donc jamais se
++// connecter. Corrigé en harmonisant sur 8765, la valeur réellement
++// utilisée par server.js.
+ function resolveServerPort() {
+   const raw = (process.env.PORT || '').trim();
+-  if (!raw) return 3000;
++  if (!raw) return 8765;
+   const parsed = Number.parseInt(raw, 10);
+-  return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : 3000;
++  return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : 8765;
+ }
+ const SERVER_PORT = resolveServerPort();
+ const CONFIG_PATH = () => path.join(USER_DATA(), 'config.json');
+diff --git a/overlay.html b/overlay.html
+index 1a4c42c..3b75fd7 100644
+--- a/overlay.html
++++ b/overlay.html
+@@ -538,14 +538,14 @@ body {
+ // Il voyage maintenant via l'en-tête de handshake Sec-WebSocket-Protocol
+ // (2e argument du constructeur WebSocket).
+ const getWsToken = () => new URLSearchParams(window.location.search).get('token');
+-// CORRECTIF (bug "serveur hors ligne" / reconnexion en boucle) : en
+-// file:// (cas réel, cette page est chargée depuis disque et collée dans
+-// OBS), il n'y a pas de window.location.host à réutiliser. Le port codé
+-// en dur ici (8765) ne correspondait à aucun port réellement utilisé par
+-// server.js (3000 par défaut, voir env.example). main.js transmet
+-// désormais le port réel via ?port=... dans getOverlayUrl() ; on le relit
+-// ici avec 3000 comme repli si absent.
+-const getWsPort = () => new URLSearchParams(window.location.search).get('port') || '3000';
++// CORRECTIF (bug "overlay hors ligne par défaut") : en file:// (cas réel,
++// cette page est chargée depuis disque et collée dans OBS), il n'y a pas
++// de window.location.host à réutiliser. main.js transmet le port réel via
++// ?port=... (voir getOverlayUrl()) ; 8765 est le vrai défaut de server.js
++// (voir config-validator.js > ENV_SCHEMA.PORT) — un correctif précédent
++// utilisait 3000 par erreur ici, qui ne correspondait au port réel de
++// server.js que si PORT était explicitement défini à cette valeur.
++const getWsPort = () => new URLSearchParams(window.location.search).get('port') || '8765';
+ const getWsUrl = () => {
+   if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+diff --git a/server.js b/server.js
+index 9ff721f..68abef8 100644
+--- a/server.js
++++ b/server.js
+@@ -79,9 +79,9 @@ const { createRateLimiter } = require('./rate-limiter');
+ 
+ const portValidation = configValidator.validateEnvVar('PORT', process.env.PORT);
+ if (!portValidation.valid) {
+-  console.warn(`[server] ${portValidation.error} — utilisation du port par défaut 3000.`);
++  console.warn(`[server] ${portValidation.error} — utilisation du port par défaut 8765.`);
+ }
+-const SERVER_PORT = portValidation.valid ? portValidation.parsedValue : 3000;
++const SERVER_PORT = portValidation.valid ? portValidation.parsedValue : 8765;
+ 
+ const hostValidation = configValidator.validateEnvVar('WS_HOST', process.env.WS_HOST);
+ let WS_HOST = hostValidation.valid ? hostValidation.parsedValue : '127.0.0.1';

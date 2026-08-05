@@ -84,12 +84,23 @@ document.querySelectorAll('.nav-item').forEach((item) => {
 // Sec-WebSocket-Protocol (2e argument du constructeur WebSocket),
 // que les proxys ne journalisent pas par défaut.
 const getWsToken = () => new URLSearchParams(window.location.search).get('token');
+// CORRECTIF (bug "overlay hors ligne par défaut" — même famille pour le
+// dashboard) : ce port était codé en dur (8765) et ignorait le paramètre
+// ?port=... que main.js transmet pourtant via l'option `query` de
+// loadFile() (voir main.js > mainWindow.loadFile). Ça fonctionnait par
+// coïncidence tant que PORT restait à sa valeur par défaut (8765,
+// justement), mais silencieusement plus dès que PORT était personnalisé
+// dans .env — le dashboard tentait alors de se connecter au mauvais port
+// sans qu'aucune erreur explicite n'indique pourquoi. Aligné sur le même
+// pattern que overlay.html (getWsPort()), qui lisait déjà correctement ce
+// paramètre.
+const getWsPort = () => new URLSearchParams(window.location.search).get('port') || '8765';
 const getWsUrl = () => {
   if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${proto}//${window.location.host}`;
   }
-  return `ws://localhost:8765`;
+  return `ws://localhost:${getWsPort()}`;
 };
 
 let ws = null;

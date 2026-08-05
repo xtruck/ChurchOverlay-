@@ -79,9 +79,9 @@ const { createRateLimiter } = require('./rate-limiter');
 
 const portValidation = configValidator.validateEnvVar('PORT', process.env.PORT);
 if (!portValidation.valid) {
-  console.warn(`[server] ${portValidation.error} — utilisation du port par défaut 3000.`);
+  console.warn(`[server] ${portValidation.error} — utilisation du port par défaut 8765.`);
 }
-const SERVER_PORT = portValidation.valid ? portValidation.parsedValue : 3000;
+const SERVER_PORT = portValidation.valid ? portValidation.parsedValue : 8765;
 
 const hostValidation = configValidator.validateEnvVar('WS_HOST', process.env.WS_HOST);
 let WS_HOST = hostValidation.valid ? hostValidation.parsedValue : '127.0.0.1';

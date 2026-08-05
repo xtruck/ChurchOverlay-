@@ -538,14 +538,14 @@ body {
 // Il voyage maintenant via l'en-tête de handshake Sec-WebSocket-Protocol
 // (2e argument du constructeur WebSocket).
 const getWsToken = () => new URLSearchParams(window.location.search).get('token');
-// CORRECTIF (bug "serveur hors ligne" / reconnexion en boucle) : en
-// file:// (cas réel, cette page est chargée depuis disque et collée dans
-// OBS), il n'y a pas de window.location.host à réutiliser. Le port codé
-// en dur ici (8765) ne correspondait à aucun port réellement utilisé par
-// server.js (3000 par défaut, voir env.example). main.js transmet
-// désormais le port réel via ?port=... dans getOverlayUrl() ; on le relit
-// ici avec 3000 comme repli si absent.
-const getWsPort = () => new URLSearchParams(window.location.search).get('port') || '3000';
+// CORRECTIF (bug "overlay hors ligne par défaut") : en file:// (cas réel,
+// cette page est chargée depuis disque et collée dans OBS), il n'y a pas
+// de window.location.host à réutiliser. main.js transmet le port réel via
+// ?port=... (voir getOverlayUrl()) ; 8765 est le vrai défaut de server.js
+// (voir config-validator.js > ENV_SCHEMA.PORT) — un correctif précédent
+// utilisait 3000 par erreur ici, qui ne correspondait au port réel de
+// server.js que si PORT était explicitement défini à cette valeur.
+const getWsPort = () => new URLSearchParams(window.location.search).get('port') || '8765';
 const getWsUrl = () => {
   if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

@@ -39,19 +39,22 @@ try {
 const APP_ROOT = __dirname;
 const USER_DATA = () => app.getPath('userData');
 
-// CORRECTIF (bug "serveur hors ligne" / reconnexion en boucle) : server.js
-// écoute sur process.env.PORT si défini, sinon sur 3000 par défaut (voir
-// env.example). dashboard.html et overlay.html sont chargés en file:// et
-// ne peuvent donc pas déduire le port depuis window.location.host ; ils
-// retombaient sur un port 8765 codé en dur qui ne correspond à rien.
-// On calcule ici la même valeur que server.js et on la transmet aux deux
-// pages via la query string, exactement comme WS_AUTH_TOKEN /
-// WS_VIEWER_TOKEN.
+// CORRECTIF (bug "overlay hors ligne par défaut") : un correctif précédent
+// avait déjà identifié que dashboard.html/overlay.html ne pouvaient pas
+// déduire le port depuis window.location.host (chargés en file://) et
+// avait tenté d'harmoniser ça avec server.js — mais avait fixé la valeur
+// par défaut à 3000, alors que le VRAI défaut de server.js (voir
+// config-validator.js > ENV_SCHEMA.PORT, couvert par
+// test-config-validator.js) est 8765. Résultat : quand PORT n'est pas
+// défini (cas par défaut), server.js écoutait sur 8765 mais main.js
+// transmettait 3000 à overlay.html — qui ne pouvait donc jamais se
+// connecter. Corrigé en harmonisant sur 8765, la valeur réellement
+// utilisée par server.js.
 function resolveServerPort() {
   const raw = (process.env.PORT || '').trim();
-  if (!raw) return 3000;
+  if (!raw) return 8765;
   const parsed = Number.parseInt(raw, 10);
-  return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : 3000;
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : 8765;
 }
 const SERVER_PORT = resolveServerPort();
 const CONFIG_PATH = () => path.join(USER_DATA(), 'config.json');
