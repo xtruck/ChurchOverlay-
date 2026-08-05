@@ -53,104 +53,20 @@ function getVerseDurationMs() {
 }
 
 // ---------------------------------------------------------------------------
-// NEW: AI modules (OPTIONAL — wrapped in try-catch)
+// AI modules (OPTIONAL — wrapped in try-catch, see ai-modules-loader.js)
 // ---------------------------------------------------------------------------
-let semanticDetector = null;
-let detectCommand = null;
-let corrector = null;
-let semanticSearch = null;
-let plugins = null;
-let themeGenerator = null;
-
-const aiLoadErrors = [];
-const groqHasChatCompletion = typeof groq.chatCompletion === 'function';
-
-try {
-  const { SemanticDetector } = require('./semantic-detector');
-  if (groqHasChatCompletion) {
-    semanticDetector = new SemanticDetector(groq);
-    console.log('[server] ✓ SemanticDetector loaded');
-  } else {
-    aiLoadErrors.push('SemanticDetector: groq.chatCompletion not available');
-  }
-} catch (e) {
-  aiLoadErrors.push('SemanticDetector: ' + e.message);
-  console.warn('[server] SemanticDetector disabled:', e.message);
-}
-
-try {
-  const mod = require('./voice-commands');
-  detectCommand = mod.detectCommand;
-  console.log('[server] ✓ Voice commands loaded');
-} catch (e) {
-  aiLoadErrors.push('VoiceCommands: ' + e.message);
-  console.warn('[server] Voice commands disabled:', e.message);
-}
-
-try {
-  const { TranscriptionCorrector } = require('./transcription-corrector');
-  if (groqHasChatCompletion) {
-    corrector = new TranscriptionCorrector(groq);
-    console.log('[server] ✓ TranscriptionCorrector loaded');
-  } else {
-    aiLoadErrors.push('TranscriptionCorrector: groq.chatCompletion not available (tests use mock)');
-    corrector = new TranscriptionCorrector(null);
-    console.log('[server] ✓ TranscriptionCorrector loaded (fast mode only)');
-  }
-} catch (e) {
-  aiLoadErrors.push('TranscriptionCorrector: ' + e.message);
-  console.warn('[server] TranscriptionCorrector disabled:', e.message);
-}
-
-try {
-  const { BibleSemanticSearch } = require('./bible-semantic-search');
-  semanticSearch = new BibleSemanticSearch();
-  semanticSearch.loadIndex().catch(() => {});
-  console.log('[server] ✓ BibleSemanticSearch loaded');
-} catch (e) {
-  aiLoadErrors.push('BibleSemanticSearch: ' + e.message);
-  console.warn('[server] BibleSemanticSearch disabled:', e.message);
-}
-
-try {
-  const { PluginSystem } = require('./plugin-system');
-  plugins = new PluginSystem();
-  const pluginsDir = path.join(APP_ROOT, 'config', 'plugins');
-  if (fs.existsSync(pluginsDir)) {
-    plugins.loadFromDirectory(pluginsDir);
-  }
-  console.log('[server] ✓ PluginSystem loaded');
-} catch (e) {
-  aiLoadErrors.push('PluginSystem: ' + e.message);
-  console.warn('[server] PluginSystem disabled:', e.message);
-}
-
-try {
-  const { AIThemeGenerator } = require('./ai-theme-generator');
-  if (groqHasChatCompletion) {
-    themeGenerator = new AIThemeGenerator(groq);
-    console.log('[server] ✓ AIThemeGenerator loaded');
-  } else {
-    themeGenerator = new AIThemeGenerator(null);
-    console.log('[server] ✓ AIThemeGenerator loaded (rule-based only)');
-  }
-} catch (e) {
-  aiLoadErrors.push('AIThemeGenerator: ' + e.message);
-  console.warn('[server] AIThemeGenerator disabled:', e.message);
-}
-
-let aiEnricher = null;
-try {
-  aiEnricher = require('./ai-enricher');
-  console.log('[server] ✓ AI Enricher loaded');
-} catch (e) {
-  aiLoadErrors.push('AIEnricher: ' + e.message);
-  console.warn('[server] AIEnricher disabled:', e.message);
-}
-
-if (aiLoadErrors.length > 0) {
-  console.log('[server] ⚠ ' + aiLoadErrors.length + ' AI feature(s) in limited mode.');
-}
+const { loadAIModules } = require('./ai-modules-loader');
+const {
+  semanticDetector,
+  detectCommand,
+  corrector,
+  semanticSearch,
+  plugins,
+  themeGenerator,
+  aiEnricher,
+  aiLoadErrors,
+  groqHasChatCompletion,
+} = loadAIModules({ groq, appRoot: APP_ROOT });
 
 // ---------------------------------------------------------------------------
 // HTTP & WebSocket server
@@ -301,18 +217,11 @@ httpServer.on('error', (err) => {
 });
 
 // ---------------------------------------------------------------------------
-// State
+// State (voir session-state.js — encapsulé le 2026-08-05, comportement
+// identique, accès désormais via des accesseurs plutôt que des `let`
+// globaux modifiables depuis n'importe où dans ce fichier)
 // ---------------------------------------------------------------------------
-let displayLanguage = 'fr';
-let lastReference = null;
-let lastShownAt = 0;
-const DEDUP_MS = 30_000;
-const verseHistory = [];
-const MAX_HISTORY = 20;
-const recentTranscripts = [];
-const MAX_CONTEXT_TRANSCRIPTS = 10;
-let obsGateOpen = true;
-let obsGateReason = '';
+const sessionState = require('./session-state');
 
 // ---------------------------------------------------------------------------
 // Rate limiter (diffusion de versets)
@@ -356,11 +265,10 @@ function broadcast(obj) {
 }
 
 // ---------------------------------------------------------------------------
-// Push to verse history
+// Push to verse history (délègue à session-state.js)
 // ---------------------------------------------------------------------------
 function pushHistory(entry) {
-  verseHistory.unshift(entry);
-  if (verseHistory.length > MAX_HISTORY) verseHistory.pop();
+  sessionState.pushHistory(entry);
 }
 
 // ---------------------------------------------------------------------------
@@ -368,11 +276,11 @@ function pushHistory(entry) {
 // ---------------------------------------------------------------------------
 const readingMode = new ReadingMode({
   getChapterVerses: (book, chapter) =>
-    bibleLookup.getChapterVersesMultilang(book, chapter, displayLanguage),
+    bibleLookup.getChapterVersesMultilang(book, chapter, sessionState.getDisplayLanguage()),
   onVerseAdvance: (verse) => {
     const reference = bibleLookup.buildReferenceLabel(
       { book: readingMode.book, chapter: readingMode.chapter, verseStart: verse.num },
-      displayLanguage
+      sessionState.getDisplayLanguage()
     );
     broadcast({
       action: 'showVerse',
@@ -380,7 +288,7 @@ const readingMode = new ReadingMode({
       text: verse.text,
       text_fr: verse.text_fr || null,
       text_en: verse.text_en || null,
-      langMode: displayLanguage,
+      langMode: sessionState.getDisplayLanguage(),
       durationMs: getVerseDurationMs(),
       readingMode: true,
     });
@@ -390,7 +298,7 @@ const readingMode = new ReadingMode({
       readingMode: true,
       timestamp: Date.now(),
     });
-    broadcast({ action: 'historyUpdated', history: verseHistory });
+    broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
   },
 });
 
@@ -405,41 +313,26 @@ async function activateReadingMode(book, chapter, verseStart) {
 // ---------------------------------------------------------------------------
 // Prompt injection filter for LLM-bound text
 // ---------------------------------------------------------------------------
-const PROMPT_INJECTION_PATTERNS = [
-  /ignore previous instructions/gi,
-  /ignore all prior/gi,
-  /system prompt/gi,
-  /you are now/gi,
-  /disregard everything/gi,
-  /new instructions?:/gi,
-  /<?\/?instruction>/gi,
-  /<?\/?system>/gi,
-  /DAN\b/gi,
-  /jailbreak/gi,
-];
-
-function sanitizeForPrompt(text) {
-  if (!text) return '';
-  let sanitized = text;
-  for (const pattern of PROMPT_INJECTION_PATTERNS) {
-    sanitized = sanitized.replace(pattern, '[...]');
-  }
-  // Limit length to prevent prompt stuffing
-  return sanitized.slice(0, 4000);
-}
+// CORRECTIF (chantier de découpage 2026-08-05) : server.js définissait sa
+// propre copie plus faible de sanitizeForPrompt() (moins de patterns, pas
+// de neutralisation des triples backticks) alors que semantic-detector.js,
+// transcription-corrector.js et ai-enricher.js utilisent déjà le module
+// partagé et plus complet prompt-sanitizer.js. Utilise désormais la même
+// défense partout — une seule source de vérité.
+const { sanitizeForPrompt } = require('./prompt-sanitizer');
 
 // ---------------------------------------------------------------------------
-// Update transcript context for AI features
+// Update transcript context for AI features (délègue à session-state.js
+// pour le stockage ; le lien avec semanticDetector reste ici car c'est une
+// dépendance vers un module IA, pas de l'état de session pur)
 // ---------------------------------------------------------------------------
 function updateTranscriptContext(text) {
-  recentTranscripts.push(text);
-  if (recentTranscripts.length > MAX_CONTEXT_TRANSCRIPTS) recentTranscripts.shift();
+  sessionState.updateTranscriptContext(text);
   if (semanticDetector) semanticDetector.addContext(text);
 }
 
 function getRecentContext(maxChars = 300) {
-  const context = recentTranscripts.slice(-5).join(' ');
-  return context.length > maxChars ? context.slice(-maxChars) : context;
+  return sessionState.getRecentContext(maxChars);
 }
 
 // ===========================================================================
@@ -549,7 +442,7 @@ async function processTranscript(text) {
             const first = readingMode.verses[readingMode.currentIndex];
             const label = bibleLookup.buildReferenceLabel(
               { book, chapter: nextChapter, verseStart: first.num },
-              displayLanguage
+              sessionState.getDisplayLanguage()
             );
             broadcast({
               action: 'showVerse',
@@ -557,7 +450,7 @@ async function processTranscript(text) {
               text: first.text,
               text_fr: first.text_fr || null,
               text_en: first.text_en || null,
-              langMode: displayLanguage,
+              langMode: sessionState.getDisplayLanguage(),
               durationMs: getVerseDurationMs(),
               readingMode: true,
             });
@@ -567,7 +460,7 @@ async function processTranscript(text) {
               readingMode: true,
               timestamp: Date.now(),
             });
-            broadcast({ action: 'historyUpdated', history: verseHistory });
+            broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
             log('Reading mode: chapitre suivant → ' + label);
           }
         }
@@ -585,12 +478,11 @@ async function processTranscript(text) {
 
   const refKey = `${reference.book}:${reference.chapter}:${reference.verseStart || ''}`;
   const now = Date.now();
-  if (lastReference === refKey && now - lastShownAt < DEDUP_MS) {
+  if (sessionState.isDuplicateReference(refKey, now)) {
     log('Duplicate suppressed: ' + refKey);
     return;
   }
-  lastReference = refKey;
-  lastShownAt = now;
+  sessionState.recordShownReference(refKey, now);
 
   let verse;
   try {
@@ -603,12 +495,12 @@ async function processTranscript(text) {
         lang: quoted.lang,
         text_fr: quoted.lang === 'fr' ? quoted.text : null,
         text_en: quoted.lang === 'en' ? quoted.text : null,
-        langMode: displayLanguage,
+        langMode: sessionState.getDisplayLanguage(),
       };
       // Le quote-match ne connaît que le texte tel qu'il a été indexé
       // (une seule langue). En mode bilingue, on retente une résolution
       // structurée de la référence pour obtenir le FR + EN complets.
-      if (displayLanguage === 'both') {
+      if (sessionState.getDisplayLanguage() === 'both') {
         const parsedRef = detector.parseReference(quoted.reference);
         if (parsedRef) {
           try {
@@ -619,7 +511,7 @@ async function processTranscript(text) {
         }
       }
     } else {
-      verse = await bibleLookup.getVerseMultilang(reference, displayLanguage);
+      verse = await bibleLookup.getVerseMultilang(reference, sessionState.getDisplayLanguage());
     }
   } catch (err) {
     warn('Bible lookup failed: ' + err.message);
@@ -647,9 +539,13 @@ async function processTranscript(text) {
 
   const features = featuresStore.readFeatures();
   const multiScene = (features.broadcast || {}).multiScene || {};
-  if (multiScene.enabled && !obsGateOpen) {
+  if (multiScene.enabled && !sessionState.getObsGate().open) {
     log('OBS gate closed — verse buffered: ' + verse.reference);
-    broadcast({ action: 'verseBuffered', reference: verse.reference, reason: obsGateReason });
+    broadcast({
+      action: 'verseBuffered',
+      reference: verse.reference,
+      reason: sessionState.getObsGate().reason,
+    });
     return;
   }
 
@@ -674,7 +570,7 @@ async function processTranscript(text) {
     timestamp: now,
     detectedBy: reference.detectedBy || 'regex',
   });
-  broadcast({ action: 'historyUpdated', history: verseHistory });
+  broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
 
   if (plugins) {
     plugins.emit('onVerseShown', { ...verse, reference: verse.reference }).catch(() => {});
@@ -695,7 +591,10 @@ async function handleVoiceCommand(command, _originalText) {
     case 'showVerse': {
       if (!command.reference) return;
       try {
-        const verse = await bibleLookup.getVerseMultilang(command.reference, displayLanguage);
+        const verse = await bibleLookup.getVerseMultilang(
+          command.reference,
+          sessionState.getDisplayLanguage()
+        );
         broadcast({
           action: 'showVerse',
           ...verse,
@@ -703,7 +602,7 @@ async function handleVoiceCommand(command, _originalText) {
           triggeredByVoice: true,
         });
         pushHistory({ ...verse, triggeredByVoice: true, timestamp: Date.now() });
-        broadcast({ action: 'historyUpdated', history: verseHistory });
+        broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
         log('Voice command: showed ' + verse.reference);
       } catch (err) {
         warn('Voice command verse lookup failed: ' + err.message);
@@ -755,8 +654,12 @@ async function handleVoiceCommand(command, _originalText) {
       break;
     }
     case 'setLanguage': {
-      displayLanguage = command.language;
-      broadcast({ action: 'languageChanged', language: displayLanguage, triggeredByVoice: true });
+      sessionState.setDisplayLanguage(command.language);
+      broadcast({
+        action: 'languageChanged',
+        language: sessionState.getDisplayLanguage(),
+        triggeredByVoice: true,
+      });
       log('Voice command: language ' + command.language);
       break;
     }
@@ -788,7 +691,7 @@ async function handleVoiceCommand(command, _originalText) {
     case 'emergencyClear': {
       broadcast({ action: 'hideVerse', emergency: true });
       broadcast({ action: 'emergencyClear' });
-      lastReference = null;
+      sessionState.clearLastReference();
       log('Voice command: EMERGENCY CLEAR');
       break;
     }
@@ -928,8 +831,8 @@ wss.on('connection', (ws, req) => {
   ws.send(
     JSON.stringify({
       action: 'init',
-      language: displayLanguage,
-      history: verseHistory,
+      language: sessionState.getDisplayLanguage(),
+      history: sessionState.getVerseHistory(),
       theme: themeLoader.themeToCss(theme),
       features,
       translations: bibleLookup.listTranslations(),
@@ -1035,11 +938,11 @@ wss.on('connection', (ws, req) => {
         return;
       }
       try {
-        const verse = await bibleLookup.getVerseMultilang(ref, displayLanguage);
+        const verse = await bibleLookup.getVerseMultilang(ref, sessionState.getDisplayLanguage());
         const durationMs = sanitized.durationMs || getVerseDurationMs();
         broadcast({ action: 'showVerse', ...verse, durationMs, triggeredManually: true });
         pushHistory({ ...verse, triggeredManually: true, timestamp: Date.now() });
-        broadcast({ action: 'historyUpdated', history: verseHistory });
+        broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
       } catch (err) {
         ws.send(JSON.stringify({ action: 'error', error: err.message }));
       }
@@ -1049,7 +952,7 @@ wss.on('connection', (ws, req) => {
     // --- Hide overlay ---
     if (sanitized.action === 'hideVerse') {
       broadcast({ action: 'hideVerse' });
-      lastReference = null;
+      sessionState.clearLastReference();
       return;
     }
 
@@ -1086,7 +989,7 @@ wss.on('connection', (ws, req) => {
     if (sanitized.action === 'setLanguage') {
       const lang = sanitized.language;
       if (['fr', 'en', 'both'].includes(lang)) {
-        displayLanguage = lang;
+        sessionState.setDisplayLanguage(lang);
         broadcast({ action: 'languageChanged', language: lang });
         log('Language changed: ' + lang);
       }
@@ -1125,7 +1028,7 @@ wss.on('connection', (ws, req) => {
         if (firstVerse) {
           const label = bibleLookup.buildReferenceLabel(
             { book: ref.book, chapter: ref.chapter, verseStart: firstVerse.num },
-            displayLanguage
+            sessionState.getDisplayLanguage()
           );
           broadcast({
             action: 'showVerse',
@@ -1133,7 +1036,7 @@ wss.on('connection', (ws, req) => {
             text: firstVerse.text,
             text_fr: firstVerse.text_fr || null,
             text_en: firstVerse.text_en || null,
-            langMode: displayLanguage,
+            langMode: sessionState.getDisplayLanguage(),
             durationMs: getVerseDurationMs(),
             readingMode: true,
           });
@@ -1143,7 +1046,7 @@ wss.on('connection', (ws, req) => {
             readingMode: true,
             timestamp: Date.now(),
           });
-          broadcast({ action: 'historyUpdated', history: verseHistory });
+          broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
         }
       } catch (err) {
         ws.send(JSON.stringify({ action: 'error', error: err.message }));
@@ -1257,7 +1160,7 @@ wss.on('connection', (ws, req) => {
         ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
         return;
       }
-      const fullTranscript = sanitizeForPrompt(recentTranscripts.join(' '));
+      const fullTranscript = sanitizeForPrompt(sessionState.getRecentTranscripts().join(' '));
       const summary = await aiEnricher.generateLiveSummary(fullTranscript);
       ws.send(JSON.stringify({ action: 'liveSummary', summary, timestamp: Date.now() }));
       return;
@@ -1269,7 +1172,7 @@ wss.on('connection', (ws, req) => {
         ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
         return;
       }
-      const fullTranscript = sanitizeForPrompt(recentTranscripts.join(' '));
+      const fullTranscript = sanitizeForPrompt(sessionState.getRecentTranscripts().join(' '));
       const themeData = await aiEnricher.detectSermonTheme(fullTranscript);
       ws.send(
         JSON.stringify({
@@ -1288,8 +1191,11 @@ wss.on('connection', (ws, req) => {
         ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
         return;
       }
-      const fullTranscript = sanitizeForPrompt(recentTranscripts.join(' '));
-      const recap = await aiEnricher.generatePostServiceRecap(fullTranscript, verseHistory);
+      const fullTranscript = sanitizeForPrompt(sessionState.getRecentTranscripts().join(' '));
+      const recap = await aiEnricher.generatePostServiceRecap(
+        fullTranscript,
+        sessionState.getVerseHistory()
+      );
       ws.send(JSON.stringify({ action: 'postServiceRecap', recap, timestamp: Date.now() }));
       return;
     }
@@ -1439,9 +1345,8 @@ if (parentPort) {
     }
 
     if (msg.type === 'obs-gate-changed') {
-      obsGateOpen = msg.open;
-      obsGateReason = msg.reason || '';
-      log(`OBS gate: ${obsGateOpen ? 'OPEN' : 'CLOSED'} (${obsGateReason})`);
+      sessionState.setObsGate(msg.open, msg.reason || '');
+      log(`OBS gate: ${msg.open ? 'OPEN' : 'CLOSED'} (${sessionState.getObsGate().reason})`);
       return;
     }
 
