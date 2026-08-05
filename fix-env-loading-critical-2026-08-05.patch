@@ -1,0 +1,277 @@
+diff --git a/dotenv-loader.js b/dotenv-loader.js
+new file mode 100644
+index 0000000..f2d171b
+--- /dev/null
++++ b/dotenv-loader.js
+@@ -0,0 +1,72 @@
++'use strict';
++/**
++ * dotenv-loader.js — Chargement minimal de fichiers .env, sans dépendance
++ *
++ * CORRECTIF CRITIQUE (transcription qui ne démarre jamais malgré des clés
++ * API renouvelées, visualiseur audio qui ne bouge pas) : main.js ne
++ * chargeait jamais .env dans process.env avant de démarrer le worker
++ * server.js — seul `npm run server-only` (mode développement, via le flag
++ * Node --env-file-if-exists) le faisait. L'app Electron réelle démarrait
++ * donc TOUJOURS avec les seules variables d'environnement déjà présentes
++ * dans le process (celles de l'OS, quasiment jamais celles d'un .env de
++ * projet) — chaque réglage placé dans .env (MIC_SILENCE_THRESHOLD, PORT
++ * personnalisé, WS_HOST...) était silencieusement ignoré par l'app réelle.
++ *
++ * Extrait dans son propre module (sans require('electron')) pour être
++ * testable en Node pur — voir test/test-dotenv-loader.js.
++ */
++
++const fs = require('fs');
++
++/**
++ * Analyse le contenu texte d'un fichier .env et ajoute chaque paire
++ * clé=valeur dans targetEnv — SANS écraser une clé déjà présente (une
++ * vraie variable d'environnement système reste toujours prioritaire).
++ * @param {string} raw - contenu texte du fichier .env
++ * @param {object} targetEnv - objet à enrichir (typiquement process.env)
++ */
++function parseEnvContent(raw, targetEnv) {
++  for (const line of raw.split(/\r?\n/)) {
++    const trimmed = line.trim();
++    if (!trimmed || trimmed.startsWith('#')) continue;
++    const eq = trimmed.indexOf('=');
++    if (eq === -1) continue;
++    const key = trimmed.slice(0, eq).trim();
++    let value = trimmed.slice(eq + 1).trim();
++    if (
++      (value.startsWith('"') && value.endsWith('"')) ||
++      (value.startsWith("'") && value.endsWith("'"))
++    ) {
++      value = value.slice(1, -1);
++    }
++    if (key && !(key in targetEnv)) {
++      targetEnv[key] = value;
++    }
++  }
++}
++
++/**
++ * Cherche un fichier .env parmi candidatePaths (dans l'ordre) et charge le
++ * PREMIER trouvé dans targetEnv. Ne fusionne jamais plusieurs fichiers.
++ * @param {object} targetEnv - objet à enrichir (typiquement process.env)
++ * @param {string[]} candidatePaths - chemins à essayer, dans l'ordre
++ * @param {(msg: string) => void} [onLoaded] - callback appelé avec le
++ *   chemin du fichier effectivement chargé (pour logger)
++ * @returns {string|null} le chemin chargé, ou null si aucun fichier trouvé
++ */
++function loadDotEnvInto(targetEnv, candidatePaths, onLoaded) {
++  for (const envPath of candidatePaths) {
++    let raw;
++    try {
++      raw = fs.readFileSync(envPath, 'utf8');
++    } catch (_e) {
++      continue; // fichier absent à cet emplacement : on essaie le suivant
++    }
++    parseEnvContent(raw, targetEnv);
++    if (onLoaded) onLoaded(envPath);
++    return envPath;
++  }
++  return null;
++}
++
++module.exports = { parseEnvContent, loadDotEnvInto };
+diff --git a/main.js b/main.js
+index 961da3b..bd9660c 100644
+--- a/main.js
++++ b/main.js
+@@ -39,6 +39,37 @@ try {
+ const APP_ROOT = __dirname;
+ const USER_DATA = () => app.getPath('userData');
+ 
++// ---------------------------------------------------------------------------
++// Chargement de .env — MANQUANT jusqu'ici dans l'app packagée
++// ---------------------------------------------------------------------------
++// CORRECTIF CRITIQUE (transcription qui ne démarre jamais malgré des clés
++// API renouvelées, visualiseur audio qui ne bouge pas) : server.js et
++// config-validator.js lisent bien process.env.MIC_SILENCE_THRESHOLD,
++// process.env.PORT, etc., mais RIEN dans main.js ne chargeait jamais le
++// fichier .env dans process.env avant de démarrer le worker server.js —
++// seul `npm run server-only` (mode développement, via le flag Node
++// --env-file-if-exists) le faisait. L'app Electron réelle (ce fichier)
++// démarrait donc TOUJOURS avec les seules variables d'environnement déjà
++// présentes dans le process (celles de l'OS, quasiment jamais celles d'un
++// .env de projet) — chaque réglage placé dans .env (MIC_SILENCE_THRESHOLD,
++// PORT personnalisé, WS_HOST...) était donc silencieusement ignoré par
++// l'app réelle, alors qu'il fonctionnait bien dans les tests (qui
++// utilisaient tous --env-file-if-exists).
++//
++// Un .env ne doit JAMAIS être inclus dans l'installateur packagé (il
++// contiendrait des clés en clair, livrées à quiconque installe l'app) —
++// on cherche donc ce fichier dans le dossier de données utilisateur
++// (USER_DATA(), ex. %APPDATA%\ChurchOverlay sous Windows — accessible et
++// modifiable même pour l'app installée), avec un repli sur APP_ROOT
++// (utile en mode développement, où .env vit à côté de main.js). Logique
++// de chargement extraite dans dotenv-loader.js (testable sans Electron).
++const { loadDotEnvInto } = require('./dotenv-loader');
++loadDotEnvInto(
++  process.env,
++  [path.join(USER_DATA(), '.env'), path.join(APP_ROOT, '.env')],
++  (loadedPath) => console.log(`[main] .env chargé depuis ${loadedPath}`)
++);
++
+ // CORRECTIF (bug "overlay hors ligne par défaut") : un correctif précédent
+ // avait déjà identifié que dashboard.html/overlay.html ne pouvaient pas
+ // déduire le port depuis window.location.host (chargés en file://) et
+diff --git a/package.json b/package.json
+index 8d2d3b6..8702ae2 100644
+--- a/package.json
++++ b/package.json
+@@ -2,7 +2,7 @@
+   "name": "churchoverlay",
+   "productName": "ChurchOverlay",
+   "version": "0.5.0",
+-  "description": "Overlay de versets bibliques en direct avec IA — détection sémantique, commandes vocales, thèmes dynamiques et recherche biblique par sujet.",
++  "description": "Overlay de versets bibliques en direct avec IA \u2014 d\u00e9tection s\u00e9mantique, commandes vocales, th\u00e8mes dynamiques et recherche biblique par sujet.",
+   "author": "ChurchOverlay",
+   "main": "main.js",
+   "scripts": {
+@@ -13,8 +13,8 @@
+     "test-envoi": "node test/test-envoi.js",
+     "check-files": "node scripts/check-build-files.js",
+     "pretest": "node ./scripts/check-test-files.js",
+-    "test": "node scripts/check-build-files.js && node test/test-detector.js && node test/test-detector-en.js && node test/test-validation.js && node test/test-rate-limiter.js && node test/test-config-validator.js && node test/test-groq-fallback-race.js && node test/test-theme-loader.js && node test/test-features-store.js && node test/test-audio-capture.js && node test/test-sentence-buffer.js && node test/test-reading-mode.js && node test/test-obs-gating.js && node test/test-ws-auth.js && node test/session-store.js && node test/integration-reading-mode-live.js && node test/integration-quote-match.js",
+-    "test-all": "node scripts/check-build-files.js && node test/test-detector.js && node test/test-detector-en.js && node test/test-validation.js && node test/test-rate-limiter.js && node test/test-config-validator.js && node test/test-groq-fallback-race.js && node test/test-theme-loader.js && node test/test-features-store.js && node test/test-audio-capture.js && node test/test-sentence-buffer.js && node test/test-reading-mode.js && node test/test-obs-gating.js && node test/test-ws-auth.js && node test/session-store.js && node test/integration-reading-mode-live.js && node test/integration-quote-match.js",
++    "test": "node scripts/check-build-files.js && node test/test-detector.js && node test/test-detector-en.js && node test/test-validation.js && node test/test-rate-limiter.js && node test/test-config-validator.js && node test/test-groq-fallback-race.js && node test/test-theme-loader.js && node test/test-features-store.js && node test/test-audio-capture.js && node test/test-sentence-buffer.js && node test/test-reading-mode.js && node test/test-obs-gating.js && node test/test-ws-auth.js && node test/test-dotenv-loader.js && node test/session-store.js && node test/integration-reading-mode-live.js && node test/integration-quote-match.js",
++    "test-all": "node scripts/check-build-files.js && node test/test-detector.js && node test/test-detector-en.js && node test/test-validation.js && node test/test-rate-limiter.js && node test/test-config-validator.js && node test/test-groq-fallback-race.js && node test/test-theme-loader.js && node test/test-features-store.js && node test/test-audio-capture.js && node test/test-sentence-buffer.js && node test/test-reading-mode.js && node test/test-obs-gating.js && node test/test-ws-auth.js && node test/test-dotenv-loader.js && node test/session-store.js && node test/integration-reading-mode-live.js && node test/integration-quote-match.js",
+     "dist": "electron-builder",
+     "lint": "eslint . --ext .ts,.js",
+     "lint:fix": "eslint . --ext .ts,.js --fix",
+@@ -71,6 +71,7 @@
+       "server.js",
+       "ai-modules-loader.js",
+       "session-state.js",
++      "dotenv-loader.js",
+       "session-store.js",
+       "sentence-buffer.js",
+       "audio-capture.js",
+diff --git a/test/test-dotenv-loader.js b/test/test-dotenv-loader.js
+new file mode 100644
+index 0000000..b612d9c
+--- /dev/null
++++ b/test/test-dotenv-loader.js
+@@ -0,0 +1,119 @@
++'use strict';
++/**
++ * Tests unitaires pour dotenv-loader.js — CORRECTIF CRITIQUE : l'app
++ * Electron réelle (main.js) ne chargeait jamais .env dans process.env,
++ * donc tout réglage placé dans .env (MIC_SILENCE_THRESHOLD, PORT...)
++ * était silencieusement ignoré par l'app packagée alors qu'il
++ * fonctionnait dans les tests (lancés via --env-file-if-exists).
++ */
++
++const fs = require('fs');
++const os = require('os');
++const path = require('path');
++
++const { parseEnvContent, loadDotEnvInto } = require('../dotenv-loader');
++
++function assert(cond, msg) {
++  if (!cond) {
++    console.error('[TEST] ✗', msg);
++    process.exit(1);
++  }
++  console.log('[TEST] ✓', msg);
++}
++
++function makeTmpDir() {
++  return fs.mkdtempSync(path.join(os.tmpdir(), 'churchoverlay-dotenv-test-'));
++}
++
++// --- Test 1 : parseEnvContent() analyse correctement clés/valeurs, commentaires, lignes vides ---
++{
++  const target = {};
++  parseEnvContent(
++    ['# commentaire', 'MIC_SILENCE_THRESHOLD=0', 'PORT=9999', '', 'FOO=bar=baz'].join('\n'),
++    target
++  );
++  assert(target.MIC_SILENCE_THRESHOLD === '0', 'MIC_SILENCE_THRESHOLD=0 correctement lu');
++  assert(target.PORT === '9999', 'PORT=9999 correctement lu');
++  assert(target.FOO === 'bar=baz', "une valeur contenant '=' n'est pas tronquée");
++  assert(!('#' in target), 'les lignes de commentaire sont ignorées');
++}
++
++// --- Test 2 : parseEnvContent() retire les guillemets simples/doubles ---
++{
++  const target = {};
++  parseEnvContent(['GROQ_API_KEY="gsk_test123"', "OTHER='val'"].join('\n'), target);
++  assert(target.GROQ_API_KEY === 'gsk_test123', 'guillemets doubles retirés');
++  assert(target.OTHER === 'val', 'guillemets simples retirés');
++}
++
++// --- Test 3 : parseEnvContent() ne remplace JAMAIS une clé déjà présente ---
++// (une vraie variable d'environnement système doit rester prioritaire)
++{
++  const target = { PORT: '1234' };
++  parseEnvContent('PORT=9999', target);
++  assert(
++    target.PORT === '1234',
++    "une variable déjà présente dans l'environnement n'est jamais écrasée par .env"
++  );
++}
++
++// --- Test 4 : loadDotEnvInto() charge le premier fichier trouvé parmi plusieurs candidats ---
++{
++  const tmpDir = makeTmpDir();
++  const missingPath = path.join(tmpDir, 'does-not-exist', '.env');
++  const realPath = path.join(tmpDir, '.env');
++  fs.writeFileSync(realPath, 'MIC_SILENCE_THRESHOLD=0.005\n');
++
++  const target = {};
++  let loadedFrom = null;
++  const result = loadDotEnvInto(target, [missingPath, realPath], (p) => {
++    loadedFrom = p;
++  });
++
++  assert(result === realPath, 'loadDotEnvInto() retourne le chemin du fichier réellement chargé');
++  assert(loadedFrom === realPath, 'le callback onLoaded reçoit le bon chemin');
++  assert(
++    target.MIC_SILENCE_THRESHOLD === '0.005',
++    'la valeur du fichier trouvé est bien chargée dans targetEnv'
++  );
++  fs.rmSync(tmpDir, { recursive: true, force: true });
++}
++
++// --- Test 5 : loadDotEnvInto() retourne null si aucun candidat n'existe (jamais d'exception) ---
++{
++  const tmpDir = makeTmpDir();
++  const target = {};
++  let threw = false;
++  let result;
++  try {
++    result = loadDotEnvInto(target, [
++      path.join(tmpDir, 'a', '.env'),
++      path.join(tmpDir, 'b', '.env'),
++    ]);
++  } catch (_err) {
++    threw = true;
++  }
++  assert(!threw, "loadDotEnvInto() ne lève jamais d'exception si aucun .env n'existe");
++  assert(result === null, 'loadDotEnvInto() retourne null si aucun candidat trouvé');
++  fs.rmSync(tmpDir, { recursive: true, force: true });
++}
++
++// --- Test 6 : loadDotEnvInto() ne fusionne pas plusieurs fichiers — seul le premier trouvé compte ---
++{
++  const tmpDir = makeTmpDir();
++  const firstPath = path.join(tmpDir, 'first.env');
++  const secondPath = path.join(tmpDir, 'second.env');
++  fs.writeFileSync(firstPath, 'ONLY_IN_FIRST=yes\n');
++  fs.writeFileSync(secondPath, 'ONLY_IN_SECOND=yes\n');
++
++  const target = {};
++  loadDotEnvInto(target, [firstPath, secondPath]);
++  assert(target.ONLY_IN_FIRST === 'yes', 'le premier fichier trouvé est bien chargé');
++  assert(
++    target.ONLY_IN_SECOND === undefined,
++    'le second fichier candidat est ignoré une fois le premier trouvé (pas de fusion)'
++  );
++  fs.rmSync(tmpDir, { recursive: true, force: true });
++}
++
++console.log('\n=== Tous les tests dotenv-loader sont passés ===');

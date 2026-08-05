@@ -39,6 +39,37 @@ try {
 const APP_ROOT = __dirname;
 const USER_DATA = () => app.getPath('userData');
 
+// ---------------------------------------------------------------------------
+// Chargement de .env — MANQUANT jusqu'ici dans l'app packagée
+// ---------------------------------------------------------------------------
+// CORRECTIF CRITIQUE (transcription qui ne démarre jamais malgré des clés
+// API renouvelées, visualiseur audio qui ne bouge pas) : server.js et
+// config-validator.js lisent bien process.env.MIC_SILENCE_THRESHOLD,
+// process.env.PORT, etc., mais RIEN dans main.js ne chargeait jamais le
+// fichier .env dans process.env avant de démarrer le worker server.js —
+// seul `npm run server-only` (mode développement, via le flag Node
+// --env-file-if-exists) le faisait. L'app Electron réelle (ce fichier)
+// démarrait donc TOUJOURS avec les seules variables d'environnement déjà
+// présentes dans le process (celles de l'OS, quasiment jamais celles d'un
+// .env de projet) — chaque réglage placé dans .env (MIC_SILENCE_THRESHOLD,
+// PORT personnalisé, WS_HOST...) était donc silencieusement ignoré par
+// l'app réelle, alors qu'il fonctionnait bien dans les tests (qui
+// utilisaient tous --env-file-if-exists).
+//
+// Un .env ne doit JAMAIS être inclus dans l'installateur packagé (il
+// contiendrait des clés en clair, livrées à quiconque installe l'app) —
+// on cherche donc ce fichier dans le dossier de données utilisateur
+// (USER_DATA(), ex. %APPDATA%\ChurchOverlay sous Windows — accessible et
+// modifiable même pour l'app installée), avec un repli sur APP_ROOT
+// (utile en mode développement, où .env vit à côté de main.js). Logique
+// de chargement extraite dans dotenv-loader.js (testable sans Electron).
+const { loadDotEnvInto } = require('./dotenv-loader');
+loadDotEnvInto(
+  process.env,
+  [path.join(USER_DATA(), '.env'), path.join(APP_ROOT, '.env')],
+  (loadedPath) => console.log(`[main] .env chargé depuis ${loadedPath}`)
+);
+
 // CORRECTIF (bug "overlay hors ligne par défaut") : un correctif précédent
 // avait déjà identifié que dashboard.html/overlay.html ne pouvaient pas
 // déduire le port depuis window.location.host (chargés en file://) et
