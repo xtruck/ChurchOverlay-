@@ -604,29 +604,8 @@
             background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
         }
 
-        /* AJOUT (effet verre + JS "gratuit" en CPU) : reflet spéculaire qui
-           suit le curseur, comme une vraie surface de verre qui accroche la
-           lumière selon l'angle de vue. --mx/--my sont deux variables CSS
-           (0-100%) mises à jour par un seul écouteur `pointermove` délégué
-           (voir le script en bas de page), throttlé par requestAnimationFrame
-           : au repos (souris immobile ou ailleurs), ce calque ne coûte
-           strictement rien — ni animation "infinite", ni JS qui tourne en
-           boucle, juste un dégradé statique tant que la position ne change
-           pas. */
-        .card::after {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: radial-gradient(480px circle at var(--mx, 50%) var(--my, 50%),
-                rgba(255, 255, 255, 0.10), transparent 55%);
-            opacity: 0;
-            transition: opacity 0.35s ease;
-            pointer-events: none;
-        }
-
-        .card:hover::after {
-            opacity: 1;
-        }
+        /* RETIRÉ (sur demande) : l'effet de reflet qui suivait le curseur au
+           survol d'une carte (halo flou) a été supprimé. */
 
         .card:hover {
             border-color: var(--border-light);
@@ -694,24 +673,8 @@
             transition: box-shadow 0.4s var(--ease-silk), border-color 0.4s var(--ease-silk);
         }
 
-        /* Même reflet spéculaire suivant le curseur que .card::after — voir
-           le commentaire à côté de .card::after pour le détail du coût CPU
-           (nul au repos). */
-        .hero-verse-card::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            border-radius: inherit;
-            background: radial-gradient(560px circle at var(--mx, 50%) var(--my, 50%),
-                rgba(255, 255, 255, 0.09), transparent 55%);
-            opacity: 0;
-            transition: opacity 0.35s ease;
-            pointer-events: none;
-        }
-
-        .hero-verse-card:hover::before {
-            opacity: 1;
-        }
+        /* RETIRÉ (sur demande) : même halo suivant le curseur retiré ici
+           aussi — voir le commentaire équivalent sur .card. */
 
         .hero-verse-card:hover {
             border-color: rgba(220, 180, 106, 0.4);
@@ -3286,38 +3249,10 @@
             applyState();
         })();
 
-        // AJOUT (plus d'effet verre + JS, sans charger le CPU) : reflet
-        // spéculaire qui suit le curseur sur .card/.hero-verse-card (voir
-        // .card::after / .hero-verse-card::before dans <style>). Un seul
-        // écouteur `pointermove` délégué sur tout le document, throttlé par
-        // requestAnimationFrame (au plus une mise à jour par frame, jamais
-        // plus vite que l'écran ne peut afficher) — et qui ne fait
-        // strictement rien tant que la souris ne bouge pas. Coût au repos :
-        // nul.
-        (function setupGlassCursorGlow() {
-            let scheduled = false;
-            let lastEvent = null;
-
-            function apply() {
-                scheduled = false;
-                if (!lastEvent) return;
-                const target = lastEvent.target.closest('.card, .hero-verse-card');
-                if (!target) return;
-                const rect = target.getBoundingClientRect();
-                const mx = ((lastEvent.clientX - rect.left) / rect.width) * 100;
-                const my = ((lastEvent.clientY - rect.top) / rect.height) * 100;
-                target.style.setProperty('--mx', `${mx}%`);
-                target.style.setProperty('--my', `${my}%`);
-            }
-
-            document.addEventListener('pointermove', (e) => {
-                lastEvent = e;
-                if (!scheduled) {
-                    scheduled = true;
-                    requestAnimationFrame(apply);
-                }
-            }, { passive: true });
-        })();
+        // RETIRÉ (sur demande) : l'écouteur pointermove qui pilotait le halo
+        // suivant le curseur sur .card/.hero-verse-card a été supprimé, en
+        // même temps que les règles CSS .card::after / .hero-verse-card::before
+        // correspondantes.
 
         // AJOUT : onde au clic (voir .btn-ripple dans <style>). Délégué sur
         // le document, ne crée un élément que sur un vrai clic, et le
