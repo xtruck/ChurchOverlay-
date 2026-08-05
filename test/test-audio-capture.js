@@ -137,6 +137,14 @@ async function run() {
   // Bout-en-bout : un segment de silence pur envoyé via feedPcmChunk() ne
   // doit PAS déclencher onAudioSegment().
   segments = [];
+  let skippedInfo = null;
+  audioCapture.on({
+    onAudioSegment: (file) => segments.push(file),
+    onSegmentSkipped: (info) => {
+      skippedInfo = info;
+    },
+    onError: (err) => console.error('[TEST] onError inattendu:', err.message),
+  });
   await audioCapture.startBrowserCapture();
   audioCapture.feedPcmChunk(Buffer.alloc(segmentBytes + 100));
   assert.strictEqual(
@@ -146,6 +154,54 @@ async function run() {
   );
   await audioCapture.stopRecording();
   console.log('[TEST] ✓ Silence correctement filtré avant envoi au STT');
+
+  // CORRECTIF (problème récurrent — transcription qui ne démarre jamais
+  // sans aucune erreur visible) : le rejet d'un segment pour silence doit
+  // désormais déclencher onSegmentSkipped(), pas rester un simple
+  // console.log invisible en usage normal.
+  console.log('\n[TEST] Test 7: onSegmentSkipped() se déclenche bien sur un rejet...');
+  assert(
+    skippedInfo !== null,
+    'onSegmentSkipped() aurait dû être appelé pour le segment silencieux'
+  );
+  assert.strictEqual(skippedInfo.voicedMs, 0, 'voicedMs devrait être 0 pour un silence pur');
+  assert.strictEqual(
+    skippedInfo.threshold,
+    config.silenceThreshold,
+    'threshold rapporté devrait correspondre à la config active'
+  );
+  console.log('[TEST] ✓ onSegmentSkipped() rapporte les bonnes informations');
+
+  // CORRECTIF : silenceThreshold doit être réglable via startBrowserCapture(),
+  // pour que MIC_SILENCE_THRESHOLD (server.js/config-validator.js) ait un
+  // effet réel. À threshold=0, même un signal très faible doit passer.
+  console.log('\n[TEST] Test 8: silenceThreshold personnalisé via startBrowserCapture()...');
+  segments = [];
+  skippedInfo = null;
+  audioCapture.on({
+    onAudioSegment: (file) => segments.push(file),
+    onSegmentSkipped: (info) => {
+      skippedInfo = info;
+    },
+    onError: (err) => console.error('[TEST] onError inattendu:', err.message),
+  });
+  await audioCapture.startBrowserCapture({ silenceThreshold: 0 });
+  // Un signal quasi silencieux (amplitude très faible) — rejeté avec le
+  // seuil par défaut (0.02), mais devrait passer avec silenceThreshold: 0.
+  const quietSegment = makeVoicedBuffer(segmentBytes, 50);
+  audioCapture.feedPcmChunk(quietSegment);
+  assert.strictEqual(
+    segments.length,
+    1,
+    'Avec silenceThreshold: 0, un signal faible devrait quand même être envoyé au STT'
+  );
+  assert.strictEqual(
+    skippedInfo,
+    null,
+    'onSegmentSkipped() ne devrait pas se déclencher quand silenceThreshold: 0'
+  );
+  await audioCapture.stopRecording();
+  console.log('[TEST] ✓ silenceThreshold: 0 désactive bien le filtre de silence');
 
   console.log('\n=== Tous les tests sont passés ===');
   process.exit(0);
