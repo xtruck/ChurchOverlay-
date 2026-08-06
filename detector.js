@@ -449,6 +449,16 @@ function matchAgainstAliases(normalized) {
     const chapitreKeyword = requireExplicitChapitre ? `chapitre\\s+` : `(?:chapitre\\s+)?`;
 
     // Standard Pattern
+    //
+    // CORRECTIF (audit — détecteur "pas assez performant", donnait le
+    // chapitre entier au lieu du verset précis) : deux notations orales/
+    // écrites très courantes de référence biblique n'étaient pas
+    // reconnues, faute de verset capturé : "Jean 3.16" (point comme
+    // séparateur — tout aussi naturel que ":" à l'oral transcrit) et
+    // "Jean 3 v16" / "Jean 3 v. 16" (abréviation "v" pour "verset", très
+    // répandue). Dans les deux cas, le verset entier était perdu et
+    // detector.js retombait sur la référence "chapitre seul" la plus
+    // faible — d'où le chapitre complet affiché au lieu du verset attendu.
     const pattern = new RegExp(
       `(?:^|\\s)${escaped}\\s+` + // Book name
         chapitreKeyword + // "chapitre"
@@ -456,11 +466,11 @@ function matchAgainstAliases(normalized) {
         `(?:` + // Start optional verse group
         `\\s*` + // Optional whitespace
         `(?:` +
-        `[:,]\\s*` + // Colon or comma
-        `(?:verset(?:s)?\\s+)?` + // Optional "verset" after colon/comma
+        `[:,.]\\s*` + // Colon, comma, OR period ("Jean 3.16")
+        `(?:(?:verset(?:s)?|v\\.?)\\s+)?` + // Optional "verset"/"v"/"v." after separator
         `(\\d{1,3})` + // Verse start (group 2)
         `|` +
-        `\\s+verset(?:s)?\\s+` + // " verset "
+        `\\s+(?:verset(?:s)?|v\\.?)\\s+` + // " verset " OR " v " OR " v. " (abréviation)
         `(\\d{1,3})` + // Verse start (group 3)
         `|` +
         `\\s+` + // Just whitespace
