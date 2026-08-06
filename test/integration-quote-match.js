@@ -37,6 +37,18 @@ const QUOTED = {
   score: 0.82,
 };
 
+const QUOTED_OTHER = {
+  reference: 'Romains 8:28',
+  text: 'Nous savons, du reste, que toutes choses concourent au bien de ceux qui aiment Dieu.',
+  provider: 'cache-disque',
+  lang: 'fr',
+  score: 0.79,
+};
+
+// Le prochain appel à findByQuotedText() renvoie ceci au lieu de QUOTED —
+// utilisé pour le scénario "deux versets différents cités par citation".
+let nextQuoted = null;
+
 let quoteLookups = 0;
 injectFakeModule('bible-lookup-with-api.js', {
   async getChapterVerses() {
@@ -51,7 +63,9 @@ injectFakeModule('bible-lookup-with-api.js', {
   resetFailedProviders() {},
   findByQuotedText() {
     quoteLookups++;
-    return { ...QUOTED };
+    const result = nextQuoted || QUOTED;
+    nextQuoted = null;
+    return { ...result };
   },
   setCacheDir() {},
   setTranslation() {},
@@ -183,6 +197,24 @@ async function simulateSegment(text) {
     'findByQuotedText a bien été consulté sur les deux segments',
     quoteLookups === 2,
     `appels=${quoteLookups}`
+  );
+
+  // RÉGRESSION COUVERTE (audit round 9) : refKey utilisait book/chapter/
+  // verseStart, tous vides pour une détection par citation — donc "::"
+  // pour n'importe quel verset. Un second verset DIFFÉRENT cité juste
+  // après un premier (sans référence dite pour aucun des deux) était donc
+  // à tort traité comme le "même" verset et supprimé comme doublon.
+  received.length = 0;
+  nextQuoted = QUOTED_OTHER;
+  await simulateSegment(
+    'nous savons du reste que toutes choses concourent au bien de ceux qui aiment dieu'
+  );
+  await sleep(400);
+  const shownOther = received.find((m) => m.action === 'showVerse');
+  check(
+    "un second verset différent cité par citation dans les 30s N'EST PAS supprimé comme doublon",
+    !!shownOther && shownOther.reference === QUOTED_OTHER.reference,
+    JSON.stringify(shownOther)
   );
 
   ws.close();
