@@ -424,8 +424,14 @@ class AIThemeGenerator {
     if (!theme) theme = MOOD_THEMES.default;
     return {
       themeName: theme.name,
-      backgroundGradient: theme.backgroundGradient,
-      textColor: theme.textColor,
+      // CORRECTIF (audit — le mood picker changeait la police/l'accent
+      // mais jamais le fond ni la couleur du texte) : overlay.html
+      // attend `theme.background`/`theme.color` (mêmes noms que le
+      // schéma de validation.js SCHEMAS.applyTheme), mais cette fonction
+      // renvoyait `backgroundGradient`/`textColor` — aucune des deux
+      // conditions correspondantes ne s'exécutait jamais côté overlay.
+      background: theme.backgroundGradient,
+      color: theme.textColor,
       accentColor: theme.accentColor,
       fontFamily: theme.fontFamily,
       animationStyle: theme.animationStyle,
