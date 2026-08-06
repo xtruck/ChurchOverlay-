@@ -257,18 +257,42 @@ function drawRealAudioVisualizer() {
   const bufferLength = analyserNode.frequencyBinCount;
   const dataArray = new Uint8Array(bufferLength);
 
-  canvas.width = canvas.offsetWidth;
-  canvas.height = canvas.offsetHeight;
+  let barGradient = null;
+  let lastWidth = -1;
+  let lastHeight = -1;
 
-  // Dégradé calculé une seule fois (évite de recréer un
-  // ctx.createLinearGradient() à chaque frame, coûteux en continu).
-  const barGradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
-  barGradient.addColorStop(0, '#6366f1');
-  barGradient.addColorStop(1, '#06b6d4');
+  // CORRECTIF (audit — "pas de courbe audio visible") : ce canvas vit dans
+  // l'onglet "Transcript", masqué (display:none) par défaut. La capture
+  // micro démarre automatiquement dès que le pipeline est prêt — souvent
+  // avant que l'opérateur n'ait cliqué sur cet onglet. canvas.offsetWidth/
+  // offsetHeight valent 0 pour un élément caché : canvas.width/height
+  // n'étaient fixés qu'une seule fois, ici, AVANT la boucle draw() —
+  // figés à 0x0 pour toujours, même une fois l'onglet affiché ensuite,
+  // car rien ne les recalculait après coup. Revérifié à chaque frame
+  // (comparaison bon marché) pour s'auto-corriger dès que le canvas
+  // redevient visible, au lieu d'un calcul figé une fois pour toutes.
+  function ensureCanvasSize() {
+    const w = canvas.offsetWidth;
+    const h = canvas.offsetHeight;
+    if (w > 0 && h > 0 && (w !== lastWidth || h !== lastHeight)) {
+      canvas.width = w;
+      canvas.height = h;
+      lastWidth = w;
+      lastHeight = h;
+      // Le dégradé dépend de la hauteur : recalculé seulement quand la
+      // taille change réellement, pas à chaque frame.
+      barGradient = ctx.createLinearGradient(0, h, 0, 0);
+      barGradient.addColorStop(0, '#6366f1');
+      barGradient.addColorStop(1, '#06b6d4');
+    }
+  }
 
   function draw() {
     if (!realMicCaptureState) return; // capture arrêtée entre-temps
     realVisualizerAnimId = requestAnimationFrame(draw);
+    ensureCanvasSize();
+    if (!barGradient) return; // toujours masqué : rien à dessiner pour l'instant
+
     analyserNode.getByteFrequencyData(dataArray);
 
     ctx.fillStyle = 'rgba(17, 24, 39, 0.4)';
