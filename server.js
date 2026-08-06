@@ -537,7 +537,30 @@ async function processTranscript(text) {
         }
       }
     } else {
-      verse = await bibleLookup.getVerseMultilang(reference, sessionState.getDisplayLanguage());
+      // CORRECTIF (audit — "Jean 3 verset 1" affichait tout le chapitre 3) :
+      // quand la transcription ne capture pas clairement le numéro de
+      // verset (bruit ambiant, parole rapide — la STT n'est jamais
+      // parfaite), detector.js retourne une référence "chapitre seul"
+      // (verseStart undefined), et bible-lookup-with-api.js traite
+      // délibérément ce cas comme "aucun verset précis demandé : renvoyer
+      // tout le chapitre" — comportement voulu pour une lecture de
+      // chapitre explicite, mais un dump de chapitre entier surprend et
+      // submerge l'écran quand ce n'était pas l'intention réelle du
+      // prédicateur. Pour la détection AUTOMATIQUE (voix, pas saisie
+      // manuelle), on affiche donc verset 1 par défaut si aucun n'a été
+      // capté — le mode lecture (activateReadingMode, plus bas) reste
+      // ancré sur ce même chapitre et avance verset par verset au fil de
+      // la parole, donc rien n'est perdu, juste un premier affichage plus
+      // sobre. La saisie manuelle ("Afficher un Verset") n'est pas
+      // affectée : un opérateur qui tape "Jean 3" exprès pour une lecture
+      // complète obtient toujours le chapitre entier.
+      const displayReference = reference.verseStart
+        ? reference
+        : { ...reference, verseStart: 1, verseEnd: 1 };
+      verse = await bibleLookup.getVerseMultilang(
+        displayReference,
+        sessionState.getDisplayLanguage()
+      );
     }
   } catch (err) {
     warn('Bible lookup failed: ' + err.message);
