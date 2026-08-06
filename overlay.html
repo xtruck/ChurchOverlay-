@@ -9,10 +9,14 @@
    la toute première règle d'une feuille de style (avant même :root et les
    @property ci-dessous), sinon le navigateur l'ignore silencieusement —
    confirmé par l'onglet "Issues" de Chrome DevTools ("Define @import rules
-   at the top of the stylesheet"). Le texte restait lisible via la police
-   de repli (Georgia), mais jamais dans la police prévue (Cormorant
-   Garamond). Remontée ici, avant toute autre règle. */
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+   at the top of the stylesheet"). Remontée ici, avant toute autre règle.
+   AJOUT (audit — police jugée trop fantaisiste/décorative pour un cadre
+   professionnel) : Merriweather (verset) + Manrope (référence) sont les
+   polices du thème "nuit" par défaut (config/themes/nuit.json) — sobres,
+   sans empattement décoratif, conçues pour la lisibilité à l'écran/projeté.
+   Cormorant Garamond et Plus Jakarta Sans restent chargées (thèmes
+   personnalisés existants/futurs qui les référencent encore). */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Manrope:wght@500;600;700&display=swap');
 
 /* ==========================================================================
    CSS Variables for Dynamic Themes (AI Innovation Pack)
@@ -26,7 +30,13 @@
   --overlay-text: #f6f3ec;
   --overlay-text-muted: #a8adc9;
   --overlay-accent: #d9bb6c;
-  --overlay-font: 'Cormorant Garamond', Georgia, serif;
+  /* CORRECTIF (audit — police jugée "fantaisiste"/pas assez professionnelle) :
+     Cormorant Garamond a un style calligraphique (empattements fins, courbes
+     prononcées) qui peut se lire comme italique/décoratif projeté en grand,
+     pas adapté à un cadre sérieux. Remplacée par Merriweather (le choix du
+     thème "nuit" par défaut, voir config/themes/nuit.json) — un serif
+     sobre, épais et très lisible à distance, sans fioriture. */
+  --overlay-font: 'Merriweather', Georgia, serif;
   --overlay-font-ui: 'Plus Jakarta Sans', 'Open Sans', sans-serif;
   --overlay-border: rgba(220, 180, 106, 0.20);
   --overlay-glow: rgba(220, 180, 106, 0.32);
@@ -211,7 +221,10 @@ body {
   margin-top: clamp(12px, 1.6vw, 20px);
   padding-top: clamp(12px, 1.6vw, 20px);
   border-top: 1px solid var(--overlay-border);
-  color: var(--overlay-text-muted);
+  /* CORRECTIF (audit — texte anglais bleuté, pas blanc comme le français) :
+     utilisait --overlay-text-muted (bleu-gris, prévu pour des badges
+     secondaires) au lieu de la même couleur que le verset principal. */
+  color: var(--overlay-text);
 }
 
 /* Indicateur de source (AI detection) */
@@ -904,6 +917,27 @@ function emergencyClear() {
 function applyTheme(theme) {
   if (!theme) return;
   const root = document.documentElement;
+
+  // CORRECTIF (audit — changer de thème dans le tableau de bord ne
+  // changeait RIEN sur l'overlay réel) : theme-loader.js (thèmes "nuit"/
+  // "claire" et thèmes personnalisés créés par l'opérateur) envoie une
+  // forme imbriquée { variables: {'--bg':..., '--verse-font':...},
+  // effects, animations, background } — totalement différente des
+  // propriétés plates (theme.background, theme.color...) que cette
+  // fonction attendait plus bas. Aucune des conditions ci-dessous ne
+  // s'exécutait donc jamais pour cette source : silencieusement sans
+  // effet, changer de thème dans le tableau de bord ne faisait rien sur
+  // l'overlay projeté. On accepte désormais aussi cette forme.
+  if (theme.variables) {
+    const v = theme.variables;
+    if (v['--bg']) root.style.setProperty('--overlay-bg', v['--bg']);
+    if (v['--text']) root.style.setProperty('--overlay-text', v['--text']);
+    if (v['--accent']) root.style.setProperty('--overlay-accent', v['--accent']);
+    if (v['--verse-font']) root.style.setProperty('--overlay-font', v['--verse-font']);
+    if (v['--ref-font']) root.style.setProperty('--overlay-font-ui', v['--ref-font']);
+    if (theme.animations && theme.animations.default) currentAnimation = theme.animations.default;
+    return;
+  }
 
   if (theme.background) root.style.setProperty('--overlay-bg', theme.background);
   if (theme.color) root.style.setProperty('--overlay-text', theme.color);
