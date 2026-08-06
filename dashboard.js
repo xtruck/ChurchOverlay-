@@ -62,16 +62,40 @@ function stopSermonModeAutoDetect() {
 }
 
 // Navigation tab switching
+//
+// CORRECTIF (audit — tableau de bord "trop rempli") : 6 onglets séparés
+// regroupés en 2 vues ("En Direct" / "Réglages"), chacune affichant
+// PLUSIEURS <section> existantes ensemble plutôt qu'une seule — aucune
+// section n'a été déplacée ni son id changé, donc tout le reste du
+// câblage (getElementById, WS handlers...) continue de fonctionner sans
+// modification. item.dataset.sections (pluriel, liste séparée par des
+// virgules) remplace l'ancien item.dataset.section (singulier, une seule
+// section à la fois).
+function showSectionsFor(item) {
+  document.querySelectorAll('.section').forEach((s) => (s.style.display = 'none'));
+  const targetIds = (item.dataset.sections || '').split(',').filter(Boolean);
+  targetIds.forEach((id) => {
+    const targetSec = document.getElementById(id);
+    if (targetSec) targetSec.style.display = 'block';
+  });
+}
+
 document.querySelectorAll('.nav-item').forEach((item) => {
   item.addEventListener('click', () => {
     document.querySelectorAll('.nav-item').forEach((i) => i.classList.remove('active'));
     item.classList.add('active');
-
-    document.querySelectorAll('.section').forEach((s) => (s.style.display = 'none'));
-    const targetSec = document.getElementById(item.dataset.section);
-    if (targetSec) targetSec.style.display = 'block';
+    showSectionsFor(item);
   });
 });
+
+// Applique l'état initial (l'onglet marqué "active" dans le HTML, "En
+// Direct" par défaut) dès le chargement — sans ça, seule la section
+// "overview" (sans display:none en dur) serait visible au démarrage,
+// alors que "transcript" (micro/transcription) fait aussi partie du
+// groupe "En Direct" mais reste display:none tant qu'aucun clic n'a eu
+// lieu.
+const initialNavItem = document.querySelector('.nav-item.active');
+if (initialNavItem) showSectionsFor(initialNavItem);
 
 // Dynamic WebSocket connection URL
 // CORRECTIF (bug "app tout le temps déconnectée") : le token n'était
@@ -1591,7 +1615,10 @@ function addActivity(title, type = 'info') {
     // qu'elle soit ensuite complétée manuellement par la personne
     // ou déjà pré-remplie automatiquement par une config existante.
     if (needsSetup) {
-      const settingsNav = document.querySelector('.nav-item[data-section="settings"]');
+      // CORRECTIF (audit — regroupement de navigation) : "settings" fait
+      // maintenant partie d'un data-sections combiné ("Réglages"), plus
+      // une valeur exacte isolée — sélecteur par sous-chaîne.
+      const settingsNav = document.querySelector('.nav-item[data-sections*="settings"]');
       if (settingsNav) settingsNav.click();
     }
 
