@@ -543,7 +543,13 @@ function handleMessage(message) {
       break;
     case 'transcriptionError':
       addActivity(`Transcription indisponible : ${message.error}`, 'error');
-      showToast(`Transcription en échec — vérifier la connexion internet`, 'error');
+      // CORRECTIF (audit — message d'erreur générique inutile) : ce toast
+      // affichait toujours "vérifier la connexion internet" quelle que soit
+      // la vraie cause (clé API invalide, quota dépassé, clé absente...),
+      // alors que le message réel (message.error) était déjà disponible —
+      // juste jamais montré ailleurs que dans le flux d'activité, moins
+      // visible. Affiche désormais la vraie raison.
+      showToast(`Transcription en échec : ${message.error || 'raison inconnue'}`, 'error');
       break;
     case 'audioError':
       addActivity(`Capture audio interrompue : ${message.error}`, 'error');
