@@ -32,6 +32,9 @@ const state = {
   autoTranslateEnabled: false,
   autoTranslateLang: 'en',
   lastPostServiceRecap: null,
+  // AJOUT (audit — lien OBS manquant) : URL file:// avec jeton
+  // WS_VIEWER_TOKEN, poussée par main.js (voir applyOverlayUrl).
+  overlayUrl: null,
 };
 
 // AJOUT : intervalle d'auto-détection du mode de culte (louange, prédication,
@@ -442,8 +445,56 @@ if (window.churchOverlay && window.churchOverlay.getStatus) {
             'Le pipeline audio est arrêté après plusieurs erreurs. Cliquez sur "Redémarrer le pipeline".',
         });
       }
+      if (s && s.overlayUrl) applyOverlayUrl(s.overlayUrl);
     })
     .catch(() => {});
+}
+
+// CORRECTIF (audit — "je ne vois plus le lien à coller dans OBS") :
+// main.js calcule déjà overlayUrl (avec le jeton WS_VIEWER_TOKEN requis
+// depuis que l'authentification WebSocket est générée automatiquement à
+// chaque démarrage) et le pousse via l'évènement IPC 'status-update' —
+// preload.js exposait déjà onStatusUpdate(), mais dashboard.js ne
+// l'écoutait jamais. Résultat : ce lien n'était affiché NULLE PART dans
+// l'interface, y compris l'aperçu iframe de l'onglet "Overlay" (chargé
+// sans jeton, donc lui-même incapable de se connecter au serveur).
+function applyOverlayUrl(url) {
+  if (!url || url === state.overlayUrl) return;
+  state.overlayUrl = url;
+  const input = document.getElementById('overlayUrlInput');
+  if (input) input.value = url;
+  const frame = document.getElementById('overlayFrame');
+  if (frame && !frame.dataset.loadedWithToken) {
+    frame.src = url;
+    frame.dataset.loadedWithToken = '1';
+  }
+}
+
+function copyOverlayUrl() {
+  if (!state.overlayUrl) {
+    showToast('Lien overlay pas encore disponible — attendez que le pipeline démarre.', 'error');
+    return;
+  }
+  navigator.clipboard
+    .writeText(state.overlayUrl)
+    .then(() => {
+      showToast(
+        "Lien copié — collez-le dans OBS comme URL d'une Source Navigateur (Browser Source)",
+        'success'
+      );
+    })
+    .catch(() => {
+      showToast(
+        'Copie automatique impossible — sélectionnez le champ et copiez manuellement.',
+        'error'
+      );
+    });
+}
+
+if (window.churchOverlay && window.churchOverlay.onStatusUpdate) {
+  window.churchOverlay.onStatusUpdate((payload) => {
+    if (payload && payload.overlayUrl) applyOverlayUrl(payload.overlayUrl);
+  });
 }
 
 let restartInFlight = false;
@@ -1362,8 +1413,8 @@ async function toggleRealMicCapture() {
 
 function refreshOverlay() {
   const frame = document.getElementById('overlayFrame');
-  if (frame) {
-    const url = new URL(frame.src, window.location.href);
+  if (frame && state.overlayUrl) {
+    const url = new URL(state.overlayUrl);
     url.searchParams.set('_refresh', Date.now());
     frame.src = url.toString();
   }

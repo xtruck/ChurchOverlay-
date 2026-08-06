@@ -1860,6 +1860,15 @@
                         <div style="font-weight: 700; color: var(--text-main);">Aperçu en direct de l'Overlay (Screen View)</div>
                         <button class="btn btn-secondary" onclick="refreshOverlay()">Actualiser Iframe</button>
                     </div>
+
+                    <!-- AJOUT (audit — lien OBS manquant) : URL à coller dans OBS comme
+                         Source Navigateur. Calculée côté main.js (avec le jeton
+                         WS_VIEWER_TOKEN requis), poussée ici via onStatusUpdate. -->
+                    <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:1rem;">
+                        <input type="text" id="overlayUrlInput" readonly value="Chargement du lien..." onclick="this.select()" style="flex:1; padding:0.6rem; border-radius:var(--radius-sm); border:1px solid var(--border-subtle); background:var(--bg-input); color:var(--text-main); font-family:monospace; font-size:0.78rem;">
+                        <button class="btn btn-primary" onclick="copyOverlayUrl()" style="flex-shrink:0;">📋 Copier le lien pour OBS</button>
+                    </div>
+
                     <iframe id="overlayFrame" src="overlay.html"></iframe>
                 </div>
             </section>
