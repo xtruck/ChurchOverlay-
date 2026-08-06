@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ChurchOverlay — Affichage</title>
 <style>
+/* CORRECTIF (audit — police du verset jamais chargée) : @import doit être
+   la toute première règle d'une feuille de style (avant même :root et les
+   @property ci-dessous), sinon le navigateur l'ignore silencieusement —
+   confirmé par l'onglet "Issues" de Chrome DevTools ("Define @import rules
+   at the top of the stylesheet"). Le texte restait lisible via la police
+   de repli (Georgia), mais jamais dans la police prévue (Cormorant
+   Garamond). Remontée ici, avant toute autre règle. */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
 /* ==========================================================================
    CSS Variables for Dynamic Themes (AI Innovation Pack)
    ========================================================================== */
@@ -53,10 +62,6 @@
   inherits: true;
   initial-value: #dcb46a;
 }
-
-/* Google Fonts — Cormorant Garamond (référence du verset, cohérent avec le
-   dashboard) + Plus Jakarta Sans (badges/indicateurs, lisible en petit) */
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
 * {
   margin: 0;
