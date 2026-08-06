@@ -20,6 +20,15 @@ const cases = [
   // s'affichait à la place du seul verset demandé.
   ['Jean 1 versus 1', { book: 'jean', chapter: 1, verseStart: 1, verseEnd: 1 }],
   ['Jean chapitre 1 versus 1', { book: 'jean', chapter: 1, verseStart: 1, verseEnd: 1 }],
+  // CORRECTIF (audit — détecteur "pas assez performant", donnait le
+  // chapitre entier au lieu du verset précis) : "Jean 3.16" (point comme
+  // séparateur) et "Jean 3 v16" / "Jean 3 v. 16" (abréviation "v") ne
+  // capturaient pas le numéro de verset — la référence retombait sur
+  // "chapitre seul", donc le chapitre entier s'affichait au lieu du
+  // verset attendu.
+  ['Jean 3.16', { book: 'jean', chapter: 3, verseStart: 16, verseEnd: 16 }],
+  ['Jean 3 v 16', { book: 'jean', chapter: 3, verseStart: 16, verseEnd: 16 }],
+  ['Jean 3 v. 16', { book: 'jean', chapter: 3, verseStart: 16, verseEnd: 16 }],
 ];
 for (const [input, expected] of cases) {
   const actual = detect(input);
