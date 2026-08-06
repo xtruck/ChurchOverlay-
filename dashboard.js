@@ -520,6 +520,9 @@ function handleMessage(message) {
         renderAiEnricherOutput(`Traduction (${message.targetLang}) : ${message.translation}`);
       }
       break;
+    case 'sessionStats':
+      renderSessionStats(message);
+      break;
     case 'postServiceRecap':
       // AJOUT : on garde le dernier récap en mémoire pour permettre
       // l'export en .txt sans le régénérer si l'opérateur clique export
@@ -772,6 +775,53 @@ function requestPostServiceRecap() {
   if (!requireWsOrWarn()) return;
   renderAiEnricherOutput('⏳ Génération du récapitulatif...');
   ws.send(JSON.stringify({ action: 'getPostServiceRecap' }));
+}
+
+// AJOUT (audit round 9) : session-store.js persiste déjà chaque verset
+// affiché et chaque erreur de pipeline en SQLite (survie à un crash),
+// mais rien ne relisait jamais cette base côté tableau de bord — la
+// persistance tournait "dans le vide" sans jamais être consultable par
+// l'opérateur. Bouton + panneau pour l'exposer : combien de versets
+// affichés, combien d'erreurs, sur la période choisie (défaut : 24h).
+function requestSessionStats(days) {
+  if (!requireWsOrWarn()) return;
+  const el = document.getElementById('sessionStatsOutput');
+  if (el) el.innerHTML = '<span class="stat-label">⏳ Chargement des statistiques...</span>';
+  ws.send(JSON.stringify({ action: 'getSessionStats', days: days || 1 }));
+}
+
+function renderSessionStats(message) {
+  const el = document.getElementById('sessionStatsOutput');
+  if (!el) return;
+
+  if (!message.persistenceEnabled) {
+    el.innerHTML =
+      '<span class="stat-label">Persistance SQLite indisponible sur cet appareil — aucun historique conservé entre les sessions.</span>';
+    return;
+  }
+
+  const period = message.days === 1 ? 'les dernières 24h' : `les ${message.days} derniers jours`;
+  const errorLines = Object.entries(message.errorsByType || {})
+    .map(([type, count]) => `${type} : ${count}`)
+    .join(' · ');
+
+  const recentVerses = (message.verses || [])
+    .slice(0, 10)
+    .map((v) => {
+      const time = new Date(v.shown_at).toLocaleTimeString('fr-FR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      return `<div class="stat-row"><span class="stat-label">${time} — ${escapeHtmlDashboard(v.reference)}</span></div>`;
+    })
+    .join('');
+
+  el.innerHTML = `
+    <div class="stat-row"><span class="stat-label">Versets affichés (${period})</span><span class="stat-value">${message.verseCount}</span></div>
+    <div class="stat-row"><span class="stat-label">Erreurs de pipeline</span><span class="stat-value">${message.errorCount}</span></div>
+    ${errorLines ? `<div class="stat-row"><span class="stat-label">Détail des erreurs</span><span class="stat-value" style="font-weight:400; font-size:0.8rem;">${errorLines}</span></div>` : ''}
+    ${recentVerses ? `<div style="margin-top:0.75rem; max-height:220px; overflow-y:auto;">${recentVerses}</div>` : ''}
+  `;
 }
 
 // AJOUT : badge de mode de culte auto-détecté (Louange / Prédication /

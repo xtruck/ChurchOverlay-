@@ -101,6 +101,14 @@ const SCHEMAS = {
       action: (value) => value === 'diagnostic',
     },
   },
+  getSessionStats: {
+    required: ['action'],
+    optional: ['days'],
+    validators: {
+      action: (value) => value === 'getSessionStats',
+      days: (value) => typeof value === 'number' && value > 0 && value <= 30,
+    },
+  },
   applyTheme: {
     // SECURITY (backend audit): `css` values previously reached
     // overlay.html's `root.style.setProperty(...)` completely unvalidated

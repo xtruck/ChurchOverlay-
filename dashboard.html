@@ -1706,6 +1706,23 @@
                         <span class="stat-label">Aucune analyse IA lancée pour le moment.</span>
                     </div>
                 </div>
+
+                <!-- AJOUT (audit round 9) : session-store.js (SQLite) enregistre déjà
+                     chaque verset affiché et chaque erreur de pipeline, mais rien ne
+                     relisait cette base côté tableau de bord — la persistance tournait
+                     "dans le vide". Panneau de consultation de l'historique. -->
+                <div class="card" style="margin-top: 1.5rem;">
+                    <div class="card-header">
+                        <span class="card-title">Historique de session (persistant)</span>
+                    </div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem;">
+                        <button class="btn btn-secondary" onclick="requestSessionStats(1)">Dernières 24h</button>
+                        <button class="btn btn-secondary" onclick="requestSessionStats(7)">7 derniers jours</button>
+                    </div>
+                    <div id="sessionStatsOutput" class="stat-row" style="display: block;">
+                        <span class="stat-label">Cliquez sur une période pour charger l'historique.</span>
+                    </div>
+                </div>
             </section>
 
             <!-- Settings Section -->

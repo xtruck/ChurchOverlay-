@@ -490,7 +490,19 @@ async function processTranscript(text) {
     return;
   }
 
-  const refKey = `${reference.book}:${reference.chapter}:${reference.verseStart || ''}`;
+  // CORRECTIF (audit round 9) : pour une détection par citation
+  // (`detectedBy: 'quote'`), `reference` est un objet placeholder
+  // ({ book: '', chapter: 0, verseStart: 0 }) — la vraie référence n'est
+  // connue que via `quotedMatch.reference`. Construire refKey à partir de
+  // ces champs vides produisait la même clé "::" pour TOUTE citation
+  // reconnue sans référence dite, quel que soit le verset réel. Deux
+  // versets différents cités à moins de 30s d'intervalle (cas courant en
+  // lecture continue) étaient alors traités comme un doublon : le second
+  // verset était silencieusement supprimé sans jamais s'afficher.
+  const refKey =
+    reference.detectedBy === 'quote' && quotedMatch
+      ? `quote:${quotedMatch.reference}`
+      : `${reference.book}:${reference.chapter}:${reference.verseStart || ''}`;
   const now = Date.now();
   if (sessionState.isDuplicateReference(refKey, now)) {
     log('Duplicate suppressed: ' + refKey);
@@ -767,6 +779,7 @@ const OPERATOR_ACTIONS = new Set([
   'getSermonTheme',
   'getPostServiceRecap',
   'getCrossReferences',
+  'getSessionStats',
 ]);
 
 // SECURITY: role is derived from WHICH token the client authenticated with
@@ -993,6 +1006,48 @@ wss.on('connection', (ws, req) => {
           JSON.stringify({
             action: 'error',
             error: 'Échec de la vérification pré-culte : ' + err.message,
+          })
+        );
+      }
+      return;
+    }
+
+    // --- Session stats (historique persistant SQLite — voir session-store.js) ---
+    // AJOUT (audit round 9) : session-store.js écrit déjà chaque verset
+    // affiché et chaque erreur de pipeline en SQLite depuis le chantier de
+    // fiabilité du 2026-08-05 (jour de survie à un crash, trace consultable
+    // après un culte), mais rien ne relisait jamais cette base — aucune
+    // action WebSocket ne l'exposait, donc aucun panneau du tableau de bord
+    // ne pouvait la montrer. La persistance tournait "dans le vide".
+    if (sanitized.action === 'getSessionStats') {
+      try {
+        const days = Math.min(Math.max(Number.parseInt(sanitized.days, 10) || 1, 1), 30);
+        const sinceMs = Date.now() - days * 24 * 60 * 60 * 1000;
+        const verses = sessionStore.getVerseHistorySince(sinceMs);
+        const errors = sessionStore.getPipelineErrorsSince(sinceMs);
+        const errorsByType = {};
+        for (const e of errors) {
+          errorsByType[e.type] = (errorsByType[e.type] || 0) + 1;
+        }
+        ws.send(
+          JSON.stringify({
+            action: 'sessionStats',
+            persistenceEnabled: sessionStore.isEnabled(),
+            days,
+            sinceMs,
+            verseCount: verses.length,
+            verses: verses.slice(0, 100),
+            errorCount: errors.length,
+            errors: errors.slice(0, 50),
+            errorsByType,
+            timestamp: Date.now(),
+          })
+        );
+      } catch (err) {
+        ws.send(
+          JSON.stringify({
+            action: 'error',
+            error: 'Impossible de récupérer les statistiques de session : ' + err.message,
           })
         );
       }
