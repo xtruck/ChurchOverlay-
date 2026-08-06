@@ -151,7 +151,10 @@ async function simulateSegment(text) {
     'car Dieu a tellement aime le monde qu il a donne son fils unique afin que quiconque croit en lui ne perisse point'
   );
   await sleep(400);
-  check('le verset a bien été diffusé', received.some((m) => m.action === 'showVerse'));
+  check(
+    'le verset a bien été diffusé',
+    received.some((m) => m.action === 'showVerse')
+  );
 
   received.length = 0;
   ws.send(JSON.stringify({ action: 'getSessionStats', days: 1 }));
