@@ -97,6 +97,20 @@ async function transcribeFile(audioFilePath, signal) {
   const keywordsQuery = KEYWORDS_PARAM.map((kw) => `keywords=${encodeURIComponent(kw)}`).join('&');
 
   // Paramètres optimisés pour la réduction de bruit de fond et la précision en milieu bruyant
+  //
+  // CORRECTIF (audit — Deepgram échouait TOUJOURS, jamais un vrai filet de
+  // sécurité) : `endpointing` est un paramètre de l'API streaming temps réel
+  // de Deepgram (détecte les silences pour couper une utterance en direct).
+  // Cet appel envoie un fichier WAV déjà complet à l'endpoint "batch"
+  // (POST /v1/listen avec le corps entier) — endpointing n'a aucun sens ici
+  // et Deepgram rejette la requête entière avec 400 "Endpointing not
+  // supported for batch requests", à chaque appel, sans exception. Comme
+  // Groq et Deepgram tournent en parallèle (voir transcribeWithFallback)
+  // et que Deepgram est censé être le filet de sécurité si Groq est lent ou
+  // échoue, ce bug supprimait ce filet en pratique : chaque fois que Groq
+  // seul ne répondait pas dans les 5s, TOUT le segment était perdu, sans
+  // qu'aucun message clair n'indique pourquoi (avant le correctif du toast
+  // générique, voir dashboard.js).
   const queryParams = [
     `model=${DEEPGRAM_MODEL}`,
     `language=${DEEPGRAM_LANGUAGE}`,
@@ -104,7 +118,6 @@ async function transcribeFile(audioFilePath, signal) {
     'denoise=true',
     'punctuate=true',
     'filler_words=false',
-    'endpointing=300',
     keywordsQuery,
   ]
     .filter(Boolean)
