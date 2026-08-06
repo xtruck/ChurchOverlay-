@@ -735,6 +735,33 @@ function renderVerseTextContent(el, text) {
 /* ==========================================================================
    Display functions
    ========================================================================== */
+// CORRECTIF (audit — plusieurs versets à la fois pouvaient déborder de
+// l'écran) : réduit progressivement la taille du texte du verset jusqu'à
+// ce que la carte tienne dans la hauteur de fenêtre disponible, avec un
+// plancher lisible (jamais en dessous de MIN_VERSE_FONT_PX). Remise à la
+// taille par défaut (CSS clamp()) avant chaque mesure, pour repartir de
+// zéro à chaque nouveau verset plutôt que de cumuler les réductions
+// précédentes.
+const MIN_VERSE_FONT_PX = 18;
+const VIEWPORT_MARGIN_PX = 120; // marge haut+bas pour rester lisible, pas collé aux bords
+function fitVerseCardToViewport() {
+  const card = document.getElementById('verse-card');
+  const verseTextEl = document.getElementById('verse-text');
+  if (!card || !verseTextEl) return;
+
+  verseTextEl.style.fontSize = '';
+  const maxCardHeight = window.innerHeight - VIEWPORT_MARGIN_PX;
+  if (maxCardHeight <= 0) return;
+
+  let currentSize = parseFloat(getComputedStyle(verseTextEl).fontSize);
+  let guard = 0;
+  while (card.scrollHeight > maxCardHeight && currentSize > MIN_VERSE_FONT_PX && guard < 30) {
+    currentSize -= 2;
+    verseTextEl.style.fontSize = `${currentSize}px`;
+    guard++;
+  }
+}
+
 function showVerse(data) {
   const container = document.getElementById('overlay-container');
   const card = document.getElementById('verse-card');
@@ -790,6 +817,18 @@ function showVerse(data) {
 
   // Show
   container.className = 'visible';
+
+  // CORRECTIF (audit — plages de plusieurs versets pouvaient déborder de
+  // l'écran) : #overlay-container n'a aucune limite de hauteur ni
+  // .verse-card ; pour une plage demandée à voix haute ("versets 2 à 8"),
+  // le texte concaténé de plusieurs versets peut largement dépasser
+  // l'espace disponible — la carte, ancrée en bas de l'écran, pousserait
+  // alors son sommet hors du cadre visible, sans qu'aucun mécanisme
+  // n'ajuste quoi que ce soit. On réduit la taille du texte du verset
+  // (jamais en dessous d'un plancher lisible) jusqu'à ce que la carte
+  // tienne dans la hauteur de la fenêtre. Après le rendu (requestAnimationFrame)
+  // pour mesurer la vraie hauteur une fois le texte injecté dans le DOM.
+  requestAnimationFrame(fitVerseCardToViewport);
 
   // Auto-hide timer
   clearTimeout(hideTimeout);
