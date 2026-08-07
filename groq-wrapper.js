@@ -48,6 +48,44 @@ const CHECK_KEY_TIMEOUT_MS = 5000;
 
 const WHISPER_PROMPT = buildWhisperPrompt();
 
+// CORRECTIF (2026-08-07 — cause racine de "Groq muet, tout part sur Deepgram") :
+// l'API Groq rejette le paramètre `prompt` de transcription au-delà de 896
+// caractères ("prompt length must be 896 characters or fewer"), mais cette
+// limite est en réalité mesurée en OCTETS UTF-8, pas en caractères JS —
+// chaque lettre accentuée du vocabulaire biblique français (é, è, à, ç...)
+// coûte 2 octets UTF-8 pour 1 seule unité de .length JS. L'ancien code
+// tronquait avec `.slice(-900)` (900 CARACTÈRES JS, déjà au-dessus de 896),
+// ce qui produisait couramment 920-950+ OCTETS réels une fois le texte
+// plein d'accents pris en compte — 100% des requêtes de transcription avec
+// contexte échouaient donc en 400, et WHISPER_PROMPT seul (sans contexte)
+// pèse déjà 1051 octets, donc même les requêtes SANS contexte échouaient
+// aussi (l'ancienne branche `else` ne tronquait pas du tout). Résultat
+// observé : Deepgram (fallback) transcrivait 100% des segments, Groq ne
+// répondait jamais avec succès.
+const GROQ_PROMPT_MAX_BYTES = 896;
+
+/**
+ * Tronque une chaîne pour tenir dans maxBytes une fois encodée en UTF-8, en
+ * conservant la FIN du texte (le contexte récent, plus utile au modèle que
+ * le vocabulaire statique en tête de prompt — même logique que l'ancien
+ * `.slice(-900)`, mais mesurée en octets réels au lieu de caractères JS).
+ * @param {string} text
+ * @param {number} maxBytes
+ * @returns {string}
+ */
+function truncateToUtf8ByteLimit(text, maxBytes) {
+  const buf = Buffer.from(text, 'utf8');
+  if (buf.length <= maxBytes) return text;
+  let start = buf.length - maxBytes;
+  // Avance jusqu'au début d'un caractère UTF-8 valide : un octet de
+  // continuation multi-octet (forme binaire 10xxxxxx) coupé au milieu
+  // produirait sinon un caractère de remplacement (�) en tête du prompt.
+  while (start < buf.length && (buf[start] & 0xc0) === 0x80) {
+    start++;
+  }
+  return buf.slice(start).toString('utf8');
+}
+
 /**
  * Indique si une clé Groq est configurée (utilisé par server.js).
  * @returns {boolean}
@@ -121,9 +159,10 @@ async function transcribeFile(audioFilePath, signal, contextHint) {
   // continuité de la phrase en cours (noms propres déjà prononcés, sujet du
   // moment) au lieu de repartir à zéro toutes les ~5s. Whisper ne regarde que
   // les ~224 derniers tokens du prompt, donc on garde le total court.
-  const prompt = contextHint
-    ? `${WHISPER_PROMPT} Contexte récent : "${contextHint}"`.slice(-900)
+  const rawPrompt = contextHint
+    ? `${WHISPER_PROMPT} Contexte récent : "${contextHint}"`
     : WHISPER_PROMPT;
+  const prompt = truncateToUtf8ByteLimit(rawPrompt, GROQ_PROMPT_MAX_BYTES);
   formData.append('prompt', prompt);
   // AJOUT (audit — boost transcription) : verrouille la langue de décodage
   // Whisper si l'opérateur l'a explicitement configurée (TRANSCRIPTION_LANGUAGE
@@ -362,4 +401,7 @@ module.exports = {
   quickCompletion,
   isConfigured,
   checkKey,
+  // Exposée pour tests unitaires (test-groq-prompt-truncation.js).
+  truncateToUtf8ByteLimit,
+  GROQ_PROMPT_MAX_BYTES,
 };
