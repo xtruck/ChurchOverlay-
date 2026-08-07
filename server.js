@@ -39,6 +39,10 @@ const detector = require('./detector-compat');
 const bibleLookup = require('./bible-lookup-with-api');
 const { ReadingMode } = require('./reading-mode');
 const themeLoader = require('./theme-loader');
+// AJOUT (audit — mémoire des cultes, gratuit/léger) : même discipline que
+// bible-semantic-search.js — fichier JSON local, recherche par mots-clés,
+// aucun modèle d'embedding, aucun appel API. Voir sermon-archive.js.
+const sermonArchive = require('./sermon-archive');
 const featuresStore = require('./features-store');
 const obsController = require('./obs-controller');
 const validation = require('./validation');
@@ -222,6 +226,17 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', port: SERVER_PORT, service: 'ChurchOverlay', authEnabled: !!WS_AUTH_TOKEN });
 });
 
+// AJOUT (audit — second écran pour l'assemblée, gratuit/léger) : page de
+// lecture seule, pensée pour un QR code scanné pendant le culte. Pas de
+// jeton WS_AUTH_TOKEN requis ici — contrairement au canal WebSocket, qui
+// peut déclencher des actions, cette route ne fait que RELIRE des versets
+// déjà projetés publiquement sur l'écran de la salle (même donnée, même
+// sensibilité que /api/health, déjà sans authentification).
+app.get('/companion', (req, res) => res.sendFile(path.join(APP_ROOT, 'companion.html')));
+app.get('/api/verses', (req, res) => {
+  res.json({ verses: verseHistory });
+});
+
 const httpServer = http.createServer(app);
 const wss = new WebSocket.Server({ server: httpServer, maxPayload: 64 * 1024 });
 
@@ -247,6 +262,21 @@ httpServer.on('error', (err) => {
 // State
 // ---------------------------------------------------------------------------
 let displayLanguage = 'fr';
+// AJOUT (audit — accessibilité, gratuit/léger) : bascule CSS pure côté
+// overlay (voir action 'setHighContrast' plus bas + overlay.html
+// .high-contrast) — aucun modèle, aucun appel API, un seul booléen partagé.
+let highContrastMode = false;
+// AJOUT (audit — accessibilité) : le texte transcrit circule déjà sur
+// chaque segment (broadcast 'transcript' dans startPipeline) — cette bascule
+// ne fait qu'autoriser l'overlay à l'afficher, aucun nouveau calcul.
+let captionsEnabled = false;
+// AJOUT (audit — affichage/sortie, gratuit/léger) : barres de couleur
+// statiques (CSS pur, voir overlay.html #test-pattern) pour vérifier la
+// chaîne vidéo (OBS/NDI via DistroAV/projecteur) avant le culte.
+let testPatternEnabled = false;
+// AJOUT (audit — affichage/sortie, gratuit/léger) : motif de fond optionnel
+// (CSS pur, aucune image), en plus des dégradés de thème existants.
+let backgroundPattern = 'none';
 let lastReference = null;
 let lastShownAt = 0;
 const DEDUP_MS = 30_000;
@@ -254,8 +284,24 @@ const verseHistory = [];
 const MAX_HISTORY = 20;
 const recentTranscripts = [];
 const MAX_CONTEXT_TRANSCRIPTS = 10;
+// AJOUT (audit — mémoire des cultes) : recentTranscripts est une fenêtre
+// glissante de 10 fragments (pensée pour le contexte court du détecteur
+// sémantique — voir updateTranscriptContext ci-dessous), donc trop étroite
+// pour un "récap fin de culte" ou une archive fidèles à un service complet.
+// Ce tampon séparé accumule tout le culte en cours, borné en octets pour
+// éviter une croissance mémoire illimitée sur un service de plusieurs
+// heures ; remis à zéro quand l'opérateur clôture le culte (voir l'action
+// 'getPostServiceRecap', seul signal de fin de service déjà présent dans
+// l'app).
+let fullServiceTranscript = '';
+const MAX_SERVICE_TRANSCRIPT_CHARS = 50_000;
 let obsGateOpen = true;
 let obsGateReason = '';
+
+// Ambient mood — voir startAmbientMoodLoop() plus bas.
+let ambientMoodInterval = null;
+let lastAmbientTranscriptCount = 0;
+let lastAmbientMood = null;
 
 // ---------------------------------------------------------------------------
 // Rate limiter (diffusion de versets)
@@ -366,11 +412,69 @@ function updateTranscriptContext(text) {
   recentTranscripts.push(text);
   if (recentTranscripts.length > MAX_CONTEXT_TRANSCRIPTS) recentTranscripts.shift();
   if (semanticDetector) semanticDetector.addContext(text);
+
+  fullServiceTranscript += (fullServiceTranscript ? ' ' : '') + text;
+  if (fullServiceTranscript.length > MAX_SERVICE_TRANSCRIPT_CHARS) {
+    fullServiceTranscript = fullServiceTranscript.slice(-MAX_SERVICE_TRANSCRIPT_CHARS);
+  }
 }
 
 function getRecentContext(maxChars = 300) {
   const context = recentTranscripts.slice(-5).join(' ');
   return context.length > maxChars ? context.slice(-maxChars) : context;
+}
+
+// ===========================================================================
+// Ambient mood — reasoning autonome : le serveur réévalue périodiquement le
+// TON du sermon (pas une référence biblique précise) sur les derniers
+// fragments transcrits et pousse un changement d'ambiance visuelle sur
+// l'overlay EN DIRECT, sans validation de l'opérateur — activé volontairement
+// (design.autoLiturgicalTheme, voir config/features.json) car décidé avec
+// l'utilisateur. Réutilise exactement le même chemin (themeGenerator.generate
+// + broadcast applyTheme) que le changement de thème par verset/commande
+// vocale, donc aucun nouveau protocole overlay.
+// ===========================================================================
+function startAmbientMoodLoop() {
+  if (!themeGenerator) return;
+
+  const tick = async () => {
+    try {
+      const features = featuresStore.readFeatures();
+      if (!(features.design || {}).autoLiturgicalTheme) return;
+
+      // Ne relance une analyse que s'il y a eu de la nouvelle parole depuis
+      // le dernier cycle (silence prolongé = pas de changement d'ambiance).
+      if (recentTranscripts.length === lastAmbientTranscriptCount) return;
+      lastAmbientTranscriptCount = recentTranscripts.length;
+
+      const context = getRecentContext(500);
+      if (!context.trim()) return;
+
+      const theme = await themeGenerator.generate(context, '', 'auto');
+      if (!theme) return;
+
+      const mood = themeGenerator.currentMood;
+      if (mood === lastAmbientMood) return; // ambiance inchangée : pas de broadcast
+      lastAmbientMood = mood;
+
+      log(`Ambient mood: "${theme.name}" (${mood}) — détecté depuis le ton du sermon`);
+      broadcast({ action: 'applyTheme', ...themeGenerator.themeToCss(theme), ambient: true });
+    } catch (e) {
+      warn('Ambient mood loop error: ' + e.message);
+    }
+  };
+
+  const features = featuresStore.readFeatures();
+  const intervalSec = (features.ai || {}).themeDetection?.intervalSec || 60;
+  ambientMoodInterval = setInterval(tick, Math.max(15, intervalSec) * 1000);
+  if (ambientMoodInterval.unref) ambientMoodInterval.unref();
+}
+
+function stopAmbientMoodLoop() {
+  if (ambientMoodInterval) {
+    clearInterval(ambientMoodInterval);
+    ambientMoodInterval = null;
+  }
 }
 
 // ===========================================================================
@@ -658,11 +762,34 @@ async function handleVoiceCommand(command, originalText) {
 // ===========================================================================
 
 // Actions that require operator role
+// CORRECTIF (audit production) : plusieurs actions à effet réel (coût API
+// IA, ou état serveur modifié) n'étaient dans cette liste — un client
+// 'viewer' (quiconque a seulement l'URL /overlay, ex. un opérateur vidéo
+// distinct ou un curieux qui l'a trouvée) pouvait donc déjà les déclencher.
+// Trois catégories corrigées ici :
+//  1. 'transcript' — le plus grave des trois : permet d'injecter n'importe
+//     quel texte directement dans processTranscript(), le même pipeline
+//     qu'un vrai segment de parole (affichage de verset arbitraire,
+//     commandes vocales dont emergencyClear, appel LLM du détecteur
+//     sémantique). Un viewer n'a aucune raison légitime d'appeler ceci.
+//  2. getLiveSummary/getSermonTheme/getPostServiceRecap/getCrossReferences
+//     — chacune déclenche un appel LLM payant en quota (voir la discipline
+//     palier gratuit établie pour semantic-detector.js/groq-wrapper.js) ;
+//     getPostServiceRecap a en plus un effet de bord réel : elle ARCHIVE le
+//     culte et RÉINITIALISE fullServiceTranscript (voir sermon-archive.js)
+//     — un viewer l'appelant par erreur ou malice perdrait la suite de la
+//     transcription du jour.
+//  3. Les 4 actions ajoutées cette session (accessibilité + affichage) —
+//     setTestPattern en particulier peut littéralement figer l'écran
+//     projeté avec des barres de couleur en pleine prédication.
 const OPERATOR_ACTIONS = new Set([
   'showVerse', 'hideVerse', 'setLanguage', 'setTranslation', 'startReading', 'stopReading',
   'applyTheme', 'setMoodTheme', 'searchBible', 'togglePlugin', 'obs-toggle-recording',
   'obs-switch-scene', 'extendTime', 'pauseTimer', 'resumeTimer', 'emergencyClear',
   'hideTranslation', 'translateText',
+  'transcript',
+  'getLiveSummary', 'getSermonTheme', 'getPostServiceRecap', 'getCrossReferences', 'getArchiveMatches',
+  'setHighContrast', 'setCaptions', 'setTestPattern', 'setBackgroundPattern',
 ]);
 
 function determineClientRole(req) {
@@ -731,6 +858,10 @@ wss.on('connection', (ws, req) => {
   ws.send(JSON.stringify({
     action: 'init',
     language: displayLanguage,
+    highContrast: highContrastMode,
+    captions: captionsEnabled,
+    testPattern: testPatternEnabled,
+    backgroundPattern,
     history: verseHistory,
     theme: themeLoader.themeToCss(theme),
     translations: bibleLookup.listTranslations(),
@@ -1018,9 +1149,39 @@ wss.on('connection', (ws, req) => {
         ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
         return;
       }
-      const fullTranscript = sanitizeForPrompt(recentTranscripts.join(' '));
+      // CORRECTIF (audit — mémoire des cultes) : utilisait recentTranscripts
+      // (fenêtre glissante de 10 fragments, pensée pour un tout autre usage —
+      // voir son commentaire), donc un "récap fin de culte" ne portait en
+      // réalité que sur les dernières secondes du service. fullServiceTranscript
+      // couvre tout le culte en cours (borné à 50 000 caractères).
+      const fullTranscript = sanitizeForPrompt(fullServiceTranscript);
       const recap = await aiEnricher.generatePostServiceRecap(fullTranscript, verseHistory);
       ws.send(JSON.stringify({ action: 'postServiceRecap', recap, timestamp: Date.now() }));
+
+      // AJOUT (audit — mémoire des cultes, gratuit/léger) : le clic "Récap
+      // fin de culte" est le seul geste explicite de fin de service déjà
+      // présent dans l'app — on l'utilise aussi pour archiver localement
+      // (voir sermon-archive.js) et repartir à zéro pour le prochain culte.
+      try {
+        sermonArchive.saveServiceEntry({
+          theme: recap && recap.title,
+          keyPoints: recap && recap.keyPoints,
+          transcriptExcerpt: fullServiceTranscript.slice(-4000),
+          versesShown: verseHistory,
+        });
+        log('Culte archivé localement (sermon-archive.js)');
+      } catch (err) {
+        warn('Archivage du culte échoué: ' + err.message);
+      }
+      fullServiceTranscript = '';
+      return;
+    }
+
+    // --- Sermon archive search (audit — mémoire des cultes, gratuit/léger) ---
+    if (sanitized.action === 'getArchiveMatches') {
+      const query = sanitizeForPrompt(sanitized.query || '');
+      const matches = query ? sermonArchive.search(query) : [];
+      ws.send(JSON.stringify({ action: 'archiveMatches', query: sanitized.query, results: matches }));
       return;
     }
 
@@ -1065,6 +1226,40 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
+    // --- Accessibility: high-contrast mode (audit — free/light) ---
+    if (sanitized.action === 'setHighContrast') {
+      highContrastMode = !!sanitized.enabled;
+      broadcast({ action: 'accessibilityMode', highContrast: highContrastMode });
+      log('Accessibilité : mode grand contraste ' + (highContrastMode ? 'activé' : 'désactivé'));
+      return;
+    }
+
+    // --- Accessibility: live caption strip (audit — free/light) ---
+    if (sanitized.action === 'setCaptions') {
+      captionsEnabled = !!sanitized.enabled;
+      broadcast({ action: 'captionsMode', captions: captionsEnabled });
+      log('Accessibilité : sous-titres ' + (captionsEnabled ? 'activés' : 'désactivés'));
+      return;
+    }
+
+    // --- Display: test pattern (audit — affichage/sortie, free/light) ---
+    if (sanitized.action === 'setTestPattern') {
+      testPatternEnabled = !!sanitized.enabled;
+      broadcast({ action: 'testPatternMode', enabled: testPatternEnabled });
+      log('Affichage : motif de test ' + (testPatternEnabled ? 'activé' : 'désactivé'));
+      return;
+    }
+
+    // --- Display: background pattern (audit — affichage/sortie, free/light) ---
+    if (sanitized.action === 'setBackgroundPattern') {
+      const allowed = ['none', 'dots', 'grid', 'diagonal'];
+      const pattern = allowed.includes(sanitized.pattern) ? sanitized.pattern : 'none';
+      backgroundPattern = pattern;
+      broadcast({ action: 'backgroundPatternMode', pattern: backgroundPattern });
+      log('Affichage : motif de fond -> ' + backgroundPattern);
+      return;
+    }
+
     // --- Ping ---
     if (sanitized.action === 'ping') {
       ws.send(JSON.stringify({ action: 'pong', timestamp: Date.now() }));
@@ -1082,11 +1277,50 @@ wss.on('connection', (ws, req) => {
 // ===========================================================================
 // Audio pipeline
 // ===========================================================================
+// AJOUT (audit — fiabilité gratuite, sans modèle local) : un échec de
+// transcription (hoquet réseau, 5xx transitoire côté Groq/Deepgram) faisait
+// perdre le segment silencieusement — pas de nouvelle tentative, juste un
+// avertissement console. Sur un service d'une heure, quelques secondes de
+// coupure Wi-Fi pouvaient donc effacer une phrase entière. Deux tentatives
+// avec un court délai suffisent à absorber un hoquet transitoire sans
+// bloquer les segments suivants (l'appelant ne les attend pas — voir
+// feedPcmChunk/handleAudioData dans audio-capture.js, purement fire-and-forget).
+let consecutiveTranscriptionFailures = 0;
+const TRANSCRIPTION_RETRY_DELAY_MS = 700;
+
+async function transcribeWithRetry(segmentFile, contextHint, maxAttempts = 2) {
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const result = await groq.transcribeWithFallback(segmentFile, undefined, contextHint);
+      if (consecutiveTranscriptionFailures > 0) {
+        consecutiveTranscriptionFailures = 0;
+        broadcast({ action: 'pipelineHealth', status: 'ok' });
+        log('Transcription rétablie après ' + attempt + ' tentative(s)');
+      }
+      return result;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < maxAttempts) {
+        warn(`Transcription échouée (tentative ${attempt}/${maxAttempts}): ${err.message} — nouvel essai`);
+        broadcast({ action: 'transcriptionRetrying', attempt, maxAttempts, error: err.message });
+        await new Promise((resolve) => setTimeout(resolve, TRANSCRIPTION_RETRY_DELAY_MS));
+      }
+    }
+  }
+  consecutiveTranscriptionFailures++;
+  broadcast({ action: 'pipelineHealth', status: 'degraded', consecutiveFailures: consecutiveTranscriptionFailures });
+  throw lastErr;
+}
+
 function startPipeline() {
   audioCapture.on({
     onAudioSegment: async (segmentFile) => {
       try {
-        const result = await groq.transcribeWithFallback(segmentFile);
+        // AJOUT (audit — boost transcription) : la fin du dernier segment déjà
+        // transcrit sert d'indice de continuité pour Whisper (voir groq-wrapper.js).
+        const contextHint = getRecentContext(300);
+        const result = await transcribeWithRetry(segmentFile, contextHint);
         if (result && result.text && result.text.trim()) {
           log(`Transcription [${result.source}]: ${result.text.substring(0, 80)}`);
           broadcast({ action: 'transcript', text: result.text, source: result.source });
@@ -1128,6 +1362,7 @@ if (parentPort) {
     if (msg.type === 'shutdown') {
       log('Shutdown requested by main process');
       audioCapture.stopRecording();
+      stopAmbientMoodLoop();
       wss.clients.forEach(ws => ws.close());
       wss.close();
       connRateLimiter.stopCleanup();
@@ -1172,6 +1407,12 @@ try {
   warn('Failed to set Bible cache dir: ' + err.message);
 }
 
+try {
+  sermonArchive.setUserDataDir(USER_DATA_DIR);
+} catch (err) {
+  warn('Failed to set sermon archive dir: ' + err.message);
+}
+
 // ===========================================================================
 // Startup
 // ===========================================================================
@@ -1180,10 +1421,12 @@ configValidator.validateSystemConfig()
   .catch((err) => warn('config-validator: ' + err.message));
 
 startPipeline();
+startAmbientMoodLoop();
 
 process.on('SIGTERM', () => {
   log('SIGTERM received');
   audioCapture.stopRecording();
+  stopAmbientMoodLoop();
   wss.close();
   connRateLimiter.stopCleanup();
   if (plugins) plugins.shutdown().catch(() => {});

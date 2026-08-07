@@ -164,6 +164,41 @@ const COMMANDS = [
     extract: () => ({ action: 'setTranslation', language: 'fr', code: 'darby' }),
   },
 
+  // AJOUT (audit — changement de traduction à la voix, ANGLAIS) : les trois
+  // entrées ci-dessus ne couvraient que le français (Segond/Darby). Un
+  // pasteur prêchant en anglais n'avait aucun moyen vocal de basculer entre
+  // KJV/WEB/ASV (les trois traductions déjà servies par bible-lookup-with-
+  // api.js — voir AVAILABLE_TRANSLATIONS.en) alors que handleVoiceCommand
+  // (server.js, case 'setTranslation') gère déjà ces deux langues
+  // indifféremment. Même discipline que translationSegond/translationDarby :
+  // toujours exiger "translation/version/bible X" ou "switch to X", jamais
+  // le mot seul — "web" en particulier serait un faux positif désastreux
+  // sans ce garde-fou (n'importe quelle phrase mentionnant "the web").
+  {
+    id: 'translationKJV',
+    patterns: [
+      /(?:translation|version|bible)\s+(?:the\s+)?(?:king\s+james(?:\s+version)?|kjv)/i,
+      /(?:switch|change|move)\s+(?:to|over\s+to)\s+(?:the\s+)?(?:king\s+james(?:\s+version)?|kjv)/i,
+    ],
+    extract: () => ({ action: 'setTranslation', language: 'en', code: 'kjv' }),
+  },
+  {
+    id: 'translationWEB',
+    patterns: [
+      /(?:translation|version|bible)\s+(?:the\s+)?(?:world\s+english\s+bible|web)\b/i,
+      /(?:switch|change|move)\s+(?:to|over\s+to)\s+(?:the\s+)?(?:world\s+english\s+bible|web\s+translation|web\s+bible)/i,
+    ],
+    extract: () => ({ action: 'setTranslation', language: 'en', code: 'web' }),
+  },
+  {
+    id: 'translationASV',
+    patterns: [
+      /(?:translation|version|bible)\s+(?:the\s+)?(?:american\s+standard(?:\s+version)?|asv)/i,
+      /(?:switch|change|move)\s+(?:to|over\s+to)\s+(?:the\s+)?(?:american\s+standard(?:\s+version)?|asv)/i,
+    ],
+    extract: () => ({ action: 'setTranslation', language: 'en', code: 'asv' }),
+  },
+
   // --- TIMER ---
   {
     id: 'extendTime',

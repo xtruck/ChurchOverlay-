@@ -2,7 +2,7 @@
   "design": {
     "customThemesEnabled": true,
     "activeTheme": "mesev-default",
-    "autoLiturgicalTheme": false,
+    "autoLiturgicalTheme": true,
     "kineticTypography": false,
     "aiGeneratedBackgrounds": false,
     "ambientModes": {

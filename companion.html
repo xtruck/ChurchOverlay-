@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ChurchOverlay — Mes versets</title>
+<style>
+/* Même identité "verrière nocturne" que dashboard.html/overlay.html — bleu
+   nuit profond, lumière de cierge (or) en accent unique. Page volontairement
+   simple : lecture seule, pensée pour un téléphone qui vient de scanner un
+   QR code affiché en salle, pas une app à installer. */
+:root {
+  --bg: #0a0e1c;
+  --bg-card: #12172a;
+  --text: #f6f3ec;
+  --text-muted: #a8adc9;
+  --accent: #d9bb6c;
+  --border: rgba(220, 180, 106, 0.20);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: linear-gradient(160deg, #0a0e1c 0%, #0d1226 55%, #10152b 100%);
+  color: var(--text);
+  font-family: 'Georgia', 'Cormorant Garamond', serif;
+  padding: 20px 16px 60px;
+}
+header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+header h1 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin: 0 0 4px;
+  color: var(--accent);
+  letter-spacing: 0.5px;
+}
+header p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-family: system-ui, sans-serif;
+}
+#list {
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.verse-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+.verse-ref {
+  font-family: system-ui, sans-serif;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+.verse-text {
+  font-size: 1.15rem;
+  line-height: 1.5;
+}
+.verse-time {
+  margin-top: 10px;
+  font-family: system-ui, sans-serif;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+#empty {
+  text-align: center;
+  color: var(--text-muted);
+  font-family: system-ui, sans-serif;
+  font-size: 0.9rem;
+  margin-top: 40px;
+  padding: 0 20px;
+}
+#status {
+  position: fixed;
+  bottom: 12px; left: 0; right: 0;
+  text-align: center;
+  font-family: system-ui, sans-serif;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Versets de ce culte</h1>
+  <p>Se met à jour automatiquement — rien à faire</p>
+</header>
+
+<div id="list"></div>
+<div id="empty" style="display:none;">Aucun verset affiché pour le moment. Cette page se mettra à jour dès qu'un verset apparaîtra à l'écran.</div>
+<div id="status"></div>
+
+<script>
+/* AJOUT (audit — second écran pour l'assemblée, gratuit/léger) : simple
+   polling JSON, pas de WebSocket ni de jeton — la même donnée que
+   /api/health, déjà publique et non sensible (des versets déjà projetés
+   en salle). Aucune dépendance externe. */
+const POLL_MS = 4000;
+let lastCount = -1;
+
+function formatTime(ts) {
+  try {
+    return new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  } catch (e) {
+    return '';
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str || '';
+  return div.innerHTML;
+}
+
+function render(verses) {
+  const list = document.getElementById('list');
+  const empty = document.getElementById('empty');
+
+  if (!verses || verses.length === 0) {
+    list.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  list.innerHTML = verses.map((v) => `
+    <div class="verse-card">
+      <div class="verse-ref">${escapeHtml(v.reference || '')}</div>
+      <div class="verse-text">${escapeHtml(v.text || '')}</div>
+      ${v.timestamp ? `<div class="verse-time">${formatTime(v.timestamp)}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+async function poll() {
+  try {
+    const res = await fetch('/api/verses', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const verses = Array.isArray(data.verses) ? data.verses : [];
+    if (verses.length !== lastCount) {
+      lastCount = verses.length;
+      render(verses);
+    }
+    document.getElementById('status').textContent = '';
+  } catch (err) {
+    document.getElementById('status').textContent = 'Connexion au serveur perdue — nouvelle tentative...';
+  }
+}
+
+poll();
+setInterval(poll, POLL_MS);
+</script>
+
+</body>
+</html>

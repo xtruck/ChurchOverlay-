@@ -119,4 +119,12 @@ contextBridge.exposeInMainWorld('churchOverlay', {
   obsListScenes: () => ipcRenderer.invoke('obs-list-scenes'),
   obsSwitchScene: (sceneName) => ipcRenderer.invoke('obs-switch-scene', { sceneName }),
   obsToggleRecording: () => ipcRenderer.invoke('obs-toggle-recording'),
+
+  // --- AJOUT (audit — plusieurs façons d'afficher l'overlay, gratuit/léger) :
+  // fenêtre plein écran indépendante d'OBS, sur l'écran choisi (voir
+  // createDisplayWindow dans main.js). Pour les églises qui projettent
+  // directement sans passer par un logiciel de diffusion.
+  listDisplays: () => ipcRenderer.invoke('list-displays'),
+  openDisplayWindow: (displayId) => ipcRenderer.invoke('open-display-window', { displayId }),
+  closeDisplayWindow: () => ipcRenderer.invoke('close-display-window'),
 });

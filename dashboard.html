@@ -1365,6 +1365,20 @@
                 </button>
             </div>
 
+            <!-- AJOUT (audit — état de repli visible) : jusqu'ici un échec de
+                 transcription n'était visible que dans la console (F12) —
+                 l'opérateur n'avait aucun moyen de savoir, pendant le culte,
+                 qu'un verset venait d'être perdu ou qu'une nouvelle tentative
+                 était en cours. Bannière distincte de pipelineAlertBanner
+                 ci-dessus : celle-ci se résorbe automatiquement dès qu'une
+                 transcription réussit (voir action 'pipelineHealth'), sans
+                 bouton de redémarrage — la retry est déjà automatique côté
+                 serveur (voir transcribeWithRetry() dans server.js). -->
+            <div id="transcriptionHealthBanner" style="display:none; margin: 0 0 1.25rem 0; padding: 0.75rem 1.1rem; border-radius: 10px; align-items: center; gap: 0.6rem;">
+                <span id="transcriptionHealthIcon">⚠️</span>
+                <span id="transcriptionHealthMessage" style="font-size: 0.85rem;"></span>
+            </div>
+
             <!-- Overview Section -->
             <section id="overview" class="section">
                 <!-- Search & Quick Detect Bar -->
@@ -1403,6 +1417,15 @@
                         </div>
                         <div class="mood-picker-row" id="moodPicker">
                             <span style="font-size:0.8rem; color:var(--text-dim);">Connexion au serveur en cours...</span>
+                        </div>
+                        <!-- AJOUT (audit — affichage/sortie, gratuit/léger) : motif de fond
+                             optionnel, CSS pur (voir #pattern-layer dans overlay.html) — en
+                             plus du dégradé de thème déjà choisi ci-dessus. -->
+                        <div class="mood-picker-row" id="patternPicker" style="margin-top:0.6rem;">
+                            <button class="mood-btn active" id="pattern-btn-none" onclick="setBackgroundPattern('none')">Aucun motif</button>
+                            <button class="mood-btn" id="pattern-btn-dots" onclick="setBackgroundPattern('dots')">Points</button>
+                            <button class="mood-btn" id="pattern-btn-grid" onclick="setBackgroundPattern('grid')">Grille</button>
+                            <button class="mood-btn" id="pattern-btn-diagonal" onclick="setBackgroundPattern('diagonal')">Diagonales</button>
                         </div>
                     </div>
 
@@ -1730,6 +1753,15 @@
                         </select>
                     </div>
 
+                    <!-- AJOUT (audit — mémoire des cultes, gratuit/léger) : recherche locale
+                         par mots-clés dans les cultes archivés (voir sermon-archive.js) —
+                         chaque clic sur "Récap fin de culte" ci-dessus alimente cette
+                         archive. Pas d'appel API, pas d'embedding, juste un fichier local. -->
+                    <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap; margin-bottom:1rem;">
+                        <input type="text" id="archiveSearchInput" placeholder="Ai-je déjà prêché sur... ?" style="flex:1; min-width:220px;" onkeydown="if(event.key==='Enter') requestArchiveSearch();">
+                        <button class="btn btn-secondary" onclick="requestArchiveSearch()">🔎 Chercher dans l'historique</button>
+                    </div>
+
                     <div id="aiEnricherOutput" class="stat-row" style="display: block;">
                         <span class="stat-label">Aucune analyse IA lancée pour le moment.</span>
                     </div>
@@ -1829,9 +1861,84 @@
                     </div>
                 </div>
 
+                <!-- AJOUT (audit — accessibilité, gratuit/léger) : bascule pure CSS côté
+                     overlay (grand texte, contraste renforcé, particules/cascade de mots
+                     coupées) — aucun nouveau modèle, aucun appel API, juste des variables
+                     CSS différentes. Voir overlay.html (.high-contrast) et le nouveau
+                     WS action 'setHighContrast' dans server.js. -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Accessibilité de l'overlay</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap; padding:0.6rem 0.8rem; border:1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius:8px;">
+                        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; user-select:none;">
+                            <input type="checkbox" id="highContrastToggle" onchange="onHighContrastToggle()">
+                            <span>Mode grand contraste (texte agrandi, sans animation)</span>
+                        </label>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap; padding:0.6rem 0.8rem; margin-top:0.6rem; border:1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius:8px;">
+                        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; user-select:none;">
+                            <input type="checkbox" id="captionsToggle" onchange="onCaptionsToggle()">
+                            <span>Sous-titres en direct (transcription brute au bas de l'overlay)</span>
+                        </label>
+                    </div>
+                    <div class="field-hint" style="margin-top:10px;">
+                        Pour les malvoyants, les malentendants et les salles avec un écran éloigné — s'applique immédiatement sur l'overlay projeté.
+                    </div>
+                </div>
+
+                <!-- AJOUT (audit — plusieurs façons d'afficher l'overlay, gratuit/léger) :
+                     fenêtre plein écran indépendante d'OBS (voir createDisplayWindow dans
+                     main.js) + motif de test pour vérifier la chaîne vidéo avant un culte. -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Affichage & sortie</span>
+                    </div>
+
+                    <div id="displayWindowUnavailable" style="display:none; color: var(--text-muted); font-size:0.82rem; line-height:1.6; margin-bottom:0.75rem;">
+                        La fenêtre d'affichage direct n'est disponible que depuis l'application de bureau
+                        ChurchOverlay. En mode « serveur seul » dans un navigateur, ouvrez plutôt
+                        <code>/overlay</code> dans un onglet et passez-le en plein écran (F11).
+                    </div>
+
+                    <div id="displayWindowControls" style="display:none;">
+                        <div class="field-hint" style="margin-bottom:8px;">
+                            Ouvre le même overlay que la Browser Source OBS, en plein écran sur l'écran choisi
+                            — utile pour projeter directement, sans passer par OBS.
+                        </div>
+                        <div class="input-row" style="margin-bottom:0.75rem;">
+                            <select id="displaySelect"><option value="">Recherche des écrans…</option></select>
+                            <button type="button" class="btn btn-secondary" onclick="refreshDisplays()">🔄 Actualiser</button>
+                        </div>
+                        <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+                            <button type="button" class="btn btn-primary" onclick="openDisplayWindow()">🖥️ Afficher en plein écran</button>
+                            <button type="button" class="btn btn-secondary" onclick="closeDisplayWindow()">Fermer la fenêtre</button>
+                        </div>
+                    </div>
+
+                    <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap; padding:0.6rem 0.8rem; margin-top:1rem; border:1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius:8px;">
+                        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; user-select:none;">
+                            <input type="checkbox" id="testPatternToggle" onchange="onTestPatternToggle()">
+                            <span>Motif de test (barres de couleur) — pour régler OBS/projecteur avant le culte</span>
+                        </label>
+                    </div>
+                </div>
+
                 <div class="card">
                     <div class="card-header">
                         <span class="card-title">Informations Système & Connexion</span>
+                    </div>
+                    <!-- AJOUT (audit — second écran pour l'assemblée, gratuit/léger) :
+                         lien de la page compagnon (companion.html), pensée pour être
+                         collée dans un générateur de QR code gratuit et affichée sur
+                         un slide en fin de culte. Lecture seule, pas de jeton requis
+                         (voir /api/verses dans server.js). -->
+                    <div class="stat-row">
+                        <span class="stat-label">Page compagnon (QR code)</span>
+                        <span class="stat-value">
+                            <a href="#" id="companionLink" onclick="return false;" style="color:var(--primary,#d9bb6c);"></a>
+                            <button class="btn btn-secondary" style="padding:2px 8px; font-size:0.75rem; margin-left:8px;" onclick="copyCompanionLink()">Copier</button>
+                        </span>
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">Canal WebSocket</span>
@@ -2051,6 +2158,47 @@
             window.churchOverlay.onPipelineAlert(setPipelineAlert);
         }
 
+        // AJOUT (audit — second écran pour l'assemblée) : affiche l'URL de la
+        // page compagnon (même origine que le tableau de bord, juste /companion)
+        // — à coller dans n'importe quel générateur de QR code gratuit.
+        (function initCompanionLink() {
+            const link = document.getElementById('companionLink');
+            if (!link) return;
+            const url = window.location.origin + '/companion';
+            link.href = url;
+            link.textContent = url;
+        })();
+
+        function copyCompanionLink() {
+            const url = window.location.origin + '/companion';
+            navigator.clipboard.writeText(url).then(() => {
+                showToast('Lien copié — collez-le dans un générateur de QR code.', 'success');
+            }).catch(() => {
+                showToast('Copie impossible — sélectionnez le lien manuellement.', 'error');
+            });
+        }
+
+        function setTranscriptionHealth(payload) {
+            const banner = document.getElementById('transcriptionHealthBanner');
+            const icon = document.getElementById('transcriptionHealthIcon');
+            const msg = document.getElementById('transcriptionHealthMessage');
+            if (!banner || !msg) return;
+
+            if (!payload || payload.status === 'ok') {
+                banner.style.display = 'none';
+                return;
+            }
+
+            const isDegraded = payload.status === 'degraded';
+            banner.style.background = isDegraded ? 'rgba(244, 63, 94, 0.12)' : 'rgba(245, 158, 11, 0.12)';
+            banner.style.border = `1px solid ${isDegraded ? 'var(--accent-rose)' : '#f59e0b'}`;
+            banner.style.display = 'flex';
+            icon.textContent = isDegraded ? '⛔' : '⚠️';
+            msg.textContent = isDegraded
+                ? `Transcription en difficulté (${payload.consecutiveFailures || 1} échec(s) d'affilée) — nouvelle tentative automatique en cours.`
+                : `Nouvelle tentative de transcription (${payload.attempt}/${payload.maxAttempts})...`;
+        }
+
         // Au chargement, on récupère aussi l'état courant (utile si l'alerte a
         // été émise avant que le tableau de bord ait fini de charger).
         if (window.churchOverlay && window.churchOverlay.getStatus) {
@@ -2136,6 +2284,19 @@
                             : `Aucune référence croisée trouvée pour ${message.reference || 'ce verset'}.`
                     );
                     break;
+                // AJOUT (audit — mémoire des cultes) : réponse à getArchiveMatches
+                // (voir sermon-archive.js — recherche locale, pas d'IA impliquée ici).
+                case 'archiveMatches':
+                    renderAiEnricherOutput(
+                        message.results && message.results.length
+                            ? `Cultes correspondants pour "${message.query}" : ` +
+                              message.results.map(r => {
+                                  const date = new Date(r.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+                                  return `${r.theme || 'Sans titre'} (${date})`;
+                              }).join(' · ')
+                            : `Aucun culte archivé ne correspond à "${message.query}".`
+                    );
+                    break;
                 case 'textTranslated':
                     // Le broadcast vers l'overlay (action showTranslation) est fait
                     // directement par le serveur quand autoBroadcast est vrai (voir
@@ -2169,6 +2330,25 @@
                     addActivity(`Ambiance changée : ${message.themeName || message.mood}`, 'info');
                     showToast(`Ambiance : ${message.themeName || message.mood}`, 'success');
                     break;
+                // AJOUT (audit — état de repli visible) : ces trois actions étaient
+                // déjà émises par server.js (transcriptionError) ou nouvellement
+                // ajoutées (transcriptionRetrying, pipelineHealth — voir
+                // transcribeWithRetry() côté serveur), mais rien ici ne les
+                // affichait : un échec de transcription passait inaperçu jusqu'à
+                // ce que l'opérateur remarque qu'aucun verset n'apparaissait.
+                case 'transcriptionRetrying':
+                    setTranscriptionHealth({ status: 'retrying', attempt: message.attempt, maxAttempts: message.maxAttempts });
+                    break;
+                case 'pipelineHealth':
+                    setTranscriptionHealth(message);
+                    if (message.status === 'ok') {
+                        addActivity('Transcription rétablie', 'success');
+                    }
+                    break;
+                case 'transcriptionError':
+                    addActivity(`Transcription échouée : ${message.error}`, 'error');
+                    showToast(`Segment perdu : ${message.error}`, 'error');
+                    break;
             }
         }
 
@@ -2195,6 +2375,21 @@
                 return;
             }
             ws.send(JSON.stringify({ action: 'setMoodTheme', mood }));
+        }
+
+        // AJOUT (audit — affichage/sortie, gratuit/léger) : motif de fond CSS
+        // (voir #pattern-layer dans overlay.html) — indépendant de l'ambiance.
+        // Même schéma déterministe que setActiveMoodButton (id plutôt que
+        // l'objet event global, plus robuste).
+        function setBackgroundPattern(pattern) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                showToast('Non connecté au serveur — impossible de changer le motif.', 'error');
+                return;
+            }
+            ws.send(JSON.stringify({ action: 'setBackgroundPattern', pattern }));
+            document.querySelectorAll('#patternPicker .mood-btn').forEach(btn => btn.classList.remove('active'));
+            const active = document.getElementById(`pattern-btn-${pattern}`);
+            if (active) active.classList.add('active');
         }
 
         function setActiveMoodButton(mood) {
@@ -2344,6 +2539,20 @@
             ws.send(JSON.stringify({ action: 'getCrossReferences', reference: verse.reference, text: verse.text || '' }));
         }
 
+        // AJOUT (audit — mémoire des cultes, gratuit/léger) : recherche locale
+        // par mots-clés, pas d'appel API — voir sermon-archive.js.
+        function requestArchiveSearch() {
+            if (!requireWsOrWarn()) return;
+            const input = document.getElementById('archiveSearchInput');
+            const query = input ? input.value.trim() : '';
+            if (!query) {
+                renderAiEnricherOutput('Tapez un mot-clé ou un thème avant de lancer la recherche.');
+                return;
+            }
+            renderAiEnricherOutput('⏳ Recherche dans les cultes archivés...');
+            ws.send(JSON.stringify({ action: 'getArchiveMatches', query }));
+        }
+
         function requestLiveTranslation() {
             if (!requireWsOrWarn()) return;
             const verse = state.currentVerse;
@@ -2394,6 +2603,29 @@
                     ws.send(JSON.stringify({ action: 'hideTranslation' }));
                 }
             }
+        }
+
+        // AJOUT (audit — accessibilité) : bascule "Mode grand contraste" — un seul
+        // message WS, le serveur retransmet à tous les overlays connectés (voir
+        // action 'setHighContrast' -> 'accessibilityMode' dans server.js).
+        function onHighContrastToggle() {
+            const checkbox = document.getElementById('highContrastToggle');
+            const enabled = !!(checkbox && checkbox.checked);
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action: 'setHighContrast', enabled }));
+            }
+            showToast(enabled ? 'Mode grand contraste activé sur l\'overlay.' : 'Mode grand contraste désactivé.', 'info');
+        }
+
+        // AJOUT (audit — accessibilité) : bascule "Sous-titres en direct" — même
+        // schéma que le contraste élevé, un booléen relayé à tous les overlays.
+        function onCaptionsToggle() {
+            const checkbox = document.getElementById('captionsToggle');
+            const enabled = !!(checkbox && checkbox.checked);
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action: 'setCaptions', enabled }));
+            }
+            showToast(enabled ? 'Sous-titres activés sur l\'overlay.' : 'Sous-titres désactivés.', 'info');
         }
 
         function onAutoTranslateLangChange() {
@@ -2519,10 +2751,17 @@
             const item = document.createElement('div');
             item.className = 'transcript-item';
 
+            // CORRECTIF (audit production — XSS) : message.text vient soit du
+            // moteur STT (Groq/Deepgram, jamais passé par le filtre
+            // <>">' appliqué aux SEULS messages entrants côté serveur — voir
+            // sanitized dans server.js), soit d'un client déjà authentifié
+            // opérateur. escapeHtmlDashboard() existait déjà (utilisé pour la
+            // file d'attente) mais n'était jamais appliqué ici, le point
+            // d'entrée le plus direct entre "parole captée" et innerHTML.
             const time = new Date(message.timestamp || Date.now()).toLocaleTimeString();
             item.innerHTML = `
-                <div class="transcript-time"><span>${time}</span><span>${message.source || 'Audio'}</span></div>
-                <div class="transcript-text">${message.text}</div>
+                <div class="transcript-time"><span>${time}</span><span>${escapeHtmlDashboard(message.source || 'Audio')}</span></div>
+                <div class="transcript-text">${escapeHtmlDashboard(message.text || '')}</div>
             `;
 
             feed.insertBefore(item, feed.firstChild);
@@ -2941,7 +3180,11 @@
             if (type === 'error') icon = '⚠️';
             if (type === 'warning') icon = '⚡';
 
-            toast.innerHTML = `<span>${icon}</span><span>${message}</span>`;
+            // CORRECTIF (audit production — XSS) : message est très souvent un
+            // gabarit incluant err.message ou un champ serveur dynamique
+            // (voir tous les appels showToast('...: ' + err.message, 'error')
+            // ajoutés cette session) — jamais échappé avant insertion.
+            toast.innerHTML = `<span>${icon}</span><span>${escapeHtmlDashboard(message)}</span>`;
             container.appendChild(toast);
 
             setTimeout(() => {
@@ -2964,10 +3207,16 @@
             item.className = 'activity-item';
             const time = new Date().toLocaleTimeString();
 
+            // CORRECTIF (audit production — XSS) : title inclut souvent des
+            // champs dynamiques (message.error, message.reference, un
+            // fuzzyOriginal qui reflète la transcription vocale...) jamais
+            // échappés avant insertion. `type` reste un littéral interne
+            // (jamais dérivé d'une entrée externe) donc pas besoin de
+            // l'échapper, seulement `title`.
             item.innerHTML = `
                 <div class="activity-icon ${type}">•</div>
                 <div class="activity-content">
-                    <div class="activity-title">${title}</div>
+                    <div class="activity-title">${escapeHtmlDashboard(title)}</div>
                     <div class="activity-time">${time}</div>
                 </div>
             `;
@@ -3193,6 +3442,68 @@
 
             refreshSettingsUi();
         })();
+
+        // AJOUT (audit — plusieurs façons d'afficher l'overlay, gratuit/léger) :
+        // fenêtre plein écran indépendante d'OBS (voir createDisplayWindow dans
+        // main.js). Même garde que initApiSettingsPanel : n'existe que côté
+        // Electron (le pont IPC vient de preload.js).
+        (function initDisplayWindowPanel() {
+            const unavailable = document.getElementById('displayWindowUnavailable');
+            const controls = document.getElementById('displayWindowControls');
+            if (!controls) return;
+
+            if (!window.churchOverlay || !window.churchOverlay.listDisplays) {
+                if (unavailable) unavailable.style.display = 'block';
+                return;
+            }
+            controls.style.display = 'block';
+            refreshDisplays();
+        })();
+
+        async function refreshDisplays() {
+            const select = document.getElementById('displaySelect');
+            if (!select || !window.churchOverlay || !window.churchOverlay.listDisplays) return;
+            try {
+                const displays = await window.churchOverlay.listDisplays();
+                select.innerHTML = (displays || []).map((d) => `<option value="${d.id}">${d.label}</option>`).join('');
+            } catch (err) {
+                showToast('Impossible de lister les écrans : ' + (err && err.message ? err.message : err), 'error');
+            }
+        }
+
+        async function openDisplayWindow() {
+            const select = document.getElementById('displaySelect');
+            if (!select || !window.churchOverlay || !window.churchOverlay.openDisplayWindow) return;
+            const displayId = select.value ? Number(select.value) : undefined;
+            try {
+                await window.churchOverlay.openDisplayWindow(displayId);
+                showToast('Overlay affiché en plein écran.', 'success');
+            } catch (err) {
+                showToast('Échec de l\'affichage : ' + (err && err.message ? err.message : err), 'error');
+            }
+        }
+
+        async function closeDisplayWindow() {
+            if (!window.churchOverlay || !window.churchOverlay.closeDisplayWindow) return;
+            try {
+                await window.churchOverlay.closeDisplayWindow();
+                showToast('Fenêtre d\'affichage fermée.', 'info');
+            } catch (err) {
+                showToast('Échec de la fermeture : ' + (err && err.message ? err.message : err), 'error');
+            }
+        }
+
+        // AJOUT (audit — motif de test, gratuit/léger) : barres de couleur pures
+        // CSS côté overlay (voir #test-pattern dans overlay.html) — aucun calcul,
+        // juste un dégradé statique pour vérifier la chaîne vidéo avant un culte.
+        function onTestPatternToggle() {
+            const checkbox = document.getElementById('testPatternToggle');
+            const enabled = !!(checkbox && checkbox.checked);
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action: 'setTestPattern', enabled }));
+            }
+            showToast(enabled ? 'Motif de test activé sur l\'overlay.' : 'Motif de test désactivé.', 'info');
+        }
     </script>
 </body>
 </html>

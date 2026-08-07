@@ -130,8 +130,17 @@ body {
   max-width: 900px;
   z-index: 10;
   opacity: 0;
-  transition: opacity 0.6s ease, transform 0.6s ease;
+  transition: opacity 0.6s ease, transform 0.6s ease, bottom 0.4s ease;
   pointer-events: none;
+}
+
+/* CORRECTIF (audit — sous-titres) : la bande #caption-strip (fixed, bottom:0,
+   voir plus bas) peut s'étendre sur 2 lignes pour une phrase longue — sans
+   ce décalage, elle chevauche le bas de la carte verset (fixed, bottom:60px
+   ci-dessus) quand les deux sont visibles en même temps. 130px dégage même
+   le cas 2 lignes avec de la marge. */
+body.captions-active #overlay-container {
+  bottom: 130px;
 }
 
 #overlay-container.visible {
@@ -429,6 +438,133 @@ body {
   }
 }
 
+/* ==========================================================================
+   Mode grand contraste (audit — accessibilité, gratuit/léger). Bascule
+   opérateur explicite (voir action 'accessibilityMode'), pas de détection
+   automatique. CSS pur : on réutilise les mêmes variables --overlay-* que le
+   reste du fichier, donc halo/particules/badges s'adaptent tout seuls sans
+   dupliquer les règles élément par élément.
+   ========================================================================== */
+body.high-contrast {
+  --overlay-bg: #000000;
+  --overlay-text: #ffffff;
+  --overlay-text-muted: #e8e8e8;
+  --overlay-accent: #ffd54a;
+  --overlay-border: rgba(255, 255, 255, 0.45);
+  --overlay-glow: transparent;
+  --overlay-particle: transparent;
+}
+body.high-contrast .verse-text {
+  font-size: clamp(38px, 4.6vw, 68px);
+  text-shadow: none;
+}
+body.high-contrast .verse-reference {
+  font-size: clamp(18px, 1.8vw, 26px);
+}
+body.high-contrast .ambient-light,
+body.high-contrast .particles,
+body.high-contrast .advanced-particle {
+  display: none !important;
+}
+body.high-contrast .verse-text .kinetic-word {
+  animation: none;
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+
+/* ==========================================================================
+   Sous-titres en direct (audit — accessibilité, gratuit/léger). Le texte
+   transcrit circule déjà sur chaque segment (broadcast 'transcript' côté
+   serveur) — cette bande ne fait qu'afficher ce qui existait déjà, aucun
+   nouveau calcul ni appel réseau.
+   ========================================================================== */
+#caption-strip {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  display: none;
+  padding: 14px clamp(20px, 4vw, 48px);
+  background: rgba(0, 0, 0, 0.72);
+  color: #ffffff;
+  font-family: var(--overlay-font-ui);
+  font-size: clamp(15px, 1.6vw, 22px);
+  line-height: 1.4;
+  text-align: center;
+  z-index: 5;
+}
+#caption-strip.visible { display: block; }
+
+/* ==========================================================================
+   Motif de test (audit — affichage/sortie, gratuit/léger). Barres de
+   couleur statiques façon mire de calage broadcast (blanc/jaune/cyan/vert/
+   magenta/rouge/bleu) — sert à vérifier OBS/NDI (via DistroAV)/projecteur
+   AVANT le culte, indépendamment de tout verset. CSS pur, aucun calcul par
+   frame : zéro coût CPU au-delà d'un rendu statique normal.
+   ========================================================================== */
+#test-pattern {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: none;
+  flex-direction: column;
+}
+#test-pattern.visible { display: flex; }
+#test-pattern .bars {
+  flex: 1;
+  display: flex;
+}
+#test-pattern .bars > div { flex: 1; }
+#test-pattern .bar-white { background: #ffffff; }
+#test-pattern .bar-yellow { background: #ffff00; }
+#test-pattern .bar-cyan { background: #00ffff; }
+#test-pattern .bar-green { background: #00ff00; }
+#test-pattern .bar-magenta { background: #ff00ff; }
+#test-pattern .bar-red { background: #ff0000; }
+#test-pattern .bar-blue { background: #0000ff; }
+#test-pattern .label {
+  padding: 10px 16px;
+  background: #000000;
+  color: #ffffff;
+  font-family: var(--overlay-font-ui);
+  font-size: 14px;
+  letter-spacing: 1px;
+}
+
+/* ==========================================================================
+   Motifs de fond (audit — affichage/sortie, gratuit/léger). Couche
+   optionnelle sous la carte du verset, en plus des dégradés de thème
+   existants — dégradés CSS générés, aucune image, aucun poids ajouté.
+   ========================================================================== */
+#pattern-layer {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.5;
+}
+#pattern-layer.pattern-dots {
+  background-image: radial-gradient(var(--overlay-accent) 1px, transparent 1px);
+  background-size: 26px 26px;
+  opacity: 0.12;
+}
+#pattern-layer.pattern-grid {
+  background-image:
+    linear-gradient(var(--overlay-border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--overlay-border) 1px, transparent 1px);
+  background-size: 48px 48px;
+  opacity: 0.35;
+}
+#pattern-layer.pattern-diagonal {
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--overlay-border) 0px,
+    var(--overlay-border) 1px,
+    transparent 1px,
+    transparent 22px
+  );
+  opacity: 0.3;
+}
+
 /* Advanced particle system */
 .advanced-particle {
   position: absolute;
@@ -440,6 +576,9 @@ body {
 <script src="animation-library.js"></script>
 </head>
 <body>
+
+<!-- Motif de fond optionnel (affichage/sortie — voir action 'backgroundPatternMode') -->
+<div id="pattern-layer" aria-hidden="true"></div>
 
 <!-- Particules d'ambiance -->
 <div class="ambient-light" aria-hidden="true"></div>
@@ -475,6 +614,23 @@ body {
     <div class="verse-text" id="verse-text">En attente d'une référence biblique...</div>
     <div class="verse-text-bilingual" id="verse-text-bilingual" style="display:none"></div>
   </div>
+</div>
+
+<!-- Sous-titres en direct (accessibilité — voir action 'captionsMode') -->
+<div id="caption-strip" aria-live="polite"></div>
+
+<!-- Motif de test (affichage/sortie — voir action 'testPatternMode') -->
+<div id="test-pattern" aria-hidden="true">
+  <div class="bars">
+    <div class="bar-white"></div>
+    <div class="bar-yellow"></div>
+    <div class="bar-cyan"></div>
+    <div class="bar-green"></div>
+    <div class="bar-magenta"></div>
+    <div class="bar-red"></div>
+    <div class="bar-blue"></div>
+  </div>
+  <div class="label">ChurchOverlay — MOTIF DE TEST — réglez OBS / NDI / projecteur avant le culte</div>
 </div>
 
 <script>
@@ -544,6 +700,10 @@ function connectWs() {
       case 'init':
         if (msg.theme) applyTheme(msg.theme);
         if (msg.mood) setMood(msg.mood);
+        setHighContrast(!!msg.highContrast);
+        setCaptionsEnabled(!!msg.captions);
+        setTestPattern(!!msg.testPattern);
+        setBackgroundPattern(msg.backgroundPattern || 'none');
         break;
       case 'showVerse':
         showVerse(msg);
@@ -591,6 +751,21 @@ function connectWs() {
         break;
       case 'transcriptCorrected':
         console.log('[overlay] Transcript corrected:', msg.corrected);
+        break;
+      case 'transcript':
+        updateCaptionText(msg.text);
+        break;
+      case 'accessibilityMode':
+        setHighContrast(!!msg.highContrast);
+        break;
+      case 'captionsMode':
+        setCaptionsEnabled(!!msg.captions);
+        break;
+      case 'testPatternMode':
+        setTestPattern(!!msg.enabled);
+        break;
+      case 'backgroundPatternMode':
+        setBackgroundPattern(msg.pattern || 'none');
         break;
       case 'error':
         console.error('[overlay] Server error:', msg.error);
@@ -791,15 +966,28 @@ function applyTheme(theme) {
   if (!theme) return;
   const root = document.documentElement;
 
-  if (theme.background) root.style.setProperty('--overlay-bg', theme.background);
-  if (theme.color) root.style.setProperty('--overlay-text', theme.color);
+  // CORRECTIF (audit — reasoning/ambient mood) : ai-theme-generator.js
+  // (utilisé par toute diffusion 'applyTheme' déclenchée par un verset, une
+  // commande vocale ou le mode ambiant automatique) envoie
+  // backgroundGradient/textColor/animationStyle, pas background/color/
+  // animation. Sans ce pont, --overlay-bg et --overlay-text — qui pilotent
+  // le fond et la couleur du texte réellement visibles (voir background:
+  // var(--overlay-bg) / color: var(--overlay-text) plus haut) — n'étaient
+  // JAMAIS mis à jour : seuls accent/police/bordure/lueur/ombre/particules
+  // changeaient, le fond restait figé sur le thème par défaut.
+  const background = theme.backgroundGradient || theme.background;
+  const color = theme.textColor || theme.color;
+  const animation = theme.animationStyle || theme.animation;
+
+  if (background) root.style.setProperty('--overlay-bg', background);
+  if (color) root.style.setProperty('--overlay-text', color);
   if (theme.accentColor) root.style.setProperty('--overlay-accent', theme.accentColor);
   if (theme.fontFamily) root.style.setProperty('--overlay-font', theme.fontFamily);
   if (theme.borderColor) root.style.setProperty('--overlay-border', theme.borderColor);
   if (theme.glowColor) root.style.setProperty('--overlay-glow', theme.glowColor);
   if (theme.shadowColor) root.style.setProperty('--overlay-shadow', theme.shadowColor);
   if (theme.particleColor) root.style.setProperty('--overlay-particle', theme.particleColor);
-  if (theme.animation) currentAnimation = theme.animation;
+  if (animation) currentAnimation = animation;
 
   // CORRECTIF PERF (audit CPU) : updateParticles() était appelée mais
   // jamais définie nulle part dans ce fichier -> ReferenceError silencieuse
@@ -834,6 +1022,51 @@ function setMood(mood) {
   animationLibrary.createParticleSystem(container, mood);
   
   console.log('[overlay] Mood set to:', mood);
+}
+
+/* ==========================================================================
+   Accessibilité (audit — gratuit/léger) : bascule explicite opérateur,
+   aucune détection automatique, aucun appel réseau au-delà du message WS
+   déjà en place pour tout le reste de l'overlay.
+   ========================================================================== */
+function setHighContrast(enabled) {
+  document.body.classList.toggle('high-contrast', !!enabled);
+}
+
+let captionsEnabled = false;
+function setCaptionsEnabled(enabled) {
+  captionsEnabled = !!enabled;
+  document.body.classList.toggle('captions-active', captionsEnabled);
+  const strip = document.getElementById('caption-strip');
+  if (!strip) return;
+  strip.classList.toggle('visible', captionsEnabled);
+  if (!captionsEnabled) strip.textContent = '';
+}
+
+function updateCaptionText(text) {
+  if (!captionsEnabled) return;
+  const strip = document.getElementById('caption-strip');
+  if (strip) strip.textContent = text || '';
+}
+
+/* ==========================================================================
+   Affichage & sortie (audit — gratuit/léger) : motif de test (barres de
+   couleur, vérification OBS/NDI/projecteur) et motif de fond optionnel.
+   CSS pur dans les deux cas, aucun calcul par frame.
+   ========================================================================== */
+function setTestPattern(enabled) {
+  const el = document.getElementById('test-pattern');
+  if (el) el.classList.toggle('visible', !!enabled);
+}
+
+const BACKGROUND_PATTERNS = ['dots', 'grid', 'diagonal'];
+function setBackgroundPattern(pattern) {
+  const el = document.getElementById('pattern-layer');
+  if (!el) return;
+  BACKGROUND_PATTERNS.forEach((p) => el.classList.remove('pattern-' + p));
+  if (BACKGROUND_PATTERNS.includes(pattern)) {
+    el.classList.add('pattern-' + pattern);
+  }
 }
 
 /* ==========================================================================

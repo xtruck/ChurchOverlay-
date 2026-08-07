@@ -24,7 +24,14 @@ const { sanitizeForPrompt } = require('./prompt-sanitizer');
 // Configuration
 // -----------------------------------------------------------------------
 const CONFIG = {
-  // Groq model — fast, cheap, good at structured output
+  // CORRECTIF (audit — retour sur 8b-instant, contrainte "gratuit fiable") :
+  // un essai avec llama-3.3-70b-versatile a été fait puis annulé — le palier
+  // gratuit de Groq limite ce modèle à 1 000 req/jour et 30 req/min PARTAGÉES
+  // avec tous les autres appelants de chatCompletion() (transcription-
+  // corrector, ai-enricher, ambient mood...). Un seul culte peut générer
+  // plusieurs centaines d'appels côté semantic-detector seul — largement de
+  // quoi épuiser ce quota en plein direct. 8b-instant offre 14 400 req/jour
+  // et suffit largement avec un prompt aussi détaillé (règles + exemples).
   MODEL: 'llama-3.1-8b-instant',
   // Only run semantic detection if regex fails AND text looks "biblical"
   BIBLICAL_KEYWORDS: [

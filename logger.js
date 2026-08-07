@@ -22,9 +22,20 @@
 // -----------------------------------------------------------------------------
 
 const fs = require('fs');
+const fsp = fs.promises;
 const path = require('path');
 
 const MAX_LOG_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 jours
+// AJOUT (audit performance) : append() utilisait fs.appendFileSync — une
+// écriture disque SYNCHRONE, bloquante, sur le thread du worker server.js,
+// appelée à CHAQUE log() (donc plusieurs fois par segment de transcription,
+// sur le chemin le plus chaud du pipeline). Sur un disque lent ou sous
+// contention, ça ajoute de la latence directement à la détection de verset
+// en direct. File d'attente bornée + vidage asynchrone séquentiel : append()
+// ne bloque plus jamais l'appelant, l'ordre des lignes reste garanti (un
+// seul writer actif à la fois), et un disque bloqué ne fait pas grossir la
+// mémoire indéfiniment (plafond, plus vieilles lignes abandonnées au-delà).
+const MAX_QUEUE_LINES = 2000;
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -93,17 +104,51 @@ function createFileLogger(logsDir) {
   // append() retentera à chaque appel).
   ensureDir();
 
+  const queue = [];
+  let draining = false;
+  let droppedSinceWarning = 0;
+
+  async function drain() {
+    if (draining) return;
+    draining = true;
+    try {
+      while (queue.length > 0) {
+        const { filePath, text } = queue.shift();
+        try {
+          await fsp.appendFile(filePath, text);
+        } catch (err) {
+          safeWarnOnce(err);
+          // Le fichier/dossier a disparu ou le disque est indisponible :
+          // vider le reste de la file ne servirait qu'à empiler des échecs
+          // identiques. On abandonne cette ligne et on continue avec la
+          // suivante (peut-être qu'une purge/permission change entre-temps).
+        }
+      }
+      purgeOldLogs();
+    } finally {
+      draining = false;
+    }
+  }
+
   function append(line, isError) {
     if (!ensureDir()) return;
-    try {
-      const now = new Date();
-      const filePath = path.join(logsDir, `${dateStamp(now)}.log`);
-      const prefix = isError ? 'ERROR' : 'INFO';
-      fs.appendFileSync(filePath, `[${timeStamp(now)}] [${prefix}] ${line}\n`);
-      purgeOldLogs();
-    } catch (err) {
-      safeWarnOnce(err);
+    const now = new Date();
+    const filePath = path.join(logsDir, `${dateStamp(now)}.log`);
+    const prefix = isError ? 'ERROR' : 'INFO';
+    const text = `[${timeStamp(now)}] [${prefix}] ${line}\n`;
+
+    if (queue.length >= MAX_QUEUE_LINES) {
+      // Disque manifestement à la traîne (ou indisponible) : on privilégie
+      // les lignes les plus RÉCENTES (plus utiles pour diagnostiquer un
+      // problème en cours) plutôt que de laisser la file grossir sans fin.
+      queue.shift();
+      droppedSinceWarning++;
+      if (droppedSinceWarning === 1 || droppedSinceWarning % 500 === 0) {
+        console.warn(`[logger] File d'attente saturée (${MAX_QUEUE_LINES}) — ${droppedSinceWarning} ligne(s) de log abandonnée(s) depuis.`);
+      }
     }
+    queue.push({ filePath, text });
+    drain(); // fire-and-forget — append() ne bloque jamais l'appelant
   }
 
   return { append };

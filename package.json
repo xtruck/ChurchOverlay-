@@ -1,7 +1,7 @@
 {
   "name": "churchoverlay",
   "productName": "ChurchOverlay",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Overlay de versets bibliques en direct avec IA — détection sémantique, commandes vocales, thèmes dynamiques et recherche biblique par sujet.",
   "author": "ChurchOverlay",
   "main": "main.js",
@@ -29,7 +29,7 @@
     "electron-builder": "^26.15.7"
   },
   "overrides": {
-    "brace-expansion": "^5.0.8",
+    "brace-expansion": "^5.0.9",
     "minimatch": "^10.2.6"
   },
   "build": {
@@ -44,6 +44,7 @@
       "setup.html",
       "dashboard.html",
       "overlay.html",
+      "companion.html",
       "server.js",
       "sentence-buffer.js",
       "audio-capture.js",
@@ -74,6 +75,7 @@
       "ai-theme-generator.js",
       "ai-enricher.js",
       "animation-library.js",
+      "sermon-archive.js",
       "node_modules/express/**/*",
       "config/themes/**/*",
       "config/features.json",

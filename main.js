@@ -8,7 +8,7 @@
 
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, safeStorage, session } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, safeStorage, session, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsp = require('fs').promises;
@@ -322,6 +322,72 @@ function createMainWindow() {
       mainWindow.hide();
     }
   });
+}
+
+// ---------------------------------------------------------------------------
+// AJOUT (audit — plusieurs façons d'afficher l'overlay, gratuit/léger) :
+// jusqu'ici overlay.html n'existait que comme Browser Source à coller dans
+// OBS. Certaines églises n'utilisent pas OBS du tout et projettent
+// directement sur un vidéoprojecteur — cette fenêtre charge le MÊME
+// overlay.html, en plein écran sur l'écran choisi, sans passer par OBS.
+// Aucune nouvelle dépendance : uniquement le module `screen` déjà fourni par
+// Electron.
+// ---------------------------------------------------------------------------
+let displayWindow = null;
+
+function listDisplays() {
+  return screen.getAllDisplays().map((d, index) => ({
+    id: d.id,
+    label: `Écran ${index + 1}${d.id === screen.getPrimaryDisplay().id ? ' (principal)' : ''} — ${d.bounds.width}×${d.bounds.height}`,
+    bounds: d.bounds,
+  }));
+}
+
+function createDisplayWindow(displayId) {
+  const displays = screen.getAllDisplays();
+  const target = displays.find((d) => d.id === displayId) || screen.getPrimaryDisplay();
+
+  if (displayWindow && !displayWindow.isDestroyed()) {
+    displayWindow.close();
+    displayWindow = null;
+  }
+
+  displayWindow = new BrowserWindow({
+    x: target.bounds.x,
+    y: target.bounds.y,
+    width: target.bounds.width,
+    height: target.bounds.height,
+    frame: false,
+    fullscreen: true,
+    autoHideMenuBar: true,
+    backgroundColor: '#000000',
+    icon: path.join(__dirname, 'icon.png'),
+    title: 'ChurchOverlay — Affichage direct',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  displayWindow.setMenuBarVisibility(false);
+  // Même jeton WS que mainWindow (voir createMainWindow) — overlay.html en
+  // file:// lit ce token via getWsUrl()/window.location.search, exactement
+  // comme dashboard.html.
+  displayWindow.loadFile(path.join(__dirname, 'overlay.html'), {
+    query: process.env.WS_AUTH_TOKEN ? { token: process.env.WS_AUTH_TOKEN } : {},
+  });
+  displayWindow.on('closed', () => {
+    displayWindow = null;
+  });
+  return { opened: true };
+}
+
+function closeDisplayWindow() {
+  if (displayWindow && !displayWindow.isDestroyed()) {
+    displayWindow.close();
+  }
+  displayWindow = null;
+  return { closed: true };
 }
 
 function createTray() {
@@ -812,6 +878,11 @@ ipcMain.handle('get-settings', async () => {
 });
 
 ipcMain.handle('get-perf-stats', async () => perfMonitor.getStats());
+
+// --- AJOUT (audit — plusieurs façons d'afficher l'overlay) ------------------
+ipcMain.handle('list-displays', async () => listDisplays());
+ipcMain.handle('open-display-window', async (_evt, { displayId }) => createDisplayWindow(displayId));
+ipcMain.handle('close-display-window', async () => closeDisplayWindow());
 
 // ---------------------------------------------------------------------------
 // Auto-updater (optional — won't crash if not installed)

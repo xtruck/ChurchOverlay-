@@ -14,7 +14,22 @@ const { GoogleGenAI } = require('@google/genai');
 const GROQ_ENDPOINT_TRANSCRIBE = 'https://api.groq.com/openai/v1/audio/transcriptions';
 const GROQ_ENDPOINT_CHAT = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_ENDPOINT_MODELS = 'https://api.groq.com/openai/v1/models';
-const GROQ_MODEL_TRANSCRIBE = 'whisper-large-v3';
+// AJOUT (audit — reflexes plus rapides, gratuit) : Turbo transcrit à 216x
+// temps réel (contre un débit bien plus faible pour le modèle large-v3
+// complet) pour un coût par heure INFÉRIEUR sur le palier gratuit Groq — un
+// strict gain, sans changement de code au-delà du nom de modèle. Écart de
+// précision (~1% WER) négligeable pour un vocabulaire déjà biaisé par
+// buildWhisperPrompt() (voir bible-keyterms.js).
+const GROQ_MODEL_TRANSCRIBE = 'whisper-large-v3-turbo';
+// CORRECTIF (audit — retour sur 8b-instant, contrainte "gratuit fiable") :
+// llama-3.3-70b-versatile a été essayé pour un raisonnement plus fin, mais
+// son palier gratuit (1 000 req/jour, 30 req/min) est PARTAGÉ par tous les
+// appelants de chatCompletion() dans l'app (semantic-detector,
+// transcription-corrector en mode smart, ai-enricher, ambient mood) — un
+// seul culte peut dépasser ce quota et faire échouer l'IA en plein direct.
+// 8b-instant (14 400 req/jour) reste le choix par défaut sûr ; voir
+// ai-theme-generator.js et transcription-corrector.js, qui l'utilisaient
+// déjà explicitement et n'ont jamais été changés.
 const GROQ_MODEL_CHAT = 'llama-3.1-8b-instant';
 const FALLBACK_TIMEOUT_MS = 5000;
 const CHECK_KEY_TIMEOUT_MS = 5000;
@@ -71,7 +86,7 @@ async function checkKey(timeoutMs = CHECK_KEY_TIMEOUT_MS) {
  * laissait une requête HTTP orpheline ouverte (parfois plusieurs minutes,
  * le temps du timeout TCP par défaut), accumulant des connexions inutiles.
  */
-async function transcribeFile(audioFilePath, signal) {
+async function transcribeFile(audioFilePath, signal, contextHint) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     throw new Error("GROQ_API_KEY non défini dans l'environnement.");
@@ -84,7 +99,31 @@ async function transcribeFile(audioFilePath, signal) {
   const formData = new FormData();
   formData.append('file', new Blob([audioBuffer]), 'audio.wav');
   formData.append('model', GROQ_MODEL_TRANSCRIBE);
-  formData.append('prompt', WHISPER_PROMPT);
+  // AJOUT (audit — boost transcription) : Whisper utilise `prompt` comme
+  // contexte de décodage (biaise le vocabulaire, ne s'exécute pas comme une
+  // instruction). En plus du vocabulaire biblique statique, on ajoute la fin
+  // du segment précédent déjà transcrit/corrigé : ça donne au modèle la
+  // continuité de la phrase en cours (noms propres déjà prononcés, sujet du
+  // moment) au lieu de repartir à zéro toutes les ~5s. Whisper ne regarde que
+  // les ~224 derniers tokens du prompt, donc on garde le total court.
+  const prompt = contextHint
+    ? `${WHISPER_PROMPT} Contexte récent : "${contextHint}"`.slice(-900)
+    : WHISPER_PROMPT;
+  formData.append('prompt', prompt);
+  // AJOUT (audit — boost transcription) : verrouille la langue de décodage
+  // Whisper si l'opérateur l'a explicitement configurée (TRANSCRIPTION_LANGUAGE
+  // dans .env). Sans indice de langue, Whisper doit deviner à partir des
+  // ~30 premières secondes de CHAQUE segment (les segments ici ne durent que
+  // quelques secondes) — sur un segment court, bruité, ou qui commence par un
+  // nom propre, la détection automatique se trompe parfois de langue et
+  // transcrit phonétiquement dans la mauvaise langue. Deepgram (fournisseur
+  // de repli, voir deepgram-wrapper.js) fixe déjà `language=fr` en dur pour
+  // la même raison ; ici c'est opt-in pour ne pas casser les cultes bilingues
+  // qui comptent sur la détection auto (voir detector-compat.js FR+EN).
+  const language = process.env.TRANSCRIPTION_LANGUAGE;
+  if (language) {
+    formData.append('language', language);
+  }
 
   const response = await fetch(GROQ_ENDPOINT_TRANSCRIBE, {
     method: 'POST',
@@ -105,12 +144,12 @@ async function transcribeFile(audioFilePath, signal) {
 /**
  * Lance Groq et Deepgram EN PARALLÈLE.
  */
-async function transcribeWithFallback(audioFilePath, timeoutMs = FALLBACK_TIMEOUT_MS) {
+async function transcribeWithFallback(audioFilePath, timeoutMs = FALLBACK_TIMEOUT_MS, contextHint) {
   const deepgramEnabled = deepgram.isConfigured();
 
   const groqAbort = new AbortController();
   const deepgramAbort = new AbortController();
-  const groqPromise = transcribeFile(audioFilePath, groqAbort.signal).catch((err) => ({ error: err }));
+  const groqPromise = transcribeFile(audioFilePath, groqAbort.signal, contextHint).catch((err) => ({ error: err }));
   const deepgramPromise = deepgramEnabled
     ? deepgram.transcribeFile(audioFilePath, deepgramAbort.signal).catch((err) => ({ error: err }))
     : Promise.resolve({ error: new Error('Deepgram non configuré') });

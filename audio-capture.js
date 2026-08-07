@@ -32,7 +32,13 @@ const CONFIG = {
   sampleRate: 16000,      // recommandé pour Whisper large-v3 (Groq)
   channels: 1,            // Mono
   bitDepth: 16,           // PCM 16-bit
-  segmentDuration: 5000,  // 5 secondes (optimisé pour réactivité)
+  // AJOUT (audit — reflexes plus rapides, gratuit) : 5000ms → 4000ms.
+  // whisper-large-v3-turbo (voir groq-wrapper.js) transcrit un segment plus
+  // vite que l'ancien modèle, donc raccourcir la fenêtre réduit la latence
+  // perçue sans changer de fournisseur ni de coût — juste moins d'audio à
+  // attendre avant l'envoi. 4s reste au-dessus du plancher usuel pour une
+  // bonne précision Whisper (le contexte se dégrade nettement sous ~3s).
+  segmentDuration: 4000,
   overlapDuration: 400,   // 400ms de chevauchement (meilleur contexte)
   // CORRECTIF (VAD réel) : ces deux valeurs existaient déjà mais n'étaient
   // lues nulle part dans ce fichier — la segmentation était purement
