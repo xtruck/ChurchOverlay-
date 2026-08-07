@@ -1,7 +1,19 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "commonjs",
+    // CORRECTIF : "commonjs"/"node" (l'ancienne paire "classique") — TS
+    // avertit désormais que moduleResolution:"node" (alias de "node10") est
+    // dépréciée et cessera de fonctionner en TypeScript 7.0. Remplacée par
+    // la paire moderne recommandée par TS pour un vrai projet Node.js
+    // (pas de bundler, pas de "type":"module" dans package.json) :
+    // "node16" respecte la résolution CJS/ESM réelle de Node (y compris
+    // le champ "exports" de package.json), contrairement à l'ancienne
+    // stratégie "node10" qui l'ignorait. Sans risque ici : aucun fichier
+    // .ts réel n'existe encore dans le dépôt (seulement global.d.ts, une
+    // déclaration de types qui ne produit aucune sortie compilée) — c'est
+    // le seul moment où changer ce réglage ne peut rien casser.
+    "module": "node16",
+    "moduleResolution": "node16",
     "lib": ["ES2022"],
     "outDir": "./dist-ts",
     "rootDir": "./",
@@ -10,7 +22,6 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,
     "declaration": true,
     "declarationMap": true,
@@ -23,5 +34,5 @@
     "checkJs": false
   },
   "include": ["*.ts", "types/**/*.ts", "test/**/*.ts"],
-  "exclude": ["node_modules", "dist", "config"]
+  "exclude": ["node_modules", "dist", "dist-ts", "config"]
 }
