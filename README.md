@@ -70,26 +70,12 @@ Verse text is fetched directly from two independent free providers with
 automatic fallback: `bible.helloao.org` (Louis Segond 1910), then
 `api.getbible.net`. No API key or provider configuration is needed.
 
-### Logging & Debug
+### Logging
 
-| Variable | Default | Description                  |
-| -------- | ------- | ---------------------------- |
-| `DEBUG`  | false   | Verbose logging (true/false) |
-
-**Enable debug:**
-
-```ini
-DEBUG=true
-```
-
-Then watch the console for detailed logs:
-
-```
-[server] Message validated from client #1: showVerse
-[detector] Detected: jean 3:16
-[bible-lookup] ✓ Got verse from helloao-lsg
-[server] Verse sent to overlay: Jean 3:16
-```
+The server always logs its main operations (verse detection, transcription,
+WebSocket connections) to the console and to a rotating daily file under
+the app's `logs/` folder (30 days retained automatically) — there is no
+separate debug/verbose toggle to enable first.
 
 ### Security
 
@@ -127,7 +113,6 @@ PORT=8765
 GROQ_API_KEY=gsk_YOUR_KEY_HERE
 DEEPGRAM_API_KEY=YOUR_DEEPGRAM_KEY_HERE
 NODE_ENV=production
-DEBUG=false
 ```
 
 ### Development/Testing
@@ -136,7 +121,6 @@ DEBUG=false
 PORT=8765
 GROQ_API_KEY=gsk_YOUR_KEY_HERE
 NODE_ENV=development
-DEBUG=true
 ```
 
 ## Secrets Management

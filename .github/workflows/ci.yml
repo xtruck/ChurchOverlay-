@@ -5,8 +5,16 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
-  release:
-    types: [ published ]
+  # CORRECTIF (audit) : ce déclencheur `release: published` créait une
+  # boucle de rebuild inutile - build-windows.yml (déclenché par un tag
+  # v*.*.*) publie déjà une Release GitHub avec l'installeur attaché, et
+  # cette publication elle-même redéclenchait TOUT ce pipeline (security-
+  # scan + lint + test + un DEUXIÈME build multi-OS + le job "release"
+  # ci-dessous essayant d'attacher SES PROPRES artefacts à la même
+  # Release) - du temps CI gaspillé au mieux, des artefacts en double sur
+  # la Release au pire. build-windows.yml gère déjà tout le cycle
+  # tag -> build -> publication de bout en bout ; retiré ici pour éviter
+  # le doublon.
 
 permissions:
   contents: read
@@ -178,30 +186,6 @@ jobs:
           name: churchoverlay-${{ matrix.os }}
           path: dist/*
           retention-days: 7
-
-  # Release (only on tagged releases)
-  release:
-    name: Create Release
-    needs: [build]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'release'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: artifacts/**/*
-          draft: false
-          prerelease: ${{ contains(github.event.release.tag_name, 'beta') || contains(github.event.release.tag_name, 'alpha') }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Deploy to staging (on push to develop)
   deploy-staging:
