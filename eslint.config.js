@@ -49,6 +49,32 @@ module.exports = [
     },
   },
   {
+    // AudioWorkletGlobalScope (audio-capture-worklet.js) : scope global
+    // séparé du DOM/window, avec ses propres globales (registerProcessor,
+    // sampleRate, currentFrame, currentTime, AudioWorkletProcessor) que ni
+    // globals.browser ni globals.node ne connaissent.
+    files: ['audio-capture-worklet.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'script',
+      globals: {
+        AudioWorkletProcessor: 'readonly',
+        registerProcessor: 'readonly',
+        sampleRate: 'readonly',
+        currentFrame: 'readonly',
+        currentTime: 'readonly',
+      },
+    },
+    plugins: { prettier: prettierPlugin },
+    rules: {
+      'prettier/prettier': 'error',
+      'no-console': ['warn', { allow: ['warn', 'error'] }],
+      'prefer-const': 'error',
+      'no-var': 'error',
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
+    },
+  },
+  {
     files: ['**/*.ts'],
     languageOptions: {
       ecmaVersion: 2022,

@@ -52,6 +52,29 @@ const CONFIG = {
   // lieu à l'autre) avant de considérer ce seuil comme définitif.
   silenceThreshold: 0.02, // Seuil RMS de silence pour VAD (0-1)
   minSpeechDuration: 500, // Durée minimum de voix détectée dans un segment (ms) pour l'envoyer au STT
+
+  // AJOUT (VAD streaming — capture de phrases plus rapide) : jusqu'ici la
+  // segmentation était PUREMENT temporelle (fenêtre fixe segmentDuration),
+  // donc une phrase courte suivie d'un silence attendait quand même la fin
+  // des 4s avant d'être transcrite. Ces réglages pilotent une coupure
+  // anticipée dès qu'un silence de fin de phrase est détecté (voir
+  // processStreamingFrame/flushSegment) — segmentDuration devient un
+  // plafond de sécurité plutôt que le seul déclencheur.
+  trailingSilenceMs: 600, // silence continu après de la voix => on considère la phrase terminée et on coupe tout de suite
+  noiseFloorAdaptRate: 0.1, // vitesse d'adaptation (moyenne mobile exponentielle) de l'estimation du bruit ambiant
+  noiseMarginMultiplier: 3, // un niveau doit dépasser (bruit ambiant × ce facteur) pour compter comme "voix" côté détection anticipée
+  minAdaptiveThreshold: 0.01, // plancher absolu : ne jamais déclencher sur du bruit de quantification même si la pièce est très calme
+  maxAdaptiveThreshold: 0.06, // plafond absolu : ne jamais exiger plus fort qu'une voix normale, même dans une pièce bruyante
+  initialNoiseFloor: 0.01, // estimation de départ avant calibration (affinée en continu pendant les silences)
+  // CORRECTIF (2026-08-07 — protection quota gratuit Groq) : whisper-large-v3-
+  // turbo est plafonné à 20 requêtes/minute côté gratuit Groq (confirmé via
+  // console.groq.com/docs/rate-limits). Sans plancher, une coupure anticipée
+  // sur CHAQUE petite pause entre phrases (parole hachée, plusieurs phrases
+  // courtes rapprochées) pourrait dépasser ce débit et déclencher des 429 en
+  // plein culte. Ce plancher ne s'applique qu'aux coupures ANTICIPÉES (voir
+  // processStreamingFrame) — le plafond de sécurité segmentDuration (4000ms)
+  // reste, lui, naturellement sous 20/min et n'a pas besoin de ce garde-fou.
+  minFlushIntervalMs: 3200, // ~18.75 requêtes/min max, marge sous le plafond Groq de 20/min
   // CORRECTIF (audit — même famille de bug que ffmpeg.exe dans setup-ffmpeg.js) :
   // était path.join(__dirname, 'temp-audio'). Dans l'app empaquetée
   // (asar: true), __dirname pointe à l'intérieur de app.asar, un fichier
@@ -85,6 +108,15 @@ const STATE = {
     onAudioSegment: null,
     onError: null,
   },
+  // AJOUT (VAD streaming) — état de la détection anticipée de fin de phrase,
+  // indépendant de STATE.audioBuffer (qui accumule les octets du segment en
+  // cours) : voir handleAudioData/processStreamingFrame/flushSegment.
+  frameAccumulator: Buffer.alloc(0), // reste d'octets encore trop court pour former une trame VAD complète
+  noiseFloor: 0.01, // estimation courante du bruit ambiant, mise à jour uniquement pendant du silence confirmé
+  segmentHasSpeech: false, // le segment en cours contient-il déjà assez de voix pour qu'un silence derrière compte comme une fin de phrase ?
+  consecutiveSilentFrameMs: 0, // durée de silence consécutif accumulée dans le segment en cours
+  voicedFrameMsInSegment: 0, // durée de voix accumulée dans le segment en cours (détection anticipée uniquement)
+  lastFlushAt: 0, // horodatage (Date.now()) du dernier segment envoyé — protège minFlushIntervalMs
 };
 
 /**
@@ -178,6 +210,12 @@ function startBrowserCapture(options = {}) {
   STATE.segmentCount = 0;
   STATE.audioBuffer = [];
   STATE.browserCaptureConfig = config;
+  STATE.frameAccumulator = Buffer.alloc(0);
+  STATE.noiseFloor = config.initialNoiseFloor;
+  STATE.segmentHasSpeech = false;
+  STATE.consecutiveSilentFrameMs = 0;
+  STATE.voicedFrameMsInSegment = 0;
+  STATE.lastFlushAt = 0; // pas de délai artificiel avant le tout premier segment
 
   console.log(
     '[audio-capture] Capture navigateur (Web Audio, sans FFmpeg) démarrée — ' +
@@ -226,11 +264,15 @@ const VAD_FRAME_MS = 100;
  * détectée à l'intérieur, en découpant le segment en sous-fenêtres de
  * VAD_FRAME_MS et en comptant celles qui dépassent config.silenceThreshold.
  *
- * Volontairement simple (RMS par sous-fenêtre, pas de state machine
- * Silence/Speech/Trailing façon Rhema) : ici on ne fait QUE décider si un
- * segment déjà découpé mérite d'être envoyé au STT, pas gater l'audio en
- * temps réel frame par frame — donc pas besoin de la complexité d'un VAD
- * "streaming".
+ * MISE À JOUR (VAD streaming) : cette fonction reste volontairement simple
+ * (RMS par sous-fenêtre, seuil STATIQUE config.silenceThreshold) — c'est le
+ * filtre final "ce segment déjà découpé mérite-t-il d'être envoyé au STT ?",
+ * appelé une fois par segment dans flushSegment(). La state machine
+ * Silence/Speech/Trailing à seuil ADAPTATIF (bruit ambiant appris en continu)
+ * qui décide QUAND couper un segment, elle, vit maintenant dans
+ * processStreamingFrame() ci-dessous — les deux couches sont volontairement
+ * séparées : l'une décide du découpage en temps réel, l'autre du go/no-go
+ * final avec un seuil prévisible et testable.
  * @param {Buffer} segmentBuffer - PCM16LE du segment complet
  * @param {Object} config - config active (sampleRate, channels, bitDepth, silenceThreshold)
  * @returns {{ voicedMs: number, totalMs: number }}
@@ -258,89 +300,175 @@ function analyzeVoiceActivity(segmentBuffer, config) {
 }
 
 /**
- * Traite les données audio reçues (segmentation, écriture WAV, callback).
+ * Traite UNE trame VAD (VAD_FRAME_MS) déjà extraite du flux entrant. Alimente
+ * la state machine de détection anticipée de fin de phrase : met à jour
+ * l'estimation adaptative du bruit ambiant pendant le silence, et déclenche
+ * un flush précoce dès qu'un silence de fin de phrase (config.trailingSilenceMs)
+ * suit un segment qui contenait déjà assez de voix (config.minSpeechDuration).
+ * AJOUT (VAD streaming — capture de phrases plus rapide/robuste au bruit).
+ * @param {Buffer} frame - trame PCM16LE de VAD_FRAME_MS
+ * @param {Object} config - configuration active
+ */
+function processStreamingFrame(frame, config) {
+  const rms = computeRms(frame);
+  const adaptiveThreshold = Math.min(
+    config.maxAdaptiveThreshold,
+    Math.max(config.minAdaptiveThreshold, STATE.noiseFloor * config.noiseMarginMultiplier)
+  );
+  const isVoiced = rms >= adaptiveThreshold;
+
+  if (isVoiced) {
+    STATE.consecutiveSilentFrameMs = 0;
+    STATE.voicedFrameMsInSegment += VAD_FRAME_MS;
+    if (STATE.voicedFrameMsInSegment >= config.minSpeechDuration) {
+      STATE.segmentHasSpeech = true;
+    }
+  } else {
+    STATE.consecutiveSilentFrameMs += VAD_FRAME_MS;
+    if (!STATE.segmentHasSpeech) {
+      // On n'a encore détecté aucune voix dans ce segment : ce silence est
+      // du bruit ambiant fiable, on peut affiner l'estimation dessus. Une
+      // fois de la voix détectée, on arrête d'adapter pour ne pas laisser
+      // un souffle/une respiration entre deux phrases faire dériver le
+      // seuil vers le haut et rater le début de la phrase suivante.
+      STATE.noiseFloor =
+        STATE.noiseFloor * (1 - config.noiseFloorAdaptRate) + rms * config.noiseFloorAdaptRate;
+    }
+  }
+
+  const sinceLastFlushMs = Date.now() - STATE.lastFlushAt;
+  if (
+    STATE.segmentHasSpeech &&
+    STATE.consecutiveSilentFrameMs >= config.trailingSilenceMs &&
+    sinceLastFlushMs >= config.minFlushIntervalMs
+  ) {
+    flushSegment(config, { early: true });
+  }
+}
+
+/**
+ * Concatène le segment en cours, décide (via analyzeVoiceActivity, seuil
+ * STATIQUE config.silenceThreshold) s'il mérite d'être envoyé au STT, et
+ * réinitialise l'état du segment en cours. Appelée soit tôt (silence de fin
+ * de phrase détecté par processStreamingFrame), soit au plafond de sécurité
+ * (segmentDuration atteint, voir handleAudioData).
+ * @param {Object} config - configuration active
+ * @param {{ early?: boolean }} [opts] - early=true : fin de phrase naturelle
+ *   (pas de chevauchement conservé) ; early=false : coupure de sécurité en
+ *   pleine parole (chevauchement conservé pour le contexte Whisper).
+ */
+function flushSegment(config, { early = false } = {}) {
+  const segmentBuffer = Buffer.concat(STATE.audioBuffer);
+  if (segmentBuffer.length === 0) return;
+
+  STATE.lastFlushAt = Date.now();
+
+  if (early) {
+    // Silence de fin de phrase confirmé : rien à reporter sur le prochain
+    // segment, la coupure tombe déjà à un bon endroit.
+    STATE.audioBuffer = [];
+  } else {
+    const bytesPerSample = config.bitDepth / 8;
+    const samplesPerSecond = config.sampleRate * config.channels;
+    const overlapSize = (config.overlapDuration / 1000) * samplesPerSecond * bytesPerSample;
+    const keepSize = Math.max(0, segmentBuffer.length - overlapSize);
+    STATE.audioBuffer = keepSize > 0 ? [segmentBuffer.slice(keepSize)] : [];
+  }
+
+  // Le segment suivant repart de zéro pour la détection de fin de phrase.
+  // noiseFloor n'est PAS réinitialisé : l'estimation du bruit de la pièce
+  // doit survivre aux coupures de segment pour rester utile sur la durée
+  // d'un culte entier.
+  STATE.segmentHasSpeech = false;
+  STATE.consecutiveSilentFrameMs = 0;
+  STATE.voicedFrameMsInSegment = 0;
+
+  // AJOUT (VAD réel) : avant d'écrire le WAV et de déclencher le STT,
+  // on vérifie que le segment contient assez de voix détectée. Sans ce
+  // filtre, un segment de 5s de silence/musique (bruit de fond, temps
+  // de transition, chant) partait quand même vers Groq/Deepgram — coût
+  // API inutile et source de faux positifs de transcription.
+  const voiceInfo = analyzeVoiceActivity(segmentBuffer, config);
+  if (voiceInfo.voicedMs < config.minSpeechDuration) {
+    STATE.segmentCount++;
+    console.log(
+      `[audio-capture] Segment ${STATE.segmentCount} ignoré (silence — ` +
+        `${voiceInfo.voicedMs}ms de voix détectée < seuil ${config.minSpeechDuration}ms)`
+    );
+    // CORRECTIF (problème récurrent — transcription qui ne démarre jamais
+    // sans qu'aucune erreur ne soit visible) : ce rejet était auparavant
+    // silencieux (console.log uniquement, jamais vu en usage normal). Si
+    // le micro reste durablement sous silenceThreshold (mauvais gain,
+    // mauvais périphérique sélectionné...), CHAQUE segment est rejeté et
+    // rien n'apparaît jamais côté opérateur, sans qu'aucun message
+    // n'explique pourquoi. Rendu visible via ce callback ; server.js
+    // limite lui-même la fréquence d'alerte pour ne pas spammer le
+    // dashboard si le silence est normal (temps mort entre deux prises
+    // de parole).
+    if (STATE.callbacks.onSegmentSkipped) {
+      STATE.callbacks.onSegmentSkipped({
+        voicedMs: voiceInfo.voicedMs,
+        totalMs: voiceInfo.totalMs,
+        threshold: config.silenceThreshold,
+        minSpeechDuration: config.minSpeechDuration,
+      });
+    }
+    return;
+  }
+
+  // Créer le fichier WAV pour ce segment
+  const wavBuffer = createWavFile(
+    segmentBuffer,
+    config.sampleRate,
+    config.channels,
+    config.bitDepth
+  );
+
+  STATE.segmentCount++;
+  const segmentFile = path.join(config.tempDir, `segment_${STATE.segmentCount}.wav`);
+  fs.writeFileSync(segmentFile, wavBuffer);
+
+  console.log(
+    `[audio-capture] Segment ${STATE.segmentCount} créé (${segmentBuffer.length} bytes, ` +
+      `${voiceInfo.voicedMs}ms de voix détectée${early ? ', coupure anticipée (fin de phrase)' : ''})`
+  );
+
+  // Envoyer le segment au callback
+  if (STATE.callbacks.onAudioSegment) {
+    STATE.callbacks.onAudioSegment(segmentFile);
+  }
+}
+
+/**
+ * Traite les données audio reçues : alimente à la fois l'accumulateur de
+ * segment (octets bruts, pour l'écriture WAV finale) et le scan VAD
+ * streaming trame par trame (détection anticipée de fin de phrase, voir
+ * processStreamingFrame). segmentDuration agit désormais comme un plafond
+ * de sécurité — la coupure normale arrive plus tôt, dès qu'un silence de
+ * fin de phrase est détecté.
  * @param {Buffer} data - Données audio brutes (PCM16LE)
  * @param {Object} config - Configuration actuelle
  */
 function handleAudioData(data, config) {
-  // Ajouter au buffer
   STATE.audioBuffer.push(data);
+  STATE.frameAccumulator = Buffer.concat([STATE.frameAccumulator, data]);
 
-  // Calculer la taille du buffer en échantillons
   const bytesPerSample = config.bitDepth / 8;
   const samplesPerSecond = config.sampleRate * config.channels;
+  const frameBytes = Math.floor((VAD_FRAME_MS / 1000) * samplesPerSecond * bytesPerSample);
+
+  while (frameBytes > 0 && STATE.frameAccumulator.length >= frameBytes) {
+    const frame = STATE.frameAccumulator.slice(0, frameBytes);
+    STATE.frameAccumulator = STATE.frameAccumulator.slice(frameBytes);
+    processStreamingFrame(frame, config);
+  }
+
+  // Plafond de sécurité : même sans silence de fin de phrase détecté (voix
+  // continue), on ne laisse jamais un segment grossir indéfiniment.
   const segmentSize = (config.segmentDuration / 1000) * samplesPerSecond * bytesPerSample;
-
-  // Si le buffer est assez grand, créer un segment
   const bufferSize = STATE.audioBuffer.reduce((sum, buf) => sum + buf.length, 0);
-
   if (bufferSize >= segmentSize) {
-    // Concaténer le buffer
-    const segmentBuffer = Buffer.concat(STATE.audioBuffer);
-
-    // Garder le chevauchement pour le prochain segment
-    const overlapSize = (config.overlapDuration / 1000) * samplesPerSecond * bytesPerSample;
-    const keepSize = Math.max(0, segmentBuffer.length - overlapSize);
-
-    if (keepSize > 0) {
-      STATE.audioBuffer = [segmentBuffer.slice(keepSize)];
-    } else {
-      STATE.audioBuffer = [];
-    }
-
-    // AJOUT (VAD réel) : avant d'écrire le WAV et de déclencher le STT,
-    // on vérifie que le segment contient assez de voix détectée. Sans ce
-    // filtre, un segment de 5s de silence/musique (bruit de fond, temps
-    // de transition, chant) partait quand même vers Groq/Deepgram — coût
-    // API inutile et source de faux positifs de transcription.
-    const voiceInfo = analyzeVoiceActivity(segmentBuffer, config);
-    if (voiceInfo.voicedMs < config.minSpeechDuration) {
-      STATE.segmentCount++;
-      console.log(
-        `[audio-capture] Segment ${STATE.segmentCount} ignoré (silence — ` +
-          `${voiceInfo.voicedMs}ms de voix détectée < seuil ${config.minSpeechDuration}ms)`
-      );
-      // CORRECTIF (problème récurrent — transcription qui ne démarre jamais
-      // sans qu'aucune erreur ne soit visible) : ce rejet était auparavant
-      // silencieux (console.log uniquement, jamais vu en usage normal). Si
-      // le micro reste durablement sous silenceThreshold (mauvais gain,
-      // mauvais périphérique sélectionné...), CHAQUE segment est rejeté et
-      // rien n'apparaît jamais côté opérateur, sans qu'aucun message
-      // n'explique pourquoi. Rendu visible via ce callback ; server.js
-      // limite lui-même la fréquence d'alerte pour ne pas spammer le
-      // dashboard si le silence est normal (temps mort entre deux prises
-      // de parole).
-      if (STATE.callbacks.onSegmentSkipped) {
-        STATE.callbacks.onSegmentSkipped({
-          voicedMs: voiceInfo.voicedMs,
-          totalMs: voiceInfo.totalMs,
-          threshold: config.silenceThreshold,
-          minSpeechDuration: config.minSpeechDuration,
-        });
-      }
-      return;
-    }
-
-    // Créer le fichier WAV pour ce segment
-    const wavBuffer = createWavFile(
-      segmentBuffer,
-      config.sampleRate,
-      config.channels,
-      config.bitDepth
-    );
-
-    STATE.segmentCount++;
-    const segmentFile = path.join(config.tempDir, `segment_${STATE.segmentCount}.wav`);
-    fs.writeFileSync(segmentFile, wavBuffer);
-
-    console.log(
-      `[audio-capture] Segment ${STATE.segmentCount} créé (${segmentBuffer.length} bytes, ${voiceInfo.voicedMs}ms de voix détectée)`
-    );
-
-    // Envoyer le segment au callback
-    if (STATE.callbacks.onAudioSegment) {
-      STATE.callbacks.onAudioSegment(segmentFile);
-    }
+    flushSegment(config, { early: false });
   }
 }
 
@@ -391,6 +519,10 @@ function stopRecording() {
   STATE.isRecording = false;
   STATE.browserCaptureConfig = null;
   STATE.audioBuffer = [];
+  STATE.frameAccumulator = Buffer.alloc(0);
+  STATE.segmentHasSpeech = false;
+  STATE.consecutiveSilentFrameMs = 0;
+  STATE.voicedFrameMsInSegment = 0;
   console.log('[audio-capture] Capture arrêtée.');
   cleanupTempFiles({ force: true });
   return Promise.resolve();

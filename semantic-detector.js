@@ -5,7 +5,7 @@
  * Detects when a speaker references a Bible passage IMPLICITLY
  * (e.g. "that passage where Jesus calms the storm" → Mark 4:39)
  *
- * Uses Groq LLM (llama-3.1-8b-instant) with smart caching and confidence scoring.
+ * Uses Groq LLM (openai/gpt-oss-20b) with smart caching and confidence scoring.
  * Falls back gracefully when offline or API limits hit.
  *
  * Integration: Drop into your project, require in server.js, call after
@@ -22,15 +22,19 @@ const { sanitizeForPrompt } = require('./prompt-sanitizer');
 // Configuration
 // -----------------------------------------------------------------------
 const CONFIG = {
-  // CORRECTIF (audit — retour sur 8b-instant, contrainte "gratuit fiable") :
-  // un essai avec llama-3.3-70b-versatile a été fait puis annulé — le palier
-  // gratuit de Groq limite ce modèle à 1 000 req/jour et 30 req/min PARTAGÉES
-  // avec tous les autres appelants de chatCompletion() (transcription-
-  // corrector, ai-enricher, ambient mood...). Un seul culte peut générer
-  // plusieurs centaines d'appels côté semantic-detector seul — largement de
-  // quoi épuiser ce quota en plein direct. 8b-instant offre 14 400 req/jour
-  // et suffit largement avec un prompt aussi détaillé (règles + exemples).
-  MODEL: 'llama-3.1-8b-instant',
+  // CORRECTIF (2026-08-07 — dépréciation Groq) : llama-3.1-8b-instant (14 400
+  // req/jour, le seul modèle de chat généraliste gratuit à ce niveau) est
+  // décommissionné par Groq le 16 août 2026. openai/gpt-oss-20b est la
+  // migration recommandée par Groq — mais TOUT le palier gratuit de chat
+  // généraliste (llama-3.3-70b-versatile, gpt-oss-20b/120b...) est désormais
+  // plafonné à 1 000 req/jour / 30 req/min PARTAGÉES avec tous les autres
+  // appelants de chatCompletion() (transcription-corrector, ai-enricher,
+  // ambient mood...) — voir groq-wrapper.js pour le détail. Un seul culte
+  // peut générer plusieurs centaines d'appels côté semantic-detector seul :
+  // ce plafond est désormais un risque réel, pas juste théorique. Pas
+  // d'alternative Groq gratuite à quota plus élevé disponible ; configurer
+  // GEMINI_API_KEY (prioritaire dans chatCompletion()) atténue le risque.
+  MODEL: 'openai/gpt-oss-20b',
   // Only run semantic detection if regex fails AND text looks "biblical"
   BIBLICAL_KEYWORDS: [
     'jesus',

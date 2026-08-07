@@ -21,16 +21,28 @@ const GROQ_ENDPOINT_MODELS = 'https://api.groq.com/openai/v1/models';
 // précision (~1% WER) négligeable pour un vocabulaire déjà biaisé par
 // buildWhisperPrompt() (voir bible-keyterms.js).
 const GROQ_MODEL_TRANSCRIBE = 'whisper-large-v3-turbo';
-// CORRECTIF (audit — retour sur 8b-instant, contrainte "gratuit fiable") :
-// llama-3.3-70b-versatile a été essayé pour un raisonnement plus fin, mais
-// son palier gratuit (1 000 req/jour, 30 req/min) est PARTAGÉ par tous les
-// appelants de chatCompletion() dans l'app (semantic-detector,
-// transcription-corrector en mode smart, ai-enricher, ambient mood) — un
-// seul culte peut dépasser ce quota et faire échouer l'IA en plein direct.
-// 8b-instant (14 400 req/jour) reste le choix par défaut sûr ; voir
-// ai-theme-generator.js et transcription-corrector.js, qui l'utilisaient
-// déjà explicitement et n'ont jamais été changés.
-const GROQ_MODEL_CHAT = 'llama-3.1-8b-instant';
+// CORRECTIF (2026-08-07 — dépréciation Groq confirmée via console.groq.com/docs/deprecations) :
+// llama-3.1-8b-instant est officiellement décommissionné le 16 août 2026
+// (email Groq du 17 juin 2026) ; les requêtes échoueront après cette date.
+// Remplacé par openai/gpt-oss-20b, la migration RECOMMANDÉE PAR GROQ
+// lui-même pour ce modèle.
+//
+// ATTENTION — ce changement N'ÉLIMINE PAS le risque de quota partagé qui
+// avait fait revenir ce projet sur 8b-instant après un essai de
+// llama-3.3-70b-versatile (voir historique) : openai/gpt-oss-20b n'a QUE
+// 1 000 req/jour en gratuit (30 req/min), contre 14 400/jour pour
+// l'ancien 8b-instant. Vérifié le 2026-08-07 : sur le palier gratuit
+// Groq actuel, TOUS les modèles de chat généralistes sont désormais à
+// 1 000 req/jour (llama-3.3-70b-versatile, openai/gpt-oss-120b,
+// openai/gpt-oss-20b, qwen/qwen3.6-27b...) — 8b-instant était le SEUL à
+// 14 400/jour, et il disparaît. Il n'existe donc plus d'option gratuite
+// Groq à quota élevé pour chatCompletion() (semantic-detector,
+// transcription-corrector mode smart, ai-enricher, ambient mood — tous
+// partagent ce même quota). Pour un culte long avec beaucoup d'appels IA,
+// configurer GEMINI_API_KEY (déjà prioritaire sur Groq dans
+// chatCompletion() ci-dessous) reste la meilleure protection contre ce
+// nouveau plafond bas.
+const GROQ_MODEL_CHAT = 'openai/gpt-oss-20b';
 const FALLBACK_TIMEOUT_MS = 5000;
 const CHECK_KEY_TIMEOUT_MS = 5000;
 

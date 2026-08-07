@@ -265,8 +265,11 @@ Rules:
 4. If unsure, leave the text unchanged
 5. Output ONLY the corrected text, nothing else`;
 
+    // CORRECTIF (2026-08-07) : llama-3.1-8b-instant décommissionné par Groq
+    // le 16 août 2026 — voir groq-wrapper.js pour le détail de la migration
+    // et l'impact sur les quotas gratuits (plafond partagé désormais bas).
     const response = await groqWrapper.chatCompletion(prompt, {
-      model: 'llama-3.1-8b-instant',
+      model: 'openai/gpt-oss-20b',
       temperature: 0.05,
       max_tokens: Math.min(text.length + 50, 500),
     });

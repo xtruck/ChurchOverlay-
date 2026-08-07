@@ -245,37 +245,6 @@ initWebSocket();
 let realMicCaptureState = null; // { stream, audioCtx, sourceNode, processorNode, silentGain, analyser }
 let realVisualizerAnimId = null;
 
-function downsampleBuffer(buffer, sampleRate, outSampleRate) {
-  if (outSampleRate === sampleRate) return buffer;
-  const sampleRateRatio = sampleRate / outSampleRate;
-  const newLength = Math.round(buffer.length / sampleRateRatio);
-  const result = new Float32Array(newLength);
-  let offsetResult = 0;
-  let offsetBuffer = 0;
-  while (offsetResult < result.length) {
-    const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
-    let accum = 0;
-    let count = 0;
-    for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
-      accum += buffer[i];
-      count++;
-    }
-    result[offsetResult] = count > 0 ? accum / count : 0;
-    offsetResult++;
-    offsetBuffer = nextOffsetBuffer;
-  }
-  return result;
-}
-
-function floatTo16BitPCM(input) {
-  const output = new Int16Array(input.length);
-  for (let i = 0; i < input.length; i++) {
-    const s = Math.max(-1, Math.min(1, input[i]));
-    output[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-  }
-  return output;
-}
-
 function drawRealAudioVisualizer() {
   const canvas = document.getElementById('audioVisualizer');
   if (!canvas || !realMicCaptureState) return;
@@ -360,18 +329,24 @@ async function startRealAudioCapture() {
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const sourceNode = audioCtx.createMediaStreamSource(stream);
 
-    const processorNode = audioCtx.createScriptProcessor(4096, 1, 1);
-    processorNode.onaudioprocess = (event) => {
-      const input = event.inputBuffer.getChannelData(0);
-      const downsampled = downsampleBuffer(input, audioCtx.sampleRate, 16000);
-      const pcm16 = floatTo16BitPCM(downsampled);
-      if (window.churchOverlay) window.churchOverlay.sendAudioChunk(pcm16.buffer);
+    // CORRECTIF (dépréciation DevTools "ScriptProcessorNode is deprecated,
+    // use AudioWorkletNode instead") : createScriptProcessor() tourne sur
+    // le thread principal (celui de l'UI) et peut le bloquer sous charge.
+    // Un AudioWorkletNode délègue le traitement à audio-capture-worklet.js,
+    // exécuté sur le thread audio dédié du navigateur ; la conversion
+    // PCM16/downsampling y est réimplémentée (un AudioWorkletProcessor
+    // tourne dans un scope global séparé, sans accès aux fonctions de
+    // cette page).
+    await audioCtx.audioWorklet.addModule('audio-capture-worklet.js');
+    const processorNode = new AudioWorkletNode(audioCtx, 'pcm-capture-processor');
+    processorNode.port.onmessage = (event) => {
+      if (window.churchOverlay) window.churchOverlay.sendAudioChunk(event.data);
     };
 
-    // Un ScriptProcessorNode ne déclenche son callback que s'il
-    // est connecté à une destination — un GainNode à volume 0
-    // satisfait cette exigence sans renvoyer le son du micro
-    // vers les haut-parleurs (pas d'écho/larsen).
+    // Comme pour l'ancien ScriptProcessorNode, le graphe doit atteindre la
+    // destination pour que le noeud reste actif — un GainNode à volume 0
+    // satisfait cette exigence sans renvoyer le son du micro vers les
+    // haut-parleurs (pas d'écho/larsen).
     const silentGain = audioCtx.createGain();
     silentGain.gain.value = 0;
     sourceNode.connect(processorNode);
@@ -411,6 +386,8 @@ function stopRealAudioCapture() {
   if (!realMicCaptureState) return;
   try {
     realMicCaptureState.sourceNode.disconnect();
+    realMicCaptureState.processorNode.port.onmessage = null;
+    realMicCaptureState.processorNode.port.close();
     realMicCaptureState.processorNode.disconnect();
     realMicCaptureState.silentGain.disconnect();
     realMicCaptureState.analyser.disconnect();

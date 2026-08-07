@@ -203,6 +203,73 @@ async function run() {
   await audioCapture.stopRecording();
   console.log('[TEST] ✓ silenceThreshold: 0 désactive bien le filtre de silence');
 
+  // AJOUT (VAD streaming — capture de phrases plus rapide) : une phrase
+  // courte suivie d'un silence de fin de phrase (>= trailingSilenceMs) doit
+  // désormais déclencher un segment AVANT d'avoir accumulé segmentDuration
+  // (4s) d'audio — c'est le coeur de la demande "capter les phrases plus
+  // vite". On vérifie ceci en comptant les octets réellement envoyés avant
+  // que le premier segment n'arrive.
+  console.log('\n[TEST] Test 9: coupure anticipée sur silence de fin de phrase...');
+  segments = [];
+  audioCapture.on({
+    onAudioSegment: (file) => segments.push(file),
+    onError: (err) => console.error('[TEST] onError inattendu:', err.message),
+  });
+  await audioCapture.startBrowserCapture();
+
+  const frameBytes = Math.ceil((100 / 1000) * config.sampleRate * bytesPerSample); // 100ms = VAD_FRAME_MS
+  let bytesFedBeforeFirstSegment = 0;
+
+  // Quelques trames de silence pour calibrer le bruit ambiant (amplitude
+  // très faible, sous le seuil adaptatif).
+  for (let i = 0; i < 3; i++) {
+    const buf = makeVoicedBuffer(frameBytes, 20);
+    audioCapture.feedPcmChunk(buf);
+    if (segments.length === 0) bytesFedBeforeFirstSegment += buf.length;
+  }
+  // 800ms de voix nette (> minSpeechDuration=500ms) pour que segmentHasSpeech passe à true.
+  for (let i = 0; i < 8; i++) {
+    const buf = makeVoicedBuffer(frameBytes, 6000);
+    audioCapture.feedPcmChunk(buf);
+    if (segments.length === 0) bytesFedBeforeFirstSegment += buf.length;
+  }
+  // 700ms de silence (> trailingSilenceMs=600ms) pour clore la phrase.
+  for (let i = 0; i < 7; i++) {
+    const buf = makeVoicedBuffer(frameBytes, 20);
+    audioCapture.feedPcmChunk(buf);
+    if (segments.length === 0) bytesFedBeforeFirstSegment += buf.length;
+  }
+
+  assert.strictEqual(segments.length, 1, 'Un segment aurait dû être créé par coupure anticipée');
+  assert(
+    bytesFedBeforeFirstSegment < segmentBytes,
+    `La coupure anticipée devrait arriver avant segmentDuration (${bytesFedBeforeFirstSegment} < ${segmentBytes})`
+  );
+  console.log(
+    `[TEST] ✓ Segment créé après ${bytesFedBeforeFirstSegment} octets (< ${segmentBytes} = plafond segmentDuration)`
+  );
+
+  // AJOUT (protection quota gratuit Groq — whisper plafonné à 20 req/min) :
+  // un deuxième cycle voix+silence enchaîné QUASI IMMÉDIATEMENT (même tick,
+  // donc largement sous minFlushIntervalMs=3200ms en temps réel) ne doit PAS
+  // produire un deuxième segment tout de suite — sans ce garde-fou, une
+  // parole hachée (phrases courtes, pauses fréquentes) pourrait dépasser le
+  // débit gratuit Groq et déclencher des 429 en plein culte.
+  console.log('\n[TEST] Test 10: plancher minFlushIntervalMs entre deux coupures anticipées...');
+  for (let i = 0; i < 8; i++) {
+    audioCapture.feedPcmChunk(makeVoicedBuffer(frameBytes, 6000));
+  }
+  for (let i = 0; i < 7; i++) {
+    audioCapture.feedPcmChunk(makeVoicedBuffer(frameBytes, 20));
+  }
+  assert.strictEqual(
+    segments.length,
+    1,
+    'Un deuxième segment immédiat aurait dû être retenu par minFlushIntervalMs'
+  );
+  await audioCapture.stopRecording();
+  console.log('[TEST] ✓ Deuxième coupure anticipée correctement retenue (débit Groq protégé)');
+
   console.log('\n=== Tous les tests sont passés ===');
   process.exit(0);
 }

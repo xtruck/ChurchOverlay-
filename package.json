@@ -8,7 +8,7 @@
   "scripts": {
     "build": "npm run build:ts",
     "dev": "node server.js",
-    "start": "node server.js",
+    "start": "electron .",
     "server-only": "node --env-file-if-exists=.env --env-file-if-exists=.env.local server.js",
     "test-envoi": "node test/test-envoi.js",
     "check-files": "node scripts/check-build-files.js",
@@ -67,6 +67,7 @@
       "setup.html",
       "dashboard.html",
       "dashboard.js",
+      "audio-capture-worklet.js",
       "overlay.html",
       "companion.html",
       "server.js",
