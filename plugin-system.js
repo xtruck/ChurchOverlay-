@@ -21,13 +21,13 @@ const vm = require('vm');
 // Capabilities that plugins can request
 // ---------------------------------------------------------------------------
 const CAPABILITIES = Object.freeze({
-  THEME: 'theme',           // Can modify overlay themes
-  OUTPUT: 'output',         // Can send messages to overlay
+  THEME: 'theme', // Can modify overlay themes
+  OUTPUT: 'output', // Can send messages to overlay
   TRANSCRIPT: 'transcript', // Can read transcripts
-  VERSE: 'verse',           // Can read detected verses
-  NETWORK: 'network',       // Can make HTTP requests (dangerous)
-  FS: 'fs',                 // Can access filesystem (dangerous)
-  PROCESS: 'process',       // Can spawn processes (dangerous)
+  VERSE: 'verse', // Can read detected verses
+  NETWORK: 'network', // Can make HTTP requests (dangerous)
+  FS: 'fs', // Can access filesystem (dangerous)
+  PROCESS: 'process', // Can spawn processes (dangerous)
 });
 
 const DANGEROUS_CAPS = new Set([CAPABILITIES.NETWORK, CAPABILITIES.FS, CAPABILITIES.PROCESS]);
@@ -37,8 +37,17 @@ const DANGEROUS_CAPS = new Set([CAPABILITIES.NETWORK, CAPABILITIES.FS, CAPABILIT
 // ---------------------------------------------------------------------------
 function createSecureRequire(pluginName, allowedCaps) {
   const allowedModules = new Set([
-    'path', 'util', 'url', 'querystring', 'crypto', 'buffer',
-    'stream', 'events', 'string_decoder', 'timers', 'assert',
+    'path',
+    'util',
+    'url',
+    'querystring',
+    'crypto',
+    'buffer',
+    'stream',
+    'events',
+    'string_decoder',
+    'timers',
+    'assert',
   ]);
 
   if (allowedCaps.includes(CAPABILITIES.FS)) {
@@ -58,8 +67,8 @@ function createSecureRequire(pluginName, allowedCaps) {
     if (!allowedModules.has(id)) {
       throw new Error(
         `[Plugin "${pluginName}"] Module "${id}" is not in the allowed list. ` +
-        `Allowed: ${Array.from(allowedModules).join(', ')}. ` +
-        `Request additional capabilities in plugin.json.`
+          `Allowed: ${Array.from(allowedModules).join(', ')}. ` +
+          `Request additional capabilities in plugin.json.`
       );
     }
     return require(id);
@@ -94,7 +103,7 @@ class PluginSystem {
 
     const name = plugin.name;
     const caps = meta.capabilities || [];
-    const isDangerous = caps.some(c => DANGEROUS_CAPS.has(c));
+    const isDangerous = caps.some((c) => DANGEROUS_CAPS.has(c));
 
     const wrapped = {
       name,
@@ -117,7 +126,9 @@ class PluginSystem {
       }
     }
 
-    console.log(`[PluginSystem] Registered: "${name}" v${wrapped.version} caps=[${caps.join(',')}]${isDangerous ? ' [DANGEROUS]' : ''}`);
+    console.log(
+      `[PluginSystem] Registered: "${name}" v${wrapped.version} caps=[${caps.join(',')}]${isDangerous ? ' [DANGEROUS]' : ''}`
+    );
     return wrapped;
   }
 
@@ -126,7 +137,7 @@ class PluginSystem {
     this.plugins.delete(name);
     delete this.metadata[name];
     for (const hook of Object.keys(this.hooks)) {
-      this.hooks[hook] = this.hooks[hook].filter(h => h.name !== name);
+      this.hooks[hook] = this.hooks[hook].filter((h) => h.name !== name);
     }
     console.log(`[PluginSystem] Unregistered: "${name}"`);
     return true;
@@ -140,7 +151,7 @@ class PluginSystem {
   }
 
   getPluginList() {
-    return Array.from(this.plugins.values()).map(p => ({
+    return Array.from(this.plugins.values()).map((p) => ({
       name: p.name,
       version: p.version,
       description: p.description,
@@ -228,23 +239,27 @@ class PluginSystem {
         continue;
       }
       if (manifest.capabilities && !Array.isArray(manifest.capabilities)) {
-        console.warn(`[PluginSystem] Manifest for "${entry}" has invalid "capabilities" (must be array)`);
+        console.warn(
+          `[PluginSystem] Manifest for "${entry}" has invalid "capabilities" (must be array)`
+        );
         continue;
       }
 
       const allowedCaps = manifest.capabilities || [];
-      const unknownCaps = allowedCaps.filter(c => !Object.values(CAPABILITIES).includes(c));
+      const unknownCaps = allowedCaps.filter((c) => !Object.values(CAPABILITIES).includes(c));
       if (unknownCaps.length > 0) {
-        console.warn(`[PluginSystem] Plugin "${manifest.name}" requests unknown capabilities: ${unknownCaps.join(', ')}`);
+        console.warn(
+          `[PluginSystem] Plugin "${manifest.name}" requests unknown capabilities: ${unknownCaps.join(', ')}`
+        );
         continue;
       }
 
       // SECURITY: warn about dangerous capabilities
-      const dangerousRequested = allowedCaps.filter(c => DANGEROUS_CAPS.has(c));
+      const dangerousRequested = allowedCaps.filter((c) => DANGEROUS_CAPS.has(c));
       if (dangerousRequested.length > 0) {
         console.warn(
           `[PluginSystem] ⚠ Plugin "${manifest.name}" requests DANGEROUS capabilities: ` +
-          `${dangerousRequested.join(', ')}. Ensure you trust this plugin.`
+            `${dangerousRequested.join(', ')}. Ensure you trust this plugin.`
         );
       }
 

@@ -7,20 +7,25 @@
 ## 🚀 One-Click Setup (Recommended)
 
 ### Step 1: First Time Setup
+
 Double-click: **`install-dependencies.bat`**
 
 This will:
+
 - ✅ Verify Node.js is installed
 - ✅ Install npm dependencies
 - ✅ Create `.env` configuration file (for the WebSocket port, API keys, etc. — no microphone name needed here)
 
 ### Step 2: Start the App
+
 Run in a terminal:
+
 ```
 npm start
 ```
 
 This will:
+
 - ✅ Launch the ChurchOverlay app (Electron)
 - ✅ On first launch, open a setup window listing your microphones —
   pick one and paste your Groq API key
@@ -52,6 +57,7 @@ This will:
 ## ✅ Everything Ready!
 
 When you see in the dashboard/console:
+
 ```
 [server] Serveur WebSocket démarré sur ws://127.0.0.1:8765
 [server] Pipeline complet opérationnel
@@ -66,11 +72,13 @@ Your system is ready. Just speak Bible verses and they'll appear automatically!
 Want to test before the service?
 
 Double-click: **`test-overlay.bat`** (or run in PowerShell):
+
 ```powershell
 node test/test-envoi.js
 ```
 
 This will:
+
 - ✅ Send a test verse to the overlay
 - ✅ Verify OBS connection works
 - ✅ Show Bible API is responding
@@ -79,13 +87,13 @@ This will:
 
 ## 📋 What Each File Does
 
-| File | Purpose | When to Use |
-|------|---------|-------------|
-| `install-dependencies.bat` | Install Node.js packages & setup | First time only |
-| `npm start` | Launch the app (setup window + dashboard + mic capture) | Every time you use it |
-| `start-server.bat` | Run the WebSocket server without a UI/microphone (debug/testing) | Advanced/testing only |
-| `.env` | Configuration file (port, API keys — no microphone name) | Edit with your settings |
-| `overlay.html` | OBS browser source | Reference in OBS |
+| File                       | Purpose                                                          | When to Use             |
+| -------------------------- | ---------------------------------------------------------------- | ----------------------- |
+| `install-dependencies.bat` | Install Node.js packages & setup                                 | First time only         |
+| `npm start`                | Launch the app (setup window + dashboard + mic capture)          | Every time you use it   |
+| `start-server.bat`         | Run the WebSocket server without a UI/microphone (debug/testing) | Advanced/testing only   |
+| `.env`                     | Configuration file (port, API keys — no microphone name)         | Edit with your settings |
+| `overlay.html`             | OBS browser source                                               | Reference in OBS        |
 
 ---
 
@@ -115,12 +123,14 @@ app's setup window (or the "Changer de micro" button in the dashboard).
 ## 🆘 Troubleshooting
 
 ### "Node.js not found"
+
 1. Download from: https://nodejs.org/
 2. Install with default settings
 3. Restart your computer
 4. Try again
 
 ### "No audio devices found" / wrong microphone picked
+
 1. Check Windows audio settings (Settings → Sound → Input devices) —
    the app lists exactly what Windows sees
 2. Verify the microphone is not disabled or muted
@@ -128,12 +138,14 @@ app's setup window (or the "Changer de micro" button in the dashboard).
    picker and choose again
 
 ### "OBS doesn't show overlay"
+
 1. Check browser console in OBS (F12)
 2. Verify the ChurchOverlay app is still running
 3. Verify file path in OBS matches your location
 4. Check browser source URL format
 
 ### "Verses don't appear"
+
 1. Check internet connection (transcription and Bible lookups need it)
 2. Check the dashboard for a "Problème micro" alert
 3. Speak clearly: "Jean 3:16"

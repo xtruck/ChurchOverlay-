@@ -70,7 +70,12 @@ function isFileWhitelisted(relPath, filesList) {
 // pour intercepter ce genre de régression. Un fichier manquant sur disque
 // est même PIRE qu'un fichier manquant de build.files : ça casse aussi
 // `npm start` en dev, pas seulement le .exe packagé.
-function findLocalRequires(filePath, seen = new Set(), result = new Set(), missingOnDisk = new Set()) {
+function findLocalRequires(
+  filePath,
+  seen = new Set(),
+  result = new Set(),
+  missingOnDisk = new Set()
+) {
   const relFromRoot = path.relative(ROOT, filePath).replace(/\\/g, '/');
   if (seen.has(relFromRoot)) return { result, missingOnDisk };
   seen.add(relFromRoot);
@@ -116,8 +121,8 @@ function main() {
 
   if (allMissingOnDisk.size > 0) {
     console.error('\n✗ ÉCHEC — les fichiers suivants sont require() par le code');
-    console.error('  (main.js/server.js ou l\'un de leurs require() locaux) mais');
-    console.error('  ABSENTS DU DISQUE. L\'app plante au lancement (MODULE_NOT_FOUND),');
+    console.error("  (main.js/server.js ou l'un de leurs require() locaux) mais");
+    console.error("  ABSENTS DU DISQUE. L'app plante au lancement (MODULE_NOT_FOUND),");
     console.error('  y compris en dev (npm start), pas seulement une fois packagée :\n');
     allMissingOnDisk.forEach((f) => console.error(`    - ${f}`));
     console.error('\n  Corrige en restaurant ce(s) fichier(s) ou en retirant le(s) require()');

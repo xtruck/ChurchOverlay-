@@ -98,17 +98,24 @@ function makeReadingMode(overrides = {}) {
   // Test 3 : avancement automatique par chevauchement de mots — le fragment
   // transcrit ressemble au verset SUIVANT (pas au verset courant) : le mode
   // doit avancer et appeler onVerseAdvance.
-  await checkAsync('avance automatiquement quand le fragment ressemble au verset suivant', async () => {
-    const { rm, calls } = makeReadingMode();
-    await rm.start('jean', 3, 1);
-    // Fragment proche du verset 2 : "Cet homme vint de nuit trouver Jesus."
-    const result = rm.processFragment('cet homme vint de nuit trouver jesus');
-    assert.ok(result, 'processFragment aurait du retourner un resultat');
-    assert.strictEqual(result.num, 2);
-    assert.strictEqual(rm.currentIndex, 1);
-    assert.strictEqual(calls.onVerseAdvance.length, 1, 'onVerseAdvance aurait du etre appele une fois');
-    assert.strictEqual(calls.onVerseAdvance[0].num, 2);
-  });
+  await checkAsync(
+    'avance automatiquement quand le fragment ressemble au verset suivant',
+    async () => {
+      const { rm, calls } = makeReadingMode();
+      await rm.start('jean', 3, 1);
+      // Fragment proche du verset 2 : "Cet homme vint de nuit trouver Jesus."
+      const result = rm.processFragment('cet homme vint de nuit trouver jesus');
+      assert.ok(result, 'processFragment aurait du retourner un resultat');
+      assert.strictEqual(result.num, 2);
+      assert.strictEqual(rm.currentIndex, 1);
+      assert.strictEqual(
+        calls.onVerseAdvance.length,
+        1,
+        'onVerseAdvance aurait du etre appele une fois'
+      );
+      assert.strictEqual(calls.onVerseAdvance[0].num, 2);
+    }
+  );
 
   // Test 4 : un fragment sans rapport avec les versets suivants ne fait pas
   // avancer le mode et ne déclenche pas onVerseAdvance.
@@ -158,7 +165,7 @@ function makeReadingMode(overrides = {}) {
   });
 
   // Test 7 : stop() désactive proprement et réinitialise l'état.
-  await checkAsync('stop() désactive et réinitialise l\'état', async () => {
+  await checkAsync("stop() désactive et réinitialise l'état", async () => {
     const { rm } = makeReadingMode();
     await rm.start('jean', 3, 1);
     rm.stop();

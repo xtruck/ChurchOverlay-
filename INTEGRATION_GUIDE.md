@@ -35,6 +35,7 @@ Add `electron-updater` to dependencies:
 ```
 
 Then run:
+
 ```bash
 npm install
 ```
@@ -91,7 +92,11 @@ async function processTranscript(text) {
       }
     } else if (command.action === 'hideVerse') {
       broadcast({ action: 'hideVerse', triggeredByVoice: true });
-    } else if (command.action === 'nextVerse' || command.action === 'previousVerse' || command.action === 'nextChapter') {
+    } else if (
+      command.action === 'nextVerse' ||
+      command.action === 'previousVerse' ||
+      command.action === 'nextChapter'
+    ) {
       // Forward to reading mode or overlay
       broadcast({ action: command.action, triggeredByVoice: true });
     } else if (command.action === 'setTheme') {
@@ -102,7 +107,13 @@ async function processTranscript(text) {
       broadcast({ action: 'languageChanged', language: displayLanguage, triggeredByVoice: true });
     } else if (command.action === 'setTranslation') {
       const newId = bibleLookup.setTranslation(command.language, command.code);
-      broadcast({ action: 'translationChanged', language: command.language, code: command.code, translationId: newId, triggeredByVoice: true });
+      broadcast({
+        action: 'translationChanged',
+        language: command.language,
+        code: command.code,
+        translationId: newId,
+        triggeredByVoice: true,
+      });
     } else if (command.action === 'extendTime') {
       broadcast({ action: 'extendTime', extraMs: command.extraMs, triggeredByVoice: true });
     } else if (command.action === 'pauseTimer') {
@@ -134,7 +145,9 @@ async function processTranscript(text) {
     const semanticResult = await semanticDetector.detect(textToProcess);
     if (semanticResult) {
       reference = semanticResult;
-      console.log(`[server] Semantic detection: ${semanticResult.raw} (${semanticResult.reasoning})`);
+      console.log(
+        `[server] Semantic detection: ${semanticResult.raw} (${semanticResult.reasoning})`
+      );
     }
   }
 
@@ -156,12 +169,14 @@ if (sanitized.action === 'searchBible') {
 
   try {
     const results = await semanticSearch.search(query, sanitized.topK || 5);
-    ws.send(JSON.stringify({ 
-      action: 'searchResults', 
-      query, 
-      results,
-      timestamp: Date.now(),
-    }));
+    ws.send(
+      JSON.stringify({
+        action: 'searchResults',
+        query,
+        results,
+        timestamp: Date.now(),
+      })
+    );
   } catch (err) {
     ws.send(JSON.stringify({ action: 'searchError', query, error: err.message }));
   }
@@ -203,15 +218,17 @@ plugins.emit('onError', error);
 ## 🔧 Step 3: Update main.js for Auto-Updater
 
 Add at the top:
+
 ```javascript
 const { initAutoUpdater } = require('./auto-updater');
 ```
 
 After `app.whenReady()`, add:
+
 ```javascript
 // Initialize auto-updater
 initAutoUpdater(mainWindow, {
-  SILENT_INSTALL: false,  // Set true for silent updates
+  SILENT_INSTALL: false, // Set true for silent updates
   SHOW_NOTIFICATION: true,
 });
 ```
@@ -221,10 +238,11 @@ initAutoUpdater(mainWindow, {
 ### 4.1 Add theme CSS variables support
 
 In your overlay CSS, add:
+
 ```css
 :root {
   --overlay-bg: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-  --overlay-text: #FFFFFF;
+  --overlay-text: #ffffff;
   --overlay-accent: #e94560;
   --overlay-font: 'Playfair Display', Georgia, serif;
   --overlay-border: rgba(255, 255, 255, 0.1);
@@ -237,13 +255,16 @@ In your overlay CSS, add:
   color: var(--overlay-text);
   font-family: var(--overlay-font);
   border: 1px solid var(--overlay-border);
-  box-shadow: 0 0 30px var(--overlay-glow), 0 10px 40px var(--overlay-shadow);
+  box-shadow:
+    0 0 30px var(--overlay-glow),
+    0 10px 40px var(--overlay-shadow);
 }
 ```
 
 ### 4.2 Handle new actions in WebSocket
 
 Add handlers for:
+
 - `applyTheme` — update CSS variables
 - `emergencyClear` — immediate hide with animation
 - `triggeredByVoice` — show small voice indicator
@@ -253,6 +274,7 @@ Add handlers for:
 ### 5.1 Add Bible Search UI
 
 Add a search box:
+
 ```html
 <div class="search-section">
   <input type="text" id="bibleSearch" placeholder="Rechercher un sujet biblique..." />
@@ -262,6 +284,7 @@ Add a search box:
 ```
 
 Add JavaScript:
+
 ```javascript
 function searchBible() {
   const query = document.getElementById('bibleSearch').value;
@@ -280,6 +303,7 @@ ws.onmessage = (event) => {
 ### 5.2 Add Voice Command Indicator
 
 Show when voice commands are detected:
+
 ```html
 <div id="voiceIndicator" class="hidden">🎤 Commande vocale détectée</div>
 ```
@@ -287,6 +311,7 @@ Show when voice commands are detected:
 ### 5.3 Add Theme Preview
 
 Show current mood/theme:
+
 ```html
 <div id="themeIndicator">Thème: <span id="currentTheme">Défaut</span></div>
 ```
@@ -294,6 +319,7 @@ Show current mood/theme:
 ## 🔧 Step 6: Update electron-builder config
 
 In `package.json` build section, add:
+
 ```json
 "publish": {
   "provider": "github",
@@ -306,6 +332,7 @@ In `package.json` build section, add:
 ## 🧪 Testing
 
 ### Test Voice Commands
+
 1. Start the app
 2. Speak: "Montre Jean 3:16"
 3. Verify verse appears
@@ -313,19 +340,23 @@ In `package.json` build section, add:
 5. Verify overlay hides
 
 ### Test Semantic Detection
+
 1. Say: "le passage où Jésus marche sur l'eau"
 2. Check logs for `[semantic] Detected: Matthieu 14:25`
 3. Verify verse appears in overlay
 
 ### Test Transcription Correction
+
 1. Say: "Moise a conduit le peuple"
 2. Check that transcript shows "Moïse" not "Moise"
 
 ### Test Bible Search
+
 1. In dashboard, search "forgiveness"
 2. Verify results include Ephesians 4:32
 
 ### Test Dynamic Themes
+
 1. Say a verse about joy
 2. Verify overlay changes to gold/orange theme
 3. Say a verse<response clipped><NOTE>Result is longer than **10000 characters**, will be **truncated**.</NOTE>

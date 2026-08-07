@@ -38,35 +38,35 @@ const ENV_SCHEMA = {
     required: false,
     default: 8765,
     validate: (value) => value > 0 && value < 65536,
-    errorMessage: 'PORT doit être un nombre entre 1 et 65535'
+    errorMessage: 'PORT doit être un nombre entre 1 et 65535',
   },
   NODE_ENV: {
     type: 'string',
     required: false,
     default: 'development',
     validate: (value) => ['development', 'production', 'test'].includes(value),
-    errorMessage: 'NODE_ENV doit être development, production ou test'
+    errorMessage: 'NODE_ENV doit être development, production ou test',
   },
   WS_HOST: {
     type: 'string',
     required: false,
     default: '127.0.0.1',
     validate: (value) => typeof value === 'string' && value.trim().length > 0,
-    errorMessage: 'WS_HOST doit être une adresse non vide (ex: 127.0.0.1)'
+    errorMessage: 'WS_HOST doit être une adresse non vide (ex: 127.0.0.1)',
   },
   MAX_CONNECTIONS: {
     type: 'number',
     required: false,
     default: 10,
     validate: (value) => value > 0 && value <= 1000,
-    errorMessage: 'MAX_CONNECTIONS doit être un nombre entre 1 et 1000'
+    errorMessage: 'MAX_CONNECTIONS doit être un nombre entre 1 et 1000',
   },
   MAX_MESSAGES_PER_MINUTE: {
     type: 'number',
     required: false,
     default: 60,
     validate: (value) => value > 0 && value <= 10000,
-    errorMessage: 'MAX_MESSAGES_PER_MINUTE doit être un nombre entre 1 et 10000'
+    errorMessage: 'MAX_MESSAGES_PER_MINUTE doit être un nombre entre 1 et 10000',
   },
   // CORRECTIF (checklist mise en production, point 1) : jeton partagé exigé
   // pour ouvrir une connexion WebSocket (voir server.js, wss.on('connection')).
@@ -79,8 +79,41 @@ const ENV_SCHEMA = {
     required: false,
     default: undefined,
     validate: (value) => typeof value === 'string' && value.trim().length > 0,
-    errorMessage: 'WS_AUTH_TOKEN ne doit pas être une chaîne vide ou composée uniquement d\'espaces'
-  }
+    errorMessage: "WS_AUTH_TOKEN ne doit pas être une chaîne vide ou composée uniquement d'espaces",
+  },
+  // SECURITY (backend audit) : jeton distinct pour les clients en lecture
+  // seule (overlay affiché dans OBS). Avant, l'overlay se connectait avec
+  // WS_AUTH_TOKEN — le même jeton "plein pouvoir" que le tableau de bord —
+  // donc toute fuite de l'URL overlay (collée dans OBS comme Browser
+  // Source, exportable avec une scène OBS) donnait un contrôle opérateur
+  // complet, pas un accès lecture seule.
+  WS_VIEWER_TOKEN: {
+    type: 'string',
+    required: false,
+    default: undefined,
+    validate: (value) => typeof value === 'string' && value.trim().length > 0,
+    errorMessage:
+      "WS_VIEWER_TOKEN ne doit pas être une chaîne vide ou composée uniquement d'espaces",
+  },
+  // CORRECTIF (problème récurrent signalé par Ole — transcription qui ne
+  // démarre jamais malgré des clés API valides) : audio-capture.js rejette
+  // silencieusement (console.log uniquement, jamais vu en usage normal)
+  // tout segment dont le niveau de voix détecté (RMS) reste sous ce seuil.
+  // La valeur par défaut (0.02) n'a jamais été calibrée avec un vrai micro
+  // de culte — un micro moins sensible que celui utilisé pour la choisir
+  // peut ne JAMAIS dépasser ce seuil, et donc ne jamais rien envoyer à
+  // Groq/Deepgram, sans qu'aucune erreur ne soit visible côté opérateur.
+  // Rendu réglable ici pour permettre un ajustement sans toucher au code ;
+  // voir aussi le nouvel événement WS 'segmentSkipped' (server.js) qui
+  // rend maintenant ces rejets visibles dans le tableau de bord.
+  MIC_SILENCE_THRESHOLD: {
+    type: 'number',
+    required: false,
+    default: 0.02,
+    validate: (value) => value >= 0 && value <= 1,
+    errorMessage:
+      'MIC_SILENCE_THRESHOLD doit être un nombre entre 0 et 1 (0 = désactive le filtre de silence)',
+  },
 };
 
 /**
@@ -129,7 +162,7 @@ function validateEnvironment() {
   const errors = [];
   const config = {};
 
-  for (const [name, schema] of Object.entries(ENV_SCHEMA)) {
+  for (const name of Object.keys(ENV_SCHEMA)) {
     const value = process.env[name];
     const validation = validateEnvVar(name, value);
 
@@ -143,7 +176,7 @@ function validateEnvironment() {
   return {
     valid: errors.length === 0,
     errors,
-    config
+    config,
   };
 }
 
@@ -170,26 +203,26 @@ async function validateSystemConfig() {
   const warnings = [];
 
   // 1. Valider les variables d'environnement
-  console.log('[config-validator] Validation des variables d\'environnement...');
+  console.log("[config-validator] Validation des variables d'environnement...");
   const envValidation = validateEnvironment();
   if (!envValidation.valid) {
     errors.push(...envValidation.errors);
   }
-  console.log('[config-validator] Variables d\'environnement validées');
+  console.log("[config-validator] Variables d'environnement validées");
 
   // 2. Clés de transcription cloud (aucun filet local depuis la suppression
   // de Whisper — Groq est désormais le seul fournisseur obligatoire)
   if (!process.env.GROQ_API_KEY) {
     warnings.push(
       "GROQ_API_KEY n'est pas défini. Aucun fournisseur de transcription " +
-      "principal n'est configuré : la détection automatique de versets ne " +
-      "fonctionnera pas tant que cette clé n'est pas renseignée (voir .env.example)."
+        "principal n'est configuré : la détection automatique de versets ne " +
+        "fonctionnera pas tant que cette clé n'est pas renseignée (voir .env.example)."
     );
   }
   if (!process.env.DEEPGRAM_API_KEY) {
     warnings.push(
       "DEEPGRAM_API_KEY n'est pas défini (optionnel) : pas de fournisseur de " +
-      "repli si Groq échoue ou est indisponible."
+        'repli si Groq échoue ou est indisponible.'
     );
   }
 
@@ -197,9 +230,31 @@ async function validateSystemConfig() {
   if (!process.env.WS_AUTH_TOKEN) {
     warnings.push(
       "WS_AUTH_TOKEN n'est pas défini : le serveur WebSocket accepte toute " +
-      "connexion sans authentification. Sans risque tant que WS_HOST=127.0.0.1 " +
-      "(par défaut), mais à définir avant d'exposer le serveur au-delà de cet " +
-      "ordinateur (WS_HOST=0.0.0.0 ou équivalent) — voir README.md."
+        'connexion sans authentification. Sans risque tant que WS_HOST=127.0.0.1 ' +
+        '(par défaut) — server.js refuse désormais de démarrer sur un WS_HOST ' +
+        'non local sans ce jeton (voir README.md).'
+    );
+  } else if (!process.env.WS_VIEWER_TOKEN) {
+    warnings.push(
+      "WS_VIEWER_TOKEN n'est pas défini : l'overlay OBS devra utiliser le " +
+        'jeton opérateur (WS_AUTH_TOKEN) pour se connecter, ce qui lui donne ' +
+        "un contrôle complet du pipeline au lieu d'un accès lecture seule. " +
+        'Définir WS_VIEWER_TOKEN (≥16 caractères, différent de WS_AUTH_TOKEN) ' +
+        'pour un vrai cloisonnement — voir README.md.'
+    );
+  }
+
+  // 2ter. Seuil de silence micro (voir server.js/audio-capture.js) — n'émet
+  // une info que si explicitement personnalisé, pour ne pas ajouter de
+  // bruit au démarrage dans le cas courant (valeur par défaut). Un
+  // opérateur qui vient de l'ajuster pour résoudre un problème de
+  // transcription voit ainsi immédiatement, à chaque démarrage, quelle
+  // valeur est réellement active.
+  if (process.env.MIC_SILENCE_THRESHOLD) {
+    warnings.push(
+      `MIC_SILENCE_THRESHOLD personnalisé actif : ${process.env.MIC_SILENCE_THRESHOLD} ` +
+        '(défaut : 0.02). Si la transcription ne démarre toujours pas, essayez ' +
+        'une valeur plus basse, ou 0 pour désactiver temporairement le filtre de silence.'
     );
   }
 
@@ -215,9 +270,9 @@ async function validateSystemConfig() {
   if (!process.workerData && !process.env.APP_ROOT) {
     warnings.push(
       "Capture audio : ce processus semble démarré hors de l'app Electron " +
-      "(node server.js direct). La capture micro native (getUserMedia) a " +
-      "besoin d'une fenêtre Chromium fournie par Electron et ne fonctionnera " +
-      "pas dans ce mode — utilisez l'application ChurchOverlay packagée."
+        '(node server.js direct). La capture micro native (getUserMedia) a ' +
+        "besoin d'une fenêtre Chromium fournie par Electron et ne fonctionnera " +
+        "pas dans ce mode — utilisez l'application ChurchOverlay packagée."
     );
   }
 
@@ -225,7 +280,7 @@ async function validateSystemConfig() {
     valid: errors.length === 0,
     errors,
     warnings,
-    config: envValidation.config
+    config: envValidation.config,
   };
 }
 
@@ -244,12 +299,12 @@ function displayValidationResults(result) {
 
   if (result.errors.length > 0) {
     console.log('\nErreurs:');
-    result.errors.forEach(error => console.log(`  - ${error}`));
+    result.errors.forEach((error) => console.log(`  - ${error}`));
   }
 
   if (result.warnings.length > 0) {
     console.log('\nAvertissements:');
-    result.warnings.forEach(warning => console.log(`  - ${warning}`));
+    result.warnings.forEach((warning) => console.log(`  - ${warning}`));
   }
 
   if (result.errors.length === 0 && result.warnings.length === 0) {
@@ -265,5 +320,5 @@ module.exports = {
   checkFileExists,
   validateSystemConfig,
   displayValidationResults,
-  ENV_SCHEMA
+  ENV_SCHEMA,
 };

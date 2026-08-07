@@ -71,7 +71,10 @@ async function checkKey(timeoutMs = CHECK_KEY_TIMEOUT_MS) {
     return { configured: true, ok: true, error: null };
   } catch (err) {
     clearTimeout(timeoutId);
-    const message = err && err.name === 'AbortError' ? `Timeout (${timeoutMs}ms)` : (err && err.message) || 'Erreur inconnue';
+    const message =
+      err && err.name === 'AbortError'
+        ? `Timeout (${timeoutMs}ms)`
+        : (err && err.message) || 'Erreur inconnue';
     return { configured: true, ok: false, error: message };
   }
 }
@@ -149,7 +152,9 @@ async function transcribeWithFallback(audioFilePath, timeoutMs = FALLBACK_TIMEOU
 
   const groqAbort = new AbortController();
   const deepgramAbort = new AbortController();
-  const groqPromise = transcribeFile(audioFilePath, groqAbort.signal, contextHint).catch((err) => ({ error: err }));
+  const groqPromise = transcribeFile(audioFilePath, groqAbort.signal, contextHint).catch((err) => ({
+    error: err,
+  }));
   const deepgramPromise = deepgramEnabled
     ? deepgram.transcribeFile(audioFilePath, deepgramAbort.signal).catch((err) => ({ error: err }))
     : Promise.resolve({ error: new Error('Deepgram non configuré') });
@@ -189,7 +194,10 @@ async function transcribeWithFallback(audioFilePath, timeoutMs = FALLBACK_TIMEOU
       console.warn('[groq-wrapper] Timeout Deepgram également — segment perdu.');
       throw groqError || new Error('Timeout Deepgram');
     }
-    console.warn('[groq-wrapper] Échec Deepgram également (%s) — segment perdu.', deepgramRace.error.message);
+    console.warn(
+      '[groq-wrapper] Échec Deepgram également (%s) — segment perdu.',
+      deepgramRace.error.message
+    );
     throw deepgramRace.error;
   }
 
@@ -246,7 +254,10 @@ async function chatCompletion(prompt, options = {}) {
         usage: {},
       };
     } catch (geminiErr) {
-      console.warn('[ai-wrapper] Échec Gemini API (repli Groq):', geminiErr.status || geminiErr.message?.substring(0, 100));
+      console.warn(
+        '[ai-wrapper] Échec Gemini API (repli Groq):',
+        geminiErr.status || geminiErr.message?.substring(0, 100)
+      );
       if (!groqApiKey) {
         throw geminiErr;
       }
@@ -260,7 +271,11 @@ async function chatCompletion(prompt, options = {}) {
   const body = {
     model,
     messages: [
-      { role: 'system', content: 'You are a helpful assistant for a church sermon transcription system. Be concise and accurate.' },
+      {
+        role: 'system',
+        content:
+          'You are a helpful assistant for a church sermon transcription system. Be concise and accurate.',
+      },
       { role: 'user', content: prompt },
     ],
     temperature,
@@ -278,7 +293,7 @@ async function chatCompletion(prompt, options = {}) {
     const response = await fetch(GROQ_ENDPOINT_CHAT, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${groqApiKey}`,
+        Authorization: `Bearer ${groqApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
@@ -306,7 +321,7 @@ async function chatCompletion(prompt, options = {}) {
   } catch (err) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
-      throw new Error(`Timeout Groq Chat (${timeoutMs}ms)`);
+      throw new Error(`Timeout Groq Chat (${timeoutMs}ms)`, { cause: err });
     }
     throw err;
   }
@@ -328,4 +343,11 @@ async function quickCompletion(prompt, options = {}) {
   return result.text;
 }
 
-module.exports = { transcribeFile, transcribeWithFallback, chatCompletion, quickCompletion, isConfigured, checkKey };
+module.exports = {
+  transcribeFile,
+  transcribeWithFallback,
+  chatCompletion,
+  quickCompletion,
+  isConfigured,
+  checkKey,
+};

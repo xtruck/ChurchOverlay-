@@ -66,6 +66,7 @@ npm start
 ```
 
 On first launch, the setup window opens:
+
 1. It lists available microphones via `getUserMedia` — pick yours from the dropdown.
 2. Paste your Groq (and optionally Deepgram) API key if you didn't set them in `.env`.
 3. Click "Enregistrer et démarrer".
@@ -126,7 +127,7 @@ The app uses free Bible APIs. If they're down:
    [bible-lookup] ✗ getbible-ls1910 a échoué: ...
    ```
    The app tries `bible.helloao.org` first, then falls back to
-   `api.getbible.net` automatically — you only need to worry if *both* fail.
+   `api.getbible.net` automatically — you only need to worry if _both_ fail.
 
 ### OBS overlay shows nothing
 
@@ -155,6 +156,7 @@ The app uses free Bible APIs. If they're down:
 ## Getting Help
 
 **Check the logs:**
+
 ```bash
 # The server prints detailed logs to console
 # Look for [server] prefixed messages
@@ -163,12 +165,14 @@ npm start > server.log 2>&1
 ```
 
 **Read the docs:**
+
 - `README.md` - Environment variables reference
 - `ARCHITECTURE.md` - Technical overview
 - `API.md` - WebSocket protocol
 - `SECURITY_IMPROVEMENTS.md` - Security features
 
 **Still stuck?** Open an issue on GitHub with:
+
 1. Your Node version: `node --version`
 2. Your OS
 3. Console output from `npm start`

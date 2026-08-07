@@ -44,22 +44,23 @@ function sample() {
   const nowCpu = process.cpuUsage();
   const nowHr = process.hrtime.bigint();
 
-  const cpuDeltaMicros = (nowCpu.user - lastCpu.user) + (nowCpu.system - lastCpu.system);
+  const cpuDeltaMicros = nowCpu.user - lastCpu.user + (nowCpu.system - lastCpu.system);
   const wallDeltaMicros = Number(nowHr - lastHrTime) / 1000; // ns → µs
 
   lastCpu = nowCpu;
   lastHrTime = nowHr;
 
-  const cpuPercent = wallDeltaMicros > 0
-    ? Math.min(100 * CPU_COUNT, (cpuDeltaMicros / wallDeltaMicros) * 100) / CPU_COUNT
-    : 0;
+  const cpuPercent =
+    wallDeltaMicros > 0
+      ? Math.min(100 * CPU_COUNT, (cpuDeltaMicros / wallDeltaMicros) * 100) / CPU_COUNT
+      : 0;
 
   const mem = process.memoryUsage();
   lastStats = {
     cpuPercent: Math.round(cpuPercent * 10) / 10,
-    rssMB: Math.round(mem.rss / 1024 / 1024 * 10) / 10,
-    heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024 * 10) / 10,
-    externalMB: Math.round(mem.external / 1024 / 1024 * 10) / 10,
+    rssMB: Math.round((mem.rss / 1024 / 1024) * 10) / 10,
+    heapUsedMB: Math.round((mem.heapUsed / 1024 / 1024) * 10) / 10,
+    externalMB: Math.round((mem.external / 1024 / 1024) * 10) / 10,
     uptimeSec: Math.round(process.uptime()),
   };
 }

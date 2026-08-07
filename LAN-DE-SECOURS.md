@@ -49,6 +49,6 @@ inaccessibles — la détection automatique de versets ne fonctionnera pas.
 
 ---
 
-*Avant chaque culte : bouton "✅ Tester avant le culte" dans le tableau de
+_Avant chaque culte : bouton "✅ Tester avant le culte" dans le tableau de
 bord, onglet Paramètres — vérifie la connexion et les clés Groq/Deepgram en
-un clic (voir checklist mise en production, point 9).*
+un clic (voir checklist mise en production, point 9)._

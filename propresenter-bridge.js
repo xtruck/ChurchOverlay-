@@ -4,7 +4,7 @@
  * ============================================================================
  * Automatically sends detected Bible verses to ProPresenter 7+ via its
  * REST API (port 50000 by default).
- * 
+ *
  * Installation: Copy to config/plugins/propresenter-bridge.js
  * Configuration: Edit the CONFIG object below
  * ============================================================================

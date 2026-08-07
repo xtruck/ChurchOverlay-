@@ -5,6 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ChurchOverlay — Affichage</title>
 <style>
+/* CORRECTIF (audit — police du verset jamais chargée) : @import doit être
+   la toute première règle d'une feuille de style (avant même :root et les
+   @property ci-dessous), sinon le navigateur l'ignore silencieusement —
+   confirmé par l'onglet "Issues" de Chrome DevTools ("Define @import rules
+   at the top of the stylesheet"). Remontée ici, avant toute autre règle.
+   AJOUT (audit — police jugée trop fantaisiste/décorative pour un cadre
+   professionnel) : Merriweather (verset) + Manrope (référence) sont les
+   polices du thème "nuit" par défaut (config/themes/nuit.json) — sobres,
+   sans empattement décoratif, conçues pour la lisibilité à l'écran/projeté.
+   Cormorant Garamond et Plus Jakarta Sans restent chargées (thèmes
+   personnalisés existants/futurs qui les référencent encore). */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Manrope:wght@500;600;700&display=swap');
+
 /* ==========================================================================
    CSS Variables for Dynamic Themes (AI Innovation Pack)
    ========================================================================== */
@@ -17,7 +30,13 @@
   --overlay-text: #f6f3ec;
   --overlay-text-muted: #a8adc9;
   --overlay-accent: #d9bb6c;
-  --overlay-font: 'Cormorant Garamond', Georgia, serif;
+  /* CORRECTIF (audit — police jugée "fantaisiste"/pas assez professionnelle) :
+     Cormorant Garamond a un style calligraphique (empattements fins, courbes
+     prononcées) qui peut se lire comme italique/décoratif projeté en grand,
+     pas adapté à un cadre sérieux. Remplacée par Merriweather (le choix du
+     thème "nuit" par défaut, voir config/themes/nuit.json) — un serif
+     sobre, épais et très lisible à distance, sans fioriture. */
+  --overlay-font: 'Merriweather', Georgia, serif;
   --overlay-font-ui: 'Plus Jakarta Sans', 'Open Sans', sans-serif;
   --overlay-border: rgba(220, 180, 106, 0.20);
   --overlay-glow: rgba(220, 180, 106, 0.32);
@@ -53,10 +72,6 @@
   inherits: true;
   initial-value: #dcb46a;
 }
-
-/* Google Fonts — Cormorant Garamond (référence du verset, cohérent avec le
-   dashboard) + Plus Jakarta Sans (badges/indicateurs, lisible en petit) */
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
 * {
   margin: 0;
@@ -215,7 +230,10 @@ body.captions-active #overlay-container {
   margin-top: clamp(12px, 1.6vw, 20px);
   padding-top: clamp(12px, 1.6vw, 20px);
   border-top: 1px solid var(--overlay-border);
-  color: var(--overlay-text-muted);
+  /* CORRECTIF (audit — texte anglais bleuté, pas blanc comme le français) :
+     utilisait --overlay-text-muted (bleu-gris, prévu pour des badges
+     secondaires) au lieu de la même couleur que le verset principal. */
+  color: var(--overlay-text);
 }
 
 /* Indicateur de source (AI detection) */
@@ -317,6 +335,37 @@ body.captions-active #overlay-container {
 }
 
 #semantic-indicator.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Alerte pipeline (transcription/audio en échec) */
+#pipeline-alert {
+  position: fixed;
+  top: 30px;
+  right: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(48, 20, 20, 0.92);
+  border: 1px solid rgba(248, 113, 113, 0.5);
+  color: #fecaca;
+  border-radius: 24px;
+  font-family: var(--overlay-font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0;
+  transform: translateY(-20px);
+  transition: all 0.4s ease;
+  z-index: 100;
+  pointer-events: none;
+  max-width: 350px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 18px rgba(248, 113, 113, 0.25);
+}
+
+#pipeline-alert.visible {
   opacity: 1;
   transform: translateY(0);
 }
@@ -573,7 +622,12 @@ body.high-contrast .verse-text .kinetic-word {
 }
 </style>
 <base target="_blank">
-<script src="animation-library.js"></script>
+<!-- CORRECTIF (audit) : animation-library.js a été retiré du dépôt lors du
+     passage à une palette unique (voir historique du projet) mais cette
+     balise <script> y faisait toujours référence, provoquant une erreur
+     404 au chargement de chaque overlay. animationLibrary reste `null`
+     (voir plus bas) et tout le code qui l'utilise est déjà protégé par
+     des gardes — comportement inchangé, juste plus d'erreur en console. -->
 </head>
 <body>
 
@@ -599,6 +653,14 @@ body.high-contrast .verse-text .kinetic-word {
     <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
   </svg>
   <span id="semantic-text">Verset détecté par IA</span>
+</div>
+
+<!-- Alerte pipeline (transcription/audio en échec) -->
+<div id="pipeline-alert">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 2L1 21h22L12 2zm0 3.99L19.53 19H4.47L12 5.99zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/>
+  </svg>
+  <span id="pipeline-alert-text">Pipeline en erreur</span>
 </div>
 
 <!-- Indicateur mode lecture -->
@@ -638,19 +700,32 @@ body.high-contrast .verse-text .kinetic-word {
    WebSocket connection
    ========================================================================== */
 // CORRECTIF (bug "serveur tout le temps hors ligne") : server.js rejette
-// (code 1008) toute connexion sans ?token=WS_AUTH_TOKEN dès que cette
-// variable est définie côté serveur. Cette fonction ne l'ajoutait jamais à
-// l'URL WebSocket -> boucle infinie rejet/reconnexion. Le token voyage dans
-// la query string de la page overlay elle-même (celle collée dans OBS,
-// ex. http://127.0.0.1:8765/overlay?token=...), on le relaie tel quel ici.
+// (code 1008) toute connexion sans jeton dès que l'authentification est
+// activée côté serveur. Le token voyage dans la query string de la page
+// overlay elle-même (celle collée dans OBS, ex.
+// http://127.0.0.1:8765/overlay?token=...) — main.js y place désormais
+// WS_VIEWER_TOKEN (accès lecture seule), pas le jeton opérateur.
+//
+// SECURITY (backend audit) : le token n'est plus rajouté en ?token= sur
+// l'URL WebSocket elle-même (un reverse proxy exposant le serveur au LAN
+// journalise typiquement l'URI de requête, exposant le jeton en clair).
+// Il voyage maintenant via l'en-tête de handshake Sec-WebSocket-Protocol
+// (2e argument du constructeur WebSocket).
+const getWsToken = () => new URLSearchParams(window.location.search).get('token');
+// CORRECTIF (bug "overlay hors ligne par défaut") : en file:// (cas réel,
+// cette page est chargée depuis disque et collée dans OBS), il n'y a pas
+// de window.location.host à réutiliser. main.js transmet le port réel via
+// ?port=... (voir getOverlayUrl()) ; 8765 est le vrai défaut de server.js
+// (voir config-validator.js > ENV_SCHEMA.PORT) — un correctif précédent
+// utilisait 3000 par erreur ici, qui ne correspondait au port réel de
+// server.js que si PORT était explicitement défini à cette valeur.
+const getWsPort = () => new URLSearchParams(window.location.search).get('port') || '8765';
 const getWsUrl = () => {
-  const token = new URLSearchParams(window.location.search).get('token');
-  const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
   if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${proto}//${window.location.host}${tokenParam}`;
+    return `${proto}//${window.location.host}`;
   }
-  return `ws://localhost:8765${tokenParam}`;
+  return `ws://localhost:${getWsPort()}`;
 };
 
 // CORRECTIF (trouvé en marge de l'innovation frontend) : escapeHtml était
@@ -676,7 +751,8 @@ function connectWs() {
   if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
 
   try {
-    ws = new WebSocket(getWsUrl());
+    const token = getWsToken();
+    ws = token ? new WebSocket(getWsUrl(), [token]) : new WebSocket(getWsUrl());
   } catch (e) {
     console.error('[overlay] Error creating WS:', e);
     scheduleOverlayReconnect();
@@ -770,6 +846,18 @@ function connectWs() {
       case 'error':
         console.error('[overlay] Server error:', msg.error);
         break;
+      case 'transcriptionError':
+        console.error('[overlay] Transcription error:', msg.error);
+        showPipelineAlert('Transcription indisponible — vérifier la connexion internet');
+        break;
+      case 'audioError':
+        console.error('[overlay] Audio capture error:', msg.error);
+        showPipelineAlert('Capture audio interrompue — vérifier le micro');
+        break;
+      case 'audioSilenceWarning':
+        console.warn('[overlay] Silence prolongé:', msg.message);
+        showPipelineAlert('Aucune voix détectée — vérifiez le micro');
+        break;
     }
   };
 
@@ -835,6 +923,33 @@ function renderVerseTextContent(el, text) {
 /* ==========================================================================
    Display functions
    ========================================================================== */
+// CORRECTIF (audit — plusieurs versets à la fois pouvaient déborder de
+// l'écran) : réduit progressivement la taille du texte du verset jusqu'à
+// ce que la carte tienne dans la hauteur de fenêtre disponible, avec un
+// plancher lisible (jamais en dessous de MIN_VERSE_FONT_PX). Remise à la
+// taille par défaut (CSS clamp()) avant chaque mesure, pour repartir de
+// zéro à chaque nouveau verset plutôt que de cumuler les réductions
+// précédentes.
+const MIN_VERSE_FONT_PX = 18;
+const VIEWPORT_MARGIN_PX = 120; // marge haut+bas pour rester lisible, pas collé aux bords
+function fitVerseCardToViewport() {
+  const card = document.getElementById('verse-card');
+  const verseTextEl = document.getElementById('verse-text');
+  if (!card || !verseTextEl) return;
+
+  verseTextEl.style.fontSize = '';
+  const maxCardHeight = window.innerHeight - VIEWPORT_MARGIN_PX;
+  if (maxCardHeight <= 0) return;
+
+  let currentSize = parseFloat(getComputedStyle(verseTextEl).fontSize);
+  let guard = 0;
+  while (card.scrollHeight > maxCardHeight && currentSize > MIN_VERSE_FONT_PX && guard < 30) {
+    currentSize -= 2;
+    verseTextEl.style.fontSize = `${currentSize}px`;
+    guard++;
+  }
+}
+
 function showVerse(data) {
   const container = document.getElementById('overlay-container');
   const card = document.getElementById('verse-card');
@@ -890,6 +1005,18 @@ function showVerse(data) {
 
   // Show
   container.className = 'visible';
+
+  // CORRECTIF (audit — plages de plusieurs versets pouvaient déborder de
+  // l'écran) : #overlay-container n'a aucune limite de hauteur ni
+  // .verse-card ; pour une plage demandée à voix haute ("versets 2 à 8"),
+  // le texte concaténé de plusieurs versets peut largement dépasser
+  // l'espace disponible — la carte, ancrée en bas de l'écran, pousserait
+  // alors son sommet hors du cadre visible, sans qu'aucun mécanisme
+  // n'ajuste quoi que ce soit. On réduit la taille du texte du verset
+  // (jamais en dessous d'un plancher lisible) jusqu'à ce que la carte
+  // tienne dans la hauteur de la fenêtre. Après le rendu (requestAnimationFrame)
+  // pour mesurer la vraie hauteur une fois le texte injecté dans le DOM.
+  requestAnimationFrame(fitVerseCardToViewport);
 
   // Auto-hide timer
   clearTimeout(hideTimeout);
@@ -966,15 +1093,35 @@ function applyTheme(theme) {
   if (!theme) return;
   const root = document.documentElement;
 
-  // CORRECTIF (audit — reasoning/ambient mood) : ai-theme-generator.js
-  // (utilisé par toute diffusion 'applyTheme' déclenchée par un verset, une
-  // commande vocale ou le mode ambiant automatique) envoie
-  // backgroundGradient/textColor/animationStyle, pas background/color/
-  // animation. Sans ce pont, --overlay-bg et --overlay-text — qui pilotent
-  // le fond et la couleur du texte réellement visibles (voir background:
-  // var(--overlay-bg) / color: var(--overlay-text) plus haut) — n'étaient
-  // JAMAIS mis à jour : seuls accent/police/bordure/lueur/ombre/particules
-  // changeaient, le fond restait figé sur le thème par défaut.
+  // CORRECTIF (deux bugs distincts, trouvés indépendamment dans le même
+  // repli silencieux — deux sessions parallèles, aucun conflit réel) :
+  // applyTheme() n'attendait qu'une forme plate (theme.background,
+  // theme.color...), mais deux sources totalement différentes envoient
+  // deux AUTRES formes :
+  //  1. ai-theme-generator.js (verset détecté, commande vocale, mode
+  //     ambiant automatique) envoie backgroundGradient/textColor/
+  //     animationStyle — voir bloc ci-dessous.
+  //  2. theme-loader.js (thèmes "nuit"/"claire" et thèmes personnalisés
+  //     choisis depuis le tableau de bord) envoie une forme imbriquée
+  //     { variables: {'--bg':..., '--verse-font':...}, effects,
+  //     animations, background } — voir bloc `theme.variables` plus bas.
+  // Sans ces deux ponts, --overlay-bg/--overlay-text (qui pilotent le
+  // fond et la couleur du texte RÉELLEMENT visibles, voir background:
+  // var(--overlay-bg) / color: var(--overlay-text) plus haut) n'étaient
+  // jamais mis à jour pour l'une ou l'autre source : changer de thème
+  // depuis le tableau de bord, ou laisser le mode ambiant réagir au ton
+  // du sermon, ne changeait silencieusement rien sur l'overlay projeté.
+  if (theme.variables) {
+    const v = theme.variables;
+    if (v['--bg']) root.style.setProperty('--overlay-bg', v['--bg']);
+    if (v['--text']) root.style.setProperty('--overlay-text', v['--text']);
+    if (v['--accent']) root.style.setProperty('--overlay-accent', v['--accent']);
+    if (v['--verse-font']) root.style.setProperty('--overlay-font', v['--verse-font']);
+    if (v['--ref-font']) root.style.setProperty('--overlay-font-ui', v['--ref-font']);
+    if (theme.animations && theme.animations.default) currentAnimation = theme.animations.default;
+    return;
+  }
+
   const background = theme.backgroundGradient || theme.background;
   const color = theme.textColor || theme.color;
   const animation = theme.animationStyle || theme.animation;
@@ -1098,7 +1245,22 @@ function showSemanticIndicator(reference, confidence) {
   }, 4000);
 }
 
+let pipelineAlertTimeout;
+function showPipelineAlert(text) {
+  const el = document.getElementById('pipeline-alert');
+  const textEl = document.getElementById('pipeline-alert-text');
+  textEl.textContent = text;
+  el.classList.add('visible');
+  clearTimeout(pipelineAlertTimeout);
+  pipelineAlertTimeout = setTimeout(() => {
+    el.classList.remove('visible');
+  }, 6000);
+}
+
 function showReadingIndicator(show) {
   const el = document.getElementById('reading-indicator');
   el.classList.toggle('visible', show);
 }
+</script>
+</body>
+</html>

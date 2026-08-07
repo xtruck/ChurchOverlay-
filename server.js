@@ -24,7 +24,8 @@ const os = require('os');
 // Environment & paths
 // ---------------------------------------------------------------------------
 const APP_ROOT = (workerData && workerData.appRoot) || __dirname;
-const USER_DATA_DIR = (workerData && workerData.userDataDir) || path.join(os.homedir(), '.churchoverlay');
+const USER_DATA_DIR =
+  (workerData && workerData.userDataDir) || path.join(os.homedir(), '.churchoverlay');
 
 // ---------------------------------------------------------------------------
 // Core modules (REQUIRED)
@@ -34,6 +35,7 @@ const groq = require('./groq-wrapper');
 const deepgramWrapper = require('./deepgram-wrapper');
 const configValidator = require('./config-validator');
 const { createFileLogger } = require('./logger');
+const sessionStore = require('./session-store');
 
 const detector = require('./detector-compat');
 const bibleLookup = require('./bible-lookup-with-api');
@@ -44,7 +46,6 @@ const themeLoader = require('./theme-loader');
 // aucun modèle d'embedding, aucun appel API. Voir sermon-archive.js.
 const sermonArchive = require('./sermon-archive');
 const featuresStore = require('./features-store');
-const obsController = require('./obs-controller');
 const validation = require('./validation');
 
 // ---------------------------------------------------------------------------
@@ -57,114 +58,20 @@ function getVerseDurationMs() {
 }
 
 // ---------------------------------------------------------------------------
-// NEW: AI modules (OPTIONAL — wrapped in try-catch)
+// AI modules (OPTIONAL — wrapped in try-catch, see ai-modules-loader.js)
 // ---------------------------------------------------------------------------
-let SemanticDetector = null;
-let semanticDetector = null;
-let detectCommand = null;
-let TranscriptionCorrector = null;
-let corrector = null;
-let BibleSemanticSearch = null;
-let semanticSearch = null;
-let PluginSystem = null;
-let plugins = null;
-let AIThemeGenerator = null;
-let themeGenerator = null;
-
-const aiLoadErrors = [];
-const groqHasChatCompletion = typeof groq.chatCompletion === 'function';
-
-try {
-  const mod = require('./semantic-detector');
-  SemanticDetector = mod.SemanticDetector;
-  if (groqHasChatCompletion) {
-    semanticDetector = new SemanticDetector(groq);
-    console.log('[server] ✓ SemanticDetector loaded');
-  } else {
-    aiLoadErrors.push('SemanticDetector: groq.chatCompletion not available');
-  }
-} catch (e) {
-  aiLoadErrors.push('SemanticDetector: ' + e.message);
-  console.warn('[server] SemanticDetector disabled:', e.message);
-}
-
-try {
-  const mod = require('./voice-commands');
-  detectCommand = mod.detectCommand;
-  console.log('[server] ✓ Voice commands loaded');
-} catch (e) {
-  aiLoadErrors.push('VoiceCommands: ' + e.message);
-  console.warn('[server] Voice commands disabled:', e.message);
-}
-
-try {
-  const mod = require('./transcription-corrector');
-  TranscriptionCorrector = mod.TranscriptionCorrector;
-  if (groqHasChatCompletion) {
-    corrector = new TranscriptionCorrector(groq);
-    console.log('[server] ✓ TranscriptionCorrector loaded');
-  } else {
-    aiLoadErrors.push('TranscriptionCorrector: groq.chatCompletion not available (tests use mock)');
-    corrector = new TranscriptionCorrector(null);
-    console.log('[server] ✓ TranscriptionCorrector loaded (fast mode only)');
-  }
-} catch (e) {
-  aiLoadErrors.push('TranscriptionCorrector: ' + e.message);
-  console.warn('[server] TranscriptionCorrector disabled:', e.message);
-}
-
-try {
-  const mod = require('./bible-semantic-search');
-  BibleSemanticSearch = mod.BibleSemanticSearch;
-  semanticSearch = new BibleSemanticSearch();
-  semanticSearch.loadIndex().catch(() => {});
-  console.log('[server] ✓ BibleSemanticSearch loaded');
-} catch (e) {
-  aiLoadErrors.push('BibleSemanticSearch: ' + e.message);
-  console.warn('[server] BibleSemanticSearch disabled:', e.message);
-}
-
-try {
-  const mod = require('./plugin-system');
-  PluginSystem = mod.PluginSystem;
-  plugins = new PluginSystem();
-  const pluginsDir = path.join(APP_ROOT, 'config', 'plugins');
-  if (fs.existsSync(pluginsDir)) {
-    plugins.loadFromDirectory(pluginsDir);
-  }
-  console.log('[server] ✓ PluginSystem loaded');
-} catch (e) {
-  aiLoadErrors.push('PluginSystem: ' + e.message);
-  console.warn('[server] PluginSystem disabled:', e.message);
-}
-
-try {
-  const mod = require('./ai-theme-generator');
-  AIThemeGenerator = mod.AIThemeGenerator;
-  if (groqHasChatCompletion) {
-    themeGenerator = new AIThemeGenerator(groq);
-    console.log('[server] ✓ AIThemeGenerator loaded');
-  } else {
-    themeGenerator = new AIThemeGenerator(null);
-    console.log('[server] ✓ AIThemeGenerator loaded (rule-based only)');
-  }
-} catch (e) {
-  aiLoadErrors.push('AIThemeGenerator: ' + e.message);
-  console.warn('[server] AIThemeGenerator disabled:', e.message);
-}
-
-let aiEnricher = null;
-try {
-  aiEnricher = require('./ai-enricher');
-  console.log('[server] ✓ AI Enricher loaded');
-} catch (e) {
-  aiLoadErrors.push('AIEnricher: ' + e.message);
-  console.warn('[server] AIEnricher disabled:', e.message);
-}
-
-if (aiLoadErrors.length > 0) {
-  console.log('[server] ⚠ ' + aiLoadErrors.length + ' AI feature(s) in limited mode.');
-}
+const { loadAIModules } = require('./ai-modules-loader');
+const {
+  semanticDetector,
+  detectCommand,
+  corrector,
+  semanticSearch,
+  plugins,
+  themeGenerator,
+  aiEnricher,
+  aiLoadErrors,
+  groqHasChatCompletion,
+} = loadAIModules({ groq, appRoot: APP_ROOT });
 
 // ---------------------------------------------------------------------------
 // HTTP & WebSocket server
@@ -176,18 +83,53 @@ const { createRateLimiter } = require('./rate-limiter');
 
 const portValidation = configValidator.validateEnvVar('PORT', process.env.PORT);
 if (!portValidation.valid) {
-  console.warn(`[server] ${portValidation.error} — utilisation du port par défaut 3000.`);
+  console.warn(`[server] ${portValidation.error} — utilisation du port par défaut 8765.`);
 }
-const SERVER_PORT = portValidation.valid ? portValidation.parsedValue : 3000;
+const SERVER_PORT = portValidation.valid ? portValidation.parsedValue : 8765;
 
 const hostValidation = configValidator.validateEnvVar('WS_HOST', process.env.WS_HOST);
-const WS_HOST = hostValidation.valid ? hostValidation.parsedValue : '127.0.0.1';
+let WS_HOST = hostValidation.valid ? hostValidation.parsedValue : '127.0.0.1';
 
-// SECURITY: enforce minimum token length of 16 characters
-let WS_AUTH_TOKEN = (process.env.WS_AUTH_TOKEN || '').trim() || null;
-if (WS_AUTH_TOKEN && WS_AUTH_TOKEN.length < 16) {
-  console.error('[server] WS_AUTH_TOKEN too short (minimum 16 characters). Authentication disabled.');
-  WS_AUTH_TOKEN = null;
+// SECURITY: enforce minimum token length of 16 characters.
+// Two independent tokens: WS_AUTH_TOKEN (operator, full control) and
+// WS_VIEWER_TOKEN (read-only overlay display). A client's role is now
+// determined by WHICH token it presents, not by which URL path it hits —
+// the path was previously just a client hint and gave no real isolation.
+function loadToken(envVar) {
+  let token = (process.env[envVar] || '').trim() || null;
+  if (token && token.length < 16) {
+    console.error(`[server] ${envVar} too short (minimum 16 characters). Ignored.`);
+    token = null;
+  }
+  return token;
+}
+const WS_AUTH_TOKEN = loadToken('WS_AUTH_TOKEN');
+let WS_VIEWER_TOKEN = loadToken('WS_VIEWER_TOKEN');
+if (WS_VIEWER_TOKEN && WS_AUTH_TOKEN && WS_VIEWER_TOKEN === WS_AUTH_TOKEN) {
+  console.error('[server] WS_VIEWER_TOKEN must differ from WS_AUTH_TOKEN. Viewer token disabled.');
+  WS_VIEWER_TOKEN = null;
+}
+// Once an operator token is configured, requiring a distinct viewer token
+// stops a leaked/shared display-page token from granting operator control.
+if (WS_AUTH_TOKEN && !WS_VIEWER_TOKEN && WS_HOST !== '127.0.0.1' && WS_HOST !== 'localhost') {
+  console.warn(
+    '[server] WS_AUTH_TOKEN is set without WS_VIEWER_TOKEN on a non-local bind — ' +
+      'the overlay page will need the operator token to connect, which over-privileges it.'
+  );
+}
+
+// SECURITY (fail-safe, not just advisory): a non-local WS_HOST with no
+// operator token would previously start up "open" — any device on the LAN
+// could connect with full operator control (broadcast arbitrary verses,
+// clear the display mid-service, hit AI/OBS actions) with zero credential.
+// Refuse to bind non-locally without a token instead of just warning.
+if (WS_HOST !== '127.0.0.1' && WS_HOST !== 'localhost' && !WS_AUTH_TOKEN) {
+  console.error(
+    `[server] WS_HOST=${WS_HOST} was requested but WS_AUTH_TOKEN is not set (or is too short). ` +
+      'Refusing to expose the WebSocket server without authentication — falling back to ' +
+      '127.0.0.1. Set WS_AUTH_TOKEN (>=16 chars) to allow LAN/remote access.'
+  );
+  WS_HOST = '127.0.0.1';
 }
 
 // Active par défaut (recommandé) ; VALIDATE_MESSAGES=false ou 0 désactive
@@ -196,11 +138,29 @@ const VALIDATE_MESSAGES_ENABLED = !['false', '0'].includes(
   (process.env.VALIDATE_MESSAGES || '').trim().toLowerCase()
 );
 
-const maxConnValidation = configValidator.validateEnvVar('MAX_CONNECTIONS', process.env.MAX_CONNECTIONS);
+const maxConnValidation = configValidator.validateEnvVar(
+  'MAX_CONNECTIONS',
+  process.env.MAX_CONNECTIONS
+);
 const MAX_CONNECTIONS = maxConnValidation.valid ? maxConnValidation.parsedValue : 10;
 
-const maxMsgValidation = configValidator.validateEnvVar('MAX_MESSAGES_PER_MINUTE', process.env.MAX_MESSAGES_PER_MINUTE);
+const maxMsgValidation = configValidator.validateEnvVar(
+  'MAX_MESSAGES_PER_MINUTE',
+  process.env.MAX_MESSAGES_PER_MINUTE
+);
 const MAX_MESSAGES_PER_MINUTE = maxMsgValidation.valid ? maxMsgValidation.parsedValue : 60;
+
+// CORRECTIF (problème récurrent — transcription qui ne démarre jamais
+// malgré des clés API valides) : voir config-validator.js pour le détail.
+// Réglable via .env sans toucher au code, pour s'adapter au micro réel du
+// lieu de culte plutôt que de garder une valeur jamais calibrée.
+const micThresholdValidation = configValidator.validateEnvVar(
+  'MIC_SILENCE_THRESHOLD',
+  process.env.MIC_SILENCE_THRESHOLD
+);
+const MIC_SILENCE_THRESHOLD = micThresholdValidation.valid
+  ? micThresholdValidation.parsedValue
+  : 0.02;
 
 const connRateLimiter = createRateLimiter({
   maxConnections: MAX_CONNECTIONS,
@@ -223,7 +183,12 @@ app.get('/dashboard', (req, res) => res.sendFile(path.join(APP_ROOT, 'dashboard.
 app.get('/overlay', (req, res) => res.sendFile(path.join(APP_ROOT, 'overlay.html')));
 app.get('/setup', (req, res) => res.sendFile(path.join(APP_ROOT, 'setup.html')));
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', port: SERVER_PORT, service: 'ChurchOverlay', authEnabled: !!WS_AUTH_TOKEN });
+  res.json({
+    status: 'ok',
+    port: SERVER_PORT,
+    service: 'ChurchOverlay',
+    authEnabled: !!WS_AUTH_TOKEN,
+  });
 });
 
 // AJOUT (audit — second écran pour l'assemblée, gratuit/léger) : page de
@@ -234,24 +199,45 @@ app.get('/api/health', (req, res) => {
 // sensibilité que /api/health, déjà sans authentification).
 app.get('/companion', (req, res) => res.sendFile(path.join(APP_ROOT, 'companion.html')));
 app.get('/api/verses', (req, res) => {
-  res.json({ verses: verseHistory });
+  res.json({ verses: sessionState.getVerseHistory() });
 });
 
 const httpServer = http.createServer(app);
-const wss = new WebSocket.Server({ server: httpServer, maxPayload: 64 * 1024 });
+// SECURITY: auth tokens travel via the Sec-WebSocket-Protocol handshake
+// header instead of the ?token= query string. Query strings routinely end
+// up in reverse-proxy / CDN access logs, browser process lists, and referer
+// headers; the WebSocket subprotocol header does not. `handleProtocols`
+// must echo back one of the client-offered values or browsers abort the
+// handshake, so we echo whichever of the two known tokens was offered (or
+// the first offered value, harmlessly, if auth is disabled).
+const wss = new WebSocket.Server({
+  server: httpServer,
+  maxPayload: 64 * 1024,
+  handleProtocols: (protocols) => {
+    const offered = Array.from(protocols);
+    if (offered.includes(WS_AUTH_TOKEN)) return WS_AUTH_TOKEN;
+    if (offered.includes(WS_VIEWER_TOKEN)) return WS_VIEWER_TOKEN;
+    return offered[0] || false;
+  },
+});
 
 httpServer.listen(SERVER_PORT, WS_HOST, () => {
   console.log(`[server] Serveur HTTP & WebSocket démarré sur http://${WS_HOST}:${SERVER_PORT}`);
 });
 
 httpServer.on('error', (err) => {
-  const reason = err && err.code === 'EADDRINUSE'
-    ? `Le port ${SERVER_PORT} est déjà utilisé par une autre application.`
-    : `Erreur du serveur HTTP/WebSocket: ${err && err.message}`;
+  const reason =
+    err && err.code === 'EADDRINUSE'
+      ? `Le port ${SERVER_PORT} est déjà utilisé par une autre application.`
+      : `Erreur du serveur HTTP/WebSocket: ${err && err.message}`;
   console.error('[server] ' + reason);
   if (parentPort) {
     parentPort.postMessage({
-      type: 'alert', code: 'server-listen-error', severity: 'error', message: reason, timestamp: Date.now(),
+      type: 'alert',
+      code: 'server-listen-error',
+      severity: 'error',
+      message: reason,
+      timestamp: Date.now(),
     });
   }
   process.exitCode = 1;
@@ -259,44 +245,11 @@ httpServer.on('error', (err) => {
 });
 
 // ---------------------------------------------------------------------------
-// State
+// State (voir session-state.js — encapsulé le 2026-08-05, comportement
+// identique, accès désormais via des accesseurs plutôt que des `let`
+// globaux modifiables depuis n'importe où dans ce fichier)
 // ---------------------------------------------------------------------------
-let displayLanguage = 'fr';
-// AJOUT (audit — accessibilité, gratuit/léger) : bascule CSS pure côté
-// overlay (voir action 'setHighContrast' plus bas + overlay.html
-// .high-contrast) — aucun modèle, aucun appel API, un seul booléen partagé.
-let highContrastMode = false;
-// AJOUT (audit — accessibilité) : le texte transcrit circule déjà sur
-// chaque segment (broadcast 'transcript' dans startPipeline) — cette bascule
-// ne fait qu'autoriser l'overlay à l'afficher, aucun nouveau calcul.
-let captionsEnabled = false;
-// AJOUT (audit — affichage/sortie, gratuit/léger) : barres de couleur
-// statiques (CSS pur, voir overlay.html #test-pattern) pour vérifier la
-// chaîne vidéo (OBS/NDI via DistroAV/projecteur) avant le culte.
-let testPatternEnabled = false;
-// AJOUT (audit — affichage/sortie, gratuit/léger) : motif de fond optionnel
-// (CSS pur, aucune image), en plus des dégradés de thème existants.
-let backgroundPattern = 'none';
-let lastReference = null;
-let lastShownAt = 0;
-const DEDUP_MS = 30_000;
-const verseHistory = [];
-const MAX_HISTORY = 20;
-const recentTranscripts = [];
-const MAX_CONTEXT_TRANSCRIPTS = 10;
-// AJOUT (audit — mémoire des cultes) : recentTranscripts est une fenêtre
-// glissante de 10 fragments (pensée pour le contexte court du détecteur
-// sémantique — voir updateTranscriptContext ci-dessous), donc trop étroite
-// pour un "récap fin de culte" ou une archive fidèles à un service complet.
-// Ce tampon séparé accumule tout le culte en cours, borné en octets pour
-// éviter une croissance mémoire illimitée sur un service de plusieurs
-// heures ; remis à zéro quand l'opérateur clôture le culte (voir l'action
-// 'getPostServiceRecap', seul signal de fin de service déjà présent dans
-// l'app).
-let fullServiceTranscript = '';
-const MAX_SERVICE_TRANSCRIPT_CHARS = 50_000;
-let obsGateOpen = true;
-let obsGateReason = '';
+const sessionState = require('./session-state');
 
 // Ambient mood — voir startAmbientMoodLoop() plus bas.
 let ambientMoodInterval = null;
@@ -339,17 +292,17 @@ function warn(msg) {
 // ---------------------------------------------------------------------------
 function broadcast(obj) {
   const json = JSON.stringify(obj);
-  wss.clients.forEach(ws => {
+  wss.clients.forEach((ws) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(json);
   });
 }
 
 // ---------------------------------------------------------------------------
-// Push to verse history
+// Push to verse history (délègue à session-state.js)
 // ---------------------------------------------------------------------------
 function pushHistory(entry) {
-  verseHistory.unshift(entry);
-  if (verseHistory.length > MAX_HISTORY) verseHistory.pop();
+  sessionState.pushHistory(entry);
+  sessionStore.recordVerseShown(entry);
 }
 
 // ---------------------------------------------------------------------------
@@ -357,17 +310,29 @@ function pushHistory(entry) {
 // ---------------------------------------------------------------------------
 const readingMode = new ReadingMode({
   getChapterVerses: (book, chapter) =>
-    bibleLookup.getChapterVerses(book, chapter, displayLanguage === 'en' ? 'en' : 'fr'),
+    bibleLookup.getChapterVersesMultilang(book, chapter, sessionState.getDisplayLanguage()),
   onVerseAdvance: (verse) => {
     const reference = bibleLookup.buildReferenceLabel(
-      { book: readingMode.book, chapter: readingMode.chapter, verseStart: verse.num }, displayLanguage
+      { book: readingMode.book, chapter: readingMode.chapter, verseStart: verse.num },
+      sessionState.getDisplayLanguage()
     );
     broadcast({
-      action: 'showVerse', reference, text: verse.text, langMode: displayLanguage,
-      durationMs: getVerseDurationMs(), readingMode: true,
+      action: 'showVerse',
+      reference,
+      text: verse.text,
+      text_fr: verse.text_fr || null,
+      text_en: verse.text_en || null,
+      langMode: sessionState.getDisplayLanguage(),
+      durationMs: getVerseDurationMs(),
+      readingMode: true,
     });
-    pushHistory({ reference, text: verse.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
-    broadcast({ action: 'historyUpdated', history: verseHistory });
+    pushHistory({
+      reference,
+      text: verse.text.substring(0, 200),
+      readingMode: true,
+      timestamp: Date.now(),
+    });
+    broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
   },
 });
 
@@ -382,46 +347,27 @@ async function activateReadingMode(book, chapter, verseStart) {
 // ---------------------------------------------------------------------------
 // Prompt injection filter for LLM-bound text
 // ---------------------------------------------------------------------------
-const PROMPT_INJECTION_PATTERNS = [
-  /ignore previous instructions/gi,
-  /ignore all prior/gi,
-  /system prompt/gi,
-  /you are now/gi,
-  /disregard everything/gi,
-  /new instructions?:/gi,
-  /<?\/?instruction>/gi,
-  /<?\/?system>/gi,
-  /DAN\b/gi,
-  /jailbreak/gi,
-];
-
-function sanitizeForPrompt(text) {
-  if (!text) return '';
-  let sanitized = text;
-  for (const pattern of PROMPT_INJECTION_PATTERNS) {
-    sanitized = sanitized.replace(pattern, '[...]');
-  }
-  // Limit length to prevent prompt stuffing
-  return sanitized.slice(0, 4000);
-}
+// CORRECTIF (chantier de découpage 2026-08-05) : server.js définissait sa
+// propre copie plus faible de sanitizeForPrompt() (moins de patterns, pas
+// de neutralisation des triples backticks) alors que semantic-detector.js,
+// transcription-corrector.js et ai-enricher.js utilisent déjà le module
+// partagé et plus complet prompt-sanitizer.js. Utilise désormais la même
+// défense partout — une seule source de vérité.
+const { sanitizeForPrompt } = require('./prompt-sanitizer');
 
 // ---------------------------------------------------------------------------
-// Update transcript context for AI features
+// Update transcript context for AI features (délègue à session-state.js
+// pour le stockage ; le lien avec semanticDetector reste ici car c'est une
+// dépendance vers un module IA, pas de l'état de session pur)
 // ---------------------------------------------------------------------------
 function updateTranscriptContext(text) {
-  recentTranscripts.push(text);
-  if (recentTranscripts.length > MAX_CONTEXT_TRANSCRIPTS) recentTranscripts.shift();
+  sessionState.updateTranscriptContext(text);
   if (semanticDetector) semanticDetector.addContext(text);
-
-  fullServiceTranscript += (fullServiceTranscript ? ' ' : '') + text;
-  if (fullServiceTranscript.length > MAX_SERVICE_TRANSCRIPT_CHARS) {
-    fullServiceTranscript = fullServiceTranscript.slice(-MAX_SERVICE_TRANSCRIPT_CHARS);
-  }
+  sessionState.appendFullServiceTranscript(text);
 }
 
 function getRecentContext(maxChars = 300) {
-  const context = recentTranscripts.slice(-5).join(' ');
-  return context.length > maxChars ? context.slice(-maxChars) : context;
+  return sessionState.getRecentContext(maxChars);
 }
 
 // ===========================================================================
@@ -444,8 +390,9 @@ function startAmbientMoodLoop() {
 
       // Ne relance une analyse que s'il y a eu de la nouvelle parole depuis
       // le dernier cycle (silence prolongé = pas de changement d'ambiance).
-      if (recentTranscripts.length === lastAmbientTranscriptCount) return;
-      lastAmbientTranscriptCount = recentTranscripts.length;
+      const transcriptCount = sessionState.getRecentTranscripts().length;
+      if (transcriptCount === lastAmbientTranscriptCount) return;
+      lastAmbientTranscriptCount = transcriptCount;
 
       const context = getRecentContext(500);
       if (!context.trim()) return;
@@ -524,11 +471,18 @@ async function processTranscript(text) {
   }
 
   if (reference && reference.fuzzy) {
-    log(`Fuzzy match: "${reference.fuzzyOriginal}" → "${reference.book}" (distance ${reference.fuzzyDistance})`);
+    log(
+      `Fuzzy match: "${reference.fuzzyOriginal}" → "${reference.book}" (distance ${reference.fuzzyDistance})`
+    );
     broadcast({
       action: 'candidateVerse',
-      reference: { book: reference.book, chapter: reference.chapter, verseStart: reference.verseStart },
-      original: reference.fuzzyOriginal, distance: reference.fuzzyDistance,
+      reference: {
+        book: reference.book,
+        chapter: reference.chapter,
+        verseStart: reference.verseStart,
+      },
+      original: reference.fuzzyOriginal,
+      distance: reference.fuzzyDistance,
     });
   }
 
@@ -537,10 +491,14 @@ async function processTranscript(text) {
       const semanticResult = await semanticDetector.detect(correctedText);
       if (semanticResult) {
         reference = semanticResult;
-        log(`Semantic detection: ${semanticResult.raw} (confidence: ${semanticResult.confidence.toFixed(2)})`);
+        log(
+          `Semantic detection: ${semanticResult.raw} (confidence: ${semanticResult.confidence.toFixed(2)})`
+        );
         broadcast({
-          action: 'semanticDetected', reference: semanticResult.raw,
-          confidence: semanticResult.confidence, reasoning: semanticResult.reasoning,
+          action: 'semanticDetected',
+          reference: semanticResult.raw,
+          confidence: semanticResult.confidence,
+          reasoning: semanticResult.reasoning,
           alternativeRefs: semanticResult.alternativeRefs,
         });
       }
@@ -558,7 +516,7 @@ async function processTranscript(text) {
         quotedMatch = quoted;
         reference = { book: '', chapter: 0, verseStart: 0, detectedBy: 'quote' };
       }
-    } catch (e) {}
+    } catch (_e) {}
   }
 
   if (!reference) {
@@ -571,10 +529,27 @@ async function processTranscript(text) {
           await activateReadingMode(book, nextChapter, 1);
           if (readingMode.active && readingMode.currentIndex >= 0) {
             const first = readingMode.verses[readingMode.currentIndex];
-            const label = bibleLookup.buildReferenceLabel({ book, chapter: nextChapter, verseStart: first.num }, displayLanguage);
-            broadcast({ action: 'showVerse', reference: label, text: first.text, langMode: displayLanguage, durationMs: getVerseDurationMs(), readingMode: true });
-            pushHistory({ reference: label, text: first.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
-            broadcast({ action: 'historyUpdated', history: verseHistory });
+            const label = bibleLookup.buildReferenceLabel(
+              { book, chapter: nextChapter, verseStart: first.num },
+              sessionState.getDisplayLanguage()
+            );
+            broadcast({
+              action: 'showVerse',
+              reference: label,
+              text: first.text,
+              text_fr: first.text_fr || null,
+              text_en: first.text_en || null,
+              langMode: sessionState.getDisplayLanguage(),
+              durationMs: getVerseDurationMs(),
+              readingMode: true,
+            });
+            pushHistory({
+              reference: label,
+              text: first.text.substring(0, 200),
+              readingMode: true,
+              timestamp: Date.now(),
+            });
+            broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
             log('Reading mode: chapitre suivant → ' + label);
           }
         }
@@ -590,22 +565,77 @@ async function processTranscript(text) {
     return;
   }
 
-  const refKey = `${reference.book}:${reference.chapter}:${reference.verseStart || ''}`;
+  // CORRECTIF (audit round 9) : pour une détection par citation
+  // (`detectedBy: 'quote'`), `reference` est un objet placeholder
+  // ({ book: '', chapter: 0, verseStart: 0 }) — la vraie référence n'est
+  // connue que via `quotedMatch.reference`. Construire refKey à partir de
+  // ces champs vides produisait la même clé "::" pour TOUTE citation
+  // reconnue sans référence dite, quel que soit le verset réel. Deux
+  // versets différents cités à moins de 30s d'intervalle (cas courant en
+  // lecture continue) étaient alors traités comme un doublon : le second
+  // verset était silencieusement supprimé sans jamais s'afficher.
+  const refKey =
+    reference.detectedBy === 'quote' && quotedMatch
+      ? `quote:${quotedMatch.reference}`
+      : `${reference.book}:${reference.chapter}:${reference.verseStart || ''}`;
   const now = Date.now();
-  if (lastReference === refKey && now - lastShownAt < DEDUP_MS) {
+  if (sessionState.isDuplicateReference(refKey, now)) {
     log('Duplicate suppressed: ' + refKey);
     return;
   }
-  lastReference = refKey;
-  lastShownAt = now;
+  sessionState.recordShownReference(refKey, now);
 
   let verse;
   try {
     if (reference.detectedBy === 'quote') {
       const quoted = quotedMatch || bibleLookup.findByQuotedText(correctedText);
-      verse = { reference: quoted.reference, text: quoted.text, provider: quoted.provider, lang: quoted.lang };
+      verse = {
+        reference: quoted.reference,
+        text: quoted.text,
+        provider: quoted.provider,
+        lang: quoted.lang,
+        text_fr: quoted.lang === 'fr' ? quoted.text : null,
+        text_en: quoted.lang === 'en' ? quoted.text : null,
+        langMode: sessionState.getDisplayLanguage(),
+      };
+      // Le quote-match ne connaît que le texte tel qu'il a été indexé
+      // (une seule langue). En mode bilingue, on retente une résolution
+      // structurée de la référence pour obtenir le FR + EN complets.
+      if (sessionState.getDisplayLanguage() === 'both') {
+        const parsedRef = detector.parseReference(quoted.reference);
+        if (parsedRef) {
+          try {
+            verse = await bibleLookup.getVerseMultilang(parsedRef, 'both');
+          } catch (_e) {
+            // Garde le fallback mono-langue construit ci-dessus.
+          }
+        }
+      }
     } else {
-      verse = await bibleLookup.getVerseMultilang(reference, displayLanguage);
+      // CORRECTIF (audit — "Jean 3 verset 1" affichait tout le chapitre 3) :
+      // quand la transcription ne capture pas clairement le numéro de
+      // verset (bruit ambiant, parole rapide — la STT n'est jamais
+      // parfaite), detector.js retourne une référence "chapitre seul"
+      // (verseStart undefined), et bible-lookup-with-api.js traite
+      // délibérément ce cas comme "aucun verset précis demandé : renvoyer
+      // tout le chapitre" — comportement voulu pour une lecture de
+      // chapitre explicite, mais un dump de chapitre entier surprend et
+      // submerge l'écran quand ce n'était pas l'intention réelle du
+      // prédicateur. Pour la détection AUTOMATIQUE (voix, pas saisie
+      // manuelle), on affiche donc verset 1 par défaut si aucun n'a été
+      // capté — le mode lecture (activateReadingMode, plus bas) reste
+      // ancré sur ce même chapitre et avance verset par verset au fil de
+      // la parole, donc rien n'est perdu, juste un premier affichage plus
+      // sobre. La saisie manuelle ("Afficher un Verset") n'est pas
+      // affectée : un opérateur qui tape "Jean 3" exprès pour une lecture
+      // complète obtient toujours le chapitre entier.
+      const displayReference = reference.verseStart
+        ? reference
+        : { ...reference, verseStart: 1, verseEnd: 1 };
+      verse = await bibleLookup.getVerseMultilang(
+        displayReference,
+        sessionState.getDisplayLanguage()
+      );
     }
   } catch (err) {
     warn('Bible lookup failed: ' + err.message);
@@ -633,23 +663,38 @@ async function processTranscript(text) {
 
   const features = featuresStore.readFeatures();
   const multiScene = (features.broadcast || {}).multiScene || {};
-  if (multiScene.enabled && !obsGateOpen) {
+  if (multiScene.enabled && !sessionState.getObsGate().open) {
     log('OBS gate closed — verse buffered: ' + verse.reference);
-    broadcast({ action: 'verseBuffered', reference: verse.reference, reason: obsGateReason });
+    broadcast({
+      action: 'verseBuffered',
+      reference: verse.reference,
+      reason: sessionState.getObsGate().reason,
+    });
     return;
   }
 
   const durationMs = getVerseDurationMs();
   broadcast({
-    action: 'showVerse', reference: verse.reference, text: verse.text,
-    text_fr: verse.text_fr || null, text_en: verse.text_en || null,
-    langMode: verse.langMode, provider: verse.provider, durationMs,
-    detectedBy: reference.detectedBy || 'regex', matchedByQuote: reference.detectedBy === 'quote',
+    action: 'showVerse',
+    reference: verse.reference,
+    text: verse.text,
+    text_fr: verse.text_fr || null,
+    text_en: verse.text_en || null,
+    langMode: verse.langMode,
+    provider: verse.provider,
+    durationMs,
+    detectedBy: reference.detectedBy || 'regex',
+    matchedByQuote: reference.detectedBy === 'quote',
     theme: theme ? { name: theme.name, mood: theme.mood } : null,
   });
 
-  pushHistory({ reference: verse.reference, text: verse.text.substring(0, 200), timestamp: now, detectedBy: reference.detectedBy || 'regex' });
-  broadcast({ action: 'historyUpdated', history: verseHistory });
+  pushHistory({
+    reference: verse.reference,
+    text: verse.text.substring(0, 200),
+    timestamp: now,
+    detectedBy: reference.detectedBy || 'regex',
+  });
+  broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
 
   if (plugins) {
     plugins.emit('onVerseShown', { ...verse, reference: verse.reference }).catch(() => {});
@@ -665,15 +710,23 @@ async function processTranscript(text) {
 // ===========================================================================
 // Voice Command Handler
 // ===========================================================================
-async function handleVoiceCommand(command, originalText) {
+async function handleVoiceCommand(command, _originalText) {
   switch (command.action) {
     case 'showVerse': {
       if (!command.reference) return;
       try {
-        const verse = await bibleLookup.getVerseMultilang(command.reference, displayLanguage);
-        broadcast({ action: 'showVerse', ...verse, durationMs: getVerseDurationMs(), triggeredByVoice: true });
+        const verse = await bibleLookup.getVerseMultilang(
+          command.reference,
+          sessionState.getDisplayLanguage()
+        );
+        broadcast({
+          action: 'showVerse',
+          ...verse,
+          durationMs: getVerseDurationMs(),
+          triggeredByVoice: true,
+        });
         pushHistory({ ...verse, triggeredByVoice: true, timestamp: Date.now() });
-        broadcast({ action: 'historyUpdated', history: verseHistory });
+        broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
         log('Voice command: showed ' + verse.reference);
       } catch (err) {
         warn('Voice command verse lookup failed: ' + err.message);
@@ -715,21 +768,35 @@ async function handleVoiceCommand(command, originalText) {
     case 'setTheme': {
       if (themeGenerator) {
         const theme = themeGenerator.getTheme(command.theme);
-        broadcast({ action: 'applyTheme', ...themeGenerator.themeToCss(theme), triggeredByVoice: true });
+        broadcast({
+          action: 'applyTheme',
+          ...themeGenerator.themeToCss(theme),
+          triggeredByVoice: true,
+        });
         log('Voice command: theme ' + command.theme);
       }
       break;
     }
     case 'setLanguage': {
-      displayLanguage = command.language;
-      broadcast({ action: 'languageChanged', language: displayLanguage, triggeredByVoice: true });
+      sessionState.setDisplayLanguage(command.language);
+      broadcast({
+        action: 'languageChanged',
+        language: sessionState.getDisplayLanguage(),
+        triggeredByVoice: true,
+      });
       log('Voice command: language ' + command.language);
       break;
     }
     case 'setTranslation': {
       try {
         const newId = bibleLookup.setTranslation(command.language, command.code);
-        broadcast({ action: 'translationChanged', language: command.language, code: command.code, translationId: newId, triggeredByVoice: true });
+        broadcast({
+          action: 'translationChanged',
+          language: command.language,
+          code: command.code,
+          translationId: newId,
+          triggeredByVoice: true,
+        });
         log(`Voice command: translation ${command.language} → ${command.code}`);
       } catch (err) {
         warn('Voice command translation failed: ' + err.message);
@@ -748,7 +815,7 @@ async function handleVoiceCommand(command, originalText) {
     case 'emergencyClear': {
       broadcast({ action: 'hideVerse', emergency: true });
       broadcast({ action: 'emergencyClear' });
-      lastReference = null;
+      sessionState.clearLastReference();
       log('Voice command: EMERGENCY CLEAR');
       break;
     }
@@ -762,47 +829,93 @@ async function handleVoiceCommand(command, originalText) {
 // ===========================================================================
 
 // Actions that require operator role
-// CORRECTIF (audit production) : plusieurs actions à effet réel (coût API
-// IA, ou état serveur modifié) n'étaient dans cette liste — un client
-// 'viewer' (quiconque a seulement l'URL /overlay, ex. un opérateur vidéo
-// distinct ou un curieux qui l'a trouvée) pouvait donc déjà les déclencher.
-// Trois catégories corrigées ici :
-//  1. 'transcript' — le plus grave des trois : permet d'injecter n'importe
-//     quel texte directement dans processTranscript(), le même pipeline
-//     qu'un vrai segment de parole (affichage de verset arbitraire,
-//     commandes vocales dont emergencyClear, appel LLM du détecteur
-//     sémantique). Un viewer n'a aucune raison légitime d'appeler ceci.
-//  2. getLiveSummary/getSermonTheme/getPostServiceRecap/getCrossReferences
-//     — chacune déclenche un appel LLM payant en quota (voir la discipline
-//     palier gratuit établie pour semantic-detector.js/groq-wrapper.js) ;
-//     getPostServiceRecap a en plus un effet de bord réel : elle ARCHIVE le
-//     culte et RÉINITIALISE fullServiceTranscript (voir sermon-archive.js)
-//     — un viewer l'appelant par erreur ou malice perdrait la suite de la
-//     transcription du jour.
-//  3. Les 4 actions ajoutées cette session (accessibilité + affichage) —
-//     setTestPattern en particulier peut littéralement figer l'écran
-//     projeté avec des barres de couleur en pleine prédication.
+//
+// CORRECTIF (deux audits indépendants convergents — round 8 et audit
+// production de cette même session) : cette liste ne couvrait pas toutes
+// les actions qui donnent en pratique un contrôle équivalent à l'opérateur,
+// ou qui consomment du quota IA payant / exposent le contenu de la
+// prédication. Les deux audits sont arrivés séparément à la même
+// conclusion sur 'transcript' et les actions IA (getLiveSummary/
+// getSermonTheme/getPostServiceRecap/getCrossReferences) : un client
+// connecté avec seulement WS_VIEWER_TOKEN (le jeton prévu pour être collé,
+// en lecture seule, dans une source navigateur OBS — donc plus exposé
+// qu'un poste opérateur) et utilisant le protocole WebSocket brut (pas
+// overlay.html, qui n'envoie jamais ces actions, mais un client fait à la
+// main) pouvait :
+//  - envoyer `transcript` directement : traité exactement comme un vrai
+//    segment audio par processTranscript(), donc afficher n'importe quel
+//    verset, changer de thème, déclencher emergencyClear, appeler le
+//    détecteur sémantique (LLM) — un contournement complet du RBAC.
+//  - appeler `preServiceCheck` : révèle wsHost et si l'authentification est
+//    activée, en plus de solliciter les API Groq/Deepgram.
+//  - appeler getLiveSummary / getSermonTheme / getPostServiceRecap /
+//    getCrossReferences / getArchiveMatches : déclenchent des appels IA
+//    payants (Groq/Gemini) et renvoient un résumé du contenu de la
+//    prédication ; getPostServiceRecap a en plus un effet de bord réel —
+//    elle ARCHIVE le culte et RÉINITIALISE fullServiceTranscript (voir
+//    sermon-archive.js), donc un viewer l'appelant par erreur ou malice
+//    perdrait la suite de la transcription du jour.
+//  - basculer setHighContrast/setCaptions/setTestPattern/
+//    setBackgroundPattern : setTestPattern en particulier peut
+//    littéralement figer l'écran projeté avec des barres de couleur en
+//    pleine prédication.
+// Les actions restées hors de cette liste (getTopics, getMoods,
+// listPlugins, getAiStats, ping, setTranslation en lecture via
+// 'getState'…) restent volontairement accessibles aux viewers : elles ne
+// renvoient que des données statiques/publiques ou des métadonnées déjà
+// visibles côté overlay.
 const OPERATOR_ACTIONS = new Set([
-  'showVerse', 'hideVerse', 'setLanguage', 'setTranslation', 'startReading', 'stopReading',
-  'applyTheme', 'setMoodTheme', 'searchBible', 'togglePlugin', 'obs-toggle-recording',
-  'obs-switch-scene', 'extendTime', 'pauseTimer', 'resumeTimer', 'emergencyClear',
-  'hideTranslation', 'translateText',
   'transcript',
-  'getLiveSummary', 'getSermonTheme', 'getPostServiceRecap', 'getCrossReferences', 'getArchiveMatches',
-  'setHighContrast', 'setCaptions', 'setTestPattern', 'setBackgroundPattern',
+  'showVerse',
+  'hideVerse',
+  'setLanguage',
+  'setTranslation',
+  'startReading',
+  'stopReading',
+  'applyTheme',
+  'setMoodTheme',
+  'searchBible',
+  'togglePlugin',
+  'obs-toggle-recording',
+  'obs-switch-scene',
+  'extendTime',
+  'pauseTimer',
+  'resumeTimer',
+  'emergencyClear',
+  'hideTranslation',
+  'translateText',
+  'preServiceCheck',
+  'getLiveSummary',
+  'getSermonTheme',
+  'getPostServiceRecap',
+  'getCrossReferences',
+  'getSessionStats',
+  'getArchiveMatches',
+  'setHighContrast',
+  'setCaptions',
+  'setTestPattern',
+  'setBackgroundPattern',
 ]);
 
-function determineClientRole(req) {
-  // Dashboard loaded via file:// or localhost with token = operator
-  // Overlay loaded via file:// or /overlay = viewer (read-only)
-  const url = req.url || '';
-  if (url.includes('/overlay') || url.includes('overlay.html')) {
-    return 'viewer';
-  }
-  // Heuristic: if token is present and matches, and origin looks like dashboard
-  return 'operator';
+// SECURITY: role is derived from WHICH token the client authenticated with
+// (ws.protocol, set by the handshake), never from the request path. The old
+// path-based heuristic let any client asking for `/` get 'operator' — the
+// shared WS_AUTH_TOKEN was the only real gate, so a leaked/observed overlay
+// URL (meant to be read-only, e.g. displayed on a public projector machine)
+// still granted full operator control once WS_AUTH_TOKEN was known.
+function determineClientRole(ws) {
+  if (WS_AUTH_TOKEN && ws.protocol === WS_AUTH_TOKEN) return 'operator';
+  if (WS_VIEWER_TOKEN && ws.protocol === WS_VIEWER_TOKEN) return 'viewer';
+  if (!WS_AUTH_TOKEN) return 'operator'; // no auth configured (local-only default): unrestricted, as before
+  return 'viewer'; // authenticated with neither known token shouldn't reach here (connection is closed earlier)
 }
 
+// SECURITY NOTE: this is defense-in-depth against browser-based cross-site
+// WebSocket hijacking, not the primary access control — a non-browser
+// client can set (or omit) any Origin header it likes, so `!origin` and
+// the 'null'/'file://' allowances below are trivially satisfied by a
+// deliberate attacker. The real gate for non-local binds is the mandatory
+// WS_AUTH_TOKEN/WS_VIEWER_TOKEN check enforced right after this call.
 function validateOrigin(req) {
   if (WS_HOST === '127.0.0.1' || WS_HOST === 'localhost') {
     return true; // localhost binds are inherently single-machine
@@ -835,13 +948,15 @@ wss.on('connection', (ws, req) => {
     return;
   }
 
-  if (WS_AUTH_TOKEN) {
-    let providedToken = null;
-    try {
-      providedToken = new URL(req.url, 'http://internal').searchParams.get('token');
-    } catch (_) {}
-    if (providedToken !== WS_AUTH_TOKEN) {
-      warn('Connexion WebSocket refusée — jeton d\'authentification invalide ou manquant.');
+  // SECURITY: token now comes from the Sec-WebSocket-Protocol handshake
+  // header (see `handleProtocols` above), resolved by the `ws` library into
+  // `ws.protocol`, not from a `?token=` query string — this keeps it out of
+  // proxy/CDN access logs and server request-URL logging.
+  if (WS_AUTH_TOKEN || WS_VIEWER_TOKEN) {
+    const presented = ws.protocol || null;
+    const validTokens = [WS_AUTH_TOKEN, WS_VIEWER_TOKEN].filter(Boolean);
+    if (!presented || !validTokens.includes(presented)) {
+      warn("Connexion WebSocket refusée — jeton d'authentification invalide ou manquant.");
       connRateLimiter.removeConnection(ws);
       ws.close(1008, 'Non autorisé');
       return;
@@ -849,33 +964,36 @@ wss.on('connection', (ws, req) => {
   }
 
   // Assign role
-  ws.clientRole = determineClientRole(req);
+  ws.clientRole = determineClientRole(ws);
   log(`Client WebSocket connecté (role: ${ws.clientRole})`);
 
   const features = featuresStore.readFeatures();
   const theme = themeLoader.getActiveTheme();
 
-  ws.send(JSON.stringify({
-    action: 'init',
-    language: displayLanguage,
-    highContrast: highContrastMode,
-    captions: captionsEnabled,
-    testPattern: testPatternEnabled,
-    backgroundPattern,
-    history: verseHistory,
-    theme: themeLoader.themeToCss(theme),
-    translations: bibleLookup.listTranslations(),
-    plugins: plugins ? plugins.getPluginList() : [],
-    aiFeatures: {
-      semanticDetection: !!semanticDetector,
-      voiceCommands: !!detectCommand,
-      transcriptionCorrection: !!corrector,
-      dynamicThemes: !!themeGenerator,
-      bibleSearch: !!semanticSearch,
-    },
-    aiLoadErrors: aiLoadErrors.length > 0 ? aiLoadErrors : undefined,
-    yourRole: ws.clientRole,
-  }));
+  ws.send(
+    JSON.stringify({
+      action: 'init',
+      language: sessionState.getDisplayLanguage(),
+      highContrast: sessionState.getHighContrast(),
+      captions: sessionState.getCaptionsEnabled(),
+      testPattern: sessionState.getTestPattern(),
+      backgroundPattern: sessionState.getBackgroundPattern(),
+      history: sessionState.getVerseHistory(),
+      theme: themeLoader.themeToCss(theme),
+      features,
+      translations: bibleLookup.listTranslations(),
+      plugins: plugins ? plugins.getPluginList() : [],
+      aiFeatures: {
+        semanticDetection: !!semanticDetector,
+        voiceCommands: !!detectCommand,
+        transcriptionCorrection: !!corrector,
+        dynamicThemes: !!themeGenerator,
+        bibleSearch: !!semanticSearch,
+      },
+      aiLoadErrors: aiLoadErrors.length > 0 ? aiLoadErrors : undefined,
+      yourRole: ws.clientRole,
+    })
+  );
 
   ws.on('message', async (raw) => {
     const msgCheck = connRateLimiter.checkMessage(ws);
@@ -930,8 +1048,9 @@ wss.on('connection', (ws, req) => {
     // testé en isolation (test-validation.js) mais jamais appelé ici. Fait
     // volontairement de façon additive : les actions plus récentes non
     // couvertes par SCHEMAS (transcript, preServiceCheck, startReading,
-    // applyTheme, obs-*, etc.) ne passent pas par ce gate et continuent de
-    // fonctionner exactement comme avant.
+    // obs-*, etc.) ne passent pas par ce gate et continuent de fonctionner
+    // exactement comme avant. `applyTheme` a été ajouté à SCHEMAS (audit
+    // backend) car son payload `css` était diffusé sans aucune validation.
     if (VALIDATE_MESSAGES_ENABLED && validation.SCHEMAS[sanitized.action]) {
       const strict = validation.validateMessage(sanitized);
       if (!strict.valid) {
@@ -946,7 +1065,12 @@ wss.on('connection', (ws, req) => {
       const text = String(sanitized.text || '').trim();
       if (text) {
         log(`WebSocket transcript received: "${text.substring(0, 80)}"`);
-        broadcast({ action: 'transcript', text, timestamp: Date.now(), source: sanitized.source || 'browser' });
+        broadcast({
+          action: 'transcript',
+          text,
+          timestamp: Date.now(),
+          source: sanitized.source || 'browser',
+        });
         await processTranscript(text);
       }
       return;
@@ -960,11 +1084,11 @@ wss.on('connection', (ws, req) => {
         return;
       }
       try {
-        const verse = await bibleLookup.getVerseMultilang(ref, displayLanguage);
+        const verse = await bibleLookup.getVerseMultilang(ref, sessionState.getDisplayLanguage());
         const durationMs = sanitized.durationMs || getVerseDurationMs();
         broadcast({ action: 'showVerse', ...verse, durationMs, triggeredManually: true });
         pushHistory({ ...verse, triggeredManually: true, timestamp: Date.now() });
-        broadcast({ action: 'historyUpdated', history: verseHistory });
+        broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
       } catch (err) {
         ws.send(JSON.stringify({ action: 'error', error: err.message }));
       }
@@ -974,7 +1098,7 @@ wss.on('connection', (ws, req) => {
     // --- Hide overlay ---
     if (sanitized.action === 'hideVerse') {
       broadcast({ action: 'hideVerse' });
-      lastReference = null;
+      sessionState.clearLastReference();
       return;
     }
 
@@ -985,13 +1109,66 @@ wss.on('connection', (ws, req) => {
           groq.checkKey(),
           deepgramWrapper.checkKey(),
         ]);
-        ws.send(JSON.stringify({
-          action: 'preServiceCheckResult',
-          wsConnected: true, wsAuthEnabled: !!WS_AUTH_TOKEN, wsHost: WS_HOST,
-          groq: groqResult, deepgram: deepgramResult, timestamp: Date.now(),
-        }));
+        ws.send(
+          JSON.stringify({
+            action: 'preServiceCheckResult',
+            wsConnected: true,
+            wsAuthEnabled: !!WS_AUTH_TOKEN,
+            wsHost: WS_HOST,
+            groq: groqResult,
+            deepgram: deepgramResult,
+            timestamp: Date.now(),
+          })
+        );
       } catch (err) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Échec de la vérification pré-culte : ' + err.message }));
+        ws.send(
+          JSON.stringify({
+            action: 'error',
+            error: 'Échec de la vérification pré-culte : ' + err.message,
+          })
+        );
+      }
+      return;
+    }
+
+    // --- Session stats (historique persistant SQLite — voir session-store.js) ---
+    // AJOUT (audit round 9) : session-store.js écrit déjà chaque verset
+    // affiché et chaque erreur de pipeline en SQLite depuis le chantier de
+    // fiabilité du 2026-08-05 (jour de survie à un crash, trace consultable
+    // après un culte), mais rien ne relisait jamais cette base — aucune
+    // action WebSocket ne l'exposait, donc aucun panneau du tableau de bord
+    // ne pouvait la montrer. La persistance tournait "dans le vide".
+    if (sanitized.action === 'getSessionStats') {
+      try {
+        const days = Math.min(Math.max(Number.parseInt(sanitized.days, 10) || 1, 1), 30);
+        const sinceMs = Date.now() - days * 24 * 60 * 60 * 1000;
+        const verses = sessionStore.getVerseHistorySince(sinceMs);
+        const errors = sessionStore.getPipelineErrorsSince(sinceMs);
+        const errorsByType = {};
+        for (const e of errors) {
+          errorsByType[e.type] = (errorsByType[e.type] || 0) + 1;
+        }
+        ws.send(
+          JSON.stringify({
+            action: 'sessionStats',
+            persistenceEnabled: sessionStore.isEnabled(),
+            days,
+            sinceMs,
+            verseCount: verses.length,
+            verses: verses.slice(0, 100),
+            errorCount: errors.length,
+            errors: errors.slice(0, 50),
+            errorsByType,
+            timestamp: Date.now(),
+          })
+        );
+      } catch (err) {
+        ws.send(
+          JSON.stringify({
+            action: 'error',
+            error: 'Impossible de récupérer les statistiques de session : ' + err.message,
+          })
+        );
       }
       return;
     }
@@ -1000,7 +1177,7 @@ wss.on('connection', (ws, req) => {
     if (sanitized.action === 'setLanguage') {
       const lang = sanitized.language;
       if (['fr', 'en', 'both'].includes(lang)) {
-        displayLanguage = lang;
+        sessionState.setDisplayLanguage(lang);
         broadcast({ action: 'languageChanged', language: lang });
         log('Language changed: ' + lang);
       }
@@ -1011,7 +1188,12 @@ wss.on('connection', (ws, req) => {
     if (sanitized.action === 'setTranslation') {
       try {
         const newId = bibleLookup.setTranslation(sanitized.language, sanitized.code);
-        broadcast({ action: 'translationChanged', language: sanitized.language, code: sanitized.code, translationId: newId });
+        broadcast({
+          action: 'translationChanged',
+          language: sanitized.language,
+          code: sanitized.code,
+          translationId: newId,
+        });
         log(`Translation: ${sanitized.language} → ${sanitized.code}`);
       } catch (err) {
         ws.send(JSON.stringify({ action: 'error', error: err.message }));
@@ -1023,17 +1205,36 @@ wss.on('connection', (ws, req) => {
     if (sanitized.action === 'startReading') {
       const ref = detector.parseReference(sanitized.reference);
       if (!ref) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Référence invalide pour le mode lecture.' }));
+        ws.send(
+          JSON.stringify({ action: 'error', error: 'Référence invalide pour le mode lecture.' })
+        );
         return;
       }
       try {
         const firstVerse = await readingMode.start(ref.book, ref.chapter, ref.verseStart);
         ws.send(JSON.stringify({ action: 'readingStarted', reference: ref }));
         if (firstVerse) {
-          const label = bibleLookup.buildReferenceLabel({ book: ref.book, chapter: ref.chapter, verseStart: firstVerse.num }, displayLanguage);
-          broadcast({ action: 'showVerse', reference: label, text: firstVerse.text, langMode: displayLanguage, durationMs: getVerseDurationMs(), readingMode: true });
-          pushHistory({ reference: label, text: firstVerse.text.substring(0, 200), readingMode: true, timestamp: Date.now() });
-          broadcast({ action: 'historyUpdated', history: verseHistory });
+          const label = bibleLookup.buildReferenceLabel(
+            { book: ref.book, chapter: ref.chapter, verseStart: firstVerse.num },
+            sessionState.getDisplayLanguage()
+          );
+          broadcast({
+            action: 'showVerse',
+            reference: label,
+            text: firstVerse.text,
+            text_fr: firstVerse.text_fr || null,
+            text_en: firstVerse.text_en || null,
+            langMode: sessionState.getDisplayLanguage(),
+            durationMs: getVerseDurationMs(),
+            readingMode: true,
+          });
+          pushHistory({
+            reference: label,
+            text: firstVerse.text.substring(0, 200),
+            readingMode: true,
+            timestamp: Date.now(),
+          });
+          broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
         }
       } catch (err) {
         ws.send(JSON.stringify({ action: 'error', error: err.message }));
@@ -1050,7 +1251,9 @@ wss.on('connection', (ws, req) => {
     // --- Bible Semantic Search ---
     if (sanitized.action === 'searchBible') {
       if (!semanticSearch) {
-        ws.send(JSON.stringify({ action: 'searchError', error: 'Recherche biblique non disponible' }));
+        ws.send(
+          JSON.stringify({ action: 'searchError', error: 'Recherche biblique non disponible' })
+        );
         return;
       }
       const query = String(sanitized.query || '').trim();
@@ -1069,13 +1272,23 @@ wss.on('connection', (ws, req) => {
 
     // --- Get topics ---
     if (sanitized.action === 'getTopics') {
-      ws.send(JSON.stringify({ action: 'topicsList', topics: semanticSearch ? semanticSearch.getTopics() : [] }));
+      ws.send(
+        JSON.stringify({
+          action: 'topicsList',
+          topics: semanticSearch ? semanticSearch.getTopics() : [],
+        })
+      );
       return;
     }
 
     // --- Get moods ---
     if (sanitized.action === 'getMoods') {
-      ws.send(JSON.stringify({ action: 'moodsList', moods: themeGenerator ? themeGenerator.getMoods() : [] }));
+      ws.send(
+        JSON.stringify({
+          action: 'moodsList',
+          moods: themeGenerator ? themeGenerator.getMoods() : [],
+        })
+      );
       return;
     }
 
@@ -1094,28 +1307,38 @@ wss.on('connection', (ws, req) => {
 
     // --- Plugin management ---
     if (sanitized.action === 'listPlugins') {
-      ws.send(JSON.stringify({ action: 'pluginsList', plugins: plugins ? plugins.getPluginList() : [] }));
+      ws.send(
+        JSON.stringify({ action: 'pluginsList', plugins: plugins ? plugins.getPluginList() : [] })
+      );
       return;
     }
 
     if (sanitized.action === 'togglePlugin') {
       if (plugins) {
         plugins.setEnabled(sanitized.pluginName, sanitized.enabled);
-        ws.send(JSON.stringify({ action: 'pluginToggled', pluginName: sanitized.pluginName, enabled: sanitized.enabled }));
+        ws.send(
+          JSON.stringify({
+            action: 'pluginToggled',
+            pluginName: sanitized.pluginName,
+            enabled: sanitized.enabled,
+          })
+        );
       }
       return;
     }
 
     // --- AI stats ---
     if (sanitized.action === 'getAiStats') {
-      ws.send(JSON.stringify({
-        action: 'aiStats',
-        semanticDetector: semanticDetector ? semanticDetector.getStats() : null,
-        corrector: corrector ? corrector.getStats() : null,
-        plugins: plugins ? plugins.metadata : null,
-        aiEnricher: !!aiEnricher,
-        loadErrors: aiLoadErrors,
-      }));
+      ws.send(
+        JSON.stringify({
+          action: 'aiStats',
+          semanticDetector: semanticDetector ? semanticDetector.getStats() : null,
+          corrector: corrector ? corrector.getStats() : null,
+          plugins: plugins ? plugins.metadata : null,
+          aiEnricher: !!aiEnricher,
+          loadErrors: aiLoadErrors,
+        })
+      );
       return;
     }
 
@@ -1125,7 +1348,7 @@ wss.on('connection', (ws, req) => {
         ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
         return;
       }
-      const fullTranscript = sanitizeForPrompt(recentTranscripts.join(' '));
+      const fullTranscript = sanitizeForPrompt(sessionState.getRecentTranscripts().join(' '));
       const summary = await aiEnricher.generateLiveSummary(fullTranscript);
       ws.send(JSON.stringify({ action: 'liveSummary', summary, timestamp: Date.now() }));
       return;
@@ -1137,9 +1360,16 @@ wss.on('connection', (ws, req) => {
         ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
         return;
       }
-      const fullTranscript = sanitizeForPrompt(recentTranscripts.join(' '));
+      const fullTranscript = sanitizeForPrompt(sessionState.getRecentTranscripts().join(' '));
       const themeData = await aiEnricher.detectSermonTheme(fullTranscript);
-      ws.send(JSON.stringify({ action: 'sermonTheme', ...themeData, silent: !!sanitized.silent, timestamp: Date.now() }));
+      ws.send(
+        JSON.stringify({
+          action: 'sermonTheme',
+          ...themeData,
+          silent: !!sanitized.silent,
+          timestamp: Date.now(),
+        })
+      );
       return;
     }
 
@@ -1149,13 +1379,18 @@ wss.on('connection', (ws, req) => {
         ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
         return;
       }
-      // CORRECTIF (audit — mémoire des cultes) : utilisait recentTranscripts
-      // (fenêtre glissante de 10 fragments, pensée pour un tout autre usage —
-      // voir son commentaire), donc un "récap fin de culte" ne portait en
-      // réalité que sur les dernières secondes du service. fullServiceTranscript
-      // couvre tout le culte en cours (borné à 50 000 caractères).
-      const fullTranscript = sanitizeForPrompt(fullServiceTranscript);
-      const recap = await aiEnricher.generatePostServiceRecap(fullTranscript, verseHistory);
+      // CORRECTIF (audit — mémoire des cultes) : sessionState.getRecentTranscripts()
+      // est une fenêtre glissante de 10 fragments (pensée pour le contexte
+      // court du détecteur sémantique, voir session-state.js), donc trop
+      // étroite pour un "récap fin de culte" fidèle — il ne portait en
+      // réalité que sur les dernières secondes du service.
+      // sessionState.getFullServiceTranscript() couvre tout le culte en
+      // cours (borné à MAX_SERVICE_TRANSCRIPT_CHARS caractères).
+      const fullTranscript = sanitizeForPrompt(sessionState.getFullServiceTranscript());
+      const recap = await aiEnricher.generatePostServiceRecap(
+        fullTranscript,
+        sessionState.getVerseHistory()
+      );
       ws.send(JSON.stringify({ action: 'postServiceRecap', recap, timestamp: Date.now() }));
 
       // AJOUT (audit — mémoire des cultes, gratuit/léger) : le clic "Récap
@@ -1166,14 +1401,14 @@ wss.on('connection', (ws, req) => {
         sermonArchive.saveServiceEntry({
           theme: recap && recap.title,
           keyPoints: recap && recap.keyPoints,
-          transcriptExcerpt: fullServiceTranscript.slice(-4000),
-          versesShown: verseHistory,
+          transcriptExcerpt: sessionState.getFullServiceTranscript().slice(-4000),
+          versesShown: sessionState.getVerseHistory(),
         });
         log('Culte archivé localement (sermon-archive.js)');
       } catch (err) {
         warn('Archivage du culte échoué: ' + err.message);
       }
-      fullServiceTranscript = '';
+      sessionState.resetFullServiceTranscript();
       return;
     }
 
@@ -1194,7 +1429,9 @@ wss.on('connection', (ws, req) => {
       const safeRef = sanitizeForPrompt(sanitized.reference || '');
       const safeText = sanitizeForPrompt(sanitized.text || '');
       const refs = await aiEnricher.findCrossReferences(safeRef, safeText);
-      ws.send(JSON.stringify({ action: 'crossReferences', reference: sanitized.reference, results: refs }));
+      ws.send(
+        JSON.stringify({ action: 'crossReferences', reference: sanitized.reference, results: refs })
+      );
       return;
     }
 
@@ -1208,9 +1445,22 @@ wss.on('connection', (ws, req) => {
       const safeText = sanitizeForPrompt(sanitized.text || '');
       const translation = await aiEnricher.translateSegment(safeText, targetLang);
       if (sanitized.autoBroadcast) {
-        broadcast({ action: 'showTranslation', translation, targetLang, reference: sanitized.reference || null });
+        broadcast({
+          action: 'showTranslation',
+          translation,
+          targetLang,
+          reference: sanitized.reference || null,
+        });
       }
-      ws.send(JSON.stringify({ action: 'textTranslated', original: sanitized.text, targetLang, translation, autoBroadcast: !!sanitized.autoBroadcast }));
+      ws.send(
+        JSON.stringify({
+          action: 'textTranslated',
+          original: sanitized.text,
+          targetLang,
+          translation,
+          autoBroadcast: !!sanitized.autoBroadcast,
+        })
+      );
       return;
     }
 
@@ -1228,25 +1478,28 @@ wss.on('connection', (ws, req) => {
 
     // --- Accessibility: high-contrast mode (audit — free/light) ---
     if (sanitized.action === 'setHighContrast') {
-      highContrastMode = !!sanitized.enabled;
-      broadcast({ action: 'accessibilityMode', highContrast: highContrastMode });
-      log('Accessibilité : mode grand contraste ' + (highContrastMode ? 'activé' : 'désactivé'));
+      sessionState.setHighContrast(!!sanitized.enabled);
+      const highContrast = sessionState.getHighContrast();
+      broadcast({ action: 'accessibilityMode', highContrast });
+      log('Accessibilité : mode grand contraste ' + (highContrast ? 'activé' : 'désactivé'));
       return;
     }
 
     // --- Accessibility: live caption strip (audit — free/light) ---
     if (sanitized.action === 'setCaptions') {
-      captionsEnabled = !!sanitized.enabled;
-      broadcast({ action: 'captionsMode', captions: captionsEnabled });
-      log('Accessibilité : sous-titres ' + (captionsEnabled ? 'activés' : 'désactivés'));
+      sessionState.setCaptionsEnabled(!!sanitized.enabled);
+      const captions = sessionState.getCaptionsEnabled();
+      broadcast({ action: 'captionsMode', captions });
+      log('Accessibilité : sous-titres ' + (captions ? 'activés' : 'désactivés'));
       return;
     }
 
     // --- Display: test pattern (audit — affichage/sortie, free/light) ---
     if (sanitized.action === 'setTestPattern') {
-      testPatternEnabled = !!sanitized.enabled;
-      broadcast({ action: 'testPatternMode', enabled: testPatternEnabled });
-      log('Affichage : motif de test ' + (testPatternEnabled ? 'activé' : 'désactivé'));
+      sessionState.setTestPattern(!!sanitized.enabled);
+      const enabled = sessionState.getTestPattern();
+      broadcast({ action: 'testPatternMode', enabled });
+      log('Affichage : motif de test ' + (enabled ? 'activé' : 'désactivé'));
       return;
     }
 
@@ -1254,9 +1507,9 @@ wss.on('connection', (ws, req) => {
     if (sanitized.action === 'setBackgroundPattern') {
       const allowed = ['none', 'dots', 'grid', 'diagonal'];
       const pattern = allowed.includes(sanitized.pattern) ? sanitized.pattern : 'none';
-      backgroundPattern = pattern;
-      broadcast({ action: 'backgroundPatternMode', pattern: backgroundPattern });
-      log('Affichage : motif de fond -> ' + backgroundPattern);
+      sessionState.setBackgroundPattern(pattern);
+      broadcast({ action: 'backgroundPatternMode', pattern });
+      log('Affichage : motif de fond -> ' + pattern);
       return;
     }
 
@@ -1314,8 +1567,22 @@ async function transcribeWithRetry(segmentFile, contextHint, maxAttempts = 2) {
 }
 
 function startPipeline() {
+  // CORRECTIF (problème récurrent — transcription qui ne démarre jamais) :
+  // compte les segments rejetés consécutivement pour silence (voir
+  // audio-capture.js). Un silence isolé est normal (temps mort entre deux
+  // prises de parole) ; ALERT_AFTER_CONSECUTIVE_SKIPS segments rejetés
+  // d'affilée (~1 minute à 5s/segment) signale plutôt un micro trop
+  // silencieux (mauvais périphérique, gain trop bas) — dans ce cas, sans
+  // cette alerte, l'opérateur voit juste "en attente" indéfiniment sans
+  // jamais savoir pourquoi.
+  const ALERT_AFTER_CONSECUTIVE_SKIPS = 12;
+  let consecutiveSkips = 0;
+  let alertedForCurrentSilence = false;
+
   audioCapture.on({
     onAudioSegment: async (segmentFile) => {
+      consecutiveSkips = 0;
+      alertedForCurrentSilence = false;
       try {
         // AJOUT (audit — boost transcription) : la fin du dernier segment déjà
         // transcrit sert d'indice de continuité pour Whisper (voir groq-wrapper.js).
@@ -1329,18 +1596,33 @@ function startPipeline() {
       } catch (err) {
         warn('Transcription error: ' + err.message);
         broadcast({ action: 'transcriptionError', error: err.message });
-        if (plugins) plugins.emit('onError', { type: 'transcription', message: err.message }).catch(() => {});
+        sessionStore.recordPipelineError('transcription', err.message);
+        if (plugins)
+          plugins.emit('onError', { type: 'transcription', message: err.message }).catch(() => {});
       } finally {
-        try { fs.unlinkSync(segmentFile); } catch (_) {}
+        try {
+          fs.unlinkSync(segmentFile);
+        } catch (_) {}
+      }
+    },
+    onSegmentSkipped: (info) => {
+      consecutiveSkips++;
+      if (consecutiveSkips >= ALERT_AFTER_CONSECUTIVE_SKIPS && !alertedForCurrentSilence) {
+        alertedForCurrentSilence = true;
+        const message = `Aucune voix détectée depuis ~${Math.round((consecutiveSkips * 5000) / 1000)}s (niveau micro sous le seuil ${info.threshold}) — vérifiez le périphérique sélectionné et son gain.`;
+        warn('Silence prolongé : ' + message);
+        broadcast({ action: 'audioSilenceWarning', message, ...info });
+        sessionStore.recordPipelineError('audio-silence', message);
       }
     },
     onError: (err) => {
       warn('Audio capture error: ' + err.message);
       broadcast({ action: 'audioError', error: err.message });
+      sessionStore.recordPipelineError('audio', err.message);
     },
   });
 
-  audioCapture.startBrowserCapture();
+  audioCapture.startBrowserCapture({ silenceThreshold: MIC_SILENCE_THRESHOLD });
 
   if (parentPort) {
     parentPort.postMessage({ type: 'audio-pipeline-ready' });
@@ -1363,13 +1645,17 @@ if (parentPort) {
       log('Shutdown requested by main process');
       audioCapture.stopRecording();
       stopAmbientMoodLoop();
-      wss.clients.forEach(ws => ws.close());
+      wss.clients.forEach((ws) => ws.close());
       wss.close();
       connRateLimiter.stopCleanup();
+      sessionStore.close();
       if (parentPort) parentPort.postMessage({ type: 'status', status: 'stopped' });
       const finish = () => process.exit(0);
       if (plugins) {
-        plugins.shutdown().catch(() => {}).finally(finish);
+        plugins
+          .shutdown()
+          .catch(() => {})
+          .finally(finish);
         setTimeout(finish, 2000).unref?.();
       } else {
         finish();
@@ -1383,9 +1669,8 @@ if (parentPort) {
     }
 
     if (msg.type === 'obs-gate-changed') {
-      obsGateOpen = msg.open;
-      obsGateReason = msg.reason || '';
-      log(`OBS gate: ${obsGateOpen ? 'OPEN' : 'CLOSED'} (${obsGateReason})`);
+      sessionState.setObsGate(msg.open, msg.reason || '');
+      log(`OBS gate: ${msg.open ? 'OPEN' : 'CLOSED'} (${sessionState.getObsGate().reason})`);
       return;
     }
 
@@ -1414,9 +1699,15 @@ try {
 }
 
 // ===========================================================================
+// Session store (persistance SQLite — voir session-store.js)
+// ===========================================================================
+sessionStore.init(USER_DATA_DIR, { onError: warn });
+
+// ===========================================================================
 // Startup
 // ===========================================================================
-configValidator.validateSystemConfig()
+configValidator
+  .validateSystemConfig()
   .then(configValidator.displayValidationResults)
   .catch((err) => warn('config-validator: ' + err.message));
 
@@ -1429,6 +1720,7 @@ process.on('SIGTERM', () => {
   stopAmbientMoodLoop();
   wss.close();
   connRateLimiter.stopCleanup();
+  sessionStore.close();
   if (plugins) plugins.shutdown().catch(() => {});
   process.exit(0);
 });
@@ -1436,20 +1728,40 @@ process.on('SIGTERM', () => {
 process.on('SIGINT', () => {
   log('SIGINT received');
   audioCapture.stopRecording();
+  // AJOUT (audit production, cette session) : même écart que celui corrigé
+  // au round 8 pour connRateLimiter juste en dessous, mais sur
+  // stopAmbientMoodLoop() — inconnu du round 8 (la boucle d'ambiance
+  // n'existait pas encore côté origin/main à ce moment-là). Même
+  // raisonnement : sans impact fonctionnel réel (timer unref()é), mais
+  // gardé symétrique avec SIGTERM par cohérence.
+  stopAmbientMoodLoop();
   wss.close();
+  // CORRECTIF (audit round 8) : le handler SIGTERM juste au-dessus arrête
+  // connRateLimiter (voir round 7), mais ce handler SIGINT — le chemin pris
+  // par un simple Ctrl+C en lancement manuel (`node server.js` / `npm run
+  // server-only`) — avait été oublié. Sans réel impact fonctionnel puisque
+  // le timer est unref()é par défaut, mais incohérent avec l'arrêt
+  // "propre" documenté au round 7 ; corrigé pour rester symétrique avec
+  // SIGTERM.
+  connRateLimiter.stopCleanup();
+  sessionStore.close();
   if (plugins) plugins.shutdown().catch(() => {});
   process.exit(0);
 });
 
 process.on('uncaughtException', (err) => {
-  warn('Uncaught exception (arrêt du serveur): ' + (err && err.stack || err.message));
-  try { audioCapture.cleanupTempFiles({ force: true }); } catch (_) {}
+  warn('Uncaught exception (arrêt du serveur): ' + ((err && err.stack) || err.message));
+  try {
+    audioCapture.cleanupTempFiles({ force: true });
+  } catch (_) {}
   process.exit(1);
 });
 
 process.on('unhandledRejection', (reason) => {
   const message = (reason && reason.stack) || (reason && reason.message) || String(reason);
   warn('Unhandled promise rejection (arrêt du serveur): ' + message);
-  try { audioCapture.cleanupTempFiles({ force: true }); } catch (_) {}
+  try {
+    audioCapture.cleanupTempFiles({ force: true });
+  } catch (_) {}
   process.exit(1);
 });

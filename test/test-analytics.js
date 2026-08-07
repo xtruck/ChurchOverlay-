@@ -4,7 +4,20 @@
  * ============================================================================
  */
 
-const { startSession, endSession, trackVerseDisplay, trackTranscription, trackVoiceCommand, trackLanguageUsage, trackDetectionConfidence, trackError, updatePeakUsers, getAnalyticsReport, getInsights, resetMetrics } = require('../analytics');
+const {
+  startSession,
+  endSession,
+  trackVerseDisplay,
+  trackTranscription,
+  trackVoiceCommand,
+  trackLanguageUsage,
+  trackDetectionConfidence,
+  trackError,
+  updatePeakUsers,
+  getAnalyticsReport,
+  getInsights,
+  resetMetrics,
+} = require('../analytics');
 
 console.log('=== Tests Analytics System ===\n');
 
@@ -14,7 +27,7 @@ startSession();
 console.log('✓ Session démarrée\n');
 
 // Test 2: Track verse display
-console.log('Test 2: Suivi d\'affichage de verset');
+console.log("Test 2: Suivi d'affichage de verset");
 trackVerseDisplay('Jean 3:16', 'jean');
 trackVerseDisplay('Matthieu 5:9', 'matthieu');
 trackVerseDisplay('Jean 3:16', 'jean'); // Duplicate
@@ -35,7 +48,7 @@ trackVoiceCommand('showVerse');
 console.log('✓ Commandes vocales suivies\n');
 
 // Test 5: Track language usage
-console.log('Test 5: Suivi d\'utilisation de langue');
+console.log("Test 5: Suivi d'utilisation de langue");
 trackLanguageUsage('fr');
 trackLanguageUsage('en');
 trackLanguageUsage('fr');
@@ -49,7 +62,7 @@ trackDetectionConfidence(0.7);
 console.log('✓ Confiance de détection suivie\n');
 
 // Test 7: Track errors
-console.log('Test 7: Suivi d\'erreurs');
+console.log("Test 7: Suivi d'erreurs");
 trackError('transcription');
 trackError('detection');
 trackError('network');
@@ -63,7 +76,7 @@ updatePeakUsers(7);
 console.log('✓ Utilisateurs max mis à jour\n');
 
 // Test 9: Get analytics report
-console.log('Test 9: Rapport d\'analytics');
+console.log("Test 9: Rapport d'analytics");
 const report = getAnalyticsReport();
 console.log('Rapport:', JSON.stringify(report, null, 2));
 console.log('✓ Rapport généré\n');

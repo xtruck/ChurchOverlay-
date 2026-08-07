@@ -23,7 +23,10 @@ const BUILTIN_FEATURES = path.join(__dirname, '..', 'config', 'features.json');
 const BUILTIN_THEMES = path.join(__dirname, '..', 'config', 'themes');
 
 function assert(cond, msg) {
-  if (!cond) { console.error('[TEST] ✗', msg); process.exit(1); }
+  if (!cond) {
+    console.error('[TEST] ✗', msg);
+    process.exit(1);
+  }
   console.log('[TEST] ✓', msg);
 }
 
@@ -36,44 +39,80 @@ try {
   themeLoader.setUserDataDir(userDataDir);
 
   const features = featuresStore.readFeatures();
-  assert(features.design && typeof features.design === 'object',
-    'readFeatures renvoie la config livrée quand aucune surcharge utilisateur n\'existe');
+  assert(
+    features.design && typeof features.design === 'object',
+    "readFeatures renvoie la config livrée quand aucune surcharge utilisateur n'existe"
+  );
 
-  featuresStore.writeFeatures({ ...features, design: { ...features.design, activeTheme: 'claire' } });
-  assert(fs.existsSync(path.join(userDataDir, 'features.json')),
-    'writeFeatures écrit dans userData, pas dans le dossier de l\'app');
-  assert(fs.readFileSync(BUILTIN_FEATURES, 'utf8') === builtinBefore,
-    'config/features.json livré avec l\'app reste intact (lecture seule une fois packagé)');
+  featuresStore.writeFeatures({
+    ...features,
+    design: { ...features.design, activeTheme: 'claire' },
+  });
+  assert(
+    fs.existsSync(path.join(userDataDir, 'features.json')),
+    "writeFeatures écrit dans userData, pas dans le dossier de l'app"
+  );
+  assert(
+    fs.readFileSync(BUILTIN_FEATURES, 'utf8') === builtinBefore,
+    "config/features.json livré avec l'app reste intact (lecture seule une fois packagé)"
+  );
 
   const merged = featuresStore.readFeatures();
-  assert(merged.design.activeTheme === 'claire', 'la surcharge utilisateur l\'emporte à la lecture');
-  assert(merged.broadcast && merged.broadcast.multiScene,
-    'les clés absentes de la surcharge retombent sur la config livrée (fusion profonde)');
+  assert(merged.design.activeTheme === 'claire', "la surcharge utilisateur l'emporte à la lecture");
+  assert(
+    merged.broadcast && merged.broadcast.multiScene,
+    'les clés absentes de la surcharge retombent sur la config livrée (fusion profonde)'
+  );
 
   // --- thèmes ------------------------------------------------------------
-  assert(themeLoader.getActiveTheme().id === 'claire', 'getActiveTheme suit la surcharge utilisateur');
+  assert(
+    themeLoader.getActiveTheme().id === 'claire',
+    'getActiveTheme suit la surcharge utilisateur'
+  );
 
   themeLoader.setActiveTheme('nuit');
-  assert(themeLoader.getActiveTheme().id === 'nuit', 'setActiveTheme fonctionne sans écrire dans l\'app');
-  assert(fs.readFileSync(BUILTIN_FEATURES, 'utf8') === builtinBefore,
-    'setActiveTheme n\'écrit pas dans config/features.json livré');
+  assert(
+    themeLoader.getActiveTheme().id === 'nuit',
+    "setActiveTheme fonctionne sans écrire dans l'app"
+  );
+  assert(
+    fs.readFileSync(BUILTIN_FEATURES, 'utf8') === builtinBefore,
+    "setActiveTheme n'écrit pas dans config/features.json livré"
+  );
 
   themeLoader.duplicateTheme('nuit', '_test_user_theme', 'Thème utilisateur');
-  assert(fs.existsSync(path.join(userDataDir, 'themes', '_test_user_theme.json')),
-    'un thème créé par l\'utilisateur est écrit dans userData/themes');
-  assert(!fs.existsSync(path.join(BUILTIN_THEMES, '_test_user_theme.json')),
-    'aucun thème utilisateur n\'est écrit dans le dossier de l\'app');
-  assert(themeLoader.listThemes().some((t) => t.id === '_test_user_theme'),
-    'listThemes fusionne thèmes livrés et thèmes utilisateur');
-  assert(themeLoader.listThemes().some((t) => t.id === 'nuit'), 'les thèmes livrés restent listés');
+  assert(
+    fs.existsSync(path.join(userDataDir, 'themes', '_test_user_theme.json')),
+    "un thème créé par l'utilisateur est écrit dans userData/themes"
+  );
+  assert(
+    !fs.existsSync(path.join(BUILTIN_THEMES, '_test_user_theme.json')),
+    "aucun thème utilisateur n'est écrit dans le dossier de l'app"
+  );
+  assert(
+    themeLoader.listThemes().some((t) => t.id === '_test_user_theme'),
+    'listThemes fusionne thèmes livrés et thèmes utilisateur'
+  );
+  assert(
+    themeLoader.listThemes().some((t) => t.id === 'nuit'),
+    'les thèmes livrés restent listés'
+  );
 
   themeLoader.setActiveTheme('_test_user_theme');
-  assert(themeLoader.getActiveTheme().id === '_test_user_theme', 'un thème utilisateur peut devenir le thème actif');
+  assert(
+    themeLoader.getActiveTheme().id === '_test_user_theme',
+    'un thème utilisateur peut devenir le thème actif'
+  );
 
   themeLoader.deleteTheme('_test_user_theme');
-  assert(!themeLoader.listThemes().some((t) => t.id === '_test_user_theme'), 'deleteTheme retire le thème utilisateur');
-  assert(themeLoader.getActiveTheme().id === 'nuit',
-    'le thème actif retombe sur le thème par défaut si le thème choisi disparaît');
+  assert(
+    !themeLoader.listThemes().some((t) => t.id === '_test_user_theme'),
+    'deleteTheme retire le thème utilisateur'
+  );
+  assert(
+    themeLoader.getActiveTheme().id === 'nuit',
+    'le thème actif retombe sur le thème par défaut si le thème choisi disparaît'
+  );
 } finally {
   themeLoader.setUserDataDir(null);
   fs.rmSync(userDataDir, { recursive: true, force: true });

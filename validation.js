@@ -26,15 +26,15 @@ const SCHEMAS = {
       langMode: (value) => typeof value === 'string' && ['fr', 'en', 'both'].includes(value),
       provider: (value) => typeof value === 'string' && value.length <= 100,
       lang: (value) => typeof value === 'string' && ['fr', 'en'].includes(value),
-      autoDetected: (value) => typeof value === 'boolean'
-    }
+      autoDetected: (value) => typeof value === 'boolean',
+    },
   },
   hideVerse: {
     required: ['action'],
     optional: [],
     validators: {
-      action: (value) => value === 'hideVerse'
-    }
+      action: (value) => value === 'hideVerse',
+    },
   },
   updateVerse: {
     required: ['action', 'reference', 'text'],
@@ -43,8 +43,8 @@ const SCHEMAS = {
       action: (value) => value === 'updateVerse',
       reference: (value) => typeof value === 'string' && value.length > 0 && value.length <= 200,
       text: (value) => typeof value === 'string' && value.length > 0 && value.length <= 5000,
-      durationMs: (value) => typeof value === 'number' && value > 0 && value <= 3600000
-    }
+      durationMs: (value) => typeof value === 'number' && value > 0 && value <= 3600000,
+    },
   },
   lookupReference: {
     required: ['action', 'reference'],
@@ -53,16 +53,18 @@ const SCHEMAS = {
       action: (value) => value === 'lookupReference',
       reference: (value) => typeof value === 'string' && value.length > 0 && value.length <= 200,
       durationMs: (value) => typeof value === 'number' && value > 0 && value <= 3600000,
-      language: (value) => typeof value === 'string' && ['fr', 'en', 'both'].includes(value.toLowerCase())
-    }
+      language: (value) =>
+        typeof value === 'string' && ['fr', 'en', 'both'].includes(value.toLowerCase()),
+    },
   },
   setLanguage: {
     required: ['action', 'language'],
     optional: [],
     validators: {
       action: (value) => value === 'setLanguage',
-      language: (value) => typeof value === 'string' && ['fr', 'en', 'both'].includes(value.toLowerCase())
-    }
+      language: (value) =>
+        typeof value === 'string' && ['fr', 'en', 'both'].includes(value.toLowerCase()),
+    },
   },
   setTranslation: {
     required: ['action', 'language', 'code'],
@@ -70,18 +72,18 @@ const SCHEMAS = {
     validators: {
       action: (value) => value === 'setTranslation',
       language: (value) => typeof value === 'string' && ['fr', 'en'].includes(value.toLowerCase()),
-      code: (value) => typeof value === 'string' && /^[a-z0-9_-]{2,20}$/i.test(value)
-    }
+      code: (value) => typeof value === 'string' && /^[a-z0-9_-]{2,20}$/i.test(value),
+    },
   },
   getState: {
     required: ['action'],
     optional: [],
-    validators: { action: (value) => value === 'getState' }
+    validators: { action: (value) => value === 'getState' },
   },
   getHistory: {
     required: ['action'],
     optional: [],
-    validators: { action: (value) => value === 'getHistory' }
+    validators: { action: (value) => value === 'getHistory' },
   },
   replayVerse: {
     required: ['action', 'id'],
@@ -90,15 +92,60 @@ const SCHEMAS = {
       action: (value) => value === 'replayVerse',
       id: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
       durationMs: (value) => typeof value === 'number' && value > 0 && value <= 3600000,
-    }
+    },
   },
   diagnostic: {
     required: ['action'],
     optional: [],
     validators: {
-      action: (value) => value === 'diagnostic'
-    }
-  }
+      action: (value) => value === 'diagnostic',
+    },
+  },
+  getSessionStats: {
+    required: ['action'],
+    optional: ['days'],
+    validators: {
+      action: (value) => value === 'getSessionStats',
+      days: (value) => typeof value === 'number' && value > 0 && value <= 30,
+    },
+  },
+  applyTheme: {
+    // SECURITY (backend audit): `css` values previously reached
+    // overlay.html's `root.style.setProperty(...)` completely unvalidated
+    // — any string-typed field of any length, from any operator client.
+    // Not script-executable (CSS custom property values aren't parsed as
+    // code), but unbounded/malformed values could deface or crash the
+    // live projector display mid-service. Each field is capped and
+    // restricted to a plausible CSS-value shape.
+    required: ['action', 'css'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'applyTheme',
+      css: (value) => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+        const allowedCssFields = new Set([
+          'background',
+          'color',
+          'accentColor',
+          'fontFamily',
+          'borderColor',
+          'glowColor',
+          'shadowColor',
+          'particleColor',
+          'animation',
+        ]);
+        for (const [k, v] of Object.entries(value)) {
+          if (!allowedCssFields.has(k)) return false;
+          if (typeof v !== 'string' || v.length === 0 || v.length > 300) return false;
+          // Reject characters with no legitimate use in a CSS value/keyword
+          // (blocks stylesheet/selector breakout attempts and control chars).
+          // eslint-disable-next-line no-control-regex -- intentional: blocking raw control bytes is the point.
+          if (/[{};\\]|[\x00-\x1f]/.test(v)) return false;
+        }
+        return true;
+      },
+    },
+  },
 };
 
 /**
@@ -161,7 +208,7 @@ function validateMessage(message) {
  */
 function sanitizeText(text) {
   if (typeof text !== 'string') return text;
-  
+
   // Échapper les caractères HTML dangereux
   return text
     .replace(/&/g, '&amp;')
@@ -194,6 +241,5 @@ module.exports = {
   validateMessage,
   sanitizeText,
   validateAndSanitize,
-  SCHEMAS
+  SCHEMAS,
 };
-

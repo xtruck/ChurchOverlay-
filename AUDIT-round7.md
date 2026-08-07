@@ -22,12 +22,13 @@ en ~1,5 seconde, le budget de crashes (`WORKER_MAX_CRASHES = 3` en 60s) est
 épuisé quasi instantanément, le pipeline s'arrête pour de bon avec un message
 générique (« Pipeline arrêté après 4 crashes rapprochés ») — et le tableau de
 bord reste bloqué en reconnexion WebSocket perpétuelle sans que rien
-n'indique que le vrai problème est *un autre processus qui occupe déjà le
-port*.
+n'indique que le vrai problème est _un autre processus qui occupe déjà le
+port_.
 
 **C'est très probablement la cause du problème persistant signalé.**
 
 Correctif (`main.js`) :
+
 - `lastAlertCode` / `lastAlertMessage` mémorisent la dernière alerte reçue du
   worker avant sa sortie.
 - Quand la sortie suit une alerte `server-listen-error`, plus aucune
@@ -78,6 +79,7 @@ l'app) coûtait 5 secondes inutiles et ne se terminait jamais par un arrêt
 propre**, uniquement par un kill forcé.
 
 Correctif :
+
 - `connRateLimiter.stopCleanup()` est appelé dans le handler `shutdown` et
   dans le handler `SIGTERM` de `server.js`, suivi d'un `process.exit(0)`
   explicite (borné à 2s pour laisser `plugins.shutdown()` se terminer).

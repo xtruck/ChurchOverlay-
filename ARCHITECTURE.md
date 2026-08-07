@@ -42,6 +42,7 @@ Micro → audio-capture.js → whisper-wrapper.js → server.js → overlay.html
 **Rôle**: Capture l'audio du micro et segmente intelligemment pour transcription.
 
 **Fonctionnalités**:
+
 - Capture audio via FFmpeg (DirectShow sur Windows)
 - Segmentation automatique (3 secondes par défaut)
 - Chevauchement entre segments (500ms) pour éviter la perte de contexte
@@ -49,6 +50,7 @@ Micro → audio-capture.js → whisper-wrapper.js → server.js → overlay.html
 - Gestion du buffer circulaire
 
 **Configuration**:
+
 ```javascript
 {
   sampleRate: 16000,      // Whisper recommande 16000 Hz
@@ -62,12 +64,13 @@ Micro → audio-capture.js → whisper-wrapper.js → server.js → overlay.html
 ```
 
 **API**:
+
 ```javascript
-audioCapture.startRecording()
-audioCapture.stopRecording()
-audioCapture.on({ onAudioSegment, onError })
-audioCapture.isRecording()
-audioCapture.cleanupTempFiles()
+audioCapture.startRecording();
+audioCapture.stopRecording();
+audioCapture.on({ onAudioSegment, onError });
+audioCapture.isRecording();
+audioCapture.cleanupTempFiles();
 ```
 
 **Dépendance**: FFmpeg (doit être installé et dans PATH)
@@ -79,6 +82,7 @@ audioCapture.cleanupTempFiles()
 **Rôle**: Gère le processus whisper-server.exe et fournit une API structurée.
 
 **Fonctionnalités**:
+
 - Gestion automatique du processus whisper-server.exe
 - Configuration VAD (Voice Activity Detection) intégrée
 - API HTTP vers whisper-server (port 8080)
@@ -86,6 +90,7 @@ audioCapture.cleanupTempFiles()
 - Callbacks pour événements (ready, transcript, error)
 
 **Configuration**:
+
 ```javascript
 {
   whisperServerPath: './whisper/whisper-server.exe',
@@ -102,17 +107,19 @@ audioCapture.cleanupTempFiles()
 ```
 
 **API**:
+
 ```javascript
-whisper.startServer(options)
-whisper.stopServer()
-whisper.transcribeFile(audioFilePath)
-whisper.transcribeBuffer(audioBuffer)
-whisper.on({ onTranscript, onError, onReady })
-whisper.isRunning()
-whisper.getConfig()
+whisper.startServer(options);
+whisper.stopServer();
+whisper.transcribeFile(audioFilePath);
+whisper.transcribeBuffer(audioBuffer);
+whisper.on({ onTranscript, onError, onReady });
+whisper.isRunning();
+whisper.getConfig();
 ```
 
-**Dépendances**: 
+**Dépendances**:
+
 - whisper-server.exe (inclus dans dossier whisper/)
 - ggml-small.bin (modèle Whisper, 487 MB)
 - form-data (npm)
@@ -124,6 +131,7 @@ whisper.getConfig()
 **Rôle**: Coordination centrale et relai vers overlay.html.
 
 **Fonctionnalités**:
+
 - Serveur WebSocket (port 8765) pour communication avec overlay.html
 - Démarrage automatique de whisper-server au lancement
 - Relai des transcriptions vers clients connectés
@@ -131,11 +139,13 @@ whisper.getConfig()
 - Arrêt propre de tous les processus
 
 **Flux de données**:
+
 ```
 audio-capture → whisper-wrapper → server.js → overlay.html
 ```
 
 **API WebSocket**:
+
 ```javascript
 // Client → Server
 { action: "showVerse", reference: "...", text: "...", durationMs: 5000 }
@@ -153,6 +163,7 @@ audio-capture → whisper-wrapper → server.js → overlay.html
 **Rôle**: Affichage des versets dans OBS Studio via Browser Source.
 
 **Fonctionnalités**:
+
 - Animations sophistiquées (croix, halo, particules)
 - API JavaScript complète (window.ChurchOverlay)
 - Gestion du temps d'affichage avec barre de progression
@@ -160,14 +171,15 @@ audio-capture → whisper-wrapper → server.js → overlay.html
 - Mode démo pour tests (?demo=1)
 
 **API**):
+
 ```javascript
-ChurchOverlay.showVerse({reference, text, durationMs})
-ChurchOverlay.updateVerse({reference, text})
-ChurchOverlay.hideVerse()
-ChurchOverlay.pauseTimer()
-ChurchOverlay.resumeTimer()
-ChurchOverlay.extendTime(extraMs)
-ChurchOverlay.getStatus()
+ChurchOverlay.showVerse({ reference, text, durationMs });
+ChurchOverlay.updateVerse({ reference, text });
+ChurchOverlay.hideVerse();
+ChurchOverlay.pauseTimer();
+ChurchOverlay.resumeTimer();
+ChurchOverlay.extendTime(extraMs);
+ChurchOverlay.getStatus();
 ```
 
 ---
@@ -175,33 +187,41 @@ ChurchOverlay.getStatus()
 ## Pipeline Complet
 
 ### Étape 1: Capture Audio
+
 ```
 Micro → FFmpeg → audio-capture.js
 ```
+
 - FFmpeg capture le micro en continu
 - audio-capture.js segmente en fichiers WAV de 3 secondes
 - Chevauchement de 500ms entre segments
 
 ### Étape 2: Transcription
+
 ```
 Segment WAV → whisper-wrapper.js → whisper-server.exe
 ```
+
 - whisper-wrapper envoie chaque segment à whisper-server
 - Whisper transcrit le texte en français
 - VAD intégré filtre les silences
 
 ### Étape 3: Relai vers Overlay
+
 ```
 Transcription → server.js → overlay.html
 ```
+
 - server.js reçoit la transcription
 - Analyse pour détecter les versets bibliques (TODO: detector.js)
 - Envoi vers overlay.html via WebSocket
 
 ### Étape 4: Affichage
+
 ```
 overlay.html → OBS Studio → Église
 ```
+
 - overlay.html affiche le verset avec animations
 - Barre de temps gère l'affichage automatique
 - Opérateur peut contrôler (pause, extension, annulation)
@@ -211,19 +231,25 @@ overlay.html → OBS Studio → Église
 ## Scripts de Test
 
 ### `test-whisper.js`
+
 Teste le module whisper-wrapper indépendamment:
+
 ```bash
 node test-whisper.js
 ```
 
 ### `test-audio-capture.js`
+
 Teste la capture audio (requiert FFmpeg et micro):
+
 ```bash
 node test-audio-capture.js
 ```
 
 ### `test-envoi.js`
+
 Teste le circuit WebSocket complet:
+
 ```bash
 node test-envoi.js           # Envoi verset par défaut
 node test-envoi.js hide      # Masquer overlay
@@ -234,11 +260,13 @@ node test-envoi.js hide      # Masquer overlay
 ## Démarrage du Système
 
 ### 1. Installation des dépendances
+
 ```bash
 npm install
 ```
 
 ### 2. Installation de FFmpeg (requis pour audio-capture)
+
 ```bash
 # Télécharger FFmpeg depuis https://ffmpeg.org/download.html
 # Ajouter à PATH Windows
@@ -246,15 +274,18 @@ npm install
 ```
 
 ### 3. Démarrage du serveur
+
 ```bash
 node server.js
 ```
 
 Le serveur démarre automatiquement:
+
 - Serveur WebSocket sur ws://localhost:8765
 - Serveur Whisper sur http://127.0.0.1:8080
 
 ### 4. Configuration OBS
+
 1. Ajouter Browser Source dans OBS
 2. URL: `file:///C:/ChurchOverlay/overlay.html`
 3. Largeur: 1920, Hauteur: 1080
@@ -265,6 +296,7 @@ Le serveur démarre automatiquement:
 ## Prochaines Étapes
 
 ### Étape 5: Pipeline Audio Complet
+
 - [ ] Intégrer audio-capture dans server.js
 - [ ] Connecter audio-capture → whisper-wrapper automatiquement
 - [ ] Implémenter detector.js (détection de versets bibliques)
@@ -272,12 +304,14 @@ Le serveur démarre automatiquement:
 - [ ] Implémenter bible-lookup.js (recherche versets dans Bible)
 
 ### Étape 6: Interface Opérateur
+
 - [ ] Panneau de contrôle pour l'opérateur
 - [ ] Visualisation en temps réel des transcriptions
 - [ ] Validation manuelle des versets détectés
 - [ ] Contrôles avancés (volume, sensibilité micro)
 
 ### Étape 7: Optimisation
+
 - [ ] Cache des transcriptions pour éviter doublons
 - [ ] Ajustement dynamique des paramètres VAD
 - [ ] Mode "apprentissage" pour améliorer la détection
@@ -310,18 +344,21 @@ ChurchOverlay/
 ## Performances
 
 ### Whisper
+
 - **Modèle**: ggml-small (487 MB)
 - **Latence**: ~1-2 secondes par segment de 3 secondes
 - **CPU**: 4 threads recommandés
 - **Mémoire**: ~600 MB (modèle + buffers)
 
 ### Audio Capture
+
 - **Taux d'échantillonnage**: 16000 Hz
 - **Segmentation**: 3 secondes
 - **Chevauchement**: 500 ms
 - **Format**: PCM 16-bit mono
 
 ### Latence Totale
+
 - **Micro → Transcription**: ~3-4 secondes
 - **Transcription → Overlay**: <100 ms (WebSocket)
 - **Total**: ~4 secondes (acceptable pour usage culte)
@@ -331,16 +368,19 @@ ChurchOverlay/
 ## Dépannage
 
 ### Whisper ne démarre pas
+
 - Vérifier que ggml-small.bin existe dans whisper/models/
 - Vérifier que whisper-server.exe existe dans whisper/
 - Logs: `[whisper-wrapper]` et `[whisper-server]`
 
 ### Capture audio ne fonctionne pas
+
 - Vérifier que FFmpeg est installé: `ffmpeg -version`
 - Vérifier que le micro est connecté
 - Logs: `[audio-capture]` et `[audio-capture FFmpeg]`
 
 ### Overlay ne reçoit pas les messages
+
 - Vérifier que server.js tourne: `node server.js`
 - Vérifier que overlay.html est ouvert dans OBS
 - Vérifier la console du navigateur OBS (F12)
@@ -351,18 +391,21 @@ ChurchOverlay/
 ## Notes Techniques
 
 ### Pourquoi whisper-server.exe au lieu de whisper-stream.exe?
+
 - **API structurée**: HTTP REST plus facile à intégrer
 - **VAD intégré**: Voice Activity Detection natif
 - **Contrôle total**: Paramètres ajustables dynamiquement
 - **Séparation**: Architecture plus modulaire et testable
 
 ### Pourquoi FFmpeg pour capture audio?
+
 - **Cross-platform**: Fonctionne sur Windows, Linux, macOS
 - **Formats supportés**: WAV, MP3, FLAC, OGG
 - **DirectShow**: Accès direct aux périphériques Windows
 - **Mature**: Stable et largement utilisé
 
 ### Pourquoi segmentation 3 secondes?
+
 - **Équilibre**: Assez long pour contexte, assez court pour latence
 - **Whisper**: Optimal pour le modèle small
 - **VAD**: Permet détection précise des segments de parole

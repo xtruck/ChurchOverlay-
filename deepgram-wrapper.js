@@ -23,7 +23,7 @@ const DEEPGRAM_ENDPOINT = 'https://api.deepgram.com/v1/listen';
 const DEEPGRAM_PROJECTS_ENDPOINT = 'https://api.deepgram.com/v1/projects';
 const DEEPGRAM_MODEL = 'nova-2';
 const DEEPGRAM_LANGUAGE = 'fr';
-const DEFAULT_WORD_CONFIDENCE_THRESHOLD = 0.40;
+const DEFAULT_WORD_CONFIDENCE_THRESHOLD = 0.4;
 const CHECK_KEY_TIMEOUT_MS = 5000;
 
 // Construit une fois au chargement du module (liste statique)
@@ -64,7 +64,10 @@ async function checkKey(timeoutMs = CHECK_KEY_TIMEOUT_MS) {
     return { configured: true, ok: true, error: null };
   } catch (err) {
     clearTimeout(timeoutId);
-    const message = err && err.name === 'AbortError' ? `Timeout (${timeoutMs}ms)` : (err && err.message) || 'Erreur inconnue';
+    const message =
+      err && err.name === 'AbortError'
+        ? `Timeout (${timeoutMs}ms)`
+        : (err && err.message) || 'Erreur inconnue';
     return { configured: true, ok: false, error: message };
   }
 }
@@ -82,18 +85,32 @@ async function checkKey(timeoutMs = CHECK_KEY_TIMEOUT_MS) {
 async function transcribeFile(audioFilePath, signal) {
   const apiKey = process.env.DEEPGRAM_API_KEY;
   if (!apiKey) {
-    throw new Error('DEEPGRAM_API_KEY non défini dans l\'environnement.');
+    throw new Error("DEEPGRAM_API_KEY non défini dans l'environnement.");
   }
   if (!fs.existsSync(audioFilePath)) {
     throw new Error(`Fichier audio non trouvé: ${audioFilePath}`);
   }
 
   const audioBuffer = fs.readFileSync(audioFilePath);
-  
+
   // Boosting vocabulaire biblique
   const keywordsQuery = KEYWORDS_PARAM.map((kw) => `keywords=${encodeURIComponent(kw)}`).join('&');
 
   // Paramètres optimisés pour la réduction de bruit de fond et la précision en milieu bruyant
+  //
+  // CORRECTIF (audit — Deepgram échouait TOUJOURS, jamais un vrai filet de
+  // sécurité) : `endpointing` est un paramètre de l'API streaming temps réel
+  // de Deepgram (détecte les silences pour couper une utterance en direct).
+  // Cet appel envoie un fichier WAV déjà complet à l'endpoint "batch"
+  // (POST /v1/listen avec le corps entier) — endpointing n'a aucun sens ici
+  // et Deepgram rejette la requête entière avec 400 "Endpointing not
+  // supported for batch requests", à chaque appel, sans exception. Comme
+  // Groq et Deepgram tournent en parallèle (voir transcribeWithFallback)
+  // et que Deepgram est censé être le filet de sécurité si Groq est lent ou
+  // échoue, ce bug supprimait ce filet en pratique : chaque fois que Groq
+  // seul ne répondait pas dans les 5s, TOUT le segment était perdu, sans
+  // qu'aucun message clair n'indique pourquoi (avant le correctif du toast
+  // générique, voir dashboard.js).
   const queryParams = [
     `model=${DEEPGRAM_MODEL}`,
     `language=${DEEPGRAM_LANGUAGE}`,
@@ -101,9 +118,10 @@ async function transcribeFile(audioFilePath, signal) {
     'denoise=true',
     'punctuate=true',
     'filler_words=false',
-    'endpointing=300',
     keywordsQuery,
-  ].filter(Boolean).join('&');
+  ]
+    .filter(Boolean)
+    .join('&');
 
   const url = `${DEEPGRAM_ENDPOINT}?${queryParams}`;
 
@@ -123,19 +141,21 @@ async function transcribeFile(audioFilePath, signal) {
   }
 
   const data = await response.json();
-  const alternative = data
-    && data.results
-    && data.results.channels
-    && data.results.channels[0]
-    && data.results.channels[0].alternatives
-    && data.results.channels[0].alternatives[0];
+  const alternative =
+    data &&
+    data.results &&
+    data.results.channels &&
+    data.results.channels[0] &&
+    data.results.channels[0].alternatives &&
+    data.results.channels[0].alternatives[0];
 
   if (!alternative) {
     return { text: '', confidence: 0 };
   }
 
   const rawTranscript = alternative.transcript || '';
-  const wordConfidenceThreshold = Number(process.env.DEEPGRAM_WORD_CONFIDENCE_THRESHOLD) || DEFAULT_WORD_CONFIDENCE_THRESHOLD;
+  const wordConfidenceThreshold =
+    Number(process.env.DEEPGRAM_WORD_CONFIDENCE_THRESHOLD) || DEFAULT_WORD_CONFIDENCE_THRESHOLD;
 
   let text = rawTranscript;
   let overallConfidence = typeof alternative.confidence === 'number' ? alternative.confidence : 0;
@@ -150,8 +170,14 @@ async function transcribeFile(audioFilePath, signal) {
     });
 
     if (validWords.length > 0) {
-      text = validWords.map((w) => w.punctuated_word || w.word || '').join(' ').trim();
-      const totalConf = validWords.reduce((sum, w) => sum + (typeof w.confidence === 'number' ? w.confidence : 1), 0);
+      text = validWords
+        .map((w) => w.punctuated_word || w.word || '')
+        .join(' ')
+        .trim();
+      const totalConf = validWords.reduce(
+        (sum, w) => sum + (typeof w.confidence === 'number' ? w.confidence : 1),
+        0
+      );
       overallConfidence = totalConf / validWords.length;
     } else {
       // Si aucun mot ne dépasse le seuil, il s'agit de bruit de fond parasite

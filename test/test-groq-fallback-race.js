@@ -34,7 +34,9 @@ function hostMatches(url, domain) {
 function withMockedFetch(responderFn, fn) {
   const originalFetch = global.fetch;
   global.fetch = responderFn;
-  return fn().finally(() => { global.fetch = originalFetch; });
+  return fn().finally(() => {
+    global.fetch = originalFetch;
+  });
 }
 
 async function run() {
@@ -42,96 +44,114 @@ async function run() {
   process.env.GROQ_API_KEY = 'test-groq-key';
   delete process.env.DEEPGRAM_API_KEY;
 
-  await withMockedFetch(async (url) => {
-    if (hostMatches(url, 'groq.com')) {
-      return {
-        ok: true,
-        json: async () => ({ text: 'Jean 3 16' }),
-      };
+  await withMockedFetch(
+    async (url) => {
+      if (hostMatches(url, 'groq.com')) {
+        return {
+          ok: true,
+          json: async () => ({ text: 'Jean 3 16' }),
+        };
+      }
+      throw new Error('fetch inattendu: ' + url);
+    },
+    async () => {
+      delete require.cache[require.resolve('../groq-wrapper')];
+      delete require.cache[require.resolve('../deepgram-wrapper')];
+      const groq = require('../groq-wrapper');
+      const result = await groq.transcribeWithFallback(tmpFile, 500);
+      assert.strictEqual(result.source, 'groq');
+      assert.strictEqual(result.text, 'Jean 3 16');
     }
-    throw new Error('fetch inattendu: ' + url);
-  }, async () => {
-    delete require.cache[require.resolve('../groq-wrapper')];
-    delete require.cache[require.resolve('../deepgram-wrapper')];
-    const groq = require('../groq-wrapper');
-    const result = await groq.transcribeWithFallback(tmpFile, 500);
-    assert.strictEqual(result.source, 'groq');
-    assert.strictEqual(result.text, 'Jean 3 16');
-  });
+  );
   console.log('[TEST] ✓ Groq prioritaire quand il répond à temps');
 
   console.log('[TEST] Test 2: Groq échoue, Deepgram configuré et répond -> source deepgram...');
   process.env.GROQ_API_KEY = 'test-groq-key';
   process.env.DEEPGRAM_API_KEY = 'test-deepgram-key';
 
-  await withMockedFetch(async (url) => {
-    if (hostMatches(url, 'groq.com')) {
-      return { ok: false, status: 500, text: async () => 'erreur serveur' };
+  await withMockedFetch(
+    async (url) => {
+      if (hostMatches(url, 'groq.com')) {
+        return { ok: false, status: 500, text: async () => 'erreur serveur' };
+      }
+      if (hostMatches(url, 'deepgram.com')) {
+        return {
+          ok: true,
+          json: async () => ({
+            results: { channels: [{ alternatives: [{ transcript: 'Psaume 23' }] }] },
+          }),
+        };
+      }
+      throw new Error('fetch inattendu: ' + url);
+    },
+    async () => {
+      delete require.cache[require.resolve('../groq-wrapper')];
+      delete require.cache[require.resolve('../deepgram-wrapper')];
+      const groq = require('../groq-wrapper');
+      const result = await groq.transcribeWithFallback(tmpFile, 500);
+      assert.strictEqual(result.source, 'deepgram');
+      assert.strictEqual(result.text, 'Psaume 23');
     }
-    if (hostMatches(url, 'deepgram.com')) {
-      return {
-        ok: true,
-        json: async () => ({
-          results: { channels: [{ alternatives: [{ transcript: 'Psaume 23' }] }] },
-        }),
-      };
-    }
-    throw new Error('fetch inattendu: ' + url);
-  }, async () => {
-    delete require.cache[require.resolve('../groq-wrapper')];
-    delete require.cache[require.resolve('../deepgram-wrapper')];
-    const groq = require('../groq-wrapper');
-    const result = await groq.transcribeWithFallback(tmpFile, 500);
-    assert.strictEqual(result.source, 'deepgram');
-    assert.strictEqual(result.text, 'Psaume 23');
-  });
+  );
   console.log('[TEST] ✓ Bascule sur Deepgram quand Groq échoue');
 
-  console.log('[TEST] Test 3: Groq et Deepgram échouent -> rejette (plus de filet local hors ligne)...');
+  console.log(
+    '[TEST] Test 3: Groq et Deepgram échouent -> rejette (plus de filet local hors ligne)...'
+  );
   process.env.GROQ_API_KEY = 'test-groq-key';
   process.env.DEEPGRAM_API_KEY = 'test-deepgram-key';
 
-  await withMockedFetch(async (url) => {
-    throw new Error('Panne réseau simulée (hors ligne)');
-  }, async () => {
-    delete require.cache[require.resolve('../groq-wrapper')];
-    delete require.cache[require.resolve('../deepgram-wrapper')];
-    const groq = require('../groq-wrapper');
-    let threw = false;
-    try {
-      await groq.transcribeWithFallback(tmpFile, 500);
-    } catch (err) {
-      threw = true;
-      assert.ok(err instanceof Error);
+  await withMockedFetch(
+    async (url) => {
+      throw new Error('Panne réseau simulée (hors ligne)');
+    },
+    async () => {
+      delete require.cache[require.resolve('../groq-wrapper')];
+      delete require.cache[require.resolve('../deepgram-wrapper')];
+      const groq = require('../groq-wrapper');
+      let threw = false;
+      try {
+        await groq.transcribeWithFallback(tmpFile, 500);
+      } catch (err) {
+        threw = true;
+        assert.ok(err instanceof Error);
+      }
+      assert.strictEqual(threw, true, 'transcribeWithFallback aurait dû rejeter');
     }
-    assert.strictEqual(threw, true, 'transcribeWithFallback aurait dû rejeter');
-  });
-  console.log('[TEST] ✓ Rejette proprement quand Groq et Deepgram sont tous deux indisponibles (offline)');
+  );
+  console.log(
+    '[TEST] ✓ Rejette proprement quand Groq et Deepgram sont tous deux indisponibles (offline)'
+  );
 
   console.log('[TEST] Test 4: Deepgram non configuré, Groq échoue -> rejette directement...');
   process.env.GROQ_API_KEY = 'test-groq-key';
   delete process.env.DEEPGRAM_API_KEY;
 
-  await withMockedFetch(async (url) => {
-    if (hostMatches(url, 'groq.com')) {
-      return { ok: false, status: 429, text: async () => 'rate limited' };
+  await withMockedFetch(
+    async (url) => {
+      if (hostMatches(url, 'groq.com')) {
+        return { ok: false, status: 429, text: async () => 'rate limited' };
+      }
+      throw new Error('fetch inattendu (Deepgram ne doit pas être appelé): ' + url);
+    },
+    async () => {
+      delete require.cache[require.resolve('../groq-wrapper')];
+      delete require.cache[require.resolve('../deepgram-wrapper')];
+      const groq = require('../groq-wrapper');
+      let threw = false;
+      try {
+        await groq.transcribeWithFallback(tmpFile, 500);
+      } catch (err) {
+        threw = true;
+      }
+      assert.strictEqual(threw, true, 'transcribeWithFallback aurait dû rejeter');
     }
-    throw new Error('fetch inattendu (Deepgram ne doit pas être appelé): ' + url);
-  }, async () => {
-    delete require.cache[require.resolve('../groq-wrapper')];
-    delete require.cache[require.resolve('../deepgram-wrapper')];
-    const groq = require('../groq-wrapper');
-    let threw = false;
-    try {
-      await groq.transcribeWithFallback(tmpFile, 500);
-    } catch (err) {
-      threw = true;
-    }
-    assert.strictEqual(threw, true, 'transcribeWithFallback aurait dû rejeter');
-  });
+  );
   console.log('[TEST] ✓ Sans clé Deepgram, rejette directement si Groq échoue');
 
-  console.log('[TEST] Test 5: deepgram-wrapper.isConfigured() reflète la variable d\'environnement...');
+  console.log(
+    "[TEST] Test 5: deepgram-wrapper.isConfigured() reflète la variable d'environnement..."
+  );
   delete require.cache[require.resolve('../deepgram-wrapper')];
   delete process.env.DEEPGRAM_API_KEY;
   let deepgram = require('../deepgram-wrapper');

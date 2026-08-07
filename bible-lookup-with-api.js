@@ -72,7 +72,9 @@ function setCacheDir(dir) {
   try {
     fs.mkdirSync(dir, { recursive: true });
   } catch (err) {
-    console.warn(`[bible-lookup] Impossible de créer le dossier de cache (${dir}) : ${err.message}`);
+    console.warn(
+      `[bible-lookup] Impossible de créer le dossier de cache (${dir}) : ${err.message}`
+    );
     return;
   }
   diskCachePath = path.join(dir, 'verse-cache.json');
@@ -119,23 +121,71 @@ function scheduleDiskCacheSave() {
 // Ce sont EXACTEMENT les mêmes codes que ceux renvoyés par
 // GET https://bible.helloao.org/api/fra_lsg/books.json
 const HELLOAO_BOOK_CODES = {
-  genese: 'GEN', exode: 'EXO', levitique: 'LEV', nombres: 'NUM',
-  deuteronome: 'DEU', josue: 'JOS', juges: 'JDG', ruth: 'RUT',
-  '1samuel': '1SA', '2samuel': '2SA', '1rois': '1KI', '2rois': '2KI',
-  '1chroniques': '1CH', '2chroniques': '2CH', esdras: 'EZR', nehemie: 'NEH',
-  esther: 'EST', job: 'JOB', psaumes: 'PSA', proverbes: 'PRO',
-  ecclesiaste: 'ECC', cantique: 'SNG', esaie: 'ISA', jeremie: 'JER',
-  lamentations: 'LAM', ezechiel: 'EZK', daniel: 'DAN', osee: 'HOS',
-  joel: 'JOL', amos: 'AMO', abdias: 'OBA', jonas: 'JON', michee: 'MIC',
-  nahum: 'NAM', habacuc: 'HAB', sophonie: 'ZEP', aggee: 'HAG',
-  zacharie: 'ZEC', malachie: 'MAL', matthieu: 'MAT', marc: 'MRK',
-  luc: 'LUK', jean: 'JHN', actes: 'ACT', romains: 'ROM',
-  '1corinthiens': '1CO', '2corinthiens': '2CO', galates: 'GAL',
-  ephesiens: 'EPH', philippiens: 'PHP', colossiens: 'COL',
-  '1thessaloniciens': '1TH', '2thessaloniciens': '2TH',
-  '1timothee': '1TI', '2timothee': '2TI', tite: 'TIT', philemon: 'PHM',
-  hebreux: 'HEB', jacques: 'JAS', '1pierre': '1PE', '2pierre': '2PE',
-  '1jean': '1JN', '2jean': '2JN', '3jean': '3JN', jude: 'JUD',
+  genese: 'GEN',
+  exode: 'EXO',
+  levitique: 'LEV',
+  nombres: 'NUM',
+  deuteronome: 'DEU',
+  josue: 'JOS',
+  juges: 'JDG',
+  ruth: 'RUT',
+  '1samuel': '1SA',
+  '2samuel': '2SA',
+  '1rois': '1KI',
+  '2rois': '2KI',
+  '1chroniques': '1CH',
+  '2chroniques': '2CH',
+  esdras: 'EZR',
+  nehemie: 'NEH',
+  esther: 'EST',
+  job: 'JOB',
+  psaumes: 'PSA',
+  proverbes: 'PRO',
+  ecclesiaste: 'ECC',
+  cantique: 'SNG',
+  esaie: 'ISA',
+  jeremie: 'JER',
+  lamentations: 'LAM',
+  ezechiel: 'EZK',
+  daniel: 'DAN',
+  osee: 'HOS',
+  joel: 'JOL',
+  amos: 'AMO',
+  abdias: 'OBA',
+  jonas: 'JON',
+  michee: 'MIC',
+  nahum: 'NAM',
+  habacuc: 'HAB',
+  sophonie: 'ZEP',
+  aggee: 'HAG',
+  zacharie: 'ZEC',
+  malachie: 'MAL',
+  matthieu: 'MAT',
+  marc: 'MRK',
+  luc: 'LUK',
+  jean: 'JHN',
+  actes: 'ACT',
+  romains: 'ROM',
+  '1corinthiens': '1CO',
+  '2corinthiens': '2CO',
+  galates: 'GAL',
+  ephesiens: 'EPH',
+  philippiens: 'PHP',
+  colossiens: 'COL',
+  '1thessaloniciens': '1TH',
+  '2thessaloniciens': '2TH',
+  '1timothee': '1TI',
+  '2timothee': '2TI',
+  tite: 'TIT',
+  philemon: 'PHM',
+  hebreux: 'HEB',
+  jacques: 'JAS',
+  '1pierre': '1PE',
+  '2pierre': '2PE',
+  '1jean': '1JN',
+  '2jean': '2JN',
+  '3jean': '3JN',
+  jude: 'JUD',
   apocalypse: 'REV',
 };
 
@@ -144,63 +194,211 @@ const HELLOAO_BOOK_CODES = {
 // https://api.getbible.net/v2/ls1910/books.json. Mêmes clés que
 // HELLOAO_BOOK_CODES ci-dessus pour rester interchangeable.
 const GETBIBLE_BOOK_NUMBERS = {
-  genese: 1, exode: 2, levitique: 3, nombres: 4, deuteronome: 5, josue: 6,
-  juges: 7, ruth: 8, '1samuel': 9, '2samuel': 10, '1rois': 11, '2rois': 12,
-  '1chroniques': 13, '2chroniques': 14, esdras: 15, nehemie: 16, esther: 17,
-  job: 18, psaumes: 19, proverbes: 20, ecclesiaste: 21, cantique: 22,
-  esaie: 23, jeremie: 24, lamentations: 25, ezechiel: 26, daniel: 27,
-  osee: 28, joel: 29, amos: 30, abdias: 31, jonas: 32, michee: 33,
-  nahum: 34, habacuc: 35, sophonie: 36, aggee: 37, zacharie: 38,
-  malachie: 39, matthieu: 40, marc: 41, luc: 42, jean: 43, actes: 44,
-  romains: 45, '1corinthiens': 46, '2corinthiens': 47, galates: 48,
-  ephesiens: 49, philippiens: 50, colossiens: 51, '1thessaloniciens': 52,
-  '2thessaloniciens': 53, '1timothee': 54, '2timothee': 55, tite: 56,
-  philemon: 57, hebreux: 58, jacques: 59, '1pierre': 60, '2pierre': 61,
-  '1jean': 62, '2jean': 63, '3jean': 64, jude: 65, apocalypse: 66,
+  genese: 1,
+  exode: 2,
+  levitique: 3,
+  nombres: 4,
+  deuteronome: 5,
+  josue: 6,
+  juges: 7,
+  ruth: 8,
+  '1samuel': 9,
+  '2samuel': 10,
+  '1rois': 11,
+  '2rois': 12,
+  '1chroniques': 13,
+  '2chroniques': 14,
+  esdras: 15,
+  nehemie: 16,
+  esther: 17,
+  job: 18,
+  psaumes: 19,
+  proverbes: 20,
+  ecclesiaste: 21,
+  cantique: 22,
+  esaie: 23,
+  jeremie: 24,
+  lamentations: 25,
+  ezechiel: 26,
+  daniel: 27,
+  osee: 28,
+  joel: 29,
+  amos: 30,
+  abdias: 31,
+  jonas: 32,
+  michee: 33,
+  nahum: 34,
+  habacuc: 35,
+  sophonie: 36,
+  aggee: 37,
+  zacharie: 38,
+  malachie: 39,
+  matthieu: 40,
+  marc: 41,
+  luc: 42,
+  jean: 43,
+  actes: 44,
+  romains: 45,
+  '1corinthiens': 46,
+  '2corinthiens': 47,
+  galates: 48,
+  ephesiens: 49,
+  philippiens: 50,
+  colossiens: 51,
+  '1thessaloniciens': 52,
+  '2thessaloniciens': 53,
+  '1timothee': 54,
+  '2timothee': 55,
+  tite: 56,
+  philemon: 57,
+  hebreux: 58,
+  jacques: 59,
+  '1pierre': 60,
+  '2pierre': 61,
+  '1jean': 62,
+  '2jean': 63,
+  '3jean': 64,
+  jude: 65,
+  apocalypse: 66,
 };
 
 const DISPLAY_NAMES = {
-  genese: 'Genèse', exode: 'Exode', levitique: 'Lévitique', nombres: 'Nombres',
-  deuteronome: 'Deutéronome', josue: 'Josué', juges: 'Juges', ruth: 'Ruth',
-  '1samuel': '1 Samuel', '2samuel': '2 Samuel', '1rois': '1 Rois', '2rois': '2 Rois',
-  '1chroniques': '1 Chroniques', '2chroniques': '2 Chroniques', esdras: 'Esdras',
-  nehemie: 'Néhémie', esther: 'Esther', job: 'Job', psaumes: 'Psaumes',
-  proverbes: 'Proverbes', ecclesiaste: 'Ecclésiaste', cantique: 'Cantique des cantiques',
-  esaie: 'Ésaïe', jeremie: 'Jérémie', lamentations: 'Lamentations', ezechiel: 'Ézéchiel',
-  daniel: 'Daniel', osee: 'Osée', joel: 'Joël', amos: 'Amos', abdias: 'Abdias',
-  jonas: 'Jonas', michee: 'Michée', nahum: 'Nahum', habacuc: 'Habacuc',
-  sophonie: 'Sophonie', aggee: 'Aggée', zacharie: 'Zacharie', malachie: 'Malachie',
-  matthieu: 'Matthieu', marc: 'Marc', luc: 'Luc', jean: 'Jean', actes: 'Actes',
-  romains: 'Romains', '1corinthiens': '1 Corinthiens', '2corinthiens': '2 Corinthiens',
-  galates: 'Galates', ephesiens: 'Éphésiens', philippiens: 'Philippiens',
-  colossiens: 'Colossiens', '1thessaloniciens': '1 Thessaloniciens',
-  '2thessaloniciens': '2 Thessaloniciens', '1timothee': '1 Timothée',
-  '2timothee': '2 Timothée', tite: 'Tite', philemon: 'Philémon', hebreux: 'Hébreux',
-  jacques: 'Jacques', '1pierre': '1 Pierre', '2pierre': '2 Pierre', '1jean': '1 Jean',
-  '2jean': '2 Jean', '3jean': '3 Jean', jude: 'Jude', apocalypse: 'Apocalypse',
+  genese: 'Genèse',
+  exode: 'Exode',
+  levitique: 'Lévitique',
+  nombres: 'Nombres',
+  deuteronome: 'Deutéronome',
+  josue: 'Josué',
+  juges: 'Juges',
+  ruth: 'Ruth',
+  '1samuel': '1 Samuel',
+  '2samuel': '2 Samuel',
+  '1rois': '1 Rois',
+  '2rois': '2 Rois',
+  '1chroniques': '1 Chroniques',
+  '2chroniques': '2 Chroniques',
+  esdras: 'Esdras',
+  nehemie: 'Néhémie',
+  esther: 'Esther',
+  job: 'Job',
+  psaumes: 'Psaumes',
+  proverbes: 'Proverbes',
+  ecclesiaste: 'Ecclésiaste',
+  cantique: 'Cantique des cantiques',
+  esaie: 'Ésaïe',
+  jeremie: 'Jérémie',
+  lamentations: 'Lamentations',
+  ezechiel: 'Ézéchiel',
+  daniel: 'Daniel',
+  osee: 'Osée',
+  joel: 'Joël',
+  amos: 'Amos',
+  abdias: 'Abdias',
+  jonas: 'Jonas',
+  michee: 'Michée',
+  nahum: 'Nahum',
+  habacuc: 'Habacuc',
+  sophonie: 'Sophonie',
+  aggee: 'Aggée',
+  zacharie: 'Zacharie',
+  malachie: 'Malachie',
+  matthieu: 'Matthieu',
+  marc: 'Marc',
+  luc: 'Luc',
+  jean: 'Jean',
+  actes: 'Actes',
+  romains: 'Romains',
+  '1corinthiens': '1 Corinthiens',
+  '2corinthiens': '2 Corinthiens',
+  galates: 'Galates',
+  ephesiens: 'Éphésiens',
+  philippiens: 'Philippiens',
+  colossiens: 'Colossiens',
+  '1thessaloniciens': '1 Thessaloniciens',
+  '2thessaloniciens': '2 Thessaloniciens',
+  '1timothee': '1 Timothée',
+  '2timothee': '2 Timothée',
+  tite: 'Tite',
+  philemon: 'Philémon',
+  hebreux: 'Hébreux',
+  jacques: 'Jacques',
+  '1pierre': '1 Pierre',
+  '2pierre': '2 Pierre',
+  '1jean': '1 Jean',
+  '2jean': '2 Jean',
+  '3jean': '3 Jean',
+  jude: 'Jude',
+  apocalypse: 'Apocalypse',
 };
 
 // Noms anglais officiels (utilisés pour l'affichage en mode 'en' seul).
 const DISPLAY_NAMES_EN = {
-  genese: 'Genesis', exode: 'Exodus', levitique: 'Leviticus', nombres: 'Numbers',
-  deuteronome: 'Deuteronomy', josue: 'Joshua', juges: 'Judges', ruth: 'Ruth',
-  '1samuel': '1 Samuel', '2samuel': '2 Samuel', '1rois': '1 Kings', '2rois': '2 Kings',
-  '1chroniques': '1 Chronicles', '2chroniques': '2 Chronicles', esdras: 'Ezra',
-  nehemie: 'Nehemiah', esther: 'Esther', job: 'Job', psaumes: 'Psalms',
-  proverbes: 'Proverbs', ecclesiaste: 'Ecclesiastes', cantique: 'Song of Solomon',
-  esaie: 'Isaiah', jeremie: 'Jeremiah', lamentations: 'Lamentations',
-  ezechiel: 'Ezekiel', daniel: 'Daniel', osee: 'Hosea', joel: 'Joel', amos: 'Amos',
-  abdias: 'Obadiah', jonas: 'Jonah', michee: 'Micah', nahum: 'Nahum',
-  habacuc: 'Habakkuk', sophonie: 'Zephaniah', aggee: 'Haggai', zacharie: 'Zechariah',
-  malachie: 'Malachi', matthieu: 'Matthew', marc: 'Mark', luc: 'Luke', jean: 'John',
-  actes: 'Acts', romains: 'Romans', '1corinthiens': '1 Corinthians',
-  '2corinthiens': '2 Corinthians', galates: 'Galatians', ephesiens: 'Ephesians',
-  philippiens: 'Philippians', colossiens: 'Colossians',
-  '1thessaloniciens': '1 Thessalonians', '2thessaloniciens': '2 Thessalonians',
-  '1timothee': '1 Timothy', '2timothee': '2 Timothy', tite: 'Titus',
-  philemon: 'Philemon', hebreux: 'Hebrews', jacques: 'James',
-  '1pierre': '1 Peter', '2pierre': '2 Peter', '1jean': '1 John', '2jean': '2 John',
-  '3jean': '3 John', jude: 'Jude', apocalypse: 'Revelation',
+  genese: 'Genesis',
+  exode: 'Exodus',
+  levitique: 'Leviticus',
+  nombres: 'Numbers',
+  deuteronome: 'Deuteronomy',
+  josue: 'Joshua',
+  juges: 'Judges',
+  ruth: 'Ruth',
+  '1samuel': '1 Samuel',
+  '2samuel': '2 Samuel',
+  '1rois': '1 Kings',
+  '2rois': '2 Kings',
+  '1chroniques': '1 Chronicles',
+  '2chroniques': '2 Chronicles',
+  esdras: 'Ezra',
+  nehemie: 'Nehemiah',
+  esther: 'Esther',
+  job: 'Job',
+  psaumes: 'Psalms',
+  proverbes: 'Proverbs',
+  ecclesiaste: 'Ecclesiastes',
+  cantique: 'Song of Solomon',
+  esaie: 'Isaiah',
+  jeremie: 'Jeremiah',
+  lamentations: 'Lamentations',
+  ezechiel: 'Ezekiel',
+  daniel: 'Daniel',
+  osee: 'Hosea',
+  joel: 'Joel',
+  amos: 'Amos',
+  abdias: 'Obadiah',
+  jonas: 'Jonah',
+  michee: 'Micah',
+  nahum: 'Nahum',
+  habacuc: 'Habakkuk',
+  sophonie: 'Zephaniah',
+  aggee: 'Haggai',
+  zacharie: 'Zechariah',
+  malachie: 'Malachi',
+  matthieu: 'Matthew',
+  marc: 'Mark',
+  luc: 'Luke',
+  jean: 'John',
+  actes: 'Acts',
+  romains: 'Romans',
+  '1corinthiens': '1 Corinthians',
+  '2corinthiens': '2 Corinthians',
+  galates: 'Galatians',
+  ephesiens: 'Ephesians',
+  philippiens: 'Philippians',
+  colossiens: 'Colossians',
+  '1thessaloniciens': '1 Thessalonians',
+  '2thessaloniciens': '2 Thessalonians',
+  '1timothee': '1 Timothy',
+  '2timothee': '2 Timothy',
+  tite: 'Titus',
+  philemon: 'Philemon',
+  hebreux: 'Hebrews',
+  jacques: 'James',
+  '1pierre': '1 Peter',
+  '2pierre': '2 Peter',
+  '1jean': '1 John',
+  '2jean': '2 John',
+  '3jean': '3 John',
+  jude: 'Jude',
+  apocalypse: 'Revelation',
 };
 
 function label({ book, chapter, verseStart, verseEnd }, lang = 'fr') {
@@ -212,7 +410,7 @@ function label({ book, chapter, verseStart, verseEnd }, lang = 'fr') {
     : `${name} ${chapter}:${verseStart}${verseEnd && verseEnd !== verseStart ? `-${verseEnd}` : ''}`;
 }
 
-async function fetchJson(url, timeoutMs = 5000) {
+async function fetchJson(url, timeoutMs = 8000) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -300,7 +498,9 @@ function listTranslations() {
   for (const lang of Object.keys(AVAILABLE_TRANSLATIONS)) {
     const activeCode = currentTranslation[lang];
     out[lang] = Object.entries(AVAILABLE_TRANSLATIONS[lang]).map(([code, meta]) => ({
-      code, label: meta.label, active: code === activeCode,
+      code,
+      label: meta.label,
+      active: code === activeCode,
     }));
   }
   return out;
@@ -326,7 +526,9 @@ async function helloaoFetchChapter(reference, lang = 'fr') {
   }
 
   const url = `https://bible.helloao.org/api/${translation}/${bookCode}/${reference.chapter}.json`;
-  console.log(`[bible-lookup] Téléchargement du chapitre ${reference.book} ${reference.chapter} (${translation}) via helloao...`);
+  console.log(
+    `[bible-lookup] Téléchargement du chapitre ${reference.book} ${reference.chapter} (${translation}) via helloao...`
+  );
   const data = await fetchJson(url);
 
   chapterCache.set(cacheKey, data);
@@ -339,13 +541,15 @@ async function helloaoFetchChapter(reference, lang = 'fr') {
 function extractVerseText(content, contentItem) {
   // Chaque item de "content" est soit une chaîne, soit un objet
   // { text, wordsOfJesus } (ex: paroles de Jésus mises en évidence).
-  return contentItem
-    .map((part) => (typeof part === 'string' ? part : part.text || ''))
-    .join(' ')
-    // Retire les marqueurs de paragraphe (¶) présents en KJV en début de verset.
-    .replace(/¶\s*/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return (
+    contentItem
+      .map((part) => (typeof part === 'string' ? part : part.text || ''))
+      .join(' ')
+      // Retire les marqueurs de paragraphe (¶) présents en KJV en début de verset.
+      .replace(/¶\s*/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
 }
 
 // AJOUT (audit — Reading Mode, inspiré de Rhema) : contrairement à
@@ -382,7 +586,9 @@ function helloaoParseVerse(chapterData, reference) {
   if (selected.length === 0) return null;
 
   return selected
-    .map((v) => `${selected.length > 1 ? v.number + ' ' : ''}${extractVerseText(v.content, v.content)}`)
+    .map(
+      (v) => `${selected.length > 1 ? v.number + ' ' : ''}${extractVerseText(v.content, v.content)}`
+    )
     .join(' ')
     .trim();
 }
@@ -407,7 +613,9 @@ async function getbibleFetchChapter(reference) {
   }
 
   const url = `https://api.getbible.net/v2/${translationSlug}/${bookNr}/${reference.chapter}.json`;
-  console.log(`[bible-lookup] Téléchargement du chapitre ${reference.book} ${reference.chapter} (${translationSlug}) via getbible...`);
+  console.log(
+    `[bible-lookup] Téléchargement du chapitre ${reference.book} ${reference.chapter} (${translationSlug}) via getbible...`
+  );
   const data = await fetchJson(url);
 
   chapterCache.set(cacheKey, data);
@@ -453,7 +661,10 @@ function getbibleParseVerse(chapterData, reference) {
   if (selected.length === 0) return null;
 
   return selected
-    .map((v) => `${selected.length > 1 ? v.verse + ' ' : ''}${stripStrongNumbers(String(v.text || '')).trim()}`)
+    .map(
+      (v) =>
+        `${selected.length > 1 ? v.verse + ' ' : ''}${stripStrongNumbers(String(v.text || '')).trim()}`
+    )
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -508,7 +719,8 @@ async function fetchFromProvider(provider, reference, lang) {
 // citer leur référence.
 function normalizeForMatch(text) {
   return String(text || '')
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
@@ -519,7 +731,11 @@ function significantWordSet(text) {
   // Mots de 3 lettres et plus seulement : élimine les articles/prépositions
   // très fréquents (de, la, un, et...) qui gonfleraient artificiellement le
   // score de similarité entre deux textes sans rapport.
-  return new Set(normalizeForMatch(text).split(' ').filter((w) => w.length > 2));
+  return new Set(
+    normalizeForMatch(text)
+      .split(' ')
+      .filter((w) => w.length > 2)
+  );
 }
 
 // Similarité = proportion des mots du texte le plus court retrouvée dans
@@ -563,58 +779,156 @@ function findByQuotedText(spokenText) {
 }
 
 const BOOK_NORMALIZATION_MAP = {
-  psaume: 'psaumes', psaumes: 'psaumes', ps: 'psaumes', psalm: 'psaumes', psalms: 'psaumes',
-  somme: 'psaumes', sommes: 'psaumes', tome: 'psaumes', tomes: 'psaumes',
-  genese: 'genese', gen: 'genese', genesis: 'genese',
-  exode: 'exode', exo: 'exode', exodus: 'exode',
-  levitique: 'levitique', lev: 'levitique', leviticus: 'levitique',
-  nombres: 'nombres', nom: 'nombres', numbers: 'nombres',
-  deuteronome: 'deuteronome', deut: 'deuteronome', deuteronomy: 'deuteronome',
-  josue: 'josue', jos: 'josue', joshua: 'josue',
-  juges: 'juges', jug: 'juges', judges: 'juges',
+  psaume: 'psaumes',
+  psaumes: 'psaumes',
+  ps: 'psaumes',
+  psalm: 'psaumes',
+  psalms: 'psaumes',
+  somme: 'psaumes',
+  sommes: 'psaumes',
+  tome: 'psaumes',
+  tomes: 'psaumes',
+  genese: 'genese',
+  gen: 'genese',
+  genesis: 'genese',
+  exode: 'exode',
+  exo: 'exode',
+  exodus: 'exode',
+  levitique: 'levitique',
+  lev: 'levitique',
+  leviticus: 'levitique',
+  nombres: 'nombres',
+  nom: 'nombres',
+  numbers: 'nombres',
+  deuteronome: 'deuteronome',
+  deut: 'deuteronome',
+  deuteronomy: 'deuteronome',
+  josue: 'josue',
+  jos: 'josue',
+  joshua: 'josue',
+  juges: 'juges',
+  jug: 'juges',
+  judges: 'juges',
   ruth: 'ruth',
-  '1samuel': '1samuel', '2samuel': '2samuel',
-  '1rois': '1rois', '2rois': '2rois',
-  '1chroniques': '1chroniques', '2chroniques': '2chroniques',
-  esdras: 'esdras', ezra: 'esdras', nehemie: 'nehemie', nehemiah: 'nehemie',
-  esther: 'esther', job: 'job',
-  proverbes: 'proverbes', prov: 'proverbes', proverbs: 'proverbes',
-  ecclesiaste: 'ecclesiaste', qohelet: 'ecclesiaste', ecclesiastes: 'ecclesiaste',
-  cantique: 'cantique', cantiques: 'cantique',
-  esaie: 'esaie', es: 'esaie', isaiah: 'esaie',
-  jeremie: 'jeremie', jer: 'jeremie', jeremiah: 'jeremie',
-  lamentations: 'lamentations', lam: 'lamentations',
-  ezechiel: 'ezechiel', ez: 'ezechiel', ezekiel: 'ezechiel',
-  daniel: 'daniel', dan: 'daniel',
-  osee: 'osee', os: 'osee', hosea: 'osee',
-  joel: 'joel', amos: 'amos', abdias: 'abdias', obadiah: 'abdias',
-  jonas: 'jonas', jonah: 'jonas', michee: 'michee', mi: 'michee', micah: 'michee',
-  nahum: 'nahum', habacuc: 'habacuc', ha: 'habacuc', habakkuk: 'habacuc',
-  sophonie: 'sophonie', so: 'sophonie', zephaniah: 'sophonie',
-  aggee: 'aggee', ag: 'aggee', haggai: 'aggee',
-  zacharie: 'zacharie', za: 'zacharie', zechariah: 'zacharie',
-  malachie: 'malachie', ml: 'malachie', malachi: 'malachie',
-  matthieu: 'matthieu', mathieu: 'matthieu', mt: 'matthieu', matthew: 'matthieu',
-  marc: 'marc', mc: 'marc', mark: 'marc',
-  luc: 'luc', lc: 'luc', luke: 'luc',
-  jean: 'jean', jn: 'jean', john: 'jean',
-  actes: 'actes', ac: 'actes', acts: 'actes',
-  romains: 'romains', rom: 'romains', rm: 'romains', romans: 'romains',
-  '1corinthiens': '1corinthiens', '2corinthiens': '2corinthiens',
-  ce2chapitre: '2corinthiens', ce2: '2corinthiens',
-  galates: 'galates', ga: 'galates', galatians: 'galates',
-  ephesiens: 'ephesiens', ep: 'ephesiens', ephesians: 'ephesiens',
-  philippiens: 'philippiens', php: 'philippiens', philippians: 'philippiens',
-  colossiens: 'colossiens', col: 'colossiens', colossians: 'colossiens',
-  '1thessaloniciens': '1thessaloniciens', '2thessaloniciens': '2thessaloniciens',
-  '1timothee': '1timothee', '2timothee': '2timothee',
-  tite: 'tite', titus: 'tite', philemon: 'philemon',
-  hebreux: 'hebreux', heb: 'hebreux', hebrews: 'hebreux',
-  jacques: 'jacques', jc: 'jacques', james: 'jacques',
-  '1pierre': '1pierre', '2pierre': '2pierre',
-  '1jean': '1jean', '2jean': '2jean', '3jean': '3jean',
+  '1samuel': '1samuel',
+  '2samuel': '2samuel',
+  '1rois': '1rois',
+  '2rois': '2rois',
+  '1chroniques': '1chroniques',
+  '2chroniques': '2chroniques',
+  esdras: 'esdras',
+  ezra: 'esdras',
+  nehemie: 'nehemie',
+  nehemiah: 'nehemie',
+  esther: 'esther',
+  job: 'job',
+  proverbes: 'proverbes',
+  prov: 'proverbes',
+  proverbs: 'proverbes',
+  ecclesiaste: 'ecclesiaste',
+  qohelet: 'ecclesiaste',
+  ecclesiastes: 'ecclesiaste',
+  cantique: 'cantique',
+  cantiques: 'cantique',
+  esaie: 'esaie',
+  es: 'esaie',
+  isaiah: 'esaie',
+  jeremie: 'jeremie',
+  jer: 'jeremie',
+  jeremiah: 'jeremie',
+  lamentations: 'lamentations',
+  lam: 'lamentations',
+  ezechiel: 'ezechiel',
+  ez: 'ezechiel',
+  ezekiel: 'ezechiel',
+  daniel: 'daniel',
+  dan: 'daniel',
+  osee: 'osee',
+  os: 'osee',
+  hosea: 'osee',
+  joel: 'joel',
+  amos: 'amos',
+  abdias: 'abdias',
+  obadiah: 'abdias',
+  jonas: 'jonas',
+  jonah: 'jonas',
+  michee: 'michee',
+  mi: 'michee',
+  micah: 'michee',
+  nahum: 'nahum',
+  habacuc: 'habacuc',
+  ha: 'habacuc',
+  habakkuk: 'habacuc',
+  sophonie: 'sophonie',
+  so: 'sophonie',
+  zephaniah: 'sophonie',
+  aggee: 'aggee',
+  ag: 'aggee',
+  haggai: 'aggee',
+  zacharie: 'zacharie',
+  za: 'zacharie',
+  zechariah: 'zacharie',
+  malachie: 'malachie',
+  ml: 'malachie',
+  malachi: 'malachie',
+  matthieu: 'matthieu',
+  mathieu: 'matthieu',
+  mt: 'matthieu',
+  matthew: 'matthieu',
+  marc: 'marc',
+  mc: 'marc',
+  mark: 'marc',
+  luc: 'luc',
+  lc: 'luc',
+  luke: 'luc',
+  jean: 'jean',
+  jn: 'jean',
+  john: 'jean',
+  actes: 'actes',
+  ac: 'actes',
+  acts: 'actes',
+  romains: 'romains',
+  rom: 'romains',
+  rm: 'romains',
+  romans: 'romains',
+  '1corinthiens': '1corinthiens',
+  '2corinthiens': '2corinthiens',
+  ce2chapitre: '2corinthiens',
+  ce2: '2corinthiens',
+  galates: 'galates',
+  ga: 'galates',
+  galatians: 'galates',
+  ephesiens: 'ephesiens',
+  ep: 'ephesiens',
+  ephesians: 'ephesiens',
+  philippiens: 'philippiens',
+  php: 'philippiens',
+  philippians: 'philippiens',
+  colossiens: 'colossiens',
+  col: 'colossiens',
+  colossians: 'colossiens',
+  '1thessaloniciens': '1thessaloniciens',
+  '2thessaloniciens': '2thessaloniciens',
+  '1timothee': '1timothee',
+  '2timothee': '2timothee',
+  tite: 'tite',
+  titus: 'tite',
+  philemon: 'philemon',
+  hebreux: 'hebreux',
+  heb: 'hebreux',
+  hebrews: 'hebreux',
+  jacques: 'jacques',
+  jc: 'jacques',
+  james: 'jacques',
+  '1pierre': '1pierre',
+  '2pierre': '2pierre',
+  '1jean': '1jean',
+  '2jean': '2jean',
+  '3jean': '3jean',
   jude: 'jude',
-  apocalypse: 'apocalypse', ap: 'apocalypse', revelation: 'apocalypse',
+  apocalypse: 'apocalypse',
+  ap: 'apocalypse',
+  revelation: 'apocalypse',
 };
 
 function normalizeBookKey(rawBook) {
@@ -715,9 +1029,44 @@ async function getVerseMultilang(reference, langMode = 'fr') {
       getVerse(reference, 'en'),
     ]);
     const frOk = frRes.status === 'fulfilled' ? frRes.value : null;
-    const enOk = enRes.status === 'fulfilled' ? enRes.value : null;
+    let enOk = enRes.status === 'fulfilled' ? enRes.value : null;
+    // CORRECTIF (signalé — mode bilingue : seule la référence était traduite,
+    // pas le verset) : le français a un double avantage structurel sur
+    // l'anglais dans cette course Promise.allSettled — il est presque
+    // toujours déjà en cache (langue par défaut, chapitre déjà téléchargé
+    // lors d'un usage précédent) ET dispose de 2 fournisseurs de repli
+    // (helloao + getbible), alors que l'anglais n'a NI cache chaud NI
+    // fournisseur de secours (seul helloao sert l'anglais). Sur un réseau
+    // d'église chargé, le premier téléchargement du chapitre anglais dépasse
+    // facilement le timeout de 5s (fetchJson) pendant que le français,
+    // déjà en cache, répond instantanément — d'où le symptôme observé :
+    // la référence bilingue s'affiche toujours (calculée localement, sans
+    // réseau) mais le texte anglais du verset manque silencieusement.
+    // Un seul nouvel essai (chapitre probablement déjà en cache navigateur/
+    // CDN côté helloao au 2e essai, et le timeout initial a pu suffire à
+    // amorcer la connexion) résout la grande majorité des cas transitoires
+    // sans complexifier le fournisseur unique existant.
+    if (!enOk) {
+      console.warn(
+        `[bible-lookup] Texte anglais manquant en mode bilingue pour ${reference.book} ${reference.chapter} — nouvelle tentative...`
+      );
+      try {
+        enOk = await getVerse(reference, 'en');
+      } catch (_e) {
+        // Toujours en échec après le second essai — voir l'avertissement
+        // ci-dessous, la référence bilingue reste affichée, le texte
+        // anglais restera absent pour ce verset précis.
+      }
+    }
     if (!frOk && !enOk) {
       throw new Error('Verset introuvable en FR et en EN.');
+    }
+    if (!enOk) {
+      console.warn(
+        `[bible-lookup] ⚠ Texte anglais indisponible pour ${reference.book} ${reference.chapter} ` +
+          'après 2 tentatives (réseau lent ou API anglaise indisponible) — ' +
+          "le verset s'affichera en français uniquement malgré le mode bilingue."
+      );
     }
     // Réf bilingue : "Jean 3:16 · John 3:16" (identique si nom commun)
     const refFr = label(reference, 'fr');
@@ -768,7 +1117,9 @@ async function getChapterVerses(book, chapter, lang = 'fr') {
     if (p.supportsLang && !p.supportsLang(lang)) continue;
     if (typeof p.parseChapterVerses !== 'function') continue;
     try {
-      console.log(`[bible-lookup] Reading Mode : chargement chapitre ${book} ${chapter} via ${p.name} (${lang})...`);
+      console.log(
+        `[bible-lookup] Reading Mode : chargement chapitre ${book} ${chapter} via ${p.name} (${lang})...`
+      );
       const chapterData = await p.fetchChapter(reference, lang);
       const verses = p.parseChapterVerses(chapterData);
       if (verses && verses.length > 0) {
@@ -777,24 +1128,78 @@ async function getChapterVerses(book, chapter, lang = 'fr') {
       }
     } catch (error) {
       lastError = error;
-      console.warn(`[bible-lookup] Reading Mode : ${p.name} a échoué pour ${book} ${chapter}: ${error.message}`);
+      console.warn(
+        `[bible-lookup] Reading Mode : ${p.name} a échoué pour ${book} ${chapter}: ${error.message}`
+      );
     }
   }
 
   throw new Error(
-    lastError ? `Chapitre ${book} ${chapter} introuvable : ${lastError.message}` : `Chapitre ${book} ${chapter} introuvable`
+    lastError
+      ? `Chapitre ${book} ${chapter} introuvable : ${lastError.message}`
+      : `Chapitre ${book} ${chapter} introuvable`
   );
+}
+
+/**
+ * Équivalent chapitre de getVerseMultilang() : récupère TOUS les versets
+ * d'un chapitre dans une ou deux langues, pour que le Reading Mode (lecture
+ * continue) puisse afficher le FR et l'EN simultanément quand langMode
+ * vaut 'both' — jusqu'ici seul le mode "un verset détecté explicitement"
+ * (getVerseMultilang) supportait le bilingue ; le Reading Mode retombait
+ * silencieusement sur une seule langue.
+ * @param {string} book
+ * @param {number} chapter
+ * @param {string} langMode - 'fr', 'en', ou 'both'
+ * @returns {Promise<{num:number, text:string, text_fr:?string, text_en:?string}[]>}
+ *   `text` reste la langue principale (FR par défaut en mode 'both'), pour
+ *   que le matching de mots du Reading Mode (basé sur ce que dit l'orateur,
+ *   en général en français) continue à fonctionner sans changement ailleurs.
+ */
+async function getChapterVersesMultilang(book, chapter, langMode = 'fr') {
+  if (langMode === 'both') {
+    const [frRes, enRes] = await Promise.allSettled([
+      getChapterVerses(book, chapter, 'fr'),
+      getChapterVerses(book, chapter, 'en'),
+    ]);
+    const frVerses = frRes.status === 'fulfilled' ? frRes.value : null;
+    const enVerses = enRes.status === 'fulfilled' ? enRes.value : null;
+    if (!frVerses && !enVerses) {
+      // On relance l'erreur d'origine (FR en priorité) pour un message utile.
+      throw frRes.reason || enRes.reason || new Error(`Chapitre ${book} ${chapter} introuvable.`);
+    }
+    const enByNum = new Map((enVerses || []).map((v) => [v.num, v.text]));
+    const frByNum = new Map((frVerses || []).map((v) => [v.num, v.text]));
+    const base = frVerses || enVerses;
+    return base.map((v) => ({
+      num: v.num,
+      text: frByNum.get(v.num) || enByNum.get(v.num) || v.text,
+      text_fr: frByNum.get(v.num) || null,
+      text_en: enByNum.get(v.num) || null,
+    }));
+  }
+  const verses = await getChapterVerses(book, chapter, langMode);
+  return verses.map((v) => ({
+    num: v.num,
+    text: v.text,
+    text_fr: langMode === 'fr' ? v.text : null,
+    text_en: langMode === 'en' ? v.text : null,
+  }));
 }
 
 module.exports = {
   getVerse,
   getVerseMultilang,
   getChapterVerses, // AJOUT (audit) : Reading Mode, inspiré de Rhema
+  getChapterVersesMultilang, // AJOUT : Reading Mode bilingue FR+EN
   buildReferenceLabel: label,
   getProviders: () => BIBLE_PROVIDERS.map((p) => p.name),
   resetFailedProviders: () => {}, // Conservé pour compatibilité avec server.js
   getCacheSize: () => cache.size,
-  clearCache: () => { cache.clear(); chapterCache.clear(); },
+  clearCache: () => {
+    cache.clear();
+    chapterCache.clear();
+  },
   setTranslation,
   listTranslations,
   getTranslationId,
@@ -824,7 +1229,9 @@ if (require.main === module) {
     for (const test of tests) {
       try {
         const result = await getVerse(test);
-        console.log(`✅ ${result.reference} [${result.provider}]: "${result.text.substring(0, 80)}..."`);
+        console.log(
+          `✅ ${result.reference} [${result.provider}]: "${result.text.substring(0, 80)}..."`
+        );
         success++;
       } catch (error) {
         console.log(`❌ ${label(test)}: ${error.message}`);

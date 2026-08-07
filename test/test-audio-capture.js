@@ -61,7 +61,11 @@ async function run() {
   });
 
   await audioCapture.startBrowserCapture();
-  assert.strictEqual(audioCapture.isRecording(), true, 'isRecording() devrait être true après startBrowserCapture()');
+  assert.strictEqual(
+    audioCapture.isRecording(),
+    true,
+    'isRecording() devrait être true après startBrowserCapture()'
+  );
 
   // Un seul chunk plus grand que segmentBytes doit produire exactement 1 segment
   // (signal "voix" synthétique — voir makeVoicedBuffer, un silence pur serait
@@ -85,15 +89,27 @@ async function run() {
   // Test 4 : stopRecording() nettoie l'état
   console.log('\n[TEST] Test 4: stopRecording()...');
   await audioCapture.stopRecording();
-  assert.strictEqual(audioCapture.isRecording(), false, 'isRecording() devrait être false après stopRecording()');
+  assert.strictEqual(
+    audioCapture.isRecording(),
+    false,
+    'isRecording() devrait être false après stopRecording()'
+  );
   console.log('[TEST] ✓ Capture arrêtée proprement');
 
   // Test 5 : pickBestDevice() — heuristique pure de sélection de micro
   console.log('\n[TEST] Test 5: pickBestDevice()...');
   const r1 = audioCapture.pickBestDevice(['Stereo Mix (Realtek)', 'Microphone (USB Headset)']);
-  assert.strictEqual(r1.chosen, 'Microphone (USB Headset)', 'Devrait écarter Stereo Mix et choisir le micro');
+  assert.strictEqual(
+    r1.chosen,
+    'Microphone (USB Headset)',
+    'Devrait écarter Stereo Mix et choisir le micro'
+  );
   const r2 = audioCapture.pickBestDevice(['Stereo Mix (Realtek)', 'CABLE Output (VB-Audio)']);
-  assert.strictEqual(r2.chosen, null, 'Ne devrait rien choisir si seuls des loopbacks sont détectés');
+  assert.strictEqual(
+    r2.chosen,
+    null,
+    'Ne devrait rien choisir si seuls des loopbacks sont détectés'
+  );
   const r3 = audioCapture.pickBestDevice([]);
   assert.strictEqual(r3.chosen, null, 'Liste vide devrait renvoyer chosen: null');
   console.log('[TEST] ✓ pickBestDevice() se comporte comme attendu');
@@ -106,19 +122,86 @@ async function run() {
   const vadConfig = { ...config };
 
   const silentInfo = audioCapture.analyzeVoiceActivity(silentSegment, vadConfig);
-  assert.strictEqual(silentInfo.voicedMs, 0, 'Un segment de silence pur ne devrait avoir aucune ms voisée');
+  assert.strictEqual(
+    silentInfo.voicedMs,
+    0,
+    'Un segment de silence pur ne devrait avoir aucune ms voisée'
+  );
 
   const voicedInfo = audioCapture.analyzeVoiceActivity(voicedSegment, vadConfig);
-  assert(voicedInfo.voicedMs >= vadConfig.minSpeechDuration, 'Un segment voisé devrait dépasser minSpeechDuration');
+  assert(
+    voicedInfo.voicedMs >= vadConfig.minSpeechDuration,
+    'Un segment voisé devrait dépasser minSpeechDuration'
+  );
 
   // Bout-en-bout : un segment de silence pur envoyé via feedPcmChunk() ne
   // doit PAS déclencher onAudioSegment().
   segments = [];
+  let skippedInfo = null;
+  audioCapture.on({
+    onAudioSegment: (file) => segments.push(file),
+    onSegmentSkipped: (info) => {
+      skippedInfo = info;
+    },
+    onError: (err) => console.error('[TEST] onError inattendu:', err.message),
+  });
   await audioCapture.startBrowserCapture();
   audioCapture.feedPcmChunk(Buffer.alloc(segmentBytes + 100));
-  assert.strictEqual(segments.length, 0, 'Un segment de silence pur ne devrait pas être envoyé au STT');
+  assert.strictEqual(
+    segments.length,
+    0,
+    'Un segment de silence pur ne devrait pas être envoyé au STT'
+  );
   await audioCapture.stopRecording();
   console.log('[TEST] ✓ Silence correctement filtré avant envoi au STT');
+
+  // CORRECTIF (problème récurrent — transcription qui ne démarre jamais
+  // sans aucune erreur visible) : le rejet d'un segment pour silence doit
+  // désormais déclencher onSegmentSkipped(), pas rester un simple
+  // console.log invisible en usage normal.
+  console.log('\n[TEST] Test 7: onSegmentSkipped() se déclenche bien sur un rejet...');
+  assert(
+    skippedInfo !== null,
+    'onSegmentSkipped() aurait dû être appelé pour le segment silencieux'
+  );
+  assert.strictEqual(skippedInfo.voicedMs, 0, 'voicedMs devrait être 0 pour un silence pur');
+  assert.strictEqual(
+    skippedInfo.threshold,
+    config.silenceThreshold,
+    'threshold rapporté devrait correspondre à la config active'
+  );
+  console.log('[TEST] ✓ onSegmentSkipped() rapporte les bonnes informations');
+
+  // CORRECTIF : silenceThreshold doit être réglable via startBrowserCapture(),
+  // pour que MIC_SILENCE_THRESHOLD (server.js/config-validator.js) ait un
+  // effet réel. À threshold=0, même un signal très faible doit passer.
+  console.log('\n[TEST] Test 8: silenceThreshold personnalisé via startBrowserCapture()...');
+  segments = [];
+  skippedInfo = null;
+  audioCapture.on({
+    onAudioSegment: (file) => segments.push(file),
+    onSegmentSkipped: (info) => {
+      skippedInfo = info;
+    },
+    onError: (err) => console.error('[TEST] onError inattendu:', err.message),
+  });
+  await audioCapture.startBrowserCapture({ silenceThreshold: 0 });
+  // Un signal quasi silencieux (amplitude très faible) — rejeté avec le
+  // seuil par défaut (0.02), mais devrait passer avec silenceThreshold: 0.
+  const quietSegment = makeVoicedBuffer(segmentBytes, 50);
+  audioCapture.feedPcmChunk(quietSegment);
+  assert.strictEqual(
+    segments.length,
+    1,
+    'Avec silenceThreshold: 0, un signal faible devrait quand même être envoyé au STT'
+  );
+  assert.strictEqual(
+    skippedInfo,
+    null,
+    'onSegmentSkipped() ne devrait pas se déclencher quand silenceThreshold: 0'
+  );
+  await audioCapture.stopRecording();
+  console.log('[TEST] ✓ silenceThreshold: 0 désactive bien le filtre de silence');
 
   console.log('\n=== Tous les tests sont passés ===');
   process.exit(0);

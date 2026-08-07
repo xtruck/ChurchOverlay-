@@ -18,7 +18,10 @@ const THEMES_DIR = path.join(__dirname, '..', 'config', 'themes');
 const FEATURES_FILE = path.join(__dirname, '..', 'config', 'features.json');
 
 function assert(cond, msg) {
-  if (!cond) { console.error('[TEST] ✗', msg); process.exit(1); }
+  if (!cond) {
+    console.error('[TEST] ✗', msg);
+    process.exit(1);
+  }
   console.log('[TEST] ✓', msg);
 }
 
@@ -35,8 +38,14 @@ cleanup();
 
 const themes = themeLoader.listThemes();
 assert(themes.length >= 2, 'listThemes retourne au moins 2 thèmes (nuit + claire)');
-assert(themes.some(t => t.id === 'nuit'), 'nuit est dans la liste');
-assert(themes.some(t => t.id === 'claire'), 'claire est dans la liste');
+assert(
+  themes.some((t) => t.id === 'nuit'),
+  'nuit est dans la liste'
+);
+assert(
+  themes.some((t) => t.id === 'claire'),
+  'claire est dans la liste'
+);
 
 const nuit = themeLoader.loadTheme('nuit');
 assert(nuit.id === 'nuit', 'loadTheme(nuit) : id correct');
@@ -59,7 +68,10 @@ themeLoader.saveTheme(partial);
 const loadedPartial = themeLoader.loadTheme('_test_partial');
 const cssPartial = themeLoader.themeToCss(loadedPartial);
 assert(cssPartial.variables['--accent'] === '#FF0000', 'themeToCss : accent personnalisé conservé');
-assert(cssPartial.variables['--verse-font'].includes('Merriweather'), 'themeToCss : typographie héritée du défaut (nuit)');
+assert(
+  cssPartial.variables['--verse-font'].includes('Merriweather'),
+  'themeToCss : typographie héritée du défaut (nuit)'
+);
 assert(cssPartial.effects.showCross === true, 'themeToCss : effets hérités du défaut (nuit)');
 themeLoader.deleteTheme('_test_partial');
 
@@ -74,15 +86,24 @@ const testTheme = {
 };
 themeLoader.saveTheme(testTheme);
 const loaded = themeLoader.loadTheme('_test_custom');
-assert(loaded.colors.accent === '#00FF00', 'saveTheme + loadTheme : couleur accent personnalisée conservée');
-assert(loaded.typography.verseFontWeight === 900, 'saveTheme : typographie personnalisée conservée');
+assert(
+  loaded.colors.accent === '#00FF00',
+  'saveTheme + loadTheme : couleur accent personnalisée conservée'
+);
+assert(
+  loaded.typography.verseFontWeight === 900,
+  'saveTheme : typographie personnalisée conservée'
+);
 assert(loaded.effects.showParticles === false, 'saveTheme : effet désactivé conservé');
 
 themeLoader.duplicateTheme('claire', '_test_dup', 'Test Dup');
 const dup = themeLoader.loadTheme('_test_dup');
 assert(dup.name === 'Test Dup', 'duplicateTheme : nouveau nom appliqué');
-assert(dup.readonly === false, 'Le duplicata n\'est PAS readonly');
-assert(dup.colors.accent === themeLoader.loadTheme('claire').colors.accent, 'duplicateTheme : palette copiée');
+assert(dup.readonly === false, "Le duplicata n'est PAS readonly");
+assert(
+  dup.colors.accent === themeLoader.loadTheme('claire').colors.accent,
+  'duplicateTheme : palette copiée'
+);
 
 try {
   themeLoader.deleteTheme('nuit');
@@ -115,7 +136,10 @@ try {
 themeLoader.deleteTheme('_test_custom');
 themeLoader.deleteTheme('_test_dup');
 const afterDelete = themeLoader.listThemes();
-assert(!afterDelete.some(t => t.id === '_test_custom'), 'deleteTheme : thème disparu de la liste');
+assert(
+  !afterDelete.some((t) => t.id === '_test_custom'),
+  'deleteTheme : thème disparu de la liste'
+);
 
 const featuresBefore = fs.readFileSync(FEATURES_FILE, 'utf8');
 try {

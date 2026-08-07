@@ -32,8 +32,11 @@ console.log('[TEST] Test 2: accumulation entre deux segments rapprochés...');
   const buf = createSentenceBuffer({ gapMs: 4000 });
   buf.push('Jean', 1000);
   const result = buf.push('chapitre 3, verset 16', 1500); // 500ms plus tard, sous le gap
-  assert.strictEqual(result, 'Jean chapitre 3, verset 16',
-    'Les deux segments auraient dû être concaténés dans une seule fenêtre');
+  assert.strictEqual(
+    result,
+    'Jean chapitre 3, verset 16',
+    'Les deux segments auraient dû être concaténés dans une seule fenêtre'
+  );
   console.log('[TEST] ✓ OK — référence recomposée sur deux segments:', result, '\n');
 }
 

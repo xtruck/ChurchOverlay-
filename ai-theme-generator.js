@@ -3,11 +3,11 @@
  * ai-theme-generator.js — Dynamic Theme Generation for ChurchOverlay
  * ============================================================================
  * Generates CSS themes based on sermon content, verse text, or mood.
- * 
+ *
  * Two modes:
  *   1. RULE-BASED: Maps keywords to predefined color palettes (instant, offline)
  *   2. AI-POWERED: Uses Groq LLM to generate custom themes (requires API)
- * 
+ *
  * Integration: Call when verse is detected, apply result to overlay via
  * broadcast({ action: 'applyTheme', ...theme }).
  * ============================================================================
@@ -235,46 +235,200 @@ const MOOD_KEYWORDS = {
   // "sing" retirés d'ici, déplacés vers "worship" ci-dessous — un signal de
   // phase de culte ("levons-nous pour chanter") est plus précis qu'un
   // simple mot-clé émotionnel, et les deux se disputaient le même mot.
-  joy: ['joie', 'joy', 'rejouis', 'alléluia', 'alleluia', 'hallelujah', 'gloire', 'célébrer', 'celebrate', 'fête', 'fete', 'triomphe', 'victoire', 'victory', 'exulte'],
+  joy: [
+    'joie',
+    'joy',
+    'rejouis',
+    'alléluia',
+    'alleluia',
+    'hallelujah',
+    'gloire',
+    'célébrer',
+    'celebrate',
+    'fête',
+    'fete',
+    'triomphe',
+    'victoire',
+    'victory',
+    'exulte',
+  ],
   // CORRECTIF : "silence"/"quiet" retirés d'ici, déplacés vers "silence"
   // ci-dessous, pour la même raison.
-  peace: ['paix', 'peace', 'calme', 'calm', 'tranquille', 'repos', 'rest', 'sérénité', 'serenity', 'refuge', 'abri', 'shelter'],
-  repentance: ['repentance', 'repentir', 'péché', 'peche', 'sin', 'jugement', 'judgment', 'sérieux', 'serious', 'grave', 'somber', 'sombre', 'ténèbres', 'darkness', 'deuil', 'mourning'],
-  love: ['amour', 'love', 'charité', 'charity', 'grâce', 'grace', 'miséricorde', 'mercy', 'compassion', 'tendresse', 'tenderness', 'bienveillance', 'kindness'],
-  faith: ['foi', 'faith', 'confiance', 'trust', 'croire', 'believe', 'croyance', 'conviction', 'assurance', 'ferme', 'steadfast'],
-  hope: ['espoir', 'hope', 'avenir', 'future', 'attendre', 'wait', 'patience', 'patient', 'promesse', 'promise', 'renouveau', 'renewal', 'restauration', 'restoration'],
-  spirit: ['esprit saint', 'holy spirit', 'pentecôte', 'pentecost', 'feu', 'fire', 'vent', 'wind', 'puissance', 'power', 'onction', 'anointing', 'miracle', 'gloire', 'glory'],
-  sacrifice: ['croix', 'cross', 'sacrifice', 'sang', 'blood', 'agonie', 'agony', 'passion', 'crucifié', 'crucified', 'rédemption', 'redemption', 'expiation', 'atonement'],
+  peace: [
+    'paix',
+    'peace',
+    'calme',
+    'calm',
+    'tranquille',
+    'repos',
+    'rest',
+    'sérénité',
+    'serenity',
+    'refuge',
+    'abri',
+    'shelter',
+  ],
+  repentance: [
+    'repentance',
+    'repentir',
+    'péché',
+    'peche',
+    'sin',
+    'jugement',
+    'judgment',
+    'sérieux',
+    'serious',
+    'grave',
+    'somber',
+    'sombre',
+    'ténèbres',
+    'darkness',
+    'deuil',
+    'mourning',
+  ],
+  love: [
+    'amour',
+    'love',
+    'charité',
+    'charity',
+    'grâce',
+    'grace',
+    'miséricorde',
+    'mercy',
+    'compassion',
+    'tendresse',
+    'tenderness',
+    'bienveillance',
+    'kindness',
+  ],
+  faith: [
+    'foi',
+    'faith',
+    'confiance',
+    'trust',
+    'croire',
+    'believe',
+    'croyance',
+    'conviction',
+    'assurance',
+    'ferme',
+    'steadfast',
+  ],
+  hope: [
+    'espoir',
+    'hope',
+    'avenir',
+    'future',
+    'attendre',
+    'wait',
+    'patience',
+    'patient',
+    'promesse',
+    'promise',
+    'renouveau',
+    'renewal',
+    'restauration',
+    'restoration',
+  ],
+  spirit: [
+    'esprit saint',
+    'holy spirit',
+    'pentecôte',
+    'pentecost',
+    'feu',
+    'fire',
+    'vent',
+    'wind',
+    'puissance',
+    'power',
+    'onction',
+    'anointing',
+    'miracle',
+    'gloire',
+    'glory',
+  ],
+  sacrifice: [
+    'croix',
+    'cross',
+    'sacrifice',
+    'sang',
+    'blood',
+    'agonie',
+    'agony',
+    'passion',
+    'crucifié',
+    'crucified',
+    'rédemption',
+    'redemption',
+    'expiation',
+    'atonement',
+  ],
 
   // --- AJOUT (audit — phase de culte, bilingue FR/EN) : phrases que dit
   // RÉELLEMENT un pasteur/animateur pour signaler un changement de moment
   // (pas des mots isolés — évite tout faux positif avec le vocabulaire
-  // émotionnel ci-dessus). ---
-  // NB : normalize() ci-dessous (dans detectMood) retire les accents du
-  // texte transcrit avant comparaison — ces mots-clés doivent donc être
-  // écrits SANS accent pour matcher réellement (ex. "priere", pas
-  // "prière"), même règle déjà suivie par "peche"/"peche" plus haut dans
-  // le fichier.
+  // émotionnel ci-dessus). NB : normalize() ci-dessous (dans detectMood)
+  // retire les accents du texte transcrit avant comparaison — ces mots-clés
+  // doivent donc être écrits SANS accent pour matcher réellement (ex.
+  // "priere", pas "prière"), même règle déjà suivie par "peche" plus haut.
   prayer: [
-    'prions', 'prions ensemble', 'inclinons la tete', 'inclinons nos tetes',
-    'seigneur nous te prions', 'esprit de priere', 'let us pray', 'lets pray',
-    'bow your heads', 'bow our heads', 'in a spirit of prayer', 'time of prayer',
-    'moment de priere', 'temps de priere',
+    'prions',
+    'prions ensemble',
+    'inclinons la tete',
+    'inclinons nos tetes',
+    'seigneur nous te prions',
+    'esprit de priere',
+    'let us pray',
+    'lets pray',
+    'bow your heads',
+    'bow our heads',
+    'in a spirit of prayer',
+    'time of prayer',
+    'moment de priere',
+    'temps de priere',
   ],
   worship: [
-    'louange', 'louons', 'chantez', 'chantons', 'levons nos mains', 'adorons',
-    'temps de louange', 'moment de louange', 'sing', 'let us worship', 'lets worship',
-    'lift your hands', 'time of worship', 'moment of worship', 'praise and worship',
+    'louange',
+    'louons',
+    'chantez',
+    'chantons',
+    'levons nos mains',
+    'adorons',
+    'temps de louange',
+    'moment de louange',
+    'sing',
+    'let us worship',
+    'lets worship',
+    'lift your hands',
+    'time of worship',
+    'moment of worship',
+    'praise and worship',
   ],
   communion: [
-    'sainte cene', 'la communion', 'prenons la communion', 'le pain et la coupe',
-    'le corps et le sang', 'holy communion', "the lord's supper", 'lords supper',
-    'the bread and the cup', 'body and blood', 'take communion',
+    'sainte cene',
+    'la communion',
+    'prenons la communion',
+    'le pain et la coupe',
+    'le corps et le sang',
+    'holy communion',
+    "the lord's supper",
+    'lords supper',
+    'the bread and the cup',
+    'body and blood',
+    'take communion',
   ],
   silence: [
-    'moment de silence', 'temps de silence', 'silence devant dieu', 'recueillons-nous',
-    'recueillement', 'a moment of silence', 'time of silence', 'quiet before the lord',
-    'let us be still', 'lets be still', 'be still',
+    'moment de silence',
+    'temps de silence',
+    'silence devant dieu',
+    'recueillons-nous',
+    'recueillement',
+    'a moment of silence',
+    'time of silence',
+    'quiet before the lord',
+    'let us be still',
+    'lets be still',
+    'be still',
   ],
 };
 
@@ -282,22 +436,25 @@ const MOOD_KEYWORDS = {
 // Detect mood from text
 // -----------------------------------------------------------------------
 function detectMood(text) {
-  // CORRECTIF (audit \u2014 m\u00eame bug que detectCommand() dans voice-commands.js,
-  // jamais appliqu\u00e9 ici) : `/\u0300-\u036f/g` SANS crochets est une classe
-  // de caract\u00e8res invalide \u2014 un tiret hors `[...]` est un caract\u00e8re
-  // litt\u00e9ral, donc cette expression cherchait la s\u00e9quence improbable
+  // CORRECTIF (audit - meme bug que detectCommand() dans voice-commands.js,
+  // jamais applique ici) : `/\u0300-\u036f/g` SANS crochets est une classe
+  // de caracteres invalide - un tiret hors `[...]` est un caractere
+  // litteral, donc cette expression cherchait la sequence improbable
   // "U+0300, -, U+036F" au lieu de la PLAGE des marques diacritiques
-  // combinantes. R\u00e9sultat r\u00e9el : le d\u00e9-accentuage NFD ne retirait jamais
-  // aucun accent, pour aucun des 8 moods d'origine \u2014 un texte transcrit
-  // avec des accents corrects ("pri\u00e8re", "c\u00e8ne"...) ne matchait donc que
-  // les mots-cl\u00e9s eux-m\u00eames accentu\u00e9s (rares dans MOOD_KEYWORDS, qui
-  // privil\u00e9gie d\u00e9j\u00e0 la forme sans accent). Avec les crochets, la plage
-  // fonctionne enfin comme document\u00e9.
-  const normalized = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  // combinantes. Resultat reel : le de-accentuage NFD ne retirait jamais
+  // aucun accent, pour aucun des 8 moods d'origine - un texte transcrit
+  // avec des accents corrects ("priere", "cene"...) ne matchait donc que
+  // les mots-cles eux-memes accentues (rares dans MOOD_KEYWORDS, qui
+  // privilegie deja la forme sans accent). Avec les crochets, la plage
+  // fonctionne enfin comme documente.
+  const normalized = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
   const scores = {};
 
   for (const [mood, keywords] of Object.entries(MOOD_KEYWORDS)) {
-    scores[mood] = keywords.filter(kw => normalized.includes(kw)).length;
+    scores[mood] = keywords.filter((kw) => normalized.includes(kw)).length;
   }
 
   const bestMood = Object.entries(scores)
@@ -427,8 +584,14 @@ class AIThemeGenerator {
     if (!theme) theme = MOOD_THEMES.default;
     return {
       themeName: theme.name,
-      backgroundGradient: theme.backgroundGradient,
-      textColor: theme.textColor,
+      // CORRECTIF (audit — le mood picker changeait la police/l'accent
+      // mais jamais le fond ni la couleur du texte) : overlay.html
+      // attend `theme.background`/`theme.color` (mêmes noms que le
+      // schéma de validation.js SCHEMAS.applyTheme), mais cette fonction
+      // renvoyait `backgroundGradient`/`textColor` — aucune des deux
+      // conditions correspondantes ne s'exécutait jamais côté overlay.
+      background: theme.backgroundGradient,
+      color: theme.textColor,
       accentColor: theme.accentColor,
       fontFamily: theme.fontFamily,
       animationStyle: theme.animationStyle,

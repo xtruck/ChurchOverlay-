@@ -38,12 +38,14 @@
  * Groq/Deepgram, dans audioCapture.on({ onAudioSegment })).
  */
 
-function getSafeStorage() {   return require('electron').safeStorage; }
+function getSafeStorage() {
+  return require('electron').safeStorage;
+}
 const featuresStore = require('./features-store');
 
 let obsClient = null;
 let gatingConfig = null;
-let currentObsState = { sceneName: null, streaming: false, recording: false };
+const currentObsState = { sceneName: null, streaming: false, recording: false };
 let lastGateOpen = null; // null = jamais évalué ; évite un log/callback redondant
 
 // CORRECTIF (audit round 4) — le mot de passe OBS est désormais chiffré par
@@ -56,7 +58,9 @@ function resolvePassword(cfg) {
   if (cfg.passwordEncrypted) {
     const safeStorage = getSafeStorage();
     if (!safeStorage.isEncryptionAvailable()) {
-      console.error('[obs] Chiffrement système indisponible : impossible de lire le mot de passe OBS.');
+      console.error(
+        '[obs] Chiffrement système indisponible : impossible de lire le mot de passe OBS.'
+      );
       return '';
     }
     try {
@@ -90,7 +94,11 @@ async function connect(onGateChange) {
   const { OBSWebSocket } = await import('obs-websocket-js');
   obsClient = new OBSWebSocket();
 
-  gatingConfig = cfg.gating || { enabled: false, liveSceneNames: [], requireStreamingOrRecording: false };
+  gatingConfig = cfg.gating || {
+    enabled: false,
+    liveSceneNames: [],
+    requireStreamingOrRecording: false,
+  };
 
   try {
     await obsClient.connect(cfg.obsWebsocketUrl, resolvePassword(cfg));
@@ -102,7 +110,7 @@ async function connect(onGateChange) {
 
     return obsClient;
   } catch (e) {
-    console.warn('[obs] Impossible de se connecter — vérifiez qu\'OBS tourne :', e.message);
+    console.warn("[obs] Impossible de se connecter — vérifiez qu'OBS tourne :", e.message);
     return null;
   }
 }
@@ -122,7 +130,7 @@ async function switchScene(sceneName) {
 async function listScenes() {
   if (!obsClient) return [];
   const res = await obsClient.call('GetSceneList');
-  return res.scenes.map(s => s.sceneName);
+  return res.scenes.map((s) => s.sceneName);
 }
 
 /** Démarre/arrête l'enregistrement du sermon. */
@@ -164,7 +172,10 @@ function evaluateGate(state, cfg) {
 
   if (Array.isArray(cfg.liveSceneNames) && cfg.liveSceneNames.length > 0) {
     if (!state.sceneName || !cfg.liveSceneNames.includes(state.sceneName)) {
-      return { open: false, reason: `scène "${state.sceneName || '?'}" hors liste des scènes "en direct"` };
+      return {
+        open: false,
+        reason: `scène "${state.sceneName || '?'}" hors liste des scènes "en direct"`,
+      };
     }
   }
 
@@ -214,7 +225,7 @@ async function setupGating(onGateChange) {
     const record = await obsClient.call('GetRecordStatus');
     currentObsState.recording = !!record.outputActive;
   } catch (e) {
-    console.warn('[obs] Gating : lecture du statut d\'enregistrement impossible:', e.message);
+    console.warn("[obs] Gating : lecture du statut d'enregistrement impossible:", e.message);
   }
 
   emitGateIfChanged(onGateChange); // état initial, avant le premier événement
@@ -232,10 +243,15 @@ async function setupGating(onGateChange) {
     emitGateIfChanged(onGateChange);
   });
 
-  console.log('[obs] Gating activé — abonné à CurrentProgramSceneChanged, StreamStateChanged, RecordStateChanged.');
+  console.log(
+    '[obs] Gating activé — abonné à CurrentProgramSceneChanged, StreamStateChanged, RecordStateChanged.'
+  );
 }
 
 module.exports = {
-  connect, switchScene, listScenes, toggleRecording,
+  connect,
+  switchScene,
+  listScenes,
+  toggleRecording,
   evaluateGate, // exporté pour les tests unitaires (pure function, sans obsClient)
 };

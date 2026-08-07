@@ -8,13 +8,22 @@
 
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, safeStorage, session, screen } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  Tray,
+  Menu,
+  ipcMain,
+  nativeImage,
+  safeStorage,
+  session,
+  screen,
+} = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsp = require('fs').promises;
 const { Worker } = require('worker_threads');
 const crypto = require('crypto');
-const os = require('os');
 const perfMonitor = require('./perf-monitor');
 const themeLoader = require('./theme-loader');
 const featuresStore = require('./features-store');
@@ -30,6 +39,56 @@ try {
 
 const APP_ROOT = __dirname;
 const USER_DATA = () => app.getPath('userData');
+
+// ---------------------------------------------------------------------------
+// Chargement de .env — MANQUANT jusqu'ici dans l'app packagée
+// ---------------------------------------------------------------------------
+// CORRECTIF CRITIQUE (transcription qui ne démarre jamais malgré des clés
+// API renouvelées, visualiseur audio qui ne bouge pas) : server.js et
+// config-validator.js lisent bien process.env.MIC_SILENCE_THRESHOLD,
+// process.env.PORT, etc., mais RIEN dans main.js ne chargeait jamais le
+// fichier .env dans process.env avant de démarrer le worker server.js —
+// seul `npm run server-only` (mode développement, via le flag Node
+// --env-file-if-exists) le faisait. L'app Electron réelle (ce fichier)
+// démarrait donc TOUJOURS avec les seules variables d'environnement déjà
+// présentes dans le process (celles de l'OS, quasiment jamais celles d'un
+// .env de projet) — chaque réglage placé dans .env (MIC_SILENCE_THRESHOLD,
+// PORT personnalisé, WS_HOST...) était donc silencieusement ignoré par
+// l'app réelle, alors qu'il fonctionnait bien dans les tests (qui
+// utilisaient tous --env-file-if-exists).
+//
+// Un .env ne doit JAMAIS être inclus dans l'installateur packagé (il
+// contiendrait des clés en clair, livrées à quiconque installe l'app) —
+// on cherche donc ce fichier dans le dossier de données utilisateur
+// (USER_DATA(), ex. %APPDATA%\ChurchOverlay sous Windows — accessible et
+// modifiable même pour l'app installée), avec un repli sur APP_ROOT
+// (utile en mode développement, où .env vit à côté de main.js). Logique
+// de chargement extraite dans dotenv-loader.js (testable sans Electron).
+const { loadDotEnvInto } = require('./dotenv-loader');
+loadDotEnvInto(
+  process.env,
+  [path.join(USER_DATA(), '.env'), path.join(APP_ROOT, '.env')],
+  (loadedPath) => console.log(`[main] .env chargé depuis ${loadedPath}`)
+);
+
+// CORRECTIF (bug "overlay hors ligne par défaut") : un correctif précédent
+// avait déjà identifié que dashboard.html/overlay.html ne pouvaient pas
+// déduire le port depuis window.location.host (chargés en file://) et
+// avait tenté d'harmoniser ça avec server.js — mais avait fixé la valeur
+// par défaut à 3000, alors que le VRAI défaut de server.js (voir
+// config-validator.js > ENV_SCHEMA.PORT, couvert par
+// test-config-validator.js) est 8765. Résultat : quand PORT n'est pas
+// défini (cas par défaut), server.js écoutait sur 8765 mais main.js
+// transmettait 3000 à overlay.html — qui ne pouvait donc jamais se
+// connecter. Corrigé en harmonisant sur 8765, la valeur réellement
+// utilisée par server.js.
+function resolveServerPort() {
+  const raw = (process.env.PORT || '').trim();
+  if (!raw) return 8765;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : 8765;
+}
+const SERVER_PORT = resolveServerPort();
 const CONFIG_PATH = () => path.join(USER_DATA(), 'config.json');
 
 const WORKER_MAX_OLD_SPACE_MB = 512;
@@ -118,44 +177,61 @@ function decryptKey(encryptedBase64, label) {
 // Un utilisateur avancé qui définit lui-même WS_AUTH_TOKEN dans son
 // environnement (mode `server-only`, ou lancement Electron depuis un
 // script) garde la main : on ne touche jamais à une valeur déjà présente.
-function ensureWsAuthToken() {
-  if ((process.env.WS_AUTH_TOKEN || '').trim()) {
-    return; // valeur explicite fournie par l'utilisateur : on ne l'écrase pas
+// SECURITY (backend audit): originally generated only WS_AUTH_TOKEN, which
+// server.js treated as a single shared operator+viewer credential — role
+// was assigned by request path, not by which token a client held, so any
+// holder of the one token (including the OBS overlay URL, meant to be
+// read-only) got full operator control. Generalized to also mint an
+// independent WS_VIEWER_TOKEN so the overlay can hold a strictly
+// read-only credential.
+function ensureWsToken(envVar, encryptedField, plaintextField) {
+  const existing = (process.env[envVar] || '').trim();
+  if (existing) {
+    return existing; // valeur explicite fournie par l'utilisateur : on ne l'écrase pas
   }
 
   const existingRaw = readRawConfig();
   let token = null;
 
-  if (existingRaw.wsAuthTokenEncrypted && safeStorage.isEncryptionAvailable()) {
+  if (existingRaw[encryptedField] && safeStorage.isEncryptionAvailable()) {
     try {
-      token = safeStorage.decryptString(Buffer.from(existingRaw.wsAuthTokenEncrypted, 'base64'));
+      token = safeStorage.decryptString(Buffer.from(existingRaw[encryptedField], 'base64'));
     } catch (e) {
-      console.error('[main] Échec du déchiffrement du jeton WS existant, régénération:', e.message);
+      console.error(`[main] Échec du déchiffrement de ${envVar}, régénération:`, e.message);
     }
-  } else if (existingRaw.wsAuthToken) {
+  } else if (existingRaw[plaintextField]) {
     // Ancien format non chiffré (chiffrement indisponible lors de la génération) : réutilisé tel quel.
-    token = existingRaw.wsAuthToken;
+    token = existingRaw[plaintextField];
   }
 
   if (!token || token.length < 16) {
     token = crypto.randomBytes(32).toString('base64url');
-    const toWrite = Object.assign({}, existingRaw);
-    delete toWrite.wsAuthToken;
+    const toWrite = Object.assign({}, readRawConfig());
+    delete toWrite[plaintextField];
     if (safeStorage.isEncryptionAvailable()) {
-      toWrite.wsAuthTokenEncrypted = safeStorage.encryptString(token).toString('base64');
+      toWrite[encryptedField] = safeStorage.encryptString(token).toString('base64');
     } else {
-      console.warn('[main] Chiffrement système indisponible : jeton WS stocké en clair.');
-      toWrite.wsAuthToken = token;
+      console.warn(`[main] Chiffrement système indisponible : ${envVar} stocké en clair.`);
+      toWrite[plaintextField] = token;
     }
     try {
       fs.mkdirSync(path.dirname(CONFIG_PATH()), { recursive: true });
       fs.writeFileSync(CONFIG_PATH(), JSON.stringify(toWrite, null, 2), 'utf8');
     } catch (e) {
-      console.error('[main] Impossible de persister le jeton WS généré (nouveau jeton à chaque démarrage):', e.message);
+      console.error(
+        `[main] Impossible de persister ${envVar} généré (nouveau jeton à chaque démarrage):`,
+        e.message
+      );
     }
   }
 
-  process.env.WS_AUTH_TOKEN = token;
+  process.env[envVar] = token;
+  return token;
+}
+
+function ensureWsAuthToken() {
+  ensureWsToken('WS_AUTH_TOKEN', 'wsAuthTokenEncrypted', 'wsAuthToken');
+  ensureWsToken('WS_VIEWER_TOKEN', 'wsViewerTokenEncrypted', 'wsViewerToken');
 }
 
 function loadConfig() {
@@ -172,7 +248,7 @@ function loadConfig() {
 
   const groqApiKey = raw.groqApiKeyEncrypted
     ? decryptKey(raw.groqApiKeyEncrypted, 'Groq')
-    : (raw.groqApiKey || null);
+    : raw.groqApiKey || null;
   const deepgramApiKey = decryptKey(raw.deepgramApiKeyEncrypted, 'Deepgram');
 
   if (raw.groqApiKey && !raw.groqApiKeyEncrypted) {
@@ -188,7 +264,9 @@ function loadConfig() {
     audioDevice: raw.audioDevice,
     groqApiKey,
     deepgramApiKey,
-    logBatchInterval: Number.isFinite(raw.logBatchInterval) ? raw.logBatchInterval : DASHBOARD_FLUSH_MS,
+    logBatchInterval: Number.isFinite(raw.logBatchInterval)
+      ? raw.logBatchInterval
+      : DASHBOARD_FLUSH_MS,
   };
 }
 
@@ -222,9 +300,10 @@ async function saveConfigAsync(config) {
   // clé passe par l'IPC dédié 'clear-api-key' (voir plus bas).
   const existingRaw = readRawConfig();
   const toWrite = {
-    audioDevice: config.audioDevice !== undefined && config.audioDevice !== null
-      ? config.audioDevice
-      : existingRaw.audioDevice,
+    audioDevice:
+      config.audioDevice !== undefined && config.audioDevice !== null
+        ? config.audioDevice
+        : existingRaw.audioDevice,
   };
 
   if (config.groqApiKey) {
@@ -235,19 +314,23 @@ async function saveConfigAsync(config) {
       toWrite.groqApiKey = config.groqApiKey;
     }
   } else {
-    if (existingRaw.groqApiKeyEncrypted) toWrite.groqApiKeyEncrypted = existingRaw.groqApiKeyEncrypted;
+    if (existingRaw.groqApiKeyEncrypted)
+      toWrite.groqApiKeyEncrypted = existingRaw.groqApiKeyEncrypted;
     if (existingRaw.groqApiKey) toWrite.groqApiKey = existingRaw.groqApiKey;
   }
 
   if (config.deepgramApiKey) {
     if (safeStorage.isEncryptionAvailable()) {
-      toWrite.deepgramApiKeyEncrypted = safeStorage.encryptString(config.deepgramApiKey).toString('base64');
+      toWrite.deepgramApiKeyEncrypted = safeStorage
+        .encryptString(config.deepgramApiKey)
+        .toString('base64');
     } else {
       console.warn('[main] Chiffrement système indisponible : clé Deepgram stockée en clair.');
       toWrite.deepgramApiKey = config.deepgramApiKey;
     }
   } else {
-    if (existingRaw.deepgramApiKeyEncrypted) toWrite.deepgramApiKeyEncrypted = existingRaw.deepgramApiKeyEncrypted;
+    if (existingRaw.deepgramApiKeyEncrypted)
+      toWrite.deepgramApiKeyEncrypted = existingRaw.deepgramApiKeyEncrypted;
     if (existingRaw.deepgramApiKey) toWrite.deepgramApiKey = existingRaw.deepgramApiKey;
   }
 
@@ -313,7 +396,10 @@ function createMainWindow() {
   // désormais explicitement via l'option `query` de loadFile ; dashboard.html
   // le relit dans getWsUrl() via window.location.search.
   mainWindow.loadFile(path.join(__dirname, 'dashboard.html'), {
-    query: process.env.WS_AUTH_TOKEN ? { token: process.env.WS_AUTH_TOKEN } : {},
+    query: {
+      ...(process.env.WS_AUTH_TOKEN ? { token: process.env.WS_AUTH_TOKEN } : {}),
+      port: String(SERVER_PORT),
+    },
   });
 
   mainWindow.on('close', (e) => {
@@ -396,7 +482,10 @@ function createTray() {
   tray.setToolTip('ChurchOverlay');
   refreshTrayMenu();
   tray.on('click', () => {
-    if (mainWindow) { mainWindow.show(); mainWindow.focus(); }
+    if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
   });
 }
 
@@ -412,10 +501,24 @@ function refreshTrayMenu() {
   const menu = Menu.buildFromTemplate([
     { label: statusLabel, enabled: false },
     { type: 'separator' },
-    { label: 'Ouvrir ChurchOverlay', click: () => { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } } },
+    {
+      label: 'Ouvrir ChurchOverlay',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      },
+    },
     { label: 'Redémarrer le pipeline', click: () => restartServer() },
     { type: 'separator' },
-    { label: 'Quitter', click: () => { app.isQuitting = true; app.quit(); } },
+    {
+      label: 'Quitter',
+      click: () => {
+        app.isQuitting = true;
+        app.quit();
+      },
+    },
   ]);
   tray.setContextMenu(menu);
 }
@@ -526,14 +629,14 @@ function startServer() {
     clearWorkerRecycle();
     const wasIntentional = shuttingDownWorker;
     shuttingDownWorker = false;
-    const dead = worker;
     worker = null;
 
     if (wasIntentional) {
       serverStatus = 'stopped';
       refreshTrayMenu();
       scheduleDashboardFlush();
-      const cb = onWorkerStopped; onWorkerStopped = null;
+      const cb = onWorkerStopped;
+      onWorkerStopped = null;
       if (cb) cb();
       return;
     }
@@ -548,7 +651,10 @@ function startServer() {
     // déjà précis envoyé par server.js (voir alert 'server-listen-error').
     if (lastAlertCode === 'server-listen-error') {
       console.error('[main] Port déjà utilisé — pas de nouvelle tentative automatique.');
-      appendLog(lastAlertMessage || 'Le port du serveur est déjà utilisé par une autre application.', true);
+      appendLog(
+        lastAlertMessage || 'Le port du serveur est déjà utilisé par une autre application.',
+        true
+      );
       serverStatus = 'error';
       refreshTrayMenu();
       scheduleDashboardFlush();
@@ -556,10 +662,16 @@ function startServer() {
     }
 
     if (recentCrashes.length > WORKER_MAX_CRASHES) {
-      console.error('[main] Trop de crashes worker (%d en %ds) — arrêt du pipeline.',
-        recentCrashes.length, WORKER_CRASH_WINDOW_MS / 1000);
-      appendLog(`Pipeline arrêté après ${recentCrashes.length} crashes rapprochés (code ${code}). ` +
-        'Cliquez sur Redémarrer.', true);
+      console.error(
+        '[main] Trop de crashes worker (%d en %ds) — arrêt du pipeline.',
+        recentCrashes.length,
+        WORKER_CRASH_WINDOW_MS / 1000
+      );
+      appendLog(
+        `Pipeline arrêté après ${recentCrashes.length} crashes rapprochés (code ${code}). ` +
+          'Cliquez sur Redémarrer.',
+        true
+      );
       serverStatus = 'error';
       refreshTrayMenu();
       scheduleDashboardFlush();
@@ -579,7 +691,10 @@ let shuttingDownWorker = false;
 let onWorkerStopped = null;
 
 function stopServerGracefully(cb) {
-  if (!worker) { cb && cb(); return; }
+  if (!worker) {
+    cb && cb();
+    return;
+  }
   shuttingDownWorker = true;
   onWorkerStopped = cb || null;
 
@@ -587,20 +702,27 @@ function stopServerGracefully(cb) {
     worker.postMessage({ type: 'shutdown' });
   } catch (e) {
     console.warn('[main] postMessage shutdown a échoué, terminate forcé:', e.message);
-    try { worker.terminate(); } catch (_) {}
+    try {
+      worker.terminate();
+    } catch (_) {}
     return;
   }
 
   setTimeout(() => {
     if (worker && shuttingDownWorker) {
       console.warn('[main] Arrêt gracieux du pipeline expiré (5s) — terminate forcé.');
-      try { worker.terminate(); } catch (_) {}
+      try {
+        worker.terminate();
+      } catch (_) {}
     }
   }, 5000);
 }
 
 function restartServer() {
-  if (!worker) { startServer(); return; }
+  if (!worker) {
+    startServer();
+    return;
+  }
   stopServerGracefully(() => setTimeout(startServer, 500));
 }
 
@@ -611,7 +733,7 @@ function scheduleWorkerRecycle() {
     if (shuttingDownWorker) return;
     const uptime = Date.now() - workerStartedAt;
     if (uptime >= WORKER_MAX_UPTIME_MS) {
-      console.log('[main] Recyclage du worker après %d min d\'uptime.', Math.round(uptime / 60000));
+      console.log("[main] Recyclage du worker après %d min d'uptime.", Math.round(uptime / 60000));
       appendLog('Recyclage préventif du pipeline (uptime > 4h).', false);
       restartServer();
     }
@@ -641,12 +763,23 @@ const MAX_LOG_LINES = 200;
 // retente indéfiniment, donc le verset ne s'affiche jamais dans OBS même
 // si le tableau de bord se montre "Serveur En Ligne". Centralise la
 // construction de l'URL ici pour que le token soit toujours ajouté.
+//
+// SECURITY (backend audit): this URL is the one meant to be pasted into
+// OBS as a Browser Source and is inherently more exposed than the
+// dashboard (visible in OBS scene/source settings, sharable by accident
+// when someone exports/shares an OBS scene collection). It now carries
+// WS_VIEWER_TOKEN, a credential that only grants read-only overlay access
+// server-side, instead of the operator token — so leaking this URL no
+// longer hands out full control of the live pipeline.
 function getOverlayUrl() {
   const base = 'file:///' + path.join(APP_ROOT, 'overlay.html').replace(/\\/g, '/');
-  const token = (process.env.WS_AUTH_TOKEN || '').trim();
-  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+  const token = (process.env.WS_VIEWER_TOKEN || '').trim();
+  const params = new URLSearchParams();
+  if (token) params.set('token', token);
+  params.set('port', String(SERVER_PORT));
+  return `${base}?${params.toString()}`;
 }
-let recentLogs = [];
+const recentLogs = [];
 let dashboardFlushTimer = null;
 let dashboardDirty = false;
 
@@ -805,7 +938,9 @@ ipcMain.handle('obs-set-config', async (_evt, { enabled, obsWebsocketUrl, passwo
         if (safeStorage.isEncryptionAvailable()) {
           multiScene.passwordEncrypted = safeStorage.encryptString(password).toString('base64');
         } else {
-          console.warn('[main] Chiffrement système indisponible : mot de passe OBS stocké en clair.');
+          console.warn(
+            '[main] Chiffrement système indisponible : mot de passe OBS stocké en clair.'
+          );
           multiScene.password = password;
         }
       }
@@ -829,7 +964,7 @@ ipcMain.handle('obs-connect', async () => {
     });
     return client
       ? { ok: true, connected: true }
-      : { ok: false, connected: false, error: 'Connexion impossible — vérifiez qu\'OBS tourne.' };
+      : { ok: false, connected: false, error: "Connexion impossible — vérifiez qu'OBS tourne." };
   } catch (e) {
     return { ok: false, connected: false, error: e.message };
   }
@@ -906,7 +1041,18 @@ function initAutoUpdater() {
 // ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
-app.disableHardwareAcceleration();
+// NOTE (audit CPU) : app.disableHardwareAcceleration() a été retiré ici.
+// L'intention d'origine ("l'app n'affiche que du texte/CSS, pas de rendu
+// 3D") ne correspond plus à dashboard.html : il contient 21 panneaux avec
+// backdrop-filter: blur()/saturate(), un halo conic-gradient, un dégradé
+// plein écran et 7 animations CSS en boucle infinie (halo-spin, mote-rise,
+// sacred-breathe, filigree-glow, mic-pulse, pulse-ring, offlineAttention),
+// plus le visualiseur audio en canvas/requestAnimationFrame. Sans
+// accélération matérielle, Chromium doit calculer tout ça en logiciel
+// (SwiftShader) sur le CPU à chaque frame — c'est la cause la plus probable
+// des ralentissements/CPU élevé signalés, précisément à cause de ces effets
+// de flou qui sont eux beaucoup plus coûteux sans GPU. Laisser Electron
+// utiliser l'accélération matérielle par défaut.
 
 app.whenReady().then(async () => {
   ensureWsAuthToken();
@@ -915,7 +1061,9 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(permission === 'media');
   });
-  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => permission === 'media');
+  session.defaultSession.setPermissionCheckHandler(
+    (_webContents, permission) => permission === 'media'
+  );
 
   createTray();
   perfMonitor.start(PERF_PUSH_MS);
@@ -940,7 +1088,10 @@ app.whenReady().then(async () => {
   if (!isFirstRunNeeded()) {
     startServer();
   } else {
-    appendLog('Configuration requise : microphone et/ou clé API Groq manquants. Ouvrez Paramètres dans le tableau de bord.', false);
+    appendLog(
+      'Configuration requise : microphone et/ou clé API Groq manquants. Ouvrez Paramètres dans le tableau de bord.',
+      false
+    );
   }
 });
 
@@ -959,6 +1110,6 @@ app.on('before-quit', (event) => {
 });
 
 process.on('uncaughtException', (err) => {
-  console.error('[main] Uncaught exception:', err && err.stack || err);
+  console.error('[main] Uncaught exception:', (err && err.stack) || err);
   appendLog('Erreur non gérée: ' + (err && err.message), true);
 });

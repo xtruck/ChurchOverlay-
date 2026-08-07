@@ -60,7 +60,8 @@ function isPlainObject(value) {
 function deepMerge(base, override) {
   const out = { ...base };
   for (const [key, value] of Object.entries(override)) {
-    out[key] = isPlainObject(value) && isPlainObject(base[key]) ? deepMerge(base[key], value) : value;
+    out[key] =
+      isPlainObject(value) && isPlainObject(base[key]) ? deepMerge(base[key], value) : value;
   }
   return out;
 }

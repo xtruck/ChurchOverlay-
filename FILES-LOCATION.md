@@ -74,6 +74,7 @@ What it does:
 
 Then run the app (no more `setup-microphone.bat` — the microphone is
 chosen inside the app itself):
+
 ```
 npm start
 ```
@@ -134,42 +135,42 @@ You should see "Jean 3:16" appear in OBS!
 
 ### Batch Files (.bat) - Double-Click These!
 
-| File | Purpose | When |
-|------|---------|------|
-| `install-dependencies.bat` | Install everything needed | First time only |
-| `setup-microphone.bat` | Find your microphone | First time only |
-| `start-server.bat` | Start the server | Every time you use it |
-| `test-overlay.bat` | Test without microphone | Before first service |
+| File                       | Purpose                   | When                  |
+| -------------------------- | ------------------------- | --------------------- |
+| `install-dependencies.bat` | Install everything needed | First time only       |
+| `setup-microphone.bat`     | Find your microphone      | First time only       |
+| `start-server.bat`         | Start the server          | Every time you use it |
+| `test-overlay.bat`         | Test without microphone   | Before first service  |
 
 ### Configuration Files
 
-| File | Purpose | Edit? |
-|------|---------|-------|
-| `.env` | Your settings | ✅ YES (after first install) |
-| `.env.example` | Template | ❌ NO |
-| `package.json` | Dependencies list | ❌ NO |
+| File           | Purpose           | Edit?                        |
+| -------------- | ----------------- | ---------------------------- |
+| `.env`         | Your settings     | ✅ YES (after first install) |
+| `.env.example` | Template          | ❌ NO                        |
+| `package.json` | Dependencies list | ❌ NO                        |
 
 ### Documentation
 
-| File | What It Covers |
-|------|----------------|
-| `README-WINDOWS.md` | **START HERE** - Full setup guide for Windows |
-| `QUICKSTART-WINDOWS.md` | Quick overview of what to click |
-| `README.md` | Environment variables explained |
-| `SETUP.md` | Detailed setup steps |
-| `ARCHITECTURE.md` | How the system works (technical) |
-| `API.md` | WebSocket API reference (technical) |
+| File                    | What It Covers                                |
+| ----------------------- | --------------------------------------------- |
+| `README-WINDOWS.md`     | **START HERE** - Full setup guide for Windows |
+| `QUICKSTART-WINDOWS.md` | Quick overview of what to click               |
+| `README.md`             | Environment variables explained               |
+| `SETUP.md`              | Detailed setup steps                          |
+| `ARCHITECTURE.md`       | How the system works (technical)              |
+| `API.md`                | WebSocket API reference (technical)           |
 
 ### Source Code (For Developers)
 
-| File | Purpose |
-|------|----------|
-| `server.js` | Main WebSocket server |
-| `overlay.html` | OBS overlay UI |
-| `audio-capture.js` | Microphone capture |
-| `whisper-wrapper.js` | Speech-to-text |
-| `detector.js` | Bible reference detection |
-| `bible-lookup-with-api.js` | Verse lookup |
+| File                       | Purpose                   |
+| -------------------------- | ------------------------- |
+| `server.js`                | Main WebSocket server     |
+| `overlay.html`             | OBS overlay UI            |
+| `audio-capture.js`         | Microphone capture        |
+| `whisper-wrapper.js`       | Speech-to-text            |
+| `detector.js`              | Bible reference detection |
+| `bible-lookup-with-api.js` | Verse lookup              |
 
 ---
 
@@ -208,22 +209,26 @@ If you see all of these ✅ **YOU'RE READY!**
 ## 🆘 Common Issues
 
 ### "install-dependencies.bat" won't run
+
 - Make sure you're in the right folder
 - Right-click and select "Run as Administrator"
 - Check Windows antivirus isn't blocking it
 
 ### "Node.js not found"
+
 - Download from https://nodejs.org/
 - Install with default settings
 - **Restart your computer**
 - Try again
 
 ### "start-server.bat" closes immediately
+
 - Check the error message in the console
 - Read `README-WINDOWS.md` for solutions
 - Make sure you completed `install-dependencies.bat` first
 
 ### "OBS overlay shows nothing"
+
 - Check `start-server.bat` is still running
 - Verify the file path in OBS is correct
 - Try: Right-click overlay source → Interact → F12 (check console)
@@ -278,6 +283,7 @@ Your Computer
 You now have everything set up. Your Church Overlay is ready to use! 🎉
 
 ### Summary:
+
 1. **First time:** Click `install-dependencies.bat` then `setup-microphone.bat`
 2. **Every time:** Click `start-server.bat`
 3. **In OBS:** Add Browser Source pointing to `overlay.html`

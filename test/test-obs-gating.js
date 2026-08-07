@@ -26,16 +26,23 @@ const { evaluateGate } = require('../obs-controller');
 
 console.log('=== Test OBS Gating (evaluateGate) ===\n');
 
-let passed = 0, failed = 0;
+let passed = 0,
+  failed = 0;
 function check(name, cond, detail) {
-  if (cond) { console.log(`✅ ${name}`); passed++; }
-  else { console.log(`❌ ${name}${detail ? ' — ' + detail : ''}`); failed++; }
+  if (cond) {
+    console.log(`✅ ${name}`);
+    passed++;
+  } else {
+    console.log(`❌ ${name}${detail ? ' — ' + detail : ''}`);
+    failed++;
+  }
 }
 
 // --- Gating désactivé : toujours ouvert, quel que soit l'état OBS --------
 check(
   'gating désactivé -> toujours ouvert',
-  evaluateGate({ sceneName: 'Louange', streaming: false, recording: false }, { enabled: false }).open === true
+  evaluateGate({ sceneName: 'Louange', streaming: false, recording: false }, { enabled: false })
+    .open === true
 );
 
 // --- Restriction par liste de scènes --------------------------------------
@@ -73,7 +80,7 @@ check(
 
 // --- Restriction par stream/enregistrement actif --------------------------
 check(
-  'requireStreamingOrRecording=true, ni l\'un ni l\'autre actif -> fermé',
+  "requireStreamingOrRecording=true, ni l'un ni l'autre actif -> fermé",
   evaluateGate(
     { sceneName: null, streaming: false, recording: false },
     { enabled: true, requireStreamingOrRecording: true }
@@ -121,7 +128,8 @@ check(
 
 check(
   'cfg enabled=true sans autre clé -> ouvert (aucune restriction configurée)',
-  evaluateGate({ sceneName: 'X', streaming: false, recording: false }, { enabled: true }).open === true
+  evaluateGate({ sceneName: 'X', streaming: false, recording: false }, { enabled: true }).open ===
+    true
 );
 
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);

@@ -62,7 +62,7 @@ test('WS_HOST: accepte une valeur personnalisée', () => {
   assert.strictEqual(r.parsedValue, '0.0.0.0');
 });
 
-test('WS_HOST: rejette une chaîne composée uniquement d\'espaces', () => {
+test("WS_HOST: rejette une chaîne composée uniquement d'espaces", () => {
   const r = configValidator.validateEnvVar('WS_HOST', '   ');
   assert.strictEqual(r.valid, false);
 });
@@ -83,6 +83,37 @@ test('MAX_MESSAGES_PER_MINUTE: défaut à 60 si non défini', () => {
   const r = configValidator.validateEnvVar('MAX_MESSAGES_PER_MINUTE', undefined);
   assert.strictEqual(r.valid, true);
   assert.strictEqual(r.parsedValue, 60);
+});
+
+// ── MIC_SILENCE_THRESHOLD (CORRECTIF — problème récurrent où la
+// transcription ne démarre jamais malgré des clés API valides, causé par
+// un seuil VAD jamais calibré et jusque-là non réglable) ──
+test('MIC_SILENCE_THRESHOLD: défaut à 0.02 si non défini', () => {
+  const r = configValidator.validateEnvVar('MIC_SILENCE_THRESHOLD', undefined);
+  assert.strictEqual(r.valid, true);
+  assert.strictEqual(r.parsedValue, 0.02);
+});
+
+test('MIC_SILENCE_THRESHOLD: accepte une valeur décimale personnalisée', () => {
+  const r = configValidator.validateEnvVar('MIC_SILENCE_THRESHOLD', '0.005');
+  assert.strictEqual(r.valid, true);
+  assert.strictEqual(r.parsedValue, 0.005);
+});
+
+test('MIC_SILENCE_THRESHOLD: accepte 0 (désactive le filtre de silence)', () => {
+  const r = configValidator.validateEnvVar('MIC_SILENCE_THRESHOLD', '0');
+  assert.strictEqual(r.valid, true);
+  assert.strictEqual(r.parsedValue, 0);
+});
+
+test('MIC_SILENCE_THRESHOLD: rejette une valeur hors plage (>1)', () => {
+  const r = configValidator.validateEnvVar('MIC_SILENCE_THRESHOLD', '1.5');
+  assert.strictEqual(r.valid, false);
+});
+
+test('MIC_SILENCE_THRESHOLD: rejette une valeur négative', () => {
+  const r = configValidator.validateEnvVar('MIC_SILENCE_THRESHOLD', '-0.01');
+  assert.strictEqual(r.valid, false);
 });
 
 // ── NODE_ENV ──
@@ -114,7 +145,7 @@ test('validateSystemConfig: avertit si GROQ_API_KEY absent', async () => {
   delete process.env.GROQ_API_KEY;
   try {
     const result = await configValidator.validateSystemConfig();
-    assert.ok(result.warnings.some(w => w.includes('GROQ_API_KEY')));
+    assert.ok(result.warnings.some((w) => w.includes('GROQ_API_KEY')));
   } finally {
     if (original !== undefined) process.env.GROQ_API_KEY = original;
   }
