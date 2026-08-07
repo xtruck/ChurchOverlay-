@@ -146,7 +146,9 @@ function createFileLogger(logsDir) {
       queue.shift();
       droppedSinceWarning++;
       if (droppedSinceWarning === 1 || droppedSinceWarning % 500 === 0) {
-        console.warn(`[logger] File d'attente saturée (${MAX_QUEUE_LINES}) — ${droppedSinceWarning} ligne(s) de log abandonnée(s) depuis.`);
+        console.warn(
+          `[logger] File d'attente saturée (${MAX_QUEUE_LINES}) — ${droppedSinceWarning} ligne(s) de log abandonnée(s) depuis.`
+        );
       }
     }
     queue.push({ filePath, text });

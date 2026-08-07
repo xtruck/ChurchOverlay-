@@ -1416,7 +1416,9 @@ wss.on('connection', (ws, req) => {
     if (sanitized.action === 'getArchiveMatches') {
       const query = sanitizeForPrompt(sanitized.query || '');
       const matches = query ? sermonArchive.search(query) : [];
-      ws.send(JSON.stringify({ action: 'archiveMatches', query: sanitized.query, results: matches }));
+      ws.send(
+        JSON.stringify({ action: 'archiveMatches', query: sanitized.query, results: matches })
+      );
       return;
     }
 
@@ -1555,14 +1557,20 @@ async function transcribeWithRetry(segmentFile, contextHint, maxAttempts = 2) {
     } catch (err) {
       lastErr = err;
       if (attempt < maxAttempts) {
-        warn(`Transcription échouée (tentative ${attempt}/${maxAttempts}): ${err.message} — nouvel essai`);
+        warn(
+          `Transcription échouée (tentative ${attempt}/${maxAttempts}): ${err.message} — nouvel essai`
+        );
         broadcast({ action: 'transcriptionRetrying', attempt, maxAttempts, error: err.message });
         await new Promise((resolve) => setTimeout(resolve, TRANSCRIPTION_RETRY_DELAY_MS));
       }
     }
   }
   consecutiveTranscriptionFailures++;
-  broadcast({ action: 'pipelineHealth', status: 'degraded', consecutiveFailures: consecutiveTranscriptionFailures });
+  broadcast({
+    action: 'pipelineHealth',
+    status: 'degraded',
+    consecutiveFailures: consecutiveTranscriptionFailures,
+  });
   throw lastErr;
 }
 

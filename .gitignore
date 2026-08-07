@@ -11,3 +11,12 @@ whisper/
 # utilisateurs vit dans les Releases GitHub (voir .github/workflows/
 # build-windows.yml), pas dans le dépôt git.
 dist/
+
+# Sortie de "npm run build" / "npm run build:ts" (tsc, voir tsconfig.json).
+# CORRECTIF : outDir pointait vers "./dist" — le même dossier que ci-dessus,
+# déjà exclusivement réservé à electron-builder par ce fichier lui-même.
+# Les deux outils écrivant dans le même répertoire pour des sorties
+# totalement différentes (fichiers .js/.d.ts/.map compilés vs. .exe/
+# installeur packagé), l'un pouvait écraser ou polluer l'autre selon
+# l'ordre d'exécution. Renommé en dist-ts/ (tsconfig.json), distinct.
+dist-ts/

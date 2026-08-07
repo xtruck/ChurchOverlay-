@@ -1016,7 +1016,9 @@ ipcMain.handle('get-perf-stats', async () => perfMonitor.getStats());
 
 // --- AJOUT (audit — plusieurs façons d'afficher l'overlay) ------------------
 ipcMain.handle('list-displays', async () => listDisplays());
-ipcMain.handle('open-display-window', async (_evt, { displayId }) => createDisplayWindow(displayId));
+ipcMain.handle('open-display-window', async (_evt, { displayId }) =>
+  createDisplayWindow(displayId)
+);
 ipcMain.handle('close-display-window', async () => closeDisplayWindow());
 
 // ---------------------------------------------------------------------------

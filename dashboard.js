@@ -687,7 +687,11 @@ function handleMessage(message) {
     // ci-dessus (qui gère l'échec final) : ceci couvre les tentatives
     // intermédiaires et l'état "dégradé" persistant.
     case 'transcriptionRetrying':
-      setTranscriptionHealth({ status: 'retrying', attempt: message.attempt, maxAttempts: message.maxAttempts });
+      setTranscriptionHealth({
+        status: 'retrying',
+        attempt: message.attempt,
+        maxAttempts: message.maxAttempts,
+      });
       break;
     case 'pipelineHealth':
       setTranscriptionHealth(message);
@@ -702,16 +706,16 @@ function handleMessage(message) {
       renderAiEnricherOutput(
         message.results && message.results.length
           ? `Cultes correspondants pour "${message.query}" : ` +
-            message.results
-              .map((r) => {
-                const date = new Date(r.date).toLocaleDateString('fr-FR', {
-                  day: 'numeric',
-                  month: 'long',
-                  year: 'numeric',
-                });
-                return `${r.theme || 'Sans titre'} (${date})`;
-              })
-              .join(' · ')
+              message.results
+                .map((r) => {
+                  const date = new Date(r.date).toLocaleDateString('fr-FR', {
+                    day: 'numeric',
+                    month: 'long',
+                    year: 'numeric',
+                  });
+                  return `${r.theme || 'Sans titre'} (${date})`;
+                })
+                .join(' · ')
           : `Aucun culte archivé ne correspond à "${message.query}".`
       );
       break;
@@ -778,7 +782,9 @@ function setBackgroundPattern(pattern) {
     return;
   }
   ws.send(JSON.stringify({ action: 'setBackgroundPattern', pattern }));
-  document.querySelectorAll('#patternPicker .mood-btn').forEach((btn) => btn.classList.remove('active'));
+  document
+    .querySelectorAll('#patternPicker .mood-btn')
+    .forEach((btn) => btn.classList.remove('active'));
   const active = document.getElementById(`pattern-btn-${pattern}`);
   if (active) active.classList.add('active');
 }
@@ -1073,7 +1079,7 @@ function onCaptionsToggle() {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ action: 'setCaptions', enabled }));
   }
-  showToast(enabled ? 'Sous-titres activés sur l\'overlay.' : 'Sous-titres désactivés.', 'info');
+  showToast(enabled ? "Sous-titres activés sur l'overlay." : 'Sous-titres désactivés.', 'info');
 }
 
 // AJOUT (audit — plusieurs façons d'afficher l'overlay, gratuit/léger,
@@ -1099,9 +1105,14 @@ async function refreshDisplays() {
   if (!select || !window.churchOverlay || !window.churchOverlay.listDisplays) return;
   try {
     const displays = await window.churchOverlay.listDisplays();
-    select.innerHTML = (displays || []).map((d) => `<option value="${d.id}">${d.label}</option>`).join('');
+    select.innerHTML = (displays || [])
+      .map((d) => `<option value="${d.id}">${d.label}</option>`)
+      .join('');
   } catch (err) {
-    showToast('Impossible de lister les écrans : ' + (err && err.message ? err.message : err), 'error');
+    showToast(
+      'Impossible de lister les écrans : ' + (err && err.message ? err.message : err),
+      'error'
+    );
   }
 }
 

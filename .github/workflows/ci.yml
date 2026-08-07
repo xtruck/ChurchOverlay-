@@ -117,13 +117,21 @@ jobs:
         env:
           CI: true
 
+      # CORRECTIF (audit) : ce projet n'a jamais eu d'outil de couverture
+      # (aucun nyc/c8/istanbul dans package.json, "npm test" ne génère
+      # aucun ./coverage/lcov.info) — cette étape échouait donc toujours
+      # en cherchant un fichier qui n'existe jamais. fail_ci_if_error
+      # évite de faire échouer tout le job "test" pour ça tant qu'aucune
+      # instrumentation de couverture n'est réellement mise en place.
       - name: Upload test coverage
         uses: codecov/codecov-action@v4
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22.x'
+        continue-on-error: true
         with:
           files: ./coverage/lcov.info
           flags: unittests
           name: codecov-umbrella
+          fail_ci_if_error: false
 
   # Build Electron Application
   build:

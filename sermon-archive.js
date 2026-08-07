@@ -57,7 +57,9 @@ function writeArchive(entries) {
 function saveServiceEntry(data) {
   if (!archivePath) return null;
   const versesShown = Array.isArray(data.versesShown)
-    ? data.versesShown.map((v) => (typeof v === 'string' ? v : v.reference || v.raw || '')).filter(Boolean)
+    ? data.versesShown
+        .map((v) => (typeof v === 'string' ? v : v.reference || v.raw || ''))
+        .filter(Boolean)
     : [];
 
   const entry = {
@@ -80,11 +82,7 @@ function normalize(text) {
   // décomposition NFD — plus robuste que la plage ̀-ͯ utilisée
   // ailleurs dans le dépôt (ex. detector.js), sans dépendre d'échapper des
   // points de code combinants à la main dans le code source.
-  return (text || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/\p{M}/gu, '')
-    .trim();
+  return (text || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').trim();
 }
 
 /**
@@ -94,13 +92,20 @@ function normalize(text) {
  * @returns {Array<{date:string, theme:string|null, keyPoints:string[], versesShown:string[], score:number}>}
  */
 function search(query, topK = 5) {
-  const qWords = normalize(query).split(/\s+/).filter((w) => w.length > 2);
+  const qWords = normalize(query)
+    .split(/\s+/)
+    .filter((w) => w.length > 2);
   if (qWords.length === 0) return [];
 
   const entries = readArchive();
   const scored = entries.map((entry) => {
     const haystack = normalize(
-      [entry.theme, ...(entry.keyPoints || []), ...(entry.versesShown || []), entry.transcriptExcerpt]
+      [
+        entry.theme,
+        ...(entry.keyPoints || []),
+        ...(entry.versesShown || []),
+        entry.transcriptExcerpt,
+      ]
         .filter(Boolean)
         .join(' ')
     );
