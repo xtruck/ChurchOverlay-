@@ -1244,18 +1244,25 @@ function initAutoUpdater() {
 // ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
-// NOTE (audit CPU) : app.disableHardwareAcceleration() a été retiré ici.
-// L'intention d'origine ("l'app n'affiche que du texte/CSS, pas de rendu
-// 3D") ne correspond plus à dashboard.html : il contient 21 panneaux avec
-// backdrop-filter: blur()/saturate(), un halo conic-gradient, un dégradé
-// plein écran et 7 animations CSS en boucle infinie (halo-spin, mote-rise,
-// sacred-breathe, filigree-glow, mic-pulse, pulse-ring, offlineAttention),
-// plus le visualiseur audio en canvas/requestAnimationFrame. Sans
+// NOTE (audit CPU, mise à jour lors de l'audit perf suivant) :
+// app.disableHardwareAcceleration() a été retiré ici. L'intention d'origine
+// ("l'app n'affiche que du texte/CSS, pas de rendu 3D") ne correspond pas à
+// dashboard.html/overlay.html : backdrop-filter: blur()/saturate() (~21
+// panneaux dans dashboard.html), un halo conic-gradient, un dégradé plein
+// écran, le visualiseur audio en canvas/requestAnimationFrame, et un rendu
+// de particules d'ambiance également en canvas (overlay.html). Sans
 // accélération matérielle, Chromium doit calculer tout ça en logiciel
 // (SwiftShader) sur le CPU à chaque frame — c'est la cause la plus probable
 // des ralentissements/CPU élevé signalés, précisément à cause de ces effets
 // de flou qui sont eux beaucoup plus coûteux sans GPU. Laisser Electron
 // utiliser l'accélération matérielle par défaut.
+// (La liste des 7 animations CSS en boucle infinie citée dans une version
+// précédente de cette note — halo-spin/mote-rise/sacred-breathe/filigree-
+// glow — ne reflétait déjà plus dashboard.html : ces effets avaient été
+// retirés sur demande explicite. Seuls offlineAttention/pulse-ring/mic-pulse
+// restent, et sont conditionnels à un état — pas des animations "toujours
+// actives". Le raisonnement GPU ci-dessus reste valable pour les
+// backdrop-filter et les rendus canvas, qui eux tournent en continu.)
 
 // ---------------------------------------------------------------------------
 // AJOUT (raccourcis clavier globaux — recommandation "hotkeys" façon OBS)

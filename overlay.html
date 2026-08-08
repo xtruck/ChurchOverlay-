@@ -111,28 +111,16 @@ body {
   50% { opacity: 0.44; }
 }
 
-/* Particules d'ambiance */
-.particles {
+/* Particules d'ambiance — voir #ambientCanvas plus bas (audit perf) : cette
+   règle ciblait un conteneur .particles jamais peuplé par aucun JS depuis
+   le retrait d'animation-library.js (voir commentaire près de <head> plus
+   bas) — ~20 lignes de CSS mortes, remplacées par un rendu canvas léger. */
+#ambientCanvas {
   position: fixed;
   top: 0; left: 0;
   width: 100%; height: 100%;
   pointer-events: none;
   z-index: 0;
-}
-.particle {
-  position: absolute;
-  width: 3px; height: 3px;
-  background: var(--overlay-particle);
-  border-radius: 50%;
-  opacity: 0;
-  box-shadow: 0 0 6px 1px var(--overlay-particle), 0 0 12px 3px var(--overlay-glow);
-  animation: float 11s infinite ease-in-out;
-}
-@keyframes float {
-  0%, 100% { transform: translateY(100vh) scale(0); opacity: 0; }
-  10% { opacity: 0.6; }
-  90% { opacity: 0.6; }
-  100% { transform: translateY(-10vh) scale(1); opacity: 0; }
 }
 
 /* Container principal */
@@ -511,7 +499,7 @@ body.high-contrast .verse-reference {
   font-size: clamp(18px, 1.8vw, 26px);
 }
 body.high-contrast .ambient-light,
-body.high-contrast .particles,
+body.high-contrast #ambientCanvas,
 body.high-contrast .advanced-particle {
   display: none !important;
 }
@@ -674,7 +662,7 @@ body.high-contrast .verse-text .kinetic-word {
 
 <!-- Particules d'ambiance -->
 <div class="ambient-light" aria-hidden="true"></div>
-<div class="particles" id="particles"></div>
+<canvas id="ambientCanvas" aria-hidden="true"></canvas>
 
 <!-- Indicateur commande vocale -->
 <div id="voice-indicator">
@@ -1374,6 +1362,127 @@ function showReadingIndicator(show) {
   const el = document.getElementById('reading-indicator');
   el.classList.toggle('visible', show);
 }
+
+/* ============================================================================
+ * Particules d'ambiance — #ambientCanvas (audit perf)
+ * ----------------------------------------------------------------------------
+ * REMPLACE l'ancien conteneur .particles/.particle : ce dernier n'était plus
+ * jamais peuplé depuis le retrait d'animation-library.js (voir commentaire
+ * près de <head>) — coût nul, mais ~20 lignes de CSS mortes. Rendu ici sur
+ * un unique <canvas> (au lieu de N nœuds DOM individuels), avec la même
+ * intention visuelle (points lumineux qui montent lentement) pour un coût
+ * de composition GPU nettement plus faible que N box-shadow animées.
+ * Respecte prefers-reduced-motion (aucune particule créée) et se met en
+ * pause quand la page n'est pas visible.
+ * ============================================================================ */
+(function initAmbientParticles() {
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const canvas = document.getElementById('ambientCanvas');
+  if (!canvas || !canvas.getContext) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const PARTICLE_COUNT = 18;
+  let particles = [];
+  let width = 0;
+  let height = 0;
+  let dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  let particleColor = '#dcb46a';
+  let glowColor = 'rgba(220, 180, 106, 0.32)';
+  let colorRefreshCounter = 0;
+  let rafId = null;
+  let running = false;
+
+  function readThemeColors() {
+    // getComputedStyle() a un coût réel : on ne le fait qu'une fois toutes
+    // les ~90 frames (autour d'1x/seconde à 90fps, moins souvent en dessous)
+    // plutôt qu'à chaque frame, pour suivre les changements de mood/thème
+    // (applyTheme) sans payer ce coût en continu.
+    const styles = getComputedStyle(document.body);
+    particleColor = styles.getPropertyValue('--overlay-particle').trim() || particleColor;
+    glowColor = styles.getPropertyValue('--overlay-glow').trim() || glowColor;
+  }
+
+  function makeParticle(randomizeY) {
+    return {
+      x: Math.random() * width,
+      y: randomizeY ? Math.random() * height : height + 20,
+      speed: 6 + Math.random() * 10, // px/s, monte lentement
+      size: 1.5 + Math.random() * 2,
+      phase: Math.random() * Math.PI * 2,
+    };
+  }
+
+  function resize() {
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  let lastTs = 0;
+  function tick(ts) {
+    if (!running) return;
+    const dt = lastTs ? Math.min(0.05, (ts - lastTs) / 1000) : 0;
+    lastTs = ts;
+
+    colorRefreshCounter++;
+    if (colorRefreshCounter % 90 === 0) readThemeColors();
+
+    ctx.clearRect(0, 0, width, height);
+    for (const p of particles) {
+      p.y -= p.speed * dt;
+      const lifeRatio = 1 - p.y / height; // 0 en bas, ~1 en haut
+      const fadeIn = Math.min(1, (height - p.y) / (height * 0.15));
+      const fadeOut = Math.min(1, p.y / (height * 0.15));
+      const opacity = Math.max(0, Math.min(0.6, fadeIn, fadeOut)) * (0.7 + 0.3 * Math.sin(p.phase + ts / 900));
+
+      if (opacity > 0.01) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = particleColor;
+        ctx.globalAlpha = opacity;
+        ctx.shadowColor = glowColor;
+        ctx.shadowBlur = 8;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+      }
+
+      if (p.y < -20 || lifeRatio > 1.05) {
+        Object.assign(p, makeParticle(false));
+      }
+    }
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function start() {
+    if (running) return;
+    running = true;
+    lastTs = 0;
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function stop() {
+    running = false;
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+
+  window.addEventListener('resize', resize);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stop();
+    else start();
+  });
+
+  resize();
+  readThemeColors();
+  particles = Array.from({ length: PARTICLE_COUNT }, () => makeParticle(true));
+  if (!document.hidden) start();
+})();
 </script>
 </body>
 </html>

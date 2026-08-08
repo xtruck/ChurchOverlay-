@@ -1292,6 +1292,15 @@
                     <div class="status-dot"></div>
                     <span id="sidebarStatusText">Serveur En Ligne</span>
                 </div>
+                <!-- AJOUT (audit perf) : indicateur CPU/RAM du processus principal,
+                     alimenté par perf-monitor.js (déjà présent côté Electron mais
+                     jamais branché à l'UI jusqu'ici — voir onPerfUpdate() dans
+                     preload.js). Masqué par défaut : n'existe qu'en app Electron,
+                     pas en mode "serveur seul" navigateur (voir initPerfPill). -->
+                <div class="live-status-pill" id="perfPill" style="display:none;" title="Utilisation CPU / mémoire du processus principal ChurchOverlay">
+                    <div class="status-dot" id="perfDot"></div>
+                    <span id="perfPillText">CPU —% · RAM —</span>
+                </div>
                 <div>v2.4.0 — Moteur Biblique AI</div>
             </div>
         </aside>

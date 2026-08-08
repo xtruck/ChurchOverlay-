@@ -88,6 +88,7 @@ const {
 // HTTP & WebSocket server
 // ---------------------------------------------------------------------------
 const express = require('express');
+const compression = require('compression');
 const http = require('http');
 const WebSocket = require('ws');
 const { createRateLimiter } = require('./rate-limiter');
@@ -179,6 +180,11 @@ const connRateLimiter = createRateLimiter({
 });
 
 const app = express();
+// AJOUT (audit perf) : dashboard.html/dashboard.js (~230 Ko à eux deux)
+// étaient servis non compressés. Coût quasi nul en localhost (127.0.0.1 par
+// défaut), mais réel dès qu'un second poste rejoint via WS_HOST distant
+// (voir config-validator.js) — gzip/brotli sur toutes les réponses HTTP.
+app.use(compression());
 app.use(express.static(APP_ROOT));
 // AJOUT (médiathèque) : overlay.html et dashboard.html sont chargés en
 // file:// (voir main.js) — cette route leur donne une URL http:// stable
@@ -229,6 +235,12 @@ const httpServer = http.createServer(app);
 const wss = new WebSocket.Server({
   server: httpServer,
   maxPayload: 64 * 1024,
+  // AJOUT (audit perf) : compression native de `ws`, aucune dépendance
+  // supplémentaire. Réduit la taille sur le fil des diffusions verbeuses
+  // (transcript complet, réponses sermon-qa, archives) — gratuit en CPU
+  // pour de si petits messages, RAS pour les clients navigateur/Electron
+  // qui négocient déjà cette extension nativement.
+  perMessageDeflate: true,
   handleProtocols: (protocols) => {
     const offered = Array.from(protocols);
     if (offered.includes(WS_AUTH_TOKEN)) return WS_AUTH_TOKEN;

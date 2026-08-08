@@ -2029,6 +2029,14 @@ function updateMLStats(message) {
 }
 
 function updateDashboard() {
+  // AJOUT (audit perf) : cette minuterie tournait chaque seconde même
+  // fenêtre cachée/sans focus (opérateur basculé sur OBS pendant tout le
+  // culte) — seule minuterie que le throttle de visibilité existant
+  // (setupAmbientAnimationThrottle, voir .animations-paused plus bas dans
+  // ce fichier) ne couvrait pas encore. Réutilise le même signal plutôt que
+  // de dupliquer la logique document.hidden/hasFocus().
+  if (document.body.classList.contains('animations-paused')) return;
+
   setMetricValue('totalVerses', state.totalVerses);
   setMetricValue('detectionRate', state.detectionRate, '%');
   if (document.getElementById('activeLanguage'))
@@ -2685,4 +2693,36 @@ async function toggleCameraCapture() {
   if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
     navigator.mediaDevices.addEventListener('devicechange', refreshCameraList);
   }
+})();
+
+/* ============================================================================
+ * Indicateur de performance (CPU/RAM) — voir perf-monitor.js
+ * ----------------------------------------------------------------------------
+ * AJOUT (audit perf). L'échantillonnage (perf-monitor.js) et le pont IPC
+ * (main.js/preload.js, onPerfUpdate) existaient déjà côté Electron mais
+ * n'étaient consommés par aucune UI — ce bloc ferme la boucle. Absent en
+ * mode "serveur seul" navigateur (window.churchOverlay n'existe pas alors),
+ * la pastille reste masquée dans ce cas (voir style="display:none" en HTML).
+ * ============================================================================ */
+(function initPerfPill() {
+  const pill = document.getElementById('perfPill');
+  const text = document.getElementById('perfPillText');
+  const dot = document.getElementById('perfDot');
+  if (!pill || !text || !dot || !window.churchOverlay || !window.churchOverlay.onPerfUpdate) return;
+
+  pill.style.display = 'flex';
+  window.churchOverlay.onPerfUpdate((stats) => {
+    if (!stats) return;
+    const cpu = Math.round(stats.cpuPercent || 0);
+    const ram = Math.round(stats.rssMB || 0);
+    text.textContent = `CPU ${cpu}% · RAM ${ram} Mo`;
+    const color =
+      cpu >= 70
+        ? 'var(--accent-rose)'
+        : cpu >= 40
+          ? 'var(--accent-amber)'
+          : 'var(--accent-emerald)';
+    dot.style.background = color;
+    dot.style.boxShadow = `0 0 8px ${color}`;
+  });
 })();
