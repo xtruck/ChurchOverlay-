@@ -66,10 +66,27 @@ assert.strictEqual(
 );
 console.log('[TEST] ✓ Vidéo ajoutée et classée correctement\n');
 
+// Test 2b : addItem() sans AUCUNE phrase déclencheuse retombe sur le nom —
+// évite qu'un média reste silencieusement inatteignable à la voix quand
+// l'opérateur ne remplit que le champ "Nom" (voir commentaire dans addItem).
+console.log('[TEST] Test 2b: addItem() sans phrase déclencheuse retombe sur le nom...');
+const noPhraseSource = makeSourceFile('fallback.png');
+const noPhraseItem = mediaLibrary.addItem({ sourcePath: noPhraseSource, label: 'Poster Un' });
+assert.deepStrictEqual(
+  noPhraseItem.triggerPhrases,
+  ['Poster Un'],
+  'sans phrase déclencheuse fournie, le nom doit devenir la phrase déclencheuse par défaut'
+);
+assert(
+  mediaLibrary.matchTriggerPhrase('on va montrer poster un maintenant') !== null,
+  'dire le nom seul doit suffire à déclencher le média'
+);
+console.log('[TEST] ✓ Repli sur le nom comme phrase déclencheuse par défaut\n');
+
 // Test 3 : listItems()/getItem() reflètent les ajouts.
 console.log('[TEST] Test 3: listItems() / getItem()...');
 const items = mediaLibrary.listItems();
-assert.strictEqual(items.length, 2, 'les deux éléments ajoutés doivent apparaître');
+assert.strictEqual(items.length, 3, 'les trois éléments ajoutés doivent apparaître');
 assert.strictEqual(mediaLibrary.getItem(imgItem.id).label, 'Poster annonces');
 assert.strictEqual(mediaLibrary.getItem('id-inexistant'), null, 'un id inconnu doit renvoyer null');
 console.log('[TEST] ✓ Liste et accès par id corrects\n');

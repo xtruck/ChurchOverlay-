@@ -116,13 +116,23 @@ function addItem(data) {
   fs.mkdirSync(mediaDir, { recursive: true });
   fs.copyFileSync(data.sourcePath, path.join(mediaDir, filename));
 
-  const triggerPhrases = (Array.isArray(data.triggerPhrases) ? data.triggerPhrases : [])
+  const label = (data.label || path.basename(data.sourcePath, ext)).slice(0, 200);
+  let triggerPhrases = (Array.isArray(data.triggerPhrases) ? data.triggerPhrases : [])
     .map((p) => (typeof p === 'string' ? p.trim() : ''))
     .filter(Boolean);
+  // AJOUT (audit — écart avec l'intention "je nomme le média, je dis son nom
+  // pour l'afficher") : un opérateur qui ne remplit que le champ "Nom" en
+  // pensant que ça suffit se retrouvait avec un média silencieusement
+  // inatteignable à la voix (triggerPhrases resté vide). Le nom sert
+  // maintenant de phrase déclencheuse par défaut quand aucune n'est saisie —
+  // un champ "phrases déclencheuses" toujours rempli reste prioritaire.
+  if (triggerPhrases.length === 0 && label) {
+    triggerPhrases = [label];
+  }
 
   const item = {
     id,
-    label: (data.label || path.basename(data.sourcePath, ext)).slice(0, 200),
+    label,
     triggerPhrases: triggerPhrases.slice(0, 20).map((p) => p.slice(0, 200)),
     mediaType,
     filename,

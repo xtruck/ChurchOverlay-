@@ -1455,7 +1455,7 @@
                         </div>
                         <div class="queue-add-row" id="mediaLibraryAddRow">
                             <input type="text" id="mediaLabelInput" placeholder="Nom (ex. Poster annonces)">
-                            <input type="text" id="mediaPhrasesInput" placeholder="Phrase(s) déclencheuse(s), séparées par des virgules">
+                            <input type="text" id="mediaPhrasesInput" placeholder="Phrase(s) déclencheuse(s) (optionnel — vide = le nom sert de phrase)">
                             <!-- AJOUT (diaporama d'annonces — recommandation "présentation
                                  secondaire indépendante") : inclut cet élément dans la boucle
                                  de announcement-loop.html, indépendamment du déclenchement
@@ -1465,6 +1465,7 @@
                             </label>
                             <button class="btn btn-secondary" style="padding: 0.55rem 0.9rem;" onclick="addMediaLibraryItem()">+ Choisir un fichier</button>
                         </div>
+                        <div class="field-hint" style="margin-bottom:0.5rem;">Dites simplement le nom du média (ex. « affiche Poster annonces ») pour l'afficher à l'écran, ou tapez une phrase déclencheuse dédiée si vous préférez un mot-clé différent.</div>
                         <div class="queue-list" id="mediaLibraryList"></div>
                     </div>
 
