@@ -1586,11 +1586,13 @@ function startPipeline() {
   const ALERT_AFTER_CONSECUTIVE_SKIPS = 12;
   let consecutiveSkips = 0;
   let alertedForCurrentSilence = false;
+  let silenceStartedAt = null; // horodatage réel du 1er skip de la série en cours
 
   audioCapture.on({
     onAudioSegment: async (segmentFile) => {
       consecutiveSkips = 0;
       alertedForCurrentSilence = false;
+      silenceStartedAt = null;
       try {
         // AJOUT (audit — boost transcription) : la fin du dernier segment déjà
         // transcrit sert d'indice de continuité pour Whisper (voir groq-wrapper.js).
@@ -1615,9 +1617,27 @@ function startPipeline() {
     },
     onSegmentSkipped: (info) => {
       consecutiveSkips++;
+      if (consecutiveSkips === 1) silenceStartedAt = Date.now();
       if (consecutiveSkips >= ALERT_AFTER_CONSECUTIVE_SKIPS && !alertedForCurrentSilence) {
         alertedForCurrentSilence = true;
-        const message = `Aucune voix détectée depuis ~${Math.round((consecutiveSkips * 5000) / 1000)}s (niveau micro sous le seuil ${info.threshold}) — vérifiez le périphérique sélectionné et son gain.`;
+        // CORRECTIF (2026-08-08) : `consecutiveSkips * 5000` supposait une
+        // segmentation fixe à 5s (déjà fausse avant : segmentDuration vaut
+        // 4000ms, et depuis le VAD streaming les segments n'ont plus une
+        // durée fixe du tout) — remplacé par un horodatage réel.
+        const elapsedS = silenceStartedAt
+          ? Math.round((Date.now() - silenceStartedAt) / 1000)
+          : '?';
+        // CORRECTIF (2026-08-08 — diagnostic concret au lieu de générique) :
+        // affiche le niveau le plus fort réellement capté (maxRms) et le
+        // bruit ambiant appris à côté du seuil statique, pour distinguer
+        // "vraiment aucun son" de "de la voix, mais sous les deux seuils" —
+        // voir audio-capture.js flushSegment() pour le détail du calcul.
+        const levelDetail =
+          typeof info.maxRms === 'number'
+            ? ` — pic capté ${info.maxRms.toFixed(4)}, seuil statique ${info.threshold}, ` +
+              `seuil adaptatif ${info.adaptiveThreshold.toFixed(4)} (bruit ambiant appris ${info.noiseFloor.toFixed(4)})`
+            : ` (niveau micro sous le seuil ${info.threshold})`;
+        const message = `Aucune voix détectée depuis ~${elapsedS}s${levelDetail} — vérifiez le périphérique sélectionné et son gain.`;
         warn('Silence prolongé : ' + message);
         broadcast({ action: 'audioSilenceWarning', message, ...info });
         sessionStore.recordPipelineError('audio-silence', message);

@@ -270,6 +270,65 @@ async function run() {
   await audioCapture.stopRecording();
   console.log('[TEST] ✓ Deuxième coupure anticipée correctement retenue (débit Groq protégé)');
 
+  // AJOUT (2026-08-08 — régression réelle : "aucune voix détectée" alors que
+  // l'opérateur parlait) : une voix captée sous silenceThreshold (0.02) mais
+  // nettement au-dessus du bruit ambiant réel (pièce calme, micro peu
+  // sensible/éloigné) doit quand même être acceptée, grâce au détecteur
+  // ADAPTATIF — avant ce correctif, un tel segment était rejeté à 100% du
+  // temps par le seul seuil statique, malgré le VAD streaming.
+  console.log(
+    '\n[TEST] Test 11: voix sous silenceThreshold mais acceptée via détecteur adaptatif...'
+  );
+  segments = [];
+  audioCapture.on({
+    onAudioSegment: (file) => segments.push(file),
+    onError: (err) => console.error('[TEST] onError inattendu:', err.message),
+  });
+  await audioCapture.startBrowserCapture();
+
+  // Calibre le bruit ambiant vers un niveau très bas (silence quasi pur).
+  for (let i = 0; i < 15; i++) {
+    audioCapture.feedPcmChunk(makeVoicedBuffer(frameBytes, 0));
+  }
+  // Voix "faible" : amplitude 500 => RMS ≈ 0.0153, sous silenceThreshold
+  // (0.02 par défaut) mais nettement au-dessus du bruit ambiant calibré
+  // ci-dessus (~0.003, seuil adaptatif résultant ~0.01).
+  const quietVoiceAmplitude = 500;
+  const quietVoiceRms = quietVoiceAmplitude / 32768;
+  assert(
+    quietVoiceRms < config.silenceThreshold,
+    `signal de test bien sous silenceThreshold (${quietVoiceRms.toFixed(4)} < ${config.silenceThreshold})`
+  );
+  for (let i = 0; i < 25; i++) {
+    audioCapture.feedPcmChunk(makeVoicedBuffer(frameBytes, quietVoiceAmplitude));
+  }
+  // Complète jusqu'au plafond segmentDuration (40 trames de 100ms = 4000ms)
+  // pour forcer un flush même sans silence de fin de phrase.
+  for (let i = 0; i < 40 - 15 - 25; i++) {
+    audioCapture.feedPcmChunk(makeVoicedBuffer(frameBytes, quietVoiceAmplitude));
+  }
+
+  assert.strictEqual(
+    segments.length,
+    1,
+    'Un segment sous silenceThreshold mais au-dessus du bruit ambiant aurait dû être accepté'
+  );
+
+  // Confirme explicitement que le seuil STATIQUE seul aurait rejeté ce même
+  // segment — la preuve que c'est bien le détecteur adaptatif qui a sauvé
+  // ce segment, pas une coïncidence de calibrage du test.
+  const wholeSegmentBuffer = makeVoicedBuffer(segmentBytes, quietVoiceAmplitude);
+  const staticOnlyInfo = audioCapture.analyzeVoiceActivity(wholeSegmentBuffer, config);
+  assert(
+    staticOnlyInfo.voicedMs < config.minSpeechDuration,
+    `confirmation : le seuil statique seul aurait rejeté ce signal (${staticOnlyInfo.voicedMs}ms voisées)`
+  );
+
+  await audioCapture.stopRecording();
+  console.log(
+    '[TEST] ✓ Segment accepté via le détecteur adaptatif malgré un niveau sous silenceThreshold'
+  );
+
   console.log('\n=== Tous les tests sont passés ===');
   process.exit(0);
 }

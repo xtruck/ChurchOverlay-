@@ -265,17 +265,23 @@ const VAD_FRAME_MS = 100;
  * VAD_FRAME_MS et en comptant celles qui dépassent config.silenceThreshold.
  *
  * MISE À JOUR (VAD streaming) : cette fonction reste volontairement simple
- * (RMS par sous-fenêtre, seuil STATIQUE config.silenceThreshold) — c'est le
- * filtre final "ce segment déjà découpé mérite-t-il d'être envoyé au STT ?",
- * appelé une fois par segment dans flushSegment(). La state machine
- * Silence/Speech/Trailing à seuil ADAPTATIF (bruit ambiant appris en continu)
- * qui décide QUAND couper un segment, elle, vit maintenant dans
- * processStreamingFrame() ci-dessous — les deux couches sont volontairement
- * séparées : l'une décide du découpage en temps réel, l'autre du go/no-go
- * final avec un seuil prévisible et testable.
+ * (RMS par sous-fenêtre, seuil STATIQUE config.silenceThreshold) — c'était à
+ * l'origine le SEUL filtre "ce segment mérite-t-il d'être envoyé au STT ?".
+ *
+ * CORRECTIF (2026-08-08 — "aucune voix détectée" alors que l'opérateur
+ * parle) : ce seuil statique (0.02 par défaut, jamais calibré pour un micro
+ * réel — voir .env.example) peut être plus haut que le niveau RMS réel
+ * d'une voix captée par un micro peu sensible/éloigné dans une pièce très
+ * calme, même quand cette voix est nettement au-dessus du bruit ambiant
+ * réel. flushSegment() n'utilise donc plus CE SEUL résultat : il accepte
+ * aussi un segment si le seuil ADAPTATIF (bruit ambiant appris en continu,
+ * voir processStreamingFrame/STATE.segmentHasSpeech) l'avait déjà classé
+ * comme voisé — les deux détecteurs sont combinés en OU, pas l'un après
+ * l'autre, pour ne jamais perdre une vraie phrase juste parce qu'elle est
+ * sous silenceThreshold sans être sous le bruit ambiant réel.
  * @param {Buffer} segmentBuffer - PCM16LE du segment complet
  * @param {Object} config - config active (sampleRate, channels, bitDepth, silenceThreshold)
- * @returns {{ voicedMs: number, totalMs: number }}
+ * @returns {{ voicedMs: number, totalMs: number, maxRms: number }}
  */
 function analyzeVoiceActivity(segmentBuffer, config) {
   const bytesPerSample = config.bitDepth / 8;
@@ -291,12 +297,18 @@ function analyzeVoiceActivity(segmentBuffer, config) {
 
   let voicedFrames = 0;
   let totalFrames = 0;
+  let maxRms = 0;
   for (let offset = 0; offset + frameBytes <= segmentBuffer.length; offset += frameBytes) {
     const frame = segmentBuffer.slice(offset, offset + frameBytes);
-    if (computeRms(frame) >= config.silenceThreshold) voicedFrames++;
+    const frameRms = computeRms(frame);
+    if (frameRms >= config.silenceThreshold) voicedFrames++;
+    if (frameRms > maxRms) maxRms = frameRms;
     totalFrames++;
   }
-  return { voicedMs: voicedFrames * VAD_FRAME_MS, totalMs: totalFrames * VAD_FRAME_MS };
+  // maxRms (AJOUT diagnostic) : le niveau le plus fort observé dans le
+  // segment, même rejeté — sert à distinguer "vraiment silencieux" de
+  // "de la voix, mais sous silenceThreshold" dans onSegmentSkipped ci-dessous.
+  return { voicedMs: voicedFrames * VAD_FRAME_MS, totalMs: totalFrames * VAD_FRAME_MS, maxRms };
 }
 
 /**
@@ -363,6 +375,16 @@ function flushSegment(config, { early = false } = {}) {
 
   STATE.lastFlushAt = Date.now();
 
+  // Capturés AVANT le reset ci-dessous : verdict du détecteur ADAPTATIF sur
+  // ce segment précis (voir processStreamingFrame), utilisé en OU avec
+  // analyzeVoiceActivity() (seuil statique) pour la décision d'acceptation.
+  const adaptiveDetectedSpeech = STATE.segmentHasSpeech;
+  const noiseFloorAtFlush = STATE.noiseFloor;
+  const adaptiveThresholdAtFlush = Math.min(
+    config.maxAdaptiveThreshold,
+    Math.max(config.minAdaptiveThreshold, noiseFloorAtFlush * config.noiseMarginMultiplier)
+  );
+
   if (early) {
     // Silence de fin de phrase confirmé : rien à reporter sur le prochain
     // segment, la coupure tombe déjà à un bon endroit.
@@ -388,12 +410,22 @@ function flushSegment(config, { early = false } = {}) {
   // filtre, un segment de 5s de silence/musique (bruit de fond, temps
   // de transition, chant) partait quand même vers Groq/Deepgram — coût
   // API inutile et source de faux positifs de transcription.
+  //
+  // CORRECTIF (2026-08-08) : accepté si le seuil STATIQUE (analyzeVoiceActivity)
+  // OU le détecteur ADAPTATIF (adaptiveDetectedSpeech, calculé en continu
+  // pendant l'accumulation du segment, voir plus haut) a détecté de la voix
+  // — voir le commentaire de analyzeVoiceActivity() pour le raisonnement
+  // complet. Un micro peu sensible dans une pièce très calme peut produire
+  // une voix sous silenceThreshold sans être sous le bruit ambiant réel.
   const voiceInfo = analyzeVoiceActivity(segmentBuffer, config);
-  if (voiceInfo.voicedMs < config.minSpeechDuration) {
+  const staticDetectedSpeech = voiceInfo.voicedMs >= config.minSpeechDuration;
+  if (!staticDetectedSpeech && !adaptiveDetectedSpeech) {
     STATE.segmentCount++;
     console.log(
       `[audio-capture] Segment ${STATE.segmentCount} ignoré (silence — ` +
-        `${voiceInfo.voicedMs}ms de voix détectée < seuil ${config.minSpeechDuration}ms)`
+        `${voiceInfo.voicedMs}ms de voix détectée < seuil ${config.minSpeechDuration}ms, ` +
+        `pic ${voiceInfo.maxRms.toFixed(4)} vs seuil statique ${config.silenceThreshold} / ` +
+        `seuil adaptatif ${adaptiveThresholdAtFlush.toFixed(4)}, bruit ambiant ${noiseFloorAtFlush.toFixed(4)})`
     );
     // CORRECTIF (problème récurrent — transcription qui ne démarre jamais
     // sans qu'aucune erreur ne soit visible) : ce rejet était auparavant
@@ -404,16 +436,28 @@ function flushSegment(config, { early = false } = {}) {
     // n'explique pourquoi. Rendu visible via ce callback ; server.js
     // limite lui-même la fréquence d'alerte pour ne pas spammer le
     // dashboard si le silence est normal (temps mort entre deux prises
-    // de parole).
+    // de parole). AJOUT (2026-08-08) : maxRms/noiseFloor/adaptiveThreshold
+    // exposés pour que le message d'alerte donne des chiffres concrets au
+    // lieu de renvoyer juste vers "vérifiez le périphérique et son gain".
     if (STATE.callbacks.onSegmentSkipped) {
       STATE.callbacks.onSegmentSkipped({
         voicedMs: voiceInfo.voicedMs,
         totalMs: voiceInfo.totalMs,
         threshold: config.silenceThreshold,
         minSpeechDuration: config.minSpeechDuration,
+        maxRms: voiceInfo.maxRms,
+        noiseFloor: noiseFloorAtFlush,
+        adaptiveThreshold: adaptiveThresholdAtFlush,
       });
     }
     return;
+  }
+  if (!staticDetectedSpeech && adaptiveDetectedSpeech) {
+    console.log(
+      `[audio-capture] Segment accepté via détecteur ADAPTATIF uniquement ` +
+        `(pic ${voiceInfo.maxRms.toFixed(4)} sous seuil statique ${config.silenceThreshold}, ` +
+        `mais au-dessus du bruit ambiant appris ${noiseFloorAtFlush.toFixed(4)})`
+    );
   }
 
   // Créer le fichier WAV pour ce segment
