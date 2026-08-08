@@ -421,7 +421,20 @@ function createMainWindow() {
 // Aucune nouvelle dépendance : uniquement le module `screen` déjà fourni par
 // Electron.
 // ---------------------------------------------------------------------------
-let displayWindow = null;
+// CORRECTIF (stage display / diaporama d'annonces) : une seule variable
+// `displayWindow` ne pouvait porter qu'UNE fenêtre à la fois — impossible
+// d'avoir le vidéoprojecteur (overlay.html) et l'écran scène (stage-
+// display.html) ouverts simultanément sur deux écrans différents, alors que
+// c'est exactement le scénario visé par ces deux fonctionnalités. Remplacée
+// par une petite table {mode: BrowserWindow|null}, une fenêtre indépendante
+// par mode. displayWindow(s) au singulier restait le nom de la fonctionnalité
+// d'origine (multi-écrans) ; ce n'est que son STOCKAGE qui change.
+const DISPLAY_MODES = {
+  overlay: { file: 'overlay.html', title: 'ChurchOverlay — Affichage direct' },
+  stage: { file: 'stage-display.html', title: 'ChurchOverlay — Écran scène' },
+  announcements: { file: 'announcement-loop.html', title: 'ChurchOverlay — Diaporama annonces' },
+};
+const displayWindows = { overlay: null, stage: null, announcements: null };
 
 function listDisplays() {
   return screen.getAllDisplays().map((d, index) => ({
@@ -431,16 +444,17 @@ function listDisplays() {
   }));
 }
 
-function createDisplayWindow(displayId) {
+function createDisplayWindow(displayId, mode = 'overlay') {
+  const modeConfig = DISPLAY_MODES[mode] || DISPLAY_MODES.overlay;
   const displays = screen.getAllDisplays();
   const target = displays.find((d) => d.id === displayId) || screen.getPrimaryDisplay();
 
-  if (displayWindow && !displayWindow.isDestroyed()) {
-    displayWindow.close();
-    displayWindow = null;
+  if (displayWindows[mode] && !displayWindows[mode].isDestroyed()) {
+    displayWindows[mode].close();
+    displayWindows[mode] = null;
   }
 
-  displayWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     x: target.bounds.x,
     y: target.bounds.y,
     width: target.bounds.width,
@@ -450,32 +464,34 @@ function createDisplayWindow(displayId) {
     autoHideMenuBar: true,
     backgroundColor: '#000000',
     icon: path.join(__dirname, 'icon.png'),
-    title: 'ChurchOverlay — Affichage direct',
+    title: modeConfig.title,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
-  displayWindow.setMenuBarVisibility(false);
-  // Même jeton WS que mainWindow (voir createMainWindow) — overlay.html en
+  win.setMenuBarVisibility(false);
+  // Même jeton WS que mainWindow (voir createMainWindow) — chaque page en
   // file:// lit ce token via getWsUrl()/window.location.search, exactement
-  // comme dashboard.html.
-  displayWindow.loadFile(path.join(__dirname, 'overlay.html'), {
+  // comme dashboard.html/overlay.html.
+  win.loadFile(path.join(__dirname, modeConfig.file), {
     query: process.env.WS_AUTH_TOKEN ? { token: process.env.WS_AUTH_TOKEN } : {},
   });
-  displayWindow.on('closed', () => {
-    displayWindow = null;
+  win.on('closed', () => {
+    displayWindows[mode] = null;
   });
-  return { opened: true };
+  displayWindows[mode] = win;
+  return { opened: true, mode };
 }
 
-function closeDisplayWindow() {
-  if (displayWindow && !displayWindow.isDestroyed()) {
-    displayWindow.close();
+function closeDisplayWindow(mode = 'overlay') {
+  const win = displayWindows[mode];
+  if (win && !win.isDestroyed()) {
+    win.close();
   }
-  displayWindow = null;
-  return { closed: true };
+  displayWindows[mode] = null;
+  return { closed: true, mode };
 }
 
 function createTray() {
@@ -600,6 +616,26 @@ function startServer() {
     if (msg.type === 'audio-pipeline-ready') {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('audio-pipeline-ready');
+      }
+      return;
+    }
+
+    // AJOUT (pont ProPresenter — envoi automatique des versets détectés) :
+    // ignoré silencieusement si non activé/non connecté — pas d'erreur ni
+    // de log parasite pour l'immense majorité des installations qui
+    // n'utilisent pas ProPresenter (features.broadcast.propresenter.enabled
+    // reste false par défaut).
+    if (msg.type === 'verse-shown') {
+      try {
+        const cfg = (featuresStore.readFeatures().broadcast || {}).propresenter || {};
+        if (cfg.enabled && cfg.autoSendVerses) {
+          const pp = getProPresenterController();
+          if (pp.isConnected()) {
+            pp.sendStageMessage(`${msg.verse.reference}\n${msg.verse.text}`);
+          }
+        }
+      } catch (_e) {
+        /* best effort — jamais bloquant pour le pipeline principal */
       }
       return;
     }
@@ -999,6 +1035,141 @@ ipcMain.handle('obs-toggle-recording', async () => {
   }
 });
 
+// --- AJOUT (pont ProPresenter — recommandation "ProPresenter Remote/API") --
+// Même structure que le bloc OBS ci-dessus, dormant tant que
+// features.broadcast.propresenter.enabled reste à false (défaut).
+function getProPresenterController() {
+  return require('./propresenter-controller');
+}
+
+ipcMain.handle('propresenter-get-config', async () => {
+  try {
+    const cfg = (featuresStore.readFeatures().broadcast || {}).propresenter || {};
+    return {
+      ok: true,
+      enabled: !!cfg.enabled,
+      host: cfg.host || 'localhost',
+      port: cfg.port || 50001,
+      hasPassword: !!(cfg.passwordEncrypted || cfg.password),
+      autoSendVerses: !!cfg.autoSendVerses,
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle(
+  'propresenter-set-config',
+  async (_evt, { enabled, host, port, password, autoSendVerses }) => {
+    try {
+      const features = featuresStore.readFeatures();
+      features.broadcast = features.broadcast || {};
+      const pp = features.broadcast.propresenter || {};
+      features.broadcast.propresenter = pp;
+      if (typeof enabled === 'boolean') pp.enabled = enabled;
+      if (typeof host === 'string' && host.trim()) pp.host = host.trim();
+      if (typeof port === 'number' && port > 0) pp.port = port;
+      if (typeof autoSendVerses === 'boolean') pp.autoSendVerses = autoSendVerses;
+      if (typeof password === 'string') {
+        delete pp.password;
+        delete pp.passwordEncrypted;
+        if (password) {
+          if (safeStorage.isEncryptionAvailable()) {
+            pp.passwordEncrypted = safeStorage.encryptString(password).toString('base64');
+          } else {
+            console.warn(
+              '[main] Chiffrement système indisponible : mot de passe ProPresenter stocké en clair.'
+            );
+            pp.password = password;
+          }
+        }
+      }
+      featuresStore.writeFeatures(features);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }
+);
+
+ipcMain.handle('propresenter-connect', async () => {
+  try {
+    const pp = getProPresenterController();
+    return await pp.connect();
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('propresenter-send-message', async (_evt, { text }) => {
+  try {
+    const pp = getProPresenterController();
+    return pp.sendStageMessage(text);
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// --- AJOUT (Planning Center Services — recommandation "sync ordre du culte") -
+// Même structure que les blocs OBS/ProPresenter ci-dessus. Lecture seule
+// (voir planning-center-wrapper.js) — pas d'écriture vers le compte
+// Planning Center de l'opérateur.
+function getPlanningCenterWrapper() {
+  return require('./planning-center-wrapper');
+}
+
+ipcMain.handle('pco-get-config', async () => {
+  try {
+    const cfg = (featuresStore.readFeatures().broadcast || {}).planningCenter || {};
+    return {
+      ok: true,
+      enabled: !!cfg.enabled,
+      appId: cfg.appId || '',
+      hasSecret: !!(cfg.secretEncrypted || cfg.secret),
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('pco-set-config', async (_evt, { enabled, appId, secret }) => {
+  try {
+    const features = featuresStore.readFeatures();
+    features.broadcast = features.broadcast || {};
+    const pco = features.broadcast.planningCenter || {};
+    features.broadcast.planningCenter = pco;
+    if (typeof enabled === 'boolean') pco.enabled = enabled;
+    if (typeof appId === 'string') pco.appId = appId.trim();
+    if (typeof secret === 'string') {
+      delete pco.secret;
+      delete pco.secretEncrypted;
+      if (secret) {
+        if (safeStorage.isEncryptionAvailable()) {
+          pco.secretEncrypted = safeStorage.encryptString(secret).toString('base64');
+        } else {
+          console.warn(
+            '[main] Chiffrement système indisponible : secret Planning Center stocké en clair.'
+          );
+          pco.secret = secret;
+        }
+      }
+    }
+    featuresStore.writeFeatures(features);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('pco-fetch-plan-items', async () => {
+  try {
+    const pco = getPlanningCenterWrapper();
+    return await pco.getUpcomingPlanItems();
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
 ipcMain.handle('open-setup', async () => {
   createSetupWindow();
   return true;
@@ -1017,11 +1188,14 @@ ipcMain.handle('get-settings', async () => {
 ipcMain.handle('get-perf-stats', async () => perfMonitor.getStats());
 
 // --- AJOUT (audit — plusieurs façons d'afficher l'overlay) ------------------
+// CORRECTIF (stage display / diaporama d'annonces) : `mode` ajouté,
+// rétrocompatible ('overlay' par défaut si omis — comportement inchangé
+// pour tout appelant existant).
 ipcMain.handle('list-displays', async () => listDisplays());
-ipcMain.handle('open-display-window', async (_evt, { displayId }) =>
-  createDisplayWindow(displayId)
+ipcMain.handle('open-display-window', async (_evt, { displayId, mode }) =>
+  createDisplayWindow(displayId, mode)
 );
-ipcMain.handle('close-display-window', async () => closeDisplayWindow());
+ipcMain.handle('close-display-window', async (_evt, { mode } = {}) => closeDisplayWindow(mode));
 
 // --- AJOUT (médiathèque — déclenchement vocal de photos/vidéos) ------------
 // Seul point d'accès natif nécessaire côté main.js : le choix du fichier

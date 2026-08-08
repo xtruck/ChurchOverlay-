@@ -133,6 +133,12 @@ function addItem(data) {
         : mediaType === 'image'
           ? DEFAULT_IMAGE_DURATION_MS
           : null,
+    // AJOUT (diaporama d'annonces — recommandation "présentation secondaire
+    // indépendante") : inclus dans announcement-loop.html si vrai, sinon cet
+    // élément reste uniquement déclenchable à la voix/manuellement comme
+    // avant. Indépendant de displayDurationMs (voir DEFAULT_LOOP_DURATION_MS
+    // dans announcement-loop.html pour la durée utilisée en boucle).
+    includeInLoop: !!data.includeInLoop,
   };
 
   const items = readIndex();

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>ChurchOverlay — Écran scène</title>
+<!--
+  ============================================================================
+  stage-display.html — Écran dédié aux musiciens/chantres
+  ----------------------------------------------------------------------------
+  AJOUT (recommandation "Stage Display" façon ProPresenter) : page DISTINCTE
+  de overlay.html (pas un thème/mode de la même page) — le contenu ici n'est
+  JAMAIS destiné au public. Volontairement minimale (pas d'animations, pas de
+  thèmes/dégradés) : gros texte lisible de loin, fond neutre, rien qui
+  distraie un musicien en train de jouer.
+
+  Écoute les MÊMES diffusions 'showVerse'/'hideVerse' que overlay.html (les
+  musiciens voient ce que l'assemblée voit), plus deux diffusions qui
+  n'existent QUE pour cette page : 'stageMessage'/'stageMessageClear' — un
+  message texte de l'opérateur vers la scène, qui ne passe jamais par
+  l'overlay public (voir server.js, action 'sendStageMessage').
+
+  Se connecte exactement comme overlay.html (getWsToken/getWsPort depuis
+  window.location.search, injectés par main.js via createDisplayWindow) —
+  code dupliqué plutôt que partagé : ce fichier tourne dans une fenêtre
+  Electron séparée, sans accès aux fonctions de overlay.html.
+  ============================================================================
+-->
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --text: #f5f5f7;
+    --text-dim: #8a8a94;
+    --accent: #6366f1;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: var(--bg); color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    padding: 3vh 4vw;
+  }
+  #timer {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 3.2vh;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+  }
+  #main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 2vh;
+  }
+  #reference {
+    font-size: 3.4vh;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  #text {
+    font-size: 5.5vh;
+    line-height: 1.35;
+    max-width: 90vw;
+    white-space: pre-wrap;
+  }
+  #placeholder {
+    font-size: 3vh;
+    color: var(--text-dim);
+  }
+  #stageMessage {
+    display: none;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    padding: 2.5vh 4vw;
+    background: #d97706;
+    color: #1a1200;
+    font-size: 4vh;
+    font-weight: 700;
+    text-align: center;
+  }
+  #stageMessage.visible { display: block; }
+  #connIndicator {
+    position: fixed;
+    top: 2vh; right: 3vw;
+    width: 1.4vh; height: 1.4vh;
+    border-radius: 50%;
+    background: #ef4444;
+  }
+  #connIndicator.connected { background: #22c55e; }
+</style>
+</head>
+<body>
+
+<div id="connIndicator" title="État de la connexion"></div>
+<div id="timer">00:00</div>
+
+<div id="main">
+  <div id="placeholder">En attente...</div>
+  <div id="reference" style="display:none;"></div>
+  <div id="text" style="display:none;"></div>
+</div>
+
+<div id="stageMessage"></div>
+
+<script>
+'use strict';
+
+// Identique à overlay.html — voir son commentaire pour le raisonnement complet.
+const getWsToken = () => new URLSearchParams(window.location.search).get('token');
+const getWsPort = () => new URLSearchParams(window.location.search).get('port') || '8765';
+const getWsUrl = () => {
+  if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${window.location.host}`;
+  }
+  return `ws://localhost:${getWsPort()}`;
+};
+
+let ws = null;
+let reconnectTimer = null;
+
+function showReferenceText(reference, text) {
+  document.getElementById('placeholder').style.display = 'none';
+  const refEl = document.getElementById('reference');
+  const textEl = document.getElementById('text');
+  refEl.textContent = reference || '';
+  refEl.style.display = reference ? 'block' : 'none';
+  textEl.textContent = text || '';
+  textEl.style.display = text ? 'block' : 'none';
+}
+
+function clearReferenceText() {
+  document.getElementById('placeholder').style.display = 'block';
+  document.getElementById('reference').style.display = 'none';
+  document.getElementById('text').style.display = 'none';
+}
+
+function showStageMessage(text) {
+  const el = document.getElementById('stageMessage');
+  el.textContent = text;
+  el.classList.add('visible');
+}
+
+function clearStageMessage() {
+  document.getElementById('stageMessage').classList.remove('visible');
+}
+
+function connectWs() {
+  if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
+
+  try {
+    const token = getWsToken();
+    ws = token ? new WebSocket(getWsUrl(), [token]) : new WebSocket(getWsUrl());
+  } catch (e) {
+    console.error('[stage-display] Error creating WS:', e);
+    scheduleReconnect();
+    return;
+  }
+
+  ws.onopen = () => {
+    console.log('[stage-display] WebSocket connecté');
+    document.getElementById('connIndicator').classList.add('connected');
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+  };
+
+  ws.onmessage = (event) => {
+    let msg;
+    try {
+      msg = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+    if (!msg || !msg.action) return;
+
+    switch (msg.action) {
+      case 'showVerse':
+        showReferenceText(msg.reference, msg.text);
+        break;
+      case 'hideVerse':
+      case 'emergencyClear':
+        clearReferenceText();
+        break;
+      case 'stageMessage':
+        showStageMessage(msg.text);
+        break;
+      case 'stageMessageClear':
+        clearStageMessage();
+        break;
+    }
+  };
+
+  ws.onclose = () => {
+    console.log('[stage-display] WebSocket déconnecté');
+    document.getElementById('connIndicator').classList.remove('connected');
+    scheduleReconnect();
+  };
+
+  ws.onerror = (err) => {
+    console.error('[stage-display] WebSocket error:', err);
+  };
+}
+
+function scheduleReconnect() {
+  if (!reconnectTimer) {
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connectWs();
+    }, 3000);
+  }
+}
+
+connectWs();
+
+// Minuteur local (temps écoulé depuis l'ouverture de cet écran) — volontairement
+// simple, pas synchronisé avec le serveur : un repère approximatif pour les
+// musiciens ("ça fait 12 minutes qu'on joue"), pas une horloge de précision.
+const startedAt = Date.now();
+function tickTimer() {
+  const elapsedS = Math.floor((Date.now() - startedAt) / 1000);
+  const mm = String(Math.floor(elapsedS / 60)).padStart(2, '0');
+  const ss = String(elapsedS % 60).padStart(2, '0');
+  document.getElementById('timer').textContent = `${mm}:${ss}`;
+}
+setInterval(tickTimer, 1000);
+tickTimer();
+</script>
+</body>
+</html>

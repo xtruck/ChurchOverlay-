@@ -181,6 +181,8 @@ function initWebSocket() {
       // vocal doit y accéder même sans tableau de bord ouvert) — récupérée
       // à chaque connexion/reconnexion pour rester synchronisée.
       ws.send(JSON.stringify({ action: 'getMediaLibrary' }));
+      // AJOUT (bibliothèque de chants) : même raisonnement que getMediaLibrary.
+      ws.send(JSON.stringify({ action: 'getSongLibrary' }));
     }
   };
 
@@ -761,6 +763,18 @@ function handleMessage(message) {
       break;
     case 'hideMedia':
       break;
+    // AJOUT (bibliothèque de chants) : même raisonnement que mediaLibraryUpdated.
+    case 'songLibraryUpdated':
+      renderSongLibrary(message.songs);
+      break;
+    // AJOUT (stage display) : messages opérateur -> écran scène uniquement,
+    // rien à faire côté tableau de bord au-delà d'un accusé dans le journal
+    // d'activité (le contenu réel s'affiche sur stage-display.html).
+    case 'stageMessage':
+      addActivity(`Message envoyé à l'écran scène : ${message.text}`, 'info');
+      break;
+    case 'stageMessageClear':
+      break;
     // AJOUT : le serveur diffusait déjà languageChanged (déclenché par
     // une commande vocale "passe en bilingue", ou par un autre tableau
     // de bord connecté) mais rien n'écoutait ici — les boutons de langue
@@ -942,6 +956,7 @@ async function addMediaLibraryItem() {
     if (!sourcePath) return; // sélection annulée par l'opérateur
     const labelInput = document.getElementById('mediaLabelInput');
     const phrasesInput = document.getElementById('mediaPhrasesInput');
+    const loopInput = document.getElementById('mediaLoopInput');
     const label = labelInput ? labelInput.value.trim() : '';
     const triggerPhrases = phrasesInput
       ? phrasesInput.value
@@ -949,9 +964,13 @@ async function addMediaLibraryItem() {
           .map((p) => p.trim())
           .filter(Boolean)
       : [];
-    ws.send(JSON.stringify({ action: 'addMediaItem', sourcePath, label, triggerPhrases }));
+    const includeInLoop = !!(loopInput && loopInput.checked);
+    ws.send(
+      JSON.stringify({ action: 'addMediaItem', sourcePath, label, triggerPhrases, includeInLoop })
+    );
     if (labelInput) labelInput.value = '';
     if (phrasesInput) phrasesInput.value = '';
+    if (loopInput) loopInput.checked = false;
   } catch (err) {
     showToast(
       'Échec de la sélection du fichier : ' + (err && err.message ? err.message : err),
@@ -1006,7 +1025,7 @@ function renderMediaLibrary(items) {
                 <div class="queue-item">
                     <span class="queue-item-position">${item.mediaType === 'video' ? '🎬' : '🖼️'}</span>
                     <div class="media-item-info">
-                        <div class="media-item-label">${escapeHtmlDashboard(item.label)}</div>
+                        <div class="media-item-label">${item.includeInLoop ? '🔁 ' : ''}${escapeHtmlDashboard(item.label)}</div>
                         <div class="media-item-phrases">${phrasesBadges || '<span class="media-item-phrase-badge">Déclenchement manuel uniquement</span>'}</div>
                     </div>
                     <div class="queue-item-actions">
@@ -1031,6 +1050,269 @@ function renderMediaLibrary(items) {
     addRow.style.display = 'none';
   }
 })();
+
+/* ======================================================================
+   Bibliothèque de chants (déclenchement vocal ou manuel, section par
+   section, voir song-library.js/server.js). Comme la médiathèque : la
+   liste vit côté serveur. songSectionIndex garde en mémoire LOCALE quelle
+   section de chaque chant est "en cours" pour la navigation précédent/
+   suivant — le serveur, lui, reste sans état entre deux showSongSection().
+   ====================================================================== */
+let songLibraryItems = [];
+const songSectionIndex = {};
+
+function addSongToLibrary() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast("Non connecté au serveur — impossible d'ajouter un chant.", 'error');
+    return;
+  }
+  const titleInput = document.getElementById('songTitleInput');
+  const phrasesInput = document.getElementById('songPhrasesInput');
+  const lyricsInput = document.getElementById('songLyricsInput');
+  const title = titleInput ? titleInput.value.trim() : '';
+  const lyrics = lyricsInput ? lyricsInput.value : '';
+  if (!title || !lyrics.trim()) {
+    showToast('Titre et paroles requis.', 'error');
+    return;
+  }
+  const triggerPhrases = phrasesInput
+    ? phrasesInput.value
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean)
+    : [];
+  ws.send(JSON.stringify({ action: 'addSong', title, lyrics, triggerPhrases }));
+  if (titleInput) titleInput.value = '';
+  if (phrasesInput) phrasesInput.value = '';
+  if (lyricsInput) lyricsInput.value = '';
+}
+
+function deleteSongFromLibrary(id) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  ws.send(JSON.stringify({ action: 'deleteSong', id }));
+  delete songSectionIndex[id];
+}
+
+function showSongSectionNow(id) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  ws.send(
+    JSON.stringify({ action: 'showSongSection', id, sectionIndex: songSectionIndex[id] || 0 })
+  );
+}
+
+function stepSongSection(id, direction) {
+  const song = songLibraryItems.find((s) => s.id === id);
+  if (!song) return;
+  const current = songSectionIndex[id] || 0;
+  const next = Math.max(0, Math.min(song.sectionCount - 1, current + direction));
+  songSectionIndex[id] = next;
+  renderSongLibrary(songLibraryItems); // met à jour l'indicateur "N/total" affiché
+  showSongSectionNow(id);
+}
+
+function renderSongLibrary(songs) {
+  songLibraryItems = Array.isArray(songs) ? songs : [];
+  const list = document.getElementById('songLibraryList');
+  const countEl = document.getElementById('songLibraryCount');
+  if (countEl) countEl.textContent = songLibraryItems.length;
+  if (!list) return;
+
+  if (songLibraryItems.length === 0) {
+    list.innerHTML =
+      '<div style="font-size:0.8rem; color:var(--text-dim); padding: 0.5rem 0;">Aucun chant ajouté. Collez des paroles ci-dessus.</div>';
+    return;
+  }
+
+  list.innerHTML = songLibraryItems
+    .map((song) => {
+      const phrasesBadges = (song.triggerPhrases || [])
+        .map((p) => `<span class="media-item-phrase-badge">${escapeHtmlDashboard(p)}</span>`)
+        .join('');
+      const current = (songSectionIndex[song.id] || 0) + 1;
+      return `
+                <div class="queue-item">
+                    <span class="queue-item-position">🎵</span>
+                    <div class="media-item-info">
+                        <div class="media-item-label">${escapeHtmlDashboard(song.title)}</div>
+                        <div class="media-item-phrases">${phrasesBadges || '<span class="media-item-phrase-badge">Déclenchement manuel uniquement</span>'}</div>
+                    </div>
+                    <div class="queue-item-actions">
+                        <button class="queue-icon-btn" onclick="stepSongSection('${song.id}', -1)" title="Section précédente">◀</button>
+                        <span style="font-size:0.7rem; color:var(--text-dim); white-space:nowrap;">${current}/${song.sectionCount}</span>
+                        <button class="queue-icon-btn" onclick="stepSongSection('${song.id}', 1)" title="Section suivante">▶</button>
+                        <button class="queue-icon-btn queue-send" onclick="showSongSectionNow('${song.id}')" title="Afficher maintenant">▶▶</button>
+                        <button class="queue-icon-btn queue-remove" onclick="deleteSongFromLibrary('${song.id}')" title="Supprimer">✕</button>
+                    </div>
+                </div>
+            `;
+    })
+    .join('');
+}
+
+/* ======================================================================
+   Pont ProPresenter (écran scène, recommandation "ProPresenter Remote/API").
+   Entièrement optionnel — voir propresenter-controller.js/main.js. Passe
+   par IPC (window.churchOverlay), pas par WebSocket : la connexion
+   ProPresenter elle-même vit dans le process principal (accès à
+   safeStorage pour le mot de passe, comme pour OBS).
+   ====================================================================== */
+async function loadProPresenterConfig() {
+  if (!window.churchOverlay || !window.churchOverlay.getProPresenterConfig) return;
+  try {
+    const cfg = await window.churchOverlay.getProPresenterConfig();
+    if (!cfg || !cfg.ok) return;
+    const enabledInput = document.getElementById('ppEnabledInput');
+    const hostInput = document.getElementById('ppHostInput');
+    const portInput = document.getElementById('ppPortInput');
+    const autoSendInput = document.getElementById('ppAutoSendInput');
+    if (enabledInput) enabledInput.checked = !!cfg.enabled;
+    if (hostInput) hostInput.value = cfg.host || 'localhost';
+    if (portInput) portInput.value = cfg.port || 50001;
+    if (autoSendInput) autoSendInput.checked = !!cfg.autoSendVerses;
+  } catch (_err) {
+    /* silencieux : panneau optionnel, pas d'erreur bloquante au chargement */
+  }
+}
+
+async function saveProPresenterConfig() {
+  if (!window.churchOverlay || !window.churchOverlay.setProPresenterConfig) return;
+  const enabled = !!document.getElementById('ppEnabledInput')?.checked;
+  const host = document.getElementById('ppHostInput')?.value.trim() || 'localhost';
+  const port = Number(document.getElementById('ppPortInput')?.value) || 50001;
+  const autoSendVerses = !!document.getElementById('ppAutoSendInput')?.checked;
+  const password = document.getElementById('ppPasswordInput')?.value || '';
+  try {
+    await window.churchOverlay.setProPresenterConfig({
+      enabled,
+      host,
+      port,
+      autoSendVerses,
+      password,
+    });
+    const pwInput = document.getElementById('ppPasswordInput');
+    if (pwInput) pwInput.value = '';
+    showToast('Configuration ProPresenter enregistrée.', 'success');
+  } catch (err) {
+    showToast('Échec : ' + (err && err.message ? err.message : err), 'error');
+  }
+}
+
+async function connectProPresenter() {
+  if (!window.churchOverlay || !window.churchOverlay.proPresenterConnect) return;
+  const statusEl = document.getElementById('ppStatus');
+  if (statusEl) statusEl.textContent = 'Connexion en cours...';
+  try {
+    const result = await window.churchOverlay.proPresenterConnect();
+    if (statusEl) {
+      statusEl.textContent =
+        result && result.ok ? '✅ Connecté' : '❌ ' + (result?.error || 'Échec');
+    }
+  } catch (err) {
+    if (statusEl) statusEl.textContent = '❌ ' + (err && err.message ? err.message : err);
+  }
+}
+
+async function sendProPresenterTestMessage() {
+  if (!window.churchOverlay || !window.churchOverlay.proPresenterSendMessage) return;
+  const input = document.getElementById('ppTestMessageInput');
+  const text = input ? input.value.trim() : '';
+  if (!text) return;
+  try {
+    const result = await window.churchOverlay.proPresenterSendMessage(text);
+    if (result && result.ok) {
+      showToast('Message envoyé à ProPresenter.', 'success');
+      if (input) input.value = '';
+    } else {
+      showToast('Échec : ' + (result?.error || 'erreur inconnue'), 'error');
+    }
+  } catch (err) {
+    showToast('Échec : ' + (err && err.message ? err.message : err), 'error');
+  }
+}
+
+if (window.churchOverlay && window.churchOverlay.getProPresenterConfig) {
+  loadProPresenterConfig();
+}
+
+/* ======================================================================
+   Planning Center Services (ordre du culte, recommandation "sync Planning
+   Center"). Lecture seule — voir planning-center-wrapper.js/main.js. Passe
+   par IPC comme ProPresenter ci-dessus (le secret vit chiffré côté process
+   principal via safeStorage).
+   ====================================================================== */
+async function loadPlanningCenterConfig() {
+  if (!window.churchOverlay || !window.churchOverlay.getPlanningCenterConfig) return;
+  try {
+    const cfg = await window.churchOverlay.getPlanningCenterConfig();
+    if (!cfg || !cfg.ok) return;
+    const enabledInput = document.getElementById('pcoEnabledInput');
+    const appIdInput = document.getElementById('pcoAppIdInput');
+    if (enabledInput) enabledInput.checked = !!cfg.enabled;
+    if (appIdInput) appIdInput.value = cfg.appId || '';
+  } catch (_err) {
+    /* silencieux : panneau optionnel */
+  }
+}
+
+async function savePlanningCenterConfig() {
+  if (!window.churchOverlay || !window.churchOverlay.setPlanningCenterConfig) return;
+  const enabled = !!document.getElementById('pcoEnabledInput')?.checked;
+  const appId = document.getElementById('pcoAppIdInput')?.value.trim() || '';
+  const secret = document.getElementById('pcoSecretInput')?.value || '';
+  try {
+    await window.churchOverlay.setPlanningCenterConfig({ enabled, appId, secret });
+    const secretInput = document.getElementById('pcoSecretInput');
+    if (secretInput) secretInput.value = '';
+    showToast('Configuration Planning Center enregistrée.', 'success');
+  } catch (err) {
+    showToast('Échec : ' + (err && err.message ? err.message : err), 'error');
+  }
+}
+
+async function fetchPlanningCenterPlan() {
+  if (!window.churchOverlay || !window.churchOverlay.fetchPlanningCenterPlan) return;
+  const statusEl = document.getElementById('pcoStatus');
+  const itemsEl = document.getElementById('pcoPlanItems');
+  if (statusEl) statusEl.textContent = 'Chargement...';
+  if (itemsEl) itemsEl.innerHTML = '';
+  try {
+    const result = await window.churchOverlay.fetchPlanningCenterPlan();
+    if (!result || !result.ok) {
+      if (statusEl) statusEl.textContent = '❌ ' + (result?.error || 'Échec du chargement');
+      return;
+    }
+    const dateLabel = result.planDate
+      ? new Date(result.planDate).toLocaleDateString('fr-FR', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        })
+      : '';
+    if (statusEl) {
+      statusEl.textContent = `${escapeHtmlDashboard(result.planTitle)}${dateLabel ? ' — ' + dateLabel : ''}`;
+    }
+    if (itemsEl) {
+      itemsEl.innerHTML = (result.items || [])
+        .map(
+          (item) =>
+            `<div style="padding:0.3rem 0; border-bottom:1px solid var(--border-subtle);">${escapeHtmlDashboard(item.title)} <span style="color:var(--text-dim); font-size:0.78rem;">(${escapeHtmlDashboard(item.itemType)})</span></div>`
+        )
+        .join('');
+    }
+  } catch (err) {
+    if (statusEl) statusEl.textContent = '❌ ' + (err && err.message ? err.message : err);
+  }
+}
+
+if (window.churchOverlay && window.churchOverlay.getPlanningCenterConfig) {
+  loadPlanningCenterConfig();
+}
 
 // CORRECTIF (checklist mise en production, point 9) : bouton "Tester avant
 // le culte" — envoie une demande de vérification au serveur (connexion WS,
@@ -1268,13 +1550,29 @@ async function refreshDisplays() {
   }
 }
 
+// AJOUT (stage display / diaporama d'annonces) : le mode sélectionné décide
+// QUELLE page (overlay.html / stage-display.html / announcement-loop.html)
+// s'ouvre — voir DISPLAY_MODES dans main.js. Chaque mode a sa PROPRE fenêtre
+// (peuvent être ouvertes simultanément sur des écrans différents).
+function getSelectedDisplayMode() {
+  const modeSelect = document.getElementById('displayModeSelect');
+  return modeSelect ? modeSelect.value || 'overlay' : 'overlay';
+}
+
+const DISPLAY_MODE_LABELS = {
+  overlay: 'Overlay',
+  stage: 'Écran scène',
+  announcements: 'Diaporama annonces',
+};
+
 async function openDisplayWindow() {
   const select = document.getElementById('displaySelect');
   if (!select || !window.churchOverlay || !window.churchOverlay.openDisplayWindow) return;
   const displayId = select.value ? Number(select.value) : undefined;
+  const mode = getSelectedDisplayMode();
   try {
-    await window.churchOverlay.openDisplayWindow(displayId);
-    showToast('Overlay affiché en plein écran.', 'success');
+    await window.churchOverlay.openDisplayWindow(displayId, mode);
+    showToast(`${DISPLAY_MODE_LABELS[mode] || mode} affiché en plein écran.`, 'success');
   } catch (err) {
     showToast("Échec de l'affichage : " + (err && err.message ? err.message : err), 'error');
   }
@@ -1282,12 +1580,34 @@ async function openDisplayWindow() {
 
 async function closeDisplayWindow() {
   if (!window.churchOverlay || !window.churchOverlay.closeDisplayWindow) return;
+  const mode = getSelectedDisplayMode();
   try {
-    await window.churchOverlay.closeDisplayWindow();
-    showToast("Fenêtre d'affichage fermée.", 'info');
+    await window.churchOverlay.closeDisplayWindow(mode);
+    showToast(`Fenêtre "${DISPLAY_MODE_LABELS[mode] || mode}" fermée.`, 'info');
   } catch (err) {
     showToast('Échec de la fermeture : ' + (err && err.message ? err.message : err), 'error');
   }
+}
+
+// AJOUT (stage display) : message texte opérateur -> écran scène uniquement.
+function sendStageMessage() {
+  const input = document.getElementById('stageMessageInput');
+  const text = input ? input.value.trim() : '';
+  if (!text) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  ws.send(JSON.stringify({ action: 'sendStageMessage', text }));
+  if (input) input.value = '';
+}
+
+function clearStageMessage() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  ws.send(JSON.stringify({ action: 'clearStageMessage' }));
 }
 
 // AJOUT (audit — motif de test, gratuit/léger, session parallèle) : barres

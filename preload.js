@@ -120,13 +120,32 @@ contextBridge.exposeInMainWorld('churchOverlay', {
   obsSwitchScene: (sceneName) => ipcRenderer.invoke('obs-switch-scene', { sceneName }),
   obsToggleRecording: () => ipcRenderer.invoke('obs-toggle-recording'),
 
+  // --- AJOUT (pont ProPresenter — recommandation "ProPresenter Remote/API") :
+  // même structure que le bloc OBS ci-dessus. Entièrement optionnel — n'agit
+  // que si activé (features.broadcast.propresenter.enabled).
+  getProPresenterConfig: () => ipcRenderer.invoke('propresenter-get-config'),
+  setProPresenterConfig: (cfg) => ipcRenderer.invoke('propresenter-set-config', cfg),
+  proPresenterConnect: () => ipcRenderer.invoke('propresenter-connect'),
+  proPresenterSendMessage: (text) => ipcRenderer.invoke('propresenter-send-message', { text }),
+
+  // --- AJOUT (Planning Center Services — recommandation "sync ordre du culte") -
+  // Lecture seule, même structure que les blocs ci-dessus.
+  getPlanningCenterConfig: () => ipcRenderer.invoke('pco-get-config'),
+  setPlanningCenterConfig: (cfg) => ipcRenderer.invoke('pco-set-config', cfg),
+  fetchPlanningCenterPlan: () => ipcRenderer.invoke('pco-fetch-plan-items'),
+
   // --- AJOUT (audit — plusieurs façons d'afficher l'overlay, gratuit/léger) :
   // fenêtre plein écran indépendante d'OBS, sur l'écran choisi (voir
   // createDisplayWindow dans main.js). Pour les églises qui projettent
   // directement sans passer par un logiciel de diffusion.
   listDisplays: () => ipcRenderer.invoke('list-displays'),
-  openDisplayWindow: (displayId) => ipcRenderer.invoke('open-display-window', { displayId }),
-  closeDisplayWindow: () => ipcRenderer.invoke('close-display-window'),
+  // CORRECTIF (stage display / diaporama d'annonces) : `mode` optionnel
+  // ('overlay' par défaut côté main.js) pour choisir la page chargée dans
+  // la fenêtre plein écran — overlay.html / stage-display.html /
+  // announcement-loop.html.
+  openDisplayWindow: (displayId, mode) =>
+    ipcRenderer.invoke('open-display-window', { displayId, mode }),
+  closeDisplayWindow: (mode) => ipcRenderer.invoke('close-display-window', { mode }),
 
   // --- AJOUT (médiathèque — déclenchement vocal de photos/vidéos) ---------
   // Seul accès natif nécessaire : le sélecteur de fichier (dialog n'existe

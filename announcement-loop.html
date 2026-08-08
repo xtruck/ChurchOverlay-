@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>ChurchOverlay — Diaporama annonces</title>
+<!--
+  ============================================================================
+  announcement-loop.html — Présentation secondaire indépendante
+  ----------------------------------------------------------------------------
+  AJOUT (recommandation "présentation secondaire indépendante", ex. écran de
+  hall pendant le culte principal) : cycle en boucle, côté client uniquement,
+  à travers les éléments de la médiathèque marqués "Diaporama" (voir
+  includeInLoop dans media-library.js / la case à cocher dans dashboard.html).
+
+  Volontairement DÉCOUPLÉ du pipeline en direct : n'écoute JAMAIS
+  'showVerse'/'showMedia'/'stageMessage'. Une seule lecture de la liste au
+  chargement (pas de mise à jour en direct — rouvrir cette fenêtre après un
+  ajout dans la médiathèque si besoin, cohérent avec le principe "boucle
+  d'annonces préparée à l'avance", pas un flux piloté en direct).
+  ============================================================================
+-->
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000000; overflow: hidden;
+  }
+  #stage {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #stage img, #stage video {
+    max-width: 100%; max-height: 100%; object-fit: contain;
+  }
+  #empty {
+    display: none;
+    color: #6b7280;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 3vh;
+    text-align: center;
+  }
+  #empty.visible { display: block; }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <img id="stageImg" alt="" hidden>
+  <video id="stageVideo" hidden playsinline muted></video>
+</div>
+<div id="empty">Aucun média inclus dans le diaporama.<br>Cochez "Diaporama" sur un élément de la médiathèque.</div>
+
+<script>
+'use strict';
+
+// Identique à overlay.html — voir son commentaire pour le raisonnement complet.
+const getWsToken = () => new URLSearchParams(window.location.search).get('token');
+const getWsPort = () => new URLSearchParams(window.location.search).get('port') || '8765';
+const getWsUrl = () => {
+  if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${window.location.host}`;
+  }
+  return `ws://localhost:${getWsPort()}`;
+};
+const getHttpBase = () => {
+  if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+    return window.location.origin;
+  }
+  return `http://localhost:${getWsPort()}`;
+};
+
+const DEFAULT_LOOP_DURATION_MS = 8000; // repli si l'élément n'a pas de displayDurationMs propre
+let loopItems = [];
+let loopIndex = 0;
+let loopTimer = null;
+
+function showLoopItem() {
+  const img = document.getElementById('stageImg');
+  const video = document.getElementById('stageVideo');
+  clearTimeout(loopTimer);
+
+  if (loopItems.length === 0) {
+    img.hidden = true;
+    video.hidden = true;
+    document.getElementById('empty').classList.add('visible');
+    return;
+  }
+  document.getElementById('empty').classList.remove('visible');
+
+  const item = loopItems[loopIndex % loopItems.length];
+  const url = `${getHttpBase()}/media/${item.filename}`;
+
+  if (item.mediaType === 'video') {
+    img.hidden = true;
+    video.hidden = false;
+    video.src = url;
+    video.currentTime = 0;
+    video.play().catch(() => {});
+    video.onended = advanceLoop;
+    loopTimer = setTimeout(advanceLoop, item.displayDurationMs || DEFAULT_LOOP_DURATION_MS);
+  } else {
+    video.hidden = true;
+    video.pause();
+    video.onended = null;
+    img.hidden = false;
+    img.src = url;
+    loopTimer = setTimeout(advanceLoop, item.displayDurationMs || DEFAULT_LOOP_DURATION_MS);
+  }
+}
+
+function advanceLoop() {
+  loopIndex = (loopIndex + 1) % Math.max(1, loopItems.length);
+  showLoopItem();
+}
+
+function connectAndLoad() {
+  const token = getWsToken();
+  const ws = token ? new WebSocket(getWsUrl(), [token]) : new WebSocket(getWsUrl());
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ action: 'getMediaLibrary' }));
+  };
+
+  ws.onmessage = (event) => {
+    let msg;
+    try {
+      msg = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+    if (msg && msg.action === 'mediaLibraryUpdated') {
+      loopItems = (msg.items || []).filter((item) => item.includeInLoop);
+      loopIndex = 0;
+      // Chargement unique (voir commentaire d'en-tête) : la connexion peut
+      // fermer ensuite, elle n'a servi qu'à récupérer la liste une fois.
+      ws.close();
+      showLoopItem();
+    }
+  };
+
+  ws.onerror = (err) => {
+    console.error('[announcement-loop] WebSocket error:', err);
+  };
+}
+
+connectAndLoad();
+</script>
+</body>
+</html>

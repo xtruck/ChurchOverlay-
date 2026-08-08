@@ -48,6 +48,10 @@ const sermonArchive = require('./sermon-archive');
 // AJOUT (médiathèque — déclenchement vocal de photos/vidéos) : même
 // discipline que sermon-archive.js ci-dessus. Voir media-library.js.
 const mediaLibrary = require('./media-library');
+// AJOUT (bibliothèque de chants — déclenchement vocal, section suivante/
+// précédente en direct) : même discipline que media-library.js ci-dessus.
+// Voir song-library.js.
+const songLibrary = require('./song-library');
 const featuresStore = require('./features-store');
 const validation = require('./validation');
 
@@ -478,6 +482,21 @@ async function processTranscript(text) {
     warn('Media cue detection error: ' + e.message);
   }
 
+  // AJOUT (bibliothèque de chants) : même emplacement/philosophie que le
+  // médiathèque ci-dessus. Diffusée comme un 'showVerse' synthétique — voir
+  // showSongSection() plus bas — donc overlay.html n'a besoin d'aucune
+  // logique d'affichage dédiée aux chants.
+  try {
+    const songMatch = songLibrary.matchTriggerPhrase(text);
+    if (songMatch) {
+      log('Song cue detected: ' + songMatch.song.title);
+      broadcastSongSection(songMatch.song, songMatch.sectionIndex, 'voice-cue');
+      return;
+    }
+  } catch (e) {
+    warn('Song cue detection error: ' + e.message);
+  }
+
   let correctedText = text;
   if (corrector) {
     try {
@@ -719,6 +738,20 @@ async function processTranscript(text) {
     theme: theme ? { name: theme.name, mood: theme.mood } : null,
   });
 
+  // AJOUT (pont ProPresenter — envoi automatique des versets détectés) :
+  // relayé à main.js (seul endroit avec accès à safeStorage/propresenter-
+  // controller.js) via le même canal parentPort déjà utilisé pour
+  // audio-pipeline-ready/status. Ne couvre QUE ce chemin de détection
+  // automatique (le chemin dominant en usage réel) — pas les versets
+  // envoyés manuellement/depuis la file d'attente, pour garder ce lot de
+  // fonctionnalités raisonnable en taille (voir plan).
+  if (parentPort) {
+    parentPort.postMessage({
+      type: 'verse-shown',
+      verse: { reference: verse.reference, text: verse.text },
+    });
+  }
+
   pushHistory({
     reference: verse.reference,
     text: verse.text.substring(0, 200),
@@ -884,6 +917,29 @@ function handleHotkeyAction(action) {
   }
 }
 
+// AJOUT (bibliothèque de chants) : diffuse une section de chant comme un
+// 'showVerse' synthétique — reference = "Titre — Étiquette", text = paroles
+// de la section. Réutilise TOUT le pipeline d'affichage existant côté
+// overlay.html (carte, thème, timer) sans lui ajouter le moindre code dédié
+// aux chants. durationMs volontairement absent : sanitizeDurationMs() côté
+// overlay applique le même défaut généreux (2 min) que pour un verset,
+// largement suffisant pour un couplet/refrain chanté, et l'opérateur peut
+// avancer manuellement à la section suivante à tout moment.
+function broadcastSongSection(song, sectionIndex, detectedBy) {
+  const section = song.sections[sectionIndex];
+  if (!section) return;
+  broadcast({
+    action: 'showVerse',
+    reference: `${song.title} — ${section.label}`,
+    text: section.text,
+    text_fr: null,
+    text_en: null,
+    langMode: 'fr',
+    provider: 'song-library',
+    detectedBy,
+  });
+}
+
 // ===========================================================================
 // WebSocket handlers — with RBAC
 // ===========================================================================
@@ -961,6 +1017,14 @@ const OPERATOR_ACTIONS = new Set([
   'deleteMediaItem',
   'triggerMediaItem',
   'hideMedia',
+  // AJOUT (bibliothèque de chants)
+  'getSongLibrary',
+  'addSong',
+  'deleteSong',
+  'showSongSection',
+  // AJOUT (stage display — messages opérateur vers l'écran scène)
+  'sendStageMessage',
+  'clearStageMessage',
 ]);
 
 // SECURITY: role is derived from WHICH token the client authenticated with
@@ -1599,6 +1663,7 @@ wss.on('connection', (ws, req) => {
           label: sanitized.label,
           triggerPhrases: sanitized.triggerPhrases,
           displayDurationMs: sanitized.displayDurationMs,
+          includeInLoop: sanitized.includeInLoop,
         });
         log(`Médiathèque : "${item.label}" ajouté (${item.mediaType})`);
         broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
@@ -1639,6 +1704,64 @@ wss.on('connection', (ws, req) => {
 
     if (sanitized.action === 'hideMedia') {
       broadcast({ action: 'hideMedia' });
+      return;
+    }
+
+    // --- Bibliothèque de chants (mêmes conventions que la médiathèque
+    // ci-dessus : réponse directe au demandeur pour la lecture/mutation de
+    // la liste, broadcast() pour ce que tous les clients doivent voir) ---
+    if (sanitized.action === 'getSongLibrary') {
+      ws.send(JSON.stringify({ action: 'songLibraryUpdated', songs: songLibrary.listSongs() }));
+      return;
+    }
+
+    if (sanitized.action === 'addSong') {
+      try {
+        const song = songLibrary.addSong({
+          title: sanitized.title,
+          artist: sanitized.artist,
+          lyrics: sanitized.lyrics,
+          triggerPhrases: sanitized.triggerPhrases,
+        });
+        log(`Bibliothèque de chants : "${song.title}" ajouté (${song.sections.length} section(s))`);
+        broadcast({ action: 'songLibraryUpdated', songs: songLibrary.listSongs() });
+      } catch (err) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Chants : ' + err.message }));
+      }
+      return;
+    }
+
+    if (sanitized.action === 'deleteSong') {
+      const removed = songLibrary.deleteSong(sanitized.id);
+      if (removed) {
+        broadcast({ action: 'songLibraryUpdated', songs: songLibrary.listSongs() });
+      } else {
+        ws.send(JSON.stringify({ action: 'error', error: 'Chants : chant introuvable' }));
+      }
+      return;
+    }
+
+    if (sanitized.action === 'showSongSection') {
+      const song = songLibrary.getSong(sanitized.id);
+      if (!song) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Chants : chant introuvable' }));
+        return;
+      }
+      const sectionIndex = Number.isInteger(sanitized.sectionIndex) ? sanitized.sectionIndex : 0;
+      broadcastSongSection(song, sectionIndex, 'manual');
+      return;
+    }
+
+    // --- Stage display : messages opérateur visibles uniquement côté scène,
+    // jamais sur l'overlay public (voir stage-display.html) ---
+    if (sanitized.action === 'sendStageMessage') {
+      const text = sanitizeForPrompt((sanitized.text || '').slice(0, 500));
+      broadcast({ action: 'stageMessage', text, timestamp: Date.now() });
+      return;
+    }
+
+    if (sanitized.action === 'clearStageMessage') {
+      broadcast({ action: 'stageMessageClear' });
       return;
     }
 
@@ -1862,6 +1985,12 @@ try {
   mediaLibrary.setUserDataDir(USER_DATA_DIR);
 } catch (err) {
   warn('Failed to set media library dir: ' + err.message);
+}
+
+try {
+  songLibrary.setUserDataDir(USER_DATA_DIR);
+} catch (err) {
+  warn('Failed to set song library dir: ' + err.message);
 }
 
 // ===========================================================================

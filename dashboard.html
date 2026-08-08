@@ -1447,9 +1447,35 @@
                         <div class="queue-add-row" id="mediaLibraryAddRow">
                             <input type="text" id="mediaLabelInput" placeholder="Nom (ex. Poster annonces)">
                             <input type="text" id="mediaPhrasesInput" placeholder="Phrase(s) déclencheuse(s), séparées par des virgules">
+                            <!-- AJOUT (diaporama d'annonces — recommandation "présentation
+                                 secondaire indépendante") : inclut cet élément dans la boucle
+                                 de announcement-loop.html, indépendamment du déclenchement
+                                 vocal ci-dessus. -->
+                            <label style="display:flex; align-items:center; gap:0.35rem; font-size:0.8rem; color:var(--text-dim); white-space:nowrap;">
+                                <input type="checkbox" id="mediaLoopInput"> Diaporama
+                            </label>
                             <button class="btn btn-secondary" style="padding: 0.55rem 0.9rem;" onclick="addMediaLibraryItem()">+ Choisir un fichier</button>
                         </div>
                         <div class="queue-list" id="mediaLibraryList"></div>
+                    </div>
+
+                    <!-- AJOUT (bibliothèque de chants) : mêmes classes CSS que les cartes
+                         ci-dessus (queue-list/queue-item/queue-icon-btn). -->
+                    <div class="card">
+                        <div class="queue-panel-header">
+                            <span class="card-title">Chants (<span id="songLibraryCount">0</span>)</span>
+                        </div>
+                        <div class="queue-add-row">
+                            <input type="text" id="songTitleInput" placeholder="Titre du chant">
+                            <input type="text" id="songPhrasesInput" placeholder="Phrase(s) déclencheuse(s) (optionnel)">
+                        </div>
+                        <div class="queue-add-row">
+                            <textarea id="songLyricsInput" placeholder="Collez les paroles ici — séparez chaque couplet/refrain par une ligne vide" rows="3" style="flex:1; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 0.55rem 0.85rem; color: var(--text-main); font-family: inherit; font-size: 0.85rem; resize: vertical;"></textarea>
+                        </div>
+                        <div class="queue-add-row">
+                            <button class="btn btn-secondary" style="padding: 0.55rem 0.9rem;" onclick="addSongToLibrary()">+ Ajouter le chant</button>
+                        </div>
+                        <div class="queue-list" id="songLibraryList"></div>
                     </div>
                 </div>
 
@@ -1956,17 +1982,31 @@
 
                     <div id="displayWindowControls" style="display:none;">
                         <div class="field-hint" style="margin-bottom:8px;">
-                            Ouvre le même overlay que la Browser Source OBS, en plein écran sur l'écran choisi
-                            — utile pour projeter directement, sans passer par OBS.
+                            Ouvre l'overlay, l'écran scène ou le diaporama d'annonces en plein écran sur
+                            l'écran choisi — chacun peut être ouvert simultanément sur un écran différent
+                            (voir recommandations "Stage Display" / "présentation secondaire indépendante").
                         </div>
                         <div class="input-row" style="margin-bottom:0.75rem;">
                             <select id="displaySelect"><option value="">Recherche des écrans…</option></select>
+                            <select id="displayModeSelect">
+                                <option value="overlay">Overlay (public)</option>
+                                <option value="stage">Écran scène</option>
+                                <option value="announcements">Diaporama annonces</option>
+                            </select>
                             <button type="button" class="btn btn-secondary" onclick="refreshDisplays()">🔄 Actualiser</button>
                         </div>
                         <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
                             <button type="button" class="btn btn-primary" onclick="openDisplayWindow()">🖥️ Afficher en plein écran</button>
                             <button type="button" class="btn btn-secondary" onclick="closeDisplayWindow()">Fermer la fenêtre</button>
                         </div>
+                    </div>
+
+                    <!-- AJOUT (stage display) : message texte visible UNIQUEMENT sur
+                         l'écran scène, jamais sur l'overlay public. -->
+                    <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap; padding:0.6rem 0.8rem; margin-top:1rem; border:1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius:8px;">
+                        <input type="text" id="stageMessageInput" placeholder="Message pour l'écran scène (ex. « 2 min avant la fin »)" style="flex:1; min-width:200px; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 0.5rem 0.75rem; color: var(--text-main); font-family: inherit; font-size: 0.85rem;" onkeydown="if(event.key==='Enter') sendStageMessage()">
+                        <button type="button" class="btn btn-secondary" onclick="sendStageMessage()">📣 Envoyer</button>
+                        <button type="button" class="btn btn-secondary" onclick="clearStageMessage()">Effacer</button>
                     </div>
 
                     <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap; padding:0.6rem 0.8rem; margin-top:1rem; border:1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius:8px;">
@@ -2021,6 +2061,80 @@
                         </button>
                         <div id="preServiceCheckResults" style="display:none; margin-top: 0.75rem; font-size: 0.85rem;"></div>
                     </div>
+                </div>
+
+                <!-- AJOUT (pont ProPresenter + Planning Center — recommandations
+                     "ProPresenter Remote/API" et "Planning Center Services sync").
+                     ENTIÈREMENT OPTIONNEL, "enabled" reste à false tant que
+                     l'opérateur ne le configure pas explicitement ici — voir
+                     config/features.json > broadcast.propresenter, même principe
+                     que le module OBS (obs-controller.js). -->
+                <div class="card" style="margin-bottom: 1.25rem;">
+                    <div class="card-header">
+                        <span class="card-title">Intégrations</span>
+                    </div>
+
+                    <div style="font-size:0.85rem; font-weight:600; color:var(--text-main); margin-bottom:0.5rem;">ProPresenter (écran scène)</div>
+                    <div class="form-group">
+                        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                            <input type="checkbox" id="ppEnabledInput"> Activer la connexion ProPresenter
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label for="ppHostInput">Hôte / Port (Réglages → Réseau → API Remote dans ProPresenter)</label>
+                        <div class="input-row">
+                            <input type="text" id="ppHostInput" placeholder="localhost" style="max-width:180px;">
+                            <input type="number" id="ppPortInput" placeholder="50001" style="max-width:110px;">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="ppPasswordInput">Mot de passe API Remote</label>
+                        <div class="input-row">
+                            <input type="password" id="ppPasswordInput" placeholder="Laisser vide pour conserver le mot de passe actuel" autocomplete="off">
+                            <button type="button" class="btn btn-secondary btn-toggle-pass" data-target="ppPasswordInput">Afficher</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                            <input type="checkbox" id="ppAutoSendInput"> Envoyer automatiquement chaque verset détecté vers l'écran scène ProPresenter
+                        </label>
+                    </div>
+                    <div style="display:flex; gap:0.6rem; flex-wrap:wrap; margin-bottom:0.75rem;">
+                        <button type="button" class="btn btn-secondary" onclick="saveProPresenterConfig()">Enregistrer</button>
+                        <button type="button" class="btn btn-secondary" onclick="connectProPresenter()">🔌 Se connecter</button>
+                    </div>
+                    <div class="field-hint" id="ppStatus" style="margin-bottom:1rem;"></div>
+                    <div class="input-row" style="margin-bottom:1.25rem;">
+                        <input type="text" id="ppTestMessageInput" placeholder="Message de test vers l'écran scène ProPresenter">
+                        <button type="button" class="btn btn-secondary" onclick="sendProPresenterTestMessage()">Envoyer</button>
+                    </div>
+
+                    <div style="font-size:0.85rem; font-weight:600; color:var(--text-main); margin-bottom:0.5rem; padding-top:0.75rem; border-top:1px solid var(--border-subtle);">Planning Center Services (ordre du culte)</div>
+                    <div class="field-hint" style="margin-bottom:0.5rem;">
+                        Jeton d'accès personnel : <a href="#" class="settings-copy-link" data-url="https://api.planningcenteronline.com/oauth/applications">api.planningcenteronline.com/oauth/applications</a>
+                    </div>
+                    <div class="form-group">
+                        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                            <input type="checkbox" id="pcoEnabledInput"> Activer Planning Center
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label for="pcoAppIdInput">Application ID</label>
+                        <input type="text" id="pcoAppIdInput" placeholder="Application ID" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="pcoSecretInput">Secret</label>
+                        <div class="input-row">
+                            <input type="password" id="pcoSecretInput" placeholder="Laisser vide pour conserver le secret actuel" autocomplete="off">
+                            <button type="button" class="btn btn-secondary btn-toggle-pass" data-target="pcoSecretInput">Afficher</button>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:0.6rem; flex-wrap:wrap; margin-bottom:0.75rem;">
+                        <button type="button" class="btn btn-secondary" onclick="savePlanningCenterConfig()">Enregistrer</button>
+                        <button type="button" class="btn btn-secondary" onclick="fetchPlanningCenterPlan()">📋 Charger l'ordre du culte</button>
+                    </div>
+                    <div class="field-hint" id="pcoStatus" style="margin-bottom:0.5rem;"></div>
+                    <div id="pcoPlanItems" style="font-size:0.85rem;"></div>
                 </div>
             </section>
 
