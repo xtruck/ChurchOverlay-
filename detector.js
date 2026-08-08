@@ -270,6 +270,28 @@ function escapeRegExp(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// AJOUT (cahier des charges — précision contextuelle) : indices qu'une
+// citation biblique est réellement INTENTIONNELLE plutôt qu'une simple
+// coïncidence de mots ("chapitre" au sens figuré, un nom de livre qui
+// apparaît par hasard dans une autre phrase). Volontairement large sur les
+// verbes/tournures (la parole prononcée ne reproduira jamais exactement une
+// formulation) mais chaque entrée reste sans ambiguïté : aucune n'apparaît
+// naturellement hors d'une introduction de citation.
+const INTRO_PHRASES_PATTERN =
+  /\b(?:il est ecrit|comme (?:il est )?ecrit|comme (?:le )?dit la bible|la parole (?:de dieu )?dit|selon l ecriture|les ecritures disent|la bible dit|comme nous (?:le )?dit|ouvrons (?:nos bibles )?(?:dans|en|a)|lisons (?:dans|en)|je lis (?:dans|en))\b/i;
+
+/**
+ * Indique si le texte contient une tournure d'introduction de citation
+ * biblique ("il est écrit...", "comme dit la Bible...") — un indice fort
+ * qu'une référence détectée à proximité est une VRAIE citation, pas une
+ * coïncidence de mots.
+ * @param {string} text - texte brut (sera normalisé en interne)
+ * @returns {boolean}
+ */
+function hasIntroductionPhrase(text) {
+  return INTRO_PHRASES_PATTERN.test(normalize(String(text || '')));
+}
+
 function normalize(value) {
   const base = String(value || '')
     .normalize('NFD')
@@ -521,15 +543,30 @@ function matchAgainstAliases(normalized) {
   return null;
 }
 
+// AJOUT (cahier des charges — score de confiance) : ajouté ICI, en
+// enveloppant les points de sortie de matchAgainstAliases(), plutôt que
+// dans ses 4 "return" internes — évite de toucher cette fonction dense et
+// déjà bien réglée (regex inversées + pattern standard) juste pour y coller
+// un champ. 'high' : verset explicitement précisé (référence non ambiguë,
+// c'est exactement la condition du court-circuit "appel direct", voir
+// server.js processTranscript). 'medium' : référence "chapitre seul" (une
+// vraie référence, mais moins précise). Les correspondances FLOUES
+// (fuzzyMatch plus bas) ne dépassent jamais 'medium', quelle que soit la
+// précision du verset — le nom du livre lui-même y est une supposition.
+function withConfidence(match) {
+  if (!match) return match;
+  return { ...match, confidence: match.verseStart !== undefined ? 'high' : 'medium' };
+}
+
 function detectExact(text) {
   const normalized = numberWordsToDigits(normalize(text));
-  return matchAgainstAliases(normalized);
+  return withConfidence(matchAgainstAliases(normalized));
 }
 
 function detect(text) {
   const normalized = numberWordsToDigits(normalize(text));
   const exact = matchAgainstAliases(normalized);
-  if (exact) return exact;
+  if (exact) return withConfidence(exact);
 
   // AJOUT (audit — inspiré de Rhema, correspondance floue). Aucune
   // correspondance exacte : peut-être que Whisper/Groq a mal transcrit le
@@ -562,9 +599,17 @@ function detect(text) {
   // pour eux.
   const hasChapitreKeyword = /\bchapitre\b/i.test(fuzzyMatch.raw);
   const hasVerseSpecified = fuzzyMatch.verseStart !== undefined;
-  if (!hasChapitreKeyword && !hasVerseSpecified) {
+  // AJOUT (cahier des charges — précision contextuelle) : une tournure
+  // d'introduction de citation ("il est écrit...") sur le texte ORIGINAL
+  // (pas le texte corrigé par le fuzzy matching, qui ne porte que le nom du
+  // livre corrigé) est une preuve tout aussi valable que "chapitre"/verset
+  // explicite — réduit les faux NÉGATIFS sur de vraies citations
+  // paraphrasées ("comme il est écrit dans Filipiens 2") qui étaient
+  // rejetées jusqu'ici faute de mot "chapitre" ou de verset précis.
+  const hasIntroPhrase = hasIntroductionPhrase(text);
+  if (!hasChapitreKeyword && !hasVerseSpecified && !hasIntroPhrase) {
     console.log(
-      `[detector] Correspondance floue rejetée (preuve insuffisante — ni "chapitre" ni verset) : ` +
+      `[detector] Correspondance floue rejetée (preuve insuffisante — ni "chapitre", ni verset, ni tournure d'introduction) : ` +
         `"${corrected.original}" → "${corrected.name}"`
     );
     return null;
@@ -577,9 +622,12 @@ function detect(text) {
   // CORRECTIF : une correspondance floue (nom de livre deviné, pas certain)
   // était renvoyée avec exactement la même forme qu'une correspondance
   // exacte — server.js n'avait donc aucun moyen de la traiter différemment
-  // (ex. demander confirmation avant affichage). On l'annote.
+  // (ex. demander confirmation avant affichage). On l'annote. confidence
+  // plafonnée à 'medium' quelle que soit la précision du verset : le nom du
+  // livre lui-même reste une supposition sur ce chemin.
   return {
     ...fuzzyMatch,
+    confidence: 'medium',
     fuzzy: true,
     fuzzyDistance: corrected.distance,
     fuzzyOriginal: corrected.original,
@@ -688,5 +736,6 @@ module.exports = {
   normalize,
   numberWordsToDigits,
   detectTranslationSwitch,
+  hasIntroductionPhrase,
   BOOKS,
 };

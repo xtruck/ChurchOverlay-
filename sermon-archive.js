@@ -50,7 +50,8 @@ function writeArchive(entries) {
  * @param {Object} data
  * @param {string} [data.theme] - Titre court (ex. recap.title, déjà généré)
  * @param {string[]} [data.keyPoints] - Points clés déjà générés (recap.keyPoints)
- * @param {string} [data.transcriptExcerpt] - Extrait de transcription (borné)
+ * @param {string} [data.transcriptExcerpt] - Extrait de transcription (borné, pour l'UI de récap existante)
+ * @param {string} [data.fullTranscript] - Transcription complète du culte (voir sermon-qa.js)
  * @param {Array<string|{reference:string}>} [data.versesShown] - Versets affichés
  * @returns {Object} l'entrée enregistrée
  */
@@ -67,6 +68,13 @@ function saveServiceEntry(data) {
     theme: data.theme || null,
     keyPoints: Array.isArray(data.keyPoints) ? data.keyPoints.slice(0, 10) : [],
     transcriptExcerpt: (data.transcriptExcerpt || '').slice(0, 4000),
+    // AJOUT (cahier des charges — assistant sermons, sermon-qa.js) : texte
+    // complet, distinct de transcriptExcerpt ci-dessus (gardé tel quel pour
+    // l'UI de récap post-culte existante, inchangée). Déjà borné à 50 000
+    // caractères en amont par session-state.js/MAX_SERVICE_TRANSCRIPT_CHARS
+    // — la limite ici est une sécurité supplémentaire, pas une troncature
+    // attendue en usage normal.
+    fullTranscript: (data.fullTranscript || '').slice(0, 50000),
     versesShown,
   };
 
@@ -136,4 +144,18 @@ function listEntries(limit = 20) {
     .map((e) => ({ date: e.date, theme: e.theme, versesShown: e.versesShown }));
 }
 
-module.exports = { setUserDataDir, saveServiceEntry, search, listEntries };
+/**
+ * AJOUT (cahier des charges — assistant sermons, sermon-qa.js) : distinct de
+ * listEntries() ci-dessus (délibérément allégée pour une future UI de
+ * parcours) — celle-ci inclut fullTranscript, nécessaire pour le
+ * découpage/la recherche par mots-clés du Q&A. Entrées sans fullTranscript
+ * (cultes archivés avant cet ajout) filtrées : rien à chercher dedans.
+ * @returns {Array<{date: string, theme: string|null, fullTranscript: string}>}
+ */
+function getAllTranscripts() {
+  return readArchive()
+    .filter((e) => e.fullTranscript)
+    .map((e) => ({ date: e.date, theme: e.theme, fullTranscript: e.fullTranscript }));
+}
+
+module.exports = { setUserDataDir, saveServiceEntry, search, listEntries, getAllTranscripts };

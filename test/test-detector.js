@@ -1,14 +1,26 @@
 'use strict';
 const assert = require('assert');
-const { detect } = require('../detector');
+const { detect, detectExact, hasIntroductionPhrase } = require('../detector');
 
 const cases = [
-  ['Lisons Jean 3:16.', { book: 'jean', chapter: 3, verseStart: 16, verseEnd: 16 }],
+  [
+    'Lisons Jean 3:16.',
+    { book: 'jean', chapter: 3, verseStart: 16, verseEnd: 16, confidence: 'high' },
+  ],
   [
     'Dans premier Corinthiens 13 versets 4 à 7',
     { book: '1corinthiens', chapter: 13, verseStart: 4, verseEnd: 7 },
   ],
-  ['Psaume 23', { book: 'psaumes', chapter: 23, verseStart: undefined, verseEnd: undefined }],
+  [
+    'Psaume 23',
+    {
+      book: 'psaumes',
+      chapter: 23,
+      verseStart: undefined,
+      verseEnd: undefined,
+      confidence: 'medium',
+    },
+  ],
   ['Jean chapitre trois verset seize', { book: 'jean', chapter: 3, verseStart: 16, verseEnd: 16 }],
   [
     'premier Corinthiens treize versets quatre à sept',
@@ -37,4 +49,40 @@ for (const [input, expected] of cases) {
     assert.strictEqual(actual[key], value, `${input}: ${key}`);
 }
 assert.strictEqual(detect('Bonjour à tous.'), null);
+
+// AJOUT (cahier des charges — Point 1A, précision contextuelle) --------------
+
+// hasIntroductionPhrase() : détecte les tournures de citation, insensible
+// aux accents/majuscules (passe par normalize() en interne).
+assert.strictEqual(hasIntroductionPhrase('Il EST écrit que Dieu aime le monde'), true);
+assert.strictEqual(hasIntroductionPhrase('comme dit la Bible, tout est possible'), true);
+assert.strictEqual(hasIntroductionPhrase("Ce qu'il va manger ce soir"), false);
+
+// detectExact() : jamais de correspondance floue, confidence 'high'
+// uniquement quand un verset est explicitement précisé.
+assert.strictEqual(detectExact('Jean 3:16').confidence, 'high');
+assert.strictEqual(detectExact('Jean chapitre 3').confidence, 'medium');
+assert.strictEqual(
+  detectExact('Filipiens 2:5'),
+  null,
+  'detectExact ne doit jamais deviner un nom de livre'
+);
+
+// Une correspondance floue (nom de livre mal transcrit) sans "chapitre" ni
+// verset explicite était rejetée avant cet ajout — une tournure
+// d'introduction juste avant doit maintenant suffire comme preuve.
+assert.strictEqual(
+  detect('vous savez que Filipiens 2 est important'),
+  null,
+  "sans tournure d'introduction, toujours rejeté (comportement inchangé)"
+);
+const withIntro = detect('il est ecrit dans Filipiens 2');
+assert(withIntro, "avec une tournure d'introduction, la correspondance floue doit être acceptée");
+assert.strictEqual(withIntro.book, 'philippiens');
+assert.strictEqual(
+  withIntro.confidence,
+  'medium',
+  'une correspondance floue ne dépasse jamais medium'
+);
+
 console.log('✓ detector.js : tous les tests sont passés');

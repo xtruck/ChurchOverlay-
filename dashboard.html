@@ -1829,6 +1829,31 @@
                     </div>
                 </div>
 
+                <!-- AJOUT (cahier des charges — assistant sermons, Point 5 "outil
+                     d'affichage, jamais de génération théologique") : carte VOLONTAIREMENT
+                     séparée des "Fonctions IA Avancées" ci-dessus (pas le même
+                     aiEnricherOutput partagé) — répond UNIQUEMENT à partir de prédications
+                     réellement archivées, jamais de contenu généré sans source (voir
+                     sermon-qa.js). Réservé à l'opérateur : jamais exposé sur
+                     companion.html/overlay.html. -->
+                <div class="card" style="margin-top: 1.5rem;">
+                    <div class="card-header">
+                        <span class="card-title">Assistant Q&R — Prédications archivées</span>
+                    </div>
+                    <div class="field-hint" style="margin-bottom:0.75rem;">
+                        Répond uniquement à partir des prédications déjà archivées (voir "Récap fin de
+                        culte" ci-dessus) — jamais de théologie générée sans passage réel à citer.
+                    </div>
+                    <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap; margin-bottom:1rem;">
+                        <input type="text" id="sermonQaInput" placeholder="Qu'a dit le pasteur sur... ?" style="flex:1; min-width:220px;" onkeydown="if(event.key==='Enter') askSermonQuestion();">
+                        <button class="btn btn-secondary" onclick="askSermonQuestion()">💬 Demander</button>
+                    </div>
+                    <div id="sermonQaOutput" class="stat-row" style="display: block;">
+                        <span class="stat-label">Posez une question sur une prédication passée.</span>
+                    </div>
+                    <div id="sermonQaSources" style="margin-top:0.75rem;"></div>
+                </div>
+
                 <!-- AJOUT (audit round 9) : session-store.js (SQLite) enregistre déjà
                      chaque verset affiché et chaque erreur de pipeline, mais rien ne
                      relisait cette base côté tableau de bord — la persistance tournait
@@ -2044,6 +2069,12 @@
                     <div class="stat-row">
                         <span class="stat-label">APIs Bibliques Intégrées</span>
                         <span class="stat-value">HelloAO, Bible-API, Bolls Life</span>
+                    </div>
+                    <!-- AJOUT (cahier des charges — Point 1B, base biblique hors-ligne) :
+                         statut du téléchargement en arrière-plan, voir bible-offline-cache.js. -->
+                    <div class="stat-row">
+                        <span class="stat-label">Bible hors-ligne (repli si coupure réseau)</span>
+                        <span class="status-badge warning" id="offlineBibleStatus">Statut inconnu</span>
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">Statut Capture Micro (Whisper/Groq/Deepgram)</span>

@@ -55,8 +55,10 @@ module.exports = {
   parseReference,
   // Also re-export original functions for compatibility
   detect: detector.detect,
+  detectExact: detector.detectExact,
   normalize: detector.normalize,
   numberWordsToDigits: detector.numberWordsToDigits,
   detectTranslationSwitch: detector.detectTranslationSwitch,
+  hasIntroductionPhrase: detector.hasIntroductionPhrase,
   BOOKS: detector.BOOKS,
 };

@@ -183,6 +183,10 @@ function initWebSocket() {
       ws.send(JSON.stringify({ action: 'getMediaLibrary' }));
       // AJOUT (bibliothèque de chants) : même raisonnement que getMediaLibrary.
       ws.send(JSON.stringify({ action: 'getSongLibrary' }));
+      // AJOUT (base biblique hors-ligne) : un seul statut suffit à la
+      // connexion ; pollOfflineBibleStatusUntilDone() prend le relais si un
+      // téléchargement est en cours (voir plus bas).
+      ws.send(JSON.stringify({ action: 'getOfflineBibleStatus' }));
     }
   };
 
@@ -775,6 +779,14 @@ function handleMessage(message) {
       break;
     case 'stageMessageClear':
       break;
+    // AJOUT (base biblique hors-ligne) : voir renderOfflineBibleStatus() plus bas.
+    case 'offlineBibleStatus':
+      renderOfflineBibleStatus(message);
+      break;
+    // AJOUT (cahier des charges — assistant sermons) : voir renderSermonQaResult().
+    case 'sermonQuestionAnswered':
+      renderSermonQaResult(message);
+      break;
     // AJOUT : le serveur diffusait déjà languageChanged (déclenché par
     // une commande vocale "passe en bilingue", ou par un autre tableau
     // de bord connecté) mais rien n'écoutait ici — les boutons de langue
@@ -1153,6 +1165,41 @@ function renderSongLibrary(songs) {
             `;
     })
     .join('');
+}
+
+/* ======================================================================
+   Base biblique hors-ligne (cahier des charges — Point 1B). Statut
+   téléchargé une seule fois à la connexion ; si un téléchargement est en
+   cours, on repasse par-dessus toutes les 5s jusqu'à ce qu'il se termine,
+   pour afficher une progression qui avance plutôt qu'un statut figé.
+   ====================================================================== */
+let offlineBibleStatusPollTimer = null;
+
+function renderOfflineBibleStatus(status) {
+  const el = document.getElementById('offlineBibleStatus');
+  if (!el) return;
+
+  clearTimeout(offlineBibleStatusPollTimer);
+
+  if (status.status === 'done') {
+    el.textContent = '✅ Téléchargée';
+    el.className = 'status-badge success';
+  } else if (status.status === 'downloading') {
+    const pct = status.total > 0 ? Math.round((status.downloaded / status.total) * 100) : 0;
+    el.textContent = `⏳ Téléchargement... ${pct}%`;
+    el.className = 'status-badge warning';
+    offlineBibleStatusPollTimer = setTimeout(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: 'getOfflineBibleStatus' }));
+      }
+    }, 5000);
+  } else if (status.status === 'error') {
+    el.textContent = '❌ Échec du téléchargement';
+    el.className = 'status-badge error';
+  } else {
+    el.textContent = 'En attente';
+    el.className = 'status-badge warning';
+  }
 }
 
 /* ======================================================================
@@ -1635,6 +1682,65 @@ function requestArchiveSearch() {
   }
   renderAiEnricherOutput('⏳ Recherche dans les cultes archivés...');
   ws.send(JSON.stringify({ action: 'getArchiveMatches', query }));
+}
+
+// AJOUT (cahier des charges — assistant sermons, Point 5) : voir sermon-qa.js
+// côté serveur pour le garde-fou "jamais de réponse sans source". Cette
+// fonction/sa carte restent volontairement séparées de
+// renderAiEnricherOutput() ci-dessus.
+function askSermonQuestion() {
+  if (!requireWsOrWarn()) return;
+  const input = document.getElementById('sermonQaInput');
+  const outputEl = document.getElementById('sermonQaOutput');
+  const sourcesEl = document.getElementById('sermonQaSources');
+  const question = input ? input.value.trim() : '';
+  if (!question) {
+    if (outputEl)
+      outputEl.innerHTML =
+        '<span class="stat-label">Tapez une question avant de lancer la recherche.</span>';
+    return;
+  }
+  if (outputEl) outputEl.innerHTML = '<span class="stat-label">⏳ Recherche en cours...</span>';
+  if (sourcesEl) sourcesEl.innerHTML = '';
+  ws.send(JSON.stringify({ action: 'askSermonQuestion', question }));
+}
+
+// AJOUT (cahier des charges — assistant sermons) : les sources sont
+// TOUJOURS affichées à côté de la réponse générée, jamais seulement citées
+// dans le texte du modèle — garantie au niveau de l'interface que "jamais
+// de réponse sans citation" tient même si la réponse elle-même oublie de
+// toutes les mentionner.
+function renderSermonQaResult(result) {
+  const outputEl = document.getElementById('sermonQaOutput');
+  const sourcesEl = document.getElementById('sermonQaSources');
+  if (!outputEl) return;
+
+  if (!result.ok) {
+    outputEl.innerHTML = `<span class="stat-label">❌ ${escapeHtmlDashboard(result.message || 'Erreur inconnue')}</span>`;
+    if (sourcesEl) sourcesEl.innerHTML = '';
+    return;
+  }
+
+  if (!result.answered) {
+    outputEl.innerHTML = `<span class="stat-label">${escapeHtmlDashboard(result.message)}</span>`;
+    if (sourcesEl) sourcesEl.innerHTML = '';
+    return;
+  }
+
+  outputEl.innerHTML = `<span class="stat-value" style="display:block; white-space:pre-wrap;">${escapeHtmlDashboard(result.answer)}</span>`;
+  if (sourcesEl) {
+    sourcesEl.innerHTML =
+      '<div style="font-size:0.78rem; color:var(--text-dim); margin-bottom:0.4rem;">Sources citées :</div>' +
+      (result.sources || [])
+        .map(
+          (s) =>
+            `<div class="media-item-phrase-badge" style="display:block; margin-bottom:0.4rem; padding:0.5rem 0.7rem;">
+               <strong>${escapeHtmlDashboard(s.label)}</strong><br>
+               <span style="opacity:0.85;">${escapeHtmlDashboard(s.excerpt.slice(0, 200))}${s.excerpt.length > 200 ? '…' : ''}</span>
+             </div>`
+        )
+        .join('');
+  }
 }
 
 // AJOUT (audit — second écran pour l'assemblée, session parallèle) :

@@ -39,12 +39,16 @@ const sessionStore = require('./session-store');
 
 const detector = require('./detector-compat');
 const bibleLookup = require('./bible-lookup-with-api');
+// AJOUT (cahier des charges — base biblique hors-ligne) : voir bible-offline-cache.js.
+const bibleOfflineCache = require('./bible-offline-cache');
 const { ReadingMode } = require('./reading-mode');
 const themeLoader = require('./theme-loader');
 // AJOUT (audit — mémoire des cultes, gratuit/léger) : même discipline que
 // bible-semantic-search.js — fichier JSON local, recherche par mots-clés,
 // aucun modèle d'embedding, aucun appel API. Voir sermon-archive.js.
 const sermonArchive = require('./sermon-archive');
+// AJOUT (cahier des charges — assistant sermons) : voir sermon-qa.js.
+const sermonQa = require('./sermon-qa');
 // AJOUT (médiathèque — déclenchement vocal de photos/vidéos) : même
 // discipline que sermon-archive.js ci-dessus. Voir media-library.js.
 const mediaLibrary = require('./media-library');
@@ -498,7 +502,29 @@ async function processTranscript(text) {
   }
 
   let correctedText = text;
-  if (corrector) {
+  let reference = null;
+
+  // AJOUT (cahier des charges — Point 2, "appel direct") : quand le
+  // prédicateur cite une référence explicite et non ambiguë ("Jean 3:16"),
+  // detector.detectExact() la reconnaît sur le texte BRUT sans la moindre
+  // correction floue — inutile d'attendre l'aller-retour IA de
+  // corrector.correct() avant de l'afficher. confidence === 'high'
+  // (voir detector.js) signifie précisément "verset explicitement précisé,
+  // correspondance exacte" : la même condition que le court-circuit
+  // recherché ici. Un match sans verset (confidence 'medium', "chapitre
+  // seul") ou une correspondance floue reste sur le pipeline normal
+  // ci-dessous, plus prudent pour les cas ambigus.
+  try {
+    const fastMatch = detector.detectExact(text);
+    if (fastMatch && fastMatch.confidence === 'high') {
+      reference = fastMatch;
+      log('Appel direct (référence explicite, avant correction IA) : ' + fastMatch.raw);
+    }
+  } catch (e) {
+    warn('Fast-path detection error: ' + e.message);
+  }
+
+  if (!reference && corrector) {
     try {
       const mode = groqHasChatCompletion ? 'auto' : 'fast';
       correctedText = await corrector.correct(text, mode);
@@ -513,11 +539,12 @@ async function processTranscript(text) {
 
   updateTranscriptContext(correctedText);
 
-  let reference = null;
-  try {
-    reference = detector.detectBilingual(correctedText);
-  } catch (e) {
-    warn('Detector error: ' + e.message);
+  if (!reference) {
+    try {
+      reference = detector.detectBilingual(correctedText);
+    } catch (e) {
+      warn('Detector error: ' + e.message);
+    }
   }
 
   if (reference && reference.fuzzy) {
@@ -1022,6 +1049,9 @@ const OPERATOR_ACTIONS = new Set([
   'addSong',
   'deleteSong',
   'showSongSection',
+  // AJOUT (cahier des charges — base biblique hors-ligne + assistant sermons)
+  'getOfflineBibleStatus',
+  'askSermonQuestion',
   // AJOUT (stage display — messages opérateur vers l'écran scène)
   'sendStageMessage',
   'clearStageMessage',
@@ -1532,6 +1562,9 @@ wss.on('connection', (ws, req) => {
           theme: recap && recap.title,
           keyPoints: recap && recap.keyPoints,
           transcriptExcerpt: sessionState.getFullServiceTranscript().slice(-4000),
+          // AJOUT (cahier des charges — assistant sermons) : texte complet,
+          // pas seulement les 4000 derniers caractères — voir sermon-qa.js.
+          fullTranscript: sessionState.getFullServiceTranscript(),
           versesShown: sessionState.getVerseHistory(),
         });
         log('Culte archivé localement (sermon-archive.js)');
@@ -1765,6 +1798,31 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
+    // --- Base biblique hors-ligne (cahier des charges — Point 1B) ---------
+    if (sanitized.action === 'getOfflineBibleStatus') {
+      ws.send(JSON.stringify({ action: 'offlineBibleStatus', ...bibleOfflineCache.getStatus() }));
+      return;
+    }
+
+    // --- Assistant Q&R sur les prédications (cahier des charges — Point 5,
+    // voir sermon-qa.js pour le garde-fou "jamais de réponse sans source") ---
+    if (sanitized.action === 'askSermonQuestion') {
+      try {
+        const safeQuestion = sanitizeForPrompt(sanitized.question || '');
+        const result = await sermonQa.askQuestion(safeQuestion);
+        ws.send(
+          JSON.stringify({
+            action: 'sermonQuestionAnswered',
+            question: sanitized.question,
+            ...result,
+          })
+        );
+      } catch (err) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Assistant sermons : ' + err.message }));
+      }
+      return;
+    }
+
     // --- Ping ---
     if (sanitized.action === 'ping') {
       ws.send(JSON.stringify({ action: 'pong', timestamp: Date.now() }));
@@ -1973,6 +2031,21 @@ try {
   bibleLookup.setCacheDir(USER_DATA_DIR);
 } catch (err) {
   warn('Failed to set Bible cache dir: ' + err.message);
+}
+
+// AJOUT (cahier des charges — Point 1B, base biblique hors-ligne) :
+// idempotent (downloadFullBible() vérifie isAvailable() en premier, voir
+// bible-offline-cache.js) — sans effet si déjà téléchargée, donc sans
+// risque à appeler sans condition à chaque démarrage. Volontairement
+// fire-and-forget (.catch, pas d'await) : un téléchargement de ~1189
+// chapitres ne doit jamais retarder le démarrage du pipeline en direct.
+try {
+  bibleOfflineCache.setUserDataDir(USER_DATA_DIR);
+  bibleOfflineCache
+    .downloadFullBible()
+    .catch((err) => warn('Offline Bible download failed: ' + err.message));
+} catch (err) {
+  warn('Failed to init offline Bible cache: ' + err.message);
 }
 
 try {

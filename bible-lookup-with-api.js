@@ -997,6 +997,29 @@ async function getVerse(reference, lang = 'fr') {
   }
 
   if (!text) {
+    // AJOUT (cahier des charges — Point 1B, offline-first) : dernier
+    // recours avant d'abandonner — les DEUX fournisseurs réseau ont échoué
+    // (connexion coupée en plein culte, la panne réelle que ce repli vise).
+    // Repli en retard (pas en haut du fichier) : voir le commentaire
+    // symétrique dans bible-offline-cache.js sur la dépendance circulaire.
+    try {
+      const offlineCache = require('./bible-offline-cache');
+      const translation = getTranslationId(lang) || offlineCache.DEFAULT_TRANSLATION;
+      const offlineText = offlineCache.getOfflineVerse(reference, translation);
+      if (offlineText) {
+        text = offlineText;
+        provider = 'offline-cache';
+        console.log(
+          '[bible-lookup] ✓ Verset obtenu depuis la base hors-ligne (réseau indisponible)'
+        );
+      }
+    } catch (_e) {
+      // Module hors-ligne non initialisé ou base absente : traité comme
+      // n'importe quel autre échec de fournisseur, voir throw ci-dessous.
+    }
+  }
+
+  if (!text) {
     throw new Error('Could not fetch verse from any provider. Check your internet connection.');
   }
 
@@ -1205,6 +1228,12 @@ module.exports = {
   getTranslationId,
   setCacheDir, // AJOUT (audit) : cache de versets persistant sur disque
   findByQuotedText, // AJOUT (audit) : détection par citation, inspirée de Rhema
+  // AJOUT (cahier des charges — base biblique hors-ligne) : exposé pour que
+  // bible-offline-cache.js réutilise EXACTEMENT le même mapping que
+  // helloaoFetchChapter() ci-dessus, plutôt que de dupliquer les 66 codes
+  // USFM (risque de désynchronisation si l'un des deux fichiers est corrigé
+  // sans l'autre).
+  HELLOAO_BOOK_CODES,
 };
 
 // Mode test : `node bible-lookup-with-api.js` (documenté dans SETUP.md).

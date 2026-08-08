@@ -3,6 +3,30 @@
  * groq-wrapper.js — Transcription cloud Groq (Whisper large-v3), fournisseur
  * principal, avec repli en parallèle sur Deepgram (Nova-2) si configuré
  * + Chat Completion API pour les features IA (Gemini 3.6 Flash / Groq)
+ * ----------------------------------------------------------------------------
+ * PRINCIPE DIRECTEUR (cahier des charges — Point 5, "outil d'affichage,
+ * jamais de génération théologique") : ce fichier est le SEUL point de
+ * passage de tout appel LLM dans l'app (chatCompletion()/quickCompletion()
+ * ci-dessous) — l'endroit naturel où écrire cette règle une fois plutôt que
+ * de compter sur chaque appelant pour s'en souvenir.
+ *
+ *   1. Le TEXTE BIBLIQUE affiché sur l'overlay ne doit JAMAIS provenir d'un
+ *      appel à ce fichier. Il vient uniquement de bible-lookup-with-api.js
+ *      (fournisseurs réels helloao/getbible) ou de bible-offline-cache.js
+ *      (même contenu, mis en cache) — jamais généré, paraphrasé, résumé ou
+ *      "complété" par un modèle génératif, aussi tentant que ce soit pour
+ *      combler un trou de traduction ou reformuler plus clairement.
+ *   2. Toute fonctionnalité IA qui SYNTHÉTISE du texte à partir de ce
+ *      fichier (résumés de prédication, assistant de questions/réponses —
+ *      voir sermon-qa.js) doit rester un outil clairement identifié et
+ *      SÉPARÉ de l'affichage des versets — jamais mélangé au même flux
+ *      d'affichage public, et par défaut réservé à l'opérateur (jamais
+ *      exposé sur companion.html/overlay.html sans une décision explicite).
+ *   3. Concrètement pour sermon-qa.js : ne jamais appeler chatCompletion()
+ *      "à vide" — seulement une fois qu'une recherche par mots-clés a déjà
+ *      trouvé un contenu de prédication pertinent à citer. Sans contenu
+ *      pertinent trouvé, répondre "aucun contenu correspondant" plutôt que
+ *      de laisser le modèle répondre sans source réelle à citer.
  * ============================================================================
  */
 
