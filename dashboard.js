@@ -177,6 +177,10 @@ function initWebSocket() {
     // que de coder les moods en dur (ils pourraient changer côté serveur).
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ action: 'getMoods' }));
+      // AJOUT (médiathèque) : la liste vit côté serveur (le déclenchement
+      // vocal doit y accéder même sans tableau de bord ouvert) — récupérée
+      // à chaque connexion/reconnexion pour rester synchronisée.
+      ws.send(JSON.stringify({ action: 'getMediaLibrary' }));
     }
   };
 
@@ -696,6 +700,21 @@ function handleMessage(message) {
           : `Aucun culte archivé ne correspond à "${message.query}".`
       );
       break;
+    // AJOUT (médiathèque — déclenchement vocal de photos/vidéos) : la liste
+    // vit côté serveur, diffusée à tous les tableaux de bord ouverts après
+    // chaque ajout/suppression pour rester synchronisée entre eux.
+    case 'mediaLibraryUpdated':
+      renderMediaLibrary(message.items);
+      break;
+    case 'showMedia':
+      addActivity(
+        `Média affiché : ${message.label}` +
+          (message.detectedBy === 'voice-cue' ? ' (déclenché à la voix)' : ''),
+        'info'
+      );
+      break;
+    case 'hideMedia':
+      break;
     // AJOUT : le serveur diffusait déjà languageChanged (déclenché par
     // une commande vocale "passe en bilingue", ou par un autre tableau
     // de bord connecté) mais rien n'écoutait ici — les boutons de langue
@@ -856,6 +875,116 @@ function escapeHtmlDashboard(str) {
 }
 
 renderQueue();
+
+/* ======================================================================
+   Médiathèque (déclenchement vocal ou manuel de photos/vidéos, voir
+   media-library.js/server.js). Contrairement à la file d'attente de
+   versets ci-dessus (purement locale à cet onglet), la liste vit côté
+   serveur : le déclenchement vocal doit pouvoir la consulter pendant tout
+   le culte, même si aucun tableau de bord n'est ouvert à ce moment-là.
+   ====================================================================== */
+let mediaLibraryItems = [];
+
+async function addMediaLibraryItem() {
+  if (!window.churchOverlay || !window.churchOverlay.pickMediaFile) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast("Non connecté au serveur — impossible d'ajouter un média.", 'error');
+    return;
+  }
+  try {
+    const sourcePath = await window.churchOverlay.pickMediaFile();
+    if (!sourcePath) return; // sélection annulée par l'opérateur
+    const labelInput = document.getElementById('mediaLabelInput');
+    const phrasesInput = document.getElementById('mediaPhrasesInput');
+    const label = labelInput ? labelInput.value.trim() : '';
+    const triggerPhrases = phrasesInput
+      ? phrasesInput.value
+          .split(',')
+          .map((p) => p.trim())
+          .filter(Boolean)
+      : [];
+    ws.send(JSON.stringify({ action: 'addMediaItem', sourcePath, label, triggerPhrases }));
+    if (labelInput) labelInput.value = '';
+    if (phrasesInput) phrasesInput.value = '';
+  } catch (err) {
+    showToast(
+      'Échec de la sélection du fichier : ' + (err && err.message ? err.message : err),
+      'error'
+    );
+  }
+}
+
+function triggerMediaLibraryItem(id) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  ws.send(JSON.stringify({ action: 'triggerMediaItem', id }));
+}
+
+function deleteMediaLibraryItem(id) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  ws.send(JSON.stringify({ action: 'deleteMediaItem', id }));
+}
+
+function hideMediaNow() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  ws.send(JSON.stringify({ action: 'hideMedia' }));
+}
+
+function renderMediaLibrary(items) {
+  mediaLibraryItems = Array.isArray(items) ? items : [];
+  const list = document.getElementById('mediaLibraryList');
+  const countEl = document.getElementById('mediaLibraryCount');
+  if (countEl) countEl.textContent = mediaLibraryItems.length;
+  if (!list) return;
+
+  if (mediaLibraryItems.length === 0) {
+    list.innerHTML =
+      '<div style="font-size:0.8rem; color:var(--text-dim); padding: 0.5rem 0;">Aucun média ajouté. Choisissez une photo ou une vidéo ci-dessus.</div>';
+    return;
+  }
+
+  list.innerHTML = mediaLibraryItems
+    .map((item) => {
+      const phrasesBadges = (item.triggerPhrases || [])
+        .map((p) => `<span class="media-item-phrase-badge">${escapeHtmlDashboard(p)}</span>`)
+        .join('');
+      return `
+                <div class="queue-item">
+                    <span class="queue-item-position">${item.mediaType === 'video' ? '🎬' : '🖼️'}</span>
+                    <div class="media-item-info">
+                        <div class="media-item-label">${escapeHtmlDashboard(item.label)}</div>
+                        <div class="media-item-phrases">${phrasesBadges || '<span class="media-item-phrase-badge">Déclenchement manuel uniquement</span>'}</div>
+                    </div>
+                    <div class="queue-item-actions">
+                        <button class="queue-icon-btn queue-send" onclick="triggerMediaLibraryItem('${item.id}')" title="Afficher maintenant">▶</button>
+                        <button class="queue-icon-btn queue-remove" onclick="deleteMediaLibraryItem('${item.id}')" title="Supprimer">✕</button>
+                    </div>
+                </div>
+            `;
+    })
+    .join('');
+}
+
+// Même garde que les autres panneaux Electron-only (file d'affichage,
+// dashboard.js:~1067) : le sélecteur de fichier natif n'existe que côté
+// application de bureau (pont IPC depuis preload.js).
+(function initMediaLibraryPanel() {
+  const unavailable = document.getElementById('mediaLibraryUnavailable');
+  const addRow = document.getElementById('mediaLibraryAddRow');
+  if (!addRow) return;
+  if (!window.churchOverlay || !window.churchOverlay.pickMediaFile) {
+    if (unavailable) unavailable.style.display = 'flex';
+    addRow.style.display = 'none';
+  }
+})();
 
 // CORRECTIF (checklist mise en production, point 9) : bouton "Tester avant
 // le culte" — envoie une demande de vérification au serveur (connexion WS,

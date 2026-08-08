@@ -45,6 +45,9 @@ const themeLoader = require('./theme-loader');
 // bible-semantic-search.js — fichier JSON local, recherche par mots-clés,
 // aucun modèle d'embedding, aucun appel API. Voir sermon-archive.js.
 const sermonArchive = require('./sermon-archive');
+// AJOUT (médiathèque — déclenchement vocal de photos/vidéos) : même
+// discipline que sermon-archive.js ci-dessus. Voir media-library.js.
+const mediaLibrary = require('./media-library');
 const featuresStore = require('./features-store');
 const validation = require('./validation');
 
@@ -169,6 +172,11 @@ const connRateLimiter = createRateLimiter({
 
 const app = express();
 app.use(express.static(APP_ROOT));
+// AJOUT (médiathèque) : overlay.html et dashboard.html sont chargés en
+// file:// (voir main.js) — cette route leur donne une URL http:// stable
+// pour les fichiers copiés dans <userData>/media/ par media-library.js,
+// sur le même principe pont que /api/verses pour les données JSON.
+app.use('/media', express.static(path.join(USER_DATA_DIR, 'media')));
 
 // SECURITY: origin validation middleware for non-localhost binds
 const ALLOWED_ORIGINS = new Set([
@@ -445,6 +453,29 @@ async function processTranscript(text) {
     } catch (e) {
       warn('Voice command error: ' + e.message);
     }
+  }
+
+  // AJOUT (médiathèque — déclenchement vocal de photos/vidéos) : même
+  // emplacement et même philosophie de court-circuit que detectCommand()
+  // ci-dessus — vérifié sur le texte BRUT (avant correction IA) pour rester
+  // aussi immédiat que les commandes vocales, avant la détection de verset.
+  try {
+    const mediaMatch = mediaLibrary.matchTriggerPhrase(text);
+    if (mediaMatch) {
+      log('Media cue detected: ' + mediaMatch.label);
+      broadcast({
+        action: 'showMedia',
+        id: mediaMatch.id,
+        mediaType: mediaMatch.mediaType,
+        mediaUrl: `/media/${mediaMatch.filename}`,
+        label: mediaMatch.label,
+        displayDurationMs: mediaMatch.displayDurationMs,
+        detectedBy: 'voice-cue',
+      });
+      return;
+    }
+  } catch (e) {
+    warn('Media cue detection error: ' + e.message);
   }
 
   let correctedText = text;
@@ -895,6 +926,12 @@ const OPERATOR_ACTIONS = new Set([
   'setCaptions',
   'setTestPattern',
   'setBackgroundPattern',
+  // AJOUT (médiathèque — déclenchement vocal de photos/vidéos)
+  'getMediaLibrary',
+  'addMediaItem',
+  'deleteMediaItem',
+  'triggerMediaItem',
+  'hideMedia',
 ]);
 
 // SECURITY: role is derived from WHICH token the client authenticated with
@@ -1515,6 +1552,67 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
+    // --- Médiathèque (déclenchement vocal de photos/vidéos) ---------------
+    // Réponse directe au demandeur (ws.send) pour la lecture/mutation de la
+    // liste, même convention que getArchiveMatches/getSessionStats ci-dessus ;
+    // broadcast() uniquement pour ce que TOUS les clients (overlay compris)
+    // doivent voir (affichage/masquage réel, mise à jour de la liste pour
+    // les autres tableaux de bord éventuellement ouverts).
+    if (sanitized.action === 'getMediaLibrary') {
+      ws.send(JSON.stringify({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() }));
+      return;
+    }
+
+    if (sanitized.action === 'addMediaItem') {
+      try {
+        const item = mediaLibrary.addItem({
+          sourcePath: sanitized.sourcePath,
+          label: sanitized.label,
+          triggerPhrases: sanitized.triggerPhrases,
+          displayDurationMs: sanitized.displayDurationMs,
+        });
+        log(`Médiathèque : "${item.label}" ajouté (${item.mediaType})`);
+        broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
+      } catch (err) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Médiathèque : ' + err.message }));
+      }
+      return;
+    }
+
+    if (sanitized.action === 'deleteMediaItem') {
+      const removed = mediaLibrary.deleteItem(sanitized.id);
+      if (removed) {
+        broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
+      } else {
+        ws.send(JSON.stringify({ action: 'error', error: 'Médiathèque : élément introuvable' }));
+      }
+      return;
+    }
+
+    if (sanitized.action === 'triggerMediaItem') {
+      const item = mediaLibrary.getItem(sanitized.id);
+      if (!item) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Médiathèque : élément introuvable' }));
+        return;
+      }
+      log(`Médiathèque : "${item.label}" déclenché manuellement`);
+      broadcast({
+        action: 'showMedia',
+        id: item.id,
+        mediaType: item.mediaType,
+        mediaUrl: `/media/${item.filename}`,
+        label: item.label,
+        displayDurationMs: item.displayDurationMs,
+        detectedBy: 'manual',
+      });
+      return;
+    }
+
+    if (sanitized.action === 'hideMedia') {
+      broadcast({ action: 'hideMedia' });
+      return;
+    }
+
     // --- Ping ---
     if (sanitized.action === 'ping') {
       ws.send(JSON.stringify({ action: 'pong', timestamp: Date.now() }));
@@ -1724,6 +1822,12 @@ try {
   sermonArchive.setUserDataDir(USER_DATA_DIR);
 } catch (err) {
   warn('Failed to set sermon archive dir: ' + err.message);
+}
+
+try {
+  mediaLibrary.setUserDataDir(USER_DATA_DIR);
+} catch (err) {
+  warn('Failed to set media library dir: ' + err.message);
 }
 
 // ===========================================================================

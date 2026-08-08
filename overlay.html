@@ -614,6 +614,38 @@ body.high-contrast .verse-text .kinetic-word {
   opacity: 0.3;
 }
 
+/* ==========================================================================
+   Médiathèque (photos/vidéos déclenchées à la voix ou manuellement, voir
+   action 'showMedia'). Même principe de prise de contrôle plein écran que
+   #test-pattern, en z-index plus haut (150) pour passer au-dessus de tout
+   le reste (motif de test compris) : un seul média à l'écran à la fois.
+   ========================================================================== */
+#media-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: #000000;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+#media-layer.visible {
+  display: flex;
+  opacity: 1;
+}
+#media-layer img,
+#media-layer video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+#media-layer img[hidden],
+#media-layer video[hidden] {
+  display: none;
+}
+
 /* Advanced particle system */
 .advanced-particle {
   position: absolute;
@@ -633,6 +665,12 @@ body.high-contrast .verse-text .kinetic-word {
 
 <!-- Motif de fond optionnel (affichage/sortie — voir action 'backgroundPatternMode') -->
 <div id="pattern-layer" aria-hidden="true"></div>
+
+<!-- Médiathèque : photo/vidéo affichée en plein écran (voir action 'showMedia') -->
+<div id="media-layer" aria-hidden="true">
+  <img id="media-layer-img" alt="" hidden>
+  <video id="media-layer-video" hidden playsinline></video>
+</div>
 
 <!-- Particules d'ambiance -->
 <div class="ambient-light" aria-hidden="true"></div>
@@ -842,6 +880,12 @@ function connectWs() {
         break;
       case 'backgroundPatternMode':
         setBackgroundPattern(msg.pattern || 'none');
+        break;
+      case 'showMedia':
+        showMediaItem(msg);
+        break;
+      case 'hideMedia':
+        hideMediaItem();
         break;
       case 'error':
         console.error('[overlay] Server error:', msg.error);
@@ -1213,6 +1257,75 @@ function setBackgroundPattern(pattern) {
   BACKGROUND_PATTERNS.forEach((p) => el.classList.remove('pattern-' + p));
   if (BACKGROUND_PATTERNS.includes(pattern)) {
     el.classList.add('pattern-' + pattern);
+  }
+}
+
+/* ==========================================================================
+   Médiathèque (audit — déclenchement vocal ou manuel de photos/vidéos).
+   Prise de contrôle plein écran comme #test-pattern : masque la carte de
+   verset pendant l'affichage (hideVerse(), aucune tentative de "restaurer"
+   le dernier verset ensuite — même simplicité que le motif de test, qui ne
+   restaure rien non plus ; le prochain verset détecté réaffichera
+   naturellement la carte).
+   ========================================================================== */
+let mediaHideTimeout = null;
+function showMediaItem(msg) {
+  const layer = document.getElementById('media-layer');
+  const img = document.getElementById('media-layer-img');
+  const video = document.getElementById('media-layer-video');
+  if (!layer || !img || !video) return;
+
+  hideVerse(false);
+  clearTimeout(mediaHideTimeout);
+  mediaHideTimeout = null;
+
+  if (msg.mediaType === 'video') {
+    img.hidden = true;
+    img.removeAttribute('src');
+    video.hidden = false;
+    video.src = msg.mediaUrl;
+    video.currentTime = 0;
+    video.play().catch(() => {
+      /* lecture auto refusée (rare, sans interaction utilisateur) : la vidéo reste affichée, silencieuse */
+    });
+  } else {
+    video.hidden = true;
+    video.pause();
+    video.removeAttribute('src');
+    img.hidden = false;
+    img.src = msg.mediaUrl;
+  }
+
+  layer.classList.add('visible');
+  layer.setAttribute('aria-hidden', 'false');
+
+  // displayDurationMs absent/null = vidéo qui joue jusqu'à sa fin naturelle,
+  // ou image affichée jusqu'à hideMedia() manuel. sanitizeDurationMs() est
+  // réutilisée telle quelle (même borne réseau que pour les versets).
+  if (typeof msg.displayDurationMs === 'number' && msg.displayDurationMs > 0) {
+    mediaHideTimeout = setTimeout(() => hideMediaItem(), sanitizeDurationMs(msg.displayDurationMs));
+  }
+}
+
+function hideMediaItem() {
+  const layer = document.getElementById('media-layer');
+  const img = document.getElementById('media-layer-img');
+  const video = document.getElementById('media-layer-video');
+  if (!layer) return;
+
+  clearTimeout(mediaHideTimeout);
+  mediaHideTimeout = null;
+  layer.classList.remove('visible');
+  layer.setAttribute('aria-hidden', 'true');
+
+  if (video) {
+    video.pause();
+    video.removeAttribute('src');
+    video.hidden = true;
+  }
+  if (img) {
+    img.removeAttribute('src');
+    img.hidden = true;
   }
 }
 

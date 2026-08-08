@@ -18,6 +18,7 @@ const {
   safeStorage,
   session,
   screen,
+  dialog,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -1020,6 +1021,31 @@ ipcMain.handle('open-display-window', async (_evt, { displayId }) =>
   createDisplayWindow(displayId)
 );
 ipcMain.handle('close-display-window', async () => closeDisplayWindow());
+
+// --- AJOUT (médiathèque — déclenchement vocal de photos/vidéos) ------------
+// Seul point d'accès natif nécessaire côté main.js : le choix du fichier
+// (dialog.showOpenDialog n'existe que dans le processus principal). La copie
+// du fichier, l'indexation et la mise en correspondance des phrases
+// déclencheuses vivent dans media-library.js, chargé par server.js (le
+// worker) aux côtés de sermon-archive.js/session-store.js — pas ici, pour
+// garder main.js limité à l'accès OS et laisser la logique applicative dans
+// le worker, comme pour le reste de l'app.
+ipcMain.handle('pick-media-file', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choisir une photo ou une vidéo',
+    properties: ['openFile'],
+    filters: [
+      {
+        name: 'Images et vidéos',
+        extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'webm', 'mov'],
+      },
+      { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] },
+      { name: 'Vidéos', extensions: ['mp4', 'webm', 'mov'] },
+    ],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
 
 // ---------------------------------------------------------------------------
 // Auto-updater (optional — won't crash if not installed)

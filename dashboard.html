@@ -573,6 +573,36 @@
             color: #f4a3b3;
         }
 
+        /* AJOUT (médiathèque — déclenchement vocal de photos/vidéos) : réutilise
+           .queue-list/.queue-item/.queue-item-actions/.queue-icon-btn ci-dessus
+           (déjà assez génériques), juste ces quelques classes en plus pour le
+           libellé + les badges de phrases déclencheuses. */
+        .media-item-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .media-item-label {
+            font-size: 0.88rem;
+            color: var(--text-main);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .media-item-phrases {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.3rem;
+            margin-top: 0.25rem;
+        }
+        .media-item-phrase-badge {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 999px;
+            padding: 0.1rem 0.55rem;
+        }
+
         /* Grid Layouts */
         .metrics-grid {
             display: grid;
@@ -1385,6 +1415,25 @@
                             <button class="btn btn-secondary" style="padding: 0.55rem 0.9rem;" onclick="addToQueue()">+ Ajouter</button>
                         </div>
                         <div class="queue-list" id="queueList"></div>
+                    </div>
+
+                    <!-- AJOUT (médiathèque — déclenchement vocal de photos/vidéos, voir
+                         media-library.js) : mêmes classes CSS que la file d'attente
+                         ci-dessus (queue-list/queue-item/queue-icon-btn). -->
+                    <div class="card">
+                        <div class="queue-panel-header">
+                            <span class="card-title">Médiathèque (<span id="mediaLibraryCount">0</span>)</span>
+                            <button class="btn btn-secondary" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" onclick="hideMediaNow()">⏹ Masquer</button>
+                        </div>
+                        <div class="queue-add-row" id="mediaLibraryUnavailable" style="display:none;">
+                            <span style="font-size:0.8rem; color:var(--text-dim);">Ajout de média disponible uniquement dans l'application ChurchOverlay (pas dans un navigateur).</span>
+                        </div>
+                        <div class="queue-add-row" id="mediaLibraryAddRow">
+                            <input type="text" id="mediaLabelInput" placeholder="Nom (ex. Poster annonces)">
+                            <input type="text" id="mediaPhrasesInput" placeholder="Phrase(s) déclencheuse(s), séparées par des virgules">
+                            <button class="btn btn-secondary" style="padding: 0.55rem 0.9rem;" onclick="addMediaLibraryItem()">+ Choisir un fichier</button>
+                        </div>
+                        <div class="queue-list" id="mediaLibraryList"></div>
                     </div>
                 </div>
 

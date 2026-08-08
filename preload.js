@@ -127,4 +127,11 @@ contextBridge.exposeInMainWorld('churchOverlay', {
   listDisplays: () => ipcRenderer.invoke('list-displays'),
   openDisplayWindow: (displayId) => ipcRenderer.invoke('open-display-window', { displayId }),
   closeDisplayWindow: () => ipcRenderer.invoke('close-display-window'),
+
+  // --- AJOUT (médiathèque — déclenchement vocal de photos/vidéos) ---------
+  // Seul accès natif nécessaire : le sélecteur de fichier (dialog n'existe
+  // que côté main.js). L'ajout/liste/suppression/déclenchement passent tous
+  // par le WebSocket existant (voir server.js), pas par IPC — cohérent avec
+  // le reste de l'app (main.js = accès OS, server.js = logique applicative).
+  pickMediaFile: () => ipcRenderer.invoke('pick-media-file'),
 });
