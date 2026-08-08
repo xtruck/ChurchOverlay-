@@ -2042,6 +2042,37 @@
                     </div>
                 </div>
 
+                <!-- AJOUT (capture webcam — aperçu opérateur, voir camera-capture.js).
+                     Module ISOLÉ du pipeline audio existant (audio-capture.js,
+                     groq-wrapper.js, detector.js...) : aucune donnée vidéo n'est
+                     envoyée au serveur/pipeline. Aperçu local uniquement pour
+                     l'instant — pas encore de sortie vers overlay.html. -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Caméra (aperçu opérateur)</span>
+                        <span class="status-badge warning" id="cameraStatus">Capture arrêtée</span>
+                    </div>
+
+                    <div class="field-hint" style="margin-bottom:0.75rem;">
+                        Aperçu local d'une webcam USB pour l'opérateur. Pas encore diffusé
+                        sur l'overlay public — première étape, aperçu seulement.
+                    </div>
+
+                    <div class="input-row" style="margin-bottom:0.75rem;">
+                        <select id="cameraSelect"><option value="">Recherche des caméras…</option></select>
+                        <button type="button" class="btn btn-secondary" onclick="refreshCameraList()">🔄 Actualiser</button>
+                    </div>
+
+                    <div id="cameraErrorHint" style="display:none; color: var(--text-muted); font-size:0.82rem; line-height:1.6; margin-bottom:0.75rem;"></div>
+
+                    <div style="position:relative; width:100%; max-width:480px; aspect-ratio:16/9; background:#000; border-radius: var(--radius-sm, 8px); overflow:hidden; margin-bottom:0.75rem;">
+                        <video id="cameraPreview" autoplay playsinline muted style="width:100%; height:100%; object-fit:cover; display:none;"></video>
+                        <div id="cameraPreviewPlaceholder" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--text-muted); font-size:0.82rem; text-align:center; padding:1rem;">Aucun aperçu — démarrez la caméra</div>
+                    </div>
+
+                    <button type="button" class="btn btn-primary" id="cameraToggleBtn" onclick="toggleCameraCapture()">📷 Démarrer la caméra</button>
+                </div>
+
                 <div class="card">
                     <div class="card-header">
                         <span class="card-title">Informations Système & Connexion</span>
@@ -2191,6 +2222,9 @@
         </main>
     </div>
 
+    <!-- AJOUT (capture webcam — aperçu opérateur) : module isolé, chargé
+         avant dashboard.js pour que window.CameraCapture soit prêt. -->
+    <script src="camera-capture.js"></script>
     <script src="dashboard.js"></script>
 </body>
 </html>
