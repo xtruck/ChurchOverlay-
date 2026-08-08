@@ -83,7 +83,7 @@ l'ancien.
 
 Réglages → Caméra : liste les webcams disponibles, aperçu local pour vous
 uniquement (pas encore diffusé publiquement). Fonctionne aussi avec une
-caméra **NDI** si vous installez l'outil gratuit *NDI Virtual Input*
+caméra **NDI** si vous installez l'outil gratuit _NDI Virtual Input_
 (suite NDI Tools de NewTek/Vizrt) — elle apparaît alors dans la même liste
 que les webcams USB normales.
 
@@ -124,14 +124,14 @@ inventée sans contenu réel à citer.
 
 ## Dépannage rapide
 
-| Symptôme | Vérifier |
-|---|---|
-| Aucun verset ne s'affiche | Micro démarré ? Badge "Capture active" ? Clé Groq configurée (écran de setup) ? |
-| Le verset apparaît en retard/coupé | Réseau lent — la détection par citation exacte est la plus rapide, privilégiez des références explicites ("Jean 3:16") |
-| Le poster principal ne réapparaît pas | Un verset ou un autre média est peut-être encore actif à l'écran — le poster ne reprend sa place que si RIEN d'autre n'est affiché |
-| "show poster X" ne déclenche rien | Vérifiez que le nom/la phrase déclencheuse correspond bien à ce qui est dit — la correspondance est par sous-chaîne, pas par similarité approximative |
-| Caméra NDI absente de la liste | Installez/activez "NDI Virtual Input" (NDI Tools gratuit) — sans lui, une source NDI n'apparaît pas comme une webcam standard |
-| Sous-titres traduits en retard ou absents | Normal par design (best-effort, jamais bloquant) — vérifiez simplement que le quota gratuit Groq/Gemini n'est pas épuisé par ailleurs |
+| Symptôme                                  | Vérifier                                                                                                                                              |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Aucun verset ne s'affiche                 | Micro démarré ? Badge "Capture active" ? Clé Groq configurée (écran de setup) ?                                                                       |
+| Le verset apparaît en retard/coupé        | Réseau lent — la détection par citation exacte est la plus rapide, privilégiez des références explicites ("Jean 3:16")                                |
+| Le poster principal ne réapparaît pas     | Un verset ou un autre média est peut-être encore actif à l'écran — le poster ne reprend sa place que si RIEN d'autre n'est affiché                    |
+| "show poster X" ne déclenche rien         | Vérifiez que le nom/la phrase déclencheuse correspond bien à ce qui est dit — la correspondance est par sous-chaîne, pas par similarité approximative |
+| Caméra NDI absente de la liste            | Installez/activez "NDI Virtual Input" (NDI Tools gratuit) — sans lui, une source NDI n'apparaît pas comme une webcam standard                         |
+| Sous-titres traduits en retard ou absents | Normal par design (best-effort, jamais bloquant) — vérifiez simplement que le quota gratuit Groq/Gemini n'est pas épuisé par ailleurs                 |
 
 Pour les détails techniques (variables d'environnement, protocole
 WebSocket, architecture), voir `README.md`, `API.md` et

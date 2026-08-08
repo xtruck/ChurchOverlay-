@@ -54,13 +54,20 @@ const captionTranslator = require('../caption-translator');
   // Test 2 : traduction réussie -> texte renvoyé, prompt contient la langue cible.
   console.log('[TEST] Test 2: translateCaption() traduction réussie...');
   chatCompletionCalls = [];
-  chatCompletionBehavior = async () => ({ text: 'God so loved the world', model: 'fake', usage: {} });
+  chatCompletionBehavior = async () => ({
+    text: 'God so loved the world',
+    model: 'fake',
+    usage: {},
+  });
   const result = await captionTranslator.translateCaption('Dieu a tant aimé le monde', 'en', {
     skipThrottle: true,
   });
   assert.strictEqual(result, 'God so loved the world');
   assert.strictEqual(chatCompletionCalls.length, 1);
-  assert(chatCompletionCalls[0].prompt.includes('English'), 'le prompt doit nommer la langue cible');
+  assert(
+    chatCompletionCalls[0].prompt.includes('English'),
+    'le prompt doit nommer la langue cible'
+  );
   assert(
     chatCompletionCalls[0].prompt.includes('Dieu a tant aimé le monde'),
     'le prompt doit inclure le texte source'
@@ -82,7 +89,11 @@ const captionTranslator = require('../caption-translator');
   } catch (_e) {
     threw = true;
   }
-  assert.strictEqual(threw, false, 'translateCaption() ne doit jamais lever, même si le LLM échoue');
+  assert.strictEqual(
+    threw,
+    false,
+    'translateCaption() ne doit jamais lever, même si le LLM échoue'
+  );
   assert.strictEqual(failResult, null, 'un échec LLM doit renvoyer null');
   console.log('[TEST] ✓ Échec LLM absorbé proprement, aucune exception\n');
 

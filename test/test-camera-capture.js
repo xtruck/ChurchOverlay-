@@ -95,7 +95,10 @@ console.log('[TEST] Test 5: formatDeviceLabel()...');
 {
   assert.strictEqual(cameraCapture.formatDeviceLabel({ label: '' }, 0), 'Caméra 1');
   assert.strictEqual(cameraCapture.formatDeviceLabel({ label: '   ' }, 2), 'Caméra 3');
-  assert.strictEqual(cameraCapture.formatDeviceLabel({ label: 'Logitech C920' }, 0), 'Logitech C920');
+  assert.strictEqual(
+    cameraCapture.formatDeviceLabel({ label: 'Logitech C920' }, 0),
+    'Logitech C920'
+  );
 }
 console.log('[TEST] ✓ Libellés formatés correctement (avec repli générique)\n');
 
@@ -116,7 +119,10 @@ console.log('[TEST] Test 6: mapGetUserMediaError()...');
   assert(/plus disponible/i.test(stale), 'OverconstrainedError -> message "plus disponible"');
 
   const unknown = cameraCapture.mapGetUserMediaError({ name: 'WeirdError', message: 'oops' });
-  assert(unknown.includes('oops'), 'erreur inconnue -> message générique incluant le détail original');
+  assert(
+    unknown.includes('oops'),
+    'erreur inconnue -> message générique incluant le détail original'
+  );
 }
 console.log('[TEST] ✓ Tous les types d’erreur getUserMedia produisent un message clair\n');
 

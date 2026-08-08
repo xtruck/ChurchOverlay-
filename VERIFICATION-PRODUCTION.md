@@ -91,6 +91,7 @@ le dimanche matin même.
       aucune particule.
 
 ## Priorité basse mais à ne pas oublier — fonctionnalités des sessions
+
 antérieures, si jamais non testées
 
 - [ ] Détection vocale de commandes (hotkeys globaux, si configurés).

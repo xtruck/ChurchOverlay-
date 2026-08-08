@@ -35,7 +35,11 @@ console.log('[TEST] Test 2: buildYoutubeChapters() — cas simple...');
   const lines = result.split('\n');
   assert.strictEqual(lines.length, 3, 'entrée "Début du culte" ajoutée + 2 temps forts');
   assert.strictEqual(lines[0], '0:00 Début du culte');
-  assert.strictEqual(lines[1], '0:30 Jean 3:16', 'trié par ordre chronologique, pas ordre d’entrée');
+  assert.strictEqual(
+    lines[1],
+    '0:30 Jean 3:16',
+    'trié par ordre chronologique, pas ordre d’entrée'
+  );
   assert.strictEqual(lines[2], '10:00 Romains 8:28');
 }
 console.log('[TEST] ✓ Chapitres triés chronologiquement, 0:00 forcé en tête\n');
@@ -61,7 +65,10 @@ console.log('[TEST] Test 4: buildYoutubeChapters() — filtre anti-rapprochement
     { reference: 'Verset C', shown_at: SESSION_START + 25_000 },
   ];
   const result = highlightExport.buildYoutubeChapters(entries, SESSION_START);
-  assert(!result.includes('Verset B'), 'un temps fort à moins de 10s du précédent doit être filtré');
+  assert(
+    !result.includes('Verset B'),
+    'un temps fort à moins de 10s du précédent doit être filtré'
+  );
   assert(result.includes('Verset A'));
   assert(result.includes('Verset C'));
 }
@@ -90,13 +97,19 @@ console.log('[TEST] Test 6: buildCsv()...');
   const rows = csv.split('\n');
   assert.strictEqual(rows[0], 'shown_at_epoch_ms,timestamp,label');
   assert.strictEqual(rows.length, 3, 'les deux entrées doivent apparaître malgré le faible écart');
-  assert(rows[2].includes('"Verset, avec virgule"'), 'une virgule dans le libellé doit être échappée');
+  assert(
+    rows[2].includes('"Verset, avec virgule"'),
+    'une virgule dans le libellé doit être échappée'
+  );
 }
 console.log('[TEST] ✓ Export CSV correct, virgules échappées\n');
 
 // Test 7 : buildCsv() sans entrée -> uniquement l'en-tête, jamais d'erreur.
 console.log('[TEST] Test 7: buildCsv() sans entrée...');
-assert.strictEqual(highlightExport.buildCsv([], SESSION_START), 'shown_at_epoch_ms,timestamp,label');
+assert.strictEqual(
+  highlightExport.buildCsv([], SESSION_START),
+  'shown_at_epoch_ms,timestamp,label'
+);
 assert.strictEqual(
   highlightExport.buildCsv(null, SESSION_START),
   'shown_at_epoch_ms,timestamp,label'
