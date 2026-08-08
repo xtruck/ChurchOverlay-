@@ -688,6 +688,9 @@ function handleMessage(message) {
     case 'sessionStats':
       renderSessionStats(message);
       break;
+    case 'highlightsExported':
+      renderHighlightsExport(message);
+      break;
     case 'postServiceRecap':
       // AJOUT : on garde le dernier récap en mémoire pour permettre
       // l'export en .txt sans le régénérer si l'opérateur clique export
@@ -969,6 +972,8 @@ async function addMediaLibraryItem() {
     const labelInput = document.getElementById('mediaLabelInput');
     const phrasesInput = document.getElementById('mediaPhrasesInput');
     const loopInput = document.getElementById('mediaLoopInput');
+    const durationInput = document.getElementById('mediaDurationInput');
+    const styleInput = document.getElementById('mediaStyleInput');
     const label = labelInput ? labelInput.value.trim() : '';
     const triggerPhrases = phrasesInput
       ? phrasesInput.value
@@ -977,12 +982,25 @@ async function addMediaLibraryItem() {
           .filter(Boolean)
       : [];
     const includeInLoop = !!(loopInput && loopInput.checked);
+    const rawSeconds = durationInput ? durationInput.value.trim() : '';
+    const displayDurationMs = rawSeconds ? Math.max(1, Number(rawSeconds)) * 1000 : undefined;
+    const transitionStyle = styleInput ? styleInput.value : undefined;
     ws.send(
-      JSON.stringify({ action: 'addMediaItem', sourcePath, label, triggerPhrases, includeInLoop })
+      JSON.stringify({
+        action: 'addMediaItem',
+        sourcePath,
+        label,
+        triggerPhrases,
+        includeInLoop,
+        displayDurationMs,
+        transitionStyle,
+      })
     );
     if (labelInput) labelInput.value = '';
     if (phrasesInput) phrasesInput.value = '';
     if (loopInput) loopInput.checked = false;
+    if (durationInput) durationInput.value = '';
+    if (styleInput) styleInput.value = 'fade';
   } catch (err) {
     showToast(
       'Échec de la sélection du fichier : ' + (err && err.message ? err.message : err),
@@ -1015,6 +1033,15 @@ function hideMediaNow() {
   ws.send(JSON.stringify({ action: 'hideMedia' }));
 }
 
+// AJOUT (détails d'affichage média — durée + style d'apparition, pour les
+// médias DÉJÀ uploadés, pas seulement au moment de l'ajout).
+const MEDIA_STYLE_LABELS = {
+  fade: 'Fondu',
+  slide: 'Glissement',
+  zoom: 'Zoom',
+  cut: 'Coupe instantanée',
+};
+
 function renderMediaLibrary(items) {
   mediaLibraryItems = Array.isArray(items) ? items : [];
   const list = document.getElementById('mediaLibraryList');
@@ -1033,12 +1060,27 @@ function renderMediaLibrary(items) {
       const phrasesBadges = (item.triggerPhrases || [])
         .map((p) => `<span class="media-item-phrase-badge">${escapeHtmlDashboard(p)}</span>`)
         .join('');
+      const durationSec =
+        typeof item.displayDurationMs === 'number' ? Math.round(item.displayDurationMs / 1000) : '';
+      const styleOptions = Object.entries(MEDIA_STYLE_LABELS)
+        .map(
+          ([value, styleLabel]) =>
+            `<option value="${value}" ${item.transitionStyle === value ? 'selected' : ''}>${styleLabel}</option>`
+        )
+        .join('');
       return `
                 <div class="queue-item">
                     <span class="queue-item-position">${item.mediaType === 'video' ? '🎬' : '🖼️'}</span>
                     <div class="media-item-info">
                         <div class="media-item-label">${item.includeInLoop ? '🔁 ' : ''}${escapeHtmlDashboard(item.label)}</div>
                         <div class="media-item-phrases">${phrasesBadges || '<span class="media-item-phrase-badge">Déclenchement manuel uniquement</span>'}</div>
+                        <div style="display:flex; align-items:center; gap:0.4rem; margin-top:0.35rem; flex-wrap:wrap;">
+                            <input type="number" min="1" step="1" placeholder="secondes" value="${durationSec}" id="mediaDuration-${item.id}" style="width:80px; padding:0.25rem 0.4rem; font-size:0.75rem; border-radius:var(--radius-sm); border:1px solid var(--border-subtle); background:var(--bg-input); color:var(--text-main);" title="Durée d'affichage en secondes — vide = pas de minuterie automatique (masquage manuel)">
+                            <select id="mediaStyle-${item.id}" style="padding:0.25rem 0.4rem; font-size:0.75rem; border-radius:var(--radius-sm); border:1px solid var(--border-subtle); background:var(--bg-input); color:var(--text-main);" title="Style d'apparition à l'écran">
+                                ${styleOptions}
+                            </select>
+                            <button class="queue-icon-btn" onclick="saveMediaItemDetails('${item.id}')" title="Enregistrer la durée/le style">💾</button>
+                        </div>
                     </div>
                     <div class="queue-item-actions">
                         <button class="queue-icon-btn queue-send" onclick="triggerMediaLibraryItem('${item.id}')" title="Afficher maintenant">▶</button>
@@ -1048,6 +1090,20 @@ function renderMediaLibrary(items) {
             `;
     })
     .join('');
+}
+
+function saveMediaItemDetails(id) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  const durationInput = document.getElementById(`mediaDuration-${id}`);
+  const styleSelect = document.getElementById(`mediaStyle-${id}`);
+  const rawSeconds = durationInput ? durationInput.value.trim() : '';
+  const displayDurationMs = rawSeconds ? Math.max(1, Number(rawSeconds)) * 1000 : null;
+  const transitionStyle = styleSelect ? styleSelect.value : 'fade';
+  ws.send(JSON.stringify({ action: 'updateMediaItem', id, displayDurationMs, transitionStyle }));
+  showToast('Détails d’affichage enregistrés.', 'success');
 }
 
 // Même garde que les autres panneaux Electron-only (file d'affichage,
@@ -1493,6 +1549,43 @@ function renderSessionStats(message) {
   `;
 }
 
+// AJOUT (export des temps forts — voir highlight-export.js) : réutilise le
+// même historique persistant que ci-dessus, mis en forme pour un
+// enregistrement vidéo du culte EN COURS (depuis le démarrage du serveur,
+// pas une période choisie comme requestSessionStats).
+function exportHighlights() {
+  if (!requireWsOrWarn()) return;
+  ws.send(JSON.stringify({ action: 'exportHighlights' }));
+}
+
+function renderHighlightsExport(message) {
+  const output = document.getElementById('highlightsExportOutput');
+  if (!output) return;
+
+  if (!message.count) {
+    showToast('Aucun temps fort à exporter pour le moment.', 'info');
+    output.style.display = 'none';
+    return;
+  }
+
+  output.value = message.youtubeChapters || '';
+  output.style.display = 'block';
+
+  if (navigator.clipboard && navigator.clipboard.writeText && message.csv) {
+    navigator.clipboard
+      .writeText(message.csv)
+      .then(() =>
+        showToast(
+          `${message.count} temps fort(s) — CSV copié, chapitres YouTube ci-dessous.`,
+          'success'
+        )
+      )
+      .catch(() => showToast(`${message.count} temps fort(s) exportés ci-dessous.`, 'success'));
+  } else {
+    showToast(`${message.count} temps fort(s) exportés ci-dessous.`, 'success');
+  }
+}
+
 // AJOUT : badge de mode de culte auto-détecté (Louange / Prédication /
 // Prière / Annonces...). Le texte de `theme` provient de detectSermonTheme
 // côté ai-enricher.js ; on l'affiche tel quel sans le réinterpréter pour
@@ -1561,6 +1654,22 @@ function onCaptionsToggle() {
     ws.send(JSON.stringify({ action: 'setCaptions', enabled }));
   }
   showToast(enabled ? "Sous-titres activés sur l'overlay." : 'Sous-titres désactivés.', 'info');
+}
+
+// AJOUT (sous-titres traduits en direct — voir caption-translator.js) :
+// même schéma que onCaptionsToggle(), avec une langue cible en plus.
+function onTranslatedCaptionsToggle() {
+  const checkbox = document.getElementById('translatedCaptionsToggle');
+  const langSelect = document.getElementById('captionTargetLangSelect');
+  const enabled = !!(checkbox && checkbox.checked);
+  const targetLang = langSelect ? langSelect.value : 'en';
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: 'setTranslatedCaptions', enabled, targetLang }));
+  }
+  showToast(
+    enabled ? `Sous-titres traduits activés (${targetLang}).` : 'Sous-titres traduits désactivés.',
+    'info'
+  );
 }
 
 // AJOUT (audit — plusieurs façons d'afficher l'overlay, gratuit/léger,

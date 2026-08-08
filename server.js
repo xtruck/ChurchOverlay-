@@ -52,6 +52,18 @@ const sermonQa = require('./sermon-qa');
 // AJOUT (médiathèque — déclenchement vocal de photos/vidéos) : même
 // discipline que sermon-archive.js ci-dessus. Voir media-library.js.
 const mediaLibrary = require('./media-library');
+// AJOUT (sous-titres traduits en direct) : module isolé, jamais attendu
+// avant processTranscript() — voir startPipeline() et caption-translator.js.
+const captionTranslator = require('./caption-translator');
+// AJOUT (export des temps forts d'un culte) : module pur, aucune donnée
+// nouvelle collectée — voir highlight-export.js.
+const highlightExport = require('./highlight-export');
+// Zéro-point utilisé pour les temps forts exportés (voir action
+// 'exportHighlights' plus bas) : approximation raisonnable du début du
+// culte (démarrage du process serveur), pas une vérité absolue — un
+// enregistrement OBS démarré séparément peut différer de quelques secondes,
+// ajustables manuellement par l'opérateur au besoin.
+const SESSION_STARTED_AT = Date.now();
 // AJOUT (bibliothèque de chants — déclenchement vocal, section suivante/
 // précédente en direct) : même discipline que media-library.js ci-dessus.
 // Voir song-library.js.
@@ -490,7 +502,16 @@ async function processTranscript(text) {
         mediaUrl: `/media/${mediaMatch.filename}`,
         label: mediaMatch.label,
         displayDurationMs: mediaMatch.displayDurationMs,
+        transitionStyle: mediaMatch.transitionStyle,
         detectedBy: 'voice-cue',
+      });
+      // AJOUT (temps forts exportables — voir highlight-export.js) : best-effort,
+      // n'affecte pas la liste "versets récents" du dashboard (voir
+      // pushHistory) — uniquement la trace persistante utilisée à l'export.
+      sessionStore.recordVerseShown({
+        reference: `📷 ${mediaMatch.label}`,
+        detectedBy: 'media',
+        timestamp: Date.now(),
       });
       return;
     }
@@ -967,9 +988,10 @@ function handleHotkeyAction(action) {
 function broadcastSongSection(song, sectionIndex, detectedBy) {
   const section = song.sections[sectionIndex];
   if (!section) return;
+  const reference = `${song.title} — ${section.label}`;
   broadcast({
     action: 'showVerse',
-    reference: `${song.title} — ${section.label}`,
+    reference,
     text: section.text,
     text_fr: null,
     text_en: null,
@@ -977,6 +999,11 @@ function broadcastSongSection(song, sectionIndex, detectedBy) {
     provider: 'song-library',
     detectedBy,
   });
+  // AJOUT (temps forts exportables — voir highlight-export.js) : les chants
+  // réutilisaient déjà entièrement l'affichage 'showVerse' mais n'étaient
+  // jamais enregistrés dans l'historique (ni mémoire ni disque) — absents
+  // de la liste "versets récents" ET de tout export après le culte.
+  pushHistory({ reference, text: section.text, detectedBy, timestamp: Date.now() });
 }
 
 // ===========================================================================
@@ -1048,6 +1075,7 @@ const OPERATOR_ACTIONS = new Set([
   'getArchiveMatches',
   'setHighContrast',
   'setCaptions',
+  'setTranslatedCaptions',
   'setTestPattern',
   'setBackgroundPattern',
   // AJOUT (médiathèque — déclenchement vocal de photos/vidéos)
@@ -1067,6 +1095,10 @@ const OPERATOR_ACTIONS = new Set([
   // AJOUT (stage display — messages opérateur vers l'écran scène)
   'sendStageMessage',
   'clearStageMessage',
+  // AJOUT (export des temps forts d'un culte — voir highlight-export.js)
+  'exportHighlights',
+  // AJOUT (détails d'affichage média — durée/style)
+  'updateMediaItem',
 ]);
 
 // SECURITY: role is derived from WHICH token the client authenticated with
@@ -1148,6 +1180,8 @@ wss.on('connection', (ws, req) => {
       language: sessionState.getDisplayLanguage(),
       highContrast: sessionState.getHighContrast(),
       captions: sessionState.getCaptionsEnabled(),
+      translatedCaptions: sessionState.getTranslatedCaptionsEnabled(),
+      captionTargetLang: sessionState.getCaptionTargetLang(),
       testPattern: sessionState.getTestPattern(),
       backgroundPattern: sessionState.getBackgroundPattern(),
       history: sessionState.getVerseHistory(),
@@ -1339,6 +1373,31 @@ wss.on('connection', (ws, req) => {
           JSON.stringify({
             action: 'error',
             error: 'Impossible de récupérer les statistiques de session : ' + err.message,
+          })
+        );
+      }
+      return;
+    }
+
+    // --- Export des temps forts (chapitres YouTube / CSV) — voir
+    // highlight-export.js. Réutilise l'historique déjà persistant, aucune
+    // nouvelle collecte de données ici. ---
+    if (sanitized.action === 'exportHighlights') {
+      try {
+        const entries = sessionStore.getVerseHistorySince(SESSION_STARTED_AT);
+        ws.send(
+          JSON.stringify({
+            action: 'highlightsExported',
+            youtubeChapters: highlightExport.buildYoutubeChapters(entries, SESSION_STARTED_AT),
+            csv: highlightExport.buildCsv(entries, SESSION_STARTED_AT),
+            count: entries.length,
+          })
+        );
+      } catch (err) {
+        ws.send(
+          JSON.stringify({
+            action: 'error',
+            error: "Impossible d'exporter les temps forts : " + err.message,
           })
         );
       }
@@ -1671,6 +1730,21 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
+    // --- Sous-titres traduits en direct (opt-in, coût quota supplémentaire
+    // Groq/Gemini — voir caption-translator.js et son garde-fou) ---
+    if (sanitized.action === 'setTranslatedCaptions') {
+      sessionState.setTranslatedCaptionsEnabled(!!sanitized.enabled);
+      if (sanitized.targetLang) sessionState.setCaptionTargetLang(sanitized.targetLang);
+      const translatedCaptions = sessionState.getTranslatedCaptionsEnabled();
+      const targetLang = sessionState.getCaptionTargetLang();
+      broadcast({ action: 'translatedCaptionsMode', enabled: translatedCaptions, targetLang });
+      log(
+        'Accessibilité : sous-titres traduits ' +
+          (translatedCaptions ? `activés (${targetLang})` : 'désactivés')
+      );
+      return;
+    }
+
     // --- Display: test pattern (audit — affichage/sortie, free/light) ---
     if (sanitized.action === 'setTestPattern') {
       sessionState.setTestPattern(!!sanitized.enabled);
@@ -1709,11 +1783,32 @@ wss.on('connection', (ws, req) => {
           triggerPhrases: sanitized.triggerPhrases,
           displayDurationMs: sanitized.displayDurationMs,
           includeInLoop: sanitized.includeInLoop,
+          transitionStyle: sanitized.transitionStyle,
         });
         log(`Médiathèque : "${item.label}" ajouté (${item.mediaType})`);
         broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
       } catch (err) {
         ws.send(JSON.stringify({ action: 'error', error: 'Médiathèque : ' + err.message }));
+      }
+      return;
+    }
+
+    // --- Détails d'affichage média (durée/style) — voir updateItem() dans
+    // media-library.js. Pour les médias DÉJÀ uploadés, sans les re-uploader. ---
+    if (sanitized.action === 'updateMediaItem') {
+      const displayDurationMs =
+        sanitized.displayDurationMs === null || sanitized.displayDurationMs === 0
+          ? null
+          : sanitized.displayDurationMs;
+      const updated = mediaLibrary.updateItem(sanitized.id, {
+        displayDurationMs,
+        transitionStyle: sanitized.transitionStyle,
+      });
+      if (updated) {
+        log(`Médiathèque : détails d'affichage mis à jour pour "${updated.label}"`);
+        broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
+      } else {
+        ws.send(JSON.stringify({ action: 'error', error: 'Médiathèque : élément introuvable' }));
       }
       return;
     }
@@ -1742,7 +1837,13 @@ wss.on('connection', (ws, req) => {
         mediaUrl: `/media/${item.filename}`,
         label: item.label,
         displayDurationMs: item.displayDurationMs,
+        transitionStyle: item.transitionStyle,
         detectedBy: 'manual',
+      });
+      sessionStore.recordVerseShown({
+        reference: `📷 ${item.label}`,
+        detectedBy: 'media',
+        timestamp: Date.now(),
       });
       return;
     }
@@ -1921,6 +2022,18 @@ function startPipeline() {
         if (result && result.text && result.text.trim()) {
           log(`Transcription [${result.source}]: ${result.text.substring(0, 80)}`);
           broadcast({ action: 'transcript', text: result.text, source: result.source });
+          // AJOUT (sous-titres traduits en direct) : JAMAIS attendu (pas de
+          // `await`) — voir le garde-fou en en-tête de caption-translator.js.
+          // Un sous-titre traduit en retard/manqué est sans conséquence ;
+          // retarder processTranscript() ci-dessous ne l'est pas.
+          if (sessionState.getTranslatedCaptionsEnabled()) {
+            captionTranslator
+              .translateCaption(result.text, sessionState.getCaptionTargetLang())
+              .then((translated) => {
+                if (translated) broadcast({ action: 'transcriptTranslation', text: translated });
+              })
+              .catch(() => {});
+          }
           await processTranscript(result.text);
         }
       } catch (err) {

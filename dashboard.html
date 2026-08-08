@@ -1456,6 +1456,16 @@
                         <div class="queue-add-row" id="mediaLibraryAddRow">
                             <input type="text" id="mediaLabelInput" placeholder="Nom (ex. Poster annonces)">
                             <input type="text" id="mediaPhrasesInput" placeholder="Phrase(s) déclencheuse(s) (optionnel — vide = le nom sert de phrase)">
+                            <!-- AJOUT (détails d'affichage média — durée + style d'apparition) :
+                                 réglables dès l'ajout, et modifiables ensuite pour les médias
+                                 déjà uploadés directement dans la liste ci-dessous. -->
+                            <input type="number" min="1" step="1" id="mediaDurationInput" placeholder="Durée (s)" style="width:100px;" title="Durée d'affichage en secondes — vide = 15s pour une image, jusqu'à la fin pour une vidéo">
+                            <select id="mediaStyleInput" title="Style d'apparition à l'écran">
+                                <option value="fade" selected>Fondu</option>
+                                <option value="slide">Glissement</option>
+                                <option value="zoom">Zoom</option>
+                                <option value="cut">Coupe instantanée</option>
+                            </select>
                             <!-- AJOUT (diaporama d'annonces — recommandation "présentation
                                  secondaire indépendante") : inclut cet élément dans la boucle
                                  de announcement-loop.html, indépendamment du déclenchement
@@ -1465,7 +1475,7 @@
                             </label>
                             <button class="btn btn-secondary" style="padding: 0.55rem 0.9rem;" onclick="addMediaLibraryItem()">+ Choisir un fichier</button>
                         </div>
-                        <div class="field-hint" style="margin-bottom:0.5rem;">Dites simplement le nom du média (ex. « affiche Poster annonces ») pour l'afficher à l'écran, ou tapez une phrase déclencheuse dédiée si vous préférez un mot-clé différent.</div>
+                        <div class="field-hint" style="margin-bottom:0.5rem;">Dites simplement le nom du média (ex. « affiche Poster annonces ») pour l'afficher à l'écran, ou tapez une phrase déclencheuse dédiée si vous préférez un mot-clé différent. Durée et style sont aussi modifiables après coup, directement dans la liste ci-dessous.</div>
                         <div class="queue-list" id="mediaLibraryList"></div>
                     </div>
 
@@ -1879,6 +1889,18 @@
                     <div id="sessionStatsOutput" class="stat-row" style="display: block;">
                         <span class="stat-label">Cliquez sur une période pour charger l'historique.</span>
                     </div>
+
+                    <!-- AJOUT (export des temps forts — voir highlight-export.js) :
+                         réutilise le même historique persistant ci-dessus, juste
+                         mis en forme pour un enregistrement vidéo du culte en cours
+                         (chapitres YouTube à coller dans la description, ou CSV). -->
+                    <div style="margin-top:1.25rem; padding-top:1rem; border-top:1px solid var(--border-color, rgba(255,255,255,0.1));">
+                        <div style="display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.75rem;">
+                            <button class="btn btn-secondary" onclick="exportHighlights()">🎬 Exporter les temps forts (culte en cours)</button>
+                        </div>
+                        <div class="field-hint" style="margin-bottom:0.5rem;">Versets, chants et médias affichés depuis le démarrage du serveur, au format "chapitres YouTube" (à coller dans la description de la vidéo) — un export CSV est aussi copié.</div>
+                        <textarea id="highlightsExportOutput" readonly rows="6" style="display:none; width:100%; font-family:monospace; font-size:0.8rem; padding:0.6rem; border-radius:var(--radius-sm); border:1px solid var(--border-subtle); background:var(--bg-input); color:var(--text-main);"></textarea>
+                    </div>
                 </div>
             </section>
 
@@ -1999,6 +2021,26 @@
                     <div class="field-hint" style="margin-top:10px;">
                         Pour les malvoyants, les malentendants et les salles avec un écran éloigné — s'applique immédiatement sur l'overlay projeté.
                     </div>
+                    <!-- AJOUT (sous-titres traduits en direct, voir caption-translator.js) :
+                         distinct des sous-titres bruts ci-dessus ET de la traduction de
+                         VERSETS (bouton "Bilingue FR/EN"). Traduit ce qui est en train
+                         d'être DIT, en direct. Opt-in explicite : appel LLM supplémentaire
+                         par segment de parole (quota Groq/Gemini gratuit partagé). -->
+                    <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap; padding:0.6rem 0.8rem; margin-top:0.6rem; border:1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius:8px;">
+                        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; user-select:none;">
+                            <input type="checkbox" id="translatedCaptionsToggle" onchange="onTranslatedCaptionsToggle()">
+                            <span>Sous-titres traduits en direct</span>
+                        </label>
+                        <select id="captionTargetLangSelect" onchange="onTranslatedCaptionsToggle()" style="padding:0.35rem 0.6rem; border-radius:var(--radius-sm); border:1px solid var(--border-subtle); background:var(--bg-input); color:var(--text-main); font-size:0.82rem;">
+                            <option value="en">Anglais</option>
+                            <option value="es">Espagnol</option>
+                            <option value="pt">Portugais</option>
+                            <option value="de">Allemand</option>
+                        </select>
+                    </div>
+                    <div class="field-hint" style="margin-top:10px;">
+                        Traduit en direct ce qui est DIT (pas seulement les versets cités) — utilise un appel IA gratuit supplémentaire par segment de parole. Laissez désactivé si votre assemblée n'en a pas besoin.
+                    </div>
                 </div>
 
                 <!-- AJOUT (audit — plusieurs façons d'afficher l'overlay, gratuit/léger) :
@@ -2066,6 +2108,17 @@
                     <div class="field-hint" style="margin-bottom:0.75rem;">
                         Aperçu local d'une webcam USB pour l'opérateur. Pas encore diffusé
                         sur l'overlay public — première étape, aperçu seulement.
+                        <br>
+                        <!-- AJOUT (demande explicite — caméras NDI) : pas d'intégration native
+                             du protocole NDI (SDK propriétaire, redistribution soumise à
+                             licence NewTek/Vizrt, non testable sans matériel NDI réel) —
+                             mais une caméra NDI pontée via l'outil GRATUIT "NDI Virtual
+                             Input" (suite NDI Tools) apparaît comme une webcam normale
+                             ci-dessus et fonctionne dès aujourd'hui, sans configuration
+                             supplémentaire côté ChurchOverlay. -->
+                        Caméra NDI (PTZ, régie) : installez le NDI Tools gratuit de NewTek/Vizrt
+                        et activez "NDI Virtual Input" — la source apparaît alors ci-dessus comme
+                        une webcam normale.
                     </div>
 
                     <div class="input-row" style="margin-bottom:0.75rem;">

@@ -60,6 +60,35 @@ console.log('[TEST] Test 4: pickBestCamera() avec un seul candidat réel...');
 }
 console.log('[TEST] ✓ Candidat unique choisi même sans indice de nom\n');
 
+// Test 4b (CORRECTIF — caméras NDI) : "NDI Video" (nom exposé par l'outil
+// gratuit NDI Virtual Input) doit être reconnu comme une source RÉELLE et
+// préféré — avant ce correctif, il était filtré comme une fausse caméra
+// virtuelle au même titre qu'OBS Virtual Camera.
+console.log('[TEST] Test 4b: pickBestCamera() reconnaît une caméra NDI comme réelle...');
+{
+  const devices = [{ deviceId: '1', label: 'NDI Video' }];
+  const result = cameraCapture.pickBestCamera(devices);
+  assert.strictEqual(
+    result.chosen && result.chosen.deviceId,
+    '1',
+    'une caméra NDI (pontée via NDI Virtual Input) ne doit plus être rejetée comme virtuelle'
+  );
+  assert.strictEqual(result.rejected.length, 0);
+}
+{
+  const devices = [
+    { deviceId: '1', label: 'Integrated Webcam' },
+    { deviceId: '2', label: 'NDI Video' },
+  ];
+  const result = cameraCapture.pickBestCamera(devices);
+  assert.strictEqual(
+    result.candidates.length,
+    2,
+    'les deux sources doivent être candidates (aucune rejetée)'
+  );
+}
+console.log('[TEST] ✓ Caméra NDI reconnue comme source réelle, non filtrée\n');
+
 // Test 5 : formatDeviceLabel() — libellé vide (avant permission accordée)
 // retombe sur un nom générique numéroté, jamais une chaîne vide.
 console.log('[TEST] Test 5: formatDeviceLabel()...');

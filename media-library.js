@@ -35,6 +35,13 @@ const ALLOWED_EXTENSIONS = new Set([
   '.mov',
 ]);
 
+// AJOUT (demande explicite — détails d'affichage média : durée + style
+// d'apparition). Styles CSS-only côté overlay.html (transform/opacity,
+// composités par le GPU — voir l'audit perf de cette même session), jamais
+// de JS lourd par frame.
+const TRANSITION_STYLES = new Set(['fade', 'slide', 'zoom', 'cut']);
+const DEFAULT_TRANSITION_STYLE = 'fade';
+
 let indexPath = null;
 let mediaDir = null;
 
@@ -86,6 +93,10 @@ function listItems() {
  */
 function getItem(id) {
   return readIndex().find((item) => item.id === id) || null;
+}
+
+function sanitizeTransitionStyle(style) {
+  return TRANSITION_STYLES.has(style) ? style : DEFAULT_TRANSITION_STYLE;
 }
 
 /**
@@ -149,6 +160,8 @@ function addItem(data) {
     // avant. Indépendant de displayDurationMs (voir DEFAULT_LOOP_DURATION_MS
     // dans announcement-loop.html pour la durée utilisée en boucle).
     includeInLoop: !!data.includeInLoop,
+    // AJOUT (détails d'affichage média — style d'apparition à l'écran).
+    transitionStyle: sanitizeTransitionStyle(data.transitionStyle),
   };
 
   const items = readIndex();
@@ -190,6 +203,40 @@ function deleteItem(id) {
 }
 
 /**
+ * Modifie les détails d'affichage d'un élément déjà uploadé — durée et
+ * style d'apparition (demande explicite : "pour les médias déjà composés").
+ * Ne touche jamais au fichier ni aux phrases déclencheuses (utiliser
+ * deleteItem() + addItem() pour ça) — uniquement les champs listés ici,
+ * pour rester un patch simple et prévisible.
+ * @param {string} id
+ * @param {Object} patch
+ * @param {number|null} [patch.displayDurationMs] - null = jusqu'à fin de vidéo/masquage manuel
+ * @param {string} [patch.transitionStyle] - 'fade' | 'slide' | 'zoom' | 'cut'
+ * @returns {Object|null} l'élément mis à jour, ou null si id inconnu
+ */
+function updateItem(id, patch) {
+  const items = readIndex();
+  const idx = items.findIndex((item) => item.id === id);
+  if (idx === -1) return null;
+
+  const item = items[idx];
+  if (patch && typeof patch === 'object') {
+    if (patch.displayDurationMs === null) {
+      item.displayDurationMs = null;
+    } else if (typeof patch.displayDurationMs === 'number' && patch.displayDurationMs > 0) {
+      item.displayDurationMs = patch.displayDurationMs;
+    }
+    if (patch.transitionStyle !== undefined) {
+      item.transitionStyle = sanitizeTransitionStyle(patch.transitionStyle);
+    }
+  }
+
+  items[idx] = item;
+  writeIndex(items);
+  return item;
+}
+
+/**
  * Cherche si un texte transcrit contient l'une des phrases déclencheuses
  * d'un élément de la médiathèque. Correspondance par sous-chaîne sur texte
  * normalisé (pas de LLM) — même philosophie que detectCommand()
@@ -217,9 +264,12 @@ module.exports = {
   listItems,
   getItem,
   addItem,
+  updateItem,
   deleteItem,
   matchTriggerPhrase,
   // Exposées pour tests unitaires (test-media-library.js).
   ALLOWED_EXTENSIONS,
   DEFAULT_IMAGE_DURATION_MS,
+  TRANSITION_STYLES,
+  DEFAULT_TRANSITION_STYLE,
 };

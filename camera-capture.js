@@ -34,11 +34,20 @@
 // Caméras virtuelles à écarter automatiquement (logiciels de routage vidéo,
 // jamais une vraie webcam physique) — même logique que LOOPBACK_PATTERNS
 // dans audio-capture.js, appliquée aux libellés de caméra.
+// CORRECTIF (demande explicite — caméras NDI) : "ndi video" a été RETIRÉ de
+// cette liste. C'est exactement le nom sous lequel l'outil gratuit "NDI
+// Virtual Input" (NDI Tools, NewTek/Vizrt) expose un flux NDI comme une
+// webcam standard au système — ce n'était pas une caméra virtuelle "à
+// écarter" comme OBS Virtual Camera, mais une source réelle légitime (PTZ
+// NDI, régie vidéo) qu'on rejetait par erreur avant. Voir CAMERA_HINT_PATTERNS
+// ci-dessous : "ndi" y est maintenant un indice PRÉFÉRÉ plutôt que rejeté.
 const VIRTUAL_CAMERA_PATTERNS =
-  /obs virtual camera|snap camera|droidcam|manycam|xsplit vcam|iriun|epoccam|ndi video|camo\b|virtual cam/i;
+  /obs virtual camera|snap camera|droidcam|manycam|xsplit vcam|iriun|epoccam|camo\b|virtual cam/i;
 
-// Mots qui indiquent fortement une vraie webcam physique.
-const CAMERA_HINT_PATTERNS = /webcam|cam[ée]ra|camera|facetime|integrated|usb/i;
+// Mots qui indiquent fortement une vraie webcam physique — "ndi" inclus :
+// une caméra NDI pontée via NDI Virtual Input est une source réelle, pas un
+// bruit à filtrer (voir commentaire ci-dessus).
+const CAMERA_HINT_PATTERNS = /webcam|cam[ée]ra|camera|facetime|integrated|usb|ndi/i;
 
 const DEFAULT_CONSTRAINTS = {
   width: { ideal: 1280 },

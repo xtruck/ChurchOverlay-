@@ -51,6 +51,11 @@ assert(
   fs.existsSync(path.join(userDataDir, 'media', imgItem.filename)),
   'le fichier doit avoir été copié dans <userData>/media/'
 );
+assert.strictEqual(
+  imgItem.transitionStyle,
+  mediaLibrary.DEFAULT_TRANSITION_STYLE,
+  'sans style précisé, le style d’apparition par défaut doit être appliqué'
+);
 console.log('[TEST] ✓ Image ajoutée et copiée correctement\n');
 
 // Test 2 : addItem() classe correctement une vidéo, sans durée par défaut
@@ -83,10 +88,34 @@ assert(
 );
 console.log('[TEST] ✓ Repli sur le nom comme phrase déclencheuse par défaut\n');
 
+// Test 2c : addItem() avec un style d'apparition explicite valide, et repli
+// sur le défaut pour une valeur inconnue (jamais une valeur arbitraire non
+// reconnue par overlay.html, voir TRANSITION_STYLES).
+console.log('[TEST] Test 2c: addItem() — style d’apparition (valide et invalide)...');
+const styledSource = makeSourceFile('styled.png');
+const styledItem = mediaLibrary.addItem({
+  sourcePath: styledSource,
+  label: 'Style test',
+  transitionStyle: 'zoom',
+});
+assert.strictEqual(styledItem.transitionStyle, 'zoom');
+const badStyleSource = makeSourceFile('badstyle.png');
+const badStyleItem = mediaLibrary.addItem({
+  sourcePath: badStyleSource,
+  label: 'Mauvais style',
+  transitionStyle: 'explosion-3d',
+});
+assert.strictEqual(
+  badStyleItem.transitionStyle,
+  mediaLibrary.DEFAULT_TRANSITION_STYLE,
+  'un style inconnu doit retomber sur le défaut plutôt que d’être stocké tel quel'
+);
+console.log('[TEST] ✓ Style d’apparition validé correctement\n');
+
 // Test 3 : listItems()/getItem() reflètent les ajouts.
 console.log('[TEST] Test 3: listItems() / getItem()...');
 const items = mediaLibrary.listItems();
-assert.strictEqual(items.length, 3, 'les trois éléments ajoutés doivent apparaître');
+assert.strictEqual(items.length, 5, 'les cinq éléments ajoutés doivent apparaître');
 assert.strictEqual(mediaLibrary.getItem(imgItem.id).label, 'Poster annonces');
 assert.strictEqual(mediaLibrary.getItem('id-inexistant'), null, 'un id inconnu doit renvoyer null');
 console.log('[TEST] ✓ Liste et accès par id corrects\n');
@@ -150,6 +179,50 @@ console.log('[TEST] ✓ Suppression complète (fichier + index)\n');
 console.log('[TEST] Test 9: deleteItem() sur un id inconnu...');
 assert.strictEqual(mediaLibrary.deleteItem('id-inexistant'), false);
 console.log('[TEST] ✓ Suppression d’un id inconnu gérée proprement\n');
+
+// Test 10 : updateItem() modifie durée/style d'un média DÉJÀ uploadé (voir
+// demande explicite — "détails d'affichage" pour les médias déjà composés),
+// sans toucher au fichier ni aux phrases déclencheuses.
+console.log('[TEST] Test 10: updateItem() — durée et style...');
+const updated = mediaLibrary.updateItem(vidItem.id, {
+  displayDurationMs: 30_000,
+  transitionStyle: 'slide',
+});
+assert(updated !== null);
+assert.strictEqual(updated.displayDurationMs, 30_000);
+assert.strictEqual(updated.transitionStyle, 'slide');
+assert.strictEqual(
+  mediaLibrary.getItem(vidItem.id).displayDurationMs,
+  30_000,
+  'la mise à jour doit être persistée sur disque'
+);
+assert.strictEqual(
+  mediaLibrary.getItem(vidItem.id).label,
+  'Intro culte',
+  'updateItem() ne doit jamais toucher au libellé'
+);
+console.log('[TEST] ✓ Durée et style mis à jour et persistés\n');
+
+// Test 10b : updateItem() avec displayDurationMs: null retire le minuteur
+// (affichage jusqu'à masquage manuel), et un style inconnu est ignoré
+// plutôt que stocké tel quel.
+console.log('[TEST] Test 10b: updateItem() — durée null et style invalide...');
+const updated2 = mediaLibrary.updateItem(vidItem.id, {
+  displayDurationMs: null,
+  transitionStyle: 'explosion-3d',
+});
+assert.strictEqual(updated2.displayDurationMs, null);
+assert.strictEqual(
+  updated2.transitionStyle,
+  mediaLibrary.DEFAULT_TRANSITION_STYLE,
+  'un style inconnu doit retomber sur le défaut plutôt que d’être accepté'
+);
+console.log('[TEST] ✓ Durée null et style invalide gérés correctement\n');
+
+// Test 10c : updateItem() sur un id inconnu renvoie null sans planter.
+console.log('[TEST] Test 10c: updateItem() sur un id inconnu...');
+assert.strictEqual(mediaLibrary.updateItem('id-inexistant', { transitionStyle: 'zoom' }), null);
+console.log('[TEST] ✓ Id inconnu géré proprement\n');
 
 fs.rmSync(userDataDir, { recursive: true, force: true });
 console.log('=== Tous les tests media-library sont passés ===');

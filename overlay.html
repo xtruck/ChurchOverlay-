@@ -520,6 +520,8 @@ body.high-contrast .verse-text .kinetic-word {
   position: fixed;
   left: 0; right: 0; bottom: 0;
   display: none;
+  flex-direction: column;
+  gap: 4px;
   padding: 14px clamp(20px, 4vw, 48px);
   background: rgba(0, 0, 0, 0.72);
   color: #ffffff;
@@ -529,7 +531,17 @@ body.high-contrast .verse-text .kinetic-word {
   text-align: center;
   z-index: 5;
 }
-#caption-strip.visible { display: block; }
+#caption-strip.visible { display: flex; }
+/* AJOUT (sous-titres traduits en direct, opt-in) : ligne distincte, en
+   italique et légèrement plus sobre pour rester secondaire face au sous-
+   titre original — vide (donc invisible, :empty) tant qu'aucune traduction
+   n'est arrivée pour ce segment. */
+#caption-strip-translation {
+  font-style: italic;
+  font-size: 0.85em;
+  color: rgba(255, 255, 255, 0.75);
+}
+#caption-strip-translation:empty { display: none; }
 
 /* ==========================================================================
    Motif de test (audit — affichage/sortie, gratuit/léger). Barres de
@@ -628,6 +640,36 @@ body.high-contrast .verse-text .kinetic-word {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+  /* AJOUT (détails d'affichage média — style d'apparition, voir showMediaItem()
+     dans le script plus bas) : transform/opacity uniquement (GPU-composité,
+     même discipline que l'audit perf de cette session) — jamais de propriété
+     coûteuse (width/height/filter) animée par frame. */
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+/* 'fade' (par défaut) : le fondu du layer suffit, le média lui-même est statique. */
+#media-layer.transition-slide img,
+#media-layer.transition-slide video {
+  transform: translateY(0);
+}
+#media-layer.transition-slide:not(.visible) img,
+#media-layer.transition-slide:not(.visible) video {
+  transform: translateY(40px);
+}
+#media-layer.transition-zoom img,
+#media-layer.transition-zoom video {
+  transform: scale(1);
+}
+#media-layer.transition-zoom:not(.visible) img,
+#media-layer.transition-zoom:not(.visible) video {
+  transform: scale(0.85);
+}
+/* 'cut' : aucune transition, apparition/disparition instantanée. */
+#media-layer.transition-cut {
+  transition: none;
+}
+#media-layer.transition-cut img,
+#media-layer.transition-cut video {
+  transition: none;
 }
 #media-layer img[hidden],
 #media-layer video[hidden] {
@@ -705,7 +747,13 @@ body.high-contrast .verse-text .kinetic-word {
 </div>
 
 <!-- Sous-titres en direct (accessibilité — voir action 'captionsMode') -->
-<div id="caption-strip" aria-live="polite"></div>
+<div id="caption-strip" aria-live="polite">
+  <div id="caption-strip-text"></div>
+  <!-- AJOUT (sous-titres traduits en direct, opt-in — voir caption-translator.js) :
+       seconde ligne, distincte de la traduction de VERSETS (langMode 'both').
+       Masquée tant qu'aucune traduction n'a encore été reçue pour ce segment. -->
+  <div id="caption-strip-translation" aria-live="polite"></div>
+</div>
 
 <!-- Motif de test (affichage/sortie — voir action 'testPatternMode') -->
 <div id="test-pattern" aria-hidden="true">
@@ -804,6 +852,7 @@ function connectWs() {
         if (msg.mood) setMood(msg.mood);
         setHighContrast(!!msg.highContrast);
         setCaptionsEnabled(!!msg.captions);
+        setTranslatedCaptionsEnabled(!!msg.translatedCaptions);
         setTestPattern(!!msg.testPattern);
         setBackgroundPattern(msg.backgroundPattern || 'none');
         break;
@@ -862,6 +911,12 @@ function connectWs() {
         break;
       case 'captionsMode':
         setCaptionsEnabled(!!msg.captions);
+        break;
+      case 'translatedCaptionsMode':
+        setTranslatedCaptionsEnabled(!!msg.enabled);
+        break;
+      case 'transcriptTranslation':
+        updateTranslatedCaptionText(msg.text);
         break;
       case 'testPatternMode':
         setTestPattern(!!msg.enabled);
@@ -1217,15 +1272,35 @@ function setCaptionsEnabled(enabled) {
   captionsEnabled = !!enabled;
   document.body.classList.toggle('captions-active', captionsEnabled);
   const strip = document.getElementById('caption-strip');
+  const text = document.getElementById('caption-strip-text');
+  const translation = document.getElementById('caption-strip-translation');
   if (!strip) return;
   strip.classList.toggle('visible', captionsEnabled);
-  if (!captionsEnabled) strip.textContent = '';
+  if (!captionsEnabled) {
+    if (text) text.textContent = '';
+    if (translation) translation.textContent = '';
+  }
 }
 
 function updateCaptionText(text) {
   if (!captionsEnabled) return;
-  const strip = document.getElementById('caption-strip');
-  if (strip) strip.textContent = text || '';
+  const el = document.getElementById('caption-strip-text');
+  if (el) el.textContent = text || '';
+}
+
+// AJOUT (sous-titres traduits en direct, opt-in — voir caption-translator.js
+// et l'action 'setTranslatedCaptions' dans server.js).
+let translatedCaptionsEnabled = false;
+function setTranslatedCaptionsEnabled(enabled) {
+  translatedCaptionsEnabled = !!enabled;
+  const translation = document.getElementById('caption-strip-translation');
+  if (translation && !translatedCaptionsEnabled) translation.textContent = '';
+}
+
+function updateTranslatedCaptionText(text) {
+  if (!captionsEnabled || !translatedCaptionsEnabled) return;
+  const el = document.getElementById('caption-strip-translation');
+  if (el) el.textContent = text || '';
 }
 
 /* ==========================================================================
@@ -1283,6 +1358,14 @@ function showMediaItem(msg) {
     img.hidden = false;
     img.src = msg.mediaUrl;
   }
+
+  // AJOUT (détails d'affichage média — style d'apparition) : classe posée
+  // AVANT '.visible' pour que le navigateur ait bien calculé l'état "avant"
+  // (voir règles #media-layer.transition-*:not(.visible) plus haut) — sans
+  // ça, la transition ne s'anime pas, elle saute directement à l'état final.
+  layer.classList.remove('transition-fade', 'transition-slide', 'transition-zoom', 'transition-cut');
+  const style = ['slide', 'zoom', 'cut'].includes(msg.transitionStyle) ? msg.transitionStyle : 'fade';
+  layer.classList.add(`transition-${style}`);
 
   layer.classList.add('visible');
   layer.setAttribute('aria-hidden', 'false');

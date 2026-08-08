@@ -33,6 +33,12 @@ let obsGateOpen = true;
 let obsGateReason = '';
 let highContrastMode = false;
 let captionsEnabled = false;
+// AJOUT (sous-titres traduits en direct — voir caption-translator.js) :
+// distinct de captionsEnabled (sous-titres bruts, même langue) et de
+// langMode 'both' (traduction de VERSETS uniquement). Désactivé par défaut
+// — opt-in explicite, coût en quota Groq/Gemini supplémentaire.
+let translatedCaptionsEnabled = false;
+let captionTargetLang = 'en';
 let testPatternEnabled = false;
 let backgroundPattern = 'none';
 // Distinct de recentTranscripts (fenêtre glissante de MAX_CONTEXT_TRANSCRIPTS
@@ -121,6 +127,18 @@ function getCaptionsEnabled() {
 function setCaptionsEnabled(enabled) {
   captionsEnabled = !!enabled;
 }
+function getTranslatedCaptionsEnabled() {
+  return translatedCaptionsEnabled;
+}
+function setTranslatedCaptionsEnabled(enabled) {
+  translatedCaptionsEnabled = !!enabled;
+}
+function getCaptionTargetLang() {
+  return captionTargetLang;
+}
+function setCaptionTargetLang(lang) {
+  captionTargetLang = typeof lang === 'string' && lang ? lang : 'en';
+}
 function getTestPattern() {
   return testPatternEnabled;
 }
@@ -172,6 +190,10 @@ module.exports = {
   setHighContrast,
   getCaptionsEnabled,
   setCaptionsEnabled,
+  getTranslatedCaptionsEnabled,
+  setTranslatedCaptionsEnabled,
+  getCaptionTargetLang,
+  setCaptionTargetLang,
   getTestPattern,
   setTestPattern,
   getBackgroundPattern,
