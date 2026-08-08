@@ -1069,13 +1069,13 @@ function renderMediaLibrary(items) {
         )
         .join('');
       return `
-                <div class="queue-item">
+                <div class="queue-item" style="${item.isDefault ? 'border-color: var(--accent-amber, #d9a441);' : ''}">
                     <span class="queue-item-position">${item.mediaType === 'video' ? '🎬' : '🖼️'}</span>
                     <div class="media-item-info">
-                        <div class="media-item-label">${item.includeInLoop ? '🔁 ' : ''}${escapeHtmlDashboard(item.label)}</div>
-                        <div class="media-item-phrases">${phrasesBadges || '<span class="media-item-phrase-badge">Déclenchement manuel uniquement</span>'}</div>
+                        <div class="media-item-label">${item.isDefault ? '⭐ ' : ''}${item.includeInLoop ? '🔁 ' : ''}${escapeHtmlDashboard(item.label)}</div>
+                        <div class="media-item-phrases">${phrasesBadges || '<span class="media-item-phrase-badge">Déclenchement manuel uniquement</span>'}${item.isDefault ? ' <span class="media-item-phrase-badge">Poster principal — affiché quand rien d’autre n’est à l’écran</span>' : ''}</div>
                         <div style="display:flex; align-items:center; gap:0.4rem; margin-top:0.35rem; flex-wrap:wrap;">
-                            <input type="number" min="1" step="1" placeholder="secondes" value="${durationSec}" id="mediaDuration-${item.id}" style="width:80px; padding:0.25rem 0.4rem; font-size:0.75rem; border-radius:var(--radius-sm); border:1px solid var(--border-subtle); background:var(--bg-input); color:var(--text-main);" title="Durée d'affichage en secondes — vide = pas de minuterie automatique (masquage manuel)">
+                            <input type="number" min="1" step="1" placeholder="secondes" value="${durationSec}" id="mediaDuration-${item.id}" ${item.isDefault ? 'disabled title="Le poster principal reste affiché en continu — pas de minuterie"' : `title="Durée d'affichage en secondes — vide = pas de minuterie automatique (masquage manuel)"`} style="width:80px; padding:0.25rem 0.4rem; font-size:0.75rem; border-radius:var(--radius-sm); border:1px solid var(--border-subtle); background:var(--bg-input); color:var(--text-main);">
                             <select id="mediaStyle-${item.id}" style="padding:0.25rem 0.4rem; font-size:0.75rem; border-radius:var(--radius-sm); border:1px solid var(--border-subtle); background:var(--bg-input); color:var(--text-main);" title="Style d'apparition à l'écran">
                                 ${styleOptions}
                             </select>
@@ -1083,6 +1083,7 @@ function renderMediaLibrary(items) {
                         </div>
                     </div>
                     <div class="queue-item-actions">
+                        <button class="queue-icon-btn" onclick="toggleDefaultMediaItem('${item.id}', ${item.isDefault ? 'true' : 'false'})" title="${item.isDefault ? 'Retirer le statut de poster principal' : 'Définir comme poster principal (affiché quand rien d’autre n’est à l’écran)'}">${item.isDefault ? '⭐' : '☆'}</button>
                         <button class="queue-icon-btn queue-send" onclick="triggerMediaLibraryItem('${item.id}')" title="Afficher maintenant">▶</button>
                         <button class="queue-icon-btn queue-remove" onclick="deleteMediaLibraryItem('${item.id}')" title="Supprimer">✕</button>
                     </div>
@@ -1104,6 +1105,22 @@ function saveMediaItemDetails(id) {
   const transitionStyle = styleSelect ? styleSelect.value : 'fade';
   ws.send(JSON.stringify({ action: 'updateMediaItem', id, displayDurationMs, transitionStyle }));
   showToast('Détails d’affichage enregistrés.', 'success');
+}
+
+// AJOUT (demande explicite — "poster principal") : affiché automatiquement
+// sur l'overlay dès que rien d'autre n'est à l'écran (voir
+// maybeShowDefaultMedia() dans overlay.html). Un seul à la fois — le
+// marquer en démarque automatiquement un éventuel précédent côté serveur.
+function toggleDefaultMediaItem(id, isCurrentlyDefault) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  ws.send(JSON.stringify({ action: 'setDefaultMediaItem', id: isCurrentlyDefault ? null : id }));
+  showToast(
+    isCurrentlyDefault ? 'Poster principal retiré.' : 'Poster principal défini.',
+    'success'
+  );
 }
 
 // Même garde que les autres panneaux Electron-only (file d'affichage,

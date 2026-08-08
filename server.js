@@ -1084,6 +1084,7 @@ const OPERATOR_ACTIONS = new Set([
   'deleteMediaItem',
   'triggerMediaItem',
   'hideMedia',
+  'setDefaultMediaItem',
   // AJOUT (bibliothèque de chants)
   'getSongLibrary',
   'addSong',
@@ -1184,6 +1185,7 @@ wss.on('connection', (ws, req) => {
       captionTargetLang: sessionState.getCaptionTargetLang(),
       testPattern: sessionState.getTestPattern(),
       backgroundPattern: sessionState.getBackgroundPattern(),
+      defaultMedia: mediaLibrary.getDefaultItem(),
       history: sessionState.getVerseHistory(),
       theme: themeLoader.themeToCss(theme),
       features,
@@ -1813,10 +1815,36 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
+    // --- Poster principal (voir setDefaultItem() dans media-library.js) :
+    // affiché automatiquement dès que rien d'autre n'est à l'écran — voir
+    // maybeShowDefaultMedia() côté overlay.html. sanitized.id absent/vide =
+    // retire le poster principal actuel sans en désigner un nouveau. ---
+    if (sanitized.action === 'setDefaultMediaItem') {
+      const updated = sanitized.id
+        ? mediaLibrary.setDefaultItem(sanitized.id)
+        : mediaLibrary.clearDefaultItem();
+      if (sanitized.id && !updated) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Médiathèque : élément introuvable' }));
+        return;
+      }
+      log(
+        sanitized.id
+          ? `Médiathèque : "${updated.label}" désigné comme poster principal`
+          : 'Médiathèque : poster principal retiré'
+      );
+      broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
+      broadcast({ action: 'defaultMediaChanged', item: mediaLibrary.getDefaultItem() });
+      return;
+    }
+
     if (sanitized.action === 'deleteMediaItem') {
+      const wasDefault = !!(mediaLibrary.getItem(sanitized.id) || {}).isDefault;
       const removed = mediaLibrary.deleteItem(sanitized.id);
       if (removed) {
         broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
+        // Le poster principal supprimé ne doit pas rester "fantôme" côté
+        // overlay (URL cassée réaffichée à la prochaine minute d'inactivité).
+        if (wasDefault) broadcast({ action: 'defaultMediaChanged', item: null });
       } else {
         ws.send(JSON.stringify({ action: 'error', error: 'Médiathèque : élément introuvable' }));
       }

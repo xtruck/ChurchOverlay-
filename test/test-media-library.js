@@ -224,5 +224,60 @@ console.log('[TEST] Test 10c: updateItem() sur un id inconnu...');
 assert.strictEqual(mediaLibrary.updateItem('id-inexistant', { transitionStyle: 'zoom' }), null);
 console.log('[TEST] ✓ Id inconnu géré proprement\n');
 
+// Test 11 : getDefaultItem() renvoie null tant qu'aucun poster principal
+// n'a été désigné.
+console.log('[TEST] Test 11: getDefaultItem() sans poster principal...');
+assert.strictEqual(mediaLibrary.getDefaultItem(), null);
+console.log('[TEST] ✓ Aucun poster principal par défaut\n');
+
+// Test 12 : setDefaultItem() marque l'élément ET force displayDurationMs à
+// null (demande explicite — "toujours affiché", jamais de minuterie qui le
+// masquerait puis le ferait réapparaître aussitôt).
+console.log('[TEST] Test 12: setDefaultItem() — marquage + durée forcée à null...');
+assert.strictEqual(
+  styledItem.displayDurationMs,
+  mediaLibrary.DEFAULT_IMAGE_DURATION_MS,
+  'précondition : cet élément a encore sa durée par défaut avant setDefaultItem()'
+);
+const defaultResult = mediaLibrary.setDefaultItem(styledItem.id);
+assert(defaultResult !== null);
+assert.strictEqual(defaultResult.isDefault, true);
+assert.strictEqual(
+  defaultResult.displayDurationMs,
+  null,
+  'le poster principal ne doit jamais avoir de minuterie automatique'
+);
+assert.strictEqual(mediaLibrary.getDefaultItem().id, styledItem.id);
+console.log('[TEST] ✓ Poster principal désigné, durée forcée à null\n');
+
+// Test 13 : un seul poster principal à la fois — en désigner un nouveau
+// démarque automatiquement l'ancien.
+console.log('[TEST] Test 13: setDefaultItem() — un seul à la fois...');
+const secondDefault = mediaLibrary.setDefaultItem(badStyleItem.id);
+assert.strictEqual(secondDefault.isDefault, true);
+assert.strictEqual(
+  mediaLibrary.getItem(styledItem.id).isDefault,
+  false,
+  'l’ancien poster principal doit être démarqué automatiquement'
+);
+assert.strictEqual(mediaLibrary.getDefaultItem().id, badStyleItem.id);
+console.log('[TEST] ✓ Un seul poster principal à la fois, ancien démarqué\n');
+
+// Test 14 : clearDefaultItem() retire le statut, getDefaultItem() renvoie
+// à nouveau null.
+console.log('[TEST] Test 14: clearDefaultItem()...');
+const cleared = mediaLibrary.clearDefaultItem();
+assert.strictEqual(cleared.id, badStyleItem.id);
+assert.strictEqual(mediaLibrary.getDefaultItem(), null);
+assert.strictEqual(mediaLibrary.getItem(badStyleItem.id).isDefault, false);
+console.log('[TEST] ✓ Poster principal retiré correctement\n');
+
+// Test 15 : setDefaultItem()/clearDefaultItem() sur un id inconnu ou sans
+// poster actif renvoient null sans planter.
+console.log('[TEST] Test 15: cas limites (id inconnu / rien à retirer)...');
+assert.strictEqual(mediaLibrary.setDefaultItem('id-inexistant'), null);
+assert.strictEqual(mediaLibrary.clearDefaultItem(), null, 'rien à retirer -> null, pas d’erreur');
+console.log('[TEST] ✓ Cas limites gérés proprement\n');
+
 fs.rmSync(userDataDir, { recursive: true, force: true });
 console.log('=== Tous les tests media-library sont passés ===');

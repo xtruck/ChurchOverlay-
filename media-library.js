@@ -162,6 +162,9 @@ function addItem(data) {
     includeInLoop: !!data.includeInLoop,
     // AJOUT (détails d'affichage média — style d'apparition à l'écran).
     transitionStyle: sanitizeTransitionStyle(data.transitionStyle),
+    // AJOUT (demande explicite — "poster principal") : voir setDefaultItem()
+    // plus bas. Un seul élément à la fois peut être vrai.
+    isDefault: false,
   };
 
   const items = readIndex();
@@ -237,6 +240,54 @@ function updateItem(id, patch) {
 }
 
 /**
+ * @returns {Object|null} l'élément marqué "poster principal", ou null si aucun.
+ */
+function getDefaultItem() {
+  return readIndex().find((item) => item.isDefault) || null;
+}
+
+/**
+ * Marque un élément comme "poster principal" — affiché automatiquement sur
+ * l'overlay dès que rien d'autre n'est à l'écran (ni verset, ni média
+ * déclenché). Un seul élément à la fois : marquer celui-ci démarque
+ * automatiquement l'ancien (voir server.js/overlay.html pour la diffusion
+ * en direct de ce changement).
+ *
+ * displayDurationMs est forcé à null (jamais de minuterie automatique) :
+ * un poster "principal" qui s'auto-masquerait après quelques secondes puis
+ * réapparaîtrait aussitôt (voir maybeShowDefaultMedia() dans overlay.html)
+ * ne ferait que clignoter sans raison.
+ * @param {string} id
+ * @returns {Object|null} l'élément désormais principal, ou null si id inconnu
+ */
+function setDefaultItem(id) {
+  const items = readIndex();
+  const idx = items.findIndex((item) => item.id === id);
+  if (idx === -1) return null;
+
+  for (const item of items) {
+    item.isDefault = item.id === id;
+  }
+  items[idx].displayDurationMs = null;
+  writeIndex(items);
+  return items[idx];
+}
+
+/**
+ * Retire le statut "poster principal" de l'élément qui l'a actuellement (s'il
+ * y en a un). Sans effet si aucun élément n'est marqué principal.
+ * @returns {Object|null} l'élément qui était principal, désormais démarqué — ou null
+ */
+function clearDefaultItem() {
+  const items = readIndex();
+  const idx = items.findIndex((item) => item.isDefault);
+  if (idx === -1) return null;
+  items[idx].isDefault = false;
+  writeIndex(items);
+  return items[idx];
+}
+
+/**
  * Cherche si un texte transcrit contient l'une des phrases déclencheuses
  * d'un élément de la médiathèque. Correspondance par sous-chaîne sur texte
  * normalisé (pas de LLM) — même philosophie que detectCommand()
@@ -266,6 +317,9 @@ module.exports = {
   addItem,
   updateItem,
   deleteItem,
+  getDefaultItem,
+  setDefaultItem,
+  clearDefaultItem,
   matchTriggerPhrase,
   // Exposées pour tests unitaires (test-media-library.js).
   ALLOWED_EXTENSIONS,

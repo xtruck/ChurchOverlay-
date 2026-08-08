@@ -855,6 +855,14 @@ function connectWs() {
         setTranslatedCaptionsEnabled(!!msg.translatedCaptions);
         setTestPattern(!!msg.testPattern);
         setBackgroundPattern(msg.backgroundPattern || 'none');
+        // AJOUT (poster principal) : à l'ouverture/rechargement de l'overlay,
+        // affiche immédiatement le poster principal s'il y en a un et que
+        // rien d'autre n'est encore à l'écran (setCurrentDefaultMedia()
+        // appelle déjà maybeShowDefaultMedia() en interne).
+        setCurrentDefaultMedia(msg.defaultMedia || null);
+        break;
+      case 'defaultMediaChanged':
+        setCurrentDefaultMedia(msg.item || null);
         break;
       case 'showVerse':
         showVerse(msg);
@@ -1090,6 +1098,15 @@ function showVerse(data) {
     card.style.animationName = currentAnimation;
   }
 
+  // CORRECTIF (poster principal — demande explicite) : un média (poster/
+  // vidéo) a un z-index plus élevé que #overlay-container (150 vs 10) —
+  // sans ce masquage, un verset détecté PENDANT qu'un média est affiché
+  // restait invisible, caché derrière le calque média, jusqu'à ce que ce
+  // dernier se masque de lui-même. Version "silencieuse" (hideMediaLayer,
+  // pas hideMediaItem) : pas de vérification "poster principal" ici, un
+  // verset est sur le point de prendre l'écran de toute façon.
+  hideMediaLayer();
+
   // Show
   container.className = 'visible';
 
@@ -1111,7 +1128,12 @@ function showVerse(data) {
   hideTimeout = setTimeout(() => hideVerse(false), duration);
 }
 
-function hideVerse(emergency = false) {
+// AJOUT (poster principal) : version "silencieuse", sans vérification du
+// poster principal — utilisée en interne (showMediaItem()) quand un média
+// est sur le point de prendre l'écran, pour éviter un flash du poster
+// principal entre les deux. hideVerse() (public, plus bas) reste la
+// fonction à appeler depuis un minuteur/action WS/urgence.
+function hideVerseQuiet(emergency) {
   const container = document.getElementById('overlay-container');
   if (emergency) {
     container.className = 'hidden emergency-flash';
@@ -1120,6 +1142,11 @@ function hideVerse(emergency = false) {
   }
   clearTimeout(hideTimeout);
   hideTimeout = null;
+}
+
+function hideVerse(emergency = false) {
+  hideVerseQuiet(emergency);
+  maybeShowDefaultMedia();
 }
 
 function extendDisplayTime(extraMs) {
@@ -1168,7 +1195,14 @@ function resumeTimer() {
 }
 
 function emergencyClear() {
-  hideVerse(true);
+  // CORRECTIF (poster principal) : hideVerse(true) seul ne masquait pas un
+  // média activement affiché (couche séparée, voir #media-layer) — un
+  // "effacement d'urgence" laissait le poster/vidéo en place. hideMediaItem()
+  // est appelée en second : si aucun poster principal n'est configuré,
+  // l'écran reste bien vide comme avant ; sinon le poster principal
+  // réapparaît (préférable à un écran noir).
+  hideVerseQuiet(true);
+  hideMediaItem();
   showVoiceIndicator('🚨 Urgence');
   setTimeout(() => hideVoiceIndicator(), 2000);
 }
@@ -1338,7 +1372,10 @@ function showMediaItem(msg) {
   const video = document.getElementById('media-layer-video');
   if (!layer || !img || !video) return;
 
-  hideVerse(false);
+  // Version "silencieuse" (voir hideVerseQuiet ci-dessus) : ce média est sur
+  // le point de prendre l'écran, pas besoin/pas souhaitable de vérifier le
+  // poster principal entre les deux (éviterait un flash inutile).
+  hideVerseQuiet(false);
   clearTimeout(mediaHideTimeout);
   mediaHideTimeout = null;
 
@@ -1378,7 +1415,11 @@ function showMediaItem(msg) {
   }
 }
 
-function hideMediaItem() {
+// AJOUT (poster principal) : version "silencieuse", sans vérification du
+// poster principal — utilisée en interne (showVerse()) quand un verset est
+// sur le point de prendre l'écran. hideMediaItem() (public, plus bas) reste
+// la fonction à appeler depuis un minuteur/action WS/urgence.
+function hideMediaLayer() {
   const layer = document.getElementById('media-layer');
   const img = document.getElementById('media-layer-img');
   const video = document.getElementById('media-layer-video');
@@ -1398,6 +1439,45 @@ function hideMediaItem() {
     img.removeAttribute('src');
     img.hidden = true;
   }
+}
+
+function hideMediaItem() {
+  hideMediaLayer();
+  maybeShowDefaultMedia();
+}
+
+/* ==========================================================================
+   Poster principal — demande explicite : "quand il n'y a rien à afficher,
+   ce poster doit toujours être là". Réutilise entièrement showMediaItem()
+   (mêmes styles d'apparition, même z-index) plutôt que de dupliquer la
+   logique d'affichage média — le poster principal EST un média comme un
+   autre, juste réaffiché automatiquement quand l'écran serait sinon vide.
+   ========================================================================== */
+let currentDefaultMedia = null; // { id, mediaType, filename, label, transitionStyle } ou null
+
+function setCurrentDefaultMedia(item) {
+  currentDefaultMedia = item || null;
+  maybeShowDefaultMedia();
+}
+
+function maybeShowDefaultMedia() {
+  if (!currentDefaultMedia) return;
+  const container = document.getElementById('overlay-container');
+  const mediaLayer = document.getElementById('media-layer');
+  const verseVisible = !!(container && container.classList.contains('visible'));
+  const mediaVisible = !!(mediaLayer && mediaLayer.classList.contains('visible'));
+  // Rien d'autre à l'écran : c'est le seul moment où le poster principal
+  // doit reprendre sa place — jamais en interrompant un verset ou un média
+  // explicitement déclenché.
+  if (verseVisible || mediaVisible) return;
+  showMediaItem({
+    mediaType: currentDefaultMedia.mediaType,
+    mediaUrl: `/media/${currentDefaultMedia.filename}`,
+    label: currentDefaultMedia.label,
+    displayDurationMs: null,
+    transitionStyle: currentDefaultMedia.transitionStyle,
+    detectedBy: 'default',
+  });
 }
 
 /* ==========================================================================
