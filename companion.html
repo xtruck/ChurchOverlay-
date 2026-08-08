@@ -75,6 +75,59 @@ header p {
   font-size: 0.72rem;
   color: var(--text-muted);
 }
+/* AJOUT (compagnon congrégation — notes/surlignage personnels) : rangée
+   d'actions par verset, note repliée par défaut pour ne pas alourdir la
+   page tant qu'elle n'est pas utilisée. */
+.verse-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-family: system-ui, sans-serif;
+}
+.verse-action-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.verse-action-btn.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(217, 187, 108, 0.12);
+}
+.verse-note {
+  display: none;
+  margin-top: 10px;
+}
+.verse-note.open { display: block; }
+.verse-note textarea {
+  width: 100%;
+  min-height: 60px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: system-ui, sans-serif;
+  font-size: 0.88rem;
+  padding: 8px 10px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.verse-note .saved-hint {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.verse-note .saved-hint.visible { opacity: 0.8; }
 #empty {
   text-align: center;
   color: var(--text-muted);
@@ -127,6 +180,35 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+/* AJOUT (compagnon congrégation — notes/surlignage personnels, recommandation
+   "Study Hub" simplifiée) : stockage UNIQUEMENT dans le navigateur du
+   fidèle (localStorage) — aucune note personnelle n'est envoyée au
+   serveur. Clé composite référence+horodatage : stable d'un sondage à
+   l'autre pour un même verset, distincte si la même référence est
+   réaffichée plus tard dans le culte. */
+const NOTES_KEY = 'churchoverlay_notes';
+
+function loadNotes() {
+  try {
+    return JSON.parse(localStorage.getItem(NOTES_KEY) || '{}');
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveNotes(notes) {
+  try {
+    localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
+  } catch (e) {
+    /* stockage plein/indisponible (navigation privée) : dégrade en silence,
+       la page reste utilisable sans persistance des notes. */
+  }
+}
+
+function verseKey(v) {
+  return `${v.reference || ''}::${v.timestamp || ''}`;
+}
+
 function render(verses) {
   const list = document.getElementById('list');
   const empty = document.getElementById('empty');
@@ -138,14 +220,78 @@ function render(verses) {
   }
   empty.style.display = 'none';
 
-  list.innerHTML = verses.map((v) => `
+  const notes = loadNotes();
+
+  // data-key porte la clé HTML-échappée (attribut) ; aucune interpolation
+  // dans du JS inline (onclick="...") : délégation d'événements ci-dessous
+  // à la place, plus sûre qu'échapper la clé pour un contexte JS en plus
+  // du contexte HTML.
+  list.innerHTML = verses
+    .map((v) => {
+      const key = verseKey(v);
+      const entry = notes[key] || {};
+      const keyAttr = escapeHtml(key);
+      return `
     <div class="verse-card">
       <div class="verse-ref">${escapeHtml(v.reference || '')}</div>
       <div class="verse-text">${escapeHtml(v.text || '')}</div>
       ${v.timestamp ? `<div class="verse-time">${formatTime(v.timestamp)}</div>` : ''}
+      <div class="verse-actions">
+        <button class="verse-action-btn${entry.highlighted ? ' active' : ''}" data-action="highlight" data-key="${keyAttr}">⭐ Marquer</button>
+        <button class="verse-action-btn" data-action="toggle-note" data-key="${keyAttr}">📝 Ma note</button>
+      </div>
+      <div class="verse-note" data-note-key="${keyAttr}">
+        <textarea placeholder="Votre note personnelle (visible uniquement sur cet appareil)..." data-key="${keyAttr}">${escapeHtml(entry.note || '')}</textarea>
+        <div class="saved-hint" data-hint-key="${keyAttr}">Enregistré</div>
+      </div>
     </div>
-  `).join('');
+  `;
+    })
+    .join('');
 }
+
+// Délégation d'événements sur le conteneur (pas d'écouteur par carte à
+// reposer à chaque render()) — fonctionne aussi bien pour les cartes déjà
+// présentes que celles ajoutées lors du prochain rendu.
+document.getElementById('list').addEventListener('click', (event) => {
+  const btn = event.target.closest('[data-action]');
+  if (!btn) return;
+  const key = btn.dataset.key;
+
+  if (btn.dataset.action === 'highlight') {
+    const notes = loadNotes();
+    const entry = notes[key] || {};
+    entry.highlighted = !entry.highlighted;
+    notes[key] = entry;
+    saveNotes(notes);
+    btn.classList.toggle('active', entry.highlighted);
+  } else if (btn.dataset.action === 'toggle-note') {
+    const noteEl = document.querySelector(`.verse-note[data-note-key="${CSS.escape(key)}"]`);
+    if (noteEl) noteEl.classList.toggle('open');
+  }
+});
+
+let saveNoteTimer = null;
+document.getElementById('list').addEventListener('input', (event) => {
+  const textarea = event.target.closest('textarea[data-key]');
+  if (!textarea) return;
+  const key = textarea.dataset.key;
+  const value = textarea.value;
+
+  clearTimeout(saveNoteTimer);
+  saveNoteTimer = setTimeout(() => {
+    const notes = loadNotes();
+    const entry = notes[key] || {};
+    entry.note = value;
+    notes[key] = entry;
+    saveNotes(notes);
+    const hint = document.querySelector(`[data-hint-key="${CSS.escape(key)}"]`);
+    if (hint) {
+      hint.classList.add('visible');
+      setTimeout(() => hint.classList.remove('visible'), 1500);
+    }
+  }, 400);
+});
 
 async function poll() {
   try {
