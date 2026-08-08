@@ -1379,6 +1379,22 @@
                     <button class="chip-btn" onclick="sendCustomSpeechText('Esaie 40 verset 31')">🦅 Ésaïe 40:31</button>
                 </div>
 
+                <!-- AJOUT (aperçu en direct — recommandation "prévisualisation" façon
+                     OBS) : iframe de overlay.html avec le même jeton que ce tableau de
+                     bord, pour voir exactement ce qui est diffusé sans ouvrir OBS ni un
+                     second écran. src vide par défaut (chargé à la demande) pour ne pas
+                     payer une connexion WebSocket supplémentaire si l'opérateur ne
+                     l'ouvre jamais. -->
+                <div class="card" style="margin-bottom: 1.75rem;">
+                    <div class="card-header">
+                        <span class="card-title">Aperçu en direct</span>
+                        <button class="btn btn-secondary" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" id="livePreviewToggleBtn" onclick="toggleLivePreview()">👁 Afficher l'aperçu</button>
+                    </div>
+                    <div id="livePreviewWrap" style="display:none;">
+                        <iframe id="livePreviewFrame" title="Aperçu de l'overlay" style="width:100%; aspect-ratio:16/9; border:1px solid var(--border-subtle); border-radius: var(--radius-sm); background:#000; display:block;"></iframe>
+                    </div>
+                </div>
+
                 <!-- AJOUT (innovation frontend) : sélecteur d'ambiances + file
                      d'attente de versets. config/features.json exposait déjà
                      design.ambientModes et le serveur savait déjà répondre à
@@ -1588,6 +1604,17 @@
                             🛑 Arrêt d'Urgence
                         </button>
                     </div>
+                    <!-- AJOUT (raccourcis clavier globaux — recommandation "hotkeys" façon
+                         OBS) : fonctionnent même sans le focus sur cette fenêtre (voir
+                         registerGlobalHotkeys() dans main.js). Combinaisons fixes pour
+                         l'instant, choisies pour ne quasiment jamais entrer en conflit
+                         avec d'autres logiciels. -->
+                    <div style="margin-top: 1rem; padding-top: 0.85rem; border-top: 1px solid var(--border-subtle); font-size: 0.78rem; color: var(--text-dim); display: flex; flex-wrap: wrap; gap: 0.4rem 1.5rem;">
+                        <span>⌨️ Raccourcis globaux (fonctionnent même sans le focus) :</span>
+                        <span><code>Ctrl+Alt+Maj+C</code> Effacement d'urgence</span>
+                        <span><code>Ctrl+Alt+Maj+H</code> Masquer le verset</span>
+                        <span><code>Ctrl+Alt+Maj+M</code> Masquer le média</span>
+                    </div>
                 </div>
 
                 <div class="card">
@@ -1648,7 +1675,15 @@
                 <div class="card">
                     <div class="card-header">
                         <span class="card-title">Transcription Vocale en Temps Réel</span>
-                        <div style="display: flex; gap: 0.5rem;">
+                        <div style="display: flex; gap: 0.85rem; align-items: center;">
+                            <!-- AJOUT (filtre audio — recommandation "filtres audio" façon OBS) :
+                                 réduction de bruit côté micro (voir audio-capture-worklet.js),
+                                 activée par défaut. Utile de pouvoir la désactiver si le micro
+                                 est déjà propre/pré-traité (mixeur externe, etc.). -->
+                            <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.8rem; color:var(--text-dim); cursor:pointer;">
+                                <input type="checkbox" id="noiseGateToggle" checked onchange="toggleNoiseGate()">
+                                Réduction de bruit
+                            </label>
                             <button class="btn btn-secondary" onclick="clearTranscript()">Effacer</button>
                         </div>
                     </div>

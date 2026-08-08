@@ -346,6 +346,12 @@ async function startRealAudioCapture() {
     processorNode.port.onmessage = (event) => {
       if (window.churchOverlay) window.churchOverlay.sendAudioChunk(event.data);
     };
+    // Synchronise l'état du gate avec la case à cocher (utile si le micro
+    // redémarre — ex. changement de périphérique — alors que l'opérateur
+    // avait déjà désactivé la réduction de bruit ; le worklet, lui, repart
+    // toujours activé par défaut à sa création).
+    const gateCheckbox = document.getElementById('noiseGateToggle');
+    processorNode.port.postMessage({ gateEnabled: !gateCheckbox || gateCheckbox.checked });
 
     // Comme pour l'ancien ScriptProcessorNode, le graphe doit atteindre la
     // destination pour que le noeud reste actif — un GainNode à volume 0
@@ -406,6 +412,46 @@ function stopRealAudioCapture() {
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   }
+}
+
+// AJOUT (filtre audio — recommandation "filtres audio" façon OBS) : active/
+// désactive l'expandeur/gate de bruit du worklet (voir audio-capture-worklet.js)
+// sans redémarrer la capture — juste un message sur le MessagePort déjà ouvert.
+function toggleNoiseGate() {
+  const checkbox = document.getElementById('noiseGateToggle');
+  const enabled = !!(checkbox && checkbox.checked);
+  if (realMicCaptureState && realMicCaptureState.processorNode) {
+    realMicCaptureState.processorNode.port.postMessage({ gateEnabled: enabled });
+  }
+  addActivity(enabled ? 'Réduction de bruit activée' : 'Réduction de bruit désactivée', 'info');
+}
+
+// AJOUT (aperçu en direct — recommandation "prévisualisation" façon OBS) :
+// iframe de overlay.html chargée à la demande, avec le même jeton/port que
+// ce tableau de bord (getWsToken/getWsPort, déjà utilisés pour la propre
+// connexion WebSocket de ce fichier). Fermée (src vidée) quand l'opérateur
+// masque l'aperçu, pour ne pas garder une connexion WebSocket inutile
+// ouverte en arrière-plan.
+function toggleLivePreview() {
+  const wrap = document.getElementById('livePreviewWrap');
+  const frame = document.getElementById('livePreviewFrame');
+  const btn = document.getElementById('livePreviewToggleBtn');
+  if (!wrap || !frame || !btn) return;
+
+  const currentlyShown = wrap.style.display !== 'none';
+  if (currentlyShown) {
+    wrap.style.display = 'none';
+    frame.src = 'about:blank';
+    btn.textContent = "👁 Afficher l'aperçu";
+    return;
+  }
+
+  const token = getWsToken();
+  const port = getWsPort();
+  const query = token ? `?token=${encodeURIComponent(token)}&port=${encodeURIComponent(port)}` : '';
+  frame.src = 'overlay.html' + query;
+  wrap.style.display = 'block';
+  btn.textContent = "🙈 Masquer l'aperçu";
 }
 
 if (window.churchOverlay && window.churchOverlay.onAudioPipelineReady) {

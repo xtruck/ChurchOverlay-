@@ -19,6 +19,7 @@ const {
   session,
   screen,
   dialog,
+  globalShortcut,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -1082,6 +1083,55 @@ function initAutoUpdater() {
 // de flou qui sont eux beaucoup plus coûteux sans GPU. Laisser Electron
 // utiliser l'accélération matérielle par défaut.
 
+// ---------------------------------------------------------------------------
+// AJOUT (raccourcis clavier globaux — recommandation "hotkeys" façon OBS)
+// ---------------------------------------------------------------------------
+// Combinaisons à 4 modificateurs (Ctrl/Cmd+Alt+Shift+lettre) : quasiment
+// jamais utilisées par d'autres logiciels, donc pas de réglage de
+// remappage nécessaire pour un premier jet. Fonctionnent même quand
+// ChurchOverlay n'a pas le focus (globalShortcut, contrairement à un
+// raccourci lié à une fenêtre) — utile en plein culte, quand l'opérateur a
+// autre chose au premier plan (OBS, une présentation...).
+//
+// Le déclenchement passe par worker.postMessage() (même canal que
+// audio-pcm-chunk/theme-changed déjà utilisés ci-dessous), PAS par une
+// connexion WebSocket depuis le process principal : server.js tourne déjà
+// dans un Worker séparé et sait déjà router ce type de message (voir
+// parentPort.on('message', ...) dans server.js).
+const GLOBAL_HOTKEYS = [
+  {
+    accelerator: 'CommandOrControl+Alt+Shift+C',
+    action: 'emergencyClear',
+    label: 'Effacement d’urgence (masque tout immédiatement)',
+  },
+  {
+    accelerator: 'CommandOrControl+Alt+Shift+H',
+    action: 'hideVerse',
+    label: 'Masquer le verset affiché',
+  },
+  {
+    accelerator: 'CommandOrControl+Alt+Shift+M',
+    action: 'hideMedia',
+    label: 'Masquer la photo/vidéo affichée',
+  },
+];
+
+function registerGlobalHotkeys() {
+  for (const { accelerator, action } of GLOBAL_HOTKEYS) {
+    try {
+      const ok = globalShortcut.register(accelerator, () => {
+        if (!worker) return; // pipeline pas encore démarré : rien à déclencher
+        worker.postMessage({ type: 'hotkey-action', action });
+      });
+      if (!ok) {
+        console.warn(`[main] Raccourci "${accelerator}" déjà pris par une autre application.`);
+      }
+    } catch (e) {
+      console.warn(`[main] Échec d'enregistrement du raccourci "${accelerator}":`, e.message);
+    }
+  }
+}
+
 app.whenReady().then(async () => {
   ensureWsAuthToken();
   themeLoader.setUserDataDir(USER_DATA());
@@ -1112,6 +1162,7 @@ app.whenReady().then(async () => {
   // createSetupWindow()/l'IPC 'open-setup' restent disponibles pour un
   // usage manuel éventuel mais ne sont plus appelés au démarrage.
   createMainWindow();
+  registerGlobalHotkeys();
   initAutoUpdater();
   if (!isFirstRunNeeded()) {
     startServer();
@@ -1130,6 +1181,7 @@ app.on('window-all-closed', () => {
 let isShuttingDown = false;
 app.on('before-quit', (event) => {
   app.isQuitting = true;
+  globalShortcut.unregisterAll();
   if (worker && !isShuttingDown) {
     isShuttingDown = true;
     event.preventDefault();

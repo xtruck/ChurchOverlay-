@@ -855,6 +855,35 @@ async function handleVoiceCommand(command, _originalText) {
   }
 }
 
+// AJOUT (raccourcis clavier globaux — recommandation "hotkeys" façon OBS) :
+// déclenché par main.js via worker.postMessage({type:'hotkey-action', ...}),
+// PAS par le pipeline vocal (pas de triggeredByVoice ici, pour ne pas
+// afficher à tort "commande vocale détectée" côté overlay/dashboard alors
+// que c'est un raccourci clavier). Volontairement un tout petit sous-
+// ensemble d'actions sûres, sans dépendance à un état côté client (la file
+// d'attente de versets, par exemple, ne vit que dans le tableau de bord —
+// un raccourci global (process principal) n'y a pas accès).
+function handleHotkeyAction(action) {
+  switch (action) {
+    case 'emergencyClear':
+      broadcast({ action: 'hideVerse', emergency: true });
+      broadcast({ action: 'emergencyClear' });
+      sessionState.clearLastReference();
+      log('Hotkey: EMERGENCY CLEAR');
+      break;
+    case 'hideVerse':
+      broadcast({ action: 'hideVerse' });
+      log('Hotkey: masquer le verset');
+      break;
+    case 'hideMedia':
+      broadcast({ action: 'hideMedia' });
+      log('Hotkey: masquer le média');
+      break;
+    default:
+      warn('Unknown hotkey action: ' + action);
+  }
+}
+
 // ===========================================================================
 // WebSocket handlers — with RBAC
 // ===========================================================================
@@ -1802,6 +1831,11 @@ if (parentPort) {
 
     if (msg.type === 'audio-pcm-chunk') {
       audioCapture.feedPcmChunk(Buffer.from(msg.buffer));
+      return;
+    }
+
+    if (msg.type === 'hotkey-action') {
+      handleHotkeyAction(msg.action);
       return;
     }
   });

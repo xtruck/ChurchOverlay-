@@ -18,6 +18,23 @@
  * ============================================================================
  */
 
+// AJOUT (bruit de fond — recommandation "filtres audio" façon OBS) : un
+// expandeur/gate de bruit doux, calculé ici plutôt que via un
+// DynamicsCompressorNode natif (compresseur : réduit les PICS forts, ne
+// touche pas au bruit de fond faible — l'inverse de ce qu'il faut ici).
+// Suit l'enveloppe (attaque rapide/relâchement lent, classique en gate
+// audio) et ATTÉNUE plutôt qu'annule le signal sous le seuil (GATE_FLOOR,
+// pas 0) : un hard-mute couperait net le tout début d'une syllabe encore
+// sous le seuil au moment où l'enveloppe grimpe, et supprimerait
+// entièrement une voix faible plutôt que de simplement réduire le bruit
+// autour. Coût : quelques multiplications/comparaisons par échantillon,
+// déjà sur le thread audio dédié — négligeable à côté du travail existant.
+const GATE_THRESHOLD = 0.015; // amplitude d'enveloppe en dessous de laquelle on atténue
+const GATE_FLOOR = 0.12; // gain appliqué quand fermé (jamais 0 — pas de coupure brutale)
+const GATE_ATTACK_S = 0.003; // ouverture rapide : ne pas manger le début d'un mot
+const GATE_RELEASE_S = 0.2; // fermeture lente : ne pas couper entre deux syllabes d'un même mot
+const GAIN_SMOOTH_S = 0.005; // lissage du gain appliqué, évite les clics/zipper noise
+
 class PcmCaptureProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -27,6 +44,45 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
     this._batchSize = 4096;
     this._accum = new Float32Array(this._batchSize);
     this._accumLength = 0;
+
+    // Coefficients calculés depuis le sampleRate RÉEL du périphérique (44.1k/
+    // 48k selon le micro) plutôt que codés en dur, sinon le comportement du
+    // gate varierait d'un poste à l'autre pour le même réglage en secondes.
+    this._envelope = 0;
+    this._gain = 1;
+    this._gateEnabled = true;
+    this._attackCoeff = 1 - Math.exp(-1 / (GATE_ATTACK_S * sampleRate));
+    this._releaseCoeff = 1 - Math.exp(-1 / (GATE_RELEASE_S * sampleRate));
+    this._gainSmoothCoeff = 1 - Math.exp(-1 / (GAIN_SMOOTH_S * sampleRate));
+
+    // Activation/désactivation depuis dashboard.js (voir toggleNoiseGate()) —
+    // utile si un micro déjà propre/pré-traité n'en a pas besoin.
+    this.port.onmessage = (event) => {
+      if (event.data && typeof event.data.gateEnabled === 'boolean') {
+        this._gateEnabled = event.data.gateEnabled;
+      }
+    };
+  }
+
+  _applyNoiseGate(channelData) {
+    if (!this._gateEnabled) return channelData;
+    const out = new Float32Array(channelData.length);
+    for (let i = 0; i < channelData.length; i++) {
+      const sample = channelData[i];
+      const absSample = Math.abs(sample);
+
+      // Enveloppe : attaque rapide (suit les pics qui montent), relâchement
+      // lent (redescend doucement après un pic, ne "papillonne" pas entre
+      // chaque syllabe).
+      const coeff = absSample > this._envelope ? this._attackCoeff : this._releaseCoeff;
+      this._envelope += (absSample - this._envelope) * coeff;
+
+      const targetGain = this._envelope >= GATE_THRESHOLD ? 1 : GATE_FLOOR;
+      this._gain += (targetGain - this._gain) * this._gainSmoothCoeff;
+
+      out[i] = sample * this._gain;
+    }
+    return out;
   }
 
   _downsampleAndSend(buffer) {
@@ -70,7 +126,7 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
     const input = inputs[0];
     if (!input || !input[0]) return true; // pas encore de flux micro connecté
 
-    const channelData = input[0]; // mono : un seul canal, comme l'ancien getChannelData(0)
+    const channelData = this._applyNoiseGate(input[0]); // mono : un seul canal, comme l'ancien getChannelData(0)
 
     let i = 0;
     while (i < channelData.length) {
