@@ -14,7 +14,14 @@ name: Build Windows Installer
 on:
   push:
     tags:
+      # CORRECTIF (2026-08-08) : ce déclencheur est sensible à la casse —
+      # les tags "V0.7.9" et "V0.7.7" (V majuscule) ont été poussés sans
+      # jamais déclencher ce workflow, silencieusement (aucune erreur nulle
+      # part, juste aucun run du tout), laissant croire qu'une mise à jour
+      # avait été publiée alors qu'aucun .exe n'avait été reconstruit.
+      # Accepte désormais les deux casses du "v" initial.
       - "v*.*.*"
+      - "V*.*.*"
   workflow_dispatch: {}
 
 # Par défaut, le GITHUB_TOKEN généré automatiquement pour ce workflow n'a
