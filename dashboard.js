@@ -183,6 +183,8 @@ function initWebSocket() {
       ws.send(JSON.stringify({ action: 'getMediaLibrary' }));
       // AJOUT (bibliothèque de chants) : même raisonnement que getMediaLibrary.
       ws.send(JSON.stringify({ action: 'getSongLibrary' }));
+      // AJOUT (caméras de téléphone) : même raisonnement que getMediaLibrary.
+      ws.send(JSON.stringify({ action: 'getIpCameras' }));
       // AJOUT (base biblique hors-ligne) : un seul statut suffit à la
       // connexion ; pollOfflineBibleStatusUntilDone() prend le relais si un
       // téléchargement est en cours (voir plus bas).
@@ -761,6 +763,12 @@ function handleMessage(message) {
     case 'mediaLibraryUpdated':
       renderMediaLibrary(message.items);
       break;
+    // AJOUT (caméras de téléphone) : même raisonnement que mediaLibraryUpdated
+    // ci-dessus — la liste vit côté serveur, diffusée à tous les tableaux de
+    // bord ouverts après chaque ajout/suppression.
+    case 'ipCamerasUpdated':
+      renderIpCameras(message.items);
+      break;
     case 'showMedia':
       addActivity(
         `Média affiché : ${message.label}` +
@@ -1121,6 +1129,129 @@ function toggleDefaultMediaItem(id, isCurrentlyDefault) {
     isCurrentlyDefault ? 'Poster principal retiré.' : 'Poster principal défini.',
     'success'
   );
+}
+
+/* ======================================================================
+   Caméras de téléphone (flux MJPEG réseau, voir ip-camera-store.js).
+   Distinct de camera-capture.js : pas de navigator.mediaDevices ici — un
+   <img> pointé directement sur l'URL du flux réseau. Chromium affiche
+   nativement un flux MJPEG (multipart/x-mixed-replace) comme une image
+   "vivante", sans librairie ni décodage vidéo ajouté ici. Fonctionne aussi
+   en mode "serveur seul" navigateur (pas de dépendance Electron/IPC,
+   contrairement au panneau webcam ci-dessus).
+   ====================================================================== */
+let ipCameraItems = [];
+const ipCameraMonitors = {}; // id -> intervalId, nettoyés à chaque ré-rendu
+
+function renderIpCameras(items) {
+  ipCameraItems = Array.isArray(items) ? items : [];
+  const list = document.getElementById('ipCameraList');
+  const countEl = document.getElementById('ipCameraCount');
+  if (countEl) countEl.textContent = ipCameraItems.length;
+  if (!list) return;
+
+  // Le ré-rendu détruit les <img>/badges existants : on arrête d'abord tout
+  // minuteur de reconnexion en cours pour ne pas en accumuler à chaque mise
+  // à jour de la liste (ajout/suppression d'une autre caméra, etc.).
+  Object.values(ipCameraMonitors).forEach((timerId) => clearInterval(timerId));
+  for (const key of Object.keys(ipCameraMonitors)) delete ipCameraMonitors[key];
+
+  if (ipCameraItems.length === 0) {
+    list.innerHTML =
+      '<div style="font-size:0.8rem; color:var(--text-dim); padding: 0.5rem 0;">Aucune caméra de téléphone ajoutée.</div>';
+    return;
+  }
+
+  list.innerHTML = ipCameraItems
+    .map(
+      (item) => `
+                <div class="queue-item">
+                    <div style="width:120px; height:68px; background:#000; border-radius:6px; overflow:hidden; flex-shrink:0;">
+                        <img id="ipcam-img-${item.id}" style="width:100%; height:100%; object-fit:cover;" alt="">
+                    </div>
+                    <div class="media-item-info">
+                        <div class="media-item-label">${escapeHtmlDashboard(item.label)}</div>
+                        <span id="ipcam-status-${item.id}" class="status-badge warning">Connexion…</span>
+                    </div>
+                    <div class="queue-item-actions">
+                        <button class="queue-icon-btn" onclick="copyIpCameraUrl('${item.id}')" title="Copier le lien pour OBS">📋</button>
+                        <button class="queue-icon-btn queue-remove" onclick="deleteIpCameraItem('${item.id}')" title="Supprimer">✕</button>
+                    </div>
+                </div>
+            `
+    )
+    .join('');
+
+  for (const item of ipCameraItems) {
+    startIpCameraMonitor(item.id, item.url);
+  }
+}
+
+function startIpCameraMonitor(id, url) {
+  const img = document.getElementById(`ipcam-img-${id}`);
+  const badge = document.getElementById(`ipcam-status-${id}`);
+  if (!img || !badge) return;
+
+  function markOnline() {
+    badge.textContent = 'En ligne';
+    badge.className = 'status-badge success';
+  }
+  function markOffline() {
+    badge.textContent = 'Hors ligne';
+    badge.className = 'status-badge error';
+  }
+
+  img.onload = markOnline;
+  img.onerror = markOffline;
+  img.src = url;
+
+  // Ne retente le chargement QUE si la dernière tentative a échoué — un
+  // flux MJPEG sain reste "chargé" en continu sur la même connexion
+  // ouverte ; le relancer inutilement interromprait l'aperçu en direct.
+  ipCameraMonitors[id] = setInterval(() => {
+    if (badge.classList.contains('error')) {
+      img.src = url + (url.includes('?') ? '&' : '?') + '_retry=' + Date.now();
+    }
+  }, 10000);
+}
+
+function addIpCamera() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  const labelInput = document.getElementById('ipCameraLabelInput');
+  const urlInput = document.getElementById('ipCameraUrlInput');
+  const label = labelInput ? labelInput.value.trim() : '';
+  const url = urlInput ? urlInput.value.trim() : '';
+  if (!url) {
+    showToast('Entrez l’adresse du flux (ex. http://192.168.1.50:8080/video).', 'error');
+    return;
+  }
+  ws.send(JSON.stringify({ action: 'addIpCamera', label, url }));
+  if (labelInput) labelInput.value = '';
+  if (urlInput) urlInput.value = '';
+}
+
+function deleteIpCameraItem(id) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  ws.send(JSON.stringify({ action: 'deleteIpCamera', id }));
+}
+
+function copyIpCameraUrl(id) {
+  const item = ipCameraItems.find((c) => c.id === id);
+  if (!item) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard
+      .writeText(item.url)
+      .then(() => showToast('Lien copié — collez-le dans une Source Navigateur OBS.', 'success'))
+      .catch(() => showToast(item.url, 'info'));
+  } else {
+    showToast(item.url, 'info');
+  }
 }
 
 // Même garde que les autres panneaux Electron-only (file d'affichage,

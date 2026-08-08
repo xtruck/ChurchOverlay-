@@ -2123,6 +2123,16 @@
                         Caméra NDI (PTZ, régie) : installez le NDI Tools gratuit de NewTek/Vizrt
                         et activez "NDI Virtual Input" — la source apparaît alors ci-dessus comme
                         une webcam normale.
+                        <br>
+                        <!-- AJOUT (demande explicite — caméras de téléphone) : applications
+                             compagnon (DroidCam, Iriun Webcam, EpocCam) qui installent un
+                             pilote de webcam virtuelle sur ce PC — le téléphone apparaît alors
+                             ci-dessus comme une caméra normale. Voir le panneau "Caméras IP
+                             (téléphones)" plus bas pour l'alternative sans pilote PC (flux
+                             réseau direct, ex. app "IP Webcam"). -->
+                        Caméra de téléphone (pilote PC) : les apps DroidCam, Iriun Webcam ou
+                        EpocCam fonctionnent aussi — une fois leur client de bureau lancé, le
+                        téléphone apparaît ci-dessus comme une webcam normale.
                     </div>
 
                     <div class="input-row" style="margin-bottom:0.75rem;">
@@ -2138,6 +2148,35 @@
                     </div>
 
                     <button type="button" class="btn btn-primary" id="cameraToggleBtn" onclick="toggleCameraCapture()">📷 Démarrer la caméra</button>
+                </div>
+
+                <!-- AJOUT (demande explicite — plusieurs téléphones comme caméras
+                     multi-angles pour la diffusion). Distinct du panneau caméra
+                     ci-dessus : pas de navigator.mediaDevices ici, juste une URL de
+                     flux MJPEG réseau (app type "IP Webcam" côté téléphone) affichée
+                     directement via <img> — Chromium sait nativement lire un flux
+                     multipart/x-mixed-replace comme une image "vivante", sans
+                     librairie ni décodage vidéo ajouté. Voir ip-camera-store.js. -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Caméras IP (téléphones)</span>
+                        <span id="ipCameraCount" class="status-badge warning">0</span>
+                    </div>
+                    <div class="field-hint" style="margin-bottom:0.75rem;">
+                        Pour utiliser plusieurs téléphones comme caméras, sans rien installer
+                        sur ce PC : installez une app gratuite type <strong>« IP Webcam »</strong>
+                        (Android) sur chaque téléphone, connectez-le au même Wi-Fi que ce PC,
+                        démarrez le serveur dans l'app — elle affiche une adresse du type
+                        <code>http://192.168.1.50:8080</code>. Collez cette adresse suivie de
+                        <code>/video</code> ci-dessous. Le bouton 📋 sur chaque caméra copie le
+                        lien à coller directement dans une Source Navigateur OBS.
+                    </div>
+                    <div class="input-row" style="margin-bottom:0.75rem;">
+                        <input type="text" id="ipCameraLabelInput" placeholder="Nom (ex. Téléphone scène)">
+                        <input type="text" id="ipCameraUrlInput" placeholder="http://192.168.1.50:8080/video">
+                        <button type="button" class="btn btn-secondary" onclick="addIpCamera()">+ Ajouter</button>
+                    </div>
+                    <div class="queue-list" id="ipCameraList"></div>
                 </div>
 
                 <div class="card">

@@ -52,6 +52,10 @@ const sermonQa = require('./sermon-qa');
 // AJOUT (médiathèque — déclenchement vocal de photos/vidéos) : même
 // discipline que sermon-archive.js ci-dessus. Voir media-library.js.
 const mediaLibrary = require('./media-library');
+// AJOUT (caméras de téléphone — demande explicite) : liste de flux MJPEG
+// réseau (apps type "IP Webcam"), distincte de camera-capture.js (webcams
+// locales via navigator.mediaDevices) — voir ip-camera-store.js.
+const ipCameraStore = require('./ip-camera-store');
 // AJOUT (sous-titres traduits en direct) : module isolé, jamais attendu
 // avant processTranscript() — voir startPipeline() et caption-translator.js.
 const captionTranslator = require('./caption-translator');
@@ -1085,6 +1089,10 @@ const OPERATOR_ACTIONS = new Set([
   'triggerMediaItem',
   'hideMedia',
   'setDefaultMediaItem',
+  // AJOUT (caméras de téléphone)
+  'getIpCameras',
+  'addIpCamera',
+  'deleteIpCamera',
   // AJOUT (bibliothèque de chants)
   'getSongLibrary',
   'addSong',
@@ -1881,6 +1889,38 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
+    // --- Caméras de téléphone (flux MJPEG réseau, voir ip-camera-store.js).
+    // Contrairement à la médiathèque, il n'y a rien à diffuser à l'overlay
+    // ici : c'est un outil de suivi côté opérateur uniquement, le flux
+    // lui-même est chargé directement par le navigateur du dashboard depuis
+    // le téléphone (pas relayé par ce serveur). broadcast() seulement pour
+    // que plusieurs tableaux de bord ouverts restent synchronisés. ---
+    if (sanitized.action === 'getIpCameras') {
+      ws.send(JSON.stringify({ action: 'ipCamerasUpdated', items: ipCameraStore.listItems() }));
+      return;
+    }
+
+    if (sanitized.action === 'addIpCamera') {
+      try {
+        const item = ipCameraStore.addItem({ label: sanitized.label, url: sanitized.url });
+        log(`Caméra IP : "${item.label}" ajoutée`);
+        broadcast({ action: 'ipCamerasUpdated', items: ipCameraStore.listItems() });
+      } catch (err) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Caméra IP : ' + err.message }));
+      }
+      return;
+    }
+
+    if (sanitized.action === 'deleteIpCamera') {
+      const removed = ipCameraStore.deleteItem(sanitized.id);
+      if (removed) {
+        broadcast({ action: 'ipCamerasUpdated', items: ipCameraStore.listItems() });
+      } else {
+        ws.send(JSON.stringify({ action: 'error', error: 'Caméra IP : élément introuvable' }));
+      }
+      return;
+    }
+
     // --- Bibliothèque de chants (mêmes conventions que la médiathèque
     // ci-dessus : réponse directe au demandeur pour la lecture/mutation de
     // la liste, broadcast() pour ce que tous les clients doivent voir) ---
@@ -2211,6 +2251,12 @@ try {
   mediaLibrary.setUserDataDir(USER_DATA_DIR);
 } catch (err) {
   warn('Failed to set media library dir: ' + err.message);
+}
+
+try {
+  ipCameraStore.setUserDataDir(USER_DATA_DIR);
+} catch (err) {
+  warn('Failed to set IP camera store dir: ' + err.message);
 }
 
 try {

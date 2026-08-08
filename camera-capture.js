@@ -41,13 +41,21 @@
 // écarter" comme OBS Virtual Camera, mais une source réelle légitime (PTZ
 // NDI, régie vidéo) qu'on rejetait par erreur avant. Voir CAMERA_HINT_PATTERNS
 // ci-dessous : "ndi" y est maintenant un indice PRÉFÉRÉ plutôt que rejeté.
+// CORRECTIF (demande explicite — caméras de téléphone) : "droidcam" (Android),
+// "iriun" et "epoccam" (iOS) ont été RETIRÉS pour la même raison — ce sont
+// les applications compagnon PC des apps téléphone DroidCam/Iriun
+// Webcam/EpocCam, qui exposent le téléphone comme une webcam standard une
+// fois leur client de bureau lancé. Un vrai usage légitime (l'église utilise
+// plusieurs téléphones comme caméras), pas une caméra virtuelle "à écarter".
 const VIRTUAL_CAMERA_PATTERNS =
-  /obs virtual camera|snap camera|droidcam|manycam|xsplit vcam|iriun|epoccam|camo\b|virtual cam/i;
+  /obs virtual camera|snap camera|manycam|xsplit vcam|camo\b|virtual cam/i;
 
-// Mots qui indiquent fortement une vraie webcam physique — "ndi" inclus :
-// une caméra NDI pontée via NDI Virtual Input est une source réelle, pas un
-// bruit à filtrer (voir commentaire ci-dessus).
-const CAMERA_HINT_PATTERNS = /webcam|cam[ée]ra|camera|facetime|integrated|usb|ndi/i;
+// Mots qui indiquent fortement une vraie webcam physique — "ndi"/"droidcam"
+// inclus : ce sont des sources réelles (voir commentaire ci-dessus), pas du
+// bruit à filtrer. "iriun"/"epoccam" n'ont pas besoin d'être ajoutés ici :
+// leurs libellés ("Iriun Webcam", "EpocCam Camera") contiennent déjà
+// "webcam"/"camera".
+const CAMERA_HINT_PATTERNS = /webcam|cam[ée]ra|camera|facetime|integrated|usb|ndi|droidcam/i;
 
 const DEFAULT_CONSTRAINTS = {
   width: { ideal: 1280 },

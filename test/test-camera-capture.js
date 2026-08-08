@@ -89,6 +89,41 @@ console.log('[TEST] Test 4b: pickBestCamera() reconnaît une caméra NDI comme r
 }
 console.log('[TEST] ✓ Caméra NDI reconnue comme source réelle, non filtrée\n');
 
+// Test 4c (CORRECTIF — caméras de téléphone) : DroidCam/Iriun/EpocCam
+// (applications compagnon PC qui exposent un téléphone comme webcam)
+// doivent être reconnues comme des sources réelles — avant ce correctif,
+// elles étaient filtrées comme de fausses caméras virtuelles.
+console.log('[TEST] Test 4c: pickBestCamera() reconnaît les caméras de téléphone...');
+{
+  const devices = [{ deviceId: '1', label: 'DroidCam Source 2' }];
+  const result = cameraCapture.pickBestCamera(devices);
+  assert.strictEqual(
+    result.chosen && result.chosen.deviceId,
+    '1',
+    'DroidCam ne doit plus être rejetée comme caméra virtuelle'
+  );
+  assert.strictEqual(result.rejected.length, 0);
+}
+{
+  const devices = [{ deviceId: '1', label: 'Iriun Webcam' }];
+  const result = cameraCapture.pickBestCamera(devices);
+  assert.strictEqual(
+    result.chosen && result.chosen.deviceId,
+    '1',
+    'Iriun ne doit plus être rejetée'
+  );
+}
+{
+  const devices = [{ deviceId: '1', label: 'EpocCam Camera' }];
+  const result = cameraCapture.pickBestCamera(devices);
+  assert.strictEqual(
+    result.chosen && result.chosen.deviceId,
+    '1',
+    'EpocCam ne doit plus être rejetée'
+  );
+}
+console.log('[TEST] ✓ Caméras de téléphone (DroidCam/Iriun/EpocCam) reconnues comme réelles\n');
+
 // Test 5 : formatDeviceLabel() — libellé vide (avant permission accordée)
 // retombe sur un nom générique numéroté, jamais une chaîne vide.
 console.log('[TEST] Test 5: formatDeviceLabel()...');
