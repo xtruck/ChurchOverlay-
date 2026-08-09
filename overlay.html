@@ -42,6 +42,16 @@
         --overlay-glow: rgba(220, 180, 106, 0.32);
         --overlay-shadow: rgba(0, 0, 0, 0.55);
         --overlay-particle: #dcb46a;
+        /* AJOUT (thèmes — champs déclarés dans config/themes/*.json mais
+     jamais consommés par applyTheme(), voir plus bas) : valeurs par
+     défaut identiques aux constantes qui étaient codées en dur dans
+     .verse-card/.verse-text/.verse-reference ci-dessous, pour un rendu
+     identique tant qu'aucun thème n'a encore poussé ses propres valeurs. */
+        --overlay-verse-size: clamp(28px, 3.2vw, 46px);
+        --overlay-verse-weight: 500;
+        --overlay-radius: 18px;
+        --overlay-blur: 14px;
+        --overlay-reference-color: var(--overlay-accent);
       }
 
       /* AJOUT (innovation frontend — ambiances vivantes) : enregistrer les
@@ -178,13 +188,13 @@
         color: var(--overlay-text);
         font-family: var(--overlay-font);
         padding: clamp(24px, 3vw, 40px) clamp(28px, 4vw, 52px);
-        border-radius: 18px;
+        border-radius: var(--overlay-radius);
         border: 1px solid var(--overlay-border);
         box-shadow:
           0 0 46px var(--overlay-glow),
           0 14px 54px var(--overlay-shadow),
           inset 0 1px 0 rgba(255, 255, 255, 0.08);
-        backdrop-filter: blur(14px);
+        backdrop-filter: blur(var(--overlay-blur));
         position: relative;
         overflow: hidden;
         /* AJOUT : accompagne le changement d'ambiance (mood) en douceur au
@@ -213,7 +223,7 @@
         font-family: var(--overlay-font-ui);
         font-size: clamp(14px, 1.3vw, 19px);
         font-weight: 700;
-        color: var(--overlay-accent);
+        color: var(--overlay-reference-color);
         text-transform: uppercase;
         letter-spacing: 2.5px;
         margin-bottom: clamp(10px, 1.4vw, 18px);
@@ -226,9 +236,9 @@
    lisible au fond d'une salle sur grand écran (22px fixe était illisible
    projeté ; clamp() adapte à toute résolution OBS/vidéoprojecteur). */
       .verse-text {
-        font-size: clamp(28px, 3.2vw, 46px);
+        font-size: var(--overlay-verse-size);
         line-height: 1.35;
-        font-weight: 500;
+        font-weight: var(--overlay-verse-weight);
         text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
       }
 
@@ -1340,6 +1350,21 @@
           if (v['--accent']) root.style.setProperty('--overlay-accent', v['--accent']);
           if (v['--verse-font']) root.style.setProperty('--overlay-font', v['--verse-font']);
           if (v['--ref-font']) root.style.setProperty('--overlay-font-ui', v['--ref-font']);
+          // CORRECTIF (thèmes à moitié appliqués) : theme-loader.js calcule
+          // déjà ces 5 variables depuis config/themes/*.json (typography.verseFontSize/
+          // Weight, effects.borderRadius/blurBackdrop, colors.reference), mais
+          // applyTheme() les ignorait silencieusement — changer de thème ne
+          // modifiait donc jamais les coins arrondis/le flou/la taille et le
+          // poids du verset/la couleur de la référence, malgré leur présence
+          // dans les deux thèmes livrés (nuit.json/claire.json).
+          if (v['--verse-size']) root.style.setProperty('--overlay-verse-size', v['--verse-size']);
+          if (v['--verse-weight'])
+            root.style.setProperty('--overlay-verse-weight', v['--verse-weight']);
+          if (v['--border-radius'])
+            root.style.setProperty('--overlay-radius', v['--border-radius']);
+          if (v['--blur']) root.style.setProperty('--overlay-blur', v['--blur']);
+          if (v['--reference-color'])
+            root.style.setProperty('--overlay-reference-color', v['--reference-color']);
           if (theme.animations && theme.animations.default)
             currentAnimation = theme.animations.default;
           return;
