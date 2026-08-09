@@ -626,24 +626,37 @@ body {
 .queue-list {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: var(--space-2);
   max-height: 260px;
   overflow-y: auto;
 }
 
+/* CORRECTIF (redesign visuel, lot 2) : cette même paire de classes
+           (.queue-item/.queue-icon-btn ci-dessous) est réutilisée telle
+           quelle par verse-queue.js, song-library.js et ip-cameras.js —
+           tout ce bloc est donc restylé une seule fois ici, et les trois
+           panneaux en héritent automatiquement. */
 .queue-item {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: var(--space-3);
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  padding: 0.5rem 0.75rem;
+  padding: var(--space-2) var(--space-3);
+  transition:
+    border-color var(--duration-fast) ease,
+    background var(--duration-fast) ease;
+}
+
+.queue-item:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-light);
 }
 
 .queue-item-position {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--text-dim);
   width: 1.2rem;
   text-align: center;
@@ -651,13 +664,13 @@ body {
 
 .queue-item-ref {
   flex: 1;
-  font-size: 0.88rem;
+  font-size: var(--text-sm);
   color: var(--text-main);
 }
 
 .queue-item-actions {
   display: flex;
-  gap: 0.3rem;
+  gap: var(--space-1);
 }
 
 .queue-icon-btn {
@@ -670,7 +683,7 @@ body {
   cursor: pointer;
   font-size: 0.8rem;
   line-height: 1;
-  transition: all 0.15s ease;
+  transition: all var(--duration-fast) ease;
 }
 
 .queue-icon-btn:hover:not(:disabled) {
@@ -683,16 +696,24 @@ body {
   cursor: not-allowed;
 }
 
+/* CORRECTIF (redesign visuel, lot 2) : --sapphire/--garnet alias
+           tous les deux --primary depuis la consolidation "one color"
+           (voir tokens en tête de fichier) — envoyer et supprimer un
+           élément de file avaient donc un survol visuellement identique
+           (même fond, même bordure), seule la couleur d'icône différait.
+           Alignés ici sur le langage sémantique déjà utilisé ailleurs dans
+           l'app (émeraude = action positive/succès, rose = destructif —
+           voir .status-badge.success/.btn-danger). */
 .queue-icon-btn.queue-send:hover:not(:disabled) {
-  background: var(--sapphire-soft);
-  border-color: var(--sapphire);
-  color: #9db1ec;
+  background: rgba(52, 211, 153, 0.16);
+  border-color: var(--accent-emerald);
+  color: var(--accent-emerald);
 }
 
 .queue-icon-btn.queue-remove:hover:not(:disabled) {
-  background: var(--garnet-soft);
-  border-color: var(--garnet);
-  color: #f4a3b3;
+  background: rgba(244, 96, 122, 0.16);
+  border-color: var(--accent-rose);
+  color: var(--accent-rose);
 }
 
 /* AJOUT (médiathèque — déclenchement vocal de photos/vidéos) : réutilise
@@ -704,7 +725,7 @@ body {
   min-width: 0;
 }
 .media-item-label {
-  font-size: 0.88rem;
+  font-size: var(--text-sm);
   color: var(--text-main);
   white-space: nowrap;
   overflow: hidden;
@@ -713,16 +734,16 @@ body {
 .media-item-phrases {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3rem;
-  margin-top: 0.25rem;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
 }
 .media-item-phrase-badge {
   font-size: 0.7rem;
   color: var(--text-dim);
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  padding: 0.1rem 0.55rem;
+  border-radius: var(--radius-full);
+  padding: 0.1rem var(--space-2);
 }
 
 /* AJOUT (demande explicite — "scène" médiathèque avec vraies vignettes) :
