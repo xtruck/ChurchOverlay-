@@ -87,6 +87,7 @@
       "dashboard/features/network-settings.js",
       "dashboard/features/ip-cameras.js",
       "dashboard/features/branding.js",
+      "dashboard/features/audio-capture.js",
       "dashboard/dashboard.css",
       "audio-capture-worklet.js",
       "camera-capture.js",

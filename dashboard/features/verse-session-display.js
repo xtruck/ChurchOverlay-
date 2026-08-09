@@ -8,13 +8,12 @@
  * artificiel, sans bénéfice réel.
  * Extrait de dashboard/legacy-core.js (chantier de modularisation).
  */
+import { state, ws } from '../legacy-core.js';
 import {
-  state,
-  ws,
   realMicCaptureState,
   startRealAudioCapture,
   stopRealAudioCapture,
-} from '../legacy-core.js';
+} from './audio-capture.js';
 import { showToast, addActivity, escapeHtmlDashboard } from '../utils.js';
 
 export function displayVerse(message) {
