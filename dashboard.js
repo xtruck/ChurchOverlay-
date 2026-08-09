@@ -1111,8 +1111,41 @@ const MEDIA_STYLE_LABELS = {
   cut: 'Coupe instantanée',
 };
 
+// AJOUT (poster principal — carte dédiée) : simple surface de lecture sur
+// mediaLibraryItems, déjà tenu à jour par renderMediaLibrary() ci-dessous —
+// aucun nouvel état, aucune nouvelle requête serveur. La source de vérité
+// reste isDefault sur chaque item (media-library.js) ; le bouton "Retirer"
+// de cette carte réutilise toggleDefaultMediaItem(), déjà utilisé par
+// l'étoile ⭐ dans la liste Médiathèque.
+function renderDefaultPosterCard(items) {
+  const empty = document.getElementById('defaultPosterEmpty');
+  const active = document.getElementById('defaultPosterActive');
+  const label = document.getElementById('defaultPosterLabel');
+  if (!empty || !active || !label) return;
+
+  const defaultItem = (items || []).find((item) => item.isDefault);
+  if (defaultItem) {
+    label.textContent = `${defaultItem.mediaType === 'video' ? '🎬' : '🖼️'} ${defaultItem.label}`;
+    empty.style.display = 'none';
+    active.style.display = 'flex';
+    active.dataset.id = defaultItem.id;
+  } else {
+    empty.style.display = 'block';
+    active.style.display = 'none';
+    delete active.dataset.id;
+  }
+}
+
+function clearDefaultPosterFromCard() {
+  const active = document.getElementById('defaultPosterActive');
+  const id = active && active.dataset.id;
+  if (!id) return;
+  toggleDefaultMediaItem(id, true);
+}
+
 function renderMediaLibrary(items) {
   mediaLibraryItems = Array.isArray(items) ? items : [];
+  renderDefaultPosterCard(mediaLibraryItems);
   const list = document.getElementById('mediaLibraryList');
   const countEl = document.getElementById('mediaLibraryCount');
   if (countEl) countEl.textContent = mediaLibraryItems.length;

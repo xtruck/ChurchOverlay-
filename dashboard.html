@@ -1344,6 +1344,26 @@
         text-decoration: underline;
       }
 
+      /* AJOUT (clarté — carte "Caméras IP") : sépare visuellement le
+         jumelage QR et l'ajout manuel, jusqu'ici distingués par un simple
+         texte d'introduction ("Ou manuellement..."). */
+      .camera-pairing-subsection {
+        padding-top: 0.85rem;
+        margin-top: 0.85rem;
+        border-top: 1px solid var(--border-subtle);
+      }
+      .camera-pairing-subsection:first-child {
+        padding-top: 0;
+        margin-top: 0;
+        border-top: none;
+      }
+      .camera-pairing-subsection h4 {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        margin-bottom: 0.5rem;
+      }
+
       .link-btn {
         background: none;
         border: none;
@@ -1786,6 +1806,45 @@
                 </button>
               </div>
               <div class="queue-list" id="queueList"></div>
+            </div>
+
+            <!-- AJOUT (poster principal — carte dédiée) : jusqu'ici l'état du
+                         poster principal n'était visible que sous forme de texte
+                         explicatif dans la carte Médiathèque ci-dessous (il fallait
+                         la lire en entier pour comprendre ce qui était configuré).
+                         Cette carte ne fait qu'AFFICHER l'état actuel — la source de
+                         vérité reste le champ isDefault de media-library.js, toujours
+                         piloté par l'étoile ⭐ dans la liste Médiathèque ; voir
+                         renderDefaultPosterCard() dans dashboard.js. -->
+            <div class="card" id="defaultPosterCard">
+              <div class="card-header">
+                <span class="card-title">⭐ Poster principal</span>
+              </div>
+              <div
+                id="defaultPosterEmpty"
+                style="font-size: 0.8rem; color: var(--text-dim); line-height: 1.5"
+              >
+                Aucun poster principal configuré — l'écran peut rester vide entre deux versets.
+                Cliquez l'étoile ☆ d'un média dans la Médiathèque ci-dessous pour en choisir un.
+              </div>
+              <div
+                id="defaultPosterActive"
+                style="
+                  display: none;
+                  align-items: center;
+                  gap: 0.6rem;
+                  justify-content: space-between;
+                "
+              >
+                <span style="font-size: 0.85rem; font-weight: 600" id="defaultPosterLabel"></span>
+                <button
+                  class="btn btn-secondary"
+                  style="padding: 0.35rem 0.7rem; font-size: 0.75rem; flex-shrink: 0"
+                  onclick="clearDefaultPosterFromCard()"
+                >
+                  Retirer
+                </button>
+              </div>
             </div>
 
             <!-- AJOUT (médiathèque — déclenchement vocal de photos/vidéos, voir
@@ -2514,6 +2573,37 @@
             </div>
           </div>
 
+          <!-- AJOUT (mise en avant — checkup UX) : ce bouton vivait auparavant tout
+                       en bas de la carte "Informations Système & Connexion", un endroit
+                       sans raison intuitive de l'ouvrir en premier. Déplacé en tête de
+                       Réglages : c'est la toute première chose à faire avant un culte.
+                       Déplacement de balisage uniquement — runPreServiceCheck()/
+                       renderPreServiceCheckResult() référencent les éléments par id, pas
+                       par position, donc aucun comportement JS ne change ici. -->
+          <div class="card" id="preServiceCheckCard" style="margin-bottom: 1.25rem">
+            <div class="card-header">
+              <span class="card-title">✅ Vérification avant le culte</span>
+            </div>
+            <div class="field-hint" style="margin-top: 0; margin-bottom: 0.75rem">
+              Vérifie en un clic les clés API, l'authentification WebSocket, la médiathèque, le
+              poster principal, l'habillage caméra, la base biblique hors-ligne, les caméras IP et
+              la caméra téléphone par QR code.
+            </div>
+            <button
+              type="button"
+              class="btn btn-primary"
+              id="preServiceCheckBtn"
+              onclick="runPreServiceCheck()"
+              style="width: 100%"
+            >
+              ✅ Tester avant le culte
+            </button>
+            <div
+              id="preServiceCheckResults"
+              style="display: none; margin-top: 0.75rem; font-size: 0.85rem"
+            ></div>
+          </div>
+
           <div class="card" id="apiSettingsCard" style="margin-bottom: 1.25rem">
             <div class="card-header">
               <span class="card-title">Clés API & Microphone</span>
@@ -2918,33 +3008,33 @@
                      l'instant — pas encore de sortie vers overlay.html. -->
           <div class="card">
             <div class="card-header">
-              <span class="card-title">Caméra (aperçu opérateur)</span>
+              <span class="card-title">1. Caméra (aperçu opérateur)</span>
               <span class="status-badge warning" id="cameraStatus">Capture arrêtée</span>
             </div>
 
+            <div class="field-hint" style="margin-bottom: 0.5rem">
+              <strong>Webcam USB</strong> — aperçu local pour l'opérateur. Pas encore diffusé sur
+              l'overlay public, aperçu seulement.
+            </div>
+            <!-- AJOUT (demande explicite — caméras NDI) : pas d'intégration native
+                         du protocole NDI (SDK propriétaire, redistribution soumise à
+                         licence NewTek/Vizrt, non testable sans matériel NDI réel) —
+                         mais une caméra NDI pontée via l'outil GRATUIT "NDI Virtual
+                         Input" (suite NDI Tools) apparaît comme une webcam normale
+                         ci-dessus et fonctionne dès aujourd'hui, sans configuration
+                         supplémentaire côté ChurchOverlay. AJOUT (demande explicite —
+                         caméras de téléphone) : applications compagnon (DroidCam, Iriun
+                         Webcam, EpocCam) qui installent un pilote de webcam virtuelle sur
+                         ce PC — le téléphone apparaît alors ci-dessus comme une caméra
+                         normale. Voir le panneau "Caméras IP (téléphones)" plus bas pour
+                         l'alternative sans pilote PC (flux réseau direct, ex. app "IP
+                         Webcam"). -->
             <div class="field-hint" style="margin-bottom: 0.75rem">
-              Aperçu local d'une webcam USB pour l'opérateur. Pas encore diffusé sur l'overlay
-              public — première étape, aperçu seulement.
-              <br />
-              <!-- AJOUT (demande explicite — caméras NDI) : pas d'intégration native
-                             du protocole NDI (SDK propriétaire, redistribution soumise à
-                             licence NewTek/Vizrt, non testable sans matériel NDI réel) —
-                             mais une caméra NDI pontée via l'outil GRATUIT "NDI Virtual
-                             Input" (suite NDI Tools) apparaît comme une webcam normale
-                             ci-dessus et fonctionne dès aujourd'hui, sans configuration
-                             supplémentaire côté ChurchOverlay. -->
-              Caméra NDI (PTZ, régie) : installez le NDI Tools gratuit de NewTek/Vizrt et activez
-              "NDI Virtual Input" — la source apparaît alors ci-dessus comme une webcam normale.
-              <br />
-              <!-- AJOUT (demande explicite — caméras de téléphone) : applications
-                             compagnon (DroidCam, Iriun Webcam, EpocCam) qui installent un
-                             pilote de webcam virtuelle sur ce PC — le téléphone apparaît alors
-                             ci-dessus comme une caméra normale. Voir le panneau "Caméras IP
-                             (téléphones)" plus bas pour l'alternative sans pilote PC (flux
-                             réseau direct, ex. app "IP Webcam"). -->
-              Caméra de téléphone (pilote PC) : les apps DroidCam, Iriun Webcam ou EpocCam
-              fonctionnent aussi — une fois leur client de bureau lancé, le téléphone apparaît
-              ci-dessus comme une webcam normale.
+              <strong>Caméra NDI / téléphone (pilote PC)</strong> — caméra NDI (PTZ, régie) :
+              installez le NDI Tools gratuit de NewTek/Vizrt et activez "NDI Virtual Input" ; ou
+              téléphone via DroidCam, Iriun Webcam ou EpocCam — une fois leur client de bureau
+              lancé. Dans les deux cas, la source apparaît ensuite ci-dessus comme une webcam
+              normale.
             </div>
 
             <div class="input-row" style="margin-bottom: 0.75rem">
@@ -3023,7 +3113,7 @@
                      librairie ni décodage vidéo ajouté. Voir ip-camera-store.js. -->
           <div class="card">
             <div class="card-header">
-              <span class="card-title">Caméras IP (téléphones)</span>
+              <span class="card-title">2. Caméras IP (téléphones)</span>
               <span id="ipCameraCount" class="status-badge warning">0</span>
             </div>
             <div class="field-hint" style="margin-bottom: 0.75rem">
@@ -3040,73 +3130,82 @@
                          choisis AVANT de générer le QR — le téléphone lit son réglage de
                          qualité directement dans l'URL scannée (voir phone-camera.html),
                          il ne peut pas le demander à l'opérateur après coup. -->
-            <div
-              style="
-                display: flex;
-                gap: 0.6rem;
-                align-items: center;
-                margin-bottom: 0.75rem;
-                flex-wrap: wrap;
-              "
-            >
-              <input
-                type="text"
-                id="cameraPairingLabelInput"
-                placeholder="Nom (ex. Téléphone scène)"
-                style="max-width: 220px"
-              />
-              <select
-                id="cameraPairingQualitySelect"
-                title="Qualité du flux — plus haut = meilleure image mais plus de données sur le Wi-Fi"
+            <div class="camera-pairing-subsection">
+              <h4>📷 Sans application (QR code)</h4>
+              <div
+                style="
+                  display: flex;
+                  gap: 0.6rem;
+                  align-items: center;
+                  margin-bottom: 0.75rem;
+                  flex-wrap: wrap;
+                "
               >
-                <option value="low">Qualité basse (Wi-Fi faible)</option>
-                <option value="medium" selected>Qualité moyenne</option>
-                <option value="high">Qualité haute</option>
-              </select>
-              <button type="button" class="btn btn-primary" onclick="generateCameraPairing()">
-                📷 Générer un QR code (téléphone, sans app)
-              </button>
-            </div>
-            <div
-              id="cameraPairingBox"
-              style="
-                display: none;
-                margin-bottom: 1rem;
-                padding: 1rem;
-                border: 1px solid var(--border-subtle);
-                border-radius: var(--radius-sm);
-                text-align: center;
-              "
-            >
-              <img
-                id="cameraPairingQr"
-                style="width: 200px; height: 200px; margin-bottom: 0.5rem"
-                alt="QR code de jumelage caméra"
-              />
-              <div class="field-hint">
-                Scannez avec l'appareil photo du téléphone (pas besoin d'app — s'ouvre dans le
-                navigateur). Valable <span id="cameraPairingExpiry">10 minutes</span>.
+                <input
+                  type="text"
+                  id="cameraPairingLabelInput"
+                  placeholder="Nom (ex. Téléphone scène)"
+                  style="max-width: 220px"
+                />
+                <select
+                  id="cameraPairingQualitySelect"
+                  title="Qualité du flux — plus haut = meilleure image mais plus de données sur le Wi-Fi"
+                >
+                  <option value="low">Qualité basse (Wi-Fi faible)</option>
+                  <option value="medium" selected>Qualité moyenne</option>
+                  <option value="high">Qualité haute</option>
+                </select>
+                <button type="button" class="btn btn-primary" onclick="generateCameraPairing()">
+                  📷 Générer un QR code (téléphone, sans app)
+                </button>
+              </div>
+              <div
+                id="cameraPairingBox"
+                style="
+                  display: none;
+                  margin-bottom: 0.5rem;
+                  padding: 1rem;
+                  border: 1px solid var(--border-subtle);
+                  border-radius: var(--radius-sm);
+                  text-align: center;
+                "
+              >
+                <img
+                  id="cameraPairingQr"
+                  style="width: 200px; height: 200px; margin-bottom: 0.5rem"
+                  alt="QR code de jumelage caméra"
+                />
+                <div class="field-hint">
+                  Scannez avec l'appareil photo du téléphone (pas besoin d'app — s'ouvre dans le
+                  navigateur). Valable <span id="cameraPairingExpiry">10 minutes</span>.
+                </div>
               </div>
             </div>
 
-            <div class="field-hint" style="margin-bottom: 0.5rem">
-              Ou manuellement, pour une app type <strong>« IP Webcam »</strong> déjà en cours
-              d'exécution sur un téléphone : notez son adresse (ex.
-              <code>http://192.168.1.50:8080</code>), ajoutez <code>/video</code>, et collez-la
-              ci-dessous.
+            <div class="camera-pairing-subsection">
+              <h4>🔧 Manuel (app « IP Webcam » ou équivalent)</h4>
+              <div class="field-hint" style="margin-bottom: 0.5rem">
+                Pour une app déjà en cours d'exécution sur un téléphone : notez son adresse (ex.
+                <code>http://192.168.1.50:8080</code>), ajoutez <code>/video</code>, et collez-la
+                ci-dessous.
+              </div>
+              <div class="input-row" style="margin-bottom: 0.75rem">
+                <input
+                  type="text"
+                  id="ipCameraLabelInput"
+                  placeholder="Nom (ex. Téléphone scène)"
+                />
+                <input
+                  type="text"
+                  id="ipCameraUrlInput"
+                  placeholder="http://192.168.1.50:8080/video"
+                />
+                <button type="button" class="btn btn-secondary" onclick="addIpCamera()">
+                  + Ajouter
+                </button>
+              </div>
+              <div class="queue-list" id="ipCameraList"></div>
             </div>
-            <div class="input-row" style="margin-bottom: 0.75rem">
-              <input type="text" id="ipCameraLabelInput" placeholder="Nom (ex. Téléphone scène)" />
-              <input
-                type="text"
-                id="ipCameraUrlInput"
-                placeholder="http://192.168.1.50:8080/video"
-              />
-              <button type="button" class="btn btn-secondary" onclick="addIpCamera()">
-                + Ajouter
-              </button>
-            </div>
-            <div class="queue-list" id="ipCameraList"></div>
           </div>
 
           <!-- AJOUT (habillage caméra — logo/titre par-dessus la caméra, demande
@@ -3116,7 +3215,7 @@
                      ici, sans jamais rouvrir OBS pour changer un texte. -->
           <div class="card">
             <div class="card-header">
-              <span class="card-title">Habillage caméra (logo, titre)</span>
+              <span class="card-title">3. Habillage caméra (logo, titre)</span>
               <span id="brandingStatus" class="status-badge warning">Masqué</span>
             </div>
             <div class="field-hint" style="margin-bottom: 0.75rem">
@@ -3290,37 +3389,6 @@
             <div class="stat-row">
               <span class="stat-label">Statut Capture Micro (Whisper/Groq/Deepgram)</span>
               <span class="status-badge warning" id="speechStatus">Capture arrêtée</span>
-            </div>
-
-            <!-- CORRECTIF (checklist mise en production, point 9 ; élargi lors du
-                         checkup général de cette session) : vérification en une fois avant
-                         de démarrer un culte — connexion WebSocket, validité des clés Groq/
-                         Deepgram, authentification WS, ET l'état de tout ce qui a été
-                         ajouté depuis (médiathèque, poster principal, habillage caméra,
-                         base biblique hors-ligne, caméra téléphone par QR) — plutôt que de
-                         vérifier chaque panneau séparément avant chaque culte.
-                         Le micro n'est pas testé ici (accès navigateur uniquement) : voir
-                         le statut "Statut Capture Micro" ci-dessus pour ça. -->
-            <div
-              style="
-                margin-top: 1rem;
-                padding-top: 1rem;
-                border-top: 1px solid var(--border-subtle);
-              "
-            >
-              <button
-                type="button"
-                class="btn btn-primary"
-                id="preServiceCheckBtn"
-                onclick="runPreServiceCheck()"
-                style="width: 100%"
-              >
-                ✅ Tester avant le culte
-              </button>
-              <div
-                id="preServiceCheckResults"
-                style="display: none; margin-top: 0.75rem; font-size: 0.85rem"
-              ></div>
             </div>
           </div>
 
