@@ -153,18 +153,7 @@
                  que "Déconnecté — reconnexion en cours" indéfiniment, sans
                  raison ni moyen de le relancer depuis la fenêtre principale
                  (seule l'icône de la zone de notification l'avait). -->
-        <div
-          id="pipelineAlertBanner"
-          style="
-            display: none;
-            margin: 0 0 1.25rem 0;
-            padding: 0.85rem 1.1rem;
-            border-radius: 10px;
-            align-items: center;
-            justify-content: space-between;
-            gap: 1rem;
-          "
-        >
+        <div id="pipelineAlertBanner" class="pipeline-banner pipeline-banner--with-action">
           <div style="display: flex; align-items: center; gap: 0.6rem">
             <span id="pipelineAlertIcon">⚠️</span>
             <span id="pipelineAlertMessage" style="font-size: 0.9rem"></span>
@@ -183,17 +172,7 @@
                  transcription réussit (voir action 'pipelineHealth'), sans
                  bouton de redémarrage — la retry est déjà automatique côté
                  serveur (voir transcribeWithRetry() dans server.js). -->
-        <div
-          id="transcriptionHealthBanner"
-          style="
-            display: none;
-            margin: 0 0 1.25rem 0;
-            padding: 0.75rem 1.1rem;
-            border-radius: 10px;
-            align-items: center;
-            gap: 0.6rem;
-          "
-        >
+        <div id="transcriptionHealthBanner" class="pipeline-banner">
           <span id="transcriptionHealthIcon">⚠️</span>
           <span id="transcriptionHealthMessage" style="font-size: 0.85rem"></span>
         </div>

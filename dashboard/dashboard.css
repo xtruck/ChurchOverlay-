@@ -746,6 +746,36 @@ body {
   padding: 0.1rem var(--space-2);
 }
 
+/* AJOUT (redesign visuel, lot 4) : liste vide générique — même
+           style="..." inline (police/couleur/padding) était dupliqué à
+           l'identique dans ip-cameras.js, verse-queue.js, song-library.js
+           et media-library.js. Appliqué ici pour ip-cameras.js ; les
+           trois autres restent inchangés pour ce lot (portée volontaire,
+           voir commit) mais pourront reprendre cette même classe lors du
+           balayage final. */
+.empty-state-note {
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+  padding: var(--space-2) 0;
+}
+
+/* AJOUT (redesign visuel, lot 4) : vignette caméra IP (ip-cameras.js) —
+           remplace le style="..." inline répété par ligne de la liste. */
+.camera-thumb-wrap {
+  width: 120px;
+  height: 68px;
+  background: #000;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.camera-thumb-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 /* AJOUT (demande explicite — "scène" médiathèque avec vraies vignettes) :
            classes DÉDIÉES à #mediaLibraryList, séparées de .queue-list/.queue-item
            ci-dessus qui restent utilisées telles quelles par la file d'attente de
@@ -1405,6 +1435,45 @@ body {
 
 .qa-source-excerpt {
   opacity: 0.85;
+}
+
+/* AJOUT (redesign visuel, lot 4) : bannières d'état pipeline
+           (pipeline-health.js > setPipelineAlert/setTranscriptionHealth).
+           Structure (marge/padding/rayon/alignement) déplacée depuis les
+           style="..." inline de dashboard.html vers cette classe commune
+           aux deux bannières ; la couleur (fond+bordure), jusqu'ici
+           assignée directement en JS via element.style.background/.border,
+           bascule sur les deux modificateurs ci-dessous appliqués via
+           classList.toggle() — voir pipeline-health.js. display:none reste
+           géré en JS (état visible/masqué, pas une couleur) : inchangé. */
+.pipeline-banner {
+  display: none;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-5) 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: 10px;
+}
+
+.pipeline-banner--with-action {
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+/* CORRECTIF (redesign visuel, lot 4) : l'état "warning" (échec worker de
+           sévérité par défaut, ou nouvel essai de transcription en cours)
+           utilisait la couleur primaire (#7c8cf5 en dur — même bug de
+           littéral figé que le status-badge.warning corrigé au lot 1) au
+           lieu d'une vraie couleur d'avertissement. Utilise maintenant
+           --accent-amber, cohérent avec le reste de l'app. */
+.pipeline-banner--warning {
+  background: var(--accent-amber-bg);
+  border: 1px solid var(--accent-amber);
+}
+
+.pipeline-banner--error {
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid var(--accent-rose);
 }
 
 .status-badge {

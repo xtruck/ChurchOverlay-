@@ -36,8 +36,7 @@ export function renderIpCameras(items) {
   for (const key of Object.keys(ipCameraMonitors)) delete ipCameraMonitors[key];
 
   if (ipCameraItems.length === 0) {
-    list.innerHTML =
-      '<div style="font-size:0.8rem; color:var(--text-dim); padding: 0.5rem 0;">Aucune caméra de téléphone ajoutée.</div>';
+    list.innerHTML = '<div class="empty-state-note">Aucune caméra de téléphone ajoutée.</div>';
     return;
   }
 
@@ -45,8 +44,8 @@ export function renderIpCameras(items) {
     .map(
       (item) => `
                 <div class="queue-item">
-                    <div style="width:120px; height:68px; background:#000; border-radius:6px; overflow:hidden; flex-shrink:0;">
-                        <img id="ipcam-img-${item.id}" style="width:100%; height:100%; object-fit:cover;" alt="">
+                    <div class="camera-thumb-wrap">
+                        <img id="ipcam-img-${item.id}" alt="">
                     </div>
                     <div class="media-item-info">
                         <div class="media-item-label">${escapeHtmlDashboard(item.label)}</div>

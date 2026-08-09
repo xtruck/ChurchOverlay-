@@ -17,12 +17,13 @@ export function setPipelineAlert(payload) {
 
   if (!payload || payload.clear) {
     banner.style.display = 'none';
+    banner.classList.remove('pipeline-banner--error', 'pipeline-banner--warning');
     return;
   }
 
   const isError = (payload.severity || 'warning') === 'error';
-  banner.style.background = isError ? 'rgba(244, 63, 94, 0.12)' : 'rgba(124, 140, 245, 0.12)';
-  banner.style.border = `1px solid ${isError ? 'var(--accent-rose)' : '#7c8cf5'}`;
+  banner.classList.toggle('pipeline-banner--error', isError);
+  banner.classList.toggle('pipeline-banner--warning', !isError);
   banner.style.display = 'flex';
   if (icon) icon.textContent = isError ? '⛔' : '⚠️';
   msg.textContent = payload.message || 'Le pipeline a rencontré un problème.';
@@ -46,12 +47,13 @@ export function setTranscriptionHealth(payload) {
 
   if (!payload || payload.status === 'ok') {
     banner.style.display = 'none';
+    banner.classList.remove('pipeline-banner--error', 'pipeline-banner--warning');
     return;
   }
 
   const isDegraded = payload.status === 'degraded';
-  banner.style.background = isDegraded ? 'rgba(244, 63, 94, 0.12)' : 'rgba(124, 140, 245, 0.12)';
-  banner.style.border = `1px solid ${isDegraded ? 'var(--accent-rose)' : '#7c8cf5'}`;
+  banner.classList.toggle('pipeline-banner--error', isDegraded);
+  banner.classList.toggle('pipeline-banner--warning', !isDegraded);
   banner.style.display = 'flex';
   if (icon) icon.textContent = isDegraded ? '⛔' : '⚠️';
   msg.textContent = isDegraded
