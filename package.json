@@ -76,6 +76,7 @@
       "dashboard/features/ui-effects.js",
       "dashboard/features/perf-pill.js",
       "dashboard/features/companion-link.js",
+      "dashboard/features/verse-session-display.js",
       "dashboard/dashboard.css",
       "audio-capture-worklet.js",
       "camera-capture.js",
