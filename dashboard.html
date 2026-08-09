@@ -2202,8 +2202,14 @@
     </div>
 
     <!-- AJOUT (capture webcam — aperçu opérateur) : module isolé, chargé
-         avant dashboard.js pour que window.CameraCapture soit prêt. -->
+         avant le tableau de bord pour que window.CameraCapture soit prêt.
+         Script classique (synchrone) intentionnellement, contrairement au
+         module ci-dessous : un <script type="module"> est TOUJOURS différé
+         (s'exécute après le parsing complet du document, même sans l'attribut
+         defer explicite), donc l'ordre relatif est garanti quoi qu'il arrive
+         — mais garder camera-capture.js classique et immédiat reste le choix
+         le plus simple à raisonner. -->
     <script src="camera-capture.js"></script>
-    <script src="dashboard.js"></script>
+    <script type="module" src="dashboard/main.js"></script>
   </body>
 </html>
