@@ -88,6 +88,7 @@
       "dashboard/features/ip-cameras.js",
       "dashboard/features/branding.js",
       "dashboard/features/audio-capture.js",
+      "dashboard/features/pipeline-health.js",
       "dashboard/dashboard.css",
       "audio-capture-worklet.js",
       "camera-capture.js",
