@@ -5,7 +5,7 @@
  * pipeline.
  * Extrait de dashboard/legacy-core.js (chantier de modularisation).
  */
-import { state } from '../legacy-core.js';
+import { state } from '../state.js';
 import { showToast } from '../utils.js';
 
 // --- Bannière d'erreur pipeline (voir CORRECTIF plus haut dans le HTML) ---

@@ -5,7 +5,7 @@
  * repasse par-dessus toutes les 5s jusqu'à ce qu'il se termine.
  * Extrait de dashboard/legacy-core.js (chantier de modularisation).
  */
-import { ws } from '../legacy-core.js';
+import { ws } from '../state.js';
 
 /* ======================================================================
    Base biblique hors-ligne (cahier des charges — Point 1B). Statut

@@ -7,7 +7,7 @@
  * persiste déjà tout seul ; cette carte n'en affiche que le statut.
  * Extrait de dashboard/legacy-core.js (chantier de modularisation).
  */
-import { ws } from '../legacy-core.js';
+import { ws } from '../state.js';
 import { showToast } from '../utils.js';
 
 /* ======================================================================

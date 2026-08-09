@@ -7,7 +7,7 @@
  * fenêtres d'affichage secondaires, et messages de scène.
  * Extrait de dashboard/legacy-core.js (chantier de modularisation).
  */
-import { state, ws } from '../legacy-core.js';
+import { state, ws } from '../state.js';
 import { showToast, escapeHtmlDashboard, requireWsOrWarn } from '../utils.js';
 
 // CORRECTIF (checklist mise en production, point 9) : bouton "Tester avant

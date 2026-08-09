@@ -6,7 +6,7 @@
  * réduction de bruit (gate), aperçu overlay en direct.
  * Extrait de dashboard/legacy-core.js (chantier de modularisation).
  */
-import { getWsToken, getWsPort } from '../legacy-core.js';
+import { getWsToken, getWsPort } from '../state.js';
 // AJOUT (import circulaire, sûr) : verse-session-display.js importe
 // realMicCaptureState/startRealAudioCapture/stopRealAudioCapture DEPUIS ce
 // fichier ; celui-ci importe updateMicButtonUI en retour. Sûr par la même

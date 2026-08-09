@@ -8,7 +8,7 @@
  * artificiel, sans bénéfice réel.
  * Extrait de dashboard/legacy-core.js (chantier de modularisation).
  */
-import { state, ws } from '../legacy-core.js';
+import { state, ws } from '../state.js';
 import {
   realMicCaptureState,
   startRealAudioCapture,

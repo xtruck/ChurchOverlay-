@@ -3,12 +3,11 @@
  * (toasts, journal d'activité, échappement HTML, garde WebSocket).
  *
  * Extrait de dashboard/legacy-core.js (chantier de modularisation). `ws`
- * reste déclaré dans legacy-core.js pour l'instant (sera déplacé vers
- * dashboard/state.js dans un lot ultérieur) — importé ici en lecture seule
+ * est déclaré dans dashboard/state.js — importé ici en lecture seule
  * (liaison "live" ES module : requireWsOrWarn() voit toujours la valeur
  * actuelle, sans jamais pouvoir la réassigner elle-même).
  */
-import { ws } from './legacy-core.js';
+import { ws } from './state.js';
 
 export function escapeHtmlDashboard(str) {
   const div = document.createElement('div');

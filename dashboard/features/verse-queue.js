@@ -6,7 +6,7 @@
  * existante au moment d'envoyer).
  * Extrait de dashboard/legacy-core.js (chantier de modularisation).
  */
-import { ws } from '../legacy-core.js';
+import { ws } from '../state.js';
 import { showToast, addActivity, escapeHtmlDashboard } from '../utils.js';
 
 /* ======================================================================

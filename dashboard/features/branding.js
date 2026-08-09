@@ -7,7 +7,7 @@
  * Navigateur séparée.
  * Extrait de dashboard/legacy-core.js (chantier de modularisation).
  */
-import { ws, getHttpOrigin } from '../legacy-core.js';
+import { ws, getHttpOrigin } from '../state.js';
 import { showToast } from '../utils.js';
 
 /* ======================================================================

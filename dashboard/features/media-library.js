@@ -9,7 +9,7 @@
  * emplacement d'origine, physiquement égaré près du code d'habillage
  * caméra alors qu'il appartient conceptuellement à ce fichier).
  */
-import { ws, getHttpOrigin } from '../legacy-core.js';
+import { ws, getHttpOrigin } from '../state.js';
 import { showToast, escapeHtmlDashboard } from '../utils.js';
 
 /* ======================================================================

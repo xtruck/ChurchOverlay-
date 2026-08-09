@@ -1,0 +1,273 @@
+/**
+ * dashboard/ws-dispatch.js — hub de dispatch des messages WebSocket entrants
+ * (handleMessage), le routeur central "action reçue -> module feature qui la
+ * rend".
+ *
+ * Extrait de dashboard/legacy-core.js (chantier de modularisation, dernier
+ * lot). C'est la pièce la plus interconnectée du tableau de bord (elle
+ * importe depuis quasiment tous les modules feature) mais la plus mécanique
+ * à extraire une fois ceux-ci stabilisés : chaque branche du switch se
+ * contente d'appeler une fonction déjà exportée ailleurs. IMPORT CIRCULAIRE
+ * assumé et sûr avec state.js (voir son commentaire d'en-tête) : `state`
+ * n'est utilisé ici qu'à l'intérieur des branches du switch, jamais évalué
+ * au chargement du module.
+ */
+import { showToast, addActivity } from './utils.js';
+import { state } from './state.js';
+import {
+  displayVerse,
+  hideVerseDisplay,
+  addTranscript,
+  showCandidateVerse,
+  updateDashboard,
+} from './features/verse-session-display.js';
+import { renderMoodPicker, setActiveMoodButton } from './features/mood-theme.js';
+import { renderSongLibrary } from './features/song-library.js';
+import { renderOfflineBibleStatus } from './features/offline-bible.js';
+import {
+  renderAiEnricherOutput,
+  renderSessionStats,
+  renderHighlightsExport,
+  updateSermonModeBadge,
+  renderSermonQaResult,
+  requestAutoTranslation,
+  renderPreServiceCheckResult,
+} from './features/preservice-ai.js';
+import { renderMediaLibrary } from './features/media-library.js';
+import { renderNetworkStatus } from './features/network-settings.js';
+import { renderIpCameras, showCameraPairingQr } from './features/ip-cameras.js';
+import { renderBranding } from './features/branding.js';
+import { setTranscriptionHealth } from './features/pipeline-health.js';
+
+export function handleMessage(message) {
+  switch (message.action) {
+    case 'showVerse':
+      displayVerse(message);
+      state.totalVerses++;
+      updateDashboard();
+      addActivity(`Verset affiché : ${message.reference}`, 'success');
+      showToast(`Verset : ${message.reference}`, 'success');
+      // AJOUT : traduction live automatique si le toggle est activé —
+      // chaque nouveau verset déclenche translateText sans action manuelle.
+      if (state.autoTranslateEnabled && message.text) {
+        requestAutoTranslation(message);
+      }
+      break;
+    case 'hideVerse':
+      hideVerseDisplay();
+      addActivity('Verset masqué', 'info');
+      break;
+    case 'transcript':
+      addTranscript(message);
+      break;
+    case 'candidateVerse':
+      showCandidateVerse(message);
+      addActivity(`Verset candidat : ${message.reference}`, 'warning');
+      break;
+    case 'error':
+      addActivity(`Erreur : ${message.error}`, 'error');
+      showToast(`Erreur : ${message.error}`, 'error');
+      break;
+    case 'transcriptionError':
+      addActivity(`Transcription indisponible : ${message.error}`, 'error');
+      // CORRECTIF (audit — message d'erreur générique inutile) : ce toast
+      // affichait toujours "vérifier la connexion internet" quelle que soit
+      // la vraie cause (clé API invalide, quota dépassé, clé absente...),
+      // alors que le message réel (message.error) était déjà disponible —
+      // juste jamais montré ailleurs que dans le flux d'activité, moins
+      // visible. Affiche désormais la vraie raison.
+      showToast(`Transcription en échec : ${message.error || 'raison inconnue'}`, 'error');
+      break;
+    case 'audioError':
+      addActivity(`Capture audio interrompue : ${message.error}`, 'error');
+      showToast(`Micro/audio en échec — vérifier la capture`, 'error');
+      break;
+    case 'audioSilenceWarning':
+      addActivity(message.message, 'warning');
+      showToast(`⚠️ ${message.message}`, 'error');
+      break;
+    case 'preServiceCheckResult':
+      renderPreServiceCheckResult(message);
+      break;
+    case 'networkStatus':
+      renderNetworkStatus(message);
+      break;
+    // AJOUT (audit round 6) : réponses des modules ai-enricher.js,
+    // jusqu'ici sans destination côté dashboard (les WS envoyaient bien
+    // ces actions, mais rien n'écoutait la réponse).
+    case 'sermonTheme':
+      // AJOUT : les requêtes auto (silent:true, voir startSermonModeAutoDetect)
+      // mettent seulement à jour le badge, sans polluer le panneau de sortie
+      // manuel avec un texte qui change toutes les 2 minutes.
+      updateSermonModeBadge(message);
+      if (!message.silent) {
+        renderAiEnricherOutput(
+          message.theme
+            ? `Thème détecté : ${message.theme}${message.keywords ? ' — mots-clés : ' + message.keywords.join(', ') : ''}`
+            : 'Aucun thème identifiable pour le moment (transcription encore trop courte).'
+        );
+      }
+      break;
+    case 'liveSummary':
+      renderAiEnricherOutput(
+        message.summary ? `Résumé : ${message.summary}` : 'Résumé indisponible pour le moment.'
+      );
+      break;
+    case 'crossReferences':
+      renderAiEnricherOutput(
+        message.results && message.results.length
+          ? `Références croisées pour ${message.reference} : ` +
+              message.results
+                .map((r) => `${r.ref}${r.reason ? ' (' + r.reason + ')' : ''}`)
+                .join(' · ')
+          : `Aucune référence croisée trouvée pour ${message.reference || 'ce verset'}.`
+      );
+      break;
+    case 'textTranslated':
+      // Le broadcast vers l'overlay (action showTranslation) est fait
+      // directement par le serveur quand autoBroadcast est vrai (voir
+      // requestAutoTranslation) — ici on ne fait qu'afficher côté dashboard.
+      if (!message.autoBroadcast) {
+        renderAiEnricherOutput(`Traduction (${message.targetLang}) : ${message.translation}`);
+      }
+      break;
+    case 'sessionStats':
+      renderSessionStats(message);
+      break;
+    case 'highlightsExported':
+      renderHighlightsExport(message);
+      break;
+    case 'postServiceRecap':
+      // AJOUT : on garde le dernier récap en mémoire pour permettre
+      // l'export en .txt sans le régénérer si l'opérateur clique export
+      // juste après avoir cliqué "Récap fin de culte".
+      state.lastPostServiceRecap = message.recap || null;
+      renderAiEnricherOutput(
+        message.recap
+          ? `${message.recap.title || 'Récap du culte'} — Points clés : ${(message.recap.keyPoints || []).join(', ')}. ` +
+              `Application : ${message.recap.application || '—'}. Verset à retenir : ${message.recap.memoryVerse || '—'}.`
+          : 'Récap indisponible.'
+      );
+      break;
+    // AJOUT (innovation frontend — sélecteur d'ambiances) : le serveur
+    // envoyait déjà ces deux réponses (server.js: 'moodsList' sur
+    // getMoods, 'themeApplied' sur setMoodTheme) mais aucun cas ne les
+    // traitait ici — le générateur de thèmes IA restait invisible et
+    // inutilisable depuis le tableau de bord.
+    case 'moodsList':
+      renderMoodPicker(message.moods || []);
+      break;
+    case 'themeApplied':
+      setActiveMoodButton(message.mood);
+      addActivity(`Ambiance changée : ${message.themeName || message.mood}`, 'info');
+      showToast(`Ambiance : ${message.themeName || message.mood}`, 'success');
+      break;
+    // AJOUT (audit — état de repli visible, session parallèle) : émises par
+    // transcribeWithRetry() côté serveur (server.js) — un échec de
+    // transcription tente désormais un nouvel essai automatique avant
+    // d'abandonner. Distinct du case 'transcriptionError' déjà présent
+    // ci-dessus (qui gère l'échec final) : ceci couvre les tentatives
+    // intermédiaires et l'état "dégradé" persistant.
+    case 'transcriptionRetrying':
+      setTranscriptionHealth({
+        status: 'retrying',
+        attempt: message.attempt,
+        maxAttempts: message.maxAttempts,
+      });
+      break;
+    case 'pipelineHealth':
+      setTranscriptionHealth(message);
+      if (message.status === 'ok') {
+        addActivity('Transcription rétablie', 'success');
+      }
+      break;
+    // AJOUT (audit — mémoire des cultes, session parallèle) : réponse à
+    // getArchiveMatches (voir sermon-archive.js — recherche locale par
+    // mots-clés, pas d'IA impliquée ici).
+    case 'archiveMatches':
+      renderAiEnricherOutput(
+        message.results && message.results.length
+          ? `Cultes correspondants pour "${message.query}" : ` +
+              message.results
+                .map((r) => {
+                  const date = new Date(r.date).toLocaleDateString('fr-FR', {
+                    day: 'numeric',
+                    month: 'long',
+                    year: 'numeric',
+                  });
+                  return `${r.theme || 'Sans titre'} (${date})`;
+                })
+                .join(' · ')
+          : `Aucun culte archivé ne correspond à "${message.query}".`
+      );
+      break;
+    // AJOUT (médiathèque — déclenchement vocal de photos/vidéos) : la liste
+    // vit côté serveur, diffusée à tous les tableaux de bord ouverts après
+    // chaque ajout/suppression pour rester synchronisée entre eux.
+    case 'mediaLibraryUpdated':
+      renderMediaLibrary(message.items);
+      break;
+    // AJOUT (caméras de téléphone) : même raisonnement que mediaLibraryUpdated
+    // ci-dessus — la liste vit côté serveur, diffusée à tous les tableaux de
+    // bord ouverts après chaque ajout/suppression.
+    case 'ipCamerasUpdated':
+      renderIpCameras(message.items);
+      break;
+    // AJOUT (caméra téléphone par QR code) : réponse ponctuelle à
+    // generateCameraPairing() — affiche le QR généré, voir showCameraPairingQr().
+    case 'cameraPairingGenerated':
+      showCameraPairingQr(message);
+      break;
+    // AJOUT (habillage caméra) : même raisonnement — diffusé à chaque
+    // changement pour rester synchronisé entre plusieurs tableaux de bord.
+    case 'brandingUpdate':
+      renderBranding(message.branding);
+      break;
+    case 'showMedia':
+      addActivity(
+        `Média affiché : ${message.label}` +
+          (message.detectedBy === 'voice-cue' ? ' (déclenché à la voix)' : ''),
+        'info'
+      );
+      break;
+    case 'hideMedia':
+      break;
+    // AJOUT (bibliothèque de chants) : même raisonnement que mediaLibraryUpdated.
+    case 'songLibraryUpdated':
+      renderSongLibrary(message.songs);
+      break;
+    // AJOUT (stage display) : messages opérateur -> écran scène uniquement,
+    // rien à faire côté tableau de bord au-delà d'un accusé dans le journal
+    // d'activité (le contenu réel s'affiche sur stage-display.html).
+    case 'stageMessage':
+      addActivity(`Message envoyé à l'écran scène : ${message.text}`, 'info');
+      break;
+    case 'stageMessageClear':
+      break;
+    // AJOUT (base biblique hors-ligne) : voir renderOfflineBibleStatus() plus bas.
+    case 'offlineBibleStatus':
+      renderOfflineBibleStatus(message);
+      break;
+    // AJOUT (cahier des charges — assistant sermons) : voir renderSermonQaResult().
+    case 'sermonQuestionAnswered':
+      renderSermonQaResult(message);
+      break;
+    // AJOUT : le serveur diffusait déjà languageChanged (déclenché par
+    // une commande vocale "passe en bilingue", ou par un autre tableau
+    // de bord connecté) mais rien n'écoutait ici — les boutons de langue
+    // restaient figés sur FR même après un changement effectif.
+    case 'languageChanged':
+      state.activeLanguage = (message.language || 'fr').toUpperCase();
+      document.querySelectorAll('.lang-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.lang === message.language);
+      });
+      updateDashboard();
+      if (message.triggeredByVoice) {
+        addActivity(`Langue changée par commande vocale : ${state.activeLanguage}`, 'info');
+      }
+      break;
+  }
+}
+
+// Exposition globale explicite (module ES, pas de globals implicites).
+window.handleMessage = handleMessage;
