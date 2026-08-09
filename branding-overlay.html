@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="fr">
-<head>
-<meta charset="UTF-8">
-<title>ChurchOverlay — Habillage caméra</title>
-<!--
+  <head>
+    <meta charset="UTF-8" />
+    <title>ChurchOverlay — Habillage caméra</title>
+    <!--
   ============================================================================
   branding-overlay.html — Logo + titre/sous-titre au-dessus de la caméra
   ----------------------------------------------------------------------------
@@ -30,216 +30,279 @@
   sans accès aux fonctions de overlay.html.
   ============================================================================
 -->
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body {
-    width: 100vw;
-    height: 100vh;
-    overflow: hidden;
-    /* Transparent à dessein : OBS compose cette page PAR-DESSUS la source
+    <style>
+      /* AJOUT (cohérence visuelle avec overlay.html) : le titre du bandeau
+     utilise désormais la même serif dorée que la carte de verset
+     (Merriweather) — jusqu'ici cette page tournait entièrement en police
+     système, visuellement déconnectée du verset alors que les deux sont
+     empilés dans la même scène OBS pendant le même culte. Import isolé
+     (une seule graisse) plutôt que de dupliquer tout l'@import de
+     overlay.html, cette page restant volontairement indépendante. */
+      @import url('https://fonts.googleapis.com/css2?family=Merriweather:wght@700&display=swap');
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+        /* Transparent à dessein : OBS compose cette page PAR-DESSUS la source
        caméra placée en dessous dans la scène — un fond opaque cacherait
        entièrement l'image caméra. */
-    background: transparent;
-    font-family: 'Segoe UI', 'Plus Jakarta Sans', -apple-system, sans-serif;
-  }
+        background: transparent;
+        font-family:
+          'Segoe UI',
+          'Plus Jakarta Sans',
+          -apple-system,
+          sans-serif;
+      }
 
-  /* ==========================================================================
+      /* ==========================================================================
      Logo — coin configurable (voir action 'brandingUpdate', champs
      position/size). Deux éléments (#branding-logo-img / -video), un seul
      visible à la fois selon logoType — voir applyBranding() plus bas :
      GIF/image passent par <img> (l'animation d'un GIF est nativement gérée
      par le navigateur), vidéo (.mp4/.webm) par <video> en boucle muette.
      ========================================================================== */
-  .branding-logo {
-    position: fixed;
-    object-fit: contain;
-    filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
-    display: none;
-  }
-  .branding-logo.visible { display: block; }
-  body.pos-top-left .branding-logo { top: 32px; left: 32px; }
-  body.pos-top-right .branding-logo { top: 32px; right: 32px; }
-  body.pos-bottom-left .branding-logo { bottom: 32px; left: 32px; }
-  body.pos-bottom-right .branding-logo { bottom: 32px; right: 32px; }
-  /* AJOUT (demande explicite — "plus de paramètres") : taille du logo, en
+      .branding-logo {
+        position: fixed;
+        object-fit: contain;
+        filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
+        display: none;
+      }
+      .branding-logo.visible {
+        display: block;
+      }
+      body.pos-top-left .branding-logo {
+        top: 32px;
+        left: 32px;
+      }
+      body.pos-top-right .branding-logo {
+        top: 32px;
+        right: 32px;
+      }
+      body.pos-bottom-left .branding-logo {
+        bottom: 32px;
+        left: 32px;
+      }
+      body.pos-bottom-right .branding-logo {
+        bottom: 32px;
+        right: 32px;
+      }
+      /* AJOUT (demande explicite — "plus de paramètres") : taille du logo, en
      plus de sa position — voir action 'setBrandingSize'. */
-  body.size-small .branding-logo { max-width: 110px; max-height: 65px; }
-  body.size-medium .branding-logo { max-width: 180px; max-height: 100px; }
-  body.size-large .branding-logo { max-width: 280px; max-height: 160px; }
+      body.size-small .branding-logo {
+        max-width: 110px;
+        max-height: 65px;
+      }
+      body.size-medium .branding-logo {
+        max-width: 180px;
+        max-height: 100px;
+      }
+      body.size-large .branding-logo {
+        max-width: 280px;
+        max-height: 160px;
+      }
 
-  /* ==========================================================================
+      /* ==========================================================================
      Bandeau titre/sous-titre ("lower third") — toujours en bas, centré.
      Volontairement séparé du coin du logo pour ne jamais se chevaucher avec
      lui, quelle que soit la position choisie pour le logo.
      ========================================================================== */
-  #branding-lowerthird {
-    position: fixed;
-    left: 50%;
-    bottom: 40px;
-    transform: translateX(-50%) translateY(24px);
-    max-width: 82vw;
-    padding: 14px 28px;
-    border-radius: 10px;
-    background: rgba(10, 12, 20, 0.72);
-    backdrop-filter: blur(6px);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    color: #ffffff;
-    text-align: center;
-    opacity: 0;
-    transition: opacity 0.35s ease, transform 0.35s ease;
-  }
-  #branding-lowerthird.visible {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
-  #branding-title {
-    font-size: clamp(18px, 2.2vw, 28px);
-    font-weight: 700;
-    line-height: 1.3;
-  }
-  #branding-subtitle {
-    margin-top: 4px;
-    font-size: clamp(13px, 1.3vw, 17px);
-    font-weight: 500;
-    color: rgba(255, 255, 255, 0.78);
-    line-height: 1.3;
-  }
-  #branding-subtitle:empty { display: none; }
+      #branding-lowerthird {
+        position: fixed;
+        left: 50%;
+        bottom: 40px;
+        transform: translateX(-50%) translateY(24px);
+        max-width: 82vw;
+        padding: 16px 28px 14px;
+        border-radius: 10px;
+        /* AJOUT (cohérence visuelle) : même famille bleu-nuit que --overlay-bg
+       dans overlay.html (#0a0e1c/#0d1226), au lieu d'un gris-noir neutre
+       sans rapport — pour que le bandeau et la carte de verset se lisent
+       comme la même identité visuelle une fois empilés dans OBS. */
+        background: linear-gradient(165deg, rgba(10, 14, 28, 0.8), rgba(13, 18, 38, 0.8));
+        backdrop-filter: blur(6px);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        color: #ffffff;
+        text-align: center;
+        opacity: 0;
+        overflow: hidden;
+        transition:
+          opacity 0.35s ease,
+          transform 0.35s ease;
+      }
+      #branding-lowerthird.visible {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+      /* AJOUT (cohérence visuelle avec .verse-card::before dans overlay.html) :
+     même fin trait doré en dégradé, pour que le bandeau titre porte la
+     même signature visuelle que la carte de verset. */
+      #branding-lowerthird::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 8px;
+        right: 8px;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, #d9bb6c, transparent);
+      }
+      #branding-title {
+        font-family: 'Merriweather', Georgia, serif;
+        font-size: clamp(18px, 2.2vw, 28px);
+        font-weight: 700;
+        line-height: 1.3;
+      }
+      #branding-subtitle {
+        margin-top: 4px;
+        font-size: clamp(13px, 1.3vw, 17px);
+        font-weight: 500;
+        color: rgba(255, 255, 255, 0.78);
+        line-height: 1.3;
+      }
+      #branding-subtitle:empty {
+        display: none;
+      }
 
-  @media (prefers-reduced-motion: reduce) {
-    #branding-lowerthird {
-      transition: opacity 0.01ms;
-      transform: translateX(-50%) translateY(0);
-    }
-  }
-</style>
-</head>
-<body>
+      @media (prefers-reduced-motion: reduce) {
+        #branding-lowerthird {
+          transition: opacity 0.01ms;
+          transform: translateX(-50%) translateY(0);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <img id="branding-logo-img" class="branding-logo" alt="" />
+    <video id="branding-logo-video" class="branding-logo" autoplay loop muted playsinline></video>
 
-<img id="branding-logo-img" class="branding-logo" alt="">
-<video id="branding-logo-video" class="branding-logo" autoplay loop muted playsinline></video>
+    <div id="branding-lowerthird">
+      <div id="branding-title"></div>
+      <div id="branding-subtitle"></div>
+    </div>
 
-<div id="branding-lowerthird">
-  <div id="branding-title"></div>
-  <div id="branding-subtitle"></div>
-</div>
+    <script>
+      'use strict';
 
-<script>
-'use strict';
+      // Même mécanisme que overlay.html (voir son commentaire détaillé) : jeton
+      // via l'en-tête de handshake WebSocket (Sec-WebSocket-Protocol), pas dans
+      // l'URL — évite qu'il finisse en clair dans des journaux d'accès.
+      const getWsToken = () => new URLSearchParams(window.location.search).get('token');
+      const getWsPort = () => new URLSearchParams(window.location.search).get('port') || '8765';
+      const getWsUrl = () => {
+        if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+          const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          return `${proto}//${window.location.host}`;
+        }
+        return `ws://localhost:${getWsPort()}`;
+      };
 
-// Même mécanisme que overlay.html (voir son commentaire détaillé) : jeton
-// via l'en-tête de handshake WebSocket (Sec-WebSocket-Protocol), pas dans
-// l'URL — évite qu'il finisse en clair dans des journaux d'accès.
-const getWsToken = () => new URLSearchParams(window.location.search).get('token');
-const getWsPort = () => new URLSearchParams(window.location.search).get('port') || '8765';
-const getWsUrl = () => {
-  if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${proto}//${window.location.host}`;
-  }
-  return `ws://localhost:${getWsPort()}`;
-};
+      let ws = null;
+      let reconnectTimer = null;
 
-let ws = null;
-let reconnectTimer = null;
+      function applyBranding(data) {
+        if (!data) return;
 
-function applyBranding(data) {
-  if (!data) return;
+        // AJOUT (demande explicite — "même vidéo, même GIF") : un seul des deux
+        // éléments visible à la fois selon logoType — un GIF passe par <img>
+        // (animation gérée nativement par le navigateur), une vraie vidéo
+        // (.mp4/.webm) par <video> en boucle muette.
+        const logoImg = document.getElementById('branding-logo-img');
+        const logoVideo = document.getElementById('branding-logo-video');
+        const isVideo = data.logoType === 'video';
+        const activeLogo = isVideo ? logoVideo : logoImg;
+        const inactiveLogo = isVideo ? logoImg : logoVideo;
 
-  // AJOUT (demande explicite — "même vidéo, même GIF") : un seul des deux
-  // éléments visible à la fois selon logoType — un GIF passe par <img>
-  // (animation gérée nativement par le navigateur), une vraie vidéo
-  // (.mp4/.webm) par <video> en boucle muette.
-  const logoImg = document.getElementById('branding-logo-img');
-  const logoVideo = document.getElementById('branding-logo-video');
-  const isVideo = data.logoType === 'video';
-  const activeLogo = isVideo ? logoVideo : logoImg;
-  const inactiveLogo = isVideo ? logoImg : logoVideo;
+        if (inactiveLogo) {
+          inactiveLogo.classList.remove('visible');
+          inactiveLogo.removeAttribute('src');
+        }
+        if (activeLogo) {
+          if (data.logoUrl) {
+            if (activeLogo.src !== data.logoUrl) activeLogo.src = data.logoUrl;
+            activeLogo.classList.add('visible');
+          } else {
+            activeLogo.classList.remove('visible');
+            activeLogo.removeAttribute('src');
+          }
+        }
 
-  if (inactiveLogo) {
-    inactiveLogo.classList.remove('visible');
-    inactiveLogo.removeAttribute('src');
-  }
-  if (activeLogo) {
-    if (data.logoUrl) {
-      if (activeLogo.src !== data.logoUrl) activeLogo.src = data.logoUrl;
-      activeLogo.classList.add('visible');
-    } else {
-      activeLogo.classList.remove('visible');
-      activeLogo.removeAttribute('src');
-    }
-  }
+        const position = ['top-left', 'top-right', 'bottom-left', 'bottom-right'].includes(
+          data.position
+        )
+          ? data.position
+          : 'bottom-right';
+        const size = ['small', 'medium', 'large'].includes(data.size) ? data.size : 'medium';
+        document.body.className = `pos-${position} size-${size}`;
 
-  const position = ['top-left', 'top-right', 'bottom-left', 'bottom-right'].includes(data.position)
-    ? data.position
-    : 'bottom-right';
-  const size = ['small', 'medium', 'large'].includes(data.size) ? data.size : 'medium';
-  document.body.className = `pos-${position} size-${size}`;
+        const titleEl = document.getElementById('branding-title');
+        const subtitleEl = document.getElementById('branding-subtitle');
+        if (titleEl) titleEl.textContent = data.title || '';
+        if (subtitleEl) subtitleEl.textContent = data.subtitle || '';
 
-  const titleEl = document.getElementById('branding-title');
-  const subtitleEl = document.getElementById('branding-subtitle');
-  if (titleEl) titleEl.textContent = data.title || '';
-  if (subtitleEl) subtitleEl.textContent = data.subtitle || '';
+        const bar = document.getElementById('branding-lowerthird');
+        if (bar) bar.classList.toggle('visible', !!data.visible && !!(data.title || data.subtitle));
+      }
 
-  const bar = document.getElementById('branding-lowerthird');
-  if (bar) bar.classList.toggle('visible', !!data.visible && !!(data.title || data.subtitle));
-}
+      function connectWs() {
+        if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN))
+          return;
 
-function connectWs() {
-  if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
+        try {
+          const token = getWsToken();
+          ws = token ? new WebSocket(getWsUrl(), [token]) : new WebSocket(getWsUrl());
+        } catch (e) {
+          console.error('[branding-overlay] Error creating WS:', e);
+          scheduleReconnect();
+          return;
+        }
 
-  try {
-    const token = getWsToken();
-    ws = token ? new WebSocket(getWsUrl(), [token]) : new WebSocket(getWsUrl());
-  } catch (e) {
-    console.error('[branding-overlay] Error creating WS:', e);
-    scheduleReconnect();
-    return;
-  }
+        ws.onopen = () => {
+          console.log('[branding-overlay] WebSocket connecté');
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+          }
+        };
 
-  ws.onopen = () => {
-    console.log('[branding-overlay] WebSocket connecté');
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-    }
-  };
+        ws.onmessage = (event) => {
+          let msg;
+          try {
+            msg = JSON.parse(event.data);
+          } catch {
+            return;
+          }
+          if (!msg || !msg.action) return;
 
-  ws.onmessage = (event) => {
-    let msg;
-    try {
-      msg = JSON.parse(event.data);
-    } catch {
-      return;
-    }
-    if (!msg || !msg.action) return;
+          if (msg.action === 'init' || msg.action === 'brandingUpdate') {
+            applyBranding(msg.branding || msg);
+          }
+        };
 
-    if (msg.action === 'init' || msg.action === 'brandingUpdate') {
-      applyBranding(msg.branding || msg);
-    }
-  };
+        ws.onclose = () => {
+          console.log('[branding-overlay] WebSocket déconnecté');
+          scheduleReconnect();
+        };
 
-  ws.onclose = () => {
-    console.log('[branding-overlay] WebSocket déconnecté');
-    scheduleReconnect();
-  };
+        ws.onerror = (err) => {
+          console.error('[branding-overlay] WebSocket error:', err);
+        };
+      }
 
-  ws.onerror = (err) => {
-    console.error('[branding-overlay] WebSocket error:', err);
-  };
-}
+      function scheduleReconnect() {
+        if (!reconnectTimer) {
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            connectWs();
+          }, 3000);
+        }
+      }
 
-function scheduleReconnect() {
-  if (!reconnectTimer) {
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = null;
       connectWs();
-    }, 3000);
-  }
-}
-
-connectWs();
-</script>
-
-</body>
+    </script>
+  </body>
 </html>
