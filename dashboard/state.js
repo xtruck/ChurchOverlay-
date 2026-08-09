@@ -31,6 +31,10 @@ export const state = {
   autoTranslateEnabled: false,
   autoTranslateLang: 'en',
   lastPostServiceRecap: null,
+  // AJOUT (transparence détection IA) : posé par ws-dispatch.js sur
+  // 'semanticDetected', consommé par displayVerse() dans
+  // verse-session-display.js — voir les commentaires de ces deux fichiers.
+  pendingSemanticDetection: null,
   // AJOUT (audit — lien OBS manquant) : URL file:// avec jeton
   // WS_VIEWER_TOKEN, poussée par main.js (voir applyOverlayUrl).
   overlayUrl: null,

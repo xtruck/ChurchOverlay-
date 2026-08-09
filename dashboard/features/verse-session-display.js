@@ -53,6 +53,27 @@ export function displayVerse(message) {
     confidenceEl.style.marginLeft = '10px';
     refEl.appendChild(confidenceEl);
   }
+
+  // AJOUT (transparence détection IA) : le serveur diffuse déjà
+  // 'semanticDetected' juste avant le 'showVerse' correspondant quand
+  // c'est le détecteur sémantique (LLM), pas la détection littérale, qui a
+  // trouvé la référence (voir ws-dispatch.js > case 'semanticDetected',
+  // qui pose state.pendingSemanticDetection) — jusqu'ici cette information
+  // n'était visible nulle part côté opérateur. Fenêtre de 5s : un
+  // 'semanticDetected' peut être suivi d'un rate-limit ou d'un doublon
+  // supprimé côté serveur AVANT le showVerse (voir server.js), auquel cas
+  // ce drapeau ne doit PAS s'appliquer au prochain verset, sans rapport —
+  // il expire silencieusement plutôt que de mal étiqueter un autre verset.
+  const pendingSemantic = state.pendingSemanticDetection;
+  state.pendingSemanticDetection = null;
+  if (pendingSemantic && refEl && Date.now() - pendingSemantic.receivedAt < 5000) {
+    const aiBadge = document.createElement('span');
+    aiBadge.className = 'status-badge ai';
+    aiBadge.textContent = `🤖 Détection IA (${Math.round(pendingSemantic.confidence * 100)}%)`;
+    aiBadge.title = pendingSemantic.reasoning || 'Détecté par le détecteur sémantique (IA)';
+    aiBadge.style.marginLeft = '10px';
+    refEl.appendChild(aiBadge);
+  }
 }
 
 export function hideVerseDisplay() {

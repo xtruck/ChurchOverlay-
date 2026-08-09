@@ -1641,6 +1641,15 @@ body {
   background: var(--accent-amber-bg);
   color: var(--accent-amber);
 }
+/* AJOUT (transparence détection IA) : ni succès/avertissement/erreur — une
+           information neutre ("ceci a été trouvé par le détecteur
+           sémantique, pas par correspondance littérale"). Même couleur que
+           .activity-icon.info (--primary), qui porte déjà ce sens
+           "informatif neutre" ailleurs dans l'app. */
+.status-badge.ai {
+  background: rgba(124, 140, 245, 0.15);
+  color: var(--primary);
+}
 .status-badge.error {
   background: rgba(244, 96, 122, 0.15);
   color: var(--accent-rose);

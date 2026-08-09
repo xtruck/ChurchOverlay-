@@ -162,6 +162,14 @@ export function handleMessage(message) {
       addActivity(`Ambiance changée : ${message.themeName || message.mood}`, 'info');
       showToast(`Ambiance : ${message.themeName || message.mood}`, 'success');
       break;
+    // AJOUT (transparence détection IA) : diffusé par server.js juste avant
+    // le 'showVerse' correspondant quand c'est le détecteur sémantique
+    // (LLM), pas la détection littérale, qui a trouvé la référence. Posé
+    // ici, consommé par displayVerse() dans verse-session-display.js (voir
+    // son commentaire pour la fenêtre de validité de 5s).
+    case 'semanticDetected':
+      state.pendingSemanticDetection = { ...message, receivedAt: Date.now() };
+      break;
     // AJOUT (fiabilité — synchronisation multi-opérateur) : setHighContrast/
     // setCaptions/setTranslatedCaptions/setTestPattern/setBackgroundPattern
     // (préservice-ai.js/mood-theme.js) diffusaient déjà une confirmation
