@@ -44,12 +44,17 @@ async function run() {
   process.env.GROQ_API_KEY = 'test-groq-key';
   delete process.env.DEEPGRAM_API_KEY;
 
+  let capturedGroqFormData = null;
   await withMockedFetch(
-    async (url) => {
+    async (url, options) => {
       if (hostMatches(url, 'groq.com')) {
+        capturedGroqFormData = options && options.body;
         return {
           ok: true,
-          json: async () => ({ text: 'Jean 3 16' }),
+          json: async () => ({
+            text: 'Jean 3 16',
+            segments: [{ start: 0, end: 2, avg_logprob: -0.2, no_speech_prob: 0.05 }],
+          }),
         };
       }
       throw new Error('fetch inattendu: ' + url);
@@ -61,9 +66,18 @@ async function run() {
       const result = await groq.transcribeWithFallback(tmpFile, 500);
       assert.strictEqual(result.source, 'groq');
       assert.strictEqual(result.text, 'Jean 3 16');
+      assert.ok(
+        typeof result.confidence === 'number' && result.confidence > 0.7,
+        "confidence dérivée de verbose_json doit être propagée jusqu'à transcribeWithFallback()"
+      );
+      assert.strictEqual(
+        capturedGroqFormData.get('response_format'),
+        'verbose_json',
+        'verbose_json doit être demandé à Groq pour obtenir les segments de confiance'
+      );
     }
   );
-  console.log('[TEST] ✓ Groq prioritaire quand il répond à temps');
+  console.log('[TEST] ✓ Groq prioritaire quand il répond à temps, confidence propagée');
 
   console.log('[TEST] Test 2: Groq échoue, Deepgram configuré et répond -> source deepgram...');
   process.env.GROQ_API_KEY = 'test-groq-key';
@@ -78,7 +92,9 @@ async function run() {
         return {
           ok: true,
           json: async () => ({
-            results: { channels: [{ alternatives: [{ transcript: 'Psaume 23' }] }] },
+            results: {
+              channels: [{ alternatives: [{ transcript: 'Psaume 23', confidence: 0.92 }] }],
+            },
           }),
         };
       }
@@ -91,9 +107,14 @@ async function run() {
       const result = await groq.transcribeWithFallback(tmpFile, 500);
       assert.strictEqual(result.source, 'deepgram');
       assert.strictEqual(result.text, 'Psaume 23');
+      assert.strictEqual(
+        result.confidence,
+        0.92,
+        "la confidence déjà calculée par deepgram-wrapper.js doit survivre jusqu'à transcribeWithFallback()"
+      );
     }
   );
-  console.log('[TEST] ✓ Bascule sur Deepgram quand Groq échoue');
+  console.log('[TEST] ✓ Bascule sur Deepgram quand Groq échoue, confidence propagée');
 
   console.log(
     '[TEST] Test 3: Groq et Deepgram échouent -> rejette (plus de filet local hors ligne)...'

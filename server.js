@@ -2391,6 +2391,22 @@ wss.on('connection', (ws, req) => {
 let consecutiveTranscriptionFailures = 0;
 const TRANSCRIPTION_RETRY_DELAY_MS = 700;
 
+// AJOUT (rejet des segments garbled — transcription mêlant plusieurs
+// langues/incohérente observée en test réel) : groq-wrapper.js expose
+// désormais result.confidence (Groq via verbose_json, déjà calculé pour
+// Deepgram mais jusqu'ici jeté par transcribeWithFallback). 0.35 : le seuil
+// "mauvais segment" établi par Whisper lui-même est avg_logprob < -1.0
+// (≈ exp(-1.0) ≈ 0.37, voir computeGroqSpeechInfo) — 0.35 se place juste
+// en dessous, avec une marge confortable au-dessus de la parole réelle même
+// faible/marmonnée (typiquement ~0.5-0.75). Un faux rejet (parole réelle
+// ignorée) est pire qu'un sous-titre occasionnel raté : seuil volontairement
+// prudent, à ajuster via TRANSCRIPTION_CONFIDENCE_THRESHOLD si un vrai culte
+// montre trop/pas assez de rejets.
+const DEFAULT_TRANSCRIPTION_CONFIDENCE_THRESHOLD = 0.35;
+const TRANSCRIPTION_CONFIDENCE_THRESHOLD =
+  Number(process.env.TRANSCRIPTION_CONFIDENCE_THRESHOLD) ||
+  DEFAULT_TRANSCRIPTION_CONFIDENCE_THRESHOLD;
+
 async function transcribeWithRetry(segmentFile, contextHint, maxAttempts = 2) {
   let lastErr;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -2446,7 +2462,21 @@ function startPipeline() {
         // transcrit sert d'indice de continuité pour Whisper (voir groq-wrapper.js).
         const contextHint = getRecentContext(300);
         const result = await transcribeWithRetry(segmentFile, contextHint);
-        if (result && result.text && result.text.trim()) {
+        // AJOUT (rejet des segments garbled) : ne bloque jamais quand la
+        // confiance est inconnue (typeof !== 'number', ex. Groq sans
+        // segments exploitables) — comportement identique à avant ce
+        // correctif dans ce cas. NaN < seuil vaut toujours false en JS,
+        // donc une valeur de confiance malformée ne peut pas non plus
+        // déclencher un rejet accidentel.
+        const lowConfidence =
+          result &&
+          typeof result.confidence === 'number' &&
+          result.confidence < TRANSCRIPTION_CONFIDENCE_THRESHOLD;
+        if (lowConfidence) {
+          warn(
+            `Segment rejeté (confiance ${result.confidence.toFixed(2)} < seuil ${TRANSCRIPTION_CONFIDENCE_THRESHOLD}) [${result.source}] : "${result.text.substring(0, 80)}"`
+          );
+        } else if (result && result.text && result.text.trim()) {
           log(`Transcription [${result.source}]: ${result.text.substring(0, 80)}`);
           broadcast({ action: 'transcript', text: result.text, source: result.source });
           // AJOUT (sous-titres traduits en direct) : JAMAIS attendu (pas de

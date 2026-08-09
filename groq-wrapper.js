@@ -202,6 +202,12 @@ async function transcribeFile(audioFilePath, signal, contextHint) {
   if (language) {
     formData.append('language', language);
   }
+  // AJOUT (rejet des segments inintelligibles — bruit, voix couverte,
+  // glossolalie) : `json` (le défaut) ne renvoie que le texte, aucun signal
+  // de confiance. `verbose_json` (même API OpenAI-compatible) ajoute
+  // `segments[]` avec `avg_logprob`/`no_speech_prob` par segment — voir
+  // computeGroqSpeechInfo() plus bas, seule consommatrice de ce champ.
+  formData.append('response_format', 'verbose_json');
 
   const response = await fetch(GROQ_ENDPOINT_TRANSCRIBE, {
     method: 'POST',
@@ -216,7 +222,58 @@ async function transcribeFile(audioFilePath, signal, contextHint) {
   }
 
   const data = await response.json();
-  return { text: data.text || '' };
+  return computeGroqSpeechInfo(data);
+}
+
+// AJOUT (rejet des segments inintelligibles) : seuil repris tel quel du
+// décodeur Whisper d'OpenAI (decode.py, DecodingOptions par défaut) —
+// un segment est considéré "silence/non-parole" quand no_speech_prob
+// dépasse 0.6 ET que la confiance dérivée de avg_logprob reste sous
+// exp(-1.0) (≈0.37). Combinaison, pas fusion en un seul score : un
+// no_speech_prob élevé isolé ne suffit pas (peut arriver sur un segment
+// court mais net), un avg_logprob faible isolé non plus (peut arriver sur
+// un nom propre rare mais réel) — voir DEFAULT_TRANSCRIPTION_CONFIDENCE_THRESHOLD
+// dans server.js pour le rejet "parole réelle mais confiance faible",
+// une décision distincte de celle-ci ("probablement pas de la parole").
+const NO_SPEECH_PROB_THRESHOLD = 0.6;
+const NO_SPEECH_LOGPROB_CEILING = Math.exp(-1.0); // ≈0.37
+
+/**
+ * Dérive { text, confidence } à partir d'une réponse Groq verbose_json.
+ * confidence est exp(avg_logprob) pondéré par la durée de chaque segment —
+ * technique standard pour convertir une log-probabilité Whisper en un score
+ * comparable (même échelle 0-1) à la confidence native de Deepgram (voir
+ * deepgram-wrapper.js). Ne lève jamais d'exception : une forme de réponse
+ * inattendue (segments absents) retombe sur confidence: undefined, jamais
+ * bloquant pour l'appelant (voir le garde `typeof confidence === 'number'`
+ * dans server.js).
+ * @param {{text?: string, segments?: Array}} data
+ * @returns {{text: string, confidence?: number}}
+ */
+function computeGroqSpeechInfo(data) {
+  const segments = Array.isArray(data && data.segments) ? data.segments : null;
+  if (!segments || segments.length === 0) {
+    return { text: (data && data.text) || '', confidence: undefined };
+  }
+
+  let logprobSum = 0;
+  let weightSum = 0;
+  let maxNoSpeech = 0;
+  for (const seg of segments) {
+    const dur =
+      typeof seg.end === 'number' && typeof seg.start === 'number' && seg.end > seg.start
+        ? seg.end - seg.start
+        : 1;
+    logprobSum += (typeof seg.avg_logprob === 'number' ? seg.avg_logprob : 0) * dur;
+    weightSum += dur;
+    if (typeof seg.no_speech_prob === 'number') {
+      maxNoSpeech = Math.max(maxNoSpeech, seg.no_speech_prob);
+    }
+  }
+  const confidence = Math.exp(weightSum > 0 ? logprobSum / weightSum : 0);
+  const isSilence =
+    maxNoSpeech > NO_SPEECH_PROB_THRESHOLD && confidence < NO_SPEECH_LOGPROB_CEILING;
+  return isSilence ? { text: '', confidence: 0 } : { text: data.text || '', confidence };
 }
 
 /**
@@ -243,7 +300,7 @@ async function transcribeWithFallback(audioFilePath, timeoutMs = FALLBACK_TIMEOU
 
   if (groqRace && !groqRace.timedOut && !groqRace.error) {
     if (deepgramEnabled) deepgramAbort.abort();
-    return { text: groqRace.text, source: 'groq' };
+    return { text: groqRace.text, confidence: groqRace.confidence, source: 'groq' };
   }
   let groqError = null;
   if (groqRace && groqRace.timedOut) {
@@ -263,7 +320,7 @@ async function transcribeWithFallback(audioFilePath, timeoutMs = FALLBACK_TIMEOU
     const deepgramRace = await Promise.race([deepgramPromise, deepgramTimeoutPromise]);
 
     if (deepgramRace && !deepgramRace.timedOut && !deepgramRace.error) {
-      return { text: deepgramRace.text, source: 'deepgram' };
+      return { text: deepgramRace.text, confidence: deepgramRace.confidence, source: 'deepgram' };
     }
     if (deepgramRace && deepgramRace.timedOut) {
       console.warn('[groq-wrapper] Timeout Deepgram également — segment perdu.');
@@ -428,4 +485,6 @@ module.exports = {
   // Exposée pour tests unitaires (test-groq-prompt-truncation.js).
   truncateToUtf8ByteLimit,
   GROQ_PROMPT_MAX_BYTES,
+  // Exposée pour tests unitaires (test-groq-speech-info.js).
+  computeGroqSpeechInfo,
 };
