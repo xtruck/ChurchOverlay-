@@ -79,16 +79,36 @@ revient tout seul dès que l'écran redevient libre. Un seul poster
 principal à la fois — en désigner un nouveau démarque automatiquement
 l'ancien.
 
-### Caméra (aperçu opérateur)
+### Caméra (aperçu opérateur) — DroidCam (méthode utilisée par l'équipe)
 
 Réglages → Caméra : liste les webcams disponibles, aperçu local pour vous
-uniquement (pas encore diffusé publiquement). Fonctionne aussi avec :
+uniquement (pas encore diffusé publiquement).
+
+**DroidCam, pas à pas :**
+
+1. Installez l'app **DroidCam** sur le téléphone (Play Store / App Store).
+2. Installez le **client DroidCam pour PC** (Dev47Apps, gratuit) sur
+   l'ordinateur qui fait tourner ChurchOverlay — c'est l'étape que
+   presque tout le monde oublie : sans ce client de bureau **lancé et
+   connecté**, le téléphone n'apparaît nulle part, même si l'app est
+   ouverte sur le téléphone.
+3. Connectez : soit en **Wi-Fi** (le téléphone affiche une adresse IP à
+   entrer dans le client DroidCam PC), soit en **USB** (câble +
+   débogage USB activé sur le téléphone). Une fois connecté dans le
+   client DroidCam, celui-ci crée une **webcam virtuelle** sur ce PC.
+4. Dans ChurchOverlay, cliquez **🔄 Actualiser** dans le panneau Caméra —
+   le téléphone apparaît dans la liste (nom du type « DroidCam Source
+   2 »), sélectionnez-le et démarrez l'aperçu pour confirmer que l'image
+   arrive bien.
+5. Répétez sur chaque PC/téléphone si vous utilisez plusieurs caméras
+   DroidCam en parallèle (un client DroidCam PC par ordinateur).
+
+Fonctionne aussi avec :
 
 - une caméra **NDI**, via l'outil gratuit _NDI Virtual Input_ (suite NDI
   Tools de NewTek/Vizrt) ;
-- un **téléphone avec pilote PC** (DroidCam, Iriun Webcam, EpocCam) — une
-  fois leur client de bureau lancé, le téléphone apparaît dans la même
-  liste que les webcams USB normales.
+- **Iriun Webcam** ou **EpocCam** — même principe que DroidCam (client de
+  bureau requis, puis le téléphone apparaît comme une webcam normale).
 
 ### Caméras IP (plusieurs téléphones, sans rien installer sur ce PC)
 
@@ -113,6 +133,35 @@ ChurchOverlay :
    dans OBS comme Source Navigateur — c'est le même flux, ChurchOverlay ne
    fait que le surveiller et vous éviter de retrouver l'IP à chaque fois
    (elle peut changer d'un culte à l'autre selon votre routeur Wi-Fi).
+
+### Habillage caméra (logo, titre) — logo et texte par-dessus la caméra (nouveau)
+
+Réglages → Habillage caméra. ChurchOverlay ne peut pas fusionner un logo
+directement dans l'image de la caméra — c'est toujours OBS qui compose les
+calques. Ce que ce panneau apporte : **une seule fois** que c'est branché
+dans OBS, plus jamais besoin d'y retourner pour changer un texte.
+
+**Réglage initial (une seule fois) :**
+
+1. Cliquez **📋 Copier le lien pour OBS** dans le panneau « Habillage
+   caméra ».
+2. Dans OBS, ajoutez une **nouvelle** Source Navigateur (en plus de celle
+   de l'overlay versets, et en plus de votre source caméra) — collez-y ce
+   lien.
+3. Dans la liste des sources de la scène, faites glisser cette nouvelle
+   source **au-dessus** de votre source caméra (DroidCam, caméra IP...),
+   pour qu'elle s'affiche par-dessus l'image et pas dessous.
+
+**Ensuite, à chaque culte, tout se passe dans ChurchOverlay :**
+
+- **+ Choisir un logo** : le logo de l'église, affiché en permanence dans
+  le coin choisi (menu déroulant : haut-gauche, haut-droit, bas-gauche,
+  bas-droit). Réglé une fois, reste d'un culte à l'autre.
+- **Titre / Sous-titre** (ex. « Pasteur Jean Dupont » / « Culte du
+  dimanche ») : un bandeau en bas de l'écran, à activer avec **👁️
+  Afficher sur la diffusion** au moment voulu, et masquer ensuite avec le
+  même bouton. Contrairement au logo, le titre n'est PAS mémorisé d'un
+  culte à l'autre — à retaper (ou laisser vide) à chaque service.
 
 ### En cas de problème pendant le culte
 
@@ -157,8 +206,10 @@ inventée sans contenu réel à citer.
 | Le verset apparaît en retard/coupé        | Réseau lent — la détection par citation exacte est la plus rapide, privilégiez des références explicites ("Jean 3:16")                                                                  |
 | Le poster principal ne réapparaît pas     | Un verset ou un autre média est peut-être encore actif à l'écran — le poster ne reprend sa place que si RIEN d'autre n'est affiché                                                      |
 | "show poster X" ne déclenche rien         | Vérifiez que le nom/la phrase déclencheuse correspond bien à ce qui est dit — la correspondance est par sous-chaîne, pas par similarité approximative                                   |
+| DroidCam absent de la liste               | Le **client DroidCam pour PC** doit être lancé ET connecté au téléphone (Wi-Fi ou USB) — l'app seule sur le téléphone ne suffit pas. Cliquez 🔄 Actualiser après connexion.             |
 | Caméra NDI absente de la liste            | Installez/activez "NDI Virtual Input" (NDI Tools gratuit) — sans lui, une source NDI n'apparaît pas comme une webcam standard                                                           |
 | Caméra de téléphone (IP) "Hors ligne"     | Le téléphone a perdu le Wi-Fi, l'app "IP Webcam" a été fermée/mise en veille, ou son adresse IP a changé — rouvrez l'app sur le téléphone et, si besoin, mettez à jour l'adresse collée |
+| Logo/titre invisibles dans OBS            | Vérifiez que la Source Navigateur "Habillage caméra" a bien été ajoutée dans OBS (étape unique) ET qu'elle est positionnée AU-DESSUS de la source caméra dans la liste des sources      |
 | Sous-titres traduits en retard ou absents | Normal par design (best-effort, jamais bloquant) — vérifiez simplement que le quota gratuit Groq/Gemini n'est pas épuisé par ailleurs                                                   |
 
 Pour les détails techniques (variables d'environnement, protocole

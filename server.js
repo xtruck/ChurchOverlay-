@@ -56,6 +56,10 @@ const mediaLibrary = require('./media-library');
 // réseau (apps type "IP Webcam"), distincte de camera-capture.js (webcams
 // locales via navigator.mediaDevices) — voir ip-camera-store.js.
 const ipCameraStore = require('./ip-camera-store');
+// AJOUT (habillage caméra — logo/titre, demande explicite) : voir
+// branding-store.js (logo persisté) et branding-overlay.html (page
+// affichée par-dessus la caméra dans OBS).
+const brandingStore = require('./branding-store');
 // AJOUT (sous-titres traduits en direct) : module isolé, jamais attendu
 // avant processTranscript() — voir startPipeline() et caption-translator.js.
 const captionTranslator = require('./caption-translator');
@@ -207,6 +211,9 @@ app.use(express.static(APP_ROOT));
 // pour les fichiers copiés dans <userData>/media/ par media-library.js,
 // sur le même principe pont que /api/verses pour les données JSON.
 app.use('/media', express.static(path.join(USER_DATA_DIR, 'media')));
+// AJOUT (habillage caméra — logo) : même pont que /media ci-dessus, pour le
+// logo copié dans <userData>/branding/ par branding-store.js.
+app.use('/branding', express.static(path.join(USER_DATA_DIR, 'branding')));
 
 // SECURITY: origin validation middleware for non-localhost binds
 const ALLOWED_ORIGINS = new Set([
@@ -1010,6 +1017,23 @@ function broadcastSongSection(song, sectionIndex, detectedBy) {
   pushHistory({ reference, text: section.text, detectedBy, timestamp: Date.now() });
 }
 
+// AJOUT (habillage caméra — logo/titre) : assemble l'état complet envoyé à
+// chaque connexion ('init') et à chaque changement ('brandingUpdate') —
+// logo/position (persistés, branding-store.js) + titre/sous-titre/visible
+// (session en cours, session-state.js). Un seul point de vérité pour ne pas
+// répéter cet assemblage à chaque handler ci-dessous.
+function getBrandingState() {
+  const config = brandingStore.getConfig();
+  const text = sessionState.getBrandingText();
+  return {
+    logoUrl: config.logoFilename ? `/branding/${config.logoFilename}` : null,
+    position: config.position,
+    title: text.title,
+    subtitle: text.subtitle,
+    visible: sessionState.getBrandingVisible(),
+  };
+}
+
 // ===========================================================================
 // WebSocket handlers — with RBAC
 // ===========================================================================
@@ -1093,6 +1117,13 @@ const OPERATOR_ACTIONS = new Set([
   'getIpCameras',
   'addIpCamera',
   'deleteIpCamera',
+  // AJOUT (habillage caméra — logo/titre)
+  'getBranding',
+  'setBrandingLogo',
+  'clearBrandingLogo',
+  'setBrandingPosition',
+  'setBrandingText',
+  'setBrandingVisible',
   // AJOUT (bibliothèque de chants)
   'getSongLibrary',
   'addSong',
@@ -1194,6 +1225,7 @@ wss.on('connection', (ws, req) => {
       testPattern: sessionState.getTestPattern(),
       backgroundPattern: sessionState.getBackgroundPattern(),
       defaultMedia: mediaLibrary.getDefaultItem(),
+      branding: getBrandingState(),
       history: sessionState.getVerseHistory(),
       theme: themeLoader.themeToCss(theme),
       features,
@@ -1921,6 +1953,52 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
+    // --- Habillage caméra (logo + titre/sous-titre, voir branding-store.js
+    // et branding-overlay.html) : broadcast() à chaque changement — TOUS les
+    // clients doivent voir la mise à jour, notamment branding-overlay.html
+    // lui-même, posé au-dessus de la caméra dans OBS. ---
+    if (sanitized.action === 'getBranding') {
+      ws.send(JSON.stringify({ action: 'brandingUpdate', branding: getBrandingState() }));
+      return;
+    }
+
+    if (sanitized.action === 'setBrandingLogo') {
+      try {
+        brandingStore.setLogo(sanitized.sourcePath);
+        log('Habillage caméra : logo mis à jour');
+        broadcast({ action: 'brandingUpdate', branding: getBrandingState() });
+      } catch (err) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Habillage caméra : ' + err.message }));
+      }
+      return;
+    }
+
+    if (sanitized.action === 'clearBrandingLogo') {
+      brandingStore.clearLogo();
+      log('Habillage caméra : logo retiré');
+      broadcast({ action: 'brandingUpdate', branding: getBrandingState() });
+      return;
+    }
+
+    if (sanitized.action === 'setBrandingPosition') {
+      brandingStore.setPosition(sanitized.position);
+      broadcast({ action: 'brandingUpdate', branding: getBrandingState() });
+      return;
+    }
+
+    if (sanitized.action === 'setBrandingText') {
+      sessionState.setBrandingText(sanitized.title, sanitized.subtitle);
+      broadcast({ action: 'brandingUpdate', branding: getBrandingState() });
+      return;
+    }
+
+    if (sanitized.action === 'setBrandingVisible') {
+      sessionState.setBrandingVisible(!!sanitized.visible);
+      log('Habillage caméra : ' + (sanitized.visible ? 'affiché' : 'masqué'));
+      broadcast({ action: 'brandingUpdate', branding: getBrandingState() });
+      return;
+    }
+
     // --- Bibliothèque de chants (mêmes conventions que la médiathèque
     // ci-dessus : réponse directe au demandeur pour la lecture/mutation de
     // la liste, broadcast() pour ce que tous les clients doivent voir) ---
@@ -2257,6 +2335,12 @@ try {
   ipCameraStore.setUserDataDir(USER_DATA_DIR);
 } catch (err) {
   warn('Failed to set IP camera store dir: ' + err.message);
+}
+
+try {
+  brandingStore.setUserDataDir(USER_DATA_DIR);
+} catch (err) {
+  warn('Failed to set branding store dir: ' + err.message);
 }
 
 try {

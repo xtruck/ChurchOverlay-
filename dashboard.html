@@ -2179,6 +2179,52 @@
                     <div class="queue-list" id="ipCameraList"></div>
                 </div>
 
+                <!-- AJOUT (habillage caméra — logo/titre par-dessus la caméra, demande
+                     explicite "mieux qu'OBS"). branding-overlay.html est une Source
+                     Navigateur OBS SÉPARÉE, à ajouter UNE FOIS, empilée au-dessus de
+                     la source caméra dans la scène — ensuite, tout se pilote depuis
+                     ici, sans jamais rouvrir OBS pour changer un texte. -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Habillage caméra (logo, titre)</span>
+                        <span id="brandingStatus" class="status-badge warning">Masqué</span>
+                    </div>
+                    <div class="field-hint" style="margin-bottom:0.75rem;">
+                        Réglage unique : collez le lien ci-dessous dans OBS comme Source
+                        Navigateur, empilée au-dessus de votre source caméra (DroidCam, caméra
+                        IP...) dans la scène. Ensuite, logo/titre/sous-titre se pilotent
+                        depuis ici, en direct — plus besoin de rouvrir OBS.
+                    </div>
+                    <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:1rem;">
+                        <input type="text" id="brandingOverlayUrlInput" readonly value="Chargement du lien..." onclick="this.select()" style="flex:1; padding:0.6rem; border-radius:var(--radius-sm); border:1px solid var(--border-subtle); background:var(--bg-input); color:var(--text-main); font-family:monospace; font-size:0.78rem;">
+                        <button class="btn btn-primary" onclick="copyBrandingOverlayUrl()" style="flex-shrink:0;">📋 Copier le lien pour OBS</button>
+                    </div>
+
+                    <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap; margin-bottom:0.75rem;">
+                        <div style="width:80px; height:45px; background:#000; border-radius:6px; overflow:hidden; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                            <img id="brandingLogoImg" style="max-width:100%; max-height:100%; object-fit:contain; display:none;" alt="">
+                            <span id="brandingLogoPlaceholder" style="font-size:0.68rem; color:var(--text-dim); text-align:center;">Aucun logo</span>
+                        </div>
+                        <button type="button" class="btn btn-secondary" onclick="pickBrandingLogo()">+ Choisir un logo</button>
+                        <button type="button" class="btn btn-secondary" onclick="clearBrandingLogo()">Retirer le logo</button>
+                        <select id="brandingPositionSelect" onchange="onBrandingPositionChange()">
+                            <option value="top-left">Coin haut-gauche</option>
+                            <option value="top-right">Coin haut-droit</option>
+                            <option value="bottom-left">Coin bas-gauche</option>
+                            <option value="bottom-right" selected>Coin bas-droit</option>
+                        </select>
+                    </div>
+
+                    <div class="input-row" style="margin-bottom:0.75rem;">
+                        <input type="text" id="brandingTitleInput" placeholder="Titre (ex. Pasteur Jean Dupont)">
+                        <input type="text" id="brandingSubtitleInput" placeholder="Sous-titre (ex. Culte du dimanche)">
+                    </div>
+                    <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+                        <button type="button" class="btn btn-secondary" onclick="saveBrandingText()">💾 Enregistrer le texte</button>
+                        <button type="button" class="btn btn-primary" id="brandingVisibleToggleBtn" onclick="toggleBrandingVisible()">👁️ Afficher sur la diffusion</button>
+                    </div>
+                </div>
+
                 <div class="card">
                     <div class="card-header">
                         <span class="card-title">Informations Système & Connexion</span>

@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>ChurchOverlay — Habillage caméra</title>
+<!--
+  ============================================================================
+  branding-overlay.html — Logo + titre/sous-titre au-dessus de la caméra
+  ----------------------------------------------------------------------------
+  AJOUT (demande explicite — "logos, titres, automatisé, mieux qu'OBS").
+
+  Page DISTINCTE de overlay.html (pas un mode/thème de la même page) :
+  celle-ci n'affiche JAMAIS de verset, jamais de sous-titre de prédication —
+  uniquement le logo de l'église et un bandeau titre/sous-titre, pensés pour
+  être posés PAR-DESSUS une source caméra (DroidCam, caméra IP, webcam...)
+  dans une scène OBS.
+
+  ChurchOverlay ne peut pas fusionner du HTML directement dans le flux vidéo
+  d'une source caméra — c'est OBS qui compose les calques. Ce que cette page
+  apporte par rapport à habiller la caméra "à la main" dans OBS (source
+  image + source texte repositionnées manuellement à chaque culte) :
+  UNE FOIS cette page ajoutée comme Source Navigateur au-dessus de la
+  caméra dans OBS, tout le contenu (logo, titre, sous-titre, visibilité)
+  se pilote ensuite depuis le tableau de bord ChurchOverlay — plus jamais
+  besoin de rouvrir les propriétés d'une source OBS pour changer un texte.
+
+  Connexion WebSocket : même mécanisme que overlay.html (jeton/port via
+  ?token=&port=, injectés par main.js/getBrandingOverlayUrl()) — code
+  dupliqué plutôt que partagé, cette page tourne indépendamment dans OBS,
+  sans accès aux fonctions de overlay.html.
+  ============================================================================
+-->
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    /* Transparent à dessein : OBS compose cette page PAR-DESSUS la source
+       caméra placée en dessous dans la scène — un fond opaque cacherait
+       entièrement l'image caméra. */
+    background: transparent;
+    font-family: 'Segoe UI', 'Plus Jakarta Sans', -apple-system, sans-serif;
+  }
+
+  /* ==========================================================================
+     Logo — coin configurable (voir action 'brandingUpdate', champ position).
+     ========================================================================== */
+  #branding-logo {
+    position: fixed;
+    max-width: 180px;
+    max-height: 100px;
+    object-fit: contain;
+    filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
+    display: none;
+  }
+  #branding-logo.visible { display: block; }
+  body.pos-top-left #branding-logo { top: 32px; left: 32px; }
+  body.pos-top-right #branding-logo { top: 32px; right: 32px; }
+  body.pos-bottom-left #branding-logo { bottom: 32px; left: 32px; }
+  body.pos-bottom-right #branding-logo { bottom: 32px; right: 32px; }
+
+  /* ==========================================================================
+     Bandeau titre/sous-titre ("lower third") — toujours en bas, centré.
+     Volontairement séparé du coin du logo pour ne jamais se chevaucher avec
+     lui, quelle que soit la position choisie pour le logo.
+     ========================================================================== */
+  #branding-lowerthird {
+    position: fixed;
+    left: 50%;
+    bottom: 40px;
+    transform: translateX(-50%) translateY(24px);
+    max-width: 82vw;
+    padding: 14px 28px;
+    border-radius: 10px;
+    background: rgba(10, 12, 20, 0.72);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: #ffffff;
+    text-align: center;
+    opacity: 0;
+    transition: opacity 0.35s ease, transform 0.35s ease;
+  }
+  #branding-lowerthird.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  #branding-title {
+    font-size: clamp(18px, 2.2vw, 28px);
+    font-weight: 700;
+    line-height: 1.3;
+  }
+  #branding-subtitle {
+    margin-top: 4px;
+    font-size: clamp(13px, 1.3vw, 17px);
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.78);
+    line-height: 1.3;
+  }
+  #branding-subtitle:empty { display: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    #branding-lowerthird {
+      transition: opacity 0.01ms;
+      transform: translateX(-50%) translateY(0);
+    }
+  }
+</style>
+</head>
+<body>
+
+<img id="branding-logo" alt="">
+
+<div id="branding-lowerthird">
+  <div id="branding-title"></div>
+  <div id="branding-subtitle"></div>
+</div>
+
+<script>
+'use strict';
+
+// Même mécanisme que overlay.html (voir son commentaire détaillé) : jeton
+// via l'en-tête de handshake WebSocket (Sec-WebSocket-Protocol), pas dans
+// l'URL — évite qu'il finisse en clair dans des journaux d'accès.
+const getWsToken = () => new URLSearchParams(window.location.search).get('token');
+const getWsPort = () => new URLSearchParams(window.location.search).get('port') || '8765';
+const getWsUrl = () => {
+  if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${window.location.host}`;
+  }
+  return `ws://localhost:${getWsPort()}`;
+};
+
+let ws = null;
+let reconnectTimer = null;
+
+function applyBranding(data) {
+  if (!data) return;
+
+  const logo = document.getElementById('branding-logo');
+  if (logo) {
+    if (data.logoUrl) {
+      if (logo.src !== data.logoUrl) logo.src = data.logoUrl;
+      logo.classList.add('visible');
+    } else {
+      logo.classList.remove('visible');
+      logo.removeAttribute('src');
+    }
+  }
+
+  const position = ['top-left', 'top-right', 'bottom-left', 'bottom-right'].includes(data.position)
+    ? data.position
+    : 'bottom-right';
+  document.body.className = `pos-${position}`;
+
+  const titleEl = document.getElementById('branding-title');
+  const subtitleEl = document.getElementById('branding-subtitle');
+  if (titleEl) titleEl.textContent = data.title || '';
+  if (subtitleEl) subtitleEl.textContent = data.subtitle || '';
+
+  const bar = document.getElementById('branding-lowerthird');
+  if (bar) bar.classList.toggle('visible', !!data.visible && !!(data.title || data.subtitle));
+}
+
+function connectWs() {
+  if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
+
+  try {
+    const token = getWsToken();
+    ws = token ? new WebSocket(getWsUrl(), [token]) : new WebSocket(getWsUrl());
+  } catch (e) {
+    console.error('[branding-overlay] Error creating WS:', e);
+    scheduleReconnect();
+    return;
+  }
+
+  ws.onopen = () => {
+    console.log('[branding-overlay] WebSocket connecté');
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+  };
+
+  ws.onmessage = (event) => {
+    let msg;
+    try {
+      msg = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+    if (!msg || !msg.action) return;
+
+    if (msg.action === 'init' || msg.action === 'brandingUpdate') {
+      applyBranding(msg.branding || msg);
+    }
+  };
+
+  ws.onclose = () => {
+    console.log('[branding-overlay] WebSocket déconnecté');
+    scheduleReconnect();
+  };
+
+  ws.onerror = (err) => {
+    console.error('[branding-overlay] WebSocket error:', err);
+  };
+}
+
+function scheduleReconnect() {
+  if (!reconnectTimer) {
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connectWs();
+    }, 3000);
+  }
+}
+
+connectWs();
+</script>
+
+</body>
+</html>

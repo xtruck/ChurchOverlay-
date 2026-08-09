@@ -817,6 +817,20 @@ function getOverlayUrl() {
   params.set('port', String(SERVER_PORT));
   return `${base}?${params.toString()}`;
 }
+
+// AJOUT (habillage caméra — logo/titre par-dessus la source caméra dans
+// OBS). Même construction que getOverlayUrl() ci-dessus (même jeton
+// WS_VIEWER_TOKEN en lecture seule), juste une page différente —
+// branding-overlay.html est une Source Navigateur OBS SÉPARÉE, à empiler
+// au-dessus de la source caméra dans la scène.
+function getBrandingOverlayUrl() {
+  const base = 'file:///' + path.join(APP_ROOT, 'branding-overlay.html').replace(/\\/g, '/');
+  const token = (process.env.WS_VIEWER_TOKEN || '').trim();
+  const params = new URLSearchParams();
+  if (token) params.set('token', token);
+  params.set('port', String(SERVER_PORT));
+  return `${base}?${params.toString()}`;
+}
 const recentLogs = [];
 let dashboardFlushTimer = null;
 let dashboardDirty = false;
@@ -848,6 +862,7 @@ function flushDashboard() {
     status: serverStatus,
     logs: recentLogs.slice(-30),
     overlayUrl: getOverlayUrl(),
+    brandingOverlayUrl: getBrandingOverlayUrl(),
   });
 }
 
@@ -907,6 +922,7 @@ ipcMain.handle('get-status', async () => ({
   status: serverStatus,
   logs: recentLogs.slice(-30),
   overlayUrl: getOverlayUrl(),
+  brandingOverlayUrl: getBrandingOverlayUrl(),
 }));
 
 ipcMain.handle('request-restart', async () => restartServer());

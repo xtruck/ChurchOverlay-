@@ -35,6 +35,8 @@ const state = {
   // AJOUT (audit — lien OBS manquant) : URL file:// avec jeton
   // WS_VIEWER_TOKEN, poussée par main.js (voir applyOverlayUrl).
   overlayUrl: null,
+  // AJOUT (habillage caméra) : même mécanisme, pour branding-overlay.html.
+  brandingOverlayUrl: null,
 };
 
 // AJOUT : intervalle d'auto-détection du mode de culte (louange, prédication,
@@ -185,6 +187,8 @@ function initWebSocket() {
       ws.send(JSON.stringify({ action: 'getSongLibrary' }));
       // AJOUT (caméras de téléphone) : même raisonnement que getMediaLibrary.
       ws.send(JSON.stringify({ action: 'getIpCameras' }));
+      // AJOUT (habillage caméra) : même raisonnement que getMediaLibrary.
+      ws.send(JSON.stringify({ action: 'getBranding' }));
       // AJOUT (base biblique hors-ligne) : un seul statut suffit à la
       // connexion ; pollOfflineBibleStatusUntilDone() prend le relais si un
       // téléchargement est en cours (voir plus bas).
@@ -532,6 +536,7 @@ if (window.churchOverlay && window.churchOverlay.getStatus) {
         });
       }
       if (s && s.overlayUrl) applyOverlayUrl(s.overlayUrl);
+      if (s && s.brandingOverlayUrl) applyBrandingOverlayUrl(s.brandingOverlayUrl);
     })
     .catch(() => {});
 }
@@ -577,9 +582,41 @@ function copyOverlayUrl() {
     });
 }
 
+// AJOUT (habillage caméra) : même mécanisme que applyOverlayUrl() ci-dessus,
+// pour le lien de branding-overlay.html (Source Navigateur OBS séparée, à
+// empiler au-dessus de la caméra).
+function applyBrandingOverlayUrl(url) {
+  if (!url || url === state.brandingOverlayUrl) return;
+  state.brandingOverlayUrl = url;
+  const input = document.getElementById('brandingOverlayUrlInput');
+  if (input) input.value = url;
+}
+
+function copyBrandingOverlayUrl() {
+  if (!state.brandingOverlayUrl) {
+    showToast('Lien pas encore disponible — attendez que le pipeline démarre.', 'error');
+    return;
+  }
+  navigator.clipboard
+    .writeText(state.brandingOverlayUrl)
+    .then(() => {
+      showToast(
+        'Lien copié — collez-le dans OBS comme Source Navigateur, au-dessus de la caméra',
+        'success'
+      );
+    })
+    .catch(() => {
+      showToast(
+        'Copie automatique impossible — sélectionnez le champ et copiez manuellement.',
+        'error'
+      );
+    });
+}
+
 if (window.churchOverlay && window.churchOverlay.onStatusUpdate) {
   window.churchOverlay.onStatusUpdate((payload) => {
     if (payload && payload.overlayUrl) applyOverlayUrl(payload.overlayUrl);
+    if (payload && payload.brandingOverlayUrl) applyBrandingOverlayUrl(payload.brandingOverlayUrl);
   });
 }
 
@@ -768,6 +805,11 @@ function handleMessage(message) {
     // bord ouverts après chaque ajout/suppression.
     case 'ipCamerasUpdated':
       renderIpCameras(message.items);
+      break;
+    // AJOUT (habillage caméra) : même raisonnement — diffusé à chaque
+    // changement pour rester synchronisé entre plusieurs tableaux de bord.
+    case 'brandingUpdate':
+      renderBranding(message.branding);
       break;
     case 'showMedia':
       addActivity(
@@ -1252,6 +1294,136 @@ function copyIpCameraUrl(id) {
   } else {
     showToast(item.url, 'info');
   }
+}
+
+/* ======================================================================
+   Habillage caméra (logo + titre/sous-titre, voir branding-store.js et
+   branding-overlay.html). Contrairement au reste de la médiathèque, ce
+   n'est PAS une liste — un seul logo, un seul titre/sous-titre actifs à la
+   fois, affichés par-dessus la caméra dans OBS via une Source Navigateur
+   séparée (voir applyBrandingOverlayUrl() plus haut).
+   ====================================================================== */
+let brandingState = {
+  logoUrl: null,
+  position: 'bottom-right',
+  title: '',
+  subtitle: '',
+  visible: false,
+};
+
+function renderBranding(branding) {
+  if (!branding) return;
+  brandingState = branding;
+
+  const img = document.getElementById('brandingLogoImg');
+  const placeholder = document.getElementById('brandingLogoPlaceholder');
+  if (img && placeholder) {
+    if (branding.logoUrl) {
+      img.src = branding.logoUrl;
+      img.style.display = 'block';
+      placeholder.style.display = 'none';
+    } else {
+      img.style.display = 'none';
+      img.removeAttribute('src');
+      placeholder.style.display = 'block';
+    }
+  }
+
+  const positionSelect = document.getElementById('brandingPositionSelect');
+  if (positionSelect && document.activeElement !== positionSelect) {
+    positionSelect.value = branding.position || 'bottom-right';
+  }
+
+  const titleInput = document.getElementById('brandingTitleInput');
+  const subtitleInput = document.getElementById('brandingSubtitleInput');
+  // Ne pas écraser ce que l'opérateur est EN TRAIN de taper (un autre
+  // tableau de bord ouvert ailleurs pourrait diffuser une mise à jour
+  // pendant la saisie) — seulement synchroniser un champ non focus.
+  if (titleInput && document.activeElement !== titleInput) titleInput.value = branding.title || '';
+  if (subtitleInput && document.activeElement !== subtitleInput) {
+    subtitleInput.value = branding.subtitle || '';
+  }
+
+  const statusBadge = document.getElementById('brandingStatus');
+  const toggleBtn = document.getElementById('brandingVisibleToggleBtn');
+  if (statusBadge) {
+    statusBadge.textContent = branding.visible ? 'Affiché' : 'Masqué';
+    statusBadge.className = 'status-badge ' + (branding.visible ? 'success' : 'warning');
+  }
+  if (toggleBtn) {
+    toggleBtn.textContent = branding.visible ? '🙈 Masquer' : '👁️ Afficher sur la diffusion';
+  }
+}
+
+async function pickBrandingLogo() {
+  if (!window.churchOverlay || !window.churchOverlay.pickMediaFile) {
+    showToast(
+      'Le choix de fichier natif n’est disponible que dans l’application ChurchOverlay.',
+      'error'
+    );
+    return;
+  }
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  try {
+    const sourcePath = await window.churchOverlay.pickMediaFile();
+    if (!sourcePath) return; // sélection annulée par l'opérateur
+    ws.send(JSON.stringify({ action: 'setBrandingLogo', sourcePath }));
+  } catch (err) {
+    showToast(
+      'Échec de la sélection du fichier : ' + (err && err.message ? err.message : err),
+      'error'
+    );
+  }
+}
+
+function clearBrandingLogo() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  ws.send(JSON.stringify({ action: 'clearBrandingLogo' }));
+}
+
+function onBrandingPositionChange() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  const select = document.getElementById('brandingPositionSelect');
+  ws.send(
+    JSON.stringify({
+      action: 'setBrandingPosition',
+      position: select ? select.value : 'bottom-right',
+    })
+  );
+}
+
+function saveBrandingText() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  const titleInput = document.getElementById('brandingTitleInput');
+  const subtitleInput = document.getElementById('brandingSubtitleInput');
+  ws.send(
+    JSON.stringify({
+      action: 'setBrandingText',
+      title: titleInput ? titleInput.value.trim() : '',
+      subtitle: subtitleInput ? subtitleInput.value.trim() : '',
+    })
+  );
+  showToast('Texte enregistré.', 'success');
+}
+
+function toggleBrandingVisible() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  ws.send(JSON.stringify({ action: 'setBrandingVisible', visible: !brandingState.visible }));
 }
 
 // Même garde que les autres panneaux Electron-only (file d'affichage,

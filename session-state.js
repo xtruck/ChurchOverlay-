@@ -41,6 +41,13 @@ let translatedCaptionsEnabled = false;
 let captionTargetLang = 'en';
 let testPatternEnabled = false;
 let backgroundPattern = 'none';
+// AJOUT (habillage caméra — logo/titre, voir branding-store.js) : volontairement
+// DE LA SESSION EN COURS, pas persisté — un titre ("Pasteur X — Culte du jour")
+// resté affiché d'un culte à l'autre serait plus gênant qu'utile. Le logo et sa
+// position, eux, sont persistés (voir branding-store.js) car ils changent rarement.
+let brandingTitle = '';
+let brandingSubtitle = '';
+let brandingVisible = false;
 // Distinct de recentTranscripts (fenêtre glissante de MAX_CONTEXT_TRANSCRIPTS
 // fragments, pensée pour le contexte court du détecteur sémantique) : ce
 // tampon accumule TOUT le culte en cours, borné en caractères pour éviter
@@ -152,6 +159,22 @@ function setBackgroundPattern(pattern) {
   backgroundPattern = pattern;
 }
 
+// --- Habillage caméra : titre/sous-titre en direct (voir branding-store.js
+// pour le logo/position, persistés séparément) ---
+function getBrandingText() {
+  return { title: brandingTitle, subtitle: brandingSubtitle };
+}
+function setBrandingText(title, subtitle) {
+  brandingTitle = (title || '').slice(0, 120);
+  brandingSubtitle = (subtitle || '').slice(0, 160);
+}
+function getBrandingVisible() {
+  return brandingVisible;
+}
+function setBrandingVisible(visible) {
+  brandingVisible = !!visible;
+}
+
 // --- Transcription complète du culte en cours (mémoire des cultes — voir
 // sermon-archive.js) ---
 function appendFullServiceTranscript(text) {
@@ -198,6 +221,10 @@ module.exports = {
   setTestPattern,
   getBackgroundPattern,
   setBackgroundPattern,
+  getBrandingText,
+  setBrandingText,
+  getBrandingVisible,
+  setBrandingVisible,
   appendFullServiceTranscript,
   getFullServiceTranscript,
   resetFullServiceTranscript,

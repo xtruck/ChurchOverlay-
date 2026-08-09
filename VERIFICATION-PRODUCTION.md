@@ -9,6 +9,31 @@ le dimanche matin même.
 
 ## Priorité haute — fonctionnalités les plus récentes
 
+### Caméras de téléphone (DroidCam) et habillage caméra
+
+- [ ] DroidCam : avec le client PC lancé et connecté au téléphone, cliquer
+      🔄 Actualiser dans le panneau Caméra → le téléphone apparaît dans la
+      liste (ne doit plus être filtré comme "caméra virtuelle").
+- [ ] Habillage caméra : copier le lien, l'ajouter comme Source Navigateur
+      dans OBS, la positionner AU-DESSUS de la source caméra dans la scène
+      → confirmer que le logo/texte s'affiche bien PAR-DESSUS l'image
+      caméra et pas en dessous.
+- [ ] Choisir un logo → il apparaît dans le coin choisi sur la Source
+      Navigateur OBS en quelques secondes (broadcast WebSocket), sans
+      recharger la source dans OBS.
+- [ ] Changer la position du logo (menu déroulant) → il se déplace bien
+      dans le coin choisi, sans jamais chevaucher le bandeau titre/sous-titre
+      (toujours en bas, centré).
+- [ ] Taper un titre/sous-titre, cliquer "Afficher sur la diffusion" →
+      le bandeau apparaît avec une animation de fondu/glissement, pas un
+      "saut" brutal. Cliquer "Masquer" → il disparaît proprement.
+- [ ] Redémarrer l'app → le logo et sa position doivent être conservés (ils
+      sont persistés), mais le titre/sous-titre doivent repartir vides
+      (volontairement NON persistés, voir GUIDE-OPERATEUR.md).
+- [ ] Recharger la Source Navigateur "Habillage caméra" dans OBS pendant
+      qu'un titre est affiché → il doit réapparaître correctement (état
+      renvoyé via le message `init` à la reconnexion).
+
 ### Poster principal
 
 - [ ] Marquer un média comme principal (⭐) → il apparaît immédiatement sur
