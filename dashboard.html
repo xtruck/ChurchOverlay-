@@ -2172,7 +2172,17 @@
                          propre navigateur, et devient une caméra IP comme les autres
                          ci-dessous. Nécessite que le serveur soit accessible sur le réseau
                          (WS_HOST) — voir le message d'erreur clair si ce n'est pas le cas. -->
+                    <!-- AJOUT (demande explicite — "plus de paramètres") : nom ET qualité
+                         choisis AVANT de générer le QR — le téléphone lit son réglage de
+                         qualité directement dans l'URL scannée (voir phone-camera.html),
+                         il ne peut pas le demander à l'opérateur après coup. -->
                     <div style="display:flex; gap:0.6rem; align-items:center; margin-bottom:0.75rem; flex-wrap:wrap;">
+                        <input type="text" id="cameraPairingLabelInput" placeholder="Nom (ex. Téléphone scène)" style="max-width:220px;">
+                        <select id="cameraPairingQualitySelect" title="Qualité du flux — plus haut = meilleure image mais plus de données sur le Wi-Fi">
+                            <option value="low">Qualité basse (Wi-Fi faible)</option>
+                            <option value="medium" selected>Qualité moyenne</option>
+                            <option value="high">Qualité haute</option>
+                        </select>
                         <button type="button" class="btn btn-primary" onclick="generateCameraPairing()">📷 Générer un QR code (téléphone, sans app)</button>
                     </div>
                     <div id="cameraPairingBox" style="display:none; margin-bottom:1rem; padding:1rem; border:1px solid var(--border-subtle); border-radius:var(--radius-sm); text-align:center;">

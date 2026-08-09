@@ -32,7 +32,7 @@ const crypto = require('crypto');
 // page se connecte — pas indéfiniment valide (voir commentaire d'en-tête).
 const PAIRING_TTL_MS = 10 * 60 * 1000;
 
-const pendingCodes = new Map(); // code -> { createdAt }
+const pendingCodes = new Map(); // code -> { createdAt, label }
 const cameras = new Map(); // cameraId -> { streamSecret, pairedAt }
 
 function cleanupExpiredCodes() {
@@ -43,12 +43,20 @@ function cleanupExpiredCodes() {
 }
 
 /**
+ * @param {string} [label] - nom choisi par l'opérateur (ex. "Téléphone
+ *   scène") — AJOUT (demande explicite : plusieurs téléphones doivent être
+ *   distinguables, pas tous nommés "Téléphone (QR)" de façon identique).
+ *   Porté par le code de jumelage jusqu'à redeemPairingCode() ; l'opérateur
+ *   ne peut plus le changer une fois le QR affiché (il faudrait re-générer).
  * @returns {string} un nouveau code de jumelage à usage unique
  */
-function generatePairingCode() {
+function generatePairingCode(label) {
   cleanupExpiredCodes();
   const code = crypto.randomBytes(16).toString('hex');
-  pendingCodes.set(code, { createdAt: Date.now() });
+  pendingCodes.set(code, {
+    createdAt: Date.now(),
+    label: typeof label === 'string' ? label.trim().slice(0, 100) : '',
+  });
   return code;
 }
 
@@ -65,17 +73,18 @@ function isPairingCodeValid(code) {
  * Échange un code de jumelage (usage unique, consommé immédiatement même en
  * cas de succès) contre un identifiant de caméra + un secret de flux durable.
  * @param {string} code
- * @returns {{cameraId: string, streamSecret: string}|null} null si le code est invalide/expiré
+ * @returns {{cameraId: string, streamSecret: string, label: string}|null} null si le code est invalide/expiré
  */
 function redeemPairingCode(code) {
   cleanupExpiredCodes();
   if (!code || !pendingCodes.has(code)) return null;
+  const { label } = pendingCodes.get(code);
   pendingCodes.delete(code);
 
   const cameraId = crypto.randomUUID();
   const streamSecret = crypto.randomBytes(24).toString('hex');
   cameras.set(cameraId, { streamSecret, pairedAt: Date.now() });
-  return { cameraId, streamSecret };
+  return { cameraId, streamSecret, label: label || '' };
 }
 
 /**

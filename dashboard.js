@@ -1252,14 +1252,21 @@ function startIpCameraMonitor(id, url) {
   img.onerror = markOffline;
   img.src = url;
 
-  // Ne retente le chargement QUE si la dernière tentative a échoué — un
-  // flux MJPEG sain reste "chargé" en continu sur la même connexion
-  // ouverte ; le relancer inutilement interromprait l'aperçu en direct.
+  // CORRECTIF (fiabilité — "En ligne" pouvait rester affiché indéfiniment
+  // pour une caméra morte) : un flux MJPEG dont la connexion reste ouverte
+  // sans plus jamais pousser d'image ne redéclenche ni onload ni onerror —
+  // l'ancien code ne rechargeait QUE si déjà en erreur, donc un téléphone
+  // qui perd le Wi-Fi/verrouille son écran en plein culte restait marqué
+  // "En ligne" jusqu'à ce que l'opérateur s'en aperçoive autrement. On
+  // recharge maintenant PÉRIODIQUEMENT, que le badge soit vert ou rouge —
+  // pour une caméra téléphone jumelée par QR, le serveur refuse désormais
+  // de répondre si l'image n'est plus fraîche (voir isFrameFresh côté
+  // server.js), ce qui fait légitimement échouer ce rechargement et
+  // corrige le badge ; pour une caméra IP tierce, une vraie coupure réseau
+  // échoue tout aussi légitimement.
   ipCameraMonitors[id] = setInterval(() => {
-    if (badge.classList.contains('error')) {
-      img.src = url + (url.includes('?') ? '&' : '?') + '_retry=' + Date.now();
-    }
-  }, 10000);
+    img.src = url + (url.includes('?') ? '&' : '?') + '_retry=' + Date.now();
+  }, 12000);
 }
 
 function addIpCamera() {
@@ -1313,7 +1320,15 @@ function generateCameraPairing() {
     showToast('Non connecté au serveur.', 'error');
     return;
   }
-  ws.send(JSON.stringify({ action: 'generateCameraPairing' }));
+  const labelInput = document.getElementById('cameraPairingLabelInput');
+  const qualitySelect = document.getElementById('cameraPairingQualitySelect');
+  ws.send(
+    JSON.stringify({
+      action: 'generateCameraPairing',
+      label: labelInput ? labelInput.value.trim() : '',
+      quality: qualitySelect ? qualitySelect.value : 'medium',
+    })
+  );
 }
 
 function showCameraPairingQr(message) {

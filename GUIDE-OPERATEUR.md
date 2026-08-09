@@ -118,20 +118,30 @@ gros plan...) sans DroidCam et sans app à installer sur le téléphone.
 
 **Méthode recommandée — scanner un QR code (nouveau, aucune app) :**
 
-1. Cliquez **📷 Générer un QR code (téléphone, sans app)**.
-2. Sur le téléphone, ouvrez l'appareil photo (ou un lecteur QR) et scannez
+1. **Avant de générer le QR**, donnez un **nom** à cette caméra (ex.
+   « Téléphone scène », « Téléphone salle ») — important si vous utilisez
+   plusieurs téléphones : sans nom, ils apparaîtraient tous sous le même
+   nom générique, impossibles à distinguer dans la liste. Choisissez aussi
+   la **qualité** (Basse/Moyenne/Haute — Basse si le Wi-Fi de l'église est
+   faible ou déjà chargé par plusieurs téléphones à la fois).
+2. Cliquez **📷 Générer un QR code (téléphone, sans app)**.
+3. Sur le téléphone, ouvrez l'appareil photo (ou un lecteur QR) et scannez
    le code affiché — une page s'ouvre directement dans le navigateur du
    téléphone (Chrome/Safari), rien à installer.
-3. Autorisez l'accès à la caméra quand le navigateur le demande. La page
-   affiche « En direct » une fois connectée.
-4. Le téléphone apparaît automatiquement dans la liste ci-dessous, avec un
+4. Autorisez l'accès à la caméra quand le navigateur le demande. La page
+   affiche « En direct » une fois connectée. Un bouton **🔄** en haut de
+   l'écran permet de basculer entre caméra avant/arrière sans re-scanner.
+5. Le téléphone apparaît automatiquement dans la liste ci-dessous, avec un
    aperçu et un badge en ligne/hors ligne — comme n'importe quelle caméra
    IP. Cliquez **📋** dessus pour copier son lien à coller dans OBS.
-5. **Important :** le QR n'est valable que **10 minutes** et ne fonctionne
+6. **Important :** le QR n'est valable que **10 minutes** et ne fonctionne
    qu'**une seule fois** — s'il a expiré ou a déjà été scanné, régénérez-en
    un nouveau. Laissez l'écran du téléphone allumé pendant le culte (la
    page essaie de l'empêcher de se verrouiller automatiquement).
-6. **Condition technique :** cette méthode a besoin que le serveur
+7. **Si vous retirez la caméra depuis le tableau de bord** (🗑️), le
+   téléphone en est informé (« Caméra retirée ») et arrête d'envoyer des
+   images tout seul — pas besoin de fermer l'onglet à la main.
+8. **Condition technique :** cette méthode a besoin que le serveur
    ChurchOverlay soit accessible sur le réseau Wi-Fi de l'église (pas
    seulement en local sur ce PC) — voir `README.md` (`WS_HOST` et jetons de
    sécurité). Si ce n'est pas configuré, le bouton affiche un message clair
@@ -215,19 +225,21 @@ inventée sans contenu réel à citer.
 
 ## Dépannage rapide
 
-| Symptôme                                  | Vérifier                                                                                                                                                                                    |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Aucun verset ne s'affiche                 | Micro démarré ? Badge "Capture active" ? Clé Groq configurée (écran de setup) ?                                                                                                             |
-| Le verset apparaît en retard/coupé        | Réseau lent — la détection par citation exacte est la plus rapide, privilégiez des références explicites ("Jean 3:16")                                                                      |
-| Le poster principal ne réapparaît pas     | Un verset ou un autre média est peut-être encore actif à l'écran — le poster ne reprend sa place que si RIEN d'autre n'est affiché                                                          |
-| "show poster X" ne déclenche rien         | Vérifiez que le nom/la phrase déclencheuse correspond bien à ce qui est dit — la correspondance est par sous-chaîne, pas par similarité approximative                                       |
-| DroidCam absent de la liste               | Le **client DroidCam pour PC** doit être lancé ET connecté au téléphone (Wi-Fi ou USB) — l'app seule sur le téléphone ne suffit pas. Cliquez 🔄 Actualiser après connexion.                 |
-| Caméra NDI absente de la liste            | Installez/activez "NDI Virtual Input" (NDI Tools gratuit) — sans lui, une source NDI n'apparaît pas comme une webcam standard                                                               |
-| Caméra de téléphone (IP) "Hors ligne"     | Le téléphone a perdu le Wi-Fi, l'app "IP Webcam" a été fermée/mise en veille, ou son adresse IP a changé — rouvrez l'app sur le téléphone et, si besoin, mettez à jour l'adresse collée     |
-| "Générer un QR code" affiche une erreur   | Le serveur n'est accessible qu'en local (`WS_HOST=127.0.0.1`, le défaut) — le téléphone ne peut pas l'atteindre. Voir `README.md` pour configurer l'accès réseau et les jetons de sécurité. |
-| Le téléphone scanné n'affiche rien        | Le QR a peut-être expiré (10 min) ou a déjà été utilisé (usage unique) — régénérez-en un nouveau et scannez-le tout de suite après                                                          |
-| Logo/titre invisibles dans OBS            | Vérifiez que la Source Navigateur "Habillage caméra" a bien été ajoutée dans OBS (étape unique) ET qu'elle est positionnée AU-DESSUS de la source caméra dans la liste des sources          |
-| Sous-titres traduits en retard ou absents | Normal par design (best-effort, jamais bloquant) — vérifiez simplement que le quota gratuit Groq/Gemini n'est pas épuisé par ailleurs                                                       |
+| Symptôme                                             | Vérifier                                                                                                                                                                                    |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Aucun verset ne s'affiche                            | Micro démarré ? Badge "Capture active" ? Clé Groq configurée (écran de setup) ?                                                                                                             |
+| Le verset apparaît en retard/coupé                   | Réseau lent — la détection par citation exacte est la plus rapide, privilégiez des références explicites ("Jean 3:16")                                                                      |
+| Le poster principal ne réapparaît pas                | Un verset ou un autre média est peut-être encore actif à l'écran — le poster ne reprend sa place que si RIEN d'autre n'est affiché                                                          |
+| "show poster X" ne déclenche rien                    | Vérifiez que le nom/la phrase déclencheuse correspond bien à ce qui est dit — la correspondance est par sous-chaîne, pas par similarité approximative                                       |
+| DroidCam absent de la liste                          | Le **client DroidCam pour PC** doit être lancé ET connecté au téléphone (Wi-Fi ou USB) — l'app seule sur le téléphone ne suffit pas. Cliquez 🔄 Actualiser après connexion.                 |
+| Caméra NDI absente de la liste                       | Installez/activez "NDI Virtual Input" (NDI Tools gratuit) — sans lui, une source NDI n'apparaît pas comme une webcam standard                                                               |
+| Caméra de téléphone (IP) "Hors ligne"                | Le téléphone a perdu le Wi-Fi, l'app "IP Webcam" a été fermée/mise en veille, ou son adresse IP a changé — rouvrez l'app sur le téléphone et, si besoin, mettez à jour l'adresse collée     |
+| "Générer un QR code" affiche une erreur              | Le serveur n'est accessible qu'en local (`WS_HOST=127.0.0.1`, le défaut) — le téléphone ne peut pas l'atteindre. Voir `README.md` pour configurer l'accès réseau et les jetons de sécurité. |
+| Le téléphone scanné n'affiche rien                   | Le QR a peut-être expiré (10 min) ou a déjà été utilisé (usage unique) — régénérez-en un nouveau et scannez-le tout de suite après                                                          |
+| Le téléphone affiche « Caméra retirée »              | Normal — l'opérateur a supprimé cette caméra depuis le tableau de bord. Générez un nouveau QR pour reconnecter ce téléphone.                                                                |
+| Badge « En ligne » alors que le téléphone est éteint | Attendez ~15-20s : le tableau de bord revérifie périodiquement chaque flux, y compris ceux déjà marqués « En ligne » — un téléphone réellement mort finit par basculer sur « Hors ligne ».  |
+| Logo/titre invisibles dans OBS                       | Vérifiez que la Source Navigateur "Habillage caméra" a bien été ajoutée dans OBS (étape unique) ET qu'elle est positionnée AU-DESSUS de la source caméra dans la liste des sources          |
+| Sous-titres traduits en retard ou absents            | Normal par design (best-effort, jamais bloquant) — vérifiez simplement que le quota gratuit Groq/Gemini n'est pas épuisé par ailleurs                                                       |
 
 Pour les détails techniques (variables d'environnement, protocole
 WebSocket, architecture), voir `README.md`, `API.md` et

@@ -39,6 +39,7 @@ const result1 = pairing.redeemPairingCode(code3);
 assert(result1 !== null, 'le premier échange doit réussir');
 assert(result1.cameraId, 'un id de caméra doit être généré');
 assert(result1.streamSecret, 'un secret de flux doit être généré');
+assert.strictEqual(result1.label, '', 'sans nom fourni à la génération, le label doit être vide');
 assert.strictEqual(
   pairing.isPairingCodeValid(code3),
   false,
@@ -52,6 +53,20 @@ console.log('[TEST] ✓ Code de jumelage à usage unique — réutilisation impo
 console.log('[TEST] Test 4: redeemPairingCode() avec un code inconnu...');
 assert.strictEqual(pairing.redeemPairingCode('jamais-genere'), null);
 console.log('[TEST] ✓ Code inconnu rejeté\n');
+
+// Test 4b (demande explicite — "plusieurs téléphones doivent être
+// distinguables") : le nom choisi par l'opérateur à la génération du QR
+// doit être porté jusqu'au redeemPairingCode(), et débarrassé des espaces
+// superflus/tronqué comme les autres champs texte de l'app.
+console.log('[TEST] Test 4b: generatePairingCode() porte le nom choisi...');
+const codeNamed = pairing.generatePairingCode('  Téléphone scène  ');
+const resultNamed = pairing.redeemPairingCode(codeNamed);
+assert.strictEqual(
+  resultNamed.label,
+  'Téléphone scène',
+  'le nom doit être conservé (espaces retirés)'
+);
+console.log('[TEST] ✓ Nom choisi correctement porté jusqu’au jumelage\n');
 
 // Test 5 : isStreamSecretValid() — seul le bon secret pour la bonne caméra passe.
 console.log('[TEST] Test 5: isStreamSecretValid()...');

@@ -17,13 +17,24 @@
   WebRTC complet, largement suffisant pour une caméra d'église (pas de
   sport rapide à filmer).
 
-  Flux : ?pair=<code> dans l'URL (généré par le tableau de bord, affiché en
-  QR) → POST /phone-camera-pair (échange usage unique, voir
-  phone-camera-pairing.js) → getUserMedia() → boucle canvas→JPEG→POST
+  Flux : ?pair=<code>&q=<qualité> dans l'URL (générés par le tableau de
+  bord, affichés en QR) → POST /phone-camera-pair (échange usage unique,
+  voir phone-camera-pairing.js) → getUserMedia() → boucle canvas→JPEG→POST
   /phone-camera-frame/:id. Le serveur ré-expose ces images comme un flux
   MJPEG classique (GET /phone-camera-stream/:id) — le MÊME mécanisme que
   ip-camera-store.js pour les caméras IP tierces, donc réutilisable tel
   quel par le panneau "Caméras IP" du tableau de bord et par OBS.
+
+  Fiabilité (demande explicite — "faire vraiment le travail") :
+    - Le flux s'arrête et le dit CLAIREMENT si le secret devient invalide
+      (caméra retirée côté opérateur, voir 403 dans captureFrame()) au lieu
+      de continuer à envoyer pour rien indéfiniment.
+    - Les tentatives d'envoi s'ESPACENT après des échecs consécutifs
+      (Wi-Fi instable) plutôt que de marteler le réseau au rythme normal.
+    - Le serveur (voir isFrameFresh() dans server.js) refuse de resservir
+      une image trop ancienne — c'est ce qui permet au badge "En ligne/Hors
+      ligne" du tableau de bord de détecter un téléphone mort, pas
+      seulement une première connexion échouée.
   ============================================================================
 -->
 <style>
@@ -76,6 +87,20 @@
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
   }
+  #switch-camera-btn {
+    margin-left: auto;
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255,255,255,0.16);
+    color: #f6f3ec;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
   #message {
     position: fixed;
     inset: 0;
@@ -98,6 +123,7 @@
 <div id="status-bar">
   <div id="status-dot"></div>
   <span id="status-text">Connexion…</span>
+  <button id="switch-camera-btn" type="button" title="Changer de caméra (avant/arrière)" style="display:none;">🔄</button>
 </div>
 
 <video id="video" autoplay playsinline muted></video>
@@ -117,12 +143,29 @@ function getPairCode() {
   return new URLSearchParams(window.location.search).get('pair');
 }
 
+// AJOUT (demande explicite — "plus de paramètres") : la qualité est choisie
+// par l'opérateur AU MOMENT de générer le QR (voir generateCameraPairing()
+// côté serveur) et voyage dans l'URL elle-même — le téléphone ne peut pas
+// la demander à l'opérateur après coup, une fois la page ouverte. "Basse"
+// vise un Wi-Fi d'église faible/saturé (plusieurs téléphones à la fois) ;
+// "Haute" vise un meilleur rendu quand le réseau le supporte.
+const QUALITY_PRESETS = {
+  low: { width: 640, height: 360, intervalMs: 400, jpegQuality: 0.6 },
+  medium: { width: 1280, height: 720, intervalMs: 200, jpegQuality: 0.72 },
+  high: { width: 1920, height: 1080, intervalMs: 150, jpegQuality: 0.82 },
+};
+function getQualityPreset() {
+  const key = new URLSearchParams(window.location.search).get('q');
+  return QUALITY_PRESETS[key] || QUALITY_PRESETS.medium;
+}
+
 const statusDot = document.getElementById('status-dot');
 const statusText = document.getElementById('status-text');
 const messageEl = document.getElementById('message');
 const messageDetail = document.getElementById('message-detail');
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
+const switchCameraBtn = document.getElementById('switch-camera-btn');
 
 function setStatus(text, live) {
   statusText.textContent = text;
@@ -139,20 +182,20 @@ function hideMessage() {
   messageEl.classList.add('hidden');
 }
 
-// Capture ~5 images/seconde en JPEG — largement suffisant pour une caméra
-// d'église (angle fixe, pas d'action rapide) tout en restant léger en
-// bande passante/CPU (voir la contrainte "pas de traitement lourd" du
-// projet). Volontairement plus lent que le flux getUserMedia lui-même :
-// la fluidité perçue vient de object-fit:cover sur l'aperçu LOCAL, seul le
-// flux ENVOYÉ au serveur est échantillonné à ce rythme.
-const FRAME_INTERVAL_MS = 200;
-const JPEG_QUALITY = 0.72;
+const QUALITY = getQualityPreset();
 
 let cameraId = null;
 let streamSecret = null;
 let captureTimer = null;
 let sending = false;
 let wakeLock = null;
+let currentFacingMode = 'environment';
+let stopped = false; // true une fois retirée par l'opérateur : plus aucune tentative d'envoi
+// AJOUT (fiabilité — "ne pas marteler le réseau en boucle") : après des
+// échecs consécutifs (Wi-Fi instable, coupure temporaire), on ESPACE les
+// tentatives au lieu de continuer à en faire une toutes les 200/400/... ms
+// pour rien — voir captureFrame() ci-dessous.
+let consecutiveFailures = 0;
 
 async function requestWakeLock() {
   try {
@@ -178,26 +221,53 @@ async function pairWithServer(pairCode) {
   return res.json();
 }
 
-async function startCamera() {
-  // Caméra ARRIÈRE par défaut ('environment') : un téléphone utilisé comme
-  // caméra d'église filme la salle/scène, pas l'opérateur qui le tient.
+async function startCamera(facingMode) {
+  // Coupe proprement la piste précédente avant d'en démarrer une nouvelle
+  // (changement de caméra à chaud) — même discipline que camera-capture.js
+  // côté PC (startCapture()) pour ne jamais laisser deux caméras actives.
+  if (video.srcObject) {
+    video.srcObject.getTracks().forEach((track) => track.stop());
+  }
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+    video: {
+      facingMode: { ideal: facingMode },
+      width: { ideal: QUALITY.width },
+      height: { ideal: QUALITY.height },
+    },
     audio: false,
   });
   video.srcObject = stream;
+  currentFacingMode = facingMode;
   await video.play();
 }
 
+// AJOUT (demande explicite — "plus de paramètres") : basculer caméra avant/
+// arrière sans recharger la page ni re-scanner le QR — utile si le
+// téléphone est repositionné en cours de culte, ou pour ajuster l'angle.
+async function switchCamera() {
+  const next = currentFacingMode === 'environment' ? 'user' : 'environment';
+  try {
+    await startCamera(next);
+  } catch (_err) {
+    // Certains téléphones n'ont qu'une seule caméra — retenter avec le
+    // réglage précédent plutôt que de rester sans image du tout.
+    try {
+      await startCamera(currentFacingMode);
+    } catch (_err2) {
+      showMessage('Caméra indisponible', 'Impossible de basculer de caméra sur cet appareil.');
+    }
+  }
+}
+
 function captureFrame() {
-  if (sending || video.videoWidth === 0) return;
+  if (stopped || sending || video.videoWidth === 0) return;
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   const ctx = canvas.getContext('2d');
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
   canvas.toBlob(
     (blob) => {
-      if (!blob) return;
+      if (!blob || stopped) return;
       sending = true;
       fetch(`/phone-camera-frame/${cameraId}`, {
         method: 'POST',
@@ -205,15 +275,34 @@ function captureFrame() {
         body: blob,
       })
         .then((res) => {
-          setStatus(res.ok ? 'En direct' : 'Erreur d’envoi', res.ok);
+          if (res.status === 403) {
+            // AJOUT (fiabilité — "ne pas continuer d'envoyer pour rien") :
+            // 403 = secret de flux invalide, donc caméra retirée côté
+            // tableau de bord (voir deleteIpCamera dans server.js, qui
+            // invalide le secret) — plus aucune tentative n'aboutira
+            // jamais, autant arrêter proprement et le dire clairement.
+            stopped = true;
+            clearTimeout(captureTimer);
+            captureTimer = null;
+            showMessage(
+              'Caméra retirée',
+              "L'opérateur a retiré cette caméra du tableau de bord. Scannez un nouveau QR code pour la reconnecter."
+            );
+            return;
+          }
+          consecutiveFailures = res.ok ? 0 : consecutiveFailures + 1;
+          setStatus(res.ok ? 'En direct' : 'Erreur d’envoi — nouvelle tentative…', res.ok);
         })
-        .catch(() => setStatus('Connexion perdue — nouvelle tentative…', false))
+        .catch(() => {
+          consecutiveFailures++;
+          setStatus('Connexion perdue — nouvelle tentative…', false);
+        })
         .finally(() => {
           sending = false;
         });
     },
     'image/jpeg',
-    JPEG_QUALITY
+    QUALITY.jpegQuality
   );
 }
 
@@ -243,7 +332,7 @@ async function main() {
 
   try {
     setStatus('Démarrage de la caméra…', false);
-    await startCamera();
+    await startCamera(currentFacingMode);
   } catch (err) {
     const name = err && err.name;
     let detail = "Vérifiez l'autorisation caméra dans les réglages du navigateur.";
@@ -256,17 +345,33 @@ async function main() {
   hideMessage();
   setStatus('En direct', true);
   requestWakeLock();
+  switchCameraBtn.style.display = 'flex';
+  switchCameraBtn.addEventListener('click', switchCamera);
 
-  captureTimer = setInterval(captureFrame, FRAME_INTERVAL_MS);
+  // AJOUT (fiabilité — "ne pas marteler le réseau en boucle") : setTimeout
+  // auto-planifié plutôt que setInterval fixe, pour pouvoir ESPACER les
+  // tentatives après des échecs consécutifs (voir consecutiveFailures dans
+  // captureFrame ci-dessus) au lieu de continuer à réessayer toutes les
+  // 200/400/... ms pendant une coupure réseau prolongée.
+  function scheduleNextCapture() {
+    if (stopped) return;
+    const backoffMultiplier = Math.min(1 + consecutiveFailures, 5);
+    captureTimer = setTimeout(() => {
+      captureFrame();
+      scheduleNextCapture();
+    }, QUALITY.intervalMs * backoffMultiplier);
+  }
+  scheduleNextCapture();
 
   document.addEventListener('visibilitychange', () => {
+    if (stopped) return;
     if (document.hidden) {
-      clearInterval(captureTimer);
+      clearTimeout(captureTimer);
       captureTimer = null;
       setStatus('En pause (écran non visible)', false);
     } else if (!captureTimer) {
-      captureTimer = setInterval(captureFrame, FRAME_INTERVAL_MS);
       requestWakeLock();
+      scheduleNextCapture();
     }
   });
 }

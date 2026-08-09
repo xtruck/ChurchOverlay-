@@ -267,6 +267,19 @@ app.get('/api/verses', (req, res) => {
 // live, pas un historique à conserver.
 const phoneCameraFrames = new Map(); // cameraId -> { buffer: Buffer, receivedAt: number }
 
+// CORRECTIF (fiabilité — "le badge en ligne ne détectait jamais un téléphone
+// mort") : le téléphone envoie normalement une image toutes les ~200ms (voir
+// phone-camera.html) ; 8s sans rien est un signal fiable de déconnexion
+// (écran verrouillé malgré le Wake Lock, appli fermée, Wi-Fi coupé), pas un
+// simple aléa réseau ponctuel. Utilisé par GET /phone-camera-stream/:id
+// ci-dessous pour refuser de répondre à une image obsolète.
+const STALE_FRAME_MS = 8000;
+
+function isFrameFresh(cameraId) {
+  const frame = phoneCameraFrames.get(cameraId);
+  return !!frame && Date.now() - frame.receivedAt < STALE_FRAME_MS;
+}
+
 // Repli raisonnable pour un poste unique sur le Wi-Fi de l'église (une seule
 // interface réseau active la plupart du temps) — voir le commentaire dans le
 // handler 'generateCameraPairing' pour le cas où plusieurs interfaces sont
@@ -299,7 +312,7 @@ app.post('/phone-camera-pair', express.json({ limit: '1kb' }), (req, res) => {
   if (lanIp) {
     try {
       ipCameraStore.addItem({
-        label: 'Téléphone (QR)',
+        label: result.label || 'Téléphone (QR)',
         url: `http://${lanIp}:${SERVER_PORT}/phone-camera-stream/${result.cameraId}`,
       });
       broadcast({ action: 'ipCamerasUpdated', items: ipCameraStore.listItems() });
@@ -338,7 +351,13 @@ app.post(
 // Navigateur OBS l'affichent nativement, sans code supplémentaire.
 app.get('/phone-camera-stream/:id', (req, res) => {
   const cameraId = req.params.id;
-  if (!phoneCameraPairing.isCameraPaired(cameraId)) {
+  // CORRECTIF (fiabilité) : refuser de démarrer un flux si aucune image
+  // récente n'existe — un <img> déjà chargé une fois ne réémet ni onload ni
+  // onerror tant que sa connexion reste ouverte, donc un téléphone mort
+  // AURAIT été affiché "en ligne" indéfiniment sans cette vérification. Ce
+  // 404 est ce qu'un rechargement périodique côté tableau de bord (voir
+  // startIpCameraMonitor dans dashboard.js) détecte pour corriger le badge.
+  if (!phoneCameraPairing.isCameraPaired(cameraId) || !isFrameFresh(cameraId)) {
     res.status(404).end();
     return;
   }
@@ -353,6 +372,18 @@ app.get('/phone-camera-stream/:id', (req, res) => {
 
   let lastSentAt = 0;
   const pushTimer = setInterval(() => {
+    // Le téléphone a cessé d'émettre PENDANT que cette connexion était
+    // ouverte : on ferme proprement plutôt que de laisser une connexion
+    // muette tourner indéfiniment (voir isFrameFresh ci-dessus).
+    if (!isFrameFresh(cameraId)) {
+      clearInterval(pushTimer);
+      try {
+        res.end();
+      } catch (_e) {
+        // Déjà fermée côté client, rien de plus à faire.
+      }
+      return;
+    }
     const frame = phoneCameraFrames.get(cameraId);
     if (!frame || frame.receivedAt === lastSentAt) return;
     lastSentAt = frame.receivedAt;
@@ -2119,8 +2150,20 @@ wss.on('connection', (ws, req) => {
         return;
       }
       try {
-        const pairCode = phoneCameraPairing.generatePairingCode();
-        const pairUrl = `http://${lanIp}:${SERVER_PORT}/phone-camera.html?pair=${pairCode}`;
+        // AJOUT (demande explicite — "plus de paramètres") : nom choisi par
+        // l'opérateur AVANT de générer le QR (sinon plusieurs téléphones
+        // jumelés apparaissent tous sous le même nom générique, impossible
+        // à distinguer dans la liste — voir redeemPairingCode()) et qualité
+        // du flux (Basse/Moyenne/Haute — voir QUALITY_PRESETS ci-dessous),
+        // portée dans l'URL elle-même puisque c'est le TÉLÉPHONE qui doit
+        // configurer sa propre capture, sans pouvoir demander à l'opérateur
+        // après coup.
+        const label = typeof sanitized.label === 'string' ? sanitized.label : '';
+        const quality = ['low', 'medium', 'high'].includes(sanitized.quality)
+          ? sanitized.quality
+          : 'medium';
+        const pairCode = phoneCameraPairing.generatePairingCode(label);
+        const pairUrl = `http://${lanIp}:${SERVER_PORT}/phone-camera.html?pair=${pairCode}&q=${quality}`;
         const qrDataUrl = await QRCode.toDataURL(pairUrl, { margin: 1, width: 320 });
         ws.send(
           JSON.stringify({

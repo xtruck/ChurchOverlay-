@@ -23,7 +23,15 @@ le dimanche matin même.
       (PAS de redirection vers un store d'applications), demande la
       permission caméra, affiche "En direct" une fois accordée.
 - [ ] Le téléphone apparaît automatiquement dans le panneau "Caméras IP"
-      du tableau de bord, avec aperçu + badge "En ligne".
+      du tableau de bord, SOUS LE NOM CHOISI avant de générer le QR (pas
+      un nom générique) — tester avec 2-3 téléphones en parallèle pour
+      confirmer qu'ils restent bien distinguables dans la liste.
+- [ ] Générer un QR avec chacune des 3 qualités (Basse/Moyenne/Haute) →
+      confirmer une différence visible de netteté/fluidité, et que
+      "Basse" utilise sensiblement moins de données mobiles/Wi-Fi.
+- [ ] Sur le téléphone, cliquer le bouton 🔄 → la caméra bascule avant/
+      arrière sans recharger la page ; sur un appareil à une seule caméra,
+      confirmer qu'un message clair apparaît plutôt qu'un écran noir.
 - [ ] Réessayer de scanner le MÊME QR une deuxième fois → doit échouer
       clairement (usage unique) — confirmer qu'aucune deuxième caméra
       fantôme n'apparaît.
@@ -31,10 +39,19 @@ le dimanche matin même.
       clairement (expiré).
 - [ ] Verrouiller l'écran du téléphone manuellement pendant la capture →
       noter si le flux s'interrompt (limite connue : l'API Wake Lock n'est
-      pas garantie sur tous les navigateurs/OS).
+      pas garantie sur tous les navigateurs/OS) ; **surtout**, confirmer
+      qu'après ~15-20s le badge du tableau de bord bascule bien sur "Hors
+      ligne" plutôt que de rester "En ligne" indéfiniment (correctif de
+      fiabilité — voir isFrameFresh côté serveur).
+- [ ] Couper le Wi-Fi du téléphone quelques secondes PENDANT la capture,
+      puis le réactiver → le flux doit reprendre tout seul, sans avoir à
+      re-scanner le QR (le secret de flux reste valide, seul le réseau a
+      été coupé).
 - [ ] Supprimer la caméra téléphone depuis le panneau "Caméras IP" →
-      confirmer que le téléphone cesse d'être accepté (son ancien secret
-      de flux ne doit plus fonctionner).
+      confirmer (a) que le téléphone cesse d'être accepté (son ancien
+      secret de flux ne doit plus fonctionner) ET (b) que la page du
+      téléphone affiche bien "Caméra retirée" au lieu de continuer à
+      essayer d'envoyer des images indéfiniment.
 - [ ] Coller le lien copié (📋) dans OBS comme Source Navigateur → l'image
       du téléphone s'affiche dans OBS.
 
