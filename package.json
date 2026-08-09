@@ -69,6 +69,7 @@
       "setup.html",
       "dashboard.html",
       "dashboard.js",
+      "dashboard/dashboard.css",
       "audio-capture-worklet.js",
       "camera-capture.js",
       "overlay.html",

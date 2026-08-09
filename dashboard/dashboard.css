@@ -1,0 +1,1532 @@
+/* dashboard.css — extrait de dashboard.html (chantier de modularisation,
+   "front end plus léger, mieux construit"). Contenu inchangé, juste déplacé
+   d'un <style> inline vers ce fichier, chargé via <link rel="stylesheet">. */
+
+:root {
+  /* --- Fond : nuit de sanctuaire, verrière de nuit -------------- */
+  --bg-base: #0a0e1c;
+  --bg-surface: rgba(22, 27, 46, 0.55);
+  --bg-card: rgba(255, 255, 255, 0.055);
+  --bg-card-hover: rgba(255, 255, 255, 0.09);
+  --bg-input: rgba(8, 11, 22, 0.55);
+
+  --border-subtle: rgba(255, 255, 255, 0.1);
+  --border-light: rgba(255, 255, 255, 0.22);
+  --border-active: var(--primary);
+
+  /* --- Couleur unique de l'app (demande : "one color", plus de
+               jaune/or) : violet-bleu, seule couleur d'accent utilisée
+               partout où l'ancien thème multicolore (or/garnet/saphir/cyan)
+               était purement décoratif. --gold/--garnet/--sapphire sont
+               conservés ci-dessous (au lieu d'être supprimés) pour ne pas
+               casser les dizaines d'usages existants dans la feuille de
+               style : ils pointent maintenant tous vers cette même couleur. */
+  --primary: #7c8cf5;
+  --primary-hover: #6274f0;
+  --primary-glow: rgba(124, 140, 245, 0.38);
+
+  --accent-cyan: var(--primary);
+  --accent-emerald: #34d399;
+  --accent-amber: var(--primary);
+  --accent-rose: #f4607a;
+
+  --gold: var(--primary);
+  --gold-soft: rgba(124, 140, 245, 0.2);
+  --gold-glow: rgba(124, 140, 245, 0.45);
+
+  --garnet: var(--primary);
+  --garnet-soft: rgba(124, 140, 245, 0.16);
+  --sapphire: var(--primary);
+  --sapphire-soft: rgba(124, 140, 245, 0.16);
+
+  --text-main: #f6f3ec;
+  --text-muted: #a8adc9;
+  --text-dim: #6c7292;
+
+  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 16px 40px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 26px var(--primary-glow);
+  --shadow-gold: 0 0 26px var(--gold-glow);
+  --shadow-lift: 0 20px 48px rgba(0, 0, 0, 0.5), 0 2px 0 rgba(255, 255, 255, 0.05) inset;
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+  --radius-full: 9999px;
+
+  --glass-blur: 18px;
+  --ease-silk: cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+/* Grain de verre très subtil, superposé à tout le fond — évite l'effet
+           "plastique lisse" typique du glassmorphism généré par défaut. */
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* CORRECTIF PERF (audit CPU, 03/08/2026) : les animations "infinite"
+   décoratives tournaient en continu 24h/24 même quand la fenêtre du tableau
+   de bord était minimisée ou masquée derrière OBS pendant tout un culte —
+   le compositeur continuait de repeindre ces calques sans que personne ne
+   les regarde. La classe .animations-paused est ajoutée/retirée en JS via
+   document.visibilitychange (voir dashboard.js) : elle met en pause les
+   animations restantes tant que la fenêtre n'est pas visible.
+   (La croix de lumière/poussières ambiantes ont depuis été retirées
+   entièrement — demande explicite de suppression des animations non
+   essentielles — donc ce sélecteur ne couvre plus que les indicateurs de
+   statut fonctionnels.) */
+body.animations-paused .live-status-pill.offline,
+body.animations-paused .status-dot,
+body.animations-paused .speech-trigger-btn.active {
+  animation-play-state: paused !important;
+}
+
+body {
+  font-family:
+    'Plus Jakarta Sans',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  background-color: var(--bg-base);
+  color: var(--text-main);
+  line-height: 1.5;
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+  background-image:
+    radial-gradient(circle at 12% 8%, rgba(124, 140, 245, 0.16) 0%, transparent 42%),
+    linear-gradient(180deg, #0a0e1c 0%, #0d1226 55%, #0a0e1c 100%);
+}
+
+.dashboard {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  min-height: 100vh;
+  position: relative;
+  z-index: 1;
+}
+
+/* Sidebar Styling */
+.sidebar {
+  background: rgba(13, 17, 32, 0.55);
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  border-right: 1px solid var(--border-subtle);
+  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.04) inset;
+  padding: 1.75rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  z-index: 50;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 1.5rem;
+}
+
+/* Médaillon-croix : le seul élément vraiment "signature" de cette
+           interface — un anneau doré tournant lentement, comme la lumière
+           qui tourne autour d'un vitrail en rosace, derrière une croix de
+           verre dépoli. */
+.brand-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  position: relative;
+  background: radial-gradient(
+    circle at 35% 30%,
+    rgba(255, 255, 255, 0.14),
+    rgba(255, 255, 255, 0.03) 60%
+  );
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--gold-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gold);
+  box-shadow:
+    var(--shadow-gold),
+    inset 0 1px 1px rgba(255, 255, 255, 0.25),
+    inset 0 -6px 10px rgba(0, 0, 0, 0.25);
+}
+
+.brand-icon::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: var(--radius-full);
+  background: conic-gradient(
+    from 0deg,
+    var(--primary) 0deg,
+    var(--primary) 90deg,
+    transparent 160deg,
+    transparent 260deg,
+    var(--primary) 320deg,
+    var(--primary) 360deg
+  );
+  opacity: 0.6;
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+}
+
+.brand-icon svg {
+  filter: drop-shadow(0 0 4px var(--gold-glow));
+}
+
+.brand-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #ffffff 25%, var(--gold) 120%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.brand-tag {
+  font-size: 0.7rem;
+  color: var(--accent-cyan);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  list-style: none;
+}
+
+.nav-item {
+  padding: 0.8rem 1rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 0.9rem;
+  border: 1px solid transparent;
+  position: relative;
+}
+
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-main);
+}
+
+.nav-item.active {
+  background: linear-gradient(90deg, rgba(124, 140, 245, 0.18) 0%, rgba(220, 180, 106, 0.05) 100%);
+  color: #ffffff;
+  border-color: rgba(124, 140, 245, 0.32);
+  font-weight: 600;
+}
+
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 25%;
+  bottom: 25%;
+  width: 4px;
+  background: linear-gradient(180deg, var(--gold), var(--primary));
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  box-shadow: 0 0 10px var(--primary-glow);
+}
+
+.nav-item svg {
+  transition: transform 0.2s ease;
+}
+
+.nav-item:hover svg,
+.nav-item.active svg {
+  transform: scale(1.1);
+  color: var(--primary);
+}
+
+/* Sidebar Footer */
+.sidebar-footer {
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.live-status-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(52, 211, 153, 0.1);
+  border: 1px solid rgba(52, 211, 153, 0.22);
+  border-radius: var(--radius-sm);
+  color: var(--accent-emerald);
+  font-weight: 600;
+  backdrop-filter: blur(8px);
+  transition:
+    background var(--ease-silk) 0.3s,
+    border-color var(--ease-silk) 0.3s,
+    color var(--ease-silk) 0.3s;
+}
+
+/* CORRECTIF (UX) : avant, seul le petit point changeait de couleur —
+           le fond/bordure restaient calmes (verts) même en pleine coupure.
+           En régie sous stress, ce détail seul se perd ; toute la pastille
+           doit basculer pour que la perte de connexion soit impossible à
+           manquer. */
+.live-status-pill.offline {
+  background: rgba(244, 96, 122, 0.14);
+  border-color: rgba(244, 96, 122, 0.4);
+  color: var(--accent-rose);
+  animation: offlineAttention 1.6s ease-in-out infinite;
+}
+
+@keyframes offlineAttention {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(244, 96, 122, 0);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(244, 96, 122, 0.35);
+  }
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--accent-emerald);
+  box-shadow: 0 0 8px var(--accent-emerald);
+  animation: pulse-ring 2s infinite;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+}
+
+/* Main Area */
+.main-content {
+  padding: 2rem 2.5rem;
+  overflow-y: auto;
+  max-width: 1600px;
+  margin: 0 auto;
+  width: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+.header-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.header-title-group h1 {
+  font-family: 'Cormorant Garamond', 'Plus Jakarta Sans', serif;
+  font-size: 2.1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.header-subtitle {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+/* Custom Input Bar */
+.search-detector-bar {
+  background: var(--bg-card);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 0.5rem 0.5rem 0.5rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  box-shadow:
+    var(--shadow-sm),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: all 0.3s ease;
+  margin-bottom: 1.5rem;
+}
+
+.search-detector-bar:focus-within {
+  border-color: var(--gold-soft);
+  box-shadow:
+    var(--shadow-gold),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  background: var(--bg-card-hover);
+}
+
+.search-detector-bar input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
+.search-detector-bar input::placeholder {
+  color: var(--text-dim);
+}
+
+/* Quick Suggestion Chips */
+.quick-chips {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.chip-btn {
+  background: rgba(255, 255, 255, 0.045);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-full);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.chip-btn:hover {
+  background: var(--gold-soft);
+  border-color: rgba(220, 180, 106, 0.45);
+  color: var(--text-main);
+  transform: translateY(-1px);
+}
+
+/* AJOUT (innovation frontend) : sélecteur d'ambiances — même famille
+           visuelle que .chip-btn pour rester cohérent avec le reste du
+           tableau de bord, mais avec un état actif marqué (bordure/texte or)
+           pour que l'opérateur voie d'un coup d'œil l'ambiance en cours. */
+.mood-picker-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.mood-btn {
+  background: rgba(255, 255, 255, 0.045);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  padding: 0.45rem 0.95rem;
+  border-radius: var(--radius-full);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.mood-btn:hover {
+  background: var(--gold-soft);
+  border-color: rgba(220, 180, 106, 0.45);
+  color: var(--text-main);
+  transform: translateY(-1px);
+}
+
+.mood-btn.active {
+  background: var(--gold-soft);
+  border-color: var(--gold);
+  color: var(--gold);
+  box-shadow: 0 0 0 1px var(--gold) inset;
+}
+
+/* AJOUT (innovation frontend) : file d'attente de versets. */
+.queue-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.85rem;
+}
+
+.queue-add-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.queue-add-row input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.85rem;
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.queue-add-row input:focus {
+  border-color: var(--primary);
+}
+
+.queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+}
+
+.queue-item-position {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  width: 1.2rem;
+  text-align: center;
+}
+
+.queue-item-ref {
+  flex: 1;
+  font-size: 0.88rem;
+  color: var(--text-main);
+}
+
+.queue-item-actions {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.queue-icon-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.8rem;
+  line-height: 1;
+  transition: all 0.15s ease;
+}
+
+.queue-icon-btn:hover:not(:disabled) {
+  background: var(--bg-card-hover);
+  color: var(--text-main);
+}
+
+.queue-icon-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.queue-icon-btn.queue-send:hover:not(:disabled) {
+  background: var(--sapphire-soft);
+  border-color: var(--sapphire);
+  color: #9db1ec;
+}
+
+.queue-icon-btn.queue-remove:hover:not(:disabled) {
+  background: var(--garnet-soft);
+  border-color: var(--garnet);
+  color: #f4a3b3;
+}
+
+/* AJOUT (médiathèque — déclenchement vocal de photos/vidéos) : réutilise
+           .queue-list/.queue-item/.queue-item-actions/.queue-icon-btn ci-dessus
+           (déjà assez génériques), juste ces quelques classes en plus pour le
+           libellé + les badges de phrases déclencheuses. */
+.media-item-info {
+  flex: 1;
+  min-width: 0;
+}
+.media-item-label {
+  font-size: 0.88rem;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.media-item-phrases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.25rem;
+}
+.media-item-phrase-badge {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+}
+
+/* AJOUT (demande explicite — "scène" médiathèque avec vraies vignettes) :
+           classes DÉDIÉES à #mediaLibraryList, séparées de .queue-list/.queue-item
+           ci-dessus qui restent utilisées telles quelles par la file d'attente de
+           chants et les caméras IP — un changement ici ne doit affecter qu'un
+           seul panneau. */
+.media-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.85rem;
+  max-height: 520px;
+  overflow-y: auto;
+  padding: 0.15rem;
+}
+
+.media-gallery-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+
+.media-gallery-card.is-default {
+  border-color: var(--accent-amber, #d9a441);
+}
+
+.media-gallery-thumb {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  overflow: hidden;
+}
+
+.media-gallery-thumb img,
+.media-gallery-thumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.media-gallery-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  font-size: 0.68rem;
+  line-height: 1;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.media-gallery-body {
+  padding: 0.55rem 0.65rem 0.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.media-gallery-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.media-gallery-details {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.media-gallery-details input,
+.media-gallery-details select {
+  width: 72px;
+  padding: 0.2rem 0.35rem;
+  font-size: 0.72rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-main);
+}
+.media-gallery-details select {
+  width: auto;
+  flex: 1;
+  min-width: 80px;
+}
+
+.media-gallery-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.65rem 0.65rem;
+  margin-top: auto;
+}
+
+.media-gallery-actions .btn {
+  flex: 1;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.78rem;
+}
+
+/* Grid Layouts */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 1.75rem;
+}
+
+/* Panneau de verre — la brique de base de tout le tableau de bord */
+.card {
+  background: var(--bg-card);
+  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  transition:
+    transform 0.45s var(--ease-silk),
+    box-shadow 0.45s var(--ease-silk),
+    border-color 0.45s var(--ease-silk),
+    background 0.45s var(--ease-silk);
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    var(--shadow-sm),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Reflet fin en haut du panneau — le bord "poli" du verre */
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+}
+
+/* RETIRÉ (sur demande) : l'effet de reflet qui suivait le curseur au
+           survol d'une carte (halo flou) a été supprimé. */
+
+.card:hover {
+  border-color: var(--border-light);
+  background: var(--bg-card-hover);
+  transform: translateY(-3px);
+  box-shadow:
+    var(--shadow-lift),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.85rem;
+}
+
+.card-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.card-icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary);
+}
+
+.card-value {
+  font-size: 2.2rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #ffffff;
+  line-height: 1.1;
+}
+
+.card-subtitle {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin-top: 0.4rem;
+}
+
+/* Hero Verse Display Card — la "rosace" du tableau de bord */
+.hero-verse-card {
+  grid-column: span 2;
+  background: linear-gradient(
+    135deg,
+    var(--sapphire-soft) 0%,
+    rgba(255, 255, 255, 0.045) 45%,
+    var(--gold-soft) 75%,
+    var(--garnet-soft) 100%
+  );
+  backdrop-filter: blur(var(--glass-blur)) saturate(170%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(170%);
+  border: 1px solid rgba(124, 140, 245, 0.28);
+  box-shadow:
+    var(--shadow-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  padding: 2rem;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 280px;
+  transition:
+    box-shadow 0.4s var(--ease-silk),
+    border-color 0.4s var(--ease-silk);
+}
+
+/* RETIRÉ (sur demande) : même halo suivant le curseur retiré ici
+           aussi — voir le commentaire équivalent sur .card. */
+
+.hero-verse-card:hover {
+  border-color: rgba(220, 180, 106, 0.4);
+  box-shadow:
+    var(--shadow-glow),
+    var(--shadow-gold),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Croix de lumière en filigrane, coin supérieur droit — le motif
+           signature de la carte mise en avant, dessiné en verre gravé plutôt
+           qu'en simple ligne plate. */
+.hero-verse-card::after {
+  content: '';
+  position: absolute;
+  top: 1.5rem;
+  right: 1.7rem;
+  width: 30px;
+  height: 30px;
+  opacity: 0.55;
+  background:
+    linear-gradient(180deg, transparent, var(--gold) 20%, var(--gold) 80%, transparent) center / 2px
+      100% no-repeat,
+    linear-gradient(90deg, transparent, var(--gold) 20%, var(--gold) 80%, transparent) center 34% /
+      100% 2px no-repeat;
+  filter: drop-shadow(0 0 8px var(--gold-glow));
+}
+
+@media (max-width: 1200px) {
+  .hero-verse-card {
+    grid-column: span 1;
+  }
+}
+
+.hero-verse-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+
+.live-badge {
+  background: rgba(52, 211, 153, 0.14);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  color: var(--accent-emerald);
+  padding: 0.3rem 0.75rem;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.verse-ref-large {
+  font-family: 'Cormorant Garamond', 'Plus Jakarta Sans', serif;
+  font-size: 1.9rem;
+  font-weight: 700;
+  color: var(--gold);
+  letter-spacing: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.verse-body-large {
+  font-family: 'Cormorant Garamond', 'Plus Jakarta Sans', serif;
+  font-size: 1.4rem;
+  line-height: 1.65;
+  color: var(--text-main);
+  font-style: italic;
+  font-weight: 500;
+  margin: 1rem 0;
+  position: relative;
+  padding-left: 1.25rem;
+  border-left: 3px solid var(--gold);
+}
+
+/* AJOUT (correctif bilingue dashboard) : ligne EN sous le texte FR
+           quand langMode === 'both'. Même logique que verse-text-bilingual
+           dans overlay.html, adaptée au style du dashboard. Masquée par
+           défaut ; affichée uniquement par displayVerse() si un texte
+           anglais est disponible. */
+.verse-body-bilingual {
+  font-family: 'Cormorant Garamond', 'Plus Jakarta Sans', serif;
+  font-size: 1.15rem;
+  line-height: 1.6;
+  color: var(--text-dim);
+  font-style: italic;
+  font-weight: 400;
+  margin: 0 0 1rem 0;
+  padding-left: 1.25rem;
+  padding-top: 0.6rem;
+  border-left: 3px solid var(--border-subtle);
+  border-top: 1px dashed var(--border-subtle);
+}
+
+/* Buttons */
+.btn {
+  padding: 0.65rem 1.25rem;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid transparent;
+  outline: none;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(124, 140, 245, 0.35);
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(124, 140, 245, 0.5);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(10px);
+  border-color: var(--border-subtle);
+  color: var(--text-main);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.13);
+  border-color: var(--border-light);
+  transform: translateY(-1px);
+}
+
+.btn-secondary.active,
+.mood-btn.active {
+  background: var(--gold-soft);
+  border-color: var(--gold);
+  color: var(--gold);
+  box-shadow:
+    0 0 0 1px var(--gold-soft),
+    var(--shadow-gold);
+}
+
+.btn-danger {
+  background: rgba(244, 96, 122, 0.15);
+  border-color: rgba(244, 96, 122, 0.32);
+  color: var(--accent-rose);
+}
+
+.btn-danger:hover {
+  background: rgba(244, 96, 122, 0.25);
+  transform: translateY(-1px);
+}
+
+.speech-trigger-btn {
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  transition: all 0.3s ease;
+}
+
+.speech-trigger-btn.active {
+  background: linear-gradient(135deg, #f4607a 0%, #dd3358 100%);
+  color: #fff;
+  box-shadow: 0 0 20px rgba(244, 96, 122, 0.45);
+  animation: mic-pulse 1.8s infinite;
+}
+
+@keyframes mic-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(244, 96, 122, 0.6);
+  }
+  70% {
+    box-shadow: 0 0 0 14px rgba(244, 96, 122, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(244, 96, 122, 0);
+  }
+}
+
+/* Feeds & Lists */
+.transcript-feed,
+.activity-feed {
+  max-height: 380px;
+  overflow-y: auto;
+  padding-right: 0.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.transcript-item {
+  background: rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  transition: background 0.2s ease;
+}
+
+.transcript-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.transcript-time {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  margin-bottom: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.activity-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 0.75rem;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border-subtle);
+}
+
+.activity-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.activity-icon.success {
+  background: rgba(52, 211, 153, 0.15);
+  color: var(--accent-emerald);
+}
+.activity-icon.error {
+  background: rgba(244, 96, 122, 0.15);
+  color: var(--accent-rose);
+}
+.activity-icon.info {
+  background: rgba(124, 140, 245, 0.15);
+  color: var(--primary);
+}
+.activity-icon.warning {
+  background: rgba(124, 140, 245, 0.15);
+  color: var(--accent-amber);
+}
+
+.activity-content {
+  flex: 1;
+}
+.activity-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+.activity-time {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  margin-top: 0.15rem;
+}
+
+/* Audio Visualizer */
+.audio-visualizer-container {
+  background: var(--bg-surface);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+  height: 80px;
+  margin-bottom: 1rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.audio-visualizer-container canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Overlay Frame Container */
+.overlay-preview-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.overlay-preview-header {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.overlay-preview-card iframe {
+  width: 100%;
+  height: 500px;
+  border: none;
+  background: #000;
+  isolation: isolate;
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+/* Language Buttons */
+.language-selector {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.lang-btn {
+  padding: 0.5rem 1.1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.lang-btn:hover,
+.lang-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #ffffff;
+  box-shadow: 0 2px 12px rgba(124, 140, 245, 0.35);
+}
+
+/* Stat rows */
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.8rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.stat-row:last-child {
+  border-bottom: none;
+}
+
+.stat-label {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+.stat-value {
+  font-weight: 700;
+  color: var(--text-main);
+  font-size: 0.95rem;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.status-badge.success {
+  background: rgba(52, 211, 153, 0.15);
+  color: var(--accent-emerald);
+}
+.status-badge.warning {
+  background: rgba(124, 140, 245, 0.15);
+  color: var(--accent-amber);
+}
+.status-badge.error {
+  background: rgba(244, 96, 122, 0.15);
+  color: var(--accent-rose);
+}
+
+/* Toast Notifications */
+.toast-container {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  background: rgba(22, 27, 46, 0.7);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1.25rem;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 280px;
+  color: var(--text-main);
+  font-size: 0.875rem;
+  animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.toast.success {
+  border-color: rgba(52, 211, 153, 0.4);
+}
+.toast.error {
+  border-color: rgba(244, 96, 122, 0.4);
+}
+.toast.warning {
+  border-color: rgba(124, 140, 245, 0.4);
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* AJOUT (effet JS "gratuit" en CPU) : onde au clic sur les boutons.
+           Élément unique créé par clic, animation "forwards" d'environ
+           600ms, puis retiré du DOM (voir script en bas de page) — zéro
+           coût entre deux clics, contrairement à une animation "infinite". */
+.btn-ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+  transform: scale(0);
+  opacity: 0.6;
+  pointer-events: none;
+  animation: btnRipple 0.6s ease-out forwards;
+}
+
+@keyframes btnRipple {
+  to {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .dashboard {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    display: none;
+  }
+  .main-content {
+    padding: 1.25rem;
+  }
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(220, 180, 106, 0.4);
+}
+/* --- Panneau Clés API & Microphone (section Paramètres) ------------ */
+.setup-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  background: rgba(124, 140, 245, 0.1);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid rgba(124, 140, 245, 0.35);
+  border-radius: var(--radius-md);
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 1rem;
+  color: var(--text-main);
+}
+
+.form-group {
+  margin-bottom: 1.35rem;
+}
+
+.form-group label {
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-main);
+  margin-bottom: 0.5rem;
+}
+
+.input-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.form-group select,
+.form-group input[type='password'],
+.form-group input[type='text'] {
+  flex: 1;
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.85rem;
+  font-size: 0.85rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.form-group select:focus,
+.form-group input:focus {
+  border-color: var(--border-active);
+  box-shadow: 0 0 0 3px var(--gold-soft);
+}
+
+.field-hint {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  margin-top: 0.5rem;
+  line-height: 1.5;
+}
+
+.field-hint a {
+  color: var(--gold);
+  text-decoration: none;
+}
+
+.field-hint a:hover {
+  text-decoration: underline;
+}
+
+/* AJOUT (clarté — carte "Caméras IP") : sépare visuellement le
+         jumelage QR et l'ajout manuel, jusqu'ici distingués par un simple
+         texte d'introduction ("Ou manuellement..."). */
+.camera-pairing-subsection {
+  padding-top: 0.85rem;
+  margin-top: 0.85rem;
+  border-top: 1px solid var(--border-subtle);
+}
+.camera-pairing-subsection:first-child {
+  padding-top: 0;
+  margin-top: 0;
+  border-top: none;
+}
+.camera-pairing-subsection h4 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 0.75rem;
+  font-family: inherit;
+}
+
+.link-btn:hover {
+  color: var(--accent-rose);
+}
+
+#apiSettingsCard.needs-setup {
+  border-color: rgba(124, 140, 245, 0.4);
+  box-shadow: 0 0 0 1px rgba(124, 140, 245, 0.18);
+}
+
+/* Bannière d'alerte pipeline (voir dashboard.js) */
+#pipelineAlertBanner {
+  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+}
+
+/* Entrée orchestrée au chargement — la lumière "trouve sa place"
+           plutôt que l'interface qui apparaît d'un bloc. */
+@keyframes reveal-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sidebar,
+.header-bar,
+.search-detector-bar,
+.quick-chips,
+.metrics-grid > * {
+  animation: reveal-rise 0.7s var(--ease-silk) both;
+}
+
+.header-bar {
+  animation-delay: 0.05s;
+}
+.search-detector-bar {
+  animation-delay: 0.12s;
+}
+.quick-chips {
+  animation-delay: 0.18s;
+}
+.metrics-grid > *:nth-child(1) {
+  animation-delay: 0.22s;
+}
+.metrics-grid > *:nth-child(2) {
+  animation-delay: 0.28s;
+}
+.metrics-grid > *:nth-child(3) {
+  animation-delay: 0.34s;
+}
+.metrics-grid > *:nth-child(4) {
+  animation-delay: 0.4s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .header-bar,
+  .search-detector-bar,
+  .quick-chips,
+  .metrics-grid > * {
+    animation: none;
+  }
+}
