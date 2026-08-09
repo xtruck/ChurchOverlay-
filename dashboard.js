@@ -274,7 +274,7 @@ initWebSocket();
 // recognition.onerror : limitation connue de Chromium embarqué,
 // sans lien avec le pipeline réel de détection de versets).
 // ==================================================================
-let realMicCaptureState = null; // { stream, audioCtx, sourceNode, processorNode, silentGain, analyser }
+let realMicCaptureState = null; // { stream, audioCtx, sourceNode, compressor, processorNode, silentGain, analyser }
 let realVisualizerAnimId = null;
 
 function drawRealAudioVisualizer() {
@@ -361,6 +361,23 @@ async function startRealAudioCapture() {
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const sourceNode = audioCtx.createMediaStreamSource(stream);
 
+    // AJOUT (audio — protection contre la saturation en cas de cri) : le
+    // gate de bruit dans audio-capture-worklet.js atténue le bruit de fond
+    // FAIBLE (voir son commentaire d'en-tête, qui exclut explicitement les
+    // pics forts — l'inverse de ce qu'il faut ici) ; rien jusqu'ici ne
+    // protégeait contre l'écrêtage numérique d'une voix criée, qui sature
+    // deux fois (le micro, puis le clamp dur à ±1 dans
+    // _downsampleAndSend() du worklet). Valeurs par défaut de la spec Web
+    // Audio pour DynamicsCompressorNode — seuil à -24dBFS, bien au-dessus
+    // du GATE_THRESHOLD (0.015 ≈ -36dBFS) du gate, donc les passages calmes
+    // traversent quasiment inchangés.
+    const compressorNode = audioCtx.createDynamicsCompressor();
+    compressorNode.threshold.value = -24;
+    compressorNode.knee.value = 30;
+    compressorNode.ratio.value = 12;
+    compressorNode.attack.value = 0.003;
+    compressorNode.release.value = 0.25;
+
     // CORRECTIF (dépréciation DevTools "ScriptProcessorNode is deprecated,
     // use AudioWorkletNode instead") : createScriptProcessor() tourne sur
     // le thread principal (celui de l'UI) et peut le bloquer sous charge.
@@ -387,7 +404,8 @@ async function startRealAudioCapture() {
     // haut-parleurs (pas d'écho/larsen).
     const silentGain = audioCtx.createGain();
     silentGain.gain.value = 0;
-    sourceNode.connect(processorNode);
+    sourceNode.connect(compressorNode);
+    compressorNode.connect(processorNode);
     processorNode.connect(silentGain);
     silentGain.connect(audioCtx.destination);
 
@@ -401,6 +419,7 @@ async function startRealAudioCapture() {
       stream,
       audioCtx,
       sourceNode,
+      compressor: compressorNode,
       processorNode,
       silentGain,
       analyser: analyserNode,
@@ -424,6 +443,7 @@ function stopRealAudioCapture() {
   if (!realMicCaptureState) return;
   try {
     realMicCaptureState.sourceNode.disconnect();
+    realMicCaptureState.compressor.disconnect();
     realMicCaptureState.processorNode.port.onmessage = null;
     realMicCaptureState.processorNode.port.close();
     realMicCaptureState.processorNode.disconnect();
