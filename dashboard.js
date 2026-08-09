@@ -132,6 +132,20 @@ const getWsUrl = () => {
   return `ws://localhost:${getWsPort()}`;
 };
 
+// CORRECTIF (bug production — logo d'habillage caméra invisible dans le
+// tableau de bord, "Failed to load resource: /C:/branding/..."). Ce
+// tableau de bord est chargé en file:// dans Electron (pas via le
+// serveur Express), donc un chemin racine-relatif comme "/branding/xxx"
+// (renvoyé tel quel par le serveur, voir server.js > logoUrl) se
+// résolvait contre la racine du disque au lieu du serveur HTTP local —
+// même famille de bug que getWsUrl() ci-dessus pour le WebSocket.
+const getHttpOrigin = () => {
+  if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+    return window.location.origin;
+  }
+  return `http://localhost:${getWsPort()}`;
+};
+
 let ws = null;
 let reconnectAttempts = 0;
 // CORRECTIF (bug de production signalé — "l'application reste
@@ -1382,7 +1396,10 @@ function renderBranding(branding) {
   }
   if (activeEl && placeholder) {
     if (branding.logoUrl) {
-      if (activeEl.src !== branding.logoUrl) activeEl.src = branding.logoUrl;
+      const absoluteLogoUrl = branding.logoUrl.startsWith('http')
+        ? branding.logoUrl
+        : getHttpOrigin() + branding.logoUrl;
+      if (activeEl.src !== absoluteLogoUrl) activeEl.src = absoluteLogoUrl;
       activeEl.style.display = 'block';
       placeholder.style.display = 'none';
     } else {
