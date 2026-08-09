@@ -112,27 +112,40 @@ Fonctionne aussi avec :
 
 ### Caméras IP (plusieurs téléphones, sans rien installer sur ce PC)
 
-Réglages → Caméras IP (téléphones) — c'est la méthode recommandée pour
+Réglages → Caméras IP (téléphones) — la méthode recommandée pour
 **3 à 5 téléphones utilisés comme caméras multi-angles** (scène, salle,
-gros plan...) sans installer quoi que ce soit sur le PC qui fait tourner
-ChurchOverlay :
+gros plan...) sans DroidCam et sans app à installer sur le téléphone.
 
-1. Sur chaque téléphone, installez une app gratuite type **« IP Webcam »**
-   (Android, par Pavel Khlebovich — cherchez « IP Webcam » sur le Play
-   Store).
+**Méthode recommandée — scanner un QR code (nouveau, aucune app) :**
+
+1. Cliquez **📷 Générer un QR code (téléphone, sans app)**.
+2. Sur le téléphone, ouvrez l'appareil photo (ou un lecteur QR) et scannez
+   le code affiché — une page s'ouvre directement dans le navigateur du
+   téléphone (Chrome/Safari), rien à installer.
+3. Autorisez l'accès à la caméra quand le navigateur le demande. La page
+   affiche « En direct » une fois connectée.
+4. Le téléphone apparaît automatiquement dans la liste ci-dessous, avec un
+   aperçu et un badge en ligne/hors ligne — comme n'importe quelle caméra
+   IP. Cliquez **📋** dessus pour copier son lien à coller dans OBS.
+5. **Important :** le QR n'est valable que **10 minutes** et ne fonctionne
+   qu'**une seule fois** — s'il a expiré ou a déjà été scanné, régénérez-en
+   un nouveau. Laissez l'écran du téléphone allumé pendant le culte (la
+   page essaie de l'empêcher de se verrouiller automatiquement).
+6. **Condition technique :** cette méthode a besoin que le serveur
+   ChurchOverlay soit accessible sur le réseau Wi-Fi de l'église (pas
+   seulement en local sur ce PC) — voir `README.md` (`WS_HOST` et jetons de
+   sécurité). Si ce n'est pas configuré, le bouton affiche un message clair
+   plutôt qu'un QR qui ne fonctionnerait pas.
+
+**Alternative manuelle — app « IP Webcam » déjà installée :**
+
+1. Sur le téléphone, installez une app gratuite type **« IP Webcam »**
+   (Android, par Pavel Khlebovich).
 2. Connectez le téléphone au **même Wi-Fi** que le PC.
-3. Ouvrez l'app, appuyez sur « Démarrer le serveur » (ou équivalent) —
-   elle affiche une adresse du type `http://192.168.1.50:8080`.
-4. Dans ChurchOverlay, ajoutez un nom (ex. « Téléphone scène ») et collez
-   cette adresse suivie de `/video` (ex.
-   `http://192.168.1.50:8080/video`).
-5. Répétez pour chaque téléphone — un aperçu miniature en direct et un
-   badge « En ligne / Hors ligne » apparaissent pour chacun, pour repérer
-   tout de suite un téléphone déconnecté (Wi-Fi coupé, app fermée...).
-6. Cliquez **📋** sur une caméra pour copier son lien, à coller directement
-   dans OBS comme Source Navigateur — c'est le même flux, ChurchOverlay ne
-   fait que le surveiller et vous éviter de retrouver l'IP à chaque fois
-   (elle peut changer d'un culte à l'autre selon votre routeur Wi-Fi).
+3. Ouvrez l'app, appuyez sur « Démarrer le serveur » — elle affiche une
+   adresse du type `http://192.168.1.50:8080`.
+4. Dans ChurchOverlay, ajoutez un nom et collez cette adresse suivie de
+   `/video` (ex. `http://192.168.1.50:8080/video`).
 
 ### Habillage caméra (logo, titre) — logo et texte par-dessus la caméra (nouveau)
 
@@ -154,9 +167,11 @@ dans OBS, plus jamais besoin d'y retourner pour changer un texte.
 
 **Ensuite, à chaque culte, tout se passe dans ChurchOverlay :**
 
-- **+ Choisir un logo** : le logo de l'église, affiché en permanence dans
-  le coin choisi (menu déroulant : haut-gauche, haut-droit, bas-gauche,
-  bas-droit). Réglé une fois, reste d'un culte à l'autre.
+- **+ Choisir un logo** : image, **GIF animé**, ou **courte vidéo**
+  (.mp4/.webm, lue en boucle silencieuse) — affiché en permanence dans le
+  coin choisi (menu déroulant : haut-gauche, haut-droit, bas-gauche,
+  bas-droit) et à la **taille** choisie (petit/moyen/grand, second menu
+  déroulant). Réglé une fois, reste d'un culte à l'autre.
 - **Titre / Sous-titre** (ex. « Pasteur Jean Dupont » / « Culte du
   dimanche ») : un bandeau en bas de l'écran, à activer avec **👁️
   Afficher sur la diffusion** au moment voulu, et masquer ensuite avec le
@@ -200,17 +215,19 @@ inventée sans contenu réel à citer.
 
 ## Dépannage rapide
 
-| Symptôme                                  | Vérifier                                                                                                                                                                                |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Aucun verset ne s'affiche                 | Micro démarré ? Badge "Capture active" ? Clé Groq configurée (écran de setup) ?                                                                                                         |
-| Le verset apparaît en retard/coupé        | Réseau lent — la détection par citation exacte est la plus rapide, privilégiez des références explicites ("Jean 3:16")                                                                  |
-| Le poster principal ne réapparaît pas     | Un verset ou un autre média est peut-être encore actif à l'écran — le poster ne reprend sa place que si RIEN d'autre n'est affiché                                                      |
-| "show poster X" ne déclenche rien         | Vérifiez que le nom/la phrase déclencheuse correspond bien à ce qui est dit — la correspondance est par sous-chaîne, pas par similarité approximative                                   |
-| DroidCam absent de la liste               | Le **client DroidCam pour PC** doit être lancé ET connecté au téléphone (Wi-Fi ou USB) — l'app seule sur le téléphone ne suffit pas. Cliquez 🔄 Actualiser après connexion.             |
-| Caméra NDI absente de la liste            | Installez/activez "NDI Virtual Input" (NDI Tools gratuit) — sans lui, une source NDI n'apparaît pas comme une webcam standard                                                           |
-| Caméra de téléphone (IP) "Hors ligne"     | Le téléphone a perdu le Wi-Fi, l'app "IP Webcam" a été fermée/mise en veille, ou son adresse IP a changé — rouvrez l'app sur le téléphone et, si besoin, mettez à jour l'adresse collée |
-| Logo/titre invisibles dans OBS            | Vérifiez que la Source Navigateur "Habillage caméra" a bien été ajoutée dans OBS (étape unique) ET qu'elle est positionnée AU-DESSUS de la source caméra dans la liste des sources      |
-| Sous-titres traduits en retard ou absents | Normal par design (best-effort, jamais bloquant) — vérifiez simplement que le quota gratuit Groq/Gemini n'est pas épuisé par ailleurs                                                   |
+| Symptôme                                  | Vérifier                                                                                                                                                                                    |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Aucun verset ne s'affiche                 | Micro démarré ? Badge "Capture active" ? Clé Groq configurée (écran de setup) ?                                                                                                             |
+| Le verset apparaît en retard/coupé        | Réseau lent — la détection par citation exacte est la plus rapide, privilégiez des références explicites ("Jean 3:16")                                                                      |
+| Le poster principal ne réapparaît pas     | Un verset ou un autre média est peut-être encore actif à l'écran — le poster ne reprend sa place que si RIEN d'autre n'est affiché                                                          |
+| "show poster X" ne déclenche rien         | Vérifiez que le nom/la phrase déclencheuse correspond bien à ce qui est dit — la correspondance est par sous-chaîne, pas par similarité approximative                                       |
+| DroidCam absent de la liste               | Le **client DroidCam pour PC** doit être lancé ET connecté au téléphone (Wi-Fi ou USB) — l'app seule sur le téléphone ne suffit pas. Cliquez 🔄 Actualiser après connexion.                 |
+| Caméra NDI absente de la liste            | Installez/activez "NDI Virtual Input" (NDI Tools gratuit) — sans lui, une source NDI n'apparaît pas comme une webcam standard                                                               |
+| Caméra de téléphone (IP) "Hors ligne"     | Le téléphone a perdu le Wi-Fi, l'app "IP Webcam" a été fermée/mise en veille, ou son adresse IP a changé — rouvrez l'app sur le téléphone et, si besoin, mettez à jour l'adresse collée     |
+| "Générer un QR code" affiche une erreur   | Le serveur n'est accessible qu'en local (`WS_HOST=127.0.0.1`, le défaut) — le téléphone ne peut pas l'atteindre. Voir `README.md` pour configurer l'accès réseau et les jetons de sécurité. |
+| Le téléphone scanné n'affiche rien        | Le QR a peut-être expiré (10 min) ou a déjà été utilisé (usage unique) — régénérez-en un nouveau et scannez-le tout de suite après                                                          |
+| Logo/titre invisibles dans OBS            | Vérifiez que la Source Navigateur "Habillage caméra" a bien été ajoutée dans OBS (étape unique) ET qu'elle est positionnée AU-DESSUS de la source caméra dans la liste des sources          |
+| Sous-titres traduits en retard ou absents | Normal par design (best-effort, jamais bloquant) — vérifiez simplement que le quota gratuit Groq/Gemini n'est pas épuisé par ailleurs                                                       |
 
 Pour les détails techniques (variables d'environnement, protocole
 WebSocket, architecture), voir `README.md`, `API.md` et

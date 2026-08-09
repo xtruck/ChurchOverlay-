@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ChurchOverlay — Caméra téléphone</title>
+<!--
+  ============================================================================
+  phone-camera.html — Page ouverte en scannant le QR code (côté téléphone)
+  ----------------------------------------------------------------------------
+  AJOUT (demande explicite — "scanner un QR code, le téléphone est prêt à
+  filmer, sans DroidCam ni IP à taper à la main"). Aucune app à installer :
+  cette page tourne dans le navigateur du téléphone (Chrome/Safari mobile),
+  utilise getUserMedia() exactement comme camera-capture.js côté PC, et
+  envoie des images JPEG régulières au serveur ChurchOverlay plutôt qu'un
+  flux vidéo complet — plus simple et plus robuste à construire qu'un pont
+  WebRTC complet, largement suffisant pour une caméra d'église (pas de
+  sport rapide à filmer).
+
+  Flux : ?pair=<code> dans l'URL (généré par le tableau de bord, affiché en
+  QR) → POST /phone-camera-pair (échange usage unique, voir
+  phone-camera-pairing.js) → getUserMedia() → boucle canvas→JPEG→POST
+  /phone-camera-frame/:id. Le serveur ré-expose ces images comme un flux
+  MJPEG classique (GET /phone-camera-stream/:id) — le MÊME mécanisme que
+  ip-camera-store.js pour les caméras IP tierces, donc réutilisable tel
+  quel par le panneau "Caméras IP" du tableau de bord et par OBS.
+  ============================================================================
+-->
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    background: #0a0e1c;
+    color: #f6f3ec;
+    font-family: 'Segoe UI', -apple-system, sans-serif;
+    overflow: hidden;
+  }
+  #video {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background: #000;
+  }
+  #status-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 14px 18px;
+    padding-top: max(14px, env(safe-area-inset-top));
+    background: linear-gradient(180deg, rgba(0,0,0,0.75), transparent);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    z-index: 2;
+  }
+  #status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #f4607a;
+    flex-shrink: 0;
+    box-shadow: 0 0 8px #f4607a;
+  }
+  #status-dot.live {
+    background: #34d399;
+    box-shadow: 0 0 8px #34d399;
+    animation: pulse-dot 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  #message {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 32px;
+    font-size: 17px;
+    line-height: 1.5;
+    z-index: 3;
+    background: #0a0e1c;
+  }
+  #message.hidden { display: none; }
+  #message strong { display: block; margin-bottom: 8px; font-size: 20px; }
+</style>
+</head>
+<body>
+
+<div id="status-bar">
+  <div id="status-dot"></div>
+  <span id="status-text">Connexion…</span>
+</div>
+
+<video id="video" autoplay playsinline muted></video>
+<canvas id="canvas" style="display:none;"></canvas>
+
+<div id="message">
+  <div>
+    <strong>Connexion à ChurchOverlay…</strong>
+    <div id="message-detail">Merci de patienter.</div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+function getPairCode() {
+  return new URLSearchParams(window.location.search).get('pair');
+}
+
+const statusDot = document.getElementById('status-dot');
+const statusText = document.getElementById('status-text');
+const messageEl = document.getElementById('message');
+const messageDetail = document.getElementById('message-detail');
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+
+function setStatus(text, live) {
+  statusText.textContent = text;
+  statusDot.classList.toggle('live', !!live);
+}
+
+function showMessage(title, detail) {
+  messageEl.classList.remove('hidden');
+  messageEl.querySelector('strong').textContent = title;
+  messageDetail.textContent = detail || '';
+}
+
+function hideMessage() {
+  messageEl.classList.add('hidden');
+}
+
+// Capture ~5 images/seconde en JPEG — largement suffisant pour une caméra
+// d'église (angle fixe, pas d'action rapide) tout en restant léger en
+// bande passante/CPU (voir la contrainte "pas de traitement lourd" du
+// projet). Volontairement plus lent que le flux getUserMedia lui-même :
+// la fluidité perçue vient de object-fit:cover sur l'aperçu LOCAL, seul le
+// flux ENVOYÉ au serveur est échantillonné à ce rythme.
+const FRAME_INTERVAL_MS = 200;
+const JPEG_QUALITY = 0.72;
+
+let cameraId = null;
+let streamSecret = null;
+let captureTimer = null;
+let sending = false;
+let wakeLock = null;
+
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+    }
+  } catch (_e) {
+    // Best-effort : sans l'API Wake Lock (navigateur trop ancien, ou refusé
+    // par l'OS), l'écran peut s'éteindre — pas bloquant, juste moins pratique.
+  }
+}
+
+async function pairWithServer(pairCode) {
+  const res = await fetch('/phone-camera-pair', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pairCode }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Erreur serveur (${res.status})`);
+  }
+  return res.json();
+}
+
+async function startCamera() {
+  // Caméra ARRIÈRE par défaut ('environment') : un téléphone utilisé comme
+  // caméra d'église filme la salle/scène, pas l'opérateur qui le tient.
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+    audio: false,
+  });
+  video.srcObject = stream;
+  await video.play();
+}
+
+function captureFrame() {
+  if (sending || video.videoWidth === 0) return;
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  canvas.toBlob(
+    (blob) => {
+      if (!blob) return;
+      sending = true;
+      fetch(`/phone-camera-frame/${cameraId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'image/jpeg', 'X-Stream-Secret': streamSecret },
+        body: blob,
+      })
+        .then((res) => {
+          setStatus(res.ok ? 'En direct' : 'Erreur d’envoi', res.ok);
+        })
+        .catch(() => setStatus('Connexion perdue — nouvelle tentative…', false))
+        .finally(() => {
+          sending = false;
+        });
+    },
+    'image/jpeg',
+    JPEG_QUALITY
+  );
+}
+
+async function main() {
+  const pairCode = getPairCode();
+  if (!pairCode) {
+    showMessage(
+      'Lien invalide',
+      'Ouvrez cette page en scannant le QR code affiché dans le tableau de bord ChurchOverlay.'
+    );
+    return;
+  }
+
+  try {
+    setStatus('Jumelage…', false);
+    const pairing = await pairWithServer(pairCode);
+    cameraId = pairing.cameraId;
+    streamSecret = pairing.streamSecret;
+  } catch (err) {
+    showMessage(
+      'Jumelage impossible',
+      (err && err.message) ||
+        'Le QR code a peut-être expiré (valable 10 minutes) — générez-en un nouveau depuis le tableau de bord.'
+    );
+    return;
+  }
+
+  try {
+    setStatus('Démarrage de la caméra…', false);
+    await startCamera();
+  } catch (err) {
+    const name = err && err.name;
+    let detail = "Vérifiez l'autorisation caméra dans les réglages du navigateur.";
+    if (name === 'NotFoundError') detail = 'Aucune caméra détectée sur cet appareil.';
+    if (name === 'NotAllowedError') detail = "Autorisez l'accès à la caméra pour ce site, puis rechargez la page.";
+    showMessage('Caméra indisponible', detail);
+    return;
+  }
+
+  hideMessage();
+  setStatus('En direct', true);
+  requestWakeLock();
+
+  captureTimer = setInterval(captureFrame, FRAME_INTERVAL_MS);
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      clearInterval(captureTimer);
+      captureTimer = null;
+      setStatus('En pause (écran non visible)', false);
+    } else if (!captureTimer) {
+      captureTimer = setInterval(captureFrame, FRAME_INTERVAL_MS);
+      requestWakeLock();
+    }
+  });
+}
+
+main();
+</script>
+
+</body>
+</html>

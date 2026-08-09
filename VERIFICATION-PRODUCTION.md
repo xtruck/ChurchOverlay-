@@ -9,6 +9,35 @@ le dimanche matin même.
 
 ## Priorité haute — fonctionnalités les plus récentes
 
+### Caméra téléphone par QR code (nouveau, à tester avec un vrai réseau Wi-Fi)
+
+- [ ] Configurer `WS_HOST` sur une adresse réseau (pas `127.0.0.1`) avec
+      `WS_AUTH_TOKEN`/`WS_VIEWER_TOKEN` définis (voir README.md), sinon le
+      bouton "Générer un QR code" doit afficher un message d'erreur clair —
+      confirmer que ce message apparaît bien quand `WS_HOST` reste local.
+- [ ] Une fois configuré : cliquer "Générer un QR code" → un QR valide
+      apparaît (le scanner avec une app QR tierce pour vérifier qu'il
+      encode bien une URL `http://<ip-du-pc>:<port>/phone-camera.html?pair=...`
+      avant même de tester avec un téléphone).
+- [ ] Scanner avec un vrai téléphone → la page s'ouvre dans le navigateur
+      (PAS de redirection vers un store d'applications), demande la
+      permission caméra, affiche "En direct" une fois accordée.
+- [ ] Le téléphone apparaît automatiquement dans le panneau "Caméras IP"
+      du tableau de bord, avec aperçu + badge "En ligne".
+- [ ] Réessayer de scanner le MÊME QR une deuxième fois → doit échouer
+      clairement (usage unique) — confirmer qu'aucune deuxième caméra
+      fantôme n'apparaît.
+- [ ] Attendre 10+ minutes puis scanner un QR non utilisé → doit échouer
+      clairement (expiré).
+- [ ] Verrouiller l'écran du téléphone manuellement pendant la capture →
+      noter si le flux s'interrompt (limite connue : l'API Wake Lock n'est
+      pas garantie sur tous les navigateurs/OS).
+- [ ] Supprimer la caméra téléphone depuis le panneau "Caméras IP" →
+      confirmer que le téléphone cesse d'être accepté (son ancien secret
+      de flux ne doit plus fonctionner).
+- [ ] Coller le lien copié (📋) dans OBS comme Source Navigateur → l'image
+      du téléphone s'affiche dans OBS.
+
 ### Caméras de téléphone (DroidCam) et habillage caméra
 
 - [ ] DroidCam : avec le client PC lancé et connecté au téléphone, cliquer
@@ -24,6 +53,13 @@ le dimanche matin même.
 - [ ] Changer la position du logo (menu déroulant) → il se déplace bien
       dans le coin choisi, sans jamais chevaucher le bandeau titre/sous-titre
       (toujours en bas, centré).
+- [ ] Changer la taille du logo (petit/moyen/grand) → la taille change bien
+      sur la Source Navigateur OBS, sans déborder de l'écran en "grand".
+- [ ] Choisir un logo GIF animé → l'animation joue bien (aperçu dashboard
+      ET Source Navigateur OBS).
+- [ ] Choisir un logo vidéo (.mp4 ou .webm) → la vidéo joue en boucle,
+      sans son, sans contrôles visibles, aussi bien dans l'aperçu du
+      tableau de bord que sur la Source Navigateur OBS.
 - [ ] Taper un titre/sous-titre, cliquer "Afficher sur la diffusion" →
       le bandeau apparaît avec une animation de fondu/glissement, pas un
       "saut" brutal. Cliquer "Masquer" → il disparaît proprement.

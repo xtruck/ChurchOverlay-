@@ -22,9 +22,31 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const ALLOWED_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.svg']);
+// AJOUT (demande explicite — "pas seulement des logos ou du texte, des
+// masques, plein de fichiers différents, même vidéo, même GIF") : au-delà
+// des images statiques, un logo peut être une vidéo (.mp4/.webm, lue en
+// boucle silencieuse — même esprit qu'un GIF animé) ou un GIF animé
+// classique. logoType (déduit de l'extension, voir setLogo()) dit à
+// branding-overlay.html quel élément afficher (<img> ou <video>).
+const ALLOWED_EXTENSIONS = new Set([
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.webp',
+  '.svg',
+  '.gif',
+  '.mp4',
+  '.webm',
+]);
+const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm']);
 const POSITIONS = new Set(['top-left', 'top-right', 'bottom-left', 'bottom-right']);
 const DEFAULT_POSITION = 'bottom-right';
+// AJOUT (demande explicite — "plus de paramètres") : taille du logo à
+// l'écran, en plus de sa position. Trois préréglages plutôt qu'un
+// pourcentage libre — plus simple à choisir pour un opérateur non technique,
+// et évite qu'un logo mal dimensionné envahisse tout le cadre par erreur.
+const SIZES = new Set(['small', 'medium', 'large']);
+const DEFAULT_SIZE = 'medium';
 
 let configPath = null;
 let logoDir = null;
@@ -38,13 +60,20 @@ function setUserDataDir(dir) {
 }
 
 function readConfig() {
-  const fallback = { logoFilename: null, position: DEFAULT_POSITION };
+  const fallback = {
+    logoFilename: null,
+    logoType: 'image',
+    position: DEFAULT_POSITION,
+    size: DEFAULT_SIZE,
+  };
   if (!configPath || !fs.existsSync(configPath)) return fallback;
   try {
     const data = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     return {
       logoFilename: typeof data.logoFilename === 'string' ? data.logoFilename : null,
+      logoType: data.logoType === 'video' ? 'video' : 'image',
       position: POSITIONS.has(data.position) ? data.position : DEFAULT_POSITION,
+      size: SIZES.has(data.size) ? data.size : DEFAULT_SIZE,
     };
   } catch (e) {
     console.warn('[branding-store] Lecture impossible, config ignorée:', e.message);
@@ -98,17 +127,19 @@ function setLogo(sourcePath) {
   fs.copyFileSync(sourcePath, path.join(logoDir, filename));
 
   config.logoFilename = filename;
+  config.logoType = VIDEO_EXTENSIONS.has(ext) ? 'video' : 'image';
   writeConfig(config);
   return config;
 }
 
 /**
- * @returns {{logoFilename: null, position: string}}
+ * @returns {{logoFilename: null, logoType: string, position: string, size: string}}
  */
 function clearLogo() {
   const config = readConfig();
   if (config.logoFilename) deleteLogoFile(config.logoFilename);
   config.logoFilename = null;
+  config.logoType = 'image';
   writeConfig(config);
   return config;
 }
@@ -124,14 +155,29 @@ function setPosition(position) {
   return config;
 }
 
+/**
+ * @param {string} size - 'small' | 'medium' | 'large'
+ * @returns {{logoFilename: string|null, logoType: string, position: string, size: string}}
+ */
+function setSize(size) {
+  const config = readConfig();
+  config.size = SIZES.has(size) ? size : DEFAULT_SIZE;
+  writeConfig(config);
+  return config;
+}
+
 module.exports = {
   setUserDataDir,
   getConfig,
   setLogo,
   clearLogo,
   setPosition,
+  setSize,
   // Exposées pour tests unitaires (test-branding-store.js).
   ALLOWED_EXTENSIONS,
+  VIDEO_EXTENSIONS,
   POSITIONS,
   DEFAULT_POSITION,
+  SIZES,
+  DEFAULT_SIZE,
 };

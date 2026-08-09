@@ -60,6 +60,11 @@ const ipCameraStore = require('./ip-camera-store');
 // branding-store.js (logo persisté) et branding-overlay.html (page
 // affichée par-dessus la caméra dans OBS).
 const brandingStore = require('./branding-store');
+// AJOUT (caméra téléphone par QR code, demande explicite) : voir
+// phone-camera-pairing.js (codes/secrets), phone-camera.html (page ouverte
+// par le téléphone) et les routes HTTP /phone-camera-* plus bas.
+const phoneCameraPairing = require('./phone-camera-pairing');
+const QRCode = require('qrcode');
 // AJOUT (sous-titres traduits en direct) : module isolé, jamais attendu
 // avant processTranscript() — voir startPipeline() et caption-translator.js.
 const captionTranslator = require('./caption-translator');
@@ -245,6 +250,125 @@ app.get('/api/health', (req, res) => {
 app.get('/companion', (req, res) => res.sendFile(path.join(APP_ROOT, 'companion.html')));
 app.get('/api/verses', (req, res) => {
   res.json({ verses: sessionState.getVerseHistory() });
+});
+
+// ---------------------------------------------------------------------------
+// Caméra téléphone par QR code (demande explicite) — voir phone-camera.html
+// (page ouverte par le téléphone) et phone-camera-pairing.js (codes/secrets).
+// Aucune de ces trois routes ne passe par le canal WebSocket/OPERATOR_ACTIONS
+// habituel : le téléphone n'a ni jeton opérateur ni jeton viewer, seulement
+// le code de jumelage à usage unique (issu du QR) puis le secret de flux
+// durable qu'il reçoit en échange — même discipline de "secret dédié plutôt
+// que le jeton principal" que WS_VIEWER_TOKEN vs WS_AUTH_TOKEN.
+// ---------------------------------------------------------------------------
+// Dernière image JPEG reçue par caméra — voir POST /phone-camera-frame/:id
+// (écriture) et GET /phone-camera-stream/:id (lecture, ré-exposée en MJPEG).
+// Volontairement en mémoire seulement (jamais sur disque) : c'est un flux
+// live, pas un historique à conserver.
+const phoneCameraFrames = new Map(); // cameraId -> { buffer: Buffer, receivedAt: number }
+
+// Repli raisonnable pour un poste unique sur le Wi-Fi de l'église (une seule
+// interface réseau active la plupart du temps) — voir le commentaire dans le
+// handler 'generateCameraPairing' pour le cas où plusieurs interfaces sont
+// actives (VPN, etc.) et où cette détection automatique peut se tromper.
+function getLanIpAddress() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] || []) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return null;
+}
+
+app.post('/phone-camera-pair', express.json({ limit: '1kb' }), (req, res) => {
+  const pairCode = req.body && typeof req.body.pairCode === 'string' ? req.body.pairCode : '';
+  const result = phoneCameraPairing.redeemPairingCode(pairCode);
+  if (!result) {
+    res.status(400).json({ error: 'Code de jumelage invalide ou expiré.' });
+    return;
+  }
+
+  // AJOUT : le téléphone jumelé apparaît immédiatement dans la médiathèque
+  // "Caméras IP" existante — même liste, même aperçu, même badge en ligne/
+  // hors ligne que les caméras IP tierces (voir ip-camera-store.js), sans
+  // action manuelle de l'opérateur.
+  const lanIp = getLanIpAddress();
+  if (lanIp) {
+    try {
+      ipCameraStore.addItem({
+        label: 'Téléphone (QR)',
+        url: `http://${lanIp}:${SERVER_PORT}/phone-camera-stream/${result.cameraId}`,
+      });
+      broadcast({ action: 'ipCamerasUpdated', items: ipCameraStore.listItems() });
+    } catch (err) {
+      warn('Phone camera: échec ajout médiathèque IP: ' + err.message);
+    }
+  }
+
+  log('Phone camera: nouveau téléphone jumelé (' + result.cameraId + ')');
+  res.json({ cameraId: result.cameraId, streamSecret: result.streamSecret });
+});
+
+app.post(
+  '/phone-camera-frame/:id',
+  express.raw({ type: 'image/jpeg', limit: '2mb' }),
+  (req, res) => {
+    const cameraId = req.params.id;
+    const secret = req.header('X-Stream-Secret') || '';
+    if (!phoneCameraPairing.isStreamSecretValid(cameraId, secret)) {
+      res.status(403).json({ error: 'Secret de flux invalide.' });
+      return;
+    }
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      res.status(400).json({ error: 'Image manquante.' });
+      return;
+    }
+    phoneCameraFrames.set(cameraId, { buffer: req.body, receivedAt: Date.now() });
+    res.status(204).end();
+  }
+);
+
+// Ré-expose les images reçues du téléphone en flux MJPEG classique
+// (multipart/x-mixed-replace) — EXACTEMENT le même format que les caméras
+// IP tierces (app "IP Webcam") déjà consommées par le panneau "Caméras IP"
+// du tableau de bord et par OBS : un <img src="..."> ou une Source
+// Navigateur OBS l'affichent nativement, sans code supplémentaire.
+app.get('/phone-camera-stream/:id', (req, res) => {
+  const cameraId = req.params.id;
+  if (!phoneCameraPairing.isCameraPaired(cameraId)) {
+    res.status(404).end();
+    return;
+  }
+
+  const boundary = 'churchoverlayframe';
+  res.writeHead(200, {
+    'Content-Type': `multipart/x-mixed-replace; boundary=${boundary}`,
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    Pragma: 'no-cache',
+    Connection: 'close',
+  });
+
+  let lastSentAt = 0;
+  const pushTimer = setInterval(() => {
+    const frame = phoneCameraFrames.get(cameraId);
+    if (!frame || frame.receivedAt === lastSentAt) return;
+    lastSentAt = frame.receivedAt;
+    try {
+      res.write(
+        `--${boundary}\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.buffer.length}\r\n\r\n`
+      );
+      res.write(frame.buffer);
+      res.write('\r\n');
+    } catch (_e) {
+      // Client déconnecté entre le clearInterval ci-dessous et cette
+      // écriture : 'close' se chargera de nettoyer, rien d'autre à faire ici.
+    }
+  }, 150);
+
+  req.on('close', () => clearInterval(pushTimer));
 });
 
 const httpServer = http.createServer(app);
@@ -1027,7 +1151,9 @@ function getBrandingState() {
   const text = sessionState.getBrandingText();
   return {
     logoUrl: config.logoFilename ? `/branding/${config.logoFilename}` : null,
+    logoType: config.logoType,
     position: config.position,
+    size: config.size,
     title: text.title,
     subtitle: text.subtitle,
     visible: sessionState.getBrandingVisible(),
@@ -1117,11 +1243,13 @@ const OPERATOR_ACTIONS = new Set([
   'getIpCameras',
   'addIpCamera',
   'deleteIpCamera',
+  'generateCameraPairing',
   // AJOUT (habillage caméra — logo/titre)
   'getBranding',
   'setBrandingLogo',
   'clearBrandingLogo',
   'setBrandingPosition',
+  'setBrandingSize',
   'setBrandingText',
   'setBrandingVisible',
   // AJOUT (bibliothèque de chants)
@@ -1944,11 +2072,66 @@ wss.on('connection', (ws, req) => {
     }
 
     if (sanitized.action === 'deleteIpCamera') {
+      // AJOUT (caméra téléphone QR) : si l'élément supprimé est un téléphone
+      // jumelé par QR (voir POST /phone-camera-pair), on invalide aussi son
+      // secret de flux et on oublie sa dernière image — sinon le téléphone
+      // continuerait d'envoyer des images pour rien, indéfiniment.
+      const item = ipCameraStore.listItems().find((i) => i.id === sanitized.id);
+      const match = item && item.url && item.url.match(/\/phone-camera-stream\/([a-f0-9-]+)$/);
+      if (match) {
+        phoneCameraPairing.removeCamera(match[1]);
+        phoneCameraFrames.delete(match[1]);
+      }
       const removed = ipCameraStore.deleteItem(sanitized.id);
       if (removed) {
         broadcast({ action: 'ipCamerasUpdated', items: ipCameraStore.listItems() });
       } else {
         ws.send(JSON.stringify({ action: 'error', error: 'Caméra IP : élément introuvable' }));
+      }
+      return;
+    }
+
+    // --- Caméra téléphone par QR code (voir phone-camera-pairing.js,
+    // phone-camera.html, et les routes HTTP /phone-camera-* plus haut) ---
+    if (sanitized.action === 'generateCameraPairing') {
+      // Le téléphone doit pouvoir atteindre ce serveur sur le réseau — un
+      // QR généré alors que WS_HOST reste sur 127.0.0.1 (le défaut, voulu
+      // pour la sécurité) ne mènerait nulle part. On le signale clairement
+      // plutôt que de générer un QR silencieusement inutilisable.
+      if (WS_HOST === '127.0.0.1' || WS_HOST === 'localhost') {
+        ws.send(
+          JSON.stringify({
+            action: 'error',
+            error:
+              "Caméra téléphone : le serveur doit être accessible sur le réseau (WS_HOST) pour que le téléphone puisse s'y connecter. Voir README.md.",
+          })
+        );
+        return;
+      }
+      const lanIp = getLanIpAddress();
+      if (!lanIp) {
+        ws.send(
+          JSON.stringify({
+            action: 'error',
+            error: 'Caméra téléphone : aucune adresse réseau locale détectée sur ce poste.',
+          })
+        );
+        return;
+      }
+      try {
+        const pairCode = phoneCameraPairing.generatePairingCode();
+        const pairUrl = `http://${lanIp}:${SERVER_PORT}/phone-camera.html?pair=${pairCode}`;
+        const qrDataUrl = await QRCode.toDataURL(pairUrl, { margin: 1, width: 320 });
+        ws.send(
+          JSON.stringify({
+            action: 'cameraPairingGenerated',
+            qrDataUrl,
+            url: pairUrl,
+            expiresInMs: phoneCameraPairing.PAIRING_TTL_MS,
+          })
+        );
+      } catch (err) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Caméra téléphone : ' + err.message }));
       }
       return;
     }
@@ -1982,6 +2165,12 @@ wss.on('connection', (ws, req) => {
 
     if (sanitized.action === 'setBrandingPosition') {
       brandingStore.setPosition(sanitized.position);
+      broadcast({ action: 'brandingUpdate', branding: getBrandingState() });
+      return;
+    }
+
+    if (sanitized.action === 'setBrandingSize') {
+      brandingStore.setSize(sanitized.size);
       broadcast({ action: 'brandingUpdate', branding: getBrandingState() });
       return;
     }

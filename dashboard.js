@@ -806,6 +806,11 @@ function handleMessage(message) {
     case 'ipCamerasUpdated':
       renderIpCameras(message.items);
       break;
+    // AJOUT (caméra téléphone par QR code) : réponse ponctuelle à
+    // generateCameraPairing() — affiche le QR généré, voir showCameraPairingQr().
+    case 'cameraPairingGenerated':
+      showCameraPairingQr(message);
+      break;
     // AJOUT (habillage caméra) : même raisonnement — diffusé à chaque
     // changement pour rester synchronisé entre plusieurs tableaux de bord.
     case 'brandingUpdate':
@@ -1296,6 +1301,38 @@ function copyIpCameraUrl(id) {
   }
 }
 
+// AJOUT (caméra téléphone par QR code, demande explicite) : le téléphone
+// n'a besoin d'aucune app — il scanne, ouvre phone-camera.html dans son
+// propre navigateur, et apparaît automatiquement dans la liste ci-dessus
+// (voir POST /phone-camera-pair côté serveur, qui l'ajoute à
+// ip-camera-store.js). Le QR encode une URL http://<ip-locale>:<port>/...
+// — nécessite donc que le serveur soit accessible sur le réseau (voir le
+// message d'erreur clair renvoyé sinon par generateCameraPairing côté serveur).
+function generateCameraPairing() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  ws.send(JSON.stringify({ action: 'generateCameraPairing' }));
+}
+
+function showCameraPairingQr(message) {
+  const box = document.getElementById('cameraPairingBox');
+  const img = document.getElementById('cameraPairingQr');
+  const expiry = document.getElementById('cameraPairingExpiry');
+  if (!box || !img) return;
+
+  img.src = message.qrDataUrl;
+  box.style.display = 'block';
+  if (expiry && typeof message.expiresInMs === 'number') {
+    expiry.textContent = `${Math.round(message.expiresInMs / 60000)} minutes`;
+  }
+  showToast(
+    'QR code généré — scannez-le avec le téléphone dans les minutes qui suivent.',
+    'success'
+  );
+}
+
 /* ======================================================================
    Habillage caméra (logo + titre/sous-titre, voir branding-store.js et
    branding-overlay.html). Contrairement au reste de la médiathèque, ce
@@ -1315,16 +1352,27 @@ function renderBranding(branding) {
   if (!branding) return;
   brandingState = branding;
 
+  // AJOUT (demande explicite — "même vidéo, même GIF") : même logique de
+  // bascule <img>/<video> que branding-overlay.html, pour l'aperçu côté
+  // tableau de bord.
   const img = document.getElementById('brandingLogoImg');
+  const video = document.getElementById('brandingLogoVideo');
   const placeholder = document.getElementById('brandingLogoPlaceholder');
-  if (img && placeholder) {
+  const isVideo = branding.logoType === 'video';
+  const activeEl = isVideo ? video : img;
+  const inactiveEl = isVideo ? img : video;
+  if (inactiveEl) {
+    inactiveEl.style.display = 'none';
+    inactiveEl.removeAttribute('src');
+  }
+  if (activeEl && placeholder) {
     if (branding.logoUrl) {
-      img.src = branding.logoUrl;
-      img.style.display = 'block';
+      if (activeEl.src !== branding.logoUrl) activeEl.src = branding.logoUrl;
+      activeEl.style.display = 'block';
       placeholder.style.display = 'none';
     } else {
-      img.style.display = 'none';
-      img.removeAttribute('src');
+      activeEl.style.display = 'none';
+      activeEl.removeAttribute('src');
       placeholder.style.display = 'block';
     }
   }
@@ -1332,6 +1380,10 @@ function renderBranding(branding) {
   const positionSelect = document.getElementById('brandingPositionSelect');
   if (positionSelect && document.activeElement !== positionSelect) {
     positionSelect.value = branding.position || 'bottom-right';
+  }
+  const sizeSelect = document.getElementById('brandingSizeSelect');
+  if (sizeSelect && document.activeElement !== sizeSelect) {
+    sizeSelect.value = branding.size || 'medium';
   }
 
   const titleInput = document.getElementById('brandingTitleInput');
@@ -1399,6 +1451,15 @@ function onBrandingPositionChange() {
       position: select ? select.value : 'bottom-right',
     })
   );
+}
+
+function onBrandingSizeChange() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  const select = document.getElementById('brandingSizeSelect');
+  ws.send(JSON.stringify({ action: 'setBrandingSize', size: select ? select.value : 'medium' }));
 }
 
 function saveBrandingText() {
