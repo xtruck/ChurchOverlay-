@@ -54,6 +54,23 @@ le dimanche matin même.
       essayer d'envoyer des images indéfiniment.
 - [ ] Coller le lien copié (📋) dans OBS comme Source Navigateur → l'image
       du téléphone s'affiche dans OBS.
+- [ ] Jumeler un 9ème téléphone alors que 8 caméras IP existent déjà (le
+      plafond `MAX_ITEMS`) → la plus ancienne est retirée de la liste
+      automatiquement ; confirmer qu'elle ne réapparaît pas plus tard et
+      que scanner à nouveau son ancien QR (s'il restait valide) échoue
+      proprement (correctif fuite de ressources — le jumelage orphelin
+      est bien nettoyé, pas seulement caché de la liste).
+
+### Bouton "✅ Tester avant le culte" (élargi)
+
+- [ ] Cliquer le bouton avec une configuration complète (médiathèque,
+      poster principal, logo, cache biblique, caméras IP toutes actives) →
+      confirmer que chaque ligne s'affiche en vert avec un détail correct
+      (nombre d'éléments, statut du cache, etc.), pas seulement les clés
+      API/WS comme avant.
+- [ ] Cliquer le bouton avec `WS_HOST` local (`127.0.0.1`) → la ligne
+      "Caméra téléphone (QR)" doit clairement indiquer que ce n'est pas
+      utilisable en l'état, sans être présentée comme une erreur bloquante.
 
 ### Caméras de téléphone (DroidCam) et habillage caméra
 

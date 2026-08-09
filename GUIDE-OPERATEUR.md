@@ -14,6 +14,11 @@ Le tableau de bord a deux onglets, dans la barre latérale :
 
 ## 1. Avant le culte — vérifications rapides
 
+0. Bouton **✅ Tester avant le culte** (sidebar) : vérifie en un clic les clés
+   Groq/Deepgram, l'authentification WebSocket, la médiathèque, le poster
+   principal, l'habillage caméra, le cache biblique hors-ligne, les caméras
+   IP actives et si la caméra téléphone par QR code est utilisable sur ce
+   réseau. Un point rouge = quelque chose à corriger avant de commencer.
 1. Ouvrez l'app, vérifiez que le point de statut (sidebar, en bas) est
    **vert** ("Serveur En Ligne").
 2. Onglet **En Direct** → cliquez **Démarrer le Micro**. Le badge doit

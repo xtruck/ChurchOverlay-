@@ -71,9 +71,18 @@ const URL_PATTERN = /^https?:\/\/.+/i;
  * @param {Object} data
  * @param {string} data.label - nom affiché (ex. "Téléphone scène")
  * @param {string} data.url - URL du flux MJPEG (ex. http://192.168.1.50:8080/video)
+ * @param {(evicted: Object) => void} [onEvict] - CORRECTIF (fuite de ressources) :
+ *   dépasser MAX_ITEMS tronquait silencieusement la liste — pour une caméra IP
+ *   tierce, sans conséquence (juste une entrée en moins) ; pour un téléphone
+ *   jumelé par QR (voir server.js, POST /phone-camera-pair), l'appareil
+ *   continuait d'envoyer des images pour une entrée devenue fantôme, et son
+ *   état de jumelage (phone-camera-pairing.js) n'était jamais nettoyé. Ce
+ *   callback optionnel (rétrocompatible — les appels existants sans lui
+ *   continuent de fonctionner à l'identique) laisse l'appelant réagir à
+ *   CHAQUE élément évincé, quelle qu'en soit la nature.
  * @returns {Object} l'élément ajouté
  */
-function addItem(data) {
+function addItem(data, onEvict) {
   if (!indexPath) throw new Error('ip-camera-store: setUserDataDir() non appelé');
   const url = typeof data?.url === 'string' ? data.url.trim() : '';
   if (!URL_PATTERN.test(url)) {
@@ -91,7 +100,11 @@ function addItem(data) {
   const items = readIndex();
   items.unshift(item);
   if (items.length > MAX_ITEMS) {
+    const evicted = items.slice(MAX_ITEMS);
     items.length = MAX_ITEMS;
+    if (typeof onEvict === 'function') {
+      for (const evictedItem of evicted) onEvict(evictedItem);
+    }
   }
   writeIndex(items);
   return item;

@@ -2356,6 +2356,20 @@ function renderPreServiceCheckResult(message) {
       : 'Non configurée (optionnel)';
   const authDetail = message.wsAuthEnabled ? 'Activée' : `Désactivée (hôte : ${message.wsHost})`;
 
+  // AJOUT (checkup — un seul endroit pour vérifier tout ce qui a été ajouté
+  // cette session, pas seulement la transcription). Poster principal et
+  // logo restent des fonctionnalités OPTIONNELLES : leur absence n'est pas
+  // un "problème" (pas de ⚠️), juste une information — seule la base
+  // biblique hors-ligne et la caméra téléphone ont un état réellement
+  // actionnable (à télécharger / à configurer WS_HOST).
+  const offlineBibleDetail =
+    {
+      done: 'Téléchargée',
+      downloading: 'Téléchargement en cours…',
+      error: 'Échec — vérifiez la connexion',
+      idle: 'Non démarrée (secours réseau utilisé si besoin)',
+    }[message.offlineBibleStatus] || 'Statut inconnu';
+
   resultsEl.innerHTML =
     row('Connexion WebSocket', true, 'Connecté') +
     row('Clé Groq (transcription principale)', !!(message.groq && message.groq.ok), groqDetail) +
@@ -2365,6 +2379,32 @@ function renderPreServiceCheckResult(message) {
       deepgramDetail
     ) +
     row('Authentification WebSocket', true, authDetail) +
+    row(
+      'Médiathèque',
+      true,
+      message.mediaLibraryCount ? `${message.mediaLibraryCount} média(s)` : 'Aucun média ajouté'
+    ) +
+    row(
+      'Poster principal',
+      true,
+      message.hasDefaultPoster ? 'Configuré' : 'Non configuré (écran vide entre les versets)'
+    ) +
+    row(
+      'Habillage caméra (logo)',
+      true,
+      message.brandingLogoConfigured ? 'Configuré' : 'Non configuré'
+    ) +
+    row('Base biblique hors-ligne', message.offlineBibleStatus === 'done', offlineBibleDetail) +
+    row(
+      'Caméra téléphone (QR)',
+      message.qrCameraReady,
+      message.qrCameraReady ? 'Prêt' : 'Nécessite un serveur accessible sur le réseau (WS_HOST)'
+    ) +
+    row(
+      'Caméras IP actives',
+      true,
+      message.ipCameraCount ? `${message.ipCameraCount} caméra(s)` : 'Aucune'
+    ) +
     `<div style="font-size:0.75rem; color: var(--text-dim); margin-top:0.5rem;">
                     ⚠️ Le microphone n'est pas vérifié ici — voir "Statut Capture Micro" ci-dessus.
                 </div>`;

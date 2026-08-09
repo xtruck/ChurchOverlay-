@@ -280,6 +280,21 @@ function isFrameFresh(cameraId) {
   return !!frame && Date.now() - frame.receivedAt < STALE_FRAME_MS;
 }
 
+// CORRECTIF (fuite de ressources) : si un élément "Caméras IP" retiré de la
+// liste (suppression manuelle OU éviction silencieuse par MAX_ITEMS, voir
+// ip-camera-store.js/addItem) correspond à un téléphone jumelé par QR, son
+// état de jumelage (phone-camera-pairing.js) et sa dernière image
+// (phoneCameraFrames) doivent être nettoyés — sinon le téléphone continue
+// d'envoyer des images pour une entrée devenue fantôme, indéfiniment.
+// Utilisée par les DEUX chemins de retrait (voir 'deleteIpCamera' et
+// POST /phone-camera-pair ci-dessous) plutôt que dupliquée deux fois.
+function cleanupPhoneCameraStateForItem(item) {
+  const match = item && item.url && item.url.match(/\/phone-camera-stream\/([a-f0-9-]+)$/);
+  if (!match) return;
+  phoneCameraPairing.removeCamera(match[1]);
+  phoneCameraFrames.delete(match[1]);
+}
+
 // Repli raisonnable pour un poste unique sur le Wi-Fi de l'église (une seule
 // interface réseau active la plupart du temps) — voir le commentaire dans le
 // handler 'generateCameraPairing' pour le cas où plusieurs interfaces sont
@@ -311,10 +326,13 @@ app.post('/phone-camera-pair', express.json({ limit: '1kb' }), (req, res) => {
   const lanIp = getLanIpAddress();
   if (lanIp) {
     try {
-      ipCameraStore.addItem({
-        label: result.label || 'Téléphone (QR)',
-        url: `http://${lanIp}:${SERVER_PORT}/phone-camera-stream/${result.cameraId}`,
-      });
+      ipCameraStore.addItem(
+        {
+          label: result.label || 'Téléphone (QR)',
+          url: `http://${lanIp}:${SERVER_PORT}/phone-camera-stream/${result.cameraId}`,
+        },
+        cleanupPhoneCameraStateForItem
+      );
       broadcast({ action: 'ipCamerasUpdated', items: ipCameraStore.listItems() });
     } catch (err) {
       warn('Phone camera: échec ajout médiathèque IP: ' + err.message);
@@ -1516,6 +1534,15 @@ wss.on('connection', (ws, req) => {
           groq.checkKey(),
           deepgramWrapper.checkKey(),
         ]);
+        // AJOUT (checkup — "vérifier que tout ce qui a été ajouté fonctionne
+        // bien, un seul endroit avant le culte") : ce contrôle ne portait
+        // jusqu'ici que sur la transcription (Groq/Deepgram) et
+        // l'authentification WebSocket — datant d'avant la médiathèque, le
+        // poster principal, l'habillage caméra, la caméra téléphone par QR
+        // et la base biblique hors-ligne. Plutôt que de laisser l'équipe
+        // vérifier chaque panneau séparément, ce même bouton couvre
+        // désormais tout — lecture seule, aucun appel réseau supplémentaire
+        // (tout est déjà en mémoire/disque local).
         ws.send(
           JSON.stringify({
             action: 'preServiceCheckResult',
@@ -1524,6 +1551,12 @@ wss.on('connection', (ws, req) => {
             wsHost: WS_HOST,
             groq: groqResult,
             deepgram: deepgramResult,
+            mediaLibraryCount: mediaLibrary.listItems().length,
+            hasDefaultPoster: !!mediaLibrary.getDefaultItem(),
+            brandingLogoConfigured: !!brandingStore.getConfig().logoFilename,
+            offlineBibleStatus: bibleOfflineCache.getStatus().status,
+            ipCameraCount: ipCameraStore.listItems().length,
+            qrCameraReady: WS_HOST !== '127.0.0.1' && WS_HOST !== 'localhost',
             timestamp: Date.now(),
           })
         );
@@ -2093,7 +2126,10 @@ wss.on('connection', (ws, req) => {
 
     if (sanitized.action === 'addIpCamera') {
       try {
-        const item = ipCameraStore.addItem({ label: sanitized.label, url: sanitized.url });
+        const item = ipCameraStore.addItem(
+          { label: sanitized.label, url: sanitized.url },
+          cleanupPhoneCameraStateForItem
+        );
         log(`Caméra IP : "${item.label}" ajoutée`);
         broadcast({ action: 'ipCamerasUpdated', items: ipCameraStore.listItems() });
       } catch (err) {
@@ -2108,11 +2144,7 @@ wss.on('connection', (ws, req) => {
       // secret de flux et on oublie sa dernière image — sinon le téléphone
       // continuerait d'envoyer des images pour rien, indéfiniment.
       const item = ipCameraStore.listItems().find((i) => i.id === sanitized.id);
-      const match = item && item.url && item.url.match(/\/phone-camera-stream\/([a-f0-9-]+)$/);
-      if (match) {
-        phoneCameraPairing.removeCamera(match[1]);
-        phoneCameraFrames.delete(match[1]);
-      }
+      cleanupPhoneCameraStateForItem(item);
       const removed = ipCameraStore.deleteItem(sanitized.id);
       if (removed) {
         broadcast({ action: 'ipCamerasUpdated', items: ipCameraStore.listItems() });

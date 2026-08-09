@@ -2291,9 +2291,13 @@
                         <span class="status-badge warning" id="speechStatus">Capture arrêtée</span>
                     </div>
 
-                    <!-- CORRECTIF (checklist mise en production, point 9) : vérification
-                         en une fois avant de démarrer un culte — connexion WebSocket,
-                         validité des clés Groq/Deepgram, état de l'authentification WS.
+                    <!-- CORRECTIF (checklist mise en production, point 9 ; élargi lors du
+                         checkup général de cette session) : vérification en une fois avant
+                         de démarrer un culte — connexion WebSocket, validité des clés Groq/
+                         Deepgram, authentification WS, ET l'état de tout ce qui a été
+                         ajouté depuis (médiathèque, poster principal, habillage caméra,
+                         base biblique hors-ligne, caméra téléphone par QR) — plutôt que de
+                         vérifier chaque panneau séparément avant chaque culte.
                          Le micro n'est pas testé ici (accès navigateur uniquement) : voir
                          le statut "Statut Capture Micro" ci-dessus pour ça. -->
                     <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-subtle);">

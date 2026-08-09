@@ -86,5 +86,26 @@ assert.strictEqual(
 );
 console.log('[TEST] ✓ Plafond respecté\n');
 
+// Test 8 (CORRECTIF — fuite de ressources) : le rappel onEvict() est bien
+// appelé pour CHAQUE élément évincé par le plafond, avec l'élément complet
+// (pas juste son id) — c'est ce qui permet à server.js de nettoyer l'état
+// de jumelage d'un téléphone silencieusement évincé (voir addItem() ci-dessus).
+console.log('[TEST] Test 8: onEvict() appelé pour chaque élément évincé...');
+{
+  const evictedItems = [];
+  ipCameraStore.addItem(
+    { label: 'Une de plus', url: 'http://192.168.1.99:8080/video' },
+    (evicted) => evictedItems.push(evicted)
+  );
+  assert.strictEqual(evictedItems.length, 1, 'un seul élément doit être évincé par cet ajout');
+  assert(evictedItems[0].id, "l'élément évincé complet doit être transmis, pas juste son id");
+  assert.strictEqual(
+    ipCameraStore.listItems().length,
+    ipCameraStore.MAX_ITEMS,
+    'le plafond doit rester respecté'
+  );
+}
+console.log('[TEST] ✓ Callback d’éviction appelé correctement\n');
+
 fs.rmSync(userDataDir, { recursive: true, force: true });
 console.log('=== Tous les tests ip-camera-store sont passés ===');
