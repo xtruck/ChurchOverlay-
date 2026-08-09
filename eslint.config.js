@@ -75,6 +75,32 @@ module.exports = [
     },
   },
   {
+    // AJOUT (modularisation dashboard.js — "front end plus léger, mieux
+    // construit") : dashboard/**/*.js utilise import/export (chargé via
+    // <script type="module">, voir dashboard.html) — le bloc générique
+    // ci-dessus force sourceType:'commonjs' pour tout **/*.js, ce qui ferait
+    // planter le parseur ESLint sur la moindre instruction import/export.
+    // Globales navigateur uniquement (pas globals.node) : ce code ne tourne
+    // jamais côté Node, contrairement au reste du dépôt.
+    files: ['dashboard/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: {
+        ...globals.browser,
+      },
+    },
+    plugins: { prettier: prettierPlugin },
+    rules: {
+      'prettier/prettier': 'error',
+      'no-console': ['warn', { allow: ['warn', 'error'] }],
+      'prefer-const': 'error',
+      'no-var': 'error',
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
+      'no-empty': ['error', { allowEmptyCatch: true }],
+    },
+  },
+  {
     files: ['**/*.ts'],
     languageOptions: {
       ecmaVersion: 2022,
