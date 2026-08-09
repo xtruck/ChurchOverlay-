@@ -81,6 +81,8 @@
       "dashboard/features/verse-queue.js",
       "dashboard/features/song-library.js",
       "dashboard/features/offline-bible.js",
+      "dashboard/features/propresenter-planning-center.js",
+      "dashboard/features/preservice-ai.js",
       "dashboard/dashboard.css",
       "audio-capture-worklet.js",
       "camera-capture.js",

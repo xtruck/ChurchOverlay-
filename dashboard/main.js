@@ -24,3 +24,10 @@ import './features/companion-link.js';
 // n'est importé par personne d'autre : sans cette ligne, son
 // renderQueue() initial et ses window.x ne s'exécuteraient jamais.
 import './features/verse-queue.js';
+// AJOUT (lot 7) : preservice-ai.js est déjà chargé indirectement (legacy-core.js
+// l'importe pour renderAiEnricherOutput/renderSessionStats/etc.).
+// propresenter-planning-center.js, comme verse-queue.js, n'est importé par
+// personne d'autre : sans cette ligne, ses appels loadProPresenterConfig()/
+// loadPlanningCenterConfig() au chargement et ses window.x ne
+// s'exécuteraient jamais.
+import './features/propresenter-planning-center.js';
