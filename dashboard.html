@@ -659,6 +659,115 @@
         padding: 0.1rem 0.55rem;
       }
 
+      /* AJOUT (demande explicite — "scène" médiathèque avec vraies vignettes) :
+           classes DÉDIÉES à #mediaLibraryList, séparées de .queue-list/.queue-item
+           ci-dessus qui restent utilisées telles quelles par la file d'attente de
+           chants et les caméras IP — un changement ici ne doit affecter qu'un
+           seul panneau. */
+      .media-gallery-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 0.85rem;
+        max-height: 520px;
+        overflow-y: auto;
+        padding: 0.15rem;
+      }
+
+      .media-gallery-card {
+        display: flex;
+        flex-direction: column;
+        background: var(--bg-card);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+        transition: border-color 0.15s ease;
+      }
+
+      .media-gallery-card.is-default {
+        border-color: var(--accent-amber, #d9a441);
+      }
+
+      .media-gallery-thumb {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        background: #000;
+        overflow: hidden;
+      }
+
+      .media-gallery-thumb img,
+      .media-gallery-thumb video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+
+      .media-gallery-badge {
+        position: absolute;
+        top: 6px;
+        left: 6px;
+        font-size: 0.68rem;
+        line-height: 1;
+        background: rgba(0, 0, 0, 0.65);
+        color: #fff;
+        padding: 3px 6px;
+        border-radius: var(--radius-sm);
+      }
+
+      .media-gallery-body {
+        padding: 0.55rem 0.65rem 0.15rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+      }
+
+      .media-gallery-label {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: var(--text-main);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .media-gallery-details {
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+        flex-wrap: wrap;
+      }
+
+      .media-gallery-details input,
+      .media-gallery-details select {
+        width: 72px;
+        padding: 0.2rem 0.35rem;
+        font-size: 0.72rem;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-subtle);
+        background: var(--bg-input);
+        color: var(--text-main);
+      }
+      .media-gallery-details select {
+        width: auto;
+        flex: 1;
+        min-width: 80px;
+      }
+
+      .media-gallery-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.5rem 0.65rem 0.65rem;
+        margin-top: auto;
+      }
+
+      .media-gallery-actions .btn {
+        flex: 1;
+        padding: 0.4rem 0.5rem;
+        font-size: 0.78rem;
+      }
+
       /* Grid Layouts */
       .metrics-grid {
         display: grid;
@@ -1927,7 +2036,7 @@
                 il reste affiché en continu tant que rien d'autre (verset, autre média) n'est à
                 l'écran — jamais d'écran vide entre deux versets.
               </div>
-              <div class="queue-list" id="mediaLibraryList"></div>
+              <div class="media-gallery-grid" id="mediaLibraryList"></div>
             </div>
 
             <!-- AJOUT (bibliothèque de chants) : mêmes classes CSS que les cartes

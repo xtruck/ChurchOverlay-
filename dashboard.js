@@ -1178,7 +1178,7 @@ function renderMediaLibrary(items) {
 
   if (mediaLibraryItems.length === 0) {
     list.innerHTML =
-      '<div style="font-size:0.8rem; color:var(--text-dim); padding: 0.5rem 0;">Aucun média ajouté. Choisissez une photo ou une vidéo ci-dessus.</div>';
+      '<div style="grid-column: 1 / -1; font-size:0.8rem; color:var(--text-dim); padding: 0.5rem 0;">Aucun média ajouté. Choisissez une photo ou une vidéo ci-dessus.</div>';
     return;
   }
 
@@ -1195,23 +1195,41 @@ function renderMediaLibrary(items) {
             `<option value="${value}" ${item.transitionStyle === value ? 'selected' : ''}>${styleLabel}</option>`
         )
         .join('');
+      // AJOUT (demande explicite — "voir clairement l'image/vidéo") : vraie
+      // vignette au lieu d'un simple emoji. filename vient tel quel de
+      // media-library.js (jamais une URL absolue) — même correctif de
+      // résolution que le logo d'habillage caméra (getHttpOrigin()) : ce
+      // tableau de bord tourne en file://, un chemin racine-relatif "/media/..."
+      // se résoudrait sinon contre le disque local au lieu du serveur HTTP.
+      const thumbUrl = getHttpOrigin() + '/media/' + encodeURIComponent(item.filename || '');
+      const thumbMarkup =
+        item.mediaType === 'video'
+          ? `<video src="${thumbUrl}" muted preload="metadata" playsinline></video>`
+          : `<img src="${thumbUrl}" alt="${escapeHtmlDashboard(item.label)}" loading="lazy">`;
+      const badges = [
+        item.isDefault ? '⭐ Poster' : '',
+        item.includeInLoop ? '🔁 Diaporama' : '',
+      ].filter(Boolean);
       return `
-                <div class="queue-item" style="${item.isDefault ? 'border-color: var(--accent-amber, #d9a441);' : ''}">
-                    <span class="queue-item-position">${item.mediaType === 'video' ? '🎬' : '🖼️'}</span>
-                    <div class="media-item-info">
-                        <div class="media-item-label">${item.isDefault ? '⭐ ' : ''}${item.includeInLoop ? '🔁 ' : ''}${escapeHtmlDashboard(item.label)}</div>
-                        <div class="media-item-phrases">${phrasesBadges || '<span class="media-item-phrase-badge">Déclenchement manuel uniquement</span>'}${item.isDefault ? ' <span class="media-item-phrase-badge">Poster principal — affiché quand rien d’autre n’est à l’écran</span>' : ''}</div>
-                        <div style="display:flex; align-items:center; gap:0.4rem; margin-top:0.35rem; flex-wrap:wrap;">
-                            <input type="number" min="1" step="1" placeholder="secondes" value="${durationSec}" id="mediaDuration-${item.id}" ${item.isDefault ? 'disabled title="Le poster principal reste affiché en continu — pas de minuterie"' : `title="Durée d'affichage en secondes — vide = pas de minuterie automatique (masquage manuel)"`} style="width:80px; padding:0.25rem 0.4rem; font-size:0.75rem; border-radius:var(--radius-sm); border:1px solid var(--border-subtle); background:var(--bg-input); color:var(--text-main);">
-                            <select id="mediaStyle-${item.id}" style="padding:0.25rem 0.4rem; font-size:0.75rem; border-radius:var(--radius-sm); border:1px solid var(--border-subtle); background:var(--bg-input); color:var(--text-main);" title="Style d'apparition à l'écran">
+                <div class="media-gallery-card${item.isDefault ? ' is-default' : ''}">
+                    <div class="media-gallery-thumb">
+                        ${thumbMarkup}
+                        ${badges.map((b) => `<span class="media-gallery-badge">${b}</span>`).join('')}
+                    </div>
+                    <div class="media-gallery-body">
+                        <div class="media-gallery-label" title="${escapeHtmlDashboard(item.label)}">${escapeHtmlDashboard(item.label)}</div>
+                        <div class="media-item-phrases">${phrasesBadges || '<span class="media-item-phrase-badge">Déclenchement manuel uniquement</span>'}</div>
+                        <div class="media-gallery-details">
+                            <input type="number" min="1" step="1" placeholder="s" value="${durationSec}" id="mediaDuration-${item.id}" ${item.isDefault ? 'disabled title="Le poster principal reste affiché en continu — pas de minuterie"' : `title="Durée d'affichage en secondes — vide = pas de minuterie automatique (masquage manuel)"`}>
+                            <select id="mediaStyle-${item.id}" title="Style d'apparition à l'écran">
                                 ${styleOptions}
                             </select>
                             <button class="queue-icon-btn" onclick="saveMediaItemDetails('${item.id}')" title="Enregistrer la durée/le style">💾</button>
                         </div>
                     </div>
-                    <div class="queue-item-actions">
+                    <div class="media-gallery-actions">
+                        <button class="btn btn-primary" onclick="triggerMediaLibraryItem('${item.id}')" title="Afficher maintenant sur l'overlay">▶ Afficher</button>
                         <button class="queue-icon-btn" onclick="toggleDefaultMediaItem('${item.id}', ${item.isDefault ? 'true' : 'false'})" title="${item.isDefault ? 'Retirer le statut de poster principal' : 'Définir comme poster principal (affiché quand rien d’autre n’est à l’écran)'}">${item.isDefault ? '⭐' : '☆'}</button>
-                        <button class="queue-icon-btn queue-send" onclick="triggerMediaLibraryItem('${item.id}')" title="Afficher maintenant">▶</button>
                         <button class="queue-icon-btn queue-remove" onclick="deleteMediaLibraryItem('${item.id}')" title="Supprimer">✕</button>
                     </div>
                 </div>
