@@ -1,11 +1,11 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="fr">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ChurchOverlay — Affichage</title>
-<style>
-/* CORRECTIF (audit — police du verset jamais chargée) : @import doit être
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ChurchOverlay — Affichage</title>
+    <style>
+      /* CORRECTIF (audit — police du verset jamais chargée) : @import doit être
    la toute première règle d'une feuille de style (avant même :root et les
    @property ci-dessous), sinon le navigateur l'ignore silencieusement —
    confirmé par l'onglet "Issues" de Chrome DevTools ("Define @import rules
@@ -16,35 +16,35 @@
    sans empattement décoratif, conçues pour la lisibilité à l'écran/projeté.
    Cormorant Garamond et Plus Jakarta Sans restent chargées (thèmes
    personnalisés existants/futurs qui les référencent encore). */
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Manrope:wght@500;600;700&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Manrope:wght@500;600;700&display=swap');
 
-/* ==========================================================================
+      /* ==========================================================================
    CSS Variables for Dynamic Themes (AI Innovation Pack)
    ========================================================================== */
-:root {
-  /* Même identité "verrière nocturne" que le tableau de bord : bleu-nuit
+      :root {
+        /* Même identité "verrière nocturne" que le tableau de bord : bleu-nuit
      profond en fond, lumière de cierge (or) en accent unique. Avant, ce
      fichier tournait sur un thème générique bleu marine/rose sans rapport
      avec le dashboard — l'opérateur voyait deux apps différentes. */
-  --overlay-bg: linear-gradient(160deg, #0a0e1c 0%, #0d1226 55%, #10152b 100%);
-  --overlay-text: #f6f3ec;
-  --overlay-text-muted: #a8adc9;
-  --overlay-accent: #d9bb6c;
-  /* CORRECTIF (audit — police jugée "fantaisiste"/pas assez professionnelle) :
+        --overlay-bg: linear-gradient(160deg, #0a0e1c 0%, #0d1226 55%, #10152b 100%);
+        --overlay-text: #f6f3ec;
+        --overlay-text-muted: #a8adc9;
+        --overlay-accent: #d9bb6c;
+        /* CORRECTIF (audit — police jugée "fantaisiste"/pas assez professionnelle) :
      Cormorant Garamond a un style calligraphique (empattements fins, courbes
      prononcées) qui peut se lire comme italique/décoratif projeté en grand,
      pas adapté à un cadre sérieux. Remplacée par Merriweather (le choix du
      thème "nuit" par défaut, voir config/themes/nuit.json) — un serif
      sobre, épais et très lisible à distance, sans fioriture. */
-  --overlay-font: 'Merriweather', Georgia, serif;
-  --overlay-font-ui: 'Plus Jakarta Sans', 'Open Sans', sans-serif;
-  --overlay-border: rgba(220, 180, 106, 0.20);
-  --overlay-glow: rgba(220, 180, 106, 0.32);
-  --overlay-shadow: rgba(0, 0, 0, 0.55);
-  --overlay-particle: #dcb46a;
-}
+        --overlay-font: 'Merriweather', Georgia, serif;
+        --overlay-font-ui: 'Plus Jakarta Sans', 'Open Sans', sans-serif;
+        --overlay-border: rgba(220, 180, 106, 0.2);
+        --overlay-glow: rgba(220, 180, 106, 0.32);
+        --overlay-shadow: rgba(0, 0, 0, 0.55);
+        --overlay-particle: #dcb46a;
+      }
 
-/* AJOUT (innovation frontend — ambiances vivantes) : enregistrer les
+      /* AJOUT (innovation frontend — ambiances vivantes) : enregistrer les
    variables de couleur du thème via @property permet au navigateur
    d'interpoler leur changement en douceur (Chromium d'Electron le
    supporte pleinement). Sans ça, changer --overlay-glow via JS
@@ -52,1312 +52,1393 @@
    la carte d'un mood à l'autre — correct fonctionnellement, mais
    brutal visuellement pour un lieu de culte où la transition doit
    rester discrète. */
-@property --overlay-glow {
-  syntax: '<color>';
-  inherits: true;
-  initial-value: rgba(220, 180, 106, 0.32);
-}
-@property --overlay-accent {
-  syntax: '<color>';
-  inherits: true;
-  initial-value: #d9bb6c;
-}
-@property --overlay-border {
-  syntax: '<color>';
-  inherits: true;
-  initial-value: rgba(220, 180, 106, 0.20);
-}
-@property --overlay-particle {
-  syntax: '<color>';
-  inherits: true;
-  initial-value: #dcb46a;
-}
+      @property --overlay-glow {
+        syntax: '<color>';
+        inherits: true;
+        initial-value: rgba(220, 180, 106, 0.32);
+      }
+      @property --overlay-accent {
+        syntax: '<color>';
+        inherits: true;
+        initial-value: #d9bb6c;
+      }
+      @property --overlay-border {
+        syntax: '<color>';
+        inherits: true;
+        initial-value: rgba(220, 180, 106, 0.2);
+      }
+      @property --overlay-particle {
+        syntax: '<color>';
+        inherits: true;
+        initial-value: #dcb46a;
+      }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
 
-body {
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
-  background: transparent;
-  font-family: var(--overlay-font);
-}
+      body {
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+        background: transparent;
+        font-family: var(--overlay-font);
+      }
 
-/* AJOUT (audit round 6 — style "église moderne") : halo de lumière ambiant,
+      /* AJOUT (audit round 6 — style "église moderne") : halo de lumière ambiant,
    doux et pulsant lentement, façon rayons filtrant à travers un vitrail.
    Couche purement décorative, sous les particules, ne capte aucun clic. */
-.ambient-light {
-  position: fixed;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  pointer-events: none;
-  z-index: -1;
-  opacity: 0.4;
-  /* Une seule respiration, centrée sous la carte — plus de trois halos
+      .ambient-light {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: -1;
+        opacity: 0.4;
+        /* Une seule respiration, centrée sous la carte — plus de trois halos
      concurrents qui tiraient l'œil loin du texte du verset. */
-  background: radial-gradient(ellipse 55% 35% at 50% 100%, var(--overlay-glow) 0%, transparent 70%);
-  animation: ambientPulse 12s ease-in-out infinite;
-  /* AJOUT : transition de couleur du halo quand l'ambiance change
+        background: radial-gradient(
+          ellipse 55% 35% at 50% 100%,
+          var(--overlay-glow) 0%,
+          transparent 70%
+        );
+        animation: ambientPulse 12s ease-in-out infinite;
+        /* AJOUT : transition de couleur du halo quand l'ambiance change
      (setMoodTheme côté dashboard) — grâce à @property ci-dessus, le
      dégradé lui-même s'anime au lieu de sauter d'une teinte à l'autre. */
-  transition: background 2.2s ease;
-}
-@keyframes ambientPulse {
-  0%, 100% { opacity: 0.28; }
-  50% { opacity: 0.44; }
-}
+        transition: background 2.2s ease;
+      }
+      @keyframes ambientPulse {
+        0%,
+        100% {
+          opacity: 0.28;
+        }
+        50% {
+          opacity: 0.44;
+        }
+      }
 
-/* Particules d'ambiance — voir #ambientCanvas plus bas (audit perf) : cette
+      /* Particules d'ambiance — voir #ambientCanvas plus bas (audit perf) : cette
    règle ciblait un conteneur .particles jamais peuplé par aucun JS depuis
    le retrait d'animation-library.js (voir commentaire près de <head> plus
    bas) — ~20 lignes de CSS mortes, remplacées par un rendu canvas léger. */
-#ambientCanvas {
-  position: fixed;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  pointer-events: none;
-  z-index: 0;
-}
+      #ambientCanvas {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 0;
+      }
 
-/* Container principal */
-#overlay-container {
-  position: fixed;
-  bottom: 60px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 90%;
-  max-width: 900px;
-  z-index: 10;
-  opacity: 0;
-  transition: opacity 0.6s ease, transform 0.6s ease, bottom 0.4s ease;
-  pointer-events: none;
-}
+      /* Container principal */
+      #overlay-container {
+        position: fixed;
+        bottom: 60px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 90%;
+        max-width: 900px;
+        z-index: 10;
+        opacity: 0;
+        transition:
+          opacity 0.6s ease,
+          transform 0.6s ease,
+          bottom 0.4s ease;
+        pointer-events: none;
+      }
 
-/* CORRECTIF (audit — sous-titres) : la bande #caption-strip (fixed, bottom:0,
+      /* CORRECTIF (audit — sous-titres) : la bande #caption-strip (fixed, bottom:0,
    voir plus bas) peut s'étendre sur 2 lignes pour une phrase longue — sans
    ce décalage, elle chevauche le bas de la carte verset (fixed, bottom:60px
    ci-dessus) quand les deux sont visibles en même temps. 130px dégage même
    le cas 2 lignes avec de la marge. */
-body.captions-active #overlay-container {
-  bottom: 130px;
-}
+      body.captions-active #overlay-container {
+        bottom: 130px;
+      }
 
-#overlay-container.visible {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
+      #overlay-container.visible {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
 
-#overlay-container.hidden {
-  opacity: 0;
-  transform: translateX(-50%) translateY(30px);
-}
+      #overlay-container.hidden {
+        opacity: 0;
+        transform: translateX(-50%) translateY(30px);
+      }
 
-/* Carte du verset */
-.verse-card {
-  background: var(--overlay-bg);
-  color: var(--overlay-text);
-  font-family: var(--overlay-font);
-  padding: clamp(24px, 3vw, 40px) clamp(28px, 4vw, 52px);
-  border-radius: 18px;
-  border: 1px solid var(--overlay-border);
-  box-shadow:
-    0 0 46px var(--overlay-glow),
-    0 14px 54px var(--overlay-shadow),
-    inset 0 1px 0 rgba(255,255,255,0.08);
-  backdrop-filter: blur(14px);
-  position: relative;
-  overflow: hidden;
-  /* AJOUT : accompagne le changement d'ambiance (mood) en douceur au
+      /* Carte du verset */
+      .verse-card {
+        background: var(--overlay-bg);
+        color: var(--overlay-text);
+        font-family: var(--overlay-font);
+        padding: clamp(24px, 3vw, 40px) clamp(28px, 4vw, 52px);
+        border-radius: 18px;
+        border: 1px solid var(--overlay-border);
+        box-shadow:
+          0 0 46px var(--overlay-glow),
+          0 14px 54px var(--overlay-shadow),
+          inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(14px);
+        position: relative;
+        overflow: hidden;
+        /* AJOUT : accompagne le changement d'ambiance (mood) en douceur au
      lieu d'un saut de couleur instantané sur border/glow. */
-  transition: background 2.2s ease, border-color 2.2s ease, box-shadow 2.2s ease;
-}
+        transition:
+          background 2.2s ease,
+          border-color 2.2s ease,
+          box-shadow 2.2s ease;
+      }
 
-.verse-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, transparent, var(--overlay-accent), transparent);
-}
+      .verse-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, transparent, var(--overlay-accent), transparent);
+      }
 
-/* Référence — c'est le premier repère pour quiconque arrive au milieu de la
+      /* Référence — c'est le premier repère pour quiconque arrive au milieu de la
    lecture ; elle doit primer visuellement sur le corps du texte, pas
    l'inverse. Taille fluide + police UI (pas la serif du corps) pour rester
    nette même projetée en grand. */
-.verse-reference {
-  font-family: var(--overlay-font-ui);
-  font-size: clamp(14px, 1.3vw, 19px);
-  font-weight: 700;
-  color: var(--overlay-accent);
-  text-transform: uppercase;
-  letter-spacing: 2.5px;
-  margin-bottom: clamp(10px, 1.4vw, 18px);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+      .verse-reference {
+        font-family: var(--overlay-font-ui);
+        font-size: clamp(14px, 1.3vw, 19px);
+        font-weight: 700;
+        color: var(--overlay-accent);
+        text-transform: uppercase;
+        letter-spacing: 2.5px;
+        margin-bottom: clamp(10px, 1.4vw, 18px);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
 
-/* Texte — taille fluide calée sur la largeur de projection, pour rester
+      /* Texte — taille fluide calée sur la largeur de projection, pour rester
    lisible au fond d'une salle sur grand écran (22px fixe était illisible
    projeté ; clamp() adapte à toute résolution OBS/vidéoprojecteur). */
-.verse-text {
-  font-size: clamp(28px, 3.2vw, 46px);
-  line-height: 1.35;
-  font-weight: 500;
-  text-shadow: 0 2px 12px rgba(0,0,0,0.4);
-}
+      .verse-text {
+        font-size: clamp(28px, 3.2vw, 46px);
+        line-height: 1.35;
+        font-weight: 500;
+        text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+      }
 
-.verse-text-bilingual {
-  font-family: var(--overlay-font);
-  font-size: clamp(20px, 2.1vw, 30px);
-  line-height: 1.4;
-  margin-top: clamp(12px, 1.6vw, 20px);
-  padding-top: clamp(12px, 1.6vw, 20px);
-  border-top: 1px solid var(--overlay-border);
-  /* CORRECTIF (audit — texte anglais bleuté, pas blanc comme le français) :
+      .verse-text-bilingual {
+        font-family: var(--overlay-font);
+        font-size: clamp(20px, 2.1vw, 30px);
+        line-height: 1.4;
+        margin-top: clamp(12px, 1.6vw, 20px);
+        padding-top: clamp(12px, 1.6vw, 20px);
+        border-top: 1px solid var(--overlay-border);
+        /* CORRECTIF (audit — texte anglais bleuté, pas blanc comme le français) :
      utilisait --overlay-text-muted (bleu-gris, prévu pour des badges
      secondaires) au lieu de la même couleur que le verset principal. */
-  color: var(--overlay-text);
-}
+        color: var(--overlay-text);
+      }
 
-/* Indicateur de source (AI detection) */
-.source-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  padding: 3px 9px;
-  border-radius: 12px;
-  background: rgba(255,255,255,0.08);
-  color: var(--overlay-text-muted);
-  font-family: var(--overlay-font-ui);
-  text-transform: none;
-  letter-spacing: 0;
-  font-weight: 500;
-}
+      /* Indicateur de source (AI detection) */
+      .source-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        padding: 3px 9px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--overlay-text-muted);
+        font-family: var(--overlay-font-ui);
+        text-transform: none;
+        letter-spacing: 0;
+        font-weight: 500;
+      }
 
-.source-badge.ai {
-  background: rgba(52, 211, 153, 0.16);
-  color: #6ee7b7;
-}
+      .source-badge.ai {
+        background: rgba(52, 211, 153, 0.16);
+        color: #6ee7b7;
+      }
 
-.source-badge.voice {
-  background: rgba(78, 111, 216, 0.20);
-  color: #9db1ec;
-}
+      .source-badge.voice {
+        background: rgba(78, 111, 216, 0.2);
+        color: #9db1ec;
+      }
 
-.source-badge.manual {
-  background: rgba(220, 180, 106, 0.18);
-  color: var(--overlay-accent);
-}
+      .source-badge.manual {
+        background: rgba(220, 180, 106, 0.18);
+        color: var(--overlay-accent);
+      }
 
-/* Indicateur commande vocale */
-#voice-indicator {
-  position: fixed;
-  top: 30px;
-  right: 30px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: rgba(20, 26, 48, 0.92);
-  border: 1px solid rgba(78, 111, 216, 0.4);
-  color: #cdd6f5;
-  border-radius: 24px;
-  font-family: var(--overlay-font-ui);
-  font-size: 13px;
-  font-weight: 600;
-  opacity: 0;
-  transform: translateY(-20px);
-  transition: all 0.4s ease;
-  z-index: 100;
-  pointer-events: none;
-  box-shadow: 0 4px 18px rgba(78, 111, 216, 0.25);
-  backdrop-filter: blur(8px);
-}
+      /* Indicateur commande vocale */
+      #voice-indicator {
+        position: fixed;
+        top: 30px;
+        right: 30px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        background: rgba(20, 26, 48, 0.92);
+        border: 1px solid rgba(78, 111, 216, 0.4);
+        color: #cdd6f5;
+        border-radius: 24px;
+        font-family: var(--overlay-font-ui);
+        font-size: 13px;
+        font-weight: 600;
+        opacity: 0;
+        transform: translateY(-20px);
+        transition: all 0.4s ease;
+        z-index: 100;
+        pointer-events: none;
+        box-shadow: 0 4px 18px rgba(78, 111, 216, 0.25);
+        backdrop-filter: blur(8px);
+      }
 
-#voice-indicator.visible {
-  opacity: 1;
-  transform: translateY(0);
-}
+      #voice-indicator.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
 
-#voice-indicator .mic-icon {
-  width: 16px;
-  height: 16px;
-  animation: pulse 1.5s infinite;
-}
+      #voice-indicator .mic-icon {
+        width: 16px;
+        height: 16px;
+        animation: pulse 1.5s infinite;
+      }
 
-@keyframes pulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.2); opacity: 0.7; }
-}
+      @keyframes pulse {
+        0%,
+        100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+        50% {
+          transform: scale(1.2);
+          opacity: 0.7;
+        }
+      }
 
-/* Indicateur de détection sémantique */
-#semantic-indicator {
-  position: fixed;
-  top: 30px;
-  left: 30px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: rgba(20, 26, 48, 0.92);
-  border: 1px solid rgba(52, 211, 153, 0.4);
-  color: #a7f3d0;
-  border-radius: 24px;
-  font-family: var(--overlay-font-ui);
-  font-size: 12px;
-  font-weight: 600;
-  opacity: 0;
-  transform: translateY(-20px);
-  transition: all 0.4s ease;
-  z-index: 100;
-  pointer-events: none;
-  max-width: 350px;
-  backdrop-filter: blur(8px);
-  box-shadow: 0 4px 18px rgba(52, 211, 153, 0.2);
-}
+      /* Indicateur de détection sémantique */
+      #semantic-indicator {
+        position: fixed;
+        top: 30px;
+        left: 30px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        background: rgba(20, 26, 48, 0.92);
+        border: 1px solid rgba(52, 211, 153, 0.4);
+        color: #a7f3d0;
+        border-radius: 24px;
+        font-family: var(--overlay-font-ui);
+        font-size: 12px;
+        font-weight: 600;
+        opacity: 0;
+        transform: translateY(-20px);
+        transition: all 0.4s ease;
+        z-index: 100;
+        pointer-events: none;
+        max-width: 350px;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 4px 18px rgba(52, 211, 153, 0.2);
+      }
 
-#semantic-indicator.visible {
-  opacity: 1;
-  transform: translateY(0);
-}
+      #semantic-indicator.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
 
-/* Alerte pipeline (transcription/audio en échec) */
-#pipeline-alert {
-  position: fixed;
-  top: 30px;
-  right: 30px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: rgba(48, 20, 20, 0.92);
-  border: 1px solid rgba(248, 113, 113, 0.5);
-  color: #fecaca;
-  border-radius: 24px;
-  font-family: var(--overlay-font-ui);
-  font-size: 12px;
-  font-weight: 600;
-  opacity: 0;
-  transform: translateY(-20px);
-  transition: all 0.4s ease;
-  z-index: 100;
-  pointer-events: none;
-  max-width: 350px;
-  backdrop-filter: blur(8px);
-  box-shadow: 0 4px 18px rgba(248, 113, 113, 0.25);
-}
+      /* Alerte pipeline (transcription/audio en échec) */
+      #pipeline-alert {
+        position: fixed;
+        top: 30px;
+        right: 30px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        background: rgba(48, 20, 20, 0.92);
+        border: 1px solid rgba(248, 113, 113, 0.5);
+        color: #fecaca;
+        border-radius: 24px;
+        font-family: var(--overlay-font-ui);
+        font-size: 12px;
+        font-weight: 600;
+        opacity: 0;
+        transform: translateY(-20px);
+        transition: all 0.4s ease;
+        z-index: 100;
+        pointer-events: none;
+        max-width: 350px;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 4px 18px rgba(248, 113, 113, 0.25);
+      }
 
-#pipeline-alert.visible {
-  opacity: 1;
-  transform: translateY(0);
-}
+      #pipeline-alert.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
 
-/* Mode lecture */
-#reading-indicator {
-  position: fixed;
-  top: 30px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 8px 20px;
-  background: rgba(20, 26, 48, 0.92);
-  border: 1px solid var(--overlay-border);
-  color: var(--overlay-accent);
-  border-radius: 24px;
-  font-family: var(--overlay-font-ui);
-  font-size: 13px;
-  font-weight: 600;
-  opacity: 0;
-  transition: opacity 0.4s ease;
-  z-index: 100;
-  pointer-events: none;
-  backdrop-filter: blur(8px);
-  box-shadow: 0 4px 18px rgba(220, 180, 106, 0.2);
-}
+      /* Mode lecture */
+      #reading-indicator {
+        position: fixed;
+        top: 30px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 8px 20px;
+        background: rgba(20, 26, 48, 0.92);
+        border: 1px solid var(--overlay-border);
+        color: var(--overlay-accent);
+        border-radius: 24px;
+        font-family: var(--overlay-font-ui);
+        font-size: 13px;
+        font-weight: 600;
+        opacity: 0;
+        transition: opacity 0.4s ease;
+        z-index: 100;
+        pointer-events: none;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 4px 18px rgba(220, 180, 106, 0.2);
+      }
 
-#reading-indicator.visible {
-  opacity: 1;
-}
+      #reading-indicator.visible {
+        opacity: 1;
+      }
 
-/* Animations d'entrée */
-@keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(30px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+      /* Animations d'entrée */
+      @keyframes fadeInUp {
+        from {
+          opacity: 0;
+          transform: translateY(30px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
 
-@keyframes gentleFade {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
+      @keyframes gentleFade {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
 
-@keyframes solemnFade {
-  from { opacity: 0; filter: blur(4px); }
-  to { opacity: 1; filter: blur(0); }
-}
+      @keyframes solemnFade {
+        from {
+          opacity: 0;
+          filter: blur(4px);
+        }
+        to {
+          opacity: 1;
+          filter: blur(0);
+        }
+      }
 
-@keyframes heartFade {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
-}
+      @keyframes heartFade {
+        from {
+          opacity: 0;
+          transform: scale(0.95);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
 
-@keyframes riseUp {
-  from { opacity: 0; transform: translateY(50px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+      @keyframes riseUp {
+        from {
+          opacity: 0;
+          transform: translateY(50px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
 
-@keyframes bloom {
-  from { opacity: 0; transform: scale(0.8); }
-  to { opacity: 1; transform: scale(1); }
-}
+      @keyframes bloom {
+        from {
+          opacity: 0;
+          transform: scale(0.8);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
 
-@keyframes spiritWind {
-  from { opacity: 0; transform: translateX(-30px); }
-  to { opacity: 1; transform: translateX(0); }
-}
+      @keyframes spiritWind {
+        from {
+          opacity: 0;
+          transform: translateX(-30px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
 
-/* Emergency clear flash */
-@keyframes emergencyFlash {
-  0%, 100% { opacity: 0; }
-  50% { opacity: 1; background: rgba(255, 0, 0, 0.3); }
-}
+      /* Emergency clear flash */
+      @keyframes emergencyFlash {
+        0%,
+        100% {
+          opacity: 0;
+        }
+        50% {
+          opacity: 1;
+          background: rgba(255, 0, 0, 0.3);
+        }
+      }
 
-.emergency-flash {
-  animation: emergencyFlash 0.3s ease 3;
-}
+      .emergency-flash {
+        animation: emergencyFlash 0.3s ease 3;
+      }
 
-/* Animation appliquée dynamiquement */
-.animate-verse {
-  animation-duration: 0.8s;
-  animation-fill-mode: both;
-}
+      /* Animation appliquée dynamiquement */
+      .animate-verse {
+        animation-duration: 0.8s;
+        animation-fill-mode: both;
+      }
 
-/* Responsive */
-@media (max-width: 600px) {
-  .verse-text { font-size: 18px; }
-  .verse-text-bilingual { font-size: 15px; }
-  .verse-card { padding: 20px 24px; }
-}
+      /* Responsive */
+      @media (max-width: 600px) {
+        .verse-text {
+          font-size: 18px;
+        }
+        .verse-text-bilingual {
+          font-size: 15px;
+        }
+        .verse-card {
+          padding: 20px 24px;
+        }
+      }
 
-/* ==========================================================================
+      /* ==========================================================================
    Typographie cinétique (innovation frontend — features.json:
    design.kineticTypography, prévu mais jamais construit : la config
    existait, aucune UI/rendu ne l'exploitait). Chaque mot du verset
    apparaît en cascade au lieu du fondu global de la carte entière —
    effet "lecture qui se dévoile", plus vivant à l'écran de projection.
    ========================================================================== */
-.verse-text .kinetic-word {
-  display: inline-block;
-  opacity: 0;
-  transform: translateY(14px);
-  filter: blur(3px);
-  animation: kineticWordIn 0.7s cubic-bezier(0.19, 1, 0.22, 1) forwards;
-  animation-delay: var(--word-delay, 0ms);
-}
+      .verse-text .kinetic-word {
+        display: inline-block;
+        opacity: 0;
+        transform: translateY(14px);
+        filter: blur(3px);
+        animation: kineticWordIn 0.7s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+        animation-delay: var(--word-delay, 0ms);
+      }
 
-@keyframes kineticWordIn {
-  to { opacity: 1; transform: translateY(0); filter: blur(0); }
-}
+      @keyframes kineticWordIn {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+          filter: blur(0);
+        }
+      }
 
-/* Respecte les préférences d'accessibilité : pas de cascade de mots
+      /* Respecte les préférences d'accessibilité : pas de cascade de mots
    pour qui a demandé de réduire les animations — le texte apparaît
    directement, complet. */
-@media (prefers-reduced-motion: reduce) {
-  .verse-text .kinetic-word {
-    animation: none;
-    opacity: 1;
-    transform: none;
-    filter: none;
-  }
-}
+      @media (prefers-reduced-motion: reduce) {
+        .verse-text .kinetic-word {
+          animation: none;
+          opacity: 1;
+          transform: none;
+          filter: none;
+        }
+      }
 
-/* ==========================================================================
+      /* ==========================================================================
    Mode grand contraste (audit — accessibilité, gratuit/léger). Bascule
    opérateur explicite (voir action 'accessibilityMode'), pas de détection
    automatique. CSS pur : on réutilise les mêmes variables --overlay-* que le
    reste du fichier, donc halo/particules/badges s'adaptent tout seuls sans
    dupliquer les règles élément par élément.
    ========================================================================== */
-body.high-contrast {
-  --overlay-bg: #000000;
-  --overlay-text: #ffffff;
-  --overlay-text-muted: #e8e8e8;
-  --overlay-accent: #ffd54a;
-  --overlay-border: rgba(255, 255, 255, 0.45);
-  --overlay-glow: transparent;
-  --overlay-particle: transparent;
-}
-body.high-contrast .verse-text {
-  font-size: clamp(38px, 4.6vw, 68px);
-  text-shadow: none;
-}
-body.high-contrast .verse-reference {
-  font-size: clamp(18px, 1.8vw, 26px);
-}
-body.high-contrast .ambient-light,
-body.high-contrast #ambientCanvas,
-body.high-contrast .advanced-particle {
-  display: none !important;
-}
-body.high-contrast .verse-text .kinetic-word {
-  animation: none;
-  opacity: 1;
-  transform: none;
-  filter: none;
-}
+      body.high-contrast {
+        --overlay-bg: #000000;
+        --overlay-text: #ffffff;
+        --overlay-text-muted: #e8e8e8;
+        --overlay-accent: #ffd54a;
+        --overlay-border: rgba(255, 255, 255, 0.45);
+        --overlay-glow: transparent;
+        --overlay-particle: transparent;
+      }
+      body.high-contrast .verse-text {
+        font-size: clamp(38px, 4.6vw, 68px);
+        text-shadow: none;
+      }
+      body.high-contrast .verse-reference {
+        font-size: clamp(18px, 1.8vw, 26px);
+      }
+      body.high-contrast .ambient-light,
+      body.high-contrast #ambientCanvas,
+      body.high-contrast .advanced-particle {
+        display: none !important;
+      }
+      body.high-contrast .verse-text .kinetic-word {
+        animation: none;
+        opacity: 1;
+        transform: none;
+        filter: none;
+      }
 
-/* ==========================================================================
+      /* ==========================================================================
    Sous-titres en direct (audit — accessibilité, gratuit/léger). Le texte
    transcrit circule déjà sur chaque segment (broadcast 'transcript' côté
    serveur) — cette bande ne fait qu'afficher ce qui existait déjà, aucun
    nouveau calcul ni appel réseau.
    ========================================================================== */
-#caption-strip {
-  position: fixed;
-  left: 0; right: 0; bottom: 0;
-  display: none;
-  flex-direction: column;
-  gap: 4px;
-  padding: 14px clamp(20px, 4vw, 48px);
-  background: rgba(0, 0, 0, 0.72);
-  color: #ffffff;
-  font-family: var(--overlay-font-ui);
-  font-size: clamp(15px, 1.6vw, 22px);
-  line-height: 1.4;
-  text-align: center;
-  z-index: 5;
-}
-#caption-strip.visible { display: flex; }
-/* AJOUT (sous-titres traduits en direct, opt-in) : ligne distincte, en
+      #caption-strip {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: none;
+        flex-direction: column;
+        gap: 4px;
+        padding: 14px clamp(20px, 4vw, 48px);
+        background: rgba(0, 0, 0, 0.72);
+        color: #ffffff;
+        font-family: var(--overlay-font-ui);
+        font-size: clamp(15px, 1.6vw, 22px);
+        line-height: 1.4;
+        text-align: center;
+        z-index: 5;
+      }
+      #caption-strip.visible {
+        display: flex;
+      }
+      /* AJOUT (sous-titres traduits en direct, opt-in) : ligne distincte, en
    italique et légèrement plus sobre pour rester secondaire face au sous-
    titre original — vide (donc invisible, :empty) tant qu'aucune traduction
    n'est arrivée pour ce segment. */
-#caption-strip-translation {
-  font-style: italic;
-  font-size: 0.85em;
-  color: rgba(255, 255, 255, 0.75);
-}
-#caption-strip-translation:empty { display: none; }
+      #caption-strip-translation {
+        font-style: italic;
+        font-size: 0.85em;
+        color: rgba(255, 255, 255, 0.75);
+      }
+      #caption-strip-translation:empty {
+        display: none;
+      }
 
-/* ==========================================================================
+      /* ==========================================================================
    Motif de test (audit — affichage/sortie, gratuit/léger). Barres de
    couleur statiques façon mire de calage broadcast (blanc/jaune/cyan/vert/
    magenta/rouge/bleu) — sert à vérifier OBS/NDI (via DistroAV)/projecteur
    AVANT le culte, indépendamment de tout verset. CSS pur, aucun calcul par
    frame : zéro coût CPU au-delà d'un rendu statique normal.
    ========================================================================== */
-#test-pattern {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: none;
-  flex-direction: column;
-}
-#test-pattern.visible { display: flex; }
-#test-pattern .bars {
-  flex: 1;
-  display: flex;
-}
-#test-pattern .bars > div { flex: 1; }
-#test-pattern .bar-white { background: #ffffff; }
-#test-pattern .bar-yellow { background: #ffff00; }
-#test-pattern .bar-cyan { background: #00ffff; }
-#test-pattern .bar-green { background: #00ff00; }
-#test-pattern .bar-magenta { background: #ff00ff; }
-#test-pattern .bar-red { background: #ff0000; }
-#test-pattern .bar-blue { background: #0000ff; }
-#test-pattern .label {
-  padding: 10px 16px;
-  background: #000000;
-  color: #ffffff;
-  font-family: var(--overlay-font-ui);
-  font-size: 14px;
-  letter-spacing: 1px;
-}
+      #test-pattern {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: none;
+        flex-direction: column;
+      }
+      #test-pattern.visible {
+        display: flex;
+      }
+      #test-pattern .bars {
+        flex: 1;
+        display: flex;
+      }
+      #test-pattern .bars > div {
+        flex: 1;
+      }
+      #test-pattern .bar-white {
+        background: #ffffff;
+      }
+      #test-pattern .bar-yellow {
+        background: #ffff00;
+      }
+      #test-pattern .bar-cyan {
+        background: #00ffff;
+      }
+      #test-pattern .bar-green {
+        background: #00ff00;
+      }
+      #test-pattern .bar-magenta {
+        background: #ff00ff;
+      }
+      #test-pattern .bar-red {
+        background: #ff0000;
+      }
+      #test-pattern .bar-blue {
+        background: #0000ff;
+      }
+      #test-pattern .label {
+        padding: 10px 16px;
+        background: #000000;
+        color: #ffffff;
+        font-family: var(--overlay-font-ui);
+        font-size: 14px;
+        letter-spacing: 1px;
+      }
 
-/* ==========================================================================
+      /* ==========================================================================
    Motifs de fond (audit — affichage/sortie, gratuit/léger). Couche
    optionnelle sous la carte du verset, en plus des dégradés de thème
    existants — dégradés CSS générés, aucune image, aucun poids ajouté.
    ========================================================================== */
-#pattern-layer {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  opacity: 0.5;
-}
-#pattern-layer.pattern-dots {
-  background-image: radial-gradient(var(--overlay-accent) 1px, transparent 1px);
-  background-size: 26px 26px;
-  opacity: 0.12;
-}
-#pattern-layer.pattern-grid {
-  background-image:
-    linear-gradient(var(--overlay-border) 1px, transparent 1px),
-    linear-gradient(90deg, var(--overlay-border) 1px, transparent 1px);
-  background-size: 48px 48px;
-  opacity: 0.35;
-}
-#pattern-layer.pattern-diagonal {
-  background-image: repeating-linear-gradient(
-    45deg,
-    var(--overlay-border) 0px,
-    var(--overlay-border) 1px,
-    transparent 1px,
-    transparent 22px
-  );
-  opacity: 0.3;
-}
+      #pattern-layer {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        opacity: 0.5;
+      }
+      #pattern-layer.pattern-dots {
+        background-image: radial-gradient(var(--overlay-accent) 1px, transparent 1px);
+        background-size: 26px 26px;
+        opacity: 0.12;
+      }
+      #pattern-layer.pattern-grid {
+        background-image:
+          linear-gradient(var(--overlay-border) 1px, transparent 1px),
+          linear-gradient(90deg, var(--overlay-border) 1px, transparent 1px);
+        background-size: 48px 48px;
+        opacity: 0.35;
+      }
+      #pattern-layer.pattern-diagonal {
+        background-image: repeating-linear-gradient(
+          45deg,
+          var(--overlay-border) 0px,
+          var(--overlay-border) 1px,
+          transparent 1px,
+          transparent 22px
+        );
+        opacity: 0.3;
+      }
 
-/* ==========================================================================
+      /* ==========================================================================
    Médiathèque (photos/vidéos déclenchées à la voix ou manuellement, voir
    action 'showMedia'). Même principe de prise de contrôle plein écran que
    #test-pattern, en z-index plus haut (150) pour passer au-dessus de tout
    le reste (motif de test compris) : un seul média à l'écran à la fois.
    ========================================================================== */
-#media-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 150;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  background: #000000;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-#media-layer.visible {
-  display: flex;
-  opacity: 1;
-}
-#media-layer img,
-#media-layer video {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  /* AJOUT (détails d'affichage média — style d'apparition, voir showMediaItem()
+      #media-layer {
+        position: fixed;
+        inset: 0;
+        z-index: 150;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: #000000;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      }
+      #media-layer.visible {
+        display: flex;
+        opacity: 1;
+      }
+      #media-layer img,
+      #media-layer video {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        /* AJOUT (détails d'affichage média — style d'apparition, voir showMediaItem()
      dans le script plus bas) : transform/opacity uniquement (GPU-composité,
      même discipline que l'audit perf de cette session) — jamais de propriété
      coûteuse (width/height/filter) animée par frame. */
-  transition: transform 0.3s ease, opacity 0.3s ease;
-}
-/* 'fade' (par défaut) : le fondu du layer suffit, le média lui-même est statique. */
-#media-layer.transition-slide img,
-#media-layer.transition-slide video {
-  transform: translateY(0);
-}
-#media-layer.transition-slide:not(.visible) img,
-#media-layer.transition-slide:not(.visible) video {
-  transform: translateY(40px);
-}
-#media-layer.transition-zoom img,
-#media-layer.transition-zoom video {
-  transform: scale(1);
-}
-#media-layer.transition-zoom:not(.visible) img,
-#media-layer.transition-zoom:not(.visible) video {
-  transform: scale(0.85);
-}
-/* 'cut' : aucune transition, apparition/disparition instantanée. */
-#media-layer.transition-cut {
-  transition: none;
-}
-#media-layer.transition-cut img,
-#media-layer.transition-cut video {
-  transition: none;
-}
-#media-layer img[hidden],
-#media-layer video[hidden] {
-  display: none;
-}
+        transition:
+          transform 0.3s ease,
+          opacity 0.3s ease;
+      }
+      /* 'fade' (par défaut) : le fondu du layer suffit, le média lui-même est statique. */
+      #media-layer.transition-slide img,
+      #media-layer.transition-slide video {
+        transform: translateY(0);
+      }
+      #media-layer.transition-slide:not(.visible) img,
+      #media-layer.transition-slide:not(.visible) video {
+        transform: translateY(40px);
+      }
+      #media-layer.transition-zoom img,
+      #media-layer.transition-zoom video {
+        transform: scale(1);
+      }
+      #media-layer.transition-zoom:not(.visible) img,
+      #media-layer.transition-zoom:not(.visible) video {
+        transform: scale(0.85);
+      }
+      /* 'cut' : aucune transition, apparition/disparition instantanée. */
+      #media-layer.transition-cut {
+        transition: none;
+      }
+      #media-layer.transition-cut img,
+      #media-layer.transition-cut video {
+        transition: none;
+      }
+      #media-layer img[hidden],
+      #media-layer video[hidden] {
+        display: none;
+      }
 
-/* Advanced particle system */
-.advanced-particle {
-  position: absolute;
-  pointer-events: none;
-  z-index: 1;
-}
-</style>
-<base target="_blank">
-<!-- CORRECTIF (audit) : animation-library.js a été retiré du dépôt lors du
-     passage à une palette unique (voir historique du projet) mais cette
-     balise <script> y faisait toujours référence, provoquant une erreur
-     404 au chargement de chaque overlay. animationLibrary reste `null`
-     (voir plus bas) et tout le code qui l'utilise est déjà protégé par
-     des gardes — comportement inchangé, juste plus d'erreur en console. -->
-</head>
-<body>
+      /* Advanced particle system */
+      .advanced-particle {
+        position: absolute;
+        pointer-events: none;
+        z-index: 1;
+      }
+    </style>
+    <base target="_blank" />
+  </head>
+  <body>
+    <!-- Motif de fond optionnel (affichage/sortie — voir action 'backgroundPatternMode') -->
+    <div id="pattern-layer" aria-hidden="true"></div>
 
-<!-- Motif de fond optionnel (affichage/sortie — voir action 'backgroundPatternMode') -->
-<div id="pattern-layer" aria-hidden="true"></div>
-
-<!-- Médiathèque : photo/vidéo affichée en plein écran (voir action 'showMedia') -->
-<div id="media-layer" aria-hidden="true">
-  <img id="media-layer-img" alt="" hidden>
-  <video id="media-layer-video" hidden playsinline></video>
-</div>
-
-<!-- Particules d'ambiance -->
-<div class="ambient-light" aria-hidden="true"></div>
-<canvas id="ambientCanvas" aria-hidden="true"></canvas>
-
-<!-- Indicateur commande vocale -->
-<div id="voice-indicator">
-  <svg class="mic-icon" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
-  </svg>
-  <span>Commande vocale</span>
-</div>
-
-<!-- Indicateur détection sémantique -->
-<div id="semantic-indicator">
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-  </svg>
-  <span id="semantic-text">Verset détecté par IA</span>
-</div>
-
-<!-- Alerte pipeline (transcription/audio en échec) -->
-<div id="pipeline-alert">
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M12 2L1 21h22L12 2zm0 3.99L19.53 19H4.47L12 5.99zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/>
-  </svg>
-  <span id="pipeline-alert-text">Pipeline en erreur</span>
-</div>
-
-<!-- Indicateur mode lecture -->
-<div id="reading-indicator">📖 Mode lecture active</div>
-
-<!-- Container du verset -->
-<div id="overlay-container" class="hidden">
-  <div class="verse-card" id="verse-card">
-    <div class="verse-reference" id="verse-reference">
-      <span id="ref-text">ChurchOverlay</span>
-      <span class="source-badge" id="source-badge" style="display:none"></span>
+    <!-- Médiathèque : photo/vidéo affichée en plein écran (voir action 'showMedia') -->
+    <div id="media-layer" aria-hidden="true">
+      <img id="media-layer-img" alt="" hidden />
+      <video id="media-layer-video" hidden playsinline></video>
     </div>
-    <div class="verse-text" id="verse-text">En attente d'une référence biblique...</div>
-    <div class="verse-text-bilingual" id="verse-text-bilingual" style="display:none"></div>
-  </div>
-</div>
 
-<!-- Sous-titres en direct (accessibilité — voir action 'captionsMode') -->
-<div id="caption-strip" aria-live="polite">
-  <div id="caption-strip-text"></div>
-  <!-- AJOUT (sous-titres traduits en direct, opt-in — voir caption-translator.js) :
+    <!-- Particules d'ambiance -->
+    <div class="ambient-light" aria-hidden="true"></div>
+    <canvas id="ambientCanvas" aria-hidden="true"></canvas>
+
+    <!-- Indicateur commande vocale -->
+    <div id="voice-indicator">
+      <svg class="mic-icon" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
+        <path
+          d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"
+        />
+      </svg>
+      <span>Commande vocale</span>
+    </div>
+
+    <!-- Indicateur détection sémantique -->
+    <div id="semantic-indicator">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <path
+          d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
+        />
+      </svg>
+      <span id="semantic-text">Verset détecté par IA</span>
+    </div>
+
+    <!-- Alerte pipeline (transcription/audio en échec) -->
+    <div id="pipeline-alert">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <path
+          d="M12 2L1 21h22L12 2zm0 3.99L19.53 19H4.47L12 5.99zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"
+        />
+      </svg>
+      <span id="pipeline-alert-text">Pipeline en erreur</span>
+    </div>
+
+    <!-- Indicateur mode lecture -->
+    <div id="reading-indicator">📖 Mode lecture active</div>
+
+    <!-- Container du verset -->
+    <div id="overlay-container" class="hidden">
+      <div class="verse-card" id="verse-card">
+        <div class="verse-reference" id="verse-reference">
+          <span id="ref-text">ChurchOverlay</span>
+          <span class="source-badge" id="source-badge" style="display: none"></span>
+        </div>
+        <div class="verse-text" id="verse-text">En attente d'une référence biblique...</div>
+        <div class="verse-text-bilingual" id="verse-text-bilingual" style="display: none"></div>
+      </div>
+    </div>
+
+    <!-- Sous-titres en direct (accessibilité — voir action 'captionsMode') -->
+    <div id="caption-strip" aria-live="polite">
+      <div id="caption-strip-text"></div>
+      <!-- AJOUT (sous-titres traduits en direct, opt-in — voir caption-translator.js) :
        seconde ligne, distincte de la traduction de VERSETS (langMode 'both').
        Masquée tant qu'aucune traduction n'a encore été reçue pour ce segment. -->
-  <div id="caption-strip-translation" aria-live="polite"></div>
-</div>
+      <div id="caption-strip-translation" aria-live="polite"></div>
+    </div>
 
-<!-- Motif de test (affichage/sortie — voir action 'testPatternMode') -->
-<div id="test-pattern" aria-hidden="true">
-  <div class="bars">
-    <div class="bar-white"></div>
-    <div class="bar-yellow"></div>
-    <div class="bar-cyan"></div>
-    <div class="bar-green"></div>
-    <div class="bar-magenta"></div>
-    <div class="bar-red"></div>
-    <div class="bar-blue"></div>
-  </div>
-  <div class="label">ChurchOverlay — MOTIF DE TEST — réglez OBS / NDI / projecteur avant le culte</div>
-</div>
+    <!-- Motif de test (affichage/sortie — voir action 'testPatternMode') -->
+    <div id="test-pattern" aria-hidden="true">
+      <div class="bars">
+        <div class="bar-white"></div>
+        <div class="bar-yellow"></div>
+        <div class="bar-cyan"></div>
+        <div class="bar-green"></div>
+        <div class="bar-magenta"></div>
+        <div class="bar-red"></div>
+        <div class="bar-blue"></div>
+      </div>
+      <div class="label">
+        ChurchOverlay — MOTIF DE TEST — réglez OBS / NDI / projecteur avant le culte
+      </div>
+    </div>
 
-<script>
-/* ==========================================================================
+    <script>
+      /* ==========================================================================
    WebSocket connection
    ========================================================================== */
-// CORRECTIF (bug "serveur tout le temps hors ligne") : server.js rejette
-// (code 1008) toute connexion sans jeton dès que l'authentification est
-// activée côté serveur. Le token voyage dans la query string de la page
-// overlay elle-même (celle collée dans OBS, ex.
-// http://127.0.0.1:8765/overlay?token=...) — main.js y place désormais
-// WS_VIEWER_TOKEN (accès lecture seule), pas le jeton opérateur.
-//
-// SECURITY (backend audit) : le token n'est plus rajouté en ?token= sur
-// l'URL WebSocket elle-même (un reverse proxy exposant le serveur au LAN
-// journalise typiquement l'URI de requête, exposant le jeton en clair).
-// Il voyage maintenant via l'en-tête de handshake Sec-WebSocket-Protocol
-// (2e argument du constructeur WebSocket).
-const getWsToken = () => new URLSearchParams(window.location.search).get('token');
-// CORRECTIF (bug "overlay hors ligne par défaut") : en file:// (cas réel,
-// cette page est chargée depuis disque et collée dans OBS), il n'y a pas
-// de window.location.host à réutiliser. main.js transmet le port réel via
-// ?port=... (voir getOverlayUrl()) ; 8765 est le vrai défaut de server.js
-// (voir config-validator.js > ENV_SCHEMA.PORT) — un correctif précédent
-// utilisait 3000 par erreur ici, qui ne correspondait au port réel de
-// server.js que si PORT était explicitement défini à cette valeur.
-const getWsPort = () => new URLSearchParams(window.location.search).get('port') || '8765';
-const getWsUrl = () => {
-  if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${proto}//${window.location.host}`;
-  }
-  return `ws://localhost:${getWsPort()}`;
-};
+      // CORRECTIF (bug "serveur tout le temps hors ligne") : server.js rejette
+      // (code 1008) toute connexion sans jeton dès que l'authentification est
+      // activée côté serveur. Le token voyage dans la query string de la page
+      // overlay elle-même (celle collée dans OBS, ex.
+      // http://127.0.0.1:8765/overlay?token=...) — main.js y place désormais
+      // WS_VIEWER_TOKEN (accès lecture seule), pas le jeton opérateur.
+      //
+      // SECURITY (backend audit) : le token n'est plus rajouté en ?token= sur
+      // l'URL WebSocket elle-même (un reverse proxy exposant le serveur au LAN
+      // journalise typiquement l'URI de requête, exposant le jeton en clair).
+      // Il voyage maintenant via l'en-tête de handshake Sec-WebSocket-Protocol
+      // (2e argument du constructeur WebSocket).
+      const getWsToken = () => new URLSearchParams(window.location.search).get('token');
+      // CORRECTIF (bug "overlay hors ligne par défaut") : en file:// (cas réel,
+      // cette page est chargée depuis disque et collée dans OBS), il n'y a pas
+      // de window.location.host à réutiliser. main.js transmet le port réel via
+      // ?port=... (voir getOverlayUrl()) ; 8765 est le vrai défaut de server.js
+      // (voir config-validator.js > ENV_SCHEMA.PORT) — un correctif précédent
+      // utilisait 3000 par erreur ici, qui ne correspondait au port réel de
+      // server.js que si PORT était explicitement défini à cette valeur.
+      const getWsPort = () => new URLSearchParams(window.location.search).get('port') || '8765';
+      const getWsUrl = () => {
+        if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+          const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          return `${proto}//${window.location.host}`;
+        }
+        return `ws://localhost:${getWsPort()}`;
+      };
 
-// CORRECTIF (trouvé en marge de l'innovation frontend) : escapeHtml était
-// appelé dans showVerse() pour le texte bilingue (EN) mais n'était défini
-// nulle part dans ce fichier -> ReferenceError silencieuse dès qu'un verset
-// avec langMode 'both' s'affichait (le crash arrêtait tout le script, donc
-// aussi le WebSocket et les timers).
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str == null ? '' : String(str);
-  return div.innerHTML;
-}
+      // CORRECTIF (trouvé en marge de l'innovation frontend) : escapeHtml était
+      // appelé dans showVerse() pour le texte bilingue (EN) mais n'était défini
+      // nulle part dans ce fichier -> ReferenceError silencieuse dès qu'un verset
+      // avec langMode 'both' s'affichait (le crash arrêtait tout le script, donc
+      // aussi le WebSocket et les timers).
+      function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str == null ? '' : String(str);
+        return div.innerHTML;
+      }
 
-let ws = null;
-let hideTimeout = null;
-let currentTheme = 'default';
-let currentAnimation = 'fadeInUp';
-let currentMood = 'peace';
-let reconnectTimer = null;
-let animationLibrary = null;
+      let ws = null;
+      let hideTimeout = null;
+      let currentTheme = 'default';
+      let currentAnimation = 'fadeInUp';
+      let reconnectTimer = null;
 
-function connectWs() {
-  if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
+      function connectWs() {
+        if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN))
+          return;
 
-  try {
-    const token = getWsToken();
-    ws = token ? new WebSocket(getWsUrl(), [token]) : new WebSocket(getWsUrl());
-  } catch (e) {
-    console.error('[overlay] Error creating WS:', e);
-    scheduleOverlayReconnect();
-    return;
-  }
+        try {
+          const token = getWsToken();
+          ws = token ? new WebSocket(getWsUrl(), [token]) : new WebSocket(getWsUrl());
+        } catch (e) {
+          console.error('[overlay] Error creating WS:', e);
+          scheduleOverlayReconnect();
+          return;
+        }
 
-  ws.onopen = () => {
-    console.log('[overlay] WebSocket connecté');
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-    }
-  };
+        ws.onopen = () => {
+          console.log('[overlay] WebSocket connecté');
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+          }
+        };
 
-  ws.onmessage = (event) => {
-    let msg;
-    try { msg = JSON.parse(event.data); } catch { return; }
-    if (!msg || !msg.action) return;
+        ws.onmessage = (event) => {
+          let msg;
+          try {
+            msg = JSON.parse(event.data);
+          } catch {
+            return;
+          }
+          if (!msg || !msg.action) return;
 
-    switch (msg.action) {
-      case 'init':
-        if (msg.theme) applyTheme(msg.theme);
-        if (msg.mood) setMood(msg.mood);
-        setHighContrast(!!msg.highContrast);
-        setCaptionsEnabled(!!msg.captions);
-        setTranslatedCaptionsEnabled(!!msg.translatedCaptions);
-        setTestPattern(!!msg.testPattern);
-        setBackgroundPattern(msg.backgroundPattern || 'none');
-        // AJOUT (poster principal) : à l'ouverture/rechargement de l'overlay,
-        // affiche immédiatement le poster principal s'il y en a un et que
-        // rien d'autre n'est encore à l'écran (setCurrentDefaultMedia()
-        // appelle déjà maybeShowDefaultMedia() en interne).
-        setCurrentDefaultMedia(msg.defaultMedia || null);
-        break;
-      case 'defaultMediaChanged':
-        setCurrentDefaultMedia(msg.item || null);
-        break;
-      case 'showVerse':
-        showVerse(msg);
-        break;
-      case 'hideVerse':
-        hideVerse(msg.emergency);
-        break;
-      case 'applyTheme':
-        applyTheme(msg);
-        break;
-      case 'applyAnimation':
-        applyAnimation(msg.animation, msg.options);
-        break;
-      case 'setMood':
-        setMood(msg.mood);
-        break;
-      case 'languageChanged':
-        break;
-      case 'translationChanged':
-        break;
-      case 'readingStarted':
-        showReadingIndicator(true);
-        break;
-      case 'readingStopped':
-        showReadingIndicator(false);
-        break;
-      case 'nextVerse':
-      case 'previousVerse':
-      case 'nextChapter':
-        break;
-      case 'extendTime':
-        extendDisplayTime(msg.extraMs);
-        break;
-      case 'pauseTimer':
-        pauseTimer();
-        break;
-      case 'resumeTimer':
-        resumeTimer();
-        break;
-      case 'emergencyClear':
-        emergencyClear();
-        break;
-      case 'semanticDetected':
-        showSemanticIndicator(msg.reference, msg.confidence);
-        break;
-      case 'transcriptCorrected':
-        console.log('[overlay] Transcript corrected:', msg.corrected);
-        break;
-      case 'transcript':
-        updateCaptionText(msg.text);
-        break;
-      case 'accessibilityMode':
-        setHighContrast(!!msg.highContrast);
-        break;
-      case 'captionsMode':
-        setCaptionsEnabled(!!msg.captions);
-        break;
-      case 'translatedCaptionsMode':
-        setTranslatedCaptionsEnabled(!!msg.enabled);
-        break;
-      case 'transcriptTranslation':
-        updateTranslatedCaptionText(msg.text);
-        break;
-      case 'testPatternMode':
-        setTestPattern(!!msg.enabled);
-        break;
-      case 'backgroundPatternMode':
-        setBackgroundPattern(msg.pattern || 'none');
-        break;
-      case 'showMedia':
-        showMediaItem(msg);
-        break;
-      case 'hideMedia':
-        hideMediaItem();
-        break;
-      case 'error':
-        console.error('[overlay] Server error:', msg.error);
-        break;
-      case 'transcriptionError':
-        console.error('[overlay] Transcription error:', msg.error);
-        showPipelineAlert('Transcription indisponible — vérifier la connexion internet');
-        break;
-      case 'audioError':
-        console.error('[overlay] Audio capture error:', msg.error);
-        showPipelineAlert('Capture audio interrompue — vérifier le micro');
-        break;
-      case 'audioSilenceWarning':
-        console.warn('[overlay] Silence prolongé:', msg.message);
-        showPipelineAlert('Aucune voix détectée — vérifiez le micro');
-        break;
-    }
-  };
+          switch (msg.action) {
+            case 'init':
+              if (msg.theme) applyTheme(msg.theme);
+              setHighContrast(!!msg.highContrast);
+              setCaptionsEnabled(!!msg.captions);
+              setTranslatedCaptionsEnabled(!!msg.translatedCaptions);
+              setTestPattern(!!msg.testPattern);
+              setBackgroundPattern(msg.backgroundPattern || 'none');
+              // AJOUT (poster principal) : à l'ouverture/rechargement de l'overlay,
+              // affiche immédiatement le poster principal s'il y en a un et que
+              // rien d'autre n'est encore à l'écran (setCurrentDefaultMedia()
+              // appelle déjà maybeShowDefaultMedia() en interne).
+              setCurrentDefaultMedia(msg.defaultMedia || null);
+              break;
+            case 'defaultMediaChanged':
+              setCurrentDefaultMedia(msg.item || null);
+              break;
+            case 'showVerse':
+              showVerse(msg);
+              break;
+            case 'hideVerse':
+              hideVerse(msg.emergency);
+              break;
+            case 'applyTheme':
+              applyTheme(msg);
+              break;
+            case 'languageChanged':
+              break;
+            case 'translationChanged':
+              break;
+            case 'readingStarted':
+              showReadingIndicator(true);
+              break;
+            case 'readingStopped':
+              showReadingIndicator(false);
+              break;
+            case 'nextVerse':
+            case 'previousVerse':
+            case 'nextChapter':
+              break;
+            case 'extendTime':
+              extendDisplayTime(msg.extraMs);
+              break;
+            case 'pauseTimer':
+              pauseTimer();
+              break;
+            case 'resumeTimer':
+              resumeTimer();
+              break;
+            case 'emergencyClear':
+              emergencyClear();
+              break;
+            case 'semanticDetected':
+              showSemanticIndicator(msg.reference, msg.confidence);
+              break;
+            case 'transcriptCorrected':
+              console.log('[overlay] Transcript corrected:', msg.corrected);
+              break;
+            case 'transcript':
+              updateCaptionText(msg.text);
+              break;
+            case 'accessibilityMode':
+              setHighContrast(!!msg.highContrast);
+              break;
+            case 'captionsMode':
+              setCaptionsEnabled(!!msg.captions);
+              break;
+            case 'translatedCaptionsMode':
+              setTranslatedCaptionsEnabled(!!msg.enabled);
+              break;
+            case 'transcriptTranslation':
+              updateTranslatedCaptionText(msg.text);
+              break;
+            case 'testPatternMode':
+              setTestPattern(!!msg.enabled);
+              break;
+            case 'backgroundPatternMode':
+              setBackgroundPattern(msg.pattern || 'none');
+              break;
+            case 'showMedia':
+              showMediaItem(msg);
+              break;
+            case 'hideMedia':
+              hideMediaItem();
+              break;
+            case 'error':
+              console.error('[overlay] Server error:', msg.error);
+              break;
+            case 'transcriptionError':
+              console.error('[overlay] Transcription error:', msg.error);
+              showPipelineAlert('Transcription indisponible — vérifier la connexion internet');
+              break;
+            case 'audioError':
+              console.error('[overlay] Audio capture error:', msg.error);
+              showPipelineAlert('Capture audio interrompue — vérifier le micro');
+              break;
+            case 'audioSilenceWarning':
+              console.warn('[overlay] Silence prolongé:', msg.message);
+              showPipelineAlert('Aucune voix détectée — vérifiez le micro');
+              break;
+          }
+        };
 
-  ws.onclose = () => {
-    console.log('[overlay] WebSocket déconnecté');
-    scheduleOverlayReconnect();
-  };
+        ws.onclose = () => {
+          console.log('[overlay] WebSocket déconnecté');
+          scheduleOverlayReconnect();
+        };
 
-  ws.onerror = (err) => {
-    console.error('[overlay] WebSocket error:', err);
-  };
-}
+        ws.onerror = (err) => {
+          console.error('[overlay] WebSocket error:', err);
+        };
+      }
 
-function scheduleOverlayReconnect() {
-  if (!reconnectTimer) {
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = null;
+      function scheduleOverlayReconnect() {
+        if (!reconnectTimer) {
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            connectWs();
+          }, 3000);
+        }
+      }
+
       connectWs();
-    }, 3000);
-  }
-}
 
-connectWs();
-
-/* ==========================================================================
+      /* ==========================================================================
    Typographie cinétique
    ========================================================================== */
-// Active la config config/features.json -> design.kineticTypography (elle
-// existait déjà côté config mais n'avait aucun effet visuel réel jusqu'ici :
-// applyAnimation('wordByWord') n'animait que la carte entière, pas les mots).
-// Passages trop longs (> 55 mots) : la cascade deviendrait plus distrayante
-// que lisible sur un plan large, donc on retombe sur un affichage direct.
-const KINETIC_MAX_WORDS = 55;
-const KINETIC_WORD_STEP_MS = 55;
+      // Active la config config/features.json -> design.kineticTypography (elle
+      // existait déjà côté config mais n'avait aucun effet visuel réel jusqu'ici :
+      // applyAnimation('wordByWord') n'animait que la carte entière, pas les mots).
+      // Passages trop longs (> 55 mots) : la cascade deviendrait plus distrayante
+      // que lisible sur un plan large, donc on retombe sur un affichage direct.
+      const KINETIC_MAX_WORDS = 55;
+      const KINETIC_WORD_STEP_MS = 55;
 
-function renderVerseTextContent(el, text) {
-  el.classList.remove('kinetic-mode');
-  const words = (text || '').split(/(\s+)/).filter(Boolean);
-  const wordCount = words.filter(w => !/^\s+$/.test(w)).length;
+      function renderVerseTextContent(el, text) {
+        el.classList.remove('kinetic-mode');
+        const words = (text || '').split(/(\s+)/).filter(Boolean);
+        const wordCount = words.filter((w) => !/^\s+$/.test(w)).length;
 
-  if (wordCount === 0 || wordCount > KINETIC_MAX_WORDS) {
-    el.textContent = text || '';
-    return;
-  }
+        if (wordCount === 0 || wordCount > KINETIC_MAX_WORDS) {
+          el.textContent = text || '';
+          return;
+        }
 
-  el.innerHTML = '';
-  el.classList.add('kinetic-mode');
-  let wordIndex = 0;
-  words.forEach((token) => {
-    if (/^\s+$/.test(token)) {
-      el.appendChild(document.createTextNode(token));
-      return;
-    }
-    const span = document.createElement('span');
-    span.className = 'kinetic-word';
-    span.textContent = token;
-    span.style.setProperty('--word-delay', `${wordIndex * KINETIC_WORD_STEP_MS}ms`);
-    el.appendChild(span);
-    wordIndex++;
-  });
-}
+        el.innerHTML = '';
+        el.classList.add('kinetic-mode');
+        let wordIndex = 0;
+        words.forEach((token) => {
+          if (/^\s+$/.test(token)) {
+            el.appendChild(document.createTextNode(token));
+            return;
+          }
+          const span = document.createElement('span');
+          span.className = 'kinetic-word';
+          span.textContent = token;
+          span.style.setProperty('--word-delay', `${wordIndex * KINETIC_WORD_STEP_MS}ms`);
+          el.appendChild(span);
+          wordIndex++;
+        });
+      }
 
-/* ==========================================================================
+      /* ==========================================================================
    Display functions
    ========================================================================== */
-// CORRECTIF (audit — plusieurs versets à la fois pouvaient déborder de
-// l'écran) : réduit progressivement la taille du texte du verset jusqu'à
-// ce que la carte tienne dans la hauteur de fenêtre disponible, avec un
-// plancher lisible (jamais en dessous de MIN_VERSE_FONT_PX). Remise à la
-// taille par défaut (CSS clamp()) avant chaque mesure, pour repartir de
-// zéro à chaque nouveau verset plutôt que de cumuler les réductions
-// précédentes.
-const MIN_VERSE_FONT_PX = 18;
-const VIEWPORT_MARGIN_PX = 120; // marge haut+bas pour rester lisible, pas collé aux bords
-function fitVerseCardToViewport() {
-  const card = document.getElementById('verse-card');
-  const verseTextEl = document.getElementById('verse-text');
-  if (!card || !verseTextEl) return;
+      // CORRECTIF (audit — plusieurs versets à la fois pouvaient déborder de
+      // l'écran) : réduit progressivement la taille du texte du verset jusqu'à
+      // ce que la carte tienne dans la hauteur de fenêtre disponible, avec un
+      // plancher lisible (jamais en dessous de MIN_VERSE_FONT_PX). Remise à la
+      // taille par défaut (CSS clamp()) avant chaque mesure, pour repartir de
+      // zéro à chaque nouveau verset plutôt que de cumuler les réductions
+      // précédentes.
+      const MIN_VERSE_FONT_PX = 18;
+      const VIEWPORT_MARGIN_PX = 120; // marge haut+bas pour rester lisible, pas collé aux bords
+      function fitVerseCardToViewport() {
+        const card = document.getElementById('verse-card');
+        const verseTextEl = document.getElementById('verse-text');
+        if (!card || !verseTextEl) return;
 
-  verseTextEl.style.fontSize = '';
-  const maxCardHeight = window.innerHeight - VIEWPORT_MARGIN_PX;
-  if (maxCardHeight <= 0) return;
+        verseTextEl.style.fontSize = '';
+        const maxCardHeight = window.innerHeight - VIEWPORT_MARGIN_PX;
+        if (maxCardHeight <= 0) return;
 
-  let currentSize = parseFloat(getComputedStyle(verseTextEl).fontSize);
-  let guard = 0;
-  while (card.scrollHeight > maxCardHeight && currentSize > MIN_VERSE_FONT_PX && guard < 30) {
-    currentSize -= 2;
-    verseTextEl.style.fontSize = `${currentSize}px`;
-    guard++;
-  }
-}
+        let currentSize = parseFloat(getComputedStyle(verseTextEl).fontSize);
+        let guard = 0;
+        while (card.scrollHeight > maxCardHeight && currentSize > MIN_VERSE_FONT_PX && guard < 30) {
+          currentSize -= 2;
+          verseTextEl.style.fontSize = `${currentSize}px`;
+          guard++;
+        }
+      }
 
-function showVerse(data) {
-  const container = document.getElementById('overlay-container');
-  const card = document.getElementById('verse-card');
-  const refText = document.getElementById('ref-text');
-  const verseText = document.getElementById('verse-text');
-  const verseBilingual = document.getElementById('verse-text-bilingual');
-  const sourceBadge = document.getElementById('source-badge');
+      function showVerse(data) {
+        const container = document.getElementById('overlay-container');
+        const card = document.getElementById('verse-card');
+        const refText = document.getElementById('ref-text');
+        const verseText = document.getElementById('verse-text');
+        const verseBilingual = document.getElementById('verse-text-bilingual');
+        const sourceBadge = document.getElementById('source-badge');
 
-  // Update content
-  refText.textContent = data.reference || 'Référence inconnue';
+        // Update content
+        refText.textContent = data.reference || 'Référence inconnue';
 
-  // Bilingual display — on détermine d'abord le texte principal réel
-  // (le français prend le pas sur le texte brut si bilingue), puis on
-  // ne fait le rendu (cinétique ou direct) qu'une seule fois dessus.
-  let mainText = data.text || '';
-  if (data.langMode === 'both' && data.text_fr && data.text_en) {
-    verseBilingual.style.display = 'block';
-    verseBilingual.innerHTML = `<em>EN:</em> ${escapeHtml(data.text_en)}`;
-    mainText = data.text_fr;
-  } else {
-    verseBilingual.style.display = 'none';
-  }
-  renderVerseTextContent(verseText, mainText);
+        // Bilingual display — on détermine d'abord le texte principal réel
+        // (le français prend le pas sur le texte brut si bilingue), puis on
+        // ne fait le rendu (cinétique ou direct) qu'une seule fois dessus.
+        let mainText = data.text || '';
+        if (data.langMode === 'both' && data.text_fr && data.text_en) {
+          verseBilingual.style.display = 'block';
+          verseBilingual.innerHTML = `<em>EN:</em> ${escapeHtml(data.text_en)}`;
+          mainText = data.text_fr;
+        } else {
+          verseBilingual.style.display = 'none';
+        }
+        renderVerseTextContent(verseText, mainText);
 
-  // Source badge
-  if (data.detectedBy || data.triggeredByVoice || data.triggeredManually) {
-    sourceBadge.style.display = 'inline-flex';
-    if (data.triggeredByVoice) {
-      sourceBadge.className = 'source-badge voice';
-      sourceBadge.textContent = '🎤 Voix';
-      showVoiceIndicator();
-    } else if (data.triggeredManually) {
-      sourceBadge.className = 'source-badge manual';
-      sourceBadge.textContent = '👤 Manuel';
-    } else if (data.detectedBy === 'semantic' || data.detectedBy === 'quote') {
-      sourceBadge.className = 'source-badge ai';
-      sourceBadge.textContent = '🤖 IA';
-    } else {
-      sourceBadge.style.display = 'none';
-    }
-  } else {
-    sourceBadge.style.display = 'none';
-  }
+        // Source badge
+        if (data.detectedBy || data.triggeredByVoice || data.triggeredManually) {
+          sourceBadge.style.display = 'inline-flex';
+          if (data.triggeredByVoice) {
+            sourceBadge.className = 'source-badge voice';
+            sourceBadge.textContent = '🎤 Voix';
+            showVoiceIndicator();
+          } else if (data.triggeredManually) {
+            sourceBadge.className = 'source-badge manual';
+            sourceBadge.textContent = '👤 Manuel';
+          } else if (data.detectedBy === 'semantic' || data.detectedBy === 'quote') {
+            sourceBadge.className = 'source-badge ai';
+            sourceBadge.textContent = '🤖 IA';
+          } else {
+            sourceBadge.style.display = 'none';
+          }
+        } else {
+          sourceBadge.style.display = 'none';
+        }
 
-  // Use animation library if available, otherwise fallback to legacy
-  if (animationLibrary && data.animation) {
-    applyAnimation(data.animation, data.animationOptions);
-  } else {
-    // Legacy animation
-    card.className = 'verse-card animate-verse';
-    card.style.animationName = currentAnimation;
-  }
+        card.className = 'verse-card animate-verse';
+        card.style.animationName = currentAnimation;
 
-  // CORRECTIF (poster principal — demande explicite) : un média (poster/
-  // vidéo) a un z-index plus élevé que #overlay-container (150 vs 10) —
-  // sans ce masquage, un verset détecté PENDANT qu'un média est affiché
-  // restait invisible, caché derrière le calque média, jusqu'à ce que ce
-  // dernier se masque de lui-même. Version "silencieuse" (hideMediaLayer,
-  // pas hideMediaItem) : pas de vérification "poster principal" ici, un
-  // verset est sur le point de prendre l'écran de toute façon.
-  hideMediaLayer();
+        // CORRECTIF (poster principal — demande explicite) : un média (poster/
+        // vidéo) a un z-index plus élevé que #overlay-container (150 vs 10) —
+        // sans ce masquage, un verset détecté PENDANT qu'un média est affiché
+        // restait invisible, caché derrière le calque média, jusqu'à ce que ce
+        // dernier se masque de lui-même. Version "silencieuse" (hideMediaLayer,
+        // pas hideMediaItem) : pas de vérification "poster principal" ici, un
+        // verset est sur le point de prendre l'écran de toute façon.
+        hideMediaLayer();
 
-  // Show
-  container.className = 'visible';
+        // Show
+        container.className = 'visible';
 
-  // CORRECTIF (audit — plages de plusieurs versets pouvaient déborder de
-  // l'écran) : #overlay-container n'a aucune limite de hauteur ni
-  // .verse-card ; pour une plage demandée à voix haute ("versets 2 à 8"),
-  // le texte concaténé de plusieurs versets peut largement dépasser
-  // l'espace disponible — la carte, ancrée en bas de l'écran, pousserait
-  // alors son sommet hors du cadre visible, sans qu'aucun mécanisme
-  // n'ajuste quoi que ce soit. On réduit la taille du texte du verset
-  // (jamais en dessous d'un plancher lisible) jusqu'à ce que la carte
-  // tienne dans la hauteur de la fenêtre. Après le rendu (requestAnimationFrame)
-  // pour mesurer la vraie hauteur une fois le texte injecté dans le DOM.
-  requestAnimationFrame(fitVerseCardToViewport);
+        // CORRECTIF (audit — plages de plusieurs versets pouvaient déborder de
+        // l'écran) : #overlay-container n'a aucune limite de hauteur ni
+        // .verse-card ; pour une plage demandée à voix haute ("versets 2 à 8"),
+        // le texte concaténé de plusieurs versets peut largement dépasser
+        // l'espace disponible — la carte, ancrée en bas de l'écran, pousserait
+        // alors son sommet hors du cadre visible, sans qu'aucun mécanisme
+        // n'ajuste quoi que ce soit. On réduit la taille du texte du verset
+        // (jamais en dessous d'un plancher lisible) jusqu'à ce que la carte
+        // tienne dans la hauteur de la fenêtre. Après le rendu (requestAnimationFrame)
+        // pour mesurer la vraie hauteur une fois le texte injecté dans le DOM.
+        requestAnimationFrame(fitVerseCardToViewport);
 
-  // Auto-hide timer
-  clearTimeout(hideTimeout);
-  const duration = sanitizeDurationMs(data.durationMs);
-  hideTimeout = setTimeout(() => hideVerse(false), duration);
-}
+        // Auto-hide timer
+        clearTimeout(hideTimeout);
+        const duration = sanitizeDurationMs(data.durationMs);
+        hideTimeout = setTimeout(() => hideVerse(false), duration);
+      }
 
-// AJOUT (poster principal) : version "silencieuse", sans vérification du
-// poster principal — utilisée en interne (showMediaItem()) quand un média
-// est sur le point de prendre l'écran, pour éviter un flash du poster
-// principal entre les deux. hideVerse() (public, plus bas) reste la
-// fonction à appeler depuis un minuteur/action WS/urgence.
-function hideVerseQuiet(emergency) {
-  const container = document.getElementById('overlay-container');
-  if (emergency) {
-    container.className = 'hidden emergency-flash';
-  } else {
-    container.className = 'hidden';
-  }
-  clearTimeout(hideTimeout);
-  hideTimeout = null;
-}
+      // AJOUT (poster principal) : version "silencieuse", sans vérification du
+      // poster principal — utilisée en interne (showMediaItem()) quand un média
+      // est sur le point de prendre l'écran, pour éviter un flash du poster
+      // principal entre les deux. hideVerse() (public, plus bas) reste la
+      // fonction à appeler depuis un minuteur/action WS/urgence.
+      function hideVerseQuiet(emergency) {
+        const container = document.getElementById('overlay-container');
+        if (emergency) {
+          container.className = 'hidden emergency-flash';
+        } else {
+          container.className = 'hidden';
+        }
+        clearTimeout(hideTimeout);
+        hideTimeout = null;
+      }
 
-function hideVerse(emergency = false) {
-  hideVerseQuiet(emergency);
-  maybeShowDefaultMedia();
-}
+      function hideVerse(emergency = false) {
+        hideVerseQuiet(emergency);
+        maybeShowDefaultMedia();
+      }
 
-function extendDisplayTime(extraMs) {
-  if (hideTimeout) {
-    clearTimeout(hideTimeout);
-    hideTimeout = setTimeout(() => hideVerse(false), sanitizeDurationMs(extraMs));
-  }
-}
+      function extendDisplayTime(extraMs) {
+        if (hideTimeout) {
+          clearTimeout(hideTimeout);
+          hideTimeout = setTimeout(() => hideVerse(false), sanitizeDurationMs(extraMs));
+        }
+      }
 
-// Borne strictement toute durée de timer venant du réseau (WebSocket) avant
-// de la passer à setTimeout : évite qu'une valeur non finie, négative ou
-// démesurée (accidentelle ou malveillante) ne cause un épuisement de
-// ressources côté overlay. Alignée avec le plafond serveur (1h = 3600000 ms).
-const MAX_DISPLAY_DURATION_MS = 3600000;
-// Filet de sécurité uniquement (si le serveur envoie une valeur invalide/
-// absente) : aligné sur le défaut serveur de 120s (config/features.json
-// display.verseDurationMs). Le serveur envoie normalement toujours une
-// durée valide via getVerseDurationMs().
-const DEFAULT_DISPLAY_DURATION_MS = 120000;
-function sanitizeDurationMs(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) return DEFAULT_DISPLAY_DURATION_MS;
-  return Math.min(n, MAX_DISPLAY_DURATION_MS);
-}
+      // Borne strictement toute durée de timer venant du réseau (WebSocket) avant
+      // de la passer à setTimeout : évite qu'une valeur non finie, négative ou
+      // démesurée (accidentelle ou malveillante) ne cause un épuisement de
+      // ressources côté overlay. Alignée avec le plafond serveur (1h = 3600000 ms).
+      const MAX_DISPLAY_DURATION_MS = 3600000;
+      // Filet de sécurité uniquement (si le serveur envoie une valeur invalide/
+      // absente) : aligné sur le défaut serveur de 120s (config/features.json
+      // display.verseDurationMs). Le serveur envoie normalement toujours une
+      // durée valide via getVerseDurationMs().
+      const DEFAULT_DISPLAY_DURATION_MS = 120000;
+      function sanitizeDurationMs(value) {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n <= 0) return DEFAULT_DISPLAY_DURATION_MS;
+        return Math.min(n, MAX_DISPLAY_DURATION_MS);
+      }
 
-let timerPaused = false;
-let pauseRemaining = 0;
-let pauseStartTime = 0;
+      let timerPaused = false;
+      let pauseRemaining = 0;
+      let pauseStartTime = 0;
 
-function pauseTimer() {
-  if (hideTimeout && !timerPaused) {
-    timerPaused = true;
-    pauseStartTime = Date.now();
-    clearTimeout(hideTimeout);
-    console.log('[overlay] Timer paused');
-  }
-}
+      function pauseTimer() {
+        if (hideTimeout && !timerPaused) {
+          timerPaused = true;
+          pauseStartTime = Date.now();
+          clearTimeout(hideTimeout);
+          console.log('[overlay] Timer paused');
+        }
+      }
 
-function resumeTimer() {
-  if (timerPaused) {
-    timerPaused = false;
-    console.log('[overlay] Timer resumed');
-    // We don't know original remaining, so just extend by elapsed pause time
-    // In practice, the server handles the real timing
-  }
-}
+      function resumeTimer() {
+        if (timerPaused) {
+          timerPaused = false;
+          console.log('[overlay] Timer resumed');
+          // We don't know original remaining, so just extend by elapsed pause time
+          // In practice, the server handles the real timing
+        }
+      }
 
-function emergencyClear() {
-  // CORRECTIF (poster principal) : hideVerse(true) seul ne masquait pas un
-  // média activement affiché (couche séparée, voir #media-layer) — un
-  // "effacement d'urgence" laissait le poster/vidéo en place. hideMediaItem()
-  // est appelée en second : si aucun poster principal n'est configuré,
-  // l'écran reste bien vide comme avant ; sinon le poster principal
-  // réapparaît (préférable à un écran noir).
-  hideVerseQuiet(true);
-  hideMediaItem();
-  showVoiceIndicator('🚨 Urgence');
-  setTimeout(() => hideVoiceIndicator(), 2000);
-}
+      function emergencyClear() {
+        // CORRECTIF (poster principal) : hideVerse(true) seul ne masquait pas un
+        // média activement affiché (couche séparée, voir #media-layer) — un
+        // "effacement d'urgence" laissait le poster/vidéo en place. hideMediaItem()
+        // est appelée en second : si aucun poster principal n'est configuré,
+        // l'écran reste bien vide comme avant ; sinon le poster principal
+        // réapparaît (préférable à un écran noir).
+        hideVerseQuiet(true);
+        hideMediaItem();
+        showVoiceIndicator('🚨 Urgence');
+        setTimeout(() => hideVoiceIndicator(), 2000);
+      }
 
-/* ==========================================================================
+      /* ==========================================================================
    Theme system
    ========================================================================== */
-function applyTheme(theme) {
-  if (!theme) return;
-  const root = document.documentElement;
+      function applyTheme(theme) {
+        if (!theme) return;
+        const root = document.documentElement;
 
-  // CORRECTIF (deux bugs distincts, trouvés indépendamment dans le même
-  // repli silencieux — deux sessions parallèles, aucun conflit réel) :
-  // applyTheme() n'attendait qu'une forme plate (theme.background,
-  // theme.color...), mais deux sources totalement différentes envoient
-  // deux AUTRES formes :
-  //  1. ai-theme-generator.js (verset détecté, commande vocale, mode
-  //     ambiant automatique) envoie backgroundGradient/textColor/
-  //     animationStyle — voir bloc ci-dessous.
-  //  2. theme-loader.js (thèmes "nuit"/"claire" et thèmes personnalisés
-  //     choisis depuis le tableau de bord) envoie une forme imbriquée
-  //     { variables: {'--bg':..., '--verse-font':...}, effects,
-  //     animations, background } — voir bloc `theme.variables` plus bas.
-  // Sans ces deux ponts, --overlay-bg/--overlay-text (qui pilotent le
-  // fond et la couleur du texte RÉELLEMENT visibles, voir background:
-  // var(--overlay-bg) / color: var(--overlay-text) plus haut) n'étaient
-  // jamais mis à jour pour l'une ou l'autre source : changer de thème
-  // depuis le tableau de bord, ou laisser le mode ambiant réagir au ton
-  // du sermon, ne changeait silencieusement rien sur l'overlay projeté.
-  if (theme.variables) {
-    const v = theme.variables;
-    if (v['--bg']) root.style.setProperty('--overlay-bg', v['--bg']);
-    if (v['--text']) root.style.setProperty('--overlay-text', v['--text']);
-    if (v['--accent']) root.style.setProperty('--overlay-accent', v['--accent']);
-    if (v['--verse-font']) root.style.setProperty('--overlay-font', v['--verse-font']);
-    if (v['--ref-font']) root.style.setProperty('--overlay-font-ui', v['--ref-font']);
-    if (theme.animations && theme.animations.default) currentAnimation = theme.animations.default;
-    return;
-  }
+        // CORRECTIF (deux bugs distincts, trouvés indépendamment dans le même
+        // repli silencieux — deux sessions parallèles, aucun conflit réel) :
+        // applyTheme() n'attendait qu'une forme plate (theme.background,
+        // theme.color...), mais deux sources totalement différentes envoient
+        // deux AUTRES formes :
+        //  1. ai-theme-generator.js (verset détecté, commande vocale, mode
+        //     ambiant automatique) envoie backgroundGradient/textColor/
+        //     animationStyle — voir bloc ci-dessous.
+        //  2. theme-loader.js (thèmes "nuit"/"claire" et thèmes personnalisés
+        //     choisis depuis le tableau de bord) envoie une forme imbriquée
+        //     { variables: {'--bg':..., '--verse-font':...}, effects,
+        //     animations, background } — voir bloc `theme.variables` plus bas.
+        // Sans ces deux ponts, --overlay-bg/--overlay-text (qui pilotent le
+        // fond et la couleur du texte RÉELLEMENT visibles, voir background:
+        // var(--overlay-bg) / color: var(--overlay-text) plus haut) n'étaient
+        // jamais mis à jour pour l'une ou l'autre source : changer de thème
+        // depuis le tableau de bord, ou laisser le mode ambiant réagir au ton
+        // du sermon, ne changeait silencieusement rien sur l'overlay projeté.
+        if (theme.variables) {
+          const v = theme.variables;
+          if (v['--bg']) root.style.setProperty('--overlay-bg', v['--bg']);
+          if (v['--text']) root.style.setProperty('--overlay-text', v['--text']);
+          if (v['--accent']) root.style.setProperty('--overlay-accent', v['--accent']);
+          if (v['--verse-font']) root.style.setProperty('--overlay-font', v['--verse-font']);
+          if (v['--ref-font']) root.style.setProperty('--overlay-font-ui', v['--ref-font']);
+          if (theme.animations && theme.animations.default)
+            currentAnimation = theme.animations.default;
+          return;
+        }
 
-  const background = theme.backgroundGradient || theme.background;
-  const color = theme.textColor || theme.color;
-  const animation = theme.animationStyle || theme.animation;
+        const background = theme.backgroundGradient || theme.background;
+        const color = theme.textColor || theme.color;
+        const animation = theme.animationStyle || theme.animation;
 
-  if (background) root.style.setProperty('--overlay-bg', background);
-  if (color) root.style.setProperty('--overlay-text', color);
-  if (theme.accentColor) root.style.setProperty('--overlay-accent', theme.accentColor);
-  if (theme.fontFamily) root.style.setProperty('--overlay-font', theme.fontFamily);
-  if (theme.borderColor) root.style.setProperty('--overlay-border', theme.borderColor);
-  if (theme.glowColor) root.style.setProperty('--overlay-glow', theme.glowColor);
-  if (theme.shadowColor) root.style.setProperty('--overlay-shadow', theme.shadowColor);
-  if (theme.particleColor) root.style.setProperty('--overlay-particle', theme.particleColor);
-  if (animation) currentAnimation = animation;
+        if (background) root.style.setProperty('--overlay-bg', background);
+        if (color) root.style.setProperty('--overlay-text', color);
+        if (theme.accentColor) root.style.setProperty('--overlay-accent', theme.accentColor);
+        if (theme.fontFamily) root.style.setProperty('--overlay-font', theme.fontFamily);
+        if (theme.borderColor) root.style.setProperty('--overlay-border', theme.borderColor);
+        if (theme.glowColor) root.style.setProperty('--overlay-glow', theme.glowColor);
+        if (theme.shadowColor) root.style.setProperty('--overlay-shadow', theme.shadowColor);
+        if (theme.particleColor) root.style.setProperty('--overlay-particle', theme.particleColor);
+        // CORRECTIF (bug de nommage — les animations de mood IA ne jouaient
+        // jamais) : ai-theme-generator.js envoie animationStyle en kebab-case
+        // ("fade-in-up"), mais les @keyframes CSS de ce fichier sont en
+        // camelCase ("fadeInUp") — animation-name ne matchait donc jamais
+        // aucune règle et le navigateur n'animait rien, silencieusement.
+        if (animation) currentAnimation = animation.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 
-  // CORRECTIF PERF (audit CPU) : updateParticles() était appelée mais
-  // jamais définie nulle part dans ce fichier -> ReferenceError silencieuse
-  // à chaque changement de thème, qui interrompait applyTheme() en plein
-  // milieu. La couleur des particules est une variable CSS (--overlay-particle,
-  // déjà positionnée ci-dessus) : le navigateur la propage tout seul à tous
-  // les éléments .particle/.advanced-particle existants, aucune fonction
-  // JS n'est nécessaire ici.
-}
+        // CORRECTIF PERF (audit CPU) : updateParticles() était appelée mais
+        // jamais définie nulle part dans ce fichier -> ReferenceError silencieuse
+        // à chaque changement de thème, qui interrompait applyTheme() en plein
+        // milieu. La couleur des particules est une variable CSS (--overlay-particle,
+        // déjà positionnée ci-dessus) : le navigateur la propage tout seul à tous
+        // les éléments .particle/.advanced-particle existants, aucune fonction
+        // JS n'est nécessaire ici.
+      }
 
-/* ==========================================================================
-   Animation system
-   ========================================================================== */
-function applyAnimation(animationKey, options = {}) {
-  if (!animationLibrary) return;
-  
-  const card = document.getElementById('verse-card');
-  animationLibrary.applyAnimation(card, animationKey, options);
-}
-
-function setMood(mood) {
-  if (!animationLibrary) return;
-  
-  currentMood = mood;
-  const container = document.getElementById('overlay-container');
-  
-  // Clear old advanced particles
-  const oldParticles = container.querySelectorAll('.advanced-particle');
-  oldParticles.forEach(p => p.remove());
-  
-  // Create new particle system based on mood
-  animationLibrary.createParticleSystem(container, mood);
-  
-  console.log('[overlay] Mood set to:', mood);
-}
-
-/* ==========================================================================
+      /* ==========================================================================
    Accessibilité (audit — gratuit/léger) : bascule explicite opérateur,
    aucune détection automatique, aucun appel réseau au-delà du message WS
    déjà en place pour tout le reste de l'overlay.
    ========================================================================== */
-function setHighContrast(enabled) {
-  document.body.classList.toggle('high-contrast', !!enabled);
-}
+      function setHighContrast(enabled) {
+        document.body.classList.toggle('high-contrast', !!enabled);
+      }
 
-let captionsEnabled = false;
-function setCaptionsEnabled(enabled) {
-  captionsEnabled = !!enabled;
-  document.body.classList.toggle('captions-active', captionsEnabled);
-  const strip = document.getElementById('caption-strip');
-  const text = document.getElementById('caption-strip-text');
-  const translation = document.getElementById('caption-strip-translation');
-  if (!strip) return;
-  strip.classList.toggle('visible', captionsEnabled);
-  if (!captionsEnabled) {
-    if (text) text.textContent = '';
-    if (translation) translation.textContent = '';
-  }
-}
+      let captionsEnabled = false;
+      function setCaptionsEnabled(enabled) {
+        captionsEnabled = !!enabled;
+        document.body.classList.toggle('captions-active', captionsEnabled);
+        const strip = document.getElementById('caption-strip');
+        const text = document.getElementById('caption-strip-text');
+        const translation = document.getElementById('caption-strip-translation');
+        if (!strip) return;
+        strip.classList.toggle('visible', captionsEnabled);
+        if (!captionsEnabled) {
+          if (text) text.textContent = '';
+          if (translation) translation.textContent = '';
+        }
+      }
 
-function updateCaptionText(text) {
-  if (!captionsEnabled) return;
-  const el = document.getElementById('caption-strip-text');
-  if (el) el.textContent = text || '';
-}
+      function updateCaptionText(text) {
+        if (!captionsEnabled) return;
+        const el = document.getElementById('caption-strip-text');
+        if (el) el.textContent = text || '';
+      }
 
-// AJOUT (sous-titres traduits en direct, opt-in — voir caption-translator.js
-// et l'action 'setTranslatedCaptions' dans server.js).
-let translatedCaptionsEnabled = false;
-function setTranslatedCaptionsEnabled(enabled) {
-  translatedCaptionsEnabled = !!enabled;
-  const translation = document.getElementById('caption-strip-translation');
-  if (translation && !translatedCaptionsEnabled) translation.textContent = '';
-}
+      // AJOUT (sous-titres traduits en direct, opt-in — voir caption-translator.js
+      // et l'action 'setTranslatedCaptions' dans server.js).
+      let translatedCaptionsEnabled = false;
+      function setTranslatedCaptionsEnabled(enabled) {
+        translatedCaptionsEnabled = !!enabled;
+        const translation = document.getElementById('caption-strip-translation');
+        if (translation && !translatedCaptionsEnabled) translation.textContent = '';
+      }
 
-function updateTranslatedCaptionText(text) {
-  if (!captionsEnabled || !translatedCaptionsEnabled) return;
-  const el = document.getElementById('caption-strip-translation');
-  if (el) el.textContent = text || '';
-}
+      function updateTranslatedCaptionText(text) {
+        if (!captionsEnabled || !translatedCaptionsEnabled) return;
+        const el = document.getElementById('caption-strip-translation');
+        if (el) el.textContent = text || '';
+      }
 
-/* ==========================================================================
+      /* ==========================================================================
    Affichage & sortie (audit — gratuit/léger) : motif de test (barres de
    couleur, vérification OBS/NDI/projecteur) et motif de fond optionnel.
    CSS pur dans les deux cas, aucun calcul par frame.
    ========================================================================== */
-function setTestPattern(enabled) {
-  const el = document.getElementById('test-pattern');
-  if (el) el.classList.toggle('visible', !!enabled);
-}
+      function setTestPattern(enabled) {
+        const el = document.getElementById('test-pattern');
+        if (el) el.classList.toggle('visible', !!enabled);
+      }
 
-const BACKGROUND_PATTERNS = ['dots', 'grid', 'diagonal'];
-function setBackgroundPattern(pattern) {
-  const el = document.getElementById('pattern-layer');
-  if (!el) return;
-  BACKGROUND_PATTERNS.forEach((p) => el.classList.remove('pattern-' + p));
-  if (BACKGROUND_PATTERNS.includes(pattern)) {
-    el.classList.add('pattern-' + pattern);
-  }
-}
+      const BACKGROUND_PATTERNS = ['dots', 'grid', 'diagonal'];
+      function setBackgroundPattern(pattern) {
+        const el = document.getElementById('pattern-layer');
+        if (!el) return;
+        BACKGROUND_PATTERNS.forEach((p) => el.classList.remove('pattern-' + p));
+        if (BACKGROUND_PATTERNS.includes(pattern)) {
+          el.classList.add('pattern-' + pattern);
+        }
+      }
 
-/* ==========================================================================
+      /* ==========================================================================
    Médiathèque (audit — déclenchement vocal ou manuel de photos/vidéos).
    Prise de contrôle plein écran comme #test-pattern : masque la carte de
    verset pendant l'affichage (hideVerse(), aucune tentative de "restaurer"
@@ -1365,287 +1446,300 @@ function setBackgroundPattern(pattern) {
    restaure rien non plus ; le prochain verset détecté réaffichera
    naturellement la carte).
    ========================================================================== */
-let mediaHideTimeout = null;
-function showMediaItem(msg) {
-  const layer = document.getElementById('media-layer');
-  const img = document.getElementById('media-layer-img');
-  const video = document.getElementById('media-layer-video');
-  if (!layer || !img || !video) return;
+      let mediaHideTimeout = null;
+      function showMediaItem(msg) {
+        const layer = document.getElementById('media-layer');
+        const img = document.getElementById('media-layer-img');
+        const video = document.getElementById('media-layer-video');
+        if (!layer || !img || !video) return;
 
-  // Version "silencieuse" (voir hideVerseQuiet ci-dessus) : ce média est sur
-  // le point de prendre l'écran, pas besoin/pas souhaitable de vérifier le
-  // poster principal entre les deux (éviterait un flash inutile).
-  hideVerseQuiet(false);
-  clearTimeout(mediaHideTimeout);
-  mediaHideTimeout = null;
+        // Version "silencieuse" (voir hideVerseQuiet ci-dessus) : ce média est sur
+        // le point de prendre l'écran, pas besoin/pas souhaitable de vérifier le
+        // poster principal entre les deux (éviterait un flash inutile).
+        hideVerseQuiet(false);
+        clearTimeout(mediaHideTimeout);
+        mediaHideTimeout = null;
 
-  if (msg.mediaType === 'video') {
-    img.hidden = true;
-    img.removeAttribute('src');
-    video.hidden = false;
-    video.src = msg.mediaUrl;
-    video.currentTime = 0;
-    video.play().catch(() => {
-      /* lecture auto refusée (rare, sans interaction utilisateur) : la vidéo reste affichée, silencieuse */
-    });
-  } else {
-    video.hidden = true;
-    video.pause();
-    video.removeAttribute('src');
-    img.hidden = false;
-    img.src = msg.mediaUrl;
-  }
+        if (msg.mediaType === 'video') {
+          img.hidden = true;
+          img.removeAttribute('src');
+          video.hidden = false;
+          video.src = msg.mediaUrl;
+          video.currentTime = 0;
+          video.play().catch(() => {
+            /* lecture auto refusée (rare, sans interaction utilisateur) : la vidéo reste affichée, silencieuse */
+          });
+        } else {
+          video.hidden = true;
+          video.pause();
+          video.removeAttribute('src');
+          img.hidden = false;
+          img.src = msg.mediaUrl;
+        }
 
-  // AJOUT (détails d'affichage média — style d'apparition) : classe posée
-  // AVANT '.visible' pour que le navigateur ait bien calculé l'état "avant"
-  // (voir règles #media-layer.transition-*:not(.visible) plus haut) — sans
-  // ça, la transition ne s'anime pas, elle saute directement à l'état final.
-  layer.classList.remove('transition-fade', 'transition-slide', 'transition-zoom', 'transition-cut');
-  const style = ['slide', 'zoom', 'cut'].includes(msg.transitionStyle) ? msg.transitionStyle : 'fade';
-  layer.classList.add(`transition-${style}`);
+        // AJOUT (détails d'affichage média — style d'apparition) : classe posée
+        // AVANT '.visible' pour que le navigateur ait bien calculé l'état "avant"
+        // (voir règles #media-layer.transition-*:not(.visible) plus haut) — sans
+        // ça, la transition ne s'anime pas, elle saute directement à l'état final.
+        layer.classList.remove(
+          'transition-fade',
+          'transition-slide',
+          'transition-zoom',
+          'transition-cut'
+        );
+        const style = ['slide', 'zoom', 'cut'].includes(msg.transitionStyle)
+          ? msg.transitionStyle
+          : 'fade';
+        layer.classList.add(`transition-${style}`);
 
-  layer.classList.add('visible');
-  layer.setAttribute('aria-hidden', 'false');
+        layer.classList.add('visible');
+        layer.setAttribute('aria-hidden', 'false');
 
-  // displayDurationMs absent/null = vidéo qui joue jusqu'à sa fin naturelle,
-  // ou image affichée jusqu'à hideMedia() manuel. sanitizeDurationMs() est
-  // réutilisée telle quelle (même borne réseau que pour les versets).
-  if (typeof msg.displayDurationMs === 'number' && msg.displayDurationMs > 0) {
-    mediaHideTimeout = setTimeout(() => hideMediaItem(), sanitizeDurationMs(msg.displayDurationMs));
-  }
-}
+        // displayDurationMs absent/null = vidéo qui joue jusqu'à sa fin naturelle,
+        // ou image affichée jusqu'à hideMedia() manuel. sanitizeDurationMs() est
+        // réutilisée telle quelle (même borne réseau que pour les versets).
+        if (typeof msg.displayDurationMs === 'number' && msg.displayDurationMs > 0) {
+          mediaHideTimeout = setTimeout(
+            () => hideMediaItem(),
+            sanitizeDurationMs(msg.displayDurationMs)
+          );
+        }
+      }
 
-// AJOUT (poster principal) : version "silencieuse", sans vérification du
-// poster principal — utilisée en interne (showVerse()) quand un verset est
-// sur le point de prendre l'écran. hideMediaItem() (public, plus bas) reste
-// la fonction à appeler depuis un minuteur/action WS/urgence.
-function hideMediaLayer() {
-  const layer = document.getElementById('media-layer');
-  const img = document.getElementById('media-layer-img');
-  const video = document.getElementById('media-layer-video');
-  if (!layer) return;
+      // AJOUT (poster principal) : version "silencieuse", sans vérification du
+      // poster principal — utilisée en interne (showVerse()) quand un verset est
+      // sur le point de prendre l'écran. hideMediaItem() (public, plus bas) reste
+      // la fonction à appeler depuis un minuteur/action WS/urgence.
+      function hideMediaLayer() {
+        const layer = document.getElementById('media-layer');
+        const img = document.getElementById('media-layer-img');
+        const video = document.getElementById('media-layer-video');
+        if (!layer) return;
 
-  clearTimeout(mediaHideTimeout);
-  mediaHideTimeout = null;
-  layer.classList.remove('visible');
-  layer.setAttribute('aria-hidden', 'true');
+        clearTimeout(mediaHideTimeout);
+        mediaHideTimeout = null;
+        layer.classList.remove('visible');
+        layer.setAttribute('aria-hidden', 'true');
 
-  if (video) {
-    video.pause();
-    video.removeAttribute('src');
-    video.hidden = true;
-  }
-  if (img) {
-    img.removeAttribute('src');
-    img.hidden = true;
-  }
-}
+        if (video) {
+          video.pause();
+          video.removeAttribute('src');
+          video.hidden = true;
+        }
+        if (img) {
+          img.removeAttribute('src');
+          img.hidden = true;
+        }
+      }
 
-function hideMediaItem() {
-  hideMediaLayer();
-  maybeShowDefaultMedia();
-}
+      function hideMediaItem() {
+        hideMediaLayer();
+        maybeShowDefaultMedia();
+      }
 
-/* ==========================================================================
+      /* ==========================================================================
    Poster principal — demande explicite : "quand il n'y a rien à afficher,
    ce poster doit toujours être là". Réutilise entièrement showMediaItem()
    (mêmes styles d'apparition, même z-index) plutôt que de dupliquer la
    logique d'affichage média — le poster principal EST un média comme un
    autre, juste réaffiché automatiquement quand l'écran serait sinon vide.
    ========================================================================== */
-let currentDefaultMedia = null; // { id, mediaType, filename, label, transitionStyle } ou null
+      let currentDefaultMedia = null; // { id, mediaType, filename, label, transitionStyle } ou null
 
-function setCurrentDefaultMedia(item) {
-  currentDefaultMedia = item || null;
-  maybeShowDefaultMedia();
-}
+      function setCurrentDefaultMedia(item) {
+        currentDefaultMedia = item || null;
+        maybeShowDefaultMedia();
+      }
 
-function maybeShowDefaultMedia() {
-  if (!currentDefaultMedia) return;
-  const container = document.getElementById('overlay-container');
-  const mediaLayer = document.getElementById('media-layer');
-  const verseVisible = !!(container && container.classList.contains('visible'));
-  const mediaVisible = !!(mediaLayer && mediaLayer.classList.contains('visible'));
-  // Rien d'autre à l'écran : c'est le seul moment où le poster principal
-  // doit reprendre sa place — jamais en interrompant un verset ou un média
-  // explicitement déclenché.
-  if (verseVisible || mediaVisible) return;
-  showMediaItem({
-    mediaType: currentDefaultMedia.mediaType,
-    mediaUrl: `/media/${currentDefaultMedia.filename}`,
-    label: currentDefaultMedia.label,
-    displayDurationMs: null,
-    transitionStyle: currentDefaultMedia.transitionStyle,
-    detectedBy: 'default',
-  });
-}
+      function maybeShowDefaultMedia() {
+        if (!currentDefaultMedia) return;
+        const container = document.getElementById('overlay-container');
+        const mediaLayer = document.getElementById('media-layer');
+        const verseVisible = !!(container && container.classList.contains('visible'));
+        const mediaVisible = !!(mediaLayer && mediaLayer.classList.contains('visible'));
+        // Rien d'autre à l'écran : c'est le seul moment où le poster principal
+        // doit reprendre sa place — jamais en interrompant un verset ou un média
+        // explicitement déclenché.
+        if (verseVisible || mediaVisible) return;
+        showMediaItem({
+          mediaType: currentDefaultMedia.mediaType,
+          mediaUrl: `/media/${currentDefaultMedia.filename}`,
+          label: currentDefaultMedia.label,
+          displayDurationMs: null,
+          transitionStyle: currentDefaultMedia.transitionStyle,
+          detectedBy: 'default',
+        });
+      }
 
-/* ==========================================================================
+      /* ==========================================================================
    Indicators
    ========================================================================== */
-let voiceIndicatorTimeout = null;
-let semanticIndicatorTimeout = null;
+      let voiceIndicatorTimeout = null;
+      let semanticIndicatorTimeout = null;
 
-function showVoiceIndicator(text = 'Commande vocale') {
-  const el = document.getElementById('voice-indicator');
-  el.querySelector('span').textContent = text;
-  el.classList.add('visible');
-  clearTimeout(voiceIndicatorTimeout);
-  voiceIndicatorTimeout = setTimeout(() => hideVoiceIndicator(), 2500);
-}
-
-function hideVoiceIndicator() {
-  document.getElementById('voice-indicator').classList.remove('visible');
-}
-
-function showSemanticIndicator(reference, confidence) {
-  const el = document.getElementById('semantic-indicator');
-  const textEl = document.getElementById('semantic-text');
-  textEl.textContent = `IA: ${reference} (${Math.round((confidence || 0) * 100)}%)`;
-  el.classList.add('visible');
-  clearTimeout(semanticIndicatorTimeout);
-  semanticIndicatorTimeout = setTimeout(() => {
-    el.classList.remove('visible');
-  }, 4000);
-}
-
-let pipelineAlertTimeout;
-function showPipelineAlert(text) {
-  const el = document.getElementById('pipeline-alert');
-  const textEl = document.getElementById('pipeline-alert-text');
-  textEl.textContent = text;
-  el.classList.add('visible');
-  clearTimeout(pipelineAlertTimeout);
-  pipelineAlertTimeout = setTimeout(() => {
-    el.classList.remove('visible');
-  }, 6000);
-}
-
-function showReadingIndicator(show) {
-  const el = document.getElementById('reading-indicator');
-  el.classList.toggle('visible', show);
-}
-
-/* ============================================================================
- * Particules d'ambiance — #ambientCanvas (audit perf)
- * ----------------------------------------------------------------------------
- * REMPLACE l'ancien conteneur .particles/.particle : ce dernier n'était plus
- * jamais peuplé depuis le retrait d'animation-library.js (voir commentaire
- * près de <head>) — coût nul, mais ~20 lignes de CSS mortes. Rendu ici sur
- * un unique <canvas> (au lieu de N nœuds DOM individuels), avec la même
- * intention visuelle (points lumineux qui montent lentement) pour un coût
- * de composition GPU nettement plus faible que N box-shadow animées.
- * Respecte prefers-reduced-motion (aucune particule créée) et se met en
- * pause quand la page n'est pas visible.
- * ============================================================================ */
-(function initAmbientParticles() {
-  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const canvas = document.getElementById('ambientCanvas');
-  if (!canvas || !canvas.getContext) return;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-
-  const PARTICLE_COUNT = 18;
-  let particles = [];
-  let width = 0;
-  let height = 0;
-  let dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-  let particleColor = '#dcb46a';
-  let glowColor = 'rgba(220, 180, 106, 0.32)';
-  let colorRefreshCounter = 0;
-  let rafId = null;
-  let running = false;
-
-  function readThemeColors() {
-    // getComputedStyle() a un coût réel : on ne le fait qu'une fois toutes
-    // les ~90 frames (autour d'1x/seconde à 90fps, moins souvent en dessous)
-    // plutôt qu'à chaque frame, pour suivre les changements de mood/thème
-    // (applyTheme) sans payer ce coût en continu.
-    const styles = getComputedStyle(document.body);
-    particleColor = styles.getPropertyValue('--overlay-particle').trim() || particleColor;
-    glowColor = styles.getPropertyValue('--overlay-glow').trim() || glowColor;
-  }
-
-  function makeParticle(randomizeY) {
-    return {
-      x: Math.random() * width,
-      y: randomizeY ? Math.random() * height : height + 20,
-      speed: 6 + Math.random() * 10, // px/s, monte lentement
-      size: 1.5 + Math.random() * 2,
-      phase: Math.random() * Math.PI * 2,
-    };
-  }
-
-  function resize() {
-    width = window.innerWidth;
-    height = window.innerHeight;
-    canvas.width = Math.round(width * dpr);
-    canvas.height = Math.round(height * dpr);
-    canvas.style.width = width + 'px';
-    canvas.style.height = height + 'px';
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
-
-  let lastTs = 0;
-  function tick(ts) {
-    if (!running) return;
-    const dt = lastTs ? Math.min(0.05, (ts - lastTs) / 1000) : 0;
-    lastTs = ts;
-
-    colorRefreshCounter++;
-    if (colorRefreshCounter % 90 === 0) readThemeColors();
-
-    ctx.clearRect(0, 0, width, height);
-    for (const p of particles) {
-      p.y -= p.speed * dt;
-      const lifeRatio = 1 - p.y / height; // 0 en bas, ~1 en haut
-      const fadeIn = Math.min(1, (height - p.y) / (height * 0.15));
-      const fadeOut = Math.min(1, p.y / (height * 0.15));
-      const opacity = Math.max(0, Math.min(0.6, fadeIn, fadeOut)) * (0.7 + 0.3 * Math.sin(p.phase + ts / 900));
-
-      if (opacity > 0.01) {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fillStyle = particleColor;
-        ctx.globalAlpha = opacity;
-        ctx.shadowColor = glowColor;
-        ctx.shadowBlur = 8;
-        ctx.fill();
-        ctx.shadowBlur = 0;
-        ctx.globalAlpha = 1;
+      function showVoiceIndicator(text = 'Commande vocale') {
+        const el = document.getElementById('voice-indicator');
+        el.querySelector('span').textContent = text;
+        el.classList.add('visible');
+        clearTimeout(voiceIndicatorTimeout);
+        voiceIndicatorTimeout = setTimeout(() => hideVoiceIndicator(), 2500);
       }
 
-      if (p.y < -20 || lifeRatio > 1.05) {
-        Object.assign(p, makeParticle(false));
+      function hideVoiceIndicator() {
+        document.getElementById('voice-indicator').classList.remove('visible');
       }
-    }
-    rafId = requestAnimationFrame(tick);
-  }
 
-  function start() {
-    if (running) return;
-    running = true;
-    lastTs = 0;
-    rafId = requestAnimationFrame(tick);
-  }
+      function showSemanticIndicator(reference, confidence) {
+        const el = document.getElementById('semantic-indicator');
+        const textEl = document.getElementById('semantic-text');
+        textEl.textContent = `IA: ${reference} (${Math.round((confidence || 0) * 100)}%)`;
+        el.classList.add('visible');
+        clearTimeout(semanticIndicatorTimeout);
+        semanticIndicatorTimeout = setTimeout(() => {
+          el.classList.remove('visible');
+        }, 4000);
+      }
 
-  function stop() {
-    running = false;
-    if (rafId) cancelAnimationFrame(rafId);
-    rafId = null;
-  }
+      let pipelineAlertTimeout;
+      function showPipelineAlert(text) {
+        const el = document.getElementById('pipeline-alert');
+        const textEl = document.getElementById('pipeline-alert-text');
+        textEl.textContent = text;
+        el.classList.add('visible');
+        clearTimeout(pipelineAlertTimeout);
+        pipelineAlertTimeout = setTimeout(() => {
+          el.classList.remove('visible');
+        }, 6000);
+      }
 
-  window.addEventListener('resize', resize);
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) stop();
-    else start();
-  });
+      function showReadingIndicator(show) {
+        const el = document.getElementById('reading-indicator');
+        el.classList.toggle('visible', show);
+      }
 
-  resize();
-  readThemeColors();
-  particles = Array.from({ length: PARTICLE_COUNT }, () => makeParticle(true));
-  if (!document.hidden) start();
-})();
-</script>
-</body>
+      /* ============================================================================
+       * Particules d'ambiance — #ambientCanvas (audit perf)
+       * ----------------------------------------------------------------------------
+       * REMPLACE l'ancien conteneur .particles/.particle : ce dernier n'était plus
+       * jamais peuplé depuis le retrait d'animation-library.js (voir commentaire
+       * près de <head>) — coût nul, mais ~20 lignes de CSS mortes. Rendu ici sur
+       * un unique <canvas> (au lieu de N nœuds DOM individuels), avec la même
+       * intention visuelle (points lumineux qui montent lentement) pour un coût
+       * de composition GPU nettement plus faible que N box-shadow animées.
+       * Respecte prefers-reduced-motion (aucune particule créée) et se met en
+       * pause quand la page n'est pas visible.
+       * ============================================================================ */
+      (function initAmbientParticles() {
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+          return;
+        const canvas = document.getElementById('ambientCanvas');
+        if (!canvas || !canvas.getContext) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const PARTICLE_COUNT = 18;
+        let particles = [];
+        let width = 0;
+        let height = 0;
+        let dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        let particleColor = '#dcb46a';
+        let glowColor = 'rgba(220, 180, 106, 0.32)';
+        let colorRefreshCounter = 0;
+        let rafId = null;
+        let running = false;
+
+        function readThemeColors() {
+          // getComputedStyle() a un coût réel : on ne le fait qu'une fois toutes
+          // les ~90 frames (autour d'1x/seconde à 90fps, moins souvent en dessous)
+          // plutôt qu'à chaque frame, pour suivre les changements de mood/thème
+          // (applyTheme) sans payer ce coût en continu.
+          const styles = getComputedStyle(document.body);
+          particleColor = styles.getPropertyValue('--overlay-particle').trim() || particleColor;
+          glowColor = styles.getPropertyValue('--overlay-glow').trim() || glowColor;
+        }
+
+        function makeParticle(randomizeY) {
+          return {
+            x: Math.random() * width,
+            y: randomizeY ? Math.random() * height : height + 20,
+            speed: 6 + Math.random() * 10, // px/s, monte lentement
+            size: 1.5 + Math.random() * 2,
+            phase: Math.random() * Math.PI * 2,
+          };
+        }
+
+        function resize() {
+          width = window.innerWidth;
+          height = window.innerHeight;
+          canvas.width = Math.round(width * dpr);
+          canvas.height = Math.round(height * dpr);
+          canvas.style.width = width + 'px';
+          canvas.style.height = height + 'px';
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        let lastTs = 0;
+        function tick(ts) {
+          if (!running) return;
+          const dt = lastTs ? Math.min(0.05, (ts - lastTs) / 1000) : 0;
+          lastTs = ts;
+
+          colorRefreshCounter++;
+          if (colorRefreshCounter % 90 === 0) readThemeColors();
+
+          ctx.clearRect(0, 0, width, height);
+          for (const p of particles) {
+            p.y -= p.speed * dt;
+            const lifeRatio = 1 - p.y / height; // 0 en bas, ~1 en haut
+            const fadeIn = Math.min(1, (height - p.y) / (height * 0.15));
+            const fadeOut = Math.min(1, p.y / (height * 0.15));
+            const opacity =
+              Math.max(0, Math.min(0.6, fadeIn, fadeOut)) *
+              (0.7 + 0.3 * Math.sin(p.phase + ts / 900));
+
+            if (opacity > 0.01) {
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+              ctx.fillStyle = particleColor;
+              ctx.globalAlpha = opacity;
+              ctx.shadowColor = glowColor;
+              ctx.shadowBlur = 8;
+              ctx.fill();
+              ctx.shadowBlur = 0;
+              ctx.globalAlpha = 1;
+            }
+
+            if (p.y < -20 || lifeRatio > 1.05) {
+              Object.assign(p, makeParticle(false));
+            }
+          }
+          rafId = requestAnimationFrame(tick);
+        }
+
+        function start() {
+          if (running) return;
+          running = true;
+          lastTs = 0;
+          rafId = requestAnimationFrame(tick);
+        }
+
+        function stop() {
+          running = false;
+          if (rafId) cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+
+        window.addEventListener('resize', resize);
+        document.addEventListener('visibilitychange', () => {
+          if (document.hidden) stop();
+          else start();
+        });
+
+        resize();
+        readThemeColors();
+        particles = Array.from({ length: PARTICLE_COUNT }, () => makeParticle(true));
+        if (!document.hidden) start();
+      })();
+    </script>
+  </body>
 </html>

@@ -7,7 +7,7 @@
  * fichier navigable, chargé via <script src="dashboard.js"> dans
  * dashboard.html.
  *
- * NOTE ESLint : de nombreuses fonctions ci-dessous (setLanguage, setMood,
+ * NOTE ESLint : de nombreuses fonctions ci-dessous (setLanguage,
  * clearTranscript, etc.) semblent "jamais utilisées" à ESLint car il analyse
  * ce fichier isolément — en réalité, dashboard.html les appelle via des
  * attributs onclick="..." inline (certains statiques dans le HTML, d'autres
@@ -2714,41 +2714,6 @@ function setLanguage(lang) {
     btn.classList.toggle('active', btn.dataset.lang === lang);
   });
   updateDashboard();
-}
-
-function setAnimation(animation) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(
-      JSON.stringify({
-        action: 'applyAnimation',
-        animation: animation,
-        options: { duration: parseInt(document.getElementById('animationDuration').value) },
-      })
-    );
-  }
-  addActivity(`Animation changée: ${animation}`, 'info');
-  showToast(`Animation: ${animation}`, 'success');
-}
-
-function setMood(mood) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ action: 'setMood', mood: mood }));
-  }
-
-  // Update active button state
-  document.querySelectorAll('.mood-btn').forEach((btn) => {
-    btn.classList.remove('active');
-    if (btn.dataset.mood === mood) {
-      btn.classList.add('active');
-    }
-  });
-
-  addActivity(`Ambiance changée: ${mood}`, 'info');
-  showToast(`Ambiance: ${mood}`, 'success');
-}
-
-function setAnimationDuration(duration) {
-  document.getElementById('durationValue').textContent = `${duration}ms`;
 }
 
 function clearTranscript() {
