@@ -162,6 +162,63 @@ export function handleMessage(message) {
       addActivity(`Ambiance changée : ${message.themeName || message.mood}`, 'info');
       showToast(`Ambiance : ${message.themeName || message.mood}`, 'success');
       break;
+    // AJOUT (fiabilité — synchronisation multi-opérateur) : setHighContrast/
+    // setCaptions/setTranslatedCaptions/setTestPattern/setBackgroundPattern
+    // (préservice-ai.js/mood-theme.js) diffusaient déjà une confirmation
+    // côté serveur (broadcast, donc envoyée à TOUS les tableaux de bord
+    // connectés), mais rien ici ne l'écoutait — un opérateur cliquant "sous-
+    // titres" n'avait aucune confirmation que ça avait bien pris côté
+    // serveur, et un DEUXIÈME tableau de bord ouvert restait à l'ancien
+    // état sans jamais l'apprendre. Chaque case resynchronise la case à
+    // cocher/le bouton correspondant (pas seulement un toast) pour que ça
+    // reste vrai même sur un tableau de bord qui n'a pas cliqué lui-même.
+    case 'accessibilityMode': {
+      const cb = document.getElementById('highContrastToggle');
+      if (cb) cb.checked = !!message.highContrast;
+      showToast(
+        message.highContrast ? 'Mode grand contraste activé.' : 'Mode grand contraste désactivé.',
+        'info'
+      );
+      break;
+    }
+    case 'captionsMode': {
+      const cb = document.getElementById('captionsToggle');
+      if (cb) cb.checked = !!message.captions;
+      showToast(message.captions ? 'Sous-titres activés.' : 'Sous-titres désactivés.', 'info');
+      break;
+    }
+    case 'translatedCaptionsMode': {
+      const cb = document.getElementById('translatedCaptionsToggle');
+      if (cb) cb.checked = !!message.enabled;
+      const langSelect = document.getElementById('captionTargetLangSelect');
+      if (langSelect && message.targetLang) langSelect.value = message.targetLang;
+      showToast(
+        message.enabled
+          ? `Sous-titres traduits activés (${message.targetLang}).`
+          : 'Sous-titres traduits désactivés.',
+        'info'
+      );
+      break;
+    }
+    case 'testPatternMode': {
+      const cb = document.getElementById('testPatternToggle');
+      if (cb) cb.checked = !!message.enabled;
+      showToast(message.enabled ? 'Motif de test activé.' : 'Motif de test désactivé.', 'info');
+      break;
+    }
+    case 'backgroundPatternMode': {
+      const labels = {
+        none: 'Aucun motif',
+        dots: 'Points',
+        grid: 'Grille',
+        diagonal: 'Diagonales',
+      };
+      document.querySelectorAll('#patternPicker .mood-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.id === `pattern-btn-${message.pattern}`);
+      });
+      showToast(`Motif de fond : ${labels[message.pattern] || message.pattern}`, 'success');
+      break;
+    }
     // AJOUT (audit — état de repli visible, session parallèle) : émises par
     // transcribeWithRetry() côté serveur (server.js) — un échec de
     // transcription tente désormais un nouvel essai automatique avant
