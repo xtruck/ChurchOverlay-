@@ -424,13 +424,13 @@ export function renderSermonQaResult(result) {
   outputEl.innerHTML = `<span class="stat-value" style="display:block; white-space:pre-wrap;">${escapeHtmlDashboard(result.answer)}</span>`;
   if (sourcesEl) {
     sourcesEl.innerHTML =
-      '<div style="font-size:0.78rem; color:var(--text-dim); margin-bottom:0.4rem;">Sources citées :</div>' +
+      '<div class="qa-sources-label">Sources citées :</div>' +
       (result.sources || [])
         .map(
           (s) =>
-            `<div class="media-item-phrase-badge" style="display:block; margin-bottom:0.4rem; padding:0.5rem 0.7rem;">
+            `<div class="media-item-phrase-badge qa-source-card">
                <strong>${escapeHtmlDashboard(s.label)}</strong><br>
-               <span style="opacity:0.85;">${escapeHtmlDashboard(s.excerpt.slice(0, 200))}${s.excerpt.length > 200 ? '…' : ''}</span>
+               <span class="qa-source-excerpt">${escapeHtmlDashboard(s.excerpt.slice(0, 200))}${s.excerpt.length > 200 ? '…' : ''}</span>
              </div>`
         )
         .join('');
@@ -500,10 +500,9 @@ export function renderPreServiceCheckResult(message) {
 
   function row(label, ok, detail) {
     const icon = ok ? '✅' : '⚠️';
-    const color = ok ? 'var(--accent-emerald, #10b981)' : 'var(--accent-amber, #7c8cf5)';
-    return `<div style="display:flex; justify-content:space-between; gap:0.75rem; padding: 0.35rem 0;">
-                    <span>${icon} ${label}</span>
-                    <span style="color:${color}; text-align:right;">${detail || (ok ? 'OK' : 'Problème')}</span>
+    return `<div class="preflight-row">
+                    <span class="preflight-row-label">${icon} ${label}</span>
+                    <span class="preflight-row-status ${ok ? 'ok' : 'warn'}">${detail || (ok ? 'OK' : 'Problème')}</span>
                 </div>`;
   }
 
@@ -570,7 +569,7 @@ export function renderPreServiceCheckResult(message) {
       true,
       message.ipCameraCount ? `${message.ipCameraCount} caméra(s)` : 'Aucune'
     ) +
-    `<div style="font-size:0.75rem; color: var(--text-dim); margin-top:0.5rem;">
+    `<div class="preflight-note">
                     ⚠️ Le microphone n'est pas vérifié ici — voir "Statut Capture Micro" ci-dessus.
                 </div>`;
   resultsEl.style.display = 'block';

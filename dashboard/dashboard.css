@@ -1348,6 +1348,65 @@ body {
   font-size: 0.95rem;
 }
 
+/* AJOUT (redesign visuel, lot 3) : la checklist "Tester avant le culte"
+           (preservice-ai.js > renderPreServiceCheckResult) construisait
+           chaque ligne entièrement en style="..." inline — aucune classe
+           réutilisable, seul composant du tableau de bord resté à ce
+           niveau après le lot médiathèque. Reprend le même rythme visuel
+           que .stat-row juste au-dessus. */
+.preflight-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.preflight-row-label {
+  color: var(--text-main);
+  font-size: var(--text-sm);
+}
+
+.preflight-row-status {
+  text-align: right;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.preflight-row-status.ok {
+  color: var(--accent-emerald);
+}
+
+.preflight-row-status.warn {
+  color: var(--accent-amber);
+}
+
+.preflight-note {
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+  margin-top: var(--space-2);
+}
+
+/* AJOUT (redesign visuel, lot 3) : cartes source de l'assistant sermons
+           (preservice-ai.js > renderSermonQaResult) — variante "bloc" de
+           .media-item-phrase-badge (voir plus haut), qui n'existait
+           jusqu'ici qu'en style="..." inline répété par carte. */
+.qa-sources-label {
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+  margin-bottom: var(--space-2);
+}
+
+.media-item-phrase-badge.qa-source-card {
+  display: block;
+  margin-bottom: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.qa-source-excerpt {
+  opacity: 0.85;
+}
+
 .status-badge {
   display: inline-flex;
   align-items: center;
