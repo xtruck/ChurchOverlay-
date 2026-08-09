@@ -2391,21 +2391,24 @@ wss.on('connection', (ws, req) => {
 let consecutiveTranscriptionFailures = 0;
 const TRANSCRIPTION_RETRY_DELAY_MS = 700;
 
-// AJOUT (rejet des segments garbled — transcription mêlant plusieurs
-// langues/incohérente observée en test réel) : groq-wrapper.js expose
-// désormais result.confidence (Groq via verbose_json, déjà calculé pour
-// Deepgram mais jusqu'ici jeté par transcribeWithFallback). 0.35 : le seuil
-// "mauvais segment" établi par Whisper lui-même est avg_logprob < -1.0
-// (≈ exp(-1.0) ≈ 0.37, voir computeGroqSpeechInfo) — 0.35 se place juste
-// en dessous, avec une marge confortable au-dessus de la parole réelle même
-// faible/marmonnée (typiquement ~0.5-0.75). Un faux rejet (parole réelle
-// ignorée) est pire qu'un sous-titre occasionnel raté : seuil volontairement
-// prudent, à ajuster via TRANSCRIPTION_CONFIDENCE_THRESHOLD si un vrai culte
-// montre trop/pas assez de rejets.
-const DEFAULT_TRANSCRIPTION_CONFIDENCE_THRESHOLD = 0.35;
+// CORRECTIF (détection de versets muette après ajout du rejet par confiance) :
+// ce garde-fou est né d'une hypothèse sur la distribution réelle de
+// exp(avg_logprob) (voir computeGroqSpeechInfo dans groq-wrapper.js) — jamais
+// vérifiée contre une vraie clé Groq en conditions réelles (micro d'église :
+// écho, sono, chant en fond...). Un signalement de "la détection ne
+// fonctionne plus" est arrivé juste après la mise en service de ce rejet ;
+// impossible de confirmer ou d'infirmer le lien sans accès réseau ici. Par
+// prudence (un faux rejet qui coupe TOUTE détection est pire que le problème
+// que ce garde-fou visait à résoudre), le rejet est désormais opt-in :
+// désactivé tant que TRANSCRIPTION_CONFIDENCE_THRESHOLD n'est pas réglé
+// explicitement. La confiance Groq continue d'être calculée et journalisée
+// (voir le log() plus bas) pour observer de vraies valeurs en culte et
+// choisir un seuil en connaissance de cause avant de l'activer.
+const rawConfidenceThreshold = Number(process.env.TRANSCRIPTION_CONFIDENCE_THRESHOLD);
 const TRANSCRIPTION_CONFIDENCE_THRESHOLD =
-  Number(process.env.TRANSCRIPTION_CONFIDENCE_THRESHOLD) ||
-  DEFAULT_TRANSCRIPTION_CONFIDENCE_THRESHOLD;
+  Number.isFinite(rawConfidenceThreshold) && rawConfidenceThreshold > 0
+    ? rawConfidenceThreshold
+    : null;
 
 async function transcribeWithRetry(segmentFile, contextHint, maxAttempts = 2) {
   let lastErr;
@@ -2462,13 +2465,13 @@ function startPipeline() {
         // transcrit sert d'indice de continuité pour Whisper (voir groq-wrapper.js).
         const contextHint = getRecentContext(300);
         const result = await transcribeWithRetry(segmentFile, contextHint);
-        // AJOUT (rejet des segments garbled) : ne bloque jamais quand la
-        // confiance est inconnue (typeof !== 'number', ex. Groq sans
-        // segments exploitables) — comportement identique à avant ce
-        // correctif dans ce cas. NaN < seuil vaut toujours false en JS,
-        // donc une valeur de confiance malformée ne peut pas non plus
-        // déclencher un rejet accidentel.
+        // Rejet désactivé tant que TRANSCRIPTION_CONFIDENCE_THRESHOLD n'est
+        // pas réglé explicitement (voir le correctif en tête de fichier) —
+        // ne bloque jamais non plus quand la confiance est inconnue (ex. Groq
+        // sans segments exploitables), ni sur une valeur malformée (NaN <
+        // seuil vaut toujours false en JS).
         const lowConfidence =
+          TRANSCRIPTION_CONFIDENCE_THRESHOLD !== null &&
           result &&
           typeof result.confidence === 'number' &&
           result.confidence < TRANSCRIPTION_CONFIDENCE_THRESHOLD;
@@ -2477,7 +2480,14 @@ function startPipeline() {
             `Segment rejeté (confiance ${result.confidence.toFixed(2)} < seuil ${TRANSCRIPTION_CONFIDENCE_THRESHOLD}) [${result.source}] : "${result.text.substring(0, 80)}"`
           );
         } else if (result && result.text && result.text.trim()) {
-          log(`Transcription [${result.source}]: ${result.text.substring(0, 80)}`);
+          // Confiance journalisée quand connue (Groq via verbose_json), même
+          // rejet désactivé — permet d'observer de vraies valeurs en culte
+          // avant de choisir un seuil pour TRANSCRIPTION_CONFIDENCE_THRESHOLD.
+          const confidenceNote =
+            typeof result.confidence === 'number'
+              ? ` (confiance ${result.confidence.toFixed(2)})`
+              : '';
+          log(`Transcription [${result.source}]${confidenceNote}: ${result.text.substring(0, 80)}`);
           broadcast({ action: 'transcript', text: result.text, source: result.source });
           // AJOUT (sous-titres traduits en direct) : JAMAIS attendu (pas de
           // `await`) — voir le garde-fou en en-tête de caption-translator.js.
