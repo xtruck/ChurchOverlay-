@@ -11,10 +11,20 @@ le dimanche matin même.
 
 ### Caméra téléphone par QR code (nouveau, à tester avec un vrai réseau Wi-Fi)
 
-- [ ] Configurer `WS_HOST` sur une adresse réseau (pas `127.0.0.1`) avec
-      `WS_AUTH_TOKEN`/`WS_VIEWER_TOKEN` définis (voir README.md), sinon le
-      bouton "Générer un QR code" doit afficher un message d'erreur clair —
-      confirmer que ce message apparaît bien quand `WS_HOST` reste local.
+- [ ] Nouvelle carte "📶 Réseau (caméra téléphone par QR)" (Réglages, juste
+      au-dessus de "Caméras IP") : cliquer "📍 Utiliser cette adresse" →
+      un IPv4 local plausible se remplit dans le champ ; Enregistrer →
+      toast de confirmation, le badge passe à "Prêt", le serveur redémarre.
+      `WS_AUTH_TOKEN`/`WS_VIEWER_TOKEN` n'ont rien à configurer (générés
+      automatiquement) — confirmer que le statut du jeton s'affiche bien
+      "généré automatiquement ✓".
+- [ ] Avant tout enregistrement (`WS_HOST` encore local) : confirmer que le
+      bouton "Générer un QR code" affiche un message d'erreur clair plutôt
+      qu'un QR invalide.
+- [ ] Enregistrer une clé Groq/Deepgram APRÈS avoir configuré l'adresse
+      réseau → recharger l'app → confirmer que l'adresse réseau et le badge
+      "Prêt" sont toujours là (correctif : ce chemin de sauvegarde effaçait
+      auparavant silencieusement `wsHost` et les jetons WS déjà générés).
 - [ ] Une fois configuré : cliquer "Générer un QR code" → un QR valide
       apparaît (le scanner avec une app QR tierce pour vérifier qu'il
       encode bien une URL `http://<ip-du-pc>:<port>/phone-camera.html?pair=...`
