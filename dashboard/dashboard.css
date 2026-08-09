@@ -27,7 +27,16 @@
 
   --accent-cyan: var(--primary);
   --accent-emerald: #34d399;
-  --accent-amber: var(--primary);
+  /* CORRECTIF (redesign visuel) : cet alias pointait vers --primary depuis
+             la consolidation "one color" ci-dessus, ce qui faisait qu'un
+             badge "warning" se lisait visuellement comme une action
+             primaire — un vrai flou pour un opérateur qui doit trancher
+             vite en direct. .media-gallery-card.is-default (plus bas)
+             utilisait déjà var(--accent-amber, #d9a441) avec un repli
+             ambré : l'intention d'une couleur distincte existait déjà,
+             juste jamais branchée. Restaurée ici. */
+  --accent-amber: #f5a623;
+  --accent-amber-bg: rgba(245, 166, 35, 0.15);
   --accent-rose: #f4607a;
 
   --gold: var(--primary);
@@ -52,10 +61,72 @@
   --radius-sm: 8px;
   --radius-md: 14px;
   --radius-lg: 22px;
+  --radius-xl: 20px;
   --radius-full: 9999px;
 
   --glass-blur: 18px;
   --ease-silk: cubic-bezier(0.19, 1, 0.22, 1);
+
+  /* --- Redesign visuel (fondations) : tokens additifs, rien ci-dessus
+             n'est retiré ni redéfini (hors --accent-amber, commenté plus
+             haut) — chaque lot du chantier de redesign les applique
+             progressivement, aucun composant ne les consomme encore ici. */
+
+  /* Teintes tonales (survol/actif/appuyé) — évite les bidouilles d'opacité
+     ad hoc pour ces états. */
+  --primary-300: #a8b3f9;
+  --primary-600: #5f6eea;
+  --primary-700: #4a56c4;
+  --accent-emerald-600: #1fb886;
+  --accent-rose-600: #e14264;
+  --accent-amber-600: #d98d12;
+
+  /* Profondeur : un niveau au-dessus de --bg-surface, pour les éléments
+     qui doivent se détacher des cartes (popovers, dropdowns) — introuvable
+     ailleurs dans ce fichier aujourd'hui. */
+  --bg-elevated: #141a30;
+
+  /* Échelle typographique — les tailles existantes restent en dur tant
+     qu'un lot ne les migre pas explicitement (pas de réécriture en masse). */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-md: 1.125rem;
+  --text-lg: 1.375rem;
+  --text-xl: 1.75rem;
+  --text-2xl: 2.25rem;
+  --text-3xl: 3rem;
+  --leading-tight: 1.15;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.7;
+
+  /* Échelle d'espacement (base 4px) — même logique d'adoption progressive
+     que l'échelle typographique ci-dessus. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Niveaux d'élévation (repos/survol/modale) et variantes "glow" par
+     accent, pour les micro-interactions des lots suivants (carte verset
+     en direct, pastille de connexion). */
+  --shadow-e1: 0 2px 10px rgba(0, 0, 0, 0.3);
+  --shadow-e2: 0 10px 28px rgba(0, 0, 0, 0.42);
+  --shadow-e3: 0 24px 56px rgba(0, 0, 0, 0.55);
+  --shadow-glow-primary: 0 0 26px var(--primary-glow);
+  --shadow-glow-emerald: 0 0 22px rgba(52, 211, 153, 0.4);
+  --shadow-glow-rose: 0 0 22px rgba(244, 96, 122, 0.4);
+
+  --duration-fast: 120ms;
+  --duration-base: 220ms;
+  --duration-slow: 420ms;
+  --duration-breathe: 2400ms;
 }
 
 /* Grain de verre très subtil, superposé à tout le fond — évite l'effet
@@ -76,6 +147,15 @@
   box-sizing: border-box;
 }
 
+/* CORRECTIF (redesign visuel) : fusionné avec le second bloc
+   prefers-reduced-motion qui existait plus bas dans ce fichier (mêmes
+   règles éclatées en deux endroits) — un seul bloc désormais, la garde
+   universelle *, *::before, *::after couvrant déjà tout ce que le second
+   bloc ciblait explicitement, ses sélecteurs sont repris ici pour
+   documenter l'intention d'origine sans dupliquer la media query. Toute
+   nouvelle animation ajoutée par le chantier de redesign (glow carte
+   verset en direct, pastille de connexion respirante...) doit se figer
+   sur un état statique sous ce mode, pas juste ralentir. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -83,6 +163,14 @@
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+  }
+
+  .sidebar,
+  .header-bar,
+  .search-detector-bar,
+  .quick-chips,
+  .metrics-grid > * {
+    animation: none;
   }
 }
 
@@ -1125,7 +1213,7 @@ body {
   color: var(--primary);
 }
 .activity-icon.warning {
-  background: rgba(124, 140, 245, 0.15);
+  background: var(--accent-amber-bg);
   color: var(--accent-amber);
 }
 
@@ -1253,7 +1341,7 @@ body {
   color: var(--accent-emerald);
 }
 .status-badge.warning {
-  background: rgba(124, 140, 245, 0.15);
+  background: var(--accent-amber-bg);
   color: var(--accent-amber);
 }
 .status-badge.error {
@@ -1298,7 +1386,7 @@ body {
   border-color: rgba(244, 96, 122, 0.4);
 }
 .toast.warning {
-  border-color: rgba(124, 140, 245, 0.4);
+  border-color: rgba(245, 166, 35, 0.4);
 }
 
 @keyframes slideInRight {
@@ -1519,14 +1607,4 @@ body {
 }
 .metrics-grid > *:nth-child(4) {
   animation-delay: 0.4s;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sidebar,
-  .header-bar,
-  .search-detector-bar,
-  .quick-chips,
-  .metrics-grid > * {
-    animation: none;
-  }
 }
