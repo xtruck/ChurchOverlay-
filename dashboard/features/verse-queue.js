@@ -70,7 +70,7 @@ export function renderQueue() {
 
   if (verseQueue.length === 0) {
     list.innerHTML =
-      '<div style="font-size:0.8rem; color:var(--text-dim); padding: 0.5rem 0;">Aucun verset en attente. Ajoutez une référence ci-dessus.</div>';
+      '<div class="empty-state-note">Aucun verset en attente. Ajoutez une référence ci-dessus.</div>';
     return;
   }
 

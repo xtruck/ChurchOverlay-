@@ -785,6 +785,49 @@ body {
   padding: var(--space-2) 0;
 }
 
+/* AJOUT (redesign visuel, lot 7 — balayage final) : même paire
+           police/couleur que .empty-state-note ci-dessus, mais sans son
+           padding — cet élément est un <span> inline sans les autres
+           usages en <div> de bloc, le padding vertical y aurait été un
+           changement visuel inutile (mood-theme.js). */
+.text-note {
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+}
+
+/* AJOUT (redesign visuel, lot 7 — balayage final) : les deux derniers
+           style="..." inline de renderSessionStats() (preservice-ai.js),
+           laissés volontairement de côté au lot 3 (portée déjà large ce
+           jour-là) — variante plus discrète de .stat-value, et conteneur
+           défilant pour la liste des versets récents. */
+.stat-value-sub {
+  font-weight: 400;
+  font-size: var(--text-xs);
+}
+
+.stat-scroll-list {
+  margin-top: var(--space-3);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+/* AJOUT (redesign visuel, lot 7) : badge de progression de section
+           (song-library.js), ex. "2/5". */
+.song-section-progress {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* AJOUT (redesign visuel, lot 7) : variante atténuée de .transcript-text
+           pour l'état "historique effacé, en attente" (clearTranscript()
+           dans verse-session-display.js) — .transcript-text elle-même n'a
+           pas de règle dédiée (hérite de --text-main), cette variante est
+           donc un vrai modificateur, pas un doublon. */
+.transcript-text--placeholder {
+  color: var(--text-dim);
+}
+
 /* AJOUT (redesign visuel, lot 6) : carte "Poster principal" — même
            style="..." inline (display/align-items/gap/justify-content)
            que les bannières pipeline (lot 4), même traitement : structure
@@ -1210,6 +1253,23 @@ body {
   outline: none;
   position: relative;
   overflow: hidden;
+}
+
+/* CORRECTIF (redesign visuel, lot 7 — accessibilité) : outline: none
+           ci-dessus supprimait l'indicateur de focus par défaut du
+           navigateur sur TOUS les boutons (.btn/.btn-primary/.btn-secondary/
+           .btn-danger — le composant le plus utilisé de tout le tableau de
+           bord) sans jamais poser de remplacement — un opérateur naviguant
+           au clavier n'avait ainsi aucun moyen de voir quel bouton est
+           actuellement ciblé. Les champs de saisie (.form-group input,
+           .queue-add-row input, .search-detector-bar) avaient déjà un
+           remplacement (bordure/ombre au focus) ; c'était uniquement les
+           boutons qui manquaient. :focus-visible plutôt que :focus pour ne
+           montrer l'anneau qu'à la navigation clavier, pas à chaque clic
+           souris. */
+.btn:focus-visible {
+  outline: 2px solid var(--primary-300);
+  outline-offset: 2px;
 }
 
 .btn-primary {

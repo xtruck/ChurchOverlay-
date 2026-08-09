@@ -145,7 +145,7 @@ export function renderMediaLibrary(items) {
 
   if (mediaLibraryItems.length === 0) {
     list.innerHTML =
-      '<div style="grid-column: 1 / -1; font-size:0.8rem; color:var(--text-dim); padding: 0.5rem 0;">Aucun média ajouté. Choisissez une photo ou une vidéo ci-dessus.</div>';
+      '<div class="empty-state-note" style="grid-column: 1 / -1">Aucun média ajouté. Choisissez une photo ou une vidéo ci-dessus.</div>';
     return;
   }
 

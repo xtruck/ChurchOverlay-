@@ -85,7 +85,7 @@ export function renderSongLibrary(songs) {
 
   if (songLibraryItems.length === 0) {
     list.innerHTML =
-      '<div style="font-size:0.8rem; color:var(--text-dim); padding: 0.5rem 0;">Aucun chant ajouté. Collez des paroles ci-dessus.</div>';
+      '<div class="empty-state-note">Aucun chant ajouté. Collez des paroles ci-dessus.</div>';
     return;
   }
 
@@ -104,7 +104,7 @@ export function renderSongLibrary(songs) {
                     </div>
                     <div class="queue-item-actions">
                         <button class="queue-icon-btn" onclick="stepSongSection('${song.id}', -1)" title="Section précédente">◀</button>
-                        <span style="font-size:0.7rem; color:var(--text-dim); white-space:nowrap;">${current}/${song.sectionCount}</span>
+                        <span class="song-section-progress">${current}/${song.sectionCount}</span>
                         <button class="queue-icon-btn" onclick="stepSongSection('${song.id}', 1)" title="Section suivante">▶</button>
                         <button class="queue-icon-btn queue-send" onclick="showSongSectionNow('${song.id}')" title="Afficher maintenant">▶▶</button>
                         <button class="queue-icon-btn queue-remove" onclick="deleteSongFromLibrary('${song.id}')" title="Supprimer">✕</button>

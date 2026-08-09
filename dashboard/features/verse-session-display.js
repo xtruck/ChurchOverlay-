@@ -314,7 +314,7 @@ export function clearTranscript() {
     feed.innerHTML = `
                     <div class="transcript-item">
                         <div class="transcript-time"><span>00:00:00</span><span>Info</span></div>
-                        <div class="transcript-text" style="color: var(--text-dim);">Historique effacé. En attente de nouvelles entrées audio.</div>
+                        <div class="transcript-text transcript-text--placeholder">Historique effacé. En attente de nouvelles entrées audio.</div>
                     </div>
                 `;
   }

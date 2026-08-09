@@ -13,8 +13,7 @@ export function renderMoodPicker(moods) {
   const container = document.getElementById('moodPicker');
   if (!container) return;
   if (!moods.length) {
-    container.innerHTML =
-      '<span style="font-size:0.8rem; color:var(--text-dim);">Générateur d\'ambiances indisponible.</span>';
+    container.innerHTML = '<span class="text-note">Générateur d\'ambiances indisponible.</span>';
     return;
   }
   container.innerHTML = moods
