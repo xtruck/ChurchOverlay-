@@ -758,6 +758,11 @@
         max-width: 100%;
         max-height: 100%;
         object-fit: contain;
+        /* AJOUT (cohérence visuelle avec .verse-card) : même famille de coins
+     arrondis/ombre que la carte de verset, pour que le média affiché ne
+     ressemble pas à un élément d'une app différente. */
+        border-radius: var(--overlay-radius);
+        box-shadow: 0 14px 54px var(--overlay-shadow);
         /* AJOUT (détails d'affichage média — style d'apparition, voir showMediaItem()
      dans le script plus bas) : transform/opacity uniquement (GPU-composité,
      même discipline que l'audit perf de cette session) — jamais de propriété
@@ -765,6 +770,26 @@
         transition:
           transform 0.3s ease,
           opacity 0.3s ease;
+      }
+      /* AJOUT (Ken Burns — champ backgroundImage.kenBurns déclaré dans
+   config/themes/*.json mais jamais consommé, voir showMediaItem()) : zoom
+   lent uniquement sur les images fixes (une vidéo "bouge" déjà). Désactivé
+   sous prefers-reduced-motion, comme le reste des animations de ce fichier. */
+      #media-layer img.ken-burns {
+        animation: kenBurns 20s ease-out forwards;
+      }
+      @keyframes kenBurns {
+        from {
+          transform: scale(1);
+        }
+        to {
+          transform: scale(1.06);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #media-layer img.ken-burns {
+          animation: none;
+        }
       }
       /* 'fade' (par défaut) : le fondu du layer suffit, le média lui-même est statique. */
       #media-layer.transition-slide img,
@@ -938,6 +963,9 @@
       let hideTimeout = null;
       let currentTheme = 'default';
       let currentAnimation = 'fadeInUp';
+      // AJOUT (Ken Burns) : backgroundImage du thème actif (voir applyTheme()
+      // et showMediaItem()) — { type, source, kenBurns, opacity }.
+      let currentThemeBackground = {};
       let reconnectTimer = null;
 
       function connectWs() {
@@ -1367,6 +1395,7 @@
             root.style.setProperty('--overlay-reference-color', v['--reference-color']);
           if (theme.animations && theme.animations.default)
             currentAnimation = theme.animations.default;
+          currentThemeBackground = theme.background || {};
           return;
         }
 
@@ -1488,6 +1517,7 @@
         if (msg.mediaType === 'video') {
           img.hidden = true;
           img.removeAttribute('src');
+          img.classList.remove('ken-burns');
           video.hidden = false;
           video.src = msg.mediaUrl;
           video.currentTime = 0;
@@ -1500,6 +1530,14 @@
           video.removeAttribute('src');
           img.hidden = false;
           img.src = msg.mediaUrl;
+          // AJOUT (Ken Burns — images fixes uniquement, une vidéo bouge déjà) :
+          // classe retirée puis reposée pour relancer l'animation à chaque
+          // nouvelle image (une classe déjà présente ne redémarre pas seule).
+          img.classList.remove('ken-burns');
+          if (currentThemeBackground.kenBurns) {
+            void img.offsetWidth;
+            img.classList.add('ken-burns');
+          }
         }
 
         // AJOUT (détails d'affichage média — style d'apparition) : classe posée
