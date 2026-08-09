@@ -20,6 +20,14 @@ export function displayVerse(message) {
   const refEl = document.getElementById('verseReference');
   const textEl = document.getElementById('verseText');
   const bilingualEl = document.getElementById('verseTextBilingual');
+  // AJOUT (redesign visuel — carte verset en direct) : jusqu'ici cette
+  // carte avait le même aspect qu'un verset soit réellement à l'écran
+  // devant l'assemblée ou non — .live-badge affichait "Diffusion Overlay
+  // En Direct" en permanence, sans lien avec l'état réel. .is-live donne
+  // une confirmation visuelle immédiate (voir .hero-verse-card.is-live
+  // dans dashboard.css), retirée par hideVerseDisplay() ci-dessous.
+  const heroCard = document.getElementById('verseDisplay');
+  if (heroCard) heroCard.classList.add('is-live');
   if (refEl) refEl.textContent = message.reference;
   if (textEl) textEl.textContent = message.text;
   // CORRECTIF (bilingue dashboard) : jusqu'ici seule verseReference
@@ -51,6 +59,8 @@ export function hideVerseDisplay() {
   const refEl = document.getElementById('verseReference');
   const textEl = document.getElementById('verseText');
   const bilingualEl = document.getElementById('verseTextBilingual');
+  const heroCard = document.getElementById('verseDisplay');
+  if (heroCard) heroCard.classList.remove('is-live');
   if (refEl) refEl.textContent = 'Aucun verset affiché';
   if (textEl) textEl.textContent = 'Les versets apparaîtront ici une fois détectés';
   if (bilingualEl) {
