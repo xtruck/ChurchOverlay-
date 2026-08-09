@@ -1570,6 +1570,48 @@ body {
   }
 }
 
+/* AJOUT (redesign visuel, lot 5) : voir le commentaire d'en-tête dans
+           dashboard.html — même paire de .nav-item que la sidebar, en
+           layout horizontal fixé en bas d'écran. Masquée par défaut ;
+           activée uniquement sous 1024px, voir la media query plus bas. */
+.bottom-tab-bar {
+  display: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
+  padding: var(--space-1) 0;
+  background: rgba(13, 17, 32, 0.85);
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  border-top: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-e2);
+}
+
+.bottom-tab-bar .nav-list {
+  flex-direction: row;
+  gap: 0;
+}
+
+.bottom-tab-bar .nav-item {
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+  text-align: center;
+  border-radius: 0;
+  padding: var(--space-2) var(--space-1);
+  font-size: var(--text-xs);
+}
+
+/* La barre d'accent verticale (.nav-item.active::before) est pensée pour
+           une liste verticale — inutile/mal placée en layout horizontal, la
+           couleur de fond + gras de .nav-item.active suffit déjà ici. */
+.bottom-tab-bar .nav-item.active::before {
+  display: none;
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
   .dashboard {
@@ -1578,8 +1620,14 @@ body {
   .sidebar {
     display: none;
   }
+  .bottom-tab-bar {
+    display: block;
+  }
   .main-content {
     padding: 1.25rem;
+    /* Place pour ne pas laisser la barre d'onglets fixe recouvrir le bas
+               du contenu (hauteur de la barre + marge de confort). */
+    padding-bottom: 5.5rem;
   }
 }
 

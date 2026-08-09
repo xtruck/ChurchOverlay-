@@ -2180,6 +2180,53 @@
       </main>
     </div>
 
+    <!-- AJOUT (redesign visuel, lot 5 — repli navigation) : la barre
+         latérale (.sidebar) est totalement masquée sous 1024px (voir la
+         media query dans dashboard.css) — une tablette de régie dans
+         cette largeur perdait jusqu'ici TOUTE navigation entre "En
+         Direct" et "Réglages". Duplique les 2 mêmes .nav-item avec les
+         mêmes data-sections : le clic passe par le même gestionnaire
+         d'événement que la barre latérale (voir document.querySelectorAll
+         ('.nav-item') dans dashboard/state.js), aucune logique dupliquée.
+         Masquée par défaut (voir .bottom-tab-bar dans dashboard.css),
+         visible uniquement sous 1024px. -->
+    <nav class="bottom-tab-bar" aria-label="Navigation principale">
+      <ul class="nav-list">
+        <li class="nav-item active" data-sections="overview,transcript">
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <rect x="3" y="3" width="7" height="7" rx="1.5" />
+            <rect x="14" y="3" width="7" height="7" rx="1.5" />
+            <rect x="14" y="14" width="7" height="7" rx="1.5" />
+            <rect x="3" y="14" width="7" height="7" rx="1.5" />
+          </svg>
+          <span>En Direct</span>
+        </li>
+        <li class="nav-item" data-sections="controls,analysis,settings,overlay">
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+            />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+          <span>Réglages</span>
+        </li>
+      </ul>
+    </nav>
+
     <!-- AJOUT (capture webcam — aperçu opérateur) : module isolé, chargé
          avant le tableau de bord pour que window.CameraCapture soit prêt.
          Script classique (synchrone) intentionnellement, contrairement au

@@ -84,7 +84,16 @@ function showSectionsFor(item) {
 document.querySelectorAll('.nav-item').forEach((item) => {
   item.addEventListener('click', () => {
     document.querySelectorAll('.nav-item').forEach((i) => i.classList.remove('active'));
-    item.classList.add('active');
+    // CORRECTIF (redesign visuel, lot 5) : la barre d'onglets fixée en bas
+    // d'écran (<1024px, voir .bottom-tab-bar) duplique ces mêmes
+    // .nav-item pour rester utilisable en largeur tablette — un clic doit
+    // donc activer TOUTES les copies partageant le même data-sections
+    // (barre latérale + barre du bas), pas seulement l'élément
+    // physiquement cliqué, sinon les deux indicateurs actifs se
+    // désynchronisent dès le premier redimensionnement de fenêtre.
+    document
+      .querySelectorAll(`.nav-item[data-sections="${item.dataset.sections}"]`)
+      .forEach((i) => i.classList.add('active'));
     showSectionsFor(item);
   });
 });
