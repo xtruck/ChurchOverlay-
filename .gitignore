@@ -20,3 +20,9 @@ dist/
 # installeur packagé), l'un pouvait écraser ou polluer l'autre selon
 # l'ordre d'exécution. Renommé en dist-ts/ (tsconfig.json), distinct.
 dist-ts/
+
+# Sortie de "npm run test:e2e" (Playwright — voir playwright.config.js) :
+# rapport HTML + traces/captures d'écran des tests échoués. Régénérés à
+# chaque exécution, jamais du code source.
+test-results/
+playwright-report/
