@@ -12,17 +12,22 @@
  * dédiés sous dashboard/features/* ; il rétrécit à chaque lot.
  *
  * NOTE ESLint : de nombreuses fonctions ci-dessous (setLanguage,
- * clearTranscript, etc.) semblent "jamais utilisées" à ESLint car il analyse
- * ce fichier isolément — en réalité, dashboard.html les appelle via des
- * attributs onclick="..." inline (certains statiques dans le HTML, d'autres
- * générés dynamiquement dans ce fichier même via des template strings, ex.
- * moveQueueItem/setMoodTheme dans le rendu de liste). C'est le même modèle
- * que le reste du projet (overlay.html, setup.html) — pas une régression
- * introduite par l'extraction.
+ * clearTranscript, etc.) sont appelées par dashboard.html via des attributs
+ * onclick="..." inline (certains statiques dans le HTML, d'autres générés
+ * dynamiquement dans ce fichier même via des template strings, ex.
+ * moveQueueItem/setMoodTheme dans le rendu de liste), invisibles à l'analyse
+ * statique d'un fichier isolé. Contrairement à l'ancien dashboard.js (un
+ * <script> classique, où ces fonctions étaient globales par défaut), le
+ * bloc `window.x = x` en fin de fichier les rend explicitement globales ET
+ * donne à ESLint une vraie référence de lecture pour chacune — plus besoin
+ * du désactivateur `no-unused-vars` que ce fichier portait auparavant.
  */
-/* eslint-disable no-unused-vars -- voir note ci-dessus : fonctions
-   appelées depuis des attributs onclick="..." en HTML, invisibles à
-   l'analyse statique d'un fichier isolé. */
+
+// AJOUT (modularisation, lot 4) : showToast/addActivity/escapeHtmlDashboard/
+// requireWsOrWarn ont déménagé dans dashboard/utils.js — importés ici car
+// le reste de ce fichier les appelle encore par leur nom nu (même portée
+// partagée qu'avant l'extraction).
+import { showToast, addActivity, escapeHtmlDashboard, requireWsOrWarn } from './utils.js';
 
 // State Management
 const state = {
@@ -150,7 +155,10 @@ const getHttpOrigin = () => {
   return `http://localhost:${getWsPort()}`;
 };
 
-let ws = null;
+// AJOUT (modularisation, lot 4) : exporté pour que dashboard/utils.js
+// (requireWsOrWarn) y accède en lecture seule — liaison "live" ES module,
+// voir son commentaire d'en-tête. Seul CE fichier réassigne ws.
+export let ws = null;
 let reconnectAttempts = 0;
 // CORRECTIF (bug de production signalé — "l'application reste
 // déconnectée et je ne peux rien faire") : `maxReconnectAttempts`
@@ -1039,12 +1047,6 @@ function renderQueue() {
             `
     )
     .join('');
-}
-
-function escapeHtmlDashboard(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
 }
 
 renderQueue();
@@ -2031,14 +2033,6 @@ function renderAiEnricherOutput(text) {
   if (el) el.innerHTML = `<span class="stat-label">${text}</span>`;
 }
 
-function requireWsOrWarn() {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    showToast("Non connecté au serveur — impossible de lancer l'analyse IA.", 'error');
-    return false;
-  }
-  return true;
-}
-
 function requestSermonTheme() {
   if (!requireWsOrWarn()) return;
   renderAiEnricherOutput('⏳ Analyse du thème en cours...');
@@ -2435,30 +2429,6 @@ function renderSermonQaResult(result) {
         )
         .join('');
   }
-}
-
-// AJOUT (audit — second écran pour l'assemblée, session parallèle) :
-// affiche l'URL de la page compagnon (même origine que le tableau de bord,
-// juste /companion) — à coller dans n'importe quel générateur de QR code
-// gratuit.
-(function initCompanionLink() {
-  const link = document.getElementById('companionLink');
-  if (!link) return;
-  const url = window.location.origin + '/companion';
-  link.href = url;
-  link.textContent = url;
-})();
-
-function copyCompanionLink() {
-  const url = window.location.origin + '/companion';
-  navigator.clipboard
-    .writeText(url)
-    .then(() => {
-      showToast('Lien copié — collez-le dans un générateur de QR code.', 'success');
-    })
-    .catch(() => {
-      showToast('Copie impossible — sélectionnez le lien manuellement.', 'error');
-    });
 }
 
 function requestAutoTranslation(verse) {
@@ -2959,473 +2929,6 @@ function refreshOverlay() {
   showToast('Aperçu Overlay rafraîchi', 'info');
 }
 
-function showToast(message, type = 'info', duration = 3000) {
-  const container = document.querySelector('.toast-container') || createToastContainer();
-  const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-
-  let icon = 'ℹ️';
-  if (type === 'success') icon = '✅';
-  if (type === 'error') icon = '⚠️';
-  if (type === 'warning') icon = '⚡';
-
-  // CORRECTIF (audit production — XSS) : message est souvent un gabarit
-  // incluant err.message ou un champ serveur dynamique, jamais échappé
-  // avant insertion.
-  toast.innerHTML = `<span>${icon}</span><span>${escapeHtmlDashboard(message)}</span>`;
-  container.appendChild(toast);
-
-  setTimeout(() => {
-    toast.remove();
-  }, duration);
-}
-
-function createToastContainer() {
-  const container = document.createElement('div');
-  container.className = 'toast-container';
-  document.body.appendChild(container);
-  return container;
-}
-
-function addActivity(title, type = 'info') {
-  const feed = document.getElementById('activityFeed');
-  if (!feed) return;
-
-  const item = document.createElement('div');
-  item.className = 'activity-item';
-  const time = new Date().toLocaleTimeString();
-
-  // CORRECTIF (audit production — XSS) : title inclut souvent des champs
-  // dynamiques (message.error, message.reference, un fuzzyOriginal qui
-  // reflète la transcription vocale...) jamais échappés avant insertion.
-  // `type` reste un littéral interne, pas besoin de l'échapper.
-  item.innerHTML = `
-                <div class="activity-icon ${type}">•</div>
-                <div class="activity-content">
-                    <div class="activity-title">${escapeHtmlDashboard(title)}</div>
-                    <div class="activity-time">${time}</div>
-                </div>
-            `;
-
-  feed.insertBefore(item, feed.firstChild);
-
-  while (feed.children.length > 20) {
-    feed.removeChild(feed.lastChild);
-  }
-}
-
-// ---------------------------------------------------------------
-// Paramètres — Clés API & Microphone
-// ---------------------------------------------------------------
-// window.churchOverlay n'existe que dans la fenêtre Electron (exposé
-// par preload.js). Si ce fichier est ouvert directement dans un
-// navigateur (mode "serveur seul"), le panneau se désactive proprement
-// au lieu d'échouer silencieusement sur des appels IPC inexistants.
-(function initApiSettingsPanel() {
-  const els = {
-    unavailable: document.getElementById('apiSettingsUnavailable'),
-    form: document.getElementById('apiSettingsForm'),
-    card: document.getElementById('apiSettingsCard'),
-    banner: document.getElementById('setupBanner'),
-    requiredBadge: document.getElementById('setupRequiredBadge'),
-    micSelect: document.getElementById('settingsMicSelect'),
-    micStatus: document.getElementById('settingsMicStatus'),
-    btnRefreshMic: document.getElementById('settingsBtnRefreshMic'),
-    groqInput: document.getElementById('settingsGroqKey'),
-    groqBadge: document.getElementById('groqKeyBadge'),
-    deepgramInput: document.getElementById('settingsDeepgramKey'),
-    deepgramBadge: document.getElementById('deepgramKeyBadge'),
-    geminiInput: document.getElementById('settingsGeminiKey'),
-    geminiBadge: document.getElementById('geminiKeyBadge'),
-    btnSave: document.getElementById('settingsBtnSave'),
-    saveStatus: document.getElementById('settingsSaveStatus'),
-    btnClearGroq: document.getElementById('settingsClearGroq'),
-    btnClearDeepgram: document.getElementById('settingsClearDeepgram'),
-    btnClearGemini: document.getElementById('settingsClearGemini'),
-  };
-
-  if (!els.form) return; // section absente de ce build, rien à faire
-
-  if (!window.churchOverlay) {
-    if (els.unavailable) els.unavailable.style.display = 'block';
-    return;
-  }
-
-  function setBadge(el, configured) {
-    if (!el) return;
-    el.style.display = 'inline-block';
-    el.textContent = configured ? '✓ Configurée' : 'Non configurée';
-    el.className = 'status-badge ' + (configured ? 'success' : 'warning');
-  }
-
-  async function loadMicrophones(preselectId) {
-    els.micStatus.className = 'field-hint';
-    els.micStatus.textContent = '';
-    els.micSelect.innerHTML = '<option value="">🔍 Recherche des microphones…</option>';
-    els.btnRefreshMic.disabled = true;
-
-    let devices;
-    try {
-      const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      tempStream.getTracks().forEach((t) => t.stop());
-      const allDevices = await navigator.mediaDevices.enumerateDevices();
-      devices = allDevices
-        .filter((d) => d.kind === 'audioinput')
-        .map((d) => ({ id: d.deviceId, label: d.label || 'Microphone (nom indisponible)' }));
-    } catch (err) {
-      els.btnRefreshMic.disabled = false;
-      els.micSelect.innerHTML = '<option value="">❌ Accès micro refusé</option>';
-      els.micStatus.className = 'field-hint';
-      els.micStatus.style.color = 'var(--accent-rose)';
-      const isPermissionError =
-        err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError');
-      els.micStatus.textContent = isPermissionError
-        ? "⚠️ Autorisation micro refusée (Windows → Confidentialité → Microphone). Cliquez sur Actualiser après avoir autorisé l'accès."
-        : `⚠️ Erreur : ${err && err.message ? err.message : err}`;
-      return;
-    }
-
-    els.btnRefreshMic.disabled = false;
-    els.micSelect.innerHTML = '';
-
-    if (devices.length === 0) {
-      els.micSelect.innerHTML = '<option value="">❌ Aucun microphone détecté</option>';
-      els.micStatus.style.color = 'var(--accent-rose)';
-      els.micStatus.textContent =
-        "⚠️ Vérifiez qu'un micro est branché, puis cliquez sur Actualiser.";
-      return;
-    }
-
-    devices.forEach(({ id, label }) => {
-      const opt = document.createElement('option');
-      opt.value = id;
-      opt.textContent = label;
-      els.micSelect.appendChild(opt);
-    });
-
-    if (preselectId && devices.some((d) => d.id === preselectId)) {
-      els.micSelect.value = preselectId;
-    }
-
-    els.micStatus.style.color = 'var(--accent-emerald)';
-    els.micStatus.textContent = `✅ ${devices.length} microphone(s) détecté(s)`;
-  }
-
-  async function refreshSettingsUi() {
-    const settings = await window.churchOverlay.getSettings();
-    setBadge(els.groqBadge, settings.hasGroqKey);
-    setBadge(els.deepgramBadge, settings.hasDeepgramKey);
-    setBadge(els.geminiBadge, settings.hasGeminiKey);
-
-    const needsSetup = !!settings.needsSetup;
-    els.card.classList.toggle('needs-setup', needsSetup);
-    els.requiredBadge.style.display = needsSetup ? 'inline-block' : 'none';
-    els.banner.style.display = needsSetup ? 'flex' : 'none';
-
-    await loadMicrophones(settings.audioDevice);
-
-    // Au premier lancement (ou tant qu'il manque le micro/la clé
-    // Groq), on ouvre directement l'onglet Paramètres pour que la
-    // configuration soit visible sans action supplémentaire —
-    // qu'elle soit ensuite complétée manuellement par la personne
-    // ou déjà pré-remplie automatiquement par une config existante.
-    if (needsSetup) {
-      // CORRECTIF (audit — regroupement de navigation) : "settings" fait
-      // maintenant partie d'un data-sections combiné ("Réglages"), plus
-      // une valeur exacte isolée — sélecteur par sous-chaîne.
-      const settingsNav = document.querySelector('.nav-item[data-sections*="settings"]');
-      if (settingsNav) settingsNav.click();
-    }
-
-    return settings;
-  }
-
-  els.form.style.display = 'block';
-
-  els.btnRefreshMic.addEventListener('click', () => loadMicrophones(els.micSelect.value));
-
-  document.querySelectorAll('.settings-copy-link').forEach((link) => {
-    link.addEventListener('click', (e) => {
-      e.preventDefault();
-      const url = link.dataset.url;
-      navigator.clipboard.writeText(url).then(() => {
-        const original = link.textContent;
-        link.textContent = 'Lien copié ✓';
-        setTimeout(() => {
-          link.textContent = original;
-        }, 2000);
-      });
-    });
-  });
-
-  document.querySelectorAll('.btn-toggle-pass').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const target = document.getElementById(btn.dataset.target);
-      if (!target) return;
-      const show = target.type === 'password';
-      target.type = show ? 'text' : 'password';
-      btn.textContent = show ? 'Masquer' : 'Afficher';
-    });
-  });
-
-  async function clearKey(provider, inputEl, badgeEl) {
-    const label = provider === 'groq' ? 'Groq' : provider === 'deepgram' ? 'Deepgram' : 'Gemini';
-    if (!confirm(`Retirer la clé API ${label} enregistrée ?`)) return;
-    try {
-      await window.churchOverlay.clearApiKey(provider);
-      inputEl.value = '';
-      setBadge(badgeEl, false);
-      showToast(`Clé ${label} retirée`, 'info');
-      if (provider === 'groq') await refreshSettingsUi();
-    } catch (e) {
-      showToast(`Erreur lors du retrait de la clé ${label}`, 'error');
-    }
-  }
-
-  if (els.btnClearGroq) {
-    els.btnClearGroq.addEventListener('click', () =>
-      clearKey('groq', els.groqInput, els.groqBadge)
-    );
-  }
-  if (els.btnClearDeepgram) {
-    els.btnClearDeepgram.addEventListener('click', () =>
-      clearKey('deepgram', els.deepgramInput, els.deepgramBadge)
-    );
-  }
-  if (els.btnClearGemini) {
-    els.btnClearGemini.addEventListener('click', () =>
-      clearKey('gemini', els.geminiInput, els.geminiBadge)
-    );
-  }
-
-  els.form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    const mic = els.micSelect.value;
-    if (!mic) {
-      els.saveStatus.style.color = 'var(--accent-rose)';
-      els.saveStatus.textContent = "⚠️ Sélectionnez un microphone avant d'enregistrer.";
-      return;
-    }
-
-    els.btnSave.disabled = true;
-    const originalLabel = els.btnSave.textContent;
-    els.btnSave.textContent = '⏳ Enregistrement…';
-    els.saveStatus.textContent = '';
-
-    try {
-      // Champs laissés vides = conserver la clé déjà enregistrée
-      // (voir saveConfigAsync côté main.js) ; utiliser « Retirer
-      // la clé » pour un retrait volontaire.
-      await window.churchOverlay.saveSetup(
-        mic,
-        els.groqInput.value.trim(),
-        els.deepgramInput.value.trim(),
-        els.geminiInput.value.trim()
-      );
-      els.groqInput.value = '';
-      els.deepgramInput.value = '';
-      els.geminiInput.value = '';
-      els.saveStatus.style.color = 'var(--accent-emerald)';
-      els.saveStatus.textContent = '✅ Configuration enregistrée — pipeline (re)démarré.';
-      showToast('Configuration API enregistrée', 'success');
-      await refreshSettingsUi();
-    } catch (err) {
-      els.saveStatus.style.color = 'var(--accent-rose)';
-      els.saveStatus.textContent = '❌ Erreur : ' + (err && err.message ? err.message : err);
-    } finally {
-      els.btnSave.disabled = false;
-      els.btnSave.textContent = originalLabel;
-    }
-  });
-
-  refreshSettingsUi();
-})();
-
-// CORRECTIF PERF (audit CPU, 03/08/2026) : voir le commentaire CSS sur
-// .animations-paused plus haut dans <style>. On considère la fenêtre
-// "au repos" dès qu'elle est masquée (onglet caché / minimisée) OU
-// qu'elle perd le focus (opérateur basculé sur OBS pendant tout le
-// culte) — les deux cas sont fréquents en régie et n'ont aucune
-// raison de garder des animations décoratives actives en continu.
-(function setupAmbientAnimationThrottle() {
-  function applyState() {
-    const shouldPause = document.hidden || !document.hasFocus();
-    document.body.classList.toggle('animations-paused', shouldPause);
-  }
-  document.addEventListener('visibilitychange', applyState);
-  window.addEventListener('blur', applyState);
-  window.addEventListener('focus', applyState);
-  applyState();
-})();
-
-// RETIRÉ (sur demande) : l'écouteur pointermove qui pilotait le halo
-// suivant le curseur sur .card/.hero-verse-card a été supprimé, en
-// même temps que les règles CSS .card::after / .hero-verse-card::before
-// correspondantes.
-
-// AJOUT : onde au clic (voir .btn-ripple dans <style>). Délégué sur
-// le document, ne crée un élément que sur un vrai clic, et le
-// retire dès que l'animation "forwards" se termine (aucun élément
-// ni timer qui s'accumule au fil d'un long culte).
-(function setupButtonRipple() {
-  document.addEventListener('click', (e) => {
-    const btn = e.target.closest('.btn');
-    if (!btn) return;
-    const rect = btn.getBoundingClientRect();
-    const size = Math.max(rect.width, rect.height) * 1.4;
-    const ripple = document.createElement('span');
-    ripple.className = 'btn-ripple';
-    ripple.style.width = ripple.style.height = `${size}px`;
-    ripple.style.left = `${e.clientX - rect.left - size / 2}px`;
-    ripple.style.top = `${e.clientY - rect.top - size / 2}px`;
-    btn.appendChild(ripple);
-    ripple.addEventListener('animationend', () => ripple.remove(), { once: true });
-  });
-})();
-
-/* ============================================================================
- * Capture webcam — aperçu opérateur (voir camera-capture.js)
- * ----------------------------------------------------------------------------
- * AJOUT (demande explicite). Module ISOLÉ du pipeline audio existant
- * (audio-capture.js/groq-wrapper.js/realMicCaptureState) : ne touche à
- * aucune variable ni fonction audio, ne fait aucun appel réseau/serveur —
- * juste un aperçu vidéo local piloté via window.CameraCapture.
- * ============================================================================ */
-
-async function refreshCameraList() {
-  const select = document.getElementById('cameraSelect');
-  if (!select || !window.CameraCapture) return;
-  try {
-    const cameras = await window.CameraCapture.listCameras();
-    if (cameras.length === 0) {
-      select.innerHTML = '<option value="">Aucune caméra détectée</option>';
-      return;
-    }
-    select.innerHTML = cameras
-      .map((c) => `<option value="${c.deviceId}">${escapeHtmlDashboard(c.label)}</option>`)
-      .join('');
-    const best = window.CameraCapture.pickBestCamera(cameras);
-    if (best.chosen) select.value = best.chosen.deviceId;
-    hideCameraErrorHint();
-  } catch (err) {
-    showCameraErrorHint(err && err.message ? err.message : String(err));
-  }
-}
-
-function showCameraErrorHint(message) {
-  const hint = document.getElementById('cameraErrorHint');
-  if (!hint) return;
-  hint.textContent = message;
-  hint.style.display = 'block';
-}
-
-function hideCameraErrorHint() {
-  const hint = document.getElementById('cameraErrorHint');
-  if (hint) hint.style.display = 'none';
-}
-
-function updateCameraButtonUI() {
-  const btn = document.getElementById('cameraToggleBtn');
-  const badge = document.getElementById('cameraStatus');
-  const video = document.getElementById('cameraPreview');
-  const placeholder = document.getElementById('cameraPreviewPlaceholder');
-  const active = !!(window.CameraCapture && window.CameraCapture.isCapturing());
-
-  if (btn) btn.textContent = active ? '⏹ Arrêter la caméra' : '📷 Démarrer la caméra';
-  if (badge) {
-    badge.textContent = active ? 'Aperçu actif' : 'Capture arrêtée';
-    badge.className = 'status-badge ' + (active ? 'success' : 'warning');
-  }
-  if (video) video.style.display = active ? 'block' : 'none';
-  if (placeholder) placeholder.style.display = active ? 'none' : 'flex';
-}
-
-async function toggleCameraCapture() {
-  if (!window.CameraCapture) {
-    showToast('Module caméra indisponible.', 'error');
-    return;
-  }
-
-  if (window.CameraCapture.isCapturing()) {
-    window.CameraCapture.stopCapture();
-    updateCameraButtonUI();
-    addActivity('Caméra arrêtée manuellement', 'info');
-    return;
-  }
-
-  const select = document.getElementById('cameraSelect');
-  const video = document.getElementById('cameraPreview');
-  const deviceId = select ? select.value : '';
-  try {
-    hideCameraErrorHint();
-    await window.CameraCapture.startCapture(deviceId, video);
-    updateCameraButtonUI();
-    addActivity('Caméra démarrée', 'success');
-    showToast('Caméra démarrée', 'success');
-  } catch (err) {
-    updateCameraButtonUI();
-    const message = err && err.message ? err.message : String(err);
-    showCameraErrorHint(message);
-    showToast('Caméra : ' + message, 'error');
-  }
-}
-
-(function initCameraPanel() {
-  if (!document.getElementById('cameraToggleBtn') || !window.CameraCapture) return;
-
-  window.CameraCapture.onStopped((reason) => {
-    updateCameraButtonUI();
-    if (reason === 'device-ended') {
-      showCameraErrorHint('Caméra débranchée ou désactivée.');
-      addActivity('Caméra déconnectée', 'warning');
-      showToast('Caméra débranchée', 'warning');
-    }
-  });
-
-  updateCameraButtonUI();
-  refreshCameraList();
-
-  // Redécouvre les vrais libellés une fois la permission accordée (avant
-  // ça, enumerateDevices() ne renvoie que des libellés vides/génériques) et
-  // suit le branchement/débranchement de caméras en cours d'utilisation.
-  if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
-    navigator.mediaDevices.addEventListener('devicechange', refreshCameraList);
-  }
-})();
-
-/* ============================================================================
- * Indicateur de performance (CPU/RAM) — voir perf-monitor.js
- * ----------------------------------------------------------------------------
- * AJOUT (audit perf). L'échantillonnage (perf-monitor.js) et le pont IPC
- * (main.js/preload.js, onPerfUpdate) existaient déjà côté Electron mais
- * n'étaient consommés par aucune UI — ce bloc ferme la boucle. Absent en
- * mode "serveur seul" navigateur (window.churchOverlay n'existe pas alors),
- * la pastille reste masquée dans ce cas (voir style="display:none" en HTML).
- * ============================================================================ */
-(function initPerfPill() {
-  const pill = document.getElementById('perfPill');
-  const text = document.getElementById('perfPillText');
-  const dot = document.getElementById('perfDot');
-  if (!pill || !text || !dot || !window.churchOverlay || !window.churchOverlay.onPerfUpdate) return;
-
-  pill.style.display = 'flex';
-  window.churchOverlay.onPerfUpdate((stats) => {
-    if (!stats) return;
-    const cpu = Math.round(stats.cpuPercent || 0);
-    const ram = Math.round(stats.rssMB || 0);
-    text.textContent = `CPU ${cpu}% · RAM ${ram} Mo`;
-    const color =
-      cpu >= 70
-        ? 'var(--accent-rose)'
-        : cpu >= 40
-          ? 'var(--accent-amber)'
-          : 'var(--accent-emerald)';
-    dot.style.background = color;
-    dot.style.boxShadow = `0 0 8px ${color}`;
-  });
-})();
-
 /* ============================================================================
    AJOUT (modularisation — chantier "dashboard/", front end plus léger, mieux
    construit) : dashboard.html charge désormais ce fichier via
@@ -3440,7 +2943,6 @@ async function toggleCameraCapture() {
    dashboard/features/*.js) ; ce bloc d'exposition rétrécit au fur et à
    mesure — sans usage restant une fois le démantèlement terminé.
    ============================================================================ */
-window.addActivity = addActivity;
 window.addIpCamera = addIpCamera;
 window.addMediaLibraryItem = addMediaLibraryItem;
 window.addSongToLibrary = addSongToLibrary;
@@ -3456,17 +2958,14 @@ window.clearTranscript = clearTranscript;
 window.closeDisplayWindow = closeDisplayWindow;
 window.connectProPresenter = connectProPresenter;
 window.copyBrandingOverlayUrl = copyBrandingOverlayUrl;
-window.copyCompanionLink = copyCompanionLink;
 window.copyIpCameraUrl = copyIpCameraUrl;
 window.copyOverlayUrl = copyOverlayUrl;
-window.createToastContainer = createToastContainer;
 window.deleteIpCameraItem = deleteIpCameraItem;
 window.deleteMediaLibraryItem = deleteMediaLibraryItem;
 window.deleteSongFromLibrary = deleteSongFromLibrary;
 window.displayVerse = displayVerse;
 window.drawRealAudioVisualizer = drawRealAudioVisualizer;
 window.emergencyStop = emergencyStop;
-window.escapeHtmlDashboard = escapeHtmlDashboard;
 window.exportHighlights = exportHighlights;
 window.exportPostServiceRecap = exportPostServiceRecap;
 window.fetchPlanningCenterPlan = fetchPlanningCenterPlan;
@@ -3477,7 +2976,6 @@ window.getWsPort = getWsPort;
 window.getWsToken = getWsToken;
 window.getWsUrl = getWsUrl;
 window.handleMessage = handleMessage;
-window.hideCameraErrorHint = hideCameraErrorHint;
 window.hideMediaNow = hideMediaNow;
 window.hideVerse = hideVerse;
 window.hideVerseDisplay = hideVerseDisplay;
@@ -3497,7 +2995,6 @@ window.onTranslatedCaptionsToggle = onTranslatedCaptionsToggle;
 window.openDisplayWindow = openDisplayWindow;
 window.pauseTimer = pauseTimer;
 window.pickBrandingLogo = pickBrandingLogo;
-window.refreshCameraList = refreshCameraList;
 window.refreshDisplays = refreshDisplays;
 window.refreshOverlay = refreshOverlay;
 window.removeFromQueue = removeFromQueue;
@@ -3524,7 +3021,6 @@ window.requestNetworkStatus = requestNetworkStatus;
 window.requestPostServiceRecap = requestPostServiceRecap;
 window.requestSermonTheme = requestSermonTheme;
 window.requestSessionStats = requestSessionStats;
-window.requireWsOrWarn = requireWsOrWarn;
 window.restartPipeline = restartPipeline;
 window.resumeTimer = resumeTimer;
 window.runPreServiceCheck = runPreServiceCheck;
@@ -3546,13 +3042,11 @@ window.setMetricValue = setMetricValue;
 window.setMoodTheme = setMoodTheme;
 window.setPipelineAlert = setPipelineAlert;
 window.setTranscriptionHealth = setTranscriptionHealth;
-window.showCameraErrorHint = showCameraErrorHint;
 window.showCameraPairingQr = showCameraPairingQr;
 window.showCandidateVerse = showCandidateVerse;
 window.showManualVerse = showManualVerse;
 window.showSectionsFor = showSectionsFor;
 window.showSongSectionNow = showSongSectionNow;
-window.showToast = showToast;
 window.startIpCameraMonitor = startIpCameraMonitor;
 window.startRealAudioCapture = startRealAudioCapture;
 window.startSermonModeAutoDetect = startSermonModeAutoDetect;
@@ -3560,14 +3054,12 @@ window.stepSongSection = stepSongSection;
 window.stopRealAudioCapture = stopRealAudioCapture;
 window.stopSermonModeAutoDetect = stopSermonModeAutoDetect;
 window.toggleBrandingVisible = toggleBrandingVisible;
-window.toggleCameraCapture = toggleCameraCapture;
 window.toggleDefaultMediaItem = toggleDefaultMediaItem;
 window.toggleLivePreview = toggleLivePreview;
 window.toggleNoiseGate = toggleNoiseGate;
 window.toggleRealMicCapture = toggleRealMicCapture;
 window.triggerMediaLibraryItem = triggerMediaLibraryItem;
 window.updateAnalysis = updateAnalysis;
-window.updateCameraButtonUI = updateCameraButtonUI;
 window.updateDashboard = updateDashboard;
 window.updateMLStats = updateMLStats;
 window.updateMicButtonUI = updateMicButtonUI;
