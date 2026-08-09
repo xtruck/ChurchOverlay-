@@ -1270,6 +1270,7 @@ const OPERATOR_ACTIONS = new Set([
   'hideTranslation',
   'translateText',
   'preServiceCheck',
+  'getNetworkStatus',
   'getLiveSummary',
   'getSermonTheme',
   'getPostServiceRecap',
@@ -1568,6 +1569,22 @@ wss.on('connection', (ws, req) => {
           })
         );
       }
+      return;
+    }
+
+    // AJOUT (carte réseau — "Réseau / caméra téléphone (QR)") : statut de
+    // lecture seule séparé de preServiceCheck ci-dessus pour que rafraîchir
+    // cette carte (au chargement des Réglages, après un enregistrement) ne
+    // déclenche pas au passage un appel réseau Groq/Deepgram inutile.
+    if (sanitized.action === 'getNetworkStatus') {
+      ws.send(
+        JSON.stringify({
+          action: 'networkStatus',
+          wsHost: WS_HOST,
+          wsAuthEnabled: !!WS_AUTH_TOKEN,
+          qrCameraReady: WS_HOST !== '127.0.0.1' && WS_HOST !== 'localhost',
+        })
+      );
       return;
     }
 

@@ -3104,6 +3104,45 @@
             </button>
           </div>
 
+          <!-- AJOUT (carte réseau — préalable au jumelage QR ci-dessous) : jusqu'ici
+                     WS_HOST (obligatoire pour que le QR caméra téléphone fonctionne)
+                     n'était modifiable qu'en éditant .env à la main, sans indication
+                     dans l'app de ce qu'il fallait y écrire — voir save-network-settings
+                     dans main.js et getNetworkStatus côté server.js. WS_AUTH_TOKEN/
+                     WS_VIEWER_TOKEN ne se configurent pas ici : ils sont déjà générés et
+                     persistés automatiquement (ensureWsToken() dans main.js), cette carte
+                     n'en affiche que le statut. -->
+          <div class="card" id="networkSettingsCard" style="margin-bottom: 1.25rem">
+            <div class="card-header">
+              <span class="card-title">📶 Réseau (caméra téléphone par QR)</span>
+              <span id="networkQrReadyBadge" class="status-badge warning">Indisponible</span>
+            </div>
+            <div class="field-hint" style="margin-top: 0; margin-bottom: 0.75rem">
+              Le jumelage par QR code (panneau suivant) a besoin que ce PC soit joignable sur le
+              réseau local — pas seulement sur lui-même. Renseignez son adresse Wi-Fi ci-dessous (le
+              bouton propose automatiquement celle détectée sur ce PC).
+            </div>
+            <div class="input-row" style="margin-bottom: 0.5rem">
+              <input type="text" id="networkWsHostInput" placeholder="ex. 192.168.1.42" />
+              <button
+                type="button"
+                class="btn btn-secondary"
+                id="networkSuggestBtn"
+                onclick="useSuggestedLanIp()"
+                title="Utiliser l'adresse détectée sur ce PC"
+              >
+                📍 Utiliser cette adresse
+              </button>
+              <button type="button" class="btn btn-primary" onclick="saveNetworkSettings()">
+                Enregistrer
+              </button>
+            </div>
+            <div class="field-hint" style="margin-top: 0">
+              Actuellement : <strong id="networkCurrentHost">127.0.0.1 (local uniquement)</strong> —
+              Jeton de sécurité : <span id="networkTokenStatus">généré automatiquement ✓</span>
+            </div>
+          </div>
+
           <!-- AJOUT (demande explicite — plusieurs téléphones comme caméras
                      multi-angles pour la diffusion). Distinct du panneau caméra
                      ci-dessus : pas de navigator.mediaDevices ici, juste une URL de

@@ -24,6 +24,7 @@ const {
 const path = require('path');
 const fs = require('fs');
 const fsp = require('fs').promises;
+const os = require('os');
 const { Worker } = require('worker_threads');
 const crypto = require('crypto');
 const perfMonitor = require('./perf-monitor');
@@ -269,6 +270,7 @@ function loadConfig() {
     logBatchInterval: Number.isFinite(raw.logBatchInterval)
       ? raw.logBatchInterval
       : DASHBOARD_FLUSH_MS,
+    wsHost: raw.wsHost || null,
   };
 }
 
@@ -340,6 +342,21 @@ async function saveConfigAsync(config) {
     ? config.logBatchInterval
     : existingRaw.logBatchInterval;
   if (!Number.isFinite(toWrite.logBatchInterval)) delete toWrite.logBatchInterval;
+
+  // CORRECTIF (carte réseau — wsHost/jetons WS silencieusement effacés) :
+  // cette fonction reconstruit toWrite depuis zéro à partir des seuls champs
+  // qu'elle connaît explicitement (voir commentaire en tête de fonction).
+  // Sans ceci, enregistrer une clé API depuis ce même panneau de réglages
+  // effacerait wsHost (voir save-network-settings) ET les jetons WS déjà
+  // persistés par ensureWsToken() — régénérés au prochain démarrage, ce qui
+  // invaliderait tout lien overlay/OBS déjà collé avec l'ancien jeton.
+  if (existingRaw.wsHost) toWrite.wsHost = existingRaw.wsHost;
+  if (existingRaw.wsAuthTokenEncrypted)
+    toWrite.wsAuthTokenEncrypted = existingRaw.wsAuthTokenEncrypted;
+  if (existingRaw.wsAuthToken) toWrite.wsAuthToken = existingRaw.wsAuthToken;
+  if (existingRaw.wsViewerTokenEncrypted)
+    toWrite.wsViewerTokenEncrypted = existingRaw.wsViewerTokenEncrypted;
+  if (existingRaw.wsViewerToken) toWrite.wsViewerToken = existingRaw.wsViewerToken;
 
   await writeRawConfig(toWrite);
 }
@@ -567,6 +584,15 @@ function startServer() {
   }
   if (config.deepgramApiKey) {
     workerEnv.DEEPGRAM_API_KEY = config.deepgramApiKey;
+  }
+  // AJOUT (carte réseau — QR caméra téléphone) : jusqu'ici WS_HOST ne pouvait
+  // venir que de .env, à éditer manuellement. Même pattern que les clés
+  // Groq/Deepgram ci-dessus — server.js garde son garde-fou existant (refus
+  // de bind non-local sans WS_AUTH_TOKEN, voir server.js) inchangé, il ne se
+  // déclenche simplement plus pour un opérateur normal puisque le jeton est
+  // désormais toujours présent (ensureWsToken(), déjà appelé au démarrage).
+  if (config.wsHost) {
+    workerEnv.WS_HOST = config.wsHost;
   }
 
   serverStatus = 'starting';
@@ -893,6 +919,31 @@ ipcMain.handle('save-setup', async (_evt, { audioDevice, groqApiKey, deepgramApi
   return true;
 });
 
+// AJOUT (carte réseau — "Réseau / caméra téléphone (QR)") : jusqu'ici
+// WS_HOST n'avait aucun chemin de persistance en dehors d'une édition
+// manuelle de .env — voir startServer() ci-dessus pour comment ce champ
+// atteint le worker. WS_AUTH_TOKEN/WS_VIEWER_TOKEN ne sont PAS gérés ici :
+// ensureWsToken() les génère et les persiste déjà automatiquement à chaque
+// démarrage, rien à ajouter côté UI hormis en afficher le statut (voir
+// getNetworkStatus côté server.js).
+ipcMain.handle('save-network-settings', async (_evt, { wsHost }) => {
+  const trimmed = typeof wsHost === 'string' ? wsHost.trim() : '';
+  if (!trimmed) {
+    throw new Error('Adresse réseau vide.');
+  }
+  const raw = readRawConfig();
+  raw.wsHost = trimmed;
+  await writeRawConfig(raw);
+  // Même garde que save-setup ci-dessus : ne démarre pas le pipeline tout
+  // seul si le micro/la clé Groq ne sont pas encore configurés.
+  if (worker) {
+    restartServer();
+  } else if (!isFirstRunNeeded()) {
+    startServer();
+  }
+  return true;
+});
+
 // Retrait explicite d'une clé API (bouton « Retirer la clé » du tableau de
 // bord) — distinct d'un champ simplement laissé vide lors d'un
 // enregistrement, qui doit préserver la clé existante (voir saveConfigAsync).
@@ -1191,6 +1242,22 @@ ipcMain.handle('open-setup', async () => {
   return true;
 });
 
+// AJOUT (carte réseau) : adresse IPv4 locale suggérée pour le champ WS_HOST
+// — même logique que getLanIpAddress() dans server.js (dupliquée plutôt que
+// partagée : main.js et le worker server.js ne partagent pas de module
+// utilitaire aujourd'hui).
+function getLanIpAddress() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] || []) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return null;
+}
+
 ipcMain.handle('get-settings', async () => {
   const cfg = loadConfig() || {};
   return {
@@ -1198,6 +1265,8 @@ ipcMain.handle('get-settings', async () => {
     hasDeepgramKey: !!cfg.deepgramApiKey,
     audioDevice: cfg.audioDevice || null,
     needsSetup: isFirstRunNeeded(),
+    wsHost: cfg.wsHost || null,
+    suggestedLanIp: getLanIpAddress(),
   };
 });
 

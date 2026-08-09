@@ -50,6 +50,10 @@ contextBridge.exposeInMainWorld('churchOverlay', {
   // lors d'un saveSetup(), qui préserve désormais la clé déjà enregistrée.
   clearApiKey: (provider) => ipcRenderer.invoke('clear-api-key', { provider }),
 
+  // AJOUT (carte réseau — "Réseau / caméra téléphone (QR)") : WS_HOST,
+  // jusqu'ici uniquement modifiable en éditant .env à la main.
+  saveNetworkSettings: (wsHost) => ipcRenderer.invoke('save-network-settings', { wsHost }),
+
   // --- Tableau de bord (dashboard.html) ------------------------------------
   getStatus: () => ipcRenderer.invoke('get-status'),
   requestRestart: () => ipcRenderer.invoke('request-restart'),
