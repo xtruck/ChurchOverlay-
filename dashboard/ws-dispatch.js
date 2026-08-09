@@ -38,6 +38,11 @@ import { renderNetworkStatus } from './features/network-settings.js';
 import { renderIpCameras, showCameraPairingQr } from './features/ip-cameras.js';
 import { renderBranding } from './features/branding.js';
 import { setTranscriptionHealth } from './features/pipeline-health.js';
+import {
+  renderBibleTopics,
+  renderBibleSearchResults,
+  renderBibleSearchError,
+} from './features/bible-search.js';
 
 export function handleMessage(message) {
   switch (message.action) {
@@ -169,6 +174,20 @@ export function handleMessage(message) {
     // son commentaire pour la fenêtre de validité de 5s).
     case 'semanticDetected':
       state.pendingSemanticDetection = { ...message, receivedAt: Date.now() };
+      break;
+    // AJOUT (recherche de versets par thème) : searchBible/getTopics
+    // (bible-semantic-search.js) fonctionnaient déjà côté serveur, sans
+    // aucune UI côté tableau de bord — voir bible-search.js pour le
+    // rappel important sur ce que "par thème" veut dire ici (pas de
+    // recherche IA/sémantique réelle aujourd'hui).
+    case 'topicsList':
+      renderBibleTopics(message.topics || []);
+      break;
+    case 'searchResults':
+      renderBibleSearchResults(message);
+      break;
+    case 'searchError':
+      renderBibleSearchError(message);
       break;
     // AJOUT (fiabilité — synchronisation multi-opérateur) : setHighContrast/
     // setCaptions/setTranslatedCaptions/setTestPattern/setBackgroundPattern

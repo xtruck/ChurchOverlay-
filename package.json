@@ -92,6 +92,7 @@
       "dashboard/features/branding.js",
       "dashboard/features/audio-capture.js",
       "dashboard/features/pipeline-health.js",
+      "dashboard/features/bible-search.js",
       "dashboard/dashboard.css",
       "audio-capture-worklet.js",
       "camera-capture.js",

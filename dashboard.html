@@ -1035,6 +1035,47 @@
             <div id="sermonQaSources" style="margin-top: 0.75rem"></div>
           </div>
 
+          <!-- AJOUT (recherche de versets par thème — fonctionnalité déjà codée
+                     côté serveur, jamais exposée côté tableau de bord jusqu'ici :
+                     voir bible-search.js). IMPORTANT : "par thème", pas "IA"/
+                     "sémantique" dans le libellé — le vrai index vectoriel n'est
+                     pas implémenté côté serveur, le matching réel est un
+                     rapprochement par mot-clé sur une douzaine de thèmes
+                     prédéfinis. Ne pas survendre. -->
+          <div class="card" style="margin-top: 1.5rem">
+            <div class="card-header">
+              <span class="card-title">Recherche de versets par thème</span>
+            </div>
+            <div class="field-hint" style="margin-bottom: 0.75rem">
+              Recherche par mot-clé sur des thèmes courants (amour, foi, pardon, grâce, paix...) —
+              pas une recherche IA/sémantique.
+            </div>
+            <div class="mood-picker-row" id="bibleTopicChips" style="margin-bottom: 1rem"></div>
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                gap: 0.6rem;
+                flex-wrap: wrap;
+                margin-bottom: 1rem;
+              "
+            >
+              <input
+                type="text"
+                id="bibleSearchInput"
+                placeholder="Rechercher un thème (ex. pardon, espérance...)"
+                style="flex: 1; min-width: 220px"
+                onkeydown="if (event.key === 'Enter') searchBibleByTopic();"
+              />
+              <button class="btn btn-secondary" onclick="searchBibleByTopic()">
+                🔎 Rechercher
+              </button>
+            </div>
+            <div id="bibleSearchOutput" class="stat-row" style="display: block">
+              <span class="stat-label">Choisissez un thème ou tapez une recherche.</span>
+            </div>
+          </div>
+
           <!-- AJOUT (audit round 9) : session-store.js (SQLite) enregistre déjà
                      chaque verset affiché et chaque erreur de pipeline, mais rien ne
                      relisait cette base côté tableau de bord — la persistance tournait

@@ -224,6 +224,11 @@ function initWebSocket() {
       ws.send(JSON.stringify({ action: 'getOfflineBibleStatus' }));
       // AJOUT (carte réseau) : même raisonnement que getMediaLibrary.
       ws.send(JSON.stringify({ action: 'getNetworkStatus' }));
+      // AJOUT (recherche de versets par thème) : même raisonnement que
+      // getMoods — la liste de thèmes vit côté serveur (TOPIC_INDEX dans
+      // bible-semantic-search.js), récupérée à chaque connexion plutôt
+      // que codée en dur ici.
+      ws.send(JSON.stringify({ action: 'getTopics' }));
     }
   };
 
