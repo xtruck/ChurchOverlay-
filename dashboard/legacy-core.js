@@ -45,6 +45,9 @@ import {
   updateStatus,
   updateMicButtonUI,
 } from './features/verse-session-display.js';
+import { renderMoodPicker, setActiveMoodButton } from './features/mood-theme.js';
+import { renderSongLibrary } from './features/song-library.js';
+import { renderOfflineBibleStatus } from './features/offline-bible.js';
 
 // State Management
 // AJOUT (modularisation, lot 5) : exporté pour verse-session-display.js —
@@ -937,144 +940,6 @@ function handleMessage(message) {
 }
 
 /* ======================================================================
-           Sélecteur d'ambiances (moods)
-           ====================================================================== */
-function renderMoodPicker(moods) {
-  const container = document.getElementById('moodPicker');
-  if (!container) return;
-  if (!moods.length) {
-    container.innerHTML =
-      '<span style="font-size:0.8rem; color:var(--text-dim);">Générateur d\'ambiances indisponible.</span>';
-    return;
-  }
-  container.innerHTML = moods
-    .map(
-      (m) => `
-                <button class="mood-btn" id="mood-btn-${m.id}" onclick="setMoodTheme('${m.id}')" title="${m.name}">
-                    ${m.name}
-                </button>
-            `
-    )
-    .join('');
-}
-
-function setMoodTheme(mood) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    showToast("Non connecté au serveur — impossible de changer l'ambiance.", 'error');
-    return;
-  }
-  ws.send(JSON.stringify({ action: 'setMoodTheme', mood }));
-}
-
-function setActiveMoodButton(mood) {
-  document.querySelectorAll('.mood-btn').forEach((btn) => btn.classList.remove('active'));
-  const active = document.getElementById(`mood-btn-${mood}`);
-  if (active) active.classList.add('active');
-}
-
-// AJOUT (audit — affichage/sortie, gratuit/léger, session parallèle) :
-// motif de fond CSS (voir #pattern-layer dans overlay.html) — indépendant
-// de l'ambiance. Même schéma déterministe que setActiveMoodButton (id
-// plutôt que l'objet event global, plus robuste).
-function setBackgroundPattern(pattern) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    showToast('Non connecté au serveur — impossible de changer le motif.', 'error');
-    return;
-  }
-  ws.send(JSON.stringify({ action: 'setBackgroundPattern', pattern }));
-  document
-    .querySelectorAll('#patternPicker .mood-btn')
-    .forEach((btn) => btn.classList.remove('active'));
-  const active = document.getElementById(`pattern-btn-${pattern}`);
-  if (active) active.classList.add('active');
-}
-
-/* ======================================================================
-           File d'attente de versets (innovation frontend, inspirée de Rhema) :
-           permet à l'opérateur de préparer à l'avance les versets d'une
-           prédication (recherche manuelle) et de les envoyer un par un au bon
-           moment, plutôt que de taper chaque référence en direct. Purement
-           côté dashboard — réutilise l'action 'showVerse' déjà supportée par
-           le serveur, aucun changement serveur nécessaire.
-           ====================================================================== */
-const verseQueue = [];
-
-function addToQueue() {
-  const input = document.getElementById('queueRefInput');
-  const reference = input ? input.value.trim() : '';
-  if (!reference) return;
-  verseQueue.push({ id: Date.now() + Math.random(), reference });
-  if (input) input.value = '';
-  renderQueue();
-}
-
-function removeFromQueue(id) {
-  const idx = verseQueue.findIndex((v) => v.id === id);
-  if (idx !== -1) verseQueue.splice(idx, 1);
-  renderQueue();
-}
-
-function moveQueueItem(id, direction) {
-  const idx = verseQueue.findIndex((v) => v.id === id);
-  const target = idx + direction;
-  if (idx === -1 || target < 0 || target >= verseQueue.length) return;
-  [verseQueue[idx], verseQueue[target]] = [verseQueue[target], verseQueue[idx]];
-  renderQueue();
-}
-
-function sendQueueItem(id) {
-  const item = verseQueue.find((v) => v.id === id);
-  if (!item) return;
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    showToast("Non connecté au serveur — impossible d'envoyer le verset.", 'error');
-    return;
-  }
-  ws.send(JSON.stringify({ action: 'showVerse', reference: item.reference }));
-  addActivity(`Verset envoyé depuis la file : ${item.reference}`, 'info');
-  removeFromQueue(id);
-}
-
-function sendNextInQueue() {
-  if (verseQueue.length === 0) {
-    showToast("File d'attente vide.", 'info');
-    return;
-  }
-  sendQueueItem(verseQueue[0].id);
-}
-
-function renderQueue() {
-  const list = document.getElementById('queueList');
-  const countEl = document.getElementById('queueCount');
-  if (countEl) countEl.textContent = verseQueue.length;
-  if (!list) return;
-
-  if (verseQueue.length === 0) {
-    list.innerHTML =
-      '<div style="font-size:0.8rem; color:var(--text-dim); padding: 0.5rem 0;">Aucun verset en attente. Ajoutez une référence ci-dessus.</div>';
-    return;
-  }
-
-  list.innerHTML = verseQueue
-    .map(
-      (item, i) => `
-                <div class="queue-item">
-                    <span class="queue-item-position">${i + 1}</span>
-                    <span class="queue-item-ref">${escapeHtmlDashboard(item.reference)}</span>
-                    <div class="queue-item-actions">
-                        <button class="queue-icon-btn" onclick="moveQueueItem(${item.id}, -1)" title="Monter" ${i === 0 ? 'disabled' : ''}>↑</button>
-                        <button class="queue-icon-btn" onclick="moveQueueItem(${item.id}, 1)" title="Descendre" ${i === verseQueue.length - 1 ? 'disabled' : ''}>↓</button>
-                        <button class="queue-icon-btn queue-send" onclick="sendQueueItem(${item.id})" title="Envoyer maintenant">▶</button>
-                        <button class="queue-icon-btn queue-remove" onclick="removeFromQueue(${item.id})" title="Retirer">✕</button>
-                    </div>
-                </div>
-            `
-    )
-    .join('');
-}
-
-renderQueue();
-
-/* ======================================================================
    Médiathèque (déclenchement vocal ou manuel de photos/vidéos, voir
    media-library.js/server.js). Contrairement à la file d'attente de
    versets ci-dessus (purement locale à cet onglet), la liste vit côté
@@ -1728,145 +1593,6 @@ function toggleBrandingVisible() {
     addRow.style.display = 'none';
   }
 })();
-
-/* ======================================================================
-   Bibliothèque de chants (déclenchement vocal ou manuel, section par
-   section, voir song-library.js/server.js). Comme la médiathèque : la
-   liste vit côté serveur. songSectionIndex garde en mémoire LOCALE quelle
-   section de chaque chant est "en cours" pour la navigation précédent/
-   suivant — le serveur, lui, reste sans état entre deux showSongSection().
-   ====================================================================== */
-let songLibraryItems = [];
-const songSectionIndex = {};
-
-function addSongToLibrary() {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    showToast("Non connecté au serveur — impossible d'ajouter un chant.", 'error');
-    return;
-  }
-  const titleInput = document.getElementById('songTitleInput');
-  const phrasesInput = document.getElementById('songPhrasesInput');
-  const lyricsInput = document.getElementById('songLyricsInput');
-  const title = titleInput ? titleInput.value.trim() : '';
-  const lyrics = lyricsInput ? lyricsInput.value : '';
-  if (!title || !lyrics.trim()) {
-    showToast('Titre et paroles requis.', 'error');
-    return;
-  }
-  const triggerPhrases = phrasesInput
-    ? phrasesInput.value
-        .split(',')
-        .map((p) => p.trim())
-        .filter(Boolean)
-    : [];
-  ws.send(JSON.stringify({ action: 'addSong', title, lyrics, triggerPhrases }));
-  if (titleInput) titleInput.value = '';
-  if (phrasesInput) phrasesInput.value = '';
-  if (lyricsInput) lyricsInput.value = '';
-}
-
-function deleteSongFromLibrary(id) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    showToast('Non connecté au serveur.', 'error');
-    return;
-  }
-  ws.send(JSON.stringify({ action: 'deleteSong', id }));
-  delete songSectionIndex[id];
-}
-
-function showSongSectionNow(id) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    showToast('Non connecté au serveur.', 'error');
-    return;
-  }
-  ws.send(
-    JSON.stringify({ action: 'showSongSection', id, sectionIndex: songSectionIndex[id] || 0 })
-  );
-}
-
-function stepSongSection(id, direction) {
-  const song = songLibraryItems.find((s) => s.id === id);
-  if (!song) return;
-  const current = songSectionIndex[id] || 0;
-  const next = Math.max(0, Math.min(song.sectionCount - 1, current + direction));
-  songSectionIndex[id] = next;
-  renderSongLibrary(songLibraryItems); // met à jour l'indicateur "N/total" affiché
-  showSongSectionNow(id);
-}
-
-function renderSongLibrary(songs) {
-  songLibraryItems = Array.isArray(songs) ? songs : [];
-  const list = document.getElementById('songLibraryList');
-  const countEl = document.getElementById('songLibraryCount');
-  if (countEl) countEl.textContent = songLibraryItems.length;
-  if (!list) return;
-
-  if (songLibraryItems.length === 0) {
-    list.innerHTML =
-      '<div style="font-size:0.8rem; color:var(--text-dim); padding: 0.5rem 0;">Aucun chant ajouté. Collez des paroles ci-dessus.</div>';
-    return;
-  }
-
-  list.innerHTML = songLibraryItems
-    .map((song) => {
-      const phrasesBadges = (song.triggerPhrases || [])
-        .map((p) => `<span class="media-item-phrase-badge">${escapeHtmlDashboard(p)}</span>`)
-        .join('');
-      const current = (songSectionIndex[song.id] || 0) + 1;
-      return `
-                <div class="queue-item">
-                    <span class="queue-item-position">🎵</span>
-                    <div class="media-item-info">
-                        <div class="media-item-label">${escapeHtmlDashboard(song.title)}</div>
-                        <div class="media-item-phrases">${phrasesBadges || '<span class="media-item-phrase-badge">Déclenchement manuel uniquement</span>'}</div>
-                    </div>
-                    <div class="queue-item-actions">
-                        <button class="queue-icon-btn" onclick="stepSongSection('${song.id}', -1)" title="Section précédente">◀</button>
-                        <span style="font-size:0.7rem; color:var(--text-dim); white-space:nowrap;">${current}/${song.sectionCount}</span>
-                        <button class="queue-icon-btn" onclick="stepSongSection('${song.id}', 1)" title="Section suivante">▶</button>
-                        <button class="queue-icon-btn queue-send" onclick="showSongSectionNow('${song.id}')" title="Afficher maintenant">▶▶</button>
-                        <button class="queue-icon-btn queue-remove" onclick="deleteSongFromLibrary('${song.id}')" title="Supprimer">✕</button>
-                    </div>
-                </div>
-            `;
-    })
-    .join('');
-}
-
-/* ======================================================================
-   Base biblique hors-ligne (cahier des charges — Point 1B). Statut
-   téléchargé une seule fois à la connexion ; si un téléchargement est en
-   cours, on repasse par-dessus toutes les 5s jusqu'à ce qu'il se termine,
-   pour afficher une progression qui avance plutôt qu'un statut figé.
-   ====================================================================== */
-let offlineBibleStatusPollTimer = null;
-
-function renderOfflineBibleStatus(status) {
-  const el = document.getElementById('offlineBibleStatus');
-  if (!el) return;
-
-  clearTimeout(offlineBibleStatusPollTimer);
-
-  if (status.status === 'done') {
-    el.textContent = '✅ Téléchargée';
-    el.className = 'status-badge success';
-  } else if (status.status === 'downloading') {
-    const pct = status.total > 0 ? Math.round((status.downloaded / status.total) * 100) : 0;
-    el.textContent = `⏳ Téléchargement... ${pct}%`;
-    el.className = 'status-badge warning';
-    offlineBibleStatusPollTimer = setTimeout(() => {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ action: 'getOfflineBibleStatus' }));
-      }
-    }, 5000);
-  } else if (status.status === 'error') {
-    el.textContent = '❌ Échec du téléchargement';
-    el.className = 'status-badge error';
-  } else {
-    el.textContent = 'En attente';
-    el.className = 'status-badge warning';
-  }
-}
 
 /* ======================================================================
    Pont ProPresenter (écran scène, recommandation "ProPresenter Remote/API").
@@ -2615,8 +2341,6 @@ function renderPreServiceCheckResult(message) {
    ============================================================================ */
 window.addIpCamera = addIpCamera;
 window.addMediaLibraryItem = addMediaLibraryItem;
-window.addSongToLibrary = addSongToLibrary;
-window.addToQueue = addToQueue;
 window.applyBrandingOverlayUrl = applyBrandingOverlayUrl;
 window.applyOverlayUrl = applyOverlayUrl;
 window.askSermonQuestion = askSermonQuestion;
@@ -2630,7 +2354,6 @@ window.copyIpCameraUrl = copyIpCameraUrl;
 window.copyOverlayUrl = copyOverlayUrl;
 window.deleteIpCameraItem = deleteIpCameraItem;
 window.deleteMediaLibraryItem = deleteMediaLibraryItem;
-window.deleteSongFromLibrary = deleteSongFromLibrary;
 window.drawRealAudioVisualizer = drawRealAudioVisualizer;
 window.exportHighlights = exportHighlights;
 window.exportPostServiceRecap = exportPostServiceRecap;
@@ -2647,7 +2370,6 @@ window.initNetworkCard = initNetworkCard;
 window.initWebSocket = initWebSocket;
 window.loadPlanningCenterConfig = loadPlanningCenterConfig;
 window.loadProPresenterConfig = loadProPresenterConfig;
-window.moveQueueItem = moveQueueItem;
 window.onAutoTranslateLangChange = onAutoTranslateLangChange;
 window.onAutoTranslateToggle = onAutoTranslateToggle;
 window.onBrandingPositionChange = onBrandingPositionChange;
@@ -2659,21 +2381,16 @@ window.onTranslatedCaptionsToggle = onTranslatedCaptionsToggle;
 window.openDisplayWindow = openDisplayWindow;
 window.pickBrandingLogo = pickBrandingLogo;
 window.refreshDisplays = refreshDisplays;
-window.removeFromQueue = removeFromQueue;
 window.renderAiEnricherOutput = renderAiEnricherOutput;
 window.renderBranding = renderBranding;
 window.renderDefaultPosterCard = renderDefaultPosterCard;
 window.renderHighlightsExport = renderHighlightsExport;
 window.renderIpCameras = renderIpCameras;
 window.renderMediaLibrary = renderMediaLibrary;
-window.renderMoodPicker = renderMoodPicker;
 window.renderNetworkStatus = renderNetworkStatus;
-window.renderOfflineBibleStatus = renderOfflineBibleStatus;
 window.renderPreServiceCheckResult = renderPreServiceCheckResult;
-window.renderQueue = renderQueue;
 window.renderSermonQaResult = renderSermonQaResult;
 window.renderSessionStats = renderSessionStats;
-window.renderSongLibrary = renderSongLibrary;
 window.requestArchiveSearch = requestArchiveSearch;
 window.requestAutoTranslation = requestAutoTranslation;
 window.requestCrossReferences = requestCrossReferences;
@@ -2691,22 +2408,15 @@ window.saveNetworkSettings = saveNetworkSettings;
 window.savePlanningCenterConfig = savePlanningCenterConfig;
 window.saveProPresenterConfig = saveProPresenterConfig;
 window.scheduleReconnect = scheduleReconnect;
-window.sendNextInQueue = sendNextInQueue;
 window.sendProPresenterTestMessage = sendProPresenterTestMessage;
-window.sendQueueItem = sendQueueItem;
 window.sendStageMessage = sendStageMessage;
-window.setActiveMoodButton = setActiveMoodButton;
-window.setBackgroundPattern = setBackgroundPattern;
-window.setMoodTheme = setMoodTheme;
 window.setPipelineAlert = setPipelineAlert;
 window.setTranscriptionHealth = setTranscriptionHealth;
 window.showCameraPairingQr = showCameraPairingQr;
 window.showSectionsFor = showSectionsFor;
-window.showSongSectionNow = showSongSectionNow;
 window.startIpCameraMonitor = startIpCameraMonitor;
 window.startRealAudioCapture = startRealAudioCapture;
 window.startSermonModeAutoDetect = startSermonModeAutoDetect;
-window.stepSongSection = stepSongSection;
 window.stopRealAudioCapture = stopRealAudioCapture;
 window.stopSermonModeAutoDetect = stopSermonModeAutoDetect;
 window.toggleBrandingVisible = toggleBrandingVisible;
