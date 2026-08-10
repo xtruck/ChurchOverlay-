@@ -295,6 +295,17 @@ function startBrowserCapture(options = {}) {
   STATE.deepgramSession = null;
   STATE.deepgramStreamingActive = false;
   STATE.utteranceTracker = null;
+  // AJOUT (finalisation locale par silence — voir finalizeStreamingUtteranceLocally) :
+  // dernier texte partiel reçu de Deepgram pour l'énoncé EN COURS, promu en
+  // "final" dès que le VAD local (Silero ou repli RMS) détecte un silence de
+  // fin de phrase — voir §"ENDPOINTING" du rapport livré : l'endpointing
+  // serveur Deepgram (endpointing/utterance_end_ms) a mesuré ~7,5s de délai
+  // réel avant de finaliser une phrase, bien trop lent pour un affichage en
+  // direct. Le VAD local reste la seule mesure fiable et rapide dont on
+  // dispose pour décider QUAND une phrase est terminée ; Deepgram reste la
+  // seule source du TEXTE transcrit.
+  STATE.lastStreamingPartialText = '';
+  STATE.lastStreamingPartialMeta = null;
   if (STATE.asrProvider === 'deepgram') {
     startDeepgramStreamingSession(config);
   }
@@ -339,6 +350,16 @@ function startDeepgramStreamingSession(config) {
         if (tracker && !tracker.summary().deltas.asrFirstPartial) {
           tracker.mark('asrFirstPartial');
         }
+        // AJOUT (finalisation locale par silence) : dernier partial connu
+        // pour l'énoncé en cours — c'est CE texte que
+        // finalizeStreamingUtteranceLocally() promeut en "final" dès que le
+        // VAD local détecte la fin de la phrase, sans jamais attendre
+        // is_final/speech_final de Deepgram (mesuré ~7,5s de délai réel,
+        // voir le rapport livré).
+        if (text) {
+          STATE.lastStreamingPartialText = text;
+          STATE.lastStreamingPartialMeta = meta;
+        }
         if (STATE.callbacks.onPartialTranscript) {
           STATE.callbacks.onPartialTranscript(text, meta, tracker);
         }
@@ -367,6 +388,15 @@ function startDeepgramStreamingSession(config) {
         // Énoncé terminé : le prochain indice de voix (markVadOnset) doit
         // démarrer un tracker frais, pas continuer à empiler sur celui-ci.
         STATE.utteranceTracker = null;
+        // Ce 'final' officiel Deepgram (souvent tardif, voir plus haut)
+        // règle définitivement l'énoncé qu'il décrit — rien à re-finaliser
+        // localement pour ce même texte. S'il arrive APRÈS que le VAD local
+        // a déjà promu un partial en "final" pour l'énoncé SUIVANT (déjà en
+        // cours), ce reset est sans effet indésirable : il efface juste un
+        // texte déjà transmis, jamais celui de l'énoncé en cours (mis à jour
+        // en continu par onPartial ci-dessus).
+        STATE.lastStreamingPartialText = '';
+        STATE.lastStreamingPartialMeta = null;
       },
       onError: (err) => {
         console.warn(
@@ -587,9 +617,20 @@ function processStreamingFrame(frame, config) {
   // c'est bien elle qui pilote la session — sinon RMS et Silero pourraient
   // tous deux appeler flushSegment() pour le même segment.
   if (STATE.vadProvider !== 'rms') return;
-  // AJOUT (Deepgram streaming) : voir le même garde dans processSileroWindow —
-  // aucun segment WAV à flusher quand Deepgram reçoit déjà l'audio en direct.
-  if (STATE.deepgramStreamingActive) return;
+  // AJOUT (Deepgram streaming + finalisation locale, voir
+  // finalizeStreamingUtteranceLocally) : pendant que le streaming est actif,
+  // pas de segment WAV à flusher — mais ce même silence de fin de phrase
+  // sert désormais à décider QUAND promouvoir le dernier partial Deepgram
+  // en "final", au lieu d'attendre l'endpointing serveur (mesuré ~7,5s de
+  // délai réel, bien trop lent — voir le rapport livré). Pas de garde
+  // minFlushIntervalMs ici : ce seuil protège le quota de requêtes Groq,
+  // sans objet pour une connexion streaming déjà ouverte en continu.
+  if (STATE.deepgramStreamingActive) {
+    if (STATE.segmentHasSpeech && STATE.consecutiveSilentFrameMs >= config.trailingSilenceMs) {
+      finalizeStreamingUtteranceLocally();
+    }
+    return;
+  }
 
   const sinceLastFlushMs = Date.now() - STATE.lastFlushAt;
   if (
@@ -762,6 +803,76 @@ function flushSegment(config, { early = false } = {}) {
 }
 
 /**
+ * Équivalent de flushSegment(), MAIS pour le chemin streaming Deepgram —
+ * appelée par processStreamingFrame()/processSileroWindow() quand le VAD
+ * local (RMS ou Silero, selon STATE.vadProvider) détecte un silence de fin
+ * de phrase (config.trailingSilenceMs) après un énoncé confirmé
+ * (config.minSpeechDuration) alors qu'une session streaming est active.
+ *
+ * POURQUOI CETTE FONCTION EXISTE (rapport de validation Deepgram livré,
+ * phase "endpointing") : mesuré en conditions réelles (vraie clé
+ * DEEPGRAM_API_KEY, vrai réseau), aucune des deux options officielles
+ * Deepgram pour détecter la fin d'un énoncé pendant un flux continu
+ * (`endpointing` seul, ou `utterance_end_ms` + `vad_events`) n'a fini par
+ * finaliser en moins de ~7,5 SECONDES après la fin réelle de la parole —
+ * les deux semblent attendre le même premier `is_final` interne au moteur
+ * Deepgram, quelle que soit leur configuration. Beaucoup trop lent pour un
+ * affichage en direct pendant un culte. Le VAD local (déjà réel, déjà
+ * testé, voir silero-vad.js) reste la seule mesure fiable et rapide de
+ * "l'orateur s'est tu" dont on dispose : cette fonction l'utilise pour
+ * décider QUAND finaliser, tout en gardant Deepgram comme unique source du
+ * TEXTE transcrit (le dernier partial reçu, voir STATE.lastStreamingPartialText
+ * mis à jour dans onPartial de startDeepgramStreamingSession).
+ *
+ * Le flux WebSocket Deepgram N'EST JAMAIS fermé ni relancé ici — seule la
+ * decision LOCALE de "cet énoncé est terminé" change ; si Deepgram finit
+ * quand même par renvoyer, bien plus tard, son propre `final` officiel pour
+ * ce même énoncé, il est toujours transmis normalement (voir onFinal
+ * ci-dessus) — le dédoublonnage déjà existant côté serveur
+ * (sessionState.isDuplicateReference, fenêtre de 30s) absorbe ce cas sans
+ * déclencher une deuxième mise à jour OBS pour la même référence.
+ *
+ * Réutilise EXACTEMENT les mêmes seuils déjà réglés et éprouvés pour le
+ * chemin WAV classique (config.minSpeechDuration=500ms, config.trailingSilenceMs=600ms)
+ * plutôt que d'en inventer de nouveaux sans justification : un silence plus
+ * court qu'une respiration/pause naturelle ne déclenche jamais cette
+ * fonction (le compteur de silence repart à zéro dès que la parole
+ * reprend, avant même d'atteindre ce seuil — voir processStreamingFrame/
+ * processSileroWindow), donc une pause normale au milieu d'une phrase ne
+ * coupe pas prématurément l'énoncé.
+ */
+function finalizeStreamingUtteranceLocally() {
+  if (!STATE.lastStreamingPartialText) return; // rien à finaliser (silence pur, ou déjà résolu par un final officiel)
+
+  const text = STATE.lastStreamingPartialText;
+  const meta = { ...(STATE.lastStreamingPartialMeta || {}), finalizedBy: 'local-vad-silence' };
+  const tracker = STATE.utteranceTracker;
+  if (tracker) tracker.mark('asrFinal');
+
+  STATE.lastFlushAt = Date.now();
+  STATE.lastStreamingPartialText = '';
+  STATE.lastStreamingPartialMeta = null;
+  // Prêt pour le prochain énoncé : mêmes réinitialisations que flushSegment(),
+  // moins l'état du buffer WAV (inexistant côté streaming).
+  STATE.segmentHasSpeech = false;
+  STATE.consecutiveSilentFrameMs = 0;
+  STATE.voicedFrameMsInSegment = 0;
+  STATE.sileroConsecutiveSilentMs = 0;
+  STATE.sileroVoicedFrameMsInSegment = 0;
+  STATE.sileroSegmentHasSpeech = false;
+  STATE.sileroProbSum = 0;
+  STATE.sileroProbCount = 0;
+  STATE.utteranceTracker = null;
+
+  console.log(
+    `[audio-capture] Énoncé streaming finalisé localement (silence VAD) : "${text.substring(0, 80)}"`
+  );
+  if (STATE.callbacks.onFinalTranscript) {
+    STATE.callbacks.onFinalTranscript(text, meta, tracker);
+  }
+}
+
+/**
  * Traite les données audio reçues : alimente à la fois l'accumulateur de
  * segment (octets bruts, pour l'écriture WAV finale) et le scan VAD
  * streaming trame par trame (détection anticipée de fin de phrase, voir
@@ -874,6 +985,11 @@ async function processSileroWindow(frame, config) {
   STATE.sileroProbCount += 1;
 
   const isVoiced = prob >= config.sileroSpeechThreshold;
+  if (process.env.DEBUG_SILERO_WINDOWS) {
+    console.log(
+      `[DEBUG_SILERO] prob=${prob.toFixed(4)} threshold=${config.sileroSpeechThreshold} isVoiced=${isVoiced} sileroSegmentHasSpeech=${STATE.sileroSegmentHasSpeech} sileroConsecutiveSilentMs=${STATE.sileroConsecutiveSilentMs} sileroVoicedFrameMsInSegment=${STATE.sileroVoicedFrameMsInSegment}`
+    );
+  }
   if (isVoiced) {
     markVadOnset();
     STATE.sileroConsecutiveSilentMs = 0;
@@ -887,12 +1003,28 @@ async function processSileroWindow(frame, config) {
 
   // AJOUT (Deepgram streaming) : quand le streaming pilote la session, il
   // n'y a plus de segment WAV à "flusher" — Deepgram reçoit déjà l'audio en
-  // continu (voir handleAudioData) et décide lui-même de la fin de phrase
-  // (endpointing côté serveur Deepgram, voir deepgram-streaming.js). Cette
-  // détection Silero reste active UNIQUEMENT pour marquer la latence VAD
-  // (markVadOnset ci-dessus) et comme filet de repli si le streaming tombe
-  // en cours de session (voir startDeepgramStreamingSession/onError).
-  if (STATE.deepgramStreamingActive) return;
+  // continu (voir handleAudioData).
+  //
+  // CORRECTIF (rapport de validation Deepgram livré, phase "endpointing") :
+  // ce commentaire disait auparavant que Deepgram "décide lui-même de la
+  // fin de phrase (endpointing côté serveur)" — mesuré FAUX en conditions
+  // réelles : ni `endpointing` ni `utterance_end_ms`+`vad_events` n'ont
+  // finalisé en moins de ~7,5s après la fin réelle de la parole (voir
+  // live-tests/endpointing-strategies.js et le rapport livré). C'est donc
+  // maintenant CE détecteur Silero (le plus rapide et le plus fiable des
+  // deux, déjà réel et testé) qui décide QUAND l'énoncé est terminé, via
+  // finalizeStreamingUtteranceLocally() — Deepgram reste la seule source du
+  // TEXTE transcrit. Pas de garde minFlushIntervalMs : ce seuil protège le
+  // quota Groq, sans objet pour une connexion streaming déjà ouverte.
+  if (STATE.deepgramStreamingActive) {
+    if (
+      STATE.sileroSegmentHasSpeech &&
+      STATE.sileroConsecutiveSilentMs >= config.trailingSilenceMs
+    ) {
+      finalizeStreamingUtteranceLocally();
+    }
+    return;
+  }
 
   const sinceLastFlushMs = Date.now() - STATE.lastFlushAt;
   if (

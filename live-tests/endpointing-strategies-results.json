@@ -1,0 +1,68 @@
+[
+  {
+    "label": "C (utterance_end_ms=1000 + vad_events=true, recommandation officielle Deepgram, silence 10s pour comparaison équitable avec B)",
+    "speechFinalAtMs": 13739,
+    "utteranceEndAtMs": 13759,
+    "speechStartedAtMs": 1688,
+    "events": [
+      {
+        "t": 1688,
+        "type": "SpeechStarted"
+      },
+      {
+        "t": 2998,
+        "type": "Results",
+        "is_final": false,
+        "speech_final": false,
+        "transcript": "Jean chapitre"
+      },
+      {
+        "t": 4534,
+        "type": "Results",
+        "is_final": false,
+        "speech_final": false,
+        "transcript": "Jean chapitre"
+      },
+      {
+        "t": 7738,
+        "type": "Results",
+        "is_final": false,
+        "speech_final": false,
+        "transcript": "Jean chapitre 3 verset 1."
+      },
+      {
+        "t": 9245,
+        "type": "Results",
+        "is_final": false,
+        "speech_final": false,
+        "transcript": "Jean chapitre 3 verset 1."
+      },
+      {
+        "t": 10749,
+        "type": "Results",
+        "is_final": false,
+        "speech_final": false,
+        "transcript": "Jean chapitre 3 verset 1."
+      },
+      {
+        "t": 12212,
+        "type": "Results",
+        "is_final": false,
+        "speech_final": false,
+        "transcript": "Jean chapitre 3 verset 1."
+      },
+      {
+        "t": 13739,
+        "type": "Results",
+        "is_final": true,
+        "speech_final": true,
+        "transcript": "Jean chapitre 3 verset 1."
+      },
+      {
+        "t": 13759,
+        "type": "UtteranceEnd",
+        "last_word_end": 2.5
+      }
+    ]
+  }
+]

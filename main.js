@@ -861,11 +861,28 @@ const recentLogs = [];
 let dashboardFlushTimer = null;
 let dashboardDirty = false;
 
+// CORRECTIF (test réel — impossible de voir les logs du worker, ex.
+// "[audio-capture] VAD : Silero actif") : worker.stdout/stderr sont
+// interceptés par Node (Worker créé avec stdout:true/stderr:true, voir
+// plus haut) et n'atteignent donc PLUS automatiquement le terminal —
+// avant ce correctif, cette fonction se contentait de les stocker dans
+// recentLogs, envoyé par IPC au tableau de bord... qui ne les affiche
+// nulle part (aucun composant ne lit payload.logs). Résultat : ces
+// journaux (essentiels pour diagnostiquer VAD/ASR en conditions réelles)
+// n'étaient visibles NULLE PART, ni dans le terminal, ni dans DevTools,
+// ni dans l'appli — confirmé lors d'un test réel avec micro humain. On
+// les réémet donc aussi vers la console du process principal, qui elle
+// reste bien connectée au terminal quand l'app tourne via `npm start`.
 function appendLog(text, isError) {
   const line = { text: String(text || ''), isError: !!isError, ts: Date.now() };
   recentLogs.push(line);
   if (recentLogs.length > MAX_LOG_LINES) {
     recentLogs.splice(0, recentLogs.length - MAX_LOG_LINES);
+  }
+  const trimmed = line.text.replace(/\n+$/, '');
+  if (trimmed) {
+    if (isError) console.error(trimmed);
+    else console.log(trimmed);
   }
   scheduleDashboardFlush();
 }
