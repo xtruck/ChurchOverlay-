@@ -63,6 +63,14 @@ function resolveProvider() {
 async function transcribeSegment(segmentFile, contextHint, signal) {
   const provider = resolveProvider();
   const timestamp = Date.now();
+  // AJOUT (phase de vérification runtime — voir le rapport livré) : trace
+  // grep-able, par segment, du chemin RÉELLEMENT emprunté (batch WAV, pas
+  // streaming — voir audio-capture.js pour le tag [ASR] équivalent côté
+  // streaming). 'auto' résout ici vers groq/deepgram selon
+  // groq.transcribeWithFallback() ; le provider réel n'est connu qu'après
+  // coup (voir engine dans le résultat retourné plus bas), donc ce log
+  // affiche 'auto' tel quel pour ce cas — cohérent avec resolveProvider().
+  console.log(`[ASR] provider=${provider} mode=batch`);
 
   if (provider === 'qwen-local') {
     const status = getStatus();

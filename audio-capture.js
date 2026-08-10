@@ -314,6 +314,19 @@ function startBrowserCapture(options = {}) {
     '[audio-capture] Capture navigateur (Web Audio, sans FFmpeg) démarrée — ' +
       'en attente de chunks PCM du renderer.'
   );
+  // AJOUT (phase de vérification runtime — voir le rapport livré) : trace
+  // explicite, grep-able, de la configuration RÉELLEMENT résolue à chaque
+  // démarrage de capture — pas ce que .env/.env.example DOCUMENTENT, ce
+  // qu'asrEngine.resolveProvider()/config.vadProviderPreference ont
+  // RÉELLEMENT lu de process.env à cet instant précis. `auto` est explicité
+  // dans le second log dès que initVadProvider() a fini de résoudre
+  // silero/rms (asynchrone, quelques centaines de ms plus tard).
+  console.log(
+    `[CONFIG] ASR_PROVIDER=${process.env.ASR_PROVIDER || '(non défini, défaut: auto)'} -> résolu: ${STATE.asrProvider}`
+  );
+  console.log(
+    `[CONFIG] VAD_PROVIDER=${process.env.VAD_PROVIDER || '(non défini, défaut: auto)'} (résolution asynchrone, voir le prochain log [VAD])`
+  );
 }
 
 /**
@@ -341,6 +354,7 @@ function startDeepgramStreamingSession(config) {
         if (!STATE.isRecording || STATE.browserCaptureConfig !== config) return; // session obsolète (capture relancée entre-temps)
         STATE.deepgramStreamingActive = true;
         console.log('[audio-capture] ASR : session streaming Deepgram ouverte.');
+        console.log('[ASR] provider=deepgram mode=streaming');
       },
       onPartial: (text, meta) => {
         if (!STATE.isRecording) return;
@@ -446,6 +460,7 @@ function startDeepgramStreamingSession(config) {
 function initVadProvider(config) {
   if (config.vadProviderPreference === 'rms') {
     console.log('[audio-capture] VAD : RMS forcé (VAD_PROVIDER=rms).');
+    console.log('[VAD] resolved provider=rms (forcé par VAD_PROVIDER=rms)');
     return;
   }
   sileroVad
@@ -458,16 +473,19 @@ function initVadProvider(config) {
       if (ok) {
         STATE.vadProvider = 'silero';
         console.log('[audio-capture] VAD : Silero (neuronal) actif.');
+        console.log('[VAD] resolved provider=silero');
       } else {
         console.warn(
           `[audio-capture] VAD : Silero indisponible (${error}) — repli sur la détection RMS existante.`
         );
+        console.log('[VAD] resolved provider=rms (repli — échec chargement Silero)');
       }
     })
     .catch((err) => {
       console.warn(
         `[audio-capture] VAD : erreur inattendue à l'init Silero (${err.message}) — repli RMS.`
       );
+      console.log('[VAD] resolved provider=rms (repli — erreur inattendue Silero)');
     });
 }
 
@@ -987,7 +1005,7 @@ async function processSileroWindow(frame, config) {
   const isVoiced = prob >= config.sileroSpeechThreshold;
   if (process.env.DEBUG_SILERO_WINDOWS) {
     console.log(
-      `[DEBUG_SILERO] prob=${prob.toFixed(4)} threshold=${config.sileroSpeechThreshold} isVoiced=${isVoiced} sileroSegmentHasSpeech=${STATE.sileroSegmentHasSpeech} sileroConsecutiveSilentMs=${STATE.sileroConsecutiveSilentMs} sileroVoicedFrameMsInSegment=${STATE.sileroVoicedFrameMsInSegment}`
+      `[SILERO] window probability=${prob.toFixed(4)} threshold=${config.sileroSpeechThreshold} isVoiced=${isVoiced} sileroSegmentHasSpeech=${STATE.sileroSegmentHasSpeech} sileroConsecutiveSilentMs=${STATE.sileroConsecutiveSilentMs} sileroVoicedFrameMsInSegment=${STATE.sileroVoicedFrameMsInSegment}`
     );
   }
   if (isVoiced) {

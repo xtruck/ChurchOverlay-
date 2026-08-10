@@ -113,12 +113,19 @@ function createSession(handlers, wsFactory) {
   // aucun audio n'est perdu pendant ce court intervalle.
   const pendingChunks = [];
 
+  // AJOUT (phase de vérification runtime — voir le rapport livré) : traces
+  // grep-ables du cycle de vie RÉEL de la connexion, pour prouver — pas
+  // supposer — qu'une vraie session Deepgram s'ouvre et reçoit de vrais
+  // messages en conditions réelles (npm start, vrai micro).
+  console.log('[DEEPGRAM] WebSocket connecting');
   const ws = factory(url, {
     headers: { Authorization: `Token ${apiKey}` },
   });
 
   ws.on('open', () => {
     open = true;
+    console.log('[DEEPGRAM] WebSocket open');
+    console.log('[DEEPGRAM] PCM streaming active');
     while (pendingChunks.length > 0) {
       ws.send(pendingChunks.shift());
     }
@@ -147,8 +154,10 @@ function createSession(handlers, wsFactory) {
       timestamp: Date.now(),
     };
     if (msg.is_final || msg.speech_final) {
+      console.log(`[DEEPGRAM] final received: "${text}"`);
       if (handlers.onFinal) handlers.onFinal(text, meta);
     } else if (handlers.onPartial) {
+      console.log(`[DEEPGRAM] partial received: "${text}"`);
       handlers.onPartial(text, meta);
     }
   });
