@@ -568,6 +568,22 @@ async function activateReadingMode(book, chapter, verseStart) {
   }
 }
 
+// AJOUT (mode lecture — bouton manuel) : extrait du corps auparavant
+// dupliqué dans les case 'nextVerse'/'previousVerse' de
+// handleVoiceCommand() ci-dessous — partagé maintenant avec les nouvelles
+// actions WS directes 'nextReadingVerse'/'previousReadingVerse' (voir plus
+// bas) pour que le déclenchement vocal et le clic manuel avancent de la
+// même façon, sans logique divergente entre les deux chemins.
+function advanceReadingModeVerse(direction) {
+  if (!readingMode.active) return false;
+  const nextIndex = readingMode.currentIndex + direction;
+  if (nextIndex < 0 || nextIndex >= readingMode.verses.length) return false;
+  const verse = readingMode.verses[nextIndex];
+  readingMode.currentIndex = nextIndex;
+  readingMode.onVerseAdvance(verse);
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Prompt injection filter for LLM-bound text
 // ---------------------------------------------------------------------------
@@ -1047,20 +1063,12 @@ async function handleVoiceCommand(command, _originalText) {
       break;
     case 'nextVerse': {
       broadcast({ action: 'nextVerse', triggeredByVoice: true });
-      if (readingMode.active && readingMode.currentIndex < readingMode.verses.length - 1) {
-        const verse = readingMode.verses[readingMode.currentIndex + 1];
-        readingMode.currentIndex += 1;
-        readingMode.onVerseAdvance(verse);
-      }
+      advanceReadingModeVerse(1);
       break;
     }
     case 'previousVerse': {
       broadcast({ action: 'previousVerse', triggeredByVoice: true });
-      if (readingMode.active && readingMode.currentIndex > 0) {
-        const verse = readingMode.verses[readingMode.currentIndex - 1];
-        readingMode.currentIndex -= 1;
-        readingMode.onVerseAdvance(verse);
-      }
+      advanceReadingModeVerse(-1);
       break;
     }
     case 'nextChapter': {
@@ -1257,6 +1265,11 @@ const OPERATOR_ACTIONS = new Set([
   'setTranslation',
   'startReading',
   'stopReading',
+  // AJOUT (mode lecture — bouton manuel) : mutent l'état du programme en
+  // direct exactement comme startReading/stopReading juste au-dessus —
+  // un client 'viewer' ne doit pas pouvoir avancer le mode lecture.
+  'nextReadingVerse',
+  'previousReadingVerse',
   'applyTheme',
   'setMoodTheme',
   'searchBible',
@@ -1727,6 +1740,26 @@ wss.on('connection', (ws, req) => {
     if (sanitized.action === 'stopReading') {
       readingMode.stop();
       broadcast({ action: 'readingStopped' });
+      return;
+    }
+
+    // AJOUT (mode lecture — bouton manuel) : avant ce correctif, avancer
+    // verset par verset en mode lecture n'était possible QUE par commande
+    // vocale ('nextVerse'/'previousVerse' dans handleVoiceCommand()
+    // ci-dessus) — aucune action WS directe n'existait pour un clic
+    // Suivant/Précédent depuis le tableau de bord. Réutilise
+    // advanceReadingModeVerse(), le même helper que le chemin vocal ;
+    // triggeredByVoice:false permet aux deux chemins de rester
+    // distinguables côté client si besoin un jour.
+    if (sanitized.action === 'nextReadingVerse') {
+      broadcast({ action: 'nextVerse', triggeredByVoice: false });
+      advanceReadingModeVerse(1);
+      return;
+    }
+
+    if (sanitized.action === 'previousReadingVerse') {
+      broadcast({ action: 'previousVerse', triggeredByVoice: false });
+      advanceReadingModeVerse(-1);
       return;
     }
 
