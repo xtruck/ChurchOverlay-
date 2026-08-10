@@ -43,6 +43,7 @@ import {
   renderBibleSearchResults,
   renderBibleSearchError,
 } from './features/bible-search.js';
+import { setReadingModeActive } from './features/reading-mode.js';
 
 export function handleMessage(message) {
   switch (message.action) {
@@ -188,6 +189,19 @@ export function handleMessage(message) {
       break;
     case 'searchError':
       renderBibleSearchError(message);
+      break;
+    // AJOUT (mode lecture — bouton manuel) : bascule l'état actif/inactif
+    // de l'UI (boutons Suivant/Précédent) — voir reading-mode.js. Le
+    // verset lui-même arrive séparément via 'showVerse' (déjà géré
+    // ci-dessus), readingMode.onVerseAdvance() le diffuse côté serveur à
+    // chaque avancée.
+    case 'readingStarted':
+      setReadingModeActive(true);
+      showToast('Mode lecture démarré.', 'success');
+      break;
+    case 'readingStopped':
+      setReadingModeActive(false);
+      showToast('Mode lecture arrêté.', 'info');
       break;
     // AJOUT (fiabilité — synchronisation multi-opérateur) : setHighContrast/
     // setCaptions/setTranslatedCaptions/setTestPattern/setBackgroundPattern

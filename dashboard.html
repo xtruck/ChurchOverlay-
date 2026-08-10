@@ -763,6 +763,57 @@
             </div>
           </div>
 
+          <!-- AJOUT (mode lecture — bouton manuel) : startReading/stopReading
+                     existaient déjà côté serveur mais sans aucune UI ; avancer
+                     verset par verset n'était même possible que par commande
+                     vocale jusqu'à l'ajout de nextReadingVerse/previousReadingVerse
+                     (voir server.js). Les boutons Suivant/Précédent restent
+                     masqués tant que le mode lecture n'est pas actif (voir
+                     readingStarted/readingStopped -> setReadingModeActive()
+                     dans reading-mode.js). -->
+          <div class="card" style="margin-bottom: 1.5rem">
+            <div class="card-header">
+              <span class="card-title">Mode lecture (verset par verset)</span>
+              <span id="readingModeBadge" class="status-badge success" style="display: none"
+                >Actif</span
+              >
+            </div>
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                gap: 0.6rem;
+                flex-wrap: wrap;
+                margin-bottom: 0.75rem;
+              "
+            >
+              <input
+                type="text"
+                id="readingModeInput"
+                placeholder="Référence de départ (ex. Jean 3:1)"
+                style="flex: 1; min-width: 220px"
+                onkeydown="if (event.key === 'Enter') startReadingMode();"
+              />
+              <button class="btn btn-primary" id="readingModeStartBtn" onclick="startReadingMode()">
+                ▶️ Démarrer
+              </button>
+              <button
+                class="btn btn-danger"
+                id="readingModeStopBtn"
+                onclick="stopReadingMode()"
+                style="display: none"
+              >
+                ⏹️ Arrêter
+              </button>
+            </div>
+            <div id="readingModeAdvanceRow" style="display: none; gap: 0.6rem">
+              <button class="btn btn-secondary" onclick="previousReadingVerse()">
+                ◀ Précédent
+              </button>
+              <button class="btn btn-secondary" onclick="nextReadingVerse()">Suivant ▶</button>
+            </div>
+          </div>
+
           <div class="card">
             <div class="card-header">
               <span class="card-title">Configuration de la Langue de Projection</span>
@@ -820,7 +871,7 @@
             <div class="transcript-feed" id="transcriptFeed">
               <div class="transcript-item">
                 <div class="transcript-time"><span>00:00:00</span><span>Prêt</span></div>
-                <div class="transcript-text" style="color: var(--text-dim)">
+                <div class="transcript-text transcript-text--placeholder">
                   En attente du signal audio... Parlez au microphone ou utilisez le champ de
                   détection.
                 </div>

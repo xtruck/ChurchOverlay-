@@ -93,6 +93,7 @@
       "dashboard/features/audio-capture.js",
       "dashboard/features/pipeline-health.js",
       "dashboard/features/bible-search.js",
+      "dashboard/features/reading-mode.js",
       "dashboard/dashboard.css",
       "audio-capture-worklet.js",
       "camera-capture.js",
