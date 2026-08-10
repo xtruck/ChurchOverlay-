@@ -28,11 +28,29 @@ injectFakeModule('bible-lookup-with-api.js', {
   async getChapterVerses() {
     throw new Error('non utilisé dans ce test');
   },
-  async getVerseMultilang() {
-    throw new Error('non utilisé dans ce test');
+  // CORRECTIF (débogage e2e) : l'action WS directe 'showVerse' (server.js)
+  // n'échotoie pas simplement le payload reçu — elle reparse la référence
+  // et appelle CE lookup pour le vrai texte, quel que soit ce que le
+  // client a envoyé. Utilisé par plusieurs parcours e2e (clic "afficher
+  // maintenant" de la recherche par thème, simulation showVerse directe) :
+  // un texte factice générique suffit, le contenu biblique réel n'est pas
+  // ce qui est testé ici.
+  async getVerseMultilang(reference, langMode) {
+    return {
+      reference: this.buildReferenceLabel(reference),
+      text: 'Texte de verset factice (e2e).',
+      text_fr: 'Texte de verset factice (e2e).',
+      text_en: null,
+      langMode,
+    };
   },
   buildReferenceLabel(reference) {
-    return `Jean ${reference.chapter}`;
+    // detector.parseReference() normalise le nom du livre en minuscules
+    // ("jean", pas "Jean") — recapitalisé ici pour que le libellé affiché
+    // ressemble à ce que produit le vrai bibleLookup en usage normal.
+    const book = String(reference.book || '');
+    const capitalized = book.charAt(0).toUpperCase() + book.slice(1);
+    return `${capitalized} ${reference.chapter}:${reference.verseStart || 1}`;
   },
   resetFailedProviders() {},
   findByQuotedText() {

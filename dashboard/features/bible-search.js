@@ -47,7 +47,12 @@ export function searchBibleByTopic(topic) {
 
 export function showFoundVerse(reference) {
   if (!requireWsOrWarn()) return;
-  ws.send(JSON.stringify({ action: 'showVerse', reference }));
+  // AJOUT : voir le commentaire équivalent dans verse-session-display.js
+  // > showManualVerse() — validation.js exige un champ `text` non vide
+  // pour tout message client 'showVerse', jamais lu par le handler
+  // serveur (qui refait sa propre recherche), donc purement cosmétique
+  // ici, jamais affiché nulle part.
+  ws.send(JSON.stringify({ action: 'showVerse', reference, text: reference }));
   showToast(`Affichage de ${reference}...`, 'info');
 }
 

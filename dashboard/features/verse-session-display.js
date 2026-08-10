@@ -280,6 +280,18 @@ export function showManualVerse() {
         JSON.stringify({
           action: 'showVerse',
           reference: reference,
+          // CORRECTIF (bug trouvé via les tests Playwright, lot 8) :
+          // validation.js exige un champ `text` non vide pour tout message
+          // client 'showVerse' (voir SCHEMAS.showVerse), mais le handler
+          // serveur (server.js > sanitized.action === 'showVerse') ne lit
+          // JAMAIS ce champ — il refait sa propre recherche via
+          // bibleLookup.getVerseMultilang() et diffuse CE texte-là. Sans ce
+          // champ, le message est rejeté par validation.js avant même
+          // d'atteindre ce handler (dès que VALIDATE_MESSAGES=true, actif
+          // par défaut) : "Afficher un Verset" ne faisait donc jamais rien.
+          // Valeur purement cosmétique côté client, jamais affichée nulle
+          // part — seule sa présence/longueur compte pour la validation.
+          text: reference,
         })
       );
       addActivity(`Recherche manuelle : ${reference}`, 'info');
