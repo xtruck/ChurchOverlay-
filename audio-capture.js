@@ -26,6 +26,10 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const sileroVad = require('./silero-vad');
+const asrEngine = require('./asr-engine');
+const deepgramStreaming = require('./deepgram-streaming');
+const { startTracker } = require('./latency-tracker');
 
 // Configuration
 const CONFIG = {
@@ -52,6 +56,25 @@ const CONFIG = {
   // lieu à l'autre) avant de considérer ce seuil comme définitif.
   silenceThreshold: 0.02, // Seuil RMS de silence pour VAD (0-1)
   minSpeechDuration: 500, // Durée minimum de voix détectée dans un segment (ms) pour l'envoyer au STT
+
+  // AJOUT (VAD neuronal — Silero) : le RMS seul ne distingue pas "fort"
+  // de "parole" (musique, sono, ventilateur passent le seuil aussi
+  // facilement qu'une voix) — voir silero-vad.js pour le détail du modèle.
+  // 'auto' : Silero si le modèle charge, repli RMS silencieux sinon (voir
+  // initVadProvider). 'rms' : force l'ancien comportement (désactive
+  // Silero explicitement, ex. VAD_PROVIDER=rms en environnement contraint).
+  // 'silero' : force Silero — si le chargement échoue, on retombe quand
+  // même sur RMS (jamais d'échec dur du pipeline audio pour une préférence
+  // de VAD, voir §25 — un composant indisponible ne doit jamais arrêter le
+  // reste du pipeline).
+  vadProviderPreference:
+    process.env.VAD_PROVIDER === 'rms' || process.env.VAD_PROVIDER === 'silero'
+      ? process.env.VAD_PROVIDER
+      : 'auto',
+  // Seuil de probabilité Silero (0-1) au-dessus duquel une fenêtre de 32ms
+  // est classée "voix" — 0.5 est la valeur par défaut documentée par
+  // l'équipe Silero, point de départ raisonnable avant calibration terrain.
+  sileroSpeechThreshold: 0.5,
 
   // AJOUT (VAD streaming — capture de phrases plus rapide) : jusqu'ici la
   // segmentation était PUREMENT temporelle (fenêtre fixe segmentDuration),
@@ -107,6 +130,10 @@ const STATE = {
   callbacks: {
     onAudioSegment: null,
     onError: null,
+    // AJOUT (Deepgram streaming) — voir startDeepgramStreamingSession.
+    onPartialTranscript: null, // (text, meta, tracker)
+    onFinalTranscript: null, // (text, meta, tracker)
+    onAsrFallback: null, // ({ reason }) — la session streaming a échoué, repli sur le pipeline segment/Groq en cours de session
   },
   // AJOUT (VAD streaming) — état de la détection anticipée de fin de phrase,
   // indépendant de STATE.audioBuffer (qui accumule les octets du segment en
@@ -117,6 +144,37 @@ const STATE = {
   consecutiveSilentFrameMs: 0, // durée de silence consécutif accumulée dans le segment en cours
   voicedFrameMsInSegment: 0, // durée de voix accumulée dans le segment en cours (détection anticipée uniquement)
   lastFlushAt: 0, // horodatage (Date.now()) du dernier segment envoyé — protège minFlushIntervalMs
+
+  // AJOUT (VAD neuronal — Silero) : miroir du bloc RMS ci-dessus, mais
+  // piloté par la probabilité de parole du modèle plutôt qu'un seuil RMS.
+  // 'rms' par défaut jusqu'à ce que initVadProvider() confirme que Silero a
+  // bien chargé (voir startBrowserCapture) — jamais bloquant au démarrage.
+  vadProvider: 'rms',
+  sileroStreamState: null, // état LSTM du flux courant, voir silero-vad.createStreamState()
+  sileroFrameAccumulator: Buffer.alloc(0), // reste d'octets en attente d'une fenêtre Silero complète (512 échantillons)
+  sileroQueue: Promise.resolve(), // chaîne sérielle : le LSTM de Silero dépend de l'ordre des fenêtres
+  sileroConsecutiveSilentMs: 0,
+  sileroVoicedFrameMsInSegment: 0,
+  sileroSegmentHasSpeech: false,
+  sileroProbSum: 0, // somme des probabilités de parole des fenêtres du segment en cours (verdict final à flushSegment)
+  sileroProbCount: 0,
+
+  // AJOUT (Deepgram streaming — architecture temps réel, §7-11 du cahier
+  // des charges) : quand actif, les chunks PCM sont poussés en continu vers
+  // deepgram-streaming.js AU LIEU d'être accumulés en segments WAV (voir le
+  // garde `!STATE.deepgramStreamingActive` dans handleAudioData). asrProvider
+  // est résolu UNE FOIS au démarrage de la capture (asr-engine.resolveProvider())
+  // — un changement d'ASR_PROVIDER en cours de culte n'est pris en compte
+  // qu'au prochain redémarrage du pipeline, comme le reste de la config.
+  asrProvider: 'auto',
+  deepgramSession: null,
+  deepgramStreamingActive: false, // true seulement après ouverture RÉUSSIE de la connexion — jamais supposé avant confirmation
+
+  // AJOUT (latence, §14) : un tracker par énoncé, créé au tout premier
+  // indice de voix (VAD, avant même la confirmation cumulative
+  // segmentHasSpeech) et refermé/journalisé une fois le résultat final de
+  // l'ASR reçu (voir markVadOnset/flushSegment/onFinal du streaming).
+  utteranceTracker: null,
 };
 
 /**
@@ -217,10 +275,156 @@ function startBrowserCapture(options = {}) {
   STATE.voicedFrameMsInSegment = 0;
   STATE.lastFlushAt = 0; // pas de délai artificiel avant le tout premier segment
 
+  // AJOUT (VAD neuronal — Silero) : état remis à zéro à chaque nouvelle
+  // capture — un LSTM d'une session précédente n'a aucun sens ici.
+  STATE.vadProvider = 'rms';
+  STATE.sileroStreamState = sileroVad.createStreamState();
+  STATE.sileroFrameAccumulator = Buffer.alloc(0);
+  STATE.sileroQueue = Promise.resolve();
+  STATE.sileroConsecutiveSilentMs = 0;
+  STATE.sileroVoicedFrameMsInSegment = 0;
+  STATE.sileroSegmentHasSpeech = false;
+  STATE.sileroProbSum = 0;
+  STATE.sileroProbCount = 0;
+  initVadProvider(config);
+
+  // AJOUT (Deepgram streaming) : état remis à zéro à chaque nouvelle
+  // capture — une session WebSocket d'une capture précédente n'a aucun
+  // sens ici (voir startDeepgramStreamingSession).
+  STATE.asrProvider = asrEngine.resolveProvider();
+  STATE.deepgramSession = null;
+  STATE.deepgramStreamingActive = false;
+  STATE.utteranceTracker = null;
+  if (STATE.asrProvider === 'deepgram') {
+    startDeepgramStreamingSession(config);
+  }
+
   console.log(
     '[audio-capture] Capture navigateur (Web Audio, sans FFmpeg) démarrée — ' +
       'en attente de chunks PCM du renderer.'
   );
+}
+
+/**
+ * Ouvre la session streaming Deepgram pour la capture en cours (asynchrone,
+ * ne bloque jamais startBrowserCapture — même logique que initVadProvider).
+ * Tant que la connexion n'est pas confirmée ouverte, STATE.deepgramStreamingActive
+ * reste false et handleAudioData continue d'utiliser le pipeline segment/WAV
+ * classique — AUCUN audio n'est donc perdu pendant la négociation WebSocket
+ * ni si DEEPGRAM_API_KEY est absent (repli propre, voir onError plus bas).
+ * @param {Object} config - config active de cette capture
+ */
+function startDeepgramStreamingSession(config) {
+  if (!deepgramStreaming.isConfigured()) {
+    console.warn(
+      '[audio-capture] ASR : DEEPGRAM_API_KEY absent — ASR_PROVIDER=deepgram demandé mais ' +
+        'impossible à honorer, repli sur le pipeline segment/Groq classique.'
+    );
+    return;
+  }
+
+  let session;
+  try {
+    session = deepgramStreaming.createSession({
+      onOpen: () => {
+        if (!STATE.isRecording || STATE.browserCaptureConfig !== config) return; // session obsolète (capture relancée entre-temps)
+        STATE.deepgramStreamingActive = true;
+        console.log('[audio-capture] ASR : session streaming Deepgram ouverte.');
+      },
+      onPartial: (text, meta) => {
+        if (!STATE.isRecording) return;
+        const tracker = STATE.utteranceTracker;
+        // Un seul marquage 'asrFirstPartial' par énoncé — les partials suivants
+        // affinent le texte mais le premier est la mesure de latence utile.
+        if (tracker && !tracker.summary().deltas.asrFirstPartial) {
+          tracker.mark('asrFirstPartial');
+        }
+        if (STATE.callbacks.onPartialTranscript) {
+          STATE.callbacks.onPartialTranscript(text, meta, tracker);
+        }
+      },
+      onFinal: (text, meta) => {
+        if (!STATE.isRecording) return;
+        const tracker = STATE.utteranceTracker;
+        if (tracker) tracker.mark('asrFinal');
+        if (STATE.callbacks.onFinalTranscript) {
+          STATE.callbacks.onFinalTranscript(text, meta, tracker);
+        }
+        // Énoncé terminé : le prochain indice de voix (markVadOnset) doit
+        // démarrer un tracker frais, pas continuer à empiler sur celui-ci.
+        STATE.utteranceTracker = null;
+      },
+      onError: (err) => {
+        console.warn(
+          `[audio-capture] ASR : erreur streaming Deepgram (${err.message}) — repli sur le ` +
+            'pipeline segment/Groq pour le reste de la session.'
+        );
+        STATE.deepgramStreamingActive = false;
+        if (STATE.callbacks.onAsrFallback) {
+          STATE.callbacks.onAsrFallback({ reason: err.message });
+        }
+      },
+      onClose: () => {
+        // Fermeture inattendue (pas via stopRecording, qui appelle déjà
+        // session.finish() et ignore ce cas car isRecording est déjà false) :
+        // même traitement qu'une erreur — reste de la session en repli.
+        if (!STATE.isRecording) return;
+        if (STATE.deepgramStreamingActive) {
+          console.warn(
+            '[audio-capture] ASR : session streaming Deepgram fermée de façon inattendue — repli.'
+          );
+        }
+        STATE.deepgramStreamingActive = false;
+        if (STATE.callbacks.onAsrFallback) {
+          STATE.callbacks.onAsrFallback({ reason: 'Connexion streaming fermée inopinément.' });
+        }
+      },
+    });
+  } catch (err) {
+    console.warn(
+      `[audio-capture] ASR : impossible d'ouvrir la session Deepgram (${err.message}) — repli.`
+    );
+    return;
+  }
+
+  STATE.deepgramSession = session;
+}
+
+/**
+ * Détermine et active le fournisseur de VAD pour la capture en cours, sans
+ * jamais bloquer le démarrage (async, "fire and forget" — les tout premiers
+ * segments peuvent être classés en RMS le temps que Silero finisse de
+ * charger, sans conséquence : le seuil RMS reste correct, juste moins
+ * précis sur du bruit fort). N'écrase JAMAIS un repli déjà décidé par une
+ * capture entre-temps arrêtée/relancée (voir le garde isRecording ci-dessous).
+ * @param {Object} config - config active de cette capture (vadProviderPreference)
+ */
+function initVadProvider(config) {
+  if (config.vadProviderPreference === 'rms') {
+    console.log('[audio-capture] VAD : RMS forcé (VAD_PROVIDER=rms).');
+    return;
+  }
+  sileroVad
+    .init()
+    .then(({ ok, error }) => {
+      // La capture a pu être arrêtée/relancée pendant le chargement (~qq
+      // centaines de ms) — ne pas activer Silero pour une session qui n'est
+      // plus la session courante.
+      if (!STATE.isRecording || STATE.browserCaptureConfig !== config) return;
+      if (ok) {
+        STATE.vadProvider = 'silero';
+        console.log('[audio-capture] VAD : Silero (neuronal) actif.');
+      } else {
+        console.warn(
+          `[audio-capture] VAD : Silero indisponible (${error}) — repli sur la détection RMS existante.`
+        );
+      }
+    })
+    .catch((err) => {
+      console.warn(
+        `[audio-capture] VAD : erreur inattendue à l'init Silero (${err.message}) — repli RMS.`
+      );
+    });
 }
 
 /**
@@ -258,6 +462,20 @@ function computeRms(buffer) {
 // silences internes, assez long pour rester rapide en JS pur, sans lib
 // externe).
 const VAD_FRAME_MS = 100;
+
+/**
+ * AJOUT (latence, §14) : crée le tracker de l'énoncé en cours au tout
+ * premier indice de voix (avant même la confirmation cumulative
+ * segmentHasSpeech/sileroSegmentHasSpeech, qui n'arrive qu'après
+ * config.minSpeechDuration) — c'est la mesure "VAD" du cahier des charges :
+ * le temps entre le début réel de la parole et sa détection. Idempotent :
+ * un tracker déjà en cours pour cet énoncé n'est jamais recréé.
+ */
+function markVadOnset() {
+  if (STATE.utteranceTracker) return;
+  STATE.utteranceTracker = startTracker();
+  STATE.utteranceTracker.mark('vad');
+}
 
 /**
  * Analyse un segment PCM déjà assemblé et retourne la durée totale de voix
@@ -330,6 +548,7 @@ function processStreamingFrame(frame, config) {
   const isVoiced = rms >= adaptiveThreshold;
 
   if (isVoiced) {
+    markVadOnset();
     STATE.consecutiveSilentFrameMs = 0;
     STATE.voicedFrameMsInSegment += VAD_FRAME_MS;
     if (STATE.voicedFrameMsInSegment >= config.minSpeechDuration) {
@@ -347,6 +566,16 @@ function processStreamingFrame(frame, config) {
         STATE.noiseFloor * (1 - config.noiseFloorAdaptRate) + rms * config.noiseFloorAdaptRate;
     }
   }
+
+  // AJOUT (VAD neuronal — Silero) : cette boucle RMS reste TOUJOURS active
+  // (voir handleAudioData) pour maintenir noiseFloor à jour et servir de
+  // repli instantané, mais ne doit déclencher le flush anticipé que si
+  // c'est bien elle qui pilote la session — sinon RMS et Silero pourraient
+  // tous deux appeler flushSegment() pour le même segment.
+  if (STATE.vadProvider !== 'rms') return;
+  // AJOUT (Deepgram streaming) : voir le même garde dans processSileroWindow —
+  // aucun segment WAV à flusher quand Deepgram reçoit déjà l'audio en direct.
+  if (STATE.deepgramStreamingActive) return;
 
   const sinceLastFlushMs = Date.now() - STATE.lastFlushAt;
   if (
@@ -384,6 +613,21 @@ function flushSegment(config, { early = false } = {}) {
     config.maxAdaptiveThreshold,
     Math.max(config.minAdaptiveThreshold, noiseFloorAtFlush * config.noiseMarginMultiplier)
   );
+  // AJOUT (VAD neuronal — Silero) : capturés AVANT le reset ci-dessous,
+  // même principe que adaptiveDetectedSpeech mais piloté par le modèle —
+  // voir processSileroWindow. sileroAvgProb sert uniquement au diagnostic
+  // (journal) ; la décision d'acceptation utilise sileroSegmentHasSpeech
+  // (cohérence de seuil avec processSileroWindow, qui compare déjà chaque
+  // fenêtre à config.sileroSpeechThreshold).
+  const usingSilero = STATE.vadProvider === 'silero';
+  const sileroSegmentHasSpeech = STATE.sileroSegmentHasSpeech;
+  const sileroAvgProb =
+    STATE.sileroProbCount > 0 ? STATE.sileroProbSum / STATE.sileroProbCount : null;
+  // AJOUT (latence, §14) : capturé AVANT reset — repris par onAudioSegment
+  // si le segment est accepté (l'ASR va suivre), sinon simplement abandonné
+  // (aucun évènement ASR ne viendra jamais pour un segment rejeté).
+  const flushTracker = STATE.utteranceTracker;
+  STATE.utteranceTracker = null;
 
   if (early) {
     // Silence de fin de phrase confirmé : rien à reporter sur le prochain
@@ -404,6 +648,11 @@ function flushSegment(config, { early = false } = {}) {
   STATE.segmentHasSpeech = false;
   STATE.consecutiveSilentFrameMs = 0;
   STATE.voicedFrameMsInSegment = 0;
+  STATE.sileroConsecutiveSilentMs = 0;
+  STATE.sileroVoicedFrameMsInSegment = 0;
+  STATE.sileroSegmentHasSpeech = false;
+  STATE.sileroProbSum = 0;
+  STATE.sileroProbCount = 0;
 
   // AJOUT (VAD réel) : avant d'écrire le WAV et de déclencher le STT,
   // on vérifie que le segment contient assez de voix détectée. Sans ce
@@ -419,14 +668,23 @@ function flushSegment(config, { early = false } = {}) {
   // une voix sous silenceThreshold sans être sous le bruit ambiant réel.
   const voiceInfo = analyzeVoiceActivity(segmentBuffer, config);
   const staticDetectedSpeech = voiceInfo.voicedMs >= config.minSpeechDuration;
-  if (!staticDetectedSpeech && !adaptiveDetectedSpeech) {
+  // AJOUT (VAD neuronal — Silero) : quand Silero pilote la session, c'est
+  // SON verdict qui fait foi pour accepter/rejeter (un modèle entraîné à
+  // reconnaître la parole plutôt qu'un simple niveau sonore) — le OU
+  // RMS/adaptatif ci-dessus reste le comportement exact d'avant quand
+  // Silero est indisponible (config.vadProviderPreference==='rms', ou repli
+  // suite à une erreur d'inférence, voir processSileroWindow).
+  const detectedSpeech = usingSilero
+    ? sileroSegmentHasSpeech
+    : staticDetectedSpeech || adaptiveDetectedSpeech;
+  if (!detectedSpeech) {
     STATE.segmentCount++;
-    console.log(
-      `[audio-capture] Segment ${STATE.segmentCount} ignoré (silence — ` +
-        `${voiceInfo.voicedMs}ms de voix détectée < seuil ${config.minSpeechDuration}ms, ` +
+    const providerNote = usingSilero
+      ? `Silero, probabilité moyenne ${sileroAvgProb !== null ? sileroAvgProb.toFixed(3) : 'n/a'} < seuil ${config.sileroSpeechThreshold}`
+      : `RMS — ${voiceInfo.voicedMs}ms de voix détectée < seuil ${config.minSpeechDuration}ms, ` +
         `pic ${voiceInfo.maxRms.toFixed(4)} vs seuil statique ${config.silenceThreshold} / ` +
-        `seuil adaptatif ${adaptiveThresholdAtFlush.toFixed(4)}, bruit ambiant ${noiseFloorAtFlush.toFixed(4)})`
-    );
+        `seuil adaptatif ${adaptiveThresholdAtFlush.toFixed(4)}, bruit ambiant ${noiseFloorAtFlush.toFixed(4)}`;
+    console.log(`[audio-capture] Segment ${STATE.segmentCount} ignoré (silence — ${providerNote})`);
     // CORRECTIF (problème récurrent — transcription qui ne démarre jamais
     // sans qu'aucune erreur ne soit visible) : ce rejet était auparavant
     // silencieux (console.log uniquement, jamais vu en usage normal). Si
@@ -441,6 +699,8 @@ function flushSegment(config, { early = false } = {}) {
     // lieu de renvoyer juste vers "vérifiez le périphérique et son gain".
     if (STATE.callbacks.onSegmentSkipped) {
       STATE.callbacks.onSegmentSkipped({
+        provider: usingSilero ? 'silero' : 'rms',
+        sileroAvgProb,
         voicedMs: voiceInfo.voicedMs,
         totalMs: voiceInfo.totalMs,
         threshold: config.silenceThreshold,
@@ -452,7 +712,7 @@ function flushSegment(config, { early = false } = {}) {
     }
     return;
   }
-  if (!staticDetectedSpeech && adaptiveDetectedSpeech) {
+  if (!usingSilero && !staticDetectedSpeech && adaptiveDetectedSpeech) {
     console.log(
       `[audio-capture] Segment accepté via détecteur ADAPTATIF uniquement ` +
         `(pic ${voiceInfo.maxRms.toFixed(4)} sous seuil statique ${config.silenceThreshold}, ` +
@@ -472,14 +732,18 @@ function flushSegment(config, { early = false } = {}) {
   const segmentFile = path.join(config.tempDir, `segment_${STATE.segmentCount}.wav`);
   fs.writeFileSync(segmentFile, wavBuffer);
 
+  const providerSummary = usingSilero
+    ? `Silero, probabilité moyenne ${sileroAvgProb !== null ? sileroAvgProb.toFixed(3) : 'n/a'}`
+    : `RMS, ${voiceInfo.voicedMs}ms de voix détectée`;
   console.log(
     `[audio-capture] Segment ${STATE.segmentCount} créé (${segmentBuffer.length} bytes, ` +
-      `${voiceInfo.voicedMs}ms de voix détectée${early ? ', coupure anticipée (fin de phrase)' : ''})`
+      `${providerSummary}${early ? ', coupure anticipée (fin de phrase)' : ''})`
   );
 
-  // Envoyer le segment au callback
+  // Envoyer le segment au callback — flushTracker (§14) suit ce segment
+  // précis jusqu'à son résultat ASR final, voir server.js (transcribeWithRetry).
   if (STATE.callbacks.onAudioSegment) {
-    STATE.callbacks.onAudioSegment(segmentFile);
+    STATE.callbacks.onAudioSegment(segmentFile, flushTracker);
   }
 }
 
@@ -494,25 +758,135 @@ function flushSegment(config, { early = false } = {}) {
  * @param {Object} config - Configuration actuelle
  */
 function handleAudioData(data, config) {
-  STATE.audioBuffer.push(data);
+  // AJOUT (Deepgram streaming, §7-11 du cahier des charges — architecture
+  // temps réel, pas un simple découpage plus rapide de l'ancienne
+  // architecture WAV) : quand une session streaming est active, CHAQUE
+  // chunk part directement vers Deepgram, et AUCUN segment WAV n'est
+  // accumulé/écrit pour ce chemin — c'est bien "Micro → chunks PCM en
+  // continu → Deepgram" tel que demandé, pas "toujours des WAV mais plus
+  // petits". Le VAD (RMS/Silero) continue de tourner ci-dessous, mais
+  // seulement pour la latence (markVadOnset) et comme filet de repli — voir
+  // les gardes STATE.deepgramStreamingActive dans processStreamingFrame et
+  // processSileroWindow, qui empêchent tout flush WAV tant que le
+  // streaming est sain.
+  if (STATE.deepgramStreamingActive && STATE.deepgramSession) {
+    STATE.deepgramSession.sendAudio(data);
+  } else {
+    STATE.audioBuffer.push(data);
+  }
   STATE.frameAccumulator = Buffer.concat([STATE.frameAccumulator, data]);
 
   const bytesPerSample = config.bitDepth / 8;
   const samplesPerSecond = config.sampleRate * config.channels;
   const frameBytes = Math.floor((VAD_FRAME_MS / 1000) * samplesPerSecond * bytesPerSample);
 
+  // AJOUT (VAD neuronal — Silero) : boucle RMS existante conservée TELLE
+  // QUELLE et TOUJOURS active, même quand Silero pilote la décision de
+  // coupure — voir processStreamingFrame, dont le déclenchement de flush
+  // anticipé est lui-même gardé par vadProvider === 'rms'. La garder active
+  // en permanence maintient noiseFloor à jour, prêt à servir de repli
+  // instantané si Silero échoue en cours de culte (voir processSileroWindow).
   while (frameBytes > 0 && STATE.frameAccumulator.length >= frameBytes) {
     const frame = STATE.frameAccumulator.slice(0, frameBytes);
     STATE.frameAccumulator = STATE.frameAccumulator.slice(frameBytes);
     processStreamingFrame(frame, config);
   }
 
+  // AJOUT (VAD neuronal — Silero) : découpage en fenêtres de EXACTEMENT
+  // silero-vad.WINDOW_SAMPLES échantillons (32ms à 16kHz — voir silero-vad.js
+  // pour pourquoi cette taille précise). Chaque fenêtre est empilée sur une
+  // file sérielle (STATE.sileroQueue) : l'inférence est asynchrone et le
+  // LSTM du modèle dépend strictement de l'ordre, donc jamais deux
+  // inférences en vol en parallèle pour le même flux.
+  if (STATE.vadProvider === 'silero') {
+    const windowBytes = sileroVad.WINDOW_SAMPLES * bytesPerSample;
+    STATE.sileroFrameAccumulator = Buffer.concat([STATE.sileroFrameAccumulator, data]);
+    while (STATE.sileroFrameAccumulator.length >= windowBytes) {
+      const frame = STATE.sileroFrameAccumulator.slice(0, windowBytes);
+      STATE.sileroFrameAccumulator = STATE.sileroFrameAccumulator.slice(windowBytes);
+      STATE.sileroQueue = STATE.sileroQueue.then(() => processSileroWindow(frame, config));
+    }
+  }
+
   // Plafond de sécurité : même sans silence de fin de phrase détecté (voix
-  // continue), on ne laisse jamais un segment grossir indéfiniment.
-  const segmentSize = (config.segmentDuration / 1000) * samplesPerSecond * bytesPerSample;
-  const bufferSize = STATE.audioBuffer.reduce((sum, buf) => sum + buf.length, 0);
-  if (bufferSize >= segmentSize) {
-    flushSegment(config, { early: false });
+  // continue), on ne laisse jamais un segment grossir indéfiniment. Sans
+  // objet tant que le streaming est actif (STATE.audioBuffer reste vide,
+  // voir plus haut) — garde explicite malgré tout, par clarté.
+  if (!STATE.deepgramStreamingActive) {
+    const segmentSize = (config.segmentDuration / 1000) * samplesPerSecond * bytesPerSample;
+    const bufferSize = STATE.audioBuffer.reduce((sum, buf) => sum + buf.length, 0);
+    if (bufferSize >= segmentSize) {
+      flushSegment(config, { early: false });
+    }
+  }
+}
+
+/**
+ * Classe UNE fenêtre Silero (32ms) déjà extraite du flux entrant, met à
+ * jour la state machine de détection anticipée (miroir de
+ * processStreamingFrame, mais pilotée par la probabilité de parole du
+ * modèle plutôt qu'un seuil RMS), et déclenche un flush précoce dans les
+ * mêmes conditions que la version RMS. Appelée en série via
+ * STATE.sileroQueue — voir handleAudioData.
+ * @param {Buffer} frame - trame PCM16LE de EXACTEMENT WINDOW_SAMPLES échantillons
+ * @param {Object} config - configuration active
+ */
+async function processSileroWindow(frame, config) {
+  // Le fournisseur actif a pu changer pendant que cette fenêtre attendait
+  // son tour dans la file (repli RMS déclenché par une erreur d'inférence
+  // précédente, ou capture arrêtée) — abandonner plutôt que de continuer à
+  // calculer un état Silero que plus personne ne consultera.
+  if (STATE.vadProvider !== 'silero' || !STATE.isRecording) return;
+
+  let prob;
+  try {
+    const samples = sileroVad.pcm16ToFloat32(frame);
+    prob = await sileroVad.processWindow(samples, STATE.sileroStreamState);
+  } catch (err) {
+    // CORRECTIF (jamais d'échec dur du pipeline audio pour un problème de
+    // VAD, voir §25) : une erreur d'inférence en pleine capture (modèle
+    // corrompu, mémoire insuffisante...) fait basculer DÉFINITIVEMENT sur
+    // RMS pour le reste de cette session plutôt que de retenter à chaque
+    // fenêtre (32ms) et spammer les journaux/le CPU.
+    console.warn(
+      `[audio-capture] VAD : erreur d'inférence Silero (${err.message}) — repli RMS pour le reste de la session.`
+    );
+    STATE.vadProvider = 'rms';
+    return;
+  }
+
+  const windowMs = (sileroVad.WINDOW_SAMPLES / sileroVad.SAMPLE_RATE) * 1000;
+  STATE.sileroProbSum += prob;
+  STATE.sileroProbCount += 1;
+
+  const isVoiced = prob >= config.sileroSpeechThreshold;
+  if (isVoiced) {
+    markVadOnset();
+    STATE.sileroConsecutiveSilentMs = 0;
+    STATE.sileroVoicedFrameMsInSegment += windowMs;
+    if (STATE.sileroVoicedFrameMsInSegment >= config.minSpeechDuration) {
+      STATE.sileroSegmentHasSpeech = true;
+    }
+  } else {
+    STATE.sileroConsecutiveSilentMs += windowMs;
+  }
+
+  // AJOUT (Deepgram streaming) : quand le streaming pilote la session, il
+  // n'y a plus de segment WAV à "flusher" — Deepgram reçoit déjà l'audio en
+  // continu (voir handleAudioData) et décide lui-même de la fin de phrase
+  // (endpointing côté serveur Deepgram, voir deepgram-streaming.js). Cette
+  // détection Silero reste active UNIQUEMENT pour marquer la latence VAD
+  // (markVadOnset ci-dessus) et comme filet de repli si le streaming tombe
+  // en cours de session (voir startDeepgramStreamingSession/onError).
+  if (STATE.deepgramStreamingActive) return;
+
+  const sinceLastFlushMs = Date.now() - STATE.lastFlushAt;
+  if (
+    STATE.sileroSegmentHasSpeech &&
+    STATE.sileroConsecutiveSilentMs >= config.trailingSilenceMs &&
+    sinceLastFlushMs >= config.minFlushIntervalMs
+  ) {
+    flushSegment(config, { early: true });
   }
 }
 
@@ -567,6 +941,27 @@ function stopRecording() {
   STATE.segmentHasSpeech = false;
   STATE.consecutiveSilentFrameMs = 0;
   STATE.voicedFrameMsInSegment = 0;
+  STATE.vadProvider = 'rms';
+  STATE.sileroStreamState = null;
+  STATE.sileroFrameAccumulator = Buffer.alloc(0);
+  STATE.sileroQueue = Promise.resolve();
+  STATE.sileroConsecutiveSilentMs = 0;
+  STATE.sileroVoicedFrameMsInSegment = 0;
+  STATE.sileroSegmentHasSpeech = false;
+  STATE.sileroProbSum = 0;
+  STATE.sileroProbCount = 0;
+  // AJOUT (Deepgram streaming) : ferme proprement la session (CloseStream +
+  // close WebSocket, voir deepgram-streaming.js) plutôt que de la laisser
+  // pendre — isRecording est déjà false ici, donc les handlers onError/
+  // onClose ci-dessus (startDeepgramStreamingSession) l'ont déjà repéré et
+  // n'essaieront pas de déclencher un repli pour une session qu'on arrête
+  // nous-mêmes volontairement.
+  if (STATE.deepgramSession) {
+    STATE.deepgramSession.finish();
+  }
+  STATE.deepgramSession = null;
+  STATE.deepgramStreamingActive = false;
+  STATE.utteranceTracker = null;
   console.log('[audio-capture] Capture arrêtée.');
   cleanupTempFiles({ force: true });
   return Promise.resolve();
@@ -574,7 +969,7 @@ function stopRecording() {
 
 /**
  * Enregistre les callbacks d'événements
- * @param {Object} callbacks - { onAudioSegment, onError }
+ * @param {Object} callbacks - { onAudioSegment, onError, onPartialTranscript, onFinalTranscript, onAsrFallback }
  */
 function on(callbacks) {
   STATE.callbacks = { ...STATE.callbacks, ...callbacks };
@@ -662,4 +1057,11 @@ module.exports = {
   // AJOUT (VAD réel) — exposées pour tests unitaires (test-audio-capture.js).
   computeRms,
   analyzeVoiceActivity,
+  // AJOUT (VAD neuronal — Silero) — diagnostic/tests : quel détecteur pilote
+  // la session en cours ('rms' tant que Silero n'a pas fini de charger ou
+  // s'il est indisponible/désactivé, voir initVadProvider).
+  getVadProvider: () => STATE.vadProvider,
+  // AJOUT (Deepgram streaming) — diagnostic/tests.
+  getAsrProvider: () => STATE.asrProvider,
+  isDeepgramStreamingActive: () => STATE.deepgramStreamingActive,
 };

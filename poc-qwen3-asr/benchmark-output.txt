@@ -1,0 +1,17 @@
+[POC-native] RAM avant chargement du modèle: 35 MB
+[POC-native] Modèle chargé en 6296ms
+[POC-native] RAM après chargement du modèle: 1068 MB
+
+[POC-native] --- ./samples/sample1_16k.wav ---
+[POC-native] Attendu (voix de synthèse TTS, PAS une voix humaine) : "Nous allons lire Jean chapitre trois verset seize."
+[POC-native] Transcrit : "Nous allons lire Jean chapitre trois verset seize."
+[POC-native] Latence de décodage : 2186ms
+[POC-native] CPU pendant le décodage — user 4234ms, system 46ms (numThreads: 2)
+[POC-native] RAM après ce décodage: 1224 MB
+
+[POC-native] --- ./samples/sample2_16k.wav ---
+[POC-native] Attendu (voix de synthèse TTS, PAS une voix humaine) : "Premier Corinthiens chapitre treize verset quatre."
+[POC-native] Transcrit : "Premier Corinthe un chapitre treize verset quatre."
+[POC-native] Latence de décodage : 2319ms
+[POC-native] CPU pendant le décodage — user 4656ms, system 16ms (numThreads: 2)
+[POC-native] RAM après ce décodage: 1249 MB

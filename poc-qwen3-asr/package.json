@@ -1,0 +1,10 @@
+{
+  "name": "poc-qwen3-asr",
+  "private": true,
+  "description": "POC isolé - feasibility Qwen3-ASR via sherpa-onnx-node - NON lié au packaging de l'app principale",
+  "version": "0.0.0",
+  "dependencies": {
+    "sherpa-onnx": "^1.13.4",
+    "sherpa-onnx-node": "^1.13.4"
+  }
+}

@@ -105,8 +105,12 @@ export function addTranscript(message) {
   // n'était jamais appliqué ici, le point d'entrée le plus direct entre
   // "parole captée" et innerHTML.
   const time = new Date(message.timestamp || Date.now()).toLocaleTimeString();
+  const confidenceHtml =
+    typeof message.confidence === 'number'
+      ? `<span class="status-badge ${message.confidence >= 0.6 ? 'success' : message.confidence >= 0.3 ? 'warning' : 'error'}">${Math.round(message.confidence * 100)}%</span>`
+      : '';
   item.innerHTML = `
-                <div class="transcript-time"><span>${time}</span><span>${escapeHtmlDashboard(message.source || 'Audio')}</span></div>
+                <div class="transcript-time"><span>${time}</span><span>${escapeHtmlDashboard(message.source || 'Audio')}${confidenceHtml}</span></div>
                 <div class="transcript-text">${escapeHtmlDashboard(message.text || '')}</div>
             `;
 

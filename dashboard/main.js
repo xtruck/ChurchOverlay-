@@ -38,3 +38,7 @@ import './features/verse-queue.js';
 // loadPlanningCenterConfig() au chargement et ses window.x ne
 // s'exécuteraient jamais.
 import './features/propresenter-planning-center.js';
+// AJOUT : obs-scenes.js, comme propresenter-planning-center.js et
+// verse-queue.js, n'est importé par personne d'autre — sans cette ligne,
+// son loadObsConfig() initial et ses window.x ne s'exécuteraient jamais.
+import './features/obs-scenes.js';
