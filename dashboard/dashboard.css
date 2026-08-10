@@ -1650,6 +1650,21 @@ body {
   background: rgba(124, 140, 245, 0.15);
   color: var(--primary);
 }
+
+/* AJOUT (redesign visuel — balayage final) : dernier composant restant
+           avec un style="..." inline (propresenter-planning-center.js),
+           déjà repéré au chantier de redesign mais laissé de côté à
+           l'époque (portée du lot déjà large ce jour-là). Liste des
+           éléments d'une playlist ProPresenter/Planning Center. */
+.integration-item {
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.integration-item-meta {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
 .status-badge.error {
   background: rgba(244, 96, 122, 0.15);
   color: var(--accent-rose);

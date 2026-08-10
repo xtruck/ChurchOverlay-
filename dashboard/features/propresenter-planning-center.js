@@ -148,7 +148,7 @@ export async function fetchPlanningCenterPlan() {
       itemsEl.innerHTML = (result.items || [])
         .map(
           (item) =>
-            `<div style="padding:0.3rem 0; border-bottom:1px solid var(--border-subtle);">${escapeHtmlDashboard(item.title)} <span style="color:var(--text-dim); font-size:0.78rem;">(${escapeHtmlDashboard(item.itemType)})</span></div>`
+            `<div class="integration-item">${escapeHtmlDashboard(item.title)} <span class="integration-item-meta">(${escapeHtmlDashboard(item.itemType)})</span></div>`
         )
         .join('');
     }
