@@ -53,8 +53,14 @@ async function main() {
   );
 
   const samples = [
-    { file: './samples/sample1_16k.wav', expected: 'Nous allons lire Jean chapitre trois verset seize.' },
-    { file: './samples/sample2_16k.wav', expected: 'Premier Corinthiens chapitre treize verset quatre.' },
+    {
+      file: './samples/sample1_16k.wav',
+      expected: 'Nous allons lire Jean chapitre trois verset seize.',
+    },
+    {
+      file: './samples/sample2_16k.wav',
+      expected: 'Premier Corinthiens chapitre treize verset quatre.',
+    },
   ];
 
   for (const { file, expected } of samples) {

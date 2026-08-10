@@ -55,5 +55,7 @@ for (const [inFile, outFile] of [
   const { sampleRate, samples } = readWav(inFile);
   const resampled = resampleLinear(samples, sampleRate, 16000);
   writeWav(outFile, resampled, 16000);
-  console.log(`${inFile} (${sampleRate}Hz, ${samples.length} samples) -> ${outFile} (16000Hz, ${resampled.length} samples, ${(resampled.length / 16000).toFixed(2)}s)`);
+  console.log(
+    `${inFile} (${sampleRate}Hz, ${samples.length} samples) -> ${outFile} (16000Hz, ${resampled.length} samples, ${(resampled.length / 16000).toFixed(2)}s)`
+  );
 }

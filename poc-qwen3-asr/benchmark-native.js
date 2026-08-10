@@ -52,13 +52,21 @@ async function main() {
   console.log('[POC-native] RAM après chargement du modèle:', memMB(), 'MB');
 
   const samples = [
-    { file: './samples/sample1_16k.wav', expected: 'Nous allons lire Jean chapitre trois verset seize.' },
-    { file: './samples/sample2_16k.wav', expected: 'Premier Corinthiens chapitre treize verset quatre.' },
+    {
+      file: './samples/sample1_16k.wav',
+      expected: 'Nous allons lire Jean chapitre trois verset seize.',
+    },
+    {
+      file: './samples/sample2_16k.wav',
+      expected: 'Premier Corinthiens chapitre treize verset quatre.',
+    },
   ];
 
   for (const { file, expected } of samples) {
     console.log(`\n[POC-native] --- ${file} ---`);
-    console.log(`[POC-native] Attendu (voix de synthèse TTS, PAS une voix humaine) : "${expected}"`);
+    console.log(
+      `[POC-native] Attendu (voix de synthèse TTS, PAS une voix humaine) : "${expected}"`
+    );
     const { text, decodeMs, cpuUserMs, cpuSystemMs } = transcribe(recognizer, file);
     console.log(`[POC-native] Transcrit : "${text}"`);
     console.log(`[POC-native] Latence de décodage : ${decodeMs}ms`);
