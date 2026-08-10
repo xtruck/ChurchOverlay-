@@ -51,6 +51,57 @@ export function requestLiveSummary() {
   ws.send(JSON.stringify({ action: 'getLiveSummary' }));
 }
 
+// AJOUT (statistiques IA — fonctionnalité déjà codée côté serveur, jamais
+// exposée côté tableau de bord jusqu'ici) : getAiStats existait déjà
+// (server.js), purement diagnostique — utile pour vérifier que le
+// détecteur sémantique/correcteur tournent réellement, pas pour une
+// décision en direct pendant un culte.
+export function requestAiStats() {
+  if (!requireWsOrWarn()) return;
+  renderAiEnricherOutput('⏳ Chargement des statistiques IA...');
+  ws.send(JSON.stringify({ action: 'getAiStats' }));
+}
+
+export function renderAiStats(message) {
+  // CORRECTIF : renderAiEnricherOutput() enveloppe systématiquement son
+  // contenu dans <span class="stat-label">...</span> (voir plus haut) —
+  // adapté à une seule ligne de texte, pas à une liste de .stat-row (des
+  // <div>, invalides à l'intérieur d'un <span>). Écrit donc directement
+  // dans le même élément plutôt que de réutiliser ce wrapper ici.
+  const el = document.getElementById('aiEnricherOutput');
+  if (!el) return;
+  const rows = [];
+  if (message.semanticDetector) {
+    rows.push(
+      `<div class="stat-row"><span class="stat-label">Détecteur sémantique — cache</span><span class="stat-value">${message.semanticDetector.cacheSize}</span></div>`
+    );
+    rows.push(
+      `<div class="stat-row"><span class="stat-label">Détecteur sémantique — appels récents</span><span class="stat-value">${message.semanticDetector.recentCalls}</span></div>`
+    );
+  } else {
+    rows.push(
+      '<div class="stat-row"><span class="stat-label">Détecteur sémantique</span><span class="stat-value">Indisponible</span></div>'
+    );
+  }
+  if (message.corrector) {
+    rows.push(
+      `<div class="stat-row"><span class="stat-label">Corrections rapides</span><span class="stat-value">${message.corrector.fastCorrections || 0}</span></div>`
+    );
+    rows.push(
+      `<div class="stat-row"><span class="stat-label">Corrections avancées</span><span class="stat-value">${message.corrector.smartCorrections || 0}</span></div>`
+    );
+  }
+  rows.push(
+    `<div class="stat-row"><span class="stat-label">Enrichisseur IA (résumé/thème/récap)</span><span class="stat-value">${message.aiEnricher ? 'Actif' : 'Indisponible'}</span></div>`
+  );
+  if (message.loadErrors && message.loadErrors.length) {
+    rows.push(
+      `<div class="stat-row"><span class="stat-label">Erreurs de chargement</span><span class="stat-value stat-value-sub">${message.loadErrors.map((e) => escapeHtmlDashboard(String(e))).join(', ')}</span></div>`
+    );
+  }
+  el.innerHTML = rows.join('');
+}
+
 export function requestCrossReferences() {
   if (!requireWsOrWarn()) return;
   const verse = state.currentVerse;
@@ -584,6 +635,7 @@ export function renderPreServiceCheckResult(message) {
 window.runPreServiceCheck = runPreServiceCheck;
 window.requestSermonTheme = requestSermonTheme;
 window.requestLiveSummary = requestLiveSummary;
+window.requestAiStats = requestAiStats;
 window.requestCrossReferences = requestCrossReferences;
 window.requestLiveTranslation = requestLiveTranslation;
 window.requestPostServiceRecap = requestPostServiceRecap;

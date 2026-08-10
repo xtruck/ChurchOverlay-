@@ -24,6 +24,22 @@ function injectFakeModule(relativePath, exportsObj) {
   return abs;
 }
 
+// Utilisé par le sélecteur de version biblique (translation-picker.js) —
+// mêmes champs (code/label/active) et mêmes langues que
+// AVAILABLE_TRANSLATIONS dans le vrai bible-lookup-with-api.js, en
+// miniature. Mutable par setTranslation() ci-dessous, comme la vraie
+// implémentation.
+const FAKE_TRANSLATIONS = {
+  fr: [
+    { code: 'lsg', label: 'Louis Segond 1910', active: true },
+    { code: 'darby', label: 'Darby', active: false },
+  ],
+  en: [
+    { code: 'kjv', label: 'King James Version', active: true },
+    { code: 'web', label: 'World English Bible (moderne)', active: false },
+  ],
+};
+
 injectFakeModule('bible-lookup-with-api.js', {
   async getChapterVerses() {
     throw new Error('non utilisé dans ce test');
@@ -57,9 +73,19 @@ injectFakeModule('bible-lookup-with-api.js', {
     return null;
   },
   setCacheDir() {},
-  setTranslation() {},
+  setTranslation(lang, code) {
+    const list = FAKE_TRANSLATIONS[lang];
+    if (!list) throw new Error(`Langue inconnue: ${lang}`);
+    if (!list.some((t) => t.code === code)) {
+      throw new Error(`Traduction inconnue pour ${lang}: ${code}`);
+    }
+    list.forEach((t) => {
+      t.active = t.code === code;
+    });
+    return code;
+  },
   listTranslations() {
-    return [];
+    return FAKE_TRANSLATIONS;
   },
   getTranslationId() {
     return 'lsg';
@@ -104,5 +130,16 @@ injectFakeModule('audio-capture.js', {
 
 process.env.PORT = process.env.PORT || '8770'; // distinct des ports déjà utilisés par test/*.js
 process.env.WS_HOST = '127.0.0.1';
+// CORRECTIF (débogage e2e) : le limiteur de débit (rate-limiter.js) compte
+// par IP cliente — TOUTES les connexions Playwright de TOUTE la suite
+// e2e (un seul processus serveur partagé pour tous les fichiers .spec.js,
+// voir playwright.config.js > webServer) partagent donc le même quota
+// 127.0.0.1, cumulé sur toute la durée de la suite, pas par test. Avec la
+// limite par défaut (60/min), un test qui tourne après plusieurs autres
+// peut se faire silencieusement rejeter ses messages WS sans qu'aucune
+// erreur ne remonte côté page — repéré exactement ainsi (le test de
+// sélecteur de version biblique passait seul, échouait dans la suite
+// complète). Limite relevée uniquement pour cet environnement de test.
+process.env.MAX_MESSAGES_PER_MINUTE = process.env.MAX_MESSAGES_PER_MINUTE || '1000';
 
 require('../../server.js');

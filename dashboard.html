@@ -829,6 +829,23 @@
                 🌐 Bilingue (FR + EN)
               </button>
             </div>
+            <!-- AJOUT (sélecteur de version biblique) : distinct de la LANGUE
+                         d'affichage ci-dessus — choisit la VERSION du texte dans une
+                         langue donnée (ex. Louis Segond 1910 vs Darby en français). Voir
+                         dashboard/features/translation-picker.js. Peuplé dynamiquement
+                         depuis le message 'init' (bibleLookup.listTranslations()), pas
+                         codé en dur ici. -->
+            <div
+              id="translationPicker"
+              style="
+                margin-top: 1rem;
+                padding-top: 1rem;
+                border-top: 1px solid var(--border-subtle);
+                display: flex;
+                flex-direction: column;
+                gap: 0.5rem;
+              "
+            ></div>
           </div>
         </section>
 
@@ -972,6 +989,17 @@
                 title="Génère d'abord le récap si nécessaire"
               >
                 📄 Exporter le récap (.txt)
+              </button>
+              <!-- AJOUT (statistiques IA — diagnostic) : getAiStats existait déjà
+                           côté serveur, jamais exposé côté tableau de bord. Purement
+                           informatif (cache/appels du détecteur, corrections
+                           appliquées...), pas une action pour le culte en cours. -->
+              <button
+                class="btn btn-secondary"
+                onclick="requestAiStats()"
+                title="Diagnostic — cache/appels du détecteur sémantique, corrections appliquées"
+              >
+                📊 Statistiques IA
               </button>
             </div>
 

@@ -32,6 +32,7 @@ import {
   renderSermonQaResult,
   requestAutoTranslation,
   renderPreServiceCheckResult,
+  renderAiStats,
 } from './features/preservice-ai.js';
 import { renderMediaLibrary } from './features/media-library.js';
 import { renderNetworkStatus } from './features/network-settings.js';
@@ -44,9 +45,28 @@ import {
   renderBibleSearchError,
 } from './features/bible-search.js';
 import { setReadingModeActive } from './features/reading-mode.js';
+import {
+  renderTranslationPicker,
+  updateActiveTranslationButton,
+} from './features/translation-picker.js';
 
 export function handleMessage(message) {
   switch (message.action) {
+    // AJOUT (sélecteur de version biblique) : 'init', le tout premier
+    // message envoyé par le serveur à chaque connexion (voir server.js),
+    // n'avait jusqu'ici AUCUN case ici — porte pourtant translations,
+    // plugins, history, theme, branding, defaultMedia... Ce correctif ne
+    // consomme QUE translations (portée volontairement limitée à ce que
+    // ce lot construit) ; reconstruire l'état complet du tableau de bord
+    // au chargement depuis le reste de ce message reste un chantier
+    // séparé, plus large, pas entrepris ici.
+    case 'init':
+      renderTranslationPicker(message.translations);
+      break;
+    case 'translationChanged':
+      updateActiveTranslationButton(message.language, message.code);
+      showToast(`Version biblique changée (${message.language}).`, 'success');
+      break;
     case 'showVerse':
       displayVerse(message);
       state.totalVerses++;
@@ -118,6 +138,9 @@ export function handleMessage(message) {
       renderAiEnricherOutput(
         message.summary ? `Résumé : ${message.summary}` : 'Résumé indisponible pour le moment.'
       );
+      break;
+    case 'aiStats':
+      renderAiStats(message);
       break;
     case 'crossReferences':
       renderAiEnricherOutput(
