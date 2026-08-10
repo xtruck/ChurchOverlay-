@@ -2009,12 +2009,80 @@
               <span class="card-title">Intégrations</span>
             </div>
 
+            <!-- AJOUT : le module OBS (obs-controller.js) et son pont IPC
+                 (main.js > obs-get-config/obs-set-config/obs-connect/
+                 obs-list-scenes/obs-switch-scene, exposés via preload.js)
+                 existaient déjà et étaient testés (test-obs-gating.js), mais
+                 sans aucune interface : impossible de changer de scène OBS
+                 depuis le tableau de bord, ni même de saisir l'URL/mot de
+                 passe obs-websocket. Même principe que ProPresenter/Planning
+                 Center ci-dessous : entièrement optionnel, "enabled" reste à
+                 false tant que l'opérateur ne l'active pas explicitement ici. -->
             <div
               style="
                 font-size: 0.85rem;
                 font-weight: 600;
                 color: var(--text-main);
                 margin-bottom: 0.5rem;
+              "
+            >
+              OBS Studio (scènes multiples)
+            </div>
+            <div class="field-hint" style="margin-bottom: 0.5rem">
+              Outils → obs-websocket → Activer serveur WebSocket (déjà intégré depuis OBS 28+).
+            </div>
+            <div class="form-group">
+              <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer">
+                <input type="checkbox" id="obsEnabledInput" /> Activer la connexion OBS
+              </label>
+            </div>
+            <div class="form-group">
+              <label for="obsUrlInput">URL du serveur obs-websocket</label>
+              <input type="text" id="obsUrlInput" placeholder="ws://localhost:4455" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="obsPasswordInput">Mot de passe</label>
+              <div class="input-row">
+                <input
+                  type="password"
+                  id="obsPasswordInput"
+                  placeholder="Laisser vide pour conserver le mot de passe actuel"
+                  autocomplete="off"
+                />
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-toggle-pass"
+                  data-target="obsPasswordInput"
+                >
+                  Afficher
+                </button>
+              </div>
+            </div>
+            <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.75rem">
+              <button type="button" class="btn btn-secondary" onclick="saveObsConfig()">
+                Enregistrer
+              </button>
+              <button type="button" class="btn btn-secondary" onclick="connectObs()">
+                🔌 Se connecter
+              </button>
+              <button type="button" class="btn btn-secondary" onclick="refreshObsScenes()">
+                🔄 Rafraîchir les scènes
+              </button>
+              <button type="button" class="btn btn-secondary" onclick="toggleObsRecording()">
+                ⏺ Démarrer/arrêter l'enregistrement
+              </button>
+            </div>
+            <div class="field-hint" id="obsStatus" style="margin-bottom: 0.75rem"></div>
+            <div id="obsScenesList" style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem"></div>
+
+            <div
+              style="
+                font-size: 0.85rem;
+                font-weight: 600;
+                color: var(--text-main);
+                margin-bottom: 0.5rem;
+                padding-top: 0.75rem;
+                border-top: 1px solid var(--border-subtle);
               "
             >
               ProPresenter (écran scène)

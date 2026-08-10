@@ -82,6 +82,7 @@
       "dashboard/features/song-library.js",
       "dashboard/features/offline-bible.js",
       "dashboard/features/propresenter-planning-center.js",
+      "dashboard/features/obs-scenes.js",
       "dashboard/features/preservice-ai.js",
       "dashboard/features/media-library.js",
       "dashboard/features/network-settings.js",
