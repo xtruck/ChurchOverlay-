@@ -1,0 +1,188 @@
+[
+  {
+    "id": "A",
+    "startedAt": 1786398032252,
+    "partials": [
+      {
+        "text": "Jean chapitre",
+        "at": 1786398035602,
+        "confidence": 0.8959961
+      },
+      {
+        "text": "Jean chapitre",
+        "at": 1786398037356,
+        "confidence": 0.9707031
+      }
+    ],
+    "firstPartialAt": 1786398035602,
+    "finalAt": 1786398041436,
+    "finalText": "Jean chapitre 3 verset 1.",
+    "finalConfidence": 0.93603516,
+    "tracker": null,
+    "expected": {
+      "id": "A",
+      "file": "testA_16k.wav",
+      "text": "Jean chapitre trois verset seize.",
+      "expectScripture": true
+    },
+    "correctedFinal": "Jean chapitre 3 verset 1.",
+    "finalRef": {
+      "book": "jean",
+      "chapter": 3,
+      "verseStart": 1,
+      "verseEnd": 1,
+      "raw": "jean chapitre 3 verset 1",
+      "confidence": "high"
+    },
+    "finalRefKey": "jean:3:1",
+    "bibleLookupMs": 336,
+    "bibleVerseText": "Mais il y eut un homme d’entre les pharisiens, nommé Nicodème, un chef des Juifs,"
+  },
+  {
+    "id": "B",
+    "startedAt": 1786398041775,
+    "partials": [
+      {
+        "text": "premier Corri",
+        "at": 1786398044385,
+        "confidence": 0.5292969
+      },
+      {
+        "text": "premier Corinthiens chapitre",
+        "at": 1786398046219,
+        "confidence": 0.8364258
+      },
+      {
+        "text": "premier Corinthiens chapitre 13 verset",
+        "at": 1786398047858,
+        "confidence": 0.75146484
+      },
+      {
+        "text": "premier Corinthiens chapitre 13 verset.",
+        "at": 1786398051305,
+        "confidence": 0.8339844
+      }
+    ],
+    "firstPartialAt": 1786398044385,
+    "finalAt": 1786398051652,
+    "finalText": "premier Corinthiens chapitre 13 verset.",
+    "finalConfidence": 0.8339844,
+    "tracker": null,
+    "expected": {
+      "id": "B",
+      "file": "testB_16k.wav",
+      "text": "Premier Corinthiens chapitre treize verset quatre.",
+      "expectScripture": true
+    },
+    "correctedFinal": "premier Corinthiens chapitre 13 verset.",
+    "finalRef": {
+      "book": "1corinthiens",
+      "chapter": 13,
+      "raw": "1 corinthiens chapitre 13",
+      "confidence": "medium"
+    },
+    "finalRefKey": "1corinthiens:13:"
+  },
+  {
+    "id": "C",
+    "startedAt": 1786398051963,
+    "partials": [
+      {
+        "text": "Nous allons lire",
+        "at": 1786398055293,
+        "confidence": 0.99902344
+      },
+      {
+        "text": "Nous allons lire dans Jean,",
+        "at": 1786398056597,
+        "confidence": 0.9970703
+      },
+      {
+        "text": "Nous allons lire dans Jean, chapitre",
+        "at": 1786398058270,
+        "confidence": 0.9980469
+      },
+      {
+        "text": "Nous allons lire dans Des, chapitre",
+        "at": 1786398058820,
+        "confidence": 0.9970703
+      },
+      {
+        "text": "Nous allons lire dans Jean chapitre 3 verset 16.",
+        "at": 1786398060271,
+        "confidence": 0.89990234
+      },
+      {
+        "text": "Nous allons lire dans Jean chapitre 3, verset 16.",
+        "at": 1786398062937,
+        "confidence": 0.94311523
+      }
+    ],
+    "firstPartialAt": 1786398055293,
+    "firstUsefulPartialAt": 1786398060271,
+    "firstUsefulPartialText": "Nous allons lire dans Jean chapitre 3 verset 16.",
+    "firstUsefulRef": {
+      "book": "jean",
+      "chapter": 3,
+      "verseStart": 16,
+      "verseEnd": 16,
+      "raw": "jean chapitre 3 verset 16",
+      "confidence": "high"
+    },
+    "finalAt": 1786398063342,
+    "finalText": "Nous allons lire dans Jean chapitre 3, verset 16.",
+    "finalConfidence": 0.94311523,
+    "tracker": null,
+    "expected": {
+      "id": "C",
+      "file": "testC_16k.wav",
+      "text": "Nous allons lire dans Jean, chapitre trois, verset seize.",
+      "expectScripture": true
+    },
+    "correctedFinal": "Nous allons lire dans Jean chapitre 3, verset 16.",
+    "finalRef": {
+      "book": "jean",
+      "chapter": 3,
+      "verseStart": 16,
+      "verseEnd": 16,
+      "raw": "jean chapitre 3, verset 16",
+      "confidence": "high"
+    },
+    "finalRefKey": "jean:3:16"
+  },
+  {
+    "id": "D",
+    "startedAt": 1786398063647,
+    "partials": [
+      {
+        "text": "Bonjour à tous",
+        "at": 1786398066574,
+        "confidence": 0.8852539
+      },
+      {
+        "text": "Bonjour à tous, nous allons",
+        "at": 1786398068036,
+        "confidence": 0.9807129
+      },
+      {
+        "text": "Bonjour à tous, nous allons commencer le",
+        "at": 1786398069496,
+        "confidence": 0.94921875
+      }
+    ],
+    "firstPartialAt": 1786398066574,
+    "finalAt": 1786398071083,
+    "finalText": "Bonjour à tous, nous allons commencer le culte.",
+    "finalConfidence": 0.9873047,
+    "tracker": {},
+    "expected": {
+      "id": "D",
+      "file": "testD_16k.wav",
+      "text": "Bonjour à tous, nous allons commencer le culte.",
+      "expectScripture": false
+    },
+    "correctedFinal": "Bonjour à tous, nous allons commencer le culte.",
+    "finalRef": null,
+    "finalRefKey": null
+  }
+]

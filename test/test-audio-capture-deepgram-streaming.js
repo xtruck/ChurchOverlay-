@@ -47,6 +47,12 @@ class FakeWebSocket extends EventEmitter {
   }
   send(data) {
     this.sent.push(data);
+    // Simule le comportement RÉEL de Deepgram observé en direct (voir
+    // live-tests/diagnose-raw-messages.js) : après CloseStream, le serveur
+    // ferme la connexion de SON côté, de façon asynchrone.
+    if (typeof data === 'string' && data.includes('CloseStream')) {
+      setImmediate(() => this.close());
+    }
   }
   close() {
     this.closed = true;
@@ -159,6 +165,74 @@ async function run() {
   await sleep(100);
   assert.strictEqual(segments.length, 1, 'un segment WAV aurait dû être créé après le repli');
   console.log('[TEST] ✓ Repli fonctionnel — audio non perdu après la panne streaming\n');
+
+  await audioCapture.stopRecording();
+
+  console.log(
+    '\n[TEST] Test 7: un FINAL arrivant APRÈS un arrêt volontaire (stopRecording) est bien délivré ' +
+      '(régression du bug "dernier final de chaque énoncé perdu", trouvé en test réel — voir le rapport livré)...'
+  );
+  {
+    const finals2 = [];
+    audioCapture.on({
+      onAudioSegment: () => {},
+      onPartialTranscript: () => {},
+      onFinalTranscript: (text) => finals2.push(text),
+      onAsrFallback: () => {},
+    });
+    await audioCapture.startBrowserCapture();
+    const fake2 = FakeWebSocket.lastInstance;
+    fake2.emit('open');
+    await waitFor(() => audioCapture.isDeepgramStreamingActive());
+    await audioCapture.stopRecording(); // déclenche finish() -> CloseStream, ne ferme plus le socket immédiatement
+    assert.strictEqual(fake2.closed, false, 'ne doit pas fermer avant la réponse de "Deepgram" (simulée)');
+    // Le dernier résultat arrive ICI, entre stopRecording() et la fermeture réseau — exactement le scénario réel.
+    fake2.emit('message', resultMessage({ transcript: 'Jean trois seize', isFinal: true }));
+    assert.strictEqual(finals2.length, 1, 'le dernier final doit être délivré malgré STATE.isRecording déjà à false');
+    assert.strictEqual(finals2[0], 'Jean trois seize');
+  }
+  console.log('[TEST] ✓ Dernier final délivré après un arrêt volontaire\n');
+
+  console.log(
+    '[TEST] Test 8: un FINAL tardif d\'une session déjà REMPLACÉE (arrêt puis relance) est bien ignoré ' +
+      '(le correctif du Test 7 ne doit pas réintroduire de fuite entre sessions)...'
+  );
+  {
+    const finals3 = [];
+    audioCapture.on({
+      onAudioSegment: () => {},
+      onPartialTranscript: () => {},
+      onFinalTranscript: (text) => finals3.push(text),
+      onAsrFallback: () => {},
+    });
+    await audioCapture.startBrowserCapture();
+    const staleFake = FakeWebSocket.lastInstance;
+    staleFake.emit('open');
+    await waitFor(() => audioCapture.isDeepgramStreamingActive());
+
+    // Arrêt puis relance immédiate (ex. redémarrage du pipeline) — le
+    // scénario réel où STATE.deepgramSession en vient à pointer vers une
+    // toute nouvelle session, jamais vers `staleFake`. stopRecording()
+    // déclenche finish() sur staleFake, mais on n'attend PAS sa fermeture
+    // simulée avant de relancer, pour reproduire fidèlement une relance
+    // rapide.
+    await audioCapture.stopRecording();
+    await audioCapture.startBrowserCapture();
+    const freshFake = FakeWebSocket.lastInstance;
+    freshFake.emit('open');
+    await waitFor(() => audioCapture.isDeepgramStreamingActive());
+    assert.notStrictEqual(staleFake, freshFake, 'les deux captures doivent avoir des sockets distincts');
+
+    // Le "vieux" final de la session remplacée arrive tardivement.
+    staleFake.emit('message', resultMessage({ transcript: 'texte obsolète', isFinal: true }));
+    assert.strictEqual(finals3.length, 0, 'un final d\'une session déjà remplacée ne doit JAMAIS être délivré');
+
+    // Le final de la session ACTIVE, lui, doit toujours fonctionner normalement.
+    freshFake.emit('message', resultMessage({ transcript: 'texte actuel', isFinal: true }));
+    assert.strictEqual(finals3.length, 1);
+    assert.strictEqual(finals3[0], 'texte actuel');
+  }
+  console.log('[TEST] ✓ Final obsolète ignoré, final de la session active délivré normalement\n');
 
   await audioCapture.stopRecording();
   deepgramStreaming.setWsFactoryForTesting(null);

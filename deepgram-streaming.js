@@ -43,6 +43,11 @@ const DEEPGRAM_LANGUAGE = 'fr';
 // proche de trailingSilenceMs (audio-capture.js) pour un ressenti cohérent
 // entre les deux chemins (streaming vs repli segment).
 const DEFAULT_ENDPOINTING_MS = 500;
+// Délai maximum d'attente, après CloseStream, avant de forcer la fermeture
+// locale si Deepgram ne ferme jamais lui-même la connexion — voir finish()
+// plus bas. Assez long pour laisser passer un dernier 'final', assez court
+// pour ne jamais bloquer un arrêt de capture perçu par l'opérateur.
+const FINISH_TIMEOUT_MS = 2000;
 
 function isConfigured() {
   return !!process.env.DEEPGRAM_API_KEY;
@@ -168,15 +173,42 @@ function createSession(handlers, wsFactory) {
         pendingChunks.push(buf);
       }
     },
-    /** Fin normale — signale à Deepgram que le flux est terminé, laisse le dernier 'final' arriver. */
+    /**
+     * Fin normale — signale à Deepgram que le flux est terminé, laisse le
+     * dernier 'final' arriver.
+     *
+     * CORRECTIF (live test réel, DEEPGRAM_API_KEY vraie — le dernier 'final'
+     * n'arrivait JAMAIS) : ce code fermait auparavant le socket local
+     * (ws.close()) IMMÉDIATEMENT après avoir envoyé CloseStream, sans
+     * laisser à Deepgram la moindre chance de vider son buffer et renvoyer
+     * son dernier résultat avant que la connexion ne soit coupée depuis
+     * notre côté. Confirmé par une connexion réelle (voir
+     * live-tests/diagnose-raw-messages.js) : après CloseStream, fermer tout
+     * de suite empêchait tout 'Results' final de jamais arriver. On attend
+     * maintenant que Deepgram ferme lui-même la connexion (l'événement
+     * 'close' existant déclenche déjà handlers.onClose ci-dessus, sans
+     * changement) — avec un filet de sécurité (FINISH_TIMEOUT_MS) pour ne
+     * jamais rester bloqué si Deepgram ne répond pas.
+     */
     finish() {
       if (closed) return;
-      try {
-        if (open) ws.send(JSON.stringify({ type: 'CloseStream' }));
-      } catch (_err) {
-        // Connexion déjà en train de se fermer — sans conséquence, close() ci-dessous suffit.
+      if (!open) {
+        ws.close();
+        return;
       }
-      ws.close();
+      try {
+        ws.send(JSON.stringify({ type: 'CloseStream' }));
+      } catch (_err) {
+        // Envoi impossible (connexion déjà en mauvais état) : rien à attendre, ferme tout de suite.
+        ws.close();
+        return;
+      }
+      const timer = setTimeout(() => {
+        if (!closed) ws.close();
+      }, FINISH_TIMEOUT_MS);
+      if (typeof ws.once === 'function') {
+        ws.once('close', () => clearTimeout(timer));
+      }
     },
     /** Coupure immédiate (erreur/repli) — pas de message de fin propre. */
     abort() {
@@ -192,5 +224,6 @@ module.exports = {
   isConfigured,
   buildStreamingUrl,
   DEFAULT_ENDPOINTING_MS,
+  FINISH_TIMEOUT_MS,
   setWsFactoryForTesting,
 };

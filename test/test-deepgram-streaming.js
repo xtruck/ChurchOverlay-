@@ -33,6 +33,15 @@ class FakeWebSocket extends EventEmitter {
   }
   send(data) {
     this.sent.push(data);
+    // Simule le comportement RÉEL de Deepgram observé en direct (voir
+    // live-tests/diagnose-raw-messages.js) : après CloseStream, le serveur
+    // ferme la connexion de SON côté, de façon asynchrone — jamais en
+    // réaction synchrone à l'envoi. C'est justement ce délai que le
+    // correctif de finish() (deepgram-streaming.js) doit maintenant
+    // attendre avant de fermer le socket local.
+    if (typeof data === 'string' && data.includes('CloseStream')) {
+      setImmediate(() => this.close());
+    }
   }
   close() {
     this.closed = true;
@@ -46,6 +55,10 @@ class FakeWebSocket extends EventEmitter {
 
 function makeFactory() {
   return (url, options) => new FakeWebSocket(url, options);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function resultMessage({ transcript, isFinal = false, speechFinal = false, confidence = 0.9 }) {
@@ -197,7 +210,7 @@ async function run() {
   }
   console.log('[TEST] ✓ onError propagé\n');
 
-  console.log('[TEST] Test 11: finish() envoie CloseStream puis ferme, sendAudio() après close() est un no-op...');
+  console.log('[TEST] Test 11: finish() envoie CloseStream, attend que Deepgram ferme lui-même, sendAudio() après close() est un no-op...');
   {
     let closedCalled = false;
     const session = deepgramStreaming.createSession({ onClose: () => (closedCalled = true) }, makeFactory());
@@ -205,13 +218,62 @@ async function run() {
     fake.emit('open');
     session.finish();
     assert(fake.sent.some((s) => typeof s === 'string' && s.includes('CloseStream')));
+    // CORRECTIF (live test réel — voir deepgram-streaming.js) : le socket
+    // local ne doit PLUS se fermer de façon SYNCHRONE juste après l'envoi
+    // de CloseStream — ça ne laissait auparavant aucune chance à Deepgram
+    // de renvoyer son dernier résultat. La fermeture n'arrive qu'une fois
+    // que le serveur (simulé ici) ferme lui-même la connexion.
+    assert.strictEqual(fake.closed, false, 'ne doit pas fermer avant que Deepgram ait répondu');
+    await sleep(10); // laisse le setImmediate() du FakeWebSocket simuler la fermeture serveur
     assert.strictEqual(fake.closed, true);
     assert.strictEqual(closedCalled, true);
     assert.strictEqual(session.isOpen(), false);
     // Ne doit jamais lever, même après fermeture.
     assert.doesNotThrow(() => session.sendAudio(Buffer.from([1])));
   }
-  console.log('[TEST] ✓ Fin de session propre\n');
+  console.log('[TEST] ✓ Fin de session propre, fermeture locale différée jusqu\'à la réponse serveur\n');
+
+  console.log(
+    '[TEST] Test 12: un Results FINAL arrivant APRÈS finish() (avant la fermeture serveur simulée) est bien délivré à onFinal (régression du bug "dernier final perdu")...'
+  );
+  {
+    const finals = [];
+    const session = deepgramStreaming.createSession(
+      { onFinal: (t) => finals.push(t) },
+      makeFactory()
+    );
+    const fake = FakeWebSocket.lastInstance;
+    fake.emit('open');
+    session.finish(); // envoie CloseStream ; le FakeWebSocket ne se fermera qu'au prochain tick (setImmediate)
+    // Le dernier résultat de Deepgram arrive ICI, avant la fermeture réseau — exactement le scénario observé en direct.
+    fake.emit('message', resultMessage({ transcript: 'Jean trois seize', isFinal: true, confidence: 0.95 }));
+    assert.strictEqual(finals.length, 1, 'le dernier final doit être délivré même après finish()');
+    assert.strictEqual(finals[0], 'Jean trois seize');
+    await sleep(10);
+    assert.strictEqual(fake.closed, true, 'la connexion doit tout de même finir par se fermer');
+  }
+  console.log('[TEST] ✓ Dernier final délivré avant la fermeture\n');
+
+  console.log('[TEST] Test 13: finish() ne bloque jamais indéfiniment si le serveur ne ferme jamais (filet FINISH_TIMEOUT_MS)...');
+  {
+    // FakeWebSocket "sourde" : n'émet jamais 'close' d'elle-même, même après CloseStream.
+    class DeafFakeWebSocket extends FakeWebSocket {
+      send(data) {
+        this.sent.push(data); // ne déclenche PAS de close() automatique
+      }
+    }
+    const session = deepgramStreaming.createSession(
+      {},
+      (url, options) => new DeafFakeWebSocket(url, options)
+    );
+    const fake = FakeWebSocket.lastInstance;
+    fake.emit('open');
+    session.finish();
+    assert.strictEqual(fake.closed, false);
+    await sleep(deepgramStreaming.FINISH_TIMEOUT_MS + 50);
+    assert.strictEqual(fake.closed, true, 'le filet de sécurité doit forcer la fermeture après FINISH_TIMEOUT_MS');
+  }
+  console.log('[TEST] ✓ Filet de sécurité déclenché — jamais de connexion qui pend indéfiniment\n');
 
   console.log('\n=== Tous les tests deepgram-streaming sont passés ===');
   process.exit(0);

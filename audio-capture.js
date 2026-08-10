@@ -344,7 +344,21 @@ function startDeepgramStreamingSession(config) {
         }
       },
       onFinal: (text, meta) => {
-        if (!STATE.isRecording) return;
+        // CORRECTIF (live test réel, DEEPGRAM_API_KEY vraie — le dernier
+        // 'final' d'un énoncé était perdu à chaque arrêt volontaire de la
+        // capture) : stopRecording() met STATE.isRecording à false AVANT
+        // d'appeler session.finish() — et finish() attend maintenant
+        // (à raison, voir son correctif dans deepgram-streaming.js) que
+        // Deepgram renvoie ce dernier résultat avant de fermer le socket.
+        // Le garde `!STATE.isRecording` ci-dessus rejetait donc le tout
+        // dernier 'final' de CHAQUE énoncé qui déclenchait un arrêt de
+        // capture — confirmé par un test réel (live-tests/). On vérifie à
+        // la place qu'aucune session PLUS RÉCENTE n'a remplacé celle-ci
+        // (repli légitime : ignorer un 'final' tardif d'une session que la
+        // capture a depuis relancée) — un arrêt volontaire simple
+        // (STATE.deepgramSession devenu null) laisse toujours passer ce
+        // dernier résultat.
+        if (STATE.deepgramSession !== session && STATE.deepgramSession !== null) return;
         const tracker = STATE.utteranceTracker;
         if (tracker) tracker.mark('asrFinal');
         if (STATE.callbacks.onFinalTranscript) {
