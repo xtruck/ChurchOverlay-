@@ -13,6 +13,9 @@
   "display": {
     "verseDurationMs": 120000
   },
+  "audio": {
+    "transcriptionConfidenceThreshold": 0.15
+  },
   "ai": {
     "themeDetection": { "enabled": true, "intervalSec": 60 },
     "liveTranslation": { "enabled": true, "targetLangs": ["en", "es"] },

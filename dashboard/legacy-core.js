@@ -317,6 +317,17 @@ function handleMessage(message) {
     case 'transcript':
       addTranscript(message);
       break;
+    case 'transcriptRejected':
+      // AJOUT (fix — versets affichés sans être prononcés) : jusqu'ici un
+      // segment de faible confiance (bruit/écho mal transcrit) était rejeté
+      // en silence côté serveur — l'opérateur ne voyait ni le texte
+      // halluciné, ni pourquoi rien ne s'affichait. Visible dans le flux
+      // d'activité pour comprendre un micro trop bruyant sans deviner.
+      addActivity(
+        `Segment ignoré (confiance ${Math.round((message.confidence || 0) * 100)}% < ${Math.round((message.threshold || 0) * 100)}%) : "${message.text.substring(0, 60)}"`,
+        'warning'
+      );
+      break;
     case 'candidateVerse':
       showCandidateVerse(message);
       addActivity(`Verset candidat : ${message.reference}`, 'warning');

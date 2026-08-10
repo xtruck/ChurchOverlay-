@@ -12,6 +12,18 @@ whisper/
 # build-windows.yml), pas dans le dépôt git.
 dist/
 
+# POC isolé de faisabilité Qwen3-ASR (voir QWEN3-ASR-FEASIBILITY.md) — le
+# code du POC (benchmark*.js, resample.js, package.json) reste commité,
+# mais PAS le modèle téléchargé (~705 Mo décompressé, ~879 Mo l'archive) ni
+# ses dépendances : un dépôt git n'est pas fait pour stocker des binaires de
+# cette taille, et ce POC est volontairement isolé du pipeline de
+# production (voir asr-engine.js, provider 'qwen-local' toujours réservé).
+poc-qwen3-asr/node_modules/
+poc-qwen3-asr/model.tar.bz2
+poc-qwen3-asr/sherpa-onnx-qwen3-asr-*/
+poc-qwen3-asr/samples/
+poc-qwen3-asr/package-lock.json
+
 # Sortie de "npm run build" / "npm run build:ts" (tsc, voir tsconfig.json).
 # CORRECTIF : outDir pointait vers "./dist" — le même dossier que ci-dessus,
 # déjà exclusivement réservé à electron-builder par ce fichier lui-même.

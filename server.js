@@ -33,6 +33,7 @@ const USER_DATA_DIR =
 const audioCapture = require('./audio-capture');
 const groq = require('./groq-wrapper');
 const deepgramWrapper = require('./deepgram-wrapper');
+const asrEngine = require('./asr-engine');
 const configValidator = require('./config-validator');
 const { createFileLogger } = require('./logger');
 const sessionStore = require('./session-store');
@@ -91,6 +92,35 @@ const DEFAULT_VERSE_DURATION_MS = 120_000;
 function getVerseDurationMs() {
   const features = featuresStore.readFeatures();
   return (features.display || {}).verseDurationMs || DEFAULT_VERSE_DURATION_MS;
+}
+
+// ---------------------------------------------------------------------------
+// Seuil de rejet des transcriptions peu fiables
+// ---------------------------------------------------------------------------
+// Retours d'usage réel : sur un segment de silence/bruit de sono que Whisper
+// n'a pas classé "non-parole" (no_speech_prob pas assez élevé pour
+// isSilence, voir computeGroqSpeechInfo dans groq-wrapper.js), le texte
+// halluciné passait tel quel jusqu'à la détection de verset — versets
+// affichés sans qu'aucune référence n'ait été prononcée. Seuil bas (0.15, très en
+// dessous du 0.7+ d'une phrase claire, voir test-groq-speech-info.js) : ne
+// filtre que ce qui est déjà quasi-certainement du bruit, pas une parole
+// réelle mais incertaine (nom propre rare, accent, micro lointain).
+// Réglable en direct via config/features.json (audio.transcriptionConfidenceThreshold,
+// rechargé à chaque segment, aucun redémarrage requis) ou, pour compat avec
+// les déploiements existants, via la variable d'env TRANSCRIPTION_CONFIDENCE_THRESHOLD
+// (utilisée seulement si features.json ne définit rien). Valeur 0 ou négative
+// désactive le rejet.
+const DEFAULT_TRANSCRIPTION_CONFIDENCE_THRESHOLD = 0.15;
+function getTranscriptionConfidenceThreshold() {
+  const features = featuresStore.readFeatures();
+  const fromFeatures = (features.audio || {}).transcriptionConfidenceThreshold;
+  if (typeof fromFeatures === 'number' && Number.isFinite(fromFeatures)) {
+    return fromFeatures > 0 ? fromFeatures : null;
+  }
+  const fromEnv = Number(process.env.TRANSCRIPTION_CONFIDENCE_THRESHOLD);
+  if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
+  if (process.env.TRANSCRIPTION_CONFIDENCE_THRESHOLD === '0') return null;
+  return DEFAULT_TRANSCRIPTION_CONFIDENCE_THRESHOLD;
 }
 
 // ---------------------------------------------------------------------------
@@ -648,10 +678,28 @@ function stopAmbientMoodLoop() {
   }
 }
 
+// AJOUT (latence, §14) : journalise le résumé [PERF] d'un énoncé une fois
+// son traitement terminé — no-op silencieux si aucun tracker n'a suivi cet
+// énoncé (ex. verset saisi manuellement, sans VAD/ASR en amont).
+function logLatencySummary(tracker) {
+  if (!tracker) return;
+  log('\n' + tracker.format());
+}
+
 // ===========================================================================
 // MAIN PIPELINE: processTranscript
 // ===========================================================================
-async function processTranscript(text) {
+/**
+ * @param {string} text
+ * @param {import('./latency-tracker').Tracker} [tracker] - AJOUT (§14) :
+ *   suit la latence de CET énoncé à travers détection/Bible/OBS — voir
+ *   audio-capture.js (markVadOnset) pour sa création et onAudioSegment/
+ *   onFinalTranscript pour son marquage ASR. undefined pour les appels sans
+ *   tracker en amont (verset saisi manuellement, voix-commande) — chaque
+ *   .mark() ci-dessous est gardé (`tracker &&`), jamais un no-op silencieux
+ *   qui masquerait un tracker manquant par erreur.
+ */
+async function processTranscript(text, tracker) {
   log('Processing transcript: ' + text.substring(0, 100));
 
   if (plugins) {
@@ -854,6 +902,10 @@ async function processTranscript(text) {
     return;
   }
 
+  // AJOUT (latence, §14) : référence résolue (exact/fuzzy/sémantique/citation
+  // — voir plus haut) — marque la fin de l'étape "détection biblique".
+  if (tracker) tracker.mark('scripture');
+
   if (isRateLimited()) {
     warn('Rate limit hit — verse display skipped');
     return;
@@ -937,6 +989,10 @@ async function processTranscript(text) {
     return;
   }
 
+  // AJOUT (latence, §14) : texte du verset résolu (base locale ou API,
+  // voir bibleLookup) — marque la fin de l'étape "lookup Bible".
+  if (tracker) tracker.mark('bible');
+
   if (plugins) {
     plugins.emit('onVerseDetected', { ...verse, reference: verse.reference }).catch(() => {});
   }
@@ -981,6 +1037,10 @@ async function processTranscript(text) {
     matchedByQuote: reference.detectedBy === 'quote',
     theme: theme ? { name: theme.name, mood: theme.mood } : null,
   });
+
+  // AJOUT (latence, §14) : verset diffusé à l'overlay/OBS — dernière étape
+  // du pipeline, marque la fin de mesure de cet énoncé (voir logLatencySummary).
+  if (tracker) tracker.mark('obs');
 
   // AJOUT (pont ProPresenter — envoi automatique des versets détectés) :
   // relayé à main.js (seul endroit avec accès à safeStorage/propresenter-
@@ -2391,30 +2451,23 @@ wss.on('connection', (ws, req) => {
 let consecutiveTranscriptionFailures = 0;
 const TRANSCRIPTION_RETRY_DELAY_MS = 700;
 
-// CORRECTIF (détection de versets muette après ajout du rejet par confiance) :
-// ce garde-fou est né d'une hypothèse sur la distribution réelle de
-// exp(avg_logprob) (voir computeGroqSpeechInfo dans groq-wrapper.js) — jamais
-// vérifiée contre une vraie clé Groq en conditions réelles (micro d'église :
-// écho, sono, chant en fond...). Un signalement de "la détection ne
-// fonctionne plus" est arrivé juste après la mise en service de ce rejet ;
-// impossible de confirmer ou d'infirmer le lien sans accès réseau ici. Par
-// prudence (un faux rejet qui coupe TOUTE détection est pire que le problème
-// que ce garde-fou visait à résoudre), le rejet est désormais opt-in :
-// désactivé tant que TRANSCRIPTION_CONFIDENCE_THRESHOLD n'est pas réglé
-// explicitement. La confiance Groq continue d'être calculée et journalisée
-// (voir le log() plus bas) pour observer de vraies valeurs en culte et
-// choisir un seuil en connaissance de cause avant de l'activer.
-const rawConfidenceThreshold = Number(process.env.TRANSCRIPTION_CONFIDENCE_THRESHOLD);
-const TRANSCRIPTION_CONFIDENCE_THRESHOLD =
-  Number.isFinite(rawConfidenceThreshold) && rawConfidenceThreshold > 0
-    ? rawConfidenceThreshold
-    : null;
-
 async function transcribeWithRetry(segmentFile, contextHint, maxAttempts = 2) {
   let lastErr;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const result = await groq.transcribeWithFallback(segmentFile, undefined, contextHint);
+      // CORRECTIF (ASR découplé, §9-10) : passait auparavant par
+      // groq.transcribeWithFallback() directement — désormais par
+      // asr-engine.js, qui enveloppe EXACTEMENT le même appel par défaut
+      // (ASR_PROVIDER=auto, aucun changement de comportement) tout en
+      // permettant de forcer 'groq' ou 'deepgram' seul via cette variable.
+      // { engine } renommé en { source } ici pour rester compatible avec le
+      // reste de ce fichier (broadcast/log), sans devoir tout renommer.
+      const asrResult = await asrEngine.transcribeSegment(segmentFile, contextHint);
+      const result = {
+        text: asrResult.text,
+        confidence: asrResult.confidence,
+        source: asrResult.engine,
+      };
       if (consecutiveTranscriptionFailures > 0) {
         consecutiveTranscriptionFailures = 0;
         broadcast({ action: 'pipelineHealth', status: 'ok' });
@@ -2456,7 +2509,7 @@ function startPipeline() {
   let silenceStartedAt = null; // horodatage réel du 1er skip de la série en cours
 
   audioCapture.on({
-    onAudioSegment: async (segmentFile) => {
+    onAudioSegment: async (segmentFile, tracker) => {
       consecutiveSkips = 0;
       alertedForCurrentSilence = false;
       silenceStartedAt = null;
@@ -2465,30 +2518,42 @@ function startPipeline() {
         // transcrit sert d'indice de continuité pour Whisper (voir groq-wrapper.js).
         const contextHint = getRecentContext(300);
         const result = await transcribeWithRetry(segmentFile, contextHint);
-        // Rejet désactivé tant que TRANSCRIPTION_CONFIDENCE_THRESHOLD n'est
-        // pas réglé explicitement (voir le correctif en tête de fichier) —
-        // ne bloque jamais non plus quand la confiance est inconnue (ex. Groq
-        // sans segments exploitables), ni sur une valeur malformée (NaN <
-        // seuil vaut toujours false en JS).
+        // AJOUT (latence, §14) : chemin segment/batch — un seul évènement
+        // ASR (pas de partial), la marque 'asrFinal' couvre donc tout le
+        // temps de transcription (Groq/Deepgram batch).
+        if (tracker) tracker.mark('asrFinal');
+        // Seuil rechargé à chaque segment (voir getTranscriptionConfidenceThreshold) :
+        // ne bloque jamais quand la confiance est inconnue (ex. Groq sans
+        // segments exploitables), ni sur une valeur malformée (NaN < seuil
+        // vaut toujours false en JS), ni quand le seuil est désactivé (null).
+        const confidenceThreshold = getTranscriptionConfidenceThreshold();
         const lowConfidence =
-          TRANSCRIPTION_CONFIDENCE_THRESHOLD !== null &&
+          confidenceThreshold !== null &&
           result &&
           typeof result.confidence === 'number' &&
-          result.confidence < TRANSCRIPTION_CONFIDENCE_THRESHOLD;
+          result.confidence < confidenceThreshold;
         if (lowConfidence) {
           warn(
-            `Segment rejeté (confiance ${result.confidence.toFixed(2)} < seuil ${TRANSCRIPTION_CONFIDENCE_THRESHOLD}) [${result.source}] : "${result.text.substring(0, 80)}"`
+            `Segment rejeté (confiance ${result.confidence.toFixed(2)} < seuil ${confidenceThreshold}) [${result.source}] : "${result.text.substring(0, 80)}"`
           );
+          broadcast({
+            action: 'transcriptRejected',
+            text: result.text,
+            confidence: result.confidence,
+            threshold: confidenceThreshold,
+          });
         } else if (result && result.text && result.text.trim()) {
-          // Confiance journalisée quand connue (Groq via verbose_json), même
-          // rejet désactivé — permet d'observer de vraies valeurs en culte
-          // avant de choisir un seuil pour TRANSCRIPTION_CONFIDENCE_THRESHOLD.
           const confidenceNote =
             typeof result.confidence === 'number'
               ? ` (confiance ${result.confidence.toFixed(2)})`
               : '';
           log(`Transcription [${result.source}]${confidenceNote}: ${result.text.substring(0, 80)}`);
-          broadcast({ action: 'transcript', text: result.text, source: result.source });
+          broadcast({
+            action: 'transcript',
+            text: result.text,
+            source: result.source,
+            confidence: typeof result.confidence === 'number' ? result.confidence : null,
+          });
           // AJOUT (sous-titres traduits en direct) : JAMAIS attendu (pas de
           // `await`) — voir le garde-fou en en-tête de caption-translator.js.
           // Un sous-titre traduit en retard/manqué est sans conséquence ;
@@ -2501,7 +2566,8 @@ function startPipeline() {
               })
               .catch(() => {});
           }
-          await processTranscript(result.text);
+          await processTranscript(result.text, tracker);
+          logLatencySummary(tracker);
         }
       } catch (err) {
         warn('Transcription error: ' + err.message);
@@ -2514,6 +2580,73 @@ function startPipeline() {
           fs.unlinkSync(segmentFile);
         } catch (_) {}
       }
+    },
+    // AJOUT (Deepgram streaming, §7-13 du cahier des charges) : chemin
+    // temps réel — audio-capture.js appelle ceci pour chaque évènement
+    // 'Results' non-final reçu de Deepgram (voir deepgram-streaming.js).
+    // Ne PAS lancer le pipeline complet (correction IA, fuzzy, sémantique —
+    // couteux et instable sur un texte encore en train de se construire) :
+    // seulement le court-circuit "référence explicite déjà connue"
+    // (detector.detectExact, confidence 'high') — voir §13 "une référence
+    // extrêmement claire peut être affichée avant le final si la confiance
+    // est suffisante". processTranscript() re-fait ce même test en premier
+    // en interne (redondant mais peu coûteux, pure regex) : le dédoublonnage
+    // existant (sessionState.isDuplicateReference) absorbe proprement le cas
+    // où le 'final' qui suit redit la même référence quelques centaines de
+    // ms plus tard.
+    onPartialTranscript: async (text, meta, tracker) => {
+      broadcast({ action: 'transcriptPartial', text, confidence: meta && meta.confidence });
+      let fastMatch = null;
+      try {
+        fastMatch = detector.detectExact(text);
+      } catch (_e) {
+        // Texte partiel encore incomplet/malformé — pas une vraie erreur,
+        // juste "pas encore de référence exploitable dans ce fragment".
+      }
+      if (fastMatch && fastMatch.confidence === 'high') {
+        log('Appel direct sur partial (référence explicite) : ' + fastMatch.raw);
+        await processTranscript(text, tracker);
+      }
+    },
+    // AJOUT (Deepgram streaming) : évènement 'Results' final — chemin
+    // AUTORITAIRE, équivalent au segment WAV classique mais sans jamais
+    // avoir attendu la fin d'un fichier complet. Toujours passé par le
+    // pipeline complet (correction/fuzzy/sémantique), qui rattrape tout ce
+    // que le court-circuit sur partial ci-dessus aurait pu manquer.
+    onFinalTranscript: async (text, meta, tracker) => {
+      if (!text || !text.trim()) return;
+      log(
+        `Transcription [deepgram-streaming]${typeof meta?.confidence === 'number' ? ` (confiance ${meta.confidence.toFixed(2)})` : ''}: ${text.substring(0, 80)}`
+      );
+      broadcast({
+        action: 'transcript',
+        text,
+        source: 'deepgram-streaming',
+        confidence: typeof meta?.confidence === 'number' ? meta.confidence : null,
+      });
+      if (sessionState.getTranslatedCaptionsEnabled()) {
+        captionTranslator
+          .translateCaption(text, sessionState.getCaptionTargetLang())
+          .then((translated) => {
+            if (translated) broadcast({ action: 'transcriptTranslation', text: translated });
+          })
+          .catch(() => {});
+      }
+      await processTranscript(text, tracker);
+      logLatencySummary(tracker);
+    },
+    // AJOUT (Deepgram streaming) : la session temps réel est tombée — juste
+    // visible côté opérateur, le repli lui-même est déjà entièrement géré
+    // par audio-capture.js (reprise automatique du pipeline segment/Groq).
+    onAsrFallback: (info) => {
+      warn(
+        'ASR streaming Deepgram indisponible — repli sur le pipeline segment/Groq : ' + info.reason
+      );
+      broadcast({
+        action: 'asrFallback',
+        reason: info.reason,
+        message: 'Connexion temps réel Deepgram perdue — bascule sur le pipeline classique (Groq).',
+      });
     },
     onSegmentSkipped: (info) => {
       consecutiveSkips++;
