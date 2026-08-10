@@ -40,9 +40,24 @@ const FAKE_TRANSLATIONS = {
   ],
 };
 
+// Chapitre factice pour le mode lecture (readingMode.getChapterVerses ->
+// bibleLookup.getChapterVersesMultilang côté server.js), même contenu que
+// test/test-reading-mode-ws-actions.js.
+const FAKE_JEAN_3 = [
+  { num: 1, text: 'Il y avait parmi les pharisiens un homme nomme Nicodeme.' },
+  { num: 2, text: 'Cet homme vint de nuit trouver Jesus.' },
+  { num: 3, text: 'Jesus lui repondit en verite en verite je te le dis.' },
+];
+
 injectFakeModule('bible-lookup-with-api.js', {
   async getChapterVerses() {
     throw new Error('non utilisé dans ce test');
+  },
+  async getChapterVersesMultilang(book, chapter) {
+    // Voir buildReferenceLabel plus bas : detector.parseReference()
+    // normalise le nom du livre en minuscules.
+    if (String(book).toLowerCase() === 'jean' && chapter === 3) return FAKE_JEAN_3;
+    return [];
   },
   // CORRECTIF (débogage e2e) : l'action WS directe 'showVerse' (server.js)
   // n'échotoie pas simplement le payload reçu — elle reparse la référence
