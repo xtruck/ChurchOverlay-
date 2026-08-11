@@ -27,6 +27,16 @@ const DEDUP_MS = 30_000;
 const MAX_SERVICE_TRANSCRIPT_CHARS = 50_000;
 
 let displayLanguage = 'fr';
+// AJOUT (support bilingue FR/EN de bout en bout) : langue dans laquelle le
+// PASTEUR PARLE (ce que l'ASR doit décoder), délibérément distincte de
+// displayLanguage ci-dessus (langue dans laquelle le verset s'AFFICHE).
+// Ces deux réglages ne doivent JAMAIS être couplés automatiquement — voir
+// setTranscriptionLanguage plus bas et son commentaire. null = pas de
+// préférence de session : Groq garde sa détection automatique native
+// (voir groq-wrapper.js), Deepgram garde son défaut 'fr' (voir
+// deepgram-wrapper.js/deepgram-streaming.js) — comportement actuel
+// préservé tant qu'aucune commande vocale ne change explicitement ceci.
+let transcriptionLanguage = null;
 let lastReference = null;
 let lastShownAt = 0;
 let obsGateOpen = true;
@@ -65,6 +75,19 @@ function getDisplayLanguage() {
 }
 function setDisplayLanguage(lang) {
   displayLanguage = lang;
+}
+
+// --- Langue de transcription (ASR) — voir le commentaire de la variable
+// ci-dessus. setTranscriptionLanguage() ne touche JAMAIS displayLanguage,
+// et setDisplayLanguage() ci-dessus ne touche JAMAIS transcriptionLanguage
+// — c'est la règle centrale de ce chantier, appliquée ici au niveau le
+// plus bas possible (aucun appelant ne peut accidentellement les coupler
+// puisque ce module n'expose que deux paires d'accesseurs indépendantes). ---
+function getTranscriptionLanguage() {
+  return transcriptionLanguage;
+}
+function setTranscriptionLanguage(lang) {
+  transcriptionLanguage = lang || null;
 }
 
 // --- Anti-doublon (dernier verset affiché) ---
@@ -197,6 +220,8 @@ module.exports = {
   MAX_SERVICE_TRANSCRIPT_CHARS,
   getDisplayLanguage,
   setDisplayLanguage,
+  getTranscriptionLanguage,
+  setTranscriptionLanguage,
   getLastReference,
   getLastShownAt,
   isDuplicateReference,
