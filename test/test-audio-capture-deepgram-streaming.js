@@ -33,6 +33,7 @@ process.env.VAD_PROVIDER = 'rms';
 
 const audioCapture = require('../audio-capture');
 const deepgramStreaming = require('../deepgram-streaming');
+const sessionState = require('../session-state');
 
 console.log('=== Test intégration Deepgram Streaming <-> audio-capture.js ===\n');
 
@@ -109,14 +110,20 @@ async function run() {
     onError: (err) => console.error('[TEST] onError inattendu:', err.message),
   });
 
-  console.log('[TEST] Test 1: startBrowserCapture() avec ASR_PROVIDER=deepgram ouvre une session streaming...');
+  console.log(
+    '[TEST] Test 1: startBrowserCapture() avec ASR_PROVIDER=deepgram ouvre une session streaming...'
+  );
   await audioCapture.startBrowserCapture();
   assert.strictEqual(audioCapture.getAsrProvider(), 'deepgram');
   const fake = FakeWebSocket.lastInstance;
   assert(fake, 'une WebSocket simulée aurait dû être créée');
   fake.emit('open');
   const becameActive = await waitFor(() => audioCapture.isDeepgramStreamingActive());
-  assert.strictEqual(becameActive, true, 'isDeepgramStreamingActive() devrait devenir true après "open"');
+  assert.strictEqual(
+    becameActive,
+    true,
+    'isDeepgramStreamingActive() devrait devenir true après "open"'
+  );
   console.log('[TEST] ✓ Session streaming active\n');
 
   console.log(
@@ -126,20 +133,38 @@ async function run() {
   const chunk = makeVoicedChunk(3200); // 100ms à 16kHz mono 16-bit — assez pour déclencher markVadOnset
   audioCapture.feedPcmChunk(chunk);
   await sleep(50); // laisse la file Silero/RMS traiter la trame (asynchrone pour Silero)
-  assert(fake.sent.includes(chunk), 'le chunk PCM devrait avoir été envoyé tel quel à la WebSocket');
-  assert.strictEqual(segments.length, 0, 'aucun segment WAV ne devrait être écrit pendant le streaming');
+  assert(
+    fake.sent.includes(chunk),
+    'le chunk PCM devrait avoir été envoyé tel quel à la WebSocket'
+  );
+  assert.strictEqual(
+    segments.length,
+    0,
+    'aucun segment WAV ne devrait être écrit pendant le streaming'
+  );
   console.log('[TEST] ✓ Chunks forwardés en direct, pipeline WAV inactif\n');
 
-  console.log('[TEST] Test 3: un Results partiel (is_final=false) déclenche onPartialTranscript avec un tracker...');
+  console.log(
+    '[TEST] Test 3: un Results partiel (is_final=false) déclenche onPartialTranscript avec un tracker...'
+  );
   fake.emit('message', resultMessage({ transcript: 'Jean trois', isFinal: false }));
   assert.strictEqual(partials.length, 1);
   assert.strictEqual(partials[0].text, 'Jean trois');
-  assert(partials[0].tracker, 'un tracker de latence devrait accompagner le partial (VAD déjà déclenché au Test 2)');
-  assert('asrFirstPartial' in partials[0].tracker.summary().deltas, 'le mark asrFirstPartial doit être posé');
+  assert(
+    partials[0].tracker,
+    'un tracker de latence devrait accompagner le partial (VAD déjà déclenché au Test 2)'
+  );
+  assert(
+    'asrFirstPartial' in partials[0].tracker.summary().deltas,
+    'le mark asrFirstPartial doit être posé'
+  );
   console.log('[TEST] ✓ Partial routé avec latence VAD->ASR mesurée\n');
 
   console.log('[TEST] Test 4: un Results final (is_final=true) déclenche onFinalTranscript...');
-  fake.emit('message', resultMessage({ transcript: 'Jean trois seize', isFinal: true, confidence: 0.95 }));
+  fake.emit(
+    'message',
+    resultMessage({ transcript: 'Jean trois seize', isFinal: true, confidence: 0.95 })
+  );
   assert.strictEqual(finals.length, 1);
   assert.strictEqual(finals[0].text, 'Jean trois seize');
   assert.strictEqual(finals[0].meta.confidence, 0.95);
@@ -147,7 +172,9 @@ async function run() {
   assert('asrFirstPartial' in finalSummary.deltas && 'asrFinal' in finalSummary.deltas);
   console.log(`[TEST] ✓ Final routé, latence bout-en-bout mesurée (${finalSummary.totalMs}ms)\n`);
 
-  console.log('[TEST] Test 5: une erreur streaming déclenche le repli (onAsrFallback) et désactive le streaming...');
+  console.log(
+    '[TEST] Test 5: une erreur streaming déclenche le repli (onAsrFallback) et désactive le streaming...'
+  );
   fake.emit('error', new Error('connexion perdue'));
   assert.strictEqual(fallbacks.length, 1);
   assert.strictEqual(audioCapture.isDeepgramStreamingActive(), false);
@@ -155,7 +182,7 @@ async function run() {
 
   console.log(
     '[TEST] Test 6: après repli, le pipeline segment/WAV classique reprend ' +
-      '(un segment WAV finit par être créé pour de l\'audio qui suit)...'
+      "(un segment WAV finit par être créé pour de l'audio qui suit)..."
   );
   const config = audioCapture.getConfig();
   const bytesPerSample = config.bitDepth / 8;
@@ -185,16 +212,24 @@ async function run() {
     fake2.emit('open');
     await waitFor(() => audioCapture.isDeepgramStreamingActive());
     await audioCapture.stopRecording(); // déclenche finish() -> CloseStream, ne ferme plus le socket immédiatement
-    assert.strictEqual(fake2.closed, false, 'ne doit pas fermer avant la réponse de "Deepgram" (simulée)');
+    assert.strictEqual(
+      fake2.closed,
+      false,
+      'ne doit pas fermer avant la réponse de "Deepgram" (simulée)'
+    );
     // Le dernier résultat arrive ICI, entre stopRecording() et la fermeture réseau — exactement le scénario réel.
     fake2.emit('message', resultMessage({ transcript: 'Jean trois seize', isFinal: true }));
-    assert.strictEqual(finals2.length, 1, 'le dernier final doit être délivré malgré STATE.isRecording déjà à false');
+    assert.strictEqual(
+      finals2.length,
+      1,
+      'le dernier final doit être délivré malgré STATE.isRecording déjà à false'
+    );
     assert.strictEqual(finals2[0], 'Jean trois seize');
   }
   console.log('[TEST] ✓ Dernier final délivré après un arrêt volontaire\n');
 
   console.log(
-    '[TEST] Test 8: un FINAL tardif d\'une session déjà REMPLACÉE (arrêt puis relance) est bien ignoré ' +
+    "[TEST] Test 8: un FINAL tardif d'une session déjà REMPLACÉE (arrêt puis relance) est bien ignoré " +
       '(le correctif du Test 7 ne doit pas réintroduire de fuite entre sessions)...'
   );
   {
@@ -221,11 +256,19 @@ async function run() {
     const freshFake = FakeWebSocket.lastInstance;
     freshFake.emit('open');
     await waitFor(() => audioCapture.isDeepgramStreamingActive());
-    assert.notStrictEqual(staleFake, freshFake, 'les deux captures doivent avoir des sockets distincts');
+    assert.notStrictEqual(
+      staleFake,
+      freshFake,
+      'les deux captures doivent avoir des sockets distincts'
+    );
 
     // Le "vieux" final de la session remplacée arrive tardivement.
     staleFake.emit('message', resultMessage({ transcript: 'texte obsolète', isFinal: true }));
-    assert.strictEqual(finals3.length, 0, 'un final d\'une session déjà remplacée ne doit JAMAIS être délivré');
+    assert.strictEqual(
+      finals3.length,
+      0,
+      "un final d'une session déjà remplacée ne doit JAMAIS être délivré"
+    );
 
     // Le final de la session ACTIVE, lui, doit toujours fonctionner normalement.
     freshFake.emit('message', resultMessage({ transcript: 'texte actuel', isFinal: true }));
@@ -235,9 +278,46 @@ async function run() {
   console.log('[TEST] ✓ Final obsolète ignoré, final de la session active délivré normalement\n');
 
   await audioCapture.stopRecording();
+
+  console.log(
+    '[TEST] Test 9: sessionState.getTranscriptionLanguage() est lue au DÉMARRAGE de la session ' +
+      'streaming et propagée à la connexion WebSocket (support bilingue FR/EN, lot 6)...'
+  );
+  {
+    // Pas de langue de session -> comportement historique inchangé (fr par défaut).
+    assert.strictEqual(
+      sessionState.getTranscriptionLanguage(),
+      null,
+      'aucune langue de session par défaut'
+    );
+    await audioCapture.startBrowserCapture();
+    const fakeDefault = FakeWebSocket.lastInstance;
+    fakeDefault.emit('open');
+    await waitFor(() => audioCapture.isDeepgramStreamingActive());
+    assert(
+      fakeDefault.url.includes('language=fr'),
+      "sans langue de session, la connexion utilise 'fr' par défaut"
+    );
+    await audioCapture.stopRecording();
+
+    // Langue de session explicite -> reflétée dans l'URL de la PROCHAINE session.
+    sessionState.setTranscriptionLanguage('en');
+    await audioCapture.startBrowserCapture();
+    const fakeEnglish = FakeWebSocket.lastInstance;
+    fakeEnglish.emit('open');
+    await waitFor(() => audioCapture.isDeepgramStreamingActive());
+    assert(
+      fakeEnglish.url.includes('language=en'),
+      "avec une langue de session 'en', la connexion la reflète"
+    );
+    await audioCapture.stopRecording();
+    sessionState.setTranscriptionLanguage(null); // ne pas fuiter d'état vers d'autres fichiers de test
+  }
+  console.log("[TEST] ✓ Langue de session propagée jusqu'à la connexion WebSocket streaming\n");
+
   deepgramStreaming.setWsFactoryForTesting(null);
   delete process.env.ASR_PROVIDER;
-  console.log('=== Tous les tests d\'intégration Deepgram streaming sont passés ===');
+  console.log("=== Tous les tests d'intégration Deepgram streaming sont passés ===");
   process.exit(0);
 }
 

@@ -30,6 +30,11 @@ const sileroVad = require('./silero-vad');
 const asrEngine = require('./asr-engine');
 const deepgramStreaming = require('./deepgram-streaming');
 const { startTracker } = require('./latency-tracker');
+// AJOUT (support bilingue FR/EN, lot 6) : session-state.js n'a aucune
+// dépendance réseau/IO ni vers le reste de l'app (voir son en-tête) —
+// aucun risque de dépendance circulaire à le requérir ici, comme déjà fait
+// dans asr-engine.js (lot 4).
+const sessionState = require('./session-state');
 
 // Configuration
 const CONFIG = {
@@ -347,97 +352,114 @@ function startDeepgramStreamingSession(config) {
     return;
   }
 
+  // AJOUT (support bilingue FR/EN, lot 6) : lue ICI, une seule fois, au
+  // moment où la session WebSocket s'ouvre — PAS par chunk. LIMITE CONNUE
+  // (protocole, pas un oubli — voir deepgram-streaming.js) : la langue est
+  // un paramètre de connexion, sans message de contrôle Deepgram pour la
+  // changer en cours de flux. Un changement de langue via commande vocale
+  // ("écoute en français"/"listen in English", voir voice-commands.js)
+  // pendant qu'une session streaming est déjà ouverte ne prend donc effet
+  // qu'à la PROCHAINE ouverture de session (prochain redémarrage de
+  // capture), jamais rétroactivement sur la connexion en cours.
+  const transcriptionLanguage = sessionState.getTranscriptionLanguage();
+
   let session;
   try {
-    session = deepgramStreaming.createSession({
-      onOpen: () => {
-        if (!STATE.isRecording || STATE.browserCaptureConfig !== config) return; // session obsolète (capture relancée entre-temps)
-        STATE.deepgramStreamingActive = true;
-        console.log('[audio-capture] ASR : session streaming Deepgram ouverte.');
-        console.log('[ASR] provider=deepgram mode=streaming');
-      },
-      onPartial: (text, meta) => {
-        if (!STATE.isRecording) return;
-        const tracker = STATE.utteranceTracker;
-        // Un seul marquage 'asrFirstPartial' par énoncé — les partials suivants
-        // affinent le texte mais le premier est la mesure de latence utile.
-        if (tracker && !tracker.summary().deltas.asrFirstPartial) {
-          tracker.mark('asrFirstPartial');
-        }
-        // AJOUT (finalisation locale par silence) : dernier partial connu
-        // pour l'énoncé en cours — c'est CE texte que
-        // finalizeStreamingUtteranceLocally() promeut en "final" dès que le
-        // VAD local détecte la fin de la phrase, sans jamais attendre
-        // is_final/speech_final de Deepgram (mesuré ~7,5s de délai réel,
-        // voir le rapport livré).
-        if (text) {
-          STATE.lastStreamingPartialText = text;
-          STATE.lastStreamingPartialMeta = meta;
-        }
-        if (STATE.callbacks.onPartialTranscript) {
-          STATE.callbacks.onPartialTranscript(text, meta, tracker);
-        }
-      },
-      onFinal: (text, meta) => {
-        // CORRECTIF (live test réel, DEEPGRAM_API_KEY vraie — le dernier
-        // 'final' d'un énoncé était perdu à chaque arrêt volontaire de la
-        // capture) : stopRecording() met STATE.isRecording à false AVANT
-        // d'appeler session.finish() — et finish() attend maintenant
-        // (à raison, voir son correctif dans deepgram-streaming.js) que
-        // Deepgram renvoie ce dernier résultat avant de fermer le socket.
-        // Le garde `!STATE.isRecording` ci-dessus rejetait donc le tout
-        // dernier 'final' de CHAQUE énoncé qui déclenchait un arrêt de
-        // capture — confirmé par un test réel (live-tests/). On vérifie à
-        // la place qu'aucune session PLUS RÉCENTE n'a remplacé celle-ci
-        // (repli légitime : ignorer un 'final' tardif d'une session que la
-        // capture a depuis relancée) — un arrêt volontaire simple
-        // (STATE.deepgramSession devenu null) laisse toujours passer ce
-        // dernier résultat.
-        if (STATE.deepgramSession !== session && STATE.deepgramSession !== null) return;
-        const tracker = STATE.utteranceTracker;
-        if (tracker) tracker.mark('asrFinal');
-        if (STATE.callbacks.onFinalTranscript) {
-          STATE.callbacks.onFinalTranscript(text, meta, tracker);
-        }
-        // Énoncé terminé : le prochain indice de voix (markVadOnset) doit
-        // démarrer un tracker frais, pas continuer à empiler sur celui-ci.
-        STATE.utteranceTracker = null;
-        // Ce 'final' officiel Deepgram (souvent tardif, voir plus haut)
-        // règle définitivement l'énoncé qu'il décrit — rien à re-finaliser
-        // localement pour ce même texte. S'il arrive APRÈS que le VAD local
-        // a déjà promu un partial en "final" pour l'énoncé SUIVANT (déjà en
-        // cours), ce reset est sans effet indésirable : il efface juste un
-        // texte déjà transmis, jamais celui de l'énoncé en cours (mis à jour
-        // en continu par onPartial ci-dessus).
-        STATE.lastStreamingPartialText = '';
-        STATE.lastStreamingPartialMeta = null;
-      },
-      onError: (err) => {
-        console.warn(
-          `[audio-capture] ASR : erreur streaming Deepgram (${err.message}) — repli sur le ` +
-            'pipeline segment/Groq pour le reste de la session.'
-        );
-        STATE.deepgramStreamingActive = false;
-        if (STATE.callbacks.onAsrFallback) {
-          STATE.callbacks.onAsrFallback({ reason: err.message });
-        }
-      },
-      onClose: () => {
-        // Fermeture inattendue (pas via stopRecording, qui appelle déjà
-        // session.finish() et ignore ce cas car isRecording est déjà false) :
-        // même traitement qu'une erreur — reste de la session en repli.
-        if (!STATE.isRecording) return;
-        if (STATE.deepgramStreamingActive) {
-          console.warn(
-            '[audio-capture] ASR : session streaming Deepgram fermée de façon inattendue — repli.'
+    session = deepgramStreaming.createSession(
+      {
+        onOpen: () => {
+          if (!STATE.isRecording || STATE.browserCaptureConfig !== config) return; // session obsolète (capture relancée entre-temps)
+          STATE.deepgramStreamingActive = true;
+          console.log('[audio-capture] ASR : session streaming Deepgram ouverte.');
+          console.log(
+            `[ASR] provider=deepgram mode=streaming language=${transcriptionLanguage || '(fr, defaut)'}`
           );
-        }
-        STATE.deepgramStreamingActive = false;
-        if (STATE.callbacks.onAsrFallback) {
-          STATE.callbacks.onAsrFallback({ reason: 'Connexion streaming fermée inopinément.' });
-        }
+        },
+        onPartial: (text, meta) => {
+          if (!STATE.isRecording) return;
+          const tracker = STATE.utteranceTracker;
+          // Un seul marquage 'asrFirstPartial' par énoncé — les partials suivants
+          // affinent le texte mais le premier est la mesure de latence utile.
+          if (tracker && !tracker.summary().deltas.asrFirstPartial) {
+            tracker.mark('asrFirstPartial');
+          }
+          // AJOUT (finalisation locale par silence) : dernier partial connu
+          // pour l'énoncé en cours — c'est CE texte que
+          // finalizeStreamingUtteranceLocally() promeut en "final" dès que le
+          // VAD local détecte la fin de la phrase, sans jamais attendre
+          // is_final/speech_final de Deepgram (mesuré ~7,5s de délai réel,
+          // voir le rapport livré).
+          if (text) {
+            STATE.lastStreamingPartialText = text;
+            STATE.lastStreamingPartialMeta = meta;
+          }
+          if (STATE.callbacks.onPartialTranscript) {
+            STATE.callbacks.onPartialTranscript(text, meta, tracker);
+          }
+        },
+        onFinal: (text, meta) => {
+          // CORRECTIF (live test réel, DEEPGRAM_API_KEY vraie — le dernier
+          // 'final' d'un énoncé était perdu à chaque arrêt volontaire de la
+          // capture) : stopRecording() met STATE.isRecording à false AVANT
+          // d'appeler session.finish() — et finish() attend maintenant
+          // (à raison, voir son correctif dans deepgram-streaming.js) que
+          // Deepgram renvoie ce dernier résultat avant de fermer le socket.
+          // Le garde `!STATE.isRecording` ci-dessus rejetait donc le tout
+          // dernier 'final' de CHAQUE énoncé qui déclenchait un arrêt de
+          // capture — confirmé par un test réel (live-tests/). On vérifie à
+          // la place qu'aucune session PLUS RÉCENTE n'a remplacé celle-ci
+          // (repli légitime : ignorer un 'final' tardif d'une session que la
+          // capture a depuis relancée) — un arrêt volontaire simple
+          // (STATE.deepgramSession devenu null) laisse toujours passer ce
+          // dernier résultat.
+          if (STATE.deepgramSession !== session && STATE.deepgramSession !== null) return;
+          const tracker = STATE.utteranceTracker;
+          if (tracker) tracker.mark('asrFinal');
+          if (STATE.callbacks.onFinalTranscript) {
+            STATE.callbacks.onFinalTranscript(text, meta, tracker);
+          }
+          // Énoncé terminé : le prochain indice de voix (markVadOnset) doit
+          // démarrer un tracker frais, pas continuer à empiler sur celui-ci.
+          STATE.utteranceTracker = null;
+          // Ce 'final' officiel Deepgram (souvent tardif, voir plus haut)
+          // règle définitivement l'énoncé qu'il décrit — rien à re-finaliser
+          // localement pour ce même texte. S'il arrive APRÈS que le VAD local
+          // a déjà promu un partial en "final" pour l'énoncé SUIVANT (déjà en
+          // cours), ce reset est sans effet indésirable : il efface juste un
+          // texte déjà transmis, jamais celui de l'énoncé en cours (mis à jour
+          // en continu par onPartial ci-dessus).
+          STATE.lastStreamingPartialText = '';
+          STATE.lastStreamingPartialMeta = null;
+        },
+        onError: (err) => {
+          console.warn(
+            `[audio-capture] ASR : erreur streaming Deepgram (${err.message}) — repli sur le ` +
+              'pipeline segment/Groq pour le reste de la session.'
+          );
+          STATE.deepgramStreamingActive = false;
+          if (STATE.callbacks.onAsrFallback) {
+            STATE.callbacks.onAsrFallback({ reason: err.message });
+          }
+        },
+        onClose: () => {
+          // Fermeture inattendue (pas via stopRecording, qui appelle déjà
+          // session.finish() et ignore ce cas car isRecording est déjà false) :
+          // même traitement qu'une erreur — reste de la session en repli.
+          if (!STATE.isRecording) return;
+          if (STATE.deepgramStreamingActive) {
+            console.warn(
+              '[audio-capture] ASR : session streaming Deepgram fermée de façon inattendue — repli.'
+            );
+          }
+          STATE.deepgramStreamingActive = false;
+          if (STATE.callbacks.onAsrFallback) {
+            STATE.callbacks.onAsrFallback({ reason: 'Connexion streaming fermée inopinément.' });
+          }
+        },
       },
-    });
+      undefined,
+      transcriptionLanguage
+    );
   } catch (err) {
     console.warn(
       `[audio-capture] ASR : impossible d'ouvrir la session Deepgram (${err.message}) — repli.`

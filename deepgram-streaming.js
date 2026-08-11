@@ -37,6 +37,21 @@ const { buildDeepgramKeywords } = require('./bible-keyterms');
 
 const DEEPGRAM_STREAMING_ENDPOINT = 'wss://api.deepgram.com/v1/listen';
 const DEEPGRAM_MODEL = 'nova-2';
+// AJOUT (support bilingue FR/EN, lot 6 — chemin temps réel, le plus
+// sensible à la latence) : reste la valeur par défaut si createSession()
+// est appelé SANS langue explicite (compatibilité arrière totale). LIMITE
+// CONNUE, documentée ici comme dans deepgram-wrapper.js (lot 5) : nova-2
+// n'a pas de détection automatique multilingue (`language=multi`,
+// nova-3 seulement) — un changement de modèle est une décision séparée,
+// pas prise dans ce lot. AUTRE LIMITE PROPRE AU STREAMING (pas au batch) :
+// la langue est un paramètre de connexion WebSocket (query string, lu une
+// seule fois à l'ouverture) — le protocole Deepgram n'a AUCUN message de
+// contrôle pour changer la langue EN COURS DE FLUX. Un changement de
+// langue via la commande vocale "écoute en français"/"listen in English"
+// ne prend donc effet qu'à la PROCHAINE session (voir audio-capture.js,
+// qui lit sessionState.getTranscriptionLanguage() au DÉMARRAGE d'une
+// session, pas par chunk) — pas un défaut de conception à corriger ici,
+// une contrainte réelle du protocole.
 const DEEPGRAM_LANGUAGE = 'fr';
 // Silence côté serveur Deepgram avant de considérer une phrase terminée
 // (is_final=true) — voir endpointing dans la doc Deepgram. Volontairement
@@ -63,13 +78,19 @@ function setWsFactoryForTesting(factory) {
   testWsFactory = factory;
 }
 
-function buildStreamingUrl() {
+/**
+ * @param {string} [language] - 'fr'|'en' (voir DEEPGRAM_LANGUAGE plus haut
+ *   pour la limite connue : pas de détection automatique sur nova-2).
+ *   Défaut 'fr' si omis, comportement historique inchangé.
+ */
+function buildStreamingUrl(language) {
+  const resolvedLanguage = language || DEEPGRAM_LANGUAGE;
   const keywordsQuery = buildDeepgramKeywords()
     .map((kw) => `keywords=${encodeURIComponent(kw)}`)
     .join('&');
   const params = [
     `model=${DEEPGRAM_MODEL}`,
-    `language=${DEEPGRAM_LANGUAGE}`,
+    `language=${resolvedLanguage}`,
     'punctuate=true',
     'smart_format=true',
     'interim_results=true',
@@ -95,16 +116,19 @@ function buildStreamingUrl() {
  *   (défaut : `(url, options) => new (require('ws'))(url, options)`). Une FONCTION qui
  *   RETOURNE une instance compatible avec l'API `ws` (.on/.send/.close), pas une classe
  *   à instancier avec `new` — voir test/test-deepgram-streaming.js pour un exemple.
+ * @param {string} [language] - voir buildStreamingUrl. Lu UNE SEULE FOIS ici, à
+ *   l'ouverture de la connexion — voir audio-capture.js pour la limite du
+ *   protocole (aucun changement de langue en cours de flux).
  * @returns {{ sendAudio: (buf: Buffer) => void, finish: () => void, abort: () => void, isOpen: () => boolean }}
  */
-function createSession(handlers, wsFactory) {
+function createSession(handlers, wsFactory, language) {
   if (!isConfigured()) {
     throw new Error('DEEPGRAM_API_KEY non défini — impossible de démarrer une session streaming.');
   }
   const factory =
     wsFactory || testWsFactory || ((url, options) => new (require('ws'))(url, options));
   const apiKey = process.env.DEEPGRAM_API_KEY;
-  const url = buildStreamingUrl();
+  const url = buildStreamingUrl(language);
 
   let open = false;
   let closed = false;

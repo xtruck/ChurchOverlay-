@@ -77,26 +77,59 @@ async function run() {
   process.env.DEEPGRAM_API_KEY = 'fake-key-for-test';
   console.log('[TEST] ✓ Erreur explicite\n');
 
-  console.log('[TEST] Test 2: URL construite avec les paramètres attendus (streaming, fr, interim_results)...');
+  console.log(
+    '[TEST] Test 2: URL construite avec les paramètres attendus (streaming, fr, interim_results)...'
+  );
   const url = deepgramStreaming.buildStreamingUrl();
   assert(url.startsWith('wss://api.deepgram.com/v1/listen?'), 'endpoint streaming attendu');
-  assert(url.includes('interim_results=true'), "interim_results=true requis pour recevoir des 'partial'");
+  assert(
+    url.includes('interim_results=true'),
+    "interim_results=true requis pour recevoir des 'partial'"
+  );
   assert(url.includes('language=fr'), 'langue française attendue');
-  assert(url.includes('encoding=linear16'), 'encodage PCM16LE attendu (cohérent avec audio-capture.js)');
-  assert(url.includes('sample_rate=16000'), 'sample rate 16kHz attendu (cohérent avec audio-capture.js)');
+  assert(
+    url.includes('encoding=linear16'),
+    'encodage PCM16LE attendu (cohérent avec audio-capture.js)'
+  );
+  assert(
+    url.includes('sample_rate=16000'),
+    'sample rate 16kHz attendu (cohérent avec audio-capture.js)'
+  );
   console.log('[TEST] ✓ URL correcte\n');
+
+  console.log(
+    '[TEST] Test 2b: buildStreamingUrl() supporte une langue explicite (support bilingue FR/EN, lot 6)...'
+  );
+  // AJOUT (support bilingue FR/EN, lot 6) : sans langue explicite,
+  // DEEPGRAM_LANGUAGE ('fr') reste le défaut — comportement historique
+  // inchangé (verrouillé par Test 2 ci-dessus). Ici, la preuve du nouveau
+  // comportement : une langue explicite est bien reflétée dans l'URL.
+  assert(
+    deepgramStreaming.buildStreamingUrl('en').includes('language=en'),
+    "avec une langue explicite ('en'), l'URL streaming la reflète correctement"
+  );
+  assert(
+    deepgramStreaming.buildStreamingUrl(undefined).includes('language=fr'),
+    'langue explicitement undefined retombe toujours sur fr par défaut'
+  );
+  console.log('[TEST] ✓ Paramètre de langue correctement propagé\n');
 
   console.log('[TEST] Test 3: authentification par en-tête Authorization: Token <clé>...');
   {
     const partials = [];
-    const session = deepgramStreaming.createSession({ onPartial: (t) => partials.push(t) }, makeFactory());
+    const session = deepgramStreaming.createSession(
+      { onPartial: (t) => partials.push(t) },
+      makeFactory()
+    );
     const fake = FakeWebSocket.lastInstance;
     assert.strictEqual(fake.options.headers.Authorization, 'Token fake-key-for-test');
     session.abort();
   }
   console.log('[TEST] ✓ En-tête correct\n');
 
-  console.log('[TEST] Test 4: audio envoyé avant "open" est mis en file puis vidé à l\'ouverture...');
+  console.log(
+    '[TEST] Test 4: audio envoyé avant "open" est mis en file puis vidé à l\'ouverture...'
+  );
   {
     const session = deepgramStreaming.createSession({}, makeFactory());
     const fake = FakeWebSocket.lastInstance;
@@ -108,7 +141,7 @@ async function run() {
     assert.strictEqual(session.isOpen(), false);
     fake.emit('open');
     assert.strictEqual(session.isOpen(), true);
-    assert.strictEqual(fake.sent.length, 2, 'les 2 chunks en attente doivent partir à l\'ouverture');
+    assert.strictEqual(fake.sent.length, 2, "les 2 chunks en attente doivent partir à l'ouverture");
     assert.strictEqual(fake.sent[0], chunkA);
     assert.strictEqual(fake.sent[1], chunkB);
     // Un chunk envoyé APRÈS ouverture part immédiatement, pas de mise en file.
@@ -154,7 +187,11 @@ async function run() {
     assert.strictEqual(finals.length, 1);
     assert.strictEqual(finals[0].t, 'Jean trois seize');
     assert.strictEqual(finals[0].m.confidence, 0.97);
-    assert.strictEqual(partials.length, 0, 'un résultat final ne doit pas aussi déclencher onPartial');
+    assert.strictEqual(
+      partials.length,
+      0,
+      'un résultat final ne doit pas aussi déclencher onPartial'
+    );
     session.abort();
   }
   console.log('[TEST] ✓ Routage final correct, confiance propagée\n');
@@ -162,7 +199,10 @@ async function run() {
   console.log('[TEST] Test 7: speech_final=true (sans is_final) route aussi vers onFinal...');
   {
     const finals = [];
-    const session = deepgramStreaming.createSession({ onFinal: (t) => finals.push(t) }, makeFactory());
+    const session = deepgramStreaming.createSession(
+      { onFinal: (t) => finals.push(t) },
+      makeFactory()
+    );
     const fake = FakeWebSocket.lastInstance;
     fake.emit('open');
     fake.emit('message', resultMessage({ transcript: 'Amen', isFinal: false, speechFinal: true }));
@@ -193,15 +233,20 @@ async function run() {
     const session = deepgramStreaming.createSession({}, makeFactory());
     const fake = FakeWebSocket.lastInstance;
     fake.emit('open');
-    assert.doesNotThrow(() => fake.emit('message', 'ceci n\'est pas du JSON'));
+    assert.doesNotThrow(() => fake.emit('message', "ceci n'est pas du JSON"));
     session.abort();
   }
   console.log('[TEST] ✓ Message malformé toléré\n');
 
-  console.log('[TEST] Test 10: une erreur WebSocket appelle onError (pour déclencher le repli côté appelant)...');
+  console.log(
+    '[TEST] Test 10: une erreur WebSocket appelle onError (pour déclencher le repli côté appelant)...'
+  );
   {
     let receivedErr = null;
-    const session = deepgramStreaming.createSession({ onError: (e) => (receivedErr = e) }, makeFactory());
+    const session = deepgramStreaming.createSession(
+      { onError: (e) => (receivedErr = e) },
+      makeFactory()
+    );
     const fake = FakeWebSocket.lastInstance;
     fake.emit('error', new Error('connexion refusée'));
     assert(receivedErr instanceof Error);
@@ -210,10 +255,15 @@ async function run() {
   }
   console.log('[TEST] ✓ onError propagé\n');
 
-  console.log('[TEST] Test 11: finish() envoie CloseStream, attend que Deepgram ferme lui-même, sendAudio() après close() est un no-op...');
+  console.log(
+    '[TEST] Test 11: finish() envoie CloseStream, attend que Deepgram ferme lui-même, sendAudio() après close() est un no-op...'
+  );
   {
     let closedCalled = false;
-    const session = deepgramStreaming.createSession({ onClose: () => (closedCalled = true) }, makeFactory());
+    const session = deepgramStreaming.createSession(
+      { onClose: () => (closedCalled = true) },
+      makeFactory()
+    );
     const fake = FakeWebSocket.lastInstance;
     fake.emit('open');
     session.finish();
@@ -231,7 +281,9 @@ async function run() {
     // Ne doit jamais lever, même après fermeture.
     assert.doesNotThrow(() => session.sendAudio(Buffer.from([1])));
   }
-  console.log('[TEST] ✓ Fin de session propre, fermeture locale différée jusqu\'à la réponse serveur\n');
+  console.log(
+    "[TEST] ✓ Fin de session propre, fermeture locale différée jusqu'à la réponse serveur\n"
+  );
 
   console.log(
     '[TEST] Test 12: un Results FINAL arrivant APRÈS finish() (avant la fermeture serveur simulée) est bien délivré à onFinal (régression du bug "dernier final perdu")...'
@@ -246,7 +298,10 @@ async function run() {
     fake.emit('open');
     session.finish(); // envoie CloseStream ; le FakeWebSocket ne se fermera qu'au prochain tick (setImmediate)
     // Le dernier résultat de Deepgram arrive ICI, avant la fermeture réseau — exactement le scénario observé en direct.
-    fake.emit('message', resultMessage({ transcript: 'Jean trois seize', isFinal: true, confidence: 0.95 }));
+    fake.emit(
+      'message',
+      resultMessage({ transcript: 'Jean trois seize', isFinal: true, confidence: 0.95 })
+    );
     assert.strictEqual(finals.length, 1, 'le dernier final doit être délivré même après finish()');
     assert.strictEqual(finals[0], 'Jean trois seize');
     await sleep(10);
@@ -254,7 +309,9 @@ async function run() {
   }
   console.log('[TEST] ✓ Dernier final délivré avant la fermeture\n');
 
-  console.log('[TEST] Test 13: finish() ne bloque jamais indéfiniment si le serveur ne ferme jamais (filet FINISH_TIMEOUT_MS)...');
+  console.log(
+    '[TEST] Test 13: finish() ne bloque jamais indéfiniment si le serveur ne ferme jamais (filet FINISH_TIMEOUT_MS)...'
+  );
   {
     // FakeWebSocket "sourde" : n'émet jamais 'close' d'elle-même, même après CloseStream.
     class DeafFakeWebSocket extends FakeWebSocket {
@@ -271,9 +328,37 @@ async function run() {
     session.finish();
     assert.strictEqual(fake.closed, false);
     await sleep(deepgramStreaming.FINISH_TIMEOUT_MS + 50);
-    assert.strictEqual(fake.closed, true, 'le filet de sécurité doit forcer la fermeture après FINISH_TIMEOUT_MS');
+    assert.strictEqual(
+      fake.closed,
+      true,
+      'le filet de sécurité doit forcer la fermeture après FINISH_TIMEOUT_MS'
+    );
   }
   console.log('[TEST] ✓ Filet de sécurité déclenché — jamais de connexion qui pend indéfiniment\n');
+
+  console.log(
+    '[TEST] Test 14: createSession() propage bien son 3e paramètre (langue) à buildStreamingUrl (support bilingue FR/EN, lot 6)...'
+  );
+  {
+    const session = deepgramStreaming.createSession({}, makeFactory(), 'en');
+    const fake = FakeWebSocket.lastInstance;
+    assert(
+      fake.url.includes('language=en'),
+      "la session ouvre bien la connexion avec 'language=en'"
+    );
+    session.abort();
+  }
+  {
+    // Sans 3e paramètre : comportement historique inchangé, toujours 'fr'.
+    const session = deepgramStreaming.createSession({}, makeFactory());
+    const fake = FakeWebSocket.lastInstance;
+    assert(
+      fake.url.includes('language=fr'),
+      "sans langue explicite, la session ouvre avec 'language=fr'"
+    );
+    session.abort();
+  }
+  console.log("[TEST] ✓ Langue de session propagée jusqu'à la connexion WebSocket\n");
 
   console.log('\n=== Tous les tests deepgram-streaming sont passés ===');
   process.exit(0);
