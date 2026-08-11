@@ -163,7 +163,7 @@ async function checkKey(timeoutMs = CHECK_KEY_TIMEOUT_MS) {
  * laissait une requête HTTP orpheline ouverte (parfois plusieurs minutes,
  * le temps du timeout TCP par défaut), accumulant des connexions inutiles.
  */
-async function transcribeFile(audioFilePath, signal, contextHint) {
+async function transcribeFile(audioFilePath, signal, contextHint, language) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     throw new Error("GROQ_API_KEY non défini dans l'environnement.");
@@ -188,19 +188,20 @@ async function transcribeFile(audioFilePath, signal, contextHint) {
     : WHISPER_PROMPT;
   const prompt = truncateToUtf8ByteLimit(rawPrompt, GROQ_PROMPT_MAX_BYTES);
   formData.append('prompt', prompt);
-  // AJOUT (audit — boost transcription) : verrouille la langue de décodage
-  // Whisper si l'opérateur l'a explicitement configurée (TRANSCRIPTION_LANGUAGE
-  // dans .env). Sans indice de langue, Whisper doit deviner à partir des
-  // ~30 premières secondes de CHAQUE segment (les segments ici ne durent que
-  // quelques secondes) — sur un segment court, bruité, ou qui commence par un
-  // nom propre, la détection automatique se trompe parfois de langue et
-  // transcrit phonétiquement dans la mauvaise langue. Deepgram (fournisseur
-  // de repli, voir deepgram-wrapper.js) fixe déjà `language=fr` en dur pour
-  // la même raison ; ici c'est opt-in pour ne pas casser les cultes bilingues
-  // qui comptent sur la détection auto (voir detector-compat.js FR+EN).
-  const language = process.env.TRANSCRIPTION_LANGUAGE;
-  if (language) {
-    formData.append('language', language);
+  // AJOUT (audit — boost transcription ; étendu lot 4 du chantier bilingue
+  // FR/EN) : verrouille la langue de décodage Whisper. Priorité : la
+  // langue de SESSION (réglée en direct via la commande vocale "écoute en
+  // français"/"listen in English", voir session-state.js >
+  // transcriptionLanguage) prime sur TRANSCRIPTION_LANGUAGE (.env, réglage
+  // fixe au démarrage) — sinon comportement inchangé : sans aucun des deux,
+  // Whisper devine à partir des ~30 premières secondes de CHAQUE segment
+  // (les segments ici ne durent que quelques secondes), ce qui se trompe
+  // parfois de langue sur un segment court/bruité/commençant par un nom
+  // propre. Deepgram (fournisseur de repli) fixe encore `language=fr` en
+  // dur pour la même raison à ce lot (branché au lot 5).
+  const resolvedLanguage = language || process.env.TRANSCRIPTION_LANGUAGE;
+  if (resolvedLanguage) {
+    formData.append('language', resolvedLanguage);
   }
   // AJOUT (rejet des segments inintelligibles — bruit, voix couverte,
   // glossolalie) : `json` (le défaut) ne renvoie que le texte, aucun signal
@@ -279,14 +280,21 @@ function computeGroqSpeechInfo(data) {
 /**
  * Lance Groq et Deepgram EN PARALLÈLE.
  */
-async function transcribeWithFallback(audioFilePath, timeoutMs = FALLBACK_TIMEOUT_MS, contextHint) {
+async function transcribeWithFallback(
+  audioFilePath,
+  timeoutMs = FALLBACK_TIMEOUT_MS,
+  contextHint,
+  language
+) {
   const deepgramEnabled = deepgram.isConfigured();
 
   const groqAbort = new AbortController();
   const deepgramAbort = new AbortController();
-  const groqPromise = transcribeFile(audioFilePath, groqAbort.signal, contextHint).catch((err) => ({
-    error: err,
-  }));
+  const groqPromise = transcribeFile(audioFilePath, groqAbort.signal, contextHint, language).catch(
+    (err) => ({
+      error: err,
+    })
+  );
   const deepgramPromise = deepgramEnabled
     ? deepgram.transcribeFile(audioFilePath, deepgramAbort.signal).catch((err) => ({ error: err }))
     : Promise.resolve({ error: new Error('Deepgram non configuré') });

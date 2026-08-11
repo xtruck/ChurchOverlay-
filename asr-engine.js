@@ -38,6 +38,10 @@
 
 const groq = require('./groq-wrapper');
 const deepgram = require('./deepgram-wrapper');
+// AJOUT (support bilingue FR/EN, lot 4) : session-state.js n'a aucune
+// dépendance réseau/IO ni vers le reste de l'app (voir son en-tête) —
+// aucun risque de dépendance circulaire à le requérir ici.
+const sessionState = require('./session-state');
 
 const VALID_PROVIDERS = ['auto', 'groq', 'deepgram', 'qwen-local'];
 
@@ -63,6 +67,16 @@ function resolveProvider() {
 async function transcribeSegment(segmentFile, contextHint, signal) {
   const provider = resolveProvider();
   const timestamp = Date.now();
+  // AJOUT (support bilingue FR/EN, lot 4) : lu ICI (pas dans groq-wrapper.js
+  // directement) pour que ce module reste le seul endroit où server.js/
+  // audio-capture.js ont besoin de savoir que la langue de session existe —
+  // groq-wrapper.js continue de n'accepter qu'un paramètre nu, sans jamais
+  // lire sessionState lui-même. null si l'opérateur n'a pas explicitement
+  // changé la langue de transcription (voir session-state.js) : dans ce
+  // cas, groq-wrapper.js retombe sur TRANSCRIPTION_LANGUAGE (.env) ou la
+  // détection automatique Whisper — comportement actuel intégralement
+  // préservé.
+  const language = sessionState.getTranscriptionLanguage();
   // AJOUT (phase de vérification runtime — voir le rapport livré) : trace
   // grep-able, par segment, du chemin RÉELLEMENT emprunté (batch WAV, pas
   // streaming — voir audio-capture.js pour le tag [ASR] équivalent côté
@@ -70,7 +84,7 @@ async function transcribeSegment(segmentFile, contextHint, signal) {
   // groq.transcribeWithFallback() ; le provider réel n'est connu qu'après
   // coup (voir engine dans le résultat retourné plus bas), donc ce log
   // affiche 'auto' tel quel pour ce cas — cohérent avec resolveProvider().
-  console.log(`[ASR] provider=${provider} mode=batch`);
+  console.log(`[ASR] provider=${provider} mode=batch language=${language || '(auto)'}`);
 
   if (provider === 'qwen-local') {
     const status = getStatus();
@@ -80,7 +94,7 @@ async function transcribeSegment(segmentFile, contextHint, signal) {
   }
 
   if (provider === 'groq') {
-    const result = await groq.transcribeFile(segmentFile, signal, contextHint);
+    const result = await groq.transcribeFile(segmentFile, signal, contextHint, language);
     return {
       text: result.text,
       isFinal: true,
@@ -94,6 +108,9 @@ async function transcribeSegment(segmentFile, contextHint, signal) {
     if (!deepgram.isConfigured()) {
       throw new Error('ASR_PROVIDER=deepgram mais DEEPGRAM_API_KEY non défini.');
     }
+    // AJOUT (support bilingue FR/EN, lot 4) : deepgram-wrapper.js n'accepte
+    // pas encore de paramètre de langue (voir son hardcoded DEEPGRAM_LANGUAGE
+    // = 'fr') — branché au lot 5 de ce chantier, volontairement pas ici.
     const result = await deepgram.transcribeFile(segmentFile, signal);
     return {
       text: result.text,
@@ -105,8 +122,9 @@ async function transcribeSegment(segmentFile, contextHint, signal) {
   }
 
   // 'auto' — comportement historique de groq-wrapper.transcribeWithFallback(),
-  // volontairement INCHANGÉ (voir en-tête du fichier).
-  const result = await groq.transcribeWithFallback(segmentFile, undefined, contextHint);
+  // volontairement INCHANGÉ pour tout le reste (voir en-tête du fichier) ;
+  // seul le paramètre de langue est nouveau ici (lot 4).
+  const result = await groq.transcribeWithFallback(segmentFile, undefined, contextHint, language);
   return {
     text: result.text,
     isFinal: true,
