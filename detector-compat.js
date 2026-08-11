@@ -17,24 +17,42 @@ try {
 } catch (_e) {
   // English detector optional
 }
+// CUTOVER (support bilingue FR/EN, lot 11b) : la phase EXACTE (étapes 1+2
+// de l'ancien dispatcher séquentiel FR-exact→EN-exact) est désormais UN
+// SEUL passage bilingue trié par longueur d'alias — voir bilingual-matcher.js
+// pour le détail et la justification du changement de comportement.
+let bilingualMatcher = null;
+try {
+  bilingualMatcher = require('./bilingual-matcher');
+} catch (_e) {
+  // Repli possible si detector-en est absent (voir le try/catch ci-dessus) —
+  // bilingual-matcher.js requiert directement detector-en, donc son
+  // chargement échoue dans les mêmes conditions.
+}
 
 /**
- * detectBilingual — tries exact matches first (FR then EN), then fuzzy matches (FR then EN).
+ * detectBilingual — un seul passage bilingue pour la correspondance EXACTE
+ * (voir bilingual-matcher.js), puis un repli flou par langue (FR puis EN,
+ * INCHANGÉ — filet de secours rare, pas le chemin chaud, voir l'en-tête de
+ * bilingual-matcher.js pour la justification de ne pas l'unifier aussi).
  */
 function detectBilingual(text) {
-  // Step 1: Exact FR match
-  const frExact = detector.detectExact ? detector.detectExact(text) : null;
-  if (frExact) return frExact;
+  // Étape 1 : correspondance EXACTE bilingue en un seul passage.
+  if (bilingualMatcher) {
+    const exact = bilingualMatcher.detectBilingualExact(text);
+    if (exact) return exact;
+  } else if (detector.detectExact) {
+    // Repli si bilingual-matcher.js n'a pas pu se charger (detector-en
+    // absent) : comportement historique FR seul.
+    const frExact = detector.detectExact(text);
+    if (frExact) return frExact;
+  }
 
-  // Step 2: Exact EN match
-  const enExact = detectorEn && detectorEn.detectExact ? detectorEn.detectExact(text) : null;
-  if (enExact) return enExact;
-
-  // Step 3: Fuzzy FR match
+  // Étape 2 : repli flou FR (INCHANGÉ — voir detector.js#detect).
   const frFuzzy = detector.detect(text);
   if (frFuzzy) return frFuzzy;
 
-  // Step 4: Fuzzy EN match
+  // Étape 3 : repli flou EN (INCHANGÉ — voir detector-en.js#detect).
   if (detectorEn) {
     const enFuzzy = detectorEn.detect(text);
     if (enFuzzy) return enFuzzy;

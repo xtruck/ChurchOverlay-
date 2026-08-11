@@ -94,131 +94,145 @@ const aliases = Object.entries(BOOKS)
   .flatMap(([book, names]) => names.map((name) => ({ book, name })))
   .sort((a, b) => b.name.length - a.name.length);
 
+// EXTRACTION (support bilingue FR/EN, lot 11b) : corps de boucle de
+// matchAgainstAliases ci-dessous, isolé pour UN SEUL alias — nécessaire
+// pour que bilingual-matcher.js (lot 11b) puisse entrelacer les alias FR et
+// EN dans UNE SEULE boucle triée par longueur, plutôt que deux boucles
+// séquentielles (FR entière, puis EN entière). Extraction MÉCANIQUE : tous
+// les `continue` de la boucle d'origine deviennent `return null` (même
+// effet — passer à l'alias suivant), aucune logique de matching modifiée.
+// Comportement inchangé pour detectExact()/detect() ci-dessous — verrouillé
+// par le fait que test-detector.js passe sans aucune modification.
+function testAlias(normalized, name) {
+  const escaped = escapeRegExp(name).replace(/\s+/g, '\\s+');
+
+  // Inverted Spoken Pattern 1: "verset 16 du chapitre 3 de Jean"
+  const invPattern1 = new RegExp(
+    `\\bverset(?:s)?\\s+(\\d{1,3})(?:\\s*(?:-|a|à|au)\\s*(\\d{1,3}))?\\s+(?:du|de|dans|au)?\\s*chapitre\\s+(\\d{1,3})\\s+(?:de|du|dans|de\\s+l|d|sur)?\\s*${escaped}\\b`,
+    'i'
+  );
+  const mInv1 = normalized.match(invPattern1);
+  if (mInv1) {
+    const vStart = Number(mInv1[1]);
+    const vEnd = mInv1[2] ? Number(mInv1[2]) : vStart;
+    const ch = Number(mInv1[3]);
+    if (ch > 0 && ch <= 150 && vStart > 0 && vStart <= 200 && vEnd >= vStart && vEnd <= 200) {
+      return { chapter: ch, verseStart: vStart, verseEnd: vEnd, raw: mInv1[0].trim() };
+    }
+  }
+
+  // Inverted Spoken Pattern 2: "chapitre 3 de Jean verset 16"
+  const invPattern2 = new RegExp(
+    `\\bchapitre\\s+(\\d{1,3})\\s+(?:de|du|dans|de\\s+l|d|sur)?\\s*${escaped}\\s+(?:au\\s+|le\\s+|les\\s+)?verset(?:s)?\\s+(\\d{1,3})(?:\\s*(?:-|a|à|au)\\s*(\\d{1,3}))?\\b`,
+    'i'
+  );
+  const mInv2 = normalized.match(invPattern2);
+  if (mInv2) {
+    const ch = Number(mInv2[1]);
+    const vStart = Number(mInv2[2]);
+    const vEnd = mInv2[3] ? Number(mInv2[3]) : vStart;
+    if (ch > 0 && ch <= 150 && vStart > 0 && vStart <= 200 && vEnd >= vStart && vEnd <= 200) {
+      return { chapter: ch, verseStart: vStart, verseEnd: vEnd, raw: mInv2[0].trim() };
+    }
+  }
+
+  // Inverted Spoken Pattern 3: "verset 16 de Jean 3"
+  const invPattern3 = new RegExp(
+    `\\bverset(?:s)?\\s+(\\d{1,3})(?:\\s*(?:-|a|à|au)\\s*(\\d{1,3}))?\\s+(?:dans|de|du)?\\s*${escaped}\\s+(?:chapitre\\s+)?(\\d{1,3})\\b`,
+    'i'
+  );
+  const mInv3 = normalized.match(invPattern3);
+  if (mInv3) {
+    const vStart = Number(mInv3[1]);
+    const vEnd = mInv3[2] ? Number(mInv3[2]) : vStart;
+    const ch = Number(mInv3[3]);
+    if (ch > 0 && ch <= 150 && vStart > 0 && vStart <= 200 && vEnd >= vStart && vEnd <= 200) {
+      return { chapter: ch, verseStart: vStart, verseEnd: vEnd, raw: mInv3[0].trim() };
+    }
+  }
+
+  const requireExplicitChapitre = name.length <= 2;
+  const chapitreKeyword = requireExplicitChapitre ? `chapitre\\s+` : `(?:chapitre\\s+)?`;
+
+  // Standard Pattern
+  //
+  // CORRECTIF (audit — détecteur "pas assez performant", donnait le
+  // chapitre entier au lieu du verset précis) : deux notations orales/
+  // écrites très courantes de référence biblique n'étaient pas
+  // reconnues, faute de verset capturé : "Jean 3.16" (point comme
+  // séparateur — tout aussi naturel que ":" à l'oral transcrit) et
+  // "Jean 3 v16" / "Jean 3 v. 16" (abréviation "v" pour "verset", très
+  // répandue). Dans les deux cas, le verset entier était perdu et
+  // detector.js retombait sur la référence "chapitre seul" la plus
+  // faible — d'où le chapitre complet affiché au lieu du verset attendu.
+  const pattern = new RegExp(
+    `(?:^|\\s)${escaped}\\s+` + // Book name
+      chapitreKeyword + // "chapitre"
+      `(\\d{1,3})` + // Chapter (group 1)
+      `(?:` + // Start optional verse group
+      `\\s*` + // Optional whitespace
+      `(?:` +
+      `[:,.]\\s*` + // Colon, comma, OR period ("Jean 3.16")
+      `(?:(?:verset(?:s)?|v\\.?)\\s+)?` + // Optional "verset"/"v"/"v." after separator
+      `(\\d{1,3})` + // Verse start (group 2)
+      `|` +
+      `\\s+(?:verset(?:s)?|v\\.?)\\s+` + // " verset " OR " v " OR " v. " (abréviation)
+      `(\\d{1,3})` + // Verse start (group 3)
+      `|` +
+      `\\s+` + // Just whitespace
+      `(\\d{1,3})` + // Verse start (group 4)
+      `)` +
+      `(?:` + // Optional verse range
+      `\\s*` +
+      `(?:-|a|à|au)` + // Range separator
+      `\\s*` +
+      `(\\d{1,3})` + // Verse end (group 5)
+      `)?` +
+      `)?` +
+      `(?=$|[\\s,.;!?)])`, // Word boundary
+    'i'
+  );
+
+  const match = normalized.match(pattern);
+  if (!match) return null;
+
+  const chapter = Number(match[1]);
+
+  // Get verse start from whichever group captured it (2, 3, or 4)
+  const verseStart =
+    match[2] || match[3] || match[4] ? Number(match[2] || match[3] || match[4]) : undefined;
+
+  // Get verse end (group 5) or default to verse start
+  const verseEnd = match[5] ? Number(match[5]) : verseStart;
+
+  // Validation
+  if (chapter > 0 && chapter <= 150) {
+    // NB: verseStart peut valoir 0 (ex. transcription erronée "verset 0"),
+    // qui est une valeur "falsy" en JS — on doit donc tester
+    // `!== undefined` et non `verseStart` seul, sinon 0 échappait à la
+    // validation de plage ci-dessous.
+    if (verseStart !== undefined && (verseStart <= 0 || verseStart > 200)) return null;
+    if (verseEnd !== undefined && (verseEnd < verseStart || verseEnd > 200)) return null;
+
+    return {
+      chapter,
+      verseStart,
+      verseEnd,
+      raw: match[0].trim(),
+    };
+  }
+
+  return null;
+}
+
 // Boucle de détection exacte (regex par alias), extraite de detect() pour
 // pouvoir être rejouée une seconde fois sur un texte corrigé par la
 // correspondance floue (voir detect() ci-dessous) sans dupliquer la logique.
 function matchAgainstAliases(normalized) {
   for (const { book, name } of aliases) {
-    const escaped = escapeRegExp(name).replace(/\s+/g, '\\s+');
-
-    // Inverted Spoken Pattern 1: "verset 16 du chapitre 3 de Jean"
-    const invPattern1 = new RegExp(
-      `\\bverset(?:s)?\\s+(\\d{1,3})(?:\\s*(?:-|a|à|au)\\s*(\\d{1,3}))?\\s+(?:du|de|dans|au)?\\s*chapitre\\s+(\\d{1,3})\\s+(?:de|du|dans|de\\s+l|d|sur)?\\s*${escaped}\\b`,
-      'i'
-    );
-    const mInv1 = normalized.match(invPattern1);
-    if (mInv1) {
-      const vStart = Number(mInv1[1]);
-      const vEnd = mInv1[2] ? Number(mInv1[2]) : vStart;
-      const ch = Number(mInv1[3]);
-      if (ch > 0 && ch <= 150 && vStart > 0 && vStart <= 200 && vEnd >= vStart && vEnd <= 200) {
-        return { book, chapter: ch, verseStart: vStart, verseEnd: vEnd, raw: mInv1[0].trim() };
-      }
-    }
-
-    // Inverted Spoken Pattern 2: "chapitre 3 de Jean verset 16"
-    const invPattern2 = new RegExp(
-      `\\bchapitre\\s+(\\d{1,3})\\s+(?:de|du|dans|de\\s+l|d|sur)?\\s*${escaped}\\s+(?:au\\s+|le\\s+|les\\s+)?verset(?:s)?\\s+(\\d{1,3})(?:\\s*(?:-|a|à|au)\\s*(\\d{1,3}))?\\b`,
-      'i'
-    );
-    const mInv2 = normalized.match(invPattern2);
-    if (mInv2) {
-      const ch = Number(mInv2[1]);
-      const vStart = Number(mInv2[2]);
-      const vEnd = mInv2[3] ? Number(mInv2[3]) : vStart;
-      if (ch > 0 && ch <= 150 && vStart > 0 && vStart <= 200 && vEnd >= vStart && vEnd <= 200) {
-        return { book, chapter: ch, verseStart: vStart, verseEnd: vEnd, raw: mInv2[0].trim() };
-      }
-    }
-
-    // Inverted Spoken Pattern 3: "verset 16 de Jean 3"
-    const invPattern3 = new RegExp(
-      `\\bverset(?:s)?\\s+(\\d{1,3})(?:\\s*(?:-|a|à|au)\\s*(\\d{1,3}))?\\s+(?:dans|de|du)?\\s*${escaped}\\s+(?:chapitre\\s+)?(\\d{1,3})\\b`,
-      'i'
-    );
-    const mInv3 = normalized.match(invPattern3);
-    if (mInv3) {
-      const vStart = Number(mInv3[1]);
-      const vEnd = mInv3[2] ? Number(mInv3[2]) : vStart;
-      const ch = Number(mInv3[3]);
-      if (ch > 0 && ch <= 150 && vStart > 0 && vStart <= 200 && vEnd >= vStart && vEnd <= 200) {
-        return { book, chapter: ch, verseStart: vStart, verseEnd: vEnd, raw: mInv3[0].trim() };
-      }
-    }
-
-    const requireExplicitChapitre = name.length <= 2;
-    const chapitreKeyword = requireExplicitChapitre ? `chapitre\\s+` : `(?:chapitre\\s+)?`;
-
-    // Standard Pattern
-    //
-    // CORRECTIF (audit — détecteur "pas assez performant", donnait le
-    // chapitre entier au lieu du verset précis) : deux notations orales/
-    // écrites très courantes de référence biblique n'étaient pas
-    // reconnues, faute de verset capturé : "Jean 3.16" (point comme
-    // séparateur — tout aussi naturel que ":" à l'oral transcrit) et
-    // "Jean 3 v16" / "Jean 3 v. 16" (abréviation "v" pour "verset", très
-    // répandue). Dans les deux cas, le verset entier était perdu et
-    // detector.js retombait sur la référence "chapitre seul" la plus
-    // faible — d'où le chapitre complet affiché au lieu du verset attendu.
-    const pattern = new RegExp(
-      `(?:^|\\s)${escaped}\\s+` + // Book name
-        chapitreKeyword + // "chapitre"
-        `(\\d{1,3})` + // Chapter (group 1)
-        `(?:` + // Start optional verse group
-        `\\s*` + // Optional whitespace
-        `(?:` +
-        `[:,.]\\s*` + // Colon, comma, OR period ("Jean 3.16")
-        `(?:(?:verset(?:s)?|v\\.?)\\s+)?` + // Optional "verset"/"v"/"v." after separator
-        `(\\d{1,3})` + // Verse start (group 2)
-        `|` +
-        `\\s+(?:verset(?:s)?|v\\.?)\\s+` + // " verset " OR " v " OR " v. " (abréviation)
-        `(\\d{1,3})` + // Verse start (group 3)
-        `|` +
-        `\\s+` + // Just whitespace
-        `(\\d{1,3})` + // Verse start (group 4)
-        `)` +
-        `(?:` + // Optional verse range
-        `\\s*` +
-        `(?:-|a|à|au)` + // Range separator
-        `\\s*` +
-        `(\\d{1,3})` + // Verse end (group 5)
-        `)?` +
-        `)?` +
-        `(?=$|[\\s,.;!?)])`, // Word boundary
-      'i'
-    );
-
-    const match = normalized.match(pattern);
-    if (!match) continue;
-
-    const chapter = Number(match[1]);
-
-    // Get verse start from whichever group captured it (2, 3, or 4)
-    const verseStart =
-      match[2] || match[3] || match[4] ? Number(match[2] || match[3] || match[4]) : undefined;
-
-    // Get verse end (group 5) or default to verse start
-    const verseEnd = match[5] ? Number(match[5]) : verseStart;
-
-    // Validation
-    if (chapter > 0 && chapter <= 150) {
-      // NB: verseStart peut valoir 0 (ex. transcription erronée "verset 0"),
-      // qui est une valeur "falsy" en JS — on doit donc tester
-      // `!== undefined` et non `verseStart` seul, sinon 0 échappait à la
-      // validation de plage ci-dessous.
-      if (verseStart !== undefined && (verseStart <= 0 || verseStart > 200)) continue;
-      if (verseEnd !== undefined && (verseEnd < verseStart || verseEnd > 200)) continue;
-
-      return {
-        book,
-        chapter,
-        verseStart,
-        verseEnd,
-        raw: match[0].trim(),
-      };
-    }
+    const result = testAlias(normalized, name);
+    if (result) return { book, ...result };
   }
-
   return null;
 }
 
@@ -417,4 +431,10 @@ module.exports = {
   detectTranslationSwitch,
   hasIntroductionPhrase,
   BOOKS,
+  // AJOUT (support bilingue FR/EN, lot 11b) : exports additifs pour
+  // bilingual-matcher.js (moteur d'appariement bilingue en un seul passage,
+  // voir ce fichier) — aucun appelant existant n'est affecté, ces exports
+  // n'existaient simplement pas avant.
+  aliases,
+  testAlias,
 };
