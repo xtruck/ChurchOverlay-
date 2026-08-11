@@ -61,6 +61,13 @@ const ipCameraStore = require('./ip-camera-store');
 // branding-store.js (logo persisté) et branding-overlay.html (page
 // affichée par-dessus la caméra dans OBS).
 const brandingStore = require('./branding-store');
+// AJOUT (identité de marque du tableau de bord — revente en produit "clé en
+// main", une installation par client) : nom d'organisation/couleur
+// d'accent/logo affichés dans la barre latérale du tableau de bord
+// lui-même — voir l'en-tête de dashboard-branding-store.js pour la
+// distinction avec brandingStore ci-dessus (habillage caméra) et
+// theme-loader.js (thème de l'overlay de projection).
+const dashboardBrandingStore = require('./dashboard-branding-store');
 // AJOUT (caméra téléphone par QR code, demande explicite) : voir
 // phone-camera-pairing.js (codes/secrets), phone-camera.html (page ouverte
 // par le téléphone) et les routes HTTP /phone-camera-* plus bas.
@@ -249,6 +256,12 @@ app.use('/media', express.static(path.join(USER_DATA_DIR, 'media')));
 // AJOUT (habillage caméra — logo) : même pont que /media ci-dessus, pour le
 // logo copié dans <userData>/branding/ par branding-store.js.
 app.use('/branding', express.static(path.join(USER_DATA_DIR, 'branding')));
+// AJOUT (identité de marque du tableau de bord — revente en produit
+// "clé en main") : même pont, pour le logo copié dans
+// <userData>/dashboard-branding/ par dashboard-branding-store.js. Route
+// distincte de /branding ci-dessus — deux domaines sans recouvrement, voir
+// l'en-tête de dashboard-branding-store.js.
+app.use('/dashboard-branding', express.static(path.join(USER_DATA_DIR, 'dashboard-branding')));
 
 // SECURITY: origin validation middleware for non-localhost binds
 const ALLOWED_ORIGINS = new Set([
@@ -1277,6 +1290,20 @@ function getBrandingState() {
   };
 }
 
+// AJOUT (identité de marque du tableau de bord — revente en produit "clé en
+// main") : assemble l'état complet envoyé à chaque connexion ('init') et à
+// chaque changement ('dashboardBrandingUpdate') — même principe que
+// getBrandingState() ci-dessus, pour un domaine différent (voir l'en-tête
+// de dashboard-branding-store.js).
+function getDashboardBrandingState() {
+  const config = dashboardBrandingStore.getConfig();
+  return {
+    organizationName: config.organizationName,
+    accentColor: config.accentColor,
+    logoUrl: config.logoFilename ? `/dashboard-branding/${config.logoFilename}` : null,
+  };
+}
+
 // ===========================================================================
 // WebSocket handlers — with RBAC
 // ===========================================================================
@@ -1375,6 +1402,14 @@ const OPERATOR_ACTIONS = new Set([
   'setBrandingSize',
   'setBrandingText',
   'setBrandingVisible',
+  // AJOUT (identité de marque du tableau de bord — revente en produit "clé
+  // en main") : même trust tier que l'habillage caméra ci-dessus — un
+  // viewer ne doit pas pouvoir renommer/rebrander l'outil d'un autre.
+  'getDashboardBranding',
+  'setDashboardOrgName',
+  'setDashboardAccentColor',
+  'setDashboardLogo',
+  'clearDashboardLogo',
   // AJOUT (bibliothèque de chants)
   'getSongLibrary',
   'addSong',
@@ -1477,6 +1512,7 @@ wss.on('connection', (ws, req) => {
       backgroundPattern: sessionState.getBackgroundPattern(),
       defaultMedia: mediaLibrary.getDefaultItem(),
       branding: getBrandingState(),
+      dashboardBranding: getDashboardBrandingState(),
       history: sessionState.getVerseHistory(),
       theme: themeLoader.themeToCss(theme),
       features,
@@ -2373,6 +2409,58 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
+    // --- Identité de marque du tableau de bord (nom d'organisation/couleur
+    // d'accent/logo dans la barre latérale — voir dashboard-branding-store.js
+    // et son en-tête pour la distinction avec l'habillage caméra ci-dessus).
+    // Même convention broadcast() : un second tableau de bord ouvert doit
+    // voir la même marque que le premier. ---
+    if (sanitized.action === 'getDashboardBranding') {
+      ws.send(
+        JSON.stringify({ action: 'dashboardBrandingUpdate', branding: getDashboardBrandingState() })
+      );
+      return;
+    }
+
+    if (sanitized.action === 'setDashboardOrgName') {
+      dashboardBrandingStore.setOrganizationName(sanitized.organizationName);
+      log('Identité tableau de bord : nom d’organisation mis à jour');
+      broadcast({ action: 'dashboardBrandingUpdate', branding: getDashboardBrandingState() });
+      return;
+    }
+
+    if (sanitized.action === 'setDashboardAccentColor') {
+      try {
+        dashboardBrandingStore.setAccentColor(sanitized.accentColor);
+        log('Identité tableau de bord : couleur d’accent mise à jour');
+        broadcast({ action: 'dashboardBrandingUpdate', branding: getDashboardBrandingState() });
+      } catch (err) {
+        ws.send(
+          JSON.stringify({ action: 'error', error: 'Identité tableau de bord : ' + err.message })
+        );
+      }
+      return;
+    }
+
+    if (sanitized.action === 'setDashboardLogo') {
+      try {
+        dashboardBrandingStore.setLogo(sanitized.sourcePath);
+        log('Identité tableau de bord : logo mis à jour');
+        broadcast({ action: 'dashboardBrandingUpdate', branding: getDashboardBrandingState() });
+      } catch (err) {
+        ws.send(
+          JSON.stringify({ action: 'error', error: 'Identité tableau de bord : ' + err.message })
+        );
+      }
+      return;
+    }
+
+    if (sanitized.action === 'clearDashboardLogo') {
+      dashboardBrandingStore.clearLogo();
+      log('Identité tableau de bord : logo retiré');
+      broadcast({ action: 'dashboardBrandingUpdate', branding: getDashboardBrandingState() });
+      return;
+    }
+
     // --- Bibliothèque de chants (mêmes conventions que la médiathèque
     // ci-dessus : réponse directe au demandeur pour la lecture/mutation de
     // la liste, broadcast() pour ce que tous les clients doivent voir) ---
@@ -2828,6 +2916,12 @@ try {
   brandingStore.setUserDataDir(USER_DATA_DIR);
 } catch (err) {
   warn('Failed to set branding store dir: ' + err.message);
+}
+
+try {
+  dashboardBrandingStore.setUserDataDir(USER_DATA_DIR);
+} catch (err) {
+  warn('Failed to set dashboard branding store dir: ' + err.message);
 }
 
 try {
