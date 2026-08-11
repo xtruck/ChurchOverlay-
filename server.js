@@ -1252,6 +1252,24 @@ async function handleVoiceCommand(command, _originalText) {
       log('Voice command: language ' + command.language);
       break;
     }
+    // AJOUT (support bilingue FR/EN, section 13 du cahier des charges) :
+    // langue de TRANSCRIPTION (ce que l'ASR doit décoder), jamais la
+    // langue d'AFFICHAGE gérée par 'setLanguage' juste au-dessus — ce
+    // handler n'appelle JAMAIS sessionState.setDisplayLanguage(), c'est la
+    // règle centrale de ce chantier. Diffusion distincte
+    // (transcriptionLanguageChanged, pas languageChanged) pour que le
+    // tableau de bord puisse un jour afficher les deux états séparément
+    // sans les confondre.
+    case 'setTranscriptionLanguage': {
+      sessionState.setTranscriptionLanguage(command.language);
+      broadcast({
+        action: 'transcriptionLanguageChanged',
+        language: sessionState.getTranscriptionLanguage(),
+        triggeredByVoice: true,
+      });
+      log('Voice command: transcription language ' + command.language);
+      break;
+    }
     case 'setTranslation': {
       try {
         const newId = bibleLookup.setTranslation(command.language, command.code);

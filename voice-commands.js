@@ -200,6 +200,31 @@ const COMMANDS = [
     extract: () => ({ action: 'setLanguage', language: 'both' }),
   },
 
+  // --- ASR LANGUAGE (langue de TRANSCRIPTION — ce que le moteur doit
+  // décoder — jamais la langue d'AFFICHAGE ci-dessus, voir cahier des
+  // charges bilingue section 13). Verbe impératif "écoute"/"listen"
+  // délibérément distinct des verbes "affiche"/"langue"/"passe" utilisés
+  // par langFrench/langEnglish/langBoth ci-dessus, pour qu'aucune phrase
+  // ne puisse déclencher les deux familles de commandes à la fois. ---
+  {
+    id: 'listenInFrench',
+    patterns: [
+      /(?:ecoute|reconnais)(?:[- ]?(?:moi|nous))?\s+(?:le\s+)?(?:en\s+)?francais/i,
+      /listen\s+in\s+french/i,
+      /recognize\s+french/i,
+    ],
+    extract: () => ({ action: 'setTranscriptionLanguage', language: 'fr' }),
+  },
+  {
+    id: 'listenInEnglish',
+    patterns: [
+      /(?:ecoute|reconnais)(?:[- ]?(?:moi|nous))?\s+(?:le\s+|l['’])?(?:en\s+)?anglais/i,
+      /listen\s+in\s+english/i,
+      /recognize\s+english/i,
+    ],
+    extract: () => ({ action: 'setTranscriptionLanguage', language: 'en' }),
+  },
+
   // --- TRANSLATION ---
   {
     id: 'translationSegond',

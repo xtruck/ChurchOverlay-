@@ -139,6 +139,54 @@ check(
 );
 
 // ---------------------------------------------------------------------------
+// 3b. listenInFrench/listenInEnglish (nouveau, section 13 du cahier des
+//     charges) — langue de TRANSCRIPTION, jamais d'AFFICHAGE. Vérifie ici
+//     seulement que detectCommand() produit la bonne action/langue ;
+//     l'absence de couplage avec setDisplayLanguage se vérifie côté
+//     server.js (handleVoiceCommand > case 'setTranscriptionLanguage'
+//     n'appelle jamais sessionState.setDisplayLanguage — confirmé par
+//     lecture directe du code à ce lot, et re-vérifié statiquement au lot
+//     14 de ce chantier).
+// ---------------------------------------------------------------------------
+console.log('\n--- listenInFrench / listenInEnglish (nouveau) ---\n');
+check(
+  'FR "écoute en français" -> setTranscriptionLanguage(fr)',
+  (() => {
+    const r = detectCommand('écoute en français');
+    return r?.action === 'setTranscriptionLanguage' && r.language === 'fr';
+  })()
+);
+check(
+  'FR "reconnais le français" -> setTranscriptionLanguage(fr)',
+  (() => {
+    const r = detectCommand('reconnais le français');
+    return r?.action === 'setTranscriptionLanguage' && r.language === 'fr';
+  })()
+);
+check(
+  'EN "listen in English" -> setTranscriptionLanguage(en)',
+  (() => {
+    const r = detectCommand('listen in English');
+    return r?.action === 'setTranscriptionLanguage' && r.language === 'en';
+  })()
+);
+check(
+  'EN "recognize English" -> setTranscriptionLanguage(en)',
+  (() => {
+    const r = detectCommand('recognize English');
+    return r?.action === 'setTranscriptionLanguage' && r.language === 'en';
+  })()
+);
+check(
+  'setTranscriptionLanguage et setLanguage sont des actions distinctes (jamais confondues)',
+  (() => {
+    const transcription = detectCommand('listen in English');
+    const display = detectCommand('affiche anglais');
+    return transcription.action === 'setTranscriptionLanguage' && display.action === 'setLanguage';
+  })()
+);
+
+// ---------------------------------------------------------------------------
 // 4. extendTime — nouvelle tournure anglaise naturelle.
 // ---------------------------------------------------------------------------
 console.log('\n--- extendTime ---\n');
@@ -229,6 +277,16 @@ const EXPECTED = {
   langFrench: { phrase: 'affiche français', action: 'setLanguage', language: 'fr' },
   langEnglish: { phrase: 'affiche anglais', action: 'setLanguage', language: 'en' },
   langBoth: { phrase: 'langue bilingue', action: 'setLanguage', language: 'both' },
+  listenInFrench: {
+    phrase: 'écoute en français',
+    action: 'setTranscriptionLanguage',
+    language: 'fr',
+  },
+  listenInEnglish: {
+    phrase: 'listen in English',
+    action: 'setTranscriptionLanguage',
+    language: 'en',
+  },
   translationSegond: { phrase: 'traduction segond', action: 'setTranslation', code: 'lsg' },
   translationDarby: { phrase: 'traduction darby', action: 'setTranslation', code: 'darby' },
   translationKJV: { phrase: 'translation king james', action: 'setTranslation', code: 'kjv' },
