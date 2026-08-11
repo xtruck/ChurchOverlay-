@@ -21,9 +21,21 @@
                conservés ci-dessous (au lieu d'être supprimés) pour ne pas
                casser les dizaines d'usages existants dans la feuille de
                style : ils pointent maintenant tous vers cette même couleur. */
+  /* AJOUT (identité de marque du tableau de bord — revente en produit "clé
+             en main") : --primary est désormais la SEULE valeur à écraser
+             pour rebrander tout l'outil — dashboard-branding.js fait
+             document.documentElement.style.setProperty('--primary', ...).
+             --primary-hover/--primary-glow/--primary-300/600/700 et les
+             alias --gold/--garnet/--sapphire-*soft plus bas sont donc
+             passés de valeurs hex figées à color-mix() dérivé de
+             --primary, pour que tout le système de tons suive
+             automatiquement un seul override. Léger décalage de ces tons
+             dérivés par rapport aux valeurs choisies à la main
+             précédemment (quelques % près) pour le thème par défaut —
+             accepté, confirmé par capture d'écran avant/après. */
   --primary: #7c8cf5;
-  --primary-hover: #6274f0;
-  --primary-glow: rgba(124, 140, 245, 0.38);
+  --primary-hover: color-mix(in srgb, var(--primary) 85%, black);
+  --primary-glow: color-mix(in srgb, var(--primary) 38%, transparent);
 
   --accent-cyan: var(--primary);
   --accent-emerald: #34d399;
@@ -40,13 +52,13 @@
   --accent-rose: #f4607a;
 
   --gold: var(--primary);
-  --gold-soft: rgba(124, 140, 245, 0.2);
-  --gold-glow: rgba(124, 140, 245, 0.45);
+  --gold-soft: color-mix(in srgb, var(--primary) 20%, transparent);
+  --gold-glow: color-mix(in srgb, var(--primary) 45%, transparent);
 
   --garnet: var(--primary);
-  --garnet-soft: rgba(124, 140, 245, 0.16);
+  --garnet-soft: color-mix(in srgb, var(--primary) 16%, transparent);
   --sapphire: var(--primary);
-  --sapphire-soft: rgba(124, 140, 245, 0.16);
+  --sapphire-soft: color-mix(in srgb, var(--primary) 16%, transparent);
 
   --text-main: #f6f3ec;
   --text-muted: #a8adc9;
@@ -74,9 +86,9 @@
 
   /* Teintes tonales (survol/actif/appuyé) — évite les bidouilles d'opacité
      ad hoc pour ces états. */
-  --primary-300: #a8b3f9;
-  --primary-600: #5f6eea;
-  --primary-700: #4a56c4;
+  --primary-300: color-mix(in srgb, var(--primary) 70%, white);
+  --primary-600: color-mix(in srgb, var(--primary) 88%, black);
+  --primary-700: color-mix(in srgb, var(--primary) 68%, black);
   --accent-emerald-600: #1fb886;
   --accent-rose-600: #e14264;
   --accent-amber-600: #d98d12;

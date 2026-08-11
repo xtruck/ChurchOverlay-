@@ -98,6 +98,7 @@
       "dashboard/features/bible-search.js",
       "dashboard/features/reading-mode.js",
       "dashboard/features/translation-picker.js",
+      "dashboard/features/dashboard-branding.js",
       "dashboard/dashboard.css",
       "audio-capture-worklet.js",
       "camera-capture.js",

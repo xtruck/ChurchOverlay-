@@ -19,7 +19,13 @@
       <aside class="sidebar">
         <div>
           <div class="brand">
-            <div class="brand-icon">
+            <!-- AJOUT (identité de marque du tableau de bord — revente en
+                         produit "clé en main") : brandIconDefault (la croix SVG,
+                         inchangée) et brandLogoImg (masqué par défaut) sont
+                         permutés par dashboard-branding.js selon qu'un logo
+                         personnalisé est configuré ou non — jamais d'état vide,
+                         toujours l'un des deux visible. -->
+            <div class="brand-icon" id="brandIconDefault">
               <svg
                 width="20"
                 height="20"
@@ -33,8 +39,20 @@
                 <path d="M12 2v20M6 8h12" />
               </svg>
             </div>
+            <img
+              id="brandLogoImg"
+              alt="Logo de l'organisation"
+              style="
+                display: none;
+                width: 44px;
+                height: 44px;
+                border-radius: var(--radius-full);
+                object-fit: cover;
+                flex-shrink: 0;
+              "
+            />
             <div>
-              <div class="brand-title">ChurchOverlay</div>
+              <div class="brand-title" id="brandTitle">ChurchOverlay</div>
               <div class="brand-tag">Opérateur Pro</div>
             </div>
           </div>
@@ -1259,6 +1277,75 @@
             ></div>
           </div>
 
+          <!-- AJOUT (identité de marque du tableau de bord — revente en produit
+                       "clé en main") : distinct de "3. Habillage caméra" plus bas
+                       (logo affiché PAR-DESSUS LA CAMÉRA pour OBS) — ceci change
+                       l'apparence de CET OUTIL lui-même (nom/couleur/logo dans la
+                       barre latérale), pour qu'une revente à une autre église ou
+                       entreprise porte leur identité, pas "ChurchOverlay". Voir
+                       dashboard/features/dashboard-branding.js et
+                       dashboard-branding-store.js côté serveur. -->
+          <div class="card" id="dashboardBrandingCard" style="margin-bottom: 1.25rem">
+            <div class="card-header">
+              <span class="card-title">🏷️ Identité de la marque (tableau de bord)</span>
+            </div>
+            <div class="field-hint" style="margin-top: 0; margin-bottom: 0.75rem">
+              Personnalise l'apparence de cet outil pour votre organisation — nom, couleur d'accent
+              et logo affichés dans la barre latérale. Sans rapport avec l'habillage caméra
+              ci-dessous (qui concerne ce que la caméra diffuse dans OBS).
+            </div>
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                gap: 0.6rem;
+                flex-wrap: wrap;
+                margin-bottom: 0.85rem;
+              "
+            >
+              <input
+                type="text"
+                id="dashboardOrgNameInput"
+                placeholder="Nom de l'organisation (ex. Église de la Grâce)"
+                style="flex: 1; min-width: 220px"
+                onkeydown="if (event.key === 'Enter') saveDashboardOrgName();"
+              />
+              <button class="btn btn-secondary" onclick="saveDashboardOrgName()">
+                Enregistrer le nom
+              </button>
+            </div>
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+                flex-wrap: wrap;
+                margin-bottom: 0.85rem;
+              "
+            >
+              <label
+                for="dashboardAccentColorInput"
+                style="font-size: 0.85rem; color: var(--text-muted)"
+                >Couleur d'accent</label
+              >
+              <input
+                type="color"
+                id="dashboardAccentColorInput"
+                value="#7c8cf5"
+                onchange="saveDashboardAccentColor()"
+                style="width: 48px; height: 32px; padding: 0; border-radius: 6px; cursor: pointer"
+              />
+            </div>
+            <div style="display: flex; gap: 0.6rem; flex-wrap: wrap">
+              <button class="btn btn-secondary" onclick="pickDashboardLogo()">
+                🖼️ Choisir un logo
+              </button>
+              <button class="btn btn-secondary" onclick="clearDashboardLogo()">
+                Retirer le logo
+              </button>
+            </div>
+          </div>
+
           <div class="card" id="apiSettingsCard" style="margin-bottom: 1.25rem">
             <div class="card-header">
               <span class="card-title">Clés API & Microphone</span>
@@ -2126,7 +2213,12 @@
             </div>
             <div class="form-group">
               <label for="obsUrlInput">URL du serveur obs-websocket</label>
-              <input type="text" id="obsUrlInput" placeholder="ws://localhost:4455" autocomplete="off" />
+              <input
+                type="text"
+                id="obsUrlInput"
+                placeholder="ws://localhost:4455"
+                autocomplete="off"
+              />
             </div>
             <div class="form-group">
               <label for="obsPasswordInput">Mot de passe</label>
@@ -2161,7 +2253,10 @@
               </button>
             </div>
             <div class="field-hint" id="obsStatus" style="margin-bottom: 0.75rem"></div>
-            <div id="obsScenesList" style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem"></div>
+            <div
+              id="obsScenesList"
+              style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem"
+            ></div>
 
             <div
               style="
