@@ -151,5 +151,112 @@ test('validateSystemConfig: avertit si GROQ_API_KEY absent', async () => {
   }
 });
 
-console.log(`\n=== Résultat test-config-validator : ${passed} passés, ${failed} échoués ===`);
-if (failed > 0) process.exit(1);
+// ── TRANSCRIPTION_LANGUAGE (support bilingue FR/EN, lot 7) ──
+test('TRANSCRIPTION_LANGUAGE: absent par défaut (aucune valeur imposée)', () => {
+  const r = configValidator.validateEnvVar('TRANSCRIPTION_LANGUAGE', undefined);
+  assert.strictEqual(r.valid, true);
+  assert.strictEqual(r.parsedValue, undefined);
+});
+
+test('TRANSCRIPTION_LANGUAGE: accepte un code ISO 639-1 (fr)', () => {
+  const r = configValidator.validateEnvVar('TRANSCRIPTION_LANGUAGE', 'fr');
+  assert.strictEqual(r.valid, true);
+  assert.strictEqual(r.parsedValue, 'fr');
+});
+
+test(
+  'TRANSCRIPTION_LANGUAGE: accepte un code hors fr/en (permissif — Groq/Whisper accepte une ' +
+    'plage bien plus large, voir groq-wrapper.js)',
+  () => {
+    const r = configValidator.validateEnvVar('TRANSCRIPTION_LANGUAGE', 'es');
+    assert.strictEqual(r.valid, true);
+    assert.strictEqual(r.parsedValue, 'es');
+  }
+);
+
+test('TRANSCRIPTION_LANGUAGE: rejette une valeur qui ne ressemble pas à un code de langue', () => {
+  const r = configValidator.validateEnvVar('TRANSCRIPTION_LANGUAGE', 'french');
+  assert.strictEqual(r.valid, false);
+});
+
+/** Comme test(), mais attend une fonction async avant de compter le résultat — nécessaire pour
+ * les tests qui appellent validateSystemConfig() (asynchrone), contrairement à test() ci-dessus
+ * qui ne fait qu'appeler fn() sans l'attendre. */
+async function testAsync(name, fn) {
+  try {
+    await fn();
+    console.log(`✅ ${name}`);
+    passed++;
+  } catch (err) {
+    console.log(`❌ ${name}`);
+    console.log(`   ${err.message}`);
+    failed++;
+  }
+}
+
+// ── validateSystemConfig : avertissement doux TRANSCRIPTION_LANGUAGE hors fr/en (lot 7) ──
+(async () => {
+  await testAsync(
+    'validateSystemConfig: avertit si TRANSCRIPTION_LANGUAGE hors fr/en avec ASR_PROVIDER=deepgram',
+    async () => {
+      const originalLang = process.env.TRANSCRIPTION_LANGUAGE;
+      const originalProvider = process.env.ASR_PROVIDER;
+      process.env.TRANSCRIPTION_LANGUAGE = 'es';
+      process.env.ASR_PROVIDER = 'deepgram';
+      try {
+        const result = await configValidator.validateSystemConfig();
+        assert.ok(
+          result.warnings.some(
+            (w) => w.includes('TRANSCRIPTION_LANGUAGE') && w.includes('Deepgram')
+          )
+        );
+      } finally {
+        if (originalLang !== undefined) process.env.TRANSCRIPTION_LANGUAGE = originalLang;
+        else delete process.env.TRANSCRIPTION_LANGUAGE;
+        if (originalProvider !== undefined) process.env.ASR_PROVIDER = originalProvider;
+        else delete process.env.ASR_PROVIDER;
+      }
+    }
+  );
+
+  await testAsync(
+    "validateSystemConfig: pas d'avertissement pour 'en' (Deepgram déjà vérifié dans cette langue)",
+    async () => {
+      const originalLang = process.env.TRANSCRIPTION_LANGUAGE;
+      const originalProvider = process.env.ASR_PROVIDER;
+      process.env.TRANSCRIPTION_LANGUAGE = 'en';
+      process.env.ASR_PROVIDER = 'deepgram';
+      try {
+        const result = await configValidator.validateSystemConfig();
+        assert.ok(!result.warnings.some((w) => w.includes('TRANSCRIPTION_LANGUAGE')));
+      } finally {
+        if (originalLang !== undefined) process.env.TRANSCRIPTION_LANGUAGE = originalLang;
+        else delete process.env.TRANSCRIPTION_LANGUAGE;
+        if (originalProvider !== undefined) process.env.ASR_PROVIDER = originalProvider;
+        else delete process.env.ASR_PROVIDER;
+      }
+    }
+  );
+
+  await testAsync(
+    "validateSystemConfig: pas d'avertissement hors fr/en si ASR_PROVIDER=groq (Deepgram non sollicité)",
+    async () => {
+      const originalLang = process.env.TRANSCRIPTION_LANGUAGE;
+      const originalProvider = process.env.ASR_PROVIDER;
+      process.env.TRANSCRIPTION_LANGUAGE = 'es';
+      process.env.ASR_PROVIDER = 'groq';
+      try {
+        const result = await configValidator.validateSystemConfig();
+        assert.ok(!result.warnings.some((w) => w.includes('TRANSCRIPTION_LANGUAGE')));
+      } finally {
+        if (originalLang !== undefined) process.env.TRANSCRIPTION_LANGUAGE = originalLang;
+        else delete process.env.TRANSCRIPTION_LANGUAGE;
+        if (originalProvider !== undefined) process.env.ASR_PROVIDER = originalProvider;
+        else delete process.env.ASR_PROVIDER;
+      }
+    }
+  );
+
+  console.log(`\n=== Résultat test-config-validator : ${passed} passés, ${failed} échoués ===`);
+  if (failed > 0) process.exit(1);
+})();

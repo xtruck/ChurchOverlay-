@@ -114,6 +114,23 @@ const ENV_SCHEMA = {
     errorMessage:
       'MIC_SILENCE_THRESHOLD doit être un nombre entre 0 et 1 (0 = désactive le filtre de silence)',
   },
+  // AJOUT (support bilingue FR/EN, lot 7) : override RUNTIME de la langue de
+  // transcription, lu par asr-engine.js via sessionState.getTranscriptionLanguage()
+  // (voir voice-commands.js pour les commandes "écoute en français"/"listen in
+  // English" qui la modifient en direct). Cette variable d'env reste un
+  // DÉFAUT AU DÉMARRAGE seulement — groq-wrapper.js n'y retombe que si aucune
+  // langue de session n'a été réglée. Volontairement PERMISSIF (pas restreint
+  // à fr/en) : Groq/Whisper accepte nativement toute la plage ISO 639-1
+  // (voir groq-wrapper.js) — seul Deepgram est en pratique limité ici, voir
+  // l'avertissement doux dans validateSystemConfig ci-dessous.
+  TRANSCRIPTION_LANGUAGE: {
+    type: 'string',
+    required: false,
+    default: undefined,
+    validate: (value) => typeof value === 'string' && /^[a-z]{2,3}$/i.test(value.trim()),
+    errorMessage:
+      "TRANSCRIPTION_LANGUAGE doit être un code de langue ISO 639-1/639-2 (ex: 'fr', 'en', 'es')",
+  },
 };
 
 /**
@@ -255,6 +272,32 @@ async function validateSystemConfig() {
       `MIC_SILENCE_THRESHOLD personnalisé actif : ${process.env.MIC_SILENCE_THRESHOLD} ` +
         '(défaut : 0.02). Si la transcription ne démarre toujours pas, essayez ' +
         'une valeur plus basse, ou 0 pour désactiver temporairement le filtre de silence.'
+    );
+  }
+
+  // 2quater. Langue de transcription (support bilingue FR/EN, lot 7) — la
+  // forme est déjà validée par ENV_SCHEMA.TRANSCRIPTION_LANGUAGE ci-dessus
+  // (permissive, tout code ISO plausible). Avertissement DOUX, pas une
+  // erreur : Deepgram (deepgram-wrapper.js/deepgram-streaming.js) reste en
+  // pratique limité ici — le boosting de vocabulaire biblique
+  // (bible-keyterms.js) est fr/en-biaisé quelle que soit la langue
+  // demandée, une limite déjà documentée et non traitée par ce lot. Groq/
+  // Whisper (groq-wrapper.js), lui, accepte nativement cette langue sans
+  // réserve — seul ASR_PROVIDER=deepgram (ou 'auto', qui peut retomber sur
+  // Deepgram) déclenche cet avertissement.
+  const resolvedAsrProvider = (process.env.ASR_PROVIDER || 'auto').toLowerCase();
+  const transcriptionLanguage = process.env.TRANSCRIPTION_LANGUAGE;
+  if (
+    transcriptionLanguage &&
+    !['fr', 'en'].includes(transcriptionLanguage.trim().toLowerCase()) &&
+    (resolvedAsrProvider === 'deepgram' || resolvedAsrProvider === 'auto')
+  ) {
+    warnings.push(
+      `TRANSCRIPTION_LANGUAGE='${transcriptionLanguage}' avec ASR_PROVIDER=${resolvedAsrProvider} : ` +
+        "Deepgram (utilisé par ce provider) n'est vérifié qu'en français/anglais dans " +
+        'cette app — le boosting de vocabulaire biblique (bible-keyterms.js) reste fr/en-' +
+        'biaisé quelle que soit la langue demandée. Groq/Whisper accepte cette langue ' +
+        'nativement, sans cette limite.'
     );
   }
 
