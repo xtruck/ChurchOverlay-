@@ -17,76 +17,16 @@
 // AJOUT (audit — inspiré de Rhema, correspondance floue sur les noms de
 // livres). Miroir du même ajout dans detector.js — voir levenshtein.js.
 const { correctBookNameFuzzy } = require('./levenshtein');
-
+// CUTOVER (support bilingue FR/EN, lot 10) : BOOKS était auparavant un
+// littéral dupliqué (à l'identique) entre ce fichier et detector.js — voir
+// book-catalog.js (lot 8), qui fusionne déjà les deux et sert maintenant de
+// SOURCE UNIQUE. Dérivé ici (pas retapé) pour garantir un contenu
+// strictement identique à l'ancien littéral — verrouillé par
+// test-book-catalog.js (lot 8) et par le fait que test-detector-en.js (ce
+// fichier) passe sans aucune modification.
+const { BOOK_CATALOG } = require('./book-catalog');
 // Alias EN → clé interne FR (identique à detector.js).
-const BOOKS = {
-  genese: ['genesis', 'gen'],
-  exode: ['exodus', 'exod', 'exo'],
-  levitique: ['leviticus', 'lev'],
-  nombres: ['numbers', 'num'],
-  deuteronome: ['deuteronomy', 'deut'],
-  josue: ['joshua', 'josh'],
-  juges: ['judges', 'judg'],
-  ruth: ['ruth'],
-  '1samuel': ['1 samuel', 'first samuel', 'i samuel'],
-  '2samuel': ['2 samuel', 'second samuel', 'ii samuel'],
-  '1rois': ['1 kings', 'first kings', 'i kings'],
-  '2rois': ['2 kings', 'second kings', 'ii kings'],
-  '1chroniques': ['1 chronicles', 'first chronicles', 'i chronicles'],
-  '2chroniques': ['2 chronicles', 'second chronicles', 'ii chronicles'],
-  esdras: ['ezra'],
-  nehemie: ['nehemiah', 'neh'],
-  esther: ['esther', 'esth'],
-  job: ['job'],
-  psaumes: ['psalms', 'psalm', 'ps'],
-  proverbes: ['proverbs', 'prov'],
-  ecclesiaste: ['ecclesiastes', 'eccl'],
-  cantique: ['song of solomon', 'song of songs', 'canticles'],
-  esaie: ['isaiah', 'isa'],
-  jeremie: ['jeremiah', 'jer'],
-  lamentations: ['lamentations', 'lam'],
-  ezechiel: ['ezekiel', 'ezek'],
-  daniel: ['daniel', 'dan'],
-  osee: ['hosea', 'hos'],
-  joel: ['joel'],
-  amos: ['amos'],
-  abdias: ['obadiah', 'obad'],
-  jonas: ['jonah'],
-  michee: ['micah', 'mic'],
-  nahum: ['nahum', 'nah'],
-  habacuc: ['habakkuk', 'hab'],
-  sophonie: ['zephaniah', 'zeph'],
-  aggee: ['haggai', 'hag'],
-  zacharie: ['zechariah', 'zech'],
-  malachie: ['malachi', 'mal'],
-  matthieu: ['matthew', 'matt', 'mt'],
-  marc: ['mark', 'mk'],
-  luc: ['luke', 'lk'],
-  jean: ['john', 'jn'],
-  actes: ['acts'],
-  romains: ['romans', 'rom'],
-  '1corinthiens': ['1 corinthians', 'first corinthians', 'i corinthians'],
-  '2corinthiens': ['2 corinthians', 'second corinthians', 'ii corinthians'],
-  galates: ['galatians', 'gal'],
-  ephesiens: ['ephesians', 'eph'],
-  philippiens: ['philippians', 'phil'],
-  colossiens: ['colossians', 'col'],
-  '1thessaloniciens': ['1 thessalonians', 'first thessalonians', 'i thessalonians'],
-  '2thessaloniciens': ['2 thessalonians', 'second thessalonians', 'ii thessalonians'],
-  '1timothee': ['1 timothy', 'first timothy', 'i timothy'],
-  '2timothee': ['2 timothy', 'second timothy', 'ii timothy'],
-  tite: ['titus'],
-  philemon: ['philemon', 'phlm'],
-  hebreux: ['hebrews', 'heb'],
-  jacques: ['james', 'jas'],
-  '1pierre': ['1 peter', 'first peter', 'i peter'],
-  '2pierre': ['2 peter', 'second peter', 'ii peter'],
-  '1jean': ['1 john', 'first john', 'i john'],
-  '2jean': ['2 john', 'second john', 'ii john'],
-  '3jean': ['3 john', 'third john', 'iii john'],
-  jude: ['jude'],
-  apocalypse: ['revelation', 'revelations', 'rev'],
-};
+const BOOKS = Object.fromEntries(Object.entries(BOOK_CATALOG).map(([key, { en }]) => [key, en]));
 
 // Variantes phonétiques (erreurs Whisper base/tiny sur bruit ambiant).
 const CHAPTER_VARIANTS = ['chapter', 'chapters', 'chap', 'chpt'];
@@ -107,96 +47,14 @@ function normalize(value) {
     .trim();
 }
 
-// Chiffres écrits en toutes lettres (usuel à l'oral pour les versets).
-const NUMBER_WORDS = {
-  zero: 0,
-  one: 1,
-  two: 2,
-  three: 3,
-  four: 4,
-  five: 5,
-  six: 6,
-  seven: 7,
-  eight: 8,
-  nine: 9,
-  ten: 10,
-  eleven: 11,
-  twelve: 12,
-  thirteen: 13,
-  fourteen: 14,
-  fifteen: 15,
-  sixteen: 16,
-  seventeen: 17,
-  eighteen: 18,
-  nineteen: 19,
-  twenty: 20,
-  thirty: 30,
-  forty: 40,
-  fifty: 50,
-  sixty: 60,
-  seventy: 70,
-  eighty: 80,
-  ninety: 90,
-  hundred: 100,
-  first: 1,
-  '1st': 1,
-  second: 2,
-  '2nd': 2,
-  third: 3,
-  '3rd': 3,
-  fourth: 4,
-  '4th': 4,
-  fifth: 5,
-  '5th': 5,
-  sixth: 6,
-  '6th': 6,
-  seventh: 7,
-  '7th': 7,
-  eighth: 8,
-  '8th': 8,
-  ninth: 9,
-  '9th': 9,
-  tenth: 10,
-  '10th': 10,
-  eleventh: 11,
-  '11th': 11,
-  twelfth: 12,
-  '12th': 12,
-  thirteenth: 13,
-  fourteenth: 14,
-  fifteenth: 15,
-  sixteenth: 16,
-  seventeenth: 17,
-  eighteenth: 18,
-  nineteenth: 19,
-  twentieth: 20,
-  thirtieth: 30,
-  fortieth: 40,
-  fiftieth: 50,
-};
-const NUMBER_WORD_PATTERN = Object.keys(NUMBER_WORDS).join('|');
+// CUTOVER (support bilingue FR/EN, lot 10) : voir number-words.js (lot 9),
+// fusion des tables NUMBER_WORDS de ce fichier et de detector.js —
+// verrouillée par test-number-words.js et par le fait que
+// test-detector-en.js (ce fichier) passe sans aucune modification.
+const { numberWordsToDigits: sharedNumberWordsToDigits } = require('./number-words');
 
 function numberWordsToDigits(text) {
-  return text.replace(
-    new RegExp(
-      `\\b(?:${NUMBER_WORD_PATTERN})(?:[\\s-]+(?:and[\\s-]+)?(?:${NUMBER_WORD_PATTERN}))*\\b`,
-      'g'
-    ),
-    (words) => {
-      const tokens = words
-        .replace(/-/g, ' ')
-        .split(/\s+/)
-        .filter((t) => t !== 'and');
-      let current = 0;
-      for (const tok of tokens) {
-        const v = NUMBER_WORDS[tok];
-        if (v === undefined) continue;
-        if (v === 100) current = Math.max(1, current) * 100;
-        else current += v;
-      }
-      return String(current);
-    }
-  );
+  return sharedNumberWordsToDigits(text, 'en');
 }
 
 // Trie les alias par longueur DESC pour matcher "1 corinthians" avant "corinthians".
