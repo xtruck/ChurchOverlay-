@@ -7,18 +7,59 @@
  *  deux fichiers exportaient déjà chacune leur BOOKS avant ce lot, la fusion
  *  a donc été générée directement depuis ces exports (pas retapée à la
  *  main), pour éliminer tout risque de faute de frappe/oubli d'alias.
+ *  detector.js/detector-en.js consomment ce catalogue depuis le lot 10
+ *  (cutover) — voir les commits "Lot 8/14" à "Lot 11b/14" (git log) pour
+ *  l'historique complet.
+ *
+ *  ============================================================================
+ *  DOCUMENTATION CANONIQUE (lot 12, clôture — aucun changement de code) :
+ *  clé canonique interne des livres bibliques dans TOUTE l'app
+ *  ============================================================================
  *
  *  La clé de chaque entrée (ex. 'jean', 'apocalypse') est le SLUG FRANÇAIS —
- *  déjà la clé interne canonique partagée par detector.js, detector-en.js,
- *  HELLOAO_BOOK_CODES (bible-offline-cache.js), reading-mode.js et le
- *  dédoublonnage `refKey` de server.js. Ce module ne change PAS cette
- *  convention, il ne fait que documenter et rassembler ce qui existait déjà
- *  de façon fragmentée dans deux fichiers séparés.
+ *  et c'est la SEULE clé interne utilisée pour identifier un livre biblique
+ *  PARTOUT dans ChurchOverlay, quelle que soit la langue parlée par le
+ *  prédicateur ou affichée à l'écran. Consommateurs confirmés (lecture
+ *  directe du code, pas une supposition) :
+ *    - detector.js / detector-en.js : `BOOKS`, dérivé de BOOK_CATALOG (lot 10)
+ *    - bilingual-matcher.js : `COMBINED_ALIASES` (lot 11b)
+ *    - bible-offline-cache.js : `HELLOAO_BOOK_CODES` (clés du cache local)
+ *    - reading-mode.js : navigation chapitre/verset (`currentBook`)
+ *    - server.js : dédoublonnage d'historique (`refKey`)
+ *    - bible-lookup-with-api.js : voir DISPLAY_NAMES/DISPLAY_NAMES_EN/label()
+ *      ci-dessous — le SEUL endroit qui traduit cette clé vers un nom
+ *      affichable.
  *
- *  PORTÉE DE CE LOT : additif seulement. detector.js et detector-en.js ne
- *  sont PAS encore modifiés pour consommer ce catalogue — voir le lot 10
- *  (cutover) qui fera ce remplacement, avec pour condition explicite que
- *  test-detector.js et test-detector-en.js passent SANS AUCUNE modification.
+ *  TRADUCTION VERS L'AFFICHAGE — bible-lookup-with-api.js#label() est le
+ *  SEUL point de l'application qui convertit la clé canonique française en
+ *  nom de livre LISIBLE, dans la langue d'AFFICHAGE demandée (`displayLanguage`,
+ *  totalement indépendante de la langue parlée — voir session-state.js) :
+ *  `label({book, chapter, verseStart, verseEnd}, lang)` pioche dans
+ *  DISPLAY_NAMES ('jean' -> 'Jean') ou DISPLAY_NAMES_EN ('jean' -> 'John')
+ *  selon `lang`. Aucun autre fichier ne doit dupliquer cette traduction —
+ *  toute nouvelle surface d'affichage (dashboard, overlay, export) doit
+ *  passer par label(), pas réinventer un dictionnaire de noms de livres.
+ *
+ *  DÉCISION EXPLICITE — PAS DE RENOMMAGE, PAS DE CHAMP PARALLÈLE : le slug
+ *  français ('jean') reste la clé canonique même pour un prédicateur qui ne
+ *  parle jamais français. Deux alternatives ont été délibérément écartées :
+ *    1. Renommer la clé interne en un identifiant neutre (ex. 'JHN', code
+ *       osis/usfm) : aurait nécessité de toucher SIMULTANÉMENT tous les
+ *       consommateurs listés ci-dessus (risque de régression élevé pour un
+ *       simple renommage cosmétique) sans bénéfice fonctionnel — la clé
+ *       n'est JAMAIS affichée telle quelle à l'opérateur ou à l'assemblée
+ *       (toujours traduite via label() en amont), donc son origine
+ *       linguistique est invisible en pratique.
+ *    2. Ajouter un champ `book` parallèle neutre en plus de la clé
+ *       existante : aurait dupliqué la source de vérité (deux façons de
+ *       désigner "Jean/John"), ouvrant la porte à une désynchronisation
+ *       future entre les deux — exactement le genre de fragmentation que ce
+ *       lot (8-12) a pour but d'éliminer, pas de reproduire sous une autre
+ *       forme.
+ *  Le slug français est donc un CHOIX HISTORIQUE ASSUMÉ (ChurchOverlay a
+ *  démarré comme app francophone), pas un défaut à corriger — traité comme
+ *  un simple identifiant opaque par le reste du code, au même titre qu'un
+ *  UUID ou un code ISO l'aurait été.
  * ============================================================================
  */
 'use strict';
