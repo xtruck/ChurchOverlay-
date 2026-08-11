@@ -22,6 +22,18 @@ const { buildDeepgramKeywords } = require('./bible-keyterms');
 const DEEPGRAM_ENDPOINT = 'https://api.deepgram.com/v1/listen';
 const DEEPGRAM_PROJECTS_ENDPOINT = 'https://api.deepgram.com/v1/projects';
 const DEEPGRAM_MODEL = 'nova-2';
+// AJOUT (support bilingue FR/EN, lot 5) : reste la valeur par défaut si
+// transcribeFile() est appelé SANS langue explicite (compatibilité
+// arrière totale — voir son 3e paramètre plus bas), mais n'est plus la
+// seule valeur possible. IMPORTANT (limite documentée, pas contournée en
+// douce) : nova-2 (voir DEEPGRAM_MODEL ci-dessus) ne supporte PAS la
+// détection automatique multilingue de Deepgram (`language=multi`,
+// réservé à nova-3) — un opérateur doit donc explicitement choisir fr/en
+// via la commande vocale "écoute en français"/"listen in English" (voir
+// voice-commands.js), Deepgram ne devine jamais seul contrairement à
+// Whisper/Groq (voir groq-wrapper.js). Changer de modèle pour obtenir la
+// détection automatique est une décision séparée (coût/qualité), pas
+// prise dans ce lot.
 const DEEPGRAM_LANGUAGE = 'fr';
 const DEFAULT_WORD_CONFIDENCE_THRESHOLD = 0.4;
 const CHECK_KEY_TIMEOUT_MS = 5000;
@@ -80,9 +92,12 @@ async function checkKey(timeoutMs = CHECK_KEY_TIMEOUT_MS) {
  * (au lieu de la laisser tourner en arrière-plan pour rien).
  * @param {string} audioFilePath
  * @param {AbortSignal} [signal]
+ * @param {string} [language] - 'fr'|'en' (voir DEEPGRAM_LANGUAGE plus haut
+ *   pour la limite connue : pas de détection automatique sur nova-2).
+ *   Défaut 'fr' si omis, comportement historique inchangé.
  * @returns {Promise<{ text: string, confidence?: number }>}
  */
-async function transcribeFile(audioFilePath, signal) {
+async function transcribeFile(audioFilePath, signal, language) {
   const apiKey = process.env.DEEPGRAM_API_KEY;
   if (!apiKey) {
     throw new Error("DEEPGRAM_API_KEY non défini dans l'environnement.");
@@ -92,8 +107,14 @@ async function transcribeFile(audioFilePath, signal) {
   }
 
   const audioBuffer = fs.readFileSync(audioFilePath);
+  const resolvedLanguage = language || DEEPGRAM_LANGUAGE;
 
-  // Boosting vocabulaire biblique
+  // Boosting vocabulaire biblique — LIMITE CONNUE (support bilingue FR/EN) :
+  // buildDeepgramKeywords() (bible-keyterms.js) reste un vocabulaire fixe,
+  // pas encore ajusté selon resolvedLanguage. Un culte en anglais profite
+  // donc de Groq/Whisper (voir groq-wrapper.js) mais pas de ce boost
+  // Deepgram — non traité dans ce lot, portée volontairement limitée au
+  // paramètre de langue lui-même.
   const keywordsQuery = KEYWORDS_PARAM.map((kw) => `keywords=${encodeURIComponent(kw)}`).join('&');
 
   // Paramètres optimisés pour la réduction de bruit de fond et la précision en milieu bruyant
@@ -113,7 +134,7 @@ async function transcribeFile(audioFilePath, signal) {
   // générique, voir dashboard.js).
   const queryParams = [
     `model=${DEEPGRAM_MODEL}`,
-    `language=${DEEPGRAM_LANGUAGE}`,
+    `language=${resolvedLanguage}`,
     'smart_format=true',
     'denoise=true',
     'punctuate=true',

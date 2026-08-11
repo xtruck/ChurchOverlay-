@@ -296,7 +296,9 @@ async function transcribeWithFallback(
     })
   );
   const deepgramPromise = deepgramEnabled
-    ? deepgram.transcribeFile(audioFilePath, deepgramAbort.signal).catch((err) => ({ error: err }))
+    ? deepgram
+        .transcribeFile(audioFilePath, deepgramAbort.signal, language)
+        .catch((err) => ({ error: err }))
     : Promise.resolve({ error: new Error('Deepgram non configuré') });
 
   const startedAt = Date.now();

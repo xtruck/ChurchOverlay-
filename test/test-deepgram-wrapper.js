@@ -60,6 +60,22 @@ fs.writeFileSync(tmpFile, Buffer.from([0x52, 0x49, 0x46, 0x46])); // contenu fac
     "l'URL Deepgram contient toujours les autres paramètres batch valides"
   );
 
+  // AJOUT (support bilingue FR/EN, lot 5) : sans langue explicite,
+  // DEEPGRAM_LANGUAGE ('fr') reste le défaut — comportement historique
+  // inchangé pour tout appelant existant qui n'a pas encore été mis à
+  // jour pour passer ce nouveau 3e paramètre.
+  assert(
+    capturedUrl.includes('language=fr'),
+    "sans langue explicite, l'URL Deepgram utilise toujours 'fr' par défaut"
+  );
+
+  capturedUrl = null;
+  await deepgram.transcribeFile(tmpFile, undefined, 'en');
+  assert(
+    capturedUrl.includes('language=en'),
+    "avec une langue explicite ('en'), l'URL Deepgram la reflète correctement"
+  );
+
   fs.unlinkSync(tmpFile);
   global.fetch = originalFetch;
   console.log('\n=== Tous les tests deepgram-wrapper sont passés ===');

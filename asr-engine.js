@@ -108,10 +108,7 @@ async function transcribeSegment(segmentFile, contextHint, signal) {
     if (!deepgram.isConfigured()) {
       throw new Error('ASR_PROVIDER=deepgram mais DEEPGRAM_API_KEY non défini.');
     }
-    // AJOUT (support bilingue FR/EN, lot 4) : deepgram-wrapper.js n'accepte
-    // pas encore de paramètre de langue (voir son hardcoded DEEPGRAM_LANGUAGE
-    // = 'fr') — branché au lot 5 de ce chantier, volontairement pas ici.
-    const result = await deepgram.transcribeFile(segmentFile, signal);
+    const result = await deepgram.transcribeFile(segmentFile, signal, language);
     return {
       text: result.text,
       isFinal: true,
