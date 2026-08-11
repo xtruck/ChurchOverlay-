@@ -26,6 +26,12 @@ const DEDUP_MS = 30_000;
 // suivre la même discipline d'accesseurs que le reste de l'état.
 const MAX_SERVICE_TRANSCRIPT_CHARS = 50_000;
 
+// AJOUT (support bilingue FR/EN — commande vocale "repeat"/"répète") :
+// dernière diffusion RE-DIFFUSABLE (verset ou média — voir
+// REPEATABLE_ACTIONS dans server.js > broadcast()), tous types confondus.
+// Distinct de lastReference/verseHistory ci-dessous, qui ne suivent QUE
+// les versets et servent à un usage différent (anti-doublon, historique).
+let lastBroadcast = null;
 let displayLanguage = 'fr';
 // AJOUT (support bilingue FR/EN de bout en bout) : langue dans laquelle le
 // PASTEUR PARLE (ce que l'ASR doit décoder), délibérément distincte de
@@ -88,6 +94,14 @@ function getTranscriptionLanguage() {
 }
 function setTranscriptionLanguage(lang) {
   transcriptionLanguage = lang || null;
+}
+
+// --- Dernière diffusion re-diffusable (commande "repeat") ---
+function getLastBroadcast() {
+  return lastBroadcast;
+}
+function setLastBroadcast(action, payload) {
+  lastBroadcast = { action, payload, timestamp: Date.now() };
 }
 
 // --- Anti-doublon (dernier verset affiché) ---
@@ -222,6 +236,8 @@ module.exports = {
   setDisplayLanguage,
   getTranscriptionLanguage,
   setTranscriptionLanguage,
+  getLastBroadcast,
+  setLastBroadcast,
   getLastReference,
   getLastShownAt,
   isDuplicateReference,

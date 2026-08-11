@@ -557,7 +557,19 @@ function warn(msg) {
 // ---------------------------------------------------------------------------
 // Broadcast to all WebSocket clients
 // ---------------------------------------------------------------------------
+// AJOUT (support bilingue FR/EN — commande vocale "repeat"/"répète") :
+// suivi centralisé ICI (pas à chaque site d'appel de broadcast() —
+// impossible d'en oublier un) de la dernière diffusion re-diffusable,
+// pour que 'repeat' puisse re-broadcaster le payload exact, sans nouvelle
+// recherche. showMedia délibérément inclus (pas seulement showVerse) :
+// voir la décision "repeat = verset OU chant OU média" du cahier des
+// charges bilingue.
+const REPEATABLE_ACTIONS = new Set(['showVerse', 'showMedia']);
+
 function broadcast(obj) {
+  if (REPEATABLE_ACTIONS.has(obj.action)) {
+    sessionState.setLastBroadcast(obj.action, obj);
+  }
   const json = JSON.stringify(obj);
   wss.clients.forEach((ws) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(json);
@@ -1134,6 +1146,57 @@ async function handleVoiceCommand(command, _originalText) {
       broadcast({ action: 'hideVerse', triggeredByVoice: true });
       log('Voice command: hide overlay');
       break;
+    // AJOUT (support bilingue FR/EN, cahier des charges section 9) :
+    // voice-commands.js détectait déjà 'recallLastVerse' ("ramène",
+    // "reviens"...) mais AUCUN case ici ne le traitait — commande
+    // silencieusement morte, tombait dans le `default` ci-dessous sans
+    // aucun effet ni message d'erreur visible. Reprend le DERNIER VERSET
+    // (pas la dernière diffusion quelconque — voir 'repeat' ci-dessous
+    // pour ça) depuis l'historique déjà tenu par sessionState, en
+    // refaisant une vraie recherche (l'historique ne stocke qu'un texte
+    // tronqué à 200 caractères, pas le payload complet — contrairement à
+    // 'repeat', qui a le payload exact).
+    case 'recallLastVerse': {
+      const history = sessionState.getVerseHistory();
+      const last = history && history[0];
+      if (!last || !last.reference) {
+        log('Voice command recallLastVerse: aucun verset dans l’historique.');
+        break;
+      }
+      const ref = detector.parseReference(last.reference);
+      if (!ref) {
+        warn('Voice command recallLastVerse: référence historique illisible: ' + last.reference);
+        break;
+      }
+      try {
+        const verse = await bibleLookup.getVerseMultilang(ref, sessionState.getDisplayLanguage());
+        broadcast({
+          action: 'showVerse',
+          ...verse,
+          durationMs: getVerseDurationMs(),
+          triggeredByVoice: true,
+        });
+        pushHistory({ ...verse, triggeredByVoice: true, timestamp: Date.now() });
+        broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
+      } catch (err) {
+        warn('Voice command recallLastVerse error: ' + err.message);
+      }
+      break;
+    }
+    // AJOUT (support bilingue FR/EN, décision explicite — "repeat" est
+    // large : verset OU chant OU média, pas seulement le dernier verset).
+    // Re-diffuse le payload EXACT de la dernière diffusion re-diffusable
+    // (voir REPEATABLE_ACTIONS/broadcast() plus haut) — aucune nouvelle
+    // recherche nécessaire, contrairement à recallLastVerse ci-dessus.
+    case 'repeat': {
+      const last = sessionState.getLastBroadcast();
+      if (!last) {
+        log('Voice command repeat: rien à répéter pour le moment.');
+        break;
+      }
+      broadcast({ ...last.payload, triggeredByVoice: true });
+      break;
+    }
     case 'nextVerse': {
       broadcast({ action: 'nextVerse', triggeredByVoice: true });
       advanceReadingModeVerse(1);
@@ -1148,6 +1211,19 @@ async function handleVoiceCommand(command, _originalText) {
       broadcast({ action: 'nextChapter', triggeredByVoice: true });
       if (readingMode.active) {
         await activateReadingMode(readingMode.book, (readingMode.chapter || 0) + 1, 1);
+        if (readingMode.active && readingMode.currentIndex >= 0) {
+          readingMode.onVerseAdvance(readingMode.verses[readingMode.currentIndex]);
+        }
+      }
+      break;
+    }
+    // AJOUT (support bilingue FR/EN) : symétrique de nextChapter ci-dessus,
+    // avec un plancher au chapitre 1 (nextChapter n'a pas de plafond côté
+    // conception d'origine — non modifié ici, hors périmètre).
+    case 'previousChapter': {
+      broadcast({ action: 'previousChapter', triggeredByVoice: true });
+      if (readingMode.active && (readingMode.chapter || 1) > 1) {
+        await activateReadingMode(readingMode.book, readingMode.chapter - 1, 1);
         if (readingMode.active && readingMode.currentIndex >= 0) {
           readingMode.onVerseAdvance(readingMode.verses[readingMode.currentIndex]);
         }

@@ -33,8 +33,19 @@ const COMMANDS = [
   {
     id: 'hideOverlay',
     patterns: [
-      /(?:cache|masque|hide|retire|enlève).*(?:overlay|verset|texte|écran)/i,
-      /(?:efface|clear|clean).*(?:écran|screen)/i,
+      // CORRECTIF (support bilingue FR/EN) : detectCommand() normalise le
+      // texte reçu (NFD + suppression des marques diacritiques
+      // combinantes, voir plus bas) AVANT de tester ces motifs — un
+      // caractère accentué écrit en dur dans un motif (ex. "écran",
+      // "enlève") ne peut donc JAMAIS matcher, quelle que soit la phrase
+      // prononcée : le texte normalisé ne contient plus d'accents. Ce
+      // correctif remplace chaque littéral accentué de ce fichier par sa
+      // forme sans accent (aucune perte de sens, gain réel de matching —
+      // la forme accentée était du code mort depuis l'origine). "verse"
+      // (anglais) ajouté à la liste d'ancrage, absente jusqu'ici : "hide
+      // the verse" ne matchait aucun des deux motifs.
+      /(?:cache|masque|hide|retire|enleve).*(?:overlay|verset|verse|texte|ecran)/i,
+      /(?:efface|clear|clean).*(?:ecran|screen)/i,
     ],
     extract: () => ({ action: 'hideVerse' }),
   },
@@ -52,8 +63,34 @@ const COMMANDS = [
       /(?:ramene|reviens|remets|reaffiche)[- ]?(?:moi|nous)?.{0,15}(?:sur\s+|au\s+|le\s+)?verset/i,
       /affiche[- ]?(?:le\s+)?(?:encore|a\s+nouveau|de\s+nouveau)/i,
       /(?:remontre|montre[- ]?(?:moi|nous)?\s+encore).{0,10}verset/i,
+      // AJOUT (support bilingue FR/EN) : équivalents anglais — "go back"/
+      // "bring it back" exigent le mot "verse" pour éviter de matcher un
+      // "go back" narratif quelconque dans un sermon ("let's go back to
+      // what Paul said").
+      /(?:go\s+back|bring\s+it\s+back|come\s+back)\s+(?:to\s+)?(?:the\s+)?verse/i,
+      /show\s+(?:it|the\s+verse)\s+again/i,
     ],
     extract: () => ({ action: 'recallLastVerse' }),
+  },
+
+  // --- REPEAT (dernière diffusion, verset OU chant OU média — voir
+  // sessionState.getLastBroadcast()/handleVoiceCommand > case 'repeat'
+  // dans server.js). Distinct de recallLastVerse ci-dessus, qui ne
+  // reprend QUE le dernier verset et re-résout sa référence, indifférent
+  // à un média affiché depuis. ---
+  // CORRECTIF-style discipline (voir nextChapter/nextVerse/emergencyClear
+  // plus haut) : "repeat"/"répète" seuls sont des mots bien trop courants
+  // dans un sermon ("Repeat after me...", "je répète ce point important")
+  // pour être détectés n'importe où dans la phrase — ancrés en DÉBUT ET
+  // FIN d'énoncé (avec un mot de remplissage optionnel seulement), pas
+  // une sous-chaîne libre.
+  {
+    id: 'repeat',
+    patterns: [
+      /^\s*(?:répète|repete)\s*(?:ca|ceci|encore)?\s*[.!]?\s*$/i,
+      /^\s*repeat\s*(?:that|this|it)?\s*[.!]?\s*$/i,
+    ],
+    extract: () => ({ action: 'repeat' }),
   },
 
   // --- READING MODE ---
@@ -79,6 +116,19 @@ const COMMANDS = [
     ],
     extract: () => ({ action: 'nextChapter' }),
   },
+  // AJOUT (support bilingue FR/EN, cahier des charges section 2/3) :
+  // n'existait dans aucune langue jusqu'ici. Même discipline anti-faux-
+  // positif que nextChapter/nextVerse ci-dessus — "chapitre" explicite
+  // requis, jamais juste "précédent"/"previous" seuls.
+  {
+    id: 'previousChapter',
+    patterns: [
+      /(?:chapitre)\s+(?:precedent|precedant|d'avant)/i,
+      /(?:retourne|reviens)\s+(?:au\s+)?chapitre\s+(?:precedent|d'avant)/i,
+      /previous\s+chapter/i,
+    ],
+    extract: () => ({ action: 'previousChapter' }),
+  },
   {
     id: 'nextVerse',
     patterns: [
@@ -91,8 +141,8 @@ const COMMANDS = [
   {
     id: 'previousVerse',
     patterns: [
-      /(?:verset|passage)\s+(?:précédent|précédant|d'avant)/i,
-      /(?:retourne|reviens)\s+(?:au\s+)?(?:verset|passage)\s+(?:précédent|d'avant)/i,
+      /(?:verset|passage)\s+(?:precedent|precedant|d'avant)/i,
+      /(?:retourne|reviens)\s+(?:au\s+)?(?:verset|passage)\s+(?:precedent|d'avant)/i,
       /previous\s+verse/i,
     ],
     extract: () => ({ action: 'previousVerse' }),
@@ -118,7 +168,7 @@ const COMMANDS = [
   {
     id: 'themeGold',
     patterns: [
-      /(?:thème|theme|style)\s+(?:or|gold|doré|golden)/i,
+      /(?:thème|theme|style)\s+(?:or|gold|dore|golden)/i,
       /(?:passe|switch|change)\s+(?:en|au|vers)\s+(?:thème\s+)?or/i,
     ],
     extract: () => ({ action: 'setTheme', theme: 'gold' }),
@@ -128,8 +178,8 @@ const COMMANDS = [
   {
     id: 'langFrench',
     patterns: [
-      /(?:langue|language|affiche)\s+(?:français|fr|french)/i,
-      /(?:passe|switch|change)\s+(?:en|au|vers)\s+(?:français|fr)/i,
+      /(?:langue|language|affiche)\s+(?:francais|fr|french)/i,
+      /(?:passe|switch|change)\s+(?:en|au|vers)\s+(?:francais|fr)/i,
     ],
     extract: () => ({ action: 'setLanguage', language: 'fr' }),
   },
@@ -207,7 +257,14 @@ const COMMANDS = [
   {
     id: 'extendTime',
     patterns: [
-      /(?:étends|prolonge|extend|add|ajoute)\s+(?:le\s+)?(?:temps|time|durée)\s+(?:de\s+)?(\d+)\s*(?:minutes?|min|secondes?|sec|s)?/i,
+      /(?:etends|prolonge|extend|add|ajoute)\s+(?:le\s+)?(?:temps|time|duree)\s+(?:de\s+)?(\d+)\s*(?:minutes?|min|secondes?|sec|s)?/i,
+      // AJOUT (support bilingue FR/EN) : le motif ci-dessus exige "de" (ou
+      // rien) entre le nom et le nombre — ne matchait donc pas la tournure
+      // anglaise naturelle "extend the timer BY 5 minutes"/"add 5 minutes
+      // to the timer". "timer" gardé comme mot-ancre obligatoire (même
+      // discipline anti-faux-positif que pauseTimer/resumeTimer plus bas).
+      /(?:extend|add)\s+(?:the\s+)?timer\s+(?:by\s+)?(\d+)\s*(?:minutes?|min|seconds?|sec|s)?/i,
+      /add\s+(\d+)\s*(?:minutes?|min|seconds?|sec|s)\s+(?:to\s+)?(?:the\s+)?timer/i,
     ],
     extract: (match) => {
       const amount = parseInt(match[1], 10);
@@ -215,16 +272,24 @@ const COMMANDS = [
       return { action: 'extendTime', extraMs: amount * unit };
     },
   },
+  // AJOUT (audit bilingue FR/EN) : "pause"/"continue"/"resume" sont déjà
+  // des mots anglais valides dans les motifs ci-dessous (coïncidence utile,
+  // pas conçu à l'origine pour l'anglais) — "pause the timer"/"resume the
+  // timer" fonctionnent donc déjà tels quels, aucun nouveau motif requis.
+  // Vérifié : "pause"/"continue"/"resume" seuls, sans "timer"/"chrono"
+  // etc. après, ne matchent PAS (mot-ancre obligatoire via le `.*` suivi
+  // du groupe temps|timer|chrono|décompte) — donc pas de faux positif sur
+  // "let's continue in verse 5" ou "Jesus resumed his journey".
   {
     id: 'pauseTimer',
     patterns: [
-      /(?:pause|mets\s+en\s+pause|arrête\s+temporairement).*(?:temps|timer|chrono|décompte)/i,
+      /(?:pause|mets\s+en\s+pause|arrete\s+temporairement).*(?:temps|timer|chrono|decompte)/i,
     ],
     extract: () => ({ action: 'pauseTimer' }),
   },
   {
     id: 'resumeTimer',
-    patterns: [/(?:reprends|continue|resume|redémarre).*(?:temps|timer|chrono|décompte)/i],
+    patterns: [/(?:reprends|continue|resume|redemarre).*(?:temps|timer|chrono|decompte)/i],
     extract: () => ({ action: 'resumeTimer' }),
   },
 
@@ -235,7 +300,7 @@ const COMMANDS = [
     // prédicateur disant "en cas d'urgence, Dieu répond" effaçait tout
     // l'overlay). On exige désormais une expression de commande complète.
     patterns: [
-      /(?:effacement|arrêt)\s+d['’]urgence/i,
+      /(?:effacement|arret)\s+d['’]urgence/i,
       /emergency\s+clear/i,
       /clear\s+all/i,
       /tout\s+effacer/i,
