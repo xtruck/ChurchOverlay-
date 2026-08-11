@@ -15,46 +15,15 @@ const { correctBookNameFuzzy } = require('./levenshtein');
 const { BOOK_CATALOG } = require('./book-catalog');
 const BOOKS = Object.fromEntries(Object.entries(BOOK_CATALOG).map(([key, { fr }]) => [key, fr]));
 
-// Corrige les déformations phonétiques courantes produites par Whisper
-// (surtout en base/tiny sur bruit ambiant) pour "chapitre" et "verset".
-// Étendez ces listes au fur et à mesure que vous observez de nouvelles
-// variantes dans vos logs de transcription réels. Chaque variante doit être
-// déjà en minuscules/sans accents, car elle est appliquée APRÈS le
-// dé-accentuage NFD dans normalize().
-const CHAPITRE_VARIANTS = [
-  'chapitre',
-  'chappitois',
-  'sabitoire',
-  'chabitouale',
-  'sapitois',
-  'chapitois',
-  'chappitre',
-  'chappite',
-  'chapite',
-  'chapit',
-  'chaptre',
-];
-const VERSET_VARIANTS = [
-  'verset',
-  'versets',
-  'vecc',
-  'vece',
-  'vsc',
-  'vc',
-  'veille',
-  'versai',
-  'verse',
-  'verce',
-  'vercet',
-  'versait',
-  // CORRECTIF (audit — Ole, 2026-07-30) : "versus" reproduit en conditions
-  // réelles — la reconnaissance vocale (Web Speech API comme un simple
-  // dictaphone) transforme parfois "verset" en "versus" ("Jean 1 versus 1").
-  // Sans cette entrée, le mot "verset" n'était jamais reconnu : le chapitre
-  // entier de Jean 1 s'affichait au lieu du seul verset 1, la référence
-  // retombant sur le format le plus faible ("livre + chapitre" seul).
-  'versus',
-];
+// CUTOVER (support bilingue FR/EN, lot 11a) : ces listes de déformations
+// phonétiques Whisper étaient auparavant un littéral dupliqué (côté FR)
+// distinct de celui de detector-en.js — voir keyword-variants.js, qui
+// fusionne désormais les deux et sert de SOURCE UNIQUE, avec un contrôle de
+// collision FR/EN permanent (test-keyword-variants.js). Étendez les listes
+// dans keyword-variants.js désormais, pas ici.
+const { KEYWORD_VARIANTS } = require('./keyword-variants');
+const CHAPITRE_VARIANTS = KEYWORD_VARIANTS.chapitre.fr;
+const VERSET_VARIANTS = KEYWORD_VARIANTS.verset.fr;
 
 function correctPhoneticNoise(text) {
   let result = text;

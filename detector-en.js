@@ -28,9 +28,15 @@ const { BOOK_CATALOG } = require('./book-catalog');
 // Alias EN → clé interne FR (identique à detector.js).
 const BOOKS = Object.fromEntries(Object.entries(BOOK_CATALOG).map(([key, { en }]) => [key, en]));
 
-// Variantes phonétiques (erreurs Whisper base/tiny sur bruit ambiant).
-const CHAPTER_VARIANTS = ['chapter', 'chapters', 'chap', 'chpt'];
-const VERSE_VARIANTS = ['verse', 'verses', 'vs', 'v', 'vers'];
+// CUTOVER (support bilingue FR/EN, lot 11a) : ces listes de déformations
+// phonétiques Whisper étaient auparavant un littéral dupliqué distinct de
+// celui de detector.js — voir keyword-variants.js, qui fusionne désormais
+// les deux et sert de SOURCE UNIQUE, avec un contrôle de collision FR/EN
+// permanent (test-keyword-variants.js). Étendez les listes dans
+// keyword-variants.js désormais, pas ici.
+const { KEYWORD_VARIANTS } = require('./keyword-variants');
+const CHAPTER_VARIANTS = KEYWORD_VARIANTS.chapitre.en;
+const VERSE_VARIANTS = KEYWORD_VARIANTS.verset.en;
 
 function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
