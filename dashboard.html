@@ -437,7 +437,7 @@
                   id="mediaDurationInput"
                   placeholder="Durée (s)"
                   style="width: 100px"
-                  title="Durée d'affichage en secondes — vide = 15s pour une image, jusqu'à la fin pour une vidéo"
+                  title="Durée d'affichage en secondes — vide = 15s pour une image, jusqu'à la fin pour une vidéo (sauf si « Poster » est coché)"
                 />
                 <select id="mediaStyleInput" title="Style d'apparition à l'écran">
                   <option value="fade" selected>Fondu</option>
@@ -445,6 +445,26 @@
                   <option value="zoom">Zoom</option>
                   <option value="cut">Coupe instantanée</option>
                 </select>
+                <!-- AJOUT (poster principal — correctif "le poster ne revient
+                                 pas après un verset") : jusqu'ici, obtenir ce comportement
+                                 exigeait un second clic sur l'étoile ⭐ APRÈS l'ajout — facile
+                                 à oublier, surtout pour un poster ré-uploadé chaque semaine
+                                 (voir server.js#addMediaItem). Cette case fait les deux gestes
+                                 en un seul, au moment de l'ajout. Mise en avant (fond distinct)
+                                 volontairement, pas un simple label parmi d'autres : c'est
+                                 précisément le choix qu'un opérateur doit voir sans avoir à le
+                                 chercher. -->
+                <label
+                  class="media-poster-toggle"
+                  title="Reste affiché en continu et revient automatiquement après chaque verset — remplace le poster principal actuel s'il y en a un"
+                >
+                  <input
+                    type="checkbox"
+                    id="mediaPosterInput"
+                    onchange="updateMediaPosterFormState()"
+                  />
+                  ⭐ Poster (reste à l'écran)
+                </label>
                 <!-- AJOUT (diaporama d'annonces — recommandation "présentation
                                  secondaire indépendante") : inclut cet élément dans la boucle
                                  de announcement-loop.html, indépendamment du déclenchement

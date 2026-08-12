@@ -35,6 +35,11 @@ export async function addMediaLibraryItem() {
     const loopInput = document.getElementById('mediaLoopInput');
     const durationInput = document.getElementById('mediaDurationInput');
     const styleInput = document.getElementById('mediaStyleInput');
+    // AJOUT (poster principal — correctif "le poster ne revient pas après un
+    // verset") : voir server.js#addMediaItem pour la cause réelle du bug —
+    // ce champ fait en un seul geste, à l'ajout, ce qui exigeait avant un
+    // second clic (facilement oublié) sur l'étoile ⭐ après coup.
+    const posterInput = document.getElementById('mediaPosterInput');
     const label = labelInput ? labelInput.value.trim() : '';
     const triggerPhrases = phrasesInput
       ? phrasesInput.value
@@ -43,7 +48,13 @@ export async function addMediaLibraryItem() {
           .filter(Boolean)
       : [];
     const includeInLoop = !!(loopInput && loopInput.checked);
-    const rawSeconds = durationInput ? durationInput.value.trim() : '';
+    const setAsPoster = !!(posterInput && posterInput.checked);
+    // "Poster" coché : la durée est forcée à null côté serveur
+    // (mediaLibrary.setDefaultItem(), voir server.js) — le champ durée est de
+    // toute façon désactivé dans le formulaire quand cette case est cochée
+    // (voir updateMediaPosterFormState() plus bas), donc rawSeconds serait
+    // déjà vide ici en pratique ; ce garde reste explicite plutôt qu'implicite.
+    const rawSeconds = !setAsPoster && durationInput ? durationInput.value.trim() : '';
     const displayDurationMs = rawSeconds ? Math.max(1, Number(rawSeconds)) * 1000 : undefined;
     const transitionStyle = styleInput ? styleInput.value : undefined;
     ws.send(
@@ -55,6 +66,7 @@ export async function addMediaLibraryItem() {
         includeInLoop,
         displayDurationMs,
         transitionStyle,
+        setAsPoster,
       })
     );
     if (labelInput) labelInput.value = '';
@@ -62,6 +74,8 @@ export async function addMediaLibraryItem() {
     if (loopInput) loopInput.checked = false;
     if (durationInput) durationInput.value = '';
     if (styleInput) styleInput.value = 'fade';
+    if (posterInput) posterInput.checked = false;
+    updateMediaPosterFormState();
   } catch (err) {
     showToast(
       'Échec de la sélection du fichier : ' + (err && err.message ? err.message : err),
@@ -235,6 +249,20 @@ export function toggleDefaultMediaItem(id, isCurrentlyDefault) {
   );
 }
 
+// AJOUT (poster principal — correctif "le poster ne revient pas après un
+// verset") : la durée n'a aucun effet quand "Poster" est coché (forcée à
+// null côté serveur, voir setDefaultItem() dans media-library.js) — désactiver
+// visiblement le champ évite qu'un opérateur pense l'avoir réglée pour rien.
+export function updateMediaPosterFormState() {
+  const posterInput = document.getElementById('mediaPosterInput');
+  const durationInput = document.getElementById('mediaDurationInput');
+  if (!posterInput || !durationInput) return;
+  const isPoster = posterInput.checked;
+  durationInput.disabled = isPoster;
+  durationInput.placeholder = isPoster ? 'Illimitée (poster)' : 'Durée (s)';
+  if (isPoster) durationInput.value = '';
+}
+
 // Même garde que les autres panneaux Electron-only (file d'affichage,
 // dashboard.js:~1067) : le sélecteur de fichier natif n'existe que côté
 // application de bureau (pont IPC depuis preload.js).
@@ -255,3 +283,4 @@ window.hideMediaNow = hideMediaNow;
 window.clearDefaultPosterFromCard = clearDefaultPosterFromCard;
 window.saveMediaItemDetails = saveMediaItemDetails;
 window.toggleDefaultMediaItem = toggleDefaultMediaItem;
+window.updateMediaPosterFormState = updateMediaPosterFormState;

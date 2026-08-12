@@ -852,6 +852,32 @@ body {
   justify-content: space-between;
 }
 
+/* AJOUT (poster principal — correctif "le poster ne revient pas après un
+           verset") : la case "Poster" du formulaire d'ajout média doit être
+           IMPOSSIBLE à confondre avec un réglage secondaire comme "Diaporama"
+           juste à côté — même traitement visuel (fond ambre) que .is-default
+           ci-dessus et que les badges "Poster" existants, pour que l'oeil
+           associe immédiatement cette couleur au même concept partout dans
+           l'app. */
+.media-poster-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 0.4rem 0.65rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent-amber-bg);
+  border: 1px solid var(--accent-amber, #d9a441);
+  color: var(--accent-amber, #d9a441);
+  cursor: pointer;
+}
+
+.media-poster-toggle input[type='checkbox'] {
+  accent-color: var(--accent-amber, #d9a441);
+}
+
 /* AJOUT (redesign visuel, lot 4) : vignette caméra IP (ip-cameras.js) —
            remplace le style="..." inline répété par ligne de la liste. */
 .camera-thumb-wrap {

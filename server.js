@@ -2251,7 +2251,7 @@ wss.on('connection', (ws, req) => {
 
     if (sanitized.action === 'addMediaItem') {
       try {
-        const item = mediaLibrary.addItem({
+        let item = mediaLibrary.addItem({
           sourcePath: sanitized.sourcePath,
           label: sanitized.label,
           triggerPhrases: sanitized.triggerPhrases,
@@ -2260,6 +2260,21 @@ wss.on('connection', (ws, req) => {
           transitionStyle: sanitized.transitionStyle,
         });
         log(`Médiathèque : "${item.label}" ajouté (${item.mediaType})`);
+        // CORRECTIF (poster principal — "le poster ne revient pas après un
+        // verset") : une image sans durée explicite reçoit silencieusement
+        // DEFAULT_IMAGE_DURATION_MS (15s, voir media-library.js#addItem) — un
+        // opérateur qui uploade un nouveau poster chaque semaine et clique
+        // juste "Afficher" obtenait donc un média qui disparaissait tout seul
+        // après 15 secondes, sans jamais revenir (rien n'était marqué
+        // isDefault, le seul état que maybeShowDefaultMedia() sait ramener à
+        // l'écran — voir overlay.html). Cocher "Poster" dans le formulaire
+        // d'ajout (dashboard/features/media-library.js) fait maintenant en un
+        // seul geste ce qui exigeait avant un second clic sur l'étoile ⭐
+        // APRÈS l'ajout — facile à oublier, et la cause réelle du bug signalé.
+        if (sanitized.setAsPoster) {
+          item = mediaLibrary.setDefaultItem(item.id) || item;
+          broadcast({ action: 'defaultMediaChanged', item: mediaLibrary.getDefaultItem() });
+        }
         broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
       } catch (err) {
         ws.send(JSON.stringify({ action: 'error', error: 'Médiathèque : ' + err.message }));
