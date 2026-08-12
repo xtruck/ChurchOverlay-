@@ -821,6 +821,55 @@
         display: none;
       }
 
+      /* ==========================================================================
+   Studio de scènes (texte + logo/image composés sur un fond, voir action
+   'showScene') — lot 4/6. Même tier de z-index que #media-layer (150) :
+   scène/verset et scène/média sont mutuellement exclusifs, comme média/
+   verset déjà aujourd'hui — jamais deux à l'écran en même temps.
+   ========================================================================== */
+      #scene-layer {
+        position: fixed;
+        inset: 0;
+        z-index: 150;
+        display: none;
+        background: #000000;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        overflow: hidden;
+      }
+      #scene-layer.visible {
+        display: block;
+        opacity: 1;
+      }
+      #scene-layer .scene-background-img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      /* Ancré par son propre centre (translate -50%/-50%) — fonctionne
+   identiquement pour un bloc de texte (largeur variable) et une image
+   (largeur fixée par widthPct), quelle que soit la position choisie. */
+      #scene-layer .scene-element {
+        position: absolute;
+      }
+      #scene-layer .scene-text {
+        /* Empêche un texte long de déborder du cadre, quelle que soit sa
+     position — text-align (posé en ligne, voir renderSceneDom()) gère
+     l'alignement À L'INTÉRIEUR de cette largeur. */
+        max-width: 80%;
+        white-space: pre-wrap;
+        text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+      }
+      #scene-layer .scene-image img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: var(--overlay-radius);
+        box-shadow: 0 14px 54px var(--overlay-shadow);
+      }
+
       /* Advanced particle system */
       .advanced-particle {
         position: absolute;
@@ -839,6 +888,9 @@
       <img id="media-layer-img" alt="" hidden />
       <video id="media-layer-video" hidden playsinline></video>
     </div>
+
+    <!-- Studio de scènes : texte + logo/image composés (voir action 'showScene') -->
+    <div id="scene-layer" aria-hidden="true"></div>
 
     <!-- Particules d'ambiance -->
     <div class="ambient-light" aria-hidden="true"></div>
@@ -1009,11 +1061,25 @@
               // AJOUT (poster principal) : à l'ouverture/rechargement de l'overlay,
               // affiche immédiatement le poster principal s'il y en a un et que
               // rien d'autre n'est encore à l'écran (setCurrentDefaultMedia()
-              // appelle déjà maybeShowDefaultMedia() en interne).
+              // appelle déjà maybeShowDefaultContent() en interne).
               setCurrentDefaultMedia(msg.defaultMedia || null);
+              // AJOUT (studio de scènes, lot 4/6) : même raisonnement — voir
+              // setCurrentDefaultScene() plus bas. Une scène par défaut est
+              // prioritaire sur un média par défaut (les deux ne peuvent de
+              // toute façon jamais coexister, voir maybeShowDefaultContent()).
+              setCurrentDefaultScene(msg.defaultScene || null);
               break;
             case 'defaultMediaChanged':
               setCurrentDefaultMedia(msg.item || null);
+              break;
+            case 'defaultSceneChanged':
+              setCurrentDefaultScene(msg.item || null);
+              break;
+            case 'showScene':
+              showScene(msg);
+              break;
+            case 'hideScene':
+              hideScene();
               break;
             case 'showVerse':
               showVerse(msg);
@@ -1245,6 +1311,13 @@
         // pas hideMediaItem) : pas de vérification "poster principal" ici, un
         // verset est sur le point de prendre l'écran de toute façon.
         hideMediaLayer();
+        // AJOUT (studio de scènes, lot 4/6) : même raisonnement — une scène
+        // partage le même tier de z-index que le média (150), un verset
+        // détecté pendant qu'une scène est affichée doit aussi la masquer.
+        hideSceneLayer();
+        // CORRECTIF (voir maybeShowDefaultContent() plus haut) : un verset
+        // est TOUJOURS un contenu explicite, jamais un poster principal.
+        screenOccupiedByExplicitContent = true;
 
         // Show
         container.className = 'visible';
@@ -1281,11 +1354,16 @@
         }
         clearTimeout(hideTimeout);
         hideTimeout = null;
+        // CORRECTIF (voir maybeShowDefaultContent() plus bas) : ce verset ne
+        // "tient" plus l'écran — si un show*() suit dans la même chaîne
+        // d'appels (mutuelle exclusion), il réaffirmera ce drapeau à `true`
+        // lui-même ; sinon, un poster principal doit pouvoir reprendre sa place.
+        screenOccupiedByExplicitContent = false;
       }
 
       function hideVerse(emergency = false) {
         hideVerseQuiet(emergency);
-        maybeShowDefaultMedia();
+        maybeShowDefaultContent();
       }
 
       function extendDisplayTime(extraMs) {
@@ -1341,6 +1419,11 @@
         // l'écran reste bien vide comme avant ; sinon le poster principal
         // réapparaît (préférable à un écran noir).
         hideVerseQuiet(true);
+        // AJOUT (studio de scènes, lot 4/6) : même raisonnement pour une
+        // scène activement affichée — silencieuse (pas de double appel à
+        // maybeShowDefaultContent, hideMediaItem() ci-dessous s'en charge
+        // une fois les deux couches masquées).
+        hideSceneLayer();
         hideMediaItem();
         showVoiceIndicator('🚨 Urgence');
         setTimeout(() => hideVoiceIndicator(), 2000);
@@ -1511,6 +1594,15 @@
         // le point de prendre l'écran, pas besoin/pas souhaitable de vérifier le
         // poster principal entre les deux (éviterait un flash inutile).
         hideVerseQuiet(false);
+        // AJOUT (studio de scènes, lot 4/6) : même raisonnement — un média et
+        // une scène partagent le même tier de z-index (150), mutuellement
+        // exclusifs comme verset/média l'étaient déjà.
+        hideSceneLayer();
+        // CORRECTIF (voir maybeShowDefaultContent() plus haut) : ce média
+        // n'est "le poster principal" que si c'est bien maybeShowDefaultContent()
+        // elle-même qui a déclenché cet appel (detectedBy: 'default') —
+        // sinon (déclenchement vocal/manuel), c'est un contenu explicite.
+        screenOccupiedByExplicitContent = msg.detectedBy !== 'default';
         clearTimeout(mediaHideTimeout);
         mediaHideTimeout = null;
 
@@ -1593,45 +1685,200 @@
           img.removeAttribute('src');
           img.hidden = true;
         }
+        // CORRECTIF (voir maybeShowDefaultContent() plus bas) : même
+        // raisonnement que hideVerseQuiet() ci-dessus.
+        screenOccupiedByExplicitContent = false;
       }
 
       function hideMediaItem() {
         hideMediaLayer();
-        maybeShowDefaultMedia();
+        maybeShowDefaultContent();
+      }
+
+      /* ==========================================================================
+   Studio de scènes (texte + logo/image composés, voir action 'showScene') —
+   lot 4/6. Même principe que la médiathèque ci-dessus : hideSceneLayer()
+   (silencieuse) pour un contenu qui prend l'écran, hideScene() (publique)
+   pour un masquage explicite qui doit laisser la place au poster principal.
+   ========================================================================== */
+      // AJOUT (studio de scènes, lot 4/6, destiné au lot 5 — voir le plan
+      // approuvé) : grille de positions 3x3, résolue en pourcentages du cadre.
+      // Fonction PURE ci-dessous (renderSceneDom) volontairement sans aucune
+      // dépendance sur une variable globale de ce fichier, pour rester
+      // trivialement extractible vers un module partagé avec l'aperçu du
+      // tableau de bord (lot 5) sans changement de comportement.
+      const SCENE_POSITION_PCT = {
+        'top-left': { xPct: 10, yPct: 10 },
+        'top-center': { xPct: 50, yPct: 10 },
+        'top-right': { xPct: 90, yPct: 10 },
+        'center-left': { xPct: 10, yPct: 50 },
+        center: { xPct: 50, yPct: 50 },
+        'center-right': { xPct: 90, yPct: 50 },
+        'bottom-left': { xPct: 10, yPct: 90 },
+        'bottom-center': { xPct: 50, yPct: 90 },
+        'bottom-right': { xPct: 90, yPct: 90 },
+      };
+
+      /**
+       * Construit le DOM d'une scène dans `container` (vidé d'abord). Ignore
+       * silencieusement tout élément mal formé (type inconnu, image sans
+       * mediaUrl exploitable — mediaId supprimé côté médiathèque, voir
+       * resolveSceneMediaUrls() dans server.js) : un rendu partiel vaut
+       * toujours mieux qu'un écran figé ou une exception qui bloquerait tout
+       * le reste de l'overlay.
+       * @param {Object|null} scene - { background, elements } (mediaUrl déjà résolues)
+       * @param {HTMLElement} container
+       */
+      function renderSceneDom(scene, container) {
+        container.innerHTML = '';
+        container.style.background = '';
+        if (!scene) return;
+
+        const background = scene.background || {};
+        if (background.type === 'media' && background.mediaUrl) {
+          const bgImg = document.createElement('img');
+          bgImg.className = 'scene-background-img';
+          bgImg.src = background.mediaUrl;
+          bgImg.alt = '';
+          container.appendChild(bgImg);
+        } else if (background.type === 'color' && background.color) {
+          container.style.background = background.color;
+        }
+
+        for (const el of scene.elements || []) {
+          if (!el || (el.type !== 'text' && el.type !== 'image')) continue;
+          if (el.type === 'image' && !el.mediaUrl) continue;
+
+          const pos = SCENE_POSITION_PCT[el.position] || SCENE_POSITION_PCT.center;
+          const wrapper = document.createElement('div');
+          wrapper.className = 'scene-element ' + (el.type === 'image' ? 'scene-image' : 'scene-text');
+          wrapper.style.left = pos.xPct + '%';
+          wrapper.style.top = pos.yPct + '%';
+          wrapper.style.transform = `translate(-50%, -50%) rotate(${el.rotationDeg || 0}deg)`;
+
+          if (el.type === 'image') {
+            wrapper.style.width = (el.widthPct || 18) + '%';
+            const img = document.createElement('img');
+            img.src = el.mediaUrl;
+            img.alt = '';
+            wrapper.appendChild(img);
+          } else {
+            wrapper.style.fontFamily = el.fontFamily || 'Merriweather';
+            wrapper.style.fontSize = (el.fontSizePct || 6) + 'vh';
+            wrapper.style.fontWeight = String(el.fontWeight || 400);
+            wrapper.style.color = el.color || '#FFFFFF';
+            wrapper.style.textAlign = el.align || 'center';
+            wrapper.textContent = el.text || '';
+          }
+
+          container.appendChild(wrapper);
+        }
+      }
+
+      function showScene(msg) {
+        // Même discipline que showVerse()/showMediaItem() : masque les deux
+        // autres couches AVANT de prendre l'écran (mutuelle exclusion à
+        // trois, voir showVerse()/showMediaItem() plus haut pour le miroir).
+        hideVerseQuiet(false);
+        hideMediaLayer();
+        // CORRECTIF (voir maybeShowDefaultContent() plus haut) : cette scène
+        // n'est "le poster principal" que si c'est bien maybeShowDefaultContent()
+        // elle-même qui a déclenché cet appel (detectedBy: 'default') —
+        // sinon (déclenchement vocal/manuel), c'est un contenu explicite.
+        screenOccupiedByExplicitContent = msg.detectedBy !== 'default';
+        const layer = document.getElementById('scene-layer');
+        if (!layer) return;
+        renderSceneDom(msg, layer);
+        layer.classList.add('visible');
+        layer.setAttribute('aria-hidden', 'false');
+      }
+
+      // Silencieuse (pas de vérification poster principal) — même rôle que
+      // hideMediaLayer() ci-dessus, utilisée en interne par showVerse()/
+      // showMediaItem()/emergencyClear() quand un autre contenu prend l'écran.
+      function hideSceneLayer() {
+        const layer = document.getElementById('scene-layer');
+        if (!layer) return;
+        layer.classList.remove('visible');
+        layer.setAttribute('aria-hidden', 'true');
+        layer.innerHTML = '';
+        layer.style.background = '';
+        // CORRECTIF (voir maybeShowDefaultContent() plus bas) : même
+        // raisonnement que hideVerseQuiet()/hideMediaLayer() ci-dessus.
+        screenOccupiedByExplicitContent = false;
+      }
+
+      function hideScene() {
+        hideSceneLayer();
+        maybeShowDefaultContent();
       }
 
       /* ==========================================================================
    Poster principal — demande explicite : "quand il n'y a rien à afficher,
-   ce poster doit toujours être là". Réutilise entièrement showMediaItem()
-   (mêmes styles d'apparition, même z-index) plutôt que de dupliquer la
-   logique d'affichage média — le poster principal EST un média comme un
-   autre, juste réaffiché automatiquement quand l'écran serait sinon vide.
+   ce poster doit toujours être là". Réutilise entièrement showMediaItem()/
+   showScene() (mêmes styles d'apparition, même z-index) plutôt que de
+   dupliquer la logique d'affichage — le poster principal EST un média ou
+   une scène comme un autre, juste réaffiché automatiquement quand l'écran
+   serait sinon vide. Une SCÈNE par défaut est prioritaire sur un MÉDIA par
+   défaut (voir maybeShowDefaultContent() ci-dessous) — de toute façon les
+   deux ne peuvent jamais coexister (arbitrage croisé côté serveur, voir
+   scene-store.js#setDefaultScene/media-library.js#setDefaultItem).
    ========================================================================== */
       let currentDefaultMedia = null; // { id, mediaType, filename, label, transitionStyle } ou null
+      let currentDefaultScene = null; // scène résolue (mediaUrl, pas mediaId) ou null
+      // CORRECTIF (studio de scènes, lot 4/6 — arbitrage croisé scène/média
+      // trouvé en testant CE lot avec un vrai navigateur, voir
+      // integration-scene-overlay-lifecycle.js) : distingue "un verset, un
+      // média ou une scène EXPLICITEMENT déclenchés occupent l'écran" (ne
+      // jamais interrompre) de "ce qui est visible n'est que le poster
+      // principal (ou son reliquat)" (toujours remplaçable). Sans cette
+      // distinction, une garde naïve "rien d'autre à l'écran" bloquait
+      // indéfiniment un NOUVEAU poster désigné pendant que l'ANCIEN poster
+      // (scène ou média) était encore affiché — y compris juste après avoir
+      // RETIRÉ ce dernier (setDefaultMediaItem sans id, par ex.), puisque
+      // rien ne masque jamais automatiquement un poster qu'on vient de
+      // démarquer, seul un nouveau poster/verset/déclenchement le fait. Ce
+      // cas n'existait pas avant le studio de scènes (un seul magasin de
+      // poster possible) — l'ancien maybeShowDefaultMedia() n'avait jamais
+      // eu à s'en soucier. Mis à jour par showVerse()/showMediaItem()/
+      // showScene() elles-mêmes (voir leur paramètre `detectedBy`), jamais
+      // ici directement.
+      let screenOccupiedByExplicitContent = false;
 
       function setCurrentDefaultMedia(item) {
         currentDefaultMedia = item || null;
-        maybeShowDefaultMedia();
+        maybeShowDefaultContent();
       }
 
-      function maybeShowDefaultMedia() {
-        if (!currentDefaultMedia) return;
-        const container = document.getElementById('overlay-container');
-        const mediaLayer = document.getElementById('media-layer');
-        const verseVisible = !!(container && container.classList.contains('visible'));
-        const mediaVisible = !!(mediaLayer && mediaLayer.classList.contains('visible'));
-        // Rien d'autre à l'écran : c'est le seul moment où le poster principal
-        // doit reprendre sa place — jamais en interrompant un verset ou un média
-        // explicitement déclenché.
-        if (verseVisible || mediaVisible) return;
-        showMediaItem({
-          mediaType: currentDefaultMedia.mediaType,
-          mediaUrl: `/media/${currentDefaultMedia.filename}`,
-          label: currentDefaultMedia.label,
-          displayDurationMs: null,
-          transitionStyle: currentDefaultMedia.transitionStyle,
-          detectedBy: 'default',
-        });
+      function setCurrentDefaultScene(scene) {
+        currentDefaultScene = scene || null;
+        maybeShowDefaultContent();
+      }
+
+      function maybeShowDefaultContent() {
+        // Un verset/média/scène EXPLICITEMENT déclenché est toujours
+        // prioritaire — jamais interrompu par un poster, nouveau ou ancien.
+        if (screenOccupiedByExplicitContent) return;
+
+        if (currentDefaultScene) {
+          showScene({ ...currentDefaultScene, detectedBy: 'default' });
+          return;
+        }
+        if (currentDefaultMedia) {
+          showMediaItem({
+            mediaType: currentDefaultMedia.mediaType,
+            mediaUrl: `/media/${currentDefaultMedia.filename}`,
+            label: currentDefaultMedia.label,
+            displayDurationMs: null,
+            transitionStyle: currentDefaultMedia.transitionStyle,
+            detectedBy: 'default',
+          });
+          return;
+        }
+        // Aucun poster candidat : rien à afficher, mais on ne masque pas non
+        // plus ce qui traînerait encore à l'écran (même comportement
+        // historique que l'ancien maybeShowDefaultMedia() — un poster
+        // retiré ne se masque pas tout seul, voir le commentaire ci-dessus).
       }
 
       /* ==========================================================================

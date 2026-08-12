@@ -567,8 +567,8 @@ function warn(msg) {
 // pour que 'repeat' puisse re-broadcaster le payload exact, sans nouvelle
 // recherche. showMedia délibérément inclus (pas seulement showVerse) :
 // voir la décision "repeat = verset OU chant OU média" du cahier des
-// charges bilingue.
-const REPEATABLE_ACTIONS = new Set(['showVerse', 'showMedia']);
+// charges bilingue. showScene (studio de scènes, lot 4) : même raisonnement.
+const REPEATABLE_ACTIONS = new Set(['showVerse', 'showMedia', 'showScene']);
 
 function broadcast(obj) {
   if (REPEATABLE_ACTIONS.has(obj.action)) {
@@ -578,6 +578,37 @@ function broadcast(obj) {
   wss.clients.forEach((ws) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(json);
   });
+}
+
+// AJOUT (studio de scènes, lot 4/6) : convertit une scène (telle que stockée
+// par scene-store.js — mediaId nus) en payload prêt pour l'overlay
+// (mediaUrl résolues via media-library.js). Résolution faite ICI, côté
+// serveur — jamais confiance au tableau de bord pour une URL à jour, voir
+// le plan approuvé. Un mediaId dont l'élément a été supprimé de la
+// médiathèque se dégrade proprement : mediaUrl reste absente pour CET
+// élément seul (voir renderSceneDom() côté overlay.html, qui ignore
+// silencieusement un élément sans mediaUrl exploitable), jamais un
+// plantage de la diffusion entière.
+function resolveSceneMediaUrls(scene) {
+  const resolveMediaUrl = (mediaId) => {
+    if (!mediaId) return null;
+    const item = mediaLibrary.getItem(mediaId);
+    return item ? `/media/${item.filename}` : null;
+  };
+
+  const background = scene.background || { type: 'none', mediaId: null, color: null };
+  return {
+    id: scene.id,
+    name: scene.name,
+    background: {
+      type: background.type,
+      mediaUrl: background.type === 'media' ? resolveMediaUrl(background.mediaId) : null,
+      color: background.color,
+    },
+    elements: (scene.elements || []).map((el) =>
+      el.type === 'image' ? { ...el, mediaUrl: resolveMediaUrl(el.mediaId) } : el
+    ),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1489,12 +1520,14 @@ const OPERATOR_ACTIONS = new Set([
   'setDefaultMediaItem',
   // AJOUT (studio de scènes — texte/logo/image composés) : même trust tier
   // que la médiathèque ci-dessus — un viewer ne doit ni créer/modifier de
-  // scène ni changer le poster principal.
+  // scène ni changer le poster principal ni la déclencher à l'écran.
   'getSceneLibrary',
   'addScene',
   'updateScene',
   'deleteScene',
   'setDefaultScene',
+  'triggerScene',
+  'hideScene',
   // AJOUT (caméras de téléphone)
   'getIpCameras',
   'addIpCamera',
@@ -1617,6 +1650,15 @@ wss.on('connection', (ws, req) => {
       testPattern: sessionState.getTestPattern(),
       backgroundPattern: sessionState.getBackgroundPattern(),
       defaultMedia: mediaLibrary.getDefaultItem(),
+      // AJOUT (studio de scènes, lot 4/6) : même raisonnement que defaultMedia
+      // ci-dessus — à l'ouverture/rechargement de l'overlay, la scène
+      // principale (si une existe) doit s'afficher immédiatement sans
+      // attendre un premier déclenchement. Résolue (mediaUrl, pas mediaId
+      // nus) pour le même motif que resolveSceneMediaUrls() plus haut.
+      defaultScene: (() => {
+        const scene = sceneStore.getDefaultScene();
+        return scene ? resolveSceneMediaUrls(scene) : null;
+      })(),
       branding: getBrandingState(),
       dashboardBranding: getDashboardBrandingState(),
       history: sessionState.getVerseHistory(),
@@ -2433,7 +2475,15 @@ wss.on('connection', (ws, req) => {
           : 'Studio de scènes : poster principal (scène) retiré'
       );
       broadcast({ action: 'sceneLibraryUpdated', scenes: sceneStore.listItems() });
-      broadcast({ action: 'defaultSceneChanged', item: sceneStore.getDefaultScene() });
+      // AJOUT (studio de scènes, lot 4) : resolveSceneMediaUrls() ici, PAS
+      // l'item brut du store (mediaId nus, inexploitables tels quels par
+      // renderSceneDom() côté overlay.html) — voir aussi triggerScene plus
+      // bas, même besoin de résolution.
+      const newDefaultScene = sceneStore.getDefaultScene();
+      broadcast({
+        action: 'defaultSceneChanged',
+        item: newDefaultScene ? resolveSceneMediaUrls(newDefaultScene) : null,
+      });
       // AJOUT (arbitrage croisé, lot 2) : désigner une scène par défaut
       // démarque silencieusement tout média par défaut existant
       // (scene-store.js#setDefaultScene) — symétrique au correctif du même
@@ -2472,6 +2522,36 @@ wss.on('connection', (ws, req) => {
 
     if (sanitized.action === 'hideMedia') {
       broadcast({ action: 'hideMedia' });
+      return;
+    }
+
+    // AJOUT (studio de scènes, lot 4/6 — déclenchement à l'écran) : miroir
+    // de triggerMediaItem/hideMedia ci-dessus, distinct de setDefaultScene
+    // (poster PERSISTANT) — un déclenchement ponctuel, comme un média
+    // manuel. Résout CHAQUE mediaId référencé (fond + éléments image) en URL
+    // `/media/<filename>` ICI, côté serveur — jamais confiance au tableau de
+    // bord pour avoir une URL à jour (voir le plan approuvé). Un mediaId
+    // dont l'élément a été supprimé de la médiathèque se dégrade proprement
+    // (mediaUrl omis pour cet élément seul) plutôt que de faire planter la
+    // diffusion entière.
+    if (sanitized.action === 'triggerScene') {
+      const scene = sceneStore.getItem(sanitized.id);
+      if (!scene) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Studio de scènes : scène introuvable' }));
+        return;
+      }
+      log(`Studio de scènes : "${scene.name}" déclenchée manuellement`);
+      broadcast({ action: 'showScene', ...resolveSceneMediaUrls(scene), detectedBy: 'manual' });
+      sessionStore.recordVerseShown({
+        reference: `🎬 ${scene.name}`,
+        detectedBy: 'scene',
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    if (sanitized.action === 'hideScene') {
+      broadcast({ action: 'hideScene' });
       return;
     }
 
