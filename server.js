@@ -53,6 +53,10 @@ const sermonQa = require('./sermon-qa');
 // AJOUT (médiathèque — déclenchement vocal de photos/vidéos) : même
 // discipline que sermon-archive.js ci-dessus. Voir media-library.js.
 const mediaLibrary = require('./media-library');
+// AJOUT (studio de scènes — texte/logo/image composés, déclenchables comme
+// un poster) : voir scene-store.js. Une scène référence des éléments de
+// media-library.js par id, ne possède aucun fichier propre.
+const sceneStore = require('./scene-store');
 // AJOUT (caméras de téléphone — demande explicite) : liste de flux MJPEG
 // réseau (apps type "IP Webcam"), distincte de camera-capture.js (webcams
 // locales via navigator.mediaDevices) — voir ip-camera-store.js.
@@ -1483,6 +1487,14 @@ const OPERATOR_ACTIONS = new Set([
   'triggerMediaItem',
   'hideMedia',
   'setDefaultMediaItem',
+  // AJOUT (studio de scènes — texte/logo/image composés) : même trust tier
+  // que la médiathèque ci-dessus — un viewer ne doit ni créer/modifier de
+  // scène ni changer le poster principal.
+  'getSceneLibrary',
+  'addScene',
+  'updateScene',
+  'deleteScene',
+  'setDefaultScene',
   // AJOUT (caméras de téléphone)
   'getIpCameras',
   'addIpCamera',
@@ -2321,6 +2333,15 @@ wss.on('connection', (ws, req) => {
       );
       broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
       broadcast({ action: 'defaultMediaChanged', item: mediaLibrary.getDefaultItem() });
+      // AJOUT (studio de scènes, lot 3 — arbitrage croisé, voir lot 2) :
+      // désigner un média par défaut démarque silencieusement toute scène par
+      // défaut existante (media-library.js#setDefaultItem) — sans ces deux
+      // diffusions, un tableau de bord resterait persuadé qu'une scène déjà
+      // démarquée côté serveur est toujours le poster principal.
+      if (sanitized.id) {
+        broadcast({ action: 'sceneLibraryUpdated', scenes: sceneStore.listItems() });
+        broadcast({ action: 'defaultSceneChanged', item: sceneStore.getDefaultScene() });
+      }
       return;
     }
 
@@ -2334,6 +2355,92 @@ wss.on('connection', (ws, req) => {
         if (wasDefault) broadcast({ action: 'defaultMediaChanged', item: null });
       } else {
         ws.send(JSON.stringify({ action: 'error', error: 'Médiathèque : élément introuvable' }));
+      }
+      return;
+    }
+
+    // ---------------------------------------------------------------------
+    // AJOUT (studio de scènes, lot 3/6 — texte/logo/image composés) : mêmes
+    // formes de message que la médiathèque ci-dessus (scene-store.js est un
+    // clone assumé de media-library.js), voir le plan approuvé. Aucun
+    // branchement dashboard/overlay.html pour l'instant (lots 4-6) — ces
+    // handlers ne sont exercés que par test/integration-scene-crud.js
+    // jusque-là, via des messages WS écrits à la main.
+    // ---------------------------------------------------------------------
+    if (sanitized.action === 'getSceneLibrary') {
+      ws.send(JSON.stringify({ action: 'sceneLibraryUpdated', scenes: sceneStore.listItems() }));
+      return;
+    }
+
+    if (sanitized.action === 'addScene') {
+      try {
+        const scene = sceneStore.addScene({
+          name: sanitized.name,
+          background: sanitized.background,
+          elements: sanitized.elements,
+        });
+        log(`Studio de scènes : "${scene.name}" créée`);
+        broadcast({ action: 'sceneLibraryUpdated', scenes: sceneStore.listItems() });
+      } catch (err) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Studio de scènes : ' + err.message }));
+      }
+      return;
+    }
+
+    if (sanitized.action === 'updateScene') {
+      const updated = sceneStore.updateScene(sanitized.id, {
+        name: sanitized.name,
+        background: sanitized.background,
+        elements: sanitized.elements,
+      });
+      if (updated) {
+        log(`Studio de scènes : "${updated.name}" mise à jour`);
+        broadcast({ action: 'sceneLibraryUpdated', scenes: sceneStore.listItems() });
+      } else {
+        ws.send(JSON.stringify({ action: 'error', error: 'Studio de scènes : scène introuvable' }));
+      }
+      return;
+    }
+
+    if (sanitized.action === 'deleteScene') {
+      const wasDefault = !!(sceneStore.getItem(sanitized.id) || {}).isDefault;
+      const removed = sceneStore.deleteItem(sanitized.id);
+      if (removed) {
+        broadcast({ action: 'sceneLibraryUpdated', scenes: sceneStore.listItems() });
+        // Même raisonnement que deleteMediaItem ci-dessus : la scène par
+        // défaut supprimée ne doit pas rester "fantôme" côté overlay.
+        if (wasDefault) broadcast({ action: 'defaultSceneChanged', item: null });
+      } else {
+        ws.send(JSON.stringify({ action: 'error', error: 'Studio de scènes : scène introuvable' }));
+      }
+      return;
+    }
+
+    // --- Poster principal (scène) — voir setDefaultScene() dans
+    // scene-store.js. sanitized.id absent/vide = retire le poster principal
+    // (scène) actuel sans en désigner un nouveau. ---
+    if (sanitized.action === 'setDefaultScene') {
+      const updated = sanitized.id
+        ? sceneStore.setDefaultScene(sanitized.id)
+        : sceneStore.clearDefaultScene();
+      if (sanitized.id && !updated) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Studio de scènes : scène introuvable' }));
+        return;
+      }
+      log(
+        sanitized.id
+          ? `Studio de scènes : "${updated.name}" désignée comme poster principal`
+          : 'Studio de scènes : poster principal (scène) retiré'
+      );
+      broadcast({ action: 'sceneLibraryUpdated', scenes: sceneStore.listItems() });
+      broadcast({ action: 'defaultSceneChanged', item: sceneStore.getDefaultScene() });
+      // AJOUT (arbitrage croisé, lot 2) : désigner une scène par défaut
+      // démarque silencieusement tout média par défaut existant
+      // (scene-store.js#setDefaultScene) — symétrique au correctif du même
+      // nom sur setDefaultMediaItem ci-dessus.
+      if (sanitized.id) {
+        broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
+        broadcast({ action: 'defaultMediaChanged', item: mediaLibrary.getDefaultItem() });
       }
       return;
     }
@@ -3013,6 +3120,12 @@ try {
   mediaLibrary.setUserDataDir(USER_DATA_DIR);
 } catch (err) {
   warn('Failed to set media library dir: ' + err.message);
+}
+
+try {
+  sceneStore.setUserDataDir(USER_DATA_DIR);
+} catch (err) {
+  warn('Failed to set scene store dir: ' + err.message);
 }
 
 try {
