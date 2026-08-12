@@ -22,6 +22,14 @@ import { updatePosterCardMediaItems } from './poster-principal-card.js';
    ====================================================================== */
 let mediaLibraryItems = [];
 
+// AJOUT (studio de scènes, lot 6/6 — composeur) : le composeur a besoin de
+// lister les médias déjà uploadés pour son fond et ses éléments image/logo
+// (voir scene-studio.js) — même liste, déjà tenue à jour ici à chaque
+// diffusion serveur, pas de second aller-retour WS pour la dupliquer.
+export function getMediaLibraryItems() {
+  return mediaLibraryItems;
+}
+
 export async function addMediaLibraryItem() {
   if (!window.churchOverlay || !window.churchOverlay.pickMediaFile) return;
   if (!ws || ws.readyState !== WebSocket.OPEN) {

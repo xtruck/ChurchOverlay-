@@ -609,6 +609,14 @@ function resolveSceneMediaUrls(scene) {
     isDefault: !!scene.isDefault,
     background: {
       type: background.type,
+      // AJOUT (studio de scènes, lot 6/6 — composeur) : mediaId conservé en
+      // plus de mediaUrl — même raisonnement que pour les éléments image
+      // ci-dessous (spread de el, qui garde déjà mediaId). L'overlay n'utilise
+      // que mediaUrl pour l'affichage, mais le composeur du tableau de bord
+      // (scene-studio.js#openSceneComposer) en a besoin pour savoir QUEL
+      // média de la médiathèque était choisi, et le présélectionner dans son
+      // <select> quand on modifie une scène existante.
+      mediaId: background.type === 'media' ? background.mediaId || null : null,
       mediaUrl: background.type === 'media' ? resolveMediaUrl(background.mediaId) : null,
       color: background.color,
     },

@@ -943,6 +943,102 @@ body {
   height: 100%;
 }
 
+/* AJOUT (studio de scènes, lot 6/6) : composeur — formulaire (fond +
+   éléments) à gauche, aperçu 16:9 à droite (même renderSceneDom() que la
+   vignette de galerie ci-dessus et que le rendu réel sur overlay.html, voir
+   scene-render.js — ce qui est vu ici est, par construction, ce qui sera
+   diffusé). Empile en une colonne sous 900px : le formulaire reste lisible
+   sur une tablette de régie tenue en portrait. */
+.scene-composer-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .scene-composer-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.scene-composer-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.scene-composer-elements-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+
+.scene-composer-element-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.scene-composer-element-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+.scene-composer-element-row input[type='text'] {
+  flex: 1;
+  min-width: 140px;
+}
+
+.scene-composer-form select,
+.scene-composer-form input[type='text'],
+.scene-composer-form input[type='number'] {
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.7rem;
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.scene-composer-form select:focus,
+.scene-composer-form input:focus {
+  border-color: var(--primary);
+}
+
+.scene-composer-form input[type='color'] {
+  width: 42px;
+  height: 34px;
+  padding: 2px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  cursor: pointer;
+}
+
+.scene-composer-preview-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #05070d;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
 .media-gallery-thumb img,
 .media-gallery-thumb video {
   width: 100%;

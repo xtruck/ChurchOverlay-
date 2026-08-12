@@ -2473,22 +2473,32 @@
           </div>
         </section>
 
-        <!-- AJOUT (studio de scènes, lot 5/6) : galerie en lecture seule pour
-             l'instant — lister/déclencher/supprimer/épingler des scènes déjà
-             créées (le formulaire de composition est le lot 6). Même
-             structure que la carte Médiathèque (section "controls") :
+        <!-- AJOUT (studio de scènes, lot 5/6, formulaire de composition lot 6/6) :
+             galerie (lister/déclencher/supprimer/épingler/modifier des scènes)
+             + composeur (fond + éléments texte/image, aperçu en direct via
+             renderSceneDom() — voir scene-render.js). Même structure que la
+             carte Médiathèque (section "controls") :
              classes queue-panel-header/media-gallery-grid déjà stylées. -->
         <section id="studio" class="section" style="display: none">
           <div class="card">
             <div class="queue-panel-header">
               <span class="card-title">Studio de scènes (<span id="sceneStudioCount">0</span>)</span>
-              <button
-                class="btn btn-secondary"
-                style="padding: 0.4rem 0.8rem; font-size: 0.8rem"
-                onclick="hideSceneNow()"
-              >
-                ⏹ Masquer
-              </button>
+              <div style="display: flex; gap: 0.5rem">
+                <button
+                  class="btn btn-primary"
+                  style="padding: 0.4rem 0.8rem; font-size: 0.8rem"
+                  onclick="openSceneComposer(null)"
+                >
+                  + Nouvelle scène
+                </button>
+                <button
+                  class="btn btn-secondary"
+                  style="padding: 0.4rem 0.8rem; font-size: 0.8rem"
+                  onclick="hideSceneNow()"
+                >
+                  ⏹ Masquer
+                </button>
+              </div>
             </div>
             <div class="field-hint" style="margin-bottom: 0.75rem">
               Composez un fond + du texte + un logo, puis déclenchez la scène sur l'overlay ou
@@ -2496,6 +2506,85 @@
               chaque verset, exactement comme un média épinglé dans la Médiathèque.
             </div>
             <div class="media-gallery-grid" id="sceneStudioList"></div>
+          </div>
+
+          <!-- AJOUT (studio de scènes, lot 6/6) : composeur, masqué par défaut,
+               révélé par "+ Nouvelle scène" ou "✏ Modifier" sur une carte de la
+               galerie (voir openSceneComposer() dans scene-studio.js). Presets
+               (position 3x3, police parmi 4 déjà chargées, poids/couleur/
+               alignement) plutôt que glisser-déposer libre — voir scene-store.js
+               pour le raisonnement. -->
+          <div class="card" id="sceneComposerCard" style="display: none">
+            <div class="queue-panel-header">
+              <span class="card-title" id="sceneComposerTitle">Nouvelle scène</span>
+              <button
+                class="btn btn-secondary"
+                style="padding: 0.4rem 0.8rem; font-size: 0.8rem"
+                onclick="closeSceneComposer()"
+              >
+                ✕ Fermer
+              </button>
+            </div>
+            <div class="queue-add-row">
+              <input
+                type="text"
+                id="composerNameInput"
+                placeholder="Nom de la scène (ex. Bienvenue — dimanche)"
+              />
+            </div>
+            <div class="scene-composer-layout">
+              <div class="scene-composer-form">
+                <div class="scene-composer-field-row">
+                  <label for="composerBgTypeSelect">Fond</label>
+                  <select id="composerBgTypeSelect" onchange="onComposerBgTypeChange()">
+                    <option value="none">Aucun</option>
+                    <option value="media">Image (médiathèque)</option>
+                    <option value="color">Couleur unie</option>
+                  </select>
+                  <select
+                    id="composerBgMediaSelect"
+                    onchange="onComposerBgMediaChange()"
+                    style="display: none"
+                  ></select>
+                  <input
+                    type="color"
+                    id="composerBgColorInput"
+                    value="#0b0f1a"
+                    onchange="onComposerBgColorChange()"
+                    style="display: none"
+                  />
+                </div>
+                <div class="scene-composer-elements-header">
+                  <span class="field-hint" style="margin: 0">Éléments</span>
+                  <div style="display: flex; gap: 0.5rem">
+                    <button
+                      class="btn btn-secondary"
+                      style="padding: 0.35rem 0.7rem; font-size: 0.78rem"
+                      onclick="addComposerElement('text')"
+                    >
+                      + Texte
+                    </button>
+                    <button
+                      class="btn btn-secondary"
+                      style="padding: 0.35rem 0.7rem; font-size: 0.78rem"
+                      onclick="addComposerElement('image')"
+                    >
+                      + Image / logo
+                    </button>
+                  </div>
+                </div>
+                <div id="composerElementsList"></div>
+                <div class="queue-add-row" style="margin-top: 0.5rem">
+                  <button class="btn btn-primary" onclick="saveComposerScene()">
+                    💾 Enregistrer la scène
+                  </button>
+                </div>
+              </div>
+              <div class="scene-composer-preview-col">
+                <div class="field-hint" style="margin-top: 0">Aperçu</div>
+                <div class="scene-composer-preview-frame" id="composerPreviewFrame"></div>
+              </div>
+            </div>
           </div>
         </section>
       </main>
