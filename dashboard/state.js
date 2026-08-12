@@ -212,6 +212,8 @@ function initWebSocket() {
       // vocal doit y accéder même sans tableau de bord ouvert) — récupérée
       // à chaque connexion/reconnexion pour rester synchronisée.
       ws.send(JSON.stringify({ action: 'getMediaLibrary' }));
+      // AJOUT (studio de scènes) : même raisonnement que getMediaLibrary.
+      ws.send(JSON.stringify({ action: 'getSceneLibrary' }));
       // AJOUT (bibliothèque de chants) : même raisonnement que getMediaLibrary.
       ws.send(JSON.stringify({ action: 'getSongLibrary' }));
       // AJOUT (caméras de téléphone) : même raisonnement que getMediaLibrary.

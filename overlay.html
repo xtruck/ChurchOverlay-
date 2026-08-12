@@ -967,6 +967,14 @@
       </div>
     </div>
 
+    <!-- AJOUT (studio de scènes, lot 5/6) : SCENE_POSITION_PCT/renderSceneDom
+         chargés ici, AVANT le script principal ci-dessous, qui les utilise
+         directement comme variables globales (script classique, même
+         convention que camera-capture.js dans dashboard.html) — module
+         partagé avec l'aperçu du studio dans le tableau de bord, pour que
+         "ce que l'opérateur voit en éditant" et "ce qui est sur le
+         projecteur" ne puissent jamais diverger. -->
+    <script src="scene-render.js"></script>
     <script>
       /* ==========================================================================
    WebSocket connection
@@ -1700,81 +1708,10 @@
    lot 4/6. Même principe que la médiathèque ci-dessus : hideSceneLayer()
    (silencieuse) pour un contenu qui prend l'écran, hideScene() (publique)
    pour un masquage explicite qui doit laisser la place au poster principal.
+   SCENE_POSITION_PCT et renderSceneDom() sont désormais partagés avec
+   l'aperçu du tableau de bord — voir scene-render.js (lot 5), chargé en
+   script classique juste avant celui-ci (voir <head>/<body> plus haut).
    ========================================================================== */
-      // AJOUT (studio de scènes, lot 4/6, destiné au lot 5 — voir le plan
-      // approuvé) : grille de positions 3x3, résolue en pourcentages du cadre.
-      // Fonction PURE ci-dessous (renderSceneDom) volontairement sans aucune
-      // dépendance sur une variable globale de ce fichier, pour rester
-      // trivialement extractible vers un module partagé avec l'aperçu du
-      // tableau de bord (lot 5) sans changement de comportement.
-      const SCENE_POSITION_PCT = {
-        'top-left': { xPct: 10, yPct: 10 },
-        'top-center': { xPct: 50, yPct: 10 },
-        'top-right': { xPct: 90, yPct: 10 },
-        'center-left': { xPct: 10, yPct: 50 },
-        center: { xPct: 50, yPct: 50 },
-        'center-right': { xPct: 90, yPct: 50 },
-        'bottom-left': { xPct: 10, yPct: 90 },
-        'bottom-center': { xPct: 50, yPct: 90 },
-        'bottom-right': { xPct: 90, yPct: 90 },
-      };
-
-      /**
-       * Construit le DOM d'une scène dans `container` (vidé d'abord). Ignore
-       * silencieusement tout élément mal formé (type inconnu, image sans
-       * mediaUrl exploitable — mediaId supprimé côté médiathèque, voir
-       * resolveSceneMediaUrls() dans server.js) : un rendu partiel vaut
-       * toujours mieux qu'un écran figé ou une exception qui bloquerait tout
-       * le reste de l'overlay.
-       * @param {Object|null} scene - { background, elements } (mediaUrl déjà résolues)
-       * @param {HTMLElement} container
-       */
-      function renderSceneDom(scene, container) {
-        container.innerHTML = '';
-        container.style.background = '';
-        if (!scene) return;
-
-        const background = scene.background || {};
-        if (background.type === 'media' && background.mediaUrl) {
-          const bgImg = document.createElement('img');
-          bgImg.className = 'scene-background-img';
-          bgImg.src = background.mediaUrl;
-          bgImg.alt = '';
-          container.appendChild(bgImg);
-        } else if (background.type === 'color' && background.color) {
-          container.style.background = background.color;
-        }
-
-        for (const el of scene.elements || []) {
-          if (!el || (el.type !== 'text' && el.type !== 'image')) continue;
-          if (el.type === 'image' && !el.mediaUrl) continue;
-
-          const pos = SCENE_POSITION_PCT[el.position] || SCENE_POSITION_PCT.center;
-          const wrapper = document.createElement('div');
-          wrapper.className = 'scene-element ' + (el.type === 'image' ? 'scene-image' : 'scene-text');
-          wrapper.style.left = pos.xPct + '%';
-          wrapper.style.top = pos.yPct + '%';
-          wrapper.style.transform = `translate(-50%, -50%) rotate(${el.rotationDeg || 0}deg)`;
-
-          if (el.type === 'image') {
-            wrapper.style.width = (el.widthPct || 18) + '%';
-            const img = document.createElement('img');
-            img.src = el.mediaUrl;
-            img.alt = '';
-            wrapper.appendChild(img);
-          } else {
-            wrapper.style.fontFamily = el.fontFamily || 'Merriweather';
-            wrapper.style.fontSize = (el.fontSizePct || 6) + 'vh';
-            wrapper.style.fontWeight = String(el.fontWeight || 400);
-            wrapper.style.color = el.color || '#FFFFFF';
-            wrapper.style.textAlign = el.align || 'center';
-            wrapper.textContent = el.text || '';
-          }
-
-          container.appendChild(wrapper);
-        }
-      }
-
       function showScene(msg) {
         // Même discipline que showVerse()/showMediaItem() : masque les deux
         // autres couches AVANT de prendre l'écran (mutuelle exclusion à

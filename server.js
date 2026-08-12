@@ -580,15 +580,19 @@ function broadcast(obj) {
   });
 }
 
-// AJOUT (studio de scènes, lot 4/6) : convertit une scène (telle que stockée
-// par scene-store.js — mediaId nus) en payload prêt pour l'overlay
-// (mediaUrl résolues via media-library.js). Résolution faite ICI, côté
-// serveur — jamais confiance au tableau de bord pour une URL à jour, voir
-// le plan approuvé. Un mediaId dont l'élément a été supprimé de la
-// médiathèque se dégrade proprement : mediaUrl reste absente pour CET
-// élément seul (voir renderSceneDom() côté overlay.html, qui ignore
-// silencieusement un élément sans mediaUrl exploitable), jamais un
-// plantage de la diffusion entière.
+// AJOUT (studio de scènes, lot 4/6, étendu lot 5/6) : convertit une scène
+// (telle que stockée par scene-store.js — mediaId nus) en payload prêt à
+// l'emploi côté client (mediaUrl résolues via media-library.js). Résolution
+// faite ICI, côté serveur — jamais confiance au tableau de bord pour une URL
+// à jour, voir le plan approuvé. Un mediaId dont l'élément a été supprimé de
+// la médiathèque se dégrade proprement : mediaUrl reste absente pour CET
+// élément seul (voir renderSceneDom(), qui ignore silencieusement un élément
+// sans mediaUrl exploitable), jamais un plantage de la diffusion entière.
+// AJOUT (lot 5/6) : utilisée aussi pour sceneLibraryUpdated (liste complète,
+// pas seulement le déclenchement ponctuel) — isDefault/addedAt/updatedAt
+// désormais préservés, nécessaires à la galerie du tableau de bord (badge
+// "Poster", tri) qui ne les lisait pas avant que cette fonction serve aussi
+// à peupler la liste.
 function resolveSceneMediaUrls(scene) {
   const resolveMediaUrl = (mediaId) => {
     if (!mediaId) return null;
@@ -600,6 +604,9 @@ function resolveSceneMediaUrls(scene) {
   return {
     id: scene.id,
     name: scene.name,
+    addedAt: scene.addedAt,
+    updatedAt: scene.updatedAt,
+    isDefault: !!scene.isDefault,
     background: {
       type: background.type,
       mediaUrl: background.type === 'media' ? resolveMediaUrl(background.mediaId) : null,
@@ -2381,7 +2388,10 @@ wss.on('connection', (ws, req) => {
       // diffusions, un tableau de bord resterait persuadé qu'une scène déjà
       // démarquée côté serveur est toujours le poster principal.
       if (sanitized.id) {
-        broadcast({ action: 'sceneLibraryUpdated', scenes: sceneStore.listItems() });
+        broadcast({
+          action: 'sceneLibraryUpdated',
+          scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
+        });
         broadcast({ action: 'defaultSceneChanged', item: sceneStore.getDefaultScene() });
       }
       return;
@@ -2410,7 +2420,12 @@ wss.on('connection', (ws, req) => {
     // jusque-là, via des messages WS écrits à la main.
     // ---------------------------------------------------------------------
     if (sanitized.action === 'getSceneLibrary') {
-      ws.send(JSON.stringify({ action: 'sceneLibraryUpdated', scenes: sceneStore.listItems() }));
+      ws.send(
+        JSON.stringify({
+          action: 'sceneLibraryUpdated',
+          scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
+        })
+      );
       return;
     }
 
@@ -2422,7 +2437,10 @@ wss.on('connection', (ws, req) => {
           elements: sanitized.elements,
         });
         log(`Studio de scènes : "${scene.name}" créée`);
-        broadcast({ action: 'sceneLibraryUpdated', scenes: sceneStore.listItems() });
+        broadcast({
+          action: 'sceneLibraryUpdated',
+          scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
+        });
       } catch (err) {
         ws.send(JSON.stringify({ action: 'error', error: 'Studio de scènes : ' + err.message }));
       }
@@ -2437,7 +2455,10 @@ wss.on('connection', (ws, req) => {
       });
       if (updated) {
         log(`Studio de scènes : "${updated.name}" mise à jour`);
-        broadcast({ action: 'sceneLibraryUpdated', scenes: sceneStore.listItems() });
+        broadcast({
+          action: 'sceneLibraryUpdated',
+          scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
+        });
       } else {
         ws.send(JSON.stringify({ action: 'error', error: 'Studio de scènes : scène introuvable' }));
       }
@@ -2448,7 +2469,10 @@ wss.on('connection', (ws, req) => {
       const wasDefault = !!(sceneStore.getItem(sanitized.id) || {}).isDefault;
       const removed = sceneStore.deleteItem(sanitized.id);
       if (removed) {
-        broadcast({ action: 'sceneLibraryUpdated', scenes: sceneStore.listItems() });
+        broadcast({
+          action: 'sceneLibraryUpdated',
+          scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
+        });
         // Même raisonnement que deleteMediaItem ci-dessus : la scène par
         // défaut supprimée ne doit pas rester "fantôme" côté overlay.
         if (wasDefault) broadcast({ action: 'defaultSceneChanged', item: null });
@@ -2474,7 +2498,10 @@ wss.on('connection', (ws, req) => {
           ? `Studio de scènes : "${updated.name}" désignée comme poster principal`
           : 'Studio de scènes : poster principal (scène) retiré'
       );
-      broadcast({ action: 'sceneLibraryUpdated', scenes: sceneStore.listItems() });
+      broadcast({
+        action: 'sceneLibraryUpdated',
+        scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
+      });
       // AJOUT (studio de scènes, lot 4) : resolveSceneMediaUrls() ici, PAS
       // l'item brut du store (mediaId nus, inexploitables tels quels par
       // renderSceneDom() côté overlay.html) — voir aussi triggerScene plus

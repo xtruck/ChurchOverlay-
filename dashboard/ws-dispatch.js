@@ -35,6 +35,7 @@ import {
   renderAiStats,
 } from './features/preservice-ai.js';
 import { renderMediaLibrary } from './features/media-library.js';
+import { renderSceneStudioGallery } from './features/scene-studio.js';
 import { renderNetworkStatus } from './features/network-settings.js';
 import { renderIpCameras, showCameraPairingQr } from './features/ip-cameras.js';
 import { renderBranding } from './features/branding.js';
@@ -348,6 +349,12 @@ export function handleMessage(message) {
     case 'mediaLibraryUpdated':
       renderMediaLibrary(message.items);
       break;
+    // AJOUT (studio de scènes) : même raisonnement que mediaLibraryUpdated
+    // ci-dessus — la liste vit côté serveur, diffusée à tous les tableaux de
+    // bord ouverts après chaque ajout/suppression/modification.
+    case 'sceneLibraryUpdated':
+      renderSceneStudioGallery(message.scenes);
+      break;
     // AJOUT (caméras de téléphone) : même raisonnement que mediaLibraryUpdated
     // ci-dessus — la liste vit côté serveur, diffusée à tous les tableaux de
     // bord ouverts après chaque ajout/suppression.
@@ -372,6 +379,13 @@ export function handleMessage(message) {
       );
       break;
     case 'hideMedia':
+      break;
+    // AJOUT (studio de scènes) : même raisonnement que showMedia/hideMedia
+    // ci-dessus.
+    case 'showScene':
+      addActivity(`Scène affichée : ${message.name}`, 'info');
+      break;
+    case 'hideScene':
       break;
     // AJOUT (bibliothèque de chants) : même raisonnement que mediaLibraryUpdated.
     case 'songLibraryUpdated':

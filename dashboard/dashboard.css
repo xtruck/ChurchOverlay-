@@ -844,7 +844,7 @@ body {
            style="..." inline (display/align-items/gap/justify-content)
            que les bannières pipeline (lot 4), même traitement : structure
            déplacée en classe, affichage flex/none toujours géré en JS
-           (voir renderDefaultPosterCard dans media-library.js). */
+           (voir dashboard/features/poster-principal-card.js). */
 .default-poster-active {
   display: none;
   align-items: center;
@@ -929,6 +929,18 @@ body {
   aspect-ratio: 16 / 9;
   background: #000;
   overflow: hidden;
+}
+
+/* AJOUT (studio de scènes, lot 5/6) : conteneur de l'aperçu réel d'une
+           scène (voir renderSceneDom() dans scene-render.js) — les enfants
+           positionnés en pourcentage (position:absolute; left/top:X%) que
+           cette fonction crée se calent contre CE conteneur, pas contre
+           .scene-preview-thumb (déjà position:relative via .media-gallery-thumb,
+           mais explicite ici pour ne jamais en dépendre implicitement). */
+.scene-preview-canvas {
+  position: relative;
+  width: 100%;
+  height: 100%;
 }
 
 .media-gallery-thumb img,
