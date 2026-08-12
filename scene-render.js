@@ -89,7 +89,18 @@ function renderSceneDom(scene, container) {
       wrapper.appendChild(img);
     } else {
       wrapper.style.fontFamily = el.fontFamily || 'Merriweather';
-      wrapper.style.fontSize = (el.fontSizePct || 6) + 'vh';
+      // CORRECTIF (trouvé en testant l'aperçu du composeur dans un vrai
+      // navigateur) : 'vh' se résout TOUJOURS contre la fenêtre entière du
+      // navigateur, jamais contre `container` lui-même — inoffensif sur
+      // l'overlay réel (qui EST le viewport), mais un texte "9% de la
+      // hauteur" dans une petite vignette d'aperçu du tableau de bord se
+      // dessinait alors à 9% de la fenêtre ENTIÈRE du tableau de bord,
+      // démesuré et rogné. 'cqh' (container query height) se résout contre
+      // le conteneur ayant container-type:size le plus proche — #scene-layer
+      // (overlay.html), .scene-preview-canvas et
+      // .scene-composer-preview-frame (dashboard.css) le déclarent tous les
+      // trois, donc identique sur l'overlay réel, correct dans l'aperçu.
+      wrapper.style.fontSize = (el.fontSizePct || 6) + 'cqh';
       wrapper.style.fontWeight = String(el.fontWeight || 400);
       wrapper.style.color = el.color || '#FFFFFF';
       wrapper.style.textAlign = el.align || 'center';

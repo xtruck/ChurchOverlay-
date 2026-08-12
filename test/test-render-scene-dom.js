@@ -96,8 +96,8 @@ const { chromium } = require(path.join(__dirname, '..', 'node_modules', 'playwri
     check('le texte est bien rendu', result.text === 'Bienvenue');
     check('la police du texte est appliquée', result.textFontFamily === 'Manrope');
     check(
-      'la taille de police est en vh (pourcentage de la HAUTEUR du cadre)',
-      result.textFontSize === '8vh'
+      'la taille de police est en cqh (pourcentage de la HAUTEUR du conteneur, pas du viewport)',
+      result.textFontSize === '8cqh'
     );
     check('la couleur du texte est appliquée', result.textColor === 'rgb(255, 215, 0)');
     check(
@@ -196,7 +196,7 @@ const { chromium } = require(path.join(__dirname, '..', 'node_modules', 'playwri
       };
     });
     check("police par défaut 'Merriweather'", result.fontFamily === 'Merriweather');
-    check('taille par défaut 6vh', result.fontSize === '6vh');
+    check('taille par défaut 6cqh', result.fontSize === '6cqh');
     check('couleur par défaut blanc', result.color === 'rgb(255, 255, 255)');
     check(
       "position par défaut 'center' (50%/50%) quand non précisée",

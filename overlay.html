@@ -836,6 +836,19 @@
         opacity: 0;
         transition: opacity 0.3s ease;
         overflow: hidden;
+        /* CORRECTIF (studio de scènes, lot 6/6 — trouvé en vérifiant l'aperçu
+           du composeur dans un vrai navigateur) : renderSceneDom() (voir
+           scene-render.js) dimensionne le texte en fontSizePct + 'cqh' —
+           relatif à la HAUTEUR DE CE CONTENEUR (container query), pas à
+           l'unité CSS vh qui se serait résolue contre la fenêtre ENTIÈRE du
+           navigateur. Sans hasard ici (#scene-layer occupe déjà tout le
+           viewport), donc AUCUN changement visuel sur l'overlay réel — mais
+           la même fonction, utilisée telle quelle pour l'aperçu du studio de
+           scènes (galerie + composeur, voir dashboard.css), y rendait un
+           texte démesuré et rogné : la taille se calculait contre la fenêtre
+           du tableau de bord entier, pas contre la petite vignette d'aperçu.
+           container-type:size déclare ce conteneur comme référence pour cqh. */
+        container-type: size;
       }
       #scene-layer.visible {
         display: block;

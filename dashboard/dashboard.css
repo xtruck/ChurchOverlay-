@@ -941,6 +941,11 @@ body {
   position: relative;
   width: 100%;
   height: 100%;
+  /* CORRECTIF (studio de scènes, lot 6/6) : renderSceneDom() dimensionne le
+     texte en fontSizePct + 'cqh' (container query height, voir scene-render.js)
+     — résolu contre le conteneur le plus proche déclarant container-type:size,
+     donc CETTE vignette, pas la fenêtre entière du tableau de bord. */
+  container-type: size;
 }
 
 /* AJOUT (studio de scènes, lot 6/6) : composeur — formulaire (fond +
@@ -1037,6 +1042,54 @@ body {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   overflow: hidden;
+  /* CORRECTIF (studio de scènes, lot 6/6 — trouvé en vérifiant l'aperçu du
+     composeur dans un vrai navigateur, texte démesuré et rogné) : même
+     raisonnement que .scene-preview-canvas ci-dessus — renderSceneDom()
+     utilise désormais 'cqh', pas 'vh', voir scene-render.js. */
+  container-type: size;
+}
+
+/* CORRECTIF (studio de scènes, lot 6/6 — trouvé en vérifiant l'aperçu du
+   composeur dans un vrai navigateur) : renderSceneDom() (scene-render.js) ne
+   pose QUE des styles inline (left/top/transform/etc.) sur .scene-element et
+   ses enfants — le positionnement absolu lui-même vient d'une règle CSS,
+   jusqu'ici définie UNIQUEMENT dans overlay.html, scopée à #scene-layer, que
+   dashboard.html ne charge jamais (feuilles de style séparées). Sans
+   position:absolute ici, ces éléments restaient en flux normal (empilés,
+   alignés à gauche) et le transform:translate(-50%,-50%) les décalait hors
+   du cadre au lieu de les centrer sur leur position — même bug pour la
+   vignette de galerie (lot 5) et l'aperçu du composeur (lot 6), les deux
+   seuls endroits du tableau de bord où renderSceneDom() dessine. Copie
+   fidèle des règles d'overlay.html (#scene-layer .scene-*), scopée ici sous
+   les deux conteneurs dashboard au lieu de #scene-layer. */
+.scene-preview-canvas .scene-background-img,
+.scene-composer-preview-frame .scene-background-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scene-preview-canvas .scene-element,
+.scene-composer-preview-frame .scene-element {
+  position: absolute;
+}
+
+.scene-preview-canvas .scene-text,
+.scene-composer-preview-frame .scene-text {
+  max-width: 80%;
+  white-space: pre-wrap;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+}
+
+.scene-preview-canvas .scene-image img,
+.scene-composer-preview-frame .scene-image img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
 .media-gallery-thumb img,
