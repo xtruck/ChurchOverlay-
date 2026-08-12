@@ -7,6 +7,12 @@
  *  temporaire. Même isolation que test-media-library.js, dont ce fichier
  *  reprend délibérément la structure (scene-store.js est un clone assumé de
  *  media-library.js — voir son en-tête).
+ *
+ *  AJOUT (studio de scènes, lot 2/6) : les tests d'arbitrage croisé en fin de
+ *  fichier requièrent AUSSI media-library.js, pointé vers le MÊME dossier
+ *  userData que scene-store.js — reflète l'usage réel (server.js appelle
+ *  setUserDataDir(USER_DATA_DIR) identique pour les deux modules, chaque
+ *  store ayant son propre fichier d'index dans ce même dossier).
  * ============================================================================
  */
 'use strict';
@@ -15,11 +21,13 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const sceneStore = require('../scene-store');
+const mediaLibrary = require('../media-library');
 
 console.log('=== Test Scene Store ===\n');
 
 const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'churchoverlay-scene-test-'));
 sceneStore.setUserDataDir(userDataDir);
+mediaLibrary.setUserDataDir(userDataDir);
 
 // Test 1 : addScene() minimal (nom seul) — fond et éléments par défaut.
 console.log('[TEST] Test 1: addScene() minimal...');
@@ -240,6 +248,57 @@ console.log('[TEST] Test 14: cas limites (id inconnu / rien à retirer)...');
 assert.strictEqual(sceneStore.setDefaultScene('id-inexistant'), null);
 assert.strictEqual(sceneStore.clearDefaultScene(), null, 'rien à retirer -> null, pas d’erreur');
 console.log('[TEST] ✓ Cas limites gérés proprement\n');
+
+// AJOUT (studio de scènes, lot 2/6) : arbitrage croisé — un seul poster
+// principal à la fois DANS TOUTE L'APP, scène OU média, jamais les deux.
+function makeSourceFile(filename) {
+  const p = path.join(userDataDir, 'sources', filename);
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, Buffer.from([0x00, 0x01, 0x02, 0x03]));
+  return p;
+}
+
+console.log('[TEST] Test 15: setDefaultScene() démarque un média par défaut existant...');
+const mediaItem = mediaLibrary.addItem({
+  sourcePath: makeSourceFile('poster.png'),
+  label: 'Poster média',
+});
+mediaLibrary.setDefaultItem(mediaItem.id);
+assert.strictEqual(
+  mediaLibrary.getDefaultItem().id,
+  mediaItem.id,
+  'précondition : le média est bien le poster principal'
+);
+
+const arbScene = sceneStore.addScene({ name: 'Scène arbitrage' });
+sceneStore.setDefaultScene(arbScene.id);
+assert.strictEqual(
+  sceneStore.getDefaultScene().id,
+  arbScene.id,
+  'la scène doit devenir le nouveau poster principal'
+);
+assert.strictEqual(
+  mediaLibrary.getDefaultItem(),
+  null,
+  'désigner une scène par défaut doit démarquer le média par défaut existant — un seul poster principal à la fois, scène OU média'
+);
+console.log('[TEST] ✓ Un seul poster principal à la fois — scène démarque le média\n');
+
+console.log(
+  '[TEST] Test 16: setDefaultItem() (media-library.js) démarque une scène par défaut existante...'
+);
+mediaLibrary.setDefaultItem(mediaItem.id);
+assert.strictEqual(
+  mediaLibrary.getDefaultItem().id,
+  mediaItem.id,
+  'le média doit redevenir le poster principal'
+);
+assert.strictEqual(
+  sceneStore.getDefaultScene(),
+  null,
+  'désigner un média par défaut doit démarquer la scène par défaut existante — l’inverse du Test 15, symétrique'
+);
+console.log('[TEST] ✓ Un seul poster principal à la fois — média démarque la scène\n');
 
 fs.rmSync(userDataDir, { recursive: true, force: true });
 console.log('=== Tous les tests scene-store sont passés ===');

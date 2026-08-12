@@ -14,11 +14,11 @@
  * supprimé se dégrade simplement (pas d'image pour cet élément), jamais une
  * erreur ni un plantage.
  *
- * PORTÉE DE CE LOT : store pur, additif — aucun branchement server.js/
- * overlay.html/dashboard pour l'instant (voir les lots suivants). L'arbitrage
- * "un seul poster principal à la fois, scène OU média" (setDefaultScene()
- * démarque le média par défaut et vice versa) est le lot 2, pas celui-ci —
- * setDefaultScene() ici ne touche qu'à cet index, volontairement.
+ * PORTÉE : store pur, aucun branchement server.js/overlay.html/dashboard
+ * pour l'instant (voir les lots suivants). setDefaultScene()/setDefaultItem()
+ * (media-library.js) s'arbitrent mutuellement depuis le lot 2 — un seul
+ * poster principal à la fois dans toute l'app, scène OU média (voir
+ * setDefaultScene() plus bas pour le détail du mécanisme).
  * ============================================================================
  */
 'use strict';
@@ -295,9 +295,11 @@ function getDefaultScene() {
  * l'overlay dès que rien d'autre n'est à l'écran. Un seul élément à la fois
  * DANS CET INDEX : marquer celle-ci démarque automatiquement l'ancienne.
  *
- * NE touche PAS à media-library.js — l'arbitrage "un seul poster principal
- * à la fois, scène OU média" est le lot 2 (voir l'en-tête du fichier),
- * volontairement absent de ce lot pour rester un store pur et additif.
+ * AJOUT (studio de scènes, lot 2/6 — arbitrage croisé) : un seul poster
+ * principal à la fois DANS TOUTE L'APP, scène OU média — jamais les deux en
+ * même temps (sinon lequel l'overlay devrait-il réafficher ?). Démarque donc
+ * aussi tout média par défaut existant côté media-library.js, symétrique à
+ * media-library.js#setDefaultItem qui fait l'inverse.
  * @param {string} id
  * @returns {Object|null} la scène désormais principale, ou null si id inconnu
  */
@@ -305,6 +307,12 @@ function setDefaultScene(id) {
   const items = readIndex();
   const idx = items.findIndex((item) => item.id === id);
   if (idx === -1) return null;
+
+  // Requis en retard (pas en haut du fichier) pour éviter une dépendance
+  // circulaire au chargement : media-library.js requiert lui-même ce module
+  // pour l'arbitrage symétrique (voir setDefaultItem() dans media-library.js).
+  const mediaLibrary = require('./media-library');
+  mediaLibrary.clearDefaultItem();
 
   for (const item of items) {
     item.isDefault = item.id === id;

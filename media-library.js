@@ -257,6 +257,11 @@ function getDefaultItem() {
  * un poster "principal" qui s'auto-masquerait après quelques secondes puis
  * réapparaîtrait aussitôt (voir maybeShowDefaultMedia() dans overlay.html)
  * ne ferait que clignoter sans raison.
+ *
+ * AJOUT (studio de scènes, lot 2/6 — arbitrage croisé) : un seul poster
+ * principal à la fois DANS TOUTE L'APP, média OU scène — démarque donc aussi
+ * toute scène par défaut existante côté scene-store.js, symétrique à
+ * scene-store.js#setDefaultScene qui fait l'inverse.
  * @param {string} id
  * @returns {Object|null} l'élément désormais principal, ou null si id inconnu
  */
@@ -264,6 +269,12 @@ function setDefaultItem(id) {
   const items = readIndex();
   const idx = items.findIndex((item) => item.id === id);
   if (idx === -1) return null;
+
+  // Requis en retard (pas en haut du fichier) pour éviter une dépendance
+  // circulaire au chargement : scene-store.js requiert lui-même ce module
+  // pour l'arbitrage symétrique (voir setDefaultScene() dans scene-store.js).
+  const sceneStore = require('./scene-store');
+  sceneStore.clearDefaultScene();
 
   for (const item of items) {
     item.isDefault = item.id === id;
