@@ -33,15 +33,12 @@ async function run() {
   const stream = vad.createStreamState();
   const silence = new Float32Array(vad.WINDOW_SAMPLES);
   const pSilence = await vad.processWindow(silence, stream);
-  assert(
-    pSilence < 0.1,
-    `silence devrait donner une probabilité faible (obtenu: ${pSilence})`
-  );
+  assert(pSilence < 0.1, `silence devrait donner une probabilité faible (obtenu: ${pSilence})`);
   console.log(`[TEST] ✓ prob(silence) = ${pSilence.toFixed(4)}\n`);
 
   console.log(
     '[TEST] Test 4: bruit blanc fort => probabilité de parole toujours faible ' +
-      '(la distinction que le RMS seul ne peut PAS faire — c\'est le bug corrigé)...'
+      "(la distinction que le RMS seul ne peut PAS faire — c'est le bug corrigé)..."
   );
   const noiseStream = vad.createStreamState();
   const noise = new Float32Array(vad.WINDOW_SAMPLES);
@@ -61,7 +58,9 @@ async function run() {
     `du bruit blanc fort mais non-vocal ne devrait pas être classé "parole" (obtenu: ${pNoise}) — ` +
       `un détecteur RMS seul aurait accepté ce signal (RMS ${rmsOfNoise.toFixed(3)} très au-dessus de tout seuil de silence usuel)`
   );
-  console.log(`[TEST] ✓ prob(bruit blanc fort, RMS=${rmsOfNoise.toFixed(3)}) = ${pNoise.toFixed(4)}\n`);
+  console.log(
+    `[TEST] ✓ prob(bruit blanc fort, RMS=${rmsOfNoise.toFixed(3)}) = ${pNoise.toFixed(4)}\n`
+  );
 
   console.log('[TEST] Test 5: état LSTM propagé entre fenêtres (pas figé)...');
   const evolvingStream = vad.createStreamState();

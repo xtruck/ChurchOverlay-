@@ -59,7 +59,9 @@ async function run() {
   console.log('[TEST] Pré-chargement du modèle Silero (hors chronométrage du test)...');
   const initResult = await sileroVad.init();
   if (!initResult.ok) {
-    console.error(`[TEST] ✗ Modèle Silero indisponible (${initResult.error}) — test non concluant.`);
+    console.error(
+      `[TEST] ✗ Modèle Silero indisponible (${initResult.error}) — test non concluant.`
+    );
     process.exit(1);
   }
   console.log('[TEST] ✓ Modèle prêt\n');
@@ -123,7 +125,7 @@ async function run() {
   );
 
   await audioCapture.stopRecording();
-  console.log('=== Tous les tests d\'intégration Silero sont passés ===');
+  console.log("=== Tous les tests d'intégration Silero sont passés ===");
   process.exit(0);
 }
 

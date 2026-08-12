@@ -23,9 +23,15 @@ async function run() {
   const { deltas, totalMs, marks } = t.summary();
   assert.strictEqual(marks.length, 4, 'start + 3 marks = 4 points');
   assert(deltas.vad >= 15, `deltas.vad devrait être >= ~20ms (obtenu ${deltas.vad})`);
-  assert(deltas.asrFinal >= 10, `deltas.asrFinal devrait être >= ~15ms (obtenu ${deltas.asrFinal})`);
+  assert(
+    deltas.asrFinal >= 10,
+    `deltas.asrFinal devrait être >= ~15ms (obtenu ${deltas.asrFinal})`
+  );
   assert(deltas.scripture >= 0, 'deltas.scripture doit être positif ou nul');
-  assert(totalMs >= deltas.vad + deltas.asrFinal + deltas.scripture - 5, 'totalMs doit être la somme des deltas');
+  assert(
+    totalMs >= deltas.vad + deltas.asrFinal + deltas.scripture - 5,
+    'totalMs doit être la somme des deltas'
+  );
   console.log(`[TEST] ✓ deltas cohérents (total ${totalMs}ms)\n`);
 
   console.log('[TEST] Test 2: format() produit le gabarit [PERF] attendu...');
@@ -47,7 +53,10 @@ async function run() {
   const withStart = startTracker(fixedStart);
   withStart.mark('vad');
   const s = withStart.summary();
-  assert(s.deltas.vad >= 990, `le delta doit refléter le startedAt fourni (obtenu ${s.deltas.vad})`);
+  assert(
+    s.deltas.vad >= 990,
+    `le delta doit refléter le startedAt fourni (obtenu ${s.deltas.vad})`
+  );
   console.log('[TEST] ✓ startedAt respecté\n');
 
   console.log('\n=== Tous les tests latency-tracker sont passés ===');

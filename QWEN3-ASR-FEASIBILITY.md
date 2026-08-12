@@ -26,14 +26,14 @@ prouve PAS).
 
 ## 2. Options évaluées
 
-| # | Option | Support Qwen3-ASR réel | Verdict |
-|---|--------|------------------------|---------|
-| 1 | Inférence C pure (`antirez/qwen-asr`) | Oui, dédié à Qwen3-ASR | Nécessite un compilateur C/C++ pour être construit depuis les sources — **aucun** (MSVC/cl.exe, MinGW/gcc, cmake) n'a été trouvé sur cette machine (`where cl.exe/gcc.exe/cmake.exe` → rien). Aucun binaire Windows précompilé trouvé sur les Releases GitHub du projet au moment de la recherche. Écarté pour l'instant — pas construisible ici sans installer un toolchain de compilation. |
-| 2 | Export ONNX communautaire (`andrewleech/qwen3-asr-*-onnx`, etc.) + script Python (librosa) pour le prétraitement audio | Oui, plusieurs exports existent | Nécessite Python + librosa au moment de l'inférence dans les pipelines communautaires vus (prétraitement audio fait côté Python) — réintroduit une dépendance Python que ce projet a déjà explicitement retirée (voir README.md, suppression de Whisper local en v0.3.0). Écarté comme option principale. |
-| 3 | **sherpa-onnx** (k2-fsa), build **natif** (`sherpa-onnx-node`, addon N-API) | **Oui — support Qwen3-ASR officiel et documenté**, exemple officiel `nodejs-examples/test-offline-qwen3-asr.js` | **RETENU — voir POC ci-dessous.** |
-| 4 | sherpa-onnx, build **WASM** (`sherpa-onnx`, package npm sans suffixe) | Oui en théorie (même exemple officiel) | **Testé, a échoué** ici : `RuntimeError: unreachable` au chargement du modèle 0.6B (705 Mo) — très probablement la limite de mémoire linéaire WASM par défaut d'Emscripten, jamais dimensionnée pour un modèle de cette taille. Écarté. |
-| 5 | Petit worker Python local (packagé avec PyInstaller) | Oui (transformers/vLLM officiel) | Recherché : PyTorch CPU seul pèse déjà plusieurs centaines de Mo à quelques Go une fois empaqueté (retours d'expérience PyInstaller/PyTorch trouvés en recherche), sans compter les poids du modèle. Réintroduit Python dans l'installeur — écarté comme option principale tant que l'option 3 fonctionne. |
-| 6 | Runtime alternatif générique (ONNX Runtime GenAI, llama.cpp-style) | Pas de support Qwen3-ASR trouvé spécifiquement | Non retenu — rien d'aussi mûr que sherpa-onnx pour CE modèle précis. |
+| #   | Option                                                                                                                 | Support Qwen3-ASR réel                                                                                          | Verdict                                                                                                                                                                                                                                                                                                                                                                                      |
+| --- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Inférence C pure (`antirez/qwen-asr`)                                                                                  | Oui, dédié à Qwen3-ASR                                                                                          | Nécessite un compilateur C/C++ pour être construit depuis les sources — **aucun** (MSVC/cl.exe, MinGW/gcc, cmake) n'a été trouvé sur cette machine (`where cl.exe/gcc.exe/cmake.exe` → rien). Aucun binaire Windows précompilé trouvé sur les Releases GitHub du projet au moment de la recherche. Écarté pour l'instant — pas construisible ici sans installer un toolchain de compilation. |
+| 2   | Export ONNX communautaire (`andrewleech/qwen3-asr-*-onnx`, etc.) + script Python (librosa) pour le prétraitement audio | Oui, plusieurs exports existent                                                                                 | Nécessite Python + librosa au moment de l'inférence dans les pipelines communautaires vus (prétraitement audio fait côté Python) — réintroduit une dépendance Python que ce projet a déjà explicitement retirée (voir README.md, suppression de Whisper local en v0.3.0). Écarté comme option principale.                                                                                    |
+| 3   | **sherpa-onnx** (k2-fsa), build **natif** (`sherpa-onnx-node`, addon N-API)                                            | **Oui — support Qwen3-ASR officiel et documenté**, exemple officiel `nodejs-examples/test-offline-qwen3-asr.js` | **RETENU — voir POC ci-dessous.**                                                                                                                                                                                                                                                                                                                                                            |
+| 4   | sherpa-onnx, build **WASM** (`sherpa-onnx`, package npm sans suffixe)                                                  | Oui en théorie (même exemple officiel)                                                                          | **Testé, a échoué** ici : `RuntimeError: unreachable` au chargement du modèle 0.6B (705 Mo) — très probablement la limite de mémoire linéaire WASM par défaut d'Emscripten, jamais dimensionnée pour un modèle de cette taille. Écarté.                                                                                                                                                      |
+| 5   | Petit worker Python local (packagé avec PyInstaller)                                                                   | Oui (transformers/vLLM officiel)                                                                                | Recherché : PyTorch CPU seul pèse déjà plusieurs centaines de Mo à quelques Go une fois empaqueté (retours d'expérience PyInstaller/PyTorch trouvés en recherche), sans compter les poids du modèle. Réintroduit Python dans l'installeur — écarté comme option principale tant que l'option 3 fonctionne.                                                                                   |
+| 6   | Runtime alternatif générique (ONNX Runtime GenAI, llama.cpp-style)                                                     | Pas de support Qwen3-ASR trouvé spécifiquement                                                                  | Non retenu — rien d'aussi mûr que sherpa-onnx pour CE modèle précis.                                                                                                                                                                                                                                                                                                                         |
 
 ## 3. POC réalisé — sherpa-onnx (build natif), modèle 0.6B int8
 
@@ -67,16 +67,16 @@ electron-builder). Étapes réellement exécutées :
 
 ### Résultats réels (numThreads=2, CPU de cette machine, aucune estimation)
 
-| Mesure | Valeur mesurée |
-|---|---|
-| RAM avant chargement du modèle | 35 Mo |
-| **Temps de chargement du modèle** | **6296–6847 ms** (2 exécutions) |
-| RAM après chargement | 1047–1068 Mo |
-| **Décodage — "Nous allons lire Jean chapitre trois verset seize."** (3,72s d'audio) | **2132–2186 ms**, CPU user ≈4234ms/2 threads |
-| Texte obtenu | `"Nous allons lire Jean chapitre trois verset seize."` — **exact** |
-| **Décodage — "Premier Corinthiens chapitre treize verset quatre."** (4,01s d'audio) | **2242–2319 ms**, CPU user ≈4656ms/2 threads |
-| Texte obtenu | `"Premier Corinthe un chapitre treize verset quatre."` — **"Corinthiens" mal transcrit** ("Corinthe un") |
-| RAM après les deux décodages | 1224–1249 Mo |
+| Mesure                                                                              | Valeur mesurée                                                                                           |
+| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| RAM avant chargement du modèle                                                      | 35 Mo                                                                                                    |
+| **Temps de chargement du modèle**                                                   | **6296–6847 ms** (2 exécutions)                                                                          |
+| RAM après chargement                                                                | 1047–1068 Mo                                                                                             |
+| **Décodage — "Nous allons lire Jean chapitre trois verset seize."** (3,72s d'audio) | **2132–2186 ms**, CPU user ≈4234ms/2 threads                                                             |
+| Texte obtenu                                                                        | `"Nous allons lire Jean chapitre trois verset seize."` — **exact**                                       |
+| **Décodage — "Premier Corinthiens chapitre treize verset quatre."** (4,01s d'audio) | **2242–2319 ms**, CPU user ≈4656ms/2 threads                                                             |
+| Texte obtenu                                                                        | `"Premier Corinthe un chapitre treize verset quatre."` — **"Corinthiens" mal transcrit** ("Corinthe un") |
+| RAM après les deux décodages                                                        | 1224–1249 Mo                                                                                             |
 
 **Facteur temps réel du décodage seul** : ≈0,55–0,58× (décoder ~4s d'audio
 prend ~2,2s) — CPU-bound mais plus rapide que la durée de l'audio, pas
@@ -142,6 +142,7 @@ Elle apporte une vraie capacité **offline** (aucun appel réseau), ce que ni
 Groq ni Deepgram ne peuvent offrir.
 
 Compromis à accepter consciemment :
+
 - **+705 Mo** de modèle à distribuer (téléchargement séparé au premier
   lancement recommandé, pas dans l'installeur de base — voir stratégie de
   packaging ci-dessous) — un ordre de grandeur au-dessus de tout ce que ce
@@ -217,7 +218,8 @@ non démontré par rapport à l'Option A qui fonctionne déjà sans Python.
    streaming.
 
 ---
-*Ce document reflète des mesures réelles effectuées le 2026-08-10 sur
+
+_Ce document reflète des mesures réelles effectuées le 2026-08-10 sur
 l'environnement de développement de ce projet. Le POC (`poc-qwen3-asr/`)
 reste dans le dépôt (code seulement, modèle exclu via `.gitignore`) pour
-reproductibilité.*
+reproductibilité._
