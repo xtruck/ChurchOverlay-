@@ -156,5 +156,6 @@ process.env.WS_HOST = '127.0.0.1';
 // sélecteur de version biblique passait seul, échouait dans la suite
 // complète). Limite relevée uniquement pour cet environnement de test.
 process.env.MAX_MESSAGES_PER_MINUTE = process.env.MAX_MESSAGES_PER_MINUTE || '1000';
+process.env.CHURCHOVERLAY_SKIP_BIBLE_DOWNLOAD = '1'; // pas de téléchargement biblique en test (crash libuv à l'arrêt sinon)
 
 require('../../server.js');

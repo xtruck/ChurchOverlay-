@@ -790,7 +790,7 @@ function logLatencySummary(tracker) {
  *   .mark() ci-dessous est gardé (`tracker &&`), jamais un no-op silencieux
  *   qui masquerait un tracker manquant par erreur.
  */
-async function processTranscript(text, tracker) {
+async function processTranscript(text, tracker, opts = {}) {
   log('Processing transcript: ' + text.substring(0, 100));
 
   if (plugins) {
@@ -996,6 +996,36 @@ async function processTranscript(text, tracker) {
   // AJOUT (latence, §14) : référence résolue (exact/fuzzy/sémantique/citation
   // — voir plus haut) — marque la fin de l'étape "détection biblique".
   if (tracker) tracker.mark('scripture');
+
+  // CORRECTIF (Étape 5) : un partial finalisé localement par le silence VAD
+  // est fréquemment TRONQUÉ (« Jean chapitre 3 verset » alors que l'énoncé
+  // réel est « Jean chapitre 3 verset 16 »). Le promeut-on en « final », la
+  // référence résolue est « chapitre seul » (verseStart indéfini) et le repli
+  // verse 1 afficherait Jean 3:1 de manière erronée — en écrasant ensuite le
+  // bon verset quand le final officiel arrive (course non déterministe).
+  // Principe mission : une référence ambiguë n'est jamais affichée
+  // aveuglément. On ne l'affiche pas, on diffuse une candidateVerse
+  // spéculative, et on attend le final officiel de Deepgram qui est la seule
+  // source autoritaire du texte. On ne touche pas au recordShownReference :
+  // le vrai final ne sera donc jamais bloqué par le dédoublonnage.
+  if (
+    opts.source === 'local-vad-silence' &&
+    reference.book &&
+    reference.chapter &&
+    !reference.verseStart
+  ) {
+    log(
+      "Référence chapitre seul issue d'un partial finalisé localement (probablement tronquée) — attente du final officiel"
+    );
+    broadcast({
+      action: 'candidateVerse',
+      reference: { book: reference.book, chapter: reference.chapter },
+      confidence: 'medium',
+      speculative: true,
+      original: correctedText,
+    });
+    return;
+  }
 
   if (isRateLimited()) {
     warn('Rate limit hit — verse display skipped');
@@ -2960,6 +2990,24 @@ function startPipeline() {
   let alertedForCurrentSilence = false;
   let silenceStartedAt = null; // horodatage réel du 1er skip de la série en cours
 
+  // Étape 5c/5d — mémoire des partials de l'énoncé en cours (fenêtre glissante
+  // N-3..N, bornée par l'identité du tracker d'énoncé) : une référence HIGH
+  // n'est affichée sur un PARTIAL que si elle est déjà confirmée par un
+  // partial précédent du même énoncé. Les partials Deepgram sont progressifs
+  // mais PAS infaillibles : un numéro de verset peut y apparaître
+  // temporairement faux (« verset 1 » corrigé en « verset 16 » au partial
+  // suivant). Sinon (première occurrence) : candidateVerse spéculative +
+  // préchargement du verset (cache Bible échauffé), sans affichage — le
+  // partial suivant ou le final officiel confirmera. Cf. mission « la
+  // référence n'est jamais affichée avant d'être CONFIRMÉE ».
+  const PARTIAL_WINDOW_SIZE = 3;
+  let lastPartialTracker = null;
+  let recentPartialRefs = [];
+  function resetPartialWindow(tracker) {
+    lastPartialTracker = tracker;
+    recentPartialRefs = [];
+  }
+
   audioCapture.on({
     onAudioSegment: async (segmentFile, tracker) => {
       consecutiveSkips = 0;
@@ -3048,6 +3096,9 @@ function startPipeline() {
     // ms plus tard.
     onPartialTranscript: async (text, meta, tracker) => {
       broadcast({ action: 'transcriptPartial', text, confidence: meta && meta.confidence });
+      if (tracker !== lastPartialTracker) {
+        resetPartialWindow(tracker);
+      }
       let fastMatch = null;
       try {
         fastMatch = detector.detectExact(text);
@@ -3056,8 +3107,42 @@ function startPipeline() {
         // juste "pas encore de référence exploitable dans ce fragment".
       }
       if (fastMatch && fastMatch.confidence === 'high') {
-        log('Appel direct sur partial (référence explicite) : ' + fastMatch.raw);
-        await processTranscript(text, tracker);
+        const refKey = `${fastMatch.book}:${fastMatch.chapter}:${fastMatch.verseStart || ''}`;
+        const stable = recentPartialRefs.includes(refKey);
+        recentPartialRefs.push(refKey);
+        if (recentPartialRefs.length > PARTIAL_WINDOW_SIZE) recentPartialRefs.shift();
+        if (stable) {
+          log('Appel direct sur partial (référence explicite, stable) : ' + fastMatch.raw);
+          await processTranscript(text, tracker);
+        } else {
+          // Première occurrence : référence potentiellement en cours de
+          // stabilisation — jamais affichée aveuglément (mission). On diffuse
+          // une candidateVerse spéculative et on échauffe le cache Bible pour
+          // que l'affichage (partial suivant ou final) soit quasi instantané.
+          log('Référence partielle spéculative — attente de confirmation : ' + fastMatch.raw);
+          broadcast({
+            action: 'candidateVerse',
+            reference: {
+              book: fastMatch.book,
+              chapter: fastMatch.chapter,
+              verseStart: fastMatch.verseStart,
+            },
+            confidence: 'high',
+            speculative: true,
+            original: text,
+          });
+          bibleLookup
+            .getVerseMultilang(
+              {
+                book: fastMatch.book,
+                chapter: fastMatch.chapter,
+                verseStart: fastMatch.verseStart,
+                verseEnd: fastMatch.verseEnd,
+              },
+              sessionState.getDisplayLanguage()
+            )
+            .catch(() => {});
+        }
       }
     },
     // AJOUT (Deepgram streaming) : évènement 'Results' final — chemin
@@ -3084,7 +3169,9 @@ function startPipeline() {
           })
           .catch(() => {});
       }
-      await processTranscript(text, tracker);
+      await processTranscript(text, tracker, {
+        source: meta?.finalizedBy === 'local-vad-silence' ? 'local-vad-silence' : 'deepgram-final',
+      });
       logLatencySummary(tracker);
     },
     // AJOUT (Deepgram streaming) : la session temps réel est tombée — juste
@@ -3216,11 +3303,21 @@ try {
 // risque à appeler sans condition à chaque démarrage. Volontairement
 // fire-and-forget (.catch, pas d'await) : un téléchargement de ~1189
 // chapitres ne doit jamais retarder le démarrage du pipeline en direct.
+// CORRECTIF (Chantier 0 — crash libuv à l'arrêt des tests) : sur Windows
+// (Node ≥22), process.exit() pendant que les fetch() undici du
+// téléchargement sont encore en vol déclenche un abort libuv
+// ("Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)",
+// src\win\async.c) — reproduit dans ~20 % des arrêts rapides. Les tests
+// qui démarrent server.js puis sortent vite (process.exit) peuvent donc
+// crasher leur process. CHURCHOVERLAY_SKIP_BIBLE_DOWNLOAD=1 permet aux
+// tests de désactiver ce téléchargement sans effet sur la production.
 try {
   bibleOfflineCache.setUserDataDir(USER_DATA_DIR);
-  bibleOfflineCache
-    .downloadFullBible()
-    .catch((err) => warn('Offline Bible download failed: ' + err.message));
+  if (process.env.CHURCHOVERLAY_SKIP_BIBLE_DOWNLOAD !== '1') {
+    bibleOfflineCache
+      .downloadFullBible()
+      .catch((err) => warn('Offline Bible download failed: ' + err.message));
+  }
 } catch (err) {
   warn('Failed to init offline Bible cache: ' + err.message);
 }

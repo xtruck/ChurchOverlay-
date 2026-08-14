@@ -1,21 +1,23 @@
 {
   "corpus": "C:\\Users\\xtruc\\xtruck\\live-tests\\corpus-smoketest.csv",
-  "ranAt": "2026-08-14T03:20:33.930Z",
+  "ranAt": "2026-08-14T13:36:05.924Z",
   "summaries": [
     {
       "provider": "STREAMING (deepgram)",
       "total": 4,
       "expectingReference": 3,
       "shown": 3,
+      "finalCorrect": 3,
+      "overwrittenFinalState": 0,
       "textDetectedNotShown": 0,
       "neverDetected": 0,
       "firstAttemptRate": 1,
       "falsePositives": 0,
       "negativesTotal": 1,
-      "latencyP50Ms": 2326,
-      "latencyP95Ms": 2778,
-      "latencyMinMs": 1340,
-      "latencyMaxMs": 2778,
+      "latencyP50Ms": 2536,
+      "latencyP95Ms": 3413,
+      "latencyMinMs": 2330,
+      "latencyMaxMs": 3413,
       "byCategory": [
         {
           "category": "smoketest",
@@ -31,9 +33,10 @@
           "category": "smoketest",
           "expectedText": "Jean chapitre trois verset seize.",
           "textDetected": true,
-          "textLatencyMs": 2325,
+          "textLatencyMs": 2329,
           "shown": true,
-          "shownLatencyMs": 2326,
+          "finalShownCorrect": true,
+          "shownLatencyMs": 2330,
           "falsePositive": false
         },
         {
@@ -41,9 +44,10 @@
           "category": "smoketest",
           "expectedText": "Premier Corinthiens chapitre treize verset quatre.",
           "textDetected": true,
-          "textLatencyMs": 2257,
+          "textLatencyMs": 2509,
           "shown": true,
-          "shownLatencyMs": 2778,
+          "finalShownCorrect": true,
+          "shownLatencyMs": 3413,
           "falsePositive": false
         },
         {
@@ -51,9 +55,10 @@
           "category": "smoketest",
           "expectedText": "Nous allons lire dans Jean, chapitre trois, verset seize.",
           "textDetected": true,
-          "textLatencyMs": 1339,
+          "textLatencyMs": 1588,
           "shown": true,
-          "shownLatencyMs": 1340,
+          "finalShownCorrect": true,
+          "shownLatencyMs": 2536,
           "falsePositive": false
         },
         {
@@ -63,6 +68,7 @@
           "textDetected": false,
           "textLatencyMs": null,
           "shown": false,
+          "finalShownCorrect": false,
           "shownLatencyMs": null,
           "falsePositive": false
         }

@@ -289,6 +289,7 @@ function matchRowsToEvents(rows, sessionStartWallClock, events) {
     let textLatencyMs = null;
     let shown = false;
     let shownLatencyMs = null;
+    let finalShownCorrect = false;
     let falsePositive = false;
 
     if (expectedRefKey) {
@@ -311,6 +312,14 @@ function matchRowsToEvents(rows, sessionStartWallClock, events) {
           break;
         }
       }
+      // CORRECTIF (Étape 5) : un simple "un showVerse correspondant existe"
+      // masque la régression observée en réel où le BON verset était affiché
+      // puis ÉCRASÉ par un mauvais (partial tronqué finalisé localement ->
+      // chapitre seul -> verse 1). On garde `shown` (le bon verset est bien
+      // passé) MAIS on vérifie aussi l'ÉTAT FINAL de l'overlay : le DERNIER
+      // showVerse de la fenêtre doit être le bon — sinon le test réel a
+      // affiché quelque chose de faux en dernier et le banc doit le dire.
+      const shownCandidates = [];
       for (const ev of events) {
         if (claimedShown.has(ev)) continue;
         if (ev.at < earliestAcceptable) continue;
@@ -322,13 +331,14 @@ function matchRowsToEvents(rows, sessionStartWallClock, events) {
           continue;
         }
         if (!ref) continue;
-        const key = refKeyOf(ref.book, ref.chapter, ref.verseStart);
-        if (key === expectedRefKey) {
-          shown = true;
-          shownLatencyMs = ev.at - expectedWallClock;
-          claimedShown.add(ev);
-          break;
-        }
+        shownCandidates.push({ ev, key: refKeyOf(ref.book, ref.chapter, ref.verseStart) });
+      }
+      if (shownCandidates.length > 0) {
+        shown = shownCandidates.some((c) => c.key === expectedRefKey);
+        const last = shownCandidates[shownCandidates.length - 1];
+        finalShownCorrect = last.key === expectedRefKey;
+        shownLatencyMs = shownCandidates[0].ev.at - expectedWallClock;
+        claimedShown.add(last.ev);
       }
     } else {
       // expects_scripture=false : succès = AUCUN showVerse attribuable
@@ -353,7 +363,15 @@ function matchRowsToEvents(rows, sessionStartWallClock, events) {
       }
     }
 
-    results.push({ row, textDetected, textLatencyMs, shown, shownLatencyMs, falsePositive });
+    results.push({
+      row,
+      textDetected,
+      textLatencyMs,
+      shown,
+      shownLatencyMs,
+      finalShownCorrect,
+      falsePositive,
+    });
   }
   return results;
 }
@@ -368,11 +386,13 @@ function printAndBuildSummary(providerLabel, allResults) {
   const negatives = allResults.filter((r) => !r.row.expectsScripture);
 
   const shownCount = expectingRef.filter((r) => r.shown).length;
+  const finalCorrectCount = expectingRef.filter((r) => r.finalShownCorrect).length;
+  const overwrittenCount = expectingRef.filter((r) => r.shown && !r.finalShownCorrect).length;
   const textOnlyCount = expectingRef.filter((r) => r.textDetected && !r.shown).length;
   const missedCount = expectingRef.filter((r) => !r.textDetected).length;
   const falsePositives = negatives.filter((r) => r.falsePositive).length;
 
-  const firstAttemptRate = expectingRef.length > 0 ? shownCount / expectingRef.length : null;
+  const firstAttemptRate = expectingRef.length > 0 ? finalCorrectCount / expectingRef.length : null;
 
   const latencies = expectingRef
     .filter((r) => r.shown && typeof r.shownLatencyMs === 'number')
@@ -380,9 +400,14 @@ function printAndBuildSummary(providerLabel, allResults) {
     .sort((a, b) => a - b);
 
   console.log(
-    `Taux de première tentative : ${shownCount}/${expectingRef.length}` +
+    `Taux de première tentative : ${finalCorrectCount}/${expectingRef.length}` +
       (firstAttemptRate !== null ? ` (${(firstAttemptRate * 100).toFixed(1)}%)` : '')
   );
+  if (overwrittenCount > 0) {
+    console.log(
+      `  ⚠ dont affiché PUIS ÉCRASÉ par un mauvais verset (état final erroné) : ${overwrittenCount}`
+    );
+  }
   console.log(
     `  dont détecté par le texte mais JAMAIS affiché (dédoublonnage/confiance/repli silencieux) : ${textOnlyCount}`
   );
@@ -430,6 +455,11 @@ function printAndBuildSummary(providerLabel, allResults) {
     if (r.row.expectsScripture && !r.shown) {
       console.log(`  ❌ ${r.row.id} [${r.row.category}] "${r.row.expectedText}"`);
     }
+    if (r.row.expectsScripture && r.shown && !r.finalShownCorrect) {
+      console.log(
+        `  ⚠ ${r.row.id} [${r.row.category}] "${r.row.expectedText}" : bon verset affiché mais ÉCRASÉ ensuite`
+      );
+    }
     if (!r.row.expectsScripture && r.falsePositive) {
       console.log(`  ❌ ${r.row.id} [${r.row.category}] faux positif : "${r.row.expectedText}"`);
     }
@@ -440,6 +470,8 @@ function printAndBuildSummary(providerLabel, allResults) {
     total: allResults.length,
     expectingReference: expectingRef.length,
     shown: shownCount,
+    finalCorrect: finalCorrectCount,
+    overwrittenFinalState: overwrittenCount,
     textDetectedNotShown: textOnlyCount,
     neverDetected: missedCount,
     firstAttemptRate,
@@ -467,6 +499,7 @@ function printAndBuildSummary(providerLabel, allResults) {
       textDetected: r.textDetected,
       textLatencyMs: r.textLatencyMs,
       shown: r.shown,
+      finalShownCorrect: r.finalShownCorrect,
       shownLatencyMs: r.shownLatencyMs,
       falsePositive: r.falsePositive,
     })),
