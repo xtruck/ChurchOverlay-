@@ -14,7 +14,7 @@ test.describe('Recherche de versets par thème', () => {
 
     // Bascule vers "Réglages" -> #analysis (où vit la carte de recherche).
     await page
-      .locator('.sidebar .nav-item[data-sections="controls,analysis,settings,overlay"]')
+      .locator('.sidebar .nav-item[data-sections*="controls,analysis,settings,overlay"]')
       .click();
 
     const topicChips = page.locator('#bibleTopicChips .mood-btn');

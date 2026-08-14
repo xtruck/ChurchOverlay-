@@ -24,7 +24,7 @@ test.describe('Navigation responsive — repli sous 1024px', () => {
     // exactement comme depuis la sidebar (même gestionnaire, voir
     // dashboard/state.js).
     await page
-      .locator('.bottom-tab-bar .nav-item[data-sections="controls,analysis,settings,overlay"]')
+      .locator('.bottom-tab-bar .nav-item[data-sections*="controls,analysis,settings,overlay"]')
       .click();
     await expect(page.locator('#controls')).toBeVisible();
     await expect(page.locator('#overview')).toBeHidden();
@@ -35,7 +35,7 @@ test.describe('Navigation responsive — repli sous 1024px', () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await expect(page.locator('.sidebar')).toBeVisible();
     await expect(
-      page.locator('.sidebar .nav-item[data-sections="controls,analysis,settings,overlay"]')
+      page.locator('.sidebar .nav-item[data-sections*="controls,analysis,settings,overlay"]')
     ).toHaveClass(/active/);
     await expect(
       page.locator('.sidebar .nav-item[data-sections="overview,transcript"]')

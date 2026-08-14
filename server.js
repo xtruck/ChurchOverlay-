@@ -654,6 +654,7 @@ const readingMode = new ReadingMode({
       langMode: sessionState.getDisplayLanguage(),
       durationMs: getVerseDurationMs(),
       readingMode: true,
+      readingModePos: readingModePosition(readingMode, verse.num),
     });
     pushHistory({
       reference,
@@ -664,6 +665,20 @@ const readingMode = new ReadingMode({
     broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
   },
 });
+
+// AJOUT (frontend — mode lecture "pro") : position courante du mode lecture
+// (chapitre + numéro de verset + nombre total de versets du chapitre),
+// diffusée dans chaque showVerse en mode lecture pour que le tableau de
+// bord affiche la progression ("Jean 3 · verset 16/36") sans avoir à
+// recompter lui-même les versets du chapitre.
+function readingModePosition(rm, verseNum) {
+  return {
+    book: rm.book,
+    chapter: rm.chapter,
+    verse: verseNum,
+    total: rm.verses ? rm.verses.length : 0,
+  };
+}
 
 async function activateReadingMode(book, chapter, verseStart) {
   try {
@@ -975,6 +990,7 @@ async function processTranscript(text, tracker, opts = {}) {
               langMode: sessionState.getDisplayLanguage(),
               durationMs: getVerseDurationMs(),
               readingMode: true,
+              readingModePos: readingModePosition(readingMode, first.num),
             });
             pushHistory({
               reference: label,
@@ -1996,7 +2012,7 @@ wss.on('connection', (ws, req) => {
       }
       try {
         const firstVerse = await readingMode.start(ref.book, ref.chapter, ref.verseStart);
-        ws.send(JSON.stringify({ action: 'readingStarted', reference: ref }));
+        broadcast({ action: 'readingStarted', reference: ref });
         if (firstVerse) {
           const label = bibleLookup.buildReferenceLabel(
             { book: ref.book, chapter: ref.chapter, verseStart: firstVerse.num },
@@ -2011,6 +2027,7 @@ wss.on('connection', (ws, req) => {
             langMode: sessionState.getDisplayLanguage(),
             durationMs: getVerseDurationMs(),
             readingMode: true,
+            readingModePos: readingModePosition(readingMode, firstVerse.num),
           });
           pushHistory({
             reference: label,

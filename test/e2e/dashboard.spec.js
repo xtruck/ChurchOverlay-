@@ -24,7 +24,7 @@ test.describe('Tableau de bord — fumée', () => {
 
     // Clic sur "Réglages" -> ses sections apparaissent, "En Direct" disparaît.
     await page
-      .locator('.sidebar .nav-item[data-sections="controls,analysis,settings,overlay"]')
+      .locator('.sidebar .nav-item[data-sections*="controls,analysis,settings,overlay"]')
       .click();
     await expect(page.locator('#controls')).toBeVisible();
     await expect(page.locator('#analysis')).toBeVisible();
