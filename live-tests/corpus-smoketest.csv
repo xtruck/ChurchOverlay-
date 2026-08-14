@@ -1,0 +1,5 @@
+id,category,language,source_file,start_ms,end_ms,expected_text,expects_scripture,expected_book,expected_chapter,expected_verse_start,expected_verse_end,notes
+smoke-A,smoketest,fr,testA_16k.wav,0,3360,"Jean chapitre trois verset seize.",true,jean,3,16,16,réutilise l'échantillon existant testA_16k.wav
+smoke-B,smoketest,fr,testB_16k.wav,0,4480,"Premier Corinthiens chapitre treize verset quatre.",true,1corinthiens,13,4,4,réutilise l'échantillon existant testB_16k.wav
+smoke-C,smoketest,fr,testC_16k.wav,0,5050,"Nous allons lire dans Jean, chapitre trois, verset seize.",true,jean,3,16,16,réutilise l'échantillon existant testC_16k.wav
+smoke-D,smoketest,fr,testD_16k.wav,0,4290,"Bonjour à tous, nous allons commencer le culte.",false,,,,,réutilise l'échantillon existant testD_16k.wav — aucune référence attendue

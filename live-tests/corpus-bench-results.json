@@ -1,0 +1,72 @@
+{
+  "corpus": "C:\\Users\\xtruc\\xtruck\\live-tests\\corpus-smoketest.csv",
+  "ranAt": "2026-08-14T03:20:33.930Z",
+  "summaries": [
+    {
+      "provider": "STREAMING (deepgram)",
+      "total": 4,
+      "expectingReference": 3,
+      "shown": 3,
+      "textDetectedNotShown": 0,
+      "neverDetected": 0,
+      "firstAttemptRate": 1,
+      "falsePositives": 0,
+      "negativesTotal": 1,
+      "latencyP50Ms": 2326,
+      "latencyP95Ms": 2778,
+      "latencyMinMs": 1340,
+      "latencyMaxMs": 2778,
+      "byCategory": [
+        {
+          "category": "smoketest",
+          "shown": 3,
+          "expecting": 3,
+          "falsePositives": 0,
+          "negatives": 1
+        }
+      ],
+      "details": [
+        {
+          "id": "smoke-A",
+          "category": "smoketest",
+          "expectedText": "Jean chapitre trois verset seize.",
+          "textDetected": true,
+          "textLatencyMs": 2325,
+          "shown": true,
+          "shownLatencyMs": 2326,
+          "falsePositive": false
+        },
+        {
+          "id": "smoke-B",
+          "category": "smoketest",
+          "expectedText": "Premier Corinthiens chapitre treize verset quatre.",
+          "textDetected": true,
+          "textLatencyMs": 2257,
+          "shown": true,
+          "shownLatencyMs": 2778,
+          "falsePositive": false
+        },
+        {
+          "id": "smoke-C",
+          "category": "smoketest",
+          "expectedText": "Nous allons lire dans Jean, chapitre trois, verset seize.",
+          "textDetected": true,
+          "textLatencyMs": 1339,
+          "shown": true,
+          "shownLatencyMs": 1340,
+          "falsePositive": false
+        },
+        {
+          "id": "smoke-D",
+          "category": "smoketest",
+          "expectedText": "Bonjour à tous, nous allons commencer le culte.",
+          "textDetected": false,
+          "textLatencyMs": null,
+          "shown": false,
+          "shownLatencyMs": null,
+          "falsePositive": false
+        }
+      ]
+    }
+  ]
+}

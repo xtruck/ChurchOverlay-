@@ -1,0 +1,46 @@
+id,category,language,source_file,start_ms,end_ms,expected_text,expects_scripture,expected_book,expected_chapter,expected_verse_start,expected_verse_end,notes
+A1,variante_formulation,fr,,,,"Jean 3.16",true,jean,3,16,16,
+A2,variante_formulation,fr,,,,"Jean chapitre 3 verset 16",true,jean,3,16,16,
+A3,variante_formulation,fr,,,,"Jean trois seize",true,jean,3,16,16,nombre en toutes lettres
+A4,variante_formulation,fr,,,,"Saint Jean 3.16",true,jean,3,16,16,
+A5,variante_formulation,fr,,,,"L'Évangile selon Jean, chapitre 3, verset 16",true,jean,3,16,16,
+B1,variante_formulation,en,,,,"John 3:16",true,jean,3,16,16,
+B2,variante_formulation,en,,,,"The gospel of John, chapter three, verse sixteen",true,jean,3,16,16,
+C1,livre_numerote,fr,,,,"Premier Corinthiens chapitre 13 verset 4",true,1corinthiens,13,4,4,
+C2,livre_numerote,fr,,,,"Deuxième Timothée chapitre 3 verset 16",true,2timothee,3,16,16,
+C3,livre_numerote,fr,,,,"Première Jean chapitre 4 verset 8",true,1jean,4,8,8,
+D1,livre_difficile,fr,,,,"Habacuc chapitre 2 verset 4",true,habacuc,2,4,4,
+D2,livre_difficile,fr,,,,"Ecclésiaste chapitre 3 verset 1",true,ecclesiaste,3,1,1,
+D3,livre_difficile,fr,,,,"Philémon verset 6",true,philemon,1,6,6,livre à chapitre unique
+D4,livre_difficile,fr,,,,"Aggée chapitre 1 verset 5",true,aggee,1,5,5,
+D5,livre_difficile,fr,,,,"Sophonie chapitre 3 verset 17",true,sophonie,3,17,17,
+D6,livre_difficile,fr,,,,"Apocalypse chapitre 21 verset 4",true,apocalypse,21,4,4,
+D7,livre_difficile,fr,,,,"Deutéronome chapitre 6 verset 5",true,deuteronome,6,5,5,
+E1,nombre_piege,fr,,,,"Psaume 119 verset 105",true,psaumes,119,105,105,nombre à 3 chiffres
+E2,nombre_piege,fr,,,,"Nombres chapitre 6 verset 24",true,nombres,6,24,24,nom de livre = mot courant, ambigu pour la détection
+E3,nombre_piege,fr,,,,"Genèse 1.1",true,genese,1,1,1,
+F1,rafale_5s,fr,,,,"Romains 8.28",true,romains,8,28,28,"immédiatement suivi de F2, <5s d'écart — teste minFlushIntervalMs"
+F2,rafale_5s,fr,,,,"Romains 12.2",true,romains,12,2,2,suit F1 à moins de 5s
+G1,doublon_10s,fr,,,,"Jean 14.6",true,jean,14,6,6,"répété en G2 ~10s plus tard — teste DEDUP_MS (30s)"
+G2,doublon_10s,fr,,,,"Jean 14.6",true,jean,14,6,6,"répétition légitime de G1 — doit être signalée, pas avalée en silence"
+H1,changement_langue,mixed,,,,"Comme il est écrit in the book of Romans, chapter eight",true,romains,8,,,"changement de langue fr->en en pleine phrase — teste le mode multi nova-3"
+H2,changement_langue,mixed,,,,"Let us turn to Matthieu chapitre 5",true,matthieu,5,,,changement de langue en->fr en pleine phrase
+I1,noyee,fr,,,,"Alors que nous traversons des moments difficiles, je pense à ce que dit Philippiens 4.13, qui nous encourage à tenir bon",true,philippiens,4,13,13,référence noyée dans une phrase longue
+I2,noyee,en,,,,"In these uncertain times, remember what Isaiah 41:10 tells us about not being afraid",true,esaie,41,10,10,référence noyée, EN
+J1,citation_sans_ref,fr,,,,"Car Dieu a tant aimé le monde qu'il a donné son Fils unique",false,jean,3,16,16,"citation SANS énoncer la référence — non détecté par le détecteur actuel (regex sur référence explicite) ; book/chapter/verset = réponse pour une future détection par citation (§14.2), pas attendue aujourd'hui — voir expects_scripture=false"
+J2,citation_sans_ref,fr,,,,"L'Éternel est mon berger, je ne manquerai de rien",false,psaumes,23,1,1,citation sans référence — même remarque que J1
+J3,citation_sans_ref,en,,,,"For God so loved the world that he gave his only Son",false,jean,3,16,16,citation sans référence, EN — même remarque que J1
+K1,bruit_fond,fr,,,,"Marc 16.15",true,marc,16,15,15,à enregistrer avec musique douce en fond
+K2,bruit_fond,fr,,,,"Luc 2.11",true,luc,2,11,11,à enregistrer avec rumeur d'assemblée en fond
+K3,bruit_fond,fr,,,,"Actes 2.38",true,actes,2,38,38,à enregistrer avec musique douce en fond
+K4,bruit_fond,fr,,,,"Éphésiens 2.8",true,ephesiens,2,8,8,à enregistrer avec rumeur d'assemblée en fond
+K5,bruit_fond,fr,,,,"Ésaïe 53.5",true,esaie,53,5,5,à enregistrer avec bruit de ventilation/climatisation en fond
+L1,controle_negatif,fr,,,,"Bonjour à tous, merci d'être venus ce matin",false,,,,,aucune référence attendue
+L2,controle_negatif,fr,,,,"N'oubliez pas la collecte spéciale prévue ce dimanche",false,,,,,aucune référence attendue
+L3,controle_negatif,en,,,,"Let's stand together and worship the Lord",false,,,,,"aucune référence attendue, EN"
+M1,commande_piege,fr,,,,"Répétez après moi : Dieu est amour",false,,,,,"contient ""répétez"" en milieu de phrase — ne doit PAS déclencher la commande vocale 'repeat' (ancrée début/fin d'énoncé, voir voice-commands.js)"
+M2,commande_piege,fr,,,,"Nous allons répéter ce chant une fois de plus",false,,,,,"contient ""répéter"" — même piège que M1"
+N1,livre_difficile,fr,,,,"Néhémie chapitre 8 verset 10",true,nehemie,8,10,10,
+N2,livre_difficile,fr,,,,"Osée chapitre 6 verset 6",true,osee,6,6,6,
+N3,livre_difficile,fr,,,,"Colossiens chapitre 3 verset 23",true,colossiens,3,23,23,
+N4,livre_difficile,fr,,,,"Jacques chapitre 1 verset 5",true,jacques,1,5,5,
