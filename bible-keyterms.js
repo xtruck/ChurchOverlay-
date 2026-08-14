@@ -5,7 +5,8 @@
  *  Centralise la liste des livres bibliques (FR), de leurs formes parlées,
  *  et du vocabulaire théologique courant, utilisée par :
  *    - groq-wrapper.js   → construit un `prompt` (contexte initial Whisper)
- *    - deepgram-wrapper.js → construit le paramètre `keywords` (Nova-2)
+ *    - deepgram-wrapper.js / deepgram-streaming.js → construisent le
+ *      paramètre `keyterm` (Nova-3 — voir buildDeepgramKeyterms() plus bas)
  *
  *  Objectif : réduire le taux d'erreur de transcription À LA SOURCE sur le
  *  vocabulaire spécifique au culte (au lieu de corriger après coup dans
@@ -176,14 +177,23 @@ function buildWhisperPrompt() {
 }
 
 /**
- * Construit la valeur du paramètre `keywords` pour l'API Deepgram (Nova-2) :
- * format `terme:intensité` séparés, intensité recommandée 1-2 pour ne pas
- * sur-biaiser au détriment du reste de la phrase.
- * @param {number} [boost=1.5]
- * @returns {string[]} tableau de paires "terme:boost" prêtes pour l'URL
+ * Construit la valeur du paramètre `keyterm` pour l'API Deepgram (Nova-3) —
+ * voir developers.deepgram.com/docs/keyterm, vérifié le 2026-08-14 avant
+ * cette migration (Chantier 1a).
+ *
+ * CORRECTIF (migration nova-2 -> nova-3) : remplace buildDeepgramKeywords(),
+ * qui construisait `terme:intensité` pour l'ANCIEN paramètre `keywords`
+ * (Nova-2 uniquement, voir historique git). Le "Keyterm Prompting" de
+ * Nova-3 est un mécanisme DIFFÉRENT, pas juste un renommage : un terme par
+ * occurrence du paramètre (`?keyterm=Jean&keyterm=Corinthiens`, jamais de
+ * virgule), AUCUNE syntaxe de poids/intensité (`terme:1.5` serait pris tel
+ * quel comme littéral, pas interprété) — donc pas de paramètre `boost` ici,
+ * contrairement à l'ancienne fonction.
+ * @returns {string[]} tableau de termes bruts, un par élément (l'appelant
+ *   construit `keyterm=${encodeURIComponent(terme)}` pour chacun)
  */
-function buildDeepgramKeywords(boost = 1.5) {
-  return getAllKeyterms().map((term) => `${term}:${boost}`);
+function buildDeepgramKeyterms() {
+  return getAllKeyterms();
 }
 
 module.exports = {
@@ -192,5 +202,5 @@ module.exports = {
   THEOLOGICAL_TERMS_FR,
   getAllKeyterms,
   buildWhisperPrompt,
-  buildDeepgramKeywords,
+  buildDeepgramKeyterms,
 };

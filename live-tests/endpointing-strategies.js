@@ -36,7 +36,7 @@ if (!process.env.DEEPGRAM_API_KEY) {
   process.exit(2);
 }
 
-const { buildDeepgramKeywords } = require('../bible-keyterms');
+const { buildDeepgramKeyterms } = require('../bible-keyterms');
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -48,12 +48,16 @@ function readWavPcm(filePath) {
   return buf.subarray(dataStart);
 }
 
+// CORRECTIF (Chantier 1a — migration nova-2 -> nova-3) : ce script construit
+// sa PROPRE URL indépendamment de deepgram-streaming.js (volontairement, voir
+// en-tête de fichier) — mis à jour ici pour rester cohérent avec le modèle
+// et le paramètre de boosting réellement utilisés en production désormais.
 function buildUrl(extraParams) {
-  const keywordsQuery = buildDeepgramKeywords()
-    .map((kw) => `keywords=${encodeURIComponent(kw)}`)
+  const keytermQuery = buildDeepgramKeyterms()
+    .map((kt) => `keyterm=${encodeURIComponent(kt)}`)
     .join('&');
   const base = [
-    'model=nova-2',
+    'model=nova-3',
     'language=fr',
     'punctuate=true',
     'smart_format=true',
@@ -61,7 +65,7 @@ function buildUrl(extraParams) {
     'encoding=linear16',
     'sample_rate=16000',
     'channels=1',
-    keywordsQuery,
+    keytermQuery,
   ];
   return `wss://api.deepgram.com/v1/listen?${[...base, ...extraParams].filter(Boolean).join('&')}`;
 }

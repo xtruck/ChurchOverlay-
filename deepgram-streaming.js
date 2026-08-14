@@ -9,17 +9,17 @@
  *  'Results' (is_final=false pendant que la phrase se construit, true une
  *  fois la phrase considérée terminée côté serveur — endpointing).
  *
- *  IMPORTANT — NON VÉRIFIÉ EN CONDITIONS RÉELLES : aucune clé DEEPGRAM_API_KEY
- *  n'était disponible dans cet environnement de développement pour ouvrir une
- *  vraie connexion vers l'API Deepgram. Le contrat ci-dessous (endpoint,
- *  paramètres de requête, en-tête d'authentification, forme des messages
- *  'Results') suit la documentation publique de l'API streaming Deepgram —
- *  cohérent avec deepgram-wrapper.js (même schéma d'authentification
- *  `Authorization: Token <clé>`, même modèle nova-2/langue fr) — mais SEULE
- *  la logique de ce fichier (parsing des messages, routage partial/final,
- *  reconnexion, mesure de latence) a été testée ici, via une WebSocket
- *  simulée (voir test/test-deepgram-streaming.js). Un test réel avec une
- *  vraie clé est nécessaire avant mise en production de ce chemin.
+ *  VÉRIFIÉ EN CONDITIONS RÉELLES (mis à jour, Chantier 1a) : ce commentaire
+ *  affirmait auparavant qu'aucune clé DEEPGRAM_API_KEY réelle n'avait servi
+ *  à tester ce fichier — obsolète depuis live-tests/deepgram-live-test.js,
+ *  live-tests/endpointing-strategies.js et live-tests/corpus-bench.js, qui
+ *  ouvrent tous une vraie connexion WebSocket Deepgram (voir live-tests/*-
+ *  results.json pour des résultats réels capturés). Le contrat ci-dessous
+ *  (endpoint, paramètres de requête, en-tête d'authentification, forme des
+ *  messages 'Results') a donc été confirmé contre le vrai service, pas
+ *  seulement contre la documentation publique — cohérent avec
+ *  deepgram-wrapper.js (même schéma d'authentification `Authorization: Token
+ *  <clé>`, même modèle nova-3/langue fr depuis cette migration).
  *
  *  USAGE :
  *    const session = createSession({
@@ -33,25 +33,36 @@
  * ============================================================================
  */
 
-const { buildDeepgramKeywords } = require('./bible-keyterms');
+const { buildDeepgramKeyterms } = require('./bible-keyterms');
 
 const DEEPGRAM_STREAMING_ENDPOINT = 'wss://api.deepgram.com/v1/listen';
-const DEEPGRAM_MODEL = 'nova-2';
+// CORRECTIF (Chantier 1a — migration nova-2 -> nova-3) : voir
+// deepgram-wrapper.js pour le même changement côté batch. Décision prise
+// avec l'utilisateur (voir ASR-LATENCE-DECISION.md) : rester sur Deepgram
+// plutôt que comparer 5 nouveaux fournisseurs — nova-3 est le levier quasi
+// gratuit qui restait, avec en prime un Keyterm Prompting mieux adapté à ce
+// vocabulaire (voir buildDeepgramKeyterms() dans bible-keyterms.js).
+const DEEPGRAM_MODEL = 'nova-3';
 // AJOUT (support bilingue FR/EN, lot 6 — chemin temps réel, le plus
 // sensible à la latence) : reste la valeur par défaut si createSession()
-// est appelé SANS langue explicite (compatibilité arrière totale). LIMITE
-// CONNUE, documentée ici comme dans deepgram-wrapper.js (lot 5) : nova-2
-// n'a pas de détection automatique multilingue (`language=multi`,
-// nova-3 seulement) — un changement de modèle est une décision séparée,
-// pas prise dans ce lot. AUTRE LIMITE PROPRE AU STREAMING (pas au batch) :
-// la langue est un paramètre de connexion WebSocket (query string, lu une
-// seule fois à l'ouverture) — le protocole Deepgram n'a AUCUN message de
-// contrôle pour changer la langue EN COURS DE FLUX. Un changement de
-// langue via la commande vocale "écoute en français"/"listen in English"
-// ne prend donc effet qu'à la PROCHAINE session (voir audio-capture.js,
-// qui lit sessionState.getTranscriptionLanguage() au DÉMARRAGE d'une
-// session, pas par chunk) — pas un défaut de conception à corriger ici,
-// une contrainte réelle du protocole.
+// est appelé SANS langue explicite (compatibilité arrière totale).
+// LIMITE LEVÉE PAR LA MIGRATION NOVA-3 CI-DESSUS, PAS ENCORE EXPLOITÉE :
+// nova-3 supporte `language=multi` (détection automatique multilingue en
+// cours de flux, français inclus — vérifié le 2026-08-14 contre la
+// documentation Deepgram avant ce lot, PAS supposé). Delibérément PAS activé
+// ici — la précision et le coût de `multi` doivent d'abord être mesurés sur
+// le corpus réel du Chantier 1a (voir ASR-LATENCE-DECISION.md) avant de
+// devenir le défaut. AUTRE LIMITE PROPRE AU STREAMING (pas au batch, et
+// INCHANGÉE par cette migration) : la langue est un paramètre de connexion
+// WebSocket (query string, lu une seule fois à l'ouverture) — le protocole
+// Deepgram n'a AUCUN message de contrôle pour changer la langue EN COURS DE
+// FLUX. Un changement de langue via la commande vocale "écoute en
+// français"/"listen in English" ne prend donc effet qu'à la PROCHAINE
+// session (voir audio-capture.js, qui lit
+// sessionState.getTranscriptionLanguage() au DÉMARRAGE d'une session, pas
+// par chunk) — pas un défaut de conception à corriger ici, une contrainte
+// réelle du protocole (que `language=multi`, une fois mesuré et activé,
+// lèverait : plus besoin de choisir une langue de connexion à l'avance).
 const DEEPGRAM_LANGUAGE = 'fr';
 // Silence côté serveur Deepgram avant de considérer une phrase terminée
 // (is_final=true) — voir endpointing dans la doc Deepgram. Volontairement
@@ -79,14 +90,14 @@ function setWsFactoryForTesting(factory) {
 }
 
 /**
- * @param {string} [language] - 'fr'|'en' (voir DEEPGRAM_LANGUAGE plus haut
- *   pour la limite connue : pas de détection automatique sur nova-2).
+ * @param {string} [language] - 'fr'|'en' (voir DEEPGRAM_LANGUAGE plus haut —
+ *   nova-3 supporte aussi 'multi', pas encore activé ici, voir plus haut).
  *   Défaut 'fr' si omis, comportement historique inchangé.
  */
 function buildStreamingUrl(language) {
   const resolvedLanguage = language || DEEPGRAM_LANGUAGE;
-  const keywordsQuery = buildDeepgramKeywords()
-    .map((kw) => `keywords=${encodeURIComponent(kw)}`)
+  const keytermQuery = buildDeepgramKeyterms()
+    .map((kt) => `keyterm=${encodeURIComponent(kt)}`)
     .join('&');
   const params = [
     `model=${DEEPGRAM_MODEL}`,
@@ -98,7 +109,7 @@ function buildStreamingUrl(language) {
     'encoding=linear16',
     'sample_rate=16000',
     'channels=1',
-    keywordsQuery,
+    keytermQuery,
   ]
     .filter(Boolean)
     .join('&');

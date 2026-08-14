@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- *  deepgram-wrapper.js — Transcription cloud Deepgram (Nova-2), 2e fournisseur
+ *  deepgram-wrapper.js — Transcription cloud Deepgram (Nova-3), 2e fournisseur
  * ----------------------------------------------------------------------------
  *  Même forme de résultat que groq-wrapper.js (result.text), pour que
  *  server.js puisse traiter les deux sources de façon identique dans la
@@ -17,29 +17,35 @@
  */
 
 const fs = require('fs');
-const { buildDeepgramKeywords } = require('./bible-keyterms');
+const { buildDeepgramKeyterms } = require('./bible-keyterms');
 
 const DEEPGRAM_ENDPOINT = 'https://api.deepgram.com/v1/listen';
 const DEEPGRAM_PROJECTS_ENDPOINT = 'https://api.deepgram.com/v1/projects';
-const DEEPGRAM_MODEL = 'nova-2';
+// CORRECTIF (Chantier 1a — migration nova-2 -> nova-3) : nova-3 transcrit
+// mieux ce vocabulaire (Keyterm Prompting, voir buildDeepgramKeyterms() dans
+// bible-keyterms.js) et lève la limite ci-dessous. Décision prise avec
+// l'utilisateur : rester sur Deepgram plutôt que comparer 5 nouveaux
+// fournisseurs (voir ASR-LATENCE-DECISION.md) — ce changement de modèle est
+// le levier qui restait quasi gratuit.
+const DEEPGRAM_MODEL = 'nova-3';
 // AJOUT (support bilingue FR/EN, lot 5) : reste la valeur par défaut si
 // transcribeFile() est appelé SANS langue explicite (compatibilité
 // arrière totale — voir son 3e paramètre plus bas), mais n'est plus la
-// seule valeur possible. IMPORTANT (limite documentée, pas contournée en
-// douce) : nova-2 (voir DEEPGRAM_MODEL ci-dessus) ne supporte PAS la
-// détection automatique multilingue de Deepgram (`language=multi`,
-// réservé à nova-3) — un opérateur doit donc explicitement choisir fr/en
-// via la commande vocale "écoute en français"/"listen in English" (voir
-// voice-commands.js), Deepgram ne devine jamais seul contrairement à
-// Whisper/Groq (voir groq-wrapper.js). Changer de modèle pour obtenir la
-// détection automatique est une décision séparée (coût/qualité), pas
-// prise dans ce lot.
+// seule valeur possible. LIMITE LEVÉE PAR LA MIGRATION NOVA-3 CI-DESSUS,
+// PAS ENCORE EXPLOITÉE : nova-3 supporte `language=multi` (détection
+// automatique multilingue en cours de flux, français inclus — vérifié le
+// 2026-08-14 contre la documentation Deepgram avant ce lot, PAS supposé).
+// `language=multi` n'est PAS activé ici : décision délibérément différée
+// jusqu'à sa mesure réelle (précision, coût) sur le corpus du Chantier 1a —
+// voir ASR-LATENCE-DECISION.md. En attendant, un opérateur choisit toujours
+// fr/en explicitement via la commande vocale "écoute en français"/"listen
+// in English" (voir voice-commands.js).
 const DEEPGRAM_LANGUAGE = 'fr';
 const DEFAULT_WORD_CONFIDENCE_THRESHOLD = 0.4;
 const CHECK_KEY_TIMEOUT_MS = 5000;
 
 // Construit une fois au chargement du module (liste statique)
-const KEYWORDS_PARAM = buildDeepgramKeywords();
+const KEYTERM_PARAM = buildDeepgramKeyterms();
 
 /**
  * Indique si une clé Deepgram est configurée (utilisé par server.js).
@@ -92,8 +98,8 @@ async function checkKey(timeoutMs = CHECK_KEY_TIMEOUT_MS) {
  * (au lieu de la laisser tourner en arrière-plan pour rien).
  * @param {string} audioFilePath
  * @param {AbortSignal} [signal]
- * @param {string} [language] - 'fr'|'en' (voir DEEPGRAM_LANGUAGE plus haut
- *   pour la limite connue : pas de détection automatique sur nova-2).
+ * @param {string} [language] - 'fr'|'en' (voir DEEPGRAM_LANGUAGE plus haut —
+ *   nova-3 supporte aussi 'multi', pas encore activé ici, voir plus haut).
  *   Défaut 'fr' si omis, comportement historique inchangé.
  * @returns {Promise<{ text: string, confidence?: number }>}
  */
@@ -110,12 +116,12 @@ async function transcribeFile(audioFilePath, signal, language) {
   const resolvedLanguage = language || DEEPGRAM_LANGUAGE;
 
   // Boosting vocabulaire biblique — LIMITE CONNUE (support bilingue FR/EN) :
-  // buildDeepgramKeywords() (bible-keyterms.js) reste un vocabulaire fixe,
+  // buildDeepgramKeyterms() (bible-keyterms.js) reste un vocabulaire fixe,
   // pas encore ajusté selon resolvedLanguage. Un culte en anglais profite
   // donc de Groq/Whisper (voir groq-wrapper.js) mais pas de ce boost
   // Deepgram — non traité dans ce lot, portée volontairement limitée au
   // paramètre de langue lui-même.
-  const keywordsQuery = KEYWORDS_PARAM.map((kw) => `keywords=${encodeURIComponent(kw)}`).join('&');
+  const keytermQuery = KEYTERM_PARAM.map((kt) => `keyterm=${encodeURIComponent(kt)}`).join('&');
 
   // Paramètres optimisés pour la réduction de bruit de fond et la précision en milieu bruyant
   //
@@ -139,7 +145,7 @@ async function transcribeFile(audioFilePath, signal, language) {
     'denoise=true',
     'punctuate=true',
     'filler_words=false',
-    keywordsQuery,
+    keytermQuery,
   ]
     .filter(Boolean)
     .join('&');

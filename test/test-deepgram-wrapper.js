@@ -52,12 +52,20 @@ fs.writeFileSync(tmpFile, Buffer.from([0x52, 0x49, 0x46, 0x46])); // contenu fac
     "l'URL Deepgram NE contient PAS `endpointing` (paramètre streaming, invalide en batch)"
   );
   assert(
-    capturedUrl.includes('model=nova-2'),
-    "l'URL Deepgram contient toujours le modèle attendu"
+    capturedUrl.includes('model=nova-3'),
+    "l'URL Deepgram contient toujours le modèle attendu (migration nova-2 -> nova-3, Chantier 1a)"
   );
   assert(
     capturedUrl.includes('smart_format=true'),
     "l'URL Deepgram contient toujours les autres paramètres batch valides"
+  );
+  assert(
+    capturedUrl.includes('keyterm='),
+    "l'URL Deepgram utilise bien le paramètre `keyterm` (Nova-3), pas l'ancien `keywords` (Nova-2)"
+  );
+  assert(
+    !capturedUrl.includes('keywords='),
+    "l'URL Deepgram ne contient plus l'ancien paramètre `keywords` (Nova-2)"
   );
 
   // AJOUT (support bilingue FR/EN, lot 5) : sans langue explicite,
