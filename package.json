@@ -221,7 +221,7 @@
     "publish": {
       "provider": "github",
       "owner": "xtruck",
-      "repo": "xtruck",
+      "repo": "ChurchOverlay-",
       "releaseType": "release"
     }
   }

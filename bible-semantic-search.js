@@ -28,7 +28,7 @@ const https = require('https');
 const CONFIG = {
   // Pre-computed embedding index URL (hosted on GitHub Releases or your CDN)
   INDEX_URL:
-    'https://github.com/xtruck/xtruck/releases/download/semantic-index/bible-semantic-index.json',
+    'https://github.com/xtruck/ChurchOverlay-/releases/download/semantic-index/bible-semantic-index.json',
   // Local cache path
   INDEX_PATH: path.join(require('os').homedir(), '.churchoverlay', 'bible-semantic-index.json'),
   // Vector dimensions (using lightweight sentence embeddings)

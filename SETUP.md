@@ -15,7 +15,7 @@ app's own on-screen setup window.
 ## Step 1: Clone & Install
 
 ```bash
-git clone https://github.com/xtruck/xtruck.git
+git clone https://github.com/xtruck/ChurchOverlay-.git
 cd xtruck
 npm install
 ```

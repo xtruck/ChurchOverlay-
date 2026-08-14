@@ -39,7 +39,11 @@ jobs:
         run: npm ci
 
       - name: Run npm audit
-        run: npm audit --production
+        # CORRECTIF (chantier 0 — dette technique) : --production est
+        # déprécié par npm (avertissement "npm warn config production Use
+        # `--omit=dev` instead") — même effet (audite dependencies, ignore
+        # devDependencies), syntaxe non dépréciée.
+        run: npm audit --omit=dev
         continue-on-error: false
 
       - name: Run Snyk security scan
@@ -113,6 +117,30 @@ jobs:
       - name: Rebuild native modules (better-sqlite3)
         run: npm rebuild better-sqlite3 --build-from-source
 
+      # CORRECTIF (chantier 0 — CI cassée) : "npm test" exécute 3 tests
+      # Playwright/Chromium réels (integration-scene-overlay-lifecycle.js,
+      # test-render-scene-dom.js, integration-scene-composer.js, voir
+      # test/) via playwright-core, mais aucune étape n'installait
+      # jusqu'ici le navigateur Chromium — ces 3 tests échouaient donc sur
+      # les 6 combinaisons de la matrice (browserType.launch: Executable
+      # doesn't exist). PLAYWRIGHT_BROWSERS_PATH fixe un chemin relatif au
+      # workspace, IDENTIQUE sur les 3 OS de la matrice, pour que le cache
+      # actions/cache ci-dessous fonctionne avec une seule clé/un seul
+      # chemin au lieu de gérer 3 emplacements par défaut différents
+      # (~/.cache/ms-playwright sur Linux/macOS, %LOCALAPPDATA%\ms-playwright
+      # sur Windows).
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ${{ github.workspace }}/.pw-browsers
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.pw-browsers
+
       - name: List test directory
         shell: bash
         run: |
@@ -124,6 +152,7 @@ jobs:
         run: npm test
         env:
           CI: true
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.pw-browsers
 
       # CORRECTIF (audit) : ce projet n'a jamais eu d'outil de couverture
       # (aucun nyc/c8/istanbul dans package.json, "npm test" ne génère
@@ -142,13 +171,20 @@ jobs:
           fail_ci_if_error: false
 
   # Build Electron Application
+  #
+  # CORRECTIF (chantier 0 — dette technique) : construisait auparavant sur
+  # une matrice [ubuntu-latest, windows-latest, macos-latest] avec un step
+  # dédié par OS (--win/--linux/--mac), alors que package.json#build ne
+  # définit AUCUNE config "linux"/"mac" (seulement "win", voir nsis) — les
+  # jobs Linux/macOS tournaient donc electron-builder sans cible déclarée
+  # (résultat non signé/non testé, temps CI gaspillé) pour un produit qui
+  # n'existe et n'est publié que pour Windows (voir build-windows.yml, qui
+  # gère déjà tag -> build -> publication de bout en bout). Réduit à la
+  # seule cible réelle.
   build:
-    name: Build Electron App
+    name: Build Electron App (Windows)
     needs: [security-scan, lint, test]
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: windows-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -163,58 +199,20 @@ jobs:
         run: npm ci
 
       - name: Build Electron app (Windows)
-        if: matrix.os == 'windows-latest'
         run: npm run dist -- --win
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build Electron app (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: npm run dist -- --linux
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build Electron app (macOS)
-        if: matrix.os == 'macos-latest'
-        run: npm run dist -- --mac
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: churchoverlay-${{ matrix.os }}
+          name: churchoverlay-windows-latest
           path: dist/*
           retention-days: 7
 
-  # Deploy to staging (on push to develop)
-  deploy-staging:
-    name: Deploy to Staging
-    needs: [build]
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Deploy to staging server
-        run: |
-          echo "Deploying to staging environment"
-          # Add your deployment commands here
-          # Example: scp, rsync, or deploy to cloud service
-
-  # Deploy to production (on push to main)
-  deploy-production:
-    name: Deploy to Production
-    needs: [build]
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Deploy to production
-        run: |
-          echo "Deploying to production environment"
-          # Add your production deployment commands here
-          # Example: Update download server, notify users, etc.
+  # CORRECTIF (chantier 0 — dette technique) : deploy-staging/deploy-production
+  # ont été retirés — les deux étaient des jobs vides (un seul `echo`, aucune
+  # commande réelle, voir l'historique git) qui laissaient croire à un
+  # pipeline de déploiement fonctionnel alors qu'aucun ne l'était. À
+  # réintroduire explicitement le jour où une vraie cible de déploiement
+  # existe (serveur de téléchargement, notification, etc.), pas avant.
