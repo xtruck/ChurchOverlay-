@@ -61,6 +61,55 @@ l'hypothèse Silero-batch d'origine — à tester en priorité : "le bug
 se produit-il uniquement au rejeu de fichiers, ou aussi en direct ?"
 s'applique ici littéralement (scénario de rejeu de fichier, PCM continu).
 
+**Chantier A.4 (mission autonome) — les 4 échecs restants (A2/D5/N2/F2),
+mesurés un par un** :
+
+- **F2 n'échoue plus.** `bloc5.wav` : "Romains chapitre 12 verset" (verset
+  perdu par l'ASR) est affiché via le repli chapitre (`Chapter fallback:
+Displayed Romains 12`) — `rafale_5s : 2/2` sur ce run. L'hypothèse
+  `minFlushIntervalMs=3200` (contrainte batch/Groq) n'a jamais eu l'occasion
+  de s'appliquer ici : le chemin streaming/Deepgram ne la consulte pas, et
+  le repli chapitre (Chantier 3, déjà en place) absorbe le cas. Prémisse de
+  la mission obsolète sur ce point précis.
+- **D5 (Sophonie) est un VRAI échec ASR, mais pas de vocabulaire — d'endpointing.**
+  `buildDeepgramKeyterms()` contient bien "Sophonie" (118 termes, vérifié),
+  et Deepgram le transcrit PARFAITEMENT : `[DEEPGRAM] partial received:
+"Sophonie"`. Mais l'énoncé streaming se finalise localement
+  (`Énoncé streaming finalisé localement (silence VAD) : "Sophonie"`) tout
+  de suite après ce seul mot — "chapitre 3 verset 17" n'est jamais transcrit
+  car le VAD a déjà coupé l'énoncé. Le vocabulaire n'est pas en cause ; le
+  temps de silence toléré après un nom de livre isolé (avant que le
+  prédicateur n'enchaîne sur le chapitre/verset) l'est. Renvoyé au
+  Chantier B avec cette piste précise.
+- **N2 (Osée) n'est PAS un échec ASR/vocabulaire — c'est le MÊME bug que H2
+  (Chantier A.3), confirmé une seconde fois sur un fichier différent.**
+  `bloc3.wav` contient bien un énoncé complet à l'emplacement attendu
+  (45380-48350ms, vérifié par analyse RMS — parole réelle 45250-47500ms),
+  mais **aucune activité Deepgram n'apparaît dans les logs pour ce
+  segment** : le log passe directement de N1 (Néhémie, traité normalement)
+  à N3 (Colossiens, traité normalement), N2 disparaissant purement et
+  simplement. Deux occurrences indépendantes (H2 dans bloc7.wav, N2 dans
+  bloc3.wav) renforcent la piste Chantier B : un énoncé sur plusieurs dans
+  un même flux continu peut ne jamais être finalisé/transmis, sans aucune
+  erreur visible.
+- **A2 reste ambigu — probablement un artefact d'attribution du banc, pas
+  un échec ASR pur.** `bloc1.wav` (les 5 variantes de Jean 3:16, A1-A5)
+  montre plusieurs finals corrects ("Jean 3 16.", "Jean 3:16") autour de la
+  fenêtre attendue pour A2, mais aussi des reformulations qui se chevauchent
+  ("Saint Jean 3 16" / "L'évangile selon Jean," / "chapitre 3 verset 16.")
+  — la déduplication/fusion semble absorber ou réattribuer l'affichage à un
+  autre énoncé voisin plutôt que de perdre la référence elle-même. À
+  creuser avec le même outillage que l'audit `missedCount` du Chantier 0.2
+  (attribution par plus proche voisin), pas une piste ASR/endpointing —
+  hors du périmètre naturel du Chantier A ou B, noté pour un futur audit du
+  banc lui-même.
+
+**Bilan Chantier A.4** : sur les 4 échecs supposés "vrais échecs ASR", 1
+n'échoue plus (F2), 1 est confirmé endpointing (D5), 1 est le même bug que
+H2 — pas un échec ASR (N2), et 1 reste non élucidé côté banc, pas ASR (A2).
+**Zéro des 4 n'est un problème de vocabulaire biblique** — `bible-keyterms.js`
+fonctionne comme prévu sur ce corpus.
+
 **Audit du banc (Chantier 0.2, trouvé pendant cette mesure)** : le compteur
 "jamais détecté du tout" comptait à tort 16 alors que 28/37 étaient affichés
 avec seulement 2 en "détecté non affiché" (37-28-2=7 attendu). Cause : la
