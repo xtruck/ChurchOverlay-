@@ -18,6 +18,22 @@
 
 const MAX_HISTORY = 20;
 const MAX_CONTEXT_TRANSCRIPTS = 10;
+// TENTATIVE ABANDONNÉE (Chantier D, mission autonome — "rendre visible toute
+// occurrence dédupliquée") : la mission suppose encore un bug "DEDUP_MS avale
+// une deuxième citation légitime en silence" — CE bug était déjà corrigé par
+// le Chantier 1 ci-dessous (dédoublonnage PAR ÉNONCÉ, pas seulement par
+// référence+délai) avant le début de cette mission. Broadcaster un toast à
+// chaque isDuplicateReference()===true a été prototypé puis ABANDONNÉ après
+// mesure (pas supposé) : sur le corpus complet (45 énoncés), 14 suppressions
+// pour 43 affichages — la quasi-totalité sont la cascade INTERNE normale
+// partial→final d'un MÊME énoncé (le comportement voulu, invisible à raison)
+// ou une ré-émission tardive de final Deepgram déjà affiché. Un toast à
+// chaque fois aurait spammé l'opérateur en plein culte pour un fonctionnement
+// correct, pas pour un vrai bug. S'il faut un jour rendre visible un cas de
+// suppression, cibler UNIQUEMENT `refKey.startsWith('quote:')` (seul chemin
+// qui utilise encore la règle temporelle simple, donc le seul où une
+// citation VRAIMENT distincte pourrait un jour être avalée à tort) — jamais
+// le chemin référence dite, déjà correct.
 const DEDUP_MS = 30_000;
 // AJOUT (chantier ASR, Étape 4 — reconstruction de références fragmentées) :
 // fenêtre temporelle maximale (en ms) entre deux fragments consécutifs pour
