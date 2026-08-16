@@ -208,9 +208,19 @@ function isDuplicateReference(refKey, now = Date.now(), ctx = null) {
   if (refKey.startsWith('quote:')) return true;
 
   const utteranceId = ctx && ctx.utteranceId;
+  const source = ctx && ctx.source;
+  const text = ctx && ctx.text;
   const sameUtterance =
     utteranceId != null && lastShownUtteranceId != null && utteranceId === lastShownUtteranceId;
-  if (sameUtterance) return true;
+  if (sameUtterance) {
+    // DIAGNOSTIC (Chantier 3 — dédup) : log explicitement pourquoi un énoncé
+    // distinct semble être la cascade du même énoncé — seul chemin de
+    // suppression possible pour une source non deepgram-final.
+    console.log(
+      `[dedup] suppressed ref=${refKey} reason=same-utterance id=${utteranceId} lastShownUtteranceId=${lastShownUtteranceId} text="${(text || '').substring(0, 60)}" source=${source}`
+    );
+    return true;
+  }
 
   // Énoncé différent : nouvelle intention, SAUF re-émission tardive d'un
   // final officiel Deepgram redissant (ou contenant seulement) du contenu
@@ -222,12 +232,16 @@ function isDuplicateReference(refKey, now = Date.now(), ctx = null) {
   // le final (normalisé) est-il un sous-ensemble du dernier texte affiché
   // pour cette référence ? Oui → re-émission, on supprime. Un final PLUS LONG
   // (contenu véritablement nouveau) reste une nouvelle intention.
-  const source = ctx && ctx.source;
-  const text = ctx && ctx.text;
   if (source === 'deepgram-final' && lastShownText && text) {
     const normText = normalizeShownText(text);
     const normLast = normalizeShownText(lastShownText);
-    if (normText && normLast && normLast.includes(normText)) return true;
+    if (normText && normLast && normLast.includes(normText)) {
+      // DIAGNOSTIC (Chantier 3 — dédup) : re-émission tardive confirmée.
+      console.log(
+        `[dedup] suppressed ref=${refKey} reason=deepgram-resend text="${(text || '').substring(0, 60)}" lastShownText="${(lastShownText || '').substring(0, 60)}"`
+      );
+      return true;
+    }
   }
 
   return false;
