@@ -155,6 +155,68 @@ pour H2, faute de ce signal explicite. À vérifier en premier lieu avant
 toute autre piste — changement ciblé, testable isolément sur ce même
 mini-corpus (H1+H2) avant tout run complet.
 
+**Chantier B (mission autonome) — suite et conclusion provisoire de
+l'investigation H2/N2, PUIS correction de périmètre importante.**
+
+Poursuite de l'investigation ci-dessus, avec l'outil de diagnostic déjà
+présent dans le dépôt (`live-tests/diagnose-raw-messages.js`, proxy WebSocket
+transparent qui journalise chaque message BRUT reçu de Deepgram, sans passer
+par notre propre code de filtrage) :
+
+4. **Hypothèse "message `Finalize` manquant" — testée et RÉFUTÉE.**
+   `deepgram-streaming.js#finalizeUtterance()` (envoie `{"type":"Finalize"}`
+   à chaque finalisation locale, sans fermer la session) implémenté et
+   testé sur le mini-corpus H1+H2 : **aucun effet**, H2 toujours absent.
+   Changement retiré (aucune valeur prouvée, pas de raison de le garder sur
+   le chemin live).
+5. **Test au niveau du protocole BRUT, en contournant TOUT notre code**
+   (VAD local, audio-capture.js, gestion de session) : `bloc7.wav` envoyé
+   directement à une session Deepgram via `deepgram-streaming.js`
+   (`setWsFactoryForTesting` + proxy journalisant). **Résultat identique** :
+   après le `is_final=true, speech_final=true` de H1, TOUS les messages
+   `Results` suivants ont un transcript VIDE, jusqu'à la fin du fichier —
+   y compris pendant les 3s de silence de fin ajoutées après. Le bug existe
+   donc AU NIVEAU DU PROTOCOLE DEEPGRAM LUI-MÊME, pas dans notre gestion
+   d'état.
+6. **Élimination des paramètres de connexion** : même test SANS les 118
+   `keyterm=` (URL 174 caractères au lieu de ~2500+) — même résultat. Même
+   test SANS `endpointing=500` (Deepgram utilise son défaut) — même
+   résultat. Ni le vocabulaire biblique, ni notre réglage d'endpointing ne
+   sont en cause.
+7. **Test décisif : H2 SEUL, session neuve, aucun H1 avant.** PCM de
+   `bloc7.wav` tronqué pour ne garder QUE la portion à partir de 6,5s
+   (juste avant H2), envoyé à une session Deepgram fraîchement ouverte —
+   **toujours aucune transcription**, alors que le chemin batch (Groq)
+   transcrit ce même contenu sans problème ("Matthieu chapitre 5", certes
+   entouré de mots parasites, mais bien détecté et affiché).
+
+**Conclusion (élimination complète, mesurée, pas devinée)** : ce n'est ni
+Silero, ni le VAD local (RMS ou neuronal), ni notre gestion de session
+streaming, ni un message de contrôle manquant, ni le vocabulaire biblique,
+ni notre réglage d'endpointing, ni "un énoncé après un autre dans la même
+session". C'est la détection de parole en TEMPS RÉEL de Deepgram
+elle-même qui ne reconnaît jamais cet audio précis comme de la parole —
+alors que son traitement BATCH (non temps réel) le reconnaît. Hypothèse
+restante, non vérifiable sans accès à la documentation/au support Deepgram
+ou à des ré-enregistrements de contrôle : une caractéristique acoustique de
+CET enregistrement TTS précis (débit, niveau, prosodie) qui échappe
+spécifiquement au modèle de détection d'activité vocale temps réel de
+nova-3, sans affecter son modèle batch. Aucun correctif de notre côté ne
+peut agir là-dessus — le filet de sécurité existant (rien de faux affiché,
+silence propre) est déjà le comportement correct pour ce cas.
+
+**CORRECTION DE PÉRIMÈTRE IMPORTANTE** : cette investigation (H2/N2,
+6 étapes ci-dessus) porte sur un bug que **j'ai découvert moi-même** pendant
+le Chantier A (A.3/A.4) — distinct du bug **nommément ciblé par le §5 de la
+mission** ("Le VAD Silero... rejette les échantillons comme silence... sur
+le chemin BATCH uniquement ; le streaming fonctionne"). Ce sont deux bugs
+différents : celui-ci touche le STREAMING (Deepgram ne transcrit jamais un
+énoncé), l'autre touche le BATCH (Silero rejette de la vraie parole comme
+silence, contourné par `VAD_PROVIDER=rms`). L'investigation ci-dessus est
+réelle et utile mais ne doit pas être confondue avec le "Chantier B" tel que
+défini par la mission — reprise du VRAI Chantier B (bug Silero batch) à
+suivre.
+
 **Audit du banc (Chantier 0.2, trouvé pendant cette mesure)** : le compteur
 "jamais détecté du tout" comptait à tort 16 alors que 28/37 étaient affichés
 avec seulement 2 en "détecté non affiché" (37-28-2=7 attendu). Cause : la
