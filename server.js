@@ -909,7 +909,29 @@ function enqueueTranscript(text, tracker, opts) {
  * exact du livre:chapitre est affiché par le chemin normal.
  * ============================================================================
  */
-const CHAPTER_FALLBACK_MS = 3000;
+// AJOUT (Chantier A.5 — mission autonome, arbitrage couverture/latence
+// explicite) : mesuré (BASELINE_CHANTIER_1.md, vérifié via git log que
+// c'est bien la SEULE variable de latence ayant changé entre les deux
+// runs) — ce timer a acheté +13,5 points de couverture (62,2% -> 75,7%) au
+// prix de +1,3s de p50 (671ms -> 1949ms). Un délai plus court afficherait
+// le chapitre plus tôt mais laisserait moins de temps à un verset EXACT
+// (plus précis) d'arriver avant lui ; un délai plus long ferait l'inverse.
+// Réglable en direct via config/features.json (display.chapterFallbackDelayMs,
+// rechargé à chaque appel — aucun redémarrage requis, même mécanisme que
+// getTranscriptionConfidenceThreshold() ci-dessus) ou, à défaut, via la
+// variable d'env CHAPTER_FALLBACK_MS pour compat avec les déploiements
+// existants. Défaut 3000ms = la valeur mesurée et validée sur ce corpus.
+const DEFAULT_CHAPTER_FALLBACK_MS = 3000;
+function getChapterFallbackDelayMs() {
+  const features = featuresStore.readFeatures();
+  const fromFeatures = (features.display || {}).chapterFallbackDelayMs;
+  if (typeof fromFeatures === 'number' && Number.isFinite(fromFeatures) && fromFeatures >= 0) {
+    return fromFeatures;
+  }
+  const fromEnv = Number(process.env.CHAPTER_FALLBACK_MS);
+  if (Number.isFinite(fromEnv) && fromEnv >= 0) return fromEnv;
+  return DEFAULT_CHAPTER_FALLBACK_MS;
+}
 const chapterFallbackTimers = new Map(); // clé `${book}:${chapter}` -> timerId
 
 function cancelChapterFallback(book, chapter) {
@@ -927,7 +949,7 @@ function scheduleChapterFallback(book, chapter, tracker, opts) {
   const timer = setTimeout(() => {
     chapterFallbackTimers.delete(key);
     displayChapterFallback(book, chapter, tracker, opts);
-  }, CHAPTER_FALLBACK_MS);
+  }, getChapterFallbackDelayMs());
   chapterFallbackTimers.set(key, timer);
 }
 

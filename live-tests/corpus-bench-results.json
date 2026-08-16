@@ -1,6 +1,6 @@
 {
   "corpus": "C:\\Users\\xtruc\\xtruck\\live-tests\\corpus.csv",
-  "ranAt": "2026-08-16T16:18:30.546Z",
+  "ranAt": "2026-08-16T16:53:01.811Z",
   "summaries": [
     {
       "provider": "STREAMING (deepgram)",
@@ -16,32 +16,34 @@
       "firstAttemptRate": 0.7837837837837838,
       "falsePositives": 0,
       "negativesTotal": 8,
-      "latencyP50Ms": 919.25,
-      "latencyP75Ms": 3391.449951171875,
-      "latencyP90Ms": 3866.800048828125,
-      "latencyP95Ms": 4258.5,
-      "latencyMinMs": -745.10009765625,
-      "latencyMaxMs": 5566.60009765625,
+      "latencyP50Ms": 1123.925048828125,
+      "latencyP75Ms": 3279.699951171875,
+      "latencyP90Ms": 3762.800048828125,
+      "latencyP95Ms": 3796.60009765625,
+      "latencyMinMs": -694.949951171875,
+      "latencyMaxMs": 4173.85009765625,
       "chain": {
-        "partial": [-1456.47509765625, -1094, 1516.425048828125, 1728.800048828125, 1803.5],
-        "candidate": [882.550048828125, 1516.425048828125, 1605, 1729.800048828125, 1803.5],
+        "partial": [
+          -1470.199951171875, -1444.14990234375, -1224.300048828125, -1116, 1564.25, 1877.25
+        ],
+        "candidate": [939.35009765625, 1478.699951171875, 1565.25, 1594, 1877.25],
         "biblePreload": [],
         "final": [
-          -1407.64990234375, -1292.5, -1265.22509765625, -912.39990234375, -584.39990234375, -582.5,
-          -551.199951171875, -466.5, -435.39990234375, -288.300048828125, -230.125,
-          -165.60009765625, -153.199951171875, -149.47509765625, -148.47509765625, -143.39990234375,
-          -113.574951171875, 52.425048828125, 183, 389.449951171875, 7221.5
+          -1436.27490234375, -1248.5, -942.25, -688.60009765625, -615.199951171875, -566.375,
+          -536.25, -386.35009765625, -280.949951171875, -234.074951171875, -167.39990234375,
+          -159.14990234375, -134.199951171875, -128.074951171875, -119.300048828125, -115.75, 75,
+          88.25, 351.39990234375, 7579.25
         ],
         "display": [
-          -745.10009765625, -581.5, -463.5, -434.39990234375, -165.39990234375, 53.425048828125,
-          64.60009765625, 127.5, 201.675048828125, 404.875, 499.52490234375, 585, 626.699951171875,
-          883.550048828125, 919.25, 1066.5, 2113.699951171875, 2511.35009765625, 2611.77490234375,
-          2956.425048828125, 3179.5, 3391.449951171875, 3598.52490234375, 3629, 3729.39990234375,
-          3847.375, 3866.800048828125, 4258.5, 5566.60009765625
+          -694.949951171875, -565.375, -535.25, -382.35009765625, -375.25, 148.699951171875, 198.5,
+          352.39990234375, 389.25, 562.050048828125, 623.39990234375, 894.5, 940.35009765625,
+          1090.89990234375, 1123.925048828125, 1235.925048828125, 1860.199951171875, 2267.75,
+          3101.25, 3115.72509765625, 3160.25, 3279.699951171875, 3468.25, 3530, 3708.25, 3722.75,
+          3762.800048828125, 3796.60009765625, 4173.85009765625
         ],
         "confirmToDisplay": [
-          -4042, 1, 1, 1, 3, 635, 648, 649, 747, 915, 1420, 3002, 3070, 3446, 3748, 3877, 3895,
-          3919, 4020, 5710
+          -4111, 1, 1, 1, 4, 567, 843, 1252, 1312, 1470, 2143, 3013, 3276, 3399, 3455, 3897, 3964,
+          4333, 4552
         ]
       },
       "byCategory": [
@@ -136,23 +138,23 @@
           "category": "variante_formulation",
           "expectedText": "Jean 3.16",
           "textDetected": true,
-          "partialLatencyMs": 1516.425048828125,
-          "finalLatencyMs": -113.574951171875,
-          "candidateLatencyMs": 1516.425048828125,
+          "partialLatencyMs": 1564.25,
+          "finalLatencyMs": -115.75,
+          "candidateLatencyMs": 1565.25,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": 2956.425048828125,
-          "confirmToDisplayMs": 3070
+          "shownLatencyMs": 3160.25,
+          "confirmToDisplayMs": 3276
         },
         {
           "id": "A2",
           "category": "variante_formulation",
           "expectedText": "Jean chapitre 3 verset 16",
           "textDetected": true,
-          "partialLatencyMs": null,
-          "finalLatencyMs": -551.199951171875,
+          "partialLatencyMs": -1470.199951171875,
+          "finalLatencyMs": -615.199951171875,
           "candidateLatencyMs": null,
           "biblePreloadLatencyMs": null,
           "shown": false,
@@ -166,30 +168,30 @@
           "category": "variante_formulation",
           "expectedText": "Jean trois seize",
           "textDetected": true,
-          "partialLatencyMs": 1803.5,
-          "finalLatencyMs": 7221.5,
-          "candidateLatencyMs": 1803.5,
+          "partialLatencyMs": 1877.25,
+          "finalLatencyMs": 7579.25,
+          "candidateLatencyMs": 1877.25,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": 3179.5,
-          "confirmToDisplayMs": -4042
+          "shownLatencyMs": 3468.25,
+          "confirmToDisplayMs": -4111
         },
         {
           "id": "A4",
           "category": "variante_formulation",
           "expectedText": "Saint Jean 3.16",
           "textDetected": true,
-          "partialLatencyMs": -1094,
-          "finalLatencyMs": 183,
-          "candidateLatencyMs": 1605,
+          "partialLatencyMs": -1116,
+          "finalLatencyMs": 75,
+          "candidateLatencyMs": 1594,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": 3629,
-          "confirmToDisplayMs": 3446
+          "shownLatencyMs": 3530,
+          "confirmToDisplayMs": 3455
         },
         {
           "id": "A5",
@@ -198,12 +200,12 @@
           "textDetected": false,
           "partialLatencyMs": null,
           "finalLatencyMs": null,
-          "candidateLatencyMs": 882.550048828125,
+          "candidateLatencyMs": 939.35009765625,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": 883.550048828125,
+          "shownLatencyMs": 940.35009765625,
           "confirmToDisplayMs": null
         },
         {
@@ -218,7 +220,7 @@
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": 3847.375,
+          "shownLatencyMs": 3708.25,
           "confirmToDisplayMs": null
         },
         {
@@ -233,7 +235,7 @@
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": 919.25,
+          "shownLatencyMs": 198.5,
           "confirmToDisplayMs": null
         },
         {
@@ -248,7 +250,7 @@
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": 1066.5,
+          "shownLatencyMs": 1090.89990234375,
           "confirmToDisplayMs": null
         },
         {
@@ -257,14 +259,14 @@
           "expectedText": "John 3:16",
           "textDetected": true,
           "partialLatencyMs": null,
-          "finalLatencyMs": 389.449951171875,
+          "finalLatencyMs": 88.25,
           "candidateLatencyMs": null,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": true,
           "finalShownCorrect": true,
-          "shownLatencyMs": 3391.449951171875,
-          "confirmToDisplayMs": 3002
+          "shownLatencyMs": 3101.25,
+          "confirmToDisplayMs": 3013
         },
         {
           "id": "B2",
@@ -287,14 +289,14 @@
           "expectedText": "Habacuc chapitre 2 verset 4",
           "textDetected": true,
           "partialLatencyMs": null,
-          "finalLatencyMs": -288.300048828125,
+          "finalLatencyMs": -280.949951171875,
           "candidateLatencyMs": null,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": 626.699951171875,
-          "confirmToDisplayMs": 915
+          "shownLatencyMs": 562.050048828125,
+          "confirmToDisplayMs": 843
         },
         {
           "id": "D2",
@@ -308,7 +310,7 @@
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": 585,
+          "shownLatencyMs": 389.25,
           "confirmToDisplayMs": null
         },
         {
@@ -332,13 +334,13 @@
           "expectedText": "Aggée chapitre 1 verset 5",
           "textDetected": true,
           "partialLatencyMs": null,
-          "finalLatencyMs": -582.5,
+          "finalLatencyMs": -566.375,
           "candidateLatencyMs": null,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": -581.5,
+          "shownLatencyMs": -565.375,
           "confirmToDisplayMs": 1
         },
         {
@@ -368,7 +370,7 @@
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": 4258.5,
+          "shownLatencyMs": 3722.75,
           "confirmToDisplayMs": null
         },
         {
@@ -377,14 +379,14 @@
           "expectedText": "Deutéronome chapitre 6 verset 5",
           "textDetected": true,
           "partialLatencyMs": null,
-          "finalLatencyMs": -1407.64990234375,
+          "finalLatencyMs": -1436.27490234375,
           "candidateLatencyMs": null,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": true,
           "finalShownCorrect": true,
-          "shownLatencyMs": 2511.35009765625,
-          "confirmToDisplayMs": 3919
+          "shownLatencyMs": 3115.72509765625,
+          "confirmToDisplayMs": 4552
         },
         {
           "id": "N1",
@@ -392,14 +394,14 @@
           "expectedText": "Néhémie chapitre 8 verset 10",
           "textDetected": true,
           "partialLatencyMs": null,
-          "finalLatencyMs": -584.39990234375,
+          "finalLatencyMs": -688.60009765625,
           "candidateLatencyMs": null,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": 64.60009765625,
-          "confirmToDisplayMs": 649
+          "shownLatencyMs": 623.39990234375,
+          "confirmToDisplayMs": 1312
         },
         {
           "id": "N2",
@@ -428,7 +430,7 @@
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": 201.675048828125,
+          "shownLatencyMs": 148.699951171875,
           "confirmToDisplayMs": null
         },
         {
@@ -437,14 +439,14 @@
           "expectedText": "Jacques chapitre 1 verset 5",
           "textDetected": true,
           "partialLatencyMs": null,
-          "finalLatencyMs": -466.5,
+          "finalLatencyMs": -536.25,
           "candidateLatencyMs": null,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": -463.5,
-          "confirmToDisplayMs": 3
+          "shownLatencyMs": -535.25,
+          "confirmToDisplayMs": 1
         },
         {
           "id": "E1",
@@ -452,14 +454,14 @@
           "expectedText": "Psaume 119 verset 105",
           "textDetected": true,
           "partialLatencyMs": null,
-          "finalLatencyMs": -230.125,
+          "finalLatencyMs": -234.074951171875,
           "candidateLatencyMs": null,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": 404.875,
-          "confirmToDisplayMs": 635
+          "shownLatencyMs": 1235.925048828125,
+          "confirmToDisplayMs": 1470
         },
         {
           "id": "E2",
@@ -467,14 +469,14 @@
           "expectedText": "Nombres chapitre 6 verset 24",
           "textDetected": true,
           "partialLatencyMs": null,
-          "finalLatencyMs": -1292.5,
+          "finalLatencyMs": -1248.5,
           "candidateLatencyMs": null,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": 127.5,
-          "confirmToDisplayMs": 1420
+          "shownLatencyMs": 894.5,
+          "confirmToDisplayMs": 2143
         },
         {
           "id": "E3",
@@ -482,13 +484,13 @@
           "expectedText": "Genèse 1.1",
           "textDetected": true,
           "partialLatencyMs": null,
-          "finalLatencyMs": 52.425048828125,
+          "finalLatencyMs": 351.39990234375,
           "candidateLatencyMs": null,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": 53.425048828125,
+          "shownLatencyMs": 352.39990234375,
           "confirmToDisplayMs": 1
         },
         {
@@ -496,30 +498,30 @@
           "category": "rafale_5s",
           "expectedText": "Romains 8.28",
           "textDetected": true,
-          "partialLatencyMs": 1728.800048828125,
-          "finalLatencyMs": -153.199951171875,
-          "candidateLatencyMs": 1729.800048828125,
+          "partialLatencyMs": -1224.300048828125,
+          "finalLatencyMs": -119.300048828125,
+          "candidateLatencyMs": 1478.699951171875,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": 3866.800048828125,
-          "confirmToDisplayMs": 4020
+          "shownLatencyMs": 3279.699951171875,
+          "confirmToDisplayMs": 3399
         },
         {
           "id": "F2",
           "category": "rafale_5s",
           "expectedText": "Romains 12.2",
           "textDetected": true,
-          "partialLatencyMs": -1456.47509765625,
-          "finalLatencyMs": -149.47509765625,
+          "partialLatencyMs": -1444.14990234375,
+          "finalLatencyMs": -159.14990234375,
           "candidateLatencyMs": null,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": true,
           "finalShownCorrect": true,
-          "shownLatencyMs": 3598.52490234375,
-          "confirmToDisplayMs": 3748
+          "shownLatencyMs": 4173.85009765625,
+          "confirmToDisplayMs": 4333
         },
         {
           "id": "G1",
@@ -527,14 +529,14 @@
           "expectedText": "Jean 14.6",
           "textDetected": true,
           "partialLatencyMs": null,
-          "finalLatencyMs": -143.39990234375,
+          "finalLatencyMs": -134.199951171875,
           "candidateLatencyMs": null,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": true,
           "finalShownCorrect": true,
-          "shownLatencyMs": 5566.60009765625,
-          "confirmToDisplayMs": 5710
+          "shownLatencyMs": 3762.800048828125,
+          "confirmToDisplayMs": 3897
         },
         {
           "id": "G2",
@@ -542,14 +544,14 @@
           "expectedText": "Jean 14.6",
           "textDetected": true,
           "partialLatencyMs": null,
-          "finalLatencyMs": -165.60009765625,
+          "finalLatencyMs": -167.39990234375,
           "candidateLatencyMs": null,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": true,
           "finalShownCorrect": true,
-          "shownLatencyMs": 3729.39990234375,
-          "confirmToDisplayMs": 3895
+          "shownLatencyMs": 3796.60009765625,
+          "confirmToDisplayMs": 3964
         },
         {
           "id": "H1",
@@ -593,7 +595,7 @@
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": -745.10009765625,
+          "shownLatencyMs": -694.949951171875,
           "confirmToDisplayMs": null
         },
         {
@@ -623,7 +625,7 @@
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": 719.050048828125,
+          "shownLatencyMs": 768.449951171875,
           "confirmToDisplayMs": null
         },
         {
@@ -662,14 +664,14 @@
           "expectedText": "Marc 16.15",
           "textDetected": true,
           "partialLatencyMs": null,
-          "finalLatencyMs": -148.47509765625,
+          "finalLatencyMs": -128.074951171875,
           "candidateLatencyMs": null,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": 499.52490234375,
-          "confirmToDisplayMs": 648
+          "shownLatencyMs": 1123.925048828125,
+          "confirmToDisplayMs": 1252
         },
         {
           "id": "K2",
@@ -677,14 +679,14 @@
           "expectedText": "Luc 2.11",
           "textDetected": true,
           "partialLatencyMs": null,
-          "finalLatencyMs": -435.39990234375,
+          "finalLatencyMs": -386.35009765625,
           "candidateLatencyMs": null,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": -434.39990234375,
-          "confirmToDisplayMs": 1
+          "shownLatencyMs": -382.35009765625,
+          "confirmToDisplayMs": 4
         },
         {
           "id": "K3",
@@ -698,7 +700,7 @@
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": 2113.699951171875,
+          "shownLatencyMs": 1860.199951171875,
           "confirmToDisplayMs": null
         },
         {
@@ -707,29 +709,29 @@
           "expectedText": "Éphésiens 2.8",
           "textDetected": true,
           "partialLatencyMs": null,
-          "finalLatencyMs": -912.39990234375,
+          "finalLatencyMs": -942.25,
           "candidateLatencyMs": null,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": false,
           "finalShownCorrect": true,
-          "shownLatencyMs": -165.39990234375,
-          "confirmToDisplayMs": 747
+          "shownLatencyMs": -375.25,
+          "confirmToDisplayMs": 567
         },
         {
           "id": "K5",
           "category": "bruit_fond",
           "expectedText": "Ésaïe 53.5",
-          "textDetected": true,
+          "textDetected": false,
           "partialLatencyMs": null,
-          "finalLatencyMs": -1265.22509765625,
+          "finalLatencyMs": null,
           "candidateLatencyMs": null,
           "biblePreloadLatencyMs": null,
           "shown": true,
           "chapterShown": true,
           "finalShownCorrect": true,
-          "shownLatencyMs": 2611.77490234375,
-          "confirmToDisplayMs": 3877
+          "shownLatencyMs": 2267.75,
+          "confirmToDisplayMs": null
         },
         {
           "id": "L1",

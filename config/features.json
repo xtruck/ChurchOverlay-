@@ -11,7 +11,8 @@
     }
   },
   "display": {
-    "verseDurationMs": 120000
+    "verseDurationMs": 120000,
+    "chapterFallbackDelayMs": 3000
   },
   "audio": {
     "transcriptionConfidenceThreshold": 0.15
