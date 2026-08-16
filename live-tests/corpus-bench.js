@@ -79,6 +79,20 @@ const audioCapture = require('../audio-capture');
 const detector = require('../detector-compat');
 const WebSocket = require(path.join(__dirname, '..', 'node_modules', 'ws'));
 
+// AJOUT (Chantier C, mission autonome — mesure language=multi nova-3) :
+// --language=fr|en|multi force sessionState.transcriptionLanguage AVANT le
+// replay, exactement comme le ferait la commande vocale "écoute en
+// bilingue" (voir voice-commands.js#listenInBilingual) — même chemin que la
+// production, pas un raccourci de banc. Omis = comportement historique
+// inchangé (null, Deepgram utilise son défaut 'fr', Groq sa détection
+// native).
+const LANGUAGE_ARG = argValue('language', null);
+if (LANGUAGE_ARG) {
+  const sessionState = require('../session-state');
+  sessionState.setTranscriptionLanguage(LANGUAGE_ARG);
+  console.log(`[corpus-bench] Langue de transcription forcée : ${LANGUAGE_ARG}`);
+}
+
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }

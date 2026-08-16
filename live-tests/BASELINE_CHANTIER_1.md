@@ -1,5 +1,74 @@
 # BASELINE_CHANTIER_1 — pipeline actuel (avec Étape 4 non commitée), STREAMING (deepgram)
 
+## MISE À JOUR 2026-08-16 (session mission autonome, suite 2) — Chantier C : `language=multi` nova-3 mesuré sur le corpus complet
+
+**Contexte** : 4 des 8 échecs du run précédent (B2/H1/H2/I2) sont dus à un
+décalage de langue de session ASR — la session Deepgram s'ouvre en français
+par défaut, et un énoncé anglais transcrit par un modèle français produit un
+charabia sans aucun mot détectable. `nova-3` supporte `language=multi`
+(code-switching en cours de flux, une seule connexion) depuis la migration
+nova-2→nova-3, jamais activé ni mesuré jusqu'ici. La mission demande de
+mesurer DEUX axes séparément avant de recommander un défaut : la capacité
+réelle de code-switching, ET la perte de précision éventuelle en français
+seul.
+
+**Outillage** : `corpus-bench.js` gagne un flag `--language=fr|en|multi`
+(force `sessionState.setTranscriptionLanguage()` avant le replay — exactement
+le chemin qu'emprunterait la commande vocale "écoute en bilingue", pas un
+raccourci de banc). `keyterm=` (vocabulaire biblique) reste dans l'URL de
+connexion en mode `multi` — vérifié avant le run complet (connexion de test
+isolée, `onOpen` sans erreur) : Deepgram accepte la combinaison.
+
+**Run complet** (`node live-tests/corpus-bench.js --provider=deepgram
+--language=multi`, corpus réel, vraies clés) :
+
+- **Taux de première tentative : 30/37 (81,1 %)** — MEILLEUR que le run par
+  défaut (fr) juste au-dessus (29/37, 78,4 %)
+- **FP 0/8** — inchangé, aucune dégradation du garde-fou le plus important
+- `changement_langue` : **0/2 → 1/2** — **H1 (« Comme il est écrit in the
+  book of Romans, chapter eight ») passe** ; H2 échoue encore, mais H2 est
+  déjà élucidé comme un bug de détection de parole temps réel PROPRE À
+  DEEPGRAM sur cet enregistrement précis (voir plus bas, section Chantier B
+  — reproduit même en session neuve, aucun rapport avec la langue)
+- `livre_difficile` : 8/11 → 10/11 (mieux)
+- Mais **variance sur des catégories SANS AUCUN rapport avec la langue** :
+  `nombre_piege` 3/3 → 2/3 (E2 nouvellement en échec), `bruit_fond` 5/5 →
+  4/5 (K3 nouvellement en échec), et `variante_formulation` reste 5/7 mais
+  avec des échecs différents (A4/B1 au lieu de A2/B2)
+
+**Interprétation, honnête sur la limite de la mesure** : UN SEUL run de
+chaque côté — la variance run-à-run de l'ASR est un facteur déjà bien
+documenté dans ce dépôt (Chantier 0.2, ±1-2 énoncés entre deux runs
+identiques). Les régressions sur des catégories sans rapport avec la langue
+(nombre_piege, bruit_fond) sont donc plus probablement du bruit de mesure
+qu'un effet causal de `language=multi` — mais on ne peut pas l'affirmer avec
+un seul run de chaque côté. Ce qui EST solide : `language=multi` n'a
+provoqué AUCUN faux positif supplémentaire, et a rattrapé exactement le cas
+qu'il est censé rattraper (H1, changement de langue en pleine phrase), sans
+effondrement de la précision française par ailleurs (29 des 37 catégories/
+cas restent comparables).
+
+**Recommandation (pas une bascule — verrou dur n°2)** : `language=multi`
+est un candidat sérieux pour devenir le défaut de session ASR, avec un
+gain net mesuré sur ce run (30/37 vs 29/37, 0 FP dans les deux cas). Avant
+de basculer le défaut, il faudrait : (1) plusieurs runs de chaque côté pour
+distinguer signal et bruit sur `nombre_piege`/`bruit_fond`, (2) une
+validation en conditions réelles avec l'opérateur (comme l'exige
+explicitement le verrou dur n°2). Reste activable dès aujourd'hui par
+l'opérateur via la commande vocale "écoute en bilingue"/`listenInBilingual`
+(déjà câblée de bout en bout, voir voice-commands.js) — **un choix de
+l'opérateur, pas un défaut imposé**, exactement comme le prévoyait déjà le
+commentaire de deepgram-streaming.js avant cette mesure.
+
+**Sur le nombre de connexions** : la mission demandait de vérifier qu'une
+seule connexion suffit en mode `multi` avant de supposer qu'il en faudrait
+deux en parallèle. Confirmé par la mesure elle-même — ce run entier tourne
+sur UNE session Deepgram par énoncé (comportement `createSession()`
+inchangé, seul le paramètre `language` diffère), pas deux connexions
+fr+en en parallèle.
+
+---
+
 ## MISE À JOUR 2026-08-16 (session mission autonome, suite) — 29/37 (78,4 %) mesuré en conditions réelles, clôture Chantier A
 
 **Contexte** : reprise dans un environnement neuf (`node_modules` jamais installé,
