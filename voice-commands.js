@@ -224,6 +224,27 @@ const COMMANDS = [
     ],
     extract: () => ({ action: 'setTranscriptionLanguage', language: 'en' }),
   },
+  // AJOUT (Chantier 5 — bilingue) : nova-3 supporte `language=multi`
+  // (code-switching en cours de flux, une seule connexion — voir
+  // deepgram-streaming.js/deepgram-wrapper.js). Mesuré sur un cas réel du
+  // corpus (H1, changement de langue fr->en en pleine phrase) : passe de
+  // "jamais affiché" à correctement affiché (fallback chapitre), sans
+  // dégradation observée sur du français pur dans le même test — mais sur
+  // un échantillon trop petit pour en faire un défaut universel imposé à
+  // tous (voir décision explicite : un défaut mono-langue reste plus sûr
+  // pour un culte qui ne mélange jamais les langues, "multi" doit être un
+  // choix de l'opérateur, pas une valeur imposée). Exposé ici comme un
+  // TROISIÈME choix explicite, au même niveau que fr/en, jamais activé
+  // sans que l'opérateur le déclenche lui-même.
+  {
+    id: 'listenInBilingual',
+    patterns: [
+      /(?:ecoute|reconnais)(?:[- ]?(?:moi|nous))?\s+(?:le\s+|en\s+)?(?:mode\s+)?bilingue/i,
+      /listen\s+in\s+bilingual(?:\s+mode)?/i,
+      /recognize\s+bilingual/i,
+    ],
+    extract: () => ({ action: 'setTranscriptionLanguage', language: 'multi' }),
+  },
 
   // --- TRANSLATION ---
   {

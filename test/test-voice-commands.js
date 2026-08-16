@@ -187,6 +187,48 @@ check(
 );
 
 // ---------------------------------------------------------------------------
+// 3c. listenInBilingual (Chantier 5) — troisième choix explicite pour
+//     language=multi (nova-3, code-switching en cours de flux), jamais
+//     activé sans que l'opérateur le déclenche lui-même (voir voice-commands.js).
+// ---------------------------------------------------------------------------
+console.log('\n--- listenInBilingual (nouveau, Chantier 5) ---\n');
+check(
+  'FR "écoute en bilingue" -> setTranscriptionLanguage(multi)',
+  (() => {
+    const r = detectCommand('écoute en bilingue');
+    return r?.action === 'setTranscriptionLanguage' && r.language === 'multi';
+  })()
+);
+check(
+  'FR "reconnais le mode bilingue" -> setTranscriptionLanguage(multi)',
+  (() => {
+    const r = detectCommand('reconnais le mode bilingue');
+    return r?.action === 'setTranscriptionLanguage' && r.language === 'multi';
+  })()
+);
+check(
+  'EN "listen in bilingual mode" -> setTranscriptionLanguage(multi)',
+  (() => {
+    const r = detectCommand('listen in bilingual mode');
+    return r?.action === 'setTranscriptionLanguage' && r.language === 'multi';
+  })()
+);
+check(
+  'EN "recognize bilingual" -> setTranscriptionLanguage(multi)',
+  (() => {
+    const r = detectCommand('recognize bilingual');
+    return r?.action === 'setTranscriptionLanguage' && r.language === 'multi';
+  })()
+);
+check(
+  '"écoute en français" ne déclenche PAS aussi listenInBilingual (pas de chevauchement de motif)',
+  (() => {
+    const r = detectCommand('écoute en français');
+    return r?.language === 'fr';
+  })()
+);
+
+// ---------------------------------------------------------------------------
 // 4. extendTime — nouvelle tournure anglaise naturelle.
 // ---------------------------------------------------------------------------
 console.log('\n--- extendTime ---\n');
@@ -286,6 +328,11 @@ const EXPECTED = {
     phrase: 'listen in English',
     action: 'setTranscriptionLanguage',
     language: 'en',
+  },
+  listenInBilingual: {
+    phrase: 'écoute en bilingue',
+    action: 'setTranscriptionLanguage',
+    language: 'multi',
   },
   translationSegond: { phrase: 'traduction segond', action: 'setTranslation', code: 'lsg' },
   translationDarby: { phrase: 'traduction darby', action: 'setTranslation', code: 'darby' },
