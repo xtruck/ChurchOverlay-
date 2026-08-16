@@ -690,6 +690,12 @@ function resolveSceneMediaUrls(scene) {
     elements: (scene.elements || []).map((el) =>
       el.type === 'image' ? { ...el, mediaUrl: resolveMediaUrl(el.mediaId) } : el
     ),
+    // AJOUT (déclenchement vocal des scènes) : sans ce champ, la galerie du
+    // tableau de bord (badges "🎙 phrase") et le composeur en modification
+    // (pré-remplissage de composerPhrasesInput) ne verraient jamais les
+    // phrases déclencheuses — sceneLibraryUpdated ne transite QUE par cette
+    // fonction, jamais par l'objet brut du store.
+    triggerPhrases: scene.triggerPhrases || [],
   };
 }
 
@@ -1049,6 +1055,32 @@ async function processTranscript(text, tracker, opts = {}) {
     }
   } catch (e) {
     warn('Song cue detection error: ' + e.message);
+  }
+
+  // AJOUT (studio de scènes — déclenchement vocal) : même emplacement et
+  // même philosophie de court-circuit que la médiathèque/les chants
+  // ci-dessus — une scène composée (fond + texte + logo) doit pouvoir être
+  // déclenchée en disant simplement son nom (ou une phrase déclencheuse
+  // dédiée), exactement comme un média, plutôt que de rester accessible
+  // uniquement au clic manuel depuis le tableau de bord.
+  try {
+    const sceneMatch = sceneStore.matchTriggerPhrase(text);
+    if (sceneMatch) {
+      log('Scene cue detected: ' + sceneMatch.name);
+      broadcast({
+        action: 'showScene',
+        ...resolveSceneMediaUrls(sceneMatch),
+        detectedBy: 'voice-cue',
+      });
+      sessionStore.recordVerseShown({
+        reference: `🎬 ${sceneMatch.name}`,
+        detectedBy: 'scene',
+        timestamp: Date.now(),
+      });
+      return;
+    }
+  } catch (e) {
+    warn('Scene cue detection error: ' + e.message);
   }
 
   let correctedText = text;
@@ -2838,6 +2870,7 @@ wss.on('connection', (ws, req) => {
           name: sanitized.name,
           background: sanitized.background,
           elements: sanitized.elements,
+          triggerPhrases: sanitized.triggerPhrases,
         });
         log(`Studio de scènes : "${scene.name}" créée`);
         broadcast({
@@ -2855,6 +2888,7 @@ wss.on('connection', (ws, req) => {
         name: sanitized.name,
         background: sanitized.background,
         elements: sanitized.elements,
+        triggerPhrases: sanitized.triggerPhrases,
       });
       if (updated) {
         log(`Studio de scènes : "${updated.name}" mise à jour`);

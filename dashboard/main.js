@@ -42,3 +42,6 @@ import './features/propresenter-planning-center.js';
 // verse-queue.js, n'est importé par personne d'autre — sans cette ligne,
 // son loadObsConfig() initial et ses window.x ne s'exécuteraient jamais.
 import './features/obs-scenes.js';
+// AJOUT (redesign — sous-navigation Réglages) : purement DOM/CSS, n'importe
+// aucun autre module et n'est importé par personne d'autre.
+import './features/settings-subnav.js';

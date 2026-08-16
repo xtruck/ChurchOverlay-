@@ -149,6 +149,59 @@ function sleep(ms) {
       received.some((m) => m.action === 'sceneLibraryUpdated')
     );
 
+    console.log(
+      '\n=== Scénario : addScene()/updateScene() font transiter triggerPhrases (déclenchement vocal) ===\n'
+    );
+    received.length = 0;
+    ws.send(
+      JSON.stringify({
+        action: 'addScene',
+        name: 'Scène vocale — test',
+        triggerPhrases: ['montre la scène de bienvenue', 'scène accueil'],
+      })
+    );
+    await sleep(300);
+    const voiceScene = sceneStore.listItems().find((s) => s.name === 'Scène vocale — test');
+    if (voiceScene) addedSceneIds.push(voiceScene.id);
+    check(
+      'triggerPhrases enregistrées côté store après addScene',
+      !!voiceScene &&
+        JSON.stringify(voiceScene.triggerPhrases) ===
+          JSON.stringify(['montre la scène de bienvenue', 'scène accueil'])
+    );
+    const addBroadcast = received.find((m) => m.action === 'sceneLibraryUpdated');
+    const addedInBroadcast =
+      addBroadcast && addBroadcast.scenes.find((s) => s.id === voiceScene.id);
+    check(
+      'triggerPhrases exposées dans la diffusion sceneLibraryUpdated (pas seulement côté store)',
+      !!addedInBroadcast &&
+        JSON.stringify(addedInBroadcast.triggerPhrases) ===
+          JSON.stringify(['montre la scène de bienvenue', 'scène accueil'])
+    );
+    check(
+      'la scène est bien déclenchable à la voix via scene-store.js#matchTriggerPhrase',
+      sceneStore.matchTriggerPhrase('scène accueil') !== null
+    );
+
+    received.length = 0;
+    ws.send(
+      JSON.stringify({
+        action: 'updateScene',
+        id: voiceScene.id,
+        triggerPhrases: ['nouvelle phrase unique'],
+      })
+    );
+    await sleep(300);
+    check(
+      'triggerPhrases remplacées côté store après updateScene',
+      JSON.stringify(sceneStore.getItem(voiceScene.id).triggerPhrases) ===
+        JSON.stringify(['nouvelle phrase unique'])
+    );
+    check(
+      "l'ancienne phrase déclencheuse ne matche plus après remplacement",
+      sceneStore.matchTriggerPhrase('scène accueil') === null
+    );
+
     console.log('\n=== Scénario : addScene() sans nom renvoie une erreur, pas de crash ===\n');
     received.length = 0;
     ws.send(JSON.stringify({ action: 'addScene', elements: [] }));

@@ -300,5 +300,74 @@ assert.strictEqual(
 );
 console.log('[TEST] ✓ Un seul poster principal à la fois — média démarque la scène\n');
 
+// AJOUT (déclenchement vocal des scènes) : mêmes tests que
+// test-media-library.js#matchTriggerPhrase (scene-store.js réutilise
+// délibérément le même mécanisme — voir son en-tête).
+console.log('[TEST] Test 17: addScene() — repli sur le nom comme phrase déclencheuse...');
+const voiceScene = sceneStore.addScene({ name: 'Annonces de la semaine' });
+assert.deepStrictEqual(
+  voiceScene.triggerPhrases,
+  ['Annonces de la semaine'],
+  'aucune phrase saisie -> le nom sert de phrase déclencheuse par défaut'
+);
+assert(
+  sceneStore.matchTriggerPhrase('on va montrer les annonces de la semaine maintenant') !== null,
+  'dire le nom seul doit suffire à déclencher la scène'
+);
+console.log('[TEST] ✓ Repli sur le nom comme phrase déclencheuse par défaut\n');
+
+console.log('[TEST] Test 18: addScene() — phrases déclencheuses explicites...');
+const explicitPhraseScene = sceneStore.addScene({
+  name: 'Bienvenue',
+  triggerPhrases: ['ouvrons le culte', '  Bonjour à tous  ', '', 'ouvrons le culte'],
+});
+assert.deepStrictEqual(
+  explicitPhraseScene.triggerPhrases,
+  ['ouvrons le culte', 'Bonjour à tous', 'ouvrons le culte'],
+  'phrases explicites conservées telles quelles (juste trim + vides filtrés), doublons non dédupliqués'
+);
+console.log('[TEST] ✓ Phrases déclencheuses explicites conservées\n');
+
+console.log('[TEST] Test 19: matchTriggerPhrase() — correspondance normalisée...');
+const normalizedMatch = sceneStore.matchTriggerPhrase(
+  "N'oubliez pas les ANNONCÉS de la semaine avant de partir"
+);
+assert(
+  normalizedMatch !== null,
+  'une phrase contenant la phrase déclencheuse (accents/casse différents) doit matcher'
+);
+assert.strictEqual(normalizedMatch.id, voiceScene.id);
+console.log('[TEST] ✓ Correspondance normalisée détectée\n');
+
+console.log('[TEST] Test 20: matchTriggerPhrase() — aucune correspondance...');
+assert.strictEqual(
+  sceneStore.matchTriggerPhrase('Dieu a tellement aimé le monde'),
+  null,
+  'un texte sans rapport ne doit déclencher aucune scène'
+);
+assert.strictEqual(sceneStore.matchTriggerPhrase(''), null, 'texte vide -> null, jamais un crash');
+console.log('[TEST] ✓ Aucun faux positif\n');
+
+console.log('[TEST] Test 21: updateScene() — patch de triggerPhrases...');
+const repatchedScene = sceneStore.updateScene(explicitPhraseScene.id, {
+  triggerPhrases: ['nouvelle phrase'],
+});
+assert.deepStrictEqual(repatchedScene.triggerPhrases, ['nouvelle phrase']);
+assert.strictEqual(
+  sceneStore.matchTriggerPhrase('ouvrons le culte maintenant'),
+  null,
+  "l'ancienne phrase déclencheuse ne doit plus matcher après remplacement"
+);
+console.log('[TEST] ✓ triggerPhrases remplacées par un patch explicite\n');
+
+console.log('[TEST] Test 22: updateScene() sans triggerPhrases dans le patch ne les touche pas...');
+const untouchedPhrases = sceneStore.updateScene(repatchedScene.id, { name: 'Renommée encore' });
+assert.deepStrictEqual(
+  untouchedPhrases.triggerPhrases,
+  ['nouvelle phrase'],
+  'un patch qui ne mentionne pas triggerPhrases doit les laisser intactes'
+);
+console.log('[TEST] ✓ triggerPhrases préservées par un patch ne les mentionnant pas\n');
+
 fs.rmSync(userDataDir, { recursive: true, force: true });
 console.log('=== Tous les tests scene-store sont passés ===');

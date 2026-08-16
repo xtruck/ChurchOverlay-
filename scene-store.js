@@ -31,6 +31,7 @@ const MAX_SCENES = 100; // médiathèque d'un culte, pas un CMS — même borne 
 const MAX_ELEMENTS_PER_SCENE = 20; // large marge pour un usage réel, évite un index qui explose
 const MAX_NAME_LENGTH = 200; // même borne que le label d'un élément de médiathèque
 const MAX_TEXT_LENGTH = 500; // un bloc de texte de scène, pas un sermon entier
+const MAX_TRIGGER_PHRASES = 20; // même borne que media-library.js#addItem
 
 // AJOUT (studio de scènes) : constrainte volontaire — "presets plutôt que
 // libre" est déjà le style de la maison pour ce type de réglage (voir les 4
@@ -198,6 +199,22 @@ function sanitizeElements(input) {
   return input.map(sanitizeElement).filter(Boolean).slice(0, MAX_ELEMENTS_PER_SCENE);
 }
 
+// Même approche que media-library.js#normalize (\p{M} après décomposition
+// NFD) — équivalente en résultat, réutilisée ici pour que matchTriggerPhrase()
+// se comporte identiquement (une phrase déclencheuse accentuée doit matcher
+// que la parole retranscrite le soit ou non, et vice versa).
+function normalize(text) {
+  return (text || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').trim();
+}
+
+function sanitizeTriggerPhrases(input) {
+  return (Array.isArray(input) ? input : [])
+    .map((p) => (typeof p === 'string' ? p.trim() : ''))
+    .filter(Boolean)
+    .slice(0, MAX_TRIGGER_PHRASES)
+    .map((p) => p.slice(0, MAX_NAME_LENGTH));
+}
+
 /**
  * Crée une nouvelle scène.
  * @param {Object} data
@@ -213,13 +230,24 @@ function addScene(data) {
   }
 
   const now = new Date().toISOString();
+  const name = data.name.trim().slice(0, MAX_NAME_LENGTH);
+  let triggerPhrases = sanitizeTriggerPhrases(data.triggerPhrases);
+  // AJOUT (déclenchement vocal des scènes — même écart que media-library.js#addItem
+  // "je nomme, je dis le nom pour l'afficher") : le nom sert de phrase
+  // déclencheuse par défaut quand aucune n'est saisie, pour qu'une scène
+  // composée sans jamais toucher le champ "phrases déclencheuses" reste
+  // atteignable à la voix plutôt que muette silencieusement.
+  if (triggerPhrases.length === 0 && name) {
+    triggerPhrases = [name];
+  }
   const item = {
     id: crypto.randomUUID(),
-    name: data.name.trim().slice(0, MAX_NAME_LENGTH),
+    name,
     addedAt: now,
     updatedAt: now,
     background: sanitizeBackground(data.background),
     elements: sanitizeElements(data.elements),
+    triggerPhrases,
     // AJOUT (demande explicite — "poster principal") : voir setDefaultScene()
     // plus bas. Un seul élément à la fois peut être vrai — TOUJOURS FAUX ici
     // à la création ; passer par setDefaultScene() explicitement.
@@ -259,6 +287,9 @@ function updateScene(id, patch) {
     }
     if (patch.elements !== undefined) {
       item.elements = sanitizeElements(patch.elements);
+    }
+    if (patch.triggerPhrases !== undefined) {
+      item.triggerPhrases = sanitizeTriggerPhrases(patch.triggerPhrases);
     }
   }
   item.updatedAt = new Date().toISOString();
@@ -335,6 +366,31 @@ function clearDefaultScene() {
   return items[idx];
 }
 
+/**
+ * Cherche si un texte transcrit contient l'une des phrases déclencheuses
+ * d'une scène — même mécanisme et même philosophie que
+ * media-library.js#matchTriggerPhrase (sous-chaîne sur texte normalisé, pas
+ * de LLM). Permet à une scène composée (fond + texte + logo) d'être
+ * déclenchée à la voix exactement comme un média, en plus du déclenchement
+ * manuel déjà disponible (bouton "Afficher" de la galerie).
+ * @param {string} text - texte transcrit (brut, pas encore normalisé)
+ * @returns {Object|null} la scène déclenchée, ou null
+ */
+function matchTriggerPhrase(text) {
+  const normalizedText = normalize(text);
+  if (!normalizedText) return null;
+
+  for (const item of readIndex()) {
+    for (const phrase of item.triggerPhrases || []) {
+      const normalizedPhrase = normalize(phrase);
+      if (normalizedPhrase && normalizedText.includes(normalizedPhrase)) {
+        return item;
+      }
+    }
+  }
+  return null;
+}
+
 module.exports = {
   setUserDataDir,
   listItems,
@@ -345,6 +401,7 @@ module.exports = {
   getDefaultScene,
   setDefaultScene,
   clearDefaultScene,
+  matchTriggerPhrase,
   // Exposées pour tests unitaires (test-scene-store.js).
   POSITION_PRESETS,
   DEFAULT_POSITION,
@@ -356,6 +413,7 @@ module.exports = {
   DEFAULT_FONT_WEIGHT,
   MAX_ELEMENTS_PER_SCENE,
   MAX_SCENES,
+  MAX_TRIGGER_PHRASES,
   MIN_FONT_SIZE_PCT,
   MAX_FONT_SIZE_PCT,
 };

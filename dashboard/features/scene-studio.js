@@ -243,6 +243,7 @@ export function openSceneComposer(id) {
   if (!card) return;
   const title = document.getElementById('sceneComposerTitle');
   const nameInput = document.getElementById('composerNameInput');
+  const phrasesInput = document.getElementById('composerPhrasesInput');
   const bgTypeSelect = document.getElementById('composerBgTypeSelect');
   const colorInput = document.getElementById('composerBgColorInput');
 
@@ -259,6 +260,7 @@ export function openSceneComposer(id) {
 
   if (title) title.textContent = existing ? `Modifier « ${existing.name} »` : 'Nouvelle scène';
   if (nameInput) nameInput.value = existing ? existing.name : '';
+  if (phrasesInput) phrasesInput.value = existing ? (existing.triggerPhrases || []).join(', ') : '';
   if (bgTypeSelect) bgTypeSelect.value = composerBackground.type;
   if (colorInput) colorInput.value = composerBackground.color || '#0b0f1a';
 
@@ -285,16 +287,24 @@ export function saveComposerScene() {
     return;
   }
   const nameInput = document.getElementById('composerNameInput');
+  const phrasesInput = document.getElementById('composerPhrasesInput');
   const name = nameInput ? nameInput.value.trim() : '';
   if (!name) {
     showToast('Le nom de la scène est requis.', 'error');
     return;
   }
+  const triggerPhrases = phrasesInput
+    ? phrasesInput.value
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean)
+    : [];
   const payload = {
     action: composerEditingId ? 'updateScene' : 'addScene',
     name,
     background: composerBackground,
     elements: composerElements,
+    triggerPhrases,
   };
   if (composerEditingId) payload.id = composerEditingId;
   ws.send(JSON.stringify(payload));
@@ -359,6 +369,13 @@ export function renderSceneStudioGallery(scenes) {
   list.innerHTML = sceneStudioItems
     .map((scene) => {
       const badge = scene.isDefault ? '<span class="media-gallery-badge">⭐ Poster</span>' : '';
+      // AJOUT (déclenchement vocal des scènes) : même badge que la
+      // Médiathèque (.media-item-phrase-badge) — rend visible, d'un coup
+      // d'œil dans la galerie, si une scène est atteignable à la voix ou
+      // seulement au clic manuel (voir scene-store.js#matchTriggerPhrase).
+      const phrasesBadges = (scene.triggerPhrases || [])
+        .map((p) => `<span class="media-item-phrase-badge">🎙 ${escapeHtmlDashboard(p)}</span>`)
+        .join('');
       return `
                 <div class="media-gallery-card${scene.isDefault ? ' is-default' : ''}">
                     <div class="media-gallery-thumb scene-preview-thumb" id="scenePreview-${scene.id}">
@@ -366,6 +383,7 @@ export function renderSceneStudioGallery(scenes) {
                     </div>
                     <div class="media-gallery-body">
                         <div class="media-gallery-label" title="${escapeHtmlDashboard(scene.name)}">${escapeHtmlDashboard(scene.name)}</div>
+                        <div class="media-item-phrases">${phrasesBadges || '<span class="media-item-phrase-badge">Déclenchement manuel uniquement</span>'}</div>
                     </div>
                     <div class="media-gallery-actions">
                         <button class="btn btn-primary" onclick="triggerSceneStudioItem('${scene.id}')" title="Afficher maintenant sur l'overlay">▶ Afficher</button>

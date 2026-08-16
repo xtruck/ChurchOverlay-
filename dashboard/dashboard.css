@@ -630,6 +630,59 @@ body {
   box-shadow: 0 0 0 1px var(--gold) inset;
 }
 
+/* AJOUT (redesign — sous-navigation Réglages) : barre de catégories en
+           haut de l'onglet "Réglages" (23 cartes réparties sur 5 <section>
+           autrement présentées à la suite sans aucun repère). Voir
+           settings-subnav.js pour le filtre côté client — purement additif,
+           .card[data-group] non ciblé par cette barre reste inchangé. */
+.settings-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.subnav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--duration-fast) ease;
+}
+
+.subnav-btn svg {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.subnav-btn:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-main);
+  border-color: var(--border-light);
+}
+
+.subnav-btn:focus-visible {
+  outline: 2px solid var(--primary-300);
+  outline-offset: 2px;
+}
+
+.subnav-btn.active {
+  background: var(--primary-glow);
+  border-color: var(--primary);
+  color: #ffffff;
+  box-shadow: 0 0 0 1px var(--primary) inset;
+}
+
 /* AJOUT (innovation frontend) : file d'attente de versets. */
 .queue-panel-header {
   display: flex;
