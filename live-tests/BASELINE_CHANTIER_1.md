@@ -1,5 +1,51 @@
 # BASELINE_CHANTIER_1 — pipeline actuel (avec Étape 4 non commitée), STREAMING (deepgram)
 
+## MISE À JOUR 2026-08-16 — Chantier 0.2 (calibration) + attribution des showVerse
+
+**Cause racine des mesures précédentes (découverte Chantier 0.2)** : le replay du
+bench tourne à ~1,57× du temps réel sur Windows (granularité du timer :
+`await sleep(20)` ≈ 31,5ms). L'ancien modèle `expectedWallClock = sessionStart +
+endMs` supposait un rythme strictement temps réel : pour un énoncé à endMs=24s,
+la dérive atteignait ~13,7s — les événements réels (transcript/showVerse)
+tombaient HORS fenêtre et l'énoncé était compté « jamais détecté » à tort. Fix :
+échantillonnage de l'horodatage mur réel de chaque tranche d'audio (1 point
+toutes les ~200ms) + interpolation (unité ms audio = octets/32 à 16kHz mono).
+
+**Deuxième artefact (attribution des showVerse)** : l'attribution locale ramassait
+tous les showVerse de la fenêtre [fin-1500,+8000] de chaque ligne → faux
+« jamais affiché » (A2/A4 pourtant affichés — prouvé par « Displayed: Jean 3:16 »
+dans le log serveur) et faux « affiché PUIS ÉCRASÉ » (N3/K1/E2 : c'était le
+showVerse de la ligne suivante, ex. Jacques 1:5 pour N3). Fix : attribution
+GLOBALE au plus proche voisin (fenêtre + référence attendue + signal propre).
+
+**Mesures calibrées (deepgram, après les 2 fixes — comportement serveur inchangé)** :
+
+- First attempt : **23/37 (62,2 %)** ; shown=23 ; textDetectedNotShown=1 (A2,
+  edge d'attribution de références répétées) ; jamais détecté=23 (ASR) ; **FP 0/8**
+- Latence affichage : **p50=671ms, p75=3190ms, p90=3520ms, p95=4024ms**, min=-720ms
+  (spéculatif légitime avant fin d'audio), max=4140ms
+- Chaîne : Speech→partial p50=787-1861ms ; Speech→final p50≈-39ms (le VAD local
+  finalise à la fin de la phrase, avant l'endpointing serveur) ; Final→affichage
+  p50≈700ms (coût pipeline + fetch Bible, préchauffage efficace)
+- Catégories (run de référence) : variante 4/7, livre_numerote 3/3, livre_difficile
+  7/11, nombre_piege 3/3, rafale 1/2, doublon 0/2, changement_langue 0/2,
+  noyee 1/2, bruit_fond 4/5.
+- **Toutes les suppressions dédup de la baseline sont légitimes** (diagnostic
+  `[dedup]` : cascades même énoncé + re-émissions de finals officiels tardifs).
+- Échecs restants = native ASR : troncature chapitre-seul (l'ASR perd le numéro de
+  verset : G1/G2 « Jean 14 », F2 « Romains 12 », D7/N2/D5 — le pipeline attend
+  correctement le complément, ne déduit JAMAIS un mauvais verset), livre mal
+  transcrit (B1 « Jon 3 sixtine » → Jonas), EN/FR (H1/H2/I2), « Sophonie » tronqué (D5).
+- Endpointing : balayage réel 250/350/500/700/1000 — le `speech_final` officiel
+  arrive 2,4-3,3s après la fin de parole quelle que soit la valeur ; décision :
+  conserver **endpointing=500** (l'affichage est piloté par le VAD local ~600ms).
+- VAD : audit fonctionnel OK — Silero actif, finalisation locale en fin de phrase,
+  worklet gate+downsample 16kHz correct, tests audio-capture verts.
+
+---
+
+# BASELINE_CHANTIER_1 — pipeline actuel (avec Étape 4 non commitée), STREAMING (deepgram)
+
 Mesuré le 2026-08-15 via `node live-tests/corpus-bench.js --provider=deepgram` (corpus.csv, samples/, .env).
 Méthode : fenêtre d'appariement corrigée (Étape 4), 45 lignes / 37 avec référence.
 
