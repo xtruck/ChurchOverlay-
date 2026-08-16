@@ -1,23 +1,23 @@
 {
   "corpus": "C:\\Users\\xtruc\\xtruck\\live-tests\\corpus.csv",
-  "ranAt": "2026-08-16T00:25:40.973Z",
+  "ranAt": "2026-08-16T01:17:46.230Z",
   "summaries": [
     {
       "provider": "STREAMING (deepgram)",
       "total": 45,
       "expectingReference": 37,
-      "shown": 12,
-      "finalCorrect": 12,
+      "shown": 13,
+      "finalCorrect": 13,
       "overwrittenFinalState": 0,
       "textDetectedNotShown": 1,
-      "neverDetected": 27,
-      "firstAttemptRate": 0.32432432432432434,
+      "neverDetected": 26,
+      "firstAttemptRate": 0.35135135135135137,
       "falsePositives": 0,
       "negativesTotal": 8,
-      "latencyP50Ms": 4066,
-      "latencyP95Ms": 6374,
-      "latencyMinMs": 2191,
-      "latencyMaxMs": 6374,
+      "latencyP50Ms": 4438,
+      "latencyP95Ms": 7810,
+      "latencyMinMs": 2287,
+      "latencyMaxMs": 7810,
       "byCategory": [
         {
           "category": "variante_formulation",
@@ -42,7 +42,7 @@
         },
         {
           "category": "nombre_piege",
-          "shown": 2,
+          "shown": 3,
           "expecting": 3,
           "falsePositives": 0,
           "negatives": 0
@@ -110,10 +110,10 @@
           "category": "variante_formulation",
           "expectedText": "Jean 3.16",
           "textDetected": true,
-          "textLatencyMs": 3244,
+          "textLatencyMs": 3441,
           "shown": true,
           "finalShownCorrect": true,
-          "shownLatencyMs": 4838,
+          "shownLatencyMs": 5217,
           "falsePositive": false
         },
         {
@@ -121,10 +121,10 @@
           "category": "variante_formulation",
           "expectedText": "Jean chapitre 3 verset 16",
           "textDetected": true,
-          "textLatencyMs": -686,
+          "textLatencyMs": -303,
           "shown": true,
           "finalShownCorrect": true,
-          "shownLatencyMs": 2486,
+          "shownLatencyMs": 2576,
           "falsePositive": false
         },
         {
@@ -132,7 +132,7 @@
           "category": "variante_formulation",
           "expectedText": "Jean trois seize",
           "textDetected": true,
-          "textLatencyMs": -475,
+          "textLatencyMs": -451,
           "shown": false,
           "finalShownCorrect": false,
           "shownLatencyMs": null,
@@ -143,10 +143,10 @@
           "category": "variante_formulation",
           "expectedText": "Saint Jean 3.16",
           "textDetected": true,
-          "textLatencyMs": 4699,
+          "textLatencyMs": 4737,
           "shown": true,
           "finalShownCorrect": true,
-          "shownLatencyMs": 6374,
+          "shownLatencyMs": 6278,
           "falsePositive": false
         },
         {
@@ -154,10 +154,10 @@
           "category": "variante_formulation",
           "expectedText": "L'Évangile selon Jean, chapitre 3, verset 16",
           "textDetected": true,
-          "textLatencyMs": -742,
+          "textLatencyMs": -838,
           "shown": true,
           "finalShownCorrect": true,
-          "shownLatencyMs": 2191,
+          "shownLatencyMs": 2287,
           "falsePositive": false
         },
         {
@@ -168,7 +168,7 @@
           "textLatencyMs": null,
           "shown": false,
           "finalShownCorrect": false,
-          "shownLatencyMs": 3031,
+          "shownLatencyMs": 3643,
           "falsePositive": false
         },
         {
@@ -179,7 +179,7 @@
           "textLatencyMs": null,
           "shown": false,
           "finalShownCorrect": false,
-          "shownLatencyMs": 5352,
+          "shownLatencyMs": 3531,
           "falsePositive": false
         },
         {
@@ -220,10 +220,10 @@
           "category": "livre_difficile",
           "expectedText": "Habacuc chapitre 2 verset 4",
           "textDetected": true,
-          "textLatencyMs": 2853,
+          "textLatencyMs": 1903,
           "shown": true,
           "finalShownCorrect": true,
-          "shownLatencyMs": 3967,
+          "shownLatencyMs": 2887,
           "falsePositive": false
         },
         {
@@ -234,7 +234,7 @@
           "textLatencyMs": null,
           "shown": true,
           "finalShownCorrect": true,
-          "shownLatencyMs": 5931,
+          "shownLatencyMs": 5429,
           "falsePositive": false
         },
         {
@@ -267,7 +267,7 @@
           "textLatencyMs": null,
           "shown": false,
           "finalShownCorrect": false,
-          "shownLatencyMs": 3962,
+          "shownLatencyMs": 3752,
           "falsePositive": false
         },
         {
@@ -311,7 +311,7 @@
           "textLatencyMs": null,
           "shown": false,
           "finalShownCorrect": false,
-          "shownLatencyMs": null,
+          "shownLatencyMs": 4017,
           "falsePositive": false
         },
         {
@@ -322,7 +322,7 @@
           "textLatencyMs": null,
           "shown": false,
           "finalShownCorrect": false,
-          "shownLatencyMs": 4740,
+          "shownLatencyMs": null,
           "falsePositive": false
         },
         {
@@ -333,7 +333,7 @@
           "textLatencyMs": null,
           "shown": false,
           "finalShownCorrect": false,
-          "shownLatencyMs": null,
+          "shownLatencyMs": 6181,
           "falsePositive": false
         },
         {
@@ -341,10 +341,10 @@
           "category": "nombre_piege",
           "expectedText": "Psaume 119 verset 105",
           "textDetected": true,
-          "textLatencyMs": 2103,
+          "textLatencyMs": 2030,
           "shown": true,
           "finalShownCorrect": true,
-          "shownLatencyMs": 3485,
+          "shownLatencyMs": 2442,
           "falsePositive": false
         },
         {
@@ -355,18 +355,18 @@
           "textLatencyMs": null,
           "shown": true,
           "finalShownCorrect": true,
-          "shownLatencyMs": 5612,
+          "shownLatencyMs": 5208,
           "falsePositive": false
         },
         {
           "id": "E3",
           "category": "nombre_piege",
           "expectedText": "Genèse 1.1",
-          "textDetected": false,
-          "textLatencyMs": null,
-          "shown": false,
-          "finalShownCorrect": false,
-          "shownLatencyMs": null,
+          "textDetected": true,
+          "textLatencyMs": 7771,
+          "shown": true,
+          "finalShownCorrect": true,
+          "shownLatencyMs": 7810,
           "falsePositive": false
         },
         {
@@ -374,10 +374,10 @@
           "category": "rafale_5s",
           "expectedText": "Romains 8.28",
           "textDetected": true,
-          "textLatencyMs": 3716,
+          "textLatencyMs": 3455,
           "shown": true,
           "finalShownCorrect": true,
-          "shownLatencyMs": 5701,
+          "shownLatencyMs": 5401,
           "falsePositive": false
         },
         {
@@ -388,7 +388,7 @@
           "textLatencyMs": null,
           "shown": false,
           "finalShownCorrect": false,
-          "shownLatencyMs": -284,
+          "shownLatencyMs": -584,
           "falsePositive": false
         },
         {
@@ -443,7 +443,7 @@
           "textLatencyMs": null,
           "shown": true,
           "finalShownCorrect": true,
-          "shownLatencyMs": 3383,
+          "shownLatencyMs": 3075,
           "falsePositive": false
         },
         {
@@ -465,7 +465,7 @@
           "textLatencyMs": null,
           "shown": true,
           "finalShownCorrect": true,
-          "shownLatencyMs": 5006,
+          "shownLatencyMs": 3435,
           "falsePositive": false
         },
         {
@@ -495,10 +495,10 @@
           "category": "bruit_fond",
           "expectedText": "Marc 16.15",
           "textDetected": true,
-          "textLatencyMs": 2372,
+          "textLatencyMs": 1927,
           "shown": true,
           "finalShownCorrect": true,
-          "shownLatencyMs": 4066,
+          "shownLatencyMs": 2902,
           "falsePositive": false
         },
         {
@@ -506,10 +506,10 @@
           "category": "bruit_fond",
           "expectedText": "Luc 2.11",
           "textDetected": true,
-          "textLatencyMs": 5104,
+          "textLatencyMs": 4436,
           "shown": true,
           "finalShownCorrect": true,
-          "shownLatencyMs": 5105,
+          "shownLatencyMs": 4438,
           "falsePositive": false
         },
         {
@@ -531,7 +531,7 @@
           "textLatencyMs": null,
           "shown": false,
           "finalShownCorrect": false,
-          "shownLatencyMs": 6968,
+          "shownLatencyMs": 4186,
           "falsePositive": false
         },
         {
@@ -542,7 +542,7 @@
           "textLatencyMs": null,
           "shown": false,
           "finalShownCorrect": false,
-          "shownLatencyMs": 6766,
+          "shownLatencyMs": 4681,
           "falsePositive": false
         },
         {

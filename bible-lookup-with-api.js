@@ -87,8 +87,18 @@ function loadDiskCache() {
     const raw = fs.readFileSync(diskCachePath, 'utf8');
     const entries = JSON.parse(raw);
     if (Array.isArray(entries)) {
-      for (const [key, value] of entries) cache.set(key, value);
-      console.log(`[bible-lookup] Cache disque chargé : ${entries.length} verset(s).`);
+      let kept = 0;
+      for (const [key, value] of entries) {
+        // CORRECTIF (Chantier 1 — latence fusion) : les entrées CHAPITRE SEUL
+        // (clé "lang:livre:chap:-", cf. getVerse) sont exclues du cache verset
+        // scanné par findByQuotedText — on les écarte aussi au chargement pour
+        // purger celles persistées par d'anciennes sessions.
+        const tail = key.slice(key.lastIndexOf(':') + 1);
+        if (tail === '-' || tail === '') continue;
+        cache.set(key, value);
+        kept++;
+      }
+      console.log(`[bible-lookup] Cache disque chargé : ${kept} verset(s).`);
     }
   } catch (err) {
     if (err.code !== 'ENOENT') {
@@ -1030,9 +1040,22 @@ async function getVerse(reference, lang = 'fr') {
     lang,
   };
 
-  cache.set(cacheKey, result);
-  if (cache.size > 200) {
-    cache.delete(cache.keys().next().value);
+  // CORRECTIF (Chantier 1 — latence fusion) : on NE met PAS dans le cache
+  // "verset" (scanné par findByQuotedText pour la détection par citation)
+  // les entrées CHAPITRE SEUL (verseStart absent, clé "lang:livre:chap:-").
+  // Elles ne servent jamais aux recherches par verset (clés disjointes) —
+  // leur seul effet était de POLLUER le matcher de citations : un préchauffage
+  // de chapitre (échauffement du cache pour la latence) ajoutait une entrée
+  // "1 Jean 4" (texte = chapitre entier) que "Dieu est amour" (1 Jean 4:8)
+  // pouvait ensuite matcher (score 0.67 ≥ 0.55) — faux positif sur des
+  // commandes comme « Répétez après moi Dieu est amour ». La donnée reste
+  // utilisable via chapterCache (partagé avec helloaoFetchChapter), donc le
+  // préchauffage par chapitre conserve TOUT son bénéfice de latence.
+  if (reference.verseStart) {
+    cache.set(cacheKey, result);
+    if (cache.size > 200) {
+      cache.delete(cache.keys().next().value);
+    }
   }
   scheduleDiskCacheSave(); // AJOUT (audit) : persiste pour les cultes/redémarrages suivants
 

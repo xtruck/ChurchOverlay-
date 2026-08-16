@@ -1,6 +1,13 @@
 node_modules/
 whisper/
 *.wav
+# CORRECTIF (CI) : les échantillons de test speech test*_16k.wav /
+# test*_raw.wav sont PETITS (< 250 Ko) et REQUIS par la suite de tests
+# (test-silero-vad.js exige testA_16k.wav, deepgram-live-test.js les 4).
+# Les corpus de bench (bloc*.wav) restent ignorés : volumineux et régénérés
+# via live-tests/samples/tts-synth/ (CORPUS-SCRIPT.md).
+!live-tests/samples/test*_16k.wav
+!live-tests/samples/test*_raw.wav
 .env
 .env.local
 *.log

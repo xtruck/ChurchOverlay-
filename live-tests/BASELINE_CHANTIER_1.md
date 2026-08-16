@@ -83,6 +83,22 @@ Mesures (variance run-to-run ASR réelle, 2 runs) :
 - Structurel (déterministe, indépendant du run) : cas cible **A2 affiché** (anciennement « Duplicate suppressed ») ; plus AUCUN « Duplicate suppressed » pour des énoncés distincts ; finals officiels tardifs de A1/A3 supprimés (contenance) ; G1 « Jean 14.6 » n'affiche plus jean:14:1.
 - Cause racine dominante restante PROUVÉE native ASR : proxy brut (sans pipeline, sans serveur) sur bloc1.wav → mêmes délais progressifs (C1 final « 13 verset 4. » à +56,6 s pour audio finie à 30,6 s). La latence bench P50≈4 s / P95≈8 s est donc dominée par la délivrance Deepgram sur ce feed TTS, pas par le pipeline.
 
+## Après correctif « latence chemin fusion » (2026-08-16)
+
+Implémentation (3 leviers) :
+
+- **Fusion sur partials stables** (`server.js`, `onPartialTranscript`) : un partial SANS référence complète n'est enfilé pour fusion que s'il est STABLE (2e occurrence identique du même énoncé, fenêtre `recentPartialTexts`/`recentPartialRefs`, reset par tracker) — jamais d'action sur un texte volage. Source `partial-fragment` → `processTranscript` peut reconstruire la référence dès les partials, sans attendre les finals Deepgram (~5-7 s plus tard).
+- **Garde « chapitre seul ambigu » étendue aux fragments partiels** : `opts.source === 'partial-fragment'` rejoint `local-vad-silence`/`deepgram-final` → un « 13 verset » ou « 1 Corinthiens chapitre » stable ne déclenche jamais le repli jean:14:1 (candidateVerse + attente).
+- **Préchauffage du cache Bible PAR CHAPITRE** dans la garde ET dans la fusion « référence incomplète » : `getVerseMultilang({book, chapter})` échauffe `chapterCache` (helloao) → l'affichage du verset reconstruit est ensuite quasi instantané (`bible: 0ms`, aucun re-téléchargement réseau).
+
+Correctif associé (`bible-lookup-with-api.js`) : les entrées CHAPITRE SEUL (`verseStart` absent, clé `lang:livre:chap:-`) ne sont plus insérées dans le cache « verset » scanné par `findByQuotedText`, ni chargées depuis le cache disque. Sans cela, le préchauffage mettait « 1 Jean 4 » (texte = chapitre entier) dans le cache des citations → « Répétez après moi Dieu est amour » (M1, contient exactement 1 Jean 4:8) matche à 0.67 ≥ 0.55 → faux positif. La donnée reste disponible via `chapterCache`, donc le préchauffage garde tout son bénéfice.
+
+Mesures (run après correctif, 2026-08-16) :
+
+- **14/37 (37,8 %) affichés** — A1, A2, A4, A5, D1, D2, E1, E2, E3, F1, I1, J1, K1, K2 ; textDetectedNotShown : 1 (A3, variance ASR) ; **FP 0/8** ; **p50=3752, p95=6278 (meilleur run de tous)**.
+- Structurel : C1 « 1 Corinthiens 13:4 » affiché via partial-fragment stable (~+30 s au lieu de ~+59 s via finals), sans re-fetch réseau (pre-warm chapitre → chapterCache hit, `bible: 0ms`) ; C3 et D6 affichés via fusion ; C2 via fusion des finals (partials non répétés ce run) ; D6 « Apocalypse 21:4 » via partial stable.
+- Le bench reste non créditeur pour C1/C2/C3 (« livre_numerote : 0/3 ») : la fenêtre d'appariement est [fin_audio+8000ms] alors que la délivrance ASR native + backlog de la file de transcription placent ces affichages hors fenêtre (C1 : +34 à +53 s pour fin d'audio 30,6 s). Gain réel-world net quand même (soustrait ~6 s à la latence de display de C1), hors mesure du bench.
+
 ## Causes racines par volume
 
 1. **F — latence chemin fusion de fragments : 17 à 29 s** pour les livres difficiles/numérotés (8 cas). Le chemin « Référence reconstruite par fusion de fragments » ne s'affiche qu'après confirmation longue.

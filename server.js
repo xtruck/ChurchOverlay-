@@ -987,6 +987,15 @@ async function processTranscript(text, tracker, opts = {}) {
           log(
             `Fusion de fragments : référence incomplète (chapitre seul « ${fusedRef.book} ${fusedRef.chapter} ») — non affichée, attente de plus de fragments`
           );
+          // AJOUT (Chantier 1 — latence chemin fusion) : on connaît déjà
+          // livre+chapitre → on échauffe le cache Bible (par chapitre) pour
+          // que l'affichage du verset reconstruit soit instantané.
+          bibleLookup
+            .getVerseMultilang(
+              { book: fusedRef.book, chapter: fusedRef.chapter },
+              sessionState.getDisplayLanguage()
+            )
+            .catch(() => {});
         }
       }
     } catch (e) {
@@ -1167,6 +1176,7 @@ async function processTranscript(text, tracker, opts = {}) {
     !reference.verseStart &&
     (opts.source === 'local-vad-silence' ||
       opts.source === 'deepgram-final' ||
+      opts.source === 'partial-fragment' ||
       /(?:verset|verse|versets?)\s*[,.;:!?]?\s*$/i.test(correctedText));
   if (truncatedChapterOnly) {
     log(
@@ -1179,6 +1189,18 @@ async function processTranscript(text, tracker, opts = {}) {
       speculative: true,
       original: correctedText,
     });
+    // AJOUT (Chantier 1 — latence chemin fusion) : on ne connaît que le
+    // chapitre (pas le verset), mais le cache Bible est PAR CHAPITRE : on
+    // échauffe le chapitre entier dès maintenant, pour que l'affichage du
+    // verset (partial/final suivant, fusion) soit quasi instantané — le fetch
+    // réseau à froid (~5s observé sur C1) ne se produit plus sur le chemin
+    // d'affichage.
+    bibleLookup
+      .getVerseMultilang(
+        { book: reference.book, chapter: reference.chapter },
+        sessionState.getDisplayLanguage()
+      )
+      .catch(() => {});
     return;
   }
 
@@ -3169,9 +3191,17 @@ function startPipeline() {
   const PARTIAL_WINDOW_SIZE = 3;
   let lastPartialTracker = null;
   let recentPartialRefs = [];
+  // AJOUT (Chantier 1 — latence chemin fusion) : même fenêtre de stabilité
+  // pour le TEXTE BRUT des partials (pas seulement la référence complète).
+  // Un fragment SANS référence complète (« 13 verset 4. », « 1 Corinthiens »)
+  // n'est enfilé pour fusion que s'il est STABLE (2e occurrence identique du
+  // même énoncé) — la fusion peut alors reconstruire la référence dès les
+  // PARTIALS, sans attendre les finals (qui arrivent ~5-7s plus tard).
+  let recentPartialTexts = [];
   function resetPartialWindow(tracker) {
     lastPartialTracker = tracker;
     recentPartialRefs = [];
+    recentPartialTexts = [];
   }
 
   audioCapture.on({
@@ -3308,6 +3338,25 @@ function startPipeline() {
               sessionState.getDisplayLanguage()
             )
             .catch(() => {});
+        }
+      } else {
+        // AJOUT (Chantier 1 — latence chemin fusion) : partial SANS référence
+        // complète (pas de match HIGH). Ce fragment peut être une PARTIE d'un
+        // énoncé que l'endpointing découpe (« 1 Corinthiens » puis « 13
+        // verset 4. ») : enfilé SEULEMENT s'il est stable (2e occurrence
+        // identique du même énoncé — les partials Deepgram sont progressifs
+        // mais révisables, jamais d'action sur un texte volage), avec la
+        // source 'partial-fragment'. processTranscript peut alors (a) le
+        // mettre au buffer de fusion et reconstruire la référence dès les
+        // partials, (b) s'il porte un nom de livre sans verset, le garder
+        // sous la garde « chapitre seul ambigu » (candidateVerse + échauffage
+        // du cache Bible), jamais affiché aveuglément.
+        const stableText = recentPartialTexts.includes(text);
+        recentPartialTexts.push(text);
+        if (recentPartialTexts.length > PARTIAL_WINDOW_SIZE) recentPartialTexts.shift();
+        if (stableText) {
+          log('Fragment partiel stable enfilé pour fusion : ' + text.substring(0, 80));
+          await enqueueTranscript(text, tracker, { source: 'partial-fragment' });
         }
       }
     },
