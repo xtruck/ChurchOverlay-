@@ -27,6 +27,21 @@
 // même temps que les règles CSS .card::after / .hero-verse-card::before
 // correspondantes.
 
+// AJOUT (glisser-déposer médiathèque) : filet de sécurité global — le
+// comportement PAR DÉFAUT de Chromium/Electron pour un fichier déposé
+// n'importe où sur la fenêtre (même hors d'une zone de dépôt dédiée) est de
+// NAVIGUER la fenêtre entière vers ce fichier (file://...), remplaçant tout
+// le tableau de bord. Empêché ici une fois pour toute l'application — la
+// zone de dépôt dédiée (voir media-library.js#handleMediaFileDrop) gère le
+// vrai traitement du fichier via son propre gestionnaire 'drop', qui
+// s'exécute AVANT celui-ci (delegation DOM : l'évènement remonte du plus
+// spécifique au plus général) sans conflit, preventDefault() étant appelé
+// aux deux niveaux.
+(function preventStrayFileDropNavigation() {
+  document.addEventListener('dragover', (e) => e.preventDefault());
+  document.addEventListener('drop', (e) => e.preventDefault());
+})();
+
 // AJOUT : onde au clic (voir .btn-ripple dans <style>). Délégué sur
 // le document, ne crée un élément que sur un vrai clic, et le
 // retire dès que l'animation "forwards" se termine (aucun élément

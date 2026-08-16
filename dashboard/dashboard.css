@@ -683,6 +683,66 @@ body {
   box-shadow: 0 0 0 1px var(--primary) inset;
 }
 
+/* AJOUT (bandeau d'état permanent) : rangée de pastilles compactes, même
+           famille visuelle que .live-status-pill (fond verre + bordure
+           subtile) mais en groupe horizontal plutôt qu'isolée dans la
+           barre latérale — voir status-strip.js. */
+.status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+}
+
+.status-strip-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius-full);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  font-size: var(--text-xs);
+}
+
+.status-strip-label {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.status-strip-detail {
+  color: var(--text-dim);
+}
+
+.status-strip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+  transition: background var(--duration-fast) ease;
+}
+
+/* Neutre : signal pas encore arrivé, ou fonctionnalité optionnelle non
+           utilisée (ex. réseau caméra pour une église sans caméra téléphone)
+           — volontairement PAS une couleur d'alerte, pour éviter la "fatigue
+           d'alarme" d'un point rouge permanent sur quelque chose que
+           personne n'utilise. */
+.status-strip-dot--off {
+  background: var(--text-dim);
+}
+.status-strip-dot--ok {
+  background: var(--accent-emerald);
+  box-shadow: 0 0 6px var(--accent-emerald);
+}
+.status-strip-dot--warn {
+  background: var(--accent-amber);
+  box-shadow: 0 0 6px var(--accent-amber);
+}
+.status-strip-dot--error {
+  background: var(--accent-rose);
+  box-shadow: 0 0 6px var(--accent-rose);
+}
+
 /* AJOUT (innovation frontend) : file d'attente de versets. */
 .queue-panel-header {
   display: flex;
@@ -719,6 +779,34 @@ body {
   gap: var(--space-2);
   max-height: 260px;
   overflow-y: auto;
+}
+
+/* AJOUT (glisser-déposer médiathèque) : bordure en tirets façon "zone de
+           dépôt" universellement reconnue, sans jamais imiter un vrai champ
+           de saisie (fond distinct de --bg-input) — voir
+           media-library.js#handleMediaFileDrop. */
+.media-dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--space-4);
+  margin-bottom: var(--space-3);
+  border: 1.5px dashed var(--border-light);
+  border-radius: var(--radius-md);
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  background: rgba(255, 255, 255, 0.02);
+  transition:
+    border-color var(--duration-fast) ease,
+    background var(--duration-fast) ease,
+    color var(--duration-fast) ease;
+}
+
+.media-dropzone--active {
+  border-color: var(--primary);
+  background: var(--primary-glow);
+  color: var(--text-main);
 }
 
 /* CORRECTIF (redesign visuel, lot 2) : cette même paire de classes

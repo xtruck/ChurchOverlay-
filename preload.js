@@ -34,7 +34,7 @@
 
 'use strict';
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('churchOverlay', {
   // --- Écran de configuration initiale (setup.html) -----------------------
@@ -157,4 +157,13 @@ contextBridge.exposeInMainWorld('churchOverlay', {
   // par le WebSocket existant (voir server.js), pas par IPC — cohérent avec
   // le reste de l'app (main.js = accès OS, server.js = logique applicative).
   pickMediaFile: () => ipcRenderer.invoke('pick-media-file'),
+  // AJOUT (glisser-déposer médiathèque) : File.path a été retiré d'Electron
+  // (depuis la v32) pour raisons de sécurité — webUtils.getPathForFile() est
+  // son remplacement officiel, disponible uniquement dans le script de
+  // préchargement (pas d'IPC nécessaire ici, contrairement à pickMediaFile
+  // ci-dessus qui doit, lui, ouvrir une vraie fenêtre de dialogue côté
+  // process principal). Permet de réutiliser EXACTEMENT le même chemin
+  // serveur (mediaLibrary.addItem(), voir media-library.js) que le
+  // sélecteur natif, sans dupliquer la logique de copie de fichier.
+  getPathForFile: (file) => webUtils.getPathForFile(file),
 });

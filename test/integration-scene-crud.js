@@ -202,6 +202,22 @@ function sleep(ms) {
       sceneStore.matchTriggerPhrase('scène accueil') === null
     );
 
+    // CORRECTIF (nettoyage fiable) : supprimée ICI explicitement plutôt que
+    // de compter uniquement sur addedSceneIds/finally plus bas — le
+    // scénario "deleteScene() supprime une scène" (plus loin dans ce même
+    // fichier) fait `addedSceneIds.length = 0` après avoir nettoyé SA propre
+    // scène ("Bienvenue — test"), ce qui videmait aussi cet id AVANT que le
+    // bloc finally ne s'exécute — fuite silencieuse et systématique de
+    // "Scène vocale — test" dans le VRAI dossier userData de la machine à
+    // chaque exécution de ce test (repérée en conditions réelles).
+    ws.send(JSON.stringify({ action: 'deleteScene', id: voiceScene.id }));
+    await sleep(200);
+    check(
+      'la scène « Scène vocale — test » a bien été supprimée (nettoyage explicite)',
+      sceneStore.getItem(voiceScene.id) === null
+    );
+    addedSceneIds.splice(addedSceneIds.indexOf(voiceScene.id), 1);
+
     console.log('\n=== Scénario : addScene() sans nom renvoie une erreur, pas de crash ===\n');
     received.length = 0;
     ws.send(JSON.stringify({ action: 'addScene', elements: [] }));

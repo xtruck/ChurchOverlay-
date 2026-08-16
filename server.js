@@ -1807,6 +1807,10 @@ function handleHotkeyAction(action) {
       broadcast({ action: 'hideMedia' });
       log('Hotkey: masquer le média');
       break;
+    case 'hideScene':
+      broadcast({ action: 'hideScene' });
+      log('Hotkey: masquer la scène');
+      break;
     default:
       warn('Unknown hotkey action: ' + action);
   }

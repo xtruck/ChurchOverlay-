@@ -30,6 +30,61 @@ export function getMediaLibraryItems() {
   return mediaLibraryItems;
 }
 
+// AJOUT (glisser-déposer médiathèque) : extrait de l'ancien
+// addMediaLibraryItem() — logique de soumission partagée entre le
+// sélecteur natif ci-dessous ET handleMediaFileDrop() plus bas, qui
+// obtient sourcePath autrement (webUtils.getPathForFile(), voir
+// preload.js) mais doit lire/réinitialiser EXACTEMENT les mêmes champs du
+// formulaire pour que les deux chemins se comportent de façon identique.
+function submitMediaFromPath(sourcePath) {
+  const labelInput = document.getElementById('mediaLabelInput');
+  const phrasesInput = document.getElementById('mediaPhrasesInput');
+  const loopInput = document.getElementById('mediaLoopInput');
+  const durationInput = document.getElementById('mediaDurationInput');
+  const styleInput = document.getElementById('mediaStyleInput');
+  // AJOUT (poster principal — correctif "le poster ne revient pas après un
+  // verset") : voir server.js#addMediaItem pour la cause réelle du bug —
+  // ce champ fait en un seul geste, à l'ajout, ce qui exigeait avant un
+  // second clic (facilement oublié) sur l'étoile ⭐ après coup.
+  const posterInput = document.getElementById('mediaPosterInput');
+  const label = labelInput ? labelInput.value.trim() : '';
+  const triggerPhrases = phrasesInput
+    ? phrasesInput.value
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean)
+    : [];
+  const includeInLoop = !!(loopInput && loopInput.checked);
+  const setAsPoster = !!(posterInput && posterInput.checked);
+  // "Poster" coché : la durée est forcée à null côté serveur
+  // (mediaLibrary.setDefaultItem(), voir server.js) — le champ durée est de
+  // toute façon désactivé dans le formulaire quand cette case est cochée
+  // (voir updateMediaPosterFormState() plus bas), donc rawSeconds serait
+  // déjà vide ici en pratique ; ce garde reste explicite plutôt qu'implicite.
+  const rawSeconds = !setAsPoster && durationInput ? durationInput.value.trim() : '';
+  const displayDurationMs = rawSeconds ? Math.max(1, Number(rawSeconds)) * 1000 : undefined;
+  const transitionStyle = styleInput ? styleInput.value : undefined;
+  ws.send(
+    JSON.stringify({
+      action: 'addMediaItem',
+      sourcePath,
+      label,
+      triggerPhrases,
+      includeInLoop,
+      displayDurationMs,
+      transitionStyle,
+      setAsPoster,
+    })
+  );
+  if (labelInput) labelInput.value = '';
+  if (phrasesInput) phrasesInput.value = '';
+  if (loopInput) loopInput.checked = false;
+  if (durationInput) durationInput.value = '';
+  if (styleInput) styleInput.value = 'fade';
+  if (posterInput) posterInput.checked = false;
+  updateMediaPosterFormState();
+}
+
 export async function addMediaLibraryItem() {
   if (!window.churchOverlay || !window.churchOverlay.pickMediaFile) return;
   if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -39,58 +94,61 @@ export async function addMediaLibraryItem() {
   try {
     const sourcePath = await window.churchOverlay.pickMediaFile();
     if (!sourcePath) return; // sélection annulée par l'opérateur
-    const labelInput = document.getElementById('mediaLabelInput');
-    const phrasesInput = document.getElementById('mediaPhrasesInput');
-    const loopInput = document.getElementById('mediaLoopInput');
-    const durationInput = document.getElementById('mediaDurationInput');
-    const styleInput = document.getElementById('mediaStyleInput');
-    // AJOUT (poster principal — correctif "le poster ne revient pas après un
-    // verset") : voir server.js#addMediaItem pour la cause réelle du bug —
-    // ce champ fait en un seul geste, à l'ajout, ce qui exigeait avant un
-    // second clic (facilement oublié) sur l'étoile ⭐ après coup.
-    const posterInput = document.getElementById('mediaPosterInput');
-    const label = labelInput ? labelInput.value.trim() : '';
-    const triggerPhrases = phrasesInput
-      ? phrasesInput.value
-          .split(',')
-          .map((p) => p.trim())
-          .filter(Boolean)
-      : [];
-    const includeInLoop = !!(loopInput && loopInput.checked);
-    const setAsPoster = !!(posterInput && posterInput.checked);
-    // "Poster" coché : la durée est forcée à null côté serveur
-    // (mediaLibrary.setDefaultItem(), voir server.js) — le champ durée est de
-    // toute façon désactivé dans le formulaire quand cette case est cochée
-    // (voir updateMediaPosterFormState() plus bas), donc rawSeconds serait
-    // déjà vide ici en pratique ; ce garde reste explicite plutôt qu'implicite.
-    const rawSeconds = !setAsPoster && durationInput ? durationInput.value.trim() : '';
-    const displayDurationMs = rawSeconds ? Math.max(1, Number(rawSeconds)) * 1000 : undefined;
-    const transitionStyle = styleInput ? styleInput.value : undefined;
-    ws.send(
-      JSON.stringify({
-        action: 'addMediaItem',
-        sourcePath,
-        label,
-        triggerPhrases,
-        includeInLoop,
-        displayDurationMs,
-        transitionStyle,
-        setAsPoster,
-      })
-    );
-    if (labelInput) labelInput.value = '';
-    if (phrasesInput) phrasesInput.value = '';
-    if (loopInput) loopInput.checked = false;
-    if (durationInput) durationInput.value = '';
-    if (styleInput) styleInput.value = 'fade';
-    if (posterInput) posterInput.checked = false;
-    updateMediaPosterFormState();
+    submitMediaFromPath(sourcePath);
   } catch (err) {
     showToast(
       'Échec de la sélection du fichier : ' + (err && err.message ? err.message : err),
       'error'
     );
   }
+}
+
+// AJOUT (glisser-déposer médiathèque) : appelée depuis l'attribut ondrop de
+// #mediaDropzone (dashboard.html). preventDefault() en tout premier — sans
+// lui, Chromium/Electron navigue la fenêtre entière vers le fichier déposé
+// (voir aussi le filet de sécurité global dans ui-effects.js, qui couvre le
+// reste de la fenêtre hors de cette zone). Ne gère qu'UN SEUL fichier à la
+// fois (comme le sélecteur natif ci-dessus, properties: ['openFile']) —
+// déposer plusieurs fichiers n'utilise que le premier, silencieusement,
+// plutôt que de complexifier ce premier jet avec une file d'ajouts.
+export function handleMediaFileDrop(event) {
+  event.preventDefault();
+  event.currentTarget.classList.remove('media-dropzone--active');
+
+  if (!window.churchOverlay || !window.churchOverlay.getPathForFile) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast("Non connecté au serveur — impossible d'ajouter un média.", 'error');
+    return;
+  }
+  const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+  if (!file) return;
+
+  let sourcePath;
+  try {
+    sourcePath = window.churchOverlay.getPathForFile(file);
+  } catch (err) {
+    showToast('Fichier déposé illisible : ' + (err && err.message ? err.message : err), 'error');
+    return;
+  }
+  if (!sourcePath) {
+    showToast(
+      "Impossible de déterminer l'emplacement du fichier déposé — utilisez plutôt « Choisir un fichier ».",
+      'error'
+    );
+    return;
+  }
+
+  // AJOUT (confort — le nom n'est pas toujours saisi avant un dépôt, à la
+  // différence du sélecteur natif où le fichier est déjà visible/nommé dans
+  // la fenêtre de dialogue) : ne remplit le nom QUE s'il est vide, jamais
+  // n'écrase une valeur déjà tapée par l'opérateur avant le dépôt.
+  const labelInput = document.getElementById('mediaLabelInput');
+  if (labelInput && !labelInput.value.trim()) {
+    const base = file.name.replace(/\.[^.]+$/, '');
+    labelInput.value = base;
+  }
+
+  submitMediaFromPath(sourcePath);
 }
 
 export function triggerMediaLibraryItem(id) {
@@ -249,14 +307,17 @@ export function updateMediaPosterFormState() {
 (function initMediaLibraryPanel() {
   const unavailable = document.getElementById('mediaLibraryUnavailable');
   const addRow = document.getElementById('mediaLibraryAddRow');
+  const dropzone = document.getElementById('mediaDropzone');
   if (!addRow) return;
   if (!window.churchOverlay || !window.churchOverlay.pickMediaFile) {
     if (unavailable) unavailable.style.display = 'flex';
     addRow.style.display = 'none';
+    if (dropzone) dropzone.style.display = 'none';
   }
 })();
 
 window.addMediaLibraryItem = addMediaLibraryItem;
+window.handleMediaFileDrop = handleMediaFileDrop;
 window.triggerMediaLibraryItem = triggerMediaLibraryItem;
 window.deleteMediaLibraryItem = deleteMediaLibraryItem;
 window.hideMediaNow = hideMediaNow;

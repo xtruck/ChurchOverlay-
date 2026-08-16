@@ -3,6 +3,7 @@
  * Extrait de dashboard/legacy-core.js (chantier de modularisation).
  */
 import { showToast } from '../utils.js';
+import { setStatusStripItem } from './status-strip.js';
 
 // ---------------------------------------------------------------
 // Paramètres — Clés API & Microphone
@@ -106,6 +107,21 @@ import { showToast } from '../utils.js';
     setBadge(els.groqBadge, settings.hasGroqKey);
     setBadge(els.deepgramBadge, settings.hasDeepgramKey);
     setBadge(els.geminiBadge, settings.hasGeminiKey);
+    // AJOUT (bandeau d'état permanent) : Groq est le fournisseur PRINCIPAL
+    // requis (voir config-validator.js — même règle exacte : "Aucun
+    // fournisseur de transcription principal n'est configuré" ne se
+    // déclenche que sur GROQ_API_KEY, Deepgram n'étant qu'un repli
+    // optionnel) — la pastille suit donc uniquement hasGroqKey, pas
+    // needsSetup (qui couvre aussi le micro, déjà sa propre pastille).
+    setStatusStripItem(
+      'Api',
+      settings.hasGroqKey ? 'ok' : 'warn',
+      settings.hasGroqKey
+        ? settings.hasDeepgramKey
+          ? 'Groq + Deepgram'
+          : 'Groq configurée'
+        : 'Clé Groq manquante'
+    );
 
     const needsSetup = !!settings.needsSetup;
     els.card.classList.toggle('needs-setup', needsSetup);

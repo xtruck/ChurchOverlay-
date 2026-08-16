@@ -162,6 +162,33 @@
           </div>
         </header>
 
+        <!-- AJOUT (bandeau d'état permanent — recommandation "control room") :
+                 TOUJOURS visible, contrairement aux bannières d'alerte ci-dessous
+                 qui n'apparaissent qu'en cas de problème — permet de confirmer
+                 d'un coup d'œil que le micro/les clés API/le réseau caméra vont
+                 bien, sans avoir à ouvrir Réglages. Voir status-strip.js : chaque
+                 pastille est mise à jour depuis l'endroit qui calcule déjà ce
+                 signal (aucune logique dupliquée ici). Classe --off par défaut
+                 (neutre, pas une alerte) tant que le premier signal réel n'est
+                 pas encore arrivé. -->
+        <div class="status-strip" role="status" aria-label="État du système">
+          <div class="status-strip-item">
+            <span class="status-strip-dot status-strip-dot--off" id="statusStripMicroDot"></span>
+            <span class="status-strip-label">Micro</span>
+            <span class="status-strip-detail" id="statusStripMicroText">—</span>
+          </div>
+          <div class="status-strip-item">
+            <span class="status-strip-dot status-strip-dot--off" id="statusStripApiDot"></span>
+            <span class="status-strip-label">Clés API</span>
+            <span class="status-strip-detail" id="statusStripApiText">—</span>
+          </div>
+          <div class="status-strip-item">
+            <span class="status-strip-dot status-strip-dot--off" id="statusStripNetworkDot"></span>
+            <span class="status-strip-label">Réseau caméra</span>
+            <span class="status-strip-detail" id="statusStripNetworkText">—</span>
+          </div>
+        </div>
+
         <!-- Pipeline alert banner (crashes / erreurs du worker server.js) -->
         <!-- CORRECTIF : main.js capturait déjà les erreurs du pipeline via
                  appendLog()/pipeline-alert et les exposait dans preload.js
@@ -435,6 +462,25 @@
                 <span style="font-size: 0.8rem; color: var(--text-dim)"
                   >Ajout de média disponible uniquement dans l'application ChurchOverlay (pas dans
                   un navigateur).</span
+                >
+              </div>
+              <!-- AJOUT (glisser-déposer médiathèque) : voir
+                           media-library.js#handleMediaFileDrop — réutilise EXACTEMENT
+                           la même soumission que "+ Choisir un fichier" ci-dessous (les
+                           champs nom/phrases/durée/style/poster du formulaire, remplis
+                           avant OU laissés vides, s'appliquent de la même façon dans les
+                           deux cas). Masquée hors Electron par le même mécanisme que
+                           mediaLibraryAddRow (voir initMediaLibraryPanel côté JS). -->
+              <div
+                class="media-dropzone"
+                id="mediaDropzone"
+                ondragover="event.preventDefault(); this.classList.add('media-dropzone--active')"
+                ondragleave="this.classList.remove('media-dropzone--active')"
+                ondrop="handleMediaFileDrop(event)"
+              >
+                <span
+                  >📥 Glissez une image ou une vidéo ici pour l'ajouter directement — ou utilisez le
+                  formulaire ci-dessous</span
                 >
               </div>
               <div class="queue-add-row" id="mediaLibraryAddRow">
@@ -902,6 +948,7 @@
               <span><code>Ctrl+Alt+Maj+C</code> Effacement d'urgence</span>
               <span><code>Ctrl+Alt+Maj+H</code> Masquer le verset</span>
               <span><code>Ctrl+Alt+Maj+M</code> Masquer le média</span>
+              <span><code>Ctrl+Alt+Maj+S</code> Masquer la scène</span>
             </div>
           </div>
 

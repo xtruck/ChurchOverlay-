@@ -40,6 +40,13 @@ export const state = {
   overlayUrl: null,
   // AJOUT (habillage caméra) : même mécanisme, pour branding-overlay.html.
   brandingOverlayUrl: null,
+  // AJOUT (bandeau d'état permanent — status-strip.js) : les deux moitiés du
+  // statut "réseau caméra" arrivent de deux sources séparées (getNetworkStatus
+  // dans network-settings.js, renderIpCameras dans ip-cameras.js) — partagées
+  // ici pour que chacune des deux puisse recalculer le pictogramme combiné
+  // sans dépendre de l'ordre d'arrivée des deux messages WS.
+  qrCameraReady: false,
+  ipCameraCount: 0,
 };
 
 // AJOUT : intervalle d'auto-détection du mode de culte (louange, prédication,

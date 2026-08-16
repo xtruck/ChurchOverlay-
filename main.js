@@ -1397,6 +1397,17 @@ const GLOBAL_HOTKEYS = [
     action: 'hideMedia',
     label: 'Masquer la photo/vidéo affichée',
   },
+  // AJOUT (studio de scènes — parité avec le raccourci média ci-dessus) :
+  // une scène composée (fond + texte + logo) est une couche distincte du
+  // média (#scene-layer vs #media-layer côté overlay.html) — sans ce
+  // raccourci, la masquer sans quitter d'autres logiciels (OBS, une
+  // présentation...) au premier plan n'était possible que via
+  // emergencyClear (Ctrl+Alt+Shift+C), qui masque aussi le verset affiché.
+  {
+    accelerator: 'CommandOrControl+Alt+Shift+S',
+    action: 'hideScene',
+    label: 'Masquer la scène affichée',
+  },
 ];
 
 function registerGlobalHotkeys() {

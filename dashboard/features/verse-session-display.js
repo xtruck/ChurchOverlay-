@@ -15,6 +15,7 @@ import {
   stopRealAudioCapture,
 } from './audio-capture.js';
 import { showToast, addActivity, escapeHtmlDashboard } from '../utils.js';
+import { setStatusStripItem } from './status-strip.js';
 
 export function displayVerse(message) {
   const refEl = document.getElementById('verseReference');
@@ -448,6 +449,10 @@ export function updateMicButtonUI() {
     badge.textContent = active ? 'Capture active (Whisper/Groq/Deepgram)' : 'Capture arrêtée';
     badge.className = 'status-badge ' + (active ? 'success' : 'warning');
   }
+  // AJOUT (bandeau d'état permanent) : "arrêté" n'est pas une erreur en soi
+  // (micro légitimement coupé entre deux cultes) — 'off' (neutre), pas
+  // 'warn', pour ne pas alarmer à tort en dehors d'un service.
+  setStatusStripItem('Micro', active ? 'ok' : 'off', active ? 'Capture active' : 'Arrêté');
 }
 
 export async function toggleRealMicCapture() {

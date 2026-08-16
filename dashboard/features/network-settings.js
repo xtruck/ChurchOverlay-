@@ -7,8 +7,9 @@
  * persiste déjà tout seul ; cette carte n'en affiche que le statut.
  * Extrait de dashboard/legacy-core.js (chantier de modularisation).
  */
-import { ws } from '../state.js';
+import { state, ws } from '../state.js';
 import { showToast } from '../utils.js';
+import { updateNetworkStatusStrip } from './status-strip.js';
 
 /* ======================================================================
    Réseau (WS_HOST + statut du jeton WS) — carte "Réseau (caméra téléphone
@@ -88,6 +89,8 @@ export function renderNetworkStatus(message) {
     badge.textContent = message.qrCameraReady ? 'Prêt' : 'Indisponible';
     badge.className = 'status-badge ' + (message.qrCameraReady ? 'success' : 'warning');
   }
+  state.qrCameraReady = !!message.qrCameraReady;
+  updateNetworkStatusStrip();
   if (currentHost) {
     currentHost.textContent = message.qrCameraReady
       ? message.wsHost

@@ -7,8 +7,9 @@
  * "vivante", sans librairie ni décodage vidéo ajouté.
  * Extrait de dashboard/legacy-core.js (chantier de modularisation).
  */
-import { ws } from '../state.js';
+import { state, ws } from '../state.js';
 import { showToast, escapeHtmlDashboard } from '../utils.js';
+import { updateNetworkStatusStrip } from './status-strip.js';
 
 /* ======================================================================
    Caméras de téléphone (flux MJPEG réseau, voir ip-camera-store.js).
@@ -27,6 +28,8 @@ export function renderIpCameras(items) {
   const list = document.getElementById('ipCameraList');
   const countEl = document.getElementById('ipCameraCount');
   if (countEl) countEl.textContent = ipCameraItems.length;
+  state.ipCameraCount = ipCameraItems.length;
+  updateNetworkStatusStrip();
   if (!list) return;
 
   // Le ré-rendu détruit les <img>/badges existants : on arrête d'abord tout
