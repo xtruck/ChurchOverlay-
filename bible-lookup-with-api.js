@@ -420,22 +420,55 @@ function label({ book, chapter, verseStart, verseEnd }, lang = 'fr') {
     : `${name} ${chapter}:${verseStart}${verseEnd && verseEnd !== verseStart ? `-${verseEnd}` : ''}`;
 }
 
+// AJOUT (Chantier 2 — retries) : une panne transitoire (hoquet réseau, 5xx
+// côté fournisseur, timeout) faisait échouer le verset du premier coup —
+// sur un service d'une heure, une coupure Wi-Fi de quelques secondes pouvait
+// donc empêcher un verset de s'afficher pendant le culte. Les requêtes ici
+// sont des GET idempotents (chapitre par chapitre, jamais de mutation) : une
+// nouvelle tentative est donc toujours sûre. On ne retente JAMAIS les 4xx
+// (erreur de notre requête — un 404 "livre/chapitre absent" ne se résoudra
+// pas en retentant), uniquement les pannes réseau et 5xx transitoires.
+const FETCH_RETRY_DELAYS_MS = [600, 1600]; // jusqu'à 2 nouvelles tentatives
+
 async function fetchJson(url, timeoutMs = 8000) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { 'User-Agent': 'ChurchOverlay/1.0' },
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      throw new Error(`API returned ${response.status}`);
+  let lastErr;
+  for (let attempt = 0; attempt <= FETCH_RETRY_DELAYS_MS.length; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 'User-Agent': 'ChurchOverlay/1.0' },
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        // 5xx : transitoire côté fournisseur -> nouvelle tentative (après backoff).
+        // Autre statut (4xx) : erreur définitive de notre requête -> on abandonne.
+        if (response.status >= 500 && attempt < FETCH_RETRY_DELAYS_MS.length) {
+          const err = new Error(`API returned ${response.status}`);
+          lastErr = err;
+          await new Promise((resolve) => setTimeout(resolve, FETCH_RETRY_DELAYS_MS[attempt]));
+          continue;
+        }
+        throw new Error(`API returned ${response.status}`);
+      }
+      return await response.json();
+    } catch (err) {
+      const isTransient =
+        err instanceof Error &&
+        (err.name === 'AbortError' ||
+          err.name === 'TypeError' || // réseau (fetch échoue typiquement en TypeError)
+          (err.message && err.message.startsWith('API returned 5')));
+      if (!isTransient || attempt >= FETCH_RETRY_DELAYS_MS.length) {
+        throw err;
+      }
+      lastErr = err;
+      await new Promise((resolve) => setTimeout(resolve, FETCH_RETRY_DELAYS_MS[attempt]));
+    } finally {
+      clearTimeout(timeoutId);
     }
-    return await response.json();
-  } finally {
-    clearTimeout(timeoutId);
   }
+  throw lastErr;
 }
 
 // --- Fournisseur : bible.helloao.org --------------------------------------

@@ -26,6 +26,10 @@ const os = require('os');
 const APP_ROOT = (workerData && workerData.appRoot) || __dirname;
 const USER_DATA_DIR =
   (workerData && workerData.userDataDir) || path.join(os.homedir(), '.churchoverlay');
+// AJOUT (Chantier 2 — health system) : version de l'app affichée par
+// /api/health et /api/status (diagnostic). Chargée une seule fois au boot,
+// jamais relue.
+const APP_VERSION = require(path.join(APP_ROOT, 'package.json')).version;
 
 // ---------------------------------------------------------------------------
 // Core modules (REQUIRED)
@@ -279,13 +283,63 @@ app.get('/', (req, res) => res.sendFile(path.join(APP_ROOT, 'dashboard.html')));
 app.get('/dashboard', (req, res) => res.sendFile(path.join(APP_ROOT, 'dashboard.html')));
 app.get('/overlay', (req, res) => res.sendFile(path.join(APP_ROOT, 'overlay.html')));
 app.get('/setup', (req, res) => res.sendFile(path.join(APP_ROOT, 'setup.html')));
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    port: SERVER_PORT,
+// AJOUT (Chantier 2 — health system) : le endpoint historique ne renvoyait
+// que status/port/authEnabled — statique, jamais le moindre état opérationnel
+// réel. Enrichi pour servir de watchdog côté production : à chaque requête il
+// reflète l'état VIVANT du pipeline (ASR actif et en quel mode, VAD, capture,
+// échecs de transcription consécutifs, cache Bible, clients WebSocket) et
+// bascule `status` sur 'degraded' dès qu'un composant est dégradé — sans
+// jamais avoir besoin d'instancier l'Electron shell (le worker HTTP est
+// indépendant, voir main.js/startServerWorker).
+function buildHealthReport() {
+  const asrResolved = asrEngine.resolveProvider();
+  const streamingActive = audioCapture.isDeepgramStreamingActive();
+  const asrActive = audioCapture.getAsrProvider();
+  const recording = audioCapture.isRecording();
+  const degradedReasons = [];
+  // NOTE : les getters audio-capture renvoient l'état RÉEL de la capture en
+  // cours (safe à appeler même hors capture : valeurs d'init).
+  if (recording && asrResolved === 'deepgram' && !streamingActive) {
+    degradedReasons.push('deepgram-streaming-down');
+  }
+  if (consecutiveTranscriptionFailures > 0) {
+    degradedReasons.push(`transcription-failures-${consecutiveTranscriptionFailures}`);
+  }
+  return {
+    status: degradedReasons.length === 0 ? 'ok' : 'degraded',
     service: 'ChurchOverlay',
+    version: APP_VERSION,
+    port: SERVER_PORT,
     authEnabled: !!WS_AUTH_TOKEN,
-  });
+    uptimeSeconds: Math.round(process.uptime()),
+    degradedReasons,
+    recording,
+    asr: {
+      resolved: asrResolved,
+      active: asrActive,
+      mode: streamingActive ? 'streaming' : 'batch',
+    },
+    vad: audioCapture.getVadProvider(),
+    transcription: {
+      consecutiveFailures: consecutiveTranscriptionFailures,
+    },
+    bible: {
+      cacheEntries: bibleLookup.getCacheSize(),
+    },
+    wsClients: wss.clients ? wss.clients.size : 0,
+    memory: {
+      rss: process.memoryUsage().rss,
+      heapUsed: process.memoryUsage().heapUsed,
+      heapTotal: process.memoryUsage().heapTotal,
+    },
+  };
+}
+
+app.get('/api/health', (req, res) => {
+  res.json(buildHealthReport());
+});
+app.get('/api/status', (req, res) => {
+  res.json(buildHealthReport());
 });
 
 // AJOUT (audit — second écran pour l'assemblée, gratuit/léger) : page de
