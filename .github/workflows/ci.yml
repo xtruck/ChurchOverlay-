@@ -46,13 +46,14 @@ jobs:
         run: npm audit --omit=dev
         continue-on-error: false
 
-      - name: Run Snyk security scan
-        uses: snyk/actions/node@master
-        continue-on-error: true
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: --severity-threshold=high
+      # RETIRÉ (Chantier D, mission autonome) : l'étape Snyk référençait
+      # secrets.SNYK_TOKEN, jamais configuré dans les secrets du dépôt —
+      # échouait silencieusement depuis toujours (continue-on-error: true
+      # masquait l'échec), sans jamais scanner quoi que ce soit. npm audit
+      # ci-dessus couvre déjà les vulnérabilités de dépendances gratuitement.
+      # Si un compte Snyk est créé un jour : réintroduire ce step avec
+      # SNYK_TOKEN ajouté dans GitHub -> Settings -> Secrets and variables
+      # -> Actions.
 
   # Linting and Code Quality
   lint:
