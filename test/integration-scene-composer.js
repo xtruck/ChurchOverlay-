@@ -125,8 +125,18 @@ function makeSourceFile(dir, filename) {
   });
   page.on('pageerror', (err) => consoleErrors.push('pageerror: ' + err.message));
   page.on('response', (resp) => {
-    if (resp.status() >= 400 && !resp.url().includes('/phone-camera-stream/')) {
-      consoleErrors.push(`HTTP ${resp.status()} ${resp.url()}`);
+    // CORRECTIF (flakiness CI) : dashboard.html charge des polices depuis
+    // fonts.googleapis.com / fonts.gstatic.com — un 404 intermittent de ces
+    // CDN externes n'a RIEN à voir avec l'app et ne doit pas faire échouer le
+    // test. On ne retient que les erreurs SAME-ORIGIN (http://127.0.0.1:PORT),
+    // l'app sous test ; les ressources externes sont du bruit d'environnement.
+    const url = resp.url();
+    if (
+      url.startsWith(`http://127.0.0.1:${process.env.PORT}/`) &&
+      resp.status() >= 400 &&
+      !url.includes('/phone-camera-stream/')
+    ) {
+      consoleErrors.push(`HTTP ${resp.status()} ${url}`);
     }
   });
   await page.addInitScript(() => {
