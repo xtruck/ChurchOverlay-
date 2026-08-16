@@ -19,6 +19,34 @@
 const MAX_HISTORY = 20;
 const MAX_CONTEXT_TRANSCRIPTS = 10;
 const DEDUP_MS = 30_000;
+// AJOUT (chantier ASR, Étape 4 — reconstruction de références fragmentées) :
+// fenêtre temporelle maximale (en ms) entre deux fragments consécutifs pour
+// qu'ils soient considérés comme appartenant au MÊME énoncé et donc fusionnés
+// avant détection. Calibrée sur les mesures réelles du corpus TTS (probe
+// bloc1.wav) : les fragments d'un même énoncé arrivent à 1.4-2.3s d'intervalle
+// (endpointing Deepgram 500ms + finalisation locale VAD 600ms), tandis que
+// deux énoncés DISTINCTS du corpus sont séparés par ≥2.5s de silence (bloc5
+// F1/F2 = 3s, bloc6 G1/G2 = 10s). 2600ms capture les uns sans mélanger les
+// autres — le cas F1+F2 (romains:12:28 faux, testé) reste donc exclu.
+//
+// CORRECTIF (sonde probe-overwrites) : la fenêtre seule ne suffit PAS à
+// distinguer « mêmes énoncé » de « énoncés consécutifs » quand le résidu du
+// fragment précédent est encore dans le buffer (ex. « 2e Timothée chapitre »
+// qui suit « 13 verset 4. » de l'énoncé C1) : le reset PAR NOM DE LIVRE
+// (containsBookName, voir server.js) vide le buffer dès qu'un fragment
+// commence un nouvel énoncé, ce qui rend la fenêtre large SANS RISQUE de
+// Élargie à 15000ms pour couvrir D6 (Apocalypse chapitre 21 verset 4) : le
+// probe-overwrites montre que le final « chapitre 21 verset 4. » arrive
+// ~10.8s APRÈS « Apocalypse » (endpointing retardé sur bloc3.wav) — une
+// fenêtre de 4000ms le laissait tomber et D6 restait jamais détecté (bench
+// AVANT correctif). L'élargissement est SÛR car la séparation des énoncés
+// consécutifs rapprochés (F1/F2 à 5s, 1.4-2.3s dans les blocs) est portée
+// par le RESET sur nom de livre (server.js, Test 9) : chaque début d'énoncé
+// contient un livre et vide le buffer AVANT le push. La fenêtre ne protège
+// plus que des écarts extrêmes (>15s) où un final très retardé d'un énoncé
+// ancien ne doit pas contaminer le buffer courant.
+const FRAGMENT_FUSION_WINDOW_MS = 15000;
+const MAX_FUSED_FRAGMENTS = 8;
 // AJOUT (fusion audit production / round 8) : cinq bascules overlay
 // (accessibilité + affichage) plus le tampon "culte complet" pour la
 // mémoire des cultes (voir sermon-archive.js) — ajoutés dans une session
@@ -45,6 +73,21 @@ let displayLanguage = 'fr';
 let transcriptionLanguage = null;
 let lastReference = null;
 let lastShownAt = 0;
+// AJOUT (Chantier 1 — dédoublonnage par énoncé) : identité (tracker.id) de
+// l'énoncé qui a provoqué le dernier affichage, et texte normalisé qui a
+// servi à cet affichage. Servent à distinguer :
+//  - la CASCADE partiel stable → final officiel du MÊME énoncé (UNE action,
+//    à supprimer) — signalée par lastShownUtteranceId === utteranceId ;
+//  - un FINAL OFFICIEL DEEPGRAM très retardé (~7,5s, voir audio-capture.js)
+//    qui redit à l'identique un texte déjà affiché (à supprimer aussi) mais
+//    qui arrive sous le tracker de l'énoncé SUIVANT (Signal "text identique +
+//    source deepgram-final") ;
+//  - une NOUVELLE intention (un nouvel énoncé redit la même référence, ex.
+//    corpus A1→A5) — à AFFICHER, quels que soient le texte et l'intervalle
+//    (< DEDUP_MS), la mission étant « 10s plus tard, même référence =
+//    nouvelle intention ».
+let lastShownUtteranceId = null;
+let lastShownText = null;
 let obsGateOpen = true;
 let obsGateReason = '';
 let highContrastMode = false;
@@ -74,6 +117,12 @@ let fullServiceTranscript = '';
 
 const verseHistory = [];
 const recentTranscripts = [];
+// Buffer de fragments transcits récents (chantier ASR, Étape 4) : chaque
+// fragment (partial stable ou final) est horodaté et conservé dans une
+// fenêtre glissante de FRAGMENT_FUSION_WINDOW_MS. La fusion sert à
+// reconstruire la référence quand l'ASR a découpé un énoncé en plusieurs
+// finals (voir le commentaire de FRAGMENT_FUSION_WINDOW_MS).
+const recentFragments = [];
 
 // --- Langue d'affichage ---
 function getDisplayLanguage() {
@@ -111,19 +160,90 @@ function getLastReference() {
 function getLastShownAt() {
   return lastShownAt;
 }
+
 /**
- * @returns {boolean} true si refKey est un doublon du dernier verset montré
- *   il y a moins de DEDUP_MS — ne modifie PAS l'état (lecture seule).
+ * Normalise un texte pour la comparaison de « re-émission tardive » :
+ * casse, espaces, ponctuation de fin, séparateurs chapitre/verset
+ * (« Jean 3:16 » ≡ « Jean 3 16. »). Compare le CONTENU de la référence, pas
+ * la formulation exacte — deux formulations différentes (même référence)
+ * restent des énoncés distincts.
  */
-function isDuplicateReference(refKey, now = Date.now()) {
-  return lastReference === refKey && now - lastShownAt < DEDUP_MS;
+function normalizeShownText(text) {
+  if (!text) return '';
+  return text
+    .toLowerCase()
+    .replace(/[.,;:!?"'’`«»()[\]{}]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
-function recordShownReference(refKey, now = Date.now()) {
+
+/**
+ * @param {string} refKey - clé de référence (livre:chapitre:verset)
+ * @param {number} [now] - horodatage courant
+ * @param {Object} [ctx] - contexte d'énoncé :
+ *   { utteranceId: (number|null), text: (string|null), source: (string|null) }
+ * @returns {boolean} true si cet affichage doit être supprimé comme doublon
+ *
+ * CORRECTIF (Chantier 1 — cas cible A2, « Jean chapitre 3 verset 16 » dit
+ * UNE seule fois) : l'ancienne règle (même refKey il y a moins de DEDUP_MS)
+ * avalait les répétitions LÉGITIMES d'une même référence par des énoncés
+ * DISTINCTS rapprochés (corpus A1→A5, écarts de 2,5-3,5s ; G2, 10s) — le
+ * bench « textDetected mais jamais affiché ». La règle devient : ne
+ * supprimer que (a) la cascade du MÊME énoncé (même utteranceId), ou
+ * (b) une re-émission tardive d'un final officiel Deepgram redissant à
+ * l'identique un texte déjà affiché (le final officiel arrive ~7,5s en
+ * retard et peut être attribué au tracker de l'énoncé suivant). Toute autre
+ * occurrence (nouvel énoncé) est une nouvelle intention.
+ */
+function isDuplicateReference(refKey, now = Date.now(), ctx = null) {
+  if (lastReference !== refKey) return false;
+  if (now - lastShownAt >= DEDUP_MS) return false;
+
+  // Citations (refKey "quote:...") : le MÊME verset lu à voix haute deux fois
+  // en moins de DEDUP_MS est une répétition de lecture (double diffusion
+  // accidentelle du même segment) — on conserve la règle temporelle simple
+  // (test integration-quote-match). Les citations n'ont ni énoncé distinct
+  // ni partial/final : la règle « nouvelle intention par énoncé » ne
+  // s'applique qu'aux RÉFÉRENCES DITES (refKey "livre:chapitre:verset").
+  if (refKey.startsWith('quote:')) return true;
+
+  const utteranceId = ctx && ctx.utteranceId;
+  const sameUtterance =
+    utteranceId != null && lastShownUtteranceId != null && utteranceId === lastShownUtteranceId;
+  if (sameUtterance) return true;
+
+  // Énoncé différent : nouvelle intention, SAUF re-émission tardive d'un
+  // final officiel Deepgram redissant (ou contenant seulement) du contenu
+  // déjà affiché. Le final officiel arrive ~7,5 s en retard (voir
+  // audio-capture.js), possiblement sous le tracker de l'énoncé SUIVANT, et
+  // son texte est souvent PLUS COURT que le dernier texte affiché (le dernier
+  // affichage provenait du texte cumulé des partials : « Jean 3 16. Jean »,
+  // « Jean 3 16. Saint Jean 3 16 », ...). On compare donc par CONTENANCE :
+  // le final (normalisé) est-il un sous-ensemble du dernier texte affiché
+  // pour cette référence ? Oui → re-émission, on supprime. Un final PLUS LONG
+  // (contenu véritablement nouveau) reste une nouvelle intention.
+  const source = ctx && ctx.source;
+  const text = ctx && ctx.text;
+  if (source === 'deepgram-final' && lastShownText && text) {
+    const normText = normalizeShownText(text);
+    const normLast = normalizeShownText(lastShownText);
+    if (normText && normLast && normLast.includes(normText)) return true;
+  }
+
+  return false;
+}
+
+function recordShownReference(refKey, now = Date.now(), ctx = null) {
   lastReference = refKey;
   lastShownAt = now;
+  lastShownUtteranceId = ctx && ctx.utteranceId != null ? ctx.utteranceId : null;
+  lastShownText = ctx && ctx.text ? ctx.text : null;
 }
+
 function clearLastReference() {
   lastReference = null;
+  lastShownUtteranceId = null;
+  lastShownText = null;
 }
 
 // --- Porte OBS (multi-scène) ---
@@ -155,6 +275,94 @@ function getRecentContext(maxChars = 300) {
 }
 function getRecentTranscripts() {
   return recentTranscripts;
+}
+
+// --- Fusion de fragments (chantier ASR, Étape 4) ---
+function pushTranscriptFragment(text, now = Date.now()) {
+  const cleaned = (text || '').trim().replace(/\s+/g, ' ');
+  if (!cleaned) return;
+  recentFragments.push({ text: cleaned, at: now });
+  const cutoff = now - FRAGMENT_FUSION_WINDOW_MS;
+  while (recentFragments.length > 0 && recentFragments[0].at < cutoff) {
+    recentFragments.shift();
+  }
+  if (recentFragments.length > MAX_FUSED_FRAGMENTS) {
+    recentFragments.splice(0, recentFragments.length - MAX_FUSED_FRAGMENTS);
+  }
+}
+/**
+ * AJOUT (chantier ASR, Étape 4 — reset du buffer de fusion) : vide le buffer
+ * de fragments quand un fragment contenant un NOM DE LIVRE arrive (début
+ * d'un nouvel énoncé, voir containsBookName dans detector.js). Sans ce reset,
+ * le résidu du fragment précédent se fusionnerait avec le fragment courant
+ * (« 2e Timothée chapitre » + « 13 verset 4. » → 2timothee 13:4 FAUX).
+ */
+function resetTranscriptFragments() {
+  recentFragments.length = 0;
+}
+/**
+ * AJOUT (chantier ASR, Étape 4 — purge du résidu fautif) : retire le dernier
+ * fragment poussé du buffer de fusion. Utilisé quand la fusion produit une
+ * référence IMPOSSIBLE (chapitre au-delà du nombre réel du livre) : c'est le
+ * signe que le dernier fragment est un résidu d'un énoncé précédent (final
+ * retardé par l'endpointing, ex. « 13 verset 4. » arrivé après le début de
+ * « 2e Timothée chapitre ») — on le retire pour que les fragments suivants
+ * (ex. « 3 verset 16 ») puissent fusionner proprement avec le fragment de
+ * livre qui le précède.
+ */
+function removeLastTranscriptFragment() {
+  recentFragments.pop();
+}
+/**
+ * Longueur du plus long chevauchement suffixe(a) ∩ préfixe(b), ou 0.
+ */
+function overlapLength(a, b) {
+  const maxLen = Math.min(a.length, b.length);
+  for (let len = maxLen; len > 0; len--) {
+    if (a.endsWith(b.slice(0, len))) return len;
+  }
+  return 0;
+}
+/**
+ * Fusionne les fragments dans leur ordre chronologique en éliminant les
+ * redondances (les finals/partials cumulatifs répètent le début) :
+ *   ["1 Corinthiens", "1 Corinthiens chapitre", "13 verset", "13 verset 4."]
+ *   → "1 Corinthiens chapitre 13 verset 4."
+ * Cas traités : fragment déjà contenu (skip), chevauchement suffixe/préfixe
+ * (concaténer le suffixe non couvert), sinon concaténer avec un espace.
+ */
+function fuseFragments(fragments) {
+  let acc = '';
+  for (const frag of fragments) {
+    const lowerAcc = acc.toLowerCase();
+    const lowerFrag = frag.toLowerCase();
+    if (!lowerAcc) {
+      acc = frag;
+      continue;
+    }
+    if (lowerAcc.includes(lowerFrag)) continue;
+    const overlap = overlapLength(lowerAcc, lowerFrag);
+    if (overlap > 0) {
+      acc += frag.slice(overlap);
+    } else {
+      acc += ' ' + frag;
+    }
+  }
+  return acc.trim();
+}
+/**
+ * @returns {string} texte fusionné des fragments tombés dans la fenêtre
+ *   FRAGMENT_FUSION_WINDOW_MS — vide si rien n'est fusionnable.
+ */
+function getFusedRecentText(now = Date.now()) {
+  const cutoff = now - FRAGMENT_FUSION_WINDOW_MS;
+  const inWindow = recentFragments.filter((f) => f.at >= cutoff);
+  if (inWindow.length < 2) return '';
+  const fused = fuseFragments(inWindow.map((f) => f.text));
+  return fused;
+}
+function getRecentFragments() {
+  return recentFragments;
 }
 
 // --- Accessibilité / affichage overlay (CSS pur côté client, aucun coût
@@ -250,6 +458,11 @@ module.exports = {
   updateTranscriptContext,
   getRecentContext,
   getRecentTranscripts,
+  pushTranscriptFragment,
+  resetTranscriptFragments,
+  removeLastTranscriptFragment,
+  getFusedRecentText,
+  getRecentFragments,
   getHighContrast,
   setHighContrast,
   getCaptionsEnabled,

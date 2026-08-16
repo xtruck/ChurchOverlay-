@@ -71,6 +71,7 @@ injectFakeModule('audio-capture.js', {
 });
 
 process.env.PORT = process.env.PORT || '8774'; // distinct des autres tests
+process.env.CHURCHOVERLAY_SKIP_BIBLE_DOWNLOAD = '1'; // pas de téléchargement biblique en test (crash libuv à l'arrêt sinon)
 require('../server.js');
 const sceneStore = require('../scene-store');
 const mediaLibrary = require('../media-library');
@@ -109,10 +110,25 @@ function makeSourceFile(dir, filename) {
   const browser = await chromium.launch();
   const page = await browser.newPage();
   const consoleErrors = [];
+  // CORRECTIF (flakiness Chantier 0) : le tableau de bord affiche des
+  // caméras de téléphone persistées sur la machine via <img src=
+  // "/phone-camera-stream/:id">. Le serveur REFUSE volontairement de
+  // diffuser un flux sans image fraîche (server.js, res.status(404).end())
+  // et le dashboard s'en sert pour afficher le badge "Hors ligne"
+  // (img.onerror) — ce 404 est donc un comportement ATTENDU, pas une erreur
+  // de l'app. On le filtre en corrélant les réponses HTTP (URL connue) au
+  // lieu de se fier au message console, qui ne porte pas l'URL.
   page.on('console', (msg) => {
-    if (msg.type() === 'error') consoleErrors.push(msg.text());
+    if (msg.type() === 'error' && !msg.text().startsWith('Failed to load resource')) {
+      consoleErrors.push(msg.text());
+    }
   });
   page.on('pageerror', (err) => consoleErrors.push('pageerror: ' + err.message));
+  page.on('response', (resp) => {
+    if (resp.status() >= 400 && !resp.url().includes('/phone-camera-stream/')) {
+      consoleErrors.push(`HTTP ${resp.status()} ${resp.url()}`);
+    }
+  });
   await page.addInitScript(() => {
     window.churchOverlay = { pickMediaFile: async () => null, getSettings: async () => ({}) };
   });

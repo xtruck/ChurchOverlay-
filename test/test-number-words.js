@@ -135,6 +135,40 @@ test("EN: 'hundred' -> 100, 'one hundred one' -> 101, 'two hundred fifty' -> 250
   assert.strictEqual(numberWordsToDigits('two hundred fifty', 'en'), '250');
 });
 
+// ── Nombres INDÉPENDANTS consécutifs (chantier ASR, Étape 5) : la
+// reformulation sans mot-clé « chapitre/verset » juxtapose deux nombres
+// (« Jean trois seize » = Jean chapitre trois, verset seize). La composition
+// naïve les SOMMAIT (« trois seize » -> 19, contre-sens) — elle doit les
+// SÉPARER (« 3 16 »), que le parseur de référence reconstruit ensuite en
+// chapitre 3 verset 16. Un vrai nombre composé valide continue de composer. ──
+test("FR: 'trois seize' -> '3 16' (deux nombres indépendants, pas 19)", () => {
+  assert.strictEqual(numberWordsToDigits('trois seize', 'fr'), '3 16');
+});
+
+test("FR: 'Jean trois seize' -> 'Jean 3 16' (chapitre trois, verset seize)", () => {
+  assert.strictEqual(numberWordsToDigits('jean trois seize', 'fr'), 'jean 3 16');
+});
+
+test("FR: 'seize'/'dix-sept'/'dix-huit'/'vingt'/'vingt et un'/'trente-six'/'quarante'/'cinquante'/'cent' isolés", () => {
+  assert.strictEqual(numberWordsToDigits('seize', 'fr'), '16');
+  assert.strictEqual(numberWordsToDigits('dix-sept', 'fr'), '17');
+  assert.strictEqual(numberWordsToDigits('dix-huit', 'fr'), '18');
+  assert.strictEqual(numberWordsToDigits('vingt', 'fr'), '20');
+  assert.strictEqual(numberWordsToDigits('vingt et un', 'fr'), '21');
+  assert.strictEqual(numberWordsToDigits('trente-six', 'fr'), '36');
+  assert.strictEqual(numberWordsToDigits('quarante', 'fr'), '40');
+  assert.strictEqual(numberWordsToDigits('cinquante', 'fr'), '50');
+  assert.strictEqual(numberWordsToDigits('cent', 'fr'), '100');
+});
+
+test("FR: 'vingt-six' compose toujours (20+6 -> 26, pas '20 6')", () => {
+  assert.strictEqual(numberWordsToDigits('vingt-six', 'fr'), '26');
+});
+
+test("EN: 'three sixteen' -> '3 16' (parallèle anglais de la séparation)", () => {
+  assert.strictEqual(numberWordsToDigits('three sixteen', 'en'), '3 16');
+});
+
 // ── Mot de liaison ("et"/"and") ignoré, pas confondu avec un chiffre ──
 test("FR: 'vingt et un' -> 21 ('et' est un connecteur, pas un nombre)", () => {
   assert.strictEqual(numberWordsToDigits('vingt et un', 'fr'), '21');

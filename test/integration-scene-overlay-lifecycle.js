@@ -78,6 +78,7 @@ injectFakeModule('audio-capture.js', {
 });
 
 process.env.PORT = process.env.PORT || '8773'; // distinct des autres tests
+process.env.CHURCHOVERLAY_SKIP_BIBLE_DOWNLOAD = '1'; // pas de téléchargement biblique en test (crash libuv à l'arrêt sinon)
 require('../server.js');
 const sceneStore = require('../scene-store');
 const mediaLibrary = require('../media-library');

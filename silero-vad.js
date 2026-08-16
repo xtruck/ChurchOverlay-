@@ -16,15 +16,23 @@
  *  Contrat du modèle — vérifié EMPIRIQUEMENT (pas seulement documenté) via
  *  une inspection manuelle des tenseurs d'entrée/sortie et un test de
  *  formes valides avant d'écrire ce wrapper :
- *    - inputs  : 'input' (float32 [1, 512]), 'state' (float32 [2,1,128],
+ *    - inputs  : 'input' (float32 [1, 576]), 'state' (float32 [2,1,128],
  *      état LSTM réinjecté d'une fenêtre à l'autre), 'sr' (int64 scalaire).
  *    - outputs : 'output' (float32 [1,1], probabilité de parole 0-1),
  *      'stateN' (float32 [2,1,128], nouvel état à réinjecter).
  *    - SEULE combinaison validée par l'équipe Silero ET confirmée
- *      fonctionnelle ici : 16000 Hz + fenêtres de EXACTEMENT 512
- *      échantillons (32ms). 256 échantillons ne lève pas d'erreur mais
- *      n'est pas la combinaison documentée à ce sample rate ; 1024/1536
- *      cassent le LSTM interne (testé, erreur de forme confirmée).
+ *      fonctionnelle ici : 16000 Hz + entrée de EXACTEMENT 576 échantillons
+ *      = 64 échantillons de CONTEXTE (les 64 derniers de la fenêtre
+ *      précédente, zéros au démarrage) + 512 échantillons courants (32ms).
+ *      C'est l'architecture officielle du modèle v5 : le wrapper python de
+ *      référence (silero_vad.utils_vad.OnnxWrapper.__call__) préfixe
+ *      systématiquement ce contexte avant chaque inférence, sans quoi la
+ *      fenêtrage STFT interne du modèle se décale d'une trame et la
+ *      probabilité de sortie est figée à ~0.001 pour TOUTE entrée (silence,
+ *      bruit, et même parole réelle). Envoyer 512 échantillons nus produit
+ *      exactement ce bug (vérifié sur onnxruntime-node ET onnxruntime
+ *      python). Le contexte est réinjecté de fenêtre en fenêtre via le
+ *      streamState, comme l'état LSTM.
  *      audio-capture.js capture déjà en 16kHz mono — aucun ré-échantillonnage
  *      nécessaire.
  * ============================================================================
@@ -33,7 +41,9 @@
 const path = require('path');
 const fs = require('fs');
 
-const WINDOW_SAMPLES = 512; // 32ms à 16kHz — seule fenêtre validée à ce sample rate
+const WINDOW_SAMPLES = 512; // 32ms à 16kHz — fenêtre d'écart entre deux inférences
+const CONTEXT_SAMPLES = 64; // contexte STFT requis par le modèle v5 (voir header)
+const MODEL_INPUT_SAMPLES = WINDOW_SAMPLES + CONTEXT_SAMPLES; // 576
 const SAMPLE_RATE = 16000;
 const STATE_DIMS = [2, 1, 128];
 const STATE_SIZE = STATE_DIMS[0] * STATE_DIMS[1] * STATE_DIMS[2];
@@ -95,12 +105,16 @@ function isAvailable() {
 
 /**
  * Crée un état de streaming pour UN flux de capture continu. L'état LSTM
- * est spécifique à un flux audio — ne jamais partager entre deux captures
- * concurrentes (ex. deux fenêtres de test en parallèle).
- * @returns {{ state: Float32Array }}
+ * ET le contexte STFT de 64 échantillons sont spécifiques à un flux audio —
+ * ne jamais partager entre deux captures concurrentes (ex. deux fenêtres de
+ * test en parallèle).
+ * @returns {{ state: Float32Array, context: Float32Array }}
  */
 function createStreamState() {
-  return { state: new Float32Array(STATE_SIZE) };
+  return {
+    state: new Float32Array(STATE_SIZE),
+    context: new Float32Array(CONTEXT_SAMPLES),
+  };
 }
 
 /**
@@ -123,9 +137,17 @@ function pcm16ToFloat32(buffer) {
  * DOIVENT être séquentiels pour un même streamState (le LSTM dépend de
  * l'ordre) — voir la file d'attente sérielle côté audio-capture.js, ce
  * module ne l'impose pas lui-même.
+ *
+ * Le modèle v5 exige une entrée de MODEL_INPUT_SAMPLES (576) échantillons :
+ * les CONTEXT_SAMPLES (64) premiers sont les 64 derniers échantillons de la
+ * fenêtre précédente (zéros au tout premier appel), stockés dans le
+ * streamState. C'est ce préfixe-contexte qui rend le fenêtrage STFT interne
+ * du modèle cohérent — sans lui, la probabilité de sortie reste figée à
+ * ~0.001 quelle que soit l'entrée (voir header du module).
  * @param {Float32Array} samples - EXACTEMENT WINDOW_SAMPLES échantillons.
- * @param {{ state: Float32Array }} streamState - créé par createStreamState(),
- *   son champ `state` est réassigné en place à chaque appel.
+ * @param {{ state: Float32Array, context: Float32Array }} streamState - créé
+ *   par createStreamState(), ses champs `state` et `context` sont mis à jour
+ *   en place à chaque appel.
  * @returns {Promise<number>} probabilité de parole, 0-1.
  */
 async function processWindow(samples, streamState) {
@@ -135,11 +157,18 @@ async function processWindow(samples, streamState) {
   if (!session) {
     throw new Error('silero-vad: session non initialisée (appeler init() au préalable)');
   }
-  const input = new ort.Tensor('float32', samples, [1, WINDOW_SAMPLES]);
+  const input = new Float32Array(MODEL_INPUT_SAMPLES);
+  input.set(streamState.context, 0);
+  input.set(samples, CONTEXT_SAMPLES);
   const stateTensor = new ort.Tensor('float32', streamState.state, STATE_DIMS);
   const sr = new ort.Tensor('int64', BigInt64Array.from([BigInt(SAMPLE_RATE)]), []);
-  const out = await session.run({ input, state: stateTensor, sr });
+  const out = await session.run({
+    input: new ort.Tensor('float32', input, [1, MODEL_INPUT_SAMPLES]),
+    state: stateTensor,
+    sr,
+  });
   streamState.state = Float32Array.from(out.stateN.data);
+  streamState.context = input.slice(-CONTEXT_SAMPLES);
   return out.output.data[0];
 }
 

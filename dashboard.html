@@ -660,6 +660,28 @@
             "
           ></div>
 
+          <!-- AJOUT (Étape 5 — candidateVerse spéculative) : bandeau distinct
+               du bandeau fuzzy (Correction automatique) ci-dessus. Signale à
+               l'opérateur qu'une référence biblique a été entendue et que le
+               système attend la confirmation du texte final officiel avant
+               tout affichage (jamais de référence ambiguë affichée
+               aveuglément — principe mission). Effacé quand le vrai showVerse
+               arrive, remplacé par la candidate suivante, ou sur timeout. -->
+          <div
+            id="candidateNotice"
+            style="
+              display: none;
+              margin-bottom: 1.25rem;
+              padding: 0.85rem 1.25rem;
+              border-radius: var(--radius-md);
+              background: rgba(80, 200, 180, 0.12);
+              border: 1px solid rgba(80, 200, 180, 0.35);
+              color: var(--accent-cyan);
+              font-weight: 600;
+              font-size: 0.88rem;
+            "
+          ></div>
+
           <!-- Main Display Row -->
           <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem">
             <!-- Hero Live Verse Display -->
@@ -818,6 +840,16 @@
               <span id="readingModeBadge" class="status-badge success" style="display: none"
                 >Actif</span
               >
+              <span
+                id="readingModePosition"
+                style="
+                  display: none;
+                  align-items: center;
+                  font-size: 0.8rem;
+                  font-weight: 600;
+                  color: var(--accent-cyan);
+                "
+              ></span>
             </div>
             <div
               style="
@@ -2482,7 +2514,9 @@
         <section id="studio" class="section" style="display: none">
           <div class="card">
             <div class="queue-panel-header">
-              <span class="card-title">Studio de scènes (<span id="sceneStudioCount">0</span>)</span>
+              <span class="card-title"
+                >Studio de scènes (<span id="sceneStudioCount">0</span>)</span
+              >
               <div style="display: flex; gap: 0.5rem">
                 <button
                   class="btn btn-primary"
@@ -2502,8 +2536,8 @@
             </div>
             <div class="field-hint" style="margin-bottom: 0.75rem">
               Composez un fond + du texte + un logo, puis déclenchez la scène sur l'overlay ou
-              épinglez-la comme poster principal (⭐) — elle reviendra automatiquement après
-              chaque verset, exactement comme un média épinglé dans la Médiathèque.
+              épinglez-la comme poster principal (⭐) — elle reviendra automatiquement après chaque
+              verset, exactement comme un média épinglé dans la Médiathèque.
             </div>
             <div class="media-gallery-grid" id="sceneStudioList"></div>
           </div>

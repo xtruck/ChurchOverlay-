@@ -19,6 +19,8 @@ import {
   hideVerseDisplay,
   addTranscript,
   showCandidateVerse,
+  clearCandidateNotices,
+  formatReferenceLabel,
   updateDashboard,
 } from './features/verse-session-display.js';
 import { renderMoodPicker, setActiveMoodButton } from './features/mood-theme.js';
@@ -45,7 +47,11 @@ import {
   renderBibleSearchResults,
   renderBibleSearchError,
 } from './features/bible-search.js';
-import { setReadingModeActive } from './features/reading-mode.js';
+import {
+  setReadingModeActive,
+  setReadingPosition,
+  clearReadingPosition,
+} from './features/reading-mode.js';
 import {
   renderTranslationPicker,
   updateActiveTranslationButton,
@@ -75,6 +81,16 @@ export function handleMessage(message) {
       applyDashboardBranding(message.branding);
       break;
     case 'showVerse':
+      // AJOUT (Étape 5 — candidateVerse) : un vrai verset arrive — la
+      // confirmation attendue est là, on efface tout bandeau candidat
+      // (fuzzy + spéculatif) pour ne pas le laisser traîner 8s à côté du
+      // verset affiché.
+      clearCandidateNotices();
+      // AJOUT (frontend — mode lecture "pro") : le serveur diffuse la
+      // position courante dans le chapitre à chaque avancement (voir
+      // server.js > readingModePosition) — affichée dans la carte mode
+      // lecture, sans que le dashboard ait à compter lui-même.
+      if (message.readingModePos) setReadingPosition(message.readingModePos);
       displayVerse(message);
       state.totalVerses++;
       updateDashboard();
@@ -88,6 +104,7 @@ export function handleMessage(message) {
       break;
     case 'hideVerse':
       hideVerseDisplay();
+      clearCandidateNotices();
       addActivity('Verset masqué', 'info');
       break;
     case 'transcript':
@@ -109,7 +126,10 @@ export function handleMessage(message) {
       break;
     case 'candidateVerse':
       showCandidateVerse(message);
-      addActivity(`Verset candidat : ${message.reference}`, 'warning');
+      // CORRECTIF (frontend) : message.reference est un OBJET
+      // ({ book, chapter, verseStart }) — l'afficher tel quel dans le flux
+      // d'activité produisait "[object Object]".
+      addActivity(`Verset candidat : ${formatReferenceLabel(message.reference)}`, 'warning');
       break;
     case 'error':
       addActivity(`Erreur : ${message.error}`, 'error');
@@ -245,6 +265,7 @@ export function handleMessage(message) {
       break;
     case 'readingStopped':
       setReadingModeActive(false);
+      clearReadingPosition();
       showToast('Mode lecture arrêté.', 'info');
       break;
     // AJOUT (fiabilité — synchronisation multi-opérateur) : setHighContrast/

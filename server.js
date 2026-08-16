@@ -654,6 +654,7 @@ const readingMode = new ReadingMode({
       langMode: sessionState.getDisplayLanguage(),
       durationMs: getVerseDurationMs(),
       readingMode: true,
+      readingModePos: readingModePosition(readingMode, verse.num),
     });
     pushHistory({
       reference,
@@ -664,6 +665,20 @@ const readingMode = new ReadingMode({
     broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
   },
 });
+
+// AJOUT (frontend — mode lecture "pro") : position courante du mode lecture
+// (chapitre + numéro de verset + nombre total de versets du chapitre),
+// diffusée dans chaque showVerse en mode lecture pour que le tableau de
+// bord affiche la progression ("Jean 3 · verset 16/36") sans avoir à
+// recompter lui-même les versets du chapitre.
+function readingModePosition(rm, verseNum) {
+  return {
+    book: rm.book,
+    chapter: rm.chapter,
+    verse: verseNum,
+    total: rm.verses ? rm.verses.length : 0,
+  };
+}
 
 async function activateReadingMode(book, chapter, verseStart) {
   try {
@@ -780,6 +795,29 @@ function logLatencySummary(tracker) {
 // ===========================================================================
 // MAIN PIPELINE: processTranscript
 // ===========================================================================
+// AJOUT (chantier ASR, Étape 4 — correctif "course de finals") : quand
+// l'endpointing découpe la fin d'un énoncé ET le début du suivant en finals
+// quasi-simultanés (ex. bloc3 : « chapitre 21 verset 4. » puis, ~10 ms plus
+// tard, « Deutéronome chapitre 6 verset »), chaque onFinalTranscript lançait
+// un processTranscript() CONCURRENT. Les await internes (corrector IA)
+// entrelaçaient alors les deux traitements : le reset par nom de livre du
+// fragment suivant (Deutéronome) effaçait le buffer de fusion AVANT que la
+// fin de l'énoncé précédent (chapitre 21 verset 4.) ait pu s'y fusionner —
+// Apocalypse 21:4 n'était donc JAMAIS reconstruit. On sérialise ici les
+// appels (chaîne de promesses) : chaque fragment est traité dans l'ordre
+// d'arrivée, et son push + fusion est toujours terminé avant que le fragment
+// suivant (qui reset le buffer s'il porte un livre) ne démarre.
+let transcriptQueue = Promise.resolve();
+
+function enqueueTranscript(text, tracker, opts) {
+  const run = transcriptQueue.then(() => processTranscript(text, tracker, opts));
+  transcriptQueue = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
 /**
  * @param {string} text
  * @param {import('./latency-tracker').Tracker} [tracker] - AJOUT (§14) :
@@ -790,7 +828,7 @@ function logLatencySummary(tracker) {
  *   .mark() ci-dessous est gardé (`tracker &&`), jamais un no-op silencieux
  *   qui masquerait un tracker manquant par erreur.
  */
-async function processTranscript(text, tracker) {
+async function processTranscript(text, tracker, opts = {}) {
   log('Processing transcript: ' + text.substring(0, 100));
 
   if (plugins) {
@@ -894,12 +932,108 @@ async function processTranscript(text, tracker) {
   }
 
   updateTranscriptContext(correctedText);
+  // AJOUT (chantier ASR, Étape 4 — reconstruction de références fragmentées) :
+  // chaque fragment transcrit (final VAD local, final Deepgram, partial stable
+  // relancé) est horodaté dans un buffer glissant (session-state.js) pour
+  // pouvoir être FUSIONNÉ si un énoncé a été découpé par l'endpointing en
+  // plusieurs finals. La fusion elle-même est tentée ci-dessous, uniquement
+  // quand le fragment courant ne suffit pas à produire une référence.
+  //
+  // CORRECTIF (sonde probe-overwrites) : avant de pousser le fragment, on
+  // RESET le buffer dès que ce fragment contient un NOM DE LIVRE — signe
+  // qu'un NOUVEL énoncé commence. Sans ce reset, le résidu du fragment
+  // précédent (« 13 verset 4. », fin de l'énoncé C1) resterait dans le buffer
+  // et se fusionnerait avec le début de l'énoncé suivant (« 2e Timothée
+  // chapitre ») → « 2e Timothée chapitre 13 verset 4. » → 2timothee 13:4 FAUX.
+  try {
+    if (detector.containsBookName(correctedText)) {
+      sessionState.resetTranscriptFragments();
+    }
+  } catch (e) {
+    warn('Fragment reset error: ' + e.message);
+  }
+  sessionState.pushTranscriptFragment(correctedText);
 
   if (!reference) {
     try {
       reference = detector.detectBilingual(correctedText);
     } catch (e) {
       warn('Detector error: ' + e.message);
+    }
+  }
+
+  // AJOUT (chantier ASR, Étape 4 — reconstruction de références fragmentées) :
+  // quand l'ASR a découpé l'énoncé en plusieurs finals (« 1 Corinthiens
+  // chapitre » + « 13 verset » + « 13 verset 4. »), aucun fragment seul ne
+  // contient la référence complète — le fragment courant échoue donc
+  // ci-dessus et rien ne s'affiche jamais (22 énoncés "jamais détectés" du
+  // benchmark initial). En FALLBACK UNIQUEMENT (jamais si le fragment courant
+  // suffisait), on refait la détection sur le texte FUSIONNÉ des fragments
+  // de la fenêtre temporelle (FRAGMENT_FUSION_WINDOW_MS) — et on n'accepte
+  // le résultat QUE s'il porte une référence complète (verseStart défini) :
+  // une référence "chapitre seul" reconstruite n'est pas plus fiable qu'une
+  // vraie et reste soumise à la garde anti-partial-tronqué ci-dessous.
+  if (!reference) {
+    try {
+      const fusedText = sessionState.getFusedRecentText();
+      if (fusedText && fusedText !== correctedText) {
+        const fusedRef = detector.detectBilingual(fusedText);
+        if (fusedRef && fusedRef.book && fusedRef.chapter && fusedRef.verseStart) {
+          log(
+            `Référence reconstruite par fusion de fragments (« ${fusedText.substring(0, 100)} ») → ${fusedRef.book} ${fusedRef.chapter}:${fusedRef.verseStart}`
+          );
+          reference = fusedRef;
+        } else if (fusedRef && !fusedRef.verseStart) {
+          log(
+            `Fusion de fragments : référence incomplète (chapitre seul « ${fusedRef.book} ${fusedRef.chapter} ») — non affichée, attente de plus de fragments`
+          );
+        }
+      }
+    } catch (e) {
+      warn('Fragment fusion error: ' + e.message);
+    }
+  }
+
+  // AJOUT (chantier ASR, Étape 4 — validation de cohérence du chapitre) :
+  // une référence au chapitre INEXISTANT dans le livre (ex. « 2e Timothée
+  // chapitre 13 verset 4 » — 2 Timothée n'a que 4 chapitres) est le signe
+  // d'une CONTAMINATION inter-énoncés : le résidu du fragment précédent
+  // (« 13 verset 4. », fin de C1) a été délivré par l'ASR APRÈS le début de
+  // l'énoncé suivant (« 2e Timothée chapitre », début de C2) — le final
+  // retardé se fusionne alors par erreur. On rejette la référence ET on
+  // retire le résidu fautif du buffer de fusion, pour que le fragment
+  // suivant (« 3 verset 16 ») puisse fusionner proprement.
+  if (reference && reference.book && reference.chapter) {
+    const maxChapter = bibleOfflineCache.CHAPTER_COUNTS[reference.book];
+    if (maxChapter && reference.chapter > maxChapter) {
+      log(
+        `Référence impossible rejetée (${reference.book} n'a que ${maxChapter} chapitres, demande ${reference.chapter}) : résidu d'un énoncé précédent — purge du buffer de fusion`
+      );
+      try {
+        sessionState.removeLastTranscriptFragment();
+      } catch (e) {
+        warn('Fragment purge error: ' + e.message);
+      }
+      reference = null;
+    }
+  }
+
+  // AJOUT (chantier ASR, Étape 4 — énoncé consommé) : une référence COMPLÈTE
+  // (livre + chapitre + verset) détectée sur le fragment courant — directe
+  // (appel rapide ou detectBilingual) ou reconstruite par fusion — signifie
+  // que l'énoncé a été entièrement capturé. On vide alors le buffer de
+  // fusion : sans ce reset, le fragment courant reste dans la fenêtre
+  // glissante et se REFUSIONNE aux énoncés suivants (« Jean chapitre 3,
+  // verset 1 » + texte du verset 2 -> reconstruction erronée « jean 3:1 »,
+  // doublon supprimé, avancée de lecture bloquée). Une référence INCOMPLÈTE
+  // (chapitre seul) ne vide PAS le buffer : l'énoncé peut encore être
+  // découpé par l'endpointing (« chapitre 3 verset » puis « 16 ») et les
+  // fragments doivent pouvoir se fusionner quand le verset arrive.
+  if (reference && reference.book && reference.chapter && reference.verseStart) {
+    try {
+      sessionState.resetTranscriptFragments();
+    } catch (e) {
+      warn('Fragment reset error: ' + e.message);
     }
   }
 
@@ -975,6 +1109,7 @@ async function processTranscript(text, tracker) {
               langMode: sessionState.getDisplayLanguage(),
               durationMs: getVerseDurationMs(),
               readingMode: true,
+              readingModePos: readingModePosition(readingMode, first.num),
             });
             pushHistory({
               reference: label,
@@ -997,6 +1132,56 @@ async function processTranscript(text, tracker) {
   // — voir plus haut) — marque la fin de l'étape "détection biblique".
   if (tracker) tracker.mark('scripture');
 
+  // CORRECTIF (Étape 5) : un partial finalisé localement par le silence VAD
+  // est fréquemment TRONQUÉ (« Jean chapitre 3 verset » alors que l'énoncé
+  // réel est « Jean chapitre 3 verset 16 »). Le promeut-on en « final », la
+  // référence résolue est « chapitre seul » (verseStart indéfini) et le repli
+  // verse 1 afficherait Jean 3:1 de manière erronée — en écrasant ensuite le
+  // bon verset quand le final officiel arrive (course non déterministe).
+  // Principe mission : une référence ambiguë n'est jamais affichée
+  // aveuglément. On ne l'affiche pas, on diffuse une candidateVerse
+  // spéculative, et on attend le final officiel de Deepgram qui est la seule
+  // source autoritaire du texte. On ne touche pas au recordShownReference :
+  // le vrai final ne sera donc jamais bloqué par le dédoublonnage.
+  //
+  // AJOUT (chantier ASR, Étape 4) : l'endpointing Deepgram peut AUSSI
+  // tronquer un final (« Deutéronome chapitre 6 verset » alors que l'énoncé
+  // réel est « Deutéronome chapitre 6 verset 5 » — observé sur bloc3.wav,
+  // corpus D7) : le fragment finit sur « verset »/« verse » SANS numéro, et
+  //   le repli verse 1 afficherait « Deutéronome 6:1 » faux. Le même traitement
+  //   spéculatif s'applique : candidateVerse + attente, pendant que la fusion
+  //   de fragments peut reconstruire le numéro manquant (« verset 5 »).
+  //
+  //   AJOUT (Chantier 1 — précision G1) : un FINAL OFFICIEL DEEPGRAM peut
+  //   aussi arriver « chapitre seul » alors que l'énoncé réel contenait un
+  //   verset (« Jean 14.6 » → final « Jean 14 », le « 6 » n'est jamais sorti
+  //   de l'ASR — observé sur corpus G1). Le repli verse 1 affichait alors
+  //   « Jean 14:1 » FAUX. Même traitement spéculatif pour source
+  //   'deepgram-final' (chapitre seul = ambigu) : on attend un complément de
+  //   texte. La lecture chapitre par chapitre en MODE LECTURE (reading-mode)
+  //   n'est pas concernée (chemin distinct), et le chemin segment (source non
+  //   renseignée, test integration-chapter-only-verse1) garde le repli verse 1.
+  const truncatedChapterOnly =
+    reference.book &&
+    reference.chapter &&
+    !reference.verseStart &&
+    (opts.source === 'local-vad-silence' ||
+      opts.source === 'deepgram-final' ||
+      /(?:verset|verse|versets?)\s*[,.;:!?]?\s*$/i.test(correctedText));
+  if (truncatedChapterOnly) {
+    log(
+      "Référence chapitre seul ambiguë (fragment tronqué ou verset absent de l'ASR) — attente du complément"
+    );
+    broadcast({
+      action: 'candidateVerse',
+      reference: { book: reference.book, chapter: reference.chapter },
+      confidence: 'medium',
+      speculative: true,
+      original: correctedText,
+    });
+    return;
+  }
+
   if (isRateLimited()) {
     warn('Rate limit hit — verse display skipped');
     return;
@@ -1016,11 +1201,21 @@ async function processTranscript(text, tracker) {
       ? `quote:${quotedMatch.reference}`
       : `${reference.book}:${reference.chapter}:${reference.verseStart || ''}`;
   const now = Date.now();
-  if (sessionState.isDuplicateReference(refKey, now)) {
+  // AJOUT (Chantier 1 — dédoublonnage par énoncé) : on passe au
+  // session-state le contexte d'énoncé (identité du tracker, texte affiché,
+  // source) pour qu'il distingue cascade partiel→final du MÊME énoncé
+  // (à supprimer), re-émission tardive d'un final officiel Deepgram
+  // (à supprimer), et nouvelle intention d'un énoncé distinct (à afficher).
+  const dedupCtx = {
+    utteranceId: tracker && tracker.id != null ? tracker.id : null,
+    text: correctedText,
+    source: opts.source || null,
+  };
+  if (sessionState.isDuplicateReference(refKey, now, dedupCtx)) {
     log('Duplicate suppressed: ' + refKey);
     return;
   }
-  sessionState.recordShownReference(refKey, now);
+  sessionState.recordShownReference(refKey, now, dedupCtx);
 
   let verse;
   try {
@@ -1769,7 +1964,7 @@ wss.on('connection', (ws, req) => {
           timestamp: Date.now(),
           source: sanitized.source || 'browser',
         });
-        await processTranscript(text);
+        await enqueueTranscript(text);
       }
       return;
     }
@@ -1966,7 +2161,7 @@ wss.on('connection', (ws, req) => {
       }
       try {
         const firstVerse = await readingMode.start(ref.book, ref.chapter, ref.verseStart);
-        ws.send(JSON.stringify({ action: 'readingStarted', reference: ref }));
+        broadcast({ action: 'readingStarted', reference: ref });
         if (firstVerse) {
           const label = bibleLookup.buildReferenceLabel(
             { book: ref.book, chapter: ref.chapter, verseStart: firstVerse.num },
@@ -1981,6 +2176,7 @@ wss.on('connection', (ws, req) => {
             langMode: sessionState.getDisplayLanguage(),
             durationMs: getVerseDurationMs(),
             readingMode: true,
+            readingModePos: readingModePosition(readingMode, firstVerse.num),
           });
           pushHistory({
             reference: label,
@@ -2960,6 +3156,24 @@ function startPipeline() {
   let alertedForCurrentSilence = false;
   let silenceStartedAt = null; // horodatage réel du 1er skip de la série en cours
 
+  // Étape 5c/5d — mémoire des partials de l'énoncé en cours (fenêtre glissante
+  // N-3..N, bornée par l'identité du tracker d'énoncé) : une référence HIGH
+  // n'est affichée sur un PARTIAL que si elle est déjà confirmée par un
+  // partial précédent du même énoncé. Les partials Deepgram sont progressifs
+  // mais PAS infaillibles : un numéro de verset peut y apparaître
+  // temporairement faux (« verset 1 » corrigé en « verset 16 » au partial
+  // suivant). Sinon (première occurrence) : candidateVerse spéculative +
+  // préchargement du verset (cache Bible échauffé), sans affichage — le
+  // partial suivant ou le final officiel confirmera. Cf. mission « la
+  // référence n'est jamais affichée avant d'être CONFIRMÉE ».
+  const PARTIAL_WINDOW_SIZE = 3;
+  let lastPartialTracker = null;
+  let recentPartialRefs = [];
+  function resetPartialWindow(tracker) {
+    lastPartialTracker = tracker;
+    recentPartialRefs = [];
+  }
+
   audioCapture.on({
     onAudioSegment: async (segmentFile, tracker) => {
       consecutiveSkips = 0;
@@ -3018,7 +3232,7 @@ function startPipeline() {
               })
               .catch(() => {});
           }
-          await processTranscript(result.text, tracker);
+          await enqueueTranscript(result.text, tracker);
           logLatencySummary(tracker);
         }
       } catch (err) {
@@ -3048,6 +3262,9 @@ function startPipeline() {
     // ms plus tard.
     onPartialTranscript: async (text, meta, tracker) => {
       broadcast({ action: 'transcriptPartial', text, confidence: meta && meta.confidence });
+      if (tracker !== lastPartialTracker) {
+        resetPartialWindow(tracker);
+      }
       let fastMatch = null;
       try {
         fastMatch = detector.detectExact(text);
@@ -3056,8 +3273,42 @@ function startPipeline() {
         // juste "pas encore de référence exploitable dans ce fragment".
       }
       if (fastMatch && fastMatch.confidence === 'high') {
-        log('Appel direct sur partial (référence explicite) : ' + fastMatch.raw);
-        await processTranscript(text, tracker);
+        const refKey = `${fastMatch.book}:${fastMatch.chapter}:${fastMatch.verseStart || ''}`;
+        const stable = recentPartialRefs.includes(refKey);
+        recentPartialRefs.push(refKey);
+        if (recentPartialRefs.length > PARTIAL_WINDOW_SIZE) recentPartialRefs.shift();
+        if (stable) {
+          log('Appel direct sur partial (référence explicite, stable) : ' + fastMatch.raw);
+          await enqueueTranscript(text, tracker);
+        } else {
+          // Première occurrence : référence potentiellement en cours de
+          // stabilisation — jamais affichée aveuglément (mission). On diffuse
+          // une candidateVerse spéculative et on échauffe le cache Bible pour
+          // que l'affichage (partial suivant ou final) soit quasi instantané.
+          log('Référence partielle spéculative — attente de confirmation : ' + fastMatch.raw);
+          broadcast({
+            action: 'candidateVerse',
+            reference: {
+              book: fastMatch.book,
+              chapter: fastMatch.chapter,
+              verseStart: fastMatch.verseStart,
+            },
+            confidence: 'high',
+            speculative: true,
+            original: text,
+          });
+          bibleLookup
+            .getVerseMultilang(
+              {
+                book: fastMatch.book,
+                chapter: fastMatch.chapter,
+                verseStart: fastMatch.verseStart,
+                verseEnd: fastMatch.verseEnd,
+              },
+              sessionState.getDisplayLanguage()
+            )
+            .catch(() => {});
+        }
       }
     },
     // AJOUT (Deepgram streaming) : évènement 'Results' final — chemin
@@ -3084,7 +3335,9 @@ function startPipeline() {
           })
           .catch(() => {});
       }
-      await processTranscript(text, tracker);
+      await enqueueTranscript(text, tracker, {
+        source: meta?.finalizedBy === 'local-vad-silence' ? 'local-vad-silence' : 'deepgram-final',
+      });
       logLatencySummary(tracker);
     },
     // AJOUT (Deepgram streaming) : la session temps réel est tombée — juste
@@ -3216,11 +3469,33 @@ try {
 // risque à appeler sans condition à chaque démarrage. Volontairement
 // fire-and-forget (.catch, pas d'await) : un téléchargement de ~1189
 // chapitres ne doit jamais retarder le démarrage du pipeline en direct.
+// CORRECTIF (Chantier 0 — crash libuv à l'arrêt des tests) : sur Windows
+// (Node ≥22), process.exit() pendant que les fetch() undici du
+// téléchargement sont encore en vol déclenche un abort libuv
+// ("Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)",
+// src\win\async.c) — reproduit dans ~20 % des arrêts rapides. Les tests
+// qui démarrent server.js puis sortent vite (process.exit) peuvent donc
+// crasher leur process. CHURCHOVERLAY_SKIP_BIBLE_DOWNLOAD=1 permet aux
+// tests de désactiver ce téléchargement sans effet sur la production.
 try {
   bibleOfflineCache.setUserDataDir(USER_DATA_DIR);
-  bibleOfflineCache
-    .downloadFullBible()
-    .catch((err) => warn('Offline Bible download failed: ' + err.message));
+  if (process.env.CHURCHOVERLAY_SKIP_BIBLE_DOWNLOAD !== '1') {
+    bibleOfflineCache
+      .downloadFullBible()
+      .catch((err) => warn('Offline Bible download failed: ' + err.message));
+    // AJOUT (Chantier 0 — cause réelle du crash libuv à l'arrêt) : un
+    // téléchargement en vol au moment où le process se termine laisse des
+    // fetch() undici ouverts et provoque une assertion libuv sur Windows
+    // ("Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)") dans ~20 %
+    // des arrêts rapides. On aborde ces fetch proprement à la sortie
+    // (SIGINT/SIGTERM/exit) — l'env var CHURCHOVERLAY_SKIP_BIBLE_DOWNLOAD=1
+    // reste nécessaire pour les TESTS qui s'arrêtent volontairement en
+    // pleine session (process.exit immédiat, abort async trop tardif).
+    const abortOfflineDownload = () => bibleOfflineCache.abortDownload();
+    process.once('SIGINT', abortOfflineDownload);
+    process.once('SIGTERM', abortOfflineDownload);
+    process.once('exit', abortOfflineDownload);
+  }
 } catch (err) {
   warn('Failed to init offline Bible cache: ' + err.message);
 }

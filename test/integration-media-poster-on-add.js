@@ -73,6 +73,7 @@ injectFakeModule('audio-capture.js', {
 });
 
 process.env.PORT = process.env.PORT || '8769'; // distinct des autres tests
+process.env.CHURCHOVERLAY_SKIP_BIBLE_DOWNLOAD = '1'; // pas de téléchargement biblique en test (crash libuv à l'arrêt sinon)
 require('../server.js');
 const mediaLibrary = require('../media-library');
 
@@ -81,6 +82,32 @@ const WebSocket = require('ws');
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
+
+// Attend que le serveur ait DIFFUSÉ une action précise — le serveur envoie
+// toujours `mediaLibraryUpdated` APRÈS que addItem() (copie fichier + index)
+// est entièrement terminé. Synchroniser sur cet événement (au lieu d'un
+// sleep fixe) élimine la course observée : sous charge, le traitement du
+// message WS pouvait dépasser les 400ms et les assertions lisaient l'état
+// AVANT l'ajout (item introuvable). La borne de 8s est un filet de sécurité,
+// pas un délai artificiel : elle ne déclenche que si le serveur ne répond
+// plus du tout.
+function waitForAction(action, timeoutMs = 8000) {
+  const deadline = Date.now() + timeoutMs;
+  const startIdx = received.length;
+  return new Promise((resolve, reject) => {
+    const step = () => {
+      for (let i = startIdx; i < received.length; i++) {
+        if (received[i].action === action) return resolve();
+      }
+      if (Date.now() > deadline)
+        return reject(new Error(`Timeout: action '${action}' jamais diffusée`));
+      setTimeout(step, 20);
+    };
+    step();
+  });
+}
+
+const received = [];
 
 function makeSourceFile(filename) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'churchoverlay-poster-add-test-'));
@@ -109,7 +136,6 @@ function makeSourceFile(filename) {
   const addedIds = [];
 
   const ws = new WebSocket(`ws://127.0.0.1:${process.env.PORT}`);
-  const received = [];
   await new Promise((resolve, reject) => {
     ws.on('open', resolve);
     ws.on('error', reject);
@@ -134,7 +160,7 @@ function makeSourceFile(filename) {
         setAsPoster: true,
       })
     );
-    await sleep(400);
+    await waitForAction('mediaLibraryUpdated');
 
     const posterItem = mediaLibrary.listItems().find((i) => i.label === 'Poster Semaine 1');
     if (posterItem) addedIds.push(posterItem.id);
@@ -172,7 +198,7 @@ function makeSourceFile(filename) {
         setAsPoster: true,
       })
     );
-    await sleep(400);
+    await waitForAction('mediaLibraryUpdated');
 
     const poster2Item = mediaLibrary.listItems().find((i) => i.label === 'Poster Semaine 2');
     if (poster2Item) addedIds.push(poster2Item.id);
@@ -200,7 +226,7 @@ function makeSourceFile(filename) {
         label: 'Annonce ponctuelle',
       })
     );
-    await sleep(400);
+    await waitForAction('mediaLibraryUpdated');
 
     const oneShotItem = mediaLibrary.listItems().find((i) => i.label === 'Annonce ponctuelle');
     if (oneShotItem) addedIds.push(oneShotItem.id);

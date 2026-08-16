@@ -107,6 +107,7 @@ process.env.WS_AUTH_TOKEN = OPERATOR_TOKEN;
 process.env.WS_VIEWER_TOKEN = VIEWER_TOKEN;
 process.env.PORT = process.env.PORT || '8768'; // distinct des autres tests
 process.env.WS_HOST = '127.0.0.1';
+process.env.CHURCHOVERLAY_SKIP_BIBLE_DOWNLOAD = '1'; // pas de téléchargement biblique en test (crash libuv à l'arrêt sinon)
 
 require('../server.js');
 

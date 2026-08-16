@@ -11,7 +11,7 @@ test.describe('Confirmation des bascules de réglages', () => {
   test('activer le mode grand contraste affiche une confirmation', async ({ page }) => {
     await page.goto('/');
     await page
-      .locator('.sidebar .nav-item[data-sections="controls,analysis,settings,overlay"]')
+      .locator('.sidebar .nav-item[data-sections*="controls,analysis,settings,overlay"]')
       .click();
 
     const toggle = page.locator('#highContrastToggle');
@@ -20,9 +20,14 @@ test.describe('Confirmation des bascules de réglages', () => {
 
     await toggle.check();
 
-    await expect(page.locator('.toast', { hasText: 'grand contraste activé' })).toBeVisible({
-      timeout: 5000,
-    });
+    // Le serveur diffuse une confirmation qui déclenche DEUX toasts proches
+    // ("...activé." côté tableau de bord et "...activé sur l'overlay." côté
+    // scène) — prendre le premier pour éviter la violation de mode strict.
+    await expect(page.locator('.toast', { hasText: 'grand contraste activé' }).first()).toBeVisible(
+      {
+        timeout: 5000,
+      }
+    );
     // La case reflète bien la confirmation renvoyée par le serveur (pas
     // seulement l'état natif du clic) — voir case 'accessibilityMode'.
     await expect(toggle).toBeChecked();

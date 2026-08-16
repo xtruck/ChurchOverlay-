@@ -15,6 +15,15 @@
  * ============================================================================
  */
 
+// AJOUT (Chantier 1 — dédoublonnage par énoncé) : identifiant strictement
+// croissant, unique par tracker (donc par énoncé : un tracker est créé au
+// tout premier indice de voix VAD et refermé au final). C'est CETTE identité
+// qui permet à server.js de distinguer « répétition du MÊME énoncé »
+// (partial stable puis final officiel = UNE action) de « nouvelle intention »
+// (un nouvel énoncé redit la même référence, ex. corpus A1→A5 : 5 énoncés
+// distincts qui doivent tous afficher Jean 3:16).
+let nextTrackerId = 1;
+
 /**
  * @param {number} [startedAt] - Date.now() du point de départ (ex. VAD ayant
  *   détecté le début de la parole) ; par défaut Date.now() au moment de
@@ -22,8 +31,11 @@
  */
 function startTracker(startedAt) {
   const marks = [{ name: 'start', at: startedAt || Date.now() }];
+  const id = nextTrackerId++;
 
   return {
+    /** Identité de l'énoncé — voir le commentaire de nextTrackerId. */
+    id,
     /** @param {string} name */
     mark(name) {
       marks.push({ name, at: Date.now() });

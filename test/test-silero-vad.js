@@ -13,6 +13,8 @@
 
 'use strict';
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
 const vad = require('../silero-vad');
 
 console.log('=== Test Silero VAD (modèle ONNX réel) ===\n');
@@ -91,8 +93,61 @@ async function run() {
   );
   console.log('[TEST] ✓ Erreur explicite sur taille invalide\n');
 
+  console.log(
+    '[TEST] Test 8: NON-RÉGRESSION — de la PAROLE RÉELLE connue doit dépasser le seuil de parole...'
+  );
+  const speechPath = path.join(__dirname, '..', 'live-tests', 'samples', 'testA_16k.wav');
+  assert(fs.existsSync(speechPath), `échantillon de parole connu introuvable : ${speechPath}`);
+  const speechSamples = readWavPcm16(speechPath);
+  assert(speechSamples.length >= vad.WINDOW_SAMPLES, 'échantillon de parole trop court');
+  const speechStream = vad.createStreamState();
+  const probs = [];
+  for (
+    let offset = 0;
+    offset + vad.WINDOW_SAMPLES <= speechSamples.length;
+    offset += vad.WINDOW_SAMPLES
+  ) {
+    const window = speechSamples.slice(offset, offset + vad.WINDOW_SAMPLES);
+    probs.push(await vad.processWindow(window, speechStream));
+  }
+  const maxProb = Math.max(...probs);
+  const pctAbove = (probs.filter((p) => p >= 0.5).length / probs.length) * 100;
+  assert(
+    maxProb >= 0.5,
+    `de la parole réelle connue (testA_16k.wav) doit être détectée : max prob=${maxProb.toFixed(4)}, ` +
+      `${pctAbove.toFixed(1)}% des fenêtres >= 0.5. Si le modèle renvoie ~0.001 partout, c'est le bug du ` +
+      'contexte STFT de 64 échantillons manquant (voir en-tête de silero-vad.js).'
+  );
+  console.log(
+    `[TEST] ✓ prob(parole testA_16k.wav) : max=${maxProb.toFixed(4)}, ` +
+      `${pctAbove.toFixed(1)}% des fenêtres >= 0.5 (avant correctif : max ~0.003)\n`
+  );
+
   console.log('\n=== Tous les tests silero-vad sont passés ===');
   process.exit(0);
+}
+
+/**
+ * Lit un WAV PCM16 mono/16kHz en Float32Array [-1,1] (scan des chunks,
+ * insensible au header). Taille = multiple de WINDOW_SAMPLES non garanti —
+ * l'appelant tronque.
+ */
+function readWavPcm16(filePath) {
+  const b = fs.readFileSync(filePath);
+  let off = 12;
+  while (off + 8 <= b.length) {
+    const id = b.toString('ascii', off, off + 4);
+    const sz = b.readUInt32LE(off + 4);
+    if (id === 'data') {
+      const n = sz / 2;
+      const out = new Float32Array(n);
+      const dataOff = off + 8;
+      for (let i = 0; i < n; i++) out[i] = b.readInt16LE(dataOff + i * 2) / 32768;
+      return out;
+    }
+    off += 8 + sz + (sz % 2);
+  }
+  throw new Error(`chunk 'data' introuvable dans ${filePath}`);
 }
 
 run().catch((err) => {

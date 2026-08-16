@@ -124,11 +124,70 @@ export function addTranscript(message) {
   if (state.transcripts.length > 50) state.transcripts.pop();
 }
 
+// AJOUT (frontend — candidateVerse) : formate une référence reçue en objet
+// ({ book, chapter, verseStart }) ou en chaîne toute faite en un libellé
+// lisible, quel que soit le cas — utilisé à la fois par showCandidateVerse
+// et par ws-dispatch.js pour l'activité (avant, un message affichait
+// "[object Object]" dans le flux d'activité). book est normalisé en
+// minuscules par le détecteur ("jean") — capitalisé pour l'affichage.
+export function formatReferenceLabel(reference) {
+  if (typeof reference === 'string') return reference;
+  if (!reference || typeof reference !== 'object') return '';
+  const book = String(reference.book || '').trim();
+  const displayBook = book ? book.charAt(0).toUpperCase() + book.slice(1) : '';
+  const chapter = reference.chapter ? ` ${reference.chapter}` : '';
+  const verse = reference.verseStart ? `:${reference.verseStart}` : '';
+  return `${displayBook}${chapter}${verse}`;
+}
+
+// AJOUT (Étape 5 — candidateVerse spéculative) : cycle de vie unique des
+// bandeaux "candidat" (fuzzy + spéculatif). Masque les deux bandeaux et
+// annule leurs timeouts — appelé quand un vrai showVerse arrive (la
+// confirmation est là, plus rien à signaler), quand une nouvelle candidate
+// remplace l'ancienne, et au masquage manuel.
+export function clearCandidateNotices() {
+  const fuzzyEl = document.getElementById('fuzzyMatchNotice');
+  const candidateEl = document.getElementById('candidateNotice');
+  if (fuzzyEl) {
+    fuzzyEl.style.display = 'none';
+    clearTimeout(fuzzyEl._hideTimer);
+  }
+  if (candidateEl) {
+    candidateEl.style.display = 'none';
+    clearTimeout(candidateEl._hideTimer);
+  }
+}
+
 export function showCandidateVerse(message) {
-  console.log('Verset candidat (correspondance floue) détecté :', message);
-  const el = document.getElementById('fuzzyMatchNotice');
-  if (el && message.original) {
-    el.textContent = `Correction automatique : "${message.original}" → livre "${message.reference.book || message.reference}" (distance ${message.distance || 1})`;
+  const refLabel = formatReferenceLabel(message.reference);
+
+  // Correspondance floue ("Correction automatique") : le texte original
+  // transcrit ("chapitre quatorze" → "Jean 14") — bandeau violet existant.
+  const isFuzzyCorrection =
+    typeof message.distance === 'number' && !message.speculative && message.original;
+  if (isFuzzyCorrection) {
+    const el = document.getElementById('fuzzyMatchNotice');
+    if (el) {
+      const book = refLabel || formatReferenceLabel(message.reference && message.reference.book);
+      el.textContent = `Correction automatique : "${message.original}" → livre "${book}" (distance ${message.distance})`;
+      el.style.display = 'block';
+      clearTimeout(el._hideTimer);
+      el._hideTimer = setTimeout(() => {
+        el.style.display = 'none';
+      }, 8000);
+    }
+    return;
+  }
+
+  // Candidate spéculative (Étape 5) : référence entendue (explicite, stable,
+  // ou chapitre seul d'un partial local) — on ATTEND la confirmation du
+  // texte final officiel avant tout affichage. Bandeau cyan distinct, effacé
+  // au showVerse réel / remplacé / timeout. Un message de remplacement
+  // n'empile jamais : la nouvelle candidate masque la précédente.
+  const el = document.getElementById('candidateNotice');
+  if (el && refLabel) {
+    clearCandidateNotices();
+    el.textContent = `Référence entendue : ${refLabel} — en attente de confirmation du texte…`;
     el.style.display = 'block';
     clearTimeout(el._hideTimer);
     el._hideTimer = setTimeout(() => {

@@ -78,5 +78,6 @@ module.exports = {
   numberWordsToDigits: detector.numberWordsToDigits,
   detectTranslationSwitch: detector.detectTranslationSwitch,
   hasIntroductionPhrase: detector.hasIntroductionPhrase,
+  containsBookName: detector.containsBookName,
   BOOKS: detector.BOOKS,
 };

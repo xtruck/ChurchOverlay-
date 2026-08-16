@@ -47,7 +47,36 @@ export function setReadingModeActive(active) {
   if (advanceRow) advanceRow.style.display = active ? 'flex' : 'none';
 }
 
+// AJOUT (frontend — mode lecture "pro") : affiche la progression courante
+// dans le chapitre (ex. "Jean 3 · verset 16/36"). Pos = { book, chapter,
+// verse, total }, diffusé par le serveur dans chaque showVerse en mode
+// lecture (voir server.js > readingModePosition). Ne reçoit que des
+// chiffres du serveur — jamais de calcul ici.
+export function setReadingPosition(pos) {
+  const el = document.getElementById('readingModePosition');
+  if (!el) return;
+  if (pos && typeof pos.total === 'number' && pos.total > 0 && pos.verse) {
+    const book = String(pos.book || '')
+      .trim()
+      .replace(/^./, (c) => c.toUpperCase());
+    el.textContent = `${book} ${pos.chapter} · verset ${pos.verse}/${pos.total}`;
+    el.style.display = 'inline-flex';
+  } else {
+    el.textContent = '';
+    el.style.display = 'none';
+  }
+}
+
+export function clearReadingPosition() {
+  const el = document.getElementById('readingModePosition');
+  if (!el) return;
+  el.textContent = '';
+  el.style.display = 'none';
+}
+
 window.startReadingMode = startReadingMode;
 window.stopReadingMode = stopReadingMode;
 window.nextReadingVerse = nextReadingVerse;
 window.previousReadingVerse = previousReadingVerse;
+window.setReadingPosition = setReadingPosition;
+window.clearReadingPosition = clearReadingPosition;

@@ -292,6 +292,12 @@ async function main() {
   }
 
   // --- Dédoublonnage réel (session-state.js), à partir de vraies clés de référence détectées ---
+  // CORRECTIF (Chantier 1) : la règle de dédoublonnage est désormais PAR
+  // ÉNONCÉ (contextes { utteranceId, text, source }) — la cascade
+  // partiel→final du même énoncé est supprimée, un énoncé DISTINCT qui redit
+  // la même référence est une nouvelle intention. On exerce donc la règle
+  // avec un même utteranceId (attendu: supprimé) puis un utteranceId
+  // différent (attendu: nouvelle intention, non supprimé).
   console.log('\n--- Vérification dédoublonnage (session-state.js, vraies clés) ---');
   const withRef = results.filter((r) => r.finalRefKey);
   if (withRef.length > 0) {
@@ -301,11 +307,29 @@ async function main() {
     console.log(
       `isDuplicateReference("${first.finalRefKey}") avant tout enregistrement : ${beforeRecord} (attendu: false, sauf collision avec un test précédent de cette même exécution)`
     );
-    sessionState.recordShownReference(first.finalRefKey, now1);
+    const uttA = 999001; // énoncé A
+    sessionState.recordShownReference(first.finalRefKey, now1, {
+      utteranceId: uttA,
+      text: first.text,
+      source: 'deepgram-final',
+    });
     const now2 = now1 + 1000;
-    const afterRecord = sessionState.isDuplicateReference(first.finalRefKey, now2);
+    const afterRecordSameUtt = sessionState.isDuplicateReference(first.finalRefKey, now2, {
+      utteranceId: uttA,
+      text: first.text,
+      source: 'deepgram-final',
+    });
     console.log(
-      `isDuplicateReference("${first.finalRefKey}") 1s après enregistrement       : ${afterRecord} (attendu: true — même énoncé répété serait supprimé)`
+      `isDuplicateReference("${first.finalRefKey}") 1s après enregistrement, MÊME énoncé : ${afterRecordSameUtt} (attendu: true — cascade partiel→final du même énoncé supprimée)`
+    );
+    const uttB = uttA + 1; // énoncé B, distinct
+    const afterRecordOtherUtt = sessionState.isDuplicateReference(first.finalRefKey, now2, {
+      utteranceId: uttB,
+      text: 'texte différent du même verset',
+      source: 'local-vad-silence',
+    });
+    console.log(
+      `isDuplicateReference("${first.finalRefKey}") 1s après enregistrement, AUTRE énoncé : ${afterRecordOtherUtt} (attendu: false — nouvelle intention, doit être affichée)`
     );
     if (withRef.length > 1) {
       const second = withRef.find((r) => r.finalRefKey !== first.finalRefKey);

@@ -162,6 +162,7 @@ injectFakeModule('audio-capture.js', {
 // Démarrage du serveur réel (avec les mocks ci-dessus déjà en cache)
 // -------------------------------------------------------------------------
 process.env.PORT = process.env.PORT || '8766'; // évite le conflit avec une instance déjà lancée sur 8765
+process.env.CHURCHOVERLAY_SKIP_BIBLE_DOWNLOAD = '1'; // pas de téléchargement biblique en test (crash libuv à l'arrêt sinon)
 require('../server.js');
 
 const WebSocket = require('ws');

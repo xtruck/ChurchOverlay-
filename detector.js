@@ -75,7 +75,15 @@ function normalize(value) {
     .replace(/[’']/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  return correctPhoneticNoise(base);
+  // CORRECTIF (chantier ASR, Étape 4 — fusion de fragments) : les formes
+  // ordinales abrégées « 2e », « 1re », « 1er », « 2eme » (les plus
+  // fréquentes à la transcription ASR) n'étant pas des alias reconnus des
+  // livres numérotés, « 1re Jean chapitre 4 verset 8 » retombait sur l'alias
+  // simple « jean » (l'évangile) au lieu de « 1jean » — affichage FAUX
+  // jean 4:8. On normalise ici le suffixe ordinal → numéro seul, exactement
+  // comme le fait containsBookName() ci-dessous. numberWordsToDigits() ne
+  // les reconnaît pas (testé), d'où ce remplacement ciblé.
+  return correctPhoneticNoise(base).replace(/\b(\d+)\s*(?:er|re|eme|ieme|e)\b/gi, '$1');
 }
 
 // CUTOVER (support bilingue FR/EN, lot 10) : voir number-words.js (lot 9),
@@ -408,6 +416,42 @@ if (require.main === module) {
  * @param {string} text - Segment de transcription à analyser
  * @returns {{ code: 'lsg'|'darby' }|null}
  */
+/**
+ * AJOUT (chantier ASR, Étape 4 — reset du buffer de fusion sur changement
+ * d'énoncé) : indique si un fragment transcrit contient un NOM DE LIVRE
+ * biblique, quel que soit le reste de la phrase. Distinct de detect()/
+ * detectExact(), qui exigent un chapitre/verset pour accepter — un fragment
+ * « 2e Timothée chapitre » (début d'un nouvel énoncé) ne produit AUCUNE
+ * référence détectable seule, mais doit quand même signaler que le buffer
+ * de fusion doit être vidé, sinon le résidu du fragment précédent (« 13
+ * verset 4. ») s'y collerait et donnerait « 2e Timothée chapitre 13 verset
+ * 4. » → 2timothee 13:4 FAUX.
+ * @param {string} text - Fragment transcrit à analyser
+ * @returns {string|null} Le slug du livre trouvé (ex. '2timothee'), ou null.
+ */
+function containsBookName(text) {
+  // 1) Normalisation : minuscules, accents, chiffres écrits en toutes
+  //    lettres (« premier » → « 1 », « deuxieme » → « 2 »).
+  // 2) Ordinaux abrégés « 2e », « 1re », « 1er », « 2eme » → numéro seul
+  //    (« 2e timothee » → « 2 timothee ») — ces formes ne sont pas
+  //    reconnues par numberWordsToDigits() (testé), mais sont les plus
+  //    fréquentes à la transcription ASR (« 2e Timothée », « 1re Jean »).
+  const t = numberWordsToDigits(normalize(text))
+    .replace(/\b(\d+)\s*(?:er|re|eme|ieme|e)\b/gi, '$1')
+    .replace(/\s+/g, ' ');
+  for (const { book, name } of aliases) {
+    // Les alias de <=3 lettres (« ne », « es », « os », « jn », « ap »…)
+    // matcheraient des mots courants du français parlé et déclencheraient
+    // un reset INUTILE du buffer (perte d'une fusion légitime) — on les
+    // ignore. Tous les livres ont au moins un alias de >=4 lettres (vérifié
+    // sur BOOKS) : la détection n'est donc jamais perdue par ce filtre.
+    if (name.length <= 3) continue;
+    const escaped = escapeRegExp(name).replace(/\s+/g, '\\s+');
+    if (new RegExp(`(?:^|\\s)${escaped}(?=\\s|[,.;:!?]|$)`, 'i').test(t)) return book;
+  }
+  return null;
+}
+
 function detectTranslationSwitch(text) {
   const normalized = normalize(text);
   // Verbe déclencheur, conjugué correctement (le français ne forme pas
@@ -437,4 +481,5 @@ module.exports = {
   // n'existaient simplement pas avant.
   aliases,
   testAlias,
+  containsBookName,
 };

@@ -137,6 +137,8 @@ Envoyé quand un verset doit être affiché (manuel ou automatique).
 
 - `autoDetected` (boolean, optionnel): `true` si détecté automatiquement par transcription
 - `provider` (string, optionnel): Provider API utilisé pour la recherche
+- `readingMode` (boolean, optionnel): `true` si le verset est affiché dans le cadre du mode lecture (verset par verset)
+- `readingModePos` (object, optionnel, mode lecture uniquement): position courante de la lecture — `{ book, chapter, verse, total }` (chapitre + numéro de verset affiché + nombre total de versets du chapitre), pour afficher la progression côté tableau de bord sans recomptage client
 
 ### 2. hideVerse - Masquer le verset
 
@@ -181,7 +183,18 @@ Envoyé quand une transcription audio est reçue de Whisper.
 
 ### 5. candidateVerse - Verset candidat
 
-Envoyé quand une référence biblique est détectée dans la transcription.
+Envoyé quand une référence biblique est détectée dans la transcription. Deux
+formes distinctes côté réception :
+
+- **Correspondance floue** (`distance` présent) : le texte transcrit ne
+  correspondait à aucun livre exact — le détecteur a proposé le livre le
+  plus proche. À afficher comme "correction automatique".
+- **Spéculative** (`speculative: true`, Étape 5) : une référence a été
+  entendue (référence explicite sur un partial en cours de stabilisation,
+  ou chapitre seul d'un partial finalisé localement par le silence VAD).
+  Le système attend la confirmation du texte final officiel (`showVerse`) —
+  une référence ambiguë n'est jamais affichée d'office. Le bandeau doit
+  signaler "en attente de confirmation" et être effacé au `showVerse` réel.
 
 ```json
 {
@@ -197,6 +210,13 @@ Envoyé quand une référence biblique est détectée dans la transcription.
   "timestamp": 1234567890
 }
 ```
+
+**Champs complémentaires** (selon la forme) :
+
+- `speculative` (boolean, optionnel): `true` = référence entendue, en attente de confirmation
+- `confidence` (string, optionnel): `"medium"` (chapitre seul) ou `"high"` (référence explicite stable)
+- `original` (string, optionnel): texte transcrit d'origine (utile pour la correction floue)
+- `distance` (number, optionnel): distance de la correspondance floue, si applicable
 
 ### 6. lookupError - Erreur de recherche
 

@@ -106,6 +106,30 @@ const REQUEST_DELAY_MS = 300; // rythme poli envers l'API gratuite helloao, évi
 let dirPath = null;
 let loadedData = null; // { translation, books: { [bookKey]: { [chapter]: { [verse]: text } } } }
 let downloadState = { status: 'idle', downloaded: 0, total: 0, translation: null };
+// AJOUT (Chantier 0 — cause réelle du crash libuv à l'arrêt) : les fetch()
+// undici en vol d'un téléchargement en arrière-plan déclenchent sur Windows
+// une assertion libuv ("Assertion failed: !(handle->flags &
+// UV_HANDLE_CLOSING)", src\win\async.c) quand le process s'arrête vite
+// (process.exit). L'env var CHURCHOVERLAY_SKIP_BIBLE_DOWNLOAD=1 évite déjà
+// le téléchargement dans les tests ; côté production, on offre à la sortie
+// propre (SIGINT/SIGTERM/exit) de ABANDONNER les fetch en cours via un
+// AbortController — le signal est passé à chaque requête, et l'abort fait
+// sortir la boucle immédiatement (voir downloadFullBible).
+let activeAbort = null;
+
+/**
+ * AJOUT (Chantier 0 — arrêt propre du téléchargement en arrière-plan) :
+ * abandonne les fetch() en vol du téléchargement complet en cours. Sans
+ * effet si aucun téléchargement n'actif. À appeler sur SIGINT/SIGTERM/exit
+ * (voir server.js) pour ne jamais laisser un fetch undici "en l'air" au
+ * moment où le process se termine.
+ */
+function abortDownload() {
+  if (activeAbort) {
+    activeAbort.abort();
+    activeAbort = null;
+  }
+}
 
 /**
  * @param {string} userDataDir - Dossier utilisateur de l'app (hors app.asar)
@@ -237,6 +261,12 @@ async function downloadFullBible(translation = DEFAULT_TRANSLATION) {
     `[bible-offline] Téléchargement en arrière-plan de la base biblique complète (${translation}, ${totalChapters} chapitres)...`
   );
 
+  // AJOUT (Chantier 0) : chaque téléchargement a son propre AbortController ;
+  // abortDownload() (ci-dessus) peut l'abandonner à tout moment pour fermer
+  // proprement les fetch undici avant l'arrêt du process.
+  activeAbort = new AbortController();
+  const signal = activeAbort.signal;
+
   const books = {};
   let downloaded = 0;
 
@@ -249,7 +279,7 @@ async function downloadFullBible(translation = DEFAULT_TRANSLATION) {
     for (let chapter = 1; chapter <= chapterCount; chapter++) {
       try {
         const url = `https://bible.helloao.org/api/${translation}/${bookCode}/${chapter}.json`;
-        const res = await fetch(url);
+        const res = await fetch(url, { signal });
         if (res.ok) {
           const data = await res.json();
           const content = data && data.chapter && data.chapter.content;
@@ -265,6 +295,15 @@ async function downloadFullBible(translation = DEFAULT_TRANSLATION) {
           }
         }
       } catch (_e) {
+        // AJOUT (Chantier 0) : abandon demandé (arrêt du process) — on sort
+        // immédiatement des deux boucles sans rien écrire : le prochain
+        // démarrage retentera (downloadFullBible est idempotent, isAvailable()
+        // vérifie que le fichier local existe, donc un téléchargement
+        // interrompu ne sera pas considéré comme complet).
+        if (signal.aborted) {
+          activeAbort = null;
+          return;
+        }
         // Chapitre manqué (réseau, format inattendu...) : tant pis, le
         // reste du téléchargement continue plutôt que de tout interrompre —
         // un trou ponctuel dans le cache hors-ligne reste préférable à
@@ -275,6 +314,8 @@ async function downloadFullBible(translation = DEFAULT_TRANSLATION) {
       await sleep(REQUEST_DELAY_MS);
     }
   }
+
+  activeAbort = null;
 
   try {
     fs.mkdirSync(dirPath, { recursive: true });
@@ -295,6 +336,13 @@ module.exports = {
   isAvailable,
   getOfflineVerse,
   downloadFullBible,
+  abortDownload,
   getStatus,
   DEFAULT_TRANSLATION,
+  // AJOUT (chantier ASR, Étape 4 — validation des références reconstruites
+  // par fusion de fragments) : nombre réel de chapitres par livre, utilisé
+  // pour rejeter une référence impossible (ex. « 2e Timothée chapitre 13
+  // verset 4 » — 2 Timothée n'a que 4 chapitres), signe d'une contamination
+  // inter-énoncés (résidu du fragment précédent fusionné par erreur).
+  CHAPTER_COUNTS,
 };
