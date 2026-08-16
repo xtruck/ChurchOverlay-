@@ -1,24 +1,24 @@
-'use strict';
+﻿'use strict';
 /**
  * ============================================================================
- *  live-tests/endpointing-strategies.js — comparaison RÉELLE de stratégies de
- *  détection de fin d'énoncé côté Deepgram, contre le vrai service.
+ *  live-tests/endpointing-strategies.js â€” comparaison RÃ‰ELLE de stratÃ©gies de
+ *  dÃ©tection de fin d'Ã©noncÃ© cÃ´tÃ© Deepgram, contre le vrai service.
  * ----------------------------------------------------------------------------
- *  N'utilise PAS deepgram-streaming.js (volontairement — on ne veut pas
- *  modifier la config de production pendant l'expérimentation, voir §1/§4 du
+ *  N'utilise PAS deepgram-streaming.js (volontairement â€” on ne veut pas
+ *  modifier la config de production pendant l'expÃ©rimentation, voir Â§1/Â§4 du
  *  cahier des charges). Construit ses propres URLs de test avec le module
- *  `ws` directement, même en-tête d'authentification.
+ *  `ws` directement, mÃªme en-tÃªte d'authentification.
  *
- *  Stratégies testées, sur le MÊME échantillon audio (silence pur en fin de
- *  phrase, pour isoler la détection de fin de parole du bruit ambiant) :
+ *  StratÃ©gies testÃ©es, sur le MÃŠME Ã©chantillon audio (silence pur en fin de
+ *  phrase, pour isoler la dÃ©tection de fin de parole du bruit ambiant) :
  *    A. Configuration actuelle de production (endpointing=500 seul)
- *    B. endpointing seul, mais silence prolongé (jusqu'à 10s) — pour savoir
- *       si ça finit PAR arriver, ou si ça n'arrive vraiment jamais
+ *    B. endpointing seul, mais silence prolongÃ© (jusqu'Ã  10s) â€” pour savoir
+ *       si Ã§a finit PAR arriver, ou si Ã§a n'arrive vraiment jamais
  *    C. utterance_end_ms=1000 + vad_events=true (recommandation officielle
- *       Deepgram, voir developers.deepgram.com/docs/utterance-end) — ET on
- *       écoute explicitement le message 'UtteranceEnd', que
+ *       Deepgram, voir developers.deepgram.com/docs/utterance-end) â€” ET on
+ *       Ã©coute explicitement le message 'UtteranceEnd', que
  *       deepgram-streaming.js ignore actuellement (type !== 'Results')
- *    D. vad_events=true seul — observation des évènements SpeechStarted
+ *    D. vad_events=true seul â€” observation des Ã©vÃ¨nements SpeechStarted
  *
  *  USAGE : node live-tests/endpointing-strategies.js
  * ============================================================================
@@ -32,7 +32,7 @@ const { loadDotEnvInto } = require('../dotenv-loader');
 loadDotEnvInto(process.env, [path.join(__dirname, '..', '.env')], () => {});
 
 if (!process.env.DEEPGRAM_API_KEY) {
-  console.error('REAL SERVICE TEST BLOCKED — DEEPGRAM_API_KEY NOT CONFIGURED');
+  console.error('REAL SERVICE TEST BLOCKED â€” DEEPGRAM_API_KEY NOT CONFIGURED');
   process.exit(2);
 }
 
@@ -48,10 +48,10 @@ function readWavPcm(filePath) {
   return buf.subarray(dataStart);
 }
 
-// CORRECTIF (Chantier 1a — migration nova-2 -> nova-3) : ce script construit
-// sa PROPRE URL indépendamment de deepgram-streaming.js (volontairement, voir
-// en-tête de fichier) — mis à jour ici pour rester cohérent avec le modèle
-// et le paramètre de boosting réellement utilisés en production désormais.
+// CORRECTIF (Chantier 1a â€” migration nova-2 -> nova-3) : ce script construit
+// sa PROPRE URL indÃ©pendamment de deepgram-streaming.js (volontairement, voir
+// en-tÃªte de fichier) â€” mis Ã  jour ici pour rester cohÃ©rent avec le modÃ¨le
+// et le paramÃ¨tre de boosting rÃ©ellement utilisÃ©s en production dÃ©sormais.
 function buildUrl(extraParams) {
   const keytermQuery = buildDeepgramKeyterms()
     .map((kt) => `keyterm=${encodeURIComponent(kt)}`)
@@ -72,14 +72,14 @@ function buildUrl(extraParams) {
 
 /**
  * Ouvre une connexion, envoie l'audio d'un fichier + N secondes de silence
- * numérique, et journalise chaque message brut avec un horodatage relatif.
+ * numÃ©rique, et journalise chaque message brut avec un horodatage relatif.
  * @param {string} label
  * @param {string[]} extraParams
  * @param {number} silenceSeconds
  */
 async function runStrategy(label, extraParams, silenceSeconds) {
-  console.log(`\n========== Stratégie ${label} ==========`);
-  console.log(`Paramètres additionnels : ${extraParams.join('&') || '(aucun)'}`);
+  console.log(`\n========== StratÃ©gie ${label} ==========`);
+  console.log(`ParamÃ¨tres additionnels : ${extraParams.join('&') || '(aucun)'}`);
   const url = buildUrl(extraParams);
 
   const events = [];
@@ -129,7 +129,7 @@ async function runStrategy(label, extraParams, silenceSeconds) {
       console.log(`  [+${t}ms] SpeechStarted`);
       if (speechStartedAt === null) speechStartedAt = t;
     } else {
-      console.log(`  [+${t}ms] ${msg.type} (ignoré par ce diagnostic)`);
+      console.log(`  [+${t}ms] ${msg.type} (ignorÃ© par ce diagnostic)`);
     }
   });
 
@@ -140,7 +140,7 @@ async function runStrategy(label, extraParams, silenceSeconds) {
     await sleep(20);
   }
   console.log(
-    `  [+${Date.now() - t0}ms] audio terminé ("Jean chapitre trois verset seize."), début du silence...`
+    `  [+${Date.now() - t0}ms] audio terminÃ© ("Jean chapitre trois verset seize."), dÃ©but du silence...`
   );
   const SILENCE = Buffer.alloc(FRAME_BYTES);
   const silenceFrames = Math.round((silenceSeconds * 1000) / 20);
@@ -148,7 +148,7 @@ async function runStrategy(label, extraParams, silenceSeconds) {
     ws.send(SILENCE);
     await sleep(20);
   }
-  console.log(`  [+${Date.now() - t0}ms] fin des ${silenceSeconds}s de silence envoyées`);
+  console.log(`  [+${Date.now() - t0}ms] fin des ${silenceSeconds}s de silence envoyÃ©es`);
 
   ws.close();
   await sleep(300);
@@ -163,30 +163,32 @@ async function runStrategy(label, extraParams, silenceSeconds) {
 }
 
 async function main() {
-  const only = process.argv[2] || null; // ex. "C" pour ne relancer qu'une seule stratégie
+  const only = process.argv[2] || ''; // ex. "CEFGH" pour ne relancer que certaines stratÃ©gies
+  const onlySet = new Set(only.split(''));
+  const want = (label) => only === '' || onlySet.has(label);
   const results = [];
 
-  if (!only || only === 'A')
+  if (want('A'))
     results.push(
       await runStrategy('A (production actuelle : endpointing=500)', ['endpointing=500'], 4)
     );
-  if (!only || only === 'B')
+  if (want('B'))
     results.push(
       await runStrategy(
-        'B (endpointing=500, silence prolongé 10s — arrive-t-il JAMAIS ?)',
+        'B (endpointing=500, silence prolongÃ© 10s â€” arrive-t-il JAMAIS ?)',
         ['endpointing=500'],
         10
       )
     );
-  if (!only || only === 'C')
+  if (want('C'))
     results.push(
       await runStrategy(
-        'C (utterance_end_ms=1000 + vad_events=true, recommandation officielle Deepgram, silence 10s pour comparaison équitable avec B)',
+        'C (utterance_end_ms=1000 + vad_events=true, recommandation officielle Deepgram, silence 10s pour comparaison Ã©quitable avec B)',
         ['endpointing=500', 'utterance_end_ms=1000', 'vad_events=true'],
         10
       )
     );
-  if (!only || only === 'D')
+  if (want('D'))
     results.push(
       await runStrategy(
         'D (vad_events=true seul, sans endpointing ni utterance_end_ms)',
@@ -194,18 +196,40 @@ async function main() {
         4
       )
     );
+  // AJOUT (Chantier 1.4 â€” balayage des valeurs d'endpointing demandÃ© par la
+  // mission) : mÃªme Ã©chantillon, mÃªme silence de 4s, seule la valeur
+  // endpointing change. Objectif : confirmer la plage sur laquelle l'arrivÃ©e
+  // du `speech_final` officiel Deepgram reste stable, et repÃ©rer la valeur
+  // en dessous de laquelle l'Ã©noncÃ© risque d'Ãªtre fragmentÃ© en plusieurs
+  // finals (pause naturelle entre clauses > endpointing).
+  if (want('E'))
+    results.push(
+      await runStrategy('E (endpointing=250)', ['endpointing=250'], 4)
+    );
+  if (want('F'))
+    results.push(
+      await runStrategy('F (endpointing=350)', ['endpointing=350'], 4)
+    );
+  if (want('G'))
+    results.push(
+      await runStrategy('G (endpointing=700)', ['endpointing=700'], 4)
+    );
+  if (want('H'))
+    results.push(
+      await runStrategy('H (endpointing=1000)', ['endpointing=1000'], 4)
+    );
 
-  console.log('\n\n================ RÉSUMÉ ================\n');
+  console.log('\n\n================ RÃ‰SUMÃ‰ ================\n');
   for (const r of results) {
-    console.log(`Stratégie ${r.label}`);
+    console.log(`StratÃ©gie ${r.label}`);
     console.log(
-      `  speech_final=true reçu à : ${r.speechFinalAtMs !== null ? '+' + r.speechFinalAtMs + 'ms' : 'JAMAIS'}`
+      `  speech_final=true reÃ§u Ã  : ${r.speechFinalAtMs !== null ? '+' + r.speechFinalAtMs + 'ms' : 'JAMAIS'}`
     );
     console.log(
-      `  UtteranceEnd reçu à       : ${r.utteranceEndAtMs !== null ? '+' + r.utteranceEndAtMs + 'ms' : 'JAMAIS'}`
+      `  UtteranceEnd reÃ§u Ã        : ${r.utteranceEndAtMs !== null ? '+' + r.utteranceEndAtMs + 'ms' : 'JAMAIS'}`
     );
     console.log(
-      `  SpeechStarted reçu à      : ${r.speechStartedAtMs !== null ? '+' + r.speechStartedAtMs + 'ms' : 'JAMAIS'}`
+      `  SpeechStarted reÃ§u Ã       : ${r.speechStartedAtMs !== null ? '+' + r.speechStartedAtMs + 'ms' : 'JAMAIS'}`
     );
     console.log('');
   }
@@ -219,13 +243,13 @@ async function main() {
     'utf8'
   );
   console.log(
-    '[endpointing-strategies] Résultats détaillés écrits dans live-tests/endpointing-strategies-results.json'
+    '[endpointing-strategies] RÃ©sultats dÃ©taillÃ©s Ã©crits dans live-tests/endpointing-strategies-results.json'
   );
   process.exit(0);
 }
 
 main().catch((err) => {
-  console.error('[endpointing-strategies] ÉCHEC:', err.message);
+  console.error('[endpointing-strategies] Ã‰CHEC:', err.message);
   console.error(err.stack);
   process.exit(1);
 });

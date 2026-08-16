@@ -1,26 +1,26 @@
 [
   {
-    "label": "A (production actuelle : endpointing=500)",
-    "speechFinalAtMs": 6109,
+    "label": "E (endpointing=250)",
+    "speechFinalAtMs": 5795,
     "utteranceEndAtMs": null,
     "speechStartedAtMs": null,
     "events": [
       {
-        "t": 2678,
+        "t": 2663,
         "type": "Results",
         "is_final": false,
         "speech_final": false,
         "transcript": "Jean chapitre"
       },
       {
-        "t": 4176,
+        "t": 4196,
         "type": "Results",
         "is_final": false,
         "speech_final": false,
         "transcript": "Jean chapitre 3 verset"
       },
       {
-        "t": 6109,
+        "t": 5795,
         "type": "Results",
         "is_final": true,
         "speech_final": true,
@@ -29,27 +29,27 @@
     ]
   },
   {
-    "label": "B (endpointing=500, silence prolongé 10s — arrive-t-il JAMAIS ?)",
-    "speechFinalAtMs": 6129,
+    "label": "F (endpointing=350)",
+    "speechFinalAtMs": 5895,
     "utteranceEndAtMs": null,
     "speechStartedAtMs": null,
     "events": [
       {
-        "t": 2630,
+        "t": 2774,
         "type": "Results",
         "is_final": false,
         "speech_final": false,
         "transcript": "Jean chapitre"
       },
       {
-        "t": 4294,
+        "t": 4314,
         "type": "Results",
         "is_final": false,
         "speech_final": false,
         "transcript": "Jean chapitre 3 verset"
       },
       {
-        "t": 6129,
+        "t": 5895,
         "type": "Results",
         "is_final": true,
         "speech_final": true,
@@ -58,69 +58,56 @@
     ]
   },
   {
-    "label": "C (utterance_end_ms=1000 + vad_events=true, recommandation officielle Deepgram, silence 10s pour comparaison équitable avec B)",
-    "speechFinalAtMs": 5889,
-    "utteranceEndAtMs": 7485,
-    "speechStartedAtMs": 1047,
-    "events": [
-      {
-        "t": 1047,
-        "type": "SpeechStarted"
-      },
-      {
-        "t": 2404,
-        "type": "Results",
-        "is_final": false,
-        "speech_final": false,
-        "transcript": "Jean chapitre"
-      },
-      {
-        "t": 4010,
-        "type": "Results",
-        "is_final": false,
-        "speech_final": false,
-        "transcript": "Jean chapitre 3 verset"
-      },
-      {
-        "t": 5889,
-        "type": "Results",
-        "is_final": true,
-        "speech_final": true,
-        "transcript": "Jean chapitre 3 verset 16."
-      },
-      {
-        "t": 7485,
-        "type": "UtteranceEnd",
-        "last_word_end": 2.32
-      }
-    ]
-  },
-  {
-    "label": "D (vad_events=true seul, sans endpointing ni utterance_end_ms)",
-    "speechFinalAtMs": 5177,
+    "label": "G (endpointing=700)",
+    "speechFinalAtMs": 6445,
     "utteranceEndAtMs": null,
-    "speechStartedAtMs": 1224,
+    "speechStartedAtMs": null,
     "events": [
       {
-        "t": 1224,
-        "type": "SpeechStarted"
-      },
-      {
-        "t": 2583,
+        "t": 2719,
         "type": "Results",
         "is_final": false,
         "speech_final": false,
         "transcript": "Jean chapitre"
       },
       {
-        "t": 4172,
+        "t": 4282,
         "type": "Results",
         "is_final": false,
         "speech_final": false,
         "transcript": "Jean chapitre 3 verset"
       },
       {
-        "t": 5177,
+        "t": 6445,
+        "type": "Results",
+        "is_final": true,
+        "speech_final": true,
+        "transcript": "Jean chapitre 3 verset 16."
+      }
+    ]
+  },
+  {
+    "label": "H (endpointing=1000)",
+    "speechFinalAtMs": 6712,
+    "utteranceEndAtMs": null,
+    "speechStartedAtMs": null,
+    "events": [
+      {
+        "t": 2496,
+        "type": "Results",
+        "is_final": false,
+        "speech_final": false,
+        "transcript": "Jean chapitre"
+      },
+      {
+        "t": 4040,
+        "type": "Results",
+        "is_final": false,
+        "speech_final": false,
+        "transcript": "Jean chapitre 3 verset"
+      },
+      {
+        "t": 6712,
         "type": "Results",
         "is_final": true,
         "speech_final": true,
