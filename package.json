@@ -109,6 +109,7 @@
       "camera-capture.js",
       "scene-render.js",
       "overlay.html",
+      "overlay.js",
       "branding-overlay.html",
       "phone-camera.html",
       "stage-display.html",

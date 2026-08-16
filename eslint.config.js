@@ -49,6 +49,33 @@ module.exports = [
     },
   },
   {
+    // AJOUT (Chantier D, mission autonome — extraction overlay.html ->
+    // overlay.js) : renderSceneDom est exposé par scene-render.js
+    // (window.renderSceneDom = ...) et consommé ici comme variable globale
+    // — chargement en deux <script> classiques successifs dans overlay.html
+    // (scene-render.js puis overlay.js), jamais un import. Le bloc générique
+    // ci-dessus ne peut pas le savoir en lintant overlay.js isolément.
+    files: ['overlay.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'script',
+      globals: {
+        ...globals.node,
+        ...globals.browser,
+        renderSceneDom: 'readonly',
+      },
+    },
+    plugins: { prettier: prettierPlugin },
+    rules: {
+      'prettier/prettier': 'error',
+      'no-console': ['warn', { allow: ['warn', 'error'] }],
+      'prefer-const': 'error',
+      'no-var': 'error',
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
+      'no-empty': ['error', { allowEmptyCatch: true }],
+    },
+  },
+  {
     // AudioWorkletGlobalScope (audio-capture-worklet.js) : scope global
     // séparé du DOM/window, avec ses propres globales (registerProcessor,
     // sampleRate, currentFrame, currentTime, AudioWorkletProcessor) que ni

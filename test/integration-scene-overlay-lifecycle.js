@@ -27,6 +27,16 @@
  *
  *  server.js tourne réellement (ASR/micro mockés, stores réels — mêmes
  *  fakes que integration-scene-crud.js). Nettoyage complet en fin de test.
+ *
+ *  FLAKY CONNU (Chantier D, mission autonome — vérifié avant l'extraction
+ *  overlay.html -> overlay.js, PAS causé par elle) : ~1 run sur 7 échoue sur
+ *  1-3 assertions liées au timing d'affichage d'une scène (`sleep()` fixes
+ *  après une action WS), sur le code d'ORIGINE comme après extraction —
+ *  mesuré par 10+ runs de chaque côté avant de conclure. Un échec isolé de
+ *  CE test précis n'est donc pas forcément un vrai bug ; le confirmer par
+ *  un second run avant d'investiguer plus loin. À durcir un jour (délais
+ *  plus généreux ou attente explicite d'un état plutôt qu'un sleep fixe),
+ *  hors périmètre de ce chantier.
  * ============================================================================
  */
 'use strict';
