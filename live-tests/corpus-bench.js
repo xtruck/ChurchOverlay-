@@ -293,9 +293,20 @@ function matchRowsToEvents(rows, sessionStartWallClock, events) {
     let falsePositive = false;
 
     if (expectedRefKey) {
+      // CORRECTIF (chantier ASR, Étape 4) : la fenêtre d'appariement d'une
+      // ligne EXPECTING-REFERENCE n'était BORNÉE QUE VERS LE BAS
+      // (earliestAcceptable) — sans borne haute, les showVerse des énoncés
+      // SUIVANTS du même fichier étaient aussi des candidats, et chaque
+      // ligne réclamait alors le DERNIER showVerse de la session entière
+      // (attribution par ordre inverse). finalShownCorrect / overwritten et
+      // la latence mesuraient donc le bruit, pas le pipeline. On borne la
+      // fenêtre comme pour les lignes négatives (windowEnd = fin attendue +
+      // 8000ms) : seuls les showVerse VRAIMENT attribuables à cet énoncé
+      // sont considérés.
+      const windowEnd = expectedWallClock + 8000;
       for (const ev of events) {
         if (claimedText.has(ev)) continue;
-        if (ev.at < earliestAcceptable) continue;
+        if (ev.at < earliestAcceptable || ev.at > windowEnd) continue;
         if (ev.msg.action !== 'transcript' && ev.msg.action !== 'transcriptPartial') continue;
         let ref;
         try {
@@ -322,7 +333,7 @@ function matchRowsToEvents(rows, sessionStartWallClock, events) {
       const shownCandidates = [];
       for (const ev of events) {
         if (claimedShown.has(ev)) continue;
-        if (ev.at < earliestAcceptable) continue;
+        if (ev.at < earliestAcceptable || ev.at > windowEnd) continue;
         if (ev.msg.action !== 'showVerse') continue;
         let ref;
         try {

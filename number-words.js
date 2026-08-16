@@ -201,27 +201,64 @@ function buildPattern(lang) {
 const PATTERNS = { fr: buildPattern('fr'), en: buildPattern('en') };
 
 /**
+ * Indique si `value` peut se COMPOSER au nombre en cours de construction —
+ * c'est-à-dire si leur somme forme encore un nombre français/anglais VALIDE.
+ * Un nombre isolé (unité ou dizaine) ne compose PAS avec n'importe quoi :
+ * « trois seize » est deux nombres indépendants (chapitre trois, verset
+ * seize — reformulation sans mot-clé de l'énoncé « Jean trois seize »), et
+ * leur somme naïve (19) est un CONTRE-SENS. Règles :
+ *   - cent/hundred MULTIPLIE (cent un = 101) ;
+ *   - après une centaine (>= 100), tout compose (cent vingt, cent seize) ;
+ *   - après une dizaine exacte (20/30/40/50/60/80…), unités et 11-19
+ *     composent (vingt-deux, trente-six, soixante-seize, quatre-vingt-dix) ;
+ *   - sinon (unité suivie d'une unité/dizaine) : DEUX nombres séparés.
+ *   (Le « quatre-vingt » FR — 4 puis 20 = 80 — est traité dans compound(),
+ *   car il REMPLACE la valeur en cours au lieu de s'y additionner.)
+ * @param {number} current - valeur en cours de construction
+ * @param {number} value - valeur du token suivant
+ * @returns {boolean}
+ */
+function canCompose(current, value) {
+  if (value === 100) return true;
+  if (current === 0) return false;
+  if (current >= 100) return true;
+  if (current % 10 === 0 && value <= 19) return true;
+  return false;
+}
+
+/**
  * Compose une suite de tokens numériques en un seul nombre — algorithme
- * DÉLIBÉRÉMENT différent par langue, voir l'en-tête du fichier.
+ * DÉLIBÉRÉMENT différent par langue, voir l'en-tête du fichier. Peut
+ * produire PLUSIEURS nombres (séparés par une espace) quand les tokens ne
+ * forment pas un nombre unique valide (« trois seize » -> « 3 16 »).
  * @param {string[]} tokens
  * @param {'fr'|'en'} lang
- * @returns {number}
+ * @returns {string}
  */
 function compound(tokens, lang) {
   const table = NUMBER_WORDS[lang];
   let current = 0;
+  let hasCurrent = false;
+  const parts = [];
   for (const token of tokens) {
     const value = table[token];
     if (value === undefined) continue;
     if (value === 100) {
       current = Math.max(1, current) * 100;
+      hasCurrent = true;
     } else if (lang === 'fr' && value === 20 && current === 4) {
-      current = 80; // quatre-vingt : 4 puis 20 -> 80, pas 24
-    } else {
+      current = 80; // quatre-vingt : 4 puis 20 -> 80, pas 24 (remplace, n'additionne pas)
+      hasCurrent = true;
+    } else if (canCompose(hasCurrent ? current : 0, value)) {
       current += value;
+    } else {
+      if (hasCurrent) parts.push(String(current));
+      current = value;
+      hasCurrent = true;
     }
   }
-  return current;
+  if (hasCurrent) parts.push(String(current));
+  return parts.join(' ');
 }
 
 /**

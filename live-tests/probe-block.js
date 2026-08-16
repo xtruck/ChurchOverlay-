@@ -38,11 +38,15 @@ audioCapture.on({
   onAudioSegment: (seg) => console.log(`[SEG] +${Date.now() - t0}ms "${seg && seg.text}"`),
   onPartialTranscript: (text, meta) => {
     partialCount++;
-    console.log(`[PART +${Date.now() - t0}ms] "${text}" (conf ${(meta.confidence || 0).toFixed(2)})`);
+    console.log(
+      `[PART +${Date.now() - t0}ms] "${text}" (conf ${(meta.confidence || 0).toFixed(2)})`
+    );
   },
   onFinalTranscript: (text, meta) => {
     finalCount++;
-    console.log(`[FINAL +${Date.now() - t0}ms] "${text}" (conf ${(meta.confidence || 0).toFixed(2)})`);
+    console.log(
+      `[FINAL +${Date.now() - t0}ms] "${text}" (conf ${(meta.confidence || 0).toFixed(2)})`
+    );
   },
   onAsrFallback: (info) => console.log(`[FALLBACK +${Date.now() - t0}ms] ${info.reason}`),
   onError: (err) => console.log(`[ERR +${Date.now() - t0}ms] ${err.message}`),

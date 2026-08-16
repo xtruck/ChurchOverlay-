@@ -90,8 +90,8 @@ const UTTERANCES = {
   K3: { voice: VOICE_FR, parts: ['Actes chapitre deux verset trente-huit'] },
   K4: { voice: VOICE_FR, parts: ['Éphésiens chapitre deux verset huit'] },
   K5: { voice: VOICE_FR, parts: ['Ésaïe chapitre cinquante-trois verset cinq'] },
-  L1: { voice: VOICE_FR, parts: ['Bonjour à tous, merci d\'être venus ce matin'] },
-  L2: { voice: VOICE_FR, parts: ['N\'oubliez pas la collecte spéciale prévue ce dimanche'] },
+  L1: { voice: VOICE_FR, parts: ["Bonjour à tous, merci d'être venus ce matin"] },
+  L2: { voice: VOICE_FR, parts: ["N'oubliez pas la collecte spéciale prévue ce dimanche"] },
   L3: { voice: VOICE_EN, parts: ["Let's stand together and worship the Lord"] },
   M1: { voice: VOICE_FR, parts: ['Répétez après moi : Dieu est amour'] },
   M2: { voice: VOICE_FR, parts: ['Nous allons répéter ce chant une fois de plus'] },
@@ -103,43 +103,76 @@ const UTTERANCES = {
 
 // Ordre exact de corpus.csv pour la lecture des lignes.
 const ALL_IDS = [
-  'A1','A2','A3','A4','A5',
-  'B1','B2',
-  'C1','C2','C3',
-  'D1','D2','D3','D4','D5','D6','D7',
-  'E1','E2','E3',
-  'F1','F2',
-  'G1','G2',
-  'H1','H2',
-  'I1','I2',
-  'J1','J2','J3',
-  'K1','K2','K3','K4','K5',
-  'L1','L2','L3',
-  'M1','M2',
-  'N1','N2','N3','N4',
+  'A1',
+  'A2',
+  'A3',
+  'A4',
+  'A5',
+  'B1',
+  'B2',
+  'C1',
+  'C2',
+  'C3',
+  'D1',
+  'D2',
+  'D3',
+  'D4',
+  'D5',
+  'D6',
+  'D7',
+  'E1',
+  'E2',
+  'E3',
+  'F1',
+  'F2',
+  'G1',
+  'G2',
+  'H1',
+  'H2',
+  'I1',
+  'I2',
+  'J1',
+  'J2',
+  'J3',
+  'K1',
+  'K2',
+  'K3',
+  'K4',
+  'K5',
+  'L1',
+  'L2',
+  'L3',
+  'M1',
+  'M2',
+  'N1',
+  'N2',
+  'N3',
+  'N4',
 ];
 
 // Blocs — mêmes groupes que CORPUS-SCRIPT.md, écart inter-énoncés en ms.
 const BLOCKS = [
-  { file: 'bloc1.wav',  gapMs: 2500, ids: ['A1','A2','A3','A4','A5','C1','C2','C3'] },
-  { file: 'bloc2.wav',  gapMs: 2500, ids: ['B1','B2'] },
-  { file: 'bloc3.wav',  gapMs: 2500, ids: ['D1','D2','D3','D4','D5','D6','D7','N1','N2','N3','N4'] },
-  { file: 'bloc4.wav',  gapMs: 2500, ids: ['E1','E2','E3'] },
-  { file: 'bloc5.wav',  gapMs: 3000, ids: ['F1','F2'] },
-  { file: 'bloc6.wav',  gapMs: 10000, ids: ['G1','G2'] },
-  { file: 'bloc7.wav',  gapMs: 2500, ids: ['H1','H2'] },
-  { file: 'bloc8.wav',  gapMs: 2500, ids: ['I1','I2'] },
-  { file: 'bloc9.wav',  gapMs: 2500, ids: ['J1','J2','J3'] },
-  { file: 'bloc10.wav', gapMs: 2500, ids: ['K1','K2','K3','K4','K5'] },
-  { file: 'bloc11.wav', gapMs: 2500, ids: ['L1','L2','L3'] },
-  { file: 'bloc12.wav', gapMs: 2500, ids: ['M1','M2'] },
+  { file: 'bloc1.wav', gapMs: 2500, ids: ['A1', 'A2', 'A3', 'A4', 'A5', 'C1', 'C2', 'C3'] },
+  { file: 'bloc2.wav', gapMs: 2500, ids: ['B1', 'B2'] },
+  {
+    file: 'bloc3.wav',
+    gapMs: 2500,
+    ids: ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'N1', 'N2', 'N3', 'N4'],
+  },
+  { file: 'bloc4.wav', gapMs: 2500, ids: ['E1', 'E2', 'E3'] },
+  { file: 'bloc5.wav', gapMs: 3000, ids: ['F1', 'F2'] },
+  { file: 'bloc6.wav', gapMs: 10000, ids: ['G1', 'G2'] },
+  { file: 'bloc7.wav', gapMs: 2500, ids: ['H1', 'H2'] },
+  { file: 'bloc8.wav', gapMs: 2500, ids: ['I1', 'I2'] },
+  { file: 'bloc9.wav', gapMs: 2500, ids: ['J1', 'J2', 'J3'] },
+  { file: 'bloc10.wav', gapMs: 2500, ids: ['K1', 'K2', 'K3', 'K4', 'K5'] },
+  { file: 'bloc11.wav', gapMs: 2500, ids: ['L1', 'L2', 'L3'] },
+  { file: 'bloc12.wav', gapMs: 2500, ids: ['M1', 'M2'] },
 ];
 
 const interPartGapMs = 120;
 const endMarginMs = 400;
 const leadingSilenceMs = 200;
-
-function sleep() {}
 
 function synthesizePart(voice, text, outWav) {
   const txtFile = outWav.replace(/\.wav$/i, '.txt');
@@ -285,11 +318,7 @@ for (const block of BLOCKS) {
     const uttDurationMs = Math.round((uttSamples.length / 2 / SAMPLE_RATE) * 1000);
     const refEndMs =
       partWavs.length > 1
-        ? Math.round(
-            (partWavs[0].length / 2 / SAMPLE_RATE) * 1000 +
-              interPartGapMs +
-              endMarginMs
-          )
+        ? Math.round((partWavs[0].length / 2 / SAMPLE_RATE) * 1000 + interPartGapMs + endMarginMs)
         : uttDurationMs;
 
     idToStartEnd[id] = { startMs: uttStartMs, endMs: uttStartMs + refEndMs };
