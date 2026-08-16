@@ -88,7 +88,15 @@ const CONFIG = {
   // anticipée dès qu'un silence de fin de phrase est détecté (voir
   // processStreamingFrame/flushSegment) — segmentDuration devient un
   // plafond de sécurité plutôt que le seul déclencheur.
-  trailingSilenceMs: 600, // silence continu après de la voix => on considère la phrase terminée et on coupe tout de suite
+  // AJOUT (Chantier A.4/B, mission autonome — piste D5 « Sophonie ») :
+  // réglable via TRAILING_SILENCE_MS (comme VAD_PROVIDER ci-dessus) pour
+  // pouvoir MESURER le compromis avant de changer le défaut du direct
+  // (verrou dur n°2 — jamais de bascule de défaut sans validation).
+  // Diagnostic mesuré (BASELINE_CHANTIER_1.md, Chantier A.4) : un nom de
+  // livre isolé ("Sophonie") suivi d'une pause de réflexion avant
+  // "chapitre 3 verset 17" peut dépasser 600ms et couper l'énoncé trop
+  // tôt côté VAD local, avant même que le complément soit prononcé.
+  trailingSilenceMs: Number(process.env.TRAILING_SILENCE_MS) || 600, // silence continu après de la voix => on considère la phrase terminée et on coupe tout de suite
   noiseFloorAdaptRate: 0.1, // vitesse d'adaptation (moyenne mobile exponentielle) de l'estimation du bruit ambiant
   noiseMarginMultiplier: 3, // un niveau doit dépasser (bruit ambiant × ce facteur) pour compter comme "voix" côté détection anticipée
   minAdaptiveThreshold: 0.01, // plancher absolu : ne jamais déclencher sur du bruit de quantification même si la pièce est très calme

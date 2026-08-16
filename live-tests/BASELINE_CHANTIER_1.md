@@ -1,5 +1,99 @@
 # BASELINE_CHANTIER_1 — pipeline actuel (avec Étape 4 non commitée), STREAMING (deepgram)
 
+## MISE À JOUR 2026-08-16 (session mission autonome, suite) — 29/37 (78,4 %) mesuré en conditions réelles, clôture Chantier A
+
+**Contexte** : reprise dans un environnement neuf (`node_modules` jamais installé,
+aucune clé API). `npm install` + approbation des scripts natifs
+(`better-sqlite3`, `onnxruntime-node`) + clés `GROQ_API_KEY`/`DEEPGRAM_API_KEY`
+fournies par l'opérateur. Gate complet (test/lint/tsc/format/audit/
+check-build-files) vérifié vert avant toute mesure.
+
+**Toutes les mesures ci-dessus (28/37, catégories, échecs) dataient d'AVANT
+les correctifs A.1 (livres à chapitre unique) et A.2 (double détection
+FR/EN) — jamais rejouées en conditions réelles après ces deux correctifs.
+Premier run réel post-A.1/A.2** (`node live-tests/corpus-bench.js
+--provider=deepgram`, vraies clés) :
+
+- **Taux de première tentative : 29/37 (78,4 %)** — 23 versets exacts + 6
+  chapitres de repli ; textDetectedNotShown : 1 ; jamais détecté : 7
+- **FP 0/8**
+- Latence (29 énoncés) : p50=1440ms, p75=3268ms, p90=3921ms, p95=4466ms
+- Catégories : variante_formulation 5/7, livre_numerote 3/3, livre_difficile
+  8/11, nombre_piege 3/3, rafale_5s 2/2, doublon_10s 2/2, changement_langue
+  0/2, noyee 1/2, bruit_fond 5/5 — **F2 ne figure plus dans les échecs**
+  (repli chapitre, confirmé en conditions réelles, cohérent avec A.4)
+- Échecs (8, contre 9 dans la baseline) : **A2, B2, D3, D5, N2, H1, H2, I2**
+
+**Analyse des 8 échecs, par cause racine (pas de nouveau chiffre sans
+mesure — chaque catégorie ci-dessous est vérifiée dans les logs bruts de ce
+run, pas supposée)** :
+
+1. **A2 — artefact d'attribution du banc, pas un échec produit.** Log
+   vérifié : `Displayed: Jean 3:16` apparaît bien à l'intérieur de la
+   fenêtre de l'énoncé A2 (« Jean 3 16. » émis comme final), mais le banc
+   l'attribue à l'énoncé voisin (A1/A3, formulations quasi identiques
+   prononcées à 2,5s d'écart). Déjà diagnostiqué ainsi au Chantier A.4 —
+   confirmé une seconde fois, hors périmètre Chantier A/B (audit du banc
+   lui-même, pas du pipeline).
+2. **B2, H1, H2, I2 — décalage de langue de session ASR, PAS un problème de
+   détection.** Vérifié dans les logs : B2 (« The gospel of John, chapter
+   three, verse sixteen », anglais) transcrit par la session Deepgram
+   FRANÇAISE en `"3 chapitre 3, verset"` — aucune trace de "John"/"gospel"
+   dans le transcript, donc AUCUN détecteur (FR, EN, ou les deux combinés
+   via A.2) ne peut y trouver de référence : il n'y a rien à détecter. Le
+   correctif A.2 (double détection FR/EN) est nécessaire mais **ne peut
+   rien pour ces 4 cas** — la cause est en amont, côté choix de langue de
+   la session ASR. C'est très exactement le problème que Chantier C
+   (`language=multi` nova-3) est censé résoudre, pas une régression de A.2.
+3. **D3, D5, N2 — troncature VAD/endpointing, confirmée à nouveau.** D5
+   (Sophonie) : `Énoncé streaming finalisé localement (silence VAD) :
+"Sophonie"` — le nom du livre seul déclenche la finalisation avant que
+   le chapitre/verset ne soit prononcé. Cohérent avec le diagnostic
+   Chantier A.4. Voir l'expérience `TRAILING_SILENCE_MS` ci-dessous.
+
+**Bilan réel du Chantier A** : 28/37 → 29/37 mesuré (A2 est un artefact de
+banc, donc la couverture RÉELLE côté produit est plutôt 30/37 si on ne
+compte pas ce faux négatif de mesure). N'atteint pas le 32/37 visé par la
+mission, mais avec une explication complète et vérifiée pour CHAQUE écart
+restant — aucun résidu "inexpliqué". La suite logique n'est plus dans le
+Chantier A (logique de détection) mais dans le Chantier C (langue de
+session ASR, 4 cas sur 8) et une piste VAD plus fine que Chantier B ne l'a
+couverte (3 cas sur 8, voir ci-dessous).
+
+### Expérience `TRAILING_SILENCE_MS` (piste D5) — résultat négatif, pas de changement de défaut
+
+Ajout d'un réglage (`TRAILING_SILENCE_MS`, voir `.env.example` et
+`audio-capture.js`) pour pouvoir MESURER l'effet d'un silence de fin de
+phrase plus long avant de considérer, comme l'exige le verrou dur n°2, tout
+changement de défaut du direct. Défaut inchangé : **600ms**.
+
+Run comparatif (`TRAILING_SILENCE_MS=900`, même corpus, vraies clés) :
+
+- **28/37 (75,7 %)** — MOINS bien que le run à 600ms par défaut (29/37).
+- **D5 échoue TOUJOURS** à 900ms : même log `Énoncé streaming finalisé
+localement (silence VAD) : "Sophonie"` — la pause réelle entre "Sophonie"
+  et "chapitre trois verset dix-sept" dans cet échantillon TTS dépasse donc
+  900ms, pas seulement 600ms.
+- `livre_difficile` recule (8/11 → 7/11, D2 nouvellement en échec) — signal
+  cohérent avec la variance run-à-run déjà documentée (Chantier 0.2), pas
+  forcément un effet causal de `TRAILING_SILENCE_MS` lui-même : un seul run
+  de chaque côté ne suffit pas à trancher, mais rien dans ce résultat ne
+  soutient une augmentation du défaut.
+
+**Conclusion** : ne PAS augmenter `trailingSilenceMs` par défaut — le
+correctif ne marche même pas pour le cas qui l'a motivé, et son coût
+(latence ajoutée à CHAQUE énoncé, pas seulement ceux avec une pause après
+un nom de livre isolé) n'a aucune contrepartie mesurée. Piste plus
+prometteuse pour une future session : une extension CONDITIONNELLE
+(uniquement quand le VAD vient de finaliser sur un texte qui ressemble à
+"nom de livre seul, sans chapitre ni verset" — même logique que le repli
+chapitre du Chantier 3/A.5, qui est déjà conditionnel) plutôt qu'un
+allongement global. Le réglage `TRAILING_SILENCE_MS` reste dans le code
+(testé, documenté, défaut inchangé) pour permettre cette mesure sans
+re-développer l'instrumentation.
+
+---
+
 ## MISE À JOUR 2026-08-16 (session mission maître) — 28/37 (75,7 %), fallback chapitre, dédup 2/2
 
 Reprise de session : le dépôt contenait déjà (non commité) un fallback chapitre
