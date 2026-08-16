@@ -189,7 +189,16 @@ const BOOK_CATALOG = {
   osee: { fr: ['osee', 'os', 'livre d osee', 'prophete osee'], en: ['hosea', 'hos'] },
   joel: { fr: ['joel', 'jl', 'livre de joel', 'prophete joel'], en: ['joel'] },
   amos: { fr: ['amos', 'am', 'livre d amos', 'prophete amos'], en: ['amos'] },
-  abdias: { fr: ['abdias', 'ab', 'livre d abdias', 'prophete abdias'], en: ['obadiah', 'obad'] },
+  // AJOUT (Chantier A.1 — livres à chapitre unique) : "Philémon verset 6"
+  // (sans "chapitre") renvoyait null — le pattern standard de detector.js/
+  // detector-en.js exige toujours un numéro de chapitre juste après le nom
+  // du livre. Marqueur singleChapter posé ICI (donnée), pas dans les
+  // détecteurs — voir SINGLE_CHAPTER_BOOKS plus bas, dérivé mécaniquement.
+  abdias: {
+    fr: ['abdias', 'ab', 'livre d abdias', 'prophete abdias'],
+    en: ['obadiah', 'obad'],
+    singleChapter: true,
+  },
   jonas: { fr: ['jonas', 'livre de jonas', 'prophete jonas'], en: ['jonah'] },
   michee: { fr: ['michee', 'mi', 'livre de michee', 'prophete michee'], en: ['micah', 'mic'] },
   nahum: { fr: ['nahum', 'na', 'livre de nahum', 'prophete nahum'], en: ['nahum', 'nah'] },
@@ -329,6 +338,7 @@ const BOOK_CATALOG = {
   philemon: {
     fr: ['philemon', 'epitre a philemon', 'lettre a philemon', 'phm'],
     en: ['philemon', 'phlm'],
+    singleChapter: true,
   },
   hebreux: {
     fr: ['hebreux', 'heb', 'epitre aux hebreux', 'lettre aux hebreux'],
@@ -379,6 +389,7 @@ const BOOK_CATALOG = {
       'ii jean',
     ],
     en: ['2 john', 'second john', 'ii john'],
+    singleChapter: true,
   },
   '3jean': {
     fr: [
@@ -390,12 +401,29 @@ const BOOK_CATALOG = {
       'iii jean',
     ],
     en: ['3 john', 'third john', 'iii john'],
+    singleChapter: true,
   },
-  jude: { fr: ['jude', 'epitre de jude', 'lettre de jude', 'jd'], en: ['jude'] },
+  jude: {
+    fr: ['jude', 'epitre de jude', 'lettre de jude', 'jd'],
+    en: ['jude'],
+    singleChapter: true,
+  },
   apocalypse: {
     fr: ['apocalypse', 'ap', 'livre de l apocalypse', 'revelation'],
     en: ['revelation', 'revelations', 'rev'],
   },
 };
 
-module.exports = { BOOK_CATALOG };
+// AJOUT (Chantier A.1) : dérivé mécaniquement de BOOK_CATALOG, jamais retapé
+// à la main — un livre marqué singleChapter: true ci-dessus apparaît ici
+// automatiquement, une seule source de vérité. Consommé par
+// detector.js/detector-en.js#testAlias() pour reconnaître "Philémon verset
+// 6" (sans "chapitre") et pour réinterpréter "Philémon 6" (un seul nombre)
+// comme chapitre 1 verset 6 plutôt que comme un chapitre 6 inexistant.
+const SINGLE_CHAPTER_BOOKS = new Set(
+  Object.entries(BOOK_CATALOG)
+    .filter(([, entry]) => entry.singleChapter)
+    .map(([key]) => key)
+);
+
+module.exports = { BOOK_CATALOG, SINGLE_CHAPTER_BOOKS };

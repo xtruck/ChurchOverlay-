@@ -64,7 +64,7 @@ function detectBilingualExact(text) {
   for (const { book, name, lang } of COMBINED_ALIASES) {
     const normalized = lang === 'fr' ? frNormalized : enNormalized;
     const testFn = lang === 'fr' ? detector.testAlias : detectorEn.testAlias;
-    const result = testFn(normalized, name);
+    const result = testFn(normalized, name, book);
     if (result) return { book, ...result, lang };
   }
   return null;

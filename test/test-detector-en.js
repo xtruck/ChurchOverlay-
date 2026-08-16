@@ -87,4 +87,29 @@ assert(detector.detect('John 3:250') === null, 'Verset > 200 rejeté');
 // --- Alias 'i' pour "I John" (utilise \b, donc "i john" doit matcher) ---
 assert(refEq(detector.detect('I John 4:8'), '1jean', 4, 8), 'I John 4:8');
 
+// --- AJOUT (Chantier A.1 — livres à chapitre unique) : Philemon, Jude,
+// 2 John, 3 John n'ont qu'un seul chapitre — miroir de test-detector.js (FR).
+// Corpus réel (B2/D3) : le pattern standard exige toujours un numéro de
+// chapitre, "Philemon verse 6" renvoyait null avant ce correctif. ---
+assert(refEq(detector.detect('Philemon verse 6'), 'philemon', 1, 6), 'Philemon verse 6');
+assert(
+  refEq(detector.detect('Philemon 6'), 'philemon', 1, 6),
+  'Philemon 6 (un seul nombre -> verset, jamais chapitre 6 inexistant)'
+);
+assert(refEq(detector.detect('verse 6 of Philemon'), 'philemon', 1, 6), 'verse 6 of Philemon');
+assert(refEq(detector.detect('Jude verse 3'), 'jude', 1, 3), 'Jude verse 3');
+assert(refEq(detector.detect('2 John verse 5'), '2jean', 1, 5), '2 John verse 5');
+assert(refEq(detector.detect('3 John verse 2'), '3jean', 1, 2), '3 John verse 2');
+assert(
+  refEq(detector.detect('Philemon chapter 1 verse 6'), 'philemon', 1, 6),
+  'Philemon chapter 1 verse 6 (forme explicite, chemin standard inchangé)'
+);
+assert(refEq(detector.detect('Jude verses 3 to 5'), 'jude', 1, 3, 5), 'Jude verses 3 to 5 (plage)');
+// Un livre à chapitres multiples ne doit jamais être réinterprété.
+const johnSix = detector.detect('John 6');
+assert(
+  johnSix && johnSix.chapter === 6 && johnSix.verseStart === undefined,
+  'John 6 reste chapitre 6, jamais réinterprété en verset'
+);
+
 console.log('\n=== Tous les tests detector-en OK ===');

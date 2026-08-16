@@ -85,4 +85,40 @@ assert.strictEqual(
   'une correspondance floue ne dépasse jamais medium'
 );
 
+// AJOUT (Chantier A.1 — livres à chapitre unique) : Philémon, Abdias, Jude,
+// 2 Jean, 3 Jean n'ont qu'un seul chapitre — cité sans jamais dire
+// "chapitre" à l'oral. Corpus réel (D3 : "Philémon verset 6" renvoyait null
+// avant ce correctif, voir BASELINE_CHANTIER_1.md).
+const singleChapterCases = [
+  ['Philémon verset 6', { book: 'philemon', chapter: 1, verseStart: 6, verseEnd: 6 }],
+  // Un seul nombre après le nom du livre : ne peut être qu'un verset (le
+  // chapitre 6 de Philémon n'existe pas), jamais réinterprété comme chapitre.
+  ['Philémon 6', { book: 'philemon', chapter: 1, verseStart: 6, verseEnd: 6 }],
+  ['verset 6 de Philémon', { book: 'philemon', chapter: 1, verseStart: 6, verseEnd: 6 }],
+  ['Jude verset 3', { book: 'jude', chapter: 1, verseStart: 3, verseEnd: 3 }],
+  ['2 Jean verset 5', { book: '2jean', chapter: 1, verseStart: 5, verseEnd: 5 }],
+  ['3 Jean verset 2', { book: '3jean', chapter: 1, verseStart: 2, verseEnd: 2 }],
+  ['Abdias verset 1', { book: 'abdias', chapter: 1, verseStart: 1, verseEnd: 1 }],
+  // La forme explicite "chapitre 1" doit continuer à fonctionner (chemin
+  // standard, inchangé).
+  ['Philémon chapitre 1 verset 6', { book: 'philemon', chapter: 1, verseStart: 6, verseEnd: 6 }],
+  // Une plage de versets doit continuer à fonctionner sur ces livres.
+  ['Jude versets 3 à 5', { book: 'jude', chapter: 1, verseStart: 3, verseEnd: 5 }],
+];
+for (const [input, expected] of singleChapterCases) {
+  const actual = detectExact(input);
+  assert(actual, `Référence non détectée (livre à chapitre unique) : ${input}`);
+  for (const [key, value] of Object.entries(expected))
+    assert.strictEqual(actual[key], value, `${input}: ${key}`);
+  assert.strictEqual(actual.confidence, 'high', `${input}: verset précisé -> confidence high`);
+}
+
+// Un livre à CHAPITRES MULTIPLES ne doit jamais être affecté par ce
+// correctif — "Jean 6" reste chapitre 6, jamais réinterprété en verset.
+assert.deepStrictEqual(
+  { chapter: detectExact('Jean 6').chapter, verseStart: detectExact('Jean 6').verseStart },
+  { chapter: 6, verseStart: undefined },
+  'un livre à chapitres multiples ne doit jamais être réinterprété en "chapitre 1 verset N"'
+);
+
 console.log('✓ detector.js : tous les tests sont passés');

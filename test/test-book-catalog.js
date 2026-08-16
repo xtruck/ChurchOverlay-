@@ -20,7 +20,7 @@
 const assert = require('assert');
 const { BOOKS: frBooks } = require('../detector');
 const { BOOKS: enBooks } = require('../detector-en');
-const { BOOK_CATALOG } = require('../book-catalog');
+const { BOOK_CATALOG, SINGLE_CHAPTER_BOOKS } = require('../book-catalog');
 
 let passed = 0;
 let failed = 0;
@@ -81,6 +81,29 @@ test("chaque clé est bien le slug français canonique (aucune clé anglaise ne 
     !BOOK_CATALOG.revelation,
     "la clé anglaise 'revelation' ne doit jamais exister comme clé"
   );
+});
+
+test('SINGLE_CHAPTER_BOOKS contient exactement les 5 livres à un seul chapitre (Chantier A.1)', () => {
+  assert.deepStrictEqual(
+    [...SINGLE_CHAPTER_BOOKS].sort(),
+    ['2jean', '3jean', 'abdias', 'jude', 'philemon'].sort(),
+    "biblique : Philémon/Abdias/Jude/2 Jean/3 Jean sont les seuls livres à n'avoir qu'un chapitre"
+  );
+});
+
+test('SINGLE_CHAPTER_BOOKS est dérivé de singleChapter, jamais une liste parallèle désynchronisable', () => {
+  for (const key of SINGLE_CHAPTER_BOOKS) {
+    assert.strictEqual(
+      BOOK_CATALOG[key] && BOOK_CATALOG[key].singleChapter,
+      true,
+      `'${key}' est dans SINGLE_CHAPTER_BOOKS mais BOOK_CATALOG['${key}'].singleChapter n'est pas true`
+    );
+  }
+  for (const [key, entry] of Object.entries(BOOK_CATALOG)) {
+    if (entry.singleChapter) {
+      assert.ok(SINGLE_CHAPTER_BOOKS.has(key), `'${key}' a singleChapter:true mais absent du Set`);
+    }
+  }
 });
 
 console.log(`\n=== Résultat test-book-catalog : ${passed} passés, ${failed} échoués ===`);

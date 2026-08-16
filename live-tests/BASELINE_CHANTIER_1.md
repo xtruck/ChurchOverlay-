@@ -22,10 +22,23 @@ testé (suite complète verte) et commité tel quel avant cette mesure.
 - Catégories : livre_numerote 3/3, nombre_piege 3/3, bruit_fond 5/5,
   variante_formulation 5/7, livre_difficile 8/11, rafale_5s 1/2, doublon_10s
   2/2, changement_langue 0/2, noyee 1/2
-- Échecs restants (9) : A2/B2 (variantes, ASR), D3/D5/N2 (livre_difficile,
-  troncature ASR), F2 (rafale, ASR), H1/H2 (changement de langue EN/FR — ASR
-  ne transcrit pas la partie anglaise), I2 (noyée, EN) — tous des échecs ASR
-  natifs, jamais un mauvais verset affiché à la place d'un bon.
+- Échecs restants (9) : A2/D5/N2/F2 (ASR natif, confirmé — voir CORRECTIF
+  ci-dessous) — mais **D3, B2, H1, H2, I2 ne sont PAS des échecs ASR**.
+  **CORRECTIF (Chantier A, mission autonome) : l'affirmation "tous des échecs
+  ASR natifs" ci-dessus était fausse et n'avait jamais été vérifiée en
+  passant la transcription PARFAITE (colonne `expected_text` du corpus)
+  directement à `detect()`, sans ASR.** En le faisant : D3 « Philémon verset
+  6 » et H2 « Let us turn to Matthieu chapitre 5 » échouaient pour une raison
+  purement locale — Philémon n'a qu'un chapitre et le pattern standard exige
+  toujours un numéro de chapitre après le nom du livre (corrigé au Chantier
+  A.1, voir book-catalog.js#SINGLE_CHAPTER_BOOKS) ; B2 « The gospel of John,
+  chapter three, verse sixteen », H1 « ...in the book of Romans, chapter
+  eight » et I2 « ...what Isaiah 41:10 tells us... » sont détectés
+  correctement par `detector-en.js`, qui existe et fonctionne déjà dans le
+  dépôt, mais qui n'est jamais consulté quand la session est en français
+  (Chantier A.2). Quatre à cinq des neuf échecs persisteraient donc avec un
+  ASR parfait — ils se corrigent sans un seul appel API et sans latence
+  supplémentaire. Seuls A2, D5, N2, F2 restent des échecs ASR confirmés.
 
 **Audit du banc (Chantier 0.2, trouvé pendant cette mesure)** : le compteur
 "jamais détecté du tout" comptait à tort 16 alors que 28/37 étaient affichés

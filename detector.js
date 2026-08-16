@@ -12,7 +12,7 @@ const { correctBookNameFuzzy } = require('./levenshtein');
 // contenu strictement identique à l'ancien littéral — verrouillé par
 // test-book-catalog.js (lot 8) et par le fait que test-detector.js (ce
 // fichier) passe sans aucune modification.
-const { BOOK_CATALOG } = require('./book-catalog');
+const { BOOK_CATALOG, SINGLE_CHAPTER_BOOKS } = require('./book-catalog');
 const BOOKS = Object.fromEntries(Object.entries(BOOK_CATALOG).map(([key, { fr }]) => [key, fr]));
 
 // CUTOVER (support bilingue FR/EN, lot 11a) : ces listes de déformations
@@ -111,8 +111,49 @@ const aliases = Object.entries(BOOKS)
 // effet — passer à l'alias suivant), aucune logique de matching modifiée.
 // Comportement inchangé pour detectExact()/detect() ci-dessous — verrouillé
 // par le fait que test-detector.js passe sans aucune modification.
-function testAlias(normalized, name) {
+function testAlias(normalized, name, book) {
   const escaped = escapeRegExp(name).replace(/\s+/g, '\\s+');
+  const isSingleChapterBook = SINGLE_CHAPTER_BOOKS.has(book);
+
+  // AJOUT (Chantier A.1 — livres à chapitre unique) : "Philémon verset 6",
+  // "Jude verset 3" — un livre à un seul chapitre s'entend sans jamais dire
+  // "chapitre", le pattern standard plus bas (qui exige un chiffre juste
+  // après le nom du livre) ne peut donc pas matcher. Testé ICI, avant tout
+  // le reste, uniquement pour les livres concernés (Philémon, Abdias, Jude,
+  // 2 Jean, 3 Jean — voir SINGLE_CHAPTER_BOOKS). Couvre aussi la forme
+  // inversée ("verset 6 de Philémon"), symétrique aux formes inversées
+  // ci-dessous pour les livres à chapitres multiples.
+  if (isSingleChapterBook) {
+    const versetOnly = new RegExp(
+      `\\b${escaped}\\s+(?:verset(?:s)?|v\\.?)\\s+(\\d{1,3})(?:\\s*(?:-|a|à|au)\\s*(\\d{1,3}))?\\b`,
+      'i'
+    );
+    const mVersetOnly = normalized.match(versetOnly);
+    if (mVersetOnly) {
+      const vStart = Number(mVersetOnly[1]);
+      const vEnd = mVersetOnly[2] ? Number(mVersetOnly[2]) : vStart;
+      if (vStart > 0 && vStart <= 200 && vEnd >= vStart && vEnd <= 200) {
+        return { chapter: 1, verseStart: vStart, verseEnd: vEnd, raw: mVersetOnly[0].trim() };
+      }
+    }
+    const versetOnlyReversed = new RegExp(
+      `\\bverset(?:s)?\\s+(\\d{1,3})(?:\\s*(?:-|a|à|au)\\s*(\\d{1,3}))?\\s+(?:du|de|dans)?\\s*${escaped}\\b`,
+      'i'
+    );
+    const mVersetOnlyReversed = normalized.match(versetOnlyReversed);
+    if (mVersetOnlyReversed) {
+      const vStart = Number(mVersetOnlyReversed[1]);
+      const vEnd = mVersetOnlyReversed[2] ? Number(mVersetOnlyReversed[2]) : vStart;
+      if (vStart > 0 && vStart <= 200 && vEnd >= vStart && vEnd <= 200) {
+        return {
+          chapter: 1,
+          verseStart: vStart,
+          verseEnd: vEnd,
+          raw: mVersetOnlyReversed[0].trim(),
+        };
+      }
+    }
+  }
 
   // Inverted Spoken Pattern 1: "verset 16 du chapitre 3 de Jean"
   const invPattern1 = new RegExp(
@@ -222,6 +263,16 @@ function testAlias(normalized, name) {
     if (verseStart !== undefined && (verseStart <= 0 || verseStart > 200)) return null;
     if (verseEnd !== undefined && (verseEnd < verseStart || verseEnd > 200)) return null;
 
+    // AJOUT (Chantier A.1 — livres à chapitre unique) : "Philémon 6" (un
+    // seul nombre, capturé ci-dessus comme "chapitre" par défaut) ne peut
+    // être qu'un verset pour un livre qui n'a qu'un seul chapitre — le
+    // chapitre 6 de Philémon n'existe pas, l'inverse ne peut donc jamais
+    // être l'intention. Réinterprété ici plutôt que dans une regex séparée :
+    // c'est la MÊME capture, juste relue différemment.
+    if (isSingleChapterBook && verseStart === undefined) {
+      return { chapter: 1, verseStart: chapter, verseEnd: chapter, raw: match[0].trim() };
+    }
+
     return {
       chapter,
       verseStart,
@@ -238,7 +289,7 @@ function testAlias(normalized, name) {
 // correspondance floue (voir detect() ci-dessous) sans dupliquer la logique.
 function matchAgainstAliases(normalized) {
   for (const { book, name } of aliases) {
-    const result = testAlias(normalized, name);
+    const result = testAlias(normalized, name, book);
     if (result) return { book, ...result };
   }
   return null;

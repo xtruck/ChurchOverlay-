@@ -24,7 +24,7 @@ const { correctBookNameFuzzy } = require('./levenshtein');
 // strictement identique à l'ancien littéral — verrouillé par
 // test-book-catalog.js (lot 8) et par le fait que test-detector-en.js (ce
 // fichier) passe sans aucune modification.
-const { BOOK_CATALOG } = require('./book-catalog');
+const { BOOK_CATALOG, SINGLE_CHAPTER_BOOKS } = require('./book-catalog');
 // Alias EN → clé interne FR (identique à detector.js).
 const BOOKS = Object.fromEntries(Object.entries(BOOK_CATALOG).map(([key, { en }]) => [key, en]));
 
@@ -90,8 +90,44 @@ function normalizeKeywords(text) {
 // deviennent `return null`, aucune logique de matching modifiée —
 // verrouillé par le fait que test-detector-en.js passe sans aucune
 // modification.
-function testAlias(normalized, name) {
+function testAlias(normalized, name, book) {
   const escaped = escapeRegExp(name).replace(/\s+/g, '\\s+');
+  const isSingleChapterBook = SINGLE_CHAPTER_BOOKS.has(book);
+
+  // AJOUT (Chantier A.1 — livres à chapitre unique) : "Philemon verse 6",
+  // "Jude verse 3" — miroir exact de la même addition dans detector.js
+  // (FR). Testé avant tout le reste, uniquement pour les livres concernés.
+  if (isSingleChapterBook) {
+    const verseOnly = new RegExp(
+      `\\b${escaped}\\s+verse(?:s)?\\s+(\\d{1,3})(?:\\s*(?:-|to|through)\\s*(\\d{1,3}))?\\b`,
+      'i'
+    );
+    const mVerseOnly = normalized.match(verseOnly);
+    if (mVerseOnly) {
+      const vStart = Number(mVerseOnly[1]);
+      const vEnd = mVerseOnly[2] ? Number(mVerseOnly[2]) : vStart;
+      if (vStart > 0 && vStart <= 200 && vEnd >= vStart && vEnd <= 200) {
+        return { chapter: 1, verseStart: vStart, verseEnd: vEnd, raw: mVerseOnly[0].trim() };
+      }
+    }
+    const verseOnlyReversed = new RegExp(
+      `\\bverse(?:s)?\\s+(\\d{1,3})(?:\\s*(?:-|to|through)\\s*(\\d{1,3}))?\\s+(?:of|in)?\\s*${escaped}\\b`,
+      'i'
+    );
+    const mVerseOnlyReversed = normalized.match(verseOnlyReversed);
+    if (mVerseOnlyReversed) {
+      const vStart = Number(mVerseOnlyReversed[1]);
+      const vEnd = mVerseOnlyReversed[2] ? Number(mVerseOnlyReversed[2]) : vStart;
+      if (vStart > 0 && vStart <= 200 && vEnd >= vStart && vEnd <= 200) {
+        return {
+          chapter: 1,
+          verseStart: vStart,
+          verseEnd: vEnd,
+          raw: mVerseOnlyReversed[0].trim(),
+        };
+      }
+    }
+  }
 
   // Inverted Spoken Pattern 1: "verse 16 of chapter 3 of John" / "verse 16 of John chapter 3"
   const invPattern1 = new RegExp(
@@ -172,6 +208,10 @@ function testAlias(normalized, name) {
   if (chapter > 0 && chapter <= 150) {
     if (verseStart !== undefined && (verseStart <= 0 || verseStart > 200)) return null;
     if (verseEnd !== undefined && (verseEnd < verseStart || verseEnd > 200)) return null;
+    // AJOUT (Chantier A.1) : "Philemon 6" — miroir exact de detector.js.
+    if (isSingleChapterBook && verseStart === undefined) {
+      return { chapter: 1, verseStart: chapter, verseEnd: chapter, raw: match[0].trim() };
+    }
     return { chapter, verseStart, verseEnd, raw: match[0].trim() };
   }
   return null;
@@ -181,7 +221,7 @@ function testAlias(normalized, name) {
 // texte corrigé par la correspondance floue (voir detect() ci-dessous).
 function matchAgainstAliases(normalized) {
   for (const { book, name } of aliases) {
-    const result = testAlias(normalized, name);
+    const result = testAlias(normalized, name, book);
     if (result) return { book, ...result };
   }
   return null;
