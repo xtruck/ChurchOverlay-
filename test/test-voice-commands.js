@@ -299,58 +299,127 @@ check('"the web" seul (hors contexte traduction) -> null', detectCommand('the we
 // ---------------------------------------------------------------------------
 console.log('\n--- Balayage croisé (chaque commande résout vers son propre id) ---\n');
 
-// Phrase représentative + résultat attendu {action, ...champs}, une entrée
-// par id, couvrant tout COMMANDS actuel — le but est de prouver qu'AJOUTER
-// des motifs (ce lot) n'a pas fait gagner une commande voisine sur une
-// phrase qui devrait rester la propriété d'une autre (risque réel d'une
-// liste ordonnée premier-match).
+// Phrase représentative FR + EN par id, couvrant tout COMMANDS actuel — le
+// but est de prouver qu'AJOUTER des motifs n'a pas fait gagner une commande
+// voisine sur une phrase qui devrait rester la propriété d'une autre
+// (risque réel d'une liste ordonnée premier-match).
 const EXPECTED = {
-  showVerse: { phrase: 'affiche le verset jean 3 16', action: 'showVerse' },
-  hideOverlay: { phrase: 'cache le verset', action: 'hideVerse' },
-  recallLastVerse: { phrase: 'reviens sur le verset', action: 'recallLastVerse' },
-  repeat: { phrase: 'répète', action: 'repeat' },
-  nextChapter: { phrase: 'chapitre suivant', action: 'nextChapter' },
-  previousChapter: { phrase: 'chapitre précédent', action: 'previousChapter' },
-  nextVerse: { phrase: 'verset suivant', action: 'nextVerse' },
-  previousVerse: { phrase: 'verset précédent', action: 'previousVerse' },
-  themeDark: { phrase: 'thème sombre', action: 'setTheme', theme: 'dark' },
-  themeLight: { phrase: 'thème clair', action: 'setTheme', theme: 'light' },
-  themeGold: { phrase: 'thème or', action: 'setTheme', theme: 'gold' },
-  langFrench: { phrase: 'affiche français', action: 'setLanguage', language: 'fr' },
-  langEnglish: { phrase: 'affiche anglais', action: 'setLanguage', language: 'en' },
-  langBoth: { phrase: 'langue bilingue', action: 'setLanguage', language: 'both' },
+  showVerse: {
+    fr: 'affiche le verset jean 3 16',
+    en: 'show verse john 3 16',
+    action: 'showVerse',
+  },
+  hideOverlay: { fr: 'cache le verset', en: 'hide the verse', action: 'hideVerse' },
+  recallLastVerse: {
+    fr: 'reviens sur le verset',
+    en: 'go back to the verse',
+    action: 'recallLastVerse',
+  },
+  repeat: { fr: 'répète', en: 'repeat', action: 'repeat' },
+  nextChapter: { fr: 'chapitre suivant', en: 'next chapter', action: 'nextChapter' },
+  previousChapter: {
+    fr: 'chapitre précédent',
+    en: 'previous chapter',
+    action: 'previousChapter',
+  },
+  nextVerse: { fr: 'verset suivant', en: 'next verse', action: 'nextVerse' },
+  previousVerse: { fr: 'verset précédent', en: 'previous verse', action: 'previousVerse' },
+  themeDark: {
+    fr: 'thème sombre',
+    en: 'switch to dark theme',
+    action: 'setTheme',
+    theme: 'dark',
+  },
+  themeLight: {
+    fr: 'thème clair',
+    en: 'switch to light theme',
+    action: 'setTheme',
+    theme: 'light',
+  },
+  themeGold: {
+    fr: 'thème or',
+    en: 'switch to gold theme',
+    action: 'setTheme',
+    theme: 'gold',
+  },
+  langFrench: {
+    fr: 'affiche français',
+    en: 'switch to french',
+    action: 'setLanguage',
+    language: 'fr',
+  },
+  langEnglish: {
+    fr: 'affiche anglais',
+    en: 'switch to english',
+    action: 'setLanguage',
+    language: 'en',
+  },
+  langBoth: {
+    fr: 'langue bilingue',
+    en: 'switch to bilingual',
+    action: 'setLanguage',
+    language: 'both',
+  },
   listenInFrench: {
-    phrase: 'écoute en français',
+    fr: 'écoute en français',
+    en: 'listen in french',
     action: 'setTranscriptionLanguage',
     language: 'fr',
   },
   listenInEnglish: {
-    phrase: 'listen in English',
+    fr: 'écoute en anglais',
+    en: 'listen in English',
     action: 'setTranscriptionLanguage',
     language: 'en',
   },
   listenInBilingual: {
-    phrase: 'écoute en bilingue',
+    fr: 'écoute en bilingue',
+    en: 'listen in bilingual',
     action: 'setTranscriptionLanguage',
     language: 'multi',
   },
-  translationSegond: { phrase: 'traduction segond', action: 'setTranslation', code: 'lsg' },
-  translationDarby: { phrase: 'traduction darby', action: 'setTranslation', code: 'darby' },
-  translationKJV: { phrase: 'translation king james', action: 'setTranslation', code: 'kjv' },
+  translationSegond: {
+    fr: 'traduction segond',
+    en: 'switch to segond',
+    action: 'setTranslation',
+    code: 'lsg',
+  },
+  translationDarby: {
+    fr: 'traduction darby',
+    en: 'switch to darby',
+    action: 'setTranslation',
+    code: 'darby',
+  },
+  translationKJV: {
+    fr: 'traduction king james',
+    en: 'translation king james',
+    action: 'setTranslation',
+    code: 'kjv',
+  },
   translationWEB: {
-    phrase: 'translation world english bible',
+    fr: 'bible world english bible',
+    en: 'translation world english bible',
     action: 'setTranslation',
     code: 'web',
   },
   translationASV: {
-    phrase: 'translation american standard',
+    fr: 'bible american standard',
+    en: 'translation american standard',
     action: 'setTranslation',
     code: 'asv',
   },
-  extendTime: { phrase: 'prolonge le temps de 5 minutes', action: 'extendTime' },
-  pauseTimer: { phrase: 'pause le timer', action: 'pauseTimer' },
-  resumeTimer: { phrase: 'reprends le timer', action: 'resumeTimer' },
-  emergencyClear: { phrase: "arrêt d'urgence", action: 'emergencyClear' },
+  extendTime: {
+    fr: 'prolonge le temps de 5 minutes',
+    en: 'extend the timer by 5 minutes',
+    action: 'extendTime',
+  },
+  pauseTimer: { fr: 'pause le timer', en: 'pause the timer', action: 'pauseTimer' },
+  resumeTimer: { fr: 'reprends le timer', en: 'resume the timer', action: 'resumeTimer' },
+  emergencyClear: {
+    fr: "arrêt d'urgence",
+    en: 'emergency clear',
+    action: 'emergencyClear',
+  },
 };
 
 for (const cmd of COMMANDS) {
@@ -359,16 +428,43 @@ for (const cmd of COMMANDS) {
     check(`${cmd.id} a une entrée dans EXPECTED`, false, 'ajouter EXPECTED[id] ci-dessus');
     continue;
   }
-  const result = detectCommand(expected.phrase);
-  const matches =
-    result &&
-    Object.entries(expected)
-      .filter(([k]) => k !== 'phrase')
-      .every(([k, v]) => result[k] === v);
+  const fields = Object.entries(expected).filter(([k]) => k !== 'fr' && k !== 'en');
+  for (const lang of ['fr', 'en']) {
+    const phrase = expected[lang];
+    const result = detectCommand(phrase);
+    const matches = result && fields.every(([k, v]) => result[k] === v);
+    check(
+      `[${lang}] "${phrase}" résout vers "${cmd.id}" (pas une commande voisine)`,
+      matches,
+      `attendu ${JSON.stringify(expected)}, obtenu ${JSON.stringify(result)}`
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 8. Parité FR/EN structurelle (mission Chantier C) : EXPECTED ci-dessus
+//    n'a de valeur QUE si chaque entrée fournit VRAIMENT fr ET en, et que
+//    l'un ne peut pas être un copier-coller accidentel de l'autre. Sans ces
+//    deux garde-fous, une future commande ajoutée avec une seule langue
+//    passerait la vérification silencieusement (voir mission §6 : « test
+//    de parité automatisé qui échoue en CI si une commande existe dans une
+//    langue et pas dans l'autre »).
+// ---------------------------------------------------------------------------
+console.log('\n--- Parité FR/EN structurelle (complétude de EXPECTED) ---\n');
+for (const cmd of COMMANDS) {
+  const expected = EXPECTED[cmd.id];
+  if (!expected) continue; // déjà signalé au balayage croisé ci-dessus
   check(
-    `"${expected.phrase}" résout vers "${cmd.id}" (pas une commande voisine)`,
-    matches,
-    `attendu ${JSON.stringify(expected)}, obtenu ${JSON.stringify(result)}`
+    `${cmd.id} : EXPECTED.fr renseigné`,
+    typeof expected.fr === 'string' && expected.fr.length > 0
+  );
+  check(
+    `${cmd.id} : EXPECTED.en renseigné`,
+    typeof expected.en === 'string' && expected.en.length > 0
+  );
+  check(
+    `${cmd.id} : EXPECTED.fr ≠ EXPECTED.en (deux formulations distinctes, pas un copier-coller)`,
+    expected.fr.toLowerCase() !== expected.en.toLowerCase()
   );
 }
 

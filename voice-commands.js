@@ -149,11 +149,19 @@ const COMMANDS = [
   },
 
   // --- THEME ---
+  // CORRECTIF (Chantier C, mission autonome — parité FR/EN) : le motif
+  // "switch/change" n'acceptait que des prépositions françaises (en/au/
+  // vers), et l'ordre mot-couleur-avant-nom ("dark theme", naturel en
+  // anglais) n'était couvert par aucun motif (seul l'ordre français
+  // "thème sombre" l'était). Ajout de "to" comme préposition ET d'un motif
+  // dédié à l'ordre anglais. Voir test/test-voice-commands.js (parité
+  // exhaustive) qui a mis ce trou en évidence.
   {
     id: 'themeDark',
     patterns: [
       /(?:thème|theme|style)\s+(?:sombre|dark|noir|black)/i,
-      /(?:passe|switch|change)\s+(?:en|au|vers)\s+(?:thème\s+)?sombre/i,
+      /(?:passe|switch|change)\s+(?:en|au|vers|to)\s+(?:thème\s+|the\s+)?(?:sombre|dark)/i,
+      /(?:switch|change)\s+to\s+(?:the\s+)?(?:dark|black)\s+(?:theme|style)/i,
     ],
     extract: () => ({ action: 'setTheme', theme: 'dark' }),
   },
@@ -161,7 +169,8 @@ const COMMANDS = [
     id: 'themeLight',
     patterns: [
       /(?:thème|theme|style)\s+(?:clair|light|blanc|white)/i,
-      /(?:passe|switch|change)\s+(?:en|au|vers)\s+(?:thème\s+)?clair/i,
+      /(?:passe|switch|change)\s+(?:en|au|vers|to)\s+(?:thème\s+|the\s+)?(?:clair|light)/i,
+      /(?:switch|change)\s+to\s+(?:the\s+)?(?:light|white)\s+(?:theme|style)/i,
     ],
     extract: () => ({ action: 'setTheme', theme: 'light' }),
   },
@@ -169,7 +178,8 @@ const COMMANDS = [
     id: 'themeGold',
     patterns: [
       /(?:thème|theme|style)\s+(?:or|gold|dore|golden)/i,
-      /(?:passe|switch|change)\s+(?:en|au|vers)\s+(?:thème\s+)?or/i,
+      /(?:passe|switch|change)\s+(?:en|au|vers|to)\s+(?:thème\s+|the\s+)?(?:or|gold)/i,
+      /(?:switch|change)\s+to\s+(?:the\s+)?(?:gold|golden)\s+(?:theme|style)/i,
     ],
     extract: () => ({ action: 'setTheme', theme: 'gold' }),
   },
@@ -179,7 +189,7 @@ const COMMANDS = [
     id: 'langFrench',
     patterns: [
       /(?:langue|language|affiche)\s+(?:francais|fr|french)/i,
-      /(?:passe|switch|change)\s+(?:en|au|vers)\s+(?:francais|fr)/i,
+      /(?:passe|switch|change)\s+(?:en|au|vers|to)\s+(?:francais|fr|french)/i,
     ],
     extract: () => ({ action: 'setLanguage', language: 'fr' }),
   },
@@ -187,7 +197,7 @@ const COMMANDS = [
     id: 'langEnglish',
     patterns: [
       /(?:langue|language|affiche)\s+(?:anglais|en|english)/i,
-      /(?:passe|switch|change)\s+(?:en|au|vers)\s+(?:anglais|en)/i,
+      /(?:passe|switch|change)\s+(?:en|au|vers|to)\s+(?:anglais|en|english)/i,
     ],
     extract: () => ({ action: 'setLanguage', language: 'en' }),
   },
@@ -195,7 +205,7 @@ const COMMANDS = [
     id: 'langBoth',
     patterns: [
       /(?:langue|language|affiche)\s+(?:les\s+deux|both|bilingue|bilingual)/i,
-      /(?:passe|switch|change)\s+(?:en|au|vers)\s+(?:mode\s+)?bilingue/i,
+      /(?:passe|switch|change)\s+(?:en|au|vers|to)\s+(?:mode\s+)?(?:bilingue|bilingual)/i,
     ],
     extract: () => ({ action: 'setLanguage', language: 'both' }),
   },
@@ -250,16 +260,23 @@ const COMMANDS = [
   {
     id: 'translationSegond',
     patterns: [
-      /(?:traduction|version|bible)\s+(?:segond|louis\s+segond)/i,
-      /(?:passe|switch|change)\s+(?:en|à|vers|sur)\s+(?:la\s+)?(?:segond|louis\s+segond)/i,
+      /(?:traduction|version|bible|translation)\s+(?:segond|louis\s+segond)/i,
+      /(?:passe|switch|change)\s+(?:en|à|vers|sur|to|over\s+to)\s+(?:la\s+|the\s+)?(?:segond|louis\s+segond)/i,
     ],
+    // CORRECTIF (Chantier C, mission autonome — parité FR/EN) : "switch to
+    // segond"/"change to segond" ne matchaient jamais (prépositions
+    // en/à/vers/sur toutes françaises, aucune anglaise) — seule la forme
+    // "bible/version segond" fonctionnait déjà en anglais, par coïncidence
+    // de vocabulaire partagé. Même asymétrie que translationDarby
+    // ci-dessous. Voir test/test-voice-commands.js pour le test de parité
+    // exhaustif qui a mis ce trou en évidence.
     extract: () => ({ action: 'setTranslation', language: 'fr', code: 'lsg' }),
   },
   {
     id: 'translationDarby',
     patterns: [
-      /(?:traduction|version|bible)\s+(?:darby)/i,
-      /(?:passe|switch|change)\s+(?:en|à|vers|sur)\s+(?:la\s+)?darby/i,
+      /(?:traduction|version|bible|translation)\s+(?:darby)/i,
+      /(?:passe|switch|change)\s+(?:en|à|vers|sur|to|over\s+to)\s+(?:la\s+|the\s+)?darby/i,
     ],
     extract: () => ({ action: 'setTranslation', language: 'fr', code: 'darby' }),
   },
@@ -274,10 +291,15 @@ const COMMANDS = [
   // toujours exiger "translation/version/bible X" ou "switch to X", jamais
   // le mot seul — "web" en particulier serait un faux positif désastreux
   // sans ce garde-fou (n'importe quelle phrase mentionnant "the web").
+  // CORRECTIF (Chantier C, mission autonome — parité FR/EN) : l'ancre
+  // n'acceptait que "translation" (anglais), jamais "traduction" (français)
+  // — un locuteur français ne pouvait pas dire "traduction KJV" alors que
+  // translationSegond/Darby acceptent symétriquement "traduction"/
+  // "translation". Voir test/test-voice-commands.js (parité exhaustive).
   {
     id: 'translationKJV',
     patterns: [
-      /(?:translation|version|bible)\s+(?:the\s+)?(?:king\s+james(?:\s+version)?|kjv)/i,
+      /(?:translation|traduction|version|bible)\s+(?:the\s+)?(?:king\s+james(?:\s+version)?|kjv)/i,
       /(?:switch|change|move)\s+(?:to|over\s+to)\s+(?:the\s+)?(?:king\s+james(?:\s+version)?|kjv)/i,
     ],
     extract: () => ({ action: 'setTranslation', language: 'en', code: 'kjv' }),
@@ -285,7 +307,7 @@ const COMMANDS = [
   {
     id: 'translationWEB',
     patterns: [
-      /(?:translation|version|bible)\s+(?:the\s+)?(?:world\s+english\s+bible|web)\b/i,
+      /(?:translation|traduction|version|bible)\s+(?:the\s+)?(?:world\s+english\s+bible|web)\b/i,
       /(?:switch|change|move)\s+(?:to|over\s+to)\s+(?:the\s+)?(?:world\s+english\s+bible|web\s+translation|web\s+bible)/i,
     ],
     extract: () => ({ action: 'setTranslation', language: 'en', code: 'web' }),
@@ -293,7 +315,7 @@ const COMMANDS = [
   {
     id: 'translationASV',
     patterns: [
-      /(?:translation|version|bible)\s+(?:the\s+)?(?:american\s+standard(?:\s+version)?|asv)/i,
+      /(?:translation|traduction|version|bible)\s+(?:the\s+)?(?:american\s+standard(?:\s+version)?|asv)/i,
       /(?:switch|change|move)\s+(?:to|over\s+to)\s+(?:the\s+)?(?:american\s+standard(?:\s+version)?|asv)/i,
     ],
     extract: () => ({ action: 'setTranslation', language: 'en', code: 'asv' }),
