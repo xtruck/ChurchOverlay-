@@ -378,6 +378,11 @@ function matchRowsToEvents(rows, feedTimes, events) {
 
     if (expectedRefKey) {
       // --- partial puis final (transcripts contenant la référence attendue) ---
+      // AJOUT (Chantier 3) : un transcript chapitre-seul ("Jean 14") dont le
+      // livre+chapitre correspondent à l'attendu (verset perdu par l'ASR) est
+      // un signal de détection RÉELLE — compté dans textDetected pour que le
+      // diagnostic "jamais détecté" ne masque pas ces lignes désormais
+      // affichées en chapitre par le fallback.
       let partialClaimed = false;
       let finalClaimed = false;
       for (const ev of events) {
@@ -390,7 +395,13 @@ function matchRowsToEvents(rows, feedTimes, events) {
           continue;
         }
         if (!ref) continue;
-        if (refKeyOf(ref.book, ref.chapter, ref.verseStart) !== expectedRefKey) continue;
+        const exactMatch = refKeyOf(ref.book, ref.chapter, ref.verseStart) === expectedRefKey;
+        const chapterOnlyMatch =
+          !ref.verseStart &&
+          ref.book === row.expectedBook &&
+          ref.chapter === row.expectedChapter &&
+          row.expectedVerseStart;
+        if (!exactMatch && !chapterOnlyMatch) continue;
         textDetected = true;
         if (ev.msg.action === 'transcriptPartial' && partialLatencyMs === null) {
           partialLatencyMs = ev.at - expectedWallClock;
@@ -454,20 +465,26 @@ function matchRowsToEvents(rows, feedTimes, events) {
   }
 
   // --- Passe 2 : attribution GLOBALE des showVerse au plus proche voisin ---
+  // AJOUT (Chantier 3 — précision G1) : une référence partielle (chapitre
+  // seul, verset perdu par l'ASR — corpus G1/G2/F2/D7/N2/K5/B1) est désormais
+  // affichée comme CHAPITRE ENTIER par server.js (fallback truncatedChapterOnly).
+  // Règle mission : « jamais une mauvaise référence ; une référence partielle
+  // → afficher le verset exact OU le CHAPITRE ». Un showVerse chapitre-seul
+  // (référence sans numéro de verset, refKey "livre:chapitre:") dont le
+  // livre+chapitre correspondent à l'attendu est donc un SUCCÈS de mission —
+  // crédité comme tel (shown + flag chapterShown pour la transparence du
+  // rapport), même si le verset attendu n'a pas pu être affiché.
   for (const res of results) {
-    const {
-      row,
-      expectedRefKey,
-      expectedWallClock,
-      windowEnd,
-      signalAt,
-    } = res;
+    const { row, expectedRefKey, expectedWallClock, windowEnd, signalAt } = res;
     let shown = false;
     let shownLatencyMs = null;
+    let chapterShown = false;
 
     if (expectedRefKey) {
-      let best = null;
-      let bestDist = Infinity;
+      // Le verset EXACT est préféré au chapitre-seul (mission : « verset
+      // exact OU chapitre » — le verset est meilleur). On cherche d'abord un
+      // showVerse exact ; à défaut seulement, un chapitre-seul.
+      const candidates = [];
       for (const ev of events) {
         if (claimedShown.has(ev) || !withinWindow(ev, expectedWallClock, windowEnd)) continue;
         if (ev.msg.action !== 'showVerse') continue;
@@ -479,17 +496,24 @@ function matchRowsToEvents(rows, feedTimes, events) {
           continue;
         }
         if (!ref) continue;
-        if (refKeyOf(ref.book, ref.chapter, ref.verseStart) !== expectedRefKey) continue;
-        const dist = Math.abs(ev.at - expectedWallClock);
-        if (dist < bestDist) {
-          bestDist = dist;
-          best = ev;
-        }
+        const exactMatch = refKeyOf(ref.book, ref.chapter, ref.verseStart) === expectedRefKey;
+        const chapterOnlyMatch =
+          !ref.verseStart &&
+          ref.book === row.expectedBook &&
+          ref.chapter === row.expectedChapter &&
+          row.expectedVerseStart;
+        if (!exactMatch && !chapterOnlyMatch) continue;
+        candidates.push({ ev, ref, exactMatch, dist: Math.abs(ev.at - expectedWallClock) });
       }
-      if (best) {
+      const exactCandidates = candidates.filter((c) => c.exactMatch);
+      const pool = exactCandidates.length > 0 ? exactCandidates : candidates;
+      if (pool.length > 0) {
+        pool.sort((a, b) => a.dist - b.dist);
+        const best = pool[0];
         shown = true;
-        shownLatencyMs = best.at - expectedWallClock;
-        claimedShown.add(best);
+        shownLatencyMs = best.ev.at - expectedWallClock;
+        claimedShown.add(best.ev);
+        chapterShown = !best.exactMatch;
       }
     } else {
       // expects_scripture=false : succès = AUCUN showVerse attribuable
@@ -511,6 +535,7 @@ function matchRowsToEvents(rows, feedTimes, events) {
 
     res.shown = shown;
     res.shownLatencyMs = shownLatencyMs;
+    res.chapterShown = chapterShown;
     // Attribution au plus proche voisin : un showVerse n'est attribué à une
     // ligne que s'il porte la RÉFÉRENCE ATTENDUE — l'état final affiché est
     // donc TOUJOURS correct par construction (la métrique "affiché puis
@@ -538,6 +563,8 @@ function printAndBuildSummary(providerLabel, allResults) {
   const negatives = allResults.filter((r) => !r.row.expectsScripture);
 
   const shownCount = expectingRef.filter((r) => r.shown).length;
+  const chapterOnlyCount = expectingRef.filter((r) => r.chapterShown).length;
+  const exactVerseCount = shownCount - chapterOnlyCount;
   // Attribution au plus proche voisin (voir matchRowsToEvents) : un showVerse
   // n'est attribué à une ligne que s'il porte la référence attendue, donc
   // finalShownCorrect === shown par construction — l'ancienne métrique
@@ -567,7 +594,9 @@ function printAndBuildSummary(providerLabel, allResults) {
       `  ${label} : p50=${percentile(values, 50)}ms  p75=${percentile(values, 75)}ms  ` +
       `p90=${percentile(values, 90)}ms  p95=${percentile(values, 95)}ms  ` +
       `min=${values[0]}ms  max=${values[values.length - 1]}ms` +
-      (neg > 0 ? `  (${neg} négatif(s) : arrivée avant la fin de l'audio — spéculatif/streaming, légitime)` : '')
+      (neg > 0
+        ? `  (${neg} négatif(s) : arrivée avant la fin de l'audio — spéculatif/streaming, légitime)`
+        : '')
     );
   }
 
@@ -575,6 +604,12 @@ function printAndBuildSummary(providerLabel, allResults) {
     `Taux de première tentative : ${shownCount}/${expectingRef.length}` +
       (firstAttemptRate !== null ? ` (${(firstAttemptRate * 100).toFixed(1)}%)` : '')
   );
+  if (chapterOnlyCount > 0) {
+    console.log(
+      `  dont chapitres affichés (réf. partielle, verset perdu par l'ASR — règle mission « verset exact OU chapitre ») : ${chapterOnlyCount}`
+    );
+    console.log(`  dont versets exacts : ${exactVerseCount}`);
+  }
   console.log(
     `  dont détecté par le texte mais JAMAIS affiché (dédoublonnage/confiance/repli silencieux) : ${textOnlyCount}`
   );
@@ -593,7 +628,9 @@ function printAndBuildSummary(providerLabel, allResults) {
     console.log('Latence affichage : aucun énoncé affiché, pas de percentile calculable.');
   }
 
-  console.log('\n--- Chaîne de latence (horodatage attendu = fin de l’énoncé, négatif = avant la fin) ---');
+  console.log(
+    '\n--- Chaîne de latence (horodatage attendu = fin de l’énoncé, négatif = avant la fin) ---'
+  );
   console.log(latLine('Speech → partial (réf. détectée)', chainValues('partialLatencyMs')));
   console.log(latLine('Speech → candidateVerse', chainValues('candidateLatencyMs')));
   console.log(latLine('Speech → final', chainValues('finalLatencyMs')));
@@ -645,6 +682,8 @@ function printAndBuildSummary(providerLabel, allResults) {
     total: allResults.length,
     expectingReference: expectingRef.length,
     shown: shownCount,
+    chapterShown: chapterOnlyCount,
+    exactVerseShown: exactVerseCount,
     finalCorrect: shownCount,
     overwrittenFinalState: 0,
     textDetectedNotShown: textOnlyCount,
@@ -687,6 +726,7 @@ function printAndBuildSummary(providerLabel, allResults) {
       candidateLatencyMs: r.candidateLatencyMs,
       biblePreloadLatencyMs: r.biblePreloadLatencyMs,
       shown: r.shown,
+      chapterShown: r.chapterShown,
       finalShownCorrect: r.finalShownCorrect,
       shownLatencyMs: r.shownLatencyMs,
       confirmToDisplayMs: r.confirmToDisplayMs,

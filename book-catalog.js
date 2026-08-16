@@ -190,7 +190,7 @@ const BOOK_CATALOG = {
   joel: { fr: ['joel', 'jl', 'livre de joel', 'prophete joel'], en: ['joel'] },
   amos: { fr: ['amos', 'am', 'livre d amos', 'prophete amos'], en: ['amos'] },
   abdias: { fr: ['abdias', 'ab', 'livre d abdias', 'prophete abdias'], en: ['obadiah', 'obad'] },
-  jonas: { fr: ['jonas', 'jon', 'livre de jonas', 'prophete jonas'], en: ['jonah'] },
+  jonas: { fr: ['jonas', 'livre de jonas', 'prophete jonas'], en: ['jonah'] },
   michee: { fr: ['michee', 'mi', 'livre de michee', 'prophete michee'], en: ['micah', 'mic'] },
   nahum: { fr: ['nahum', 'na', 'livre de nahum', 'prophete nahum'], en: ['nahum', 'nah'] },
   habacuc: {
@@ -231,7 +231,7 @@ const BOOK_CATALOG = {
   },
   jean: {
     fr: ['jean', 'jn', 'evangile de jean', 'evangile selon jean', 'evangile selon saint jean'],
-    en: ['john', 'jn'],
+    en: ['john', 'jn', 'jon'],
   },
   actes: { fr: ['actes des apotres', 'actes', 'ac', 'livre des actes'], en: ['acts'] },
   romains: {

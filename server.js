@@ -873,6 +873,95 @@ function enqueueTranscript(text, tracker, opts) {
 }
 
 /**
+ * ============================================================================
+ * CHANTIER 3 (précision) — Fallback d'affichage du CHAPITRE pour référence
+ * partielle (« Jean 14 » sans verset). Règle mission : « jamais une mauvaise
+ * référence ; une référence partielle → afficher le verset exact OU le
+ * CHAPITRE, jamais un verset faux ». Quand l'ASR ne livre que livre+chapitre
+ * (le numéro de verset a été tronqué/perdu — observé sur corpus G1/G2/F2/D7/
+ * K5/N2/B1, « Jean 14 » au lieu de « Jean 14.6 »), l'ancien comportement
+ * diffusait une candidateVerse et attendait un complément qui n'arrive
+ * SOUVENT JAMAIS : rien ne s'affichait jamais. On planifie désormais un
+ * timer : si aucun verset exact de ce livre:chapitre n'est affiché dans le
+ * délai, on affiche le CHAPITRE ENTIER (getVerseMultilang sans verseStart
+ * renvoie tout le chapitre) — correct par construction, jamais un verset
+ * faux. Le timer est réarmé à chaque fragment chapitre-seul du même
+ * livre:chapitre (le dernier fragment gagne), et ANNULÉ dès qu'un verset
+ * exact du livre:chapitre est affiché par le chemin normal.
+ * ============================================================================
+ */
+const CHAPTER_FALLBACK_MS = 3000;
+const chapterFallbackTimers = new Map(); // clé `${book}:${chapter}` -> timerId
+
+function cancelChapterFallback(book, chapter) {
+  const key = `${book}:${chapter}`;
+  const timer = chapterFallbackTimers.get(key);
+  if (timer) {
+    clearTimeout(timer);
+    chapterFallbackTimers.delete(key);
+  }
+}
+
+function scheduleChapterFallback(book, chapter, tracker, opts) {
+  const key = `${book}:${chapter}`;
+  if (chapterFallbackTimers.has(key)) clearTimeout(chapterFallbackTimers.get(key));
+  const timer = setTimeout(() => {
+    chapterFallbackTimers.delete(key);
+    displayChapterFallback(book, chapter, tracker, opts);
+  }, CHAPTER_FALLBACK_MS);
+  chapterFallbackTimers.set(key, timer);
+}
+
+async function displayChapterFallback(book, chapter, tracker, opts) {
+  const refKey = `${book}:${chapter}:`;
+  const now = Date.now();
+  const dedupCtx = {
+    utteranceId: tracker && tracker.id != null ? tracker.id : null,
+    text: opts && opts.chapterFallbackText ? opts.chapterFallbackText : `${book} ${chapter}`,
+    source: 'chapter-fallback',
+  };
+  if (sessionState.isDuplicateReference(refKey, now, dedupCtx)) {
+    log(`Chapter fallback suppressed (dedup): ${refKey}`);
+    return;
+  }
+  if (isRateLimited()) {
+    warn('Rate limit hit — chapter fallback skipped');
+    return;
+  }
+  sessionState.recordShownReference(refKey, now, dedupCtx);
+  let verse;
+  try {
+    verse = await bibleLookup.getVerseMultilang(
+      { book, chapter },
+      sessionState.getDisplayLanguage()
+    );
+  } catch (err) {
+    warn('Chapter fallback lookup failed: ' + err.message);
+    return;
+  }
+  const durationMs = getVerseDurationMs();
+  broadcast({
+    action: 'showVerse',
+    reference: verse.reference,
+    text: verse.text,
+    text_fr: verse.text_fr || null,
+    text_en: verse.text_en || null,
+    langMode: verse.langMode,
+    provider: verse.provider,
+    durationMs,
+    detectedBy: 'chapter-fallback',
+  });
+  pushHistory({
+    reference: verse.reference,
+    text: verse.text.substring(0, 200),
+    timestamp: now,
+    detectedBy: 'chapter-fallback',
+  });
+  broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
+  log('Chapter fallback: Displayed ' + verse.reference);
+}
+
+/**
  * @param {string} text
  * @param {import('./latency-tracker').Tracker} [tracker] - AJOUT (§14) :
  *   suit la latence de CET énoncé à travers détection/Bible/OBS — voir
@@ -1255,6 +1344,19 @@ async function processTranscript(text, tracker, opts = {}) {
         sessionState.getDisplayLanguage()
       )
       .catch(() => {});
+    // AJOUT (Chantier 3 — précision G1) : l'attente d'un complément de
+    // verset ne doit JAMAIS rester sans affichage (règle mission : référence
+    // partielle → verset exact OU chapitre, jamais un verset faux). On
+    // planifie l'affichage du CHAPITRE ENTIER si aucun verset exact de ce
+    // livre:chapitre n'arrive dans CHAPTER_FALLBACK_MS. Le timer est réarmé
+    // à chaque fragment chapitre-seul du même livre:chapitre et annulé dès
+    // qu'un verset exact est affiché par le chemin normal (voir la fin de
+    // processTranscript). candidateVerse reste diffusé pour le tableau de
+    // bord (signal spéculatif), mais l'affichage réel n'est plus tributaire
+    // d'un complément qui peut ne jamais venir.
+    scheduleChapterFallback(reference.book, reference.chapter, tracker, {
+      chapterFallbackText: correctedText,
+    });
     return;
   }
 
@@ -1431,6 +1533,14 @@ async function processTranscript(text, tracker, opts = {}) {
   }
 
   log('Displayed: ' + verse.reference);
+
+  // AJOUT (Chantier 3 — précision G1) : un verset EXACT vient d'être affiché
+  // pour ce livre:chapitre — le fallback chapitre (voir truncatedChapterOnly)
+  // devient inutile et doit être annulé, sinon il afficherait le chapitre
+  // entier quelques secondes après le verset.
+  if (reference.book && reference.chapter) {
+    cancelChapterFallback(reference.book, reference.chapter);
+  }
 
   if (reference.book && reference.chapter) {
     await activateReadingMode(reference.book, reference.chapter, reference.verseStart || 1);

@@ -68,10 +68,13 @@ async function test(name, fn) {
     const result = await bibleLookup.getVerse(JEAN_3_16, 'fr');
     assert.ok(result, 'getVerse doit réussir après retry');
     assert.ok(result.text.includes('retry OK'), 'le texte doit venir de la tentative réussie');
-    assert.ok(fetchCalls >= 3, `fetch doit avoir été appelé ≥3 fois (transitoire), reçu ${fetchCalls}`);
+    assert.ok(
+      fetchCalls >= 3,
+      `fetch doit avoir été appelé ≥3 fois (transitoire), reçu ${fetchCalls}`
+    );
   });
 
-  await test('une 4xx (404) n\'est PAS retentée — échec direct', async () => {
+  await test("une 4xx (404) n'est PAS retentée — échec direct", async () => {
     bibleLookup.clearCache();
     fetchCalls = 0;
     global.fetch = async () => {
@@ -109,9 +112,7 @@ async function test(name, fn) {
   });
 
   global.fetch = originalFetch;
-  console.log(
-    `\n=== Résultat test-bible-lookup-retry : ${passed} passés, ${failed} échoués ===`
-  );
+  console.log(`\n=== Résultat test-bible-lookup-retry : ${passed} passés, ${failed} échoués ===`);
   if (failed > 0) process.exit(1);
 })().catch((err) => {
   global.fetch = originalFetch;
