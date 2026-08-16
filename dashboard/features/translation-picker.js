@@ -18,6 +18,11 @@ import { escapeHtmlDashboard, requireWsOrWarn } from '../utils.js';
 
 const LANG_LABELS = { fr: 'Français', en: 'Anglais' };
 
+// AJOUT (Chantier G, mission autonome — préparer la vente) : mention de
+// licence affichée à côté du bouton de la traduction ACTIVE — jamais
+// masquée, jamais optionnelle. On vend ce logiciel : une traduction sous
+// droits affichée sans que personne ne l'ait remarqué est un risque réel,
+// pas un détail cosmétique. Voir LICENCES-TRADUCTIONS.md.
 export function renderTranslationPicker(translations) {
   const container = document.getElementById('translationPicker');
   if (!container || !translations) return;
@@ -26,12 +31,17 @@ export function renderTranslationPicker(translations) {
       const buttons = (options || [])
         .map(
           (t) =>
-            `<button class="mood-btn${t.active ? ' active' : ''}" data-translation-lang="${lang}" data-translation-code="${t.code}" onclick="setBibleTranslation('${lang}', '${t.code}')">${escapeHtmlDashboard(t.label)}</button>`
+            `<button class="mood-btn${t.active ? ' active' : ''}" data-translation-lang="${lang}" data-translation-code="${t.code}" data-translation-license="${escapeHtmlDashboard(t.license || '')}" onclick="setBibleTranslation('${lang}', '${t.code}')">${escapeHtmlDashboard(t.label)}</button>`
         )
         .join('');
+      const active = (options || []).find((t) => t.active);
+      const licenseNote = active?.license
+        ? `<span class="field-hint" data-translation-license-note="${lang}" style="opacity: 0.7">(${escapeHtmlDashboard(active.license)})</span>`
+        : '';
       return `<div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap">
                 <span class="field-hint" style="min-width: 70px">${escapeHtmlDashboard(LANG_LABELS[lang] || lang)}</span>
                 ${buttons}
+                ${licenseNote}
               </div>`;
     })
     .join('');
@@ -43,9 +53,19 @@ export function setBibleTranslation(language, code) {
 }
 
 export function updateActiveTranslationButton(language, code) {
+  let activeLicense = null;
   document.querySelectorAll(`[data-translation-lang="${language}"]`).forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.translationCode === code);
+    const isActive = btn.dataset.translationCode === code;
+    btn.classList.toggle('active', isActive);
+    if (isActive) activeLicense = btn.dataset.translationLicense || null;
   });
+  // AJOUT (Chantier G) : la mention de licence doit suivre la traduction
+  // ACTIVE en temps réel (bascule voix/tableau de bord), pas seulement à
+  // l'ouverture du tableau de bord — sinon un changement de traduction en
+  // cours de culte pourrait laisser affichée la mention de la traduction
+  // précédente.
+  const note = document.querySelector(`[data-translation-license-note="${language}"]`);
+  if (note && activeLicense) note.textContent = `(${activeLicense})`;
 }
 
 window.setBibleTranslation = setBibleTranslation;

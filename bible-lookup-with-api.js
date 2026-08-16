@@ -489,15 +489,48 @@ async function fetchJson(url, timeoutMs = 8000) {
 // NB: NIV, ESV, Segond 21, Semeur NE SONT PAS distribuables via API
 // publique (licence), on propose donc uniquement des traductions libres de
 // droits, françaises comme anglaises.
+// AJOUT (Chantier G, mission autonome — préparer la vente) : `license` sur
+// chaque entrée, transmis par listTranslations() au tableau de bord (voir
+// dashboard/features/translation-picker.js) pour un affichage AUTOMATIQUE
+// de la mention de licence — jamais laissé à la mémoire de l'opérateur.
+// Toutes les traductions actuellement intégrées sont domaine public ; voir
+// LICENCES-TRADUCTIONS.md pour le détail par traduction et la procédure
+// d'ajout d'une traduction sous licence payante (NIV, ESV, NLT, NASB,
+// Segond 21 — AUCUNE ne doit être ajoutée sans licence commerciale vérifiée).
 const AVAILABLE_TRANSLATIONS = {
   fr: {
-    lsg: { helloaoId: 'fra_lsg', getbibleId: 'ls1910', label: 'Louis Segond 1910' },
-    darby: { helloaoId: null, getbibleId: 'darby', label: 'Darby' },
+    lsg: {
+      helloaoId: 'fra_lsg',
+      getbibleId: 'ls1910',
+      label: 'Louis Segond 1910',
+      license: 'Domaine public',
+    },
+    darby: {
+      helloaoId: null,
+      getbibleId: 'darby',
+      label: 'Darby',
+      license: 'Domaine public',
+    },
   },
   en: {
-    kjv: { helloaoId: 'eng_kjv', getbibleId: null, label: 'King James Version' },
-    web: { helloaoId: 'eng_web', getbibleId: null, label: 'World English Bible (moderne)' },
-    asv: { helloaoId: 'eng_asv', getbibleId: null, label: 'American Standard Version' },
+    kjv: {
+      helloaoId: 'eng_kjv',
+      getbibleId: null,
+      label: 'King James Version',
+      license: 'Domaine public',
+    },
+    web: {
+      helloaoId: 'eng_web',
+      getbibleId: null,
+      label: 'World English Bible (moderne)',
+      license: 'Domaine public',
+    },
+    asv: {
+      helloaoId: 'eng_asv',
+      getbibleId: null,
+      label: 'American Standard Version',
+      license: 'Domaine public',
+    },
   },
 };
 
@@ -543,6 +576,7 @@ function listTranslations() {
     out[lang] = Object.entries(AVAILABLE_TRANSLATIONS[lang]).map(([code, meta]) => ({
       code,
       label: meta.label,
+      license: meta.license,
       active: code === activeCode,
     }));
   }
