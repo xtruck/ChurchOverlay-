@@ -155,9 +155,9 @@ function testAlias(normalized, name, book) {
     }
   }
 
-  // Inverted Spoken Pattern 1: "verset 16 du chapitre 3 de Jean"
+  // Inverted Spoken Pattern 1: "(au/le) verset 16 du chapitre 3 de Jean"
   const invPattern1 = new RegExp(
-    `\\bverset(?:s)?\\s+(\\d{1,3})(?:\\s*(?:-|a|à|au)\\s*(\\d{1,3}))?\\s+(?:du|de|dans|au)?\\s*chapitre\\s+(\\d{1,3})\\s+(?:de|du|dans|de\\s+l|d|sur)?\\s*${escaped}\\b`,
+    `\\b(?:le|la|les|au|aux|du|des)?\\s*verset(?:s)?\\s+(\\d{1,3})(?:\\s*(?:-|a|à|au)\\s*(\\d{1,3}))?\\s+(?:du|de|dans|au)?\\s*chapitre\\s+(\\d{1,3})\\s+(?:de|du|dans|de\\s+l|d|sur)?\\s*${escaped}\\b`,
     'i'
   );
   const mInv1 = normalized.match(invPattern1);
@@ -185,9 +185,9 @@ function testAlias(normalized, name, book) {
     }
   }
 
-  // Inverted Spoken Pattern 3: "verset 16 de Jean 3"
+  // Inverted Spoken Pattern 3: "(au/le) verset 16 de Jean 3"
   const invPattern3 = new RegExp(
-    `\\bverset(?:s)?\\s+(\\d{1,3})(?:\\s*(?:-|a|à|au)\\s*(\\d{1,3}))?\\s+(?:dans|de|du)?\\s*${escaped}\\s+(?:chapitre\\s+)?(\\d{1,3})\\b`,
+    `\\b(?:le|la|les|au|aux|du|des)?\\s*verset(?:s)?\\s+(\\d{1,3})(?:\\s*(?:-|a|à|au)\\s*(\\d{1,3}))?\\s+(?:dans|de|du)?\\s*${escaped}\\s+(?:chapitre\\s+)?(\\d{1,3})\\b`,
     'i'
   );
   const mInv3 = normalized.match(invPattern3);
@@ -214,6 +214,19 @@ function testAlias(normalized, name, book) {
   // répandue). Dans les deux cas, le verset entier était perdu et
   // detector.js retombait sur la référence "chapitre seul" la plus
   // faible — d'où le chapitre complet affiché au lieu du verset attendu.
+  //
+  // CORRECTIF (Chantier A.3 — mission autonome, bug RÉEL observé en direct :
+  // « Esaïe 48, le verset 3 » affiché « Ésaïe 48:1 » FAUX) : la forme
+  // « Chapitre, le verset N » (avec l'article « le », sans le mot
+  // « chapitre ») cassait l'analyse et le verset retombait silencieusement
+  // sur le chapitre seul. On accepte désormais un connecteur
+  // (le/la/les/au/aux/du/des/de la/et le/et la/et les) et le mot « numero »
+  // en toute combinaison avant le numéro de verset. Volontairement PAS de
+  // « et » seul dans le connecteur (risque de faux positif : « Marc 2, et 3 »
+  // ne doit PAS devenir Marc 2:3) — seuls « et le/la/les », qui précèdent
+  // forcément un verset, sont acceptés.
+  const verseConnector = `(?:le|la|les|au|aux|du|des|de la|et le|et la|et les)?`;
+  const verseNumberWord = `(?:numero\\s*)?`;
   const pattern = new RegExp(
     `(?:^|\\s)${escaped}\\s+` + // Book name
       chapitreKeyword + // "chapitre"
@@ -222,10 +235,14 @@ function testAlias(normalized, name, book) {
       `\\s*` + // Optional whitespace
       `(?:` +
       `[:,.]\\s*` + // Colon, comma, OR period ("Jean 3.16")
-      `(?:(?:verset(?:s)?|v\\.?)\\s+)?` + // Optional "verset"/"v"/"v." after separator
+      `${verseConnector}\\s*` + // Optional article ("le verset", "au verset")
+      `(?:(?:verset(?:s)?|v\\.?)\\s*)?` + // Optional "verset"/"v"/"v." after separator
+      `${verseNumberWord}` + // Optional "numero"
       `(\\d{1,3})` + // Verse start (group 2)
       `|` +
-      `\\s+(?:verset(?:s)?|v\\.?)\\s+` + // " verset " OR " v " OR " v. " (abréviation)
+      `\\s+${verseConnector}\\s*` + // Whitespace + optional article (" le verset ")
+      `(?:verset(?:s)?|v\\.?)\\s*` + // " verset " OR " v " OR " v. " (abréviation)
+      `${verseNumberWord}` + // Optional "numero"
       `(\\d{1,3})` + // Verse start (group 3)
       `|` +
       `\\s+` + // Just whitespace

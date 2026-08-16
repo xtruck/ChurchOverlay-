@@ -1381,16 +1381,21 @@ async function processTranscript(text, tracker, opts = {}) {
   //   « Jean 14:1 » FAUX. Même traitement spéculatif pour source
   //   'deepgram-final' (chapitre seul = ambigu) : on attend un complément de
   //   texte. La lecture chapitre par chapitre en MODE LECTURE (reading-mode)
-  //   n'est pas concernée (chemin distinct), et le chemin segment (source non
-  //   renseignée, test integration-chapter-only-verse1) garde le repli verse 1.
-  const truncatedChapterOnly =
-    reference.book &&
-    reference.chapter &&
-    !reference.verseStart &&
-    (opts.source === 'local-vad-silence' ||
-      opts.source === 'deepgram-final' ||
-      opts.source === 'partial-fragment' ||
-      /(?:verset|verse|versets?)\s*[,.;:!?]?\s*$/i.test(correctedText));
+  //   n'est pas concernée (chemin distinct).
+  //
+  //   CORRECTIF (Chantier A.3 — mission autonome) : la restriction aux seules
+  //   sources ambiguës laissait un trou sur le chemin segment/batch (source
+  //   absente, ex. ASR Groq) : « Jean chapitre 3 » transcrit sans verset y
+  //   retombait sur le verset 1 (server.js, ancien displayReference). La
+  //   règle mission est ABSOLUE : « quand le numéro de verset n'est pas
+  //   identifié avec certitude, ne jamais retomber sur le verset 1 — afficher
+  //   le chapitre en repli explicite, ou ne rien afficher ». Aucun chemin
+  //   automatique ne fait plus exception. processTranscript() n'est atteint
+  //   que par le pipeline vocal (segment batch, partials/finals streaming,
+  //   saisie texte du dashboard) — la saisie manuelle "Afficher un Verset"
+  //   passe par une autre action (showVerse) qui rend bien tout le chapitre
+  //   pour une référence chapitre seule (comportement voulu).
+  const truncatedChapterOnly = reference.book && reference.chapter && !reference.verseStart;
   if (truncatedChapterOnly) {
     log(
       "Référence chapitre seul ambiguë (fragment tronqué ou verset absent de l'ASR) — attente du complément"
@@ -1496,26 +1501,16 @@ async function processTranscript(text, tracker, opts = {}) {
       // quand la transcription ne capture pas clairement le numéro de
       // verset (bruit ambiant, parole rapide — la STT n'est jamais
       // parfaite), detector.js retourne une référence "chapitre seul"
-      // (verseStart undefined), et bible-lookup-with-api.js traite
-      // délibérément ce cas comme "aucun verset précis demandé : renvoyer
-      // tout le chapitre" — comportement voulu pour une lecture de
-      // chapitre explicite, mais un dump de chapitre entier surprend et
-      // submerge l'écran quand ce n'était pas l'intention réelle du
-      // prédicateur. Pour la détection AUTOMATIQUE (voix, pas saisie
-      // manuelle), on affiche donc verset 1 par défaut si aucun n'a été
-      // capté — le mode lecture (activateReadingMode, plus bas) reste
-      // ancré sur ce même chapitre et avance verset par verset au fil de
-      // la parole, donc rien n'est perdu, juste un premier affichage plus
-      // sobre. La saisie manuelle ("Afficher un Verset") n'est pas
-      // affectée : un opérateur qui tape "Jean 3" exprès pour une lecture
+      // (verseStart undefined). Depuis le Chantier A.3 (mission autonome),
+      // la garde `truncatedChapterOnly` ci-dessus interrompt TOUT chemin
+      // automatique à chapitre seul (candidateVerse spéculative + repli
+      // chapitre entier) — on ne peut donc plus atteindre ce bloc avec
+      // verseStart indéfini : la règle absolue « ne jamais retomber sur le
+      // verset 1 » est garantie ici par construction. La saisie manuelle
+      // ("Afficher un Verset") passe par l'action WS showVerse (chemin
+      // distinct) : un opérateur qui tape "Jean 3" exprès pour une lecture
       // complète obtient toujours le chapitre entier.
-      const displayReference = reference.verseStart
-        ? reference
-        : { ...reference, verseStart: 1, verseEnd: 1 };
-      verse = await bibleLookup.getVerseMultilang(
-        displayReference,
-        sessionState.getDisplayLanguage()
-      );
+      verse = await bibleLookup.getVerseMultilang(reference, sessionState.getDisplayLanguage());
     }
   } catch (err) {
     warn('Bible lookup failed: ' + err.message);

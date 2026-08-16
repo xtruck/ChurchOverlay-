@@ -176,6 +176,14 @@ function testAlias(normalized, name, book) {
 
   // "John 3:16" | "John chapter 3 verse 16" | "John 3 verse 16" |
   // "John 3, 16" | "John 3:16-18" | "John chapter 3 verses 16 to 18"
+  //
+  // CORRECTIF (Chantier A.3 — mission autonome, miroir exact de
+  // detector.js) : la forme avec l'article « the » (« John 14, the verse 6 »)
+  // ou le mot « number » (« verse number 6 ») cassait l'analyse et retombait
+  // sur le chapitre seul. Volontairement pas de « and » seul (faux positif
+  // « John 2, and 3 »).
+  const enVerseConnector = `(?:the)?`;
+  const enVerseNumberWord = `(?:number\\s*)?`;
   const pattern = new RegExp(
     `(?:^|\\s)${escaped}\\s+` +
       `(?:chapter\\s+)?` +
@@ -183,9 +191,15 @@ function testAlias(normalized, name, book) {
       `(?:` +
       `\\s*` +
       `(?:` +
-      `[:,]\\s*(?:verse(?:s)?\\s+)?(\\d{1,3})` +
+      `[:,]\\s*${enVerseConnector}\\s*` + // Optional article ("the verse")
+      `(?:verse(?:s)?\\s*)?` + // Optional "verse"/"verses"
+      `${enVerseNumberWord}` + // Optional "number"
+      `(\\d{1,3})` +
       `|` +
-      `\\s+verse(?:s)?\\s+(\\d{1,3})` +
+      `\\s+${enVerseConnector}\\s*` + // Whitespace + optional article
+      `verse(?:s)?\\s*` + // "verse" OR "verses"
+      `${enVerseNumberWord}` + // Optional "number"
+      `(\\d{1,3})` +
       `|` +
       `\\s+(\\d{1,3})` +
       `)` +

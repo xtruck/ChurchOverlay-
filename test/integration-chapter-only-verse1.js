@@ -1,17 +1,27 @@
 /**
  * ============================================================================
- *  integration-chapter-only-verse1.js — Détection auto sans verset → verset 1
+ *  integration-chapter-only-verse1.js — Chapitre seul → repli chapitre, jamais
+ *  le verset 1
  * ----------------------------------------------------------------------------
  *  RÉGRESSION COUVERTE (audit) : quand la transcription automatique ne
  *  capture pas de numéro de verset (ex. "Jean chapitre 3" sans "verset X" —
  *  cas fréquent quand la STT rate un mot dans le bruit ambiant), detector.js
  *  retourne une référence "chapitre seul" (verseStart undefined).
- *  bible-lookup-with-api.js traite délibérément ce cas comme "renvoyer tout
- *  le chapitre" — voulu pour une lecture de chapitre explicite, mais un
- *  dump de chapitre entier sur l'overlay surprend/submerge l'écran quand ce
- *  n'était pas l'intention. server.js doit désormais afficher le verset 1
- *  par défaut pour ce chemin de détection AUTOMATIQUE (pas la saisie
- *  manuelle, non couverte ici).
+ *
+ *  RÈGLE MISSION (Chantier A.3) : « quand le numéro de verset n'est pas
+ *  identifié avec certitude, ne jamais retomber sur le verset 1 — afficher le
+ *  chapitre en repli explicite, ou ne rien afficher ». Le chemin
+ *  segment/batch (source absente, ex. ASR Groq) retombait auparavant sur le
+ *  verset 1 (ancien displayReference) — corrigé : TOUT chapitre seul issu du
+ *  pipeline vocal (segment, partials, finals, saisie dashboard) passe par la
+ *  garde « chapitre seul ambigu » → candidateVerse spéculative + repli
+ *  chapitre entier après CHAPTER_FALLBACK_MS. Ce test vérifie donc :
+ *   1. jamais d'affichage "verset 1" en détection automatique,
+ *   2. candidateVerse spéculative diffusée immédiatement,
+ *   3. showVerse du CHAPITRE ENTIER après le délai de repli.
+ *
+ *  La saisie manuelle ("Afficher un Verset") n'est pas couverte ici : elle
+ *  passe par l'action WS showVerse (chemin distinct, comportement voulu).
  *
  *  Même approche que integration-quote-match.js : server.js tourne
  *  réellement, seuls le réseau (API biblique, Groq) et le micro sont mockés.
@@ -50,7 +60,7 @@ injectFakeModule('bible-lookup-with-api.js', {
     if (!reference.verseStart) {
       return {
         reference: `Jean ${reference.chapter}`,
-        text: 'TEXTE_CHAPITRE_ENTIER (BUG si affiché depuis une détection vocale automatique)',
+        text: 'TEXTE_CHAPITRE_ENTIER',
         provider: 'fake',
         lang: 'fr',
         text_fr: 'TEXTE_CHAPITRE_ENTIER',
@@ -60,10 +70,10 @@ injectFakeModule('bible-lookup-with-api.js', {
     }
     return {
       reference: `Jean ${reference.chapter}:${reference.verseStart}`,
-      text: 'TEXTE_VERSET_1_SEUL',
+      text: 'TEXTE_VERSET_DU_REPLI (BUG si affiché depuis une détection vocale automatique)',
       provider: 'fake',
       lang: 'fr',
-      text_fr: 'TEXTE_VERSET_1_SEUL',
+      text_fr: 'TEXTE_VERSET_DU_REPLI',
       text_en: null,
       langMode: 'fr',
     };
@@ -108,6 +118,19 @@ injectFakeModule('deepgram-wrapper.js', {
   },
   async transcribeFile() {
     throw new Error('non utilisé dans ce test');
+  },
+});
+
+// Repli chapitre accéléré (au lieu des 3000ms de config/features.json) pour
+// que le test reste rapide — même mécanisme que integration-chapter-fallback-delay.js.
+injectFakeModule('features-store.js', {
+  setUserDataDir() {},
+  readFeatures() {
+    return { display: { chapterFallbackDelayMs: 1000 } };
+  },
+  writeFeatures() {},
+  getWritableFile() {
+    return null;
   },
 });
 
@@ -174,16 +197,41 @@ async function simulateSegment(text) {
   await simulateSegment('Jean chapitre 3');
   await sleep(400);
 
-  const shown = received.find((m) => m.action === 'showVerse');
-  check('un verset a bien été diffusé', !!shown, JSON.stringify(received));
+  const candidate = received.find((m) => m.action === 'candidateVerse' && m.speculative === true);
   check(
-    'le texte affiché est celui du verset 1, PAS le chapitre entier',
-    !!shown && shown.text === 'TEXTE_VERSET_1_SEUL',
-    JSON.stringify(shown)
+    'candidateVerse spéculative diffusée (référence ambiguë, jamais affichée aveuglément)',
+    !!candidate && candidate.reference && candidate.reference.chapter === 3,
+    JSON.stringify(received)
+  );
+
+  // Règle absolue : JAMAIS d'affichage verse 1 sur ce chemin automatique.
+  const premature = received.find((m) => m.action === 'showVerse');
+  check(
+    'aucun showVerse immédiat (le chapitre seul ne doit pas déclencher un verset faux)',
+    !premature,
+    premature ? JSON.stringify(premature) : undefined
+  );
+
+  // Repli explicite : le chapitre entier s'affiche après CHAPTER_FALLBACK_MS.
+  await sleep(2200);
+  const fallback = received.find(
+    (m) => m.action === 'showVerse' && m.detectedBy === 'chapter-fallback'
+  );
+  check(
+    'repli chapitre entier affiché après le délai (detectedBy chapter-fallback)',
+    !!fallback && fallback.text === 'TEXTE_CHAPITRE_ENTIER',
+    JSON.stringify(fallback)
+  );
+  check(
+    "aucun verset 1 n'a jamais été affiché (le texte du repli verse 1 est absent)",
+    !received.some((m) => m.action === 'showVerse' && /VERSET_DU_REPLI/.test(m.text || '')),
+    undefined
   );
 
   ws.close();
-  console.log(`\n=== Résultat chapitre-seul → verset 1 : ${passed} passés, ${failed} échoués ===`);
+  console.log(
+    `\n=== Résultat chapitre-seul → repli chapitre (jamais verset 1) : ${passed} passés, ${failed} échoués ===`
+  );
   process.exit(failed > 0 ? 1 : 0);
 })().catch((err) => {
   console.error("Erreur fatale dans le test d'intégration:", err);

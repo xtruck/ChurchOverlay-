@@ -121,4 +121,39 @@ assert.deepStrictEqual(
   'un livre à chapitres multiples ne doit jamais être réinterprété en "chapitre 1 verset N"'
 );
 
+// AJOUT (Chantier A.3 — mission autonome) : la forme « Chapitre, le verset N »
+// (avec l'article, sans le mot « chapitre ») cassait l'analyse et retombait
+// silencieusement sur le chapitre seul — le bug le plus grave du log réel
+// (« Esaïe 48, le verset 3 » affiché « Ésaïe 48:1 » FAUX). Toutes les formes
+// avec article/connecteur doivent capturer le VERSET exact (confidence high).
+const articleVerseCases = [
+  ['Ésaïe 48, le verset 3', { book: 'esaie', chapter: 48, verseStart: 3, verseEnd: 3 }],
+  ['Jean 14, le verset 6', { book: 'jean', chapter: 14, verseStart: 6, verseEnd: 6 }],
+  ['Jean 14, au verset 6', { book: 'jean', chapter: 14, verseStart: 6, verseEnd: 6 }],
+  ['Jean 14, et le verset 6', { book: 'jean', chapter: 14, verseStart: 6, verseEnd: 6 }],
+  ['Jean 14, verset numéro 6', { book: 'jean', chapter: 14, verseStart: 6, verseEnd: 6 }],
+  ['Jean chapitre 3, le verset 16', { book: 'jean', chapter: 3, verseStart: 16, verseEnd: 16 }],
+  ['Jean 14 le verset 6', { book: 'jean', chapter: 14, verseStart: 6, verseEnd: 6 }],
+  ['Jean 14 verset numéro 6', { book: 'jean', chapter: 14, verseStart: 6, verseEnd: 6 }],
+  ['Psaume 23, le verset 4', { book: 'psaumes', chapter: 23, verseStart: 4, verseEnd: 4 }],
+  // Forme inversée avec article (« au verset 6 de Jean 3 »).
+  ['au verset 6 de Jean 3', { book: 'jean', chapter: 3, verseStart: 6, verseEnd: 6 }],
+];
+for (const [input, expected] of articleVerseCases) {
+  const actual = detectExact(input);
+  assert(actual, `Référence non détectée (forme avec article) : ${input}`);
+  for (const [key, value] of Object.entries(expected))
+    assert.strictEqual(actual[key], value, `${input}: ${key}`);
+  assert.strictEqual(actual.confidence, 'high', `${input}: verset précisé -> confidence high`);
+}
+
+// Garde-fou faux positifs : « Marc 2, et 3 » (liste de chapitres, « et » seul
+// sans article devant « verset ») ne doit JAMAIS devenir Marc 2:3 — il peut
+// tout au plus rester une référence chapitre seule (comportement antérieur).
+const fp = detectExact('Marc 2, et 3');
+assert(
+  fp && fp.verseStart === undefined,
+  'le connecteur « et » seul ne doit pas capturer un faux verset'
+);
+
 console.log('✓ detector.js : tous les tests sont passés');

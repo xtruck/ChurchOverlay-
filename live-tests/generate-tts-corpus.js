@@ -99,6 +99,13 @@ const UTTERANCES = {
   N2: { voice: VOICE_FR, parts: ['Osée chapitre six verset six'] },
   N3: { voice: VOICE_FR, parts: ['Colossiens chapitre trois verset vingt-trois'] },
   N4: { voice: VOICE_FR, parts: ['Jacques chapitre un verset cinq'] },
+  // AJOUT (Chantier A.3 — mission autonome) : formes « Livre N, le verset N »
+  // — reproduction exacte du bug réel du log (« Ésaïe 48, le verset 3 »
+  // affiché « Ésaïe 48:1 » FAUX). Couvert à 100% par les tests unitaires du
+  // détecteur ; ces items corpus verrouillent le chemin de bout en bout
+  // (ASR + détecteur + affichage) en conditions réelles.
+  O1: { voice: VOICE_FR, parts: ['Ésaïe 48, le verset 3'] },
+  O2: { voice: VOICE_FR, parts: ['Jean 14, le verset 6'] },
 };
 
 // Ordre exact de corpus.csv pour la lecture des lignes.
@@ -148,6 +155,8 @@ const ALL_IDS = [
   'N2',
   'N3',
   'N4',
+  'O1',
+  'O2',
 ];
 
 // Blocs — mêmes groupes que CORPUS-SCRIPT.md, écart inter-énoncés en ms.
@@ -168,6 +177,9 @@ const BLOCKS = [
   { file: 'bloc10.wav', gapMs: 2500, ids: ['K1', 'K2', 'K3', 'K4', 'K5'] },
   { file: 'bloc11.wav', gapMs: 2500, ids: ['L1', 'L2', 'L3'] },
   { file: 'bloc12.wav', gapMs: 2500, ids: ['M1', 'M2'] },
+  // AJOUT (Chantier A.3) : bloc dédié aux formes « le verset » — les blocs
+  // existants ne sont PAS régénérés (déterminisme du corpus conservé).
+  { file: 'bloc13.wav', gapMs: 2500, ids: ['O1', 'O2'] },
 ];
 
 const interPartGapMs = 120;

@@ -112,4 +112,34 @@ assert(
   'John 6 reste chapitre 6, jamais réinterprété en verset'
 );
 
+// AJOUT (Chantier A.3 — mission autonome, miroir de detector.js) : la forme
+// avec l'article « the » ou le mot « number » doit capturer le verset exact.
+assert(
+  refEq(detector.detect('Isaiah 48, the verse 3'), 'esaie', 48, 3),
+  'Isaiah 48, the verse 3 (article the)'
+);
+assert(
+  refEq(detector.detect('John 14, verse number 6'), 'jean', 14, 6),
+  'John 14, verse number 6 (mot number)'
+);
+assert(
+  refEq(detector.detect('John 14 the verse 6'), 'jean', 14, 6),
+  'John 14 the verse 6 (article sans virgule)'
+);
+assert(
+  refEq(detector.detect('John chapter 3, the verse 16'), 'jean', 3, 16),
+  'John chapter 3, the verse 16'
+);
+assert(
+  refEq(detector.detect('John 3, the verse 16 to 18'), 'jean', 3, 16, 18),
+  'John 3, the verse 16 to 18 (plage avec article)'
+);
+// Garde-fou : « and » seul (liste de chapitres) ne doit jamais capturer un
+// faux verset — tout au plus une référence chapitre seule.
+const enFp = detector.detect('John 2, and 3');
+assert(
+  enFp && enFp.verseStart === undefined,
+  'le connecteur « and » seul ne doit pas capturer un faux verset'
+);
+
 console.log('\n=== Tous les tests detector-en OK ===');

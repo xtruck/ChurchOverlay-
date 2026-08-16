@@ -44,3 +44,5 @@ N1,livre_difficile,fr,bloc3.wav,39935,42880,Néhémie chapitre 8 verset 10,true,
 N2,livre_difficile,fr,bloc3.wav,45380,48350,Osée chapitre 6 verset 6,true,osee,6,6,6,
 N3,livre_difficile,fr,bloc3.wav,50850,54415,Colossiens chapitre 3 verset 23,true,colossiens,3,23,23,
 N4,livre_difficile,fr,bloc3.wav,56915,59775,Jacques chapitre 1 verset 5,true,jacques,1,5,5,
+O1,article_forme,fr,bloc13.wav,200,3515,"Ésaïe 48, le verset 3",true,esaie,48,3,3,reproduction exacte du bug réel du log — chantier A.3 (anciennement affiché Ésaïe 48:1 FAUX)
+O2,article_forme,fr,bloc13.wav,6015,9125,"Jean 14, le verset 6",true,jean,14,6,6,forme avec article le/au/du — régression chantier A.3
