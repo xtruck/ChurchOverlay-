@@ -110,6 +110,51 @@ H2 — pas un échec ASR (N2), et 1 reste non élucidé côté banc, pas ASR (A2
 **Zéro des 4 n'est un problème de vocabulaire biblique** — `bible-keyterms.js`
 fonctionne comme prévu sur ce corpus.
 
+**Chantier B (mission autonome) — début d'investigation du bug "énoncé
+manquant" (H2/N2, Chantiers A.3/A.4)** : question posée en premier par la
+mission — rejeu de fichier uniquement, ou aussi en direct ? Progrès réel
+sur une question adjacente plus tractable en premier : **le bug est-il
+spécifique à Silero ?** Réponse mesurée, en 3 tests ciblés sur un
+mini-corpus (H1+H2 seuls, `bloc7.wav`) :
+
+1. **`VAD_PROVIDER=rms` reproduit le bug À L'IDENTIQUE** (0/2, H2 absent de
+   tout log Deepgram) — élimine complètement l'hypothèse Silero-spécifique
+   d'origine (§5 de la mission). Ce n'est pas un bug du modèle neuronal,
+   ni de sa fenêtre de 512+64 échantillons, ni de sa normalisation — les
+   deux VAD (RMS et Silero) déclenchent la même perte.
+2. **Le chemin BATCH (`--provider=auto`, Groq) traite H2 correctement** —
+   deux segments distincts détectés par le VAD local (RMS/Silero, MÊME
+   code que le chemin streaming, voir `flushSegment()`), tous deux envoyés
+   et transcrits : "Let's tourne." puis "Matthieu chapitre 5." (garbled
+   mais bien REÇU et TRANSCRIT, contrairement au streaming où H2 ne
+   déclenche RIEN côté Deepgram). Élimine l'hypothèse d'un bug générique de
+   segmentation VAD locale — le VAD identifie correctement les deux
+   énoncés dans les DEUX chemins, seul le résultat diffère.
+3. **Conclusion : le bug est spécifique à la session WebSocket streaming
+   Deepgram**, pas au VAD (local ou neuronal), pas à la segmentation.
+   `deepgram-streaming.js` : le gestionnaire `ws.on('message', ...)` est
+   inconditionnel (aucun état "déjà traité un final, ignorer le reste") —
+   confirmé par lecture de code, pas de garde suspecte trouvée côté client.
+   Le silence total de logs `[DEEPGRAM] partial received` pour H2 indique
+   que Deepgram ne renvoie RIEN pour ce fragment, malgré un envoi PCM
+   inconditionnel (`handleAudioData` envoie chaque chunk dès que
+   `deepgramStreamingActive`, sans garde par énoncé).
+
+**Hypothèse de tête pour la suite (non testée, à vérifier en premier)** :
+notre code ne prévient JAMAIS Deepgram quand le VAD LOCAL décide qu'un
+énoncé est terminé — `finalizeStreamingUtteranceLocally()` ne fait que
+promouvoir le dernier partial CÔTÉ CLIENT, sans envoyer de message de
+contrôle à Deepgram (seul `CloseStream` est envoyé, uniquement en toute fin
+de session, voir `deepgram-streaming.js`). Deepgram dispose d'un message de
+contrôle `{"type": "Finalize"}` (API documentée) qui force le moteur à
+vider son buffer interne et repartir à zéro pour la suite — jamais envoyé
+ici. Sur une session ouverte en continu, l'état interne de Deepgram (son
+propre endpointing serveur, indépendant du nôtre) pourrait rester "en
+attente" après le `final` de H1 et ne jamais se redéclencher proprement
+pour H2, faute de ce signal explicite. À vérifier en premier lieu avant
+toute autre piste — changement ciblé, testable isolément sur ce même
+mini-corpus (H1+H2) avant tout run complet.
+
 **Audit du banc (Chantier 0.2, trouvé pendant cette mesure)** : le compteur
 "jamais détecté du tout" comptait à tort 16 alors que 28/37 étaient affichés
 avec seulement 2 en "détecté non affiché" (37-28-2=7 attendu). Cause : la
