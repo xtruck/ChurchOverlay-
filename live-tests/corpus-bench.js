@@ -237,11 +237,29 @@ async function replayFile(sourceFile, provider, ws) {
       console.error(`[corpus-bench] ⚠ session Deepgram non établie pour ${sourceFile} — ignoré.`);
       ws.off('message', onMessage);
       await audioCapture.stopRecording();
-      return { sessionStartWallClock: null, events: [] };
+      return { feedTimes: null, events: [] };
     }
   }
 
   const sessionStartWallClock = Date.now();
+
+  // CORRECTIF (Chantier 0.2 — audit benchmark) : le "replay temps réel" de ce
+  // banc est en réalité ~1,5-1,8x plus LENT que le temps réel sur Windows
+  // (granularité du timer : un `await sleep(20)` prend ~31,5ms). L'ancien
+  // modèle `expectedWallClock = sessionStart + endMs` supposait un rythme
+  // strictement temps réel → pour un énoncé à endMs=24s (début de fichier),
+  // la dérive atteignait ~13,7s, soit BIEN AU-DELÀ de la fenêtre [+8000ms] :
+  // les événements réels (transcript/showVerse) tombaient HORS fenêtre et
+  // l'énoncé était compté "jamais détecté" à tort. On échantillonne donc le
+  // moment réel d'alimentation de chaque tranche d'audio et on calibre
+  // l'horodatage attendu de chaque énoncé par INTERPOLATION : le banc devient
+  // indépendant du rythme réel du replay.
+  const FEED_SAMPLE_EVERY = 10; // toutes les ~200ms d'audio
+  // La clé est l'OFFSET AUDIO EN MS dans le fichier (32 octets/ms à 16kHz
+  // mono 16-bit) — même unité que start_ms/end_ms du corpus.csv.
+  const BYTES_PER_MS = 32;
+  const feedTimes = [[0, sessionStartWallClock]];
+  let lastSampleOffset = 0;
 
   // Trames de 20ms (640 octets à 16kHz mono 16-bit) — même granularité qu'un
   // vrai flux micro, essentielle pour un comportement VAD/endpointing
@@ -249,8 +267,13 @@ async function replayFile(sourceFile, provider, ws) {
   const FRAME_BYTES = 640;
   for (let offset = 0; offset < pcm.length; offset += FRAME_BYTES) {
     audioCapture.feedPcmChunk(pcm.subarray(offset, offset + FRAME_BYTES));
+    if (offset - lastSampleOffset >= FRAME_BYTES * FEED_SAMPLE_EVERY) {
+      feedTimes.push([offset / BYTES_PER_MS, Date.now()]);
+      lastSampleOffset = offset;
+    }
     await sleep(20);
   }
+  feedTimes.push([pcm.length / BYTES_PER_MS, Date.now()]);
   // ~1.2s de silence numérique en fin de fichier — laisse le VAD (local ou
   // Silero) voir la fin de la dernière phrase avant l'arrêt.
   const SILENCE_FRAME = Buffer.alloc(FRAME_BYTES);
@@ -264,7 +287,29 @@ async function replayFile(sourceFile, provider, ws) {
   await sleep(2000);
   ws.off('message', onMessage);
 
-  return { sessionStartWallClock, events };
+  return { sessionStartWallClock, feedTimes, events };
+}
+
+// ---------------------------------------------------------------------------
+// Calibre l'horodatage mur attendu d'un offset audio (ms dans le fichier) sur
+// le RYTHME RÉEL d'alimentation (voir CORRECTIF dans replayFile) : le replay
+// est ~1,5-1,8x plus lent que le temps réel → `sessionStart + offsetMs` serait
+// faux de plusieurs secondes pour les énoncés tardifs du fichier.
+// ---------------------------------------------------------------------------
+function interpolateFeedTime(feedTimes, offsetMs) {
+  if (feedTimes.length === 0) return null;
+  let prev = feedTimes[0];
+  for (let i = 1; i < feedTimes.length; i++) {
+    const cur = feedTimes[i];
+    if (cur[0] >= offsetMs) {
+      const span = cur[0] - prev[0];
+      if (span <= 0) return cur[1];
+      const frac = (offsetMs - prev[0]) / span;
+      return prev[1] + (cur[1] - prev[1]) * frac;
+    }
+    prev = cur;
+  }
+  return prev[1];
 }
 
 // ---------------------------------------------------------------------------
@@ -273,7 +318,7 @@ async function replayFile(sourceFile, provider, ws) {
 // la MÊME référence (cas doublon_10s) ne se volent pas mutuellement leur
 // évènement — chaque évènement n'est réclamé qu'une seule fois.
 // ---------------------------------------------------------------------------
-function matchRowsToEvents(rows, sessionStartWallClock, events) {
+function matchRowsToEvents(rows, feedTimes, events) {
   const claimedText = new Set();
   const claimedShown = new Set();
   const claimedCandidate = new Set();
@@ -300,7 +345,7 @@ function matchRowsToEvents(rows, sessionStartWallClock, events) {
 
   for (const row of rows) {
     const expectedRefKey = refKeyOf(row.expectedBook, row.expectedChapter, row.expectedVerseStart);
-    const expectedWallClock = sessionStartWallClock + (row.endMs || 0);
+    const expectedWallClock = interpolateFeedTime(feedTimes, row.endMs || 0);
     const windowEnd = expectedWallClock + 8000;
 
     let textDetected = false;
@@ -675,9 +720,9 @@ function printAndBuildSummary(providerLabel, allResults) {
     const allResults = [];
     for (const [sourceFile, fileRows] of bySourceFile) {
       console.log(`\n--- Fichier : ${sourceFile} (${fileRows.length} énoncé(s)) ---`);
-      const { sessionStartWallClock, events } = await replayFile(sourceFile, provider, ws);
-      if (sessionStartWallClock === null) continue;
-      const matched = matchRowsToEvents(fileRows, sessionStartWallClock, events);
+      const { feedTimes, events } = await replayFile(sourceFile, provider, ws);
+      if (feedTimes === null) continue;
+      const matched = matchRowsToEvents(fileRows, feedTimes, events);
       allResults.push(...matched);
       await sleep(300);
     }
