@@ -65,6 +65,9 @@
     "appId": "com.mesev.churchoverlay",
     "productName": "ChurchOverlay",
     "asar": true,
+    "asarUnpack": [
+      "models/**/*"
+    ],
     "compression": "maximum",
     "files": [
       "main.js",

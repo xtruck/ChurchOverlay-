@@ -54,14 +54,38 @@ let initError = null;
 let initPromise = null;
 
 /**
- * Résout le chemin du modèle .onnx. En dev (`node server.js` direct) comme
- * en app empaquetée, ce fichier est un simple binaire statique référencé
- * dans package.json → build.files (pas un module natif) — pas besoin d'un
- * traitement asar.unpacked spécial, contrairement aux modules natifs
- * (voir better-sqlite3 dans package.json → build.files).
+ * Résout le chemin du modèle .onnx.
+ *
+ * CORRECTIF (trouvé par un VRAI build de production, `npm run dist -- --win
+ * --dir` — jamais testé avant sur ce point précis, seulement en dev `node
+ * server.js`) : le commentaire précédent affirmait qu'aucun traitement
+ * asar.unpacked n'était nécessaire ici, raisonnement FAUX — vérifié faux en
+ * inspectant le contenu réel de app.asar après un build (`npx @electron/asar
+ * list`) : le fichier était bien empaqueté (build.files fonctionne), mais
+ * RESTAIT À L'INTÉRIEUR de l'archive asar virtuelle. `fs.existsSync()` sait
+ * lire au travers d'un asar (Node.js le virtualise), mais
+ * `ort.InferenceSession.create()` (onnxruntime-node) est un ADDON NATIF —
+ * il appelle les API fichier du système d'exploitation DIRECTEMENT, sans
+ * passer par la virtualisation asar de Node, et échoue silencieusement à
+ * trouver un fichier "à l'intérieur" d'une archive qui n'existe pas comme
+ * tel pour l'OS. Exactement la même contrainte que better-sqlite3 et
+ * onnxruntime_binding.node (leurs binaires .node sont automatiquement
+ * extraits par electron-builder — mais cette détection automatique ne
+ * couvre que le dossier node_modules, pas ce fichier qui vit ailleurs). Fix
+ * à deux volets : le dossier models entier déclaré dans asarUnpack
+ * (package.json — extrait réellement le fichier sur disque à
+ * app.asar.unpacked) + réécriture du chemin ci-dessous (__dirname continue
+ * de pointer DANS l'asar virtuel, jamais vers l'unpacked, même avec
+ * asarUnpack configuré — il faut rediriger explicitement, convention
+ * standard Electron pour ce cas).
  */
 function resolveModelPath() {
-  return path.join(__dirname, 'models', 'silero_vad.onnx');
+  const modelPath = path.join(__dirname, 'models', 'silero_vad.onnx');
+  const asarMarker = 'app.asar' + path.sep;
+  if (modelPath.includes(asarMarker) && !modelPath.includes('app.asar.unpacked')) {
+    return modelPath.replace(asarMarker, 'app.asar.unpacked' + path.sep);
+  }
+  return modelPath;
 }
 
 /**
