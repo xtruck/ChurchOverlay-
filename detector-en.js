@@ -227,15 +227,27 @@ function matchAgainstAliases(normalized) {
   return null;
 }
 
+// AJOUT (Chantier A.2 — double détection FR/EN) : miroir exact de
+// withConfidence() dans detector.js, jusqu'ici absent côté EN — un match
+// EXACT anglais ne portait jamais de champ `confidence`, contrairement au
+// français. Cette asymétrie n'avait aucune conséquence tant que seul le
+// français était consulté en premier (comportement historique), mais
+// empêche toute comparaison FR/EN équitable ("la meilleure confiance",
+// voir detector-compat.js#detectBilingual).
+function withConfidence(match) {
+  if (!match) return match;
+  return { ...match, confidence: match.verseStart !== undefined ? 'high' : 'medium' };
+}
+
 function detectExact(text) {
   const normalized = numberWordsToDigits(normalizeKeywords(normalize(text)));
-  return matchAgainstAliases(normalized);
+  return withConfidence(matchAgainstAliases(normalized));
 }
 
 function detect(text) {
   const normalized = numberWordsToDigits(normalizeKeywords(normalize(text)));
   const exact = matchAgainstAliases(normalized);
-  if (exact) return exact;
+  if (exact) return withConfidence(exact);
 
   // AJOUT (audit — inspiré de Rhema, correspondance floue). Filet de
   // secours ciblé, identique en principe à celui de detector.js (FR) :
@@ -244,13 +256,23 @@ function detect(text) {
   if (!corrected) return null;
 
   const fuzzyMatch = matchAgainstAliases(corrected.text);
-  if (fuzzyMatch) {
-    console.log(
-      `[detector-en] Fuzzy match: "${corrected.original}" → "${corrected.name}" ` +
-        `(distance ${corrected.distance})`
-    );
-  }
-  return fuzzyMatch;
+  if (!fuzzyMatch) return null;
+
+  console.log(
+    `[detector-en] Fuzzy match: "${corrected.original}" → "${corrected.name}" ` +
+      `(distance ${corrected.distance})`
+  );
+  // AJOUT (Chantier A.2) : miroir exact de detector.js#detect() — confidence
+  // plafonnée à 'medium', fuzzyDistance porté jusqu'à l'appelant pour
+  // permettre une comparaison FR/EN sur la qualité de la correction plutôt
+  // que sur la seule confidence (identique des deux côtés par construction).
+  return {
+    ...fuzzyMatch,
+    confidence: 'medium',
+    fuzzy: true,
+    fuzzyDistance: corrected.distance,
+    fuzzyOriginal: corrected.original,
+  };
 }
 
 module.exports = {

@@ -32,11 +32,29 @@ try {
 
 /**
  * detectBilingual — un seul passage bilingue pour la correspondance EXACTE
- * (voir bilingual-matcher.js), puis un repli flou par langue (FR puis EN,
- * INCHANGÉ — filet de secours rare, pas le chemin chaud, voir l'en-tête de
- * bilingual-matcher.js pour la justification de ne pas l'unifier aussi).
+ * (voir bilingual-matcher.js), puis un repli flou.
+ *
+ * CORRECTIF (Chantier A.2 — mission autonome, "double détection FR/EN") :
+ * le repli flou essayait auparavant FR PUIS EN, en s'arrêtant au premier
+ * qui matchait — un texte majoritairement anglais avec un nom de livre
+ * français mal transcrit pouvait donc "gagner" à tort contre une meilleure
+ * correspondance anglaise jamais tentée (le FR fuzzy s'arrêtait déjà avant
+ * que l'EN fuzzy ait sa chance). Les deux réplis flous sont désormais
+ * TOUJOURS calculés (coût négligeable : deux regex locales, aucun appel
+ * réseau), et c'est la MEILLEURE correspondance qui gagne — confidence
+ * d'abord ('high' > 'medium', bien qu'un repli flou ne dépasse jamais
+ * 'medium' par construction, voir detector.js#detect), puis distance de
+ * correction Levenshtein (fuzzyDistance, plus bas = meilleur), et en cas
+ * d'égalité stricte la langue de la session ASR en cours (sessionLanguage,
+ * voir session-state.js#getTranscriptionLanguage) — sinon le français reste
+ * le défaut historique, pour ne rien changer au comportement d'une session
+ * dont la langue n'a jamais été réglée explicitement.
+ * @param {string} text
+ * @param {string|null} [sessionLanguage] - 'fr'|'en'|'multi'|null, voir
+ *   session-state.js#getTranscriptionLanguage(). Ignoré si absent — un
+ *   appelant qui ne le passe pas garde le comportement "FR par défaut".
  */
-function detectBilingual(text) {
+function detectBilingual(text, sessionLanguage) {
   // Étape 1 : correspondance EXACTE bilingue en un seul passage.
   if (bilingualMatcher) {
     const exact = bilingualMatcher.detectBilingualExact(text);
@@ -48,17 +66,27 @@ function detectBilingual(text) {
     if (frExact) return frExact;
   }
 
-  // Étape 2 : repli flou FR (INCHANGÉ — voir detector.js#detect).
+  // Étape 2 : repli flou — les DEUX langues, systématiquement (voir
+  // CORRECTIF ci-dessus).
   const frFuzzy = detector.detect(text);
-  if (frFuzzy) return frFuzzy;
+  const enFuzzy = detectorEn ? detectorEn.detect(text) : null;
 
-  // Étape 3 : repli flou EN (INCHANGÉ — voir detector-en.js#detect).
-  if (detectorEn) {
-    const enFuzzy = detectorEn.detect(text);
-    if (enFuzzy) return enFuzzy;
+  if (frFuzzy && !enFuzzy) return { ...frFuzzy, lang: 'fr' };
+  if (enFuzzy && !frFuzzy) return { ...enFuzzy, lang: 'en' };
+  if (!frFuzzy && !enFuzzy) return null;
+
+  // Les deux ont matché : la distance de correction la plus faible gagne
+  // (une correction plus proche du texte original est plus fiable qu'une
+  // correction plus lointaine, même à confidence égale — toujours 'medium'
+  // des deux côtés ici).
+  const frDistance = frFuzzy.fuzzyDistance;
+  const enDistance = enFuzzy.fuzzyDistance;
+  if (frDistance !== enDistance) {
+    return frDistance < enDistance ? { ...frFuzzy, lang: 'fr' } : { ...enFuzzy, lang: 'en' };
   }
-
-  return null;
+  // Égalité stricte : départage par la langue de la session ASR en cours.
+  if (sessionLanguage === 'en') return { ...enFuzzy, lang: 'en' };
+  return { ...frFuzzy, lang: 'fr' };
 }
 
 /**

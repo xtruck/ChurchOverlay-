@@ -1144,7 +1144,7 @@ async function processTranscript(text, tracker, opts = {}) {
 
   if (!reference) {
     try {
-      reference = detector.detectBilingual(correctedText);
+      reference = detector.detectBilingual(correctedText, sessionState.getTranscriptionLanguage());
     } catch (e) {
       warn('Detector error: ' + e.message);
     }
@@ -1165,7 +1165,10 @@ async function processTranscript(text, tracker, opts = {}) {
     try {
       const fusedText = sessionState.getFusedRecentText();
       if (fusedText && fusedText !== correctedText) {
-        const fusedRef = detector.detectBilingual(fusedText);
+        const fusedRef = detector.detectBilingual(
+          fusedText,
+          sessionState.getTranscriptionLanguage()
+        );
         if (fusedRef && fusedRef.book && fusedRef.chapter && fusedRef.verseStart) {
           log(
             `Référence reconstruite par fusion de fragments (« ${fusedText.substring(0, 100)} ») → ${fusedRef.book} ${fusedRef.chapter}:${fusedRef.verseStart}`

@@ -65,7 +65,15 @@ function detectBilingualExact(text) {
     const normalized = lang === 'fr' ? frNormalized : enNormalized;
     const testFn = lang === 'fr' ? detector.testAlias : detectorEn.testAlias;
     const result = testFn(normalized, name, book);
-    if (result) return { book, ...result, lang };
+    if (result) {
+      // AJOUT (Chantier A.2 — double détection FR/EN) : même règle que
+      // withConfidence() dans detector.js/detector-en.js, jusqu'ici absente
+      // de ce passage bilingue — un appelant qui compare des résultats
+      // FR/EN (detector-compat.js#detectBilingual) a besoin de ce champ
+      // pour les deux chemins, pas seulement le repli flou.
+      const confidence = result.verseStart !== undefined ? 'high' : 'medium';
+      return { book, ...result, lang, confidence };
+    }
   }
   return null;
 }
