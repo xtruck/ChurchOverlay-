@@ -25,6 +25,8 @@
 
 'use strict';
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
 const audioCapture = require('../audio-capture');
 const sileroVad = require('../silero-vad');
 
@@ -125,8 +127,69 @@ async function run() {
   );
 
   await audioCapture.stopRecording();
+
+  // AJOUT (Chantier B, mission autonome — élucidation de la prémisse "Silero
+  // rejette de la VRAIE parole comme silence sur le chemin BATCH") : le
+  // Test 2 ci-dessus ne prouve que le rejet du bruit. Sans ce Test 3, rien
+  // ne garantit qu'une session batch réelle (flushSegment(), pas juste le
+  // modèle isolé — voir Test 8 de test-silero-vad.js) accepte bien de la
+  // parole réelle. Diagnostic local (12 blocs TTS, 45 énoncés, hors CI —
+  // voir BASELINE_CHANTIER_1.md) : 68 segments acceptés, 9 rejetés, et
+  // AUCUN rejet ne correspondait à un énoncé complet (voicedMs toujours
+  // très inférieur au segment, cohérent avec du silence de fin réel) — ce
+  // test fige ce résultat en assertion reproductible, sans dépendre des
+  // fichiers TTS volumineux non commités.
+  console.log(
+    '[TEST] Test 3: de la VRAIE parole (testA_16k.wav) est acceptée par le chemin ' +
+      'BATCH (flushSegment) via Silero, jamais rejetée comme silence...'
+  );
+  const speechSkipped = [];
+  const speechSegments = [];
+  audioCapture.on({
+    onAudioSegment: (file) => speechSegments.push(file),
+    onSegmentSkipped: (info) => speechSkipped.push(info),
+    onError: (err) => console.error('[TEST] onError inattendu:', err.message),
+  });
+  await audioCapture.startBrowserCapture();
+  await waitForSileroActive();
+
+  const speechPath = path.join(__dirname, '..', 'live-tests', 'samples', 'testA_16k.wav');
+  const speechPcm = readWavPcm16(speechPath);
+  for (let off = 0; off < speechPcm.length; off += chunkBytes) {
+    audioCapture.feedPcmChunk(
+      speechPcm.subarray(off, Math.min(off + chunkBytes, speechPcm.length))
+    );
+    await sleep(chunkMs);
+  }
+  await sleep(500);
+  await audioCapture.stopRecording();
+
+  assert(
+    speechSegments.length >= 1,
+    `de la parole réelle (testA_16k.wav) aurait dû produire au moins un segment envoyé au ` +
+      `STT via Silero (obtenu: ${speechSegments.length}). Si 0, c'est le bug de la mission ` +
+      '(§5) reproduit : Silero rejette de la vraie parole comme silence sur le chemin batch.'
+  );
+  assert.strictEqual(
+    speechSkipped.length,
+    0,
+    `aucun segment de parole réelle ne devrait être rejeté comme silence (obtenu: ` +
+      `${speechSkipped.length} rejet(s), dernière probabilité moyenne : ` +
+      `${speechSkipped.length > 0 ? speechSkipped[speechSkipped.length - 1].sileroAvgProb : 'n/a'})`
+  );
+  console.log(
+    `[TEST] ✓ ${speechSegments.length} segment(s) de vraie parole accepté(s), 0 rejeté(s)\n`
+  );
+
   console.log("=== Tous les tests d'intégration Silero sont passés ===");
   process.exit(0);
+}
+
+/** Lit un WAV PCM16 mono en Buffer brut (données seules, pas le header). */
+function readWavPcm16(filePath) {
+  const buf = fs.readFileSync(filePath);
+  const dataStart = buf.indexOf('data') + 8;
+  return buf.subarray(dataStart);
 }
 
 run().catch((err) => {

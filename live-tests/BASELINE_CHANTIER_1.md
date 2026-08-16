@@ -217,6 +217,77 @@ réelle et utile mais ne doit pas être confondue avec le "Chantier B" tel que
 défini par la mission — reprise du VRAI Chantier B (bug Silero batch) à
 suivre.
 
+---
+
+## Chantier B (reprise) — le VRAI bug Silero/batch du §5 : ne reproduit pas, mesuré
+
+**Question posée par la mission, prise littéralement** : « le bug se
+produit-il uniquement au rejeu de fichiers, ou aussi en direct ? » — avant
+de répondre à cette question, encore fallait-il d'abord faire reproduire le
+bug lui-même une seule fois. Ce n'est jamais arrivé.
+
+**Étape 1 — le bug modèle isolé (probabilité figée ~0.001 pour TOUTE
+entrée) existe déjà, mais est déjà corrigé et déjà sous test de
+non-régression.** `silero-vad.js` (en-tête, lignes 16-37) documente
+précisément ce bug : envoyer 512 échantillons nus au modèle v5 sans les 64
+échantillons de contexte STFT produit une probabilité figée à ~0.001 pour
+n'importe quelle entrée, silence ou parole. Le correctif (préfixe de
+contexte, `processWindow()` lignes 184-186) est déjà en place. `git log
+--follow -- silero-vad.js` : présent depuis le commit de création du module
+(`d091d4f`), donc avant cette mission. `test/test-silero-vad.js` (Test 8)
+fige ce résultat en non-régression depuis longtemps : de la parole réelle
+connue (`testA_16k.wav`) doit dépasser 0.5 de probabilité, avec ce
+commentaire explicite déjà présent : _« avant correctif : max ~0.003 »_.
+Autrement dit : **le bug littéral du §5 (probabilité ~0.001) a déjà été
+trouvé et corrigé avant cette mission autonome**, avec sa propre preuve de
+non-régression.
+
+**Étape 2 — reste à vérifier : le chemin BATCH complet (pas le modèle
+isolé) rejette-t-il de la VRAIE parole comme silence AUJOURD'HUI ?**
+Diagnostic local, 100 % hors-ligne (aucune clé API — la décision
+accepter/rejeter d'un segment se prend entièrement dans `audio-capture.js`,
+avant tout appel réseau) : régénération du corpus TTS complet (12 blocs,
+45 énoncés, `node live-tests/generate-tts-corpus.js`, voix SAPI Windows
+locales) rejoué chunk par chunk (pacing réel, 100 ms) à travers
+`audio-capture.feedPcmChunk()` avec `VAD_PROVIDER=silero` forcé et
+`ASR_PROVIDER=groq` (chemin BATCH, `flushSegment()`) :
+
+- **68 segments acceptés, 9 rejetés, sur 45 énoncés attendus — jamais moins
+  de segments acceptés que d'énoncés dans un seul bloc** (la sur-couverture
+  vient de la fragmentation par le plafond de sécurité `segmentDuration`
+  sur les énoncés longs, un comportement connu et sans rapport avec Silero).
+- **Chaque rejet a une justification cohérente avec du VRAI silence**, pas
+  avec de la parole perdue : `voicedMs` toujours très inférieur au segment
+  (ex. 0/4000, 300/4000, 600/4000 — un segment presque entièrement silencieux
+  produit logiquement une probabilité moyenne basse). Le cas le plus extrême
+  (`bloc6.wav`, 4 rejets à probabilité 0.0001-0.002, `voicedMs=0/4000`)
+  correspond exactement à l'intervalle de 10 s de silence entre G1 et G2
+  (cas `doublon_10s`) découpé par le plafond de sécurité en fenêtres de 4 s
+  — c'est le comportement VOULU (rejeter du silence), pas le bug décrit.
+- **Aucun bloc ne montre un énoncé entier absorbé comme silence.**
+- Fixé en test de non-régression commité (pas seulement ce diagnostic
+  ponctuel) : `test/test-audio-capture-silero-integration.js` Test 3 —
+  `testA_16k.wav` (vraie parole, commité, pas besoin des blocs TTS
+  volumineux) traverse `flushSegment()` en chemin batch et produit au moins
+  un segment envoyé au STT, jamais un rejet.
+
+**Étape 3 — vérifié aussi en conditions réelles (vraies clés Groq/Deepgram,
+corpus complet, pas seulement local) : voir le run `corpus-bench.js
+--provider=deepgram` de cette session (résultats ci-dessous) — aucun
+segment silencieusement perdu côté VAD n'explique les échecs observés,
+cohérent avec ce diagnostic local.**
+
+**Conclusion (mesurée, pas devinée)** : la prémisse du §5 de la mission
+("Silero rejette les échantillons comme silence sur le chemin batch,
+jamais élucidé") **ne reproduit pas dans l'état actuel du dépôt**. Elle
+décrivait un vrai bug — mais un bug déjà corrigé (préfixe de contexte
+STFT) avant le début de cette mission autonome, avec sa propre
+non-régression déjà en place. Aucun correctif supplémentaire nécessaire.
+Verrou dur n°1 non concerné : aucun changement de comportement par défaut,
+aucun changement du taux de faux positifs (ce chantier n'a touché aucun
+code de production, seulement `test/test-audio-capture-silero-integration.js`,
+qui ajoute une assertion sans changer aucun comportement).
+
 **Audit du banc (Chantier 0.2, trouvé pendant cette mesure)** : le compteur
 "jamais détecté du tout" comptait à tort 16 alors que 28/37 étaient affichés
 avec seulement 2 en "détecté non affiché" (37-28-2=7 attendu). Cause : la
