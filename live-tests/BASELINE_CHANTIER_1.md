@@ -616,3 +616,41 @@ Mesures (run après correctif, 2026-08-16) :
 2. **H — déduplication 30 s par référence** (5 cas, dont le cas cible A2–A5 « dit une seule fois »). DEDUP_MS avale des occurrences légitimes.
 3. **D — troncature du numéro de verset** par l'ASR/VAD (4 cas) : le transcript s'arrête sur « verset ».
 4. **C/A — langues (EN/FR, EN pur)** : livre anglais non reconnu ou utterance jamais transcrite (5 cas).
+
+---
+
+## MISE À JOUR 2026-08-16 (Chantier A.3 — forme « Chapitre, le verset N » corrigée)
+
+Le bug le plus grave du log réel est corrigé : « Ésaïe 48, le verset 3 » affichait
+« Ésaïe 48:1 » FAUX (verset 1 par défaut) au lieu du verset 3. La forme avec article
+(« le verset », « au verset », « verset numéro ») casse le regex standard du détecteur
+et retombe sur « chapitre seul » → le chemin batch (ASR Groq) avait un trou qui
+retombait sur le verset 1.
+
+**Correctif appliqué** (8 fichiers, voir commit dédié) :
+- `detector.js` / `detector-en.js` : connecteur article optionnel + mot « numéro »/« number »
+  dans les deux variantes du motif standard et les motifs inversés 1 et 3. Garde-fou :
+  connecteur « et »/« and » seul (liste de chapitres) exclu.
+- `server.js` : la garde « chapitre seul ambigu » couvre désormais TOUT chemin automatique
+  (y compris segment/batch, source absente) — le repli verse 1 (displayReference) est
+  supprimé comme code mort.
+- Corpus : O1 (« Ésaïe 48, le verset 3 »), O2 (« Jean 14, le verset 6 ») → 47 lignes.
+- Tests unitaires (FR/EN) + intégration réécrite + cas FP (« Marc 2, et 3 »).
+
+**Mesures (Deepgram streaming, 2026-08-16)** :
+
+| Mode | Score | FP | Δ baseline |
+|------|-------|----|------------|
+| fr | **31/39 (79,5 %)** | 0/8 | +2 (O1+O2 passent) |
+| multi | **33/39 (84,6 %)** | 0/8 | +2 (O1+O2 passent) |
+
+Preuve de correctif (log bench fr) : `"[server] Displayed: Jean 14:6"` quand la
+transcription est `"Jean 14, le verset 6."` (anciennement Jean 14:1 FAUX).
+
+Échecs fr : A2 (artefact banc), B2/D3/D5/N2 (ASR natif), H1/H2/I2 (langue mixte — Chantier A.2).
+Échecs multi : A3/B2/D4/E2/H2/K3 (ASR natif, H2 reste langue mixte A.2).
+
+**Prochain chantier : A.2** (wrapper LLM — normalisation `(response.text || response).trim()`).
+Quand A.2 corrige la détection bilingue EN dans session FR, les items B2/H1/H2/I2 (langue
+mixte) passeront en multi et les 4 échecs langues restants (H1/H2/I2) se corrigeront en multi
+→ score multi cible ≥ 35/39.

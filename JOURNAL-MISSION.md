@@ -120,4 +120,21 @@ sans tenir ce registre (contrairement à la règle §3). Je le crée à partir d
       `npm test` EXIT 0 (1 flake constaté puis relancé vert : integration-scene-overlay-lifecycle
       timeout page.goto sous charge, passe isolément — non lié à ce chantier), `npm audit`
       0 vulnérabilité.
-- [ ] A.3 : rejouer le corpus réel (Deepgram fr puis multi) pour mesurer l'impact end-to-end.
+- [x] A.3 : rejouer le corpus réel (Deepgram fr puis multi) pour mesurer l'impact end-to-end.
+
+**Résultats mesurés (2026-08-16, corpus.csv 47 lignes, Deepgram streaming)** :
+| Mode | Score | FP | notes |
+|------|-------|----|-------|
+| fr | 31/39 (79,5 %) | 0/8 | +2 sur baseline 29/37 (items O1/O2 A.3 passent) |
+| multi | 33/39 (84,6 %) | 0/8 | +2 sur baseline 30/37 (items O1/O2 A.3 passent) |
+
+Échecs fr : A2 (artefact banc), B2 (ASR EN en mode FR), D3 (Philémon — ASR),
+D5 (Sophonie — endpointing), N2 (Osée — ASR), H1/H2 (langue mixte — A.2),
+I2 (noyée — ASR EN en FR).
+
+Échecs multi : A3 (Jean trois seize — ASR), B2 (EN ASR), D4 (Aggée — ASR),
+E2 (Nombres — ASR), H2 (langue mixte — A.2), K3 (Actes — ASR).
+
+**Preuve de correctif A.3** (log bench) : `"Jean 14, le verset 6."` →
+`[server] Appel direct (référence explicite, avant correction IA) : jean 14, le verset 6`
+→ `[server] Displayed: Jean 14:6` (et non jean 14:1 FAUX). Régression : aucune.
