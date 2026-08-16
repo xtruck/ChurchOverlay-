@@ -40,6 +40,27 @@ testé (suite complète verte) et commité tel quel avant cette mesure.
   ASR parfait — ils se corrigent sans un seul appel API et sans latence
   supplémentaire. Seuls A2, D5, N2, F2 restent des échecs ASR confirmés.
 
+**Chantier A.3 (mission autonome) — élucidation de H2** : la question posée
+était "seuil de confiance en aval, ou ASR qui n'a pas transcrit ?". Réponse
+mesurée : NI L'UN NI L'AUTRE. `bloc7.wav` contient bien H1 ("Comme il est
+écrit...") ET H2 ("Let us turn to Matthieu chapitre 5") — vérifié par
+analyse RMS de l'énergie audio (H1 : ~500-3500ms, silence net : ~4000-6500ms,
+H2 : ~7000-9500ms, silence : après 9500ms). Sur 2 runs indépendants
+(Chantier A.1 et A.2), **H2 n'apparaît JAMAIS dans les logs Deepgram** —
+aucun `[DEEPGRAM] partial received`/`final received` entre la fin du
+traitement de H1 et `Capture arrêtée`. Le fichier se termine après un seul
+énoncé traité alors que `corpus-bench.js` en attend 2. Comparaison croisée :
+`bloc2.wav` et `bloc8.wav` (mêmes conditions : 2 énoncés séparés par un
+silence, même pipeline streaming) traitent correctement leurs DEUX énoncés
+— ce n'est donc PAS un bug générique "le streaming ne gère qu'un énoncé par
+fichier", mais quelque chose de spécifique à `bloc7.wav`/H2 (durée du
+silence légèrement différente ? état du WebSocket Deepgram après la
+première finalisation ? à creuser). **Renvoyé au Chantier B** (VAD/
+endpointing) comme piste concrète et reproductible, plus précise que
+l'hypothèse Silero-batch d'origine — à tester en priorité : "le bug
+se produit-il uniquement au rejeu de fichiers, ou aussi en direct ?"
+s'applique ici littéralement (scénario de rejeu de fichier, PCM continu).
+
 **Audit du banc (Chantier 0.2, trouvé pendant cette mesure)** : le compteur
 "jamais détecté du tout" comptait à tort 16 alors que 28/37 étaient affichés
 avec seulement 2 en "détecté non affiché" (37-28-2=7 attendu). Cause : la
