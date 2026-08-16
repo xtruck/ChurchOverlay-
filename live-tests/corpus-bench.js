@@ -571,7 +571,21 @@ function printAndBuildSummary(providerLabel, allResults) {
   // "affiché puis écrasé" mesurait la fuite du showVerse de la ligne suivante
   // dans la fenêtre de la précédente, plus un vrai état serveur erroné.
   const textOnlyCount = expectingRef.filter((r) => r.textDetected && !r.shown).length;
-  const missedCount = expectingRef.filter((r) => !r.textDetected).length;
+  // CORRECTIF (Chantier 0.2 — audit du banc, trouvé en investiguant un écart
+  // "jamais détecté : 16" incohérent avec un "affiché : 28/37") : textDetected
+  // ne teste QUE le texte de CHAQUE évènement transcript/transcriptPartial EN
+  // ISOLATION (voir Passe 1 plus haut) — il ne voit jamais la "fusion de
+  // fragments" que server.js fait lui-même en interne (ex. « Premier
+  // Corinthiens chapitre 13 » + « verset 4 » reçus comme deux fragments
+  // SÉPARÉS, chacun incomplet seul, combinés côté serveur avant affichage).
+  // Un showVerse correctement attribué (r.shown, vérité terrain déjà
+  // vérifiée par l'appariement à la référence attendue) est donc TOUJOURS la
+  // preuve qu'une détection a bien eu lieu quelque part dans le pipeline,
+  // même quand textDetected ne l'a pas vue passer sur un évènement isolé —
+  // sans cette exclusion, ces lignes étaient doublement comptées ni comme
+  // "affichées" (elles LE sont) ni honnêtement comme "jamais détectées"
+  // (elles ne le sont PAS), gonflant faussement ce diagnostic.
+  const missedCount = expectingRef.filter((r) => !r.textDetected && !r.shown).length;
   const falsePositives = negatives.filter((r) => r.falsePositive).length;
 
   const firstAttemptRate = expectingRef.length > 0 ? shownCount / expectingRef.length : null;

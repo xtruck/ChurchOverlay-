@@ -277,6 +277,29 @@ function computeGroqSpeechInfo(data) {
   return isSilence ? { text: '', confidence: 0 } : { text: data.text || '', confidence };
 }
 
+// AJOUT (Chantier 2 — fiabilité, visibilité des pannes silencieuses) : la
+// course Groq/Deepgram (voir transcribeWithFallback ci-dessous) masque
+// délibérément un échec Groq isolé — Deepgram prend le relais, la
+// transcription globale réussit quand même, `consecutiveTranscriptionFailures`
+// (server.js) ne s'incrémente donc JAMAIS pour un Groq cassé tant que
+// Deepgram tient. Compteur SÉPARÉ, purement passif (aucun appel réseau
+// dédié — ne fait qu'observer les tentatives déjà déclenchées par le
+// pipeline réel), pour que /api/health puisse signaler "Groq répond
+// systématiquement en échec" même quand la transcription elle-même ne
+// s'en trouve jamais interrompue. Trouvé en conditions réelles pendant le
+// Chantier 0.1 : GROQ_API_KEY invalide en silence (401 sur /v1/models ET
+// /v1/chat/completions), tout le service tournait déjà sur le seul repli
+// Deepgram sans qu'aucun signal ne le rende visible.
+let consecutiveGroqFailures = 0;
+let lastGroqError = null;
+
+/**
+ * @returns {{ consecutiveFailures: number, lastError: string|null }}
+ */
+function getGroqHealthState() {
+  return { consecutiveFailures: consecutiveGroqFailures, lastError: lastGroqError };
+}
+
 /**
  * Lance Groq et Deepgram EN PARALLÈLE.
  */
@@ -290,11 +313,17 @@ async function transcribeWithFallback(
 
   const groqAbort = new AbortController();
   const deepgramAbort = new AbortController();
-  const groqPromise = transcribeFile(audioFilePath, groqAbort.signal, contextHint, language).catch(
-    (err) => ({
-      error: err,
+  const groqPromise = transcribeFile(audioFilePath, groqAbort.signal, contextHint, language)
+    .then((result) => {
+      consecutiveGroqFailures = 0;
+      lastGroqError = null;
+      return result;
     })
-  );
+    .catch((err) => {
+      consecutiveGroqFailures++;
+      lastGroqError = err.message;
+      return { error: err };
+    });
   const deepgramPromise = deepgramEnabled
     ? deepgram
         .transcribeFile(audioFilePath, deepgramAbort.signal, language)
@@ -492,6 +521,8 @@ module.exports = {
   quickCompletion,
   isConfigured,
   checkKey,
+  // AJOUT (Chantier 2 — santé) : voir buildHealthReport() dans server.js.
+  getGroqHealthState,
   // Exposée pour tests unitaires (test-groq-prompt-truncation.js).
   truncateToUtf8ByteLimit,
   GROQ_PROMPT_MAX_BYTES,

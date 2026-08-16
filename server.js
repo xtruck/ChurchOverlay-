@@ -305,6 +305,18 @@ function buildHealthReport() {
   if (consecutiveTranscriptionFailures > 0) {
     degradedReasons.push(`transcription-failures-${consecutiveTranscriptionFailures}`);
   }
+  // AJOUT (Chantier 2 — panne silencieuse trouvée en conditions réelles) :
+  // la course Groq/Deepgram (transcribeWithFallback) masque un Groq cassé
+  // tant que Deepgram répond — consecutiveTranscriptionFailures ci-dessus
+  // ne bouge donc jamais dans ce cas précis. groq.getGroqHealthState() est
+  // un compteur SÉPARÉ, purement passif (voir groq-wrapper.js), qui rend
+  // ce cas visible. Seuil à 3 (pas 1) pour ignorer un aléa réseau isolé —
+  // 3 échecs Groq CONSÉCUTIFS sur le vrai trafic du culte est un signal
+  // fiable, pas un faux positif sur un segment ou deux.
+  const groqHealth = groq.getGroqHealthState();
+  if (groqHealth.consecutiveFailures >= 3) {
+    degradedReasons.push(`groq-failing-${groqHealth.consecutiveFailures}`);
+  }
   return {
     status: degradedReasons.length === 0 ? 'ok' : 'degraded',
     service: 'ChurchOverlay',
@@ -318,6 +330,7 @@ function buildHealthReport() {
       resolved: asrResolved,
       active: asrActive,
       mode: streamingActive ? 'streaming' : 'batch',
+      groq: groqHealth,
     },
     vad: audioCapture.getVadProvider(),
     transcription: {

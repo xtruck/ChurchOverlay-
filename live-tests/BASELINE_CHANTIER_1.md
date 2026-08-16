@@ -1,5 +1,46 @@
 # BASELINE_CHANTIER_1 — pipeline actuel (avec Étape 4 non commitée), STREAMING (deepgram)
 
+## MISE À JOUR 2026-08-16 (session mission maître) — 28/37 (75,7 %), fallback chapitre, dédup 2/2
+
+Reprise de session : le dépôt contenait déjà (non commité) un fallback chapitre
+en cours d'implémentation (§ "Chantier 3" plus bas dans server.js), vérifié,
+testé (suite complète verte) et commité tel quel avant cette mesure.
+
+**Run complet, corpus réel (45 lignes, `node live-tests/corpus-bench.js
+--provider=deepgram`), code courant (fallback chapitre inclus)** :
+
+- Taux de première tentative : **28/37 (75,7 %)** — 23 versets exacts + 5
+  chapitres de repli (référence partielle, verset perdu par l'ASR — règle
+  mission "verset exact OU chapitre entier", jamais un mauvais verset) ;
+  textDetectedNotShown : 2 ; jamais détecté (corrigé, voir audit ci-dessous) : 7
+- **FP 0/8**
+- Latence affichage (28 énoncés) : **p50=1949ms, p75=3230ms, p90=4266ms,
+  p95=4269ms**, min=-481ms (spéculatif légitime), max=5086ms
+- **doublon_10s : 2/2 affichés** (G1 ET G2 « Jean 14.6 » tous deux affichés —
+  le correctif de dédoublonnage par énoncé, déjà documenté plus bas, tient en
+  conditions réelles sur ce run)
+- Catégories : livre_numerote 3/3, nombre_piege 3/3, bruit_fond 5/5,
+  variante_formulation 5/7, livre_difficile 8/11, rafale_5s 1/2, doublon_10s
+  2/2, changement_langue 0/2, noyee 1/2
+- Échecs restants (9) : A2/B2 (variantes, ASR), D3/D5/N2 (livre_difficile,
+  troncature ASR), F2 (rafale, ASR), H1/H2 (changement de langue EN/FR — ASR
+  ne transcrit pas la partie anglaise), I2 (noyée, EN) — tous des échecs ASR
+  natifs, jamais un mauvais verset affiché à la place d'un bon.
+
+**Audit du banc (Chantier 0.2, trouvé pendant cette mesure)** : le compteur
+"jamais détecté du tout" comptait à tort 16 alors que 28/37 étaient affichés
+avec seulement 2 en "détecté non affiché" (37-28-2=7 attendu). Cause : la
+détection dans `matchRowsToEvents` (Passe 1) teste chaque évènement
+transcript/transcriptPartial EN ISOLATION — elle ne voit jamais la "fusion de
+fragments" que `server.js` fait lui-même en interne (deux fragments partiels
+distincts, chacun incomplet seul, combinés côté serveur avant affichage — ex.
+C1/C2/C3, "livre_numerote"). Un `showVerse` correctement attribué est
+pourtant TOUJOURS la preuve qu'une détection a bien eu lieu quelque part.
+Corrigé : `missedCount` exclut désormais les lignes déjà comptées `shown`.
+Confirmé par recalcul sur les données déjà capturées de ce run : 7, pas 16.
+
+---
+
 ## MISE À JOUR 2026-08-16 — Chantier 0.2 (calibration) + attribution des showVerse
 
 **Cause racine des mesures précédentes (découverte Chantier 0.2)** : le replay du
