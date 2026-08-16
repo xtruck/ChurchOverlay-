@@ -18,6 +18,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { findTriggerMatch } = require('./voice-trigger-matcher');
 
 const MAX_SONGS = 300; // recueil d'une église, pas un catalogue commercial — largement suffisant
 const MAX_SECTIONS_PER_SONG = 40;
@@ -46,11 +47,6 @@ function writeIndex(songs) {
   if (!indexPath) return;
   fs.mkdirSync(path.dirname(indexPath), { recursive: true });
   fs.writeFileSync(indexPath, JSON.stringify(songs, null, 2), 'utf8');
-}
-
-// Même approche que media-library.js/sermon-archive.js (\p{M} après NFD).
-function normalize(text) {
-  return (text || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').trim();
 }
 
 /**
@@ -146,24 +142,14 @@ function deleteSong(id) {
 
 /**
  * Cherche si un texte transcrit contient l'une des phrases déclencheuses
- * d'un chant — même mécanisme que media-library.js : sous-chaîne sur texte
- * normalisé, pas de LLM.
+ * d'un chant — voir voice-trigger-matcher.js (mutualisé avec
+ * media-library.js, même mécanisme).
  * @param {string} text
  * @returns {{song: Object, sectionIndex: number}|null}
  */
 function matchTriggerPhrase(text) {
-  const normalizedText = normalize(text);
-  if (!normalizedText) return null;
-
-  for (const song of readIndex()) {
-    for (const phrase of song.triggerPhrases || []) {
-      const normalizedPhrase = normalize(phrase);
-      if (normalizedPhrase && normalizedText.includes(normalizedPhrase)) {
-        return { song, sectionIndex: 0 };
-      }
-    }
-  }
-  return null;
+  const song = findTriggerMatch(readIndex(), text);
+  return song ? { song, sectionIndex: 0 } : null;
 }
 
 module.exports = {

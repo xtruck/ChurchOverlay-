@@ -21,6 +21,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { findTriggerMatch } = require('./voice-trigger-matcher');
 
 const MAX_ITEMS = 100; // médiathèque d'un culte, pas un CMS — largement suffisant
 const DEFAULT_IMAGE_DURATION_MS = 15000; // "moment poster" court, pas un verset (120s par défaut)
@@ -68,14 +69,6 @@ function writeIndex(items) {
   if (!indexPath) return;
   fs.mkdirSync(path.dirname(indexPath), { recursive: true });
   fs.writeFileSync(indexPath, JSON.stringify(items, null, 2), 'utf8');
-}
-
-// Même approche que sermon-archive.js (\p{M} après décomposition NFD) plutôt
-// que la plage ̀-ͯ utilisée dans detector.js/voice-commands.js :
-// équivalente en résultat, mais ne dépend pas d'échapper des points de code
-// combinants à la main dans le code source.
-function normalize(text) {
-  return (text || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').trim();
 }
 
 /**
@@ -300,25 +293,13 @@ function clearDefaultItem() {
 
 /**
  * Cherche si un texte transcrit contient l'une des phrases déclencheuses
- * d'un élément de la médiathèque. Correspondance par sous-chaîne sur texte
- * normalisé (pas de LLM) — même philosophie que detectCommand()
- * (voice-commands.js) : rapide, gratuit, prévisible en plein culte.
+ * d'un élément de la médiathèque — voir voice-trigger-matcher.js (mutualisé
+ * avec song-library.js, même mécanisme).
  * @param {string} text - texte transcrit (brut, pas encore normalisé)
  * @returns {Object|null} l'élément déclenché, ou null
  */
 function matchTriggerPhrase(text) {
-  const normalizedText = normalize(text);
-  if (!normalizedText) return null;
-
-  for (const item of readIndex()) {
-    for (const phrase of item.triggerPhrases || []) {
-      const normalizedPhrase = normalize(phrase);
-      if (normalizedPhrase && normalizedText.includes(normalizedPhrase)) {
-        return item;
-      }
-    }
-  }
-  return null;
+  return findTriggerMatch(readIndex(), text);
 }
 
 module.exports = {
