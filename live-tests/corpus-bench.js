@@ -220,6 +220,8 @@ async function replayFile(sourceFile, provider, ws) {
     if (
       msg.action === 'transcript' ||
       msg.action === 'transcriptPartial' ||
+      msg.action === 'candidateVerse' ||
+      msg.action === 'verseBuffered' ||
       msg.action === 'showVerse' ||
       msg.action === 'transcriptRejected'
     ) {
@@ -274,39 +276,49 @@ async function replayFile(sourceFile, provider, ws) {
 function matchRowsToEvents(rows, sessionStartWallClock, events) {
   const claimedText = new Set();
   const claimedShown = new Set();
+  const claimedCandidate = new Set();
+  const claimedBuffered = new Set();
   const results = [];
+
+  // Chaîne mesurée par énoncé (CHANTIER 0.2 — audit + complétude) :
+  //   partialLatencyMs   : premier transcriptPartial contenant la référence
+  //   finalLatencyMs     : premier transcript (final) contenant la référence
+  //   candidateLatencyMs : premier candidateVerse diffusé pour la référence
+  //   biblePreloadLatencyMs : premier verseBuffered (texte Bible préchargé)
+  //   shownLatencyMs     : premier showVerse attribuable (uniquement si shown)
+  // Un timestamp NÉGATIF est légitime ici : l'affichage spéculatif / le
+  // streaming peuvent diffuser AVANT la fin de l'audio de l'énoncé
+  // (horodatage attendu = fin de l'énoncé). Ce qui n'a PAS de sens, c'est un
+  // min négatif sur les seuls énoncés affichés DÉFINITIVEMENT — depuis la
+  // correction Étape 4 (fenêtre bornée), ça ne peut plus arriver (vérifié :
+  // le seul -584 présent dans les résultats commités est une ligne NON
+  // affichée dont shownLatencyMs était rempli par erreur — corrigé ici en ne
+  // renseignant shownLatencyMs que si shown === true).
+  function withinWindow(ev, expectedWallClock, windowEnd) {
+    return ev.at >= expectedWallClock - 1500 && ev.at <= windowEnd;
+  }
 
   for (const row of rows) {
     const expectedRefKey = refKeyOf(row.expectedBook, row.expectedChapter, row.expectedVerseStart);
     const expectedWallClock = sessionStartWallClock + (row.endMs || 0);
-    // Tolérance avant l'horodatage attendu : l'appariement par horodatage
-    // n'est jamais parfait au ms près (marge de contexte volontaire au
-    // montage du corpus, voir CORPUS-SCRIPT.md) — 1500ms absorbe cette marge
-    // sans risquer de capturer l'évènement de la ligne PRÉCÉDENTE.
-    const earliestAcceptable = expectedWallClock - 1500;
+    const windowEnd = expectedWallClock + 8000;
 
     let textDetected = false;
-    let textLatencyMs = null;
+    let partialLatencyMs = null;
+    let finalLatencyMs = null;
+    let candidateLatencyMs = null;
+    let biblePreloadLatencyMs = null;
     let shown = false;
     let shownLatencyMs = null;
     let finalShownCorrect = false;
     let falsePositive = false;
 
     if (expectedRefKey) {
-      // CORRECTIF (chantier ASR, Étape 4) : la fenêtre d'appariement d'une
-      // ligne EXPECTING-REFERENCE n'était BORNÉE QUE VERS LE BAS
-      // (earliestAcceptable) — sans borne haute, les showVerse des énoncés
-      // SUIVANTS du même fichier étaient aussi des candidats, et chaque
-      // ligne réclamait alors le DERNIER showVerse de la session entière
-      // (attribution par ordre inverse). finalShownCorrect / overwritten et
-      // la latence mesuraient donc le bruit, pas le pipeline. On borne la
-      // fenêtre comme pour les lignes négatives (windowEnd = fin attendue +
-      // 8000ms) : seuls les showVerse VRAIMENT attribuables à cet énoncé
-      // sont considérés.
-      const windowEnd = expectedWallClock + 8000;
+      // --- partial puis final (transcripts contenant la référence attendue) ---
+      let partialClaimed = false;
+      let finalClaimed = false;
       for (const ev of events) {
-        if (claimedText.has(ev)) continue;
-        if (ev.at < earliestAcceptable || ev.at > windowEnd) continue;
+        if (claimedText.has(ev) || !withinWindow(ev, expectedWallClock, windowEnd)) continue;
         if (ev.msg.action !== 'transcript' && ev.msg.action !== 'transcriptPartial') continue;
         let ref;
         try {
@@ -315,26 +327,69 @@ function matchRowsToEvents(rows, sessionStartWallClock, events) {
           continue;
         }
         if (!ref) continue;
-        const key = refKeyOf(ref.book, ref.chapter, ref.verseStart);
-        if (key === expectedRefKey) {
-          textDetected = true;
-          textLatencyMs = ev.at - expectedWallClock;
+        if (refKeyOf(ref.book, ref.chapter, ref.verseStart) !== expectedRefKey) continue;
+        textDetected = true;
+        if (ev.msg.action === 'transcriptPartial' && partialLatencyMs === null) {
+          partialLatencyMs = ev.at - expectedWallClock;
           claimedText.add(ev);
+          partialClaimed = true;
+        }
+        if (ev.msg.action === 'transcript' && finalLatencyMs === null) {
+          finalLatencyMs = ev.at - expectedWallClock;
+          claimedText.add(ev);
+          finalClaimed = true;
+        }
+        if (partialClaimed && finalClaimed) break;
+      }
+
+      // --- candidateVerse (détection spéculative diffusée au tableau de bord) ---
+      for (const ev of events) {
+        if (claimedCandidate.has(ev) || !withinWindow(ev, expectedWallClock, windowEnd)) continue;
+        if (ev.msg.action !== 'candidateVerse') continue;
+        const ref = ev.msg.reference;
+        if (!ref || !ref.book || !ref.verseStart) continue;
+        if (refKeyOf(ref.book, ref.chapter, ref.verseStart) === expectedRefKey) {
+          candidateLatencyMs = ev.at - expectedWallClock;
+          claimedCandidate.add(ev);
           break;
         }
       }
-      // CORRECTIF (Étape 5) : un simple "un showVerse correspondant existe"
-      // masque la régression observée en réel où le BON verset était affiché
-      // puis ÉCRASÉ par un mauvais (partial tronqué finalisé localement ->
-      // chapitre seul -> verse 1). On garde `shown` (le bon verset est bien
-      // passé) MAIS on vérifie aussi l'ÉTAT FINAL de l'overlay : le DERNIER
-      // showVerse de la fenêtre doit être le bon — sinon le test réel a
-      // affiché quelque chose de faux en dernier et le banc doit le dire.
+
+      // --- verseBuffered (texte Bible réellement préchargé en mémoire) ---
+      for (const ev of events) {
+        if (claimedBuffered.has(ev) || !withinWindow(ev, expectedWallClock, windowEnd)) continue;
+        if (ev.msg.action !== 'verseBuffered') continue;
+        const ref = ev.msg.reference;
+        if (!ref || !ref.book) continue;
+        if (refKeyOf(ref.book, ref.chapter, ref.verseStart) === expectedRefKey) {
+          biblePreloadLatencyMs = ev.at - expectedWallClock;
+          claimedBuffered.add(ev);
+          break;
+        }
+      }
+
+      // --- showVerse (affichage réel) ---
+      // CORRECTIF (Chantier 0.2 — audit benchmark) : un showVerse N'est
+      // attribuable à cet énoncé que s'il arrive APRÈS le signal de détection
+      // propre de l'énoncé (candidate ou final). Sans cette borne, le
+      // showVerse TARDIF d'un énoncé PRÉCÉDENT portant la MÊME référence
+      // (ex. A1 "Jean 3.16" dont l'affichage met ~4,5s, pour A2 "Jean
+      // chapitre 3 verset 16" 5,5s plus loin) retombait dans la fenêtre de
+      // l'énoncé suivant et produisait un shownLatencyMs NÉGATIF mensonger
+      // (min=-1060ms mesuré). L'affichage spéculatif avant la fin de l'audio
+      // reste possible et LÉGITIME — mais uniquement après le candidateVerse
+      // de CET énoncé, ce que cette borne préserve exactement.
+      const signalAt =
+        candidateLatencyMs !== null
+          ? expectedWallClock + candidateLatencyMs
+          : finalLatencyMs !== null
+            ? expectedWallClock + finalLatencyMs
+            : null;
       const shownCandidates = [];
       for (const ev of events) {
-        if (claimedShown.has(ev)) continue;
-        if (ev.at < earliestAcceptable || ev.at > windowEnd) continue;
+        if (claimedShown.has(ev) || !withinWindow(ev, expectedWallClock, windowEnd)) continue;
         if (ev.msg.action !== 'showVerse') continue;
+        if (signalAt !== null && ev.at < signalAt) continue;
         let ref;
         try {
           ref = detector.parseReference(ev.msg.reference);
@@ -348,18 +403,19 @@ function matchRowsToEvents(rows, sessionStartWallClock, events) {
         shown = shownCandidates.some((c) => c.key === expectedRefKey);
         const last = shownCandidates[shownCandidates.length - 1];
         finalShownCorrect = last.key === expectedRefKey;
-        shownLatencyMs = shownCandidates[0].ev.at - expectedWallClock;
+        if (shown) {
+          shownLatencyMs = shownCandidates[0].ev.at - expectedWallClock;
+        }
         claimedShown.add(last.ev);
       }
     } else {
       // expects_scripture=false : succès = AUCUN showVerse attribuable
       // n'est arrivé dans la fenêtre de cet énoncé (faux positif sinon).
-      const windowEnd = expectedWallClock + 8000;
       falsePositive = events.some(
         (ev) =>
           !claimedShown.has(ev) &&
           ev.msg.action === 'showVerse' &&
-          ev.at >= earliestAcceptable &&
+          ev.at >= expectedWallClock - 1500 &&
           ev.at <= windowEnd
       );
       if (falsePositive) {
@@ -367,7 +423,7 @@ function matchRowsToEvents(rows, sessionStartWallClock, events) {
           (e) =>
             !claimedShown.has(e) &&
             e.msg.action === 'showVerse' &&
-            e.at >= earliestAcceptable &&
+            e.at >= expectedWallClock - 1500 &&
             e.at <= windowEnd
         );
         if (ev) claimedShown.add(ev);
@@ -377,11 +433,18 @@ function matchRowsToEvents(rows, sessionStartWallClock, events) {
     results.push({
       row,
       textDetected,
-      textLatencyMs,
+      partialLatencyMs,
+      finalLatencyMs,
+      candidateLatencyMs,
+      biblePreloadLatencyMs,
       shown,
       shownLatencyMs,
       finalShownCorrect,
       falsePositive,
+      confirmToDisplayMs:
+        shown && typeof shownLatencyMs === 'number' && typeof finalLatencyMs === 'number'
+          ? shownLatencyMs - finalLatencyMs
+          : null,
     });
   }
   return results;
@@ -410,6 +473,23 @@ function printAndBuildSummary(providerLabel, allResults) {
     .map((r) => r.shownLatencyMs)
     .sort((a, b) => a - b);
 
+  function chainValues(field) {
+    return expectingRef
+      .filter((r) => typeof r[field] === 'number')
+      .map((r) => r[field])
+      .sort((a, b) => a - b);
+  }
+  function latLine(label, values) {
+    if (values.length === 0) return `  ${label} : — (aucun)`;
+    const neg = values.filter((v) => v < 0).length;
+    return (
+      `  ${label} : p50=${percentile(values, 50)}ms  p75=${percentile(values, 75)}ms  ` +
+      `p90=${percentile(values, 90)}ms  p95=${percentile(values, 95)}ms  ` +
+      `min=${values[0]}ms  max=${values[values.length - 1]}ms` +
+      (neg > 0 ? `  (${neg} négatif(s) : arrivée avant la fin de l'audio — spéculatif/streaming, légitime)` : '')
+    );
+  }
+
   console.log(
     `Taux de première tentative : ${finalCorrectCount}/${expectingRef.length}` +
       (firstAttemptRate !== null ? ` (${(firstAttemptRate * 100).toFixed(1)}%)` : '')
@@ -429,12 +509,25 @@ function printAndBuildSummary(providerLabel, allResults) {
   if (latencies.length > 0) {
     console.log(
       `Latence affichage (sur les ${latencies.length} énoncés réellement affichés) — ` +
-        `p50=${percentile(latencies, 50)}ms  p95=${percentile(latencies, 95)}ms  ` +
+        `p50=${percentile(latencies, 50)}ms  p75=${percentile(latencies, 75)}ms  ` +
+        `p90=${percentile(latencies, 90)}ms  p95=${percentile(latencies, 95)}ms  ` +
         `min=${latencies[0]}ms  max=${latencies[latencies.length - 1]}ms`
     );
   } else {
     console.log('Latence affichage : aucun énoncé affiché, pas de percentile calculable.');
   }
+
+  console.log('\n--- Chaîne de latence (horodatage attendu = fin de l’énoncé, négatif = avant la fin) ---');
+  console.log(latLine('Speech → partial (réf. détectée)', chainValues('partialLatencyMs')));
+  console.log(latLine('Speech → candidateVerse', chainValues('candidateLatencyMs')));
+  console.log(latLine('Speech → final', chainValues('finalLatencyMs')));
+  console.log(latLine('Speech → affichage (showVerse)', chainValues('shownLatencyMs')));
+  console.log(
+    latLine(
+      'Final → affichage (coût pipeline après le final, Bible préchauffée ou non)',
+      chainValues('confirmToDisplayMs')
+    )
+  );
 
   console.log('\n--- Par catégorie ---');
   const categories = [...new Set(allResults.map((r) => r.row.category))];
@@ -489,9 +582,19 @@ function printAndBuildSummary(providerLabel, allResults) {
     falsePositives,
     negativesTotal: negatives.length,
     latencyP50Ms: percentile(latencies, 50),
+    latencyP75Ms: percentile(latencies, 75),
+    latencyP90Ms: percentile(latencies, 90),
     latencyP95Ms: percentile(latencies, 95),
     latencyMinMs: latencies[0] ?? null,
     latencyMaxMs: latencies[latencies.length - 1] ?? null,
+    chain: {
+      partial: chainValues('partialLatencyMs').map((v) => v),
+      candidate: chainValues('candidateLatencyMs').map((v) => v),
+      biblePreload: chainValues('biblePreloadLatencyMs').map((v) => v),
+      final: chainValues('finalLatencyMs').map((v) => v),
+      display: chainValues('shownLatencyMs').map((v) => v),
+      confirmToDisplay: chainValues('confirmToDisplayMs').map((v) => v),
+    },
     byCategory: categories.map((cat) => {
       const catExpecting = expectingRef.filter((r) => r.row.category === cat);
       const catNegatives = negatives.filter((r) => r.row.category === cat);
@@ -508,10 +611,14 @@ function printAndBuildSummary(providerLabel, allResults) {
       category: r.row.category,
       expectedText: r.row.expectedText,
       textDetected: r.textDetected,
-      textLatencyMs: r.textLatencyMs,
+      partialLatencyMs: r.partialLatencyMs,
+      finalLatencyMs: r.finalLatencyMs,
+      candidateLatencyMs: r.candidateLatencyMs,
+      biblePreloadLatencyMs: r.biblePreloadLatencyMs,
       shown: r.shown,
       finalShownCorrect: r.finalShownCorrect,
       shownLatencyMs: r.shownLatencyMs,
+      confirmToDisplayMs: r.confirmToDisplayMs,
       falsePositive: r.falsePositive,
     })),
   };
