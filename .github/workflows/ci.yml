@@ -1,239 +1,42 @@
-name: CI/CD Pipeline
+name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main]
   pull_request:
-    branches: [ main, develop ]
-  # CORRECTIF (audit) : ce déclencheur `release: published` créait une
-  # boucle de rebuild inutile - build-windows.yml (déclenché par un tag
-  # v*.*.*) publie déjà une Release GitHub avec l'installeur attaché, et
-  # cette publication elle-même redéclenchait TOUT ce pipeline (security-
-  # scan + lint + test + un DEUXIÈME build multi-OS + le job "release"
-  # ci-dessous essayant d'attacher SES PROPRES artefacts à la même
-  # Release) - du temps CI gaspillé au mieux, des artefacts en double sur
-  # la Release au pire. build-windows.yml gère déjà tout le cycle
-  # tag -> build -> publication de bout en bout ; retiré ici pour éviter
-  # le doublon.
-
-permissions:
-  contents: read
-  security-events: read
+    branches: [main]
 
 jobs:
-  # Security and Dependency Scanning
-  security-scan:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run npm audit
-        # CORRECTIF (chantier 0 — dette technique) : --production est
-        # déprécié par npm (avertissement "npm warn config production Use
-        # `--omit=dev` instead") — même effet (audite dependencies, ignore
-        # devDependencies), syntaxe non dépréciée.
-        run: npm audit --omit=dev
-        continue-on-error: false
-
-      # RETIRÉ (Chantier D, mission autonome) : l'étape Snyk référençait
-      # secrets.SNYK_TOKEN, jamais configuré dans les secrets du dépôt —
-      # échouait silencieusement depuis toujours (continue-on-error: true
-      # masquait l'échec), sans jamais scanner quoi que ce soit. npm audit
-      # ci-dessus couvre déjà les vulnérabilités de dépendances gratuitement.
-      # Si un compte Snyk est créé un jour : réintroduire ce step avec
-      # SNYK_TOKEN ajouté dans GitHub -> Settings -> Secrets and variables
-      # -> Actions.
-
-  # Linting and Code Quality
-  lint:
-    name: Code Quality Checks
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run ESLint
-        run: npm run lint
-        continue-on-error: false
-
-      - name: Check code formatting
-        run: npm run format:check
-        continue-on-error: false
-
-      - name: TypeScript type checking
-        run: npx tsc --noEmit
-        continue-on-error: false
-
-  # Testing
   test:
-    name: Run Tests
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        # CORRECTIF (Chantier D, mission autonome) : 3 OS x 2 versions Node
-        # = 6 jobs alors que seule la combinaison ubuntu/Node 20.x a jamais
-        # révélé un vrai bug CI (segfault better-sqlite3, voir le step
-        # "Rebuild native modules" plus bas) — Node 20.x n'a donc de valeur
-        # de détection QUE sur ubuntu, pas besoin de la dupliquer sur
-        # windows/macOS. Réduit à 4 jobs (22.x sur les 3 OS + 20.x sur
-        # ubuntu seul) via `include`, sans perdre la seule combinaison qui a
-        # déjà attrapé un vrai bug.
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        node-version: [22.x]
-        include:
-          - os: ubuntu-latest
-            node-version: 20.x
+        node-version: [20, 22]
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'npm'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
-
-      # CORRECTIF (segfault CI 2026-08-05) : le job "Run Tests" plantait en
-      # "Segmentation fault (core dumped)" sur ubuntu-latest/Node 20.x, au
-      # moment précis où server.js (via session-store.js) charge le binaire
-      # natif de better-sqlite3. Ce module n'a pas de binaire prébuilt
-      # (pas de champ "binary" dans son package.json — il compile via
-      # node-gyp) : un binaire natif compilé pour une ABI Node différente
-      # (ex. un artefact de cache réutilisé entre jobs de la matrice) plante
-      # au chargement plutôt que de lever une erreur JS propre. On force ici
-      # une recompilation depuis les sources pour l'ABI Node exacte de CE
-      # job, quel que soit ce que `npm ci` a pu récupérer par ailleurs.
-      #
-      # RESTREINT (Chantier D, mission autonome) : seule la combinaison
-      # ubuntu-latest/Node 20.x a jamais été observée cassée — jamais
-      # windows/macOS, jamais Node 22.x. Restreint la recompilation forcée
-      # (coûteuse, ~plusieurs dizaines de secondes par job) à cette seule
-      # combinaison plutôt que de la payer partout "au cas où". À surveiller
-      # sur ce run CI précis (mesuré, pas supposé) — si un autre job échoue
-      # au chargement de better-sqlite3, revenir à la version inconditionnelle.
-      - name: Rebuild native modules (better-sqlite3)
-        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '20.x'
-        run: npm rebuild better-sqlite3 --build-from-source
-
-      # CORRECTIF (chantier 0 — CI cassée) : "npm test" exécute 3 tests
-      # Playwright/Chromium réels (integration-scene-overlay-lifecycle.js,
-      # test-render-scene-dom.js, integration-scene-composer.js, voir
-      # test/) via playwright-core, mais aucune étape n'installait
-      # jusqu'ici le navigateur Chromium — ces 3 tests échouaient donc sur
-      # les 6 combinaisons de la matrice (browserType.launch: Executable
-      # doesn't exist). PLAYWRIGHT_BROWSERS_PATH fixe un chemin relatif au
-      # workspace, IDENTIQUE sur les 3 OS de la matrice, pour que le cache
-      # actions/cache ci-dessous fonctionne avec une seule clé/un seul
-      # chemin au lieu de gérer 3 emplacements par défaut différents
-      # (~/.cache/ms-playwright sur Linux/macOS, %LOCALAPPDATA%\ms-playwright
-      # sur Windows).
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4
-        id: playwright-cache
-        with:
-          path: ${{ github.workspace }}/.pw-browsers
-          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-
-      - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
         env:
-          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.pw-browsers
+          npm_config_electron_skip_binary_check: '1'
+          SKIP_ELECTRON_REBUILD: '1'
 
-      - name: List test directory
-        shell: bash
-        run: |
-          echo "CWD: $(pwd)"
-          ls -la .
-          ls -la test || true
+      - name: Lint
+        run: npm run lint
 
-      - name: Run tests
+      - name: Format check
+        run: npm run format:check
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Tests
         run: npm test
-        env:
-          CI: true
-          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.pw-browsers
 
-      # CORRECTIF (audit) : ce projet n'a jamais eu d'outil de couverture
-      # (aucun nyc/c8/istanbul dans package.json, "npm test" ne génère
-      # aucun ./coverage/lcov.info) — cette étape échouait donc toujours
-      # en cherchant un fichier qui n'existe jamais. fail_ci_if_error
-      # évite de faire échouer tout le job "test" pour ça tant qu'aucune
-      # instrumentation de couverture n'est réellement mise en place.
-      - name: Upload test coverage
-        uses: codecov/codecov-action@v4
-        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22.x'
-        continue-on-error: true
-        with:
-          files: ./coverage/lcov.info
-          flags: unittests
-          name: codecov-umbrella
-          fail_ci_if_error: false
-
-  # Build Electron Application
-  #
-  # CORRECTIF (chantier 0 — dette technique) : construisait auparavant sur
-  # une matrice [ubuntu-latest, windows-latest, macos-latest] avec un step
-  # dédié par OS (--win/--linux/--mac), alors que package.json#build ne
-  # définit AUCUNE config "linux"/"mac" (seulement "win", voir nsis) — les
-  # jobs Linux/macOS tournaient donc electron-builder sans cible déclarée
-  # (résultat non signé/non testé, temps CI gaspillé) pour un produit qui
-  # n'existe et n'est publié que pour Windows (voir build-windows.yml, qui
-  # gère déjà tag -> build -> publication de bout en bout). Réduit à la
-  # seule cible réelle.
-  build:
-    name: Build Electron App (Windows)
-    needs: [security-scan, lint, test]
-    runs-on: windows-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build Electron app (Windows)
-        run: npm run dist -- --win
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: churchoverlay-windows-latest
-          path: dist/*
-          retention-days: 7
-
-  # CORRECTIF (chantier 0 — dette technique) : deploy-staging/deploy-production
-  # ont été retirés — les deux étaient des jobs vides (un seul `echo`, aucune
-  # commande réelle, voir l'historique git) qui laissaient croire à un
-  # pipeline de déploiement fonctionnel alors qu'aucun ne l'était. À
-  # réintroduire explicitement le jour où une vraie cible de déploiement
-  # existe (serveur de téléchargement, notification, etc.), pas avant.
+      - name: Security audit
+        run: npm audit

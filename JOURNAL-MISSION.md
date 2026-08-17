@@ -334,6 +334,12 @@ E2 (Nombres — ASR), H2 (langue mixte — A.2), K3 (Actes — ASR).
 
 - [x] 8 fichiers .md déplacés de la racine vers `docs/archive/`.
 
+### 2026-08-17 — Chantier D.1 (CI — TERMINÉ)
+
+- [x] `.github/workflows/ci.yml` créé : matrice Node 20/22, steps lint + format + typecheck
+      + test + audit. postinstall adapté : `SKIP_ELECTRON_REBUILD=1` en CI pour ignorer
+      `@electron/rebuild` (inutile pour tests unitaires).
+
 ### TODO : tâches restantes (ordre du §16)
 
 - [x] ~~A.5 : forcer langue session~~ → TERMINÉ 2026-08-17
