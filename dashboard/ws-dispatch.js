@@ -164,6 +164,7 @@ export function handleMessage(message) {
     // pour le vumètre du dashboard.
     case 'audioDiagnostics':
       updateAudioVumeter(message);
+      updateListeningBar(message);
       break;
     case 'preServiceCheckResult':
       renderPreServiceCheckResult(message);
@@ -454,6 +455,44 @@ export function handleMessage(message) {
         addActivity(`Langue changée par commande vocale : ${state.activeLanguage}`, 'info');
       }
       break;
+  }
+}
+
+// Listening bar — état audio compact en haut de l'espace Direct
+function updateListeningBar(msg) {
+  const dot = document.getElementById('listeningDot');
+  const status = document.getElementById('listeningStatus');
+  const level = document.getElementById('listeningLevel');
+  const confidence = document.getElementById('listeningConfidence');
+  const lang = document.getElementById('listeningLang');
+  if (!dot) return;
+
+  const rms = msg.rmsMean || 0;
+  const clipping = msg.clippingRate || 0;
+  const pct = Math.min(100, Math.round(rms * 300));
+
+  level.style.width = pct + '%';
+  level.style.background = clipping > 0.01 ? '#ef4444' : pct > 60 ? '#f59e0b' : pct > 15 ? '#22c55e' : '#6b7280';
+
+  if (clipping > 0.01) {
+    dot.style.background = '#ef4444';
+    status.textContent = 'Écrêté';
+    status.style.color = '#ef4444';
+  } else if (pct > 15) {
+    dot.style.background = '#22c55e';
+    status.textContent = 'Écoute active';
+    status.style.color = '#22c55e';
+  } else {
+    dot.style.background = '#6b7280';
+    status.textContent = 'En attente…';
+    status.style.color = 'var(--text-dim)';
+  }
+
+  if (confidence && msg.confidence != null) {
+    confidence.textContent = Math.round(msg.confidence * 100) + '%';
+  }
+  if (lang && state && state.activeLanguage) {
+    lang.textContent = state.activeLanguage;
   }
 }
 

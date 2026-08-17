@@ -229,6 +229,17 @@
 
         <!-- Overview Section -->
         <section id="overview" class="section">
+          <!-- Listening Bar — état audio en un coup d'œil -->
+          <div id="listeningBar" class="card" style="margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; display: flex; align-items: center; gap: 0.75rem; font-size: 0.8rem;">
+            <div id="listeningDot" style="width: 8px; height: 8px; border-radius: 50%; background: #6b7280; flex-shrink: 0;" title="État du micro"></div>
+            <span id="listeningStatus" style="color: var(--text-dim);">En attente…</span>
+            <div style="flex: 1; height: 4px; background: #1f2937; border-radius: 2px; overflow: hidden; min-width: 60px;">
+              <div id="listeningLevel" style="height: 100%; width: 0%; background: #6b7280; border-radius: 2px; transition: width 0.15s ease-out, background 0.2s;"></div>
+            </div>
+            <span id="listeningConfidence" style="color: var(--text-dim); font-family: var(--font-mono); min-width: 3em; text-align: right;">—</span>
+            <span id="listeningLang" style="color: var(--text-dim); font-family: var(--font-mono); text-transform: uppercase; min-width: 2em;">FR</span>
+          </div>
+
           <!-- Search & Quick Detect Bar -->
           <div class="search-detector-bar">
             <svg
