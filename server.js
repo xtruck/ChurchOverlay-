@@ -1906,6 +1906,8 @@ const OPERATOR_ACTIONS = new Set([
   'exportHighlights',
   // AJOUT (détails d'affichage média — durée/style)
   'updateMediaItem',
+  // AJOUT (mode confiance — seuil ASR configuré par l'opérateur)
+  'setConfidenceThreshold',
 ]);
 
 // SECURITY: role is derived from WHICH token the client authenticated with
@@ -2124,6 +2126,22 @@ wss.on('connection', (ws, req) => {
     if (sanitized.action === 'hideVerse') {
       broadcast({ action: 'hideVerse' });
       sessionState.clearLastReference();
+      return;
+    }
+
+    // --- Confidence threshold ---
+    if (sanitized.action === 'setConfidenceThreshold') {
+      const val = Number(sanitized.threshold);
+      if (typeof val === 'number' && val >= 0 && val <= 1) {
+        const rounded = Math.round(val * 100) / 100;
+        // Persister dans features.json pour que getTranscriptionConfidenceThreshold() le lit
+        const features = featuresStore.readFeatures();
+        if (!features.audio) features.audio = {};
+        features.audio.transcriptionConfidenceThreshold = rounded > 0 ? rounded : 0;
+        featuresStore.writeFeatures(features);
+        broadcast({ action: 'confidenceThresholdChanged', threshold: rounded });
+        log('Seuil de confiance mis à jour : ' + rounded);
+      }
       return;
     }
 

@@ -33,6 +33,7 @@ const CLIENT_ACTIONS = {
   setTranslation: { category: 'language', description: 'Traduction biblique' },
   translateText: { category: 'language', description: 'Traduction IA en direct' },
   hideTranslation: { category: 'language', description: 'Masquer la traduction' },
+  setConfidenceThreshold: { category: 'transcription', description: 'Seuil de confiance ASR' },
 
   // Thème & affichage
   applyTheme: { category: 'theme', description: 'Appliquer un thème CSS' },
@@ -189,6 +190,7 @@ const SERVER_ACTIONS = {
   offlineBibleStatus: { description: 'État Bible hors-ligne' },
   audioDiagnostics: { description: 'Diagnostics audio' },
   dedupSuppressed: { description: 'Verset supprimé par dédoublonnage' },
+  confidenceThresholdChanged: { description: 'Seuil de confiance mis à jour' },
   error: { description: 'Message d\'erreur' },
 };
 

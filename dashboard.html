@@ -964,6 +964,31 @@
             </div>
           </div>
 
+          <!-- Mode confiance — seuil ASR + toggle indicateurs -->
+          <div class="card" data-group="diffusion" style="margin-bottom: 1.5rem">
+            <div class="card-header">
+              <span class="card-title">Mode Confiance</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+              <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <label for="confidenceThreshold" style="font-size: 0.8rem; min-width: 120px;">Seuil ASR</label>
+                <input type="range" id="confidenceThreshold" min="0" max="100" value="30" step="5"
+                  style="flex: 1;" oninput="document.getElementById('confidenceThresholdValue').textContent = this.value + '%'; setConfidenceThreshold(this.value / 100);" />
+                <span id="confidenceThresholdValue" style="font-family: var(--font-mono); font-size: 0.8rem; min-width: 3em; text-align: right;">30%</span>
+              </div>
+              <div style="font-size: 0.75rem; color: var(--text-dim);">
+                Segments ASR en dessous de ce seuil sont rejetés automatiquement.
+              </div>
+              <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <label for="confidenceToggle" style="font-size: 0.8rem; min-width: 120px;">Afficher badges</label>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="confidenceToggle" checked onchange="toggleConfidenceBadges(this.checked);">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+
           <div class="card" data-group="diffusion">
             <div class="card-header">
               <span class="card-title">Configuration de la Langue de Projection</span>

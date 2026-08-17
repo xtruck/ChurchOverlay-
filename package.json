@@ -85,6 +85,7 @@
       "dashboard/features/camera-panel.js",
       "dashboard/features/ui-effects.js",
       "dashboard/features/perf-pill.js",
+      "dashboard/features/confidence-mode.js",
       "dashboard/features/companion-link.js",
       "dashboard/features/verse-session-display.js",
       "dashboard/features/mood-theme.js",
