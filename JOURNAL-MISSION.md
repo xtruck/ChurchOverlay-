@@ -375,8 +375,16 @@ E2 (Nombres — ASR), H2 (langue mixte — A.2), K3 (Actes — ASR).
 - [x] ~~D.6 : mutualiser vocal triggers~~ → DÉJÀ IMPLÉMENTÉ
 - [x] ~~D.2 partiel : phone-camera-routes.js~~ → TERMINÉ 2026-08-17
 - [ ] D.2 restant : voice-command-executor, audio-pipeline, transcript-processor, ws-handlers, http-routes
-- [ ] D.7 : dédup contextuelle visible
-- [x] ~~Step 1 : registre d'actions + parité CI~~ → TERMINÉ 2026-08-17 (action-registry.js, 221 assertions)
-- [ ] Steps 2-14 : refonte interface (trois espaces DIRECT/PRÉPARATION/RÉGIE)
-- [ ] PARTIE 2 : refonte interface (trois espaces)
+- [x] ~~D.7 : dédup contextuelle visible~~ → TERMINÉ 2026-08-17 (broadcast dedupSuppressed + action registry)
+- [x] ~~Step 1 : registre d'actions + parité CI~~ → TERMINÉ 2026-08-17 (action-registry.js, 224 assertions)
+- [x] ~~Step 2 : trois espaces DIRECT/PRÉPARATION/RÉGIE~~ → TERMINÉ 2026-08-17 (sidebar + bottom tabs)
+- [x] ~~Step 3 : bande d'écoute~~ → TERMINÉ 2026-08-17 (listening bar + indicateurs audio)
+- [x] ~~Step 4 : mode confiance~~ → TERMINÉ 2026-08-17 (seuil ASR slider + toggle badges)
+- [x] ~~Step 5 : palette Ctrl+K~~ → TERMINÉ 2026-08-17 (33 commandes, recherche floue)
+- [x] ~~Step 6 : mur média~~ → TERMINÉ 2026-08-17 (grille visuelle PRÉPARATION)
+- [x] ~~Step 7 : écran noir~~ → TERMINÉ 2026-08-17 (bouton ⬛ + z-index:200)
+- [x] ~~Step 8 : aperçu/programme~~ → TERMINÉ 2026-08-17 (dual view toggle)
+- [ ] Step 9 : mode formation
+- [ ] Steps 10-14 : polish final
+- [ ] PARTIE 2 : refonte interface (trois espaces) — EN COURS, ~60% fait
 - [ ] PARTIE 3 : fonctionnalités produit
