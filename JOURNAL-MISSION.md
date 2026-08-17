@@ -340,6 +340,22 @@ E2 (Nombres — ASR), H2 (langue mixte — A.2), K3 (Actes — ASR).
       + test + audit. postinstall adapté : `SKIP_ELECTRON_REBUILD=1` en CI pour ignorer
       `@electron/rebuild` (inutile pour tests unitaires).
 
+### 2026-08-17 — Chantier D.2 (découpage server.js — PARTIEL)
+
+- [x] **phone-camera-routes.js** extrait (~130 lignes) : routes HTTP caméra téléphone,
+      état phoneCameraFrames, cleanupPhoneCameraStateForItem. Dépendances injectées via
+      contexte. Tests EXIT_CODE=0.
+- [ ] voice-command-executor.js — REPORTÉ (trop de dépendances scope server.js)
+- [ ] audio-pipeline.js — REPORTÉ
+- [ ] transcript-processor.js — REPORTÉ
+- [ ] ws-handlers.js — REPORTÉ
+- [ ] http-routes.js — REPORTÉ
+
+### 2026-08-17 — D.3 et D.6 — DÉJÀ IMPLÉMENTÉS
+
+- [x] D.3 : overlay.html n'a plus aucun `<script>` inline — overlay.js contient tout (1023 lignes).
+- [x] D.6 : voice-trigger-matcher.js partagé entre media-library.js et song-library.js, 11 tests.
+
 ### TODO : tâches restantes (ordre du §16)
 
 - [x] ~~A.5 : forcer langue session~~ → TERMINÉ 2026-08-17
