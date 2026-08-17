@@ -22,8 +22,8 @@ console.log('[TEST] Test 1: valeurs par défaut...');
 assert.strictEqual(sessionState.getDisplayLanguage(), 'fr', 'displayLanguage par défaut : fr');
 assert.strictEqual(
   sessionState.getTranscriptionLanguage(),
-  null,
-  'transcriptionLanguage par défaut : null (pas de préférence de session)'
+  'fr',
+  'transcriptionLanguage par défaut : fr (A.5 — langue de session forçée)'
 );
 console.log('[TEST] ✓ Valeurs par défaut correctes et indépendantes\n');
 

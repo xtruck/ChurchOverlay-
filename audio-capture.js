@@ -147,6 +147,10 @@ const STATE = {
     onPartialTranscript: null, // (text, meta, tracker)
     onFinalTranscript: null, // (text, meta, tracker)
     onAsrFallback: null, // ({ reason }) — la session streaming a échoué, repli sur le pipeline segment/Groq en cours de session
+    // AJOUT (A.1 — gain micro) : diagnostics audio temps réel (RMS moyen,
+    // crête, taux d'écrêtage) envoyés au dashboard pour le vumètre et
+    // l'assistant de calibrage. Émis toutes les 250 ms pendant la capture.
+    onAudioDiagnostics: null, // (diagnostics) — appelé en continu
   },
   // AJOUT (VAD streaming) — état de la détection anticipée de fin de phrase,
   // indépendant de STATE.audioBuffer (qui accumule les octets du segment en
@@ -188,6 +192,21 @@ const STATE = {
   // segmentHasSpeech) et refermé/journalisé une fois le résultat final de
   // l'ASR reçu (voir markVadOnset/flushSegment/onFinal du streaming).
   utteranceTracker: null,
+
+  // AJOUT (A.1 — gain micro) : suivi continu du niveau audio pour le
+  // vumètre et l'assistant de calibrage. Réinitialisé à chaque démarrage
+  // de capture, mis à jour à chaque trame VAD (100 ms).
+  audioDiagnostics: {
+    rmsSum: 0,
+    rmsCount: 0,
+    rmsMean: 0,
+    peak: 0,
+    clippingFrames: 0,
+    totalFrames: 0,
+    level: 'unknown', // 'silence' | 'low' | 'good' | 'hot' | 'clipping'
+    updatedAt: 0,
+  },
+  audioDiagnosticsTimer: null,
 };
 
 /**
@@ -308,6 +327,10 @@ function startBrowserCapture(options = {}) {
   STATE.deepgramSession = null;
   STATE.deepgramStreamingActive = false;
   STATE.utteranceTracker = null;
+  // AJOUT (A.1 — gain micro) : réinitialise et lance l'émission continue des
+  // diagnostics de niveau audio pour le vumètre du dashboard.
+  resetAudioDiagnostics();
+  startDiagnosticsEmission();
   // AJOUT (finalisation locale par silence — voir finalizeStreamingUtteranceLocally) :
   // dernier texte partiel reçu de Deepgram pour l'énoncé EN COURS, promu en
   // "final" dès que le VAD local (Silero ou repli RMS) détecte un silence de
@@ -342,6 +365,115 @@ function startBrowserCapture(options = {}) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// A.1 — Diagnostics audio : suivi continu du niveau micro
+// ---------------------------------------------------------------------------
+
+/**
+ * Classification du niveau audio en une zone du vumètre.
+ * Seuils calibrés pour du PCM16LE normalisé (0-1) :
+ *   - silence  : RMS < 0.005 (< -46 dBFS) — rien de capté
+ *   - low      : RMS < 0.015 (< -36 dBFS) — trop faible pour la transcription
+ *   - good     : RMS 0.015–0.15 (-36 à -16 dBFS) — plage optimale voix
+ *   - hot      : RMS > 0.15 (> -16 dBFS) — fort, risque de saturation
+ *   - clipping : >0.5% d'écrêtage — le signal est déformé
+ */
+function classifyAudioLevel(rmsMean, clippingRate) {
+  if (clippingRate > 0.005) return 'clipping';
+  if (rmsMean < 0.005) return 'silence';
+  if (rmsMean < 0.015) return 'low';
+  if (rmsMean > 0.15) return 'hot';
+  return 'good';
+}
+
+/**
+ * Réinitialise les compteurs de diagnostics (appelé au démarrage de la
+ * capture et lors du calibrage).
+ */
+function resetAudioDiagnostics() {
+  STATE.audioDiagnostics = {
+    rmsSum: 0,
+    rmsCount: 0,
+    rmsMean: 0,
+    peak: 0,
+    clippingFrames: 0,
+    totalFrames: 0,
+    level: 'unknown',
+    updatedAt: 0,
+  };
+}
+
+/**
+ * Met à jour les diagnostics avec une nouvelle trame VAD (100 ms).
+ * Appelée par processStreamingFrame et processSileroWindow pour assurer
+ * un suivi continu, que le VAD soit RMS ou Silero.
+ * @param {Buffer} frame - trame PCM16LE de VAD_FRAME_MS
+ */
+function updateAudioDiagnostics(frame) {
+  const rms = computeRms(frame);
+  const diag = STATE.audioDiagnostics;
+  diag.rmsSum += rms;
+  diag.rmsCount += 1;
+  diag.rmsMean = diag.rmsSum / diag.rmsCount;
+  if (rms > diag.peak) diag.peak = rms;
+  // Écrêtage : un échantillon int16 dont la valeur absolue dépasse 32700
+  // (≈0.998 × 32768) est considéré comme écrêté.
+  const clipCount = countClippingSamples(frame);
+  diag.clippingFrames += clipCount > 0 ? 1 : 0;
+  diag.totalFrames += 1;
+  const clippingRate = diag.totalFrames > 0 ? diag.clippingFrames / diag.totalFrames : 0;
+  diag.level = classifyAudioLevel(diag.rmsMean, clippingRate);
+  diag.updatedAt = Date.now();
+}
+
+/**
+ * Compte le nombre d'échantillons écrêtés dans une trame PCM16LE.
+ * Un échantillon est écrêté si sa valeur absolue dépasse 32700 (~0.998 du max).
+ * @param {Buffer} frame - PCM16LE
+ * @returns {number} nombre d'échantillons écrêtés
+ */
+function countClippingSamples(frame) {
+  let count = 0;
+  const clipThreshold = 32700;
+  for (let i = 0; i + 1 < frame.length; i += 2) {
+    const sample = Math.abs(frame.readInt16LE(i));
+    if (sample >= clipThreshold) count++;
+  }
+  return count;
+}
+
+/**
+ * Démarre l'émission périodique des diagnostics audio (toutes les 250 ms).
+ * Appelée au démarrage de la capture, arrêtée à l'arrêt.
+ */
+function startDiagnosticsEmission() {
+  if (STATE.audioDiagnosticsTimer) clearInterval(STATE.audioDiagnosticsTimer);
+  STATE.audioDiagnosticsTimer = setInterval(() => {
+    if (!STATE.isRecording) return;
+    if (STATE.callbacks.onAudioDiagnostics) {
+      const diag = STATE.audioDiagnostics;
+      const clippingRate = diag.totalFrames > 0 ? diag.clippingFrames / diag.totalFrames : 0;
+      STATE.callbacks.onAudioDiagnostics({
+        rmsMean: diag.rmsMean,
+        peak: diag.peak,
+        clippingRate,
+        level: diag.level,
+        totalFrames: diag.totalFrames,
+      });
+    }
+  }, 250);
+}
+
+/**
+ * Arrête l'émission périodique des diagnostics.
+ */
+function stopDiagnosticsEmission() {
+  if (STATE.audioDiagnosticsTimer) {
+    clearInterval(STATE.audioDiagnosticsTimer);
+    STATE.audioDiagnosticsTimer = null;
+  }
+}
+
 /**
  * Ouvre la session streaming Deepgram pour la capture en cours (asynchrone,
  * ne bloque jamais startBrowserCapture — même logique que initVadProvider).
@@ -369,7 +501,10 @@ function startDeepgramStreamingSession(config) {
   // pendant qu'une session streaming est déjà ouverte ne prend donc effet
   // qu'à la PROCHAINE ouverture de session (prochain redémarrage de
   // capture), jamais rétroactivement sur la connexion en cours.
-  const transcriptionLanguage = sessionState.getTranscriptionLanguage();
+  const rawLang = sessionState.getTranscriptionLanguage();
+  // A.5 — 'multi' n'est pas un code de langue valide pour Deepgram ; converti en
+  // null pour activer la détection automatique (utile en mode bilingue).
+  const transcriptionLanguage = rawLang === 'multi' ? null : rawLang;
 
   let session;
   try {
@@ -633,6 +768,9 @@ function analyzeVoiceActivity(segmentBuffer, config) {
  */
 function processStreamingFrame(frame, config) {
   const rms = computeRms(frame);
+  // AJOUT (A.1 — gain micro) : met à jour les diagnostics de niveau à
+  // chaque trame VAD (100 ms), que le fournisseur soit RMS ou Silero.
+  updateAudioDiagnostics(frame);
   const adaptiveThreshold = Math.min(
     config.maxAdaptiveThreshold,
     Math.max(config.minAdaptiveThreshold, STATE.noiseFloor * config.noiseMarginMultiplier)
@@ -1156,6 +1294,9 @@ function stopRecording() {
   STATE.deepgramSession = null;
   STATE.deepgramStreamingActive = false;
   STATE.utteranceTracker = null;
+  // AJOUT (A.1 — gain micro) : arrête l'émission continue des diagnostics
+  // de niveau audio quand la capture s'arrête.
+  stopDiagnosticsEmission();
   console.log('[audio-capture] Capture arrêtée.');
   cleanupTempFiles({ force: true });
   return Promise.resolve();
@@ -1258,4 +1399,8 @@ module.exports = {
   // AJOUT (Deepgram streaming) — diagnostic/tests.
   getAsrProvider: () => STATE.asrProvider,
   isDeepgramStreamingActive: () => STATE.deepgramStreamingActive,
+  // AJOUT (A.1 — gain micro, diagnostics temps réel) : expose l'état du
+  // suivi de niveau audio pour le vumètre et le calibrage.
+  getAudioDiagnostics: () => ({ ...STATE.audioDiagnostics }),
+  resetAudioDiagnostics: () => resetAudioDiagnostics(),
 };

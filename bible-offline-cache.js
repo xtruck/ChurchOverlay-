@@ -215,6 +215,27 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Retourne le numéro du dernier verset d'un chapitre donné, en se basant
+ * sur les données téléchargées de la base hors-ligne. Renvoie null si la
+ * base n'est pas encore chargée ou si le livre/chapitre n'existe pas.
+ * Utilisé par server.js pour rejeter un verset impossible (ex. « Ésaïe
+ * 53:17 » — Ésaïe 53 n'a que 12 versets).
+ * @param {string} book
+ * @param {number} chapter
+ * @returns {number|null}
+ */
+function getMaxVerse(book, chapter) {
+  if (!loadedData || !loadedData.books) return null;
+  const chapterVerses = loadedData.books[book] && loadedData.books[book][chapter];
+  if (!chapterVerses || typeof chapterVerses !== 'object') return null;
+  const keys = Object.keys(chapterVerses)
+    .map(Number)
+    .filter((n) => !Number.isNaN(n));
+  if (keys.length === 0) return null;
+  return Math.max(...keys);
+}
+
 function parseVerseContent(contentItem) {
   return (Array.isArray(contentItem) ? contentItem : [])
     .map((part) => (typeof part === 'string' ? part : part.text || ''))
@@ -345,4 +366,5 @@ module.exports = {
   // verset 4 » — 2 Timothée n'a que 4 chapitres), signe d'une contamination
   // inter-énoncés (résidu du fragment précédent fusionné par erreur).
   CHAPTER_COUNTS,
+  getMaxVerse,
 };

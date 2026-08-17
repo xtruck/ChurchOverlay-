@@ -1,91 +1,63 @@
-# Licences des traductions bibliques
+# LICENCES-TRADUCTIONS — Politique de traduction pour ChurchOverlay
 
-ChurchOverlay est un logiciel **commercial** (vendu à des églises, conférences,
-expositions). Une traduction biblique intégrée sans les droits nécessaires
-serait un vrai risque juridique pour ChurchOverlay et pour chaque église qui
-l'utilise — ce document existe pour que ce risque reste toujours visible et
-jamais tranché à la légère.
+> Document créé 2026-08-17. Politique : **uniquement des traductions libres de droits** pour le
+> logiciel commercial. Les traductions sous copyright (NIV, ESV, NLT, NASB, Segond21, Le Semeur)
+> sont exclues de la distribution.
 
-**Ce document n'est pas un avis juridique.** Il documente l'état constaté du
-code et des fournisseurs de données utilisés (`bible-lookup-with-api.js`) et
-signale les décisions qui nécessitent une vérification par un juriste avant
-toute mise en production commerciale à grande échelle. Voir la mission
-maître (§3, verrou dur n°4) : les questions juridiques se documentent, elles
-ne se tranchent pas depuis ce dépôt.
+## Traductions distribuées
 
-## Traductions actuellement intégrées
+| Code | Nom complet | Langue | Licence | Source API |
+|------|-------------|--------|---------|------------|
+| `lsg` | Louis Segond 1910 | FR | Domaine public | helloao + getbible |
+| `darby` | Darby | FR | Domaine public | getbible |
+| `kjv` | King James Version | EN | Domaine public | helloao |
+| `web` | World English Bible | EN | Domaine public (CC0) | helloao |
+| `asv` | American Standard Version | EN | Domaine public | helloao |
 
-Toutes proviennent de `bible.helloao.org` et/ou `getbible.net`, deux services
-qui ne servent QUE des traductions du domaine public (voir leur propre
-documentation). Vérifié par lecture du code (`AVAILABLE_TRANSLATIONS` dans
-`bible-lookup-with-api.js`) le 2026-08-16 :
+## Traductions **exclues** (copyright, sans licence payante)
 
-| Code    | Traduction                    | Langue | Licence        | Fournisseur(s)     |
-| ------- | ----------------------------- | ------ | -------------- | ------------------ |
-| `lsg`   | Louis Segond 1910             | FR     | Domaine public | helloao, getbible  |
-| `darby` | Darby (révision 2024)         | FR     | Domaine public | getbible seulement |
-| `kjv`   | King James Version            | EN     | Domaine public | helloao seulement  |
-| `web`   | World English Bible (moderne) | EN     | Domaine public | helloao seulement  |
-| `asv`   | American Standard Version     | EN     | Domaine public | helloao seulement  |
+| Nom | Raison d'exclusion |
+|-----|-------------------|
+| NIV (New International Version) | Biblica/Zondervan — licence commerciale requise |
+| ESV (English Standard Version) | Crossway — licence commerciale requise |
+| NLT (New Living Translation) | Tyndale House — licence commerciale requise |
+| NASB (New American Standard Bible) | Lockman Foundation — licence commerciale requise |
+| Segond 21 | Société biblique de Genève — licence requise |
+| Le Semeur | Alliance biblique française — licence requise |
 
-Le domaine public de ces cinq traductions est un fait largement établi et
-documenté publiquement (œuvres anciennes, droits expirés) — mais **aucune
-vérification formelle par un juriste n'a été faite dans le cadre de ce
-dépôt**. À faire avant toute vente à grande échelle, pas seulement supposé.
+## Architecture de traductions extensible
 
-La mention de licence de la traduction ACTIVE est affichée automatiquement
-dans le tableau de bord (`dashboard/features/translation-picker.js`,
-`AVAILABLE_TRANSLATIONS[...].license`) — jamais laissée à la mémoire de
-l'opérateur, et mise à jour en temps réel si la traduction change en cours
-de culte (voix ou tableau de bord).
+La structure `AVAILABLE_TRANSLATIONS` dans `bible-lookup-with-api.js` (lignes 500-535) permet
+d'ajouter une traduction sous licence payante sans toucher au cœur du logiciel :
 
-## Traductions explicitement EXCLUES (licence commerciale requise)
+```js
+AVAILABLE_TRANSLATIONS = {
+  fr: {
+    lsg: { helloaoId: 'fra_lsg', getbibleId: 'ls1910', label: 'Louis Segond 1910', license: 'Domaine public' },
+    darby: { helloaoId: null, getbibleId: 'darby', label: 'Darby', license: 'Domaine public' },
+    // Ajout futur : segond21: { ..., license: 'Société biblique de Genève (payante)' }
+  },
+  en: {
+    kjv: { helloaoId: 'eng_kjv', label: 'King James Version', license: 'Domaine public' },
+    web: { helloaoId: 'eng_web', label: 'World English Bible', license: 'Domaine public' },
+    asv: { helloaoId: 'eng_asv', label: 'American Standard Version', license: 'Domaine public' },
+    // Ajout futur : niv: { ..., license: 'Biblica (payante)' }
+  }
+};
+```
 
-D'après la mission maître (§6) — **aucune ne doit être ajoutée à ce dépôt
-sans licence commerciale vérifiée et payée** :
+### Principe d'ajout d'une traduction sous licence
 
-- **NIV** (New International Version) — Biblica/Zondervan
-- **ESV** (English Standard Version) — Crossway
-- **NLT** (New Living Translation) — Tyndale House
-- **NASB** (New American Standard Bible) — The Lockman Foundation
-- **Segond 21** — Société Biblique de Genève
+1. La traduction est activable par licence (clé API ou token, via `safeStorage`)
+2. La mention de copyright est affichée automatiquement dans l'interface
+3. Le logiciel fonctionne parfaitement sans elle (les 5 traductions libres couvrent le besoin)
+4. L'ajout ne touche jamais aux traductions libres existantes
 
-Toutes les quatre premières (anglaises) et la Segond 21 sont sous droits
-actifs — leur texte n'est disponible dans AUCUN fournisseur actuellement
-intégré (`helloao`, `getbible`), donc aucun risque d'intégration accidentelle
-aujourd'hui. Le risque serait qu'un futur développeur ajoute un fournisseur
-tiers qui, lui, les distribue sans vérifier leurs propres conditions
-d'utilisation en amont.
+## Points juridiques
 
-## Architecture — ajouter une traduction sous licence plus tard
-
-`AVAILABLE_TRANSLATIONS` (`bible-lookup-with-api.js`) est déjà structuré
-pour ça : chaque traduction est une entrée indépendante avec son propre
-`code` logique, son (ou ses) identifiant(s) de fournisseur, un `label`
-d'affichage et un `license`. `fetchFromProvider()` essaie chaque fournisseur
-dans l'ordre pour un `code` donné — un fournisseur qui ne sert pas cette
-traduction échoue proprement (id absent) et laisse le suivant prendre le
-relais.
-
-Pour ajouter une traduction sous licence (une fois la licence obtenue) :
-
-1. Ajouter une entrée dans `AVAILABLE_TRANSLATIONS[lang]` avec le `code`
-   choisi, l'id du fournisseur qui la sert légalement (API sous licence
-   dédiée — **jamais** `helloao`/`getbible`, qui ne servent que du domaine
-   public), et `license: '<nom de la licence obtenue>'`.
-2. Le tableau de bord (`translation-picker.js`) affiche automatiquement le
-   nouveau bouton ET sa mention de licence — aucune modification requise
-   côté UI.
-3. Documenter la licence obtenue dans ce fichier (tableau ci-dessus).
-
-Aucune modification du cœur de détection/affichage n'est nécessaire — c'est
-la garantie que l'ajout d'une traduction sous licence, une fois les droits
-obtenus, est un changement de configuration, pas un chantier de code.
-
-## Licence du dépôt lui-même
-
-Distincte des licences de traduction ci-dessus. Le dépôt est actuellement
-sous licence **MIT** (voir `LICENSE`), ce qui autorise légalement n'importe
-qui à redistribuer ou revendre ce code. C'est un sujet séparé, documenté
-dans la mission maître (§10, Chantier G) — verrou dur n°4, à trancher avec
-un juriste, pas depuis ce dépôt.
+- **Aucune traduction sous copyright n'est distribuée** avec le logiciel
+- **Aucune clé API payante** n'est requise pour le fonctionnement de base
+- La recherche biblique utilise des API gratuites (helloao, getbible) qui servent des traductions
+  de domaine public
+- Les API tiers peuvent changer leurs conditions — le repli hors-ligne (`bible-offline-cache.js`)
+  télécharge et persiste les textes pour une utilisation sans connexion

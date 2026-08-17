@@ -102,6 +102,7 @@ module.exports = {
   // Also re-export original functions for compatibility
   detect: detector.detect,
   detectExact: detector.detectExact,
+  detectExactEn: detectorEn ? detectorEn.detectExact : null,
   normalize: detector.normalize,
   numberWordsToDigits: detector.numberWordsToDigits,
   detectTranslationSwitch: detector.detectTranslationSwitch,

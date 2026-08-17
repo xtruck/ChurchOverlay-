@@ -76,7 +76,11 @@ async function transcribeSegment(segmentFile, contextHint, signal) {
   // cas, groq-wrapper.js retombe sur TRANSCRIPTION_LANGUAGE (.env) ou la
   // détection automatique Whisper — comportement actuel intégralement
   // préservé.
-  const language = sessionState.getTranscriptionLanguage();
+  const rawLanguage = sessionState.getTranscriptionLanguage();
+  // A.5 — 'multi' est un indicateur interne (mode bilingue) qui ne
+  // correspond à aucun code de langue pour les fournisseurs ASR. Converti en
+  // null pour que Groq/Deepgram activent leur propre détection automatique.
+  const language = rawLanguage === 'multi' ? null : rawLanguage;
   // AJOUT (phase de vérification runtime — voir le rapport livré) : trace
   // grep-able, par segment, du chemin RÉELLEMENT emprunté (batch WAV, pas
   // streaming — voir audio-capture.js pour le tag [ASR] équivalent côté

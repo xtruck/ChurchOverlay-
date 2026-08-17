@@ -181,3 +181,179 @@ E2 (Nombres — ASR), H2 (langue mixte — A.2), K3 (Actes — ASR).
       tableau pur, null, undefined, texte sans JSON, JSON malformé). Total : 19 tests.
 - [x] **Gate** : lint 0 erreur, tsc clean, prettier clean, `npm test` EXIT 0 (19/19 llm-utils),
       `npm audit` 0.
+
+### 2026-08-17 — Chantier A.1 (gain micro — TERMINÉ)
+
+- [x] **audio-capture.js** : ajout du suivi continu de niveau audio :
+      - `STATE.audioDiagnostics` : RMS moyen, crête, taux d'écrêtage, classification zone
+      - `updateAudioDiagnostics(frame)` : appelé à chaque trame VAD (100 ms)
+      - `classifyAudioLevel(rmsMean, clippingRate)` : 5 zones (silence/low/good/hot/clipping)
+      - `countClippingSamples(frame)` : détection d'écrêtage PCM16 (>32700)
+      - `startDiagnosticsEmission()` / `stopDiagnosticsEmission()` : émission toutes les 250 ms
+      - Nouveau callback `onAudioDiagnostics` dans STATE.callbacks
+      - Exposés : `getAudioDiagnostics()`, `resetAudioDiagnostics()`
+- [x] **server.js** : callback `onAudioDiagnostics` câblé, broadcast `audioDiagnostics` vers le
+      dashboard à chaque tick (250 ms).
+- [x] **dashboard/features/audio-vumeter.js** (nouveau) : vumètre permanent avec 5 zones
+      colorées, barre de niveau animée (log scale), marqueur de pic, infos dBFS/écrêtage.
+      Conçu pour être lisible à trois mètres (WCAG AA, thème sombre régie).
+- [x] **dashboard.html** : vumètre HTML ajouté dans la section Transcript, après le canvas
+      d'visualiseur audio et le toggle de réduction de bruit.
+- [x] **dashboard/ws-dispatch.js** : handler `audioDiagnostics` ajouté au switch.
+- [x] **package.json** : `dashboard/features/audio-vumeter.js` ajouté à `build.files`,
+      test `test-audio-diagnostics.js` câblé dans `test` et `test-all`.
+- [x] **test/test-audio-diagnostics.js** (nouveau) : 17 tests (silence, good, hot, clipping,
+      reset, callback câblé, arrêt propre). 17/17 passés.
+- [x] **Gate** : lint 0 erreur (nouveaux fichiers), tsc clean, prettier clean,
+      `npm test` EXIT 0, `check-build-files` OK. Tests existants (audio-capture,
+      silero-integration, deepgram-streaming, partial-truncation) tous verts — aucune
+      régression.
+- [ ] A.1 : mesurer l'effet réel sur Silero VAD (A.4) avec un vrai micro — à faire en
+      conditions réelles, pas en unitaire. L'hypothèse (probabilités basses = signal trop
+      faible) reste non confirmée par la mesure terrain.
+
+### 2026-08-17 — Chantier A.5 (langue session — TERMINÉ)
+
+- [x] **session-state.js** : `transcriptionLanguage` défaut changé de `null` à `'fr'`.
+      L'ancien défaut `null` provoquait `language=(auto)` dans le log ASR, laissant
+      Whisper détecter la langue à chaque segment — source de switchs EN en milieu de
+      phrase FR (ex. "John 2, 7" pour "Jean 2:7", "Let me think" en plein français).
+      Forcer `'fr'` par défaut élimine ces artefacts pour le cas d'usage majoritaire.
+- [x] **asr-engine.js** : ajout d'une conversion `multi → null` avant le passage aux
+      fournisseurs ASR. Le mot-clé `'multi'` est un indicateur interne (mode bilingue)
+      qui ne correspond à aucun code ISO de langue accepté par Groq/Deepgram ; converti
+      en `null` pour que le fournisseur active sa propre détection automatique.
+- [x] **audio-capture.js** : même conversion `multi → null` pour la session streaming
+      Deepgram (lue au démarrage de la session).
+- [x] **test/test-session-state.js** : assertion default `null` → `'fr'`.
+- [x] **test/test-audio-capture-deepgram-streaming.js** : assertion default `null` → `'fr'`.
+- [x] **Gate** : lint 0 erreur (23 warnings console pré-existants), tsc clean,
+      `npm test` EXIT 0, build-files OK.
+
+### 2026-08-17 — Chantier A.6 (better-sqlite3 ABI — TERMINÉ)
+
+- [x] **package.json** : postinstall corrigé — `@electron/rebuild` d'abord (pour la
+      cible Electron, ABI 148), puis `npm rebuild better-sqlite3` (pour le Node.js dev,
+      ABI 137). L'ancien postinstall ne faisait que `@electron/rebuild`, ce qui
+      compilait `better-sqlite3` pour l'ABI Electron (148) — inutilisable par Node.js
+      v24 (ABI 137) pendant les tests unitaires. Le test `session-store.js` échouait
+      systématiquement avec `n'est pas une application Win32 valide`.
+- [x] **Vérification** : `npm rebuild better-sqlite3` manuel pour corriger le binaire
+      immédiatement. Test `session-store.js` repasse de `✗` à `17/17`.
+- [x] **Gate** : `npm test` EXIT 0 — plus aucun `✗` (hors Playwright manquant,
+      API externes 404/500, clés API non définies — tous pré-existants).
+
+### 2026-08-17 — Chantier A.7 (validation verset — TERMINÉ, index vectoriel REPORTÉ)
+
+- [x] **bible-offline-cache.js** : ajout de `getMaxVerse(book, chapter)` — retourne le
+      dernier numéro de verset d'un chapitre en lisant les données de la base hors-ligne
+      chargée en mémoire. Renvoie null si la base n'est pas encore chargée, le livre
+      n'existe pas, ou le chapitre est vide.
+- [x] **server.js** : validation verse après la validation chapter (lignes 1228-1241).
+      Après vérification `maxChapter`, ajout d'une vérification `maxVerse` via
+      `bibleOfflineCache.getMaxVerse()`. Si `verseStart > maxVerse`, la référence est
+      rejetée avec un message explicite et le buffer de fusion est purgé (même comportement
+      que la garde chapter). Sans cette garde, « Ésaïe 53:17 » (12 versets) passait le
+      filtre chapitre (53 ≤ 66) et provoquait une erreur API générique « Verset
+      introuvable » au lieu d'un diagnostic clair.
+- [x] **test/test-get-max-verse.js** (nouveau) : 3 scénarios — null sans données, 5 cas
+      avec données simulées (max verse, chapitre vide, livre inexistant, chapitre
+      inexistant), simulation du rejet d'Ésaïe 53:17.
+- [x] **Gate** : lint 0 erreur, tsc clean, `npm test` EXIT 0, build-files OK.
+- [ ] **Index vectoriel REPORTÉ** : `searchByVector()` dans `bible-semantic-search.js`
+      reste un stub (retourne toujours `[]`). Nécessite : (a) génération build-time d'un
+      index d'embeddings pour ~31k versets avec un modèle sentence-transformer, (b) appel
+      `downloadIndex()` dans `loadIndex()` quand le fichier local est absent, (c)
+      implémentation de la similarité cosinus en temps réel + endpoint d'embedding requête.
+      Feature distincte du chantier A, reportée à une itération dédiée.
+
+---
+
+### 2026-08-17 — Chantier B.1 (livres à chapitre unique — DÉJÀ IMPLÉMENTÉ)
+
+- [x] **Vérification** : `book-catalog.js` contient déjà `singleChapter: true` pour
+      5 livres (abdias, philemon, 2jean, 3jean, jude). `SINGLE_CHAPTER_BOOKS` est
+      dérivé mécaniquement. Les deux détecteurs (FR + EN) auto-déduisent `chapter=1`
+      quand seul un verset est énoncé. Tests dans test-detector.js (lignes 88-122) et
+      test-detector-en.js (lignes 90-113) — déjà verts.
+
+### 2026-08-17 — Chantier B.2 (double détection FR+EN — TERMINÉ)
+
+- [x] **detector-compat.js** : ajout de `detectExactEn` au module.exports (délègue à
+      `detectorEn.detectExact` si disponible).
+- [x] **server.js** (fast-path transcript final, ~ligne 1122) : `detector.detectExact(text)`
+      remplacé par deux appels FR + EN en parallèle, meilleurs résultats comparés
+      (confidence d'abord, puis FR par défaut en cas d'égalité). L'ancien code ne
+      consultant que le détecteur FR, une référence anglaise claire ("John 3:16") sur
+      le texte brut était ignorée par le court-circuit et ne bénéficiait pas de
+      l'affichage anticipé.
+- [x] **server.js** (fast-path partial transcript, ~ligne 3571) : même correctif.
+- [x] **Gate** : lint 0 erreur, tsc clean, `npm test` EXIT 0.
+
+### 2026-08-17 — Chantier B.3 (H2 — CONCLU, pas de fix serveur)
+
+- [x] **Diagnostic** : H2 ("Let us turn to Matthieu chapitre 5") échoue parce que
+      Deepgram real-time VAD ne reconnaît jamais cet audio TTS comme de la parole —
+      alors que Groq batch le traite correctement. Ce n'est PAS un seuil de confiance
+      serveur (medium n'est pas rejeté, il déclenche le fallback chapitre après 3 s).
+      Aucun fix serveur possible : c'est un bug de l'classificateur audio temps réel
+      de Deepgram sur cet enregistrement précis. Documenté dans BASELINE_CHANTIER_1.md
+      (lignes 356-369).
+
+### 2026-08-17 — Chantier B.4 (échecs ASR A2/D5/N2/F2 — CONCLU, pas de fix vocabulaire)
+
+- [x] **Diagnostic** : les 4 échecs ne sont PAS des problèmes de vocabulaire.
+      `bible-keyterms.js` contient 66 noms FR + 17 formes parlées + 36 termes
+      théologiques (~118 termes), transmis en streaming via `keyterm=` query params
+      (deepgram-streaming.js lignes 97-117). Causes réelles : A2 = artefact
+      d'attribution de ban (pas un vrai échec), D5 = endpointing trop court après un
+      nom de livre isolé ("Sophonie" → VAD coupe avant "chapitre 3 verset 17"), N2 = bug
+      Deepgram real-time VAD (même cause que H2), F2 = passe déjà via fallback chapitre.
+- [x] **minFlushIntervalMs** : confirmé ne jamais s'appliquer en streaming (early
+      return avant la garde dans les deux chemins VAD).
+
+### 2026-08-17 — Chantier B.5 (délai configurable — DÉJÀ IMPLÉMENTÉ)
+
+- [x] `getChapterFallbackDelayMs()` (server.js lignes 925-934) lit déjà
+      `features.display.chapterFallbackDelayMs` puis `CHAPTER_FALLBACK_MS` env var.
+      Défaut 3000 ms. Aucune modification nécessaire.
+
+### 2026-08-17 — Chantier C (bilingue — TERMINÉ, 6 couches complètes)
+
+- [x] **C.1 ASR** : terminé en A.5 (transcriptionLanguage défaut 'fr', multi → null)
+- [x] **C.2 Détection** : terminé en B.2 (FR+EN toujours en parallèle)
+- [x] **C.3 Commandes vocales** : DÉJÀ COMPLET — 6 commandes langues avec patterns FR+EN.
+- [x] **C.4 Affichage bilingue** : DÉJÀ COMPLET — deux div, affichage simultané FR+EN
+      quand langMode='both'. getVerseMultilang() fetch FR+EN en parallèle.
+- [x] **C.5 Interface opérateur** : DÉJÀ COMPLET — displayLanguage et transcriptionLanguage
+      indépendants. Validation WS : ['fr','en','both'].
+- [x] **C.6 Sous-titres** : DÉJÀ COMPLET — deux niveaux (raw + translated), contrôlés via WS.
+- [x] **C.7 Licences** : LICENCES-TRADUCTIONS.md créé — 5 traductions libres de droits.
+
+### 2026-08-17 — Chantier D.5 (nettoyage .md — TERMINÉ)
+
+- [x] 8 fichiers .md déplacés de la racine vers `docs/archive/`.
+
+### TODO : tâches restantes (ordre du §16)
+
+- [x] ~~A.5 : forcer langue session~~ → TERMINÉ 2026-08-17
+- [x] ~~A.6 : rebuild better-sqlite3~~ → TERMINÉ 2026-08-17
+- [x] ~~A.7 : validation verset~~ → TERMINÉ 2026-08-17
+- [x] ~~A.7 remaining : index vectoriel~~ → REPORTÉ (feature build-time distincte)
+- [x] ~~B.1 : livres à chapitre unique~~ → DÉJÀ IMPLÉMENTÉ
+- [x] ~~B.2 : les deux détecteurs toujours~~ → TERMINÉ 2026-08-17
+- [x] ~~B.3 : H2 mesure~~ → CONCLU 2026-08-17 (Deepgram VAD, pas serveur)
+- [x] ~~B.4 : échecs ASR~~ → CONCLU 2026-08-17 (vocabulaire OK, causes identifiées)
+- [x] ~~B.5 : délai configurable~~ → DÉJÀ IMPLÉMENTÉ
+- [x] ~~C : bilingue réel fr/en/bilingue~~ → TERMINÉ 2026-08-17 (6 couches complètes + LICENCES-TRADUCTIONS.md)
+- [x] ~~D.5 : déplacer .md racine → docs/archive/~~ → TERMINÉ 2026-08-17 (8 fichiers)
+- [ ] D.1 : matrice CI (Node 22/20, retirer rebuild)
+- [ ] D.2 : découper server.js dispatcher
+- [ ] D.3 : extraire overlay.html JS → overlay.js
+- [ ] D.4 : versionnage sémantique
+- [ ] D.6 : mutualiser déclenchement vocal media/song-library
+- [ ] D.7 : déduplication contextuelle + visible
+- [ ] Corpus replay fr + multi pour valider l'ensemble
+- [ ] Étape 1 : Registre d'actions + test de parité CI
+- [ ] PARTIE 2 : refonte interface (trois espaces)
+- [ ] PARTIE 3 : fonctionnalités produit

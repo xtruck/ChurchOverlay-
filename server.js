@@ -1118,8 +1118,21 @@ async function processTranscript(text, tracker, opts = {}) {
   // recherché ici. Un match sans verset (confidence 'medium', "chapitre
   // seul") ou une correspondance floue reste sur le pipeline normal
   // ci-dessous, plus prudent pour les cas ambigus.
+  // B.2 : les deux détecteurs (FR + EN) sont désormais consultés en
+  // parallèle sur le texte brut, et c'est la MEILLEURE correspondance
+  // qui gagne (même logique que le repli flou dans detectBilingual).
   try {
-    const fastMatch = detector.detectExact(text);
+    const fastFr = detector.detectExact(text);
+    const fastEn = detector.detectExactEn ? detector.detectExactEn(text) : null;
+    let fastMatch = null;
+    if (fastFr && fastEn) {
+      // Les deux ont matché : confidence d'abord, puis pas de verset < avec verset
+      if (fastFr.confidence === 'high' && fastEn.confidence !== 'high') fastMatch = fastFr;
+      else if (fastEn.confidence === 'high' && fastFr.confidence !== 'high') fastMatch = fastEn;
+      else fastMatch = fastFr; // égalité → FR par défaut (langue historique)
+    } else {
+      fastMatch = fastFr || fastEn;
+    }
     if (fastMatch && fastMatch.confidence === 'high') {
       reference = fastMatch;
       log('Appel direct (référence explicite, avant correction IA) : ' + fastMatch.raw);
@@ -1230,6 +1243,29 @@ async function processTranscript(text, tracker, opts = {}) {
     if (maxChapter && reference.chapter > maxChapter) {
       log(
         `Référence impossible rejetée (${reference.book} n'a que ${maxChapter} chapitres, demande ${reference.chapter}) : résidu d'un énoncé précédent — purge du buffer de fusion`
+      );
+      try {
+        sessionState.removeLastTranscriptFragment();
+      } catch (e) {
+        warn('Fragment purge error: ' + e.message);
+      }
+      reference = null;
+    }
+  }
+
+  // A.7 — validation du numéro de verset : si la base hors-ligne est
+  // chargée, on vérifie que le verset demandé existe dans le chapitre.
+  // Ex. « Ésaïe 53:17 » → Ésaïe 53 n'a que 12 versets → rejeté. Sans
+  // cette garde, le verset passe au-dessus du filtre chapitre (53 ≤ 66)
+  // et provoque une erreur API générique ("Verset introuvable") au lieu
+  // d'un message explicite. Si la base n'est pas encore chargée, on
+  // conserve le comportement historique (pas de validation verset, le <=
+  // 200 dans le détecteur reste le seul filet de sécurité).
+  if (reference && reference.book && reference.chapter && reference.verseStart) {
+    const maxVerse = bibleOfflineCache.getMaxVerse(reference.book, reference.chapter);
+    if (maxVerse && reference.verseStart > maxVerse) {
+      log(
+        `Référence impossible rejetée (${reference.book} ${reference.chapter}:${reference.verseStart} — le chapitre ne contient que ${maxVerse} versets) : verset inexistant`
       );
       try {
         sessionState.removeLastTranscriptFragment();
@@ -3532,7 +3568,15 @@ function startPipeline() {
       }
       let fastMatch = null;
       try {
-        fastMatch = detector.detectExact(text);
+        const fastFr = detector.detectExact(text);
+        const fastEn = detector.detectExactEn ? detector.detectExactEn(text) : null;
+        if (fastFr && fastEn) {
+          if (fastFr.confidence === 'high' && fastEn.confidence !== 'high') fastMatch = fastFr;
+          else if (fastEn.confidence === 'high' && fastFr.confidence !== 'high') fastMatch = fastEn;
+          else fastMatch = fastFr;
+        } else {
+          fastMatch = fastFr || fastEn;
+        }
       } catch (_e) {
         // Texte partiel encore incomplet/malformé — pas une vraie erreur,
         // juste "pas encore de référence exploitable dans ce fragment".
@@ -3636,6 +3680,11 @@ function startPipeline() {
         reason: info.reason,
         message: 'Connexion temps réel Deepgram perdue — bascule sur le pipeline classique (Groq).',
       });
+    },
+    // AJOUT (A.1 — gain micro) : relaie les diagnostics de niveau audio du
+    // worker vers le dashboard pour le vumètre et l'assistant de calibrage.
+    onAudioDiagnostics: (info) => {
+      broadcast({ action: 'audioDiagnostics', ...info });
     },
     onSegmentSkipped: (info) => {
       consecutiveSkips++;

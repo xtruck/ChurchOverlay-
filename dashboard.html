@@ -1084,6 +1084,44 @@
               <canvas id="audioVisualizer"></canvas>
             </div>
 
+            <!-- AJOUT (A.1 — gain micro) : vumètre d'entrée micro permanent.
+                         Trois zones colorées (silence / trop faible / correct / fort / écrêté),
+                         lisible à trois mètres en salle de culte. Le niveau est mis à jour en
+                         continu toutes les 250 ms via les diagnostics du serveur. -->
+            <div id="audioVumeterWrap" style="
+              padding: 0.6rem 1rem;
+              background: var(--surface);
+              border-radius: var(--radius);
+              margin-top: 0.5rem;
+            ">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.35rem;">
+                <span style="font-size: 0.75rem; color: var(--text-dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Niveau Micro</span>
+                <span id="vumeterLabel" style="font-size: 0.8rem; font-weight: 600; color: #6b7280;">—</span>
+              </div>
+              <div style="position: relative; height: 10px; background: #1f2937; border-radius: 5px; overflow: visible;">
+                <!-- Zones colorées en fond -->
+                <div style="position: absolute; left: 0; width: 15%; height: 100%; background: #7f1d1d; opacity: 0.4; border-radius: 5px 0 0 5px;" title="Silence"></div>
+                <div style="position: absolute; left: 15%; width: 15%; height: 100%; background: #991b1b; opacity: 0.4;" title="Trop faible"></div>
+                <div style="position: absolute; left: 30%; width: 35%; height: 100%; background: #14532d; opacity: 0.4;" title="Correct"></div>
+                <div style="position: absolute; left: 65%; width: 20%; height: 100%; background: #78350f; opacity: 0.4;" title="Fort"></div>
+                <div style="position: absolute; left: 85%; width: 15%; height: 100%; background: #7f1d1d; opacity: 0.4; border-radius: 0 5px 5px 0;" title="Écrêté"></div>
+                <!-- Barre de niveau animée -->
+                <div id="vumeterBar" style="
+                  position: absolute; left: 0; top: 0; height: 100%;
+                  width: 0%; background: #6b7280; border-radius: 5px;
+                  transition: width 0.15s ease-out, background-color 0.2s ease;
+                "></div>
+                <!-- Marqueur de pic -->
+                <div id="vumeterPeak" style="
+                  position: absolute; top: -2px; left: 0;
+                  width: 3px; height: 14px; background: #ffffff;
+                  border-radius: 1px; display: none;
+                  box-shadow: 0 0 4px rgba(255,255,255,0.5);
+                "></div>
+              </div>
+              <div id="vumeterInfo" style="font-size: 0.7rem; color: var(--text-dim); margin-top: 0.3rem; font-family: var(--font-mono);"></div>
+            </div>
+
             <div class="transcript-feed" id="transcriptFeed">
               <div class="transcript-item">
                 <div class="transcript-time"><span>00:00:00</span><span>Prêt</span></div>

@@ -86,7 +86,7 @@ let displayLanguage = 'fr';
 // (voir groq-wrapper.js), Deepgram garde son défaut 'fr' (voir
 // deepgram-wrapper.js/deepgram-streaming.js) — comportement actuel
 // préservé tant qu'aucune commande vocale ne change explicitement ceci.
-let transcriptionLanguage = null;
+let transcriptionLanguage = 'fr';
 let lastReference = null;
 let lastShownAt = 0;
 // AJOUT (Chantier 1 — dédoublonnage par énoncé) : identité (tracker.id) de

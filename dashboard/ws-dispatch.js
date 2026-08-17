@@ -57,6 +57,7 @@ import {
   updateActiveTranslationButton,
 } from './features/translation-picker.js';
 import { applyDashboardBranding } from './features/dashboard-branding.js';
+import { updateAudioVumeter } from './features/audio-vumeter.js';
 
 export function handleMessage(message) {
   switch (message.action) {
@@ -152,6 +153,11 @@ export function handleMessage(message) {
     case 'audioSilenceWarning':
       addActivity(message.message, 'warning');
       showToast(`⚠️ ${message.message}`, 'error');
+      break;
+    // AJOUT (A.1 — gain micro) : diagnostics de niveau audio temps réel
+    // pour le vumètre du dashboard.
+    case 'audioDiagnostics':
+      updateAudioVumeter(message);
       break;
     case 'preServiceCheckResult':
       renderPreServiceCheckResult(message);

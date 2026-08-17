@@ -284,11 +284,11 @@ async function run() {
       'streaming et propagée à la connexion WebSocket (support bilingue FR/EN, lot 6)...'
   );
   {
-    // Pas de langue de session -> comportement historique inchangé (fr par défaut).
+    // A.5 — la langue par défaut est désormais 'fr' (pas de auto-détection par défaut).
     assert.strictEqual(
       sessionState.getTranscriptionLanguage(),
-      null,
-      'aucune langue de session par défaut'
+      'fr',
+      'langue de session par défaut : fr (A.5)'
     );
     await audioCapture.startBrowserCapture();
     const fakeDefault = FakeWebSocket.lastInstance;
