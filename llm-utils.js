@@ -25,4 +25,77 @@ function extractResponseText(response) {
   return '';
 }
 
-module.exports = { extractResponseText };
+/**
+ * Extrait un objet JSON depuis une réponse LLM qui peut contenir du texte
+ * superflu autour (blocs markdown ```json, commentaires, explications).
+ * Renvoie l'objet parsé, ou null si aucun JSON valide n'est trouvé.
+ * @param {string} text
+ * @returns {Object|null}
+ */
+function extractJsonObject(text) {
+  if (!text || typeof text !== 'string') return null;
+
+  // 1. Essai direct (réponse JSON pure — json_mode Groq/Gemini)
+  try {
+    return JSON.parse(text);
+  } catch (_) {
+    // continue
+  }
+
+  // 2. Extraction depuis un bloc ```json ... ```
+  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch) {
+    try {
+      return JSON.parse(codeBlockMatch[1].trim());
+    } catch (_) {
+      // continue
+    }
+  }
+
+  // 3. Extraction du premier objet { ... } ou tableau [ ... ]
+  //    Priorité au pattern qui commence le plus tôt dans le texte.
+  const objMatch = text.match(/\{[\s\S]*\}/);
+  const arrMatch = text.match(/\[[\s\S]*\]/);
+  if (objMatch && arrMatch) {
+    if (objMatch.index < arrMatch.index) {
+      try {
+        return JSON.parse(objMatch[0]);
+      } catch (_) {
+        /* try arr */
+      }
+      try {
+        return JSON.parse(arrMatch[0]);
+      } catch (_) {
+        /* continue */
+      }
+    } else {
+      try {
+        return JSON.parse(arrMatch[0]);
+      } catch (_) {
+        /* try obj */
+      }
+      try {
+        return JSON.parse(objMatch[0]);
+      } catch (_) {
+        /* continue */
+      }
+    }
+  } else if (objMatch) {
+    try {
+      return JSON.parse(objMatch[0]);
+    } catch (_) {
+      /* continue */
+    }
+  } else if (arrMatch) {
+    try {
+      return JSON.parse(arrMatch[0]);
+    } catch (_) {
+      /* continue */
+    }
+  }
+
+  console.warn('[llm-utils] extractJsonObject: aucun JSON valide trouvé dans la réponse');
+  return null;
+}
+
+module.exports = { extractResponseText, extractJsonObject };

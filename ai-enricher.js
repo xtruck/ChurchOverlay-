@@ -8,6 +8,7 @@
 
 const { chatCompletion } = require('./groq-wrapper');
 const { sanitizeForPrompt } = require('./prompt-sanitizer');
+const { extractResponseText, extractJsonObject } = require('./llm-utils');
 
 let features = {
   ai: {
@@ -39,7 +40,8 @@ Réponds uniquement en JSON valide: {"theme":"...","keywords":["...","...","..."
 
   try {
     const res = await chatCompletion(prompt, { json_mode: true, temperature: 0.2 });
-    const parsed = JSON.parse(res.text);
+    const parsed = extractJsonObject(extractResponseText(res));
+    if (!parsed) return null;
     return { theme: parsed.theme, keywords: parsed.keywords || [] };
   } catch (e) {
     console.warn('[ai-enricher] Détection thème échouée:', e.message);
@@ -59,7 +61,7 @@ async function translateSegment(text, targetLang = 'en') {
 
   try {
     const res = await chatCompletion(prompt, { temperature: 0.1, max_tokens: 200 });
-    return res.text ? res.text.trim() : null;
+    return extractResponseText(res) || null;
   } catch (e) {
     console.warn('[ai-enricher] Traduction live échouée:', e.message);
     return null;
@@ -80,7 +82,7 @@ Transcription récente: "${sanitizeForPrompt(fullTranscript.slice(-4000))}"`;
 
   try {
     const res = await chatCompletion(prompt, { temperature: 0.3, max_tokens: 100 });
-    return res.text ? res.text.trim() : null;
+    return extractResponseText(res) || null;
   } catch (e) {
     console.warn('[ai-enricher] Résumé live échoué:', e.message);
     return null;
@@ -117,7 +119,7 @@ Réponds uniquement en JSON avec cette structure exacte:
       temperature: 0.3,
       max_tokens: 600,
     });
-    return JSON.parse(res.text);
+    return extractJsonObject(extractResponseText(res));
   } catch (e) {
     console.warn('[ai-enricher] Récapitulatif post-service échoué:', e.message);
     return null;
@@ -139,7 +141,7 @@ Réponds uniquement en JSON: [{"ref": "Livre Chapitre:Verset", "reason": "Brève
       temperature: 0.2,
       max_tokens: 300,
     });
-    const parsed = JSON.parse(res.text);
+    const parsed = extractJsonObject(extractResponseText(res));
     return Array.isArray(parsed) ? parsed.slice(0, features.ai?.crossReferences?.maxRefs || 3) : [];
   } catch (e) {
     console.warn('[ai-enricher] Cross-references échouées:', e.message);

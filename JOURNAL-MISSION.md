@@ -162,3 +162,22 @@ E2 (Nombres — ASR), H2 (langue mixte — A.2), K3 (Actes — ASR).
 - [x] **Gate** : lint 0 erreur, tsc clean, prettier clean, `npm test` EXIT 0, `npm audit` 0.
 - [ ] A.2 : rejouer corpus (fr + multi) pour mesurer l'impact sur B2/H1/H2/I2
       (items langue mixte qui dépendent de la détection bilingue EN en session FR).
+
+### 2026-08-16 — Chantier A.7 (JSON 400 ai-enricher — TERMINÉ)
+
+- [x] **llm-utils.js** : ajout de `extractJsonObject(text)` — normalise la réponse LLM en
+      JSON parsable, en gérant 3 cas : JSON pur (json_mode Groq/Gemini), bloc markdown
+      ```` ```json ... ``` ````, et extraction du premier objet/tableau `{...}` / `[...]` dans
+      du texte libre. Si les deux patterns sont présents, priorité au plus ancien dans la
+      chaîne. Renvoie l'objet parsé ou null.
+- [x] **ai-enricher.js** : les 5 fonctions (detectSermonTheme, translateSegment,
+      generateLiveSummary, generatePostServiceRecap, findCrossReferences) utilisent
+      maintenant `extractResponseText(res)` et `extractJsonObject(extractResponseText(res))`
+      au lieu de `JSON.parse(res.text)` brut. L'ancien code crashait si le LLM renvoyait
+      du JSON dans un bloc markdown (json_validate_failed 400 sur Groq, ou TypeError
+      sur `.text.trim()` quand text était absent).
+- [x] **test/test-llm-utils.js** : 11 nouveaux cas pour `extractJsonObject` (JSON pur, JSON
+      avec espaces, bloc markdown, bloc sans langue, objet dans texte, tableau dans texte,
+      tableau pur, null, undefined, texte sans JSON, JSON malformé). Total : 19 tests.
+- [x] **Gate** : lint 0 erreur, tsc clean, prettier clean, `npm test` EXIT 0 (19/19 llm-utils),
+      `npm audit` 0.
