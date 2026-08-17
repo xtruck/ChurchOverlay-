@@ -327,3 +327,45 @@ window.hideMediaNow = hideMediaNow;
 window.saveMediaItemDetails = saveMediaItemDetails;
 window.toggleDefaultMediaItem = toggleDefaultMediaItem;
 window.updateMediaPosterFormState = updateMediaPosterFormState;
+
+// Mur Média — grille visuelle pour déclenchement rapide pendant le culte
+export function renderMediaWall(items) {
+  const grid = document.getElementById('mediaWallGrid');
+  const countEl = document.getElementById('mediaWallCount');
+  if (!grid) return;
+  const list = Array.isArray(items) ? items : mediaLibraryItems;
+  if (countEl) countEl.textContent = list.length;
+  if (list.length === 0) {
+    grid.innerHTML = '<div class="empty-state-note" style="grid-column: 1 / -1">Aucun média ajouté.</div>';
+    return;
+  }
+  grid.innerHTML = list
+    .map((item) => {
+      const thumbUrl = getHttpOrigin() + '/media/' + encodeURIComponent(item.filename || '');
+      const thumbMarkup =
+        item.mediaType === 'video'
+          ? `<video src="${thumbUrl}" muted preload="metadata" playsinline></video>`
+          : `<img src="${thumbUrl}" alt="${escapeHtmlDashboard(item.label || item.filename)}" loading="lazy">`;
+      const badges = [
+        item.isDefault ? '⭐' : '',
+        item.includeInLoop ? '🔁' : '',
+      ].filter(Boolean);
+      return `
+        <div class="media-gallery-card${item.isDefault ? ' is-default' : ''}" style="cursor:pointer" onclick="triggerMediaWallItem('${escapeHtmlDashboard(item.filename)}')">
+          <div class="media-gallery-thumb">
+            ${thumbMarkup}
+            ${badges.map((b) => `<span class="media-gallery-badge">${b}</span>`).join('')}
+          </div>
+          <div class="media-gallery-label" style="font-size:0.75rem;padding:0.3rem 0.5rem;text-align:center;">
+            ${escapeHtmlDashboard(item.label || item.filename)}
+          </div>
+        </div>`;
+    })
+    .join('');
+}
+window.renderMediaWall = renderMediaWall;
+
+window.triggerMediaWallItem = function (filename) {
+  const item = mediaLibraryItems.find((i) => i.filename === filename);
+  if (item) triggerMediaLibraryItem(item.id);
+};

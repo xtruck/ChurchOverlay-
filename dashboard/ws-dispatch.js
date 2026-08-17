@@ -36,7 +36,7 @@ import {
   renderPreServiceCheckResult,
   renderAiStats,
 } from './features/preservice-ai.js';
-import { renderMediaLibrary } from './features/media-library.js';
+import { renderMediaLibrary, renderMediaWall } from './features/media-library.js';
 import { renderSceneStudioGallery } from './features/scene-studio.js';
 import { renderNetworkStatus } from './features/network-settings.js';
 import { renderIpCameras, showCameraPairingQr } from './features/ip-cameras.js';
@@ -382,6 +382,7 @@ export function handleMessage(message) {
     // chaque ajout/suppression pour rester synchronisée entre eux.
     case 'mediaLibraryUpdated':
       renderMediaLibrary(message.items);
+      renderMediaWall(message.items);
       break;
     // AJOUT (studio de scènes) : même raisonnement que mediaLibraryUpdated
     // ci-dessus — la liste vit côté serveur, diffusée à tous les tableaux de
