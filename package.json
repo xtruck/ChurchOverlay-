@@ -119,6 +119,7 @@
       "announcement-loop.html",
       "companion.html",
       "server.js",
+      "phone-camera-routes.js",
       "ai-modules-loader.js",
       "session-state.js",
       "dotenv-loader.js",
