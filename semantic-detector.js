@@ -17,6 +17,7 @@
 
 const crypto = require('crypto');
 const { sanitizeForPrompt } = require('./prompt-sanitizer');
+const { extractResponseText } = require('./llm-utils');
 
 // -----------------------------------------------------------------------
 // Configuration
@@ -325,7 +326,7 @@ class SemanticDetector {
         max_tokens: 256,
       });
 
-      const result = parseResponse(response.text || response);
+      const result = parseResponse(extractResponseText(response));
 
       if (result) {
         console.log(

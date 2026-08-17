@@ -138,3 +138,27 @@ E2 (Nombres — ASR), H2 (langue mixte — A.2), K3 (Actes — ASR).
 **Preuve de correctif A.3** (log bench) : `"Jean 14, le verset 6."` →
 `[server] Appel direct (référence explicite, avant correction IA) : jean 14, le verset 6`
 → `[server] Displayed: Jean 14:6` (et non jean 14:1 FAUX). Régression : aucune.
+
+---
+
+### 2026-08-16 — Chantier A.2 (wrapper LLM)
+
+- [x] **llm-utils.js** (nouveau) : `extractResponseText(response)` — normalise la réponse
+      chatCompletion (`{text: string, model, usage}`) en string trimée, avec garde-fou
+      défensif sur les formats inattendus (null, string brute, objet sans .text).
+- [x] **transcription-corrector.js** : `(response.text || response).trim()` →
+      `extractResponseText(response)`.
+- [x] **semantic-detector.js** : `parseResponse(response.text || response)` →
+      `parseResponse(extractResponseText(response))`. L'ancien pattern passait l'objet brut
+      à `rawText.match()` si `text` était absent, provoquant un crash ou un match sur
+      `[object Object]`.
+- [x] **ai-theme-generator.js** : `response.text || response` → `extractResponseText(response)`.
+      L'ancien pattern passait un objet à `text.match(...)` si `text` était absent, crash
+      TypeError observé dans les logs (`"text.match is not a function"`).
+- [x] **test/test-llm-utils.js** (nouveau) : 8 cas de tests (format standard, string brute,
+      null/undefined, objet sans .text, type number, JSONisable). Câblé dans package.json
+      (test + test-all).
+- [x] **package.json** : `llm-utils.js` ajouté au tableau `build.files`, test câblé.
+- [x] **Gate** : lint 0 erreur, tsc clean, prettier clean, `npm test` EXIT 0, `npm audit` 0.
+- [ ] A.2 : rejouer corpus (fr + multi) pour mesurer l'impact sur B2/H1/H2/I2
+      (items langue mixte qui dépendent de la détection bilingue EN en session FR).

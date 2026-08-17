@@ -15,6 +15,8 @@
 
 'use strict';
 
+const { extractResponseText } = require('./llm-utils');
+
 // -----------------------------------------------------------------------
 // Predefined mood-based themes (rule-based, works offline)
 // -----------------------------------------------------------------------
@@ -507,7 +509,7 @@ Rules:
       max_tokens: 300,
     });
 
-    const text = response.text || response;
+    const text = extractResponseText(response);
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
 

@@ -19,6 +19,7 @@
 'use strict';
 
 const { sanitizeForPrompt } = require('./prompt-sanitizer');
+const { extractResponseText } = require('./llm-utils');
 
 const CORRECTIONS = {
   'jean le baptiseur': 'Jean-Baptiste',
@@ -274,7 +275,7 @@ Rules:
       max_tokens: Math.min(text.length + 50, 500),
     });
 
-    const corrected = (response.text || response).trim();
+    const corrected = extractResponseText(response);
     const similarity = calculateSimilarity(text, corrected);
     if (similarity < 0.7) {
       console.log('[corrector] Smart correction rejected (too different):', similarity);
