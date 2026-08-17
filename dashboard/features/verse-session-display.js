@@ -394,6 +394,17 @@ export function emergencyStop() {
   }
 }
 
+let blackScreenActive = false;
+export function toggleBlackScreen() {
+  blackScreenActive = !blackScreenActive;
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: 'setBlackScreen', enabled: blackScreenActive }));
+  }
+  addActivity(blackScreenActive ? 'Écran noir activé' : 'Écran noir désactivé', 'warning');
+  showToast(blackScreenActive ? 'Écran noir activé' : 'Écran noir désactivé', blackScreenActive ? 'error' : 'info');
+}
+window.toggleBlackScreen = toggleBlackScreen;
+
 export function setLanguage(lang) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ action: 'setLanguage', language: lang }));

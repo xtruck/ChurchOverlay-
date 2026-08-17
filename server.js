@@ -1853,6 +1853,7 @@ const OPERATOR_ACTIONS = new Set([
   'setTranslatedCaptions',
   'setTestPattern',
   'setBackgroundPattern',
+  'setBlackScreen',
   // AJOUT (médiathèque — déclenchement vocal de photos/vidéos)
   'getMediaLibrary',
   'addMediaItem',
@@ -2650,6 +2651,13 @@ wss.on('connection', (ws, req) => {
       sessionState.setBackgroundPattern(pattern);
       broadcast({ action: 'backgroundPatternMode', pattern });
       log('Affichage : motif de fond -> ' + pattern);
+      return;
+    }
+
+    // --- Black screen (écran noir d'urgence) ---
+    if (sanitized.action === 'setBlackScreen') {
+      broadcast({ action: 'blackScreenMode', enabled: !!sanitized.enabled });
+      log('Affichage : écran noir ' + (sanitized.enabled ? 'activé' : 'désactivé'));
       return;
     }
 

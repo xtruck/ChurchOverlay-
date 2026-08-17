@@ -196,6 +196,9 @@ function connectWs() {
       case 'backgroundPatternMode':
         setBackgroundPattern(msg.pattern || 'none');
         break;
+      case 'blackScreenMode':
+        document.getElementById('black-screen').style.display = msg.enabled ? 'block' : 'none';
+        break;
       case 'showMedia':
         showMediaItem(msg);
         break;
