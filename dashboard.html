@@ -2654,11 +2654,16 @@
           <div class="overlay-preview-card" data-group="diffusion">
             <div class="overlay-preview-header">
               <div style="font-weight: 700; color: var(--text-main)">
-                Aperçu en direct de l'Overlay (Screen View)
+                <span id="previewModeLabel">Aperçu en direct</span>
               </div>
-              <button class="btn btn-secondary" onclick="refreshOverlay()">
-                Actualiser Iframe
-              </button>
+              <div style="display:flex;gap:0.5rem;">
+                <button class="btn btn-secondary" onclick="togglePreviewProgramMode()" style="font-size:0.75rem;">
+                  Aperçu / Programme
+                </button>
+                <button class="btn btn-secondary" onclick="refreshOverlay()">
+                  Actualiser Iframe
+                </button>
+              </div>
             </div>
 
             <!-- AJOUT (audit — lien OBS manquant) : URL à coller dans OBS comme
@@ -2687,7 +2692,17 @@
               </button>
             </div>
 
-            <iframe id="overlayFrame" src="overlay.html"></iframe>
+            <!-- Aperçu/Programme dual view -->
+            <div id="previewProgramContainer" style="display:flex;gap:0.5rem;">
+              <div id="previewPane" style="flex:1;display:none;">
+                <div style="font-size:0.7rem;color:var(--text-dim);margin-bottom:0.25rem;text-align:center;">APERÇU</div>
+                <iframe id="previewFrame" src="overlay.html" style="width:100%;aspect-ratio:16/9;border:2px solid #3b82f6;border-radius:8px;"></iframe>
+              </div>
+              <div id="programPane" style="flex:1;">
+                <div id="programLabel" style="font-size:0.7rem;color:var(--text-dim);margin-bottom:0.25rem;text-align:center;display:none;">PROGRAMME</div>
+                <iframe id="overlayFrame" src="overlay.html"></iframe>
+              </div>
+            </div>
           </div>
         </section>
 

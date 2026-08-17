@@ -405,6 +405,19 @@ export function toggleBlackScreen() {
 }
 window.toggleBlackScreen = toggleBlackScreen;
 
+let previewProgramMode = false;
+export function togglePreviewProgramMode() {
+  previewProgramMode = !previewProgramMode;
+  const preview = document.getElementById('previewPane');
+  const programLabel = document.getElementById('programLabel');
+  const label = document.getElementById('previewModeLabel');
+  if (preview) preview.style.display = previewProgramMode ? '' : 'none';
+  if (programLabel) programLabel.style.display = previewProgramMode ? '' : 'none';
+  if (label) label.textContent = previewProgramMode ? 'Aperçu / Programme' : 'Aperçu en direct';
+  addActivity(previewProgramMode ? 'Mode Aperçu/Programme activé' : 'Mode simple rétabli', 'info');
+}
+window.togglePreviewProgramMode = togglePreviewProgramMode;
+
 export function setLanguage(lang) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ action: 'setLanguage', language: lang }));
