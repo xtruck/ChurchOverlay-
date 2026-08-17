@@ -188,6 +188,7 @@ const SERVER_ACTIONS = {
   stageMessage: { description: 'Message de piste' },
   offlineBibleStatus: { description: 'État Bible hors-ligne' },
   audioDiagnostics: { description: 'Diagnostics audio' },
+  dedupSuppressed: { description: 'Verset supprimé par dédoublonnage' },
   error: { description: 'Message d\'erreur' },
 };
 

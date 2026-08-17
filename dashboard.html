@@ -57,19 +57,11 @@
             </div>
           </div>
 
-          <!-- CORRECTIF (audit — tableau de bord "trop rempli") : 6 onglets
-                     séparés pour des informations utilisées à des moments très
-                     différents (pendant le culte vs. en préparation) obligeaient
-                     à naviguer sans arrêt. Regroupés en 2 vues : "En direct"
-                     (tout ce dont l'opérateur a besoin PENDANT le culte — verset
-                     affiché, micro/transcription, statistiques, contrôles
-                     rapides déjà présents dans la carte du verset) et "Réglages"
-                     (tout le reste — thèmes/ambiances avancées, IA, config,
-                     aperçu overlay/OBS — consulté avant/après, pas pendant).
-                     data-sections (pluriel) liste les <section> à afficher
-                     ensemble ; voir le gestionnaire de clic dans dashboard.js. -->
+          <!-- Trois espaces : DIRECT (service en cours), PRÉPARATION (avant/après culte),
+                       RÉGIE (config technique). data-sections (pluriel) liste les <section>
+                       à afficher ensemble ; voir le gestionnaire de clic dans state.js. -->
           <ul class="nav-list">
-            <li class="nav-item active" data-sections="overview,transcript">
+            <li class="nav-item active" data-sections="overview,transcript,controls">
               <svg
                 width="18"
                 height="18"
@@ -78,14 +70,27 @@
                 stroke="currentColor"
                 stroke-width="2"
               >
-                <rect x="3" y="3" width="7" height="7" rx="1.5" />
-                <rect x="14" y="3" width="7" height="7" rx="1.5" />
-                <rect x="14" y="14" width="7" height="7" rx="1.5" />
-                <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                <circle cx="12" cy="12" r="10" />
+                <circle cx="12" cy="12" r="3" />
               </svg>
-              En Direct
+              Direct
             </li>
-            <li class="nav-item" data-sections="controls,analysis,settings,overlay,studio">
+            <li class="nav-item" data-sections="analysis,studio">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <path d="M2 17l10 5 10-5" />
+                <path d="M2 12l10 5 10-5" />
+              </svg>
+              Préparation
+            </li>
+            <li class="nav-item" data-sections="settings,overlay">
               <svg
                 width="18"
                 height="18"
@@ -99,7 +104,7 @@
                 />
                 <circle cx="12" cy="12" r="3" />
               </svg>
-              Réglages
+              Régie
             </li>
           </ul>
         </div>
@@ -841,73 +846,8 @@
           </div>
         </section>
 
-        <!-- Controls Section -->
+        <!-- Controls Section — Espace Direct (contrôles de diffusion en temps réel) -->
         <section id="controls" class="section" style="display: none">
-          <!-- AJOUT (redesign — sous-navigation Réglages) : les 5 <section>
-                     de l'onglet "Réglages" empilent 23 cartes à la suite, sans
-                     aucun repère de catégorie — repéré comme le principal frein
-                     "pas assez pro / pas assez clair" de l'audit. Filtre purement
-                     visuel côté client (voir settings-subnav.js), n'affecte ni
-                     data-sections/showSectionsFor (state.js, inchangé) ni aucun id
-                     utilisé par le JS métier : ne fait que masquer/afficher les
-                     .card[data-group] déjà posés ci-dessous. "Tout" reste l'état
-                     par défaut au chargement — rien ne change pour qui ignore
-                     cette barre. -->
-          <nav class="settings-subnav" role="tablist" aria-label="Catégories de réglages">
-            <button type="button" class="subnav-btn active" data-group="all" role="tab" aria-selected="true">
-              Tout
-            </button>
-            <button type="button" class="subnav-btn" data-group="diffusion" role="tab" aria-selected="false">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />
-                <line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" />
-                <line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" />
-                <line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" />
-                <line x1="17" y1="16" x2="23" y2="16" />
-              </svg>
-              Diffusion
-            </button>
-            <button type="button" class="subnav-btn" data-group="analyse" role="tab" aria-selected="false">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" />
-                <line x1="6" y1="20" x2="6" y2="14" />
-              </svg>
-              Analyse IA
-            </button>
-            <button type="button" class="subnav-btn" data-group="cameras" role="tab" aria-selected="false">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                <circle cx="12" cy="13" r="4" />
-              </svg>
-              Caméras
-            </button>
-            <button type="button" class="subnav-btn" data-group="studio" role="tab" aria-selected="false">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <line x1="3" y1="9" x2="21" y2="9" /><line x1="9" y1="21" x2="9" y2="9" />
-              </svg>
-              Studio
-            </button>
-            <button type="button" class="subnav-btn" data-group="integrations" role="tab" aria-selected="false">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M4 7V4h3" /><path d="M9 4h3" /><path d="M16 4h4v3" />
-                <path d="M20 9v3" /><path d="M20 16v3h-3" /><path d="M15 20h-3" />
-                <path d="M8 20H4v-3" /><path d="M4 15v-3" />
-                <rect x="9" y="9" width="6" height="6" rx="1" />
-              </svg>
-              Intégrations
-            </button>
-            <button type="button" class="subnav-btn" data-group="systeme" role="tab" aria-selected="false">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path
-                  d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
-                />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-              Système
-            </button>
-          </nav>
-
           <div class="card" data-group="diffusion" style="margin-bottom: 1.5rem">
             <div class="card-header">
               <span class="card-title">Panneau de Contrôle Opérateur</span>
@@ -2863,37 +2803,27 @@
          visible uniquement sous 1024px. -->
     <nav class="bottom-tab-bar" aria-label="Navigation principale">
       <ul class="nav-list">
-        <li class="nav-item active" data-sections="overview,transcript">
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <rect x="3" y="3" width="7" height="7" rx="1.5" />
-            <rect x="14" y="3" width="7" height="7" rx="1.5" />
-            <rect x="14" y="14" width="7" height="7" rx="1.5" />
-            <rect x="3" y="14" width="7" height="7" rx="1.5" />
-          </svg>
-          <span>En Direct</span>
-        </li>
-        <li class="nav-item" data-sections="controls,analysis,settings,overlay,studio">
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <path
-              d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
-            />
+        <li class="nav-item active" data-sections="overview,transcript,controls">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" />
             <circle cx="12" cy="12" r="3" />
           </svg>
-          <span>Réglages</span>
+          <span>Direct</span>
+        </li>
+        <li class="nav-item" data-sections="analysis,studio">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5z" />
+            <path d="M2 17l10 5 10-5" />
+            <path d="M2 12l10 5 10-5" />
+          </svg>
+          <span>Préparation</span>
+        </li>
+        <li class="nav-item" data-sections="settings,overlay">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+          <span>Régie</span>
         </li>
       </ul>
     </nav>

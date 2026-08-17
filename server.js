@@ -802,6 +802,7 @@ async function displayChapterFallback(book, chapter, tracker, opts) {
   };
   if (sessionState.isDuplicateReference(refKey, now, dedupCtx)) {
     log(`Chapter fallback suppressed (dedup): ${refKey}`);
+    broadcast({ action: 'dedupSuppressed', ref: refKey, reason: 'chapter-fallback', timestamp: now });
     return;
   }
   if (isRateLimited()) {
@@ -1341,6 +1342,7 @@ async function processTranscript(text, tracker, opts = {}) {
   };
   if (sessionState.isDuplicateReference(refKey, now, dedupCtx)) {
     log('Duplicate suppressed: ' + refKey);
+    broadcast({ action: 'dedupSuppressed', ref: refKey, reason: dedupCtx.source || 'same-ref', timestamp: now });
     return;
   }
   sessionState.recordShownReference(refKey, now, dedupCtx);

@@ -136,6 +136,12 @@ export function handleMessage(message) {
       addActivity(`Erreur : ${message.error}`, 'error');
       showToast(`Erreur : ${message.error}`, 'error');
       break;
+    case 'dedupSuppressed':
+      addActivity(
+        `Doublon supprimé : ${message.ref} (${message.reason || 'same-ref'})`,
+        'info'
+      );
+      break;
     case 'transcriptionError':
       addActivity(`Transcription indisponible : ${message.error}`, 'error');
       // CORRECTIF (audit — message d'erreur générique inutile) : ce toast
