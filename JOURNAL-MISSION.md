@@ -364,18 +364,19 @@ E2 (Nombres — ASR), H2 (langue mixte — A.2), K3 (Actes — ASR).
 - [x] ~~A.7 remaining : index vectoriel~~ → REPORTÉ (feature build-time distincte)
 - [x] ~~B.1 : livres à chapitre unique~~ → DÉJÀ IMPLÉMENTÉ
 - [x] ~~B.2 : les deux détecteurs toujours~~ → TERMINÉ 2026-08-17
-- [x] ~~B.3 : H2 mesure~~ → CONCLU 2026-08-17 (Deepgram VAD, pas serveur)
-- [x] ~~B.4 : échecs ASR~~ → CONCLU 2026-08-17 (vocabulaire OK, causes identifiées)
+- [x] ~~B.3 : H2 mesure~~ → CONCLU 2026-08-17
+- [x] ~~B.4 : échecs ASR~~ → CONCLU 2026-08-17
 - [x] ~~B.5 : délai configurable~~ → DÉJÀ IMPLÉMENTÉ
-- [x] ~~C : bilingue réel fr/en/bilingue~~ → TERMINÉ 2026-08-17 (6 couches complètes + LICENCES-TRADUCTIONS.md)
-- [x] ~~D.5 : déplacer .md racine → docs/archive/~~ → TERMINÉ 2026-08-17 (8 fichiers)
-- [x] ~~D.1 : matrice CI (Node 22/20, retirer rebuild)~~ → TERMINÉ 2026-08-17
-- [ ] D.2 : découper server.js dispatcher
-- [ ] D.3 : extraire overlay.html JS → overlay.js
-- [ ] D.4 : versionnage sémantique
-- [ ] D.6 : mutualiser déclenchement vocal media/song-library
-- [ ] D.7 : déduplication contextuelle + visible
-- [ ] Corpus replay fr + multi pour valider l'ensemble
-- [ ] Étape 1 : Registre d'actions + test de parité CI
+- [x] ~~C : bilingue~~ → TERMINÉ 2026-08-17
+- [x] ~~D.1 : matrice CI~~ → TERMINÉ 2026-08-17
+- [x] ~~D.3 : overlay.html JS~~ → DÉJÀ IMPLÉMENTÉ
+- [x] ~~D.4 : versionnage~~ → DÉJÀ IMPLÉMENTÉ (APP_VERSION via package.json)
+- [x] ~~D.5 : déplacer .md~~ → TERMINÉ 2026-08-17
+- [x] ~~D.6 : mutualiser vocal triggers~~ → DÉJÀ IMPLÉMENTÉ
+- [x] ~~D.2 partiel : phone-camera-routes.js~~ → TERMINÉ 2026-08-17
+- [ ] D.2 restant : voice-command-executor, audio-pipeline, transcript-processor, ws-handlers, http-routes
+- [ ] D.7 : dédup contextuelle visible
+- [x] ~~Step 1 : registre d'actions + parité CI~~ → TERMINÉ 2026-08-17 (action-registry.js, 221 assertions)
+- [ ] Steps 2-14 : refonte interface (trois espaces DIRECT/PRÉPARATION/RÉGIE)
 - [ ] PARTIE 2 : refonte interface (trois espaces)
 - [ ] PARTIE 3 : fonctionnalités produit
