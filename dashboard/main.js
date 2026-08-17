@@ -25,6 +25,7 @@ import './features/perf-pill.js';
 import './features/confidence-mode.js';
 import './features/command-palette.js';
 import './features/training-mode.js';
+import './features/startup-wizard.js';
 import './features/companion-link.js';
 // AJOUT (lot 6) : mood-theme.js/song-library.js/offline-bible.js sont déjà
 // chargés indirectement (legacy-core.js les importe pour renderMoodPicker/

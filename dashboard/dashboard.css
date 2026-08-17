@@ -2448,3 +2448,62 @@ body {
 .training-mode .section {
   transition: outline 0.3s ease;
 }
+
+/* Assistant de démarrage */
+.startup-wizard-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 10002;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.startup-wizard-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.startup-wizard {
+  background: var(--bg-card, #1e1e2e);
+  border: 1px solid var(--border-subtle, #333);
+  border-radius: 12px;
+  padding: 1.5rem;
+  max-width: 520px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+.wizard-step {
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.wizard-step-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+.wizard-step-icon {
+  font-size: 1.1rem;
+}
+.wizard-step-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-main);
+}
+.wizard-step-body {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+.wizard-status {
+  font-size: 0.75rem;
+  color: var(--accent-cyan);
+  font-style: italic;
+}
