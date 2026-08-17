@@ -418,6 +418,23 @@ export function togglePreviewProgramMode() {
 }
 window.togglePreviewProgramMode = togglePreviewProgramMode;
 
+window.startServiceCountdown = function () {
+  const sel = document.getElementById('countdownDuration');
+  const minutes = sel ? parseInt(sel.value, 10) : 10;
+  const endTimeMs = Date.now() + minutes * 60 * 1000;
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: 'startCountdown', endTimeMs, label: 'Le culte commence dans' }));
+  }
+  addActivity('Compteur lancé : ' + minutes + ' minutes', 'info');
+  showToast('Compteur de ' + minutes + ' min lancé', 'info');
+};
+window.stopServiceCountdown = function () {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: 'stopCountdown' }));
+  }
+  addActivity('Compteur arrêté', 'warning');
+};
+
 export function setLanguage(lang) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ action: 'setLanguage', language: lang }));

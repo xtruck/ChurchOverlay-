@@ -880,6 +880,21 @@
               <button class="btn btn-danger" onclick="toggleBlackScreen()" style="background:#1a1a1a;border:1px solid #555;">⬛ Écran Noir</button>
               <button class="btn btn-secondary" onclick="toggleTrainingMode()" title="Mode formation — guide pas à pas pour les nouveaux opérateurs (Ctrl+Shift+T)">🎓 Mode Formation</button>
             </div>
+            <!-- Compteur avant culte -->
+            <div style="margin-top:1rem;padding-top:0.85rem;border-top:1px solid var(--border-subtle);">
+              <div style="font-size:0.78rem;color:var(--text-dim);margin-bottom:0.5rem;">⏱ Compteur avant culte</div>
+              <div style="display:flex;gap:0.5rem;align-items:center;">
+                <select id="countdownDuration" style="padding:0.4rem;border-radius:var(--radius-sm);border:1px solid var(--border-subtle);background:var(--bg-input);color:var(--text-main);font-size:0.8rem;">
+                  <option value="5">5 min</option>
+                  <option value="10" selected>10 min</option>
+                  <option value="15">15 min</option>
+                  <option value="30">30 min</option>
+                  <option value="60">1 h</option>
+                </select>
+                <button class="btn btn-primary" onclick="startServiceCountdown()" style="font-size:0.75rem;">▶ Lancer</button>
+                <button class="btn btn-secondary" onclick="stopServiceCountdown()" style="font-size:0.75rem;">⏹ Arrêter</button>
+              </div>
+            </div>
             <!-- AJOUT (raccourcis clavier globaux — recommandation "hotkeys" façon
                          OBS) : fonctionnent même sans le focus sur cette fenêtre (voir
                          registerGlobalHotkeys() dans main.js). Combinaisons fixes pour

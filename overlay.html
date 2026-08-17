@@ -983,6 +983,13 @@
     <!-- Écran noir — masque tout (test pattern, média, versets) pour coupure immédiate -->
     <div id="black-screen" style="display:none;position:fixed;inset:0;background:#000;z-index:200;" aria-hidden="true"></div>
 
+    <!-- Compteur avant culte — affiche un countdown avant le début du culte -->
+    <div id="service-countdown" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:180;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#fff;font-family:var(--font-display,serif);">
+      <div id="countdown-label" style="font-size:1.2rem;letter-spacing:0.1em;text-transform:uppercase;opacity:0.7;margin-bottom:1rem;">Le culte commence dans</div>
+      <div id="countdown-time" style="font-size:5rem;font-weight:700;letter-spacing:0.05em;">00:00</div>
+      <div id="countdown-sub" style="font-size:0.9rem;opacity:0.5;margin-top:1rem;"></div>
+    </div>
+
     <!-- AJOUT (studio de scènes, lot 5/6) : SCENE_POSITION_PCT/renderSceneDom
          chargés ici, AVANT le script principal ci-dessous, qui les utilise
          directement comme variables globales (script classique, même

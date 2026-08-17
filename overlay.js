@@ -199,6 +199,12 @@ function connectWs() {
       case 'blackScreenMode':
         document.getElementById('black-screen').style.display = msg.enabled ? 'block' : 'none';
         break;
+      case 'countdownMode':
+        startCountdown(msg.endTimeMs, msg.label);
+        break;
+      case 'countdownStop':
+        stopCountdown();
+        break;
       case 'showMedia':
         showMediaItem(msg);
         break;
@@ -1024,3 +1030,38 @@ function showReadingIndicator(show) {
   particles = Array.from({ length: PARTICLE_COUNT }, () => makeParticle(true));
   if (!document.hidden) start();
 })();
+
+/* === Compteur avant culte === */
+let countdownInterval = null;
+function startCountdown(endTimeMs, label) {
+  stopCountdown();
+  const el = document.getElementById('service-countdown');
+  const timeEl = document.getElementById('countdown-time');
+  const labelEl = document.getElementById('countdown-label');
+  const subEl = document.getElementById('countdown-sub');
+  if (!el || !timeEl) return;
+  if (labelEl && label) labelEl.textContent = label;
+  el.style.display = 'flex';
+  function tick() {
+    const remaining = Math.max(0, endTimeMs - Date.now());
+    const totalSec = Math.ceil(remaining / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    timeEl.textContent = h > 0
+      ? String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0')
+      : String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    if (subEl) subEl.textContent = totalSec <= 0 ? 'Le culte commence !' : '';
+    if (totalSec <= 0) {
+      clearInterval(countdownInterval);
+      countdownInterval = null;
+    }
+  }
+  tick();
+  countdownInterval = setInterval(tick, 1000);
+}
+function stopCountdown() {
+  if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+  const el = document.getElementById('service-countdown');
+  if (el) el.style.display = 'none';
+}

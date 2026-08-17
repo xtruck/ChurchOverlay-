@@ -1854,6 +1854,8 @@ const OPERATOR_ACTIONS = new Set([
   'setTestPattern',
   'setBackgroundPattern',
   'setBlackScreen',
+  'startCountdown',
+  'stopCountdown',
   // AJOUT (médiathèque — déclenchement vocal de photos/vidéos)
   'getMediaLibrary',
   'addMediaItem',
@@ -2658,6 +2660,21 @@ wss.on('connection', (ws, req) => {
     if (sanitized.action === 'setBlackScreen') {
       broadcast({ action: 'blackScreenMode', enabled: !!sanitized.enabled });
       log('Affichage : écran noir ' + (sanitized.enabled ? 'activé' : 'désactivé'));
+      return;
+    }
+
+    // --- Service countdown ---
+    if (sanitized.action === 'startCountdown') {
+      const endTimeMs = Number(sanitized.endTimeMs);
+      if (endTimeMs > Date.now()) {
+        broadcast({ action: 'countdownMode', endTimeMs, label: sanitized.label || 'Le culte commence dans' });
+        log('Affichage : countdown démarré jusqu\'à ' + new Date(endTimeMs).toLocaleTimeString());
+      }
+      return;
+    }
+    if (sanitized.action === 'stopCountdown') {
+      broadcast({ action: 'countdownStop' });
+      log('Affichage : countdown arrêté');
       return;
     }
 
