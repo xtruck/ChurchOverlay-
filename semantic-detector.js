@@ -135,12 +135,27 @@ const recentCalls = []; // timestamps of recent API calls
 // -----------------------------------------------------------------------
 // Biblical keyword pre-filter
 // -----------------------------------------------------------------------
+// CORRECTIF (meme bug que detectCommand() dans voice-commands.js et
+// detectMood() dans ai-theme-generator.js, jamais applique ici) :
+// `/\u0300-\u036f/g` SANS crochets est une classe de caracteres invalide -
+// un tiret hors `[...]` est un caractere litteral, donc cette expression ne
+// retirait jamais aucun accent. Comme BIBLICAL_KEYWORDS contient des entrees
+// accentuees (moise, eglise, grace, peche, apotre, prophete...) sans forme
+// jumelle non accentuee, le pre-filtre echouait silencieusement sur un
+// texte transcrit avec des accents corrects. Les crochets restaurent la
+// plage ; les mots-cles sont eux aussi passes au meme de-accentuage pour
+// que la comparaison soit coherente dans les deux sens.
+function stripDiacritics(str) {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+const NORMALIZED_BIBLICAL_KEYWORDS = CONFIG.BIBLICAL_KEYWORDS.map((kw) =>
+  stripDiacritics(kw.toLowerCase())
+);
+
 function looksBiblical(text) {
-  const normalized = text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/\u0300-\u036f/g, '');
-  return CONFIG.BIBLICAL_KEYWORDS.some((kw) => normalized.includes(kw));
+  const normalized = stripDiacritics(text.toLowerCase());
+  return NORMALIZED_BIBLICAL_KEYWORDS.some((kw) => normalized.includes(kw));
 }
 
 // -----------------------------------------------------------------------

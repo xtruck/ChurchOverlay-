@@ -243,9 +243,23 @@ async function correctSmart(text, groqWrapper) {
     return text;
   }
 
+  // CORRECTIF (meme classe de bug que looksBiblical() dans semantic-detector.js
+  // et detectCommand()/detectMood()) : ce test tournait sur `text`, qui a deja
+  // ete passe par correctFast() (ex. "jesus" -> "jesus" avec accent) avant
+  // d'arriver ici, alors que ce regex ne contenait QUE des formes sans accent
+  // pour "jesus" (et un melange incoherent accent/sans-accent pour le reste :
+  // "apotre"/"prophete"/"moise" etc. etaient ecrits AVEC accent). Resultat :
+  // le declencheur "jesus" le plus frequent ne matchait plus jamais des que
+  // correctFast() avait deja corrige l'accent, desactivant silencieusement la
+  // correction LLM pour la quasi-totalite des segments qui en avaient besoin.
+  // On de-accentue le texte et on ne teste plus que des formes sans accent.
+  const normalizedText = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
   const hasBiblicalTerm =
-    /\b(?:jesus|christ|dieu|seigneur|bible|evangile|apôtre|prophète|moïse|david|paul|pierre|marie|esprit|temple|église|verset|chapitre|psaume|jean|luc|marc|matthieu|romains|corinthiens|galates|ephesiens|philippiens|colossiens|hebreux|jacques|apocalypse)\b/i.test(
-      text
+    /\b(?:jesus|christ|dieu|seigneur|bible|evangile|apotre|prophete|moise|david|paul|pierre|marie|esprit|temple|eglise|verset|chapitre|psaume|jean|luc|marc|matthieu|romains|corinthiens|galates|ephesiens|philippiens|colossiens|hebreux|jacques|apocalypse)\b/.test(
+      normalizedText
     );
   if (!hasBiblicalTerm) return text;
 

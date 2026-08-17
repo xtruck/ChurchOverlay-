@@ -141,6 +141,14 @@ function makeSourceFile(dir, filename) {
   });
   await page.addInitScript(() => {
     window.churchOverlay = { pickMediaFile: async () => null, getSettings: async () => ({}) };
+    // Un contexte Playwright frais n'a pas le flag localStorage que
+    // startup-wizard.js pose apres la premiere visite reelle : sans lui,
+    // l'assistant de demarrage s'ouvre tout seul apres 1500ms et son overlay
+    // (z-index eleve) intercepte tous les clics suivants, faisant echouer ce
+    // test au bout de 30s de retries sur "Nouvelle scene" (jamais visible
+    // avant ce chantier, car aucun autre test Playwright ne charge
+    // dashboard.html).
+    localStorage.setItem('churchoverlay_wizard_seen', '1');
   });
 
   try {
