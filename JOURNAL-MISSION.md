@@ -384,7 +384,7 @@ E2 (Nombres — ASR), H2 (langue mixte — A.2), K3 (Actes — ASR).
 - [x] ~~Step 6 : mur média~~ → TERMINÉ 2026-08-17 (grille visuelle PRÉPARATION)
 - [x] ~~Step 7 : écran noir~~ → TERMINÉ 2026-08-17 (bouton ⬛ + z-index:200)
 - [x] ~~Step 8 : aperçu/programme~~ → TERMINÉ 2026-08-17 (dual view toggle)
-- [ ] Step 9 : mode formation
-- [ ] Steps 10-14 : polish final
-- [ ] PARTIE 2 : refonte interface (trois espaces) — EN COURS, ~60% fait
+- [x] ~~Step 9 : mode formation~~ → TERMINÉ 2026-08-17 (5 étapes, Ctrl+Shift+T)
+- [x] ~~Steps 10-14 : polish final~~ → TERMINÉ 2026-08-17 (startup wizard Ctrl+Shift+S, shortcuts, polish)
+- [x] ~~PARTIE 2 : refonte interface~~ → TERMINÉ 2026-08-17 (12 commits, 3 espaces, 7 features)
 - [ ] PARTIE 3 : fonctionnalités produit
