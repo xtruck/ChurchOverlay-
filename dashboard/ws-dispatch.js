@@ -12,7 +12,7 @@
  * n'est utilisé ici qu'à l'intérieur des branches du switch, jamais évalué
  * au chargement du module.
  */
-import { showToast, addActivity } from './utils.js';
+import { showToast, addActivity, escapeHtmlDashboard } from './utils.js';
 import { state } from './state.js';
 import {
   displayVerse,
@@ -102,6 +102,10 @@ export function handleMessage(message) {
       if (state.autoTranslateEnabled && message.text) {
         requestAutoTranslation(message);
       }
+      // Auto-trigger cross-references when a verse is shown
+      if (message.reference && state && state.ws && state.ws.readyState === WebSocket.OPEN) {
+        state.ws.send(JSON.stringify({ action: 'getCrossReferences', reference: message.reference, text: message.text || '' }));
+      }
       break;
     case 'hideVerse':
       hideVerseDisplay();
@@ -176,10 +180,13 @@ export function handleMessage(message) {
     // jusqu'ici sans destination côté dashboard (les WS envoyaient bien
     // ces actions, mais rien n'écoutait la réponse).
     case 'sermonTheme':
-      // AJOUT : les requêtes auto (silent:true, voir startSermonModeAutoDetect)
-      // mettent seulement à jour le badge, sans polluer le panneau de sortie
-      // manuel avec un texte qui change toutes les 2 minutes.
       updateSermonModeBadge(message);
+      // Update themes card in PRÉPARATION
+      const themesEl = document.getElementById('themesList');
+      if (themesEl && message.theme) {
+        themesEl.innerHTML = '<div class="stat-row"><span class="stat-label">Thème</span><span class="stat-value">' + escapeHtmlDashboard(message.theme) + '</span></div>' +
+          (message.keywords ? '<div class="stat-row"><span class="stat-label">Mots-clés</span><span class="stat-value" style="font-size:0.8rem">' + escapeHtmlDashboard(message.keywords.join(', ')) + '</span></div>' : '');
+      }
       if (!message.silent) {
         renderAiEnricherOutput(
           message.theme
@@ -189,22 +196,13 @@ export function handleMessage(message) {
       }
       break;
     case 'liveSummary':
-      renderAiEnricherOutput(
-        message.summary ? `Résumé : ${message.summary}` : 'Résumé indisponible pour le moment.'
-      );
+      renderLiveSummary(message);
       break;
     case 'aiStats':
       renderAiStats(message);
       break;
     case 'crossReferences':
-      renderAiEnricherOutput(
-        message.results && message.results.length
-          ? `Références croisées pour ${message.reference} : ` +
-              message.results
-                .map((r) => `${r.ref}${r.reason ? ' (' + r.reason + ')' : ''}`)
-                .join(' · ')
-          : `Aucune référence croisée trouvée pour ${message.reference || 'ce verset'}.`
-      );
+      renderCrossReferences(message);
       break;
     case 'textTranslated':
       // Le broadcast vers l'overlay (action showTranslation) est fait
@@ -494,6 +492,36 @@ function updateListeningBar(msg) {
   }
   if (lang && state && state.activeLanguage) {
     lang.textContent = state.activeLanguage;
+  }
+}
+
+// Cross-references — affichées dans la carte dédiée PRÉPARATION
+function renderCrossReferences(msg) {
+  const el = document.getElementById('crossRefResults');
+  const status = document.getElementById('crossRefStatus');
+  if (!el) return;
+  if (!msg.results || msg.results.length === 0) {
+    el.innerHTML = '<div class="stat-row"><span class="stat-label">Aucune référence croisée pour ' + escapeHtmlDashboard(msg.reference || '') + '</span></div>';
+    if (status) { status.textContent = '0'; status.style.display = ''; }
+    return;
+  }
+  el.innerHTML = msg.results.map((r) =>
+    '<div class="stat-row"><span class="stat-label">' + escapeHtmlDashboard(r.ref || '') + '</span>' +
+    '<span class="stat-value" style="font-size:0.75rem;color:var(--text-dim)">' + escapeHtmlDashboard(r.reason || '') + '</span></div>'
+  ).join('');
+  if (status) { status.textContent = msg.results.length; status.style.display = ''; }
+}
+
+// Live summary — rolling summary dans la carte dédiée PRÉPARATION
+function renderLiveSummary(msg) {
+  const el = document.getElementById('liveSummaryContent');
+  if (!el) return;
+  if (msg.summary) {
+    el.textContent = msg.summary;
+    el.style.color = 'var(--text-main)';
+  } else {
+    el.textContent = 'Résumé indisponible pour le moment.';
+    el.style.color = 'var(--text-dim)';
   }
 }
 

@@ -1169,6 +1169,30 @@
             </div>
           </div>
 
+          <!-- Références croisées — affichées automatiquement quand un verset est diffusé -->
+          <div class="card" data-group="analyse" style="margin-top: 1.5rem">
+            <div class="card-header">
+              <span class="card-title">Références Croisées</span>
+              <span id="crossRefStatus" class="status-badge" style="display:none"></span>
+            </div>
+            <div id="crossRefResults">
+              <div class="stat-row">
+                <span class="stat-label">Les références croisées apparaissent automatiquement lorsqu'un verset est affiché.</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Résumé IA en direct — rolling summary pendant le sermon -->
+          <div class="card" data-group="analyse" style="margin-top: 1.5rem">
+            <div class="card-header">
+              <span class="card-title">Résumé IA en Direct</span>
+              <button class="btn btn-secondary" onclick="requestLiveSummary()" style="font-size:0.7rem;padding:0.2rem 0.5rem;">Actualiser</button>
+            </div>
+            <div id="liveSummaryContent" style="font-size:0.8rem;color:var(--text-dim);line-height:1.5;min-height:60px;">
+              Le résumé se génère automatiquement pendant le sermon.
+            </div>
+          </div>
+
           <!-- CORRECTIF (audit round 6) : ai-enricher.js était entièrement codé et
                      câblé côté serveur (getLiveSummary / getSermonTheme / getCrossReferences /
                      translateText / getPostServiceRecap) mais sans aucun bouton pour les
