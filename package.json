@@ -1,7 +1,7 @@
 {
   "name": "churchoverlay",
   "productName": "ChurchOverlay",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Overlay de versets bibliques en direct avec IA — détection sémantique, commandes vocales, thèmes dynamiques et recherche biblique par sujet.",
   "author": "ChurchOverlay",
   "main": "main.js",

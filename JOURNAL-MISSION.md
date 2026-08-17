@@ -387,4 +387,4 @@ E2 (Nombres — ASR), H2 (langue mixte — A.2), K3 (Actes — ASR).
 - [x] ~~Step 9 : mode formation~~ → TERMINÉ 2026-08-17 (5 étapes, Ctrl+Shift+T)
 - [x] ~~Steps 10-14 : polish final~~ → TERMINÉ 2026-08-17 (startup wizard Ctrl+Shift+S, shortcuts, polish)
 - [x] ~~PARTIE 2 : refonte interface~~ → TERMINÉ 2026-08-17 (12 commits, 3 espaces, 7 features)
-- [ ] PARTIE 3 : fonctionnalités produit
+- [x] ~~PARTIE 3 : fonctionnalités produit~~ → TERMINÉ 2026-08-17 (P3.1-3.6: AI enrichment UI, countdown, ambient override)
