@@ -1314,6 +1314,20 @@
             </div>
           </div>
 
+          <!-- Récap post-culte — affiché quand le culte est terminé -->
+          <div class="card" data-group="analyse" style="margin-top: 1.5rem; display: none;" id="postServiceRecapCard">
+            <div class="card-header">
+              <span class="card-title">Récap Post-Culte</span>
+              <div style="display:flex;gap:0.4rem;">
+                <button class="btn btn-secondary" onclick="exportPostServiceRecap()" style="font-size:0.7rem;padding:0.2rem 0.5rem;">📄 Exporter .txt</button>
+                <button class="btn btn-secondary" onclick="exportHighlights()" style="font-size:0.7rem;padding:0.2rem 0.5rem;">📊 Exporter temps forts</button>
+              </div>
+            </div>
+            <div id="postServiceRecapContent" style="font-size:0.8rem;color:var(--text-dim);line-height:1.6;min-height:80px;">
+              Cliquez sur "Récap fin de culte" dans Fonctions IA pour générer ce résumé.
+            </div>
+          </div>
+
           <!-- AJOUT (cahier des charges — assistant sermons, Point 5 "outil
                      d'affichage, jamais de génération théologique") : carte VOLONTAIREMENT
                      séparée des "Fonctions IA Avancées" ci-dessus (pas le même

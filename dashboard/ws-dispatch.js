@@ -219,10 +219,23 @@ export function handleMessage(message) {
       renderHighlightsExport(message);
       break;
     case 'postServiceRecap':
-      // AJOUT : on garde le dernier récap en mémoire pour permettre
-      // l'export en .txt sans le régénérer si l'opérateur clique export
-      // juste après avoir cliqué "Récap fin de culte".
       state.lastPostServiceRecap = message.recap || null;
+      // Show the dedicated recap card
+      const recapCard = document.getElementById('postServiceRecapCard');
+      const recapContent = document.getElementById('postServiceRecapContent');
+      if (recapCard) recapCard.style.display = '';
+      if (recapContent && message.recap) {
+        const r = message.recap;
+        recapContent.innerHTML =
+          (r.title ? '<strong>' + escapeHtmlDashboard(r.title) + '</strong><br>' : '') +
+          (r.keyPoints && r.keyPoints.length ? '<br><strong>Points clés :</strong> ' + r.keyPoints.map(escapeHtmlDashboard).join(', ') : '') +
+          (r.application ? '<br><strong>Application :</strong> ' + escapeHtmlDashboard(r.application) : '') +
+          (r.memoryVerse ? '<br><strong>Verset à retenir :</strong> ' + escapeHtmlDashboard(r.memoryVerse) : '');
+        recapContent.style.color = 'var(--text-main)';
+      } else if (recapContent) {
+        recapContent.textContent = 'Récap indisponible.';
+      }
+      // Also keep the old output for compatibility
       renderAiEnricherOutput(
         message.recap
           ? `${message.recap.title || 'Récap du culte'} — Points clés : ${(message.recap.keyPoints || []).join(', ')}. ` +
