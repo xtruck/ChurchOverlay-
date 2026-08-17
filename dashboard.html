@@ -351,6 +351,13 @@
                   >Connexion au serveur en cours...</span
                 >
               </div>
+              <div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.5rem;font-size:0.75rem;color:var(--text-dim);">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="ambientModeToggle" checked onchange="toggleAmbientMode(this.checked)">
+                  <span class="toggle-slider"></span>
+                </label>
+                <span>Cycle auto ambiances</span>
+              </div>
               <!-- AJOUT (audit — affichage/sortie, gratuit/léger) : motif de fond
                              optionnel, CSS pur (voir #pattern-layer dans overlay.html) — en
                              plus du dégradé de thème déjà choisi ci-dessus. -->

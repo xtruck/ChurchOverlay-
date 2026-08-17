@@ -60,3 +60,9 @@ export function setBackgroundPattern(pattern) {
 
 window.setMoodTheme = setMoodTheme;
 window.setBackgroundPattern = setBackgroundPattern;
+
+window.toggleAmbientMode = function (enabled) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ action: 'setAmbientMode', enabled }));
+  showToast(enabled ? 'Cycle auto réactivé' : 'Cycle auto désactivé', 'info');
+};

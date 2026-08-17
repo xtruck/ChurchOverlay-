@@ -1856,6 +1856,7 @@ const OPERATOR_ACTIONS = new Set([
   'setBlackScreen',
   'startCountdown',
   'stopCountdown',
+  'setAmbientMode',
   // AJOUT (médiathèque — déclenchement vocal de photos/vidéos)
   'getMediaLibrary',
   'addMediaItem',
@@ -2675,6 +2676,19 @@ wss.on('connection', (ws, req) => {
     if (sanitized.action === 'stopCountdown') {
       broadcast({ action: 'countdownStop' });
       log('Affichage : countdown arrêté');
+      return;
+    }
+
+    // --- Ambient mode override (manual pause/resume) ---
+    if (sanitized.action === 'setAmbientMode') {
+      if (sanitized.enabled === false) {
+        stopAmbientMoodLoop();
+        log('Ambiance automatique désactivée par l\'opérateur');
+      } else {
+        startAmbientMoodLoop();
+        log('Ambiance automatique réactivée par l\'opérateur');
+      }
+      broadcast({ action: 'ambientModeChanged', enabled: sanitized.enabled !== false });
       return;
     }
 
