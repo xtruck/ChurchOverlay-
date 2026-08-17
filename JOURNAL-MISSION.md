@@ -353,7 +353,7 @@ E2 (Nombres — ASR), H2 (langue mixte — A.2), K3 (Actes — ASR).
 - [x] ~~B.5 : délai configurable~~ → DÉJÀ IMPLÉMENTÉ
 - [x] ~~C : bilingue réel fr/en/bilingue~~ → TERMINÉ 2026-08-17 (6 couches complètes + LICENCES-TRADUCTIONS.md)
 - [x] ~~D.5 : déplacer .md racine → docs/archive/~~ → TERMINÉ 2026-08-17 (8 fichiers)
-- [ ] D.1 : matrice CI (Node 22/20, retirer rebuild)
+- [x] ~~D.1 : matrice CI (Node 22/20, retirer rebuild)~~ → TERMINÉ 2026-08-17
 - [ ] D.2 : découper server.js dispatcher
 - [ ] D.3 : extraire overlay.html JS → overlay.js
 - [ ] D.4 : versionnage sémantique
