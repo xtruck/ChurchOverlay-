@@ -1089,3 +1089,63 @@ Confirmation finale de l'utilisateur sur son propre `npm start` toujours en atte
 pro OBS-style, éditeur Canva, IA/AR/3D...) — décision produit distincte et à fort volume,
 en attente de cadrage avec l'utilisateur avant tout travail (voir sa demande "implement
 all and even add amelioration to them", reçue juste après ce nettoyage).
+
+---
+
+### 2026-08-18 — Chantier "Multi-Bible côte à côte" (affichage manuel, TERMINÉ)
+
+- [x] **Contexte** : suite à la demande "implement all and even add amelioration to
+      them" sur les fichiers Devin, une revue déléguée (agent Explore, 13 fichiers) a
+      conclu qu'AUCUN des 13 fichiers ne méritait d'intégration (doublons, stubs
+      factices, 2 bugs de crash — `logger.info is not a function` dans deux fichiers,
+      `deepgramStreaming.initialize/transcribeChunk/isAvailable` inexistants). Proposé à
+      l'utilisateur : laisser en l'état / choisir une vraie idée à reconstruire / rien.
+      Réponse : reconstruire une vraie idée. La seule idée candidate encore valable
+      après élimination des doublons (le "diaporama d'annonces" suggéré existait déjà)
+      était l'affichage multi-Bible de `propresenter-features.js` — mais son
+      implémentation Devin était un stub pur (`fetchParallelBibleVerses` renvoyait
+      littéralement la chaîne `"[Verse in fr] Jean 3:16"`, jamais un vrai verset).
+- [x] **Décision de scope** : branché uniquement sur le déclenchement MANUEL d'un
+      verset (action WS `showVerse`, ex. "Afficher un Verset"), PAS sur le pipeline de
+      détection automatique en direct (11 points d'appel de `getVerseMultilang` dans
+      server.js, chemin critique déjà optimisé et largement testé). Cohérent avec
+      l'usage réel de ce type de fonctionnalité chez ProPresenter : un choix délibéré de
+      l'opérateur pour une lecture préparée, pas quelque chose greffé sur une citation
+      spontanée détectée en pleine prédication.
+- [x] **bible-lookup-with-api.js** : `translationCode` optionnel enfilé à travers
+      `getVerse`/`helloaoFetchChapter`/`getbibleFetchChapter` (avant, chaque fournisseur
+      lisait la traduction COURANTE de session `currentTranslation[lang]` — aucun moyen
+      de récupérer DEUX traductions de LA MÊME langue, ex. Louis Segond 1910 + Darby,
+      sans que l'une écrase l'état global de l'autre). Nouvelles fonctions
+      `getVerseInTranslation()`/`getVerseDualTranslation()` (cette dernière en parallèle
+      via `Promise.allSettled`, sans aucun état mutable partagé — vérifié sous
+      concurrence réelle dans le test dédié : une implémentation naïve par mutation
+      temporaire de `currentTranslation` aurait couru un vrai risque de course ici).
+- [x] **session-state.js** : `getSecondaryTranslation()`/`setSecondaryTranslation()` —
+      non persisté (même raisonnement que `highContrastMode`).
+- [x] **server.js** : action WS `setSecondaryTranslation` (validée contre
+      `bibleLookup.listTranslations()`, diffuse `secondaryTranslationChanged`, incluse
+      dans le payload `init` pour qu'un tableau de bord qui se reconnecte reste
+      synchronisé — bug trouvé et corrigé en écrivant le test e2e multi-poste). `showVerse`
+      attache `secondaryText`/`secondaryLabel`/`secondaryLang` si une traduction
+      secondaire est active ET que le mode d'affichage n'est pas déjà 'both' (2 textes
+      déjà affichés, un 3e nuirait plus qu'il n'aiderait). Best-effort strict : un échec
+      de la traduction secondaire n'empêche jamais l'affichage du verset principal.
+- [x] **overlay.js** : rend le texte secondaire via le MÊME élément/style déjà utilisé
+      pour l'affichage bilingue (les deux cas sont mutuellement exclusifs côté serveur).
+- [x] **dashboard** : nouveau menu déroulant "Comparer avec" à côté du sélecteur de
+      traduction existant, peuplé depuis la même liste aplatie toutes langues
+      confondues, synchronisé entre tableaux de bord connectés.
+- [x] **Tests** : `test-bible-lookup-dual-translation.js` (7, dont le test de
+      non-régression sous concurrence), `test-secondary-translation-actions.js` (13,
+      câblage WS avec bible-lookup mocké), +3 assertions dans `test-session-state.js`,
+      +1 scénario e2e (peuplement du menu + synchronisation entre 2 onglets/postes —
+      c'est ce test qui a révélé le bug `init` ci-dessus).
+- [x] **Gate** : `npm test` EXIT 0 (253), `tsc --noEmit` clean, `check-build-files.js`
+      OK (63 fichiers, inchangé), lint 0 erreur, `format:check` clean, `npm audit` 0
+      vulnérabilité, `test:e2e` 15/15.
+- [x] Commit `d13af20`.
+
+**Reste à faire** : la détection automatique en direct n'affiche jamais de traduction
+secondaire (décision de scope assumée, pas un oubli). Pas de commande vocale dédiée à ce
+réglage (le menu déroulant du tableau de bord suffit pour un réglage occasionnel).
