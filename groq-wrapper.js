@@ -293,15 +293,49 @@ function computeGroqSpeechInfo(data) {
 let consecutiveGroqFailures = 0;
 let lastGroqError = null;
 
-/**
- * @returns {{ consecutiveFailures: number, lastError: string|null }}
- */
-function getGroqHealthState() {
-  return { consecutiveFailures: consecutiveGroqFailures, lastError: lastGroqError };
+// AJOUT (§6b.1 — circuit breaker, pas seulement un repli) : test-groq-
+// fallback-race.js/transcribeWithFallback() essaie déjà Groq à CHAQUE
+// segment avant de basculer sur Deepgram, même si Groq échoue en boucle
+// depuis le début du culte — un vrai timeout réseau (pas une erreur HTTP
+// immédiate) coûte jusqu'à FALLBACK_TIMEOUT_MS (5000 ms) de latence
+// supplémentaire par segment pendant toute la panne. Seuil à 5 (pas 3,
+// contrairement au seuil de "signal fiable" de buildHealthReport() dans
+// server.js) : DÉLIBÉRÉMENT au-dessus des 3 échecs + 1 succès exercés par
+// test-groq-health-tracking.js, pour ne rien changer à ce contrat déjà
+// testé — seule une panne VRAIMENT prolongée (5+ segments consécutifs, pas
+// un aléa réseau isolé) ouvre le circuit. Après COOLDOWN_MS, un essai
+// "semi-ouvert" retente Groq une fois ; un succès referme le circuit
+// (compteur remis à 0, comme un succès normal), un nouvel échec relance le
+// cooldown.
+const CIRCUIT_FAILURE_THRESHOLD = 5;
+const CIRCUIT_COOLDOWN_MS = 30000;
+let circuitOpenedAt = null;
+
+function isCircuitOpen() {
+  if (consecutiveGroqFailures < CIRCUIT_FAILURE_THRESHOLD || circuitOpenedAt === null) {
+    return false;
+  }
+  return Date.now() - circuitOpenedAt < CIRCUIT_COOLDOWN_MS;
 }
 
 /**
- * Lance Groq et Deepgram EN PARALLÈLE.
+ * @returns {{ consecutiveFailures: number, lastError: string|null, circuitOpen: boolean, circuitOpenedAt: number|null }}
+ */
+function getGroqHealthState() {
+  return {
+    consecutiveFailures: consecutiveGroqFailures,
+    lastError: lastGroqError,
+    circuitOpen: isCircuitOpen(),
+    circuitOpenedAt,
+  };
+}
+
+/**
+ * Lance Groq et Deepgram EN PARALLÈLE — sauf circuit ouvert (voir
+ * isCircuitOpen()) ET Deepgram disponible, auquel cas Groq est sauté
+ * entièrement pour ce segment (repli direct sur Deepgram, sans attendre
+ * FALLBACK_TIMEOUT_MS). Jamais sauté si Deepgram n'est pas configuré : sans
+ * lui, retenter Groq reste la seule chance de transcrire, même faible.
  */
 async function transcribeWithFallback(
   audioFilePath,
@@ -311,17 +345,38 @@ async function transcribeWithFallback(
 ) {
   const deepgramEnabled = deepgram.isConfigured();
 
+  if (isCircuitOpen() && deepgramEnabled) {
+    console.warn(
+      '[groq-wrapper] Circuit Groq ouvert (%d échecs consécutifs) — repli Deepgram direct, Groq sauté.',
+      consecutiveGroqFailures
+    );
+    try {
+      const result = await deepgram.transcribeFile(
+        audioFilePath,
+        new AbortController().signal,
+        language
+      );
+      return { text: result.text, confidence: result.confidence, source: 'deepgram' };
+    } catch (err) {
+      throw lastGroqError ? new Error(lastGroqError) : err;
+    }
+  }
+
   const groqAbort = new AbortController();
   const deepgramAbort = new AbortController();
   const groqPromise = transcribeFile(audioFilePath, groqAbort.signal, contextHint, language)
     .then((result) => {
       consecutiveGroqFailures = 0;
       lastGroqError = null;
+      circuitOpenedAt = null;
       return result;
     })
     .catch((err) => {
       consecutiveGroqFailures++;
       lastGroqError = err.message;
+      if (consecutiveGroqFailures >= CIRCUIT_FAILURE_THRESHOLD) {
+        circuitOpenedAt = Date.now();
+      }
       return { error: err };
     });
   const deepgramPromise = deepgramEnabled
