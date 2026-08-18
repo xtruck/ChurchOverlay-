@@ -726,26 +726,22 @@ the app to make sure everything is working."
       majorité pré-existante (server.js, plusieurs dashboard/features/*.js,
       action-registry.js...), le reste des fichiers de test touchés cette session (jamais
       passés par prettier — `eslint --fix` ignore silencieusement `test/`). `prettier
-      --write` sur les 33, aucun changement de logique, suite complète revérifiée après.
+--write` sur les 33, aucun changement de logique, suite complète revérifiée après.
 - [x] **`npm run lint`** : 113 -> 8 erreurs rien qu'en corrigeant le formatage (eslint fait
       tourner prettier comme règle sur les fichiers hors test/). Les 8 restantes étaient de
-      VRAIS bugs, corrigés individuellement :
-      - `server.js` : `generateCameraPairing` (jumelage QR caméra téléphone) appelait
-        `getLanIpAddress()`, jamais définie dans ce fichier — ReferenceError garanti dès
-        qu'un opérateur génère un QR avec WS_HOST configuré pour le réseau (le cas d'usage
-        exact de cette fonctionnalité). main.js a sa propre copie de cette fonction
-        (son commentaire supposait déjà l'existence de celle-ci). Reproduite à l'identique.
-        Pas de test de régression ajouté (lier le serveur à une vraie IP LAN dans un test
-        est fragile selon le runner CI) — vérifié manuellement, limite documentée.
-      - `dashboard/features/startup-wizard.js` : appel à l'identifiant nu
-        `closeStartupWizard()` au lieu de la fonction locale `close` déjà dans la portée —
-        fonctionnait par accident (résolution globale), corrigé proprement.
-      - `dashboard/ws-dispatch.js` : 2 `case` avec `const` sans accolades de bloc — pas un
-        bug actif ici, mais un vrai piège pour le prochain `case` avec un nom en collision.
-      - 3 exports/locales vraiment mortes supprimées (command-palette.js `visibleCount`,
-        confidence-mode.js `BADGE_CLASS`, training-mode.js `showTip()` + le dict `TIPS`
-        que lui seul référençait — un système de tooltips à moitié construit, jamais
-        branché, supplanté par les guides à contour qui, eux, fonctionnent réellement).
+      VRAIS bugs, corrigés individuellement : - `server.js` : `generateCameraPairing` (jumelage QR caméra téléphone) appelait
+      `getLanIpAddress()`, jamais définie dans ce fichier — ReferenceError garanti dès
+      qu'un opérateur génère un QR avec WS_HOST configuré pour le réseau (le cas d'usage
+      exact de cette fonctionnalité). main.js a sa propre copie de cette fonction
+      (son commentaire supposait déjà l'existence de celle-ci). Reproduite à l'identique.
+      Pas de test de régression ajouté (lier le serveur à une vraie IP LAN dans un test
+      est fragile selon le runner CI) — vérifié manuellement, limite documentée. - `dashboard/features/startup-wizard.js` : appel à l'identifiant nu
+      `closeStartupWizard()` au lieu de la fonction locale `close` déjà dans la portée —
+      fonctionnait par accident (résolution globale), corrigé proprement. - `dashboard/ws-dispatch.js` : 2 `case` avec `const` sans accolades de bloc — pas un
+      bug actif ici, mais un vrai piège pour le prochain `case` avec un nom en collision. - 3 exports/locales vraiment mortes supprimées (command-palette.js `visibleCount`,
+      confidence-mode.js `BADGE_CLASS`, training-mode.js `showTip()` + le dict `TIPS`
+      que lui seul référençait — un système de tooltips à moitié construit, jamais
+      branché, supplanté par les guides à contour qui, eux, fonctionnent réellement).
 - [x] **Vérification de démarrage réel** : `npm run server-only` lancé (timeout 8s,
       isolé du port par défaut le temps du test) — config validée, tous les modules IA
       chargent en mode dégradé attendu (pas de clés), serveur WS+HTTP démarre. Preuve
@@ -806,3 +802,50 @@ réel apparaître dans `#captionBar` via Playwright — actuellement non couvert
 scope proportionné pour ce chantier (dupliquerait l'effort de mock déjà fourni ailleurs
 pour un gain marginal sur la logique propre à cet endpoint, qui est le gating, pas la
 traduction).
+
+---
+
+### 2026-08-18 — Chantier 4.6 (présence anonyme via QR, companion.html — TERMINÉ)
+
+- [x] **Décision produit prise en session** : le cahier des charges parle de "qui est là"
+      (analytics d'engagement). Choix délibéré de rester à un compteur ANONYME
+      (horodatage seul, aucun nom) plutôt qu'un check-in identifié — collecter de vraies
+      données personnelles sur de vraies personnes nécessiterait une politique de
+      consentement/rétention explicite que ce cahier des charges ne tranche pas, décision
+      produit non prise unilatéralement ici (même traitement que la question politique
+      embeddings plus haut dans ce journal). La valeur analytics réelle (combien de
+      personnes ont engagé, sur quelle période) reste livrée, sans aucune donnée
+      personnelle.
+- [x] **session-store.js** : nouvelle table `checkins` (horodatage seul),
+      `recordCheckin()`/`getCheckinCountSince()`, même discipline best-effort que
+      `recordVerseShown()`/`recordPipelineError()` déjà présents.
+- [x] **server.js** : `POST /api/checkin` (même discipline sans jeton que `/api/verses`/
+      `/api/captions` juste au-dessus). `checkinCount` ajouté à la réponse WS
+      `getSessionStats` existante — visible dans le panneau stats du tableau de bord sans
+      nouvelle surface UI.
+- [x] **companion.html** : un seul POST au chargement, gaté par `sessionStorage` (pas
+      `localStorage` — un nouvel onglet/retour plus tard dans le même culte recompte,
+      traité comme un signal d'engagement légitime plutôt qu'un doublon à supprimer).
+- [x] **Tests** : `test/session-store.js` étendu (+6 assertions), `test-checkin-endpoint.js`
+      (nouveau) + `test/e2e/companion-checkin.spec.js` (nouveau, vérifie exactement 1 POST
+      par session navigateur, aucun au rechargement du même onglet).
+- [x] **2 vrais bugs d'infra de test trouvés en écrivant ce chantier** : 1. `test-checkin-endpoint.js` asserait d'abord un COMPTE ABSOLU — cassait dès la 2e
+      exécution : ce test (comme la suite e2e et d'autres tests d'intégration qui font
+      `require('../server.js')` directement) n'isole pas `USER_DATA_DIR`, donc partage
+      le vrai `~/.churchoverlay` de cette machine entre exécutions (même gap déjà noté
+      pour la suite e2e). Corrigé en mesurant un DELTA avant/après plutôt qu'un total.
+      Nettoyage manuel des lignes de test déjà écrites dans la vraie table `checkins`
+      avant que le correctif n'atterrisse. 2. Plusieurs `POST /api/checkin` suivis d'un `process.exit()` immédiat plantaient de
+      façon déterministe ("Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)",
+      src\win\async.c) — bug Node/libuv connu sous Windows, un handle keep-alive HTTP
+      ou de checkpoint WAL better-sqlite3 pas fini de se fermer avant l'arrêt forcé.
+      Isolé par bissection (1 POST : jamais de crash ; 3 POST : crash déterministe
+      3/3 ; 3 POST + 500ms avant exit() : jamais de crash 3/3). Délai ajouté avec
+      commentaire expliquant pourquoi, pas un `sleep()` mystérieux.
+- [x] **Gate** : `npm test` EXIT 0, `tsc --noEmit` clean, `check-build-files.js` OK, lint 0
+      erreur, format:check clean, `npm audit` 0 vulnérabilité, `test:e2e` 14/14.
+- [x] Commit `d1d1d56`.
+
+**Reste à faire (pas dans ce chantier)** : si un check-in IDENTIFIÉ (avec nom) est
+souhaité un jour, c'est une décision produit séparée nécessitant une vraie politique de
+consentement/rétention — pas à trancher en l'absence de l'utilisateur.
