@@ -223,6 +223,101 @@ export function renderHighlightsExport(message) {
   }
 }
 
+// AJOUT (chantier 4.6 — extraits vidéo autour des temps forts) : deux
+// sélecteurs natifs (voir preload.js), stockés en variables de module —
+// pas dans localStorage, un chemin de fichier local n'a pas vocation à
+// survivre au rechargement de la page (l'opérateur re-choisit à chaque
+// export, cohérent avec le fait que la vidéo source change à chaque culte).
+let clipSourcePath = null;
+let clipOutputDir = null;
+
+function renderClipPaths() {
+  const el = document.getElementById('clipExportPaths');
+  if (!el) return;
+  const src = clipSourcePath ? `Source : ${clipSourcePath}` : 'Source : (aucune choisie)';
+  const dst = clipOutputDir ? `Destination : ${clipOutputDir}` : 'Destination : (aucune choisie)';
+  el.textContent = `${src} — ${dst}`;
+}
+
+export async function pickClipSourceVideo() {
+  if (!window.churchOverlay || !window.churchOverlay.pickSourceVideoFile) {
+    showToast(
+      'Le choix de fichier natif n’est disponible que dans l’application ChurchOverlay.',
+      'error'
+    );
+    return;
+  }
+  const picked = await window.churchOverlay.pickSourceVideoFile();
+  if (picked) {
+    clipSourcePath = picked;
+    renderClipPaths();
+  }
+}
+
+export async function pickClipOutputFolder() {
+  if (!window.churchOverlay || !window.churchOverlay.pickClipOutputDir) {
+    showToast(
+      'Le choix de dossier natif n’est disponible que dans l’application ChurchOverlay.',
+      'error'
+    );
+    return;
+  }
+  const picked = await window.churchOverlay.pickClipOutputDir();
+  if (picked) {
+    clipOutputDir = picked;
+    renderClipPaths();
+  }
+}
+
+export function startClipExport() {
+  if (!requireWsOrWarn()) return;
+  if (!clipSourcePath || !clipOutputDir) {
+    showToast('Choisissez la vidéo source et le dossier de destination avant de lancer.', 'error');
+    return;
+  }
+  const durationInput = document.getElementById('clipDurationInput');
+  const clipDurationSec = durationInput ? Number(durationInput.value) || undefined : undefined;
+  ws.send(
+    JSON.stringify({
+      action: 'exportClips',
+      sourcePath: clipSourcePath,
+      outputDir: clipOutputDir,
+      clipDurationSec,
+    })
+  );
+}
+
+export function renderClipExportStarted() {
+  const status = document.getElementById('clipExportStatus');
+  const btn = document.getElementById('clipExportBtn');
+  if (status) status.textContent = '⏳ Export en cours…';
+  if (btn) btn.disabled = true;
+}
+
+export function renderClipExportProgress(message) {
+  const status = document.getElementById('clipExportStatus');
+  if (status) status.textContent = `⏳ Extrait ${message.done}/${message.total}…`;
+}
+
+export function renderClipExportComplete(message) {
+  const status = document.getElementById('clipExportStatus');
+  const btn = document.getElementById('clipExportBtn');
+  if (btn) btn.disabled = false;
+  if (!status) return;
+
+  if (message.clips.length === 0) {
+    status.textContent = 'Aucun temps fort à extraire pour le moment.';
+    return;
+  }
+  const errorNote = message.errors.length > 0 ? ` (${message.errors.length} échec(s))` : '';
+  status.textContent = `✅ ${message.clips.length} extrait(s) généré(s) dans ${message.outputDir}${errorNote}`;
+  showToast(`${message.clips.length} extrait(s) vidéo généré(s).`, message.ok ? 'success' : 'info');
+}
+
+window.pickClipSourceVideo = pickClipSourceVideo;
+window.pickClipOutputFolder = pickClipOutputFolder;
+window.startClipExport = startClipExport;
+
 // AJOUT : badge de mode de culte auto-détecté (Louange / Prédication /
 // Prière / Annonces...). Le texte de `theme` provient de detectSermonTheme
 // côté ai-enricher.js ; on l'affiche tel quel sans le réinterpréter pour

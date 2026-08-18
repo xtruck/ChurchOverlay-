@@ -1488,6 +1488,49 @@
                 "
               ></textarea>
             </div>
+
+            <!-- AJOUT (chantier 4.6 — extraits vidéo autour des temps forts) :
+                         découpe réellement la vidéo (voir clip-exporter.js), contrairement
+                         au bloc "Exporter les temps forts" ci-dessus qui ne produit que du
+                         texte (chapitres/CSV). Nécessite un enregistrement vidéo du culte
+                         déjà terminé sur disque (l'app n'enregistre pas elle-même). -->
+            <div
+              style="
+                margin-top: 1.25rem;
+                padding-top: 1rem;
+                border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+              "
+            >
+              <div style="font-weight: 600; margin-bottom: 0.5rem">
+                🎞️ Générer des extraits vidéo (réseaux sociaux)
+              </div>
+              <div class="field-hint" style="margin-bottom: 0.6rem">
+                Découpe un extrait de
+                <input
+                  type="number"
+                  id="clipDurationInput"
+                  value="45"
+                  min="15"
+                  max="120"
+                  style="width: 4rem"
+                />
+                s autour de chaque temps fort, depuis un enregistrement vidéo déjà terminé sur
+                disque.
+              </div>
+              <div style="display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.6rem">
+                <button class="btn btn-secondary" onclick="pickClipSourceVideo()">
+                  📂 Choisir la vidéo source
+                </button>
+                <button class="btn btn-secondary" onclick="pickClipOutputFolder()">
+                  📁 Choisir le dossier de destination
+                </button>
+              </div>
+              <div id="clipExportPaths" class="field-hint" style="margin-bottom: 0.6rem"></div>
+              <button class="btn btn-primary" onclick="startClipExport()" id="clipExportBtn">
+                ✂️ Générer les extraits
+              </button>
+              <div id="clipExportStatus" class="field-hint" style="margin-top: 0.6rem"></div>
+            </div>
           </div>
         </section>
 

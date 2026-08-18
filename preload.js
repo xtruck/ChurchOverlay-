@@ -157,6 +157,10 @@ contextBridge.exposeInMainWorld('churchOverlay', {
   // par le WebSocket existant (voir server.js), pas par IPC — cohérent avec
   // le reste de l'app (main.js = accès OS, server.js = logique applicative).
   pickMediaFile: () => ipcRenderer.invoke('pick-media-file'),
+  // AJOUT (chantier 4.6 — extraits vidéo) : mêmes raisons que pickMediaFile
+  // ci-dessus (sélecteur de fichier natif, uniquement disponible côté main).
+  pickSourceVideoFile: () => ipcRenderer.invoke('pick-source-video-file'),
+  pickClipOutputDir: () => ipcRenderer.invoke('pick-clip-output-dir'),
   // AJOUT (glisser-déposer médiathèque) : File.path a été retiré d'Electron
   // (depuis la v32) pour raisons de sécurité — webUtils.getPathForFile() est
   // son remplacement officiel, disponible uniquement dans le script de

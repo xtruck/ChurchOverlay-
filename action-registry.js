@@ -120,6 +120,7 @@ const CLIENT_ACTIONS = {
   getNetworkStatus: { category: 'infra', description: 'État du réseau' },
   getSessionStats: { category: 'infra', description: 'Statistiques de session' },
   exportHighlights: { category: 'infra', description: 'Exporter les temps forts' },
+  exportClips: { category: 'infra', description: 'Générer des extraits vidéo des temps forts' },
   sendStageMessage: { category: 'infra', description: "Message sur l'écran de piste" },
   clearStageMessage: { category: 'infra', description: 'Effacer le message de piste' },
   getOfflineBibleStatus: { category: 'infra', description: 'État de la Bible hors-ligne' },

@@ -211,6 +211,10 @@ declare global {
       // --- Médiathèque ---
       pickMediaFile: () => Promise<string | null>;
       getPathForFile: (file: File) => string;
+
+      // --- Extraits vidéo (chantier 4.6) ---
+      pickSourceVideoFile: () => Promise<string | null>;
+      pickClipOutputDir: () => Promise<string | null>;
     };
   }
 }

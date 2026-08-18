@@ -1324,6 +1324,31 @@ ipcMain.handle('pick-media-file', async () => {
   return result.filePaths[0];
 });
 
+// --- AJOUT (chantier 4.6 — extraits vidéo autour des temps forts) ----------
+// Deux sélecteurs natifs distincts : la vidéo SOURCE (l'enregistrement
+// complet du culte, choisi une fois par export) et le dossier de
+// DESTINATION des extraits — même raisonnement que pick-media-file
+// ci-dessus (dialog.showOpenDialog n'existe que côté process principal),
+// la découpe elle-même (clip-exporter.js) vit dans le worker server.js.
+ipcMain.handle('pick-source-video-file', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "Choisir l'enregistrement vidéo du culte",
+    properties: ['openFile'],
+    filters: [{ name: 'Vidéos', extensions: ['mp4', 'mkv', 'mov', 'webm', 'avi'] }],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
+ipcMain.handle('pick-clip-output-dir', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choisir le dossier de destination des extraits',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
 // ---------------------------------------------------------------------------
 // Auto-updater (optional — won't crash if not installed)
 // ---------------------------------------------------------------------------

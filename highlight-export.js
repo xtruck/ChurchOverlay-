@@ -120,4 +120,10 @@ module.exports = {
   formatTimestamp,
   buildYoutubeChapters,
   buildCsv,
+  // AJOUT (chantier 4.6 — extraits vidéo, voir clip-exporter.js) : même
+  // filtre "temps forts espacés d'au moins 10s" déjà utilisé pour les
+  // chapitres YouTube ci-dessus — cut des extraits vidéo sur des temps
+  // forts non filtrés produirait des extraits qui se chevauchent ou
+  // dupliquent quasiment le même instant. Exportée plutôt que dupliquée.
+  prepareEntries,
 };

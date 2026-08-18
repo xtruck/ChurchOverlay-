@@ -87,6 +87,11 @@ const captionTranslator = require('./caption-translator');
 // AJOUT (export des temps forts d'un culte) : module pur, aucune donnée
 // nouvelle collectée — voir highlight-export.js.
 const highlightExport = require('./highlight-export');
+// AJOUT (chantier 4.6 — extraits vidéo) : voir clip-exporter.js. require()
+// tardif volontairement évité ici (contrairement à obs-controller.js par
+// ex.) — clip-exporter.js ne fait rien au chargement (pas de connexion
+// réseau/fichier ouverte), donc aucun coût de démarrage à éviter.
+const clipExporter = require('./clip-exporter');
 // Zéro-point utilisé pour les temps forts exportés (voir action
 // 'exportHighlights' plus bas) : approximation raisonnable du début du
 // culte (démarrage du process serveur), pas une vérité absolue — un
@@ -118,6 +123,13 @@ let lastLiveCaption = { text: null, translation: null, timestamp: null };
 function updateLiveCaption(text, translation) {
   lastLiveCaption = { text: text || null, translation: translation || null, timestamp: Date.now() };
 }
+
+// AJOUT (chantier 4.6 — extraits vidéo) : garde simple contre deux exports
+// concurrents qui écriraient dans le même dossier de destination en même
+// temps (fichiers de sortie potentiellement corrompus par deux process
+// ffmpeg écrivant sur le même chemin) — un seul export à la fois, quel que
+// soit le nombre de tableaux de bord connectés.
+let clipExportInProgress = false;
 
 // ---------------------------------------------------------------------------
 // Durée d'affichage des versets — source unique de vérité
@@ -1996,6 +2008,8 @@ const OPERATOR_ACTIONS = new Set([
   'clearStageMessage',
   // AJOUT (export des temps forts d'un culte — voir highlight-export.js)
   'exportHighlights',
+  // AJOUT (extraits vidéo autour des temps forts — voir clip-exporter.js)
+  'exportClips',
   // AJOUT (détails d'affichage média — durée/style)
   'updateMediaItem',
   // AJOUT (mode confiance — seuil ASR configuré par l'opérateur)
@@ -2363,6 +2377,64 @@ wss.on('connection', (ws, req) => {
             error: "Impossible d'exporter les temps forts : " + err.message,
           })
         );
+      }
+      return;
+    }
+
+    // --- Extraits vidéo autour des temps forts (chantier 4.6) ---
+    if (sanitized.action === 'exportClips') {
+      if (clipExportInProgress) {
+        ws.send(
+          JSON.stringify({
+            action: 'error',
+            error:
+              'Un export de clips est déjà en cours — attendez sa fin avant den lancer un nouveau.',
+          })
+        );
+        return;
+      }
+      const sourcePath = String(sanitized.sourcePath || '').trim();
+      const outputDir = String(sanitized.outputDir || '').trim();
+      if (!sourcePath || !outputDir) {
+        ws.send(
+          JSON.stringify({
+            action: 'error',
+            error: 'Fichier source et dossier de destination requis.',
+          })
+        );
+        return;
+      }
+      clipExportInProgress = true;
+      broadcast({ action: 'clipExportStarted' });
+      try {
+        const entries = sessionStore.getVerseHistorySince(SESSION_STARTED_AT);
+        const result = await clipExporter.exportClips(
+          sourcePath,
+          outputDir,
+          entries,
+          SESSION_STARTED_AT,
+          {
+            clipDurationSec: Number(sanitized.clipDurationSec) || undefined,
+            onProgress: (done, total) => broadcast({ action: 'clipExportProgress', done, total }),
+          }
+        );
+        broadcast({
+          action: 'clipExportComplete',
+          ok: result.ok,
+          clips: result.clips,
+          errors: result.errors,
+          outputDir,
+        });
+        log(
+          `Extraits vidéo : ${result.clips.length} généré(s), ${result.errors.length} échec(s) — ${outputDir}`
+        );
+      } catch (err) {
+        broadcast({
+          action: 'error',
+          error: "Échec de l'export des extraits vidéo : " + err.message,
+        });
+      } finally {
+        clipExportInProgress = false;
       }
       return;
     }

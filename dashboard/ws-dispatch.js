@@ -35,6 +35,9 @@ import {
   requestAutoTranslation,
   renderPreServiceCheckResult,
   renderAiStats,
+  renderClipExportStarted,
+  renderClipExportProgress,
+  renderClipExportComplete,
 } from './features/preservice-ai.js';
 import { renderMediaLibrary, renderMediaWall } from './features/media-library.js';
 import { renderSceneStudioGallery } from './features/scene-studio.js';
@@ -228,6 +231,15 @@ export function handleMessage(message) {
       break;
     case 'highlightsExported':
       renderHighlightsExport(message);
+      break;
+    case 'clipExportStarted':
+      renderClipExportStarted();
+      break;
+    case 'clipExportProgress':
+      renderClipExportProgress(message);
+      break;
+    case 'clipExportComplete':
+      renderClipExportComplete(message);
       break;
     case 'postServiceRecap': {
       state.lastPostServiceRecap = message.recap || null;
