@@ -146,7 +146,15 @@ function connect({ token, path: reqPath = '/' } = {}) {
   });
 }
 
-function waitForMessage(ws, predicate, timeoutMs = 1500) {
+// CORRECTIF (flake constaté en session — timeout ~1 fois sur 3, jamais lié à
+// ce chantier) : startReading()/nextReadingVerse() déclenchent un vrai
+// aller-retour réseau (bibleLookup.getVerseMultilang(), voir
+// bible-lookup-with-api.js — CHURCHOVERLAY_SKIP_BIBLE_DOWNLOAD n'évite que
+// le téléchargement complet en arrière-plan, pas cette consultation
+// ponctuelle). 1500 ms est un budget trop serré pour un appel HTTP externe
+// sous charge variable ; 5000 ms laisse la marge sans changer ce qui est
+// testé (le test échoue toujours si le message n'arrive jamais).
+function waitForMessage(ws, predicate, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
     const start = Date.now();
     const poll = () => {
