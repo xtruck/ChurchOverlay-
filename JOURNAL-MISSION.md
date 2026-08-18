@@ -982,3 +982,64 @@ accessibilité) — délibérément écarté après validation avec l'utilisateu
 non tentée — nécessite du matériel/logiciel externe pour être vérifiée. Le fichier
 `.patch` envoyé par la routine cloud n'a pas été appliqué (implémentation propre choisie
 à la place) — sans conséquence, aucune des deux versions n'était sur main.
+
+---
+
+### 2026-08-18 — Bug réel signalé par l'utilisateur : `npm start` cassé (session-store)
+
+- [x] **Signalé par l'utilisateur** (premier lancement réel de l'app après plusieurs
+      chantiers autonomes) : logs montrant `session-store: initialisation impossible
+(... NODE_MODULE_VERSION 137 ... requires NODE_MODULE_VERSION 148 ...) —
+persistance désactivée`. L'app tournait quand même (dégradation mémoire-seule
+      prévue), mais silencieusement sans persistance des présences/statistiques/
+      historique entre redémarrages.
+- [x] **Cause racine trouvée** : `postinstall` lançait `@electron/rebuild` (build
+      correct, ABI Electron 148) PUIS, inconditionnellement juste après, `npm rebuild
+better-sqlite3` (build pour Node système, ABI 137) — le second écrasait toujours
+      le premier. `npm install` (ex. après un `git pull`) recréait donc systématiquement
+      un binaire incompatible avec `electron .`. Confirmé en lisant les vrais en-têtes
+      Electron 43.3.0 (`~/.electron-gyp/43.3.0/include/node/node_version.h` définit bien 148) et en reproduisant l'erreur miroir dans les deux sens.
+- [x] **Piège rencontré en corrigeant** : `--force` seul ne suffisait pas à garantir une
+      vraie recompilation d'`@electron/rebuild` — un premier essai (`-f -o
+better-sqlite3` sans vider `build/`/`bin/` au préalable) a silencieusement reproduit
+      le binaire pour Node système au lieu d'Electron, malgré `--force`. Fiabilisé en
+      supprimant explicitement `node_modules/better-sqlite3/{build,bin}` avant chaque
+      rebuild ciblé (validé 2 fois de suite après ce changement).
+- [x] **Fix** : au lieu de dépendre de l'ordre `postinstall`, `npm start` et `npm test`
+      rebuild désormais CHACUN pour sa propre cible juste avant de s'exécuter (`prestart` →
+      ABI Electron, `pretest` → ABI Node système), donc peu importe ce qui a tourné en
+      dernier lors de l'installation.
+- [x] **Bascule streaming Deepgram** (signalé dans le même message, dicté/vocal —
+      "normalement on devrait être en Deepgram streaming... c'est Groq qui fait la
+      transcription... c'est long") : cause trouvée dans `asr-engine.js`/
+      `audio-capture.js` — `ASR_PROVIDER=deepgram` (seul chemin vers le mode streaming
+      réel, contre Groq par segments ~2.5-4s/segment en mode `auto` par défaut) n'était
+      lisible que via une variable d'environnement cachée, sans aucune bascule dans
+      l'interface. Ajout d'un vrai bouton "⚡ Mode streaming (Deepgram)" dans Réglages →
+      Clés API, désactivé tant qu'aucune clé Deepgram n'est enregistrée (même garde côté
+      `main.js#startServer`, défense en profondeur). Persisté dans `config.json` comme
+      `wsHost`/les clés API, redémarre le pipeline au changement.
+  - [x] **Diagnostic annexe (même message)** : les échecs de recherche Ésaïe 17:16/17:20
+        vus dans les logs ne sont PAS un bug — Ésaïe 17 ne compte que 14 versets dans
+        toutes les traductions standard, l'ASR a mal entendu le numéro de verset prononcé,
+        et l'app a correctement rejeté la référence plutôt que d'afficher n'importe quoi
+        (un `action: 'error'` est bien diffusé à l'opérateur dans ce cas).
+- [x] **Vérification** : lancement réel de l'app depuis ce shell automatisé impossible à
+      finaliser proprement (Electron perd son contexte GUI quand lancé via `timeout` dans
+      Git Bash — problème d'environnement du shell, sans rapport avec sqlite). Preuve
+      retenue à la place : le même binaire qui échoue explicitement "compiled against 148
+      ... requires 137" sous Node système EST le binaire qui a été recompilé avec les
+      vrais en-têtes Electron 43.3.0 (148 confirmé dans les en-têtes eux-mêmes) — la
+      vérification Node de l'ABI étant déterministe et symétrique, ce même binaire
+      chargera nécessairement sous Electron 43 (qui exige 148). Confirmation finale
+      recommandée à l'utilisateur via son propre `npm start`.
+- [x] **Gate** : `npm test` EXIT 0 (250+22, un flake `integration-scene-overlay-lifecycle`
+      reproduit propre isolément — préexistant, documenté, sans rapport), `tsc --noEmit`
+      clean, `check-build-files.js` OK, lint 0 erreur, `format:check` clean, `npm audit` 0
+      vulnérabilité, `test:e2e` 14/14.
+- [x] Commit `11c0aa3`.
+
+**Reste à faire** : pas de test automatisé pour les handlers IPC de `main.js` (aucun
+précédent dans ce dépôt — `main.js` dépend d'Electron au chargement, pas de harnais de
+mock existant ; cohérent avec le reste de `main.js`, jamais testé unitairement jusqu'ici).
+Confirmation finale de l'utilisateur sur son propre `npm start` toujours en attente.
