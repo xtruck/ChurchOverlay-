@@ -101,6 +101,25 @@ const featuresStore = require('./features-store');
 const validation = require('./validation');
 
 // ---------------------------------------------------------------------------
+// AJOUT (chantier 4.4 — accessibilité, sous-titres traduits sur companion.html)
+// ---------------------------------------------------------------------------
+// caption-translator.js produit déjà des traductions en direct, diffusées
+// aux clients WebSocket (action 'transcriptTranslation', voir startPipeline
+// ci-dessous) — mais companion.html (page QR "second écran" pour
+// l'assemblée) suit délibérément une discipline différente : polling HTTP
+// simple, aucun WebSocket, aucun jeton (voir le commentaire au-dessus de
+// /api/verses). Ce petit état en mémoire, mis à jour aux deux mêmes
+// endroits qui diffusent déjà 'transcript'/'transcriptTranslation', permet
+// à /api/captions (plus bas) d'exposer le DERNIER sous-titre (et sa
+// traduction, si activée) sans dupliquer la logique de traduction
+// elle-même ni ajouter de canal WS à une page pensée pour rester la plus
+// simple possible.
+let lastLiveCaption = { text: null, translation: null, timestamp: null };
+function updateLiveCaption(text, translation) {
+  lastLiveCaption = { text: text || null, translation: translation || null, timestamp: Date.now() };
+}
+
+// ---------------------------------------------------------------------------
 // Durée d'affichage des versets — source unique de vérité
 // ---------------------------------------------------------------------------
 const DEFAULT_VERSE_DURATION_MS = 120_000;
@@ -385,6 +404,26 @@ app.get('/api/status', (req, res) => {
 app.get('/companion', (req, res) => res.sendFile(path.join(APP_ROOT, 'companion.html')));
 app.get('/api/verses', (req, res) => {
   res.json({ verses: sessionState.getVerseHistory() });
+});
+// AJOUT (chantier 4.4 — sous-titres en direct, sur companion.html) : même
+// discipline que /api/verses juste au-dessus (lecture seule, pas de jeton —
+// un sous-titre déjà diffusé en direct sur l'overlay/la salle n'est pas
+// plus sensible qu'un verset déjà projeté). `text`/`translation` restent
+// `null` tant que rien n'a encore été transcrit, ou si les sous-titres
+// (respectivement leur traduction) sont désactivés côté opérateur —
+// jamais de fuite de transcript quand l'opérateur a explicitement choisi
+// de ne pas l'exposer (voir sessionState.getCaptionsEnabled()).
+app.get('/api/captions', (req, res) => {
+  const captionsEnabled = sessionState.getCaptionsEnabled();
+  const translationEnabled = sessionState.getTranslatedCaptionsEnabled();
+  res.json({
+    enabled: captionsEnabled,
+    translationEnabled,
+    targetLang: translationEnabled ? sessionState.getCaptionTargetLang() : null,
+    text: captionsEnabled ? lastLiveCaption.text : null,
+    translation: captionsEnabled && translationEnabled ? lastLiveCaption.translation : null,
+    timestamp: captionsEnabled ? lastLiveCaption.timestamp : null,
+  });
 });
 
 // Caméra téléphone — extrait vers phone-camera-routes.js (D.2)
@@ -3466,11 +3505,15 @@ function startPipeline() {
           // `await`) — voir le garde-fou en en-tête de caption-translator.js.
           // Un sous-titre traduit en retard/manqué est sans conséquence ;
           // retarder processTranscript() ci-dessous ne l'est pas.
+          updateLiveCaption(result.text, null);
           if (sessionState.getTranslatedCaptionsEnabled()) {
             captionTranslator
               .translateCaption(result.text, sessionState.getCaptionTargetLang())
               .then((translated) => {
-                if (translated) broadcast({ action: 'transcriptTranslation', text: translated });
+                if (translated) {
+                  broadcast({ action: 'transcriptTranslation', text: translated });
+                  updateLiveCaption(result.text, translated);
+                }
               })
               .catch(() => {});
           }
@@ -3596,11 +3639,15 @@ function startPipeline() {
         source: 'deepgram-streaming',
         confidence: typeof meta?.confidence === 'number' ? meta.confidence : null,
       });
+      updateLiveCaption(text, null);
       if (sessionState.getTranslatedCaptionsEnabled()) {
         captionTranslator
           .translateCaption(text, sessionState.getCaptionTargetLang())
           .then((translated) => {
-            if (translated) broadcast({ action: 'transcriptTranslation', text: translated });
+            if (translated) {
+              broadcast({ action: 'transcriptTranslation', text: translated });
+              updateLiveCaption(text, translated);
+            }
           })
           .catch(() => {});
       }
