@@ -4,8 +4,20 @@
  * ============================================================================
  * Find Bible verses by TOPIC or DESCRIPTION, not just reference.
  *
- * Uses a pre-computed embedding index (no API calls at runtime).
- * Index is ~15MB for all 31,000 verses, loads once at startup.
+ * CHANTIER 4.2 (2026-08-18) : le stub JSON d'origine (téléchargement d'un
+ * index pré-calculé jamais publié, cosineSimilarity() jamais atteinte) est
+ * remplacé par un vrai index vectoriel sqlite-vec (voir bible-vector-store.js)
+ * + des embeddings Gemini (voir embedding-provider.js), généré par
+ * scripts/generate-bible-embeddings.js. Décision prise en session (voir
+ * JOURNAL-MISSION.md) : ce chantier accepte le coût/la dépendance d'un
+ * fournisseur d'embeddings, alors que sermon-qa.js/sermon-archive.js s'y
+ * refusent délibérément ailleurs dans ce dépôt — voir leurs en-têtes.
+ *
+ * Mode dégradé (comportement inchangé si non configuré) : sans
+ * GEMINI_API_KEY (recherche par requête) ou sans le fichier
+ * models/bible-vector-index.sqlite3 (généré par le script ci-dessus, pas
+ * committé — binaire volumineux), search() retombe sur le mot-clé
+ * (TOPIC_INDEX), exactement comme avant ce chantier.
  *
  * Features:
  *   - "What does the Bible say about forgiveness?" → finds relevant verses
@@ -18,48 +30,22 @@
 
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-const https = require('https');
+const { BibleVectorStore } = require('./bible-vector-store');
+const { embedQuery } = require('./embedding-provider');
 
 // -----------------------------------------------------------------------
 // Configuration
 // -----------------------------------------------------------------------
 const CONFIG = {
-  // Pre-computed embedding index URL (hosted on GitHub Releases or your CDN)
-  INDEX_URL:
-    'https://github.com/xtruck/ChurchOverlay-/releases/download/semantic-index/bible-semantic-index.json',
-  // Local cache path
-  INDEX_PATH: path.join(require('os').homedir(), '.churchoverlay', 'bible-semantic-index.json'),
-  // Vector dimensions (using lightweight sentence embeddings)
-  VECTOR_DIM: 384,
   // Top-K results to return
   TOP_K: 5,
-  // Similarity threshold (cosine similarity)
-  MIN_SIMILARITY: 0.55,
+  // Distance sqlite-vec (L2 par défaut) au-delà de laquelle un résultat est
+  // jugé non pertinent plutôt que de renvoyer le "moins pire" voisin d'un
+  // index qui n'a rien de vraiment proche. Calibré empiriquement une fois le
+  // vrai index généré (voir scripts/generate-bible-embeddings.js) — valeur
+  // de départ prudente, à ajuster avec des requêtes réelles.
+  MAX_DISTANCE: 1.0,
 };
-
-// -----------------------------------------------------------------------
-// Simple in-memory vector operations (no external ML libraries needed)
-// -----------------------------------------------------------------------
-// cosineSimilarity/dotProduct/magnitude : utilisés par searchByVector()
-// ci-dessous une fois l'index vectoriel pré-calculé disponible (étape de
-// build non encore implémentée — voir downloadIndex()). Conservé tel quel,
-// pas du code mort à supprimer : c'est l'infrastructure prête pour cette
-// fonctionnalité.
-function dotProduct(a, b) {
-  let sum = 0;
-  for (let i = 0; i < a.length; i++) sum += a[i] * b[i];
-  return sum;
-}
-
-function magnitude(v) {
-  return Math.sqrt(v.reduce((sum, x) => sum + x * x, 0));
-}
-// eslint-disable-next-line no-unused-vars -- réservée à searchByVector(), pas encore implémentée (voir plus bas)
-function cosineSimilarity(a, b) {
-  return dotProduct(a, b) / (magnitude(a) * magnitude(b));
-}
 
 // -----------------------------------------------------------------------
 // Keyword-based fallback (works without index, always available)
@@ -266,30 +252,22 @@ const TOPIC_INDEX = {
 // -----------------------------------------------------------------------
 class BibleSemanticSearch {
   constructor() {
-    this.vectorIndex = null;
+    this.store = new BibleVectorStore();
     this.loaded = false;
   }
 
   /**
-   * Load the vector index (async, call once at startup)
+   * Load the vector index (async, call once at startup). Never throws —
+   * mode dégradé si le fichier généré par scripts/generate-bible-embeddings.js
+   * est absent (comportement inchangé : recherche par mot-clé uniquement).
    */
   async loadIndex() {
-    // Try local cache first
-    if (fs.existsSync(CONFIG.INDEX_PATH)) {
-      try {
-        const data = JSON.parse(fs.readFileSync(CONFIG.INDEX_PATH, 'utf8'));
-        this.vectorIndex = data;
-        this.loaded = true;
-        console.log('[semantic-search] Loaded local index:', data.verses?.length || 0, 'verses');
-        return;
-      } catch (err) {
-        console.warn('[semantic-search] Failed to load local index:', err.message);
-      }
+    this.loaded = this.store.openReadOnly();
+    if (this.loaded) {
+      console.log('[semantic-search] Loaded vector index:', this.store.count(), 'verses');
+    } else {
+      console.log('[semantic-search] No vector index found. Using keyword fallback.');
     }
-
-    // Try downloading (optional — app works without it via keyword fallback)
-    console.log('[semantic-search] No vector index found. Using keyword fallback.');
-    this.loaded = false;
   }
 
   /**
@@ -306,8 +284,9 @@ class BibleSemanticSearch {
     }
 
     // 2. If vector index loaded, do semantic search
-    if (this.loaded && this.vectorIndex) {
-      return await this.searchByVector(normalizedQuery, topK);
+    if (this.loaded) {
+      const vectorResults = await this.searchByVector(normalizedQuery, topK);
+      if (vectorResults.length > 0) return vectorResults;
     }
 
     // 3. Fallback: try to parse as a reference
@@ -354,12 +333,30 @@ class BibleSemanticSearch {
     return matches.sort((a, b) => b.score - a.score);
   }
 
-  async searchByVector(_query, _topK) {
-    // This would use the pre-computed embeddings (via cosineSimilarity()).
-    // For now, return empty — the index generation is a build-time step
-    // not yet implemented.
-    console.log('[semantic-search] Vector search not yet implemented (index required)');
-    return [];
+  /**
+   * Recherche vectorielle réelle : embed la requête (Gemini, voir
+   * embedding-provider.js) puis KNN sur bible-vector-store.js. Ne lève
+   * jamais — renvoie [] si l'embedding échoue (ex. GEMINI_API_KEY absent),
+   * search() retombe alors sur le tableau vide déjà géré par ses appelants.
+   * @param {string} query
+   * @param {number} topK
+   * @returns {Promise<Array<{reference: string, text: string, score: number, source: string}>>}
+   */
+  async searchByVector(query, topK) {
+    const queryVector = await embedQuery(query);
+    if (!queryVector) return [];
+
+    const rows = this.store.knnSearch(queryVector, topK);
+    return rows
+      .filter((r) => r.distance <= CONFIG.MAX_DISTANCE)
+      .map((r) => ({
+        reference: r.reference,
+        text: r.text,
+        // Distance L2 (0 = identique) convertie en score croissant pour
+        // rester comparable au score des résultats mot-clé (1.0 = meilleur).
+        score: 1 / (1 + r.distance),
+        source: 'vector',
+      }));
   }
 
   /**
@@ -367,29 +364,6 @@ class BibleSemanticSearch {
    */
   getTopics() {
     return Object.keys(TOPIC_INDEX).sort();
-  }
-
-  /**
-   * Download pre-computed index from remote
-   */
-  async downloadIndex() {
-    return new Promise((resolve, reject) => {
-      const file = fs.createWriteStream(CONFIG.INDEX_PATH + '.tmp');
-      https
-        .get(CONFIG.INDEX_URL, (res) => {
-          if (res.statusCode !== 200) {
-            reject(new Error(`HTTP ${res.statusCode}`));
-            return;
-          }
-          res.pipe(file);
-          file.on('finish', () => {
-            file.close();
-            fs.renameSync(CONFIG.INDEX_PATH + '.tmp', CONFIG.INDEX_PATH);
-            resolve();
-          });
-        })
-        .on('error', reject);
-    });
   }
 }
 

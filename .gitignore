@@ -40,6 +40,15 @@ poc-qwen3-asr/package-lock.json
 # l'ordre d'exécution. Renommé en dist-ts/ (tsconfig.json), distinct.
 dist-ts/
 
+# Index vectoriel biblique (chantier 4.2 — voir scripts/generate-bible-
+# embeddings.js, bible-vector-store.js). ~31 000 versets x 768 floats +
+# métadonnées : dizaines de Mo, régénéré à volonté par le script ci-dessus
+# (GEMINI_API_KEY requis) — un dépôt git n'est pas fait pour ce genre de
+# binaire, même principe que poc-qwen3-asr/model.tar.bz2 ci-dessus. Livré via
+# le pipeline de build/release, pas commité (à la différence du petit
+# models/silero_vad.onnx, 2,3 Mo, qui lui reste commité).
+models/bible-vector-index.sqlite3
+
 # Sortie de "npm run test:e2e" (Playwright — voir playwright.config.js) :
 # rapport HTML + traces/captures d'écran des tests échoués. Régénérés à
 # chaque exécution, jamais du code source.
