@@ -9,7 +9,7 @@
 // Electron, pas testable de façon significative dans un navigateur
 // headless sans lui ; reste un contrôle manuel uniquement.
 'use strict';
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./fixtures');
 const WebSocket = require('ws');
 
 function resetDashboardBranding(port) {
@@ -47,7 +47,7 @@ test.describe('Identité de marque du tableau de bord', () => {
   }) => {
     await page.goto('/');
     await page
-      .locator('.sidebar .nav-item[data-sections*="controls,analysis,settings,overlay"]')
+      .locator('.sidebar .nav-item[data-sections="settings,overlay"]')
       .click();
 
     await expect(page.locator('#brandTitle')).toHaveText('ChurchOverlay');

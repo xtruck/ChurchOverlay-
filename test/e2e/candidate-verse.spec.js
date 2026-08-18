@@ -15,7 +15,7 @@
 // remplacement sans empilement, effacement au showVerse réel, et l'absence
 // de "[object Object]" dans le flux d'activité.
 'use strict';
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./fixtures');
 
 test.describe('Bandeaux candidateVerse', () => {
   test('spéculative : bandeau "Référence entendue" affiché puis effacé au showVerse réel', async ({

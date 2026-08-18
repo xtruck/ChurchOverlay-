@@ -5,13 +5,13 @@
 // (case/toast/resynchronisation de la case à cocher) ; les 4 autres
 // suivent exactement le même code, voir le commit qui les a ajoutés.
 'use strict';
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./fixtures');
 
 test.describe('Confirmation des bascules de réglages', () => {
   test('activer le mode grand contraste affiche une confirmation', async ({ page }) => {
     await page.goto('/');
     await page
-      .locator('.sidebar .nav-item[data-sections*="controls,analysis,settings,overlay"]')
+      .locator('.sidebar .nav-item[data-sections="settings,overlay"]')
       .click();
 
     const toggle = page.locator('#highContrastToggle');

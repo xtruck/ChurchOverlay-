@@ -38,5 +38,11 @@ jobs:
       - name: Tests
         run: npm test
 
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E tests (dashboard smoke tests)
+        run: npm run test:e2e
+
       - name: Security audit
         run: npm audit

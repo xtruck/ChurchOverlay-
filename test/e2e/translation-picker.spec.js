@@ -3,7 +3,7 @@
 // côté tableau de bord (jusqu'à ce lot, entièrement ignoré — voir
 // dashboard/ws-dispatch.js).
 'use strict';
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./fixtures');
 
 test.describe('Sélecteur de version biblique', () => {
   test('se peuple depuis le message init et se met à jour après un changement', async ({
@@ -11,7 +11,7 @@ test.describe('Sélecteur de version biblique', () => {
   }) => {
     await page.goto('/');
     await page
-      .locator('.sidebar .nav-item[data-sections*="controls,analysis,settings,overlay"]')
+      .locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]')
       .click();
 
     const frButtons = page.locator('#translationPicker [data-translation-lang="fr"]');

@@ -4,7 +4,7 @@
 // thème, résultats, et le bouton "afficher maintenant" qui déclenche
 // réellement l'affichage du verset.
 'use strict';
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./fixtures');
 
 test.describe('Recherche de versets par thème', () => {
   test('les thèmes se chargent à la connexion, une recherche renvoie des résultats affichables', async ({
@@ -14,7 +14,7 @@ test.describe('Recherche de versets par thème', () => {
 
     // Bascule vers "Réglages" -> #analysis (où vit la carte de recherche).
     await page
-      .locator('.sidebar .nav-item[data-sections*="controls,analysis,settings,overlay"]')
+      .locator('.sidebar .nav-item[data-sections="analysis,studio,media-wall"]')
       .click();
 
     const topicChips = page.locator('#bibleTopicChips .mood-btn');

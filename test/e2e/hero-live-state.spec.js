@@ -6,7 +6,7 @@
 // connectés, y compris la page Playwright, exactement comme un second
 // opérateur ou l'overlay le ferait.
 'use strict';
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./fixtures');
 const WebSocket = require('ws');
 
 function connectRaw(port) {

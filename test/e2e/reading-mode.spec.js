@@ -6,7 +6,7 @@
 // pour la couverture backend de ce point précis ; ce spec couvre le
 // panneau lui-même (visibilité des boutons, affichage réel du verset).
 'use strict';
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./fixtures');
 
 test.describe('Panneau mode lecture', () => {
   test('Démarrer/Suivant/Précédent/Arrêter pilotent réellement le mode lecture', async ({
@@ -14,7 +14,7 @@ test.describe('Panneau mode lecture', () => {
   }) => {
     await page.goto('/');
     await page
-      .locator('.sidebar .nav-item[data-sections*="controls,analysis,settings,overlay"]')
+      .locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]')
       .click();
 
     const startBtn = page.locator('#readingModeStartBtn');

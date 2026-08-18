@@ -13,6 +13,20 @@ module.exports = {
   testDir: './test/e2e',
   timeout: 30000,
   fullyParallel: false,
+  // CORRECTIF (audit — 1 spec sur 12 flaky uniquement en suite complète,
+  // fiable en isolation) : fullyParallel:false ne rend séquentiels que les
+  // tests d'UN MÊME fichier — Playwright répartit quand même les FICHIERS
+  // sur plusieurs workers par défaut. Or tous les specs partagent UN SEUL
+  // vrai server.js (webServer, reuseExistingServer) et donc UN SEUL
+  // ~/.churchoverlay réel (voir test/e2e/start-server.js — USER_DATA_DIR
+  // n'est pas isolé pour les tests, faute de workerData ; déjà noté dans
+  // dashboard-branding.spec.js). dashboard-branding.spec.js écrit/relit cet
+  // état partagé (organizationName/accentColor) — exécuté en parallèle
+  // d'un autre spec touchant le même serveur, l'ordre des écritures/lectures
+  // devient non déterministe. workers:1 supprime la parallélisation
+  // inter-fichiers, seule option sûre tant que l'isolation de
+  // USER_DATA_DIR n'est pas un chantier à part (voir JOURNAL-MISSION.md).
+  workers: 1,
   retries: 0,
   reporter: 'list',
   use: {
