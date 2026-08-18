@@ -540,3 +540,72 @@ l'index réel disponible (valeur de départ 1.0, jamais mesurée contre de vraie
 données), et étendre `sermon-qa.js` à sqlite-vec SEULEMENT si une décision produit
 similaire est prise explicitement pour ce module (sa politique "gratuit/léger" reste
 en vigueur par défaut).
+
+---
+
+### 2026-08-18 — Chantier 4.5 (serveur MCP — TERMINÉ)
+
+Mandat étendu en session : l'utilisateur a explicitement demandé de continuer sans
+interruption ("take decisions on your own and push to main on your own"), de couvrir
+tout ce que le laptop local ne peut pas faire via la routine cloud déjà créée
+(`trig_012th8XiNUZ4DC3JbMy3MsAF`), et de terminer par un audit complet de l'app.
+Décisions produit prises seul à partir d'ici (plus de pause AskUserQuestion pour des
+choix de portée technique raisonnables) — seul un vrai blocage (clé API manquante,
+ambiguïté de sécurité) justifierait encore une pause.
+
+- [x] **mcp/church-ws-client.js** (nouveau) : client WS générique pour serveurs MCP
+      — le protocole WS de ce dépôt n'a pas de corrélation requête/réponse ; certaines
+      actions répondent en direct au client (`searchBible` -> `searchResults`),
+      d'autres seulement via `broadcast()` à TOUS les clients y compris l'émetteur
+      (vérifié en lisant `broadcast()` dans server.js — aucune exclusion du socket
+      source). `callAction()` résout sur le premier `successActions` ou `error` reçu,
+      avec timeout de repli.
+- [x] **mcp/server.js** (nouveau) : 9 outils MCP (`@modelcontextprotocol/sdk`,
+      transport stdio) — show_verse, hide_verse, search_bible, list_media,
+      list_scenes, trigger_media, hide_media, trigger_scene, hide_scene. Se connecte
+      au serveur ChurchOverlay déjà en cours comme un client opérateur normal (même
+      WS_AUTH_TOKEN) — aucune nouvelle voie d'accès. Périmètre volontairement
+      restreint aux actions dont le handler ET le contrat de réponse ont été vérifiés
+      en lisant server.js directement :
+      - **apply_theme délibérément absent** : le validateur `applyTheme`
+        (validation.js) attend des champs CSS plats (`background`, `accentColor`...)
+        alors que les thèmes nommés de theme-loader.js (claire/nuit) produisent des
+        variables CSS (`--bg`, `--accent`...) via `themeToCss()` — les deux formats
+        ne correspondent PAS, et aucune conversion entre eux n'existe ailleurs dans ce
+        dépôt. Exposer un outil dessus sans le vérifier aurait risqué un succès
+        silencieux qui n'affiche rien à l'écran.
+      - **emergency_clear absent** : listé dans `OPERATOR_ACTIONS` (permissions,
+        server.js ~ligne 1840) mais AUCUN handler `sanitized.action === 'emergencyClear'`
+        trouvé dans server.js au moment d'écrire ce fichier — même chose pour
+        `obs-switch-scene`/`obs-toggle-recording`. À confirmer dans un chantier dédié
+        avant d'exposer un outil MCP dessus.
+      - Destructeurs (delete media/scene) jamais exposés, par principe.
+- [x] **Tests** (2 nouveaux fichiers, 37 assertions) : `test-mcp-church-ws-client.js`
+      (contre un vrai `ws.Server` local — corrélation succès/erreur/timeout/fermeture
+      de connexion en attente, sous-protocole d'authentification transmis), 
+      `test-mcp-server.js` (les 9 outils, client mocké, chemins succès ET erreur).
+- [x] **Bug de flakiness réel trouvé et corrigé** (hors périmètre direct, trouvé en
+      poussant `npm test` au vert) : `test/test-reading-mode-ws-actions.js` échouait
+      par intermittence (~2 fois sur 5, confirmé en répétant le test isolément) —
+      `waitForMessage()` avait un budget de 1500 ms alors que `startReading()`/
+      `nextReadingVerse()` déclenchent un vrai aller-retour réseau
+      (`bibleLookup.getVerseMultilang()` — `CHURCHOVERLAY_SKIP_BIBLE_DOWNLOAD` n'évite
+      que le téléchargement complet en arrière-plan, pas cette consultation
+      ponctuelle). Porté à 5000 ms : 0 échec sur 11 relances après correctif (contre
+      2/5 avant).
+- [x] **package.json** : `@modelcontextprotocol/sdk` + `zod` ajoutés (dépendances,
+      aucun coût — SDK officiel Anthropic, gratuit). Nouveau script `mcp-server`.
+      `mcp/` est un point d'entrée AUTONOME (un opérateur le lance séparément,
+      `npm run mcp-server`) — jamais require() par main.js/server.js, donc
+      volontairement hors `build.files`/l'exe packagé (confirmé : `check-build-files.js`
+      reste vert sans aucune modification).
+- [x] **Gate** : `npm test` EXIT 0, `tsc --noEmit` clean, `check-build-files.js` OK,
+      `npm audit` 0 vulnérabilité. Lint : 0 erreur après `--fix` (formatage prettier)
+      sur les fichiers touchés hors tests (ignorés par eslint, comme d'habitude).
+- [x] Commit `68e744a`.
+
+**Reste à faire (pas dans ce chantier)** : vérifier le handler réel de
+`emergencyClear`/`obs-switch-scene` dans server.js pour décider s'il manque vraiment
+ou s'il est dispatché ailleurs, avant d'exposer ces deux actions comme outils MCP ;
+clarifier comment le tableau de bord applique réellement un thème nommé (claire/nuit)
+à l'overlay avant d'exposer apply_theme.
