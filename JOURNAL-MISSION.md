@@ -82,7 +82,7 @@ sans tenir ce registre (contrairement à la règle §3). Je le crée à partir d
 
 ## JOURNAL DES TÂCHES
 
-*(chronologique, plus récent en bas de chaque section)*
+_(chronologique, plus récent en bas de chaque section)_
 
 ### 2026-08-16 — Reprise
 
@@ -123,9 +123,10 @@ sans tenir ce registre (contrairement à la règle §3). Je le crée à partir d
 - [x] A.3 : rejouer le corpus réel (Deepgram fr puis multi) pour mesurer l'impact end-to-end.
 
 **Résultats mesurés (2026-08-16, corpus.csv 47 lignes, Deepgram streaming)** :
-| Mode | Score | FP | notes |
-|------|-------|----|-------|
-| fr | 31/39 (79,5 %) | 0/8 | +2 sur baseline 29/37 (items O1/O2 A.3 passent) |
+
+| Mode  | Score          | FP  | notes                                           |
+| ----- | -------------- | --- | ----------------------------------------------- |
+| fr    | 31/39 (79,5 %) | 0/8 | +2 sur baseline 29/37 (items O1/O2 A.3 passent) |
 | multi | 33/39 (84,6 %) | 0/8 | +2 sur baseline 30/37 (items O1/O2 A.3 passent) |
 
 Échecs fr : A2 (artefact banc), B2 (ASR EN en mode FR), D3 (Philémon — ASR),
@@ -167,7 +168,7 @@ E2 (Nombres — ASR), H2 (langue mixte — A.2), K3 (Actes — ASR).
 
 - [x] **llm-utils.js** : ajout de `extractJsonObject(text)` — normalise la réponse LLM en
       JSON parsable, en gérant 3 cas : JSON pur (json_mode Groq/Gemini), bloc markdown
-      ```` ```json ... ``` ````, et extraction du premier objet/tableau `{...}` / `[...]` dans
+      ` ```json ... ``` `, et extraction du premier objet/tableau `{...}` / `[...]` dans
       du texte libre. Si les deux patterns sont présents, priorité au plus ancien dans la
       chaîne. Renvoie l'objet parsé ou null.
 - [x] **ai-enricher.js** : les 5 fonctions (detectSermonTheme, translateSegment,
@@ -184,14 +185,7 @@ E2 (Nombres — ASR), H2 (langue mixte — A.2), K3 (Actes — ASR).
 
 ### 2026-08-17 — Chantier A.1 (gain micro — TERMINÉ)
 
-- [x] **audio-capture.js** : ajout du suivi continu de niveau audio :
-      - `STATE.audioDiagnostics` : RMS moyen, crête, taux d'écrêtage, classification zone
-      - `updateAudioDiagnostics(frame)` : appelé à chaque trame VAD (100 ms)
-      - `classifyAudioLevel(rmsMean, clippingRate)` : 5 zones (silence/low/good/hot/clipping)
-      - `countClippingSamples(frame)` : détection d'écrêtage PCM16 (>32700)
-      - `startDiagnosticsEmission()` / `stopDiagnosticsEmission()` : émission toutes les 250 ms
-      - Nouveau callback `onAudioDiagnostics` dans STATE.callbacks
-      - Exposés : `getAudioDiagnostics()`, `resetAudioDiagnostics()`
+- [x] **audio-capture.js** : ajout du suivi continu de niveau audio : - `STATE.audioDiagnostics` : RMS moyen, crête, taux d'écrêtage, classification zone - `updateAudioDiagnostics(frame)` : appelé à chaque trame VAD (100 ms) - `classifyAudioLevel(rmsMean, clippingRate)` : 5 zones (silence/low/good/hot/clipping) - `countClippingSamples(frame)` : détection d'écrêtage PCM16 (>32700) - `startDiagnosticsEmission()` / `stopDiagnosticsEmission()` : émission toutes les 250 ms - Nouveau callback `onAudioDiagnostics` dans STATE.callbacks - Exposés : `getAudioDiagnostics()`, `resetAudioDiagnostics()`
 - [x] **server.js** : callback `onAudioDiagnostics` câblé, broadcast `audioDiagnostics` vers le
       dashboard à chaque tick (250 ms).
 - [x] **dashboard/features/audio-vumeter.js** (nouveau) : vumètre permanent avec 5 zones
@@ -336,8 +330,7 @@ E2 (Nombres — ASR), H2 (langue mixte — A.2), K3 (Actes — ASR).
 
 ### 2026-08-17 — Chantier D.1 (CI — TERMINÉ)
 
-- [x] `.github/workflows/ci.yml` créé : matrice Node 20/22, steps lint + format + typecheck
-      + test + audit. postinstall adapté : `SKIP_ELECTRON_REBUILD=1` en CI pour ignorer
+- [x] `.github/workflows/ci.yml` créé : matrice Node 20/22, steps lint + format + typecheck + test + audit. postinstall adapté : `SKIP_ELECTRON_REBUILD=1` en CI pour ignorer
       `@electron/rebuild` (inutile pour tests unitaires).
 
 ### 2026-08-17 — Chantier D.2 (découpage server.js — PARTIEL)
@@ -395,9 +388,9 @@ E2 (Nombres — ASR), H2 (langue mixte — A.2), K3 (Actes — ASR).
 
 Contexte : reprise de session sur la base d'un brief externe (redesign concurrentiel/
 roadmap produit anglophone, hors du plan A-D de ce journal). Avant de démarrer quoi que
-ce soit de ce brief, état des lieux : 4 fichiers test/test-*.js non commités et non
+ce soit de ce brief, état des lieux : 4 fichiers test/test-_.js non commités et non
 câblés dans package.json (test-bilingual-matcher, test-prompt-sanitizer,
-test-semantic-detector, test-transcription-corrector) + 16 fichiers test-output*.txt
+test-semantic-detector, test-transcription-corrector) + 16 fichiers test-output_.txt
 (captures stdout de npm test) traînant à la racine. Travail antérieur non terminé,
 repris et clos plutôt que dupliqué.
 
@@ -481,16 +474,14 @@ journal et le git log avant de commencer, ne duplique pas ce qui suit.
 - [x] **bible-vector-store.js** (nouveau) : wrapper fin sqlite-vec (`vec0` + table
       meta jointe par rowid). Deux comportements NON documentés de sqlite-vec 0.1.9,
       trouvés en testant directement contre l'extension installée (pas dans le
-      README, vide) :
-      1. `INSERT INTO vec_verses(rowid, embedding) VALUES (?, ?)` avec un rowid
-         explicite échoue ("Only integers are allowed for primary key values") —
-         laisser SQLite assigner le rowid automatiquement, puis l'utiliser comme clé
-         explicite dans la table meta normale (elle, sans cette restriction).
-      2. `... WHERE embedding MATCH ? ORDER BY distance LIMIT ?` (LIMIT en paramètre
-         lié) échoue ("A LIMIT or 'k = ?' constraint is required") — le nombre de
-         voisins doit être connu au moment de la planification, avant la liaison des
-         paramètres. Utiliser `AND k = ?` à la place (reste un paramètre lié, pas
-         d'interpolation SQL).
+      README, vide) : 1. `INSERT INTO vec_verses(rowid, embedding) VALUES (?, ?)` avec un rowid
+      explicite échoue ("Only integers are allowed for primary key values") —
+      laisser SQLite assigner le rowid automatiquement, puis l'utiliser comme clé
+      explicite dans la table meta normale (elle, sans cette restriction). 2. `... WHERE embedding MATCH ? ORDER BY distance LIMIT ?` (LIMIT en paramètre
+      lié) échoue ("A LIMIT or 'k = ?' constraint is required") — le nombre de
+      voisins doit être connu au moment de la planification, avant la liaison des
+      paramètres. Utiliser `AND k = ?` à la place (reste un paramètre lié, pas
+      d'interpolation SQL).
 - [x] **scripts/generate-bible-embeddings.js** (nouveau) : script de build, pas
       d'exécution normale de l'app. Réutilise `bible-offline-cache.js` (même source
       bible.helloao.org, aucune clé requise pour cette étape) pour le texte, puis
@@ -566,23 +557,20 @@ ambiguïté de sécurité) justifierait encore une pause.
       au serveur ChurchOverlay déjà en cours comme un client opérateur normal (même
       WS_AUTH_TOKEN) — aucune nouvelle voie d'accès. Périmètre volontairement
       restreint aux actions dont le handler ET le contrat de réponse ont été vérifiés
-      en lisant server.js directement :
-      - **apply_theme délibérément absent** : le validateur `applyTheme`
-        (validation.js) attend des champs CSS plats (`background`, `accentColor`...)
-        alors que les thèmes nommés de theme-loader.js (claire/nuit) produisent des
-        variables CSS (`--bg`, `--accent`...) via `themeToCss()` — les deux formats
-        ne correspondent PAS, et aucune conversion entre eux n'existe ailleurs dans ce
-        dépôt. Exposer un outil dessus sans le vérifier aurait risqué un succès
-        silencieux qui n'affiche rien à l'écran.
-      - **emergency_clear absent** : listé dans `OPERATOR_ACTIONS` (permissions,
-        server.js ~ligne 1840) mais AUCUN handler `sanitized.action === 'emergencyClear'`
-        trouvé dans server.js au moment d'écrire ce fichier — même chose pour
-        `obs-switch-scene`/`obs-toggle-recording`. À confirmer dans un chantier dédié
-        avant d'exposer un outil MCP dessus.
-      - Destructeurs (delete media/scene) jamais exposés, par principe.
+      en lisant server.js directement : - **apply_theme délibérément absent** : le validateur `applyTheme`
+      (validation.js) attend des champs CSS plats (`background`, `accentColor`...)
+      alors que les thèmes nommés de theme-loader.js (claire/nuit) produisent des
+      variables CSS (`--bg`, `--accent`...) via `themeToCss()` — les deux formats
+      ne correspondent PAS, et aucune conversion entre eux n'existe ailleurs dans ce
+      dépôt. Exposer un outil dessus sans le vérifier aurait risqué un succès
+      silencieux qui n'affiche rien à l'écran. - **emergency_clear absent** : listé dans `OPERATOR_ACTIONS` (permissions,
+      server.js ~ligne 1840) mais AUCUN handler `sanitized.action === 'emergencyClear'`
+      trouvé dans server.js au moment d'écrire ce fichier — même chose pour
+      `obs-switch-scene`/`obs-toggle-recording`. À confirmer dans un chantier dédié
+      avant d'exposer un outil MCP dessus. - Destructeurs (delete media/scene) jamais exposés, par principe.
 - [x] **Tests** (2 nouveaux fichiers, 37 assertions) : `test-mcp-church-ws-client.js`
       (contre un vrai `ws.Server` local — corrélation succès/erreur/timeout/fermeture
-      de connexion en attente, sous-protocole d'authentification transmis), 
+      de connexion en attente, sous-protocole d'authentification transmis),
       `test-mcp-server.js` (les 9 outils, client mocké, chemins succès ET erreur).
 - [x] **Bug de flakiness réel trouvé et corrigé** (hors périmètre direct, trouvé en
       poussant `npm test` au vert) : `test/test-reading-mode-ws-actions.js` échouait

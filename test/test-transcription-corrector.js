@@ -4,11 +4,7 @@
  * Couvre : corrections FR courantes, casse, stats, mode fast-only, groq manquant.
  */
 const assert = require('assert');
-const {
-  TranscriptionCorrector,
-  CORRECTIONS,
-  correctFast,
-} = require('../transcription-corrector');
+const { TranscriptionCorrector, CORRECTIONS, correctFast } = require('../transcription-corrector');
 
 let passed = 0;
 let failed = 0;
@@ -43,10 +39,7 @@ check(
 );
 
 // --- Casse uppercase → uppercase ---
-check(
-  'JESUS → JÉSUS (tout majuscule)',
-  correctFast('JESUS a parle') === 'JÉSUS a parle'
-);
+check('JESUS → JÉSUS (tout majuscule)', correctFast('JESUS a parle') === 'JÉSUS a parle');
 // --- Casse Capitalized → Capitalized ---
 check(
   'Jesus → Jésus (première lettre majuscule)',
@@ -64,7 +57,8 @@ check(
 // --- Texte sans corrections ---
 check(
   'texte neutre inchangé',
-  correctFast('bonjour tout le monde comment allez vous') === 'bonjour tout le monde comment allez vous'
+  correctFast('bonjour tout le monde comment allez vous') ===
+    'bonjour tout le monde comment allez vous'
 );
 
 // --- Dictionnaire ---
@@ -74,9 +68,9 @@ check('dictionnaire non vide', Object.keys(CORRECTIONS).length > 100);
 async function runAsyncTests() {
   // --- Texte trop court (await requis — correct() est async) ---
   const tc = new TranscriptionCorrector(null);
-  check('texte < 3 chars retourne tel quel', await tc.correct('ab') === 'ab');
-  check('texte vide retourne tel quel', await tc.correct('') === '');
-  check('null retourne null', await tc.correct(null) === null);
+  check('texte < 3 chars retourne tel quel', (await tc.correct('ab')) === 'ab');
+  check('texte vide retourne tel quel', (await tc.correct('')) === '');
+  check('null retourne null', (await tc.correct(null)) === null);
 
   // --- Mode fast-only (groq manquant) ---
   const c1 = new TranscriptionCorrector(null);

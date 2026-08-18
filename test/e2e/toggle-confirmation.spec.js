@@ -10,9 +10,7 @@ const { test, expect } = require('./fixtures');
 test.describe('Confirmation des bascules de réglages', () => {
   test('activer le mode grand contraste affiche une confirmation', async ({ page }) => {
     await page.goto('/');
-    await page
-      .locator('.sidebar .nav-item[data-sections="settings,overlay"]')
-      .click();
+    await page.locator('.sidebar .nav-item[data-sections="settings,overlay"]').click();
 
     const toggle = page.locator('#highContrastToggle');
     await expect(toggle).toBeVisible();

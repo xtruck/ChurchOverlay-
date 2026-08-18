@@ -36,9 +36,9 @@ test.describe('Navigation responsive — repli sous 1024px', () => {
     // — c'est précisément le bug que le correctif du lot 5 a corrigé.
     await page.setViewportSize({ width: 1280, height: 800 });
     await expect(page.locator('.sidebar')).toBeVisible();
-    await expect(
-      page.locator('.sidebar .nav-item[data-sections="settings,overlay"]')
-    ).toHaveClass(/active/);
+    await expect(page.locator('.sidebar .nav-item[data-sections="settings,overlay"]')).toHaveClass(
+      /active/
+    );
     await expect(
       page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]')
     ).not.toHaveClass(/active/);

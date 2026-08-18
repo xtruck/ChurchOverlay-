@@ -401,7 +401,10 @@ export function toggleBlackScreen() {
     ws.send(JSON.stringify({ action: 'setBlackScreen', enabled: blackScreenActive }));
   }
   addActivity(blackScreenActive ? 'Écran noir activé' : 'Écran noir désactivé', 'warning');
-  showToast(blackScreenActive ? 'Écran noir activé' : 'Écran noir désactivé', blackScreenActive ? 'error' : 'info');
+  showToast(
+    blackScreenActive ? 'Écran noir activé' : 'Écran noir désactivé',
+    blackScreenActive ? 'error' : 'info'
+  );
 }
 window.toggleBlackScreen = toggleBlackScreen;
 
@@ -423,7 +426,9 @@ window.startServiceCountdown = function () {
   const minutes = sel ? parseInt(sel.value, 10) : 10;
   const endTimeMs = Date.now() + minutes * 60 * 1000;
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ action: 'startCountdown', endTimeMs, label: 'Le culte commence dans' }));
+    ws.send(
+      JSON.stringify({ action: 'startCountdown', endTimeMs, label: 'Le culte commence dans' })
+    );
   }
   addActivity('Compteur lancé : ' + minutes + ' minutes', 'info');
   showToast('Compteur de ' + minutes + ' min lancé', 'info');

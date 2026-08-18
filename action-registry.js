@@ -29,7 +29,7 @@ const CLIENT_ACTIONS = {
   previousReadingVerse: { category: 'reading', description: 'Verset précédent en mode lecture' },
 
   // Langue & traduction
-  setLanguage: { category: 'language', description: 'Langue d\'affichage (fr/en/both)' },
+  setLanguage: { category: 'language', description: "Langue d'affichage (fr/en/both)" },
   setTranslation: { category: 'language', description: 'Traduction biblique' },
   translateText: { category: 'language', description: 'Traduction IA en direct' },
   hideTranslation: { category: 'language', description: 'Masquer la traduction' },
@@ -37,17 +37,20 @@ const CLIENT_ACTIONS = {
 
   // Thème & affichage
   applyTheme: { category: 'theme', description: 'Appliquer un thème CSS' },
-  setMoodTheme: { category: 'theme', description: 'Thème d\'ambiance IA' },
+  setMoodTheme: { category: 'theme', description: "Thème d'ambiance IA" },
   setHighContrast: { category: 'accessibility', description: 'Contraste élevé' },
   setCaptions: { category: 'accessibility', description: 'Sous-titres en direct' },
   setTranslatedCaptions: { category: 'accessibility', description: 'Sous-titres traduits' },
   setTestPattern: { category: 'display', description: 'Motif de test couleur' },
   setBackgroundPattern: { category: 'theme', description: 'Motif de fond' },
-  setBlackScreen: { category: 'emergency', description: 'Écran noir d\'urgence' },
+  setBlackScreen: { category: 'emergency', description: "Écran noir d'urgence" },
   startCountdown: { category: 'timer', description: 'Lancer le compteur avant culte' },
   stopCountdown: { category: 'timer', description: 'Arrêter le compteur avant culte' },
-  setAmbientMode: { category: 'theme', description: 'Activer/désactiver le cycle auto d\'ambiances' },
-  extendTime: { category: 'timer', description: '延长 durée d\'affichage' },
+  setAmbientMode: {
+    category: 'theme',
+    description: "Activer/désactiver le cycle auto d'ambiances",
+  },
+  extendTime: { category: 'timer', description: "延长 durée d'affichage" },
   pauseTimer: { category: 'timer', description: 'Mettre en pause le timer' },
   resumeTimer: { category: 'timer', description: 'Reprendre le timer' },
   emergencyClear: { category: 'emergency', description: 'Effacer tout immédiatement' },
@@ -57,7 +60,7 @@ const CLIENT_ACTIONS = {
   getTopics: { category: 'bible', description: 'Liste des sujets bibliques' },
 
   // IA
-  getMoods: { category: 'ai', description: 'Thèmes d\'ambiance disponibles' },
+  getMoods: { category: 'ai', description: "Thèmes d'ambiance disponibles" },
   getLiveSummary: { category: 'ai', description: 'Résumé IA du culte en direct' },
   getSermonTheme: { category: 'ai', description: 'Détection du thème du sermon' },
   getPostServiceRecap: { category: 'ai', description: 'Récapitulatif post-culte IA' },
@@ -72,7 +75,7 @@ const CLIENT_ACTIONS = {
   addMediaItem: { category: 'media', description: 'Ajouter un média' },
   updateMediaItem: { category: 'media', description: 'Modifier un média' },
   deleteMediaItem: { category: 'media', description: 'Supprimer un média' },
-  triggerMediaItem: { category: 'media', description: 'Déclencher l\'affichage d\'un média' },
+  triggerMediaItem: { category: 'media', description: "Déclencher l'affichage d'un média" },
   hideMedia: { category: 'media', description: 'Masquer le média affiché' },
   setDefaultMediaItem: { category: 'media', description: 'Définir le poster principal' },
 
@@ -98,18 +101,18 @@ const CLIENT_ACTIONS = {
   generateCameraPairing: { category: 'cameras', description: 'Générer un code QR de jumelage' },
 
   // Habillage caméra
-  getBranding: { category: 'branding', description: 'État de l\'habillage caméra' },
-  setBrandingLogo: { category: 'branding', description: 'Logo d\'habillage' },
+  getBranding: { category: 'branding', description: "État de l'habillage caméra" },
+  setBrandingLogo: { category: 'branding', description: "Logo d'habillage" },
   clearBrandingLogo: { category: 'branding', description: 'Effacer le logo' },
-  setBrandingPosition: { category: 'branding', description: 'Position de l\'habillage' },
-  setBrandingSize: { category: 'branding', description: 'Taille de l\'habillage' },
-  setBrandingText: { category: 'branding', description: 'Titre/sous-titre d\'habillage' },
-  setBrandingVisible: { category: 'branding', description: 'Visibilité de l\'habillage' },
+  setBrandingPosition: { category: 'branding', description: "Position de l'habillage" },
+  setBrandingSize: { category: 'branding', description: "Taille de l'habillage" },
+  setBrandingText: { category: 'branding', description: "Titre/sous-titre d'habillage" },
+  setBrandingVisible: { category: 'branding', description: "Visibilité de l'habillage" },
 
   // Branding tableau de bord
   getDashboardBranding: { category: 'dashboard-branding', description: 'Identité du dashboard' },
-  setDashboardOrgName: { category: 'dashboard-branding', description: 'Nom de l\'organisation' },
-  setDashboardAccentColor: { category: 'dashboard-branding', description: 'Couleur d\'accent' },
+  setDashboardOrgName: { category: 'dashboard-branding', description: "Nom de l'organisation" },
+  setDashboardAccentColor: { category: 'dashboard-branding', description: "Couleur d'accent" },
   setDashboardLogo: { category: 'dashboard-branding', description: 'Logo du dashboard' },
   clearDashboardLogo: { category: 'dashboard-branding', description: 'Effacer le logo dashboard' },
 
@@ -117,7 +120,7 @@ const CLIENT_ACTIONS = {
   getNetworkStatus: { category: 'infra', description: 'État du réseau' },
   getSessionStats: { category: 'infra', description: 'Statistiques de session' },
   exportHighlights: { category: 'infra', description: 'Exporter les temps forts' },
-  sendStageMessage: { category: 'infra', description: 'Message sur l\'écran de piste' },
+  sendStageMessage: { category: 'infra', description: "Message sur l'écran de piste" },
   clearStageMessage: { category: 'infra', description: 'Effacer le message de piste' },
   getOfflineBibleStatus: { category: 'infra', description: 'État de la Bible hors-ligne' },
   listPlugins: { category: 'infra', description: 'Liste des plugins' },
@@ -144,7 +147,7 @@ const SERVER_ACTIONS = {
   previousVerse: { description: 'Verset précédent' },
   nextChapter: { description: 'Chapitre suivant' },
   previousChapter: { description: 'Chapitre précédent' },
-  languageChanged: { description: 'Langue d\'affichage changée' },
+  languageChanged: { description: "Langue d'affichage changée" },
   transcriptionLanguageChanged: { description: 'Langue de transcription changée' },
   translationChanged: { description: 'Traduction biblique changée' },
   showTranslation: { description: 'Traduction affichée' },
@@ -163,7 +166,7 @@ const SERVER_ACTIONS = {
   extendTime: { description: 'Durée étendue' },
   pauseTimer: { description: 'Timer en pause' },
   resumeTimer: { description: 'Timer repris' },
-  emergencyClear: { description: 'Effacement d\'urgence' },
+  emergencyClear: { description: "Effacement d'urgence" },
   historyUpdated: { description: 'Historique des versets mis à jour' },
   showMedia: { description: 'Média affiché' },
   hideMedia: { description: 'Média masqué' },
@@ -199,7 +202,7 @@ const SERVER_ACTIONS = {
   audioDiagnostics: { description: 'Diagnostics audio' },
   dedupSuppressed: { description: 'Verset supprimé par dédoublonnage' },
   confidenceThresholdChanged: { description: 'Seuil de confiance mis à jour' },
-  error: { description: 'Message d\'erreur' },
+  error: { description: "Message d'erreur" },
 };
 
 // ---------------------------------------------------------------------------
@@ -208,13 +211,13 @@ const SERVER_ACTIONS = {
 
 const VOICE_COMMANDS = {
   hideVerse: { description: 'Masquer le verset' },
-  emergencyClear: { description: 'Effacement d\'urgence' },
+  emergencyClear: { description: "Effacement d'urgence" },
   nextVerse: { description: 'Verset suivant' },
   previousVerse: { description: 'Verset précédent' },
   nextChapter: { description: 'Chapitre suivant' },
   previousChapter: { description: 'Chapitre précédent' },
   setTheme: { description: 'Changer le thème' },
-  setLanguage: { description: 'Changer la langue d\'affichage' },
+  setLanguage: { description: "Changer la langue d'affichage" },
   setTranscriptionLanguage: { description: 'Changer la langue de transcription' },
   setTranslation: { description: 'Changer la traduction biblique' },
   extendTime: { description: '延长 durée' },
@@ -227,7 +230,7 @@ const VOICE_COMMANDS = {
 // ---------------------------------------------------------------------------
 
 const KEYBOARD_SHORTCUTS = {
-  emergencyClear: { description: 'Effacement d\'urgence' },
+  emergencyClear: { description: "Effacement d'urgence" },
   hideVerse: { description: 'Masquer le verset' },
   hideMedia: { description: 'Masquer le média' },
   hideScene: { description: 'Masquer la scène' },

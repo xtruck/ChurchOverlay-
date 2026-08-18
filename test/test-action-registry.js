@@ -50,7 +50,7 @@ for (const action of clientActions) {
   const handled =
     serverSrc.includes(`action === '${action}'`) ||
     serverSrc.includes(`case '${action}'`) ||
-    serverSrc.includes(`'${action}'`) && serverSrc.includes(`msg.action`);
+    (serverSrc.includes(`'${action}'`) && serverSrc.includes(`msg.action`));
   assert(handled, `CLIENT action '${action}' not found in server.js dispatch`);
 }
 
@@ -67,7 +67,10 @@ if (operatorActionsMatch) {
       orphanActions.push(m[1]);
     }
   }
-  assert(orphanActions.length === 0, `Orphan OPERATOR_ACTIONS not in registry: ${orphanActions.join(', ')}`);
+  assert(
+    orphanActions.length === 0,
+    `Orphan OPERATOR_ACTIONS not in registry: ${orphanActions.join(', ')}`
+  );
 } else {
   assert(false, 'Could not find OPERATOR_ACTIONS Set in server.js');
 }
@@ -79,9 +82,7 @@ if (operatorActionsMatch) {
 console.log('\n=== SERVER_ACTIONS → server.js broadcast ===');
 const serverActions = listServerActions();
 for (const action of serverActions) {
-  const sent =
-    serverSrc.includes(`action: '${action}'`) ||
-    serverSrc.includes(`'${action}',`);
+  const sent = serverSrc.includes(`action: '${action}'`) || serverSrc.includes(`'${action}',`);
   assert(sent, `SERVER action '${action}' not broadcast in server.js`);
 }
 
@@ -91,10 +92,7 @@ for (const action of serverActions) {
 // ---------------------------------------------------------------------------
 
 console.log('\n=== SERVER_ACTIONS → server.js/overlay/ws-dispatch ===');
-const wsDispatchSrc = fs.readFileSync(
-  path.join(ROOT, 'dashboard', 'ws-dispatch.js'),
-  'utf8'
-);
+const wsDispatchSrc = fs.readFileSync(path.join(ROOT, 'dashboard', 'ws-dispatch.js'), 'utf8');
 for (const action of serverActions) {
   const consumed =
     serverSrc.includes(`action: '${action}'`) ||

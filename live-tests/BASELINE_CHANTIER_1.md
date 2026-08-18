@@ -628,6 +628,7 @@ et retombe sur « chapitre seul » → le chemin batch (ASR Groq) avait un trou 
 retombait sur le verset 1.
 
 **Correctif appliqué** (8 fichiers, voir commit dédié) :
+
 - `detector.js` / `detector-en.js` : connecteur article optionnel + mot « numéro »/« number »
   dans les deux variantes du motif standard et les motifs inversés 1 et 3. Garde-fou :
   connecteur « et »/« and » seul (liste de chapitres) exclu.
@@ -639,9 +640,9 @@ retombait sur le verset 1.
 
 **Mesures (Deepgram streaming, 2026-08-16)** :
 
-| Mode | Score | FP | Δ baseline |
-|------|-------|----|------------|
-| fr | **31/39 (79,5 %)** | 0/8 | +2 (O1+O2 passent) |
+| Mode  | Score              | FP  | Δ baseline         |
+| ----- | ------------------ | --- | ------------------ |
+| fr    | **31/39 (79,5 %)** | 0/8 | +2 (O1+O2 passent) |
 | multi | **33/39 (84,6 %)** | 0/8 | +2 (O1+O2 passent) |
 
 Preuve de correctif (log bench fr) : `"[server] Displayed: Jean 14:6"` quand la

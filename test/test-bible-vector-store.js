@@ -22,7 +22,10 @@ function check(name, cond) {
 }
 
 function tmpDbPath() {
-  return path.join(os.tmpdir(), `test-bible-vec-${Date.now()}-${Math.random().toString(36).slice(2)}.sqlite3`);
+  return path.join(
+    os.tmpdir(),
+    `test-bible-vec-${Date.now()}-${Math.random().toString(36).slice(2)}.sqlite3`
+  );
 }
 
 // --- isAvailable() sur fichier absent ---
@@ -67,13 +70,25 @@ function tmpDbPath() {
 
   const nearest = store.knnSearch([1, 0, 0], 2);
   check('knnSearch: 2 résultats demandés = 2 reçus', nearest.length === 2);
-  check('knnSearch: le plus proche est Jean 3:16 (distance 0)', nearest[0].reference === 'Jean 3:16' && nearest[0].distance === 0);
+  check(
+    'knnSearch: le plus proche est Jean 3:16 (distance 0)',
+    nearest[0].reference === 'Jean 3:16' && nearest[0].distance === 0
+  );
   check(
     'knnSearch: 2e résultat est Romains 8:28 (vecteur le plus proche après Jean 3:16)',
     nearest[1].reference === 'Romains 8:28'
   );
-  check('knnSearch: résultats triés par distance croissante', nearest[0].distance <= nearest[1].distance);
-  check('knnSearch: champs meta présents (book/chapter/verse/text)', nearest[0].book === 'jean' && nearest[0].chapter === 3 && nearest[0].verse === 16 && typeof nearest[0].text === 'string');
+  check(
+    'knnSearch: résultats triés par distance croissante',
+    nearest[0].distance <= nearest[1].distance
+  );
+  check(
+    'knnSearch: champs meta présents (book/chapter/verse/text)',
+    nearest[0].book === 'jean' &&
+      nearest[0].chapter === 3 &&
+      nearest[0].verse === 16 &&
+      typeof nearest[0].text === 'string'
+  );
 
   store.close();
 
@@ -82,7 +97,10 @@ function tmpDbPath() {
   check('isAvailable: true après createForWriting', reader.isAvailable() === true);
   check('openReadOnly: true sur fichier existant', reader.openReadOnly() === true);
   const reopened = reader.knnSearch([0, 1, 0], 1);
-  check('knnSearch (réouvert): retrouve Psaume 23:1', reopened.length === 1 && reopened[0].reference === 'Psaume 23:1');
+  check(
+    'knnSearch (réouvert): retrouve Psaume 23:1',
+    reopened.length === 1 && reopened[0].reference === 'Psaume 23:1'
+  );
   reader.close();
 
   fs.unlinkSync(dbPath);
@@ -91,8 +109,11 @@ function tmpDbPath() {
 // --- knnSearch sur store non ouvert ---
 {
   const store = new BibleVectorStore({ dbPath: tmpDbPath() });
-  check('knnSearch: [] si le store n\'a jamais été ouvert', Array.isArray(store.knnSearch([1, 0, 0], 5)) && store.knnSearch([1, 0, 0], 5).length === 0);
-  check('count: 0 si le store n\'a jamais été ouvert', store.count() === 0);
+  check(
+    "knnSearch: [] si le store n'a jamais été ouvert",
+    Array.isArray(store.knnSearch([1, 0, 0], 5)) && store.knnSearch([1, 0, 0], 5).length === 0
+  );
+  check("count: 0 si le store n'a jamais été ouvert", store.count() === 0);
 }
 
 console.log(`\n=== Résultat bible-vector-store : ${passed}/${passed + failed} ===`);

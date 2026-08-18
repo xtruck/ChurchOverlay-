@@ -165,7 +165,10 @@ d10.addContext('troisième');
 d10.addContext('quatrième');
 d10.addContext('cinquième');
 d10.addContext('sixième (dépasse la fenêtre)');
-check('context history: taille max = CONTEXT_WINDOW_SIZE', d10.getStats().contextWindow === CONFIG.CONTEXT_WINDOW_SIZE);
+check(
+  'context history: taille max = CONTEXT_WINDOW_SIZE',
+  d10.getStats().contextWindow === CONFIG.CONTEXT_WINDOW_SIZE
+);
 
 // --- Texte normalisé sans accent ---
 const mockGroqNorm = {

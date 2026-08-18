@@ -58,8 +58,14 @@ async function run() {
   {
     const r = await tool('show_verse').handler({ reference: 'Jean 3:16' });
     const call = calls[calls.length - 1];
-    check('show_verse: appelle showVerse avec la référence', call.action === 'showVerse' && call.payload.reference === 'Jean 3:16');
-    check('show_verse: successActions = [showVerse]', call.options.successActions.includes('showVerse'));
+    check(
+      'show_verse: appelle showVerse avec la référence',
+      call.action === 'showVerse' && call.payload.reference === 'Jean 3:16'
+    );
+    check(
+      'show_verse: successActions = [showVerse]',
+      call.options.successActions.includes('showVerse')
+    );
     check('show_verse: texte de confirmation', /Jean 3:16/.test(textOf(r)));
     check('show_verse: pas isError', !r.isError);
   }
@@ -81,12 +87,19 @@ async function run() {
   {
     const r = await tool('search_bible').handler({ query: 'amour' });
     const call = calls[calls.length - 1];
-    check('search_bible: appelle searchBible avec query', call.action === 'searchBible' && call.payload.query === 'amour');
+    check(
+      'search_bible: appelle searchBible avec query',
+      call.action === 'searchBible' && call.payload.query === 'amour'
+    );
     check(
       'search_bible: successActions inclut searchResults ET searchError',
-      call.options.successActions.includes('searchResults') && call.options.successActions.includes('searchError')
+      call.options.successActions.includes('searchResults') &&
+        call.options.successActions.includes('searchError')
     );
-    check('search_bible: résultats formatés', /Jean 3:16/.test(textOf(r)) && /keyword/.test(textOf(r)));
+    check(
+      'search_bible: résultats formatés',
+      /Jean 3:16/.test(textOf(r)) && /keyword/.test(textOf(r))
+    );
   }
 
   // --- search_bible : aucun résultat ---
@@ -103,7 +116,10 @@ async function run() {
   };
   {
     const r = await tool('list_media').handler({});
-    check('list_media: appelle getMediaLibrary', calls[calls.length - 1].action === 'getMediaLibrary');
+    check(
+      'list_media: appelle getMediaLibrary',
+      calls[calls.length - 1].action === 'getMediaLibrary'
+    );
     check('list_media: liste formatée avec id', /m1/.test(textOf(r)) && /Logo/.test(textOf(r)));
   }
 
@@ -121,7 +137,10 @@ async function run() {
   };
   {
     const r = await tool('list_scenes').handler({});
-    check('list_scenes: appelle getSceneLibrary', calls[calls.length - 1].action === 'getSceneLibrary');
+    check(
+      'list_scenes: appelle getSceneLibrary',
+      calls[calls.length - 1].action === 'getSceneLibrary'
+    );
     check('list_scenes: liste formatée', /s1/.test(textOf(r)) && /accueil/.test(textOf(r)));
   }
 
@@ -130,7 +149,10 @@ async function run() {
   {
     const r = await tool('trigger_media').handler({ id: 'm1' });
     const call = calls[calls.length - 1];
-    check('trigger_media: appelle triggerMediaItem avec id', call.action === 'triggerMediaItem' && call.payload.id === 'm1');
+    check(
+      'trigger_media: appelle triggerMediaItem avec id',
+      call.action === 'triggerMediaItem' && call.payload.id === 'm1'
+    );
     check('trigger_media: confirmation avec label', /Logo/.test(textOf(r)));
   }
 
@@ -139,7 +161,7 @@ async function run() {
   {
     const r = await tool('trigger_media').handler({ id: 'bogus' });
     check('trigger_media: isError = true sur échec', r.isError === true);
-    check('trigger_media: message d\'erreur propagé', /introuvable/.test(textOf(r)));
+    check("trigger_media: message d'erreur propagé", /introuvable/.test(textOf(r)));
   }
 
   // --- hide_media ---
@@ -155,7 +177,10 @@ async function run() {
   {
     const r = await tool('trigger_scene').handler({ id: 's1' });
     const call = calls[calls.length - 1];
-    check('trigger_scene: appelle triggerScene avec id', call.action === 'triggerScene' && call.payload.id === 's1');
+    check(
+      'trigger_scene: appelle triggerScene avec id',
+      call.action === 'triggerScene' && call.payload.id === 's1'
+    );
     check('trigger_scene: confirmation avec nom', /accueil/.test(textOf(r)));
   }
 
@@ -179,7 +204,7 @@ async function run() {
   {
     const r = await tool('show_verse').handler({ reference: 'zzz' });
     check('show_verse: isError = true sur référence invalide', r.isError === true);
-    check('show_verse: message d\'erreur propagé', /invalide/.test(textOf(r)));
+    check("show_verse: message d'erreur propagé", /invalide/.test(textOf(r)));
   }
 
   console.log(`\n=== Résultat mcp/server : ${passed}/${passed + failed} ===`);

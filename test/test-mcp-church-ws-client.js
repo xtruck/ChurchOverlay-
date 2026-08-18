@@ -94,7 +94,10 @@ async function run() {
     } catch (err) {
       caught = err;
     }
-    check('callAction: erreur serveur rejette la promesse', caught && caught.message === 'Référence invalide.');
+    check(
+      'callAction: erreur serveur rejette la promesse',
+      caught && caught.message === 'Référence invalide.'
+    );
     client.close();
     wss.close();
   }
@@ -108,11 +111,7 @@ async function run() {
     const client = new ChurchOverlayClient({ url: `ws://127.0.0.1:${port}` });
     let caught = null;
     try {
-      await client.callAction(
-        'hideVerse',
-        {},
-        { successActions: ['hideVerse'], timeoutMs: 200 }
-      );
+      await client.callAction('hideVerse', {}, { successActions: ['hideVerse'], timeoutMs: 200 });
     } catch (err) {
       caught = err;
     }
@@ -131,7 +130,10 @@ async function run() {
       });
     });
     const port = wss.address().port;
-    const client = new ChurchOverlayClient({ url: `ws://127.0.0.1:${port}`, authToken: 'test-token-123' });
+    const client = new ChurchOverlayClient({
+      url: `ws://127.0.0.1:${port}`,
+      authToken: 'test-token-123',
+    });
     await client.connect();
     check('connect: jeton transmis en sous-protocole WS', seenProtocol === 'test-token-123');
     client.close();
@@ -152,7 +154,7 @@ async function run() {
     client.ws.close();
     const result = await callPromise;
     check(
-      'connexion fermée pendant l\'attente: la requête échoue proprement (pas de pendaison)',
+      "connexion fermée pendant l'attente: la requête échoue proprement (pas de pendaison)",
       result instanceof Error
     );
     wss.close();

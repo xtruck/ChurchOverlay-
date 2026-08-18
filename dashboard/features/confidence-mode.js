@@ -3,8 +3,6 @@
  * Seuil ASR configurable + toggle d'affichage des badges de confiance.
  */
 (function () {
-  const BADGE_CLASS = 'confidence-badge-hidden';
-
   window.setConfidenceThreshold = function (value) {
     if (typeof value !== 'number' || value < 0 || value > 1) return;
     const rounded = Math.round(value * 100) / 100;
@@ -19,7 +17,9 @@
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ action: 'setConfidenceThreshold', threshold: rounded }));
       }
-    } catch (_) { /* ignore si pas de WS */ }
+    } catch (_) {
+      /* ignore si pas de WS */
+    }
   };
 
   window.toggleConfidenceBadges = function (visible) {

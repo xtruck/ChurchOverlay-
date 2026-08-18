@@ -79,7 +79,10 @@ Date.now = () => fakeNow;
 
   // 5e échec : atteint le seuil, ouvre le circuit.
   await groq.transcribeWithFallback(tmpFile);
-  assert(groqCallCount === 5, `Groq tenté au 5e appel (seuil atteint pile à ce moment, obtenu: ${groqCallCount})`);
+  assert(
+    groqCallCount === 5,
+    `Groq tenté au 5e appel (seuil atteint pile à ce moment, obtenu: ${groqCallCount})`
+  );
   const afterThreshold = groq.getGroqHealthState();
   assert(afterThreshold.circuitOpen === true, 'circuit ouvert après 5 échecs consécutifs');
   assert(afterThreshold.consecutiveFailures === 5, 'compteur à 5');
@@ -87,7 +90,10 @@ Date.now = () => fakeNow;
   // 6e appel : circuit ouvert, Deepgram configuré -> Groq doit être SAUTÉ
   // entièrement (pas de nouvel appel réseau vers groq.com).
   const skipped = await groq.transcribeWithFallback(tmpFile);
-  assert(groqCallCount === 5, `Groq PAS retenté pendant le cooldown (toujours 5, obtenu: ${groqCallCount})`);
+  assert(
+    groqCallCount === 5,
+    `Groq PAS retenté pendant le cooldown (toujours 5, obtenu: ${groqCallCount})`
+  );
   assert(skipped.source === 'deepgram', 'repli Deepgram direct pendant le circuit ouvert');
   assert(deepgramCallCount > 0, 'Deepgram bien appelé pendant le circuit ouvert');
 
@@ -95,7 +101,7 @@ Date.now = () => fakeNow;
   // (rien de nouveau à compter tant qu'aucun appel réel n'est tenté).
   assert(
     groq.getGroqHealthState().consecutiveFailures === 5,
-    'compteur inchangé (5) pendant le circuit ouvert, pas d\'incrément fantôme'
+    "compteur inchangé (5) pendant le circuit ouvert, pas d'incrément fantôme"
   );
 
   // Avance le temps jusqu'après le cooldown (30s) : le prochain appel doit
@@ -104,7 +110,10 @@ Date.now = () => fakeNow;
   groqShouldFail = false;
   const recovered = await groq.transcribeWithFallback(tmpFile);
   assert(groqCallCount === 6, `Groq retenté après le cooldown (obtenu: ${groqCallCount})`);
-  assert(recovered.source === 'groq', 'Groq redevenu fonctionnel reprend la main après le cooldown');
+  assert(
+    recovered.source === 'groq',
+    'Groq redevenu fonctionnel reprend la main après le cooldown'
+  );
   const afterRecovery = groq.getGroqHealthState();
   assert(afterRecovery.circuitOpen === false, 'circuit refermé après succès post-cooldown');
   assert(afterRecovery.consecutiveFailures === 0, 'compteur remis à 0 après succès post-cooldown');

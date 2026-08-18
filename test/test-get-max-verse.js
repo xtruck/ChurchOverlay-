@@ -64,13 +64,25 @@ console.log('[TEST] Test 2: données simulées (mock)...');
   assert.strictEqual(bibleOfflineCache.getMaxVerse('psaumes', 119), null, 'Chapitre vide = null');
 
   // Livre inexistant → null
-  assert.strictEqual(bibleOfflineCache.getMaxVerse('livre_inexistant', 1), null, 'Livre inexistant = null');
+  assert.strictEqual(
+    bibleOfflineCache.getMaxVerse('livre_inexistant', 1),
+    null,
+    'Livre inexistant = null'
+  );
 
   // Chapitre inexistant → null
-  assert.strictEqual(bibleOfflineCache.getMaxVerse('esaie', 999), null, 'Chapitre inexistant = null');
+  assert.strictEqual(
+    bibleOfflineCache.getMaxVerse('esaie', 999),
+    null,
+    'Chapitre inexistant = null'
+  );
 
   // Nettoyage
-  try { fs.rmSync(path.join(tmpDir, 'bible-offline'), { recursive: true, force: true }); } catch (_e) { /* ignore */ }
+  try {
+    fs.rmSync(path.join(tmpDir, 'bible-offline'), { recursive: true, force: true });
+  } catch (_e) {
+    /* ignore */
+  }
 }
 console.log('[TEST] ✓ Tous les cas getMaxVerse corrects\n');
 

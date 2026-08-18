@@ -6,17 +6,52 @@
   const COMMANDS = [
     { label: 'Afficher un verset', action: 'showVerse', category: 'Affichage', shortcut: '' },
     { label: 'Masquer le verset', action: 'hideVerse', category: 'Affichage', shortcut: '' },
-    { label: 'Masquer le média', action: 'hideMedia', category: 'Affichage', shortcut: 'Ctrl+Alt+Maj+M' },
-    { label: 'Masquer la scène', action: 'hideScene', category: 'Affichage', shortcut: 'Ctrl+Alt+Maj+S' },
-    { label: 'Effacement d\'urgence', action: 'emergencyClear', category: 'Urgence', shortcut: 'Ctrl+Alt+Maj+C' },
-    { label: 'Masquer le verset overlay', action: 'hideVerse', category: 'Urgence', shortcut: 'Ctrl+Alt+aj+H' },
+    {
+      label: 'Masquer le média',
+      action: 'hideMedia',
+      category: 'Affichage',
+      shortcut: 'Ctrl+Alt+Maj+M',
+    },
+    {
+      label: 'Masquer la scène',
+      action: 'hideScene',
+      category: 'Affichage',
+      shortcut: 'Ctrl+Alt+Maj+S',
+    },
+    {
+      label: "Effacement d'urgence",
+      action: 'emergencyClear',
+      category: 'Urgence',
+      shortcut: 'Ctrl+Alt+Maj+C',
+    },
+    {
+      label: 'Masquer le verset overlay',
+      action: 'hideVerse',
+      category: 'Urgence',
+      shortcut: 'Ctrl+Alt+aj+H',
+    },
     { label: 'Mettre en pause', action: 'pauseTimer', category: 'Timer', shortcut: '' },
     { label: 'Reprendre', action: 'resumeTimer', category: 'Timer', shortcut: '' },
     { label: 'Étendre la durée', action: 'extendTime', category: 'Timer', shortcut: '' },
-    { label: 'Vérification pré-culte', action: 'preServiceCheck', category: 'Système', shortcut: '' },
-    { label: 'Basculer haute intensité', action: 'setHighContrast', category: 'Accessibilité', shortcut: '' },
+    {
+      label: 'Vérification pré-culte',
+      action: 'preServiceCheck',
+      category: 'Système',
+      shortcut: '',
+    },
+    {
+      label: 'Basculer haute intensité',
+      action: 'setHighContrast',
+      category: 'Accessibilité',
+      shortcut: '',
+    },
     { label: 'Sous-titres ON/OFF', action: 'setCaptions', category: 'Accessibilité', shortcut: '' },
-    { label: 'Sous-titres traduits', action: 'setTranslatedCaptions', category: 'Accessibilité', shortcut: '' },
+    {
+      label: 'Sous-titres traduits',
+      action: 'setTranslatedCaptions',
+      category: 'Accessibilité',
+      shortcut: '',
+    },
     { label: 'Motif de test', action: 'setTestPattern', category: 'Affichage', shortcut: '' },
     { label: 'Motif de fond', action: 'setBackgroundPattern', category: 'Affichage', shortcut: '' },
     { label: 'Changer langue FR', action: 'setLanguage-fr', category: 'Langue', shortcut: '' },
@@ -24,12 +59,22 @@
     { label: 'Bilingue FR+EN', action: 'setLanguage-both', category: 'Langue', shortcut: '' },
     { label: 'Rechercher dans la Bible', action: 'searchBible', category: 'Bible', shortcut: '' },
     { label: 'Mode lecture', action: 'startReading', category: 'Mode lecture', shortcut: '' },
-    { label: 'Arrêter mode lecture', action: 'stopReading', category: 'Mode lecture', shortcut: '' },
+    {
+      label: 'Arrêter mode lecture',
+      action: 'stopReading',
+      category: 'Mode lecture',
+      shortcut: '',
+    },
     { label: 'Stats session', action: 'getSessionStats', category: 'Système', shortcut: '' },
     { label: 'Résumé IA du sermon', action: 'getLiveSummary', category: 'IA', shortcut: '' },
     { label: 'Thème du sermon', action: 'getSermonTheme', category: 'IA', shortcut: '' },
     { label: 'Envoyer message scène', action: 'sendStageMessage', category: 'Scène', shortcut: '' },
-    { label: 'Effacer message scène', action: 'clearStageMessage', category: 'Scène', shortcut: '' },
+    {
+      label: 'Effacer message scène',
+      action: 'clearStageMessage',
+      category: 'Scène',
+      shortcut: '',
+    },
     { label: 'Exporter temps forts', action: 'exportHighlights', category: 'Export', shortcut: '' },
     { label: 'Médiathèque', action: 'getMediaLibrary', category: 'Média', shortcut: '' },
     { label: 'Studio de scènes', action: 'getSceneLibrary', category: 'Scènes', shortcut: '' },
@@ -74,14 +119,23 @@
   }
 
   function filterCommands(query) {
-    const q = query.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const q = query
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
     const items = listEl.querySelectorAll('.command-palette-item');
-    let visibleCount = 0;
     items.forEach((item) => {
       const text = item.dataset.label + ' ' + item.dataset.category;
-      const match = !q || fuzzyMatch(q, text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+      const match =
+        !q ||
+        fuzzyMatch(
+          q,
+          text
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+        );
       item.style.display = match ? '' : 'none';
-      if (match) visibleCount++;
     });
     // Activer le premier visible
     const first = listEl.querySelector('.command-palette-item:not([style*="display: none"])');
@@ -98,7 +152,9 @@
   }
 
   function moveSelection(delta) {
-    const items = Array.from(listEl.querySelectorAll('.command-palette-item:not([style*="display: none"])'));
+    const items = Array.from(
+      listEl.querySelectorAll('.command-palette-item:not([style*="display: none"])')
+    );
     if (!items.length) return;
     const current = listEl.querySelector('.command-palette-item.active');
     let idx = items.indexOf(current);
@@ -118,9 +174,15 @@
     // Actions courtes : exécuter directement
     const shortActions = {
       hideVerse: () => send({ action: 'hideVerse' }),
-      emergencyClear: () => { if (typeof window.emergencyClear === 'function') window.emergencyClear(); },
-      pauseTimer: () => { if (typeof window.pauseTimer === 'function') window.pauseTimer(); },
-      resumeTimer: () => { if (typeof window.resumeTimer === 'function') window.resumeTimer(); },
+      emergencyClear: () => {
+        if (typeof window.emergencyClear === 'function') window.emergencyClear();
+      },
+      pauseTimer: () => {
+        if (typeof window.pauseTimer === 'function') window.pauseTimer();
+      },
+      resumeTimer: () => {
+        if (typeof window.resumeTimer === 'function') window.resumeTimer();
+      },
       extendTime: () => send({ action: 'extendTime' }),
       setHighContrast: () => send({ action: 'setHighContrast', enabled: true }),
       setCaptions: () => send({ action: 'setCaptions', enabled: true }),
@@ -129,8 +191,12 @@
       setBackgroundPattern: () => send({ action: 'setBackgroundPattern', enabled: true }),
       hideMedia: () => send({ action: 'hideMedia' }),
       hideScene: () => send({ action: 'hideScene' }),
-      startReading: () => { if (typeof window.startReadingMode === 'function') window.startReadingMode(); },
-      stopReading: () => { if (typeof window.stopReadingMode === 'function') window.stopReadingMode(); },
+      startReading: () => {
+        if (typeof window.startReadingMode === 'function') window.startReadingMode();
+      },
+      stopReading: () => {
+        if (typeof window.stopReadingMode === 'function') window.stopReadingMode();
+      },
     };
     if (shortActions[action]) {
       shortActions[action]();
@@ -138,13 +204,19 @@
     }
     // Actions nécessitant un payload : déclencher un flux UI existant
     const uiTriggers = {
-      showVerse: () => { if (typeof window.showManualVerse === 'function') window.showManualVerse(); },
-      searchBible: () => { if (typeof window.showManualVerse === 'function') window.showManualVerse(); },
+      showVerse: () => {
+        if (typeof window.showManualVerse === 'function') window.showManualVerse();
+      },
+      searchBible: () => {
+        if (typeof window.showManualVerse === 'function') window.showManualVerse();
+      },
       preServiceCheck: () => send({ action: 'preServiceCheck' }),
       getSessionStats: () => send({ action: 'getSessionStats' }),
       getLiveSummary: () => send({ action: 'getLiveSummary' }),
       getSermonTheme: () => send({ action: 'getSermonTheme' }),
-      sendStageMessage: () => { if (typeof window.showStageMessagePrompt === 'function') window.showStageMessagePrompt(); },
+      sendStageMessage: () => {
+        if (typeof window.showStageMessagePrompt === 'function') window.showStageMessagePrompt();
+      },
       clearStageMessage: () => send({ action: 'clearStageMessage' }),
       exportHighlights: () => send({ action: 'exportHighlights' }),
       getMediaLibrary: () => send({ action: 'getMediaLibrary' }),
@@ -162,7 +234,9 @@
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(msg));
       }
-    } catch (_) { /* ignore */ }
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   function open() {
@@ -210,7 +284,9 @@
 
   // Initialisation DOM ready
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => { if (overlay) renderList(); });
+    document.addEventListener('DOMContentLoaded', () => {
+      if (overlay) renderList();
+    });
   } else {
     // DOM already loaded — create and render
     createOverlay();

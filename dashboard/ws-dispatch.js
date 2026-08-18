@@ -104,7 +104,13 @@ export function handleMessage(message) {
       }
       // Auto-trigger cross-references when a verse is shown
       if (message.reference && state && state.ws && state.ws.readyState === WebSocket.OPEN) {
-        state.ws.send(JSON.stringify({ action: 'getCrossReferences', reference: message.reference, text: message.text || '' }));
+        state.ws.send(
+          JSON.stringify({
+            action: 'getCrossReferences',
+            reference: message.reference,
+            text: message.text || '',
+          })
+        );
       }
       break;
     case 'hideVerse':
@@ -141,10 +147,7 @@ export function handleMessage(message) {
       showToast(`Erreur : ${message.error}`, 'error');
       break;
     case 'dedupSuppressed':
-      addActivity(
-        `Doublon supprimé : ${message.ref} (${message.reason || 'same-ref'})`,
-        'info'
-      );
+      addActivity(`Doublon supprimé : ${message.ref} (${message.reason || 'same-ref'})`, 'info');
       break;
     case 'transcriptionError':
       addActivity(`Transcription indisponible : ${message.error}`, 'error');
@@ -179,13 +182,20 @@ export function handleMessage(message) {
     // AJOUT (audit round 6) : réponses des modules ai-enricher.js,
     // jusqu'ici sans destination côté dashboard (les WS envoyaient bien
     // ces actions, mais rien n'écoutait la réponse).
-    case 'sermonTheme':
+    case 'sermonTheme': {
       updateSermonModeBadge(message);
       // Update themes card in PRÉPARATION
       const themesEl = document.getElementById('themesList');
       if (themesEl && message.theme) {
-        themesEl.innerHTML = '<div class="stat-row"><span class="stat-label">Thème</span><span class="stat-value">' + escapeHtmlDashboard(message.theme) + '</span></div>' +
-          (message.keywords ? '<div class="stat-row"><span class="stat-label">Mots-clés</span><span class="stat-value" style="font-size:0.8rem">' + escapeHtmlDashboard(message.keywords.join(', ')) + '</span></div>' : '');
+        themesEl.innerHTML =
+          '<div class="stat-row"><span class="stat-label">Thème</span><span class="stat-value">' +
+          escapeHtmlDashboard(message.theme) +
+          '</span></div>' +
+          (message.keywords
+            ? '<div class="stat-row"><span class="stat-label">Mots-clés</span><span class="stat-value" style="font-size:0.8rem">' +
+              escapeHtmlDashboard(message.keywords.join(', ')) +
+              '</span></div>'
+            : '');
       }
       if (!message.silent) {
         renderAiEnricherOutput(
@@ -195,6 +205,7 @@ export function handleMessage(message) {
         );
       }
       break;
+    }
     case 'liveSummary':
       renderLiveSummary(message);
       break;
@@ -218,7 +229,7 @@ export function handleMessage(message) {
     case 'highlightsExported':
       renderHighlightsExport(message);
       break;
-    case 'postServiceRecap':
+    case 'postServiceRecap': {
       state.lastPostServiceRecap = message.recap || null;
       // Show the dedicated recap card
       const recapCard = document.getElementById('postServiceRecapCard');
@@ -228,9 +239,16 @@ export function handleMessage(message) {
         const r = message.recap;
         recapContent.innerHTML =
           (r.title ? '<strong>' + escapeHtmlDashboard(r.title) + '</strong><br>' : '') +
-          (r.keyPoints && r.keyPoints.length ? '<br><strong>Points clés :</strong> ' + r.keyPoints.map(escapeHtmlDashboard).join(', ') : '') +
-          (r.application ? '<br><strong>Application :</strong> ' + escapeHtmlDashboard(r.application) : '') +
-          (r.memoryVerse ? '<br><strong>Verset à retenir :</strong> ' + escapeHtmlDashboard(r.memoryVerse) : '');
+          (r.keyPoints && r.keyPoints.length
+            ? '<br><strong>Points clés :</strong> ' +
+              r.keyPoints.map(escapeHtmlDashboard).join(', ')
+            : '') +
+          (r.application
+            ? '<br><strong>Application :</strong> ' + escapeHtmlDashboard(r.application)
+            : '') +
+          (r.memoryVerse
+            ? '<br><strong>Verset à retenir :</strong> ' + escapeHtmlDashboard(r.memoryVerse)
+            : '');
         recapContent.style.color = 'var(--text-main)';
       } else if (recapContent) {
         recapContent.textContent = 'Récap indisponible.';
@@ -243,6 +261,7 @@ export function handleMessage(message) {
           : 'Récap indisponible.'
       );
       break;
+    }
     // AJOUT (innovation frontend — sélecteur d'ambiances) : le serveur
     // envoyait déjà ces deux réponses (server.js: 'moodsList' sur
     // getMoods, 'themeApplied' sur setMoodTheme) mais aucun cas ne les
@@ -484,7 +503,8 @@ function updateListeningBar(msg) {
   const pct = Math.min(100, Math.round(rms * 300));
 
   level.style.width = pct + '%';
-  level.style.background = clipping > 0.01 ? '#ef4444' : pct > 60 ? '#f59e0b' : pct > 15 ? '#22c55e' : '#6b7280';
+  level.style.background =
+    clipping > 0.01 ? '#ef4444' : pct > 60 ? '#f59e0b' : pct > 15 ? '#22c55e' : '#6b7280';
 
   if (clipping > 0.01) {
     dot.style.background = '#ef4444';
@@ -514,15 +534,31 @@ function renderCrossReferences(msg) {
   const status = document.getElementById('crossRefStatus');
   if (!el) return;
   if (!msg.results || msg.results.length === 0) {
-    el.innerHTML = '<div class="stat-row"><span class="stat-label">Aucune référence croisée pour ' + escapeHtmlDashboard(msg.reference || '') + '</span></div>';
-    if (status) { status.textContent = '0'; status.style.display = ''; }
+    el.innerHTML =
+      '<div class="stat-row"><span class="stat-label">Aucune référence croisée pour ' +
+      escapeHtmlDashboard(msg.reference || '') +
+      '</span></div>';
+    if (status) {
+      status.textContent = '0';
+      status.style.display = '';
+    }
     return;
   }
-  el.innerHTML = msg.results.map((r) =>
-    '<div class="stat-row"><span class="stat-label">' + escapeHtmlDashboard(r.ref || '') + '</span>' +
-    '<span class="stat-value" style="font-size:0.75rem;color:var(--text-dim)">' + escapeHtmlDashboard(r.reason || '') + '</span></div>'
-  ).join('');
-  if (status) { status.textContent = msg.results.length; status.style.display = ''; }
+  el.innerHTML = msg.results
+    .map(
+      (r) =>
+        '<div class="stat-row"><span class="stat-label">' +
+        escapeHtmlDashboard(r.ref || '') +
+        '</span>' +
+        '<span class="stat-value" style="font-size:0.75rem;color:var(--text-dim)">' +
+        escapeHtmlDashboard(r.reason || '') +
+        '</span></div>'
+    )
+    .join('');
+  if (status) {
+    status.textContent = msg.results.length;
+    status.style.display = '';
+  }
 }
 
 // Live summary — rolling summary dans la carte dédiée PRÉPARATION

@@ -46,9 +46,7 @@ test.describe('Identité de marque du tableau de bord', () => {
     page,
   }) => {
     await page.goto('/');
-    await page
-      .locator('.sidebar .nav-item[data-sections="settings,overlay"]')
-      .click();
+    await page.locator('.sidebar .nav-item[data-sections="settings,overlay"]').click();
 
     await expect(page.locator('#brandTitle')).toHaveText('ChurchOverlay');
 

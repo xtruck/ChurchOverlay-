@@ -23,14 +23,11 @@ console.log('=== Tests bilingual-matcher.js ===');
 
 check(
   'COMBINED_ALIASES contient des alias FR et EN',
-  COMBINED_ALIASES.some((a) => a.lang === 'fr') &&
-    COMBINED_ALIASES.some((a) => a.lang === 'en')
+  COMBINED_ALIASES.some((a) => a.lang === 'fr') && COMBINED_ALIASES.some((a) => a.lang === 'en')
 );
 check(
   'COMBINED_ALIASES triés par longueur décroissante',
-  COMBINED_ALIASES.every(
-    (a, i) => i === 0 || a.name.length <= COMBINED_ALIASES[i - 1].name.length
-  )
+  COMBINED_ALIASES.every((a, i) => i === 0 || a.name.length <= COMBINED_ALIASES[i - 1].name.length)
 );
 
 // --- Détection FR ---
@@ -87,7 +84,10 @@ check(
 );
 
 // --- Texte sans référence ---
-check('texte sans référence: retourne null', detectBilingualExact('bonjour tout le monde') === null);
+check(
+  'texte sans référence: retourne null',
+  detectBilingualExact('bonjour tout le monde') === null
+);
 check('texte vide: retourne null', detectBilingualExact('') === null);
 check('texte null: retourne null', detectBilingualExact(null) === null);
 

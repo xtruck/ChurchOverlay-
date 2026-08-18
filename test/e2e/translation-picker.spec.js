@@ -10,9 +10,7 @@ test.describe('Sélecteur de version biblique', () => {
     page,
   }) => {
     await page.goto('/');
-    await page
-      .locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]')
-      .click();
+    await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
 
     const frButtons = page.locator('#translationPicker [data-translation-lang="fr"]');
     await expect(frButtons).toHaveCount(2, { timeout: 5000 });

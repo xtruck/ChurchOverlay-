@@ -6,27 +6,32 @@
 (function () {
   let active = false;
 
-  const TIPS = {
-    'overview': 'ESPACE DIRECT — Vue d\'ensemble du culte en cours. La barre d\'écoute montre l\'état du micro en temps réel.',
-    'transcript': 'TRANSCRIPTION — Flux de texte en direct capté par le microphone. Les badges montrent la confiance ASR.',
-    'controls': 'CONTRÔLES — Boutons d\'action rapide : afficher/masquer le verset, pause, urgence.',
-    'analysis': 'ANALYSE IA — Thèmes, résumés et références croisées générés pendant le sermon.',
-    'studio': 'STUDIO — Composition de scènes avec texte, logo et image de fond.',
-    'media-wall': 'MUR MÉDIA — Grille visuelle pour déclencher photos et vidéos d\'un clic.',
-    'settings': 'RÉGLAGES — Configuration technique : API, micro, réseau, base biblique.',
-    'overlay': 'OVERLAY — Aperçu de ce que voit l\'assemblée via OBS.',
-    'listeningBar': 'BANDE D\'ÉCOUTE — Niveau audio en temps réel. Vert = actif, gris = en attente, rouge = écrêté.',
-    'confidenceThreshold': 'SEUIL DE CONCIANCE — Segments ASR en dessous de ce seuil sont automatiquement rejetés.',
-    'readingMode': 'MODE LECTURE — Avance verset par verset depuis une référence de départ.',
-    'searchBar': 'RECHERCHE — Tapez une référence biblique (ex. "Jean 3:16") pour l\'afficher immédiatement.',
-  };
-
   const GUIDE_STEPS = [
-    { section: 'overview', title: '1. Bienvenue !', text: 'Commencez par vérifier que la bande d\'écoute montre un niveau audio actif (point vert). Si le point est gris, vérifiez le micro.' },
-    { section: 'controls', title: '2. Afficher un verset', text: 'Cliquez sur "Afficher un Verset" ou tapez une référence dans la barre de recherche. Le verset apparaît sur l\'écran de l\'église.' },
-    { section: 'transcript', title: '3. Transcription auto', text: 'Le pasteur parle → le texte apparaît ici → le système détecte automatiquement les références bibliques.' },
-    { section: 'media-wall', title: '4. Médias', text: 'Dans PRÉPARATION, le Mur Média permet de préparer et déclencher des photos/vidéos pendant le culte.' },
-    { section: 'controls', title: '5. Urgence', text: 'Utilisez "Écran Noir" pour une coupure immédiate, ou "Arrêt d\'Urgence" pour masquer le verset.' },
+    {
+      section: 'overview',
+      title: '1. Bienvenue !',
+      text: "Commencez par vérifier que la bande d'écoute montre un niveau audio actif (point vert). Si le point est gris, vérifiez le micro.",
+    },
+    {
+      section: 'controls',
+      title: '2. Afficher un verset',
+      text: 'Cliquez sur "Afficher un Verset" ou tapez une référence dans la barre de recherche. Le verset apparaît sur l\'écran de l\'église.',
+    },
+    {
+      section: 'transcript',
+      title: '3. Transcription auto',
+      text: 'Le pasteur parle → le texte apparaît ici → le système détecte automatiquement les références bibliques.',
+    },
+    {
+      section: 'media-wall',
+      title: '4. Médias',
+      text: 'Dans PRÉPARATION, le Mur Média permet de préparer et déclencher des photos/vidéos pendant le culte.',
+    },
+    {
+      section: 'controls',
+      title: '5. Urgence',
+      text: 'Utilisez "Écran Noir" pour une coupure immédiate, ou "Arrêt d\'Urgence" pour masquer le verset.',
+    },
   ];
 
   let guideIndex = 0;
@@ -38,20 +43,6 @@
     tooltipEl.className = 'training-tooltip';
     tooltipEl.style.display = 'none';
     document.body.appendChild(tooltipEl);
-  }
-
-  function showTip(elementId) {
-    if (!active || !tooltipEl) return;
-    const tip = TIPS[elementId];
-    if (!tip) return;
-    const el = document.getElementById(elementId);
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    tooltipEl.textContent = tip;
-    tooltipEl.style.display = 'block';
-    tooltipEl.style.top = (rect.top + window.scrollY - 8) + 'px';
-    tooltipEl.style.left = Math.min(rect.left + window.scrollX, window.innerWidth - 340) + 'px';
-    tooltipEl.style.transform = 'translateY(-100%)';
   }
 
   function hideTip() {
@@ -84,7 +75,7 @@
     guideBar.querySelector('.training-guide-step').textContent = step.title;
     guideBar.querySelector('.training-guide-text').textContent = step.text;
     // Highlight section
-    document.querySelectorAll('.section').forEach((s) => s.style.outline = 'none');
+    document.querySelectorAll('.section').forEach((s) => (s.style.outline = 'none'));
     const target = document.getElementById(step.section);
     if (target && target.style.display !== 'none') {
       target.style.outline = '2px solid #3b82f6';
@@ -106,21 +97,27 @@
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ action: 'trainingModeChanged', enabled: true }));
       }
-    } catch (_) { /* ignore */ }
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   function deactivate() {
     active = false;
     hideTip();
     if (guideBar) guideBar.style.display = 'none';
-    document.querySelectorAll('.section').forEach((s) => { s.style.outline = 'none'; });
+    document.querySelectorAll('.section').forEach((s) => {
+      s.style.outline = 'none';
+    });
     document.body.classList.remove('training-mode');
     try {
       const ws = window._ws || (window.state && window.state.ws);
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ action: 'trainingModeChanged', enabled: false }));
       }
-    } catch (_) { /* ignore */ }
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   window._trainingNext = function () {

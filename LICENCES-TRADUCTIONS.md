@@ -6,24 +6,24 @@
 
 ## Traductions distribuées
 
-| Code | Nom complet | Langue | Licence | Source API |
-|------|-------------|--------|---------|------------|
-| `lsg` | Louis Segond 1910 | FR | Domaine public | helloao + getbible |
-| `darby` | Darby | FR | Domaine public | getbible |
-| `kjv` | King James Version | EN | Domaine public | helloao |
-| `web` | World English Bible | EN | Domaine public (CC0) | helloao |
-| `asv` | American Standard Version | EN | Domaine public | helloao |
+| Code    | Nom complet               | Langue | Licence              | Source API         |
+| ------- | ------------------------- | ------ | -------------------- | ------------------ |
+| `lsg`   | Louis Segond 1910         | FR     | Domaine public       | helloao + getbible |
+| `darby` | Darby                     | FR     | Domaine public       | getbible           |
+| `kjv`   | King James Version        | EN     | Domaine public       | helloao            |
+| `web`   | World English Bible       | EN     | Domaine public (CC0) | helloao            |
+| `asv`   | American Standard Version | EN     | Domaine public       | helloao            |
 
 ## Traductions **exclues** (copyright, sans licence payante)
 
-| Nom | Raison d'exclusion |
-|-----|-------------------|
-| NIV (New International Version) | Biblica/Zondervan — licence commerciale requise |
-| ESV (English Standard Version) | Crossway — licence commerciale requise |
-| NLT (New Living Translation) | Tyndale House — licence commerciale requise |
+| Nom                                | Raison d'exclusion                               |
+| ---------------------------------- | ------------------------------------------------ |
+| NIV (New International Version)    | Biblica/Zondervan — licence commerciale requise  |
+| ESV (English Standard Version)     | Crossway — licence commerciale requise           |
+| NLT (New Living Translation)       | Tyndale House — licence commerciale requise      |
 | NASB (New American Standard Bible) | Lockman Foundation — licence commerciale requise |
-| Segond 21 | Société biblique de Genève — licence requise |
-| Le Semeur | Alliance biblique française — licence requise |
+| Segond 21                          | Société biblique de Genève — licence requise     |
+| Le Semeur                          | Alliance biblique française — licence requise    |
 
 ## Architecture de traductions extensible
 
@@ -33,7 +33,12 @@ d'ajouter une traduction sous licence payante sans toucher au cœur du logiciel 
 ```js
 AVAILABLE_TRANSLATIONS = {
   fr: {
-    lsg: { helloaoId: 'fra_lsg', getbibleId: 'ls1910', label: 'Louis Segond 1910', license: 'Domaine public' },
+    lsg: {
+      helloaoId: 'fra_lsg',
+      getbibleId: 'ls1910',
+      label: 'Louis Segond 1910',
+      license: 'Domaine public',
+    },
     darby: { helloaoId: null, getbibleId: 'darby', label: 'Darby', license: 'Domaine public' },
     // Ajout futur : segond21: { ..., license: 'Société biblique de Genève (payante)' }
   },
@@ -42,7 +47,7 @@ AVAILABLE_TRANSLATIONS = {
     web: { helloaoId: 'eng_web', label: 'World English Bible', license: 'Domaine public' },
     asv: { helloaoId: 'eng_asv', label: 'American Standard Version', license: 'Domaine public' },
     // Ajout futur : niv: { ..., license: 'Biblica (payante)' }
-  }
+  },
 };
 ```
 

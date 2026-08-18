@@ -336,7 +336,8 @@ export function renderMediaWall(items) {
   const list = Array.isArray(items) ? items : mediaLibraryItems;
   if (countEl) countEl.textContent = list.length;
   if (list.length === 0) {
-    grid.innerHTML = '<div class="empty-state-note" style="grid-column: 1 / -1">Aucun média ajouté.</div>';
+    grid.innerHTML =
+      '<div class="empty-state-note" style="grid-column: 1 / -1">Aucun média ajouté.</div>';
     return;
   }
   grid.innerHTML = list
@@ -346,10 +347,7 @@ export function renderMediaWall(items) {
         item.mediaType === 'video'
           ? `<video src="${thumbUrl}" muted preload="metadata" playsinline></video>`
           : `<img src="${thumbUrl}" alt="${escapeHtmlDashboard(item.label || item.filename)}" loading="lazy">`;
-      const badges = [
-        item.isDefault ? '⭐' : '',
-        item.includeInLoop ? '🔁' : '',
-      ].filter(Boolean);
+      const badges = [item.isDefault ? '⭐' : '', item.includeInLoop ? '🔁' : ''].filter(Boolean);
       return `
         <div class="media-gallery-card${item.isDefault ? ' is-default' : ''}" style="cursor:pointer" onclick="triggerMediaWallItem('${escapeHtmlDashboard(item.filename)}')">
           <div class="media-gallery-thumb">

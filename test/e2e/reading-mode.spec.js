@@ -13,9 +13,7 @@ test.describe('Panneau mode lecture', () => {
     page,
   }) => {
     await page.goto('/');
-    await page
-      .locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]')
-      .click();
+    await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
 
     const startBtn = page.locator('#readingModeStartBtn');
     const stopBtn = page.locator('#readingModeStopBtn');

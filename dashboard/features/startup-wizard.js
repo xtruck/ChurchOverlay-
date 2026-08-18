@@ -63,7 +63,9 @@
       </div>
     `;
     document.body.appendChild(overlay);
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeStartupWizard(); });
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
   }
 
   function checkStatus() {
@@ -74,7 +76,8 @@
       const ws = window._ws || (window.state && window.state.ws);
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ action: 'preServiceCheck' }));
-        if (apiStatus) apiStatus.textContent = 'Vérification envoyée — regardez les résultats dans RÉGIE.';
+        if (apiStatus)
+          apiStatus.textContent = 'Vérification envoyée — regardez les résultats dans RÉGIE.';
         if (apiIcon) apiIcon.textContent = '🔍';
       } else {
         if (apiStatus) apiStatus.textContent = '⚠️ Non connecté au serveur.';
@@ -88,10 +91,12 @@
     const micStatus = document.getElementById('wizardMicStatus');
     const micIcon = document.getElementById('wizardMicIcon');
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      if (micStatus) micStatus.textContent = '✅ API micro disponible. Vérifiez la sélection dans Réglages.';
+      if (micStatus)
+        micStatus.textContent = '✅ API micro disponible. Vérifiez la sélection dans Réglages.';
       if (micIcon) micIcon.textContent = '✅';
     } else {
-      if (micStatus) micStatus.textContent = '⚠️ API micro non disponible (vérifiez le navigateur).';
+      if (micStatus)
+        micStatus.textContent = '⚠️ API micro non disponible (vérifiez le navigateur).';
       if (micIcon) micIcon.textContent = '⚠️';
     }
 
@@ -99,7 +104,9 @@
     const obsUrl = document.getElementById('wizardObsUrl');
     if (obsUrl) {
       const urlInput = document.getElementById('overlayUrlInput');
-      obsUrl.textContent = urlInput ? urlInput.value : 'Ouvrez RÉGIE → Overlay pour copier le lien.';
+      obsUrl.textContent = urlInput
+        ? urlInput.value
+        : 'Ouvrez RÉGIE → Overlay pour copier le lien.';
     }
   }
 
@@ -129,7 +136,9 @@
       setTimeout(open, 1500);
       localStorage.setItem('churchoverlay_wizard_seen', '1');
     }
-  } catch (_) { /* ignore */ }
+  } catch (_) {
+    /* ignore */
+  }
 
   window.openStartupWizard = open;
 })();

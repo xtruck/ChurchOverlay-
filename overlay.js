@@ -1048,9 +1048,14 @@ function startCountdown(endTimeMs, label) {
     const h = Math.floor(totalSec / 3600);
     const m = Math.floor((totalSec % 3600) / 60);
     const s = totalSec % 60;
-    timeEl.textContent = h > 0
-      ? String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0')
-      : String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    timeEl.textContent =
+      h > 0
+        ? String(h).padStart(2, '0') +
+          ':' +
+          String(m).padStart(2, '0') +
+          ':' +
+          String(s).padStart(2, '0')
+        : String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
     if (subEl) subEl.textContent = totalSec <= 0 ? 'Le culte commence !' : '';
     if (totalSec <= 0) {
       clearInterval(countdownInterval);
@@ -1061,7 +1066,10 @@ function startCountdown(endTimeMs, label) {
   countdownInterval = setInterval(tick, 1000);
 }
 function stopCountdown() {
-  if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+  if (countdownInterval) {
+    clearInterval(countdownInterval);
+    countdownInterval = null;
+  }
   const el = document.getElementById('service-countdown');
   if (el) el.style.display = 'none';
 }

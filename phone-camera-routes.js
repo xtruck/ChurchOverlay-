@@ -109,7 +109,11 @@ function registerRoutes(ctx) {
     const pushTimer = setInterval(() => {
       if (!isFrameFresh(cameraId)) {
         clearInterval(pushTimer);
-        try { res.end(); } catch (_e) { /* Déjà fermée */ }
+        try {
+          res.end();
+        } catch (_e) {
+          /* Déjà fermée */
+        }
         return;
       }
       const frame = phoneCameraFrames.get(cameraId);
@@ -121,7 +125,9 @@ function registerRoutes(ctx) {
         );
         res.write(frame.buffer);
         res.write('\r\n');
-      } catch (_e) { /* Client déconnecté */ }
+      } catch (_e) {
+        /* Client déconnecté */
+      }
     }, 150);
 
     req.on('close', () => clearInterval(pushTimer));

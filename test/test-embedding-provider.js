@@ -87,7 +87,7 @@ async function run() {
     const { embedTexts, embedQuery, CONFIG } = require('../embedding-provider');
     const r = await embedTexts(['Jean 3:16', 'Psaume 23:1']);
     check('embedTexts avec clé: 2 vecteurs pour 2 textes', Array.isArray(r) && r.length === 2);
-    check('embedTexts: vecteur dans l\'ordre d\'entrée', r[0][0] === 0 && r[1][0] === 1);
+    check("embedTexts: vecteur dans l'ordre d'entrée", r[0][0] === 0 && r[1][0] === 1);
     check('embedTexts: modèle correct transmis', lastCall.model === CONFIG.MODEL);
     check(
       'embedTexts: taskType par défaut = RETRIEVAL_DOCUMENT',

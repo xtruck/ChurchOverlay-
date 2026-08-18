@@ -172,6 +172,27 @@ const SERVER_PORT = portValidation.valid ? portValidation.parsedValue : 8765;
 const hostValidation = configValidator.validateEnvVar('WS_HOST', process.env.WS_HOST);
 let WS_HOST = hostValidation.valid ? hostValidation.parsedValue : '127.0.0.1';
 
+// CORRECTIF (audit — bug réel trouvé par `npm run lint`, no-undef) :
+// generateCameraPairing (voir plus bas) appelait getLanIpAddress() sans
+// qu'elle soit jamais définie dans ce fichier — ReferenceError garanti dès
+// qu'un opérateur génère un QR de jumelage caméra téléphone avec WS_HOST
+// correctement configuré pour le réseau (exactement le cas d'usage de
+// cette fonctionnalité). main.js a sa PROPRE copie de cette même fonction
+// (voir son commentaire "même logique que getLanIpAddress() dans
+// server.js, dupliquée plutôt que partagée" — qui supposait donc déjà
+// l'existence de celle-ci) ; reproduite ici à l'identique.
+function getLanIpAddress() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] || []) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return null;
+}
+
 // SECURITY: enforce minimum token length of 16 characters.
 // Two independent tokens: WS_AUTH_TOKEN (operator, full control) and
 // WS_VIEWER_TOKEN (read-only overlay display). A client's role is now
@@ -371,7 +392,15 @@ const phoneCameraRoutes = require('./phone-camera-routes');
 const cleanupPhoneCameraStateForItem = phoneCameraRoutes.cleanupPhoneCameraStateForItem;
 
 // Enregistrer les routes HTTP caméra téléphone (auto-contenues avec leur propre état)
-phoneCameraRoutes.registerRoutes({ app, phoneCameraPairing, ipCameraStore, broadcast, log, warn, SERVER_PORT });
+phoneCameraRoutes.registerRoutes({
+  app,
+  phoneCameraPairing,
+  ipCameraStore,
+  broadcast,
+  log,
+  warn,
+  SERVER_PORT,
+});
 
 const httpServer = http.createServer(app);
 // SECURITY: auth tokens travel via the Sec-WebSocket-Protocol handshake
@@ -802,7 +831,12 @@ async function displayChapterFallback(book, chapter, tracker, opts) {
   };
   if (sessionState.isDuplicateReference(refKey, now, dedupCtx)) {
     log(`Chapter fallback suppressed (dedup): ${refKey}`);
-    broadcast({ action: 'dedupSuppressed', ref: refKey, reason: 'chapter-fallback', timestamp: now });
+    broadcast({
+      action: 'dedupSuppressed',
+      ref: refKey,
+      reason: 'chapter-fallback',
+      timestamp: now,
+    });
     return;
   }
   if (isRateLimited()) {
@@ -1342,7 +1376,12 @@ async function processTranscript(text, tracker, opts = {}) {
   };
   if (sessionState.isDuplicateReference(refKey, now, dedupCtx)) {
     log('Duplicate suppressed: ' + refKey);
-    broadcast({ action: 'dedupSuppressed', ref: refKey, reason: dedupCtx.source || 'same-ref', timestamp: now });
+    broadcast({
+      action: 'dedupSuppressed',
+      ref: refKey,
+      reason: dedupCtx.source || 'same-ref',
+      timestamp: now,
+    });
     return;
   }
   sessionState.recordShownReference(refKey, now, dedupCtx);
@@ -2668,8 +2707,12 @@ wss.on('connection', (ws, req) => {
     if (sanitized.action === 'startCountdown') {
       const endTimeMs = Number(sanitized.endTimeMs);
       if (endTimeMs > Date.now()) {
-        broadcast({ action: 'countdownMode', endTimeMs, label: sanitized.label || 'Le culte commence dans' });
-        log('Affichage : countdown démarré jusqu\'à ' + new Date(endTimeMs).toLocaleTimeString());
+        broadcast({
+          action: 'countdownMode',
+          endTimeMs,
+          label: sanitized.label || 'Le culte commence dans',
+        });
+        log("Affichage : countdown démarré jusqu'à " + new Date(endTimeMs).toLocaleTimeString());
       }
       return;
     }
@@ -2683,10 +2726,10 @@ wss.on('connection', (ws, req) => {
     if (sanitized.action === 'setAmbientMode') {
       if (sanitized.enabled === false) {
         stopAmbientMoodLoop();
-        log('Ambiance automatique désactivée par l\'opérateur');
+        log("Ambiance automatique désactivée par l'opérateur");
       } else {
         startAmbientMoodLoop();
-        log('Ambiance automatique réactivée par l\'opérateur');
+        log("Ambiance automatique réactivée par l'opérateur");
       }
       broadcast({ action: 'ambientModeChanged', enabled: sanitized.enabled !== false });
       return;

@@ -47,7 +47,10 @@ async function run() {
     const r = await search.search('amour');
     check('search mot-clé (sujet direct): résultats non vides', r.length > 0);
     check('search mot-clé: source = keyword', r[0].source === 'keyword');
-    check('search mot-clé: référence attendue présente', r.some((x) => x.reference === 'Jean 3:16'));
+    check(
+      'search mot-clé: référence attendue présente',
+      r.some((x) => x.reference === 'Jean 3:16')
+    );
 
     const r2 = await search.search('galaxie lointaine improbable xyz');
     check('search: aucun mot-clé ni index vectoriel -> []', Array.isArray(r2) && r2.length === 0);
@@ -55,10 +58,7 @@ async function run() {
 
   // --- Chemin vectoriel : index sqlite-vec réel + embedding mocké ---
   {
-    const dbPath = path.join(
-      os.tmpdir(),
-      `test-bible-semantic-search-${Date.now()}.sqlite3`
-    );
+    const dbPath = path.join(os.tmpdir(), `test-bible-semantic-search-${Date.now()}.sqlite3`);
 
     // Construit un petit index réel à 3 dimensions (facile à raisonner).
     const { BibleVectorStore } = require('../bible-vector-store');
@@ -108,7 +108,10 @@ async function run() {
     check('search vectoriel: résultats non vides', r.length > 0);
     check('search vectoriel: source = vector', r[0].source === 'vector');
     check('search vectoriel: Jean 3:16 en premier (distance 0)', r[0].reference === 'Jean 3:16');
-    check('search vectoriel: score décroissant avec la distance', r[0].score >= (r[1] ? r[1].score : 0));
+    check(
+      'search vectoriel: score décroissant avec la distance',
+      r[0].score >= (r[1] ? r[1].score : 0)
+    );
 
     // Un sujet connu (TOPIC_INDEX) doit toujours passer par le mot-clé
     // d'abord, même avec un index vectoriel chargé (ordre de priorité
