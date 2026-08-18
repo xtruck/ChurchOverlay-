@@ -544,6 +544,18 @@ function getTranslationMeta(lang) {
   return dict[code] || Object.values(dict)[0];
 }
 
+// AJOUT (affichage multi-traduction côte à côte, déclenchement manuel
+// uniquement — voir getVerseDualTranslation ci-dessous) : contrairement à
+// getTranslationMeta() ci-dessus (toujours la traduction COURANTE de la
+// session), celle-ci résout un COUPLE (lang, code) explicite fourni par
+// l'appelant, sans jamais lire ni modifier currentTranslation — nécessaire
+// pour pouvoir demander deux traductions à la fois (ex. LSG + Darby, deux
+// traductions françaises) sans que l'une écrase l'état global de l'autre.
+function getTranslationMetaFor(lang, code) {
+  const dict = AVAILABLE_TRANSLATIONS[lang];
+  return dict ? dict[code] : undefined;
+}
+
 // Conservée pour compatibilité (server.js l'utilise pour les diagnostics) :
 // renvoie l'id helloao de la traduction courante, si ce fournisseur la sert.
 function getTranslationId(lang) {
@@ -583,12 +595,14 @@ function listTranslations() {
   return out;
 }
 
-async function helloaoFetchChapter(reference, lang = 'fr') {
+async function helloaoFetchChapter(reference, lang = 'fr', translationCode) {
   const bookCode = HELLOAO_BOOK_CODES[reference.book];
   if (!bookCode) {
     throw new Error(`Livre inconnu pour helloao: ${reference.book}`);
   }
-  const translation = getTranslationId(lang);
+  const translation = translationCode
+    ? getTranslationMetaFor(lang, translationCode)?.helloaoId
+    : getTranslationId(lang);
   // AJOUT (audit — traductions multiples) : certaines traductions (ex.
   // Darby) ne sont servies QUE par getbible, pas par helloao. On échoue
   // clairement ici plutôt que d'interroger helloao avec un id manquant
@@ -672,7 +686,7 @@ function helloaoParseVerse(chapterData, reference) {
 
 // --- Fournisseur : api.getbible.net (ls1910) ------------------------------
 
-async function getbibleFetchChapter(reference) {
+async function getbibleFetchChapter(reference, lang, translationCode) {
   const bookNr = GETBIBLE_BOOK_NUMBERS[reference.book];
   if (!bookNr) {
     throw new Error(`Livre inconnu pour getbible: ${reference.book}`);
@@ -682,7 +696,12 @@ async function getbibleFetchChapter(reference) {
   // sélectionnée — changer pour Darby (setTranslation('fr','darby'))
   // n'aurait donc rien changé pour ce fournisseur. On lit maintenant le
   // getbibleId de la traduction courante (voir AVAILABLE_TRANSLATIONS).
-  const meta = getTranslationMeta('fr');
+  // AJOUT (affichage multi-traduction côte à côte) : translationCode
+  // explicite prioritaire sur la traduction courante de session, mêmes
+  // raisons que dans helloaoFetchChapter ci-dessus.
+  const meta = translationCode
+    ? getTranslationMetaFor('fr', translationCode)
+    : getTranslationMeta('fr');
   const translationSlug = (meta && meta.getbibleId) || 'ls1910';
   const cacheKey = `getbible:${translationSlug}:${bookNr}:${reference.chapter}`;
   if (chapterCache.has(cacheKey)) {
@@ -764,11 +783,11 @@ const BIBLE_PROVIDERS = [
   },
 ];
 
-async function fetchFromProvider(provider, reference, lang) {
+async function fetchFromProvider(provider, reference, lang, translationCode) {
   try {
     if (provider.supportsLang && !provider.supportsLang(lang)) return null;
     console.log(`[bible-lookup] Tentative via ${provider.name} (${lang})...`);
-    const chapterData = await provider.fetchChapter(reference, lang);
+    const chapterData = await provider.fetchChapter(reference, lang, translationCode);
     const text = provider.parseVerse(chapterData, reference);
     if (!text) {
       throw new Error('Verset introuvable dans la réponse');
@@ -1045,7 +1064,7 @@ function normalizeBookKey(rawBook) {
   return 'psaumes';
 }
 
-async function getVerse(reference, lang = 'fr') {
+async function getVerse(reference, lang = 'fr', translationCode) {
   if (!reference || !reference.book) {
     throw new Error('Référence invalide');
   }
@@ -1053,7 +1072,7 @@ async function getVerse(reference, lang = 'fr') {
   const normalizedBook = normalizeBookKey(reference.book);
   reference = { ...reference, book: normalizedBook };
 
-  const cacheKey = `${lang}:${reference.book}:${reference.chapter}:${reference.verseStart || ''}-${reference.verseEnd || ''}`;
+  const cacheKey = `${lang}:${translationCode || 'default'}:${reference.book}:${reference.chapter}:${reference.verseStart || ''}-${reference.verseEnd || ''}`;
   if (cache.has(cacheKey)) {
     return cache.get(cacheKey);
   }
@@ -1066,7 +1085,7 @@ async function getVerse(reference, lang = 'fr') {
   let provider = null;
 
   for (const p of BIBLE_PROVIDERS) {
-    text = await fetchFromProvider(p, reference, lang);
+    text = await fetchFromProvider(p, reference, lang, translationCode);
     if (text) {
       provider = p.name;
       break;
@@ -1081,7 +1100,10 @@ async function getVerse(reference, lang = 'fr') {
     // symétrique dans bible-offline-cache.js sur la dépendance circulaire.
     try {
       const offlineCache = require('./bible-offline-cache');
-      const translation = getTranslationId(lang) || offlineCache.DEFAULT_TRANSLATION;
+      const translation =
+        (translationCode && getTranslationMetaFor(lang, translationCode)?.helloaoId) ||
+        getTranslationId(lang) ||
+        offlineCache.DEFAULT_TRANSLATION;
       const offlineText = offlineCache.getOfflineVerse(reference, translation);
       if (offlineText) {
         text = offlineText;
@@ -1205,6 +1227,83 @@ async function getVerseMultilang(reference, langMode = 'fr') {
   };
 }
 
+/**
+ * Récupère un verset dans UNE traduction précise (pas forcément celle
+ * active pour la session), sans jamais modifier currentTranslation.
+ * @param {Object} reference
+ * @param {string} lang - 'fr' ou 'en'
+ * @param {string} code - code de traduction (ex. 'lsg', 'darby', 'kjv')
+ * @returns {Object} { reference, text, lang, code, label, provider }
+ */
+async function getVerseInTranslation(reference, lang, code) {
+  const meta = getTranslationMetaFor(lang, code);
+  if (!meta) {
+    throw new Error(`Traduction inconnue: ${lang}/${code}`);
+  }
+  const result = await getVerse(reference, lang, code);
+  return {
+    reference: result.reference,
+    text: result.text,
+    lang,
+    code,
+    label: meta.label,
+    provider: result.provider,
+  };
+}
+
+/**
+ * AJOUT (affichage multi-traduction côte à côte, chantier "Multi-Bible
+ * side-by-side") : récupère le MÊME verset dans deux traductions
+ * explicites en parallèle — contrairement à getVerseMultilang('both'),
+ * qui compare toujours FR contre EN, ceci accepte n'importe quel couple
+ * (y compris deux traductions de la MÊME langue, ex. LSG + Darby). Usage
+ * volontairement limité au déclenchement MANUEL d'un verset (voir
+ * server.js#showVerse) — pas branché sur le pipeline de détection
+ * automatique en direct, pour ne jamais ajouter de latence à ce chemin
+ * critique déjà optimisé (voir son propre commentaire de tête).
+ * @param {Object} reference
+ * @param {{lang: string, code: string}} primary
+ * @param {{lang: string, code: string}} secondary
+ * @returns {Object} { reference, primary: {...}, secondary: {...} }
+ */
+async function getVerseDualTranslation(reference, primary, secondary) {
+  const primaryMeta = getTranslationMetaFor(primary.lang, primary.code);
+  const secondaryMeta = getTranslationMetaFor(secondary.lang, secondary.code);
+  if (!primaryMeta) throw new Error(`Traduction inconnue: ${primary.lang}/${primary.code}`);
+  if (!secondaryMeta) throw new Error(`Traduction inconnue: ${secondary.lang}/${secondary.code}`);
+
+  const [primaryRes, secondaryRes] = await Promise.allSettled([
+    getVerse(reference, primary.lang, primary.code),
+    getVerse(reference, secondary.lang, secondary.code),
+  ]);
+  const primaryOk = primaryRes.status === 'fulfilled' ? primaryRes.value : null;
+  const secondaryOk = secondaryRes.status === 'fulfilled' ? secondaryRes.value : null;
+
+  if (!primaryOk && !secondaryOk) {
+    throw new Error(`Verset introuvable en ${primaryMeta.label} et en ${secondaryMeta.label}.`);
+  }
+
+  const refPrimary = primaryOk ? primaryOk.reference : label(reference, primary.lang);
+  const refSecondary = secondaryOk ? secondaryOk.reference : label(reference, secondary.lang);
+  const combinedRef = refPrimary === refSecondary ? refPrimary : `${refPrimary} · ${refSecondary}`;
+
+  return {
+    reference: combinedRef,
+    primary: {
+      lang: primary.lang,
+      code: primary.code,
+      label: primaryMeta.label,
+      text: primaryOk ? primaryOk.text : null,
+    },
+    secondary: {
+      lang: secondary.lang,
+      code: secondary.code,
+      label: secondaryMeta.label,
+      text: secondaryOk ? secondaryOk.text : null,
+    },
+  };
+}
+
 // -----------------------------------------------------------------------
 // AJOUT (audit — Reading Mode, inspiré de Rhema).
 // -----------------------------------------------------------------------
@@ -1303,6 +1402,8 @@ async function getChapterVersesMultilang(book, chapter, langMode = 'fr') {
 module.exports = {
   getVerse,
   getVerseMultilang,
+  getVerseInTranslation,
+  getVerseDualTranslation,
   getChapterVerses, // AJOUT (audit) : Reading Mode, inspiré de Rhema
   getChapterVersesMultilang, // AJOUT : Reading Mode bilingue FR+EN
   buildReferenceLabel: label,

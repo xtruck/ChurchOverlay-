@@ -148,6 +148,21 @@ function setDisplayLanguage(lang) {
   displayLanguage = lang;
 }
 
+// --- Traduction secondaire (affichage côte à côte, chantier "Multi-Bible
+// side-by-side") : { lang, code } | null. Distincte de displayLanguage
+// ci-dessus — s'applique UNIQUEMENT au déclenchement manuel d'un verset
+// (voir showVerse dans server.js), jamais à la détection automatique en
+// direct. Volontairement NON persistée (comme highContrastMode/
+// captionsEnabled plus bas) : un réglage de comparaison de traductions
+// laissé actif d'un culte à l'autre serait plus surprenant qu'utile.
+let secondaryTranslation = null;
+function getSecondaryTranslation() {
+  return secondaryTranslation;
+}
+function setSecondaryTranslation(lang, code) {
+  secondaryTranslation = lang && code ? { lang, code } : null;
+}
+
 // --- Langue de transcription (ASR) — voir le commentaire de la variable
 // ci-dessus. setTranscriptionLanguage() ne touche JAMAIS displayLanguage,
 // et setDisplayLanguage() ci-dessus ne touche JAMAIS transcriptionLanguage
@@ -472,6 +487,8 @@ module.exports = {
   MAX_SERVICE_TRANSCRIPT_CHARS,
   getDisplayLanguage,
   setDisplayLanguage,
+  getSecondaryTranslation,
+  setSecondaryTranslation,
   getTranscriptionLanguage,
   setTranscriptionLanguage,
   getLastBroadcast,

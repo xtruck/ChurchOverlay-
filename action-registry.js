@@ -31,6 +31,10 @@ const CLIENT_ACTIONS = {
   // Langue & traduction
   setLanguage: { category: 'language', description: "Langue d'affichage (fr/en/both)" },
   setTranslation: { category: 'language', description: 'Traduction biblique' },
+  setSecondaryTranslation: {
+    category: 'language',
+    description: 'Traduction secondaire (affichage côte à côte, verset manuel)',
+  },
   translateText: { category: 'language', description: 'Traduction IA en direct' },
   hideTranslation: { category: 'language', description: 'Masquer la traduction' },
   setConfidenceThreshold: { category: 'transcription', description: 'Seuil de confiance ASR' },
@@ -164,6 +168,7 @@ const SERVER_ACTIONS = {
   languageChanged: { description: "Langue d'affichage changée" },
   transcriptionLanguageChanged: { description: 'Langue de transcription changée' },
   translationChanged: { description: 'Traduction biblique changée' },
+  secondaryTranslationChanged: { description: 'Traduction secondaire (côte à côte) changée' },
   showTranslation: { description: 'Traduction affichée' },
   hideTranslation: { description: 'Traduction masquée' },
   textTranslated: { description: 'Texte traduit' },

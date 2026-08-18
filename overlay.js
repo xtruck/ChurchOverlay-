@@ -337,6 +337,14 @@ function showVerse(data) {
     verseBilingual.style.display = 'block';
     verseBilingual.innerHTML = `<em>EN:</em> ${escapeHtml(data.text_en)}`;
     mainText = data.text_fr;
+  } else if (data.secondaryText) {
+    // AJOUT (Multi-Bible côte à côte, déclenchement manuel — voir
+    // server.js#showVerse) : réutilise le même élément/style que
+    // l'affichage bilingue ci-dessus plutôt qu'un nouveau bloc — mêmes
+    // deux cas mutuellement exclusifs côté serveur (secondaryText n'est
+    // jamais peuplé en mode 'both'), donc pas de risque de conflit ici.
+    verseBilingual.style.display = 'block';
+    verseBilingual.innerHTML = `<em>${escapeHtml(data.secondaryLabel || 'Traduction secondaire')}:</em> ${escapeHtml(data.secondaryText)}`;
   } else {
     verseBilingual.style.display = 'none';
   }

@@ -24,4 +24,36 @@ test.describe('Sélecteur de version biblique', () => {
     await expect(darbyBtn).toHaveClass(/active/);
     await expect(lsgBtn).not.toHaveClass(/active/);
   });
+
+  test('la comparaison de traduction secondaire se peuple et se synchronise entre postes', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
+
+    const select = page.locator('#secondaryTranslationSelect');
+    // 4 traductions au total dans FAKE_TRANSLATIONS (2 fr + 2 en) + "Aucune".
+    await expect(select.locator('option')).toHaveCount(5, { timeout: 5000 });
+    await expect(select).toHaveValue('');
+
+    await select.selectOption('fr|darby');
+    // AJOUT : simule un second poste opérateur connecté — vérifie que le
+    // réglage se synchronise entre les deux (secondaryTranslationChanged
+    // diffusé à tous les clients, pas seulement à celui qui a cliqué), même
+    // raisonnement que dashboard-branding.spec.js pour un autre réglage.
+    const context = page.context();
+    const secondPage = await context.newPage();
+    await secondPage.goto('/');
+    await secondPage
+      .locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]')
+      .click();
+    await expect(secondPage.locator('#secondaryTranslationSelect')).toHaveValue('fr|darby', {
+      timeout: 5000,
+    });
+    await secondPage.close();
+
+    // Désactivation : revient à "Aucune".
+    await select.selectOption('');
+    await expect(select).toHaveValue('');
+  });
 });

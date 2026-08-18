@@ -59,6 +59,8 @@ import {
 import {
   renderTranslationPicker,
   updateActiveTranslationButton,
+  renderSecondaryTranslationOptions,
+  updateSecondaryTranslationSelect,
 } from './features/translation-picker.js';
 import { applyDashboardBranding } from './features/dashboard-branding.js';
 import { updateAudioVumeter } from './features/audio-vumeter.js';
@@ -76,11 +78,21 @@ export function handleMessage(message) {
     // séparé, plus large, pas entrepris ici.
     case 'init':
       renderTranslationPicker(message.translations);
+      renderSecondaryTranslationOptions(message.translations);
+      if (message.secondaryTranslation) {
+        updateSecondaryTranslationSelect(
+          message.secondaryTranslation.lang,
+          message.secondaryTranslation.code
+        );
+      }
       applyDashboardBranding(message.dashboardBranding);
       break;
     case 'translationChanged':
       updateActiveTranslationButton(message.language, message.code);
       showToast(`Version biblique changée (${message.language}).`, 'success');
+      break;
+    case 'secondaryTranslationChanged':
+      updateSecondaryTranslationSelect(message.lang, message.code);
       break;
     case 'dashboardBrandingUpdate':
       applyDashboardBranding(message.branding);

@@ -1991,6 +1991,7 @@ const OPERATOR_ACTIONS = new Set([
   'hideVerse',
   'setLanguage',
   'setTranslation',
+  'setSecondaryTranslation',
   'startReading',
   'stopReading',
   // AJOUT (mode lecture — bouton manuel) : mutent l'état du programme en
@@ -2195,6 +2196,7 @@ wss.on('connection', (ws, req) => {
       theme: themeLoader.themeToCss(theme),
       features,
       translations: bibleLookup.listTranslations(),
+      secondaryTranslation: sessionState.getSecondaryTranslation(),
       plugins: plugins ? plugins.getPluginList() : [],
       aiFeatures: {
         semanticDetection: !!semanticDetector,
@@ -2297,9 +2299,43 @@ wss.on('connection', (ws, req) => {
         return;
       }
       try {
-        const verse = await bibleLookup.getVerseMultilang(ref, sessionState.getDisplayLanguage());
+        const displayLang = sessionState.getDisplayLanguage();
+        const verse = await bibleLookup.getVerseMultilang(ref, displayLang);
         const durationMs = sanitized.durationMs || getVerseDurationMs();
-        broadcast({ action: 'showVerse', ...verse, durationMs, triggeredManually: true });
+        const payload = { action: 'showVerse', ...verse, durationMs, triggeredManually: true };
+
+        // AJOUT (Multi-Bible côte à côte, déclenchement MANUEL uniquement —
+        // voir bibleLookup.getVerseDualTranslation) : si une traduction
+        // secondaire est configurée (voir setSecondaryTranslation ci-dessous)
+        // ET qu'on n'est pas déjà en mode bilingue 'both' (qui affiche déjà
+        // 2 textes — un 3e surchargerait l'overlay plutôt que d'aider),
+        // récupère AUSSI le verset dans cette traduction pour comparaison.
+        // Best-effort strict : un échec ici (réseau, traduction retirée
+        // entre-temps...) n'empêche jamais l'affichage du verset principal,
+        // il fait juste manquer secondaryText — jamais d'erreur bloquante
+        // pour un réglage de confort.
+        const secondary = sessionState.getSecondaryTranslation();
+        if (secondary && displayLang !== 'both') {
+          try {
+            const activeEntry = (bibleLookup.listTranslations()[displayLang] || []).find(
+              (t) => t.active
+            );
+            if (activeEntry) {
+              const dual = await bibleLookup.getVerseDualTranslation(
+                ref,
+                { lang: displayLang, code: activeEntry.code },
+                secondary
+              );
+              payload.secondaryText = dual.secondary.text;
+              payload.secondaryLabel = dual.secondary.label;
+              payload.secondaryLang = dual.secondary.lang;
+            }
+          } catch (secErr) {
+            warn('Traduction secondaire indisponible : ' + secErr.message);
+          }
+        }
+
+        broadcast(payload);
         pushHistory({ ...verse, triggeredManually: true, timestamp: Date.now() });
         broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
       } catch (err) {
@@ -2544,6 +2580,32 @@ wss.on('connection', (ws, req) => {
       } catch (err) {
         ws.send(JSON.stringify({ action: 'error', error: err.message }));
       }
+      return;
+    }
+
+    // AJOUT (Multi-Bible côte à côte, déclenchement manuel — voir showVerse
+    // ci-dessus) : {lang, code} pour activer, ou lang/code absents/vides
+    // pour désactiver la comparaison. Validé contre bibleLookup.listTranslations()
+    // plutôt que de faire confiance au client — un code de traduction inconnu
+    // échouerait de toute façon dans getVerseDualTranslation, mais autant le
+    // signaler clairement ici, au moment du réglage.
+    if (sanitized.action === 'setSecondaryTranslation') {
+      const lang = sanitized.lang || null;
+      const code = sanitized.code || null;
+      if (!lang || !code) {
+        sessionState.setSecondaryTranslation(null, null);
+        broadcast({ action: 'secondaryTranslationChanged', lang: null, code: null });
+        log('Traduction secondaire : désactivée');
+        return;
+      }
+      const known = (bibleLookup.listTranslations()[lang] || []).some((t) => t.code === code);
+      if (!known) {
+        ws.send(JSON.stringify({ action: 'error', error: `Traduction inconnue: ${lang}/${code}` }));
+        return;
+      }
+      sessionState.setSecondaryTranslation(lang, code);
+      broadcast({ action: 'secondaryTranslationChanged', lang, code });
+      log(`Traduction secondaire : ${lang}/${code}`);
       return;
     }
 

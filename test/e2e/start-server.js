@@ -83,6 +83,19 @@ injectFakeModule('bible-lookup-with-api.js', {
     const capitalized = book.charAt(0).toUpperCase() + book.slice(1);
     return `${capitalized} ${reference.chapter}:${reference.verseStart || 1}`;
   },
+  // AJOUT (Multi-Bible côte à côte, e2e) : utilisé par showVerse (server.js)
+  // quand une traduction secondaire est configurée — même discipline que
+  // getVerseMultilang ci-dessus, un texte factice générique suffit.
+  async getVerseDualTranslation(reference, primary, secondary) {
+    const label =
+      FAKE_TRANSLATIONS[secondary.lang]?.find((t) => t.code === secondary.code)?.label ||
+      secondary.code;
+    return {
+      reference: this.buildReferenceLabel(reference),
+      primary: { ...primary, text: 'Texte de verset factice (e2e).' },
+      secondary: { ...secondary, label, text: `Texte secondaire factice (e2e, ${label}).` },
+    };
+  },
   resetFailedProviders() {},
   findByQuotedText() {
     return null;

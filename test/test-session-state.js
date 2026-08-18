@@ -55,6 +55,25 @@ console.log('[TEST] Test 3: setDisplayLanguage() ne touche pas transcriptionLang
 }
 console.log('[TEST] ✓ transcriptionLanguage inchangé après setDisplayLanguage()\n');
 
+// Test : traduction secondaire (chantier "Multi-Bible side-by-side").
+console.log('[TEST] Test : getSecondaryTranslation()/setSecondaryTranslation()...');
+{
+  assert.strictEqual(
+    sessionState.getSecondaryTranslation(),
+    null,
+    'aucune traduction secondaire par défaut'
+  );
+  sessionState.setSecondaryTranslation('fr', 'darby');
+  assert.deepStrictEqual(sessionState.getSecondaryTranslation(), { lang: 'fr', code: 'darby' });
+  sessionState.setSecondaryTranslation(null, null);
+  assert.strictEqual(
+    sessionState.getSecondaryTranslation(),
+    null,
+    'setSecondaryTranslation(null, null) désactive la comparaison'
+  );
+}
+console.log('[TEST] ✓ getSecondaryTranslation()/setSecondaryTranslation() corrects\n');
+
 // Test 4 : setTranscriptionLanguage() accepte de revenir à "pas de préférence".
 console.log('[TEST] Test 4: setTranscriptionLanguage(null) réinitialise...');
 {

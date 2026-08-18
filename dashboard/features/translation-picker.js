@@ -52,6 +52,49 @@ export function setBibleTranslation(language, code) {
   ws.send(JSON.stringify({ action: 'setTranslation', language, code }));
 }
 
+// AJOUT (Multi-Bible côte à côte, déclenchement manuel) : liste APLATIE
+// (toutes langues confondues) des mêmes traductions que renderTranslationPicker()
+// ci-dessus — un seul <select>, pas un bouton par langue comme la traduction
+// PRINCIPALE, parce que ceci est un réglage occasionnel de comparaison, pas
+// un choix structurant de session.
+export function renderSecondaryTranslationOptions(translations) {
+  const select = document.getElementById('secondaryTranslationSelect');
+  if (!select || !translations) return;
+  const previousValue = select.value;
+  const options = ['<option value="">Aucune</option>'];
+  for (const [lang, entries] of Object.entries(translations)) {
+    for (const t of entries || []) {
+      options.push(
+        `<option value="${lang}|${t.code}">${escapeHtmlDashboard(LANG_LABELS[lang] || lang)} — ${escapeHtmlDashboard(t.label)}</option>`
+      );
+    }
+  }
+  select.innerHTML = options.join('');
+  // Préserve la sélection courante à travers un re-rendu (ex. changement de
+  // traduction PRINCIPALE qui redéclenche translationsUpdated) plutôt que de
+  // silencieusement revenir sur "Aucune".
+  if ([...select.options].some((o) => o.value === previousValue)) {
+    select.value = previousValue;
+  }
+}
+
+export function onSecondaryTranslationChange() {
+  if (!requireWsOrWarn()) return;
+  const select = document.getElementById('secondaryTranslationSelect');
+  if (!select) return;
+  const [lang, code] = select.value ? select.value.split('|') : [null, null];
+  ws.send(JSON.stringify({ action: 'setSecondaryTranslation', lang, code }));
+}
+
+// AJOUT : reflète un changement venu d'un AUTRE tableau de bord connecté
+// (broadcast secondaryTranslationChanged) — même raisonnement que
+// updateActiveTranslationButton() plus bas pour la traduction principale.
+export function updateSecondaryTranslationSelect(lang, code) {
+  const select = document.getElementById('secondaryTranslationSelect');
+  if (!select) return;
+  select.value = lang && code ? `${lang}|${code}` : '';
+}
+
 export function updateActiveTranslationButton(language, code) {
   let activeLicense = null;
   document.querySelectorAll(`[data-translation-lang="${language}"]`).forEach((btn) => {
@@ -69,3 +112,4 @@ export function updateActiveTranslationButton(language, code) {
 }
 
 window.setBibleTranslation = setBibleTranslation;
+window.onSecondaryTranslationChange = onSecondaryTranslationChange;
