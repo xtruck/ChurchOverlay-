@@ -863,7 +863,7 @@ consentement/rétention — pas à trancher en l'absence de l'utilisateur.
       onnxruntime-node/better-sqlite3 (ajouté à `allowScripts`, manuellement réinstallé
       quand le postinstall automatique a été bloqué par la sandbox de session).
 - [x] **clip-exporter.js** (nouveau) : `exportClips(sourcePath, outputDir, entries,
-    sessionStartedAt, options)` réutilise le filtrage "10s d'écart minimum entre temps
+sessionStartedAt, options)` réutilise le filtrage "10s d'écart minimum entre temps
       forts" déjà présent dans `highlight-export.js` (`prepareEntries` rendu exporté pour
       l'occasion). Bornes `MIN_CLIP_DURATION_SEC=15` / `MAX_CLIP_DURATION_SEC=120` /
       `DEFAULT=45s`, plafond `MAX_CLIPS_PER_EXPORT=20`.
@@ -907,4 +907,78 @@ consentement/rétention — pas à trancher en l'absence de l'utilisateur.
 nécessite du matériel/logiciel externe (client NDI) pour être vérifié, pas tenté sans
 pouvoir le tester réellement. Reste du §6b (logging structuré, migration zod, migration
 node:test, design multi-site, bundler Vite, couche de rendu Preact/lit-html, passe
-accessibilité) — non commencé.
+accessibilité) — délibérément écarté après validation avec l'utilisateur (voir plus bas).
+
+---
+
+### 2026-08-18 — Décision : §6b (rewrites d'infrastructure) écarté
+
+- [x] **Décision produit prise en session** : §6b liste plusieurs réécritures spéculatives
+      (logging structuré, migration zod, migration node:test, bundler Vite, couche de rendu
+      Preact/lit-html) — touchent des systèmes déjà fonctionnels et testés (framework de
+      test, couche de validation, absence de build) pour un bénéfice non priorisé par le
+      cahier des charges, avec un vrai risque de régression sur une base de code large.
+      Proposé à l'utilisateur trois options (tout tenter / un seul item bas risque / ne pas
+      y toucher) — réponse : ne pas y toucher. §6b restera donc dans son état actuel
+      (logging fichier existant via `createFileLogger`, validation manuelle existante,
+      suite de tests `node test/*.js` existante) sauf nouvelle demande explicite.
+
+---
+
+### 2026-08-18 — Chantier 4.3 — feuille de route (rundown/cue-list, TERMINÉ)
+
+- [x] **Contexte** : une routine cloud programmée (`trig_012th8XiNUZ4DC3JbMy3MsAF`, toutes
+      les 2h) avait déjà construit et testé cette même fonctionnalité (14 fichiers,
+      23 assertions, gate complet vert) mais n'a PAS pu la pousser sur GitHub — son
+      intégration GitHub s'authentifiait comme un compte tiers (`anarekaci-cpu`) sans accès
+      en écriture à ce dépôt, confirmé 3 façons (git push 403, jeton injecté = mauvais
+      compte, outil MCP push_files 403). Elle a envoyé le commit sous forme de fichier
+      `.patch` à l'utilisateur, désactivé la routine récurrente pour ne pas reproduire le
+      blocage, et notifié le problème. Le fichier `.patch` n'étant pas accessible depuis
+      cette session locale, l'utilisateur a choisi d'en refaire une implémentation propre
+      ici plutôt que d'aller chercher le fichier — voir le design ci-dessous, reconstruit
+      à partir du log de la routine (noms de fichiers, tailles, en-têtes de fichiers lus
+      dans son log, structure "addCue/listCues/getCue/removeCue/reorderCues, même
+      structure que test-scene-store.js" explicitement mentionnée par la routine) plutôt
+      que dupliqué à l'identique (implémentation, pas juste la lettre, reconstruite).
+- [x] **rundown-store.js** (nouveau) : séquence PRÉ-PLANIFIÉE de repères
+      verset/média/scène, construite à l'avance et persistée côté serveur (contrairement à
+      `verse-queue.js`, purement côté dashboard). Même discipline que `scene-store.js` :
+      petit index JSON dans userData, `addCue`/`listCues`/`getCue`/`removeCue`/
+      `reorderCues`/`clearCues`. `reorderCues()` conçu pour ne jamais faire disparaître un
+      repère (ids inconnus ignorés, ids manquants réinjectés en fin de liste).
+- [x] **server.js** : `executeCue()`, fonction partagée qui déclenche UN repère quel que
+      soit son type — délibérément dupliquée depuis showVerse/triggerMediaItem/
+      triggerScene plutôt que factorisée à l'envers (ces trois actions restent
+      déclenchables individuellement hors feuille de route). 7 nouvelles actions WS
+      (getRundown/addRundownCue/removeRundownCue/reorderRundownCues/triggerRundownCue/
+      nextRundownCue/clearRundown), toutes `OPERATOR_ACTIONS`. `nextRundownCue()` avance
+      séquentiellement via un pointeur `currentRundownIndex` en mémoire (non persisté —
+      un redémarrage du serveur reprend la feuille de route depuis le début, jamais de
+      repère sauté par erreur de reprise). Toute mutation de structure (ajout/retrait/
+      réordonnancement/vidage) réinitialise ce pointeur plutôt que de tenter de le suivre
+      à travers un remaniement — plus simple, sans zone grise.
+- [x] **dashboard** : nouvelle carte "Feuille de route" (espace Direct, sous la file
+      d'attente de versets existante) — réutilise directement les classes `.queue-item`/
+      `.queue-icon-btn` déjà stylées (même nature d'UI, pas de nouveau système visuel).
+      Bouton "➕" ajouté à chaque élément de la Médiathèque et du Studio de scènes pour
+      alimenter la feuille de route depuis leurs galeries existantes ; les repères verset
+      s'ajoutent directement depuis la nouvelle carte. Halo visuel (`--primary`) sur le
+      repère activement en cours.
+- [x] **test/test-rundown-store.js** (nouveau, 12 assertions, store pur) +
+      **test/test-rundown-actions.js** (nouveau, 22 assertions, server.js réel comme
+      `integration-scene-crud.js` — seul `bible-lookup-with-api.js` est mocké, pour que le
+      scénario "déclencher un repère verset" ne dépende pas d'un accès réseau réel ;
+      couvre les 7 actions, la diffusion showVerse/showMedia/showScene réelle par type de
+      repère, et l'avancement séquentiel de `nextRundownCue()` à travers les trois types
+      mélangés jusqu'en fin de liste).
+- [x] **Gate** : `npm test` EXIT 0 (250 assertions backend + 22 intégration, dont 12+22
+      nouvelles), `tsc --noEmit` clean, `check-build-files.js` OK (63 fichiers), lint 0
+      erreur (278 warnings préexistants, inchangés), `format:check` clean, `npm audit` 0
+      vulnérabilité, `test:e2e` 14/14 (dashboard.spec.js confirme le chargement de la
+      nouvelle carte sans erreur).
+
+**Reste à faire** : §4.3 sortie broadcast complète (NDI/multiviewer/MIDI-OSC) toujours
+non tentée — nécessite du matériel/logiciel externe pour être vérifiée. Le fichier
+`.patch` envoyé par la routine cloud n'a pas été appliqué (implémentation propre choisie
+à la place) — sans conséquence, aucune des deux versions n'était sur main.
