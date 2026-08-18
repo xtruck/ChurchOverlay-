@@ -665,3 +665,64 @@ session plutôt que traité isolément ici.
 - [x] **Gate** : `npm test` EXIT 0, `tsc --noEmit` clean, `check-build-files.js` OK,
       `npm audit` 0 vulnérabilité, lint 0 erreur sur les fichiers touchés.
 - [x] Commit `3f23aaf` (typage + flake), `97c1e83` (circuit breaker).
+
+---
+
+### 2026-08-18 — Chantier 6b.2 (suite e2e — TERMINÉ, régression majeure trouvée)
+
+Mandat élargi confirmé par l'utilisateur en session ("go ahead and execute the different
+chantiers" après une fausse alerte "No don't" — voir note ci-dessous) : continuer les
+chantiers, décider seul, pousser sur main seul.
+
+- [x] **Découverte** : `npm run test:e2e` (12 specs Playwright, `test/e2e/`) n'est PAS
+      dans `npm test` ni dans `.github/workflows/ci.yml` — jamais exécuté par la CI.
+      Exécuté manuellement pour la première fois de cette session : **7 specs sur 12
+      échouaient**, en silence depuis un temps indéterminé.
+- [x] **Cause 1 (7 échecs)** : tous les specs naviguaient via un sélecteur figé
+      (`.nav-item[data-sections*="controls,analysis,settings,overlay"]`) qui visait
+      l'ANCIENNE structure à 2 onglets ("En Direct"/"Réglages"). Le dashboard a depuis
+      été restructuré en 3 espaces (Direct/Préparation/Régie, `dashboard/state.js`),
+      chacun avec son propre groupement `data-sections` plus étroit — aucun nav-item
+      unique ne correspond plus à cette chaîne combinée. Chaque spec corrigé pour viser
+      le bon des 3 groupes réels selon l'élément qu'il teste réellement.
+      `dashboard.spec.js` (fumée fondation) supposait aussi `#controls` masqué par
+      défaut et `#controls`+`#analysis` visibles ensemble après clic — plus vrai du
+      tout post-refonte (`showSectionsFor()` affiche TOUT le groupe de l'item actif dès
+      le chargement, `#controls` fait partie du groupe "Direct" par défaut) — réécrit
+      pour vérifier le vrai comportement à 3 groupes plutôt que corriger l'ancienne
+      hypothèse.
+- [x] **Cause 2 (flake supplémentaire, 1/12 selon l'ordre)** : `dashboard-branding.spec.js`
+      échouait UNIQUEMENT en suite complète, fiable isolé (`--workers=1` sur ce seul
+      fichier : propre). `fullyParallel:false` ne sérialise QUE les tests d'un même
+      fichier — Playwright répartit quand même les FICHIERS sur plusieurs workers par
+      défaut. Les 12 specs partagent UN SEUL vrai server.js (webServer +
+      reuseExistingServer) donc UN SEUL vrai `~/.churchoverlay` réel
+      (`test/e2e/start-server.js` n'isole jamais USER_DATA_DIR, faute de workerData —
+      déjà noté dans l'en-tête du spec lui-même). Exécuté en parallèle d'un autre spec
+      touchant le même serveur, l'ordre des écritures/lectures devenait non
+      déterministe. `workers: 1` ajouté à playwright.config.js — 12/12 propre sur DEUX
+      exécutions complètes consécutives après (contre 5/12 puis 11/12 selon la cause
+      isolée).
+- [x] **test/e2e/fixtures.js** (nouveau) : fixture `page` étendue posant le flag
+      localStorage `churchoverlay_wizard_seen` — même bug déjà trouvé et corrigé
+      isolément pour `test/integration-scene-composer.js` (suite `npm test`, séparée de
+      celle-ci), corrigé ici une fois pour les 9 specs qui en avaient besoin plutôt que
+      dupliquer un `addInitScript()` par fichier.
+- [x] **CI** : `test:e2e` ajouté à `.github/workflows/ci.yml` (installation Chromium +
+      exécution), maintenant que la suite est fiable — pour que cette classe de
+      régression (silencieuse pendant un redesign entier) soit détectée à l'avenir au
+      lieu de pourrir sans bruit.
+- [x] **Gate** : `npm test` EXIT 0, `tsc --noEmit` clean, `check-build-files.js` OK,
+      `test:e2e` 12/12 sur deux exécutions consécutives, lint 0 erreur (fichiers de test
+      ignorés par eslint comme d'habitude).
+- [x] Commit `8b95e91`.
+
+**Note "No don't"** : reçu en plein milieu de l'exécution de `dashboard-branding.spec.js`
+(qui écrit réellement sur `~/.churchoverlay`, partagé avec toute installation réelle de
+l'app — 6 process `electron.exe` tournaient sur la machine à ce moment, voir chantier
+précédent). Hypothèse posée explicitement à l'utilisateur (AskUserQuestion) ; réponse :
+pas lié, juste "continue les chantiers" — mais le risque de partage d'état avec une
+vraie installation reste réel et documenté ci-dessus (cause 2), pas swept sous le tapis
+même si ce n'était pas la cause du message. Isolation de USER_DATA_DIR pour toute la
+suite de tests (e2e ET `npm test`) reste un chantier séparé, pas entrepris ici (portée
+volontairement limitée à rendre la suite déterministe, pas à l'isoler du disque réel).
