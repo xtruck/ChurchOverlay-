@@ -1043,3 +1043,49 @@ better-sqlite3` sans vider `build/`/`bin/` au préalable) a silencieusement repr
 précédent dans ce dépôt — `main.js` dépend d'Electron au chargement, pas de harnais de
 mock existant ; cohérent avec le reste de `main.js`, jamais testé unitairement jusqu'ici).
 Confirmation finale de l'utilisateur sur son propre `npm start` toujours en attente.
+
+---
+
+### 2026-08-18 — Commit externe (Devin) synchronisé + remis en état
+
+- [x] **Contexte** : l'utilisateur a demandé une synchronisation avec `main` après avoir
+      "fait des modifications tout à l'heure". `git fetch` a révélé un commit déjà poussé
+      directement sur `main` (`5b2d458`, "Transform ChurchOverlay into world-class
+      professional presentation platform") — 19 nouveaux fichiers, 10 430 lignes,
+      généré par un AUTRE agent (Devin, visible dans le trailer de co-auteur du commit),
+      pas écrit par l'utilisateur lui-même.
+- [x] **Audit avant tout autre travail** (demande explicite : "audit and setup and make
+      sure that everythings works") : aucun des 19 nouveaux fichiers n'est
+      require/import/référencé nulle part dans `main.js`/`server.js`/`dashboard.html`/
+      `package.json` — code totalement déconnecté malgré les affirmations du message de
+      commit ("30+ major features... world's most advanced presentation platform").
+      1 vraie erreur de syntaxe trouvée (`streaming-transcription-engine.js:21`,
+      `this sermonContext = []` sans le point). 737 nouvelles erreurs de lint (0 avant),
+      cassant la porte CI `npm run lint` déjà propre. Les fichiers `.md` ajoutés
+      contiennent des chiffres de performance précis et invérifiables ("<800ms",
+      ">95% accuracy") qui ne correspondent à rien de mesuré dans ce dépôt — au contraire,
+      la latence réelle mesurée cette même session est de 2,5 à 4s/segment (voir entrée
+      précédente).
+- [x] **Décision utilisateur** (3 options proposées : retirer / nettoyer en gardant en
+      l'état inerte / laisser tel quel) : nettoyer (formatage + syntaxe) sans intégrer.
+- [x] **Nettoyage effectué** : erreur de syntaxe corrigée, `eslint --fix` (721 violations
+      de formatage), 16 erreurs réelles corrigées à la main (bindings catch inutilisés,
+      arguments inutilisés, 2 boucles de déstructuration de Map réécrites en `.values()`
+      car ce dépôt n'autorise le préfixe `_` que pour les erreurs capturées/arguments, pas
+      les variables classiques). Régression auto-infligée détectée et corrigée en cours de
+      route : un renommage global `catch(e)` → `catch(_e)` a orphelin 7 références
+      `e.message` DANS ces mêmes blocs catch — corrigées en `_e.message`. 6 fichiers `.md`
+      formatés (`format:check` cassé par ce commit aussi).
+- [x] **Confirmation** : `check-build-files.js` toujours exactement 63 fichiers atteignables
+      depuis main.js/server.js (inchangé) — aucun de ces fichiers n'est réellement chargé
+      par l'app, l'intégration complète reste une décision séparée non prise ici.
+- [x] **Gate** : `npm test` EXIT 0 (250+22), `tsc --noEmit` clean, `check-build-files.js`
+      OK, lint 0 erreur (316 warnings, dont 38 nouveaux `no-console` venant des fichiers
+      Devin — non bloquant, cohérent avec le reste du dépôt), `format:check` clean,
+      `npm audit` 0 vulnérabilité, `test:e2e` 14/14.
+- [x] Commit `152df12`.
+
+**Reste à faire** : intégration réelle de tout ou partie de ces fonctionnalités (scènes
+pro OBS-style, éditeur Canva, IA/AR/3D...) — décision produit distincte et à fort volume,
+en attente de cadrage avec l'utilisateur avant tout travail (voir sa demande "implement
+all and even add amelioration to them", reçue juste après ce nettoyage).
