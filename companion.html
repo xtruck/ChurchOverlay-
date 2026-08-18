@@ -397,6 +397,26 @@
         }
       }
 
+      /* AJOUT (chantier 4.6 — présence anonyme, analytics d'engagement) : un
+         seul POST par onglet/session de navigateur (sessionStorage, pas
+         localStorage -- se réarme si le fidèle revient plus tard dans le
+         même culte avec un nouvel onglet/après avoir fermé le précédent, ce
+         qui reste un signal d'engagement valide plutôt qu'un doublon à
+         éviter à tout prix). Aucune donnée personnelle envoyée -- voir
+         session-store.js#recordCheckin(), un horodatage anonyme, rien
+         d'autre. Best-effort silencieux : un échec ici ne doit jamais gêner
+         la lecture des versets/sous-titres, le seul but réel de cette page.
+      */
+      (function checkinOnce() {
+        const CHECKIN_KEY = 'churchoverlay_checked_in';
+        if (sessionStorage.getItem(CHECKIN_KEY)) return;
+        fetch('/api/checkin', { method: 'POST' })
+          .then(() => sessionStorage.setItem(CHECKIN_KEY, '1'))
+          .catch(() => {
+            /* pas grave — réessaiera au prochain chargement de page */
+          });
+      })();
+
       poll();
       setInterval(poll, POLL_MS);
       pollCaptions();

@@ -95,6 +95,35 @@ function makeTmpDir() {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 }
 
+// --- Test 3b : recordCheckin() puis relecture via getCheckinCountSince() ---
+// AJOUT (chantier 4.6 — présence anonyme, companion.html).
+{
+  const tmpDir = makeTmpDir();
+  sessionStore.init(tmpDir);
+
+  const now = Date.now();
+  assert(
+    sessionStore.getCheckinCountSince(0) === 0,
+    'getCheckinCountSince(0) vaut 0 avant toute présence enregistrée'
+  );
+
+  sessionStore.recordCheckin();
+  sessionStore.recordCheckin();
+  sessionStore.recordCheckin();
+
+  assert(
+    sessionStore.getCheckinCountSince(0) === 3,
+    'getCheckinCountSince(0) compte les 3 présences enregistrées'
+  );
+  assert(
+    sessionStore.getCheckinCountSince(now + 3_600_000) === 0,
+    'getCheckinCountSince(sinceMs) filtre correctement par date (rien après +1h)'
+  );
+
+  sessionStore.close();
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+}
+
 // --- Test 4 : robustesse — écrire sans init() préalable ne doit jamais planter ---
 {
   // Aucun sessionStore.init() ici : simule le cas où l'initialisation a
@@ -103,17 +132,22 @@ function makeTmpDir() {
   try {
     sessionStore.recordVerseShown({ reference: 'Test', text: 'x' });
     sessionStore.recordPipelineError('transcription', 'x');
+    sessionStore.recordCheckin();
     assert(sessionStore.getVerseHistorySince(0).length === 0, 'lecture sans DB active retourne []');
     assert(
       sessionStore.getPipelineErrorsSince(0).length === 0,
       'lecture des erreurs sans DB active retourne []'
+    );
+    assert(
+      sessionStore.getCheckinCountSince(0) === 0,
+      'lecture des présences sans DB active retourne 0'
     );
   } catch (_err) {
     threw = true;
   }
   assert(
     !threw,
-    "recordVerseShown/recordPipelineError n'interrompent jamais l'appelant, même sans DB active"
+    "recordVerseShown/recordPipelineError/recordCheckin n'interrompent jamais l'appelant, même sans DB active"
   );
 }
 

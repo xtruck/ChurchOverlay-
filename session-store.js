@@ -29,6 +29,7 @@ const Database = require('better-sqlite3');
 let db = null;
 let insertVerseStmt = null;
 let insertErrorStmt = null;
+let insertCheckinStmt = null;
 
 /**
  * Initialise la base SQLite dans <userDataDir>/data/session-history.db.
@@ -69,6 +70,20 @@ function init(userDataDir, opts = {}) {
         occurred_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_pipeline_errors_occurred_at ON pipeline_errors(occurred_at);
+
+      -- AJOUT (chantier 4.6 — présence anonyme, companion.html) : UNIQUEMENT
+      -- un horodatage, aucune identité. "Qui est là" (avec un nom) est une
+      -- fonctionnalité DIFFÉRENTE, qui nécessiterait une vraie politique de
+      -- consentement/rétention pour des données personnelles réelles sur des
+      -- personnes réelles — décision produit délibérément non prise ici, voir
+      -- JOURNAL-MISSION.md. Ce compteur donne déjà la valeur d'analytics
+      -- d'engagement décrite dans le cahier des charges (combien de personnes
+      -- ont scanné le QR, sur quelle période) sans rien collecter de personnel.
+      CREATE TABLE IF NOT EXISTS checkins (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        checked_in_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_checkins_checked_in_at ON checkins(checked_in_at);
     `);
 
     insertVerseStmt = db.prepare(`
@@ -78,6 +93,9 @@ function init(userDataDir, opts = {}) {
     insertErrorStmt = db.prepare(`
       INSERT INTO pipeline_errors (type, message, occurred_at)
       VALUES (@type, @message, @occurredAt)
+    `);
+    insertCheckinStmt = db.prepare(`
+      INSERT INTO checkins (checked_in_at) VALUES (@checkedInAt)
     `);
   } catch (err) {
     db = null;
@@ -125,6 +143,34 @@ function recordPipelineError(type, message) {
 }
 
 /**
+ * Enregistre une présence anonyme (QR companion.html scanné). Best-effort.
+ */
+function recordCheckin() {
+  if (!insertCheckinStmt) return;
+  try {
+    insertCheckinStmt.run({ checkedInAt: Date.now() });
+  } catch (_err) {
+    // Best-effort.
+  }
+}
+
+/**
+ * @param {number} [sinceMs]
+ * @returns {number} nombre de présences enregistrées depuis cette date.
+ */
+function getCheckinCountSince(sinceMs = 0) {
+  if (!db) return 0;
+  try {
+    const row = db
+      .prepare('SELECT COUNT(*) as n FROM checkins WHERE checked_in_at >= ?')
+      .get(sinceMs);
+    return row ? row.n : 0;
+  } catch (_err) {
+    return 0;
+  }
+}
+
+/**
  * @param {number} [sinceMs] - timestamp epoch ; si fourni, ne retourne que
  *   les versets affichés après cette date.
  * @returns {Array<object>} versets les plus récents en premier.
@@ -167,6 +213,7 @@ function close() {
     db = null;
     insertVerseStmt = null;
     insertErrorStmt = null;
+    insertCheckinStmt = null;
   }
 }
 
@@ -182,8 +229,10 @@ module.exports = {
   init,
   recordVerseShown,
   recordPipelineError,
+  recordCheckin,
   getVerseHistorySince,
   getPipelineErrorsSince,
+  getCheckinCountSince,
   close,
   isEnabled,
 };

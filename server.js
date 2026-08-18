@@ -413,6 +413,16 @@ app.get('/api/verses', (req, res) => {
 // (respectivement leur traduction) sont désactivés côté opérateur —
 // jamais de fuite de transcript quand l'opérateur a explicitement choisi
 // de ne pas l'exposer (voir sessionState.getCaptionsEnabled()).
+// AJOUT (chantier 4.6 — présence anonyme, companion.html) : POST plutôt que
+// GET (déclenche une écriture, pas une simple lecture comme /api/verses et
+// /api/captions ci-dessus). Aucun jeton non plus — même sensibilité que les
+// deux autres routes /api/* de cette page publique, et voir l'en-tête de
+// session-store.js#recordCheckin() pour la portée volontairement limitée à
+// un horodatage anonyme (pas de nom, pas d'identité).
+app.post('/api/checkin', (req, res) => {
+  sessionStore.recordCheckin();
+  res.json({ ok: true });
+});
 app.get('/api/captions', (req, res) => {
   const captionsEnabled = sessionState.getCaptionsEnabled();
   const translationEnabled = sessionState.getTranslatedCaptionsEnabled();
@@ -2315,6 +2325,9 @@ wss.on('connection', (ws, req) => {
             errorCount: errors.length,
             errors: errors.slice(0, 50),
             errorsByType,
+            // AJOUT (chantier 4.6 — présence anonyme via companion.html) :
+            // même fenêtre `days`/`sinceMs` que le reste de cette réponse.
+            checkinCount: sessionStore.getCheckinCountSince(sinceMs),
             timestamp: Date.now(),
           })
         );

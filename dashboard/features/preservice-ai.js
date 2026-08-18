@@ -179,6 +179,7 @@ export function renderSessionStats(message) {
 
   el.innerHTML = `
     <div class="stat-row"><span class="stat-label">Versets affichés (${period})</span><span class="stat-value">${message.verseCount}</span></div>
+    <div class="stat-row"><span class="stat-label">Présences via QR compagnon (${period})</span><span class="stat-value">${message.checkinCount ?? 0}</span></div>
     <div class="stat-row"><span class="stat-label">Erreurs de pipeline</span><span class="stat-value">${message.errorCount}</span></div>
     ${errorLines ? `<div class="stat-row"><span class="stat-label">Détail des erreurs</span><span class="stat-value stat-value-sub">${errorLines}</span></div>` : ''}
     ${recentVerses ? `<div class="stat-scroll-list">${recentVerses}</div>` : ''}
