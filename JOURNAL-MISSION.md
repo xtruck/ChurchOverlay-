@@ -714,3 +714,95 @@ vraie installation reste réel et documenté ci-dessus (cause 2), pas swept sous
 même si ce n'était pas la cause du message. Isolation de USER_DATA_DIR pour toute la
 suite de tests (e2e ET `npm test`) reste un chantier séparé, pas entrepris ici (portée
 volontairement limitée à rendre la suite déterministe, pas à l'isoler du disque réel).
+
+---
+
+### 2026-08-18 — Audit complet demandé par l'utilisateur (TERMINÉ)
+
+Mandat explicite : "after you will finish I want you to do an full audit and setup of
+the app to make sure everything is working."
+
+- [x] **`npm run format:check`** (vrai step CI) était rouge sur 33 fichiers — la
+      majorité pré-existante (server.js, plusieurs dashboard/features/*.js,
+      action-registry.js...), le reste des fichiers de test touchés cette session (jamais
+      passés par prettier — `eslint --fix` ignore silencieusement `test/`). `prettier
+      --write` sur les 33, aucun changement de logique, suite complète revérifiée après.
+- [x] **`npm run lint`** : 113 -> 8 erreurs rien qu'en corrigeant le formatage (eslint fait
+      tourner prettier comme règle sur les fichiers hors test/). Les 8 restantes étaient de
+      VRAIS bugs, corrigés individuellement :
+      - `server.js` : `generateCameraPairing` (jumelage QR caméra téléphone) appelait
+        `getLanIpAddress()`, jamais définie dans ce fichier — ReferenceError garanti dès
+        qu'un opérateur génère un QR avec WS_HOST configuré pour le réseau (le cas d'usage
+        exact de cette fonctionnalité). main.js a sa propre copie de cette fonction
+        (son commentaire supposait déjà l'existence de celle-ci). Reproduite à l'identique.
+        Pas de test de régression ajouté (lier le serveur à une vraie IP LAN dans un test
+        est fragile selon le runner CI) — vérifié manuellement, limite documentée.
+      - `dashboard/features/startup-wizard.js` : appel à l'identifiant nu
+        `closeStartupWizard()` au lieu de la fonction locale `close` déjà dans la portée —
+        fonctionnait par accident (résolution globale), corrigé proprement.
+      - `dashboard/ws-dispatch.js` : 2 `case` avec `const` sans accolades de bloc — pas un
+        bug actif ici, mais un vrai piège pour le prochain `case` avec un nom en collision.
+      - 3 exports/locales vraiment mortes supprimées (command-palette.js `visibleCount`,
+        confidence-mode.js `BADGE_CLASS`, training-mode.js `showTip()` + le dict `TIPS`
+        que lui seul référençait — un système de tooltips à moitié construit, jamais
+        branché, supplanté par les guides à contour qui, eux, fonctionnent réellement).
+- [x] **Vérification de démarrage réel** : `npm run server-only` lancé (timeout 8s,
+      isolé du port par défaut le temps du test) — config validée, tous les modules IA
+      chargent en mode dégradé attendu (pas de clés), serveur WS+HTTP démarre. Preuve
+      supplémentaire inattendue : DEUX clients WS réels se sont connectés en quelques
+      secondes ("origine file://") — très probablement l'app Electron réelle de
+      l'utilisateur (6 process `electron.exe` observés toute la session), déjà ouverte et
+      en boucle de reconnexion, qui a immédiatement rejoint ce process de test. Confirme
+      que le handshake/auth/rôle fonctionne de bout en bout en conditions réelles, mais
+      aussi le risque réel de faire tourner un second serveur sur le port par défaut —
+      pas répété après ce constat.
+- [x] **Routine cloud débloquée** : `list_runs`/`get_run_log` sur `trig_012th8XiNUZ4DC3JbMy3MsAF`
+      a montré qu'elle s'était bien déclenchée à l'heure (00:43 UTC) mais restait bloquée
+      depuis 00:48 (`requires_action`) — `npm install` échouait sur le téléchargement CUDA
+      qu'exige inconditionnellement `onnxruntime-node@1.27.0` en linux/x64 (vérifié dans
+      son propre install-metadata.js — pas une détection GPU, une exigence dure), la
+      session a tenté de contourner en écrivant `.npmrc` (fichier "sensible" pour ce
+      sandbox, bloque sur une invite de permission qu'aucun humain ne peut approuver en
+      routine non surveillée). Corrigé PAS en committant un `.npmrc` global (risque réel
+      de casser l'installation Windows réelle, où Silero VAD a besoin du vrai binaire
+      onnxruntime) mais en mettant à jour le PROMPT de la routine (`RemoteTrigger update`)
+      : instruction explicite d'utiliser `ONNXRUNTIME_NODE_INSTALL=skip npm install`
+      (scopé à la commande, jamais persisté) et de ne plus jamais toucher aux fichiers
+      sensibles du sandbox. Backlog de la routine aussi mis à jour avec l'état réel du
+      dépôt (tout ce qui précède dans ce journal) pour qu'elle ne reparte pas de zéro.
+- [x] **Gate final** : `npm test` EXIT 0, `tsc --noEmit` clean, `check-build-files.js` OK,
+      `npm run lint` 0 erreur (278 warnings no-console pré-existants, intacts),
+      `npm run format:check` clean, `npm audit` 0 vulnérabilité, `test:e2e` 12/12 (deux
+      exécutions consécutives).
+- [x] Commit `9a92d65`.
+
+### 2026-08-18 — Chantier 4.4 (sous-titres traduits sur companion.html — TERMINÉ)
+
+- [x] **server.js — GET /api/captions** (nouveau, même discipline que `/api/verses` juste
+      au-dessus : lecture seule, aucun jeton). Un petit état en mémoire
+      (`lastLiveCaption`/`updateLiveCaption()`) mis à jour aux DEUX mêmes endroits qui
+      diffusaient déjà `transcript`/`transcriptTranslation` aux clients WS (résultat ASR
+      batch, final Deepgram streaming) — aucune nouvelle logique de traduction, juste
+      exposition de ce qui existait déjà. Gaté sur `sessionState.getCaptionsEnabled()` :
+      jamais de fuite de texte quand l'opérateur n'a pas activé les sous-titres (politique
+      opt-in déjà documentée dans l'en-tête de caption-translator.js).
+- [x] **companion.html** : sonde `/api/captions` toutes les 4s (même cadence que le
+      sondage des versets existant), bandeau affiché SEULEMENT si activé ET si un texte
+      réel est arrivé (jamais un bandeau visible mais vide).
+- [x] **Tests** : `test-captions-endpoint.js` (12 assertions, gating via les mêmes actions
+      WS `setCaptions`/`setTranslatedCaptions` que le tableau de bord utilise déjà) +
+      `test/e2e/companion-captions.spec.js` (Playwright réel : bandeau reste masqué par
+      défaut et après activation sans texte). Limite honnête documentée dans les deux
+      fichiers : `updateLiveCaption()` n'est appelée que par le vrai pipeline ASR, aucun
+      moyen WS de l'invoquer directement — donc aucun test ne couvre "le bandeau affiche
+      un vrai texte", seulement la logique de gating (jamais de fuite/fausse apparition).
+- [x] **Gate** : `npm test` EXIT 0, `tsc --noEmit` clean, `check-build-files.js` OK, lint 0
+      erreur, format:check clean, `npm audit` 0 vulnérabilité, `test:e2e` 13/13.
+- [x] Commit `d927d31`.
+
+**Reste à faire (pas dans ce chantier)** : un test de bout en bout qui simule vraiment un
+segment ASR (mock Groq/Deepgram comme test-groq-health-tracking.js) jusqu'à voir un texte
+réel apparaître dans `#captionBar` via Playwright — actuellement non couvert, jugé hors
+scope proportionné pour ce chantier (dupliquerait l'effort de mock déjà fourni ailleurs
+pour un gain marginal sur la logique propre à cet endpoint, qui est le gating, pas la
+traduction).
