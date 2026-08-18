@@ -450,3 +450,93 @@ et le rythme des commits (`Part 3 complete` à 22:57 le jour même) pointent ver
 boucle/agent planifié déjà en cours sur ce dépôt. Si vous lisez ceci en reprise de
 session : vérifier qu'aucune autre session n'est active avant de lancer un chantier
 lourd, pour éviter les écritures concurrentes sur les mêmes fichiers.
+
+---
+
+### 2026-08-18 — Chantier 4.2 (recherche sémantique biblique — index vectoriel réel, TERMINÉ)
+
+Contexte : reprise sur la base d'un brief externe (roadmap produit/concurrentiel
+anglophone, distinct du plan A-D de ce journal, transmis en session). Un routine
+cloud (`trig_012th8XiNUZ4DC3JbMy3MsAF`, toutes les 2h, push direct sur main) a été
+créée en parallèle pour continuer ce brief après la fin de cette session — elle lit ce
+journal et le git log avant de commencer, ne duplique pas ce qui suit.
+
+- [x] **Décision produit prise en session** (utilisateur consulté explicitement,
+      via AskUserQuestion) : le stub `searchByVector()` de bible-semantic-search.js
+      (jamais implémenté — index JSON jamais publié) semblait au premier abord être
+      juste un gap à combler comme le suggérait le brief externe. Mais
+      `sermon-qa.js` et un commentaire de server.js (ligne ~51-53, à propos de
+      sermon-archive.js) documentent explicitement une politique "gratuit/léger,
+      pas d'embeddings, pas d'API payante" pour CE dépôt. Question posée
+      explicitement : construire quand même les embeddings, respecter la politique
+      existante, ou améliorer le mot-clé sans en sortir. Réponse : **construire les
+      embeddings quand même** — décision produit assumée, pas une réinterprétation
+      silencieuse du brief. sermon-qa.js/sermon-archive.js restent INCHANGÉS
+      (leur politique n'est pas remise en cause ailleurs).
+- [x] **embedding-provider.js** (nouveau) : `embedTexts()`/`embedQuery()` via Gemini
+      text-embedding-004 (`@google/genai`, déjà une dépendance — même fournisseur que
+      groq-wrapper.js pour le chat). Ne lève jamais : renvoie `null` sans
+      `GEMINI_API_KEY` (mode dégradé, même discipline que le reste du dépôt pour les
+      fonctionnalités IA optionnelles — voir `ai-modules-loader.js`/`aiLoadErrors`).
+- [x] **bible-vector-store.js** (nouveau) : wrapper fin sqlite-vec (`vec0` + table
+      meta jointe par rowid). Deux comportements NON documentés de sqlite-vec 0.1.9,
+      trouvés en testant directement contre l'extension installée (pas dans le
+      README, vide) :
+      1. `INSERT INTO vec_verses(rowid, embedding) VALUES (?, ?)` avec un rowid
+         explicite échoue ("Only integers are allowed for primary key values") —
+         laisser SQLite assigner le rowid automatiquement, puis l'utiliser comme clé
+         explicite dans la table meta normale (elle, sans cette restriction).
+      2. `... WHERE embedding MATCH ? ORDER BY distance LIMIT ?` (LIMIT en paramètre
+         lié) échoue ("A LIMIT or 'k = ?' constraint is required") — le nombre de
+         voisins doit être connu au moment de la planification, avant la liaison des
+         paramètres. Utiliser `AND k = ?` à la place (reste un paramètre lié, pas
+         d'interpolation SQL).
+- [x] **scripts/generate-bible-embeddings.js** (nouveau) : script de build, pas
+      d'exécution normale de l'app. Réutilise `bible-offline-cache.js` (même source
+      bible.helloao.org, aucune clé requise pour cette étape) pour le texte, puis
+      embed chaque verset par lots et écrit `models/bible-vector-index.sqlite3`.
+      **Pas exécuté dans cette session** : aucun `.env`/clé API dans ce checkout de
+      dev (confirmé — `ls .env*` ne montre que `.env.example`). Le fichier généré
+      (dizaines de Mo pour ~31 000 versets) est gitignored, jamais commité — livré
+      via le pipeline de build/release comme `models/silero_vad.onnx` (mais celui-ci
+      reste committé, 2,3 Mo seulement — trop petit pour poser le même problème).
+- [x] **bible-semantic-search.js** : `loadIndex()`/`searchByVector()` réécrits pour
+      consommer bible-vector-store.js + embedding-provider.js. Contrat externe
+      inchangé (`loadIndex()` ne lève jamais, `search()` retombe sur `[]`) — **mode
+      dégradé identique à avant ce chantier tant que personne n'a lancé
+      `npm run generate-bible-index` avec une vraie clé** : le comportement observable
+      de l'app ne change pas encore, seule l'infrastructure est prête.
+- [x] **package.json** : `sqlite-vec` ajouté (dépendance native précompilée par
+      plateforme, `sqlite-vec-windows-x64` seul retenu dans `build.files` — build
+      Windows x64 uniquement, même sélection que onnxruntime-node). Nouveau script
+      `generate-bible-index`. `bible-vector-store.js`/`embedding-provider.js` ajoutés
+      à `build.files` (`check-build-files.js` les réclamait, requis
+      transitivement par server.js via bible-semantic-search.js).
+- [x] **Tests** (3 nouveaux fichiers, 35 assertions) : `test-bible-vector-store.js`
+      (sqlite-vec réel, vecteurs synthétiques, aucun réseau), `test-embedding-provider.js`
+      (Gemini mocké par injection de module — **piège trouvé en écrivant ce test** :
+      injecter `node_modules/@google/genai` par chemin construit à la main ne tombe
+      PAS sur le fichier réellement chargé par `require('@google/genai')`, ce paquet
+      ayant un champ `exports` conditionnel [`require` -> `dist/node/index.cjs`,
+      différent de `main`] — un vrai appel réseau est parti avant correction, avec la
+      clé "fake-key-for-test" [visible dans les logs de test, jamais une vraie clé].
+      Fix : `require.resolve('@google/genai')` en spécificateur nu plutôt qu'un
+      chemin reconstruit), `test-bible-semantic-search.js` (bout en bout : mot-clé
+      inchangé + vectoriel avec store réel + embedding mocké).
+- [x] **Gate** : `npm test` EXIT 0 (35 nouvelles assertions + suite existante),
+      `tsc --noEmit` clean, `check-build-files.js` OK, `npm audit` 0 vulnérabilité.
+      Lint : les 3 fichiers touchés (hors tests, ignorés par `.eslintignore`) ont
+      0 erreur après `--fix` (formatage prettier), warnings `no-console`
+      pré-existants uniquement — la dérive de 113 erreurs pré-existantes
+      (chantier précédent, server.js et ~30 autres fichiers) n'a ni changé ni été
+      traitée ici, hors périmètre.
+- [x] Commit `581e7c7`.
+
+**Reste à faire (pas dans ce chantier)** : lancer réellement
+`GEMINI_API_KEY=... npm run generate-bible-index` une fois pour produire le fichier
+(nécessite une vraie clé + plusieurs minutes de téléchargement/embedding), calibrer
+`CONFIG.MAX_DISTANCE` dans bible-semantic-search.js avec de vraies requêtes une fois
+l'index réel disponible (valeur de départ 1.0, jamais mesurée contre de vraies
+données), et étendre `sermon-qa.js` à sqlite-vec SEULEMENT si une décision produit
+similaire est prise explicitement pour ce module (sa politique "gratuit/léger" reste
+en vigueur par défaut).
