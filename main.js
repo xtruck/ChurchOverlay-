@@ -271,6 +271,11 @@ function loadConfig() {
       ? raw.logBatchInterval
       : DASHBOARD_FLUSH_MS,
     wsHost: raw.wsHost || null,
+    // AJOUT (bascule streaming Deepgram visible dans le tableau de bord) :
+    // 'deepgram' n'est retenu que si la valeur brute le dit explicitement —
+    // toute autre valeur (absente, corrompue, ancien format) retombe sur
+    // 'auto', le comportement historique inchangé (Groq par segments).
+    asrProvider: raw.asrProvider === 'deepgram' ? 'deepgram' : 'auto',
   };
 }
 
@@ -593,6 +598,18 @@ function startServer() {
   // désormais toujours présent (ensureWsToken(), déjà appelé au démarrage).
   if (config.wsHost) {
     workerEnv.WS_HOST = config.wsHost;
+  }
+  // AJOUT (bascule streaming Deepgram visible) : n'active ASR_PROVIDER=deepgram
+  // que si une clé Deepgram est AUSSI configurée — asr-engine.js échoue déjà
+  // proprement dans ce cas (voir son message d'erreur explicite), mais mieux
+  // vaut ne jamais démarrer le pipeline dans un état voué à l'échec plutôt
+  // que de compter sur ce garde-fou en aval. Toute autre valeur (dont
+  // 'auto') retombe sur le comportement historique (pas de ASR_PROVIDER
+  // forcé, asr-engine.js résout 'auto').
+  if (config.asrProvider === 'deepgram' && config.deepgramApiKey) {
+    workerEnv.ASR_PROVIDER = 'deepgram';
+  } else {
+    delete workerEnv.ASR_PROVIDER;
   }
 
   serverStatus = 'starting';
@@ -961,6 +978,30 @@ ipcMain.handle('save-network-settings', async (_evt, { wsHost }) => {
   return true;
 });
 
+// AJOUT (bascule streaming Deepgram visible dans le tableau de bord) : même
+// discipline que save-network-settings ci-dessus (persiste dans config.json,
+// redémarre le pipeline si déjà lancé). Refuse explicitement 'deepgram' sans
+// clé Deepgram déjà enregistrée plutôt que de démarrer le pipeline dans un
+// état voué à l'échec (asr-engine.js échouerait de toute façon, mais avec un
+// message moins clair pour l'opérateur que ce refus immédiat).
+ipcMain.handle('set-asr-provider', async (_evt, { provider }) => {
+  const wanted = provider === 'deepgram' ? 'deepgram' : 'auto';
+  const raw = readRawConfig();
+  if (wanted === 'deepgram' && !decryptKey(raw.deepgramApiKeyEncrypted, 'Deepgram')) {
+    throw new Error(
+      'Aucune clé API Deepgram enregistrée — enregistrez-en une avant d’activer ce mode.'
+    );
+  }
+  raw.asrProvider = wanted;
+  await writeRawConfig(raw);
+  if (worker) {
+    restartServer();
+  } else if (!isFirstRunNeeded()) {
+    startServer();
+  }
+  return true;
+});
+
 // Retrait explicite d'une clé API (bouton « Retirer la clé » du tableau de
 // bord) — distinct d'un champ simplement laissé vide lors d'un
 // enregistrement, qui doit préserver la clé existante (voir saveConfigAsync).
@@ -1284,6 +1325,7 @@ ipcMain.handle('get-settings', async () => {
     needsSetup: isFirstRunNeeded(),
     wsHost: cfg.wsHost || null,
     suggestedLanIp: getLanIpAddress(),
+    asrProvider: cfg.asrProvider || 'auto',
   };
 });
 

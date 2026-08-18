@@ -33,6 +33,8 @@ import { setStatusStripItem } from './status-strip.js';
     btnClearGroq: document.getElementById('settingsClearGroq'),
     btnClearDeepgram: document.getElementById('settingsClearDeepgram'),
     btnClearGemini: document.getElementById('settingsClearGemini'),
+    streamingToggle: document.getElementById('streamingModeToggle'),
+    streamingHint: document.getElementById('streamingModeHint'),
   };
 
   if (!els.form) return; // section absente de ce build, rien à faire
@@ -127,6 +129,21 @@ import { setStatusStripItem } from './status-strip.js';
     els.card.classList.toggle('needs-setup', needsSetup);
     els.requiredBadge.style.display = needsSetup ? 'inline-block' : 'none';
     els.banner.style.display = needsSetup ? 'flex' : 'none';
+
+    // AJOUT (bascule streaming Deepgram) : désactivée tant qu'aucune clé
+    // Deepgram n'est enregistrée — même garde-fou que main.js#startServer
+    // (qui n'active ASR_PROVIDER=deepgram que si config.deepgramApiKey est
+    // aussi présent), pour que l'état affiché ici ne mente jamais sur ce que
+    // le pipeline fera réellement au prochain démarrage.
+    if (els.streamingToggle) {
+      els.streamingToggle.checked = settings.asrProvider === 'deepgram';
+      els.streamingToggle.disabled = !settings.hasDeepgramKey;
+      if (els.streamingHint) {
+        els.streamingHint.textContent = settings.hasDeepgramKey
+          ? 'Latence bien plus faible que le mode par segments (Groq).'
+          : 'Nécessite une clé API Deepgram ci-dessus pour être activé.';
+      }
+    }
 
     await loadMicrophones(settings.audioDevice);
 
@@ -244,6 +261,27 @@ import { setStatusStripItem } from './status-strip.js';
       els.btnSave.textContent = originalLabel;
     }
   });
+
+  async function onStreamingModeToggle() {
+    if (!els.streamingToggle) return;
+    const wanted = els.streamingToggle.checked ? 'deepgram' : 'auto';
+    els.streamingToggle.disabled = true;
+    try {
+      await window.churchOverlay.setAsrProvider(wanted);
+      showToast(
+        wanted === 'deepgram'
+          ? 'Mode streaming activé — pipeline redémarré.'
+          : 'Mode streaming désactivé — pipeline redémarré.',
+        'success'
+      );
+    } catch (err) {
+      els.streamingToggle.checked = !els.streamingToggle.checked; // annule visuellement l'échec
+      showToast('Erreur : ' + (err && err.message ? err.message : err), 'error');
+    } finally {
+      await refreshSettingsUi();
+    }
+  }
+  window.onStreamingModeToggle = onStreamingModeToggle;
 
   refreshSettingsUi();
 })();

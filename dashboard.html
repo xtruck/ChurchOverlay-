@@ -1821,6 +1821,26 @@
                 </div>
               </div>
 
+              <!-- AJOUT (chantier — bascule streaming Deepgram visible) : ASR_PROVIDER=deepgram
+                           n'était accessible que via une variable d'environnement cachée, invisible
+                           dans cette interface — la transcription restait donc toujours en mode
+                           Groq par segments (2-4s de latence) même quand une clé Deepgram était
+                           configurée. Désactivée tant qu'aucune clé Deepgram n'est enregistrée
+                           (voir refreshSettingsUi() dans api-settings.js). -->
+              <div class="form-group" style="display: flex; align-items: center; gap: 0.6rem">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="streamingModeToggle" onchange="onStreamingModeToggle()" />
+                  <span class="toggle-slider"></span>
+                </label>
+                <div>
+                  <div>⚡ Mode streaming (Deepgram)</div>
+                  <div class="field-hint" id="streamingModeHint">
+                    Latence bien plus faible que le mode par segments (Groq). Nécessite une clé API
+                    Deepgram ci-dessus.
+                  </div>
+                </div>
+              </div>
+
               <div class="form-group">
                 <label for="settingsGeminiKey">
                   ✨ Clé API Gemini

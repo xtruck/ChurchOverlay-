@@ -51,6 +51,7 @@ declare global {
     needsSetup: boolean;
     wsHost: string | null;
     suggestedLanIp: string | null;
+    asrProvider: 'auto' | 'deepgram';
   }
 
   interface ChurchOverlayPerfStats {
@@ -139,6 +140,7 @@ declare global {
       ) => Promise<boolean>;
       clearApiKey: (provider: 'groq' | 'deepgram') => Promise<boolean>;
       saveNetworkSettings: (wsHost: string) => Promise<boolean>;
+      setAsrProvider: (provider: 'auto' | 'deepgram') => Promise<boolean>;
 
       // --- Tableau de bord (dashboard.html) ---
       getStatus: () => Promise<ChurchOverlayStatus>;

@@ -54,6 +54,10 @@ contextBridge.exposeInMainWorld('churchOverlay', {
   // jusqu'ici uniquement modifiable en éditant .env à la main.
   saveNetworkSettings: (wsHost) => ipcRenderer.invoke('save-network-settings', { wsHost }),
 
+  // AJOUT (bascule streaming Deepgram visible) : ASR_PROVIDER n'était
+  // modifiable qu'en éditant une variable d'environnement cachée.
+  setAsrProvider: (provider) => ipcRenderer.invoke('set-asr-provider', { provider }),
+
   // --- Tableau de bord (dashboard.html) ------------------------------------
   getStatus: () => ipcRenderer.invoke('get-status'),
   requestRestart: () => ipcRenderer.invoke('request-restart'),
