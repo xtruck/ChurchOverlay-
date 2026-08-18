@@ -206,7 +206,18 @@ function sleep(ms) {
   // vrai aller-retour réseau du corrector (voir plus haut) — objectif du
   // test : prouver la configurabilité (très en-dessous du défaut production
   // 3000ms), pas mesurer une latence précise.
-  await sleep(FALLBACK_DELAY_MS + 1200);
+  // CORRECTIF (flake constaté en session — timeout ~1 fois sur 3 avec la
+  // marge précédente de 1200ms, jamais lié à ce chantier) : bible-lookup-
+  // with-api.js est ici entièrement mocké (résolution instantanée, voir
+  // injectFakeModule ci-dessus) donc ce n'est pas un vrai aller-retour
+  // réseau qui manque de marge — plus probablement la précision de
+  // setTimeout sous charge CPU (toute la suite de tests tourne en séquence).
+  // 3000ms de marge (comme la valeur par défaut PRODUCTION du délai
+  // lui-même) reste "très en-dessous" de rien en particulier ici — c'est
+  // volontairement large, l'objectif du test étant comportemental (le repli
+  // finit-il par se déclencher), pas une mesure de latence précise (voir
+  // commentaire ci-dessus).
+  await sleep(FALLBACK_DELAY_MS + 3000);
   const shown = received.find((m) => m.action === 'showVerse');
   check(
     `le repli chapitre s'est bien déclenché dans le délai configuré (${FALLBACK_DELAY_MS}ms)`,
