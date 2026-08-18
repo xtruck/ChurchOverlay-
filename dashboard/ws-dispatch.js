@@ -41,6 +41,7 @@ import {
 } from './features/preservice-ai.js';
 import { renderMediaLibrary, renderMediaWall } from './features/media-library.js';
 import { renderSceneStudioGallery } from './features/scene-studio.js';
+import { renderRundown, applyRundownActiveCue } from './features/rundown.js';
 import { renderNetworkStatus } from './features/network-settings.js';
 import { renderIpCameras, showCameraPairingQr } from './features/ip-cameras.js';
 import { renderBranding } from './features/branding.js';
@@ -431,6 +432,16 @@ export function handleMessage(message) {
     // bord ouverts après chaque ajout/suppression/modification.
     case 'sceneLibraryUpdated':
       renderSceneStudioGallery(message.scenes);
+      break;
+    // AJOUT (chantier 4.3 — feuille de route/cue-list) : même raisonnement
+    // que sceneLibraryUpdated ci-dessus (liste persistée côté serveur,
+    // diffusée à tous les tableaux de bord ouverts). rundownActiveCue est
+    // distinct : ne transporte QUE le pointeur "repère actif", pas la liste.
+    case 'rundownUpdated':
+      renderRundown(message);
+      break;
+    case 'rundownActiveCue':
+      applyRundownActiveCue(message);
       break;
     // AJOUT (caméras de téléphone) : même raisonnement que mediaLibraryUpdated
     // ci-dessus — la liste vit côté serveur, diffusée à tous les tableaux de

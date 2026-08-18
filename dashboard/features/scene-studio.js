@@ -389,6 +389,7 @@ export function renderSceneStudioGallery(scenes) {
                         <button class="btn btn-primary" onclick="triggerSceneStudioItem('${scene.id}')" title="Afficher maintenant sur l'overlay">▶ Afficher</button>
                         <button class="queue-icon-btn" onclick="openSceneComposer('${scene.id}')" title="Modifier cette scène">✏</button>
                         <button class="queue-icon-btn" onclick="toggleDefaultScene('${scene.id}', ${scene.isDefault ? 'true' : 'false'})" title="${scene.isDefault ? 'Retirer le statut de poster principal' : 'Définir comme poster principal (affiché quand rien d’autre n’est à l’écran)'}">${scene.isDefault ? '⭐' : '☆'}</button>
+                        <button class="queue-icon-btn" onclick="addToRundown('scene', '${scene.id}', '${escapeHtmlDashboard(scene.name).replace(/'/g, "\\'")}')" title="Ajouter à la feuille de route">➕</button>
                         <button class="queue-icon-btn queue-remove" onclick="deleteSceneStudioItem('${scene.id}')" title="Supprimer">✕</button>
                     </div>
                 </div>

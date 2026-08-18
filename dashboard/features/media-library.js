@@ -249,6 +249,7 @@ export function renderMediaLibrary(items) {
                     <div class="media-gallery-actions">
                         <button class="btn btn-primary" onclick="triggerMediaLibraryItem('${item.id}')" title="Afficher maintenant sur l'overlay">▶ Afficher</button>
                         <button class="queue-icon-btn" onclick="toggleDefaultMediaItem('${item.id}', ${item.isDefault ? 'true' : 'false'})" title="${item.isDefault ? 'Retirer le statut de poster principal' : 'Définir comme poster principal (affiché quand rien d’autre n’est à l’écran)'}">${item.isDefault ? '⭐' : '☆'}</button>
+                        <button class="queue-icon-btn" onclick="addToRundown('media', '${item.id}', '${escapeHtmlDashboard(item.label).replace(/'/g, "\\'")}')" title="Ajouter à la feuille de route">➕</button>
                         <button class="queue-icon-btn queue-remove" onclick="deleteMediaLibraryItem('${item.id}')" title="Supprimer">✕</button>
                     </div>
                 </div>

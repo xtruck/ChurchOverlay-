@@ -61,6 +61,10 @@ const mediaLibrary = require('./media-library');
 // un poster) : voir scene-store.js. Une scène référence des éléments de
 // media-library.js par id, ne possède aucun fichier propre.
 const sceneStore = require('./scene-store');
+// AJOUT (chantier 4.3 — sortie broadcast, feuille de route/cue-list) : une
+// séquence PRÉ-PLANIFIÉE de repères verset/média/scène que l'opérateur
+// construit à l'avance et déclenche dans l'ordre — voir rundown-store.js.
+const rundownStore = require('./rundown-store');
 // AJOUT (caméras de téléphone — demande explicite) : liste de flux MJPEG
 // réseau (apps type "IP Webcam"), distincte de camera-capture.js (webcams
 // locales via navigator.mediaDevices) — voir ip-camera-store.js.
@@ -130,6 +134,14 @@ function updateLiveCaption(text, translation) {
 // ffmpeg écrivant sur le même chemin) — un seul export à la fois, quel que
 // soit le nombre de tableaux de bord connectés.
 let clipExportInProgress = false;
+
+// AJOUT (chantier 4.3 — feuille de route/cue-list) : quel repère a été
+// déclenché en dernier (par triggerRundownCue OU nextRundownCue), pour que
+// nextRundownCue() sache par lequel continuer. Volontairement NON persisté
+// (comme lastLiveCaption/clipExportInProgress ci-dessus) — un redémarrage du
+// serveur reprend la feuille de route depuis son début, ce qui reste sûr
+// (jamais de repère sauté par erreur de reprise).
+let currentRundownIndex = -1;
 
 // ---------------------------------------------------------------------------
 // Durée d'affichage des versets — source unique de vérité
@@ -626,6 +638,64 @@ function resolveSceneMediaUrls(scene) {
     // fonction, jamais par l'objet brut du store.
     triggerPhrases: scene.triggerPhrases || [],
   };
+}
+
+// ---------------------------------------------------------------------------
+// AJOUT (chantier 4.3 — feuille de route/cue-list) : déclenche UN repère,
+// quel que soit son type — même comportement de diffusion que showVerse/
+// triggerMediaItem/triggerScene ci-dessous (delibérément dupliqué plutôt que
+// factorisé à l'envers : ces trois actions restent aussi déclenchables
+// individuellement, hors feuille de route, donc chacune garde sa propre
+// branche ; executeCue() est le SEUL point qui les regroupe pour la feuille
+// de route). Ne lève jamais — retourne {ok, error} pour que l'appelant
+// puisse continuer d'avancer dans la liste même si un repère échoue (média
+// supprimé entre-temps, référence désormais invalide...).
+// ---------------------------------------------------------------------------
+async function executeCue(cue) {
+  try {
+    if (cue.type === 'verse') {
+      const ref = detector.parseReference(cue.reference);
+      if (!ref) return { ok: false, error: `Référence invalide : ${cue.reference}` };
+      const verse = await bibleLookup.getVerseMultilang(ref, sessionState.getDisplayLanguage());
+      const durationMs = getVerseDurationMs();
+      broadcast({ action: 'showVerse', ...verse, durationMs, triggeredManually: true });
+      pushHistory({ ...verse, triggeredManually: true, timestamp: Date.now() });
+      broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
+      return { ok: true };
+    }
+    if (cue.type === 'media') {
+      const item = mediaLibrary.getItem(cue.mediaId);
+      if (!item) return { ok: false, error: `Média introuvable : ${cue.label}` };
+      broadcast({
+        action: 'showMedia',
+        id: item.id,
+        mediaType: item.mediaType,
+        mediaUrl: `/media/${item.filename}`,
+        label: item.label,
+        displayDurationMs: item.displayDurationMs,
+        transitionStyle: item.transitionStyle,
+        detectedBy: 'manual',
+      });
+      sessionStore.recordVerseShown({
+        reference: `📷 ${item.label}`,
+        detectedBy: 'media',
+        timestamp: Date.now(),
+      });
+      return { ok: true };
+    }
+    // cue.type === 'scene'
+    const scene = sceneStore.getItem(cue.sceneId);
+    if (!scene) return { ok: false, error: `Scène introuvable : ${cue.label}` };
+    broadcast({ action: 'showScene', ...resolveSceneMediaUrls(scene), detectedBy: 'manual' });
+    sessionStore.recordVerseShown({
+      reference: `🎬 ${scene.name}`,
+      detectedBy: 'scene',
+      timestamp: Date.now(),
+    });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1974,6 +2044,16 @@ const OPERATOR_ACTIONS = new Set([
   'setDefaultScene',
   'triggerScene',
   'hideScene',
+  // AJOUT (chantier 4.3 — feuille de route/cue-list, voir rundown-store.js) :
+  // même trust tier que la médiathèque/le studio de scènes ci-dessus — un
+  // viewer ne doit ni construire la feuille de route ni la déclencher.
+  'getRundown',
+  'addRundownCue',
+  'removeRundownCue',
+  'reorderRundownCues',
+  'triggerRundownCue',
+  'nextRundownCue',
+  'clearRundown',
   // AJOUT (caméras de téléphone)
   'getIpCameras',
   'addIpCamera',
@@ -3144,6 +3224,123 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
+    // ---------------------------------------------------------------------
+    // AJOUT (chantier 4.3 — feuille de route/cue-list, voir rundown-store.js
+    // et executeCue() plus haut) : séquence pré-planifiée de repères
+    // verset/média/scène, construite à l'avance et déclenchée dans l'ordre
+    // pendant le culte. Toute mutation de la structure (ajout/retrait/
+    // réordonnancement/vidage) réinitialise currentRundownIndex à -1 (aucun
+    // repère "actif") plutôt que de tenter de suivre le repère actif à
+    // travers un remaniement — plus simple et sans zone grise, le pire cas
+    // est juste que le badge "actif" s'efface un peu tôt.
+    // ---------------------------------------------------------------------
+    if (sanitized.action === 'getRundown') {
+      ws.send(
+        JSON.stringify({
+          action: 'rundownUpdated',
+          cues: rundownStore.listCues(),
+          activeIndex: currentRundownIndex,
+        })
+      );
+      return;
+    }
+
+    if (sanitized.action === 'addRundownCue') {
+      try {
+        const cue = rundownStore.addCue({
+          type: sanitized.type,
+          label: sanitized.label,
+          reference: sanitized.reference,
+          mediaId: sanitized.mediaId,
+          sceneId: sanitized.sceneId,
+        });
+        currentRundownIndex = -1;
+        log(`Feuille de route : repère "${cue.label}" ajouté (${cue.type})`);
+        broadcast({
+          action: 'rundownUpdated',
+          cues: rundownStore.listCues(),
+          activeIndex: currentRundownIndex,
+        });
+      } catch (err) {
+        ws.send(JSON.stringify({ action: 'error', error: err.message }));
+      }
+      return;
+    }
+
+    if (sanitized.action === 'removeRundownCue') {
+      const removed = rundownStore.removeCue(sanitized.id);
+      if (removed) {
+        currentRundownIndex = -1;
+        broadcast({
+          action: 'rundownUpdated',
+          cues: rundownStore.listCues(),
+          activeIndex: currentRundownIndex,
+        });
+      }
+      return;
+    }
+
+    if (sanitized.action === 'reorderRundownCues') {
+      rundownStore.reorderCues(Array.isArray(sanitized.orderedIds) ? sanitized.orderedIds : []);
+      currentRundownIndex = -1;
+      broadcast({
+        action: 'rundownUpdated',
+        cues: rundownStore.listCues(),
+        activeIndex: currentRundownIndex,
+      });
+      return;
+    }
+
+    if (sanitized.action === 'clearRundown') {
+      rundownStore.clearCues();
+      currentRundownIndex = -1;
+      log('Feuille de route : vidée');
+      broadcast({ action: 'rundownUpdated', cues: [], activeIndex: -1 });
+      return;
+    }
+
+    if (sanitized.action === 'triggerRundownCue') {
+      const cues = rundownStore.listCues();
+      const idx = cues.findIndex((c) => c.id === sanitized.id);
+      if (idx === -1) {
+        ws.send(
+          JSON.stringify({ action: 'error', error: 'Feuille de route : repère introuvable' })
+        );
+        return;
+      }
+      const result = await executeCue(cues[idx]);
+      currentRundownIndex = idx;
+      broadcast({ action: 'rundownActiveCue', id: cues[idx].id, index: idx });
+      if (!result.ok) {
+        ws.send(JSON.stringify({ action: 'error', error: result.error }));
+      }
+      return;
+    }
+
+    if (sanitized.action === 'nextRundownCue') {
+      const cues = rundownStore.listCues();
+      const nextIdx = currentRundownIndex + 1;
+      if (nextIdx >= cues.length) {
+        ws.send(
+          JSON.stringify({
+            action: 'error',
+            error:
+              cues.length === 0
+                ? 'Feuille de route vide.'
+                : 'Fin de la feuille de route — aucun repère suivant.',
+          })
+        );
+        return;
+      }
+      const result = await executeCue(cues[nextIdx]);
+      currentRundownIndex = nextIdx;
+      broadcast({ action: 'rundownActiveCue', id: cues[nextIdx].id, index: nextIdx });
+      if (!result.ok) {
+        ws.send(JSON.stringify({ action: 'error', error: result.error }));
+      }
+      return;
+    }
+
     // --- Caméras de téléphone (flux MJPEG réseau, voir ip-camera-store.js).
     // Contrairement à la médiathèque, il n'y a rien à diffuser à l'overlay
     // ici : c'est un outil de suivi côté opérateur uniquement, le flux
@@ -3922,6 +4119,12 @@ try {
   sceneStore.setUserDataDir(USER_DATA_DIR);
 } catch (err) {
   warn('Failed to set scene store dir: ' + err.message);
+}
+
+try {
+  rundownStore.setUserDataDir(USER_DATA_DIR);
+} catch (err) {
+  warn('Failed to set rundown store dir: ' + err.message);
 }
 
 try {

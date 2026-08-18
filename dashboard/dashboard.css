@@ -832,6 +832,15 @@ body {
   border-color: var(--border-light);
 }
 
+/* AJOUT (chantier 4.3 — feuille de route) : repère le dernier repère
+           déclenché (triggerRundownCue/nextRundownCue) dans rundown.js —
+           même traitement visuel (halo accent) que le reste de l'app pour
+           signaler un état "actif/en cours", pas une nouvelle couleur. */
+.queue-item.is-active-rundown-cue {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
 .queue-item-position {
   font-family: 'JetBrains Mono', monospace;
   font-size: var(--text-xs);

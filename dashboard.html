@@ -422,6 +422,54 @@
               <div class="queue-list" id="queueList"></div>
             </div>
 
+            <!-- AJOUT (chantier 4.3 — feuille de route/cue-list) : séquence
+                         pré-planifiée de repères verset/média/scène, construite à
+                         l'avance (via ce champ pour un verset, ou le bouton "➕" de
+                         chaque élément de la Médiathèque/du Studio de scènes) et
+                         déclenchée dans l'ordre pendant le culte via "▶ Suivant".
+                         Distincte de la file d'attente ci-dessus (versets seuls,
+                         locale au navigateur) : mixte et persistée côté serveur. -->
+            <div class="card">
+              <div class="queue-panel-header">
+                <span class="card-title"
+                  >Feuille de route (<span id="rundownCount">0</span>)</span
+                >
+                <div style="display: flex; gap: 0.4rem">
+                  <button
+                    class="btn btn-secondary"
+                    style="padding: 0.4rem 0.8rem; font-size: 0.8rem"
+                    onclick="clearRundown()"
+                    title="Vider toute la feuille de route"
+                  >
+                    🗑 Vider
+                  </button>
+                  <button
+                    class="btn btn-secondary"
+                    style="padding: 0.4rem 0.8rem; font-size: 0.8rem"
+                    onclick="nextRundownCue()"
+                  >
+                    ▶ Suivant
+                  </button>
+                </div>
+              </div>
+              <div class="queue-add-row">
+                <input
+                  type="text"
+                  id="rundownRefInput"
+                  placeholder="Référence (ex. Romains 8:28)"
+                  onkeydown="if (event.key === 'Enter') addVerseToRundown();"
+                />
+                <button
+                  class="btn btn-secondary"
+                  style="padding: 0.55rem 0.9rem"
+                  onclick="addVerseToRundown()"
+                >
+                  + Ajouter
+                </button>
+              </div>
+              <div class="queue-list" id="rundownList"></div>
+            </div>
+
             <!-- AJOUT (poster principal — carte dédiée) : jusqu'ici l'état du
                          poster principal n'était visible que sous forme de texte
                          explicatif dans la carte Médiathèque ci-dessous (il fallait

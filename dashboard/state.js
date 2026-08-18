@@ -221,6 +221,10 @@ function initWebSocket() {
       ws.send(JSON.stringify({ action: 'getMediaLibrary' }));
       // AJOUT (studio de scènes) : même raisonnement que getMediaLibrary.
       ws.send(JSON.stringify({ action: 'getSceneLibrary' }));
+      // AJOUT (chantier 4.3 — feuille de route) : même raisonnement que
+      // getMediaLibrary — persistée côté serveur, récupérée à chaque
+      // connexion/reconnexion pour rester synchronisée entre postes.
+      ws.send(JSON.stringify({ action: 'getRundown' }));
       // AJOUT (bibliothèque de chants) : même raisonnement que getMediaLibrary.
       ws.send(JSON.stringify({ action: 'getSongLibrary' }));
       // AJOUT (caméras de téléphone) : même raisonnement que getMediaLibrary.
