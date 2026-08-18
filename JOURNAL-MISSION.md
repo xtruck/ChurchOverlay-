@@ -609,3 +609,59 @@ ambiguïté de sécurité) justifierait encore une pause.
 ou s'il est dispatché ailleurs, avant d'exposer ces deux actions comme outils MCP ;
 clarifier comment le tableau de bord applique réellement un thème nommé (claire/nuit)
 à l'overlay avant d'exposer apply_theme.
+
+**Suite immédiate (même session)** : `emergencyClear`/`obs-switch-scene` élucidés en
+creusant `OPERATOR_ACTIONS` — `emergencyClear` n'est QUE dans VOICE_COMMANDS/
+KEYBOARD_SHORTCUTS (action-registry.js), jamais dans CLIENT_ACTIONS : ce n'est pas une
+action WS envoyable par un client, sa présence dans `OPERATOR_ACTIONS` (permissions WS)
+est donc du code mort inoffensif. `obs-switch-scene`/`obs-toggle-recording` : contrôle
+OBS passe entièrement par IPC Electron (`window.churchOverlay.obsSwitchScene`, voir
+`dashboard/features/obs-scenes.js` + `preload.js`), jamais par WebSocket — confirme
+qu'un serveur MCP (transport WS uniquement) ne peut de toute façon PAS les exposer sans
+un pont IPC séparé. Les deux entrées dans `OPERATOR_ACTIONS` restent du code mort à
+nettoyer un jour (cosmétique, aucun impact fonctionnel), noté pour l'audit de fin de
+session plutôt que traité isolément ici.
+
+---
+
+### 2026-08-18 — Chantiers 6b.2 (typage pont IPC) + 6b.1 (circuit breaker Groq) — TERMINÉS
+
+- [x] **global.d.ts** : `window.churchOverlay` entièrement typé (toutes les méthodes de
+      preload.js), formes de retour reconstruites en lisant chaque `ipcMain.handle(...)`
+      correspondant dans main.js. `checkJs`/`allowJs` restent à `false` dans
+      tsconfig.json (dashboard/features/*.js en JS pur) — ce typage n'est donc PAS
+      encore appliqué par `tsc --noEmit` (rien à casser), mais donne déjà
+      l'autocomplétion VS Code dès maintenant et prépare une vérification réelle si
+      §6b.2 migre un jour vers Vite/TS.
+- [x] **Flake #2 trouvé et corrigé** (même famille que le premier, hors périmètre
+      direct) : `integration-chapter-fallback-delay.js` — marge d'observation
+      post-repli (+1200ms) parfois trop courte MÊME AVEC bible-lookup-with-api.js
+      entièrement mocké (résolution instante) → précision de `setTimeout` sous la
+      charge CPU de toute cette session de tests répétés, pas un vrai bug. Marge portée
+      à +3000ms, 5/5 propre en relances répétées après.
+- [x] **Constat système** : 6 process `electron.exe` tournent en parallèle sur cette
+      machine pendant la session (process tree normal d'UNE app Electron — main +
+      renderers + GPU/utilitaires — pas forcément 6 instances séparées). Contribue
+      probablement à la charge générale et à la fenêtre de flakiness observée sur
+      plusieurs tests aujourd'hui. Non touché (pourrait être l'app réelle de
+      l'utilisateur en cours d'usage) — noté pour l'audit de fin de session.
+- [x] **groq-wrapper.js — circuit breaker réel** : `transcribeWithFallback()` tentait
+      Groq à CHAQUE segment même en panne prolongée — un vrai timeout réseau (pas une
+      erreur HTTP rapide) coûtait jusqu'à 5000ms de latence supplémentaire PAR SEGMENT
+      pendant toute la durée de la panne. Étend le suivi santé déjà existant
+      (`consecutiveGroqFailures`/`lastGroqError`, ajouté pour `/api/health`) : après 5
+      échecs consécutifs (seuil DÉLIBÉRÉMENT au-dessus des 3 échecs + 1 succès déjà
+      exercés par test-groq-health-tracking.js — contrat existant intégralement
+      préservé, revérifié inchangé), circuit ouvert 30s (Groq sauté, repli Deepgram
+      direct), puis un essai semi-ouvert retente Groq une fois — succès referme le
+      circuit, échec relance le cooldown. Jamais sauté si Deepgram non configuré (seule
+      chance de transcrire quand même). `getGroqHealthState()` expose maintenant
+      `circuitOpen`/`circuitOpenedAt`, visible sans changement dans `/api/health` via
+      `buildHealthReport()` (server.js, champ `asr.groq`).
+- [x] **test-groq-circuit-breaker.js** (nouveau, 16 assertions) : fermé/ouvert/semi-ouvert,
+      pas d'incrément fantôme du compteur pendant que Groq est sauté, jamais de saut sans
+      Deepgram configuré. `Date.now()` mocké pour avancer le cooldown sans attendre 30s
+      réelles.
+- [x] **Gate** : `npm test` EXIT 0, `tsc --noEmit` clean, `check-build-files.js` OK,
+      `npm audit` 0 vulnérabilité, lint 0 erreur sur les fichiers touchés.
+- [x] Commit `3f23aaf` (typage + flake), `97c1e83` (circuit breaker).
