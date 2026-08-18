@@ -29,14 +29,14 @@ class CreativePresentationFeatures {
    */
   async initialize(userDataDir) {
     this.userDataDir = userDataDir;
-    
+
     // Initialize managers
     this.sceneManager = new professionalSceneManager();
     await this.sceneManager.initialize(userDataDir);
-    
+
     this.mediaManager = new advancedMediaManager();
     await this.mediaManager.initialize(userDataDir);
-    
+
     console.log('[CreativeFeatures] Initialized with professional capabilities');
   }
 
@@ -48,22 +48,24 @@ class CreativePresentationFeatures {
       type: transitionConfig.type || 'fade',
       duration: transitionConfig.duration || 500,
       easing: transitionConfig.easing || 'ease-in-out',
-      customStinger: transitionConfig.customStinger || null
+      customStinger: transitionConfig.customStinger || null,
     };
 
     console.log('[CreativeFeatures] Executing transition:', transition);
 
     // Emit transition event for UI to handle
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('scene-transition', {
-        detail: { fromScene, toScene, transition }
-      }));
+      window.dispatchEvent(
+        new CustomEvent('scene-transition', {
+          detail: { fromScene, toScene, transition },
+        })
+      );
     }
 
     return {
       success: true,
       transition,
-      estimatedDuration: transition.duration
+      estimatedDuration: transition.duration,
     };
   }
 
@@ -76,19 +78,24 @@ class CreativePresentationFeatures {
         { id: 'fade', name: 'Fade', duration: 500, description: 'Simple crossfade' },
         { id: 'slide', name: 'Slide', duration: 400, description: 'Slide from direction' },
         { id: 'zoom', name: 'Zoom', duration: 600, description: 'Zoom in/out effect' },
-        { id: 'cut', name: 'Cut', duration: 0, description: 'Instant cut' }
+        { id: 'cut', name: 'Cut', duration: 0, description: 'Instant cut' },
       ],
       advanced: [
         { id: 'stinger', name: 'Stinger', duration: 1000, description: 'Custom video transition' },
         { id: 'ripple', name: 'Ripple', duration: 800, description: 'Ripple dissolve effect' },
         { id: 'pixelate', name: 'Pixelate', duration: 600, description: 'Pixel dissolve' },
-        { id: 'blur', name: 'Blur', duration: 500, description: 'Blur transition' }
+        { id: 'blur', name: 'Blur', duration: 500, description: 'Blur transition' },
       ],
       professional: [
         { id: 'broadcast', name: 'Broadcast', duration: 1200, description: 'TV-style transition' },
         { id: 'cinematic', name: 'Cinematic', duration: 1500, description: 'Film-style wipe' },
-        { id: 'corporate', name: 'Corporate', duration: 800, description: 'Clean business transition' }
-      ]
+        {
+          id: 'corporate',
+          name: 'Corporate',
+          duration: 800,
+          description: 'Clean business transition',
+        },
+      ],
     };
   }
 
@@ -104,9 +111,9 @@ class CreativePresentationFeatures {
         moderation: config.moderation !== false,
         displayMode: config.displayMode || 'overlay', // overlay, sidebar, fullscreen
         autoHide: config.autoHide !== false,
-        timeout: config.timeout || 30000
+        timeout: config.timeout || 30000,
       },
-      createdAt: Date.now()
+      createdAt: Date.now(),
     };
 
     this.audienceInteractions.set(interaction.id, interaction);
@@ -127,10 +134,10 @@ class CreativePresentationFeatures {
       options: options.map((opt, index) => ({
         id: index.toString(),
         text: opt,
-        votes: 0
+        votes: 0,
       })),
       active: true,
-      createdAt: Date.now()
+      createdAt: Date.now(),
     };
 
     this.audienceInteractions.set(poll.id, poll);
@@ -147,14 +154,14 @@ class CreativePresentationFeatures {
       throw new Error('Poll not found');
     }
 
-    const option = poll.options.find(opt => opt.id === optionId);
+    const option = poll.options.find((opt) => opt.id === optionId);
     if (option) {
       option.votes++;
     }
 
     return {
       success: true,
-      poll: this.getPollResults(pollId)
+      poll: this.getPollResults(pollId),
     };
   }
 
@@ -169,11 +176,11 @@ class CreativePresentationFeatures {
 
     return {
       ...poll,
-      results: poll.options.map(opt => ({
+      results: poll.options.map((opt) => ({
         ...opt,
-        percentage: totalVotes > 0 ? (opt.votes / totalVotes) * 100 : 0
+        percentage: totalVotes > 0 ? (opt.votes / totalVotes) * 100 : 0,
       })),
-      totalVotes
+      totalVotes,
     };
   }
 
@@ -189,10 +196,10 @@ class CreativePresentationFeatures {
       permissions: {
         edit: config.allowEdit !== false,
         sceneControl: config.allowSceneControl !== false,
-        mediaControl: config.allowMediaControl !== false
+        mediaControl: config.allowMediaControl !== false,
       },
       status: 'active',
-      createdAt: Date.now()
+      createdAt: Date.now(),
     };
 
     this.collaborationSessions.set(session.id, session);
@@ -215,7 +222,7 @@ class CreativePresentationFeatures {
       id: participant.id || Date.now().toString(),
       name: participant.name || 'Anonymous',
       role: participant.role || 'viewer',
-      joinedAt: Date.now()
+      joinedAt: Date.now(),
     };
 
     session.participants.push(participantData);
@@ -223,7 +230,7 @@ class CreativePresentationFeatures {
     return {
       success: true,
       session,
-      participant: participantData
+      participant: participantData,
     };
   }
 
@@ -238,9 +245,11 @@ class CreativePresentationFeatures {
 
     // Broadcast to all participants
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('collaboration-action', {
-        detail: { sessionId, action }
-      }));
+      window.dispatchEvent(
+        new CustomEvent('collaboration-action', {
+          detail: { sessionId, action },
+        })
+      );
     }
 
     return { success: true };
@@ -259,7 +268,7 @@ class CreativePresentationFeatures {
       action: config.action,
       enabled: true,
       executed: false,
-      createdAt: Date.now()
+      createdAt: Date.now(),
     };
 
     this.scheduledEvents.set(event.id, event);
@@ -292,9 +301,11 @@ class CreativePresentationFeatures {
         case 'custom':
           // Execute custom action
           if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('custom-automation', {
-              detail: event.action
-            }));
+            window.dispatchEvent(
+              new CustomEvent('custom-automation', {
+                detail: event.action,
+              })
+            );
           }
           break;
       }
@@ -322,7 +333,7 @@ class CreativePresentationFeatures {
       enabled: true,
       triggerCount: 0,
       lastTriggered: null,
-      createdAt: Date.now()
+      createdAt: Date.now(),
     };
 
     this.automationRules.set(rule.id, rule);
@@ -347,13 +358,15 @@ class CreativePresentationFeatures {
             shouldTrigger = true;
           }
           break;
-        case 'time':
+        case 'time': {
           const currentTime = new Date();
           const triggerTime = new Date(rule.conditionValue);
-          if (Math.abs(currentTime - triggerTime) < 1000) { // Within 1 second
+          if (Math.abs(currentTime - triggerTime) < 1000) {
+            // Within 1 second
             shouldTrigger = true;
           }
           break;
+        }
         case 'manual':
           shouldTrigger = context.manualTrigger === ruleId;
           break;
@@ -384,9 +397,11 @@ class CreativePresentationFeatures {
         return await this.executeTransition(action.from, action.to, action.transition);
       case 'function':
         if (action.functionName && typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('automation-function', {
-            detail: { functionName: action.functionName, params: action.params }
-          }));
+          window.dispatchEvent(
+            new CustomEvent('automation-function', {
+              detail: { functionName: action.functionName, params: action.params },
+            })
+          );
         }
         break;
     }
@@ -418,7 +433,7 @@ class CreativePresentationFeatures {
       sources: config.sources || [],
       gridSize: config.gridSize || { rows: 2, cols: 2 },
       labels: config.labels !== false,
-      timestamps: config.timestamps !== false
+      timestamps: config.timestamps !== false,
     };
 
     this.activeFeatures.set('multiView', multiViewConfig);
@@ -438,16 +453,18 @@ class CreativePresentationFeatures {
       name: effectConfig.name || 'Custom Effect',
       settings: effectConfig.settings || {},
       duration: effectConfig.duration || 0, // 0 = permanent
-      startTime: Date.now()
+      startTime: Date.now(),
     };
 
     this.activeFeatures.set(effect.id, effect);
 
     // Emit effect event
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('effect-applied', {
-        detail: effect
-      }));
+      window.dispatchEvent(
+        new CustomEvent('effect-applied', {
+          detail: effect,
+        })
+      );
     }
 
     return effect;
@@ -465,9 +482,11 @@ class CreativePresentationFeatures {
     this.activeFeatures.delete(effectId);
 
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('effect-removed', {
-        detail: { effectId }
-      }));
+      window.dispatchEvent(
+        new CustomEvent('effect-removed', {
+          detail: { effectId },
+        })
+      );
     }
 
     return { success: true };
@@ -485,18 +504,18 @@ class CreativePresentationFeatures {
       media: config.media || [],
       settings: config.settings || {},
       transitions: config.transitions || {},
-      createdAt: Date.now()
+      createdAt: Date.now(),
     };
 
     // Save template
     const templatesPath = require('path').join(this.userDataDir, 'templates.json');
     const fs = require('fs');
-    
+
     let templates = [];
     if (fs.existsSync(templatesPath)) {
       templates = JSON.parse(fs.readFileSync(templatesPath, 'utf8'));
     }
-    
+
     templates.push(template);
     fs.writeFileSync(templatesPath, JSON.stringify(templates, null, 2), 'utf8');
 
@@ -509,24 +528,21 @@ class CreativePresentationFeatures {
   async loadTemplate(templateId) {
     const templatesPath = require('path').join(this.userDataDir, 'templates.json');
     const fs = require('fs');
-    
+
     if (!fs.existsSync(templatesPath)) {
       throw new Error('No templates found');
     }
 
     const templates = JSON.parse(fs.readFileSync(templatesPath, 'utf8'));
-    const template = templates.find(t => t.id === templateId);
-    
+    const template = templates.find((t) => t.id === templateId);
+
     if (!template) {
       throw new Error('Template not found');
     }
 
     // Apply template to current session
     for (const sceneData of template.scenes) {
-      await this.sceneManager.addSceneToCollection(
-        this.sceneManager.activeCollection,
-        sceneData
-      );
+      await this.sceneManager.addSceneToCollection(this.sceneManager.activeCollection, sceneData);
     }
 
     return template;
@@ -540,10 +556,10 @@ class CreativePresentationFeatures {
       sceneManager: this.sceneManager?.getStatus(),
       mediaManager: this.mediaManager?.getStatus(),
       activeFeatures: Object.fromEntries(this.activeFeatures),
-      scheduledEvents: Array.from(this.scheduledEvents.values()).filter(e => !e.executed),
+      scheduledEvents: Array.from(this.scheduledEvents.values()).filter((e) => !e.executed),
       collaborationSessions: Array.from(this.collaborationSessions.values()),
       automationRules: Array.from(this.automationRules.values()),
-      audienceInteractions: Array.from(this.audienceInteractions.values())
+      audienceInteractions: Array.from(this.audienceInteractions.values()),
     };
   }
 
@@ -558,7 +574,7 @@ class CreativePresentationFeatures {
       scheduledEvents: Array.from(this.scheduledEvents.values()),
       automationRules: Array.from(this.automationRules.values()),
       exportedAt: Date.now(),
-      version: '1.0'
+      version: '1.0',
     };
 
     return sessionState;

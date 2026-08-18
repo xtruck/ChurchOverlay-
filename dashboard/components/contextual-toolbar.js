@@ -190,10 +190,10 @@ class ContextualToolbar extends HTMLElement {
   setupEventListeners() {
     // Listen for selection changes
     document.addEventListener('selectionchange', () => this.handleSelectionChange());
-    
+
     // Listen for context changes from the app
     window.addEventListener('context-change', (e) => this.handleContextChange(e.detail));
-    
+
     // Listen for AI suggestions
     window.addEventListener('ai-suggestions', (e) => this.handleAISuggestions(e.detail));
   }
@@ -226,12 +226,12 @@ class ContextualToolbar extends HTMLElement {
   showForSelection(selection) {
     const range = selection.getRangeAt(0);
     const rect = range.getBoundingClientRect();
-    
+
     this.position = {
       x: rect.left + rect.width / 2,
-      y: rect.top - 50
+      y: rect.top - 50,
     };
-    
+
     this.show();
   }
 
@@ -241,7 +241,7 @@ class ContextualToolbar extends HTMLElement {
     this.style.transform = 'translate(-50%, 0)';
     this.setAttribute('visible', '');
     this.isVisible = true;
-    
+
     this.updateToolbar();
   }
 
@@ -254,37 +254,37 @@ class ContextualToolbar extends HTMLElement {
     const primaryActions = this.shadowRoot.getElementById('primary-actions');
     const aiActions = this.shadowRoot.getElementById('ai-actions');
     const styleActions = this.shadowRoot.getElementById('style-actions');
-    
+
     // Clear existing content
     primaryActions.innerHTML = '';
     aiActions.innerHTML = '';
     styleActions.innerHTML = '';
-    
+
     // Add context-specific actions
     if (this.currentContext) {
       this.addContextActions(primaryActions, this.currentContext);
     }
-    
+
     // Add AI suggestions
     if (this.aiSuggestions.length > 0) {
       this.addAISuggestions(aiActions);
     }
-    
+
     // Add common style actions
     this.addStyleActions(styleActions);
   }
 
   addContextActions(container, context) {
     const actions = this.getActionsForContext(context);
-    
-    actions.forEach(action => {
+
+    actions.forEach((action) => {
       const button = this.createActionButton(action);
       container.appendChild(button);
     });
   }
 
   addAISuggestions(container) {
-    this.aiSuggestions.slice(0, 2).forEach(suggestion => {
+    this.aiSuggestions.slice(0, 2).forEach((suggestion) => {
       const suggestionEl = document.createElement('div');
       suggestionEl.className = 'ai-suggestion';
       suggestionEl.innerHTML = `
@@ -301,10 +301,10 @@ class ContextualToolbar extends HTMLElement {
       { icon: 'bold', action: 'bold', tooltip: 'Bold' },
       { icon: 'italic', action: 'italic', tooltip: 'Italic' },
       { icon: 'color', action: 'color', tooltip: 'Color' },
-      { icon: 'size', action: 'size', tooltip: 'Size' }
+      { icon: 'size', action: 'size', tooltip: 'Size' },
     ];
-    
-    styleActions.forEach(action => {
+
+    styleActions.forEach((action) => {
       const button = this.createActionButton(action);
       container.appendChild(button);
     });
@@ -324,14 +324,18 @@ class ContextualToolbar extends HTMLElement {
   getIconForAction(iconName) {
     const icons = {
       bold: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/><path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/></svg>',
-      italic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/></svg>',
-      color: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/></svg>',
+      italic:
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/></svg>',
+      color:
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/></svg>',
       size: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>',
-      magic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L15 8l6 1-4 4 1 6-6-3-6 3 1-6-4-4 6-1z"/></svg>',
+      magic:
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L15 8l6 1-4 4 1 6-6-3-6 3 1-6-4-4 6-1z"/></svg>',
       copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
-      verse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M6 8h12"/></svg>'
+      verse:
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M6 8h12"/></svg>',
     };
-    
+
     return icons[iconName] || icons.magic;
   }
 
@@ -341,50 +345,52 @@ class ContextualToolbar extends HTMLElement {
         return [
           { icon: 'verse', action: 'show-verse', tooltip: 'Show Verse', aiEnhanced: true },
           { icon: 'copy', action: 'copy-verse', tooltip: 'Copy Verse' },
-          { icon: 'magic', action: 'ai-enhance', tooltip: 'AI Enhance', aiEnhanced: true }
+          { icon: 'magic', action: 'ai-enhance', tooltip: 'AI Enhance', aiEnhanced: true },
         ];
       case 'text':
         return [
           { icon: 'bold', action: 'bold', tooltip: 'Bold' },
           { icon: 'italic', action: 'italic', tooltip: 'Italic' },
-          { icon: 'magic', action: 'ai-improve', tooltip: 'AI Improve', aiEnhanced: true }
+          { icon: 'magic', action: 'ai-improve', tooltip: 'AI Improve', aiEnhanced: true },
         ];
       case 'media':
         return [
           { icon: 'magic', action: 'ai-style', tooltip: 'AI Style', aiEnhanced: true },
-          { icon: 'color', action: 'adjust', tooltip: 'Adjust' }
+          { icon: 'color', action: 'adjust', tooltip: 'Adjust' },
         ];
       default:
-        return [
-          { icon: 'magic', action: 'ai-suggest', tooltip: 'AI Suggest', aiEnhanced: true }
-        ];
+        return [{ icon: 'magic', action: 'ai-suggest', tooltip: 'AI Suggest', aiEnhanced: true }];
     }
   }
 
   executeAction(action) {
     console.log('Executing action:', action);
-    
+
     // Emit action event for the app to handle
-    window.dispatchEvent(new CustomEvent('toolbar-action', {
-      detail: action
-    }));
+    window.dispatchEvent(
+      new CustomEvent('toolbar-action', {
+        detail: action,
+      })
+    );
   }
 
   applySuggestion(suggestion) {
     console.log('Applying AI suggestion:', suggestion);
-    
+
     // Emit suggestion applied event
-    window.dispatchEvent(new CustomEvent('ai-suggestion-applied', {
-      detail: suggestion
-    }));
+    window.dispatchEvent(
+      new CustomEvent('ai-suggestion-applied', {
+        detail: suggestion,
+      })
+    );
   }
 
   ensureInViewport() {
     if (!this.isVisible) return;
-    
+
     const toolbar = this.shadowRoot.getElementById('toolbar');
     const rect = toolbar.getBoundingClientRect();
-    
+
     // Adjust position if toolbar is outside viewport
     if (rect.left < 0) {
       this.style.left = '10px';

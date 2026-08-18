@@ -51,12 +51,12 @@ class ProfessionalIntegration {
         features: {
           sceneManager: true,
           mediaManager: true,
-          creativeFeatures: true
-        }
+          creativeFeatures: true,
+        },
       };
     } catch (error) {
       console.error('[ProfessionalIntegration] Initialization failed:', error);
-      
+
       // Fall back to compatibility mode
       this.compatibilityMode = true;
       console.warn('[ProfessionalIntegration] Running in compatibility mode');
@@ -64,7 +64,7 @@ class ProfessionalIntegration {
       return {
         success: true,
         compatibilityMode: true,
-        error: error.message
+        error: error.message,
       };
     }
   }
@@ -78,17 +78,21 @@ class ProfessionalIntegration {
     // Test scene-store compatibility
     try {
       const scenes = sceneStore.listItems();
-      console.log(`[ProfessionalIntegration] scene-store compatible: ${scenes.length} scenes found`);
-    } catch (e) {
-      console.warn('[ProfessionalIntegration] scene-store compatibility issue:', e.message);
+      console.log(
+        `[ProfessionalIntegration] scene-store compatible: ${scenes.length} scenes found`
+      );
+    } catch (_e) {
+      console.warn('[ProfessionalIntegration] scene-store compatibility issue:', _e.message);
     }
 
     // Test media-library compatibility
     try {
       const media = mediaLibrary.listItems();
-      console.log(`[ProfessionalIntegration] media-library compatible: ${media.length} items found`);
-    } catch (e) {
-      console.warn('[ProfessionalIntegration] media-library compatibility issue:', e.message);
+      console.log(
+        `[ProfessionalIntegration] media-library compatible: ${media.length} items found`
+      );
+    } catch (_e) {
+      console.warn('[ProfessionalIntegration] media-library compatibility issue:', _e.message);
     }
 
     // Ensure existing data is preserved
@@ -110,38 +114,42 @@ class ProfessionalIntegration {
         for (const scene of existingScenes) {
           try {
             // Check if scene already exists in collection
-            const exists = mainCollection.scenes.some(s => s.sceneId === scene.id);
+            const exists = mainCollection.scenes.some((s) => s.sceneId === scene.id);
             if (!exists) {
               await this.sceneManager.addSceneToCollection(mainCollection.id, {
                 name: scene.name,
                 background: scene.background,
                 elements: scene.elements,
-                triggerPhrases: scene.triggerPhrases
+                triggerPhrases: scene.triggerPhrases,
               });
             }
-          } catch (e) {
-            console.warn('[ProfessionalIntegration] Failed to migrate scene:', scene.id, e.message);
+          } catch (_e) {
+            console.warn(
+              '[ProfessionalIntegration] Failed to migrate scene:',
+              scene.id,
+              _e.message
+            );
           }
         }
       }
-    } catch (e) {
-      console.warn('[ProfessionalIntegration] Scene migration failed:', e.message);
+    } catch (_e) {
+      console.warn('[ProfessionalIntegration] Scene migration failed:', _e.message);
     }
 
     // Migrate existing media to advanced media manager
     try {
       const existingMedia = mediaLibrary.listItems();
-      
+
       for (const media of existingMedia) {
         try {
           // Auto-tag existing media
           await this.mediaManager.autoTagMedia(media.id, media.filename);
-        } catch (e) {
-          console.warn('[ProfessionalIntegration] Failed to tag media:', media.id, e.message);
+        } catch (_e) {
+          console.warn('[ProfessionalIntegration] Failed to tag media:', media.id, _e.message);
         }
       }
-    } catch (e) {
-      console.warn('[ProfessionalIntegration] Media migration failed:', e.message);
+    } catch (_e) {
+      console.warn('[ProfessionalIntegration] Media migration failed:', _e.message);
     }
 
     console.log('[ProfessionalIntegration] Data migration complete');
@@ -154,7 +162,7 @@ class ProfessionalIntegration {
     if (!this.initialized) {
       return {
         initialized: false,
-        compatibilityMode: this.compatibilityMode
+        compatibilityMode: this.compatibilityMode,
       };
     }
 
@@ -166,8 +174,8 @@ class ProfessionalIntegration {
       creativeFeatures: this.creativeFeatures?.getStatus(),
       backwardCompatibility: {
         sceneStore: sceneStore.listItems().length,
-        mediaLibrary: mediaLibrary.listItems().length
-      }
+        mediaLibrary: mediaLibrary.listItems().length,
+      },
     };
   }
 
@@ -190,7 +198,7 @@ class ProfessionalIntegration {
     if (this.sceneManager && !this.compatibilityMode) {
       const collection = this.sceneManager.getActiveCollection();
       if (collection) {
-        const sceneEntry = collection.scenes.find(s => s.sceneId === sceneId);
+        const sceneEntry = collection.scenes.find((s) => s.sceneId === sceneId);
         if (sceneEntry) {
           return sceneStore.updateScene(sceneId, patch);
         }
@@ -204,7 +212,7 @@ class ProfessionalIntegration {
       // Remove from collection first
       const collection = this.sceneManager.getActiveCollection();
       if (collection) {
-        collection.scenes = collection.scenes.filter(s => s.sceneId !== sceneId);
+        collection.scenes = collection.scenes.filter((s) => s.sceneId !== sceneId);
         await this.sceneManager.saveCollections();
       }
     }
@@ -237,9 +245,10 @@ class ProfessionalIntegration {
       // Basic search in media-library
       const allMedia = mediaLibrary.listItems();
       const normalizedQuery = query.toLowerCase();
-      return allMedia.filter(item => 
-        item.label.toLowerCase().includes(normalizedQuery) ||
-        item.filename.toLowerCase().includes(normalizedQuery)
+      return allMedia.filter(
+        (item) =>
+          item.label.toLowerCase().includes(normalizedQuery) ||
+          item.filename.toLowerCase().includes(normalizedQuery)
       );
     }
   }
@@ -323,7 +332,7 @@ class ProfessionalIntegration {
       scenes: sceneStore.listItems(),
       media: mediaLibrary.listItems(),
       exportedAt: Date.now(),
-      compatibilityMode: true
+      compatibilityMode: true,
     };
   }
 
@@ -337,8 +346,8 @@ class ProfessionalIntegration {
         for (const scene of sessionState.scenes) {
           try {
             sceneStore.addScene(scene);
-          } catch (e) {
-            console.warn('[ProfessionalIntegration] Failed to import scene:', e.message);
+          } catch (_e) {
+            console.warn('[ProfessionalIntegration] Failed to import scene:', _e.message);
           }
         }
       }
@@ -353,20 +362,20 @@ class ProfessionalIntegration {
    */
   async emergencyFallback() {
     console.warn('[ProfessionalIntegration] Activating emergency fallback mode');
-    
+
     this.compatibilityMode = true;
-    
+
     // Disable new features
     this.sceneManager = null;
     this.mediaManager = null;
     this.creativeFeatures = null;
-    
+
     // Keep only basic operations
     console.log('[ProfessionalIntegration] Running in basic mode only');
-    
+
     return {
       success: true,
-      mode: 'basic'
+      mode: 'basic',
     };
   }
 
@@ -377,14 +386,14 @@ class ProfessionalIntegration {
     const health = {
       status: 'healthy',
       components: {},
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
 
     // Check scene-store
     try {
       sceneStore.listItems();
       health.components.sceneStore = 'healthy';
-    } catch (e) {
+    } catch (_e) {
       health.components.sceneStore = 'unhealthy';
       health.status = 'degraded';
     }
@@ -393,7 +402,7 @@ class ProfessionalIntegration {
     try {
       mediaLibrary.listItems();
       health.components.mediaLibrary = 'healthy';
-    } catch (e) {
+    } catch (_e) {
       health.components.mediaLibrary = 'unhealthy';
       health.status = 'degraded';
     }
@@ -403,7 +412,7 @@ class ProfessionalIntegration {
       try {
         this.sceneManager.getStatus();
         health.components.sceneManager = 'healthy';
-      } catch (e) {
+      } catch (_e) {
         health.components.sceneManager = 'unhealthy';
         health.status = 'degraded';
       }
@@ -411,7 +420,7 @@ class ProfessionalIntegration {
       try {
         this.mediaManager.getStatus();
         health.components.mediaManager = 'healthy';
-      } catch (e) {
+      } catch (_e) {
         health.components.mediaManager = 'unhealthy';
         health.status = 'degraded';
       }
@@ -419,7 +428,7 @@ class ProfessionalIntegration {
       try {
         this.creativeFeatures.getStatus();
         health.components.creativeFeatures = 'healthy';
-      } catch (e) {
+      } catch (_e) {
         health.components.creativeFeatures = 'unhealthy';
         health.status = 'degraded';
       }
@@ -444,5 +453,5 @@ function getProfessionalIntegration() {
 
 module.exports = {
   ProfessionalIntegration,
-  getProfessionalIntegration
+  getProfessionalIntegration,
 };

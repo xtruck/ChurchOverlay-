@@ -24,7 +24,7 @@ class ProfessionalSceneManager {
       main: { enabled: true, resolution: '1920x1080', fps: 60 },
       stage: { enabled: false, resolution: '1920x1080', fps: 30 },
       lobby: { enabled: false, resolution: '1920x1080', fps: 30 },
-      record: { enabled: false, format: 'mp4', quality: 'high' }
+      record: { enabled: false, format: 'mp4', quality: 'high' },
     };
     this.layerVisibility = new Map(); // Layer visibility controls
     this.sceneHistory = []; // Undo/redo support
@@ -38,27 +38,31 @@ class ProfessionalSceneManager {
     this.userDataDir = userDataDir;
     this.collectionsPath = path.join(userDataDir, 'scene-collections.json');
     this.configPath = path.join(userDataDir, 'output-config.json');
-    
+
     // Initialize stores
     sceneStore.setUserDataDir(userDataDir);
     mediaLibrary.setUserDataDir(userDataDir);
-    
+
     // Load existing data
     await this.loadCollections();
     await this.loadOutputConfig();
-    
+
     // Create default collection if none exists
     if (this.sceneCollections.size === 0) {
       await this.createDefaultCollection();
     }
-    
+
     // Set first collection as active
     const firstCollection = this.sceneCollections.keys().next().value;
     if (firstCollection) {
       this.activeCollection = firstCollection;
     }
-    
-    console.log('[ProfessionalSceneManager] Initialized with', this.sceneCollections.size, 'collections');
+
+    console.log(
+      '[ProfessionalSceneManager] Initialized with',
+      this.sceneCollections.size,
+      'collections'
+    );
   }
 
   /**
@@ -72,18 +76,18 @@ class ProfessionalSceneManager {
       scenes: [],
       transitions: {
         default: { type: 'fade', duration: 500 },
-        stinger: null
+        stinger: null,
       },
       layers: {
         background: { visible: true, locked: false },
         content: { visible: true, locked: false },
         overlay: { visible: true, locked: false },
-        watermark: { visible: false, locked: true }
+        watermark: { visible: false, locked: true },
       },
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
-    
+
     // Add some default scenes
     defaultCollection.scenes = [
       {
@@ -92,7 +96,7 @@ class ProfessionalSceneManager {
         type: 'basic',
         background: { type: 'color', color: '#000000' },
         elements: [],
-        isDefault: true
+        isDefault: true,
       },
       {
         id: crypto.randomUUID(),
@@ -106,9 +110,9 @@ class ProfessionalSceneManager {
             position: 'center',
             widthPct: 40,
             mediaId: null, // Will be set when logo is added
-            rotationDeg: 0
-          }
-        ]
+            rotationDeg: 0,
+          },
+        ],
       },
       {
         id: crypto.randomUUID(),
@@ -126,15 +130,15 @@ class ProfessionalSceneManager {
             fontWeight: 700,
             color: '#FFFFFF',
             align: 'center',
-            rotationDeg: 0
-          }
-        ]
-      }
+            rotationDeg: 0,
+          },
+        ],
+      },
     ];
-    
+
     this.sceneCollections.set(defaultCollection.id, defaultCollection);
     await this.saveCollections();
-    
+
     console.log('[ProfessionalSceneManager] Created default collection:', defaultCollection.name);
   }
 
@@ -149,21 +153,21 @@ class ProfessionalSceneManager {
       scenes: [],
       transitions: {
         default: { type: 'fade', duration: 500 },
-        stinger: null
+        stinger: null,
       },
       layers: {
         background: { visible: true, locked: false },
         content: { visible: true, locked: false },
         overlay: { visible: true, locked: false },
-        watermark: { visible: false, locked: true }
+        watermark: { visible: false, locked: true },
       },
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
-    
+
     this.sceneCollections.set(collection.id, collection);
     await this.saveCollections();
-    
+
     return collection;
   }
 
@@ -175,20 +179,20 @@ class ProfessionalSceneManager {
     if (!collection) {
       throw new Error('Collection not found');
     }
-    
+
     // Create scene in scene-store
     const scene = sceneStore.addScene(sceneData);
-    
+
     // Add to collection
     collection.scenes.push({
       sceneId: scene.id,
       order: collection.scenes.length,
-      customTransition: null
+      customTransition: null,
     });
-    
+
     collection.updatedAt = new Date().toISOString();
     await this.saveCollections();
-    
+
     return scene;
   }
 
@@ -200,30 +204,31 @@ class ProfessionalSceneManager {
     if (!collection) {
       throw new Error('No active collection');
     }
-    
-    const sceneEntry = collection.scenes.find(s => s.sceneId === sceneId);
+
+    const sceneEntry = collection.scenes.find((s) => s.sceneId === sceneId);
     if (!sceneEntry) {
       throw new Error('Scene not found in collection');
     }
-    
+
     // Get transition (use custom if available, otherwise default)
-    const transitionConfig = transition || sceneEntry.customTransition || collection.transitions.default;
-    
+    const transitionConfig =
+      transition || sceneEntry.customTransition || collection.transitions.default;
+
     // Store for history
     this.addToHistory({
       type: 'scene-switch',
       from: this.activeScene,
       to: sceneId,
       transition: transitionConfig,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
-    
+
     this.activeScene = sceneId;
-    
+
     return {
       sceneId,
       transition: transitionConfig,
-      success: true
+      success: true,
     };
   }
 
@@ -235,19 +240,19 @@ class ProfessionalSceneManager {
     if (!collection) {
       throw new Error('Collection not found');
     }
-    
+
     if (sceneId === 'default') {
       collection.transitions.default = transitionConfig;
     } else {
-      const sceneEntry = collection.scenes.find(s => s.sceneId === sceneId);
+      const sceneEntry = collection.scenes.find((s) => s.sceneId === sceneId);
       if (sceneEntry) {
         sceneEntry.customTransition = transitionConfig;
       }
     }
-    
+
     collection.updatedAt = new Date().toISOString();
     await this.saveCollections();
-    
+
     return { success: true };
   }
 
@@ -258,12 +263,12 @@ class ProfessionalSceneManager {
     if (this.outputConfig[outputType]) {
       this.outputConfig[outputType] = {
         ...this.outputConfig[outputType],
-        ...config
+        ...config,
       };
       await this.saveOutputConfig();
       return { success: true };
     }
-    
+
     throw new Error('Invalid output type');
   }
 
@@ -277,7 +282,7 @@ class ProfessionalSceneManager {
       this.layerVisibility.set(layerName, visible);
       return { success: true };
     }
-    
+
     throw new Error('Invalid layer name');
   }
 
@@ -289,32 +294,32 @@ class ProfessionalSceneManager {
     if (!originalScene) {
       throw new Error('Scene not found');
     }
-    
+
     // Create duplicate with modified name
     const duplicateData = {
       ...originalScene,
       name: originalScene.name + ' (Copy)',
-      triggerPhrases: [...originalScene.triggerPhrases] // Copy trigger phrases
+      triggerPhrases: [...originalScene.triggerPhrases], // Copy trigger phrases
     };
-    
+
     // Remove fields that should be regenerated
     delete duplicateData.id;
     delete duplicateData.addedAt;
     delete duplicateData.updatedAt;
     delete duplicateData.isDefault;
-    
+
     const newScene = sceneStore.addScene(duplicateData);
-    
+
     // Add to active collection
     if (this.activeCollection) {
       await this.addSceneToCollection(this.activeCollection, {
         name: newScene.name,
         background: newScene.background,
         elements: newScene.elements,
-        triggerPhrases: newScene.triggerPhrases
+        triggerPhrases: newScene.triggerPhrases,
       });
     }
-    
+
     return newScene;
   }
 
@@ -323,21 +328,21 @@ class ProfessionalSceneManager {
    */
   getAllCollections() {
     const collections = [];
-    for (const [id, collection] of this.sceneCollections) {
-      const scenesWithDetails = collection.scenes.map(sceneEntry => {
+    for (const collection of this.sceneCollections.values()) {
+      const scenesWithDetails = collection.scenes.map((sceneEntry) => {
         const scene = sceneStore.getItem(sceneEntry.sceneId);
         return {
           ...sceneEntry,
-          details: scene
+          details: scene,
         };
       });
-      
+
       collections.push({
         ...collection,
-        scenes: scenesWithDetails
+        scenes: scenesWithDetails,
       });
     }
-    
+
     return collections;
   }
 
@@ -346,21 +351,21 @@ class ProfessionalSceneManager {
    */
   getActiveCollection() {
     if (!this.activeCollection) return null;
-    
+
     const collection = this.sceneCollections.get(this.activeCollection);
     if (!collection) return null;
-    
-    const scenesWithDetails = collection.scenes.map(sceneEntry => {
+
+    const scenesWithDetails = collection.scenes.map((sceneEntry) => {
       const scene = sceneStore.getItem(sceneEntry.sceneId);
       return {
         ...sceneEntry,
-        details: scene
+        details: scene,
       };
     });
-    
+
     return {
       ...collection,
-      scenes: scenesWithDetails
+      scenes: scenesWithDetails,
     };
   }
 
@@ -372,13 +377,13 @@ class ProfessionalSceneManager {
     if (!sourceCollection) {
       throw new Error('Source collection not found');
     }
-    
+
     const targetId = targetCollectionId || this.activeCollection;
     const targetCollection = this.sceneCollections.get(targetId);
     if (!targetCollection) {
       throw new Error('Target collection not found');
     }
-    
+
     // Import each scene
     const importedScenes = [];
     for (const sceneEntry of sourceCollection.scenes) {
@@ -388,12 +393,12 @@ class ProfessionalSceneManager {
           name: originalScene.name,
           background: originalScene.background,
           elements: originalScene.elements,
-          triggerPhrases: originalScene.triggerPhrases
+          triggerPhrases: originalScene.triggerPhrases,
         });
         importedScenes.push(newScene);
       }
     }
-    
+
     return importedScenes;
   }
 
@@ -405,19 +410,19 @@ class ProfessionalSceneManager {
     if (!collection) {
       throw new Error('Collection not found');
     }
-    
+
     // Get full scene data
     const exportData = {
       ...collection,
-      scenes: collection.scenes.map(sceneEntry => {
+      scenes: collection.scenes.map((sceneEntry) => {
         const scene = sceneStore.getItem(sceneEntry.sceneId);
         return {
           ...sceneEntry,
-          fullSceneData: scene
+          fullSceneData: scene,
         };
-      })
+      }),
     };
-    
+
     return exportData;
   }
 
@@ -435,27 +440,27 @@ class ProfessionalSceneManager {
         background: { visible: true, locked: false },
         content: { visible: true, locked: false },
         overlay: { visible: true, locked: false },
-        watermark: { visible: false, locked: true }
+        watermark: { visible: false, locked: true },
       },
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
-    
+
     // Import scenes
     for (const sceneEntry of exportData.scenes) {
       if (sceneEntry.fullSceneData) {
-        const newScene = await this.addSceneToCollection(newCollection.id, {
+        await this.addSceneToCollection(newCollection.id, {
           name: sceneEntry.fullSceneData.name,
           background: sceneEntry.fullSceneData.background,
           elements: sceneEntry.fullSceneData.elements,
-          triggerPhrases: sceneEntry.fullSceneData.triggerPhrases
+          triggerPhrases: sceneEntry.fullSceneData.triggerPhrases,
         });
       }
     }
-    
+
     this.sceneCollections.set(newCollection.id, newCollection);
     await this.saveCollections();
-    
+
     return newCollection;
   }
 
@@ -467,10 +472,10 @@ class ProfessionalSceneManager {
     if (this.historyIndex < this.sceneHistory.length - 1) {
       this.sceneHistory = this.sceneHistory.slice(0, this.historyIndex + 1);
     }
-    
+
     this.sceneHistory.push(action);
     this.historyIndex = this.sceneHistory.length - 1;
-    
+
     // Limit history size
     if (this.sceneHistory.length > 50) {
       this.sceneHistory.shift();
@@ -485,15 +490,15 @@ class ProfessionalSceneManager {
     if (this.historyIndex <= 0) {
       return { success: false, message: 'Nothing to undo' };
     }
-    
+
     const action = this.sceneHistory[this.historyIndex];
     this.historyIndex--;
-    
+
     // Implement undo logic based on action type
     if (action.type === 'scene-switch') {
       return this.switchScene(action.from);
     }
-    
+
     return { success: true, message: 'Undo performed' };
   }
 
@@ -504,15 +509,15 @@ class ProfessionalSceneManager {
     if (this.historyIndex >= this.sceneHistory.length - 1) {
       return { success: false, message: 'Nothing to redo' };
     }
-    
+
     this.historyIndex++;
     const action = this.sceneHistory[this.historyIndex];
-    
+
     // Implement redo logic based on action type
     if (action.type === 'scene-switch') {
       return this.switchScene(action.to, action.transition);
     }
-    
+
     return { success: true, message: 'Redo performed' };
   }
 
@@ -531,7 +536,7 @@ class ProfessionalSceneManager {
     if (!fs.existsSync(this.collectionsPath)) {
       return;
     }
-    
+
     try {
       const data = JSON.parse(fs.readFileSync(this.collectionsPath, 'utf8'));
       this.sceneCollections = new Map(data);
@@ -554,7 +559,7 @@ class ProfessionalSceneManager {
     if (!fs.existsSync(this.configPath)) {
       return;
     }
-    
+
     try {
       const data = JSON.parse(fs.readFileSync(this.configPath, 'utf8'));
       this.outputConfig = { ...this.outputConfig, ...data };
@@ -571,11 +576,14 @@ class ProfessionalSceneManager {
       activeCollection: this.activeCollection,
       activeScene: this.activeScene,
       totalCollections: this.sceneCollections.size,
-      totalScenes: Array.from(this.sceneCollections.values()).reduce((sum, col) => sum + col.scenes.length, 0),
+      totalScenes: Array.from(this.sceneCollections.values()).reduce(
+        (sum, col) => sum + col.scenes.length,
+        0
+      ),
       outputConfig: this.outputConfig,
       layerVisibility: Object.fromEntries(this.layerVisibility),
       historySize: this.sceneHistory.length,
-      historyIndex: this.historyIndex
+      historyIndex: this.historyIndex,
     };
   }
 }

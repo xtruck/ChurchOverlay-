@@ -192,9 +192,11 @@ class AnnouncementLayerControl extends HTMLElement {
 
   setupEventListeners() {
     this.shadowRoot.getElementById('announcementToggle').addEventListener('change', (e) => {
-      window.dispatchEvent(new CustomEvent('announcement-layer-toggled', {
-        detail: { enabled: e.target.checked }
-      }));
+      window.dispatchEvent(
+        new CustomEvent('announcement-layer-toggled', {
+          detail: { enabled: e.target.checked },
+        })
+      );
     });
 
     this.shadowRoot.getElementById('addAnnouncement').addEventListener('click', () => {

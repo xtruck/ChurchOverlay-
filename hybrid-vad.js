@@ -7,7 +7,7 @@
  *  1. Silero VAD (Neural Network) - Primary, most accurate
  *  2. WebRTC VAD - Fallback, lightweight
  *  3. Energy-based detection - Final fallback
- * 
+ *
  *  Target: >95% accuracy with <100ms processing time
  * ============================================================================
  */
@@ -20,23 +20,23 @@ class HybridVAD {
     this.silero = sileroVad;
     this.webrtcVad = null; // Optional WebRTC VAD
     this.energyDetector = new EnergyDetector();
-    
+
     this.adaptiveThreshold = 0.02; // Default threshold
     this.noiseFloor = 0.0;
     this.speechHistory = [];
     this.maxHistorySize = 100;
-    
+
     this.initialized = false;
     this.availableMethods = {
       silero: false,
       webrtc: false,
-      energy: true
+      energy: true,
     };
-    
+
     this.performanceStats = {
       silero: { calls: 0, successes: 0, failures: 0, avgTime: 0 },
       webrtc: { calls: 0, successes: 0, failures: 0, avgTime: 0 },
-      energy: { calls: 0, successes: 0, failures: 0, avgTime: 0 }
+      energy: { calls: 0, successes: 0, failures: 0, avgTime: 0 },
     };
   }
 
@@ -45,7 +45,7 @@ class HybridVAD {
    */
   async initialize() {
     logger.info('[HybridVAD] Initializing hybrid VAD system');
-    
+
     // Initialize Silero VAD
     try {
       const sileroInit = await this.silero.init();
@@ -58,20 +58,20 @@ class HybridVAD {
     } catch (e) {
       logger.error('[HybridVAD] Silero VAD initialization error:', e.message);
     }
-    
+
     // Try to initialize WebRTC VAD (optional)
     try {
       // WebRTC VAD initialization would go here
       // For now, we'll mark as unavailable
       this.availableMethods.webrtc = false;
-    } catch (e) {
+    } catch (_e) {
       this.availableMethods.webrtc = false;
     }
-    
+
     this.initialized = true;
-    
+
     logger.info('[HybridVAD] Initialization complete', {
-      available: this.availableMethods
+      available: this.availableMethods,
     });
   }
 
@@ -84,28 +84,28 @@ class HybridVAD {
     if (!this.initialized) {
       await this.initialize();
     }
-    
+
     const startTime = Date.now();
-    
+
     // Update noise floor for adaptive threshold
     this.updateNoiseFloor(audioChunk);
-    
+
     // Try Silero VAD first (most accurate)
     if (this.availableMethods.silero) {
       try {
         const result = await this.processWithSilero(audioChunk);
         this.updateStats('silero', Date.now() - startTime, true);
-        
+
         // Update speech history for adaptive threshold
         this.updateSpeechHistory(result);
-        
+
         return result;
       } catch (e) {
         logger.warn('[HybridVAD] Silero VAD failed, falling back:', e.message);
         this.updateStats('silero', Date.now() - startTime, false);
       }
     }
-    
+
     // Fallback to WebRTC VAD
     if (this.availableMethods.webrtc) {
       try {
@@ -118,12 +118,12 @@ class HybridVAD {
         this.updateStats('webrtc', Date.now() - startTime, false);
       }
     }
-    
+
     // Final fallback to energy-based detection
     const result = this.processWithEnergy(audioChunk);
     this.updateStats('energy', Date.now() - startTime, true);
     this.updateSpeechHistory(result);
-    
+
     return result;
   }
 
@@ -134,11 +134,11 @@ class HybridVAD {
    */
   async processWithSilero(audioChunk) {
     const streamState = this.silero.createStreamState();
-    
+
     // Process in windows of 512 samples
     const results = [];
     const windowSize = this.silero.WINDOW_SAMPLES;
-    
+
     for (let i = 0; i < audioChunk.length; i += windowSize) {
       const window = audioChunk.slice(i, i + windowSize);
       if (window.length === windowSize) {
@@ -146,20 +146,20 @@ class HybridVAD {
         results.push(probability);
       }
     }
-    
+
     // Average probability across all windows
     const avgProbability = results.reduce((sum, p) => sum + p, 0) / results.length;
-    
+
     // Apply adaptive threshold
     const adaptiveThreshold = this.adaptiveThreshold + this.noiseFloor;
     const isSpeech = avgProbability > adaptiveThreshold;
-    
+
     return {
       isSpeech,
       confidence: avgProbability,
       method: 'silero',
       threshold: adaptiveThreshold,
-      noiseFloor: this.noiseFloor
+      noiseFloor: this.noiseFloor,
     };
   }
 
@@ -183,14 +183,14 @@ class HybridVAD {
     const energy = this.energyDetector.calculateEnergy(audioChunk);
     const adaptiveThreshold = this.adaptiveThreshold + this.noiseFloor;
     const isSpeech = energy > adaptiveThreshold;
-    
+
     return {
       isSpeech,
       confidence: Math.min(energy / adaptiveThreshold, 1.0),
       method: 'energy',
       threshold: adaptiveThreshold,
       noiseFloor: this.noiseFloor,
-      energy: energy
+      energy: energy,
     };
   }
 
@@ -200,11 +200,11 @@ class HybridVAD {
    */
   updateNoiseFloor(audioChunk) {
     const energy = this.energyDetector.calculateEnergy(audioChunk);
-    
+
     // Use moving average for noise floor
     const alpha = 0.95; // Smoothing factor
     this.noiseFloor = alpha * this.noiseFloor + (1 - alpha) * energy;
-    
+
     // Clamp noise floor to reasonable range
     this.noiseFloor = Math.max(0.001, Math.min(this.noiseFloor, 0.05));
   }
@@ -217,14 +217,14 @@ class HybridVAD {
     this.speechHistory.push({
       isSpeech: result.isSpeech,
       confidence: result.confidence,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
-    
+
     // Keep only recent history
     if (this.speechHistory.length > this.maxHistorySize) {
       this.speechHistory = this.speechHistory.slice(-this.maxHistorySize);
     }
-    
+
     // Adjust adaptive threshold based on recent speech patterns
     this.adjustAdaptiveThreshold();
   }
@@ -236,12 +236,12 @@ class HybridVAD {
     if (this.speechHistory.length < 10) {
       return;
     }
-    
+
     // Calculate recent speech ratio
     const recentHistory = this.speechHistory.slice(-20);
-    const speechCount = recentHistory.filter(h => h.isSpeech).length;
+    const speechCount = recentHistory.filter((h) => h.isSpeech).length;
     const speechRatio = speechCount / recentHistory.length;
-    
+
     // Adjust threshold to maintain optimal speech detection
     // Target: ~30-40% speech ratio in normal conversation
     if (speechRatio > 0.5) {
@@ -262,7 +262,7 @@ class HybridVAD {
   updateStats(method, time, success) {
     const stats = this.performanceStats[method];
     stats.calls++;
-    
+
     if (success) {
       stats.successes++;
       // Update average time
@@ -326,7 +326,7 @@ class HybridVAD {
       currentThreshold: this.adaptiveThreshold,
       noiseFloor: this.noiseFloor,
       speechHistorySize: this.speechHistory.length,
-      performance: this.getPerformanceStats()
+      performance: this.getPerformanceStats(),
     };
   }
 

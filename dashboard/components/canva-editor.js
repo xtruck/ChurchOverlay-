@@ -514,12 +514,18 @@ class CanvaEditor extends HTMLElement {
 
   setupEventListeners() {
     // Add element buttons
-    this.shadowRoot.getElementById('addTextBtn').addEventListener('click', () => this.addTextElement());
-    this.shadowRoot.getElementById('addImageBtn').addEventListener('click', () => this.addImageElement());
-    this.shadowRoot.getElementById('addShapeBtn').addEventListener('click', () => this.addShapeElement());
+    this.shadowRoot
+      .getElementById('addTextBtn')
+      .addEventListener('click', () => this.addTextElement());
+    this.shadowRoot
+      .getElementById('addImageBtn')
+      .addEventListener('click', () => this.addImageElement());
+    this.shadowRoot
+      .getElementById('addShapeBtn')
+      .addEventListener('click', () => this.addShapeElement());
 
     // Text formatting
-    this.shadowRoot.querySelectorAll('#textControls .toolbar-button').forEach(btn => {
+    this.shadowRoot.querySelectorAll('#textControls .toolbar-button').forEach((btn) => {
       btn.addEventListener('click', () => this.applyTextFormat(btn.dataset.format));
     });
 
@@ -532,7 +538,7 @@ class CanvaEditor extends HTMLElement {
     });
 
     // Image filters
-    this.shadowRoot.querySelectorAll('#imageControls .toolbar-button').forEach(btn => {
+    this.shadowRoot.querySelectorAll('#imageControls .toolbar-button').forEach((btn) => {
       btn.addEventListener('click', () => this.applyImageFilter(btn.dataset.filter));
     });
 
@@ -570,7 +576,7 @@ class CanvaEditor extends HTMLElement {
       backgroundColor: 'transparent',
       opacity: 1,
       rotation: 0,
-      zIndex: this.elements.length + 1
+      zIndex: this.elements.length + 1,
     };
 
     this.elements.push(element);
@@ -603,9 +609,9 @@ class CanvaEditor extends HTMLElement {
               brightness: 100,
               contrast: 100,
               saturation: 100,
-              blur: 0
+              blur: 0,
             },
-            zIndex: this.elements.length + 1
+            zIndex: this.elements.length + 1,
           };
 
           this.elements.push(element);
@@ -634,7 +640,7 @@ class CanvaEditor extends HTMLElement {
       opacity: 1,
       rotation: 0,
       borderRadius: 0,
-      zIndex: this.elements.length + 1
+      zIndex: this.elements.length + 1,
     };
 
     this.elements.push(element);
@@ -645,7 +651,7 @@ class CanvaEditor extends HTMLElement {
 
   renderElements() {
     const elementsList = this.shadowRoot.getElementById('elementsList');
-    
+
     if (this.elements.length === 0) {
       elementsList.innerHTML = `
         <div style="text-align: center; padding: 20px; color: var(--text-dim, #6c7292);">
@@ -659,7 +665,9 @@ class CanvaEditor extends HTMLElement {
       return;
     }
 
-    elementsList.innerHTML = this.elements.map((element, index) => `
+    elementsList.innerHTML = this.elements
+      .map(
+        (element, index) => `
       <div class="element-item ${this.selectedElement === element.id ? 'selected' : ''}" data-element-id="${element.id}">
         <div class="element-icon">
           ${this.getElementIcon(element.type)}
@@ -669,13 +677,15 @@ class CanvaEditor extends HTMLElement {
           <div class="element-type">${element.type}</div>
         </div>
       </div>
-    `).join('');
+    `
+      )
+      .join('');
 
     // Render canvas
     this.renderCanvas();
 
     // Setup element selection
-    elementsList.querySelectorAll('.element-item').forEach(item => {
+    elementsList.querySelectorAll('.element-item').forEach((item) => {
       item.addEventListener('click', () => this.selectElement(item.dataset.elementId));
     });
   }
@@ -683,8 +693,10 @@ class CanvaEditor extends HTMLElement {
   getElementIcon(type) {
     const icons = {
       text: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>',
-      image: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
-      shape: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>'
+      image:
+        '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
+      shape:
+        '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>',
     };
     return icons[type] || icons.text;
   }
@@ -692,9 +704,10 @@ class CanvaEditor extends HTMLElement {
   renderCanvas() {
     if (!this.canvas) return;
 
-    this.canvas.innerHTML = this.elements.map(element => {
-      const isSelected = this.selectedElement === element.id;
-      const baseStyle = `
+    this.canvas.innerHTML = this.elements
+      .map((element) => {
+        const isSelected = this.selectedElement === element.id;
+        const baseStyle = `
         position: absolute;
         left: ${element.x}px;
         top: ${element.y}px;
@@ -705,8 +718,8 @@ class CanvaEditor extends HTMLElement {
         ${isSelected ? 'outline: 2px solid var(--primary, #7c8cf5); outline-offset: 2px;' : ''}
       `;
 
-      if (element.type === 'text') {
-        return `
+        if (element.type === 'text') {
+          return `
           <div style="${baseStyle}
             font-family: ${element.fontFamily};
             font-size: ${element.fontSize}px;
@@ -722,14 +735,14 @@ class CanvaEditor extends HTMLElement {
             ${element.content}
           </div>
         `;
-      } else if (element.type === 'image') {
-        const filterString = `
+        } else if (element.type === 'image') {
+          const filterString = `
           brightness(${element.filters.brightness}%)
           contrast(${element.filters.contrast}%)
           saturate(${element.filters.saturation}%)
           blur(${element.filters.blur}px)
         `;
-        return `
+          return `
           <img src="${element.src}" style="${baseStyle}
             width: ${element.width}px;
             height: ${element.height}px;
@@ -737,8 +750,8 @@ class CanvaEditor extends HTMLElement {
             filter: ${filterString};
           " data-element-id="${element.id}" draggable="false"/>
         `;
-      } else if (element.type === 'shape') {
-        return `
+        } else if (element.type === 'shape') {
+          return `
           <div style="${baseStyle}
             width: ${element.width}px;
             height: ${element.height}px;
@@ -747,8 +760,9 @@ class CanvaEditor extends HTMLElement {
             border-radius: ${element.borderRadius}px;
           " data-element-id="${element.id}"></div>
         `;
-      }
-    }).join('');
+        }
+      })
+      .join('');
   }
 
   selectElement(elementId) {
@@ -760,7 +774,7 @@ class CanvaEditor extends HTMLElement {
 
   updatePropertiesPanel() {
     const propertiesContent = this.shadowRoot.getElementById('propertiesContent');
-    const element = this.elements.find(e => e.id === this.selectedElement);
+    const element = this.elements.find((e) => e.id === this.selectedElement);
 
     if (!element) {
       propertiesContent.innerHTML = `
@@ -877,36 +891,38 @@ class CanvaEditor extends HTMLElement {
     propertiesContent.innerHTML = propertiesHTML;
 
     // Setup property change listeners
-    propertiesContent.querySelectorAll('.property-input, .property-slider, .color-picker').forEach(input => {
-      input.addEventListener('input', (e) => {
-        const property = e.target.dataset.property;
-        let value = e.target.value;
+    propertiesContent
+      .querySelectorAll('.property-input, .property-slider, .color-picker')
+      .forEach((input) => {
+        input.addEventListener('input', (e) => {
+          const property = e.target.dataset.property;
+          let value = e.target.value;
 
-        // Convert numeric values
-        if (e.target.type === 'number' || e.target.type === 'range') {
-          value = parseFloat(value);
-          if (property === 'opacity') {
-            value = value / 100;
+          // Convert numeric values
+          if (e.target.type === 'number' || e.target.type === 'range') {
+            value = parseFloat(value);
+            if (property === 'opacity') {
+              value = value / 100;
+            }
           }
-        }
 
-        this.updateElementProperty(property, value);
+          this.updateElementProperty(property, value);
+        });
       });
-    });
   }
 
   updateToolbarControls() {
-    const element = this.elements.find(e => e.id === this.selectedElement);
-    
+    const element = this.elements.find((e) => e.id === this.selectedElement);
+
     // Show/hide relevant controls
-    this.shadowRoot.getElementById('textControls').style.display = 
+    this.shadowRoot.getElementById('textControls').style.display =
       element && element.type === 'text' ? 'flex' : 'none';
-    this.shadowRoot.getElementById('imageControls').style.display = 
+    this.shadowRoot.getElementById('imageControls').style.display =
       element && element.type === 'image' ? 'flex' : 'none';
   }
 
   updateElementProperty(property, value) {
-    const element = this.elements.find(e => e.id === this.selectedElement);
+    const element = this.elements.find((e) => e.id === this.selectedElement);
     if (!element) return;
 
     const oldValue = element[property];
@@ -917,7 +933,7 @@ class CanvaEditor extends HTMLElement {
   }
 
   applyTextFormat(format) {
-    const element = this.elements.find(e => e.id === this.selectedElement);
+    const element = this.elements.find((e) => e.id === this.selectedElement);
     if (!element || element.type !== 'text') return;
 
     switch (format) {
@@ -937,7 +953,7 @@ class CanvaEditor extends HTMLElement {
   }
 
   applyImageFilter(filter) {
-    const element = this.elements.find(e => e.id === this.selectedElement);
+    const element = this.elements.find((e) => e.id === this.selectedElement);
     if (!element || element.type !== 'image') return;
 
     // Cycle through filter values
@@ -1017,12 +1033,12 @@ class CanvaEditor extends HTMLElement {
     // Implement undo/redo logic based on action type
     if (action.action === 'add') {
       if (isUndo) {
-        this.elements = this.elements.filter(e => e.id !== action.data.id);
+        this.elements = this.elements.filter((e) => e.id !== action.data.id);
       } else {
         this.elements.push(action.data);
       }
     } else if (action.action === 'modify') {
-      const element = this.elements.find(e => e.id === action.data.elementId);
+      const element = this.elements.find((e) => e.id === action.data.elementId);
       if (element) {
         if (isUndo) {
           element[action.data.property] = action.data.oldValue;

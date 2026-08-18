@@ -35,17 +35,17 @@ class AdvancedMediaManager {
     this.tagsPath = path.join(userDataDir, 'media-tags.json');
     this.versionsPath = path.join(userDataDir, 'media-versions.json');
     this.metadataPath = path.join(userDataDir, 'media-metadata.json');
-    
+
     mediaLibrary.setUserDataDir(userDataDir);
-    
+
     // Load existing data
     await this.loadTags();
     await this.loadVersions();
     await this.loadMetadata();
-    
+
     // Build search index
     this.buildSearchIndex();
-    
+
     console.log('[AdvancedMediaManager] Initialized with', this.mediaTags.size, 'tagged items');
   }
 
@@ -56,13 +56,24 @@ class AdvancedMediaManager {
     const uploadId = crypto.randomUUID();
     const fileName = path.basename(sourcePath);
     const fileExt = path.extname(fileName).toLowerCase();
-    
+
     // Validate file type
-    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4', '.webm', '.mov', '.pdf', '.svg'];
+    const allowedExtensions = [
+      '.jpg',
+      '.jpeg',
+      '.png',
+      '.gif',
+      '.webp',
+      '.mp4',
+      '.webm',
+      '.mov',
+      '.pdf',
+      '.svg',
+    ];
     if (!allowedExtensions.includes(fileExt)) {
       throw new Error('Invalid file type');
     }
-    
+
     // Create upload record
     const uploadRecord = {
       id: uploadId,
@@ -77,66 +88,65 @@ class AdvancedMediaManager {
         label: options.label || fileName,
         category: options.category || this.detectCategory(fileName),
         autoTag: options.autoTag !== false,
-        generateThumbnail: options.generateThumbnail !== false
-      }
+        generateThumbnail: options.generateThumbnail !== false,
+      },
     };
-    
+
     this.uploadQueue.set(uploadId, uploadRecord);
-    
+
     try {
       // Simulate upload progress (in real implementation, this would be actual file copying)
       await this.simulateUploadProgress(uploadId);
-      
+
       // Copy file to media directory
       const mediaDir = path.join(this.userDataDir, 'media');
       fs.mkdirSync(mediaDir, { recursive: true });
-      
+
       const destFileName = `${uploadId}${fileExt}`;
       const destPath = path.join(mediaDir, destFileName);
-      
+
       fs.copyFileSync(sourcePath, destPath);
-      
+
       // Add to media library
       const mediaItem = mediaLibrary.addItem({
         sourcePath: destPath,
         label: uploadRecord.options.label,
-        filename: destFileName
+        filename: destFileName,
       });
-      
+
       // Create initial version
       this.createVersion(mediaItem.id, {
         path: destPath,
         action: 'upload',
         timestamp: Date.now(),
-        description: 'Initial upload'
+        description: 'Initial upload',
       });
-      
+
       // Auto-tag if enabled
       if (uploadRecord.options.autoTag) {
         await this.autoTagMedia(mediaItem.id, destPath);
       }
-      
+
       // Generate thumbnail if enabled
       if (uploadRecord.options.generateThumbnail) {
         await this.generateThumbnail(mediaItem.id, destPath);
       }
-      
+
       // Update upload record
       uploadRecord.status = 'completed';
       uploadRecord.progress = 100;
       uploadRecord.mediaItemId = mediaItem.id;
       uploadRecord.endTime = Date.now();
-      
+
       // Update search index
       this.indexMediaItem(mediaItem);
-      
+
       return {
         success: true,
         uploadId,
         mediaItem,
-        duration: uploadRecord.endTime - uploadRecord.startTime
+        duration: uploadRecord.endTime - uploadRecord.startTime,
       };
-      
     } catch (error) {
       uploadRecord.status = 'failed';
       uploadRecord.error = error.message;
@@ -150,9 +160,9 @@ class AdvancedMediaManager {
   async simulateUploadProgress(uploadId) {
     const uploadRecord = this.uploadQueue.get(uploadId);
     const totalSteps = 10;
-    
+
     for (let i = 1; i <= totalSteps; i++) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
       uploadRecord.progress = (i / totalSteps) * 100;
       this.uploadQueue.set(uploadId, uploadRecord);
     }
@@ -163,8 +173,12 @@ class AdvancedMediaManager {
    */
   detectCategory(fileName) {
     const lowerName = fileName.toLowerCase();
-    
-    if (lowerName.includes('bg') || lowerName.includes('background') || lowerName.includes('back')) {
+
+    if (
+      lowerName.includes('bg') ||
+      lowerName.includes('background') ||
+      lowerName.includes('back')
+    ) {
       return 'background';
     }
     if (lowerName.includes('logo') || lowerName.includes('brand') || lowerName.includes('icon')) {
@@ -176,10 +190,14 @@ class AdvancedMediaManager {
     if (['.mp4', '.webm', '.mov'].includes(path.extname(fileName))) {
       return 'video';
     }
-    if (lowerName.includes('graphic') || lowerName.includes('design') || lowerName.includes('art')) {
+    if (
+      lowerName.includes('graphic') ||
+      lowerName.includes('design') ||
+      lowerName.includes('art')
+    ) {
       return 'graphic';
     }
-    
+
     return 'photo'; // Default
   }
 
@@ -188,10 +206,10 @@ class AdvancedMediaManager {
    */
   async autoTagMedia(mediaId, filePath) {
     const tags = new Set();
-    
+
     // Simulate AI analysis based on file properties
     const fileName = path.basename(filePath).toLowerCase();
-    
+
     // Content-based tags
     if (fileName.includes('church') || fileName.includes('worship')) {
       tags.add('worship');
@@ -210,7 +228,7 @@ class AdvancedMediaManager {
     if (fileName.includes('nature') || fileName.includes('outdoor')) {
       tags.add('nature');
     }
-    
+
     // Color-based tags (simulated)
     if (fileName.includes('dark') || fileName.includes('black')) {
       tags.add('dark');
@@ -221,7 +239,7 @@ class AdvancedMediaManager {
     if (fileName.includes('blue') || fileName.includes('red') || fileName.includes('green')) {
       tags.add('colorful');
     }
-    
+
     // Style-based tags
     if (fileName.includes('modern') || fileName.includes('clean')) {
       tags.add('modern');
@@ -229,11 +247,11 @@ class AdvancedMediaManager {
     if (fileName.includes('vintage') || fileName.includes('retro')) {
       tags.add('vintage');
     }
-    
+
     // Store tags
     this.mediaTags.set(mediaId, Array.from(tags));
     await this.saveTags();
-    
+
     return Array.from(tags);
   }
 
@@ -243,20 +261,20 @@ class AdvancedMediaManager {
   async generateThumbnail(mediaId, filePath) {
     // In real implementation, use sharp or ffmpeg to generate thumbnails
     const thumbnailPath = path.join(this.userDataDir, 'thumbnails', `${mediaId}.jpg`);
-    
+
     // Ensure thumbnail directory exists
     fs.mkdirSync(path.dirname(thumbnailPath), { recursive: true });
-    
+
     // For now, just copy the file as thumbnail (in real implementation, actually generate thumbnail)
     try {
       fs.copyFileSync(filePath, thumbnailPath);
-      
+
       // Store thumbnail path in metadata
       const metadata = this.mediaMetadata.get(mediaId) || {};
       metadata.thumbnailPath = thumbnailPath;
       this.mediaMetadata.set(mediaId, metadata);
       await this.saveMetadata();
-      
+
       return thumbnailPath;
     } catch (e) {
       console.warn('[AdvancedMediaManager] Failed to generate thumbnail:', e.message);
@@ -269,16 +287,16 @@ class AdvancedMediaManager {
    */
   createVersion(mediaId, versionData) {
     const versions = this.mediaVersions.get(mediaId) || [];
-    
+
     versions.push({
       id: crypto.randomUUID(),
       ...versionData,
-      versionNumber: versions.length + 1
+      versionNumber: versions.length + 1,
     });
-    
+
     this.mediaVersions.set(mediaId, versions);
     this.saveVersions();
-    
+
     return versions[versions.length - 1];
   }
 
@@ -297,32 +315,32 @@ class AdvancedMediaManager {
     if (!versions) {
       throw new Error('No versions found for media item');
     }
-    
-    const version = versions.find(v => v.id === versionId);
+
+    const version = versions.find((v) => v.id === versionId);
     if (!version) {
       throw new Error('Version not found');
     }
-    
+
     // Restore the file
     const mediaItem = mediaLibrary.getItem(mediaId);
     if (!mediaItem) {
       throw new Error('Media item not found');
     }
-    
+
     const sourcePath = version.path;
     const destPath = path.join(this.userDataDir, 'media', mediaItem.filename);
-    
+
     fs.copyFileSync(sourcePath, destPath);
-    
+
     // Create new version for the restore action
     this.createVersion(mediaId, {
       path: destPath,
       action: 'restore',
       fromVersion: versionId,
       timestamp: Date.now(),
-      description: `Restored from version ${version.versionNumber}`
+      description: `Restored from version ${version.versionNumber}`,
     });
-    
+
     return { success: true, restoredVersion: version };
   }
 
@@ -334,23 +352,23 @@ class AdvancedMediaManager {
     if (!mediaItem) {
       throw new Error('Media item not found');
     }
-    
+
     // Apply edits (in real implementation, use sharp for images, ffmpeg for video)
     const editRecord = {
       id: crypto.randomUUID(),
       mediaId,
       edits,
       timestamp: Date.now(),
-      description: this.generateEditDescription(edits)
+      description: this.generateEditDescription(edits),
     };
-    
+
     // Store edit in metadata
     const metadata = this.mediaMetadata.get(mediaId) || {};
     metadata.edits = metadata.edits || [];
     metadata.edits.push(editRecord);
     this.mediaMetadata.set(mediaId, metadata);
     await this.saveMetadata();
-    
+
     // Create new version
     const mediaPath = path.join(this.userDataDir, 'media', mediaItem.filename);
     this.createVersion(mediaId, {
@@ -358,9 +376,9 @@ class AdvancedMediaManager {
       action: 'edit',
       edits: edits,
       timestamp: Date.now(),
-      description: editRecord.description
+      description: editRecord.description,
     });
-    
+
     return { success: true, editRecord };
   }
 
@@ -369,7 +387,7 @@ class AdvancedMediaManager {
    */
   generateEditDescription(edits) {
     const descriptions = [];
-    
+
     if (edits.crop) {
       descriptions.push(`cropped to ${edits.crop.width}x${edits.crop.height}`);
     }
@@ -387,7 +405,7 @@ class AdvancedMediaManager {
       if (edits.adjust.contrast) descriptions.push(`contrast ${edits.adjust.contrast}`);
       if (edits.adjust.saturation) descriptions.push(`saturation ${edits.adjust.saturation}`);
     }
-    
+
     return descriptions.join(', ') || 'minor adjustments';
   }
 
@@ -397,25 +415,25 @@ class AdvancedMediaManager {
   searchMedia(query, filters = {}) {
     const results = [];
     const normalizedQuery = query.toLowerCase();
-    
+
     const allMedia = mediaLibrary.listItems();
-    
+
     for (const item of allMedia) {
       let matches = true;
-      
+
       // Text search
       if (query) {
         const searchText = `${item.label} ${item.filename}`.toLowerCase();
         if (!searchText.includes(normalizedQuery)) {
           // Check tags
           const tags = this.mediaTags.get(item.id) || [];
-          const tagMatch = tags.some(tag => tag.toLowerCase().includes(normalizedQuery));
+          const tagMatch = tags.some((tag) => tag.toLowerCase().includes(normalizedQuery));
           if (!tagMatch) {
             matches = false;
           }
         }
       }
-      
+
       // Filter by category
       if (filters.category && matches) {
         const metadata = this.mediaMetadata.get(item.id) || {};
@@ -423,16 +441,16 @@ class AdvancedMediaManager {
           matches = false;
         }
       }
-      
+
       // Filter by tags
       if (filters.tags && filters.tags.length > 0 && matches) {
         const itemTags = this.mediaTags.get(item.id) || [];
-        const hasAllTags = filters.tags.every(tag => itemTags.includes(tag));
+        const hasAllTags = filters.tags.every((tag) => itemTags.includes(tag));
         if (!hasAllTags) {
           matches = false;
         }
       }
-      
+
       // Filter by date range
       if (filters.dateFrom && matches) {
         if (new Date(item.addedAt) < new Date(filters.dateFrom)) {
@@ -444,17 +462,17 @@ class AdvancedMediaManager {
           matches = false;
         }
       }
-      
+
       if (matches) {
         results.push({
           ...item,
           tags: this.mediaTags.get(item.id) || [],
           metadata: this.mediaMetadata.get(item.id) || {},
-          versions: this.getVersions(item.id)
+          versions: this.getVersions(item.id),
         });
       }
     }
-    
+
     return results;
   }
 
@@ -478,10 +496,10 @@ class AdvancedMediaManager {
   async addTags(mediaId, tags) {
     const existingTags = this.mediaTags.get(mediaId) || [];
     const newTags = [...new Set([...existingTags, ...tags])];
-    
+
     this.mediaTags.set(mediaId, newTags);
     await this.saveTags();
-    
+
     return newTags;
   }
 
@@ -490,11 +508,11 @@ class AdvancedMediaManager {
    */
   async removeTags(mediaId, tagsToRemove) {
     const existingTags = this.mediaTags.get(mediaId) || [];
-    const newTags = existingTags.filter(tag => !tagsToRemove.includes(tag));
-    
+    const newTags = existingTags.filter((tag) => !tagsToRemove.includes(tag));
+
     this.mediaTags.set(mediaId, newTags);
     await this.saveTags();
-    
+
     return newTags;
   }
 
@@ -504,10 +522,10 @@ class AdvancedMediaManager {
   async updateMetadata(mediaId, metadata) {
     const existing = this.mediaMetadata.get(mediaId) || {};
     const updated = { ...existing, ...metadata };
-    
+
     this.mediaMetadata.set(mediaId, updated);
     await this.saveMetadata();
-    
+
     return updated;
   }
 
@@ -516,21 +534,21 @@ class AdvancedMediaManager {
    */
   buildSearchIndex() {
     this.searchIndex.clear();
-    
+
     const allMedia = mediaLibrary.listItems();
-    
+
     for (const item of allMedia) {
       const tags = this.mediaTags.get(item.id) || [];
       const metadata = this.mediaMetadata.get(item.id) || {};
-      
+
       const indexEntry = {
         id: item.id,
         label: item.label.toLowerCase(),
         filename: item.filename.toLowerCase(),
-        tags: tags.map(t => t.toLowerCase()),
-        category: (metadata.category || '').toLowerCase()
+        tags: tags.map((t) => t.toLowerCase()),
+        category: (metadata.category || '').toLowerCase(),
       };
-      
+
       this.searchIndex.set(item.id, indexEntry);
     }
   }
@@ -541,15 +559,15 @@ class AdvancedMediaManager {
   indexMediaItem(mediaItem) {
     const tags = this.mediaTags.get(mediaItem.id) || [];
     const metadata = this.mediaMetadata.get(mediaItem.id) || {};
-    
+
     const indexEntry = {
       id: mediaItem.id,
       label: mediaItem.label.toLowerCase(),
       filename: mediaItem.filename.toLowerCase(),
-      tags: tags.map(t => t.toLowerCase()),
-      category: (metadata.category || '').toLowerCase()
+      tags: tags.map((t) => t.toLowerCase()),
+      category: (metadata.category || '').toLowerCase(),
     };
-    
+
     this.searchIndex.set(mediaItem.id, indexEntry);
   }
 
@@ -564,7 +582,7 @@ class AdvancedMediaManager {
    * Get all active uploads
    */
   getActiveUploads() {
-    return Array.from(this.uploadQueue.values()).filter(u => u.status !== 'completed');
+    return Array.from(this.uploadQueue.values()).filter((u) => u.status !== 'completed');
   }
 
   /**
@@ -582,7 +600,7 @@ class AdvancedMediaManager {
     if (!fs.existsSync(this.tagsPath)) {
       return;
     }
-    
+
     try {
       const data = JSON.parse(fs.readFileSync(this.tagsPath, 'utf8'));
       this.mediaTags = new Map(data);
@@ -606,7 +624,7 @@ class AdvancedMediaManager {
     if (!fs.existsSync(this.versionsPath)) {
       return;
     }
-    
+
     try {
       const data = JSON.parse(fs.readFileSync(this.versionsPath, 'utf8'));
       this.mediaVersions = new Map(data);
@@ -630,7 +648,7 @@ class AdvancedMediaManager {
     if (!fs.existsSync(this.metadataPath)) {
       return;
     }
-    
+
     try {
       const data = JSON.parse(fs.readFileSync(this.metadataPath, 'utf8'));
       this.mediaMetadata = new Map(data);
@@ -646,10 +664,13 @@ class AdvancedMediaManager {
     return {
       totalMedia: mediaLibrary.listItems().length,
       taggedMedia: this.mediaTags.size,
-      totalVersions: Array.from(this.mediaVersions.values()).reduce((sum, versions) => sum + versions.length, 0),
+      totalVersions: Array.from(this.mediaVersions.values()).reduce(
+        (sum, versions) => sum + versions.length,
+        0
+      ),
       activeUploads: this.getActiveUploads().length,
       categories: Array.from(this.categories),
-      searchIndexSize: this.searchIndex.size
+      searchIndexSize: this.searchIndex.size,
     };
   }
 }

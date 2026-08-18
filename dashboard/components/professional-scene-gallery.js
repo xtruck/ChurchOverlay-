@@ -449,12 +449,14 @@ class ProfessionalSceneGallery extends HTMLElement {
     });
 
     // Control buttons
-    this.shadowRoot.getElementById('addSceneBtn').addEventListener('click', () => this.addNewScene());
+    this.shadowRoot
+      .getElementById('addSceneBtn')
+      .addEventListener('click', () => this.addNewScene());
     this.shadowRoot.getElementById('undoBtn').addEventListener('click', () => this.undo());
     this.shadowRoot.getElementById('redoBtn').addEventListener('click', () => this.redo());
 
     // Layer toggles
-    this.shadowRoot.querySelectorAll('.layer-toggle').forEach(toggle => {
+    this.shadowRoot.querySelectorAll('.layer-toggle').forEach((toggle) => {
       toggle.addEventListener('change', (e) => {
         const layerName = e.target.closest('.layer-toggle').textContent.trim();
         this.toggleLayer(layerName, e.target.checked);
@@ -480,24 +482,28 @@ class ProfessionalSceneGallery extends HTMLElement {
 
   renderCollections() {
     const collectionsBar = this.shadowRoot.getElementById('collectionsBar');
-    
+
     // Mock collections for now
     const collections = [
       { id: 'main', name: 'Main Service', active: true },
       { id: 'conference', name: 'Conference', active: false },
-      { id: 'custom', name: 'Custom', active: false }
+      { id: 'custom', name: 'Custom', active: false },
     ];
-    
-    collectionsBar.innerHTML = collections.map(col => `
+
+    collectionsBar.innerHTML = collections
+      .map(
+        (col) => `
       <button class="collection-tab ${col.active ? 'active' : ''}" data-collection-id="${col.id}">
         ${col.name}
       </button>
-    `).join('');
+    `
+      )
+      .join('');
   }
 
   renderScenes() {
     const scenesGrid = this.shadowRoot.getElementById('scenesGrid');
-    
+
     if (this.scenes.length === 0) {
       scenesGrid.innerHTML = `
         <div class="empty-state">
@@ -512,8 +518,10 @@ class ProfessionalSceneGallery extends HTMLElement {
       `;
       return;
     }
-    
-    scenesGrid.innerHTML = this.scenes.map(scene => `
+
+    scenesGrid.innerHTML = this.scenes
+      .map(
+        (scene) => `
       <div class="scene-card ${scene.active ? 'active' : ''} ${this.selectedScenes.has(scene.id) ? 'selected' : ''}" 
            data-scene-id="${scene.id}" draggable="true">
         <div class="scene-preview">
@@ -547,10 +555,12 @@ class ProfessionalSceneGallery extends HTMLElement {
           </div>
         </div>
       </div>
-    `).join('');
-    
+    `
+      )
+      .join('');
+
     // Render scene previews
-    this.scenes.forEach(scene => {
+    this.scenes.forEach((scene) => {
       this.renderScenePreview(scene);
     });
   }
@@ -558,15 +568,15 @@ class ProfessionalSceneGallery extends HTMLElement {
   renderScenePreview(scene) {
     const canvas = this.shadowRoot.getElementById(`preview-${scene.id}`);
     if (!canvas) return;
-    
+
     const ctx = canvas.getContext('2d');
     canvas.width = 320;
     canvas.height = 180;
-    
+
     // Render scene preview (simplified)
     ctx.fillStyle = '#0b0f1a';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
+
     // Draw scene name
     ctx.fillStyle = '#ffffff';
     ctx.font = '14px Plus Jakarta Sans';
@@ -577,10 +587,10 @@ class ProfessionalSceneGallery extends HTMLElement {
   handleSceneClick(e) {
     const sceneCard = e.target.closest('.scene-card');
     if (!sceneCard) return;
-    
+
     const sceneId = sceneCard.dataset.sceneId;
     const action = e.target.closest('.scene-action')?.dataset.action;
-    
+
     if (action) {
       e.stopPropagation();
       this.handleSceneAction(sceneId, action);
@@ -592,7 +602,7 @@ class ProfessionalSceneGallery extends HTMLElement {
   handleSceneDoubleClick(e) {
     const sceneCard = e.target.closest('.scene-card');
     if (!sceneCard) return;
-    
+
     const sceneId = sceneCard.dataset.sceneId;
     this.activateScene(sceneId);
   }
@@ -622,89 +632,103 @@ class ProfessionalSceneGallery extends HTMLElement {
       this.selectedScenes.clear();
       this.selectedScenes.add(sceneId);
     }
-    
+
     this.renderScenes();
   }
 
   activateScene(sceneId) {
     // In real implementation, call scene manager to switch scene
     console.log('Activating scene:', sceneId);
-    
+
     // Update active state
-    this.scenes = this.scenes.map(scene => ({
+    this.scenes = this.scenes.map((scene) => ({
       ...scene,
-      active: scene.id === sceneId
+      active: scene.id === sceneId,
     }));
-    
+
     this.renderScenes();
-    
+
     // Emit event for app to handle
-    window.dispatchEvent(new CustomEvent('scene-activated', {
-      detail: { sceneId }
-    }));
+    window.dispatchEvent(
+      new CustomEvent('scene-activated', {
+        detail: { sceneId },
+      })
+    );
   }
 
   switchCollection(collectionId) {
     this.activeCollection = collectionId;
-    
+
     // Update UI
-    this.shadowRoot.querySelectorAll('.collection-tab').forEach(tab => {
+    this.shadowRoot.querySelectorAll('.collection-tab').forEach((tab) => {
       tab.classList.toggle('active', tab.dataset.collectionId === collectionId);
     });
-    
+
     // Load scenes for collection
     this.loadScenesForCollection(collectionId);
   }
 
-  loadScenesForCollection(collectionId) {
+  loadScenesForCollection(_collectionId) {
     // In real implementation, load from scene manager
     // Mock data for now
     this.scenes = [
       { id: '1', name: 'Black Screen', type: 'basic', active: true, elements: [] },
       { id: '2', name: 'Welcome', type: 'basic', active: false, elements: [{ type: 'text' }] },
-      { id: '3', name: 'Worship', type: 'basic', active: false, elements: [{ type: 'image' }] }
+      { id: '3', name: 'Worship', type: 'basic', active: false, elements: [{ type: 'image' }] },
     ];
-    
+
     this.renderScenes();
   }
 
   addNewScene() {
     // Emit event to open scene composer
-    window.dispatchEvent(new CustomEvent('open-scene-composer', {
-      detail: { collectionId: this.activeCollection }
-    }));
+    window.dispatchEvent(
+      new CustomEvent('open-scene-composer', {
+        detail: { collectionId: this.activeCollection },
+      })
+    );
   }
 
   duplicateScene(sceneId) {
-    window.dispatchEvent(new CustomEvent('duplicate-scene', {
-      detail: { sceneId }
-    }));
+    window.dispatchEvent(
+      new CustomEvent('duplicate-scene', {
+        detail: { sceneId },
+      })
+    );
   }
 
   editScene(sceneId) {
-    window.dispatchEvent(new CustomEvent('edit-scene', {
-      detail: { sceneId }
-    }));
+    window.dispatchEvent(
+      new CustomEvent('edit-scene', {
+        detail: { sceneId },
+      })
+    );
   }
 
   deleteScene(sceneId) {
     if (confirm('Are you sure you want to delete this scene?')) {
-      window.dispatchEvent(new CustomEvent('delete-scene', {
-        detail: { sceneId }
-      }));
+      window.dispatchEvent(
+        new CustomEvent('delete-scene', {
+          detail: { sceneId },
+        })
+      );
     }
   }
 
   toggleLayer(layerName, visible) {
-    window.dispatchEvent(new CustomEvent('layer-visibility-changed', {
-      detail: { layerName, visible }
-    }));
+    window.dispatchEvent(
+      new CustomEvent('layer-visibility-changed', {
+        detail: { layerName, visible },
+      })
+    );
   }
 
   setDefaultTransition(transition) {
-    window.dispatchEvent(new CustomEvent('default-transition-changed', {
-      detail: { transition }
-    }));
+    window.dispatchEvent(
+      new CustomEvent('default-transition-changed', {
+        detail: { transition },
+      })
+    );
   }
 
   undo() {

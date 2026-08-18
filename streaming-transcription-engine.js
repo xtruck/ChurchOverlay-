@@ -18,7 +18,7 @@ class StreamingTranscriptionEngine {
     this.streamingBuffer = [];
     this.finalResults = [];
     this.bibleContextCache = new Map();
-    this sermonContext = [];
+    this.sermonContext = [];
     this.isStreaming = false;
     this.latencyTracker = {
       vad: 0,
@@ -26,7 +26,7 @@ class StreamingTranscriptionEngine {
       final: 0,
       detection: 0,
       bible: 0,
-      total: 0
+      total: 0,
     };
   }
 
@@ -35,7 +35,7 @@ class StreamingTranscriptionEngine {
    */
   async initialize() {
     logger.info('[StreamingEngine] Initializing AR-grade transcription engine');
-    
+
     // Initialize Deepgram streaming
     if (deepgramStreaming.isAvailable()) {
       await deepgramStreaming.initialize();
@@ -43,10 +43,10 @@ class StreamingTranscriptionEngine {
     } else {
       logger.warn('[StreamingEngine] Deepgram streaming not available, using batch mode');
     }
-    
+
     // Pre-warm Bible cache with common verses
     await this.prewarmBibleCache();
-    
+
     logger.info('[StreamingEngine] Initialization complete');
   }
 
@@ -55,20 +55,26 @@ class StreamingTranscriptionEngine {
    */
   async prewarmBibleCache() {
     const commonVerses = [
-      'Jean 3:16', 'Jean 1:1', 'Genèse 1:1', 'Psaume 23:1',
-      'Matthieu 6:33', 'Philippiens 4:13', 'Romains 8:28', '1 Jean 4:8'
+      'Jean 3:16',
+      'Jean 1:1',
+      'Genèse 1:1',
+      'Psaume 23:1',
+      'Matthieu 6:33',
+      'Philippiens 4:13',
+      'Romains 8:28',
+      '1 Jean 4:8',
     ];
-    
+
     logger.info('[StreamingEngine] Pre-warming Bible cache with common verses');
-    
+
     for (const reference of commonVerses) {
       try {
         await bibleCache.getVerse(reference);
-      } catch (e) {
+      } catch (_e) {
         // Verse not in cache, that's okay
       }
     }
-    
+
     logger.info('[StreamingEngine] Bible cache pre-warmed');
   }
 
@@ -80,62 +86,64 @@ class StreamingTranscriptionEngine {
    */
   async processAudioChunk(audioChunk, context = {}) {
     const startTime = Date.now();
-    
+
     // Update sermon context
     this.updateSermonContext(context);
-    
+
     // Stage 1: Streaming transcription (fast, <200ms)
     const streamingStart = Date.now();
     let streamingResult = null;
-    
+
     if (deepgramStreaming.isAvailable()) {
       try {
         streamingResult = await deepgramStreaming.transcribeChunk(audioChunk);
         this.latencyTracker.streaming = Date.now() - streamingStart;
-        
+
         // Return streaming result immediately for UI display
         if (streamingResult && streamingResult.text) {
           this.streamingBuffer.push({
             text: streamingResult.text,
             timestamp: Date.now(),
-            isFinal: false
+            isFinal: false,
           });
-          
-          logger.debug(`[StreamingEngine] Streaming result: "${streamingResult.text}" (${this.latencyTracker.streaming}ms)`);
+
+          logger.debug(
+            `[StreamingEngine] Streaming result: "${streamingResult.text}" (${this.latencyTracker.streaming}ms)`
+          );
         }
       } catch (e) {
         logger.warn('[StreamingEngine] Streaming failed:', e.message);
       }
     }
-    
+
     // Stage 2: Parallel processing for final result
     const processingPromises = [];
-    
+
     // Final transcription with Groq (higher accuracy)
     if (groqWrapper.isConfigured()) {
       processingPromises.push(
-        this.getFinalTranscription(audioChunk).then(result => ({
+        this.getFinalTranscription(audioChunk).then((result) => ({
           type: 'final',
-          data: result
+          data: result,
         }))
       );
     }
-    
+
     // Pre-fetch likely Bible verses based on context
     processingPromises.push(
-      this.prefetchBibleVerses(streamingResult?.text || '').then(result => ({
+      this.prefetchBibleVerses(streamingResult?.text || '').then((result) => ({
         type: 'bible-prefetch',
-        data: result
+        data: result,
       }))
     );
-    
+
     // Wait for critical results
     const results = await Promise.allSettled(processingPromises);
-    
+
     let finalTranscription = null;
     let biblePrefetch = null;
-    
-    results.forEach(result => {
+
+    results.forEach((result) => {
       if (result.status === 'fulfilled') {
         if (result.value.type === 'final') {
           finalTranscription = result.value.data;
@@ -144,20 +152,20 @@ class StreamingTranscriptionEngine {
         }
       }
     });
-    
+
     // Calculate total latency
     this.latencyTracker.total = Date.now() - startTime;
-    
+
     const response = {
       streaming: streamingResult,
       final: finalTranscription,
       bibleCache: biblePrefetch,
       latency: { ...this.latencyTracker },
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
-    
+
     logger.debug(`[StreamingEngine] Total latency: ${this.latencyTracker.total}ms`);
-    
+
     return response;
   }
 
@@ -168,23 +176,23 @@ class StreamingTranscriptionEngine {
    */
   async getFinalTranscription(audioChunk) {
     const startTime = Date.now();
-    
+
     try {
       // Use Groq for high-accuracy final result
       const result = await groqWrapper.transcribeBuffer(audioChunk);
-      
+
       this.latencyTracker.final = Date.now() - startTime;
-      
+
       // Add to final results
       if (result && result.text) {
         this.finalResults.push({
           text: result.text,
           timestamp: Date.now(),
           isFinal: true,
-          confidence: result.confidence
+          confidence: result.confidence,
         });
       }
-      
+
       return result;
     } catch (e) {
       logger.error('[StreamingEngine] Final transcription failed:', e.message);
@@ -199,31 +207,31 @@ class StreamingTranscriptionEngine {
    */
   async prefetchBibleVerses(text) {
     const startTime = Date.now();
-    
+
     if (!text || text.length < 10) {
       return null;
     }
-    
+
     try {
       // Extract potential verse references from text
       const potentialReferences = this.extractVerseReferences(text);
-      
+
       if (potentialReferences.length === 0) {
         return null;
       }
-      
+
       // Pre-fetch these verses
-      const prefetchPromises = potentialReferences.map(ref => 
+      const prefetchPromises = potentialReferences.map((ref) =>
         bibleCache.getVerse(ref).catch(() => null)
       );
-      
+
       const verses = await Promise.all(prefetchPromises);
-      
+
       this.latencyTracker.bible = Date.now() - startTime;
-      
+
       return {
         references: potentialReferences,
-        verses: verses.filter(v => v !== null)
+        verses: verses.filter((v) => v !== null),
       };
     } catch (e) {
       logger.warn('[StreamingEngine] Bible prefetch failed:', e.message);
@@ -238,7 +246,7 @@ class StreamingTranscriptionEngine {
    */
   extractVerseReferences(text) {
     const references = [];
-    
+
     // Common Bible book patterns (French and English)
     const bookPatterns = [
       /(?:Jean|John|Jean\s+\d+|John\s+\d+)/gi,
@@ -248,36 +256,37 @@ class StreamingTranscriptionEngine {
       /(?:Romains|Romans|Romains\s+\d+|Romans\s+\d+)/gi,
       /(?:Éphésiens|Ephesians|Éphésiens\s+\d+|Ephesians\s+\d+)/gi,
       /(?:Philippiens|Philippians|Philippiens\s+\d+|Philippians\s+\d+)/gi,
-      /(?:1\s+Jean|1\s+John|1\s+Jean\s+\d+|1\s+John\s+\d+)/gi
+      /(?:1\s+Jean|1\s+John|1\s+Jean\s+\d+|1\s+John\s+\d+)/gi,
     ];
-    
+
     // Verse reference patterns
     const versePatterns = [
-      /(\d?\s*[\w\u00C0-\u00FF]+)\s*(\d+):(\d+)/g,  // Book Chapter:Verse
-      /(\d?\s*[\w\u00C0-\u00FF]+)\s*(\d+)[.,](\d+)/g,  // Book Chapter.Verse
-      /(\d?\s*[\w\u00C0-\u00FF]+)\s*(\d+)/g           // Book Chapter
+      /(\d?\s*[\w\u00C0-\u00FF]+)\s*(\d+):(\d+)/g, // Book Chapter:Verse
+      /(\d?\s*[\w\u00C0-\u00FF]+)\s*(\d+)[.,](\d+)/g, // Book Chapter.Verse
+      /(\d?\s*[\w\u00C0-\u00FF]+)\s*(\d+)/g, // Book Chapter
     ];
-    
+
     // Extract book mentions
     const books = new Set();
-    bookPatterns.forEach(pattern => {
+    bookPatterns.forEach((pattern) => {
       const matches = text.match(pattern);
       if (matches) {
-        matches.forEach(match => books.add(match.trim()));
+        matches.forEach((match) => books.add(match.trim()));
       }
     });
-    
+
     // Extract verse references
-    versePatterns.forEach(pattern => {
+    versePatterns.forEach((pattern) => {
       let match;
       while ((match = pattern.exec(text)) !== null) {
         const reference = match[0].trim();
-        if (reference.length > 3) { // Minimum reasonable reference
+        if (reference.length > 3) {
+          // Minimum reasonable reference
           references.push(reference);
         }
       }
     });
-    
+
     return [...new Set(references)]; // Remove duplicates
   }
 
@@ -290,18 +299,18 @@ class StreamingTranscriptionEngine {
       this.sermonContext.push({
         type: 'topic',
         value: context.topic,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
     }
-    
+
     if (context.verses) {
       this.sermonContext.push({
         type: 'verse',
         value: context.verses,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
     }
-    
+
     // Keep only recent context (last 50 items)
     if (this.sermonContext.length > 50) {
       this.sermonContext = this.sermonContext.slice(-50);
@@ -345,9 +354,9 @@ class StreamingTranscriptionEngine {
       final: 0,
       detection: 0,
       bible: 0,
-      total: 0
+      total: 0,
     };
-    
+
     logger.info('[StreamingEngine] Buffers cleared');
   }
 
@@ -371,8 +380,8 @@ class StreamingTranscriptionEngine {
       bufferSizes: {
         streaming: this.streamingBuffer.length,
         final: this.finalResults.length,
-        context: this.sermonContext.length
-      }
+        context: this.sermonContext.length,
+      },
     };
   }
 }
