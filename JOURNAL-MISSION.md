@@ -849,3 +849,62 @@ traduction).
 **Reste à faire (pas dans ce chantier)** : si un check-in IDENTIFIÉ (avec nom) est
 souhaité un jour, c'est une décision produit séparée nécessitant une vraie politique de
 consentement/rétention — pas à trancher en l'absence de l'utilisateur.
+
+---
+
+### 2026-08-18 — Chantier 4.6 (2/2) — extraits vidéo pour réseaux sociaux (TERMINÉ)
+
+- [x] **Décision produit prise en session** : le cahier des charges suppose ffmpeg déjà
+      présent dans l'environnement — vérifié faux (aucun binaire ffmpeg sur cette machine).
+      Options possibles : dépendre d'une install système (fragile, spécifique à chaque
+      poste), ou bundler un binaire prébuilt. Choix retenu avec l'utilisateur : **bundler
+      `ffmpeg-static`** (~79 Mo, binaire Windows prébuilt via postinstall), cohérent avec
+      la philosophie "tout marche à l'installation" déjà suivie pour
+      onnxruntime-node/better-sqlite3 (ajouté à `allowScripts`, manuellement réinstallé
+      quand le postinstall automatique a été bloqué par la sandbox de session).
+- [x] **clip-exporter.js** (nouveau) : `exportClips(sourcePath, outputDir, entries,
+    sessionStartedAt, options)` réutilise le filtrage "10s d'écart minimum entre temps
+      forts" déjà présent dans `highlight-export.js` (`prepareEntries` rendu exporté pour
+      l'occasion). Bornes `MIN_CLIP_DURATION_SEC=15` / `MAX_CLIP_DURATION_SEC=120` /
+      `DEFAULT=45s`, plafond `MAX_CLIPS_PER_EXPORT=20`.
+- [x] **Bug trouvé et corrigé en testant avec un vrai binaire ffmpeg + une vraie vidéo
+      générée** (jamais de mock) : `-ss <start> -i <source> -t <duration> -c copy`
+      (stream-copy) ne peut couper qu'aux images clés — sur une source à images clés
+      espacées, produisait des extraits bien plus longs que demandé (15.4s mesurés au
+      lieu des 3s demandés). Diagnostiqué par bissection de durées de test distinctes des
+      bornes (`clipDurationSec: 20`, hors du plancher 15s, pour ne pas confondre "clamp
+      correct" et "bug de coupe"). Corrigé en ré-encodant la sortie
+      (`-c:v libx264 -preset veryfast -c:a aac` au lieu de `-c copy`) : `-ss` reste avant
+      `-i` pour un seek rapide approximatif, mais `-t` devient exact indépendamment de
+      l'espacement des images clés de la source.
+- [x] **main.js/preload.js/global.d.ts** : 2 nouveaux `ipcMain.handle` (sélection native
+      du fichier vidéo source, sélection du dossier de destination), même discipline que
+      `pick-media-file` déjà existant.
+- [x] **server.js** : action WS `exportClips`, garde `clipExportInProgress` (un seul
+      export à la fois, message d'erreur explicite sinon — même discipline que les autres
+      opérations longues de ce fichier), diffusion `clipExportStarted`/
+      `clipExportProgress`/`clipExportComplete`. Enregistrée dans `action-registry.js`
+      (`OPERATOR_ACTIONS`) — un `check-build-files.js` orphelin a été détecté et corrigé
+      avant le commit (le registre garde une trace de toutes les actions même sans nouveau
+      fichier requis).
+- [x] **dashboard** : nouveau bloc UI dans la carte "temps forts" existante (durée
+      configurable, boutons de sélection source/destination, bouton de génération, statut
+      en direct) — `pickClipSourceVideo()`/`pickClipOutputFolder()`/`startClipExport()`
+      dans `preservice-ai.js`, suivant exactement le patron déjà utilisé par
+      `exportHighlights()`/`renderHighlightsExport()` dans le même fichier ; câblage dans
+      `ws-dispatch.js` pour les 3 messages de progression.
+- [x] **test/test-clip-exporter.js** (nouveau, 14 assertions) : génère une vraie vidéo de
+      test de 30s (ffmpeg `testsrc`/`sine`), teste `sanitizeFilenamePart`, liste vide, un
+      vrai export 2 clips avec vérification de durée réelle (parsing de la sortie
+      `ffmpeg -i`), erreur source introuvable, clamp de durée minimum — aucun mock de
+      ffmpeg nulle part.
+- [x] **Gate** : `npm test` EXIT 0 (238/238, incluant les 14 nouveaux), `tsc --noEmit`
+      clean, `check-build-files.js` OK, lint 0 erreur (278 warnings préexistants,
+      inchangés), `format:check` clean, `npm audit` 0 vulnérabilité, `test:e2e` 14/14.
+- [x] Commit `e5330be`.
+
+**Reste à faire (pas dans ce chantier)** : §4.3 (sortie NDI/diffusion broadcast) —
+nécessite du matériel/logiciel externe (client NDI) pour être vérifié, pas tenté sans
+pouvoir le tester réellement. Reste du §6b (logging structuré, migration zod, migration
+node:test, design multi-site, bundler Vite, couche de rendu Preact/lit-html, passe
+accessibilité) — non commencé.
