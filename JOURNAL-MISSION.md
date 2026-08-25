@@ -1694,8 +1694,51 @@ le demande.
   comparative sur le corpus, consignée" — impossible ici puisque A.5 (le banc
   corpus) est bloqué. Le construire à l'aveugle, sans pouvoir mesurer l'effet réel,
   irait contre l'esprit même de cette règle.
-- §4.2 (diarisation) — pas tenté, le document lui-même dit "à explorer, pas à
-  promettre".
+- §4.2 (diarisation) — **RÉVISÉ (2026-08-25) : EXPLORÉ pour de vrai, toujours
+  PAS IMPLÉMENTÉ.** L'entrée précédente ("pas tenté") ne faisait que citer la
+  clause "à explorer, pas à promettre" sans jamais l'avoir fait — corrigé :
+  vraie recherche technique (web) plutôt qu'une simple note de report.
+
+  **Piste concrète identifiée** : `sherpa-onnx-node` (npm, v1.13.6, addon
+  natif avec binaires prêts à l'emploi par plateforme — même famille que
+  `better-sqlite3`/`onnxruntime-node` déjà présents ici, même traitement
+  `@electron/rebuild` applicable) expose une diarisation locale, 100% hors
+  ligne, en 2 étapes : un modèle de SEGMENTATION
+  (`pyannote-segmentation-3.0`, 6,6 Mo, licence MIT confirmée, détecte les
+  changements de locuteur — gère jusqu'à 3 locuteurs simultanés/qui se
+  chevauchent) puis un modèle d'EMBEDDING DE LOCUTEUR qui regroupe les
+  segments par identité vocale (candidats : `nemo_en_speakerverification_
+speakernet.onnx`, 22 Mo, licence Apache 2.0, 1,93% EER sur VoxCeleb — le
+  plus petit et le mieux documenté des candidats évalués). Coût total estimé :
+  ~31 Mo (binaire natif linux-x64) + ~30 Mo (les 2 modèles) ≈ 60 Mo ajoutés
+  au paquet — même ordre de grandeur que l'index vectoriel biblique (déjà
+  NON commité, livré via le pipeline de build), pas comparable au petit
+  `models/silero_vad.onnx` (2,3 Mo, commité directement).
+
+  **Réserve réelle, pas juste procédurale** : aucun des modèles d'embedding
+  disponibles n'est entraîné sur du français (VoxCeleb = anglais, 3D-Speaker/
+  CN-Celeb = chinois) — un embedding de locuteur capture le timbre de voix,
+  pas le contenu phonétique, donc un transfert cross-lingue vers le français
+  est PLAUSIBLE mais NON VÉRIFIÉ : exactement le genre de mesure empirique
+  que la règle 2 de la Partie 5 exige déjà avant tout changement de
+  comportement — et cette mesure n'existe pas plus ici que pour A.5.
+
+  **Angle d'intégration favorable trouvé** : le modèle de segmentation
+  ingère des fenêtres de ~10s, ce n'est PAS un primitive de streaming
+  temps réel comme Silero VAD — s'intègre plus naturellement comme un
+  post-traitement sur l'audio déjà enregistré (catégorie "outils
+  post-culte" déjà dans le document mission) qu'une modification du
+  pipeline ASR en direct, ce qui réduirait sensiblement le risque
+  d'intégration par rapport à une diarisation en direct pendant un culte.
+
+  **Conclusion assumée** : buildable, mais pas construit maintenant — il
+  manque une validation sur de VRAIES voix françaises avant de faire
+  confiance à la qualité du clustering, et ~60 Mo pour une fonctionnalité
+  que personne n'a encore demandé à utiliser mérite une décision produit
+  explicite (poids du paquet) plutôt qu'un ajout unilatéral. Piste prête à
+  reprendre : nom exact des paquets npm, modèles, tailles et licences déjà
+  identifiés ci-dessus, pas à re-découvrir depuis zéro.
+
 - §7.1.2 (fichier de service portable, médias compris) — **RÉVISÉ, EXPORT
   FAIT, IMPORT PAS FAIT PAR DÉCISION ASSUMÉE (2026-08-25)**. Reconsidéré après
   §7.1.1 ci-dessous : le lecteur ZIP maison écrit pour l'import PowerPoint
