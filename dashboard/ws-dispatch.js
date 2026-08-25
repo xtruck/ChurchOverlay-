@@ -192,6 +192,10 @@ export function handleMessage(message) {
     case 'audioDiagnostics':
       updateAudioVumeter(message);
       updateListeningBar(message);
+      // AJOUT (A.1 — assistant de calibrage) : no-op si l'assistant de
+      // démarrage n'est pas ouvert (startup-wizard.js expose ce point
+      // d'entrée via window, voir son commentaire d'en-tête).
+      if (window.updateWizardMicCalibration) window.updateWizardMicCalibration(message);
       break;
     case 'preServiceCheckResult':
       renderPreServiceCheckResult(message);

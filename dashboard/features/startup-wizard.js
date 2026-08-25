@@ -30,11 +30,31 @@
           <div class="wizard-step">
             <div class="wizard-step-header">
               <span class="wizard-step-icon" id="wizardMicIcon">🎤</span>
-              <span class="wizard-step-title">2. Microphone</span>
+              <span class="wizard-step-title">2. Microphone — calibrage du niveau</span>
             </div>
             <div class="wizard-step-body">
-              Sélectionnez le microphone dans Réglages → Système. La bande d'écoute en haut de DIRECT confirme que le micro fonctionne.
+              Sélectionnez le microphone dans Réglages → Système, puis <strong>parlez normalement</strong> (comme pendant une prédication) pendant quelques secondes en regardant la barre ci-dessous.
               <div id="wizardMicStatus" class="wizard-status" style="margin-top:0.5rem;">Vérification en cours…</div>
+              <div
+                style="
+                  margin-top: 0.6rem;
+                  height: 10px;
+                  background: var(--bg-input);
+                  border-radius: 5px;
+                  overflow: hidden;
+                "
+              >
+                <div
+                  id="wizardMicLevelBar"
+                  style="height: 100%; width: 0%; background: #6b7280; transition: width 0.15s ease, background 0.15s ease;"
+                ></div>
+              </div>
+              <div
+                id="wizardMicVerdict"
+                style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-dim);"
+              >
+                En attente de son…
+              </div>
             </div>
           </div>
           <div class="wizard-step">
@@ -110,6 +130,65 @@
     }
   }
 
+  // AJOUT (A.1 — gain micro, assistant de calibrage) : verdicts actionnables
+  // par zone, mêmes seuils que classifyAudioLevel() côté serveur (voir
+  // audio-capture.js) — reçus ici via le broadcast 'audioDiagnostics' déjà
+  // câblé pour le vumètre permanent et la bande d'écoute (aucune nouvelle
+  // capture audio, on lit juste les mêmes diagnostics).
+  const CALIBRATION_VERDICTS = {
+    silence: {
+      color: '#6b7280',
+      text: '⬜ Aucun son détecté — vérifiez que le bon micro est sélectionné (Réglages → Système).',
+    },
+    low: {
+      color: '#ef4444',
+      text: '🔴 Niveau trop faible pour une transcription fiable — augmentez le gain du micro dans les réglages Windows/macOS, ou rapprochez-vous du micro.',
+    },
+    good: {
+      color: '#22c55e',
+      text: '🟢 Niveau correct — le micro est prêt pour le culte.',
+    },
+    hot: {
+      color: '#f59e0b',
+      text: '🟠 Niveau fort — éloignez légèrement le micro ou baissez son gain pour éviter la saturation.',
+    },
+    clipping: {
+      color: '#ef4444',
+      text: '🔴 Signal écrêté (déformé) — baissez le gain du micro immédiatement, la transcription sera dégradée.',
+    },
+  };
+
+  /**
+   * Appelée à chaque broadcast 'audioDiagnostics' (250 ms, voir
+   * dashboard/ws-dispatch.js) tant que l'assistant est ouvert. Pas d'effet
+   * si l'étape micro n'est pas dans le DOM (assistant fermé) ou si la
+   * capture réelle n'a pas encore démarré (info absent).
+   */
+  function updateWizardMicCalibration(info) {
+    const bar = document.getElementById('wizardMicLevelBar');
+    const verdict = document.getElementById('wizardMicVerdict');
+    const icon = document.getElementById('wizardMicIcon');
+    if (!bar || !verdict) return; // assistant fermé ou étape pas encore rendue
+
+    const rmsMean = (info && info.rmsMean) || 0;
+    const totalFrames = (info && info.totalFrames) || 0;
+    if (totalFrames === 0) {
+      verdict.textContent = 'En attente de son… (parlez près du micro)';
+      verdict.style.color = 'var(--text-dim)';
+      return;
+    }
+
+    const pct = Math.min(100, Math.round(rmsMean * 300));
+    const zone = CALIBRATION_VERDICTS[info.level] || null;
+    bar.style.width = pct + '%';
+    bar.style.background = zone ? zone.color : '#6b7280';
+    if (zone) {
+      verdict.textContent = zone.text;
+      verdict.style.color = zone.color;
+    }
+    if (icon && info.level === 'good') icon.textContent = '✅';
+  }
+
   function open() {
     if (!overlay) createOverlay();
     overlay.classList.add('open');
@@ -121,6 +200,11 @@
   }
 
   window.closeStartupWizard = close;
+  // Appelé depuis dashboard/ws-dispatch.js à chaque 'audioDiagnostics' —
+  // ce fichier expose ses points d'entrée via `window.*` plutôt que des
+  // exports ES (même convention que closeStartupWizard/openStartupWizard
+  // ci-dessus, pour rester joignable depuis les attributs onclick inline).
+  window.updateWizardMicCalibration = updateWizardMicCalibration;
 
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.shiftKey && e.key === 'S') {
