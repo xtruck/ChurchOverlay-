@@ -239,6 +239,28 @@ console.log('[TEST] Test 11: purge du résidu fautif (removeLastTranscriptFragme
 }
 console.log('[TEST] ✓ Purge du résidu fautif : fusion C2 correcte\n');
 
+// --- Mode confiance (Partie 2 — auto/semi-auto/manuel) ---
+console.log('[TEST] Test 12: getTrustMode/setTrustMode...');
+{
+  assert.strictEqual(sessionState.getTrustMode(), 'auto', "défaut 'auto' (comportement historique)");
+  assert.strictEqual(sessionState.setTrustMode('semi-auto'), true, 'semi-auto accepté');
+  assert.strictEqual(sessionState.getTrustMode(), 'semi-auto');
+  assert.strictEqual(sessionState.setTrustMode('manual'), true, 'manual accepté');
+  assert.strictEqual(sessionState.getTrustMode(), 'manual');
+  assert.strictEqual(
+    sessionState.setTrustMode('n-importe-quoi'),
+    false,
+    'valeur inconnue rejetée (false), pas silencieusement acceptée'
+  );
+  assert.strictEqual(
+    sessionState.getTrustMode(),
+    'manual',
+    'un rejet ne doit pas changer le mode déjà en place'
+  );
+  sessionState.setTrustMode('auto'); // restaure le défaut pour ne pas polluer les tests suivants
+}
+console.log('[TEST] ✓ Mode confiance : défaut auto, transitions valides, rejet propre\n');
+
 console.log(
   '=== Résultat session-state (transcriptionLanguage/displayLanguage + fusion) : tous les tests sont passés ==='
 );

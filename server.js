@@ -158,6 +158,37 @@ let clipExportInProgress = false;
 let currentRundownIndex = -1;
 
 // ---------------------------------------------------------------------------
+// Mode confiance (Partie 2) — verset détecté automatiquement en attente de
+// confirmation opérateur ('semi-auto'/'manual', voir session-state.js
+// getTrustMode). `finalize` est la MÊME fonction qui afficherait le verset
+// immédiatement en mode 'auto' — capturée en closure par processTranscript/
+// displayChapterFallback, jamais dupliquée. Une seule référence en attente à
+// la fois : une nouvelle détection REMPLACE la précédente (jamais empilée),
+// même sémantique que candidateVerse (voir showCandidateVerse côté
+// dashboard) — un opérateur qui n'a pas encore confirmé une candidate
+// dépassée par une nouvelle intention n'a pas à gérer une file d'attente.
+let pendingVerse = null; // { reference, finalize, createdAt } | null
+
+function setPendingVerse(reference, finalize) {
+  pendingVerse = { reference, finalize, createdAt: Date.now() };
+}
+
+async function confirmPendingVerse() {
+  if (!pendingVerse) return { ok: false, reason: 'Aucun verset en attente de confirmation.' };
+  const { finalize, reference } = pendingVerse;
+  pendingVerse = null;
+  await finalize();
+  return { ok: true, reference };
+}
+
+function dismissPendingVerse() {
+  if (!pendingVerse) return { ok: false };
+  const reference = pendingVerse.reference;
+  pendingVerse = null;
+  return { ok: true, reference };
+}
+
+// ---------------------------------------------------------------------------
 // Durée d'affichage des versets — source unique de vérité
 // ---------------------------------------------------------------------------
 const DEFAULT_VERSE_DURATION_MS = 120_000;
@@ -1018,25 +1049,46 @@ async function displayChapterFallback(book, chapter, tracker, opts) {
     return;
   }
   const durationMs = getVerseDurationMs();
-  broadcast({
-    action: 'showVerse',
-    reference: verse.reference,
-    text: verse.text,
-    text_fr: verse.text_fr || null,
-    text_en: verse.text_en || null,
-    langMode: verse.langMode,
-    provider: verse.provider,
-    durationMs,
-    detectedBy: 'chapter-fallback',
-  });
-  pushHistory({
-    reference: verse.reference,
-    text: verse.text.substring(0, 200),
-    timestamp: now,
-    detectedBy: 'chapter-fallback',
-  });
-  broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
-  log('Chapter fallback: Displayed ' + verse.reference);
+
+  // AJOUT (Partie 2 — mode confiance) : même raisonnement que
+  // processTranscript ci-dessous — finalize capturé en closure, appelé tout
+  // de suite en mode 'auto', différé jusqu'à confirmation sinon.
+  const finalizeDisplay = async () => {
+    broadcast({
+      action: 'showVerse',
+      reference: verse.reference,
+      text: verse.text,
+      text_fr: verse.text_fr || null,
+      text_en: verse.text_en || null,
+      langMode: verse.langMode,
+      provider: verse.provider,
+      durationMs,
+      detectedBy: 'chapter-fallback',
+    });
+    pushHistory({
+      reference: verse.reference,
+      text: verse.text.substring(0, 200),
+      timestamp: now,
+      detectedBy: 'chapter-fallback',
+    });
+    broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
+    log('Chapter fallback: Displayed ' + verse.reference);
+  };
+
+  if (sessionState.getTrustMode() === 'auto') {
+    await finalizeDisplay();
+  } else {
+    setPendingVerse(verse.reference, finalizeDisplay);
+    broadcast({
+      action: 'pendingVerseConfirmation',
+      reference: verse.reference,
+      textPreview: verse.text.substring(0, 200),
+      trustMode: sessionState.getTrustMode(),
+    });
+    log(
+      `Chapter fallback en attente de confirmation (mode ${sessionState.getTrustMode()}): ${verse.reference}`
+    );
+  }
 }
 
 /**
@@ -1632,62 +1684,87 @@ async function processTranscript(text, tracker, opts = {}) {
   }
 
   const durationMs = getVerseDurationMs();
-  broadcast({
-    action: 'showVerse',
-    reference: verse.reference,
-    text: verse.text,
-    text_fr: verse.text_fr || null,
-    text_en: verse.text_en || null,
-    langMode: verse.langMode,
-    provider: verse.provider,
-    durationMs,
-    detectedBy: reference.detectedBy || 'regex',
-    matchedByQuote: reference.detectedBy === 'quote',
-    theme: theme ? { name: theme.name, mood: theme.mood } : null,
-  });
 
-  // AJOUT (latence, §14) : verset diffusé à l'overlay/OBS — dernière étape
-  // du pipeline, marque la fin de mesure de cet énoncé (voir logLatencySummary).
-  if (tracker) tracker.mark('obs');
-
-  // AJOUT (pont ProPresenter — envoi automatique des versets détectés) :
-  // relayé à main.js (seul endroit avec accès à safeStorage/propresenter-
-  // controller.js) via le même canal parentPort déjà utilisé pour
-  // audio-pipeline-ready/status. Ne couvre QUE ce chemin de détection
-  // automatique (le chemin dominant en usage réel) — pas les versets
-  // envoyés manuellement/depuis la file d'attente, pour garder ce lot de
-  // fonctionnalités raisonnable en taille (voir plan).
-  if (parentPort) {
-    parentPort.postMessage({
-      type: 'verse-shown',
-      verse: { reference: verse.reference, text: verse.text },
+  // AJOUT (Partie 2 — mode confiance) : ce qui affiche RÉELLEMENT le verset
+  // (broadcast showVerse + toute la tenue à jour qui suit) est capturé ici
+  // en closure plutôt qu'exécuté immédiatement — en mode 'auto' (défaut,
+  // comportement historique inchangé), on l'appelle tout de suite ci-dessous ;
+  // en 'semi-auto'/'manual', server.js la garde en attente (voir
+  // setPendingVerse) et ne l'appelle que si l'opérateur confirme
+  // (action WS confirmPendingVerse).
+  const finalizeDisplay = async () => {
+    broadcast({
+      action: 'showVerse',
+      reference: verse.reference,
+      text: verse.text,
+      text_fr: verse.text_fr || null,
+      text_en: verse.text_en || null,
+      langMode: verse.langMode,
+      provider: verse.provider,
+      durationMs,
+      detectedBy: reference.detectedBy || 'regex',
+      matchedByQuote: reference.detectedBy === 'quote',
+      theme: theme ? { name: theme.name, mood: theme.mood } : null,
     });
-  }
 
-  pushHistory({
-    reference: verse.reference,
-    text: verse.text.substring(0, 200),
-    timestamp: now,
-    detectedBy: reference.detectedBy || 'regex',
-  });
-  broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
+    // AJOUT (latence, §14) : verset diffusé à l'overlay/OBS — dernière étape
+    // du pipeline, marque la fin de mesure de cet énoncé (voir logLatencySummary).
+    if (tracker) tracker.mark('obs');
 
-  if (plugins) {
-    plugins.emit('onVerseShown', { ...verse, reference: verse.reference }).catch(() => {});
-  }
+    // AJOUT (pont ProPresenter — envoi automatique des versets détectés) :
+    // relayé à main.js (seul endroit avec accès à safeStorage/propresenter-
+    // controller.js) via le même canal parentPort déjà utilisé pour
+    // audio-pipeline-ready/status. Ne couvre QUE ce chemin de détection
+    // automatique (le chemin dominant en usage réel) — pas les versets
+    // envoyés manuellement/depuis la file d'attente, pour garder ce lot de
+    // fonctionnalités raisonnable en taille (voir plan).
+    if (parentPort) {
+      parentPort.postMessage({
+        type: 'verse-shown',
+        verse: { reference: verse.reference, text: verse.text },
+      });
+    }
 
-  log('Displayed: ' + verse.reference);
+    pushHistory({
+      reference: verse.reference,
+      text: verse.text.substring(0, 200),
+      timestamp: now,
+      detectedBy: reference.detectedBy || 'regex',
+    });
+    broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
 
-  // AJOUT (Chantier 3 — précision G1) : un verset EXACT vient d'être affiché
-  // pour ce livre:chapitre — le fallback chapitre (voir truncatedChapterOnly)
-  // devient inutile et doit être annulé, sinon il afficherait le chapitre
-  // entier quelques secondes après le verset.
-  if (reference.book && reference.chapter) {
-    cancelChapterFallback(reference.book, reference.chapter);
-  }
+    if (plugins) {
+      plugins.emit('onVerseShown', { ...verse, reference: verse.reference }).catch(() => {});
+    }
 
-  if (reference.book && reference.chapter) {
-    await activateReadingMode(reference.book, reference.chapter, reference.verseStart || 1);
+    log('Displayed: ' + verse.reference);
+
+    // AJOUT (Chantier 3 — précision G1) : un verset EXACT vient d'être affiché
+    // pour ce livre:chapitre — le fallback chapitre (voir truncatedChapterOnly)
+    // devient inutile et doit être annulé, sinon il afficherait le chapitre
+    // entier quelques secondes après le verset.
+    if (reference.book && reference.chapter) {
+      cancelChapterFallback(reference.book, reference.chapter);
+    }
+
+    if (reference.book && reference.chapter) {
+      await activateReadingMode(reference.book, reference.chapter, reference.verseStart || 1);
+    }
+  };
+
+  if (sessionState.getTrustMode() === 'auto') {
+    await finalizeDisplay();
+  } else {
+    setPendingVerse(verse.reference, finalizeDisplay);
+    broadcast({
+      action: 'pendingVerseConfirmation',
+      reference: verse.reference,
+      textPreview: verse.text.substring(0, 200),
+      trustMode: sessionState.getTrustMode(),
+    });
+    log(
+      `Verset en attente de confirmation (mode ${sessionState.getTrustMode()}): ${verse.reference}`
+    );
   }
 }
 
@@ -2127,6 +2204,7 @@ wss.on('connection', (ws, req) => {
       features,
       translations: bibleLookup.listTranslations(),
       secondaryTranslation: sessionState.getSecondaryTranslation(),
+      trustMode: sessionState.getTrustMode(),
       plugins: plugins ? plugins.getPluginList() : [],
       aiFeatures: {
         semanticDetection: !!semanticDetector,
@@ -2874,6 +2952,44 @@ wss.on('connection', (ws, req) => {
     }
 
     // --- Accessibility: high-contrast mode (audit — free/light) ---
+    // --- Mode confiance (Partie 2) ---
+    if (sanitized.action === 'setTrustMode') {
+      const ok = sessionState.setTrustMode(sanitized.mode);
+      if (!ok) {
+        ws.send(
+          JSON.stringify({ action: 'error', error: `Mode confiance invalide : ${sanitized.mode}` })
+        );
+        return;
+      }
+      // Changer de mode en cours de route ne doit jamais laisser un verset
+      // orphelin en attente d'un mode qui n'existe plus (ex. bascule vers
+      // 'auto' pendant qu'une confirmation était en attente) — rejeté
+      // proprement plutôt que silencieusement oublié.
+      if (pendingVerse) {
+        const dismissed = dismissPendingVerse();
+        broadcast({ action: 'pendingVerseDismissed', reference: dismissed.reference });
+      }
+      broadcast({ action: 'trustModeChanged', trustMode: sessionState.getTrustMode() });
+      log('Mode confiance : ' + sessionState.getTrustMode());
+      return;
+    }
+
+    if (sanitized.action === 'confirmPendingVerse') {
+      const result = await confirmPendingVerse();
+      if (!result.ok) {
+        ws.send(JSON.stringify({ action: 'error', error: result.reason }));
+      }
+      return;
+    }
+
+    if (sanitized.action === 'dismissPendingVerse') {
+      const result = dismissPendingVerse();
+      if (result.ok) {
+        broadcast({ action: 'pendingVerseDismissed', reference: result.reference });
+      }
+      return;
+    }
+
     if (sanitized.action === 'setHighContrast') {
       sessionState.setHighContrast(!!sanitized.enabled);
       const highContrast = sessionState.getHighContrast();

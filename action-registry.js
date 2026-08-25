@@ -76,6 +76,23 @@ const CLIENT_ACTIONS = {
     description: 'Seuil de confiance ASR',
   },
 
+  // Mode confiance (Partie 2 — auto/semi-auto/manuel)
+  setTrustMode: {
+    operatorOnly: true,
+    category: 'trust',
+    description: 'Changer le mode confiance (auto/semi-auto/manuel)',
+  },
+  confirmPendingVerse: {
+    operatorOnly: true,
+    category: 'trust',
+    description: 'Confirmer le verset en attente (mode semi-auto/manuel)',
+  },
+  dismissPendingVerse: {
+    operatorOnly: true,
+    category: 'trust',
+    description: 'Ignorer le verset en attente (mode semi-auto/manuel)',
+  },
+
   // Thème & affichage
   applyTheme: { operatorOnly: true, category: 'theme', description: 'Appliquer un thème CSS' },
   setMoodTheme: { operatorOnly: true, category: 'theme', description: "Thème d'ambiance IA" },
@@ -370,6 +387,11 @@ const SERVER_ACTIONS = {
   semanticDetected: { description: 'Référence détectée par sémantique IA' },
   candidateVerse: { description: 'Candidat de verset spéculatif' },
   verseBuffered: { description: 'Verset en attente de confirmation' },
+  trustModeChanged: { description: 'Mode confiance changé (auto/semi-auto/manuel)' },
+  pendingVerseConfirmation: {
+    description: 'Verset détecté en attente de confirmation opérateur (mode semi-auto/manuel)',
+  },
+  pendingVerseDismissed: { description: 'Verset en attente ignoré ou remplacé' },
   readingStarted: { description: 'Mode lecture activé' },
   readingStopped: { description: 'Mode lecture désactivé' },
   nextVerse: { description: 'Verset suivant' },

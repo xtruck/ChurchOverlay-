@@ -299,6 +299,52 @@
             >
           </div>
 
+          <!-- AJOUT (Partie 2 — mode confiance) : un bénévole débutant
+               commence en manuel et gagne en confiance progressivement.
+               'auto' (défaut) = comportement historique, verset détecté
+               affiché directement. 'semi-auto' = confirmation par barre
+               d'espace (voir pendingVerseBanner ci-dessous). 'manual' = la
+               détection automatique ne déclenche jamais rien seule, tout
+               passe par les chemins manuels existants (recherche, palette). -->
+          <div
+            id="trustModeSelector"
+            class="card"
+            style="
+              margin-bottom: 0.75rem;
+              padding: 0.5rem 0.75rem;
+              display: flex;
+              align-items: center;
+              gap: 0.5rem;
+              font-size: 0.8rem;
+            "
+          >
+            <span style="color: var(--text-dim)">Mode confiance :</span>
+            <button
+              type="button"
+              class="mood-btn trust-mode-btn active"
+              data-trust-mode="auto"
+              onclick="setTrustMode('auto')"
+            >
+              Automatique
+            </button>
+            <button
+              type="button"
+              class="mood-btn trust-mode-btn"
+              data-trust-mode="semi-auto"
+              onclick="setTrustMode('semi-auto')"
+            >
+              Semi-automatique
+            </button>
+            <button
+              type="button"
+              class="mood-btn trust-mode-btn"
+              data-trust-mode="manual"
+              onclick="setTrustMode('manual')"
+            >
+              Manuel
+            </button>
+          </div>
+
           <!-- Search & Quick Detect Bar -->
           <div class="search-detector-bar">
             <svg
@@ -886,6 +932,48 @@
               font-size: 0.88rem;
             "
           ></div>
+
+          <!-- AJOUT (Partie 2 — mode confiance) : distinct du bandeau
+               candidateVerse ci-dessus (informatif, s'efface tout seul) —
+               celui-ci EXIGE une action opérateur en mode semi-auto/manuel :
+               le verset détecté reste caché tant que "Confirmer" (ou la
+               barre d'espace) n'a pas été utilisé. Jamais de timeout
+               automatique : un verset non confirmé doit rester visible
+               jusqu'à ce que l'opérateur agisse, ou soit remplacé par une
+               détection plus récente. -->
+          <div
+            id="pendingVerseBanner"
+            style="
+              display: none;
+              margin-bottom: 1.25rem;
+              padding: 0.85rem 1.25rem;
+              border-radius: var(--radius-md);
+              background: rgba(245, 158, 11, 0.15);
+              border: 1px solid rgba(245, 158, 11, 0.4);
+              color: var(--accent-amber, #f59e0b);
+              align-items: center;
+              gap: 0.75rem;
+              flex-wrap: wrap;
+            "
+          >
+            <span style="font-weight: 600; font-size: 0.88rem; flex: 1" id="pendingVerseText"></span>
+            <button
+              type="button"
+              class="btn btn-primary"
+              style="padding: 0.35rem 0.9rem; font-size: 0.8rem"
+              onclick="confirmPendingVerse()"
+            >
+              ✅ Confirmer (Espace)
+            </button>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              style="padding: 0.35rem 0.9rem; font-size: 0.8rem"
+              onclick="dismissPendingVerse()"
+            >
+              ✕ Ignorer
+            </button>
+          </div>
 
           <!-- Main Display Row -->
           <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem">

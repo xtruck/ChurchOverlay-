@@ -106,6 +106,18 @@ let lastShownUtteranceId = null;
 let lastShownText = null;
 let obsGateOpen = true;
 let obsGateReason = '';
+// AJOUT (Partie 2 — mode confiance à 3 niveaux) : gouverne si une détection
+// automatique de verset (processTranscript/displayChapterFallback dans
+// server.js) s'affiche directement ('auto', comportement historique et
+// défaut — RIEN ne change tant que l'opérateur ne bascule pas ce réglage),
+// attend une confirmation opérateur ('semi-auto', barre d'espace), ou ne
+// s'affiche JAMAIS automatiquement ('manual', uniquement via les chemins
+// manuels déjà existants : palette, recherche biblique, feuille de route).
+// Volontairement NON persisté (comme highContrastMode ci-dessus) : un
+// bénévole qui gagne en confiance culte après culte doit re-choisir son
+// niveau à chaque démarrage plutôt qu'hériter silencieusement du dernier
+// réglage d'un autre opérateur.
+let trustMode = 'auto';
 let highContrastMode = false;
 let captionsEnabled = false;
 // AJOUT (sous-titres traduits en direct — voir caption-translator.js) :
@@ -298,6 +310,17 @@ function getObsGate() {
 function setObsGate(open, reason) {
   obsGateOpen = open;
   obsGateReason = reason || '';
+}
+
+const TRUST_MODES = ['auto', 'semi-auto', 'manual'];
+// --- Mode confiance (Partie 2) ---
+function getTrustMode() {
+  return trustMode;
+}
+function setTrustMode(mode) {
+  if (!TRUST_MODES.includes(mode)) return false;
+  trustMode = mode;
+  return true;
 }
 
 // --- Historique des versets affichés ---
@@ -500,6 +523,9 @@ module.exports = {
   clearLastReference,
   getObsGate,
   setObsGate,
+  TRUST_MODES,
+  getTrustMode,
+  setTrustMode,
   getVerseHistory,
   pushHistory,
   updateTranscriptContext,

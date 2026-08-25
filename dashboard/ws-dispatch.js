@@ -65,6 +65,11 @@ import {
 import { applyDashboardBranding } from './features/dashboard-branding.js';
 import { updateAudioVumeter } from './features/audio-vumeter.js';
 import { renderAgentEvent } from './features/agent.js';
+import {
+  updateTrustModeButtons,
+  showPendingVerseBanner,
+  hidePendingVerseBanner,
+} from './features/trust-mode.js';
 
 export function handleMessage(message) {
   switch (message.action) {
@@ -90,6 +95,7 @@ export function handleMessage(message) {
         );
       }
       applyDashboardBranding(message.dashboardBranding);
+      updateTrustModeButtons(message.trustMode || 'auto');
       break;
     case 'translationChanged':
       updateActiveTranslationButton(message.language, message.code);
@@ -107,6 +113,10 @@ export function handleMessage(message) {
       // (fuzzy + spéculatif) pour ne pas le laisser traîner 8s à côté du
       // verset affiché.
       clearCandidateNotices();
+      // AJOUT (Partie 2 — mode confiance) : un verset confirmé (ou en mode
+      // auto) vient d'être affiché — le bandeau de confirmation, s'il était
+      // visible, n'a plus lieu d'être.
+      hidePendingVerseBanner();
       // AJOUT (frontend — mode lecture "pro") : le serveur diffuse la
       // position courante dans le chapitre à chaque avancement (voir
       // server.js > readingModePosition) — affichée dans la carte mode
@@ -207,6 +217,19 @@ export function handleMessage(message) {
     // comme pour aiModuleError ci-dessus).
     case 'obsConnectionStatus':
       updateObsConnectionStatus(message.status, message.reason);
+      break;
+    // AJOUT (Partie 2 — mode confiance)
+    case 'trustModeChanged':
+      updateTrustModeButtons(message.trustMode);
+      addActivity(`Mode confiance : ${message.trustMode}`, 'info');
+      break;
+    case 'pendingVerseConfirmation':
+      showPendingVerseBanner(message);
+      addActivity(`Verset en attente de confirmation : ${message.reference}`, 'info');
+      break;
+    case 'pendingVerseDismissed':
+      hidePendingVerseBanner();
+      addActivity(`Verset en attente ignoré/remplacé : ${message.reference}`, 'info');
       break;
     // AJOUT (A.1 — gain micro) : diagnostics de niveau audio temps réel
     // pour le vumètre du dashboard.
