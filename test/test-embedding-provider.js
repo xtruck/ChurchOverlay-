@@ -203,6 +203,52 @@ async function run() {
     );
   }
 
+  // --- 429 de quota JOURNALIER (distinct d'un simple palier de débit) :
+  // abandon IMMÉDIAT, aucune nouvelle tentative -- retenter ne ferait que
+  // gaspiller le reste du quota du jour sur une erreur qui ne changera pas
+  // avant le lendemain (voir isDailyQuotaError() dans embedding-provider.js,
+  // constaté en générant l'index réel de la Bible -- JOURNAL-MISSION.md).
+  let dailyQuotaCallCount = 0;
+  const DAILY_QUOTA_ERROR_JSON = JSON.stringify({
+    error: {
+      code: 429,
+      status: 'RESOURCE_EXHAUSTED',
+      details: [
+        {
+          '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+          violations: [{ quotaId: 'EmbedContentRequestsPerDayPerUserPerProjectPerModel-FreeTier' }],
+        },
+      ],
+    },
+  });
+  injectFakeModule('@google/genai', {
+    GoogleGenAI: class {
+      constructor() {}
+      get models() {
+        return {
+          embedContent: async () => {
+            dailyQuotaCallCount++;
+            const err = new Error(DAILY_QUOTA_ERROR_JSON);
+            err.status = 429;
+            throw err;
+          },
+        };
+      }
+    },
+  });
+  delete require.cache[require.resolve('../embedding-provider')];
+  {
+    const { embedTexts, CONFIG } = require('../embedding-provider');
+    CONFIG.RETRY_BASE_DELAY_MS = 1;
+    CONFIG.MAX_RETRIES_ON_RATE_LIMIT = 6;
+    const r = await embedTexts(['jean 3:16']);
+    check('embedTexts: 429 quota journalier -> null (pas de crash)', r === null);
+    check(
+      'embedTexts: 429 quota journalier -> UN SEUL appel, aucune nouvelle tentative gaspillée',
+      dailyQuotaCallCount === 1
+    );
+  }
+
   // --- Nettoyage ---
   delete require.cache[require.resolve('@google/genai')];
   delete require.cache[require.resolve('../embedding-provider')];

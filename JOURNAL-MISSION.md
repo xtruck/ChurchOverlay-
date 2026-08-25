@@ -1649,9 +1649,30 @@ avant cette session). Cette session a livré, par-dessus l'existant :
   vrai glisser-déposer vers la feuille de route ("séquence" tranché = le rundown
   existant, mais Feuille de route vit dans DIRECT et Mur Média dans PRÉPARATION —
   jamais visibles ensemble, glisser-déposer entre eux impossible sans déplacer un
-  panneau ; le bouton ➕ déjà présent atteint le même résultat), test de charge réel à
-  200 médias (aucun jeu de 200 fichiers réels disponible ici — les optimisations perf
-  faites visent directement ce critère mais ne sont pas mesurées à cette échelle).
+  panneau ; le bouton ➕ déjà présent atteint le même résultat).
+
+  **RÉVISÉ (2026-08-25) — test de charge à 200 médias FAIT.** Reconsidéré :
+  "aucun jeu de 200 fichiers réels disponible" supposait à tort qu'un vrai
+  fichier de 1 Go était nécessaire pour mesurer ce critère. En pratique,
+  `renderMediaWall()`/`renderMediaLibrary()` (déclenchés ensemble par
+  `mediaLibraryUpdated`, voir `ws-dispatch.js`) ne touchent JAMAIS les
+  octets d'un média — seulement ses métadonnées. Le poids réel d'une vidéo
+  n'a donc aucune influence sur le temps de rendu de la grille : 200 entrées
+  de métadonnées synthétiques (`test/e2e/media-wall-load.spec.js`, dont des
+  vidéos parmi les photos) exercent exactement le même chemin de code que
+  200 vraies entrées le feraient. Mesuré : **46,5ms** pour le rendu initial
+  de 200 médias, **9,1ms** pour une mise à jour d'état incrémentale
+  (`showMedia`) — le critère du document (<300ms) est donc directement
+  vérifié, avec de la marge, pas juste supposé tenu par les choix
+  d'implémentation. L'autre moitié du critère (le fichier lui-même, "1 Go+")
+  est couverte séparément par `test/test-media-library-large-file.js` : un
+  fichier de 150 Mo (`addItem()` n'a qu'une seule opération touchant le
+  contenu, `fs.copyFileSync()` — une copie OS-level en un appel, jamais de
+  lecture/hash/bufferisation JS du contenu entier, vérifié en lisant le
+  code avant d'écrire ce test — 150 Mo suffit donc à prouver l'absence de
+  code dépendant de la taille, sans faire durer `npm test` pour un Go entier
+  qui ne testerait rien de plus) copié en **379ms**, taille et intégrité
+  vérifiées après coup.
 
 ### Partie 3 (OBS/NDI) — TERMINÉ
 
@@ -1889,3 +1910,50 @@ via `CONFIG.MODEL` donc rien à changer dans le test lui-même),
 
 Génération de l'index réel (`scripts/generate-bible-embeddings.js`) lancée
 en arrière-plan juste après — voir l'entrée suivante pour le résultat.
+
+---
+
+### 2026-08-25 — Génération réelle de l'index vectoriel : bloquée par un plafond JOURNALIER, pas juste un palier de débit
+
+Premier essai : arrêté à 100/31170 versets (429 "RESOURCE_EXHAUSTED"),
+confirmant EN PRATIQUE le bug de fichier partiel corrigé juste avant (le
+fichier de 100 versets s'est bien retrouvé au VRAI chemin de production,
+`models/bible-vector-index.sqlite3` — trouvé et supprimé avant le second
+essai). Nouvelle tentative automatique + rythme poli entre lots ajoutés
+(voir plus haut), relancé : a progressé jusqu'à ~900/31170 avant un nouvel
+échec, cette fois après avoir épuisé les 6 tentatives.
+
+Lecture attentive du corps JSON de l'erreur (pas juste le code HTTP 429,
+identique dans les deux cas) : le `quotaId` distingue en réalité DEUX quotas
+Gemini différents —
+`EmbedContentRequestsPerMinutePerUserPerProjectPerModel-FreeTier` (palier de
+DÉBIT transitoire, la nouvelle tentative fonctionne) contre
+`EmbedContentRequestsPerDayPerUserPerProjectPerModel-FreeTier` (plafond
+JOURNALIER, quotaValue 1000). Implication importante trouvée au passage :
+retenter un 429 de plafond JOURNALIER avec le mécanisme conçu pour le palier
+de débit était CONTRE-PRODUCTIF — chaque tentative, même rejetée, compte
+contre ce même quota journalier, donc le nouvel essai automatique creusait
+activement le trou plutôt que d'aider. Corrigé : `isDailyQuotaError()` dans
+`embedding-provider.js` distingue les deux via le `quotaId`, abandonne
+IMMÉDIATEMENT (aucune tentative gaspillée) sur un plafond journalier, garde
+la nouvelle tentative avec repli exponentiel pour un simple palier de débit.
+Testé (2 nouveaux cas dans `test/test-embedding-provider.js`, 18/18 au
+total) : un mock reproduisant exactement le JSON du plafond journalier
+observé en pratique déclenche bien un seul appel, zéro tentative
+supplémentaire.
+
+**État à la fin de la session** : l'index reste incomplet (~900/31170
+versets), bloqué par le plafond gratuit journalier de la clé fournie —
+aucune action supplémentaire possible avant sa réinitialisation (le
+lendemain, côté Google). `scripts/generate-bible-embeddings.js` peut être
+relancé tel quel sans risque une fois le quota revenu : construit dans un
+fichier `.building` temporaire, ne promeut vers le vrai chemin de production
+qu'après un succès complet (voir plus haut) — aucun index partiel/corrompu
+n'a été laissé derrière. Le repli mot-clé actuel (`bible-semantic-search.js`)
+reste honnête et fonctionnel en attendant.
+
+Au passage, en construisant/vérifiant le critère de charge Mur Média pendant
+que cette génération tournait en arrière-plan (voir Partie 2 plus haut,
+section "RÉVISÉ — test de charge à 200 médias FAIT") : mesuré 46,5ms/9,1ms
+pour 200 médias et 379ms pour la copie d'un fichier de 150 Mo, largement
+sous le critère <300ms du document.

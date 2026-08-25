@@ -63,6 +63,28 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// CORRECTIF (2026-08-25) : constaté en générant l'index réel — un même code
+// HTTP 429 recouvre en réalité DEUX quotas Gemini bien distincts, visibles
+// uniquement dans le "quotaId" du corps JSON de l'erreur :
+//   - "...PerMinute..." : un palier de DÉBIT, transitoire — retenter après
+//     un court délai fonctionne (constaté : la génération réelle a progressé
+//     de 100 à ~900 versets grâce à ces nouvelles tentatives).
+//   - "...PerDay..." : un plafond JOURNALIER — aucun délai raisonnable dans
+//     cette même journée ne le fait revenir. Le distinguer est important :
+//     avant ce correctif, une tentative sur un plafond journalier épuisait
+//     encore plus vite le reste du quota du jour en le retentant 6 fois en
+//     pure perte (chaque tentative, même rejetée, compte contre ce quota),
+//     plutôt que d'échouer immédiatement en préservant ce qu'il en restait.
+function isDailyQuotaError(err) {
+  try {
+    const parsed = JSON.parse(err.message);
+    const violations = parsed?.error?.details?.find((d) => d.violations)?.violations || [];
+    return violations.some((v) => typeof v.quotaId === 'string' && /PerDay/i.test(v.quotaId));
+  } catch (_) {
+    return false; // message non-JSON (mock de test, etc.) -- comportement inchangé, jamais ce cas
+  }
+}
+
 /**
  * Génère un embedding par texte, dans l'ordre. Renvoie null (pas
  * d'exception) si GEMINI_API_KEY est absent ou si l'appel échoue.
@@ -100,6 +122,12 @@ async function embedTexts(texts, options = {}) {
           break;
         } catch (err) {
           if (err.status !== 429 || attempt >= CONFIG.MAX_RETRIES_ON_RATE_LIMIT) throw err;
+          if (isDailyQuotaError(err)) {
+            console.warn(
+              '[embedding-provider] 429 (quota JOURNALIER, pas un simple palier de débit) — abandon immédiat, retenter demain plutôt que de gaspiller le reste du quota en tentatives vaines.'
+            );
+            throw err;
+          }
           const delayMs = CONFIG.RETRY_BASE_DELAY_MS * 2 ** attempt;
           console.warn(
             `[embedding-provider] 429 (palier gratuit) — nouvelle tentative dans ${delayMs}ms (${attempt + 1}/${CONFIG.MAX_RETRIES_ON_RATE_LIMIT})`
