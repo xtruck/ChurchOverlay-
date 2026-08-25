@@ -180,6 +180,7 @@ declare global {
       obsListScenes: () => Promise<ChurchOverlayObsScenesResult>;
       obsSwitchScene: (sceneName: string) => Promise<ChurchOverlayObsActionResult>;
       obsToggleRecording: () => Promise<ChurchOverlayObsActionResult>;
+      obsToggleStreaming: () => Promise<ChurchOverlayObsActionResult>;
 
       // --- Pont ProPresenter ---
       getProPresenterConfig: () => Promise<ChurchOverlayProPresenterConfigResult>;

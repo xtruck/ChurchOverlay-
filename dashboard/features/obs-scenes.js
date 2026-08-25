@@ -119,6 +119,22 @@ export async function toggleObsRecording() {
   }
 }
 
+// AJOUT (Partie 3.1 — StreamStart/StreamStop) : même structure que
+// toggleObsRecording ci-dessus.
+export async function toggleObsStreaming() {
+  if (!window.churchOverlay || !window.churchOverlay.obsToggleStreaming) return;
+  try {
+    const result = await window.churchOverlay.obsToggleStreaming();
+    if (result && result.ok) {
+      showToast(result.streaming ? '🔴 Direct démarré' : '⏹ Direct arrêté', 'success');
+    } else {
+      showToast('Échec du direct : ' + (result?.reason || 'erreur inconnue'), 'error');
+    }
+  } catch (err) {
+    showToast('Échec : ' + (err && err.message ? err.message : err), 'error');
+  }
+}
+
 if (window.churchOverlay && window.churchOverlay.getObsConfig) {
   loadObsConfig();
 }
@@ -128,3 +144,4 @@ window.connectObs = connectObs;
 window.refreshObsScenes = refreshObsScenes;
 window.switchObsScene = switchObsScene;
 window.toggleObsRecording = toggleObsRecording;
+window.toggleObsStreaming = toggleObsStreaming;

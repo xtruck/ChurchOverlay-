@@ -1160,6 +1160,17 @@ ipcMain.handle('obs-toggle-recording', async () => {
   }
 });
 
+// AJOUT (Partie 3.1 — StreamStart/StreamStop) : même structure que
+// obs-toggle-recording ci-dessus.
+ipcMain.handle('obs-toggle-streaming', async () => {
+  try {
+    const obs = getObsController();
+    return await obs.toggleStreaming();
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+});
+
 // --- AJOUT (pont ProPresenter — recommandation "ProPresenter Remote/API") --
 // Même structure que le bloc OBS ci-dessus, dormant tant que
 // features.broadcast.propresenter.enabled reste à false (défaut).

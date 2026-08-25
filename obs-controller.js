@@ -146,6 +146,25 @@ async function toggleRecording() {
   }
 }
 
+/**
+ * Démarre/arrête le stream en direct (Partie 3.1 — StreamStart/StreamStop).
+ * Même forme que toggleRecording() ci-dessus : OBS fait l'encodage/
+ * l'envoi au serveur RTMP configuré côté OBS (YouTube, Facebook, un
+ * serveur RTMP auto-hébergé…) — ChurchOverlay ne touche jamais au flux
+ * vidéo lui-même, seulement à ce bouton start/stop.
+ */
+async function toggleStreaming() {
+  if (!obsClient) return { ok: false };
+  const status = await obsClient.call('GetStreamStatus');
+  if (status.outputActive) {
+    await obsClient.call('StopStream');
+    return { ok: true, streaming: false };
+  } else {
+    await obsClient.call('StartStream');
+    return { ok: true, streaming: true };
+  }
+}
+
 // -----------------------------------------------------------------------
 // AJOUT (audit — gating par état OBS, inspiré du protocole obs-websocket)
 // -----------------------------------------------------------------------
@@ -253,5 +272,6 @@ module.exports = {
   switchScene,
   listScenes,
   toggleRecording,
+  toggleStreaming,
   evaluateGate, // exporté pour les tests unitaires (pure function, sans obsClient)
 };

@@ -127,6 +127,7 @@ contextBridge.exposeInMainWorld('churchOverlay', {
   obsListScenes: () => ipcRenderer.invoke('obs-list-scenes'),
   obsSwitchScene: (sceneName) => ipcRenderer.invoke('obs-switch-scene', { sceneName }),
   obsToggleRecording: () => ipcRenderer.invoke('obs-toggle-recording'),
+  obsToggleStreaming: () => ipcRenderer.invoke('obs-toggle-streaming'),
 
   // --- AJOUT (pont ProPresenter — recommandation "ProPresenter Remote/API") :
   // même structure que le bloc OBS ci-dessus. Entièrement optionnel — n'agit
