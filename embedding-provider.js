@@ -35,12 +35,26 @@
 
 const { GoogleGenAI } = require('@google/genai');
 
+// CORRECTIF (2026-08-25) : paraphrase-multilingual préféré à bge-m3 après
+// comparaison directe sur du français réel (séparation sémantique Jean 3:16
+// vs sujet lié/non lié : 0,636 vs 0,20/0,38, MEILLEURE que bge-m3 à
+// 0,588 vs 0,26/0,38) ET ~1,5x plus rapide en inférence CPU locale (204ms
+// vs 305ms/texte, mesuré) — un gain net sur les deux axes qui comptaient,
+// pas un compromis vitesse/qualité. Dimension par modèle connu, pas une
+// constante isolée : si OLLAMA_EMBED_MODEL est surchargé vers un modèle non
+// listé ici, la dimension par défaut (768) peut être fausse — un
+// changement de modèle non couvert par cette table doit aussi mettre à jour
+// cette table, pas juste la variable d'environnement.
+const OLLAMA_MODEL_DIMENSIONS = {
+  'paraphrase-multilingual': 768,
+  'bge-m3': 1024,
+};
+
 const OLLAMA_CONFIG = {
   BASE_URL: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
-  MODEL: process.env.OLLAMA_EMBED_MODEL || 'bge-m3',
-  // Dimension native de bge-m3 (pas de troncature Matryoshka comme Gemini —
-  // vérifié : le modèle ne prend aucun paramètre de dimension de sortie).
-  DIMENSION: 1024,
+  MODEL: process.env.OLLAMA_EMBED_MODEL || 'paraphrase-multilingual',
+  DIMENSION:
+    OLLAMA_MODEL_DIMENSIONS[process.env.OLLAMA_EMBED_MODEL || 'paraphrase-multilingual'] || 768,
   BATCH_SIZE: 50,
   // Une requête localhost qui ne répond pas en 1,5s signale un serveur
   // absent/bloqué, pas une génération lente — évite d'attendre longtemps

@@ -2052,7 +2052,24 @@ inchangés et toujours verts (aucune de leurs hypothèses ne dépendait du
 fournisseur).
 
 Génération réelle relancée avec Ollama actif — sans plafond, juste plus
-lente (inférence CPU locale, pas de GPU détecté à l'installation) :
-~100 versets en quelques minutes au démarrage. Pas de risque à la laisser
-tourner longtemps : le correctif `.building` de l'entrée précédente
-s'applique identiquement, quel que soit le fournisseur.
+lente (inférence CPU locale, pas de GPU détecté à l'installation) : ~600
+versets en 333s (~1,8/s), soit ~4,8h estimées pour les 31 170 versets.
+
+**Suite (même session)** : comparé `bge-m3` à `paraphrase-multilingual`
+(sentence-transformers, 562 Mo — moitié moins volumineux) avant de laisser
+tourner des heures sur un choix non vérifié. Sur le même triplet
+Jean 3:16/sujet lié/sujet non lié : `paraphrase-multilingual` sépare MIEUX
+(0,636 vs 0,20/0,38, contre 0,588 vs 0,26/0,38 pour bge-m3) ET répond ~1,5x
+plus vite en inférence CPU locale (204ms vs 305ms/texte, mesuré) — gain net
+sur les deux axes, pas un compromis. `OLLAMA_MODEL_DIMENSIONS` ajouté
+(table modèle -> dimension, pas une constante isolée) puisque les deux
+modèles n'ont pas la même dimension native (768 vs 1024).
+
+**Arrêté pour la journée (sur demande explicite)** avant de relancer la
+génération avec le nouveau modèle : le process précédent a été tué proprement
+(`.building` supprimé, aucun index partiel/incorrect laissé derrière —
+`models/bible-vector-index.sqlite3` réel toujours absent, le repli mot-clé
+reste actif). `ollama serve` reste UP en arrière-plan sur cette machine
+(installé mais pas un service systemd ici, lancé manuellement) — relancer
+`node scripts/generate-bible-embeddings.js` à la reprise suffira, aucune
+étape supplémentaire.
