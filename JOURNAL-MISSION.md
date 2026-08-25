@@ -1218,3 +1218,28 @@ pas non plus supposer que c'est fini.
       getUserMedia en conditions réelles (aucun micro physique dans ce bac à sable) —
       reste la seule partie de A.1 qui exige du matériel réel.
       Gate : eslint 0 erreur, tsc clean, npm test vert (idem ci-dessus), test:e2e 15/15.
+- [x] **A.2 (wrapper LLM) — vérifié DÉJÀ CORRIGÉ (2026-08-16), complété aujourd'hui** :
+      `llm-utils.js`/`extractResponseText()` existe déjà et les trois modules
+      (transcription-corrector.js, semantic-detector.js, ai-theme-generator.js) l'utilisent
+      déjà — le document de mission décrit un bug qui n'existe plus. Ce qui manquait
+      vraiment (3e exigence du document, jamais faite) : remonter un échec d'appel LLM
+      (Groq indisponible, timeout…) ailleurs que dans la console. Les trois modules
+      exposent maintenant `this.onError(message)` (appelé dans leur catch existant, sans
+      changer le comportement de repli — `text`/`null` inchangés) + `errorCount`/
+      `lastError` dans `getStats()`. `ai-modules-loader.js`/server.js câble les trois sur
+      un nouveau broadcast `aiModuleError` (ajouté à action-registry.js SERVER_ACTIONS).
+      Dashboard (`ws-dispatch.js`) : `addActivity` systématique + toast throttlé à 30s
+      par module (sinon un Groq indisponible spammerait un toast par segment transcrit
+      pendant tout un culte). `getAiStats` inclut maintenant `themeGenerator` (nouveau
+      `getStats()` sur cette classe, qui n'en avait pas).
+      Tests : nouveau `test/test-ai-theme-generator.js` (8 cas, module jamais testé
+      avant — câblé dans package.json test/test-all) + 3 assertions ajoutées à
+      `test-semantic-detector.js` et `test-transcription-corrector.js` vérifiant
+      `onError` + `getStats().errorCount`/`errors` sur une vraie erreur LLM mockée —
+      exactement le test de non-régression que le document demandait.
+      Gate : eslint 0 erreur, tsc clean, npm audit 0 vuln, check-build-files OK,
+      npm test vert (264 assertions action-registry, sauf clip-exporter pré-existant),
+      test:e2e 15/15.
+- [ ] **A.2 : rejouer le corpus (fr + multi)** pour mesurer l'impact réel sur B2/H1/H2/I2
+      — toujours pas fait (déjà noté non fait le 2026-08-16), aucun changement de
+      comportement par défaut ici donc pas bloquant, mais reste à mesurer.
