@@ -491,6 +491,29 @@ export function handleMessage(message) {
       renderMediaLibrary(message.items);
       renderMediaWall(message.items);
       break;
+    // AJOUT (Partie 2.3 — Mur Média, collisions phonétiques dès l'import) :
+    // non bloquant — le média est déjà ajouté (voir 'mediaLibraryUpdated'
+    // juste avant celui-ci) — seulement un avertissement pour que
+    // l'opérateur puisse reformuler une phrase déclencheuse AVANT le culte
+    // plutôt que de découvrir la confusion en plein direct.
+    case 'mediaTriggerCollisions':
+      {
+        const details = message.collisions
+          .map(
+            (c) =>
+              `"${c.phrase}" ↔ "${c.withPhrase}" (${c.withLabel})${c.exact ? ' — IDENTIQUE' : ` — distance ${c.distance}`}`
+          )
+          .join(' ; ');
+        addActivity(
+          `⚠️ ${message.collisions.length} collision(s) phonétique(s) pour "${message.itemLabel}" : ${details}`,
+          'warning'
+        );
+        showToast(
+          `⚠️ "${message.itemLabel}" : ${message.collisions.length} phrase(s) déclencheuse(s) trop proche(s) d'un autre média/chant — voir l'activité`,
+          'error'
+        );
+      }
+      break;
     // AJOUT (studio de scènes) : même raisonnement que mediaLibraryUpdated
     // ci-dessus — la liste vit côté serveur, diffusée à tous les tableaux de
     // bord ouverts après chaque ajout/suppression/modification.

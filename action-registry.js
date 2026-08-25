@@ -427,6 +427,9 @@ const SERVER_ACTIONS = {
   defaultMediaChanged: { description: 'Poster principal changé' },
   defaultSceneChanged: { description: 'Scène par défaut changée' },
   mediaLibraryUpdated: { description: 'Médiathèque mise à jour' },
+  mediaTriggerCollisions: {
+    description: "Collision(s) phonétique(s) détectée(s) entre phrases déclencheuses à l'import",
+  },
   sceneLibraryUpdated: { description: 'Scènes mises à jour' },
   rundownUpdated: { description: 'Feuille de route mise à jour' },
   rundownActiveCue: { description: 'Repère actif de la feuille de route changé' },

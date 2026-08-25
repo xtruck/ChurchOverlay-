@@ -21,7 +21,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { findTriggerMatch } = require('./voice-trigger-matcher');
+const { findTriggerMatch, findPhoneticCollisions } = require('./voice-trigger-matcher');
 
 const MAX_ITEMS = 100; // médiathèque d'un culte, pas un CMS — largement suffisant
 const DEFAULT_IMAGE_DURATION_MS = 15000; // "moment poster" court, pas un verset (120s par défaut)
@@ -302,6 +302,22 @@ function matchTriggerPhrase(text) {
   return findTriggerMatch(readIndex(), text);
 }
 
+/**
+ * Vérifie si des phrases déclencheuses candidates entrent en collision
+ * phonétique avec des phrases déjà enregistrées dans CETTE médiathèque
+ * (voir findPhoneticCollisions dans voice-trigger-matcher.js). Ne couvre PAS
+ * la bibliothèque de chants par défaut — server.js combine les deux listes
+ * lui-même s'il veut une vérification croisée (voir action WS
+ * addMediaItem/updateMediaItem), pour ne pas coupler ce module à
+ * song-library.js.
+ * @param {string[]} candidatePhrases
+ * @param {string} [excludeId] - id à ignorer (édition d'un élément existant)
+ * @returns {Array} voir findPhoneticCollisions
+ */
+function checkTriggerCollisions(candidatePhrases, excludeId) {
+  return findPhoneticCollisions(candidatePhrases, readIndex(), { excludeId });
+}
+
 module.exports = {
   setUserDataDir,
   listItems,
@@ -313,6 +329,7 @@ module.exports = {
   setDefaultItem,
   clearDefaultItem,
   matchTriggerPhrase,
+  checkTriggerCollisions,
   // Exposées pour tests unitaires (test-media-library.js).
   ALLOWED_EXTENSIONS,
   DEFAULT_IMAGE_DURATION_MS,

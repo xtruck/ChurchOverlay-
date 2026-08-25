@@ -279,5 +279,46 @@ assert.strictEqual(mediaLibrary.setDefaultItem('id-inexistant'), null);
 assert.strictEqual(mediaLibrary.clearDefaultItem(), null, 'rien à retirer -> null, pas d’erreur');
 console.log('[TEST] ✓ Cas limites gérés proprement\n');
 
+// Test 16 : checkTriggerCollisions() — wrapper media-library.js autour de
+// findPhoneticCollisions() (voir test-voice-trigger-matcher.js pour la
+// logique elle-même, testée en détail là-bas). Élément dédié (imgItem a été
+// supprimé au Test 8) pour ne pas dépendre d'un état laissé par un test
+// précédent.
+console.log('[TEST] Test 16: checkTriggerCollisions()...');
+{
+  const collisionSource = makeSourceFile('collision-test.png');
+  const collisionItem = mediaLibrary.addItem({
+    sourcePath: collisionSource,
+    label: 'Test collision',
+    triggerPhrases: ['annonces de la semaine'],
+  });
+
+  const noCollision = mediaLibrary.checkTriggerCollisions(['un texte totalement différent']);
+  assert.strictEqual(noCollision.length, 0, 'aucune collision attendue');
+
+  const collision = mediaLibrary.checkTriggerCollisions(['annonces de la semain']);
+  assert.ok(
+    collision.some((c) => c.withItem.id === collisionItem.id),
+    'collision attendue (annonces de la semaine ~ annonces de la semain)'
+  );
+
+  // excludeId : un média qui s'édite lui-même (même si triggerPhrases n'est
+  // pas encore éditable via updateItem(), le wrapper doit rester correct
+  // pour un futur appelant) ne doit jamais collisionner avec ses PROPRES
+  // phrases.
+  const selfExcluded = mediaLibrary.checkTriggerCollisions(
+    ['annonces de la semaine'],
+    collisionItem.id
+  );
+  assert.strictEqual(
+    selfExcluded.some((c) => c.withItem.id === collisionItem.id),
+    false,
+    'un média exclu par son propre id ne doit jamais collisionner avec lui-même'
+  );
+
+  mediaLibrary.deleteItem(collisionItem.id);
+}
+console.log('[TEST] ✓ checkTriggerCollisions() détecte et exclut correctement\n');
+
 fs.rmSync(userDataDir, { recursive: true, force: true });
 console.log('=== Tous les tests media-library sont passés ===');

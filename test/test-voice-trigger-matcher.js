@@ -11,7 +11,11 @@
  */
 'use strict';
 const assert = require('assert');
-const { normalizeTriggerText, findTriggerMatch } = require('../voice-trigger-matcher');
+const {
+  normalizeTriggerText,
+  findTriggerMatch,
+  findPhoneticCollisions,
+} = require('../voice-trigger-matcher');
 
 console.log('=== Test voice-trigger-matcher ===\n');
 
@@ -72,6 +76,64 @@ check(
   'getTriggerPhrases personnalisé (forme différente, ex. song-library.js)',
   findTriggerMatch(songs, 'chantons dieu est amour ensemble', (s) => s.lyrics.triggerPhrases)
     ?.id === 's1'
+);
+
+// ---------------------------------------------------------------------------
+// findPhoneticCollisions (Partie 2.3 — Mur Média, collisions dès l'import)
+// ---------------------------------------------------------------------------
+const existing = [
+  { id: 'm1', label: 'Photo groupe jeunes', triggerPhrases: ['groupe jeunes'] },
+  { id: 'm2', label: 'Verset accueil', triggerPhrases: ['verset d’accueil', 'bienvenue'] },
+];
+
+check(
+  'phrase identique (exacte) -> collision distance 0, exact=true',
+  (() => {
+    const c = findPhoneticCollisions(['groupe jeunes'], existing);
+    return c.length === 1 && c[0].distance === 0 && c[0].exact === true && c[0].withItem.id === 'm1';
+  })()
+);
+
+check(
+  'phrase très proche (1 caractère de différence, "jeunes" -> "jeune") -> collision détectée, exact=false',
+  (() => {
+    const c = findPhoneticCollisions(['groupe jeune'], existing);
+    return c.some((x) => x.withItem.id === 'm1' && x.exact === false && x.distance === 1);
+  })()
+);
+
+check(
+  'phrase clairement différente -> aucune collision',
+  findPhoneticCollisions(['vidéo de louange'], existing).length === 0
+);
+
+check(
+  'excludeId ignore ses propres phrases (édition d’un élément existant)',
+  findPhoneticCollisions(['groupe jeunes'], existing, { excludeId: 'm1' }).length === 0
+);
+
+check(
+  'plusieurs phrases candidates -> chaque collision remontée séparément',
+  findPhoneticCollisions(['bienvenue', 'verset accueil'], existing).length >= 2
+);
+
+check(
+  'liste existante vide -> aucune collision, pas d’exception',
+  findPhoneticCollisions(['peu importe'], []).length === 0
+);
+
+check(
+  'phrases candidates vides/undefined -> aucune collision, pas d’exception',
+  findPhoneticCollisions([], existing).length === 0 &&
+    findPhoneticCollisions(undefined, existing).length === 0
+);
+
+check(
+  'trié par distance croissante (les plus proches en premier)',
+  (() => {
+    const c = findPhoneticCollisions(['groupe jeunes', 'groupe jeune'], existing);
+    return c.every((x, i) => i === 0 || c[i - 1].distance <= x.distance);
+  })()
 );
 
 assert.strictEqual(failed, 0, `${failed} test(s) échoué(s)`);

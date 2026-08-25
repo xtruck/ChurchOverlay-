@@ -107,6 +107,7 @@ const SESSION_STARTED_AT = Date.now();
 // précédente en direct) : même discipline que media-library.js ci-dessus.
 // Voir song-library.js.
 const songLibrary = require('./song-library');
+const voiceTriggerMatcher = require('./voice-trigger-matcher');
 const featuresStore = require('./features-store');
 const validation = require('./validation');
 const { createChurchOverlayAgent } = require('./ai-agent');
@@ -3093,6 +3094,26 @@ wss.on('connection', (ws, req) => {
 
     if (sanitized.action === 'addMediaItem') {
       try {
+        // AJOUT (Partie 2.3 — Mur Média, collisions phonétiques "dès
+        // l'import") : vérifié AVANT l'ajout (le nouvel élément n'existe pas
+        // encore, pas besoin de s'auto-exclure). Combine médiathèque ET
+        // bibliothèque de chants : une phrase déclencheuse qui collisionne
+        // avec un chant existant est tout aussi dangereuse en plein culte
+        // qu'une collision interne à la médiathèque — les deux partagent le
+        // même moteur de détection vocale. Non bloquant : averti,
+        // l'opérateur reste libre d'ajouter quand même (ex. collision jugée
+        // acceptable, ou fausse alerte).
+        const candidatePhrases = Array.isArray(sanitized.triggerPhrases)
+          ? sanitized.triggerPhrases
+          : sanitized.label
+            ? [sanitized.label]
+            : [];
+        const collisions = mediaLibrary
+          .checkTriggerCollisions(candidatePhrases)
+          .concat(
+            voiceTriggerMatcher.findPhoneticCollisions(candidatePhrases, songLibrary.listSongs())
+          );
+
         let item = mediaLibrary.addItem({
           sourcePath: sanitized.sourcePath,
           label: sanitized.label,
@@ -3102,6 +3123,25 @@ wss.on('connection', (ws, req) => {
           transitionStyle: sanitized.transitionStyle,
         });
         log(`Médiathèque : "${item.label}" ajouté (${item.mediaType})`);
+        if (collisions.length > 0) {
+          log(
+            `Médiathèque : ${collisions.length} collision(s) phonétique(s) détectée(s) pour "${item.label}"`
+          );
+          ws.send(
+            JSON.stringify({
+              action: 'mediaTriggerCollisions',
+              itemId: item.id,
+              itemLabel: item.label,
+              collisions: collisions.map((c) => ({
+                phrase: c.phrase,
+                withLabel: c.withItem.label || c.withItem.title,
+                withPhrase: c.withPhrase,
+                distance: c.distance,
+                exact: c.exact,
+              })),
+            })
+          );
+        }
         // CORRECTIF (poster principal — "le poster ne revient pas après un
         // verset") : une image sans durée explicite reçoit silencieusement
         // DEFAULT_IMAGE_DURATION_MS (15s, voir media-library.js#addItem) — un
