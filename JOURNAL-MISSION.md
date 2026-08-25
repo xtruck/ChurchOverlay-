@@ -1422,3 +1422,49 @@ individuellement pour ce qui suit un échec connu, soit corriger le script lui-m
 (remplacer l'enchaînement `&&` par un vrai runner qui continue après un échec et
 rapporte un résumé complet). Pas corrigé ici — hors scope de ce chantier, à trancher
 avec l'utilisateur.
+
+### 2026-08-25 — Clés API réelles fournies par l'utilisateur : A.4 mesure terrain
+
+L'utilisateur a fourni GROQ_API_KEY et DEEPGRAM_API_KEY (stockées dans `.env`,
+gitignoré, jamais commité — vérifié `git check-ignore` et `git status` avant et après).
+
+- [x] **Tenté A.5 (banc corpus 47 lignes) — BLOQUÉ, pas par les clés** :
+      `live-tests/corpus-bench.js` échoue immédiatement (`ENOENT bloc1.wav`). Les WAV
+      synthétisés du corpus (`bloc1.wav`…`bloc13.wav`) sont **volontairement
+      gitignorés** (seuls les scripts texte `_p1.txt` sont suivis) et régénérés via
+      `generate-tts-corpus.js` → `_tts-synthesize.ps1`, qui utilise les voix **Windows
+      SAPI** (`System.Speech.Synthesis`, `Microsoft Hortense/Zira Desktop`) —
+      irreproductible sur ce bac à sable Linux quelles que soient les clés fournies.
+      **Reste bloqué** : nécessite soit que l'utilisateur régénère les .wav sur sa
+      machine Windows et les transmette, soit qu'il lance lui-même
+      `node live-tests/generate-tts-corpus.js` puis `corpus-bench.js` localement.
+- [x] **A.4 — mesure Silero sur audio réel, ENFIN FAITE** (dernier point resté ouvert
+      depuis le 2026-08-17) :
+      - `live-tests/deepgram-live-test.js` (vrai pipeline de production : Silero →
+        audio-capture.js → deepgram-streaming.js → detector-compat.js →
+        transcription-corrector.js → session-state.js → vraie API Bible), sur les WAV
+        français déjà présents dans le dépôt (`testA`-`D_16k.wav`, non liés au corpus
+        A.5 ci-dessus) : **4/4 tests PASS** (Jean 3:16, 1 Corinthiens 13:4, Jean 3:16
+        avec détection utile sur un partial à +4,71s, aucune référence sur une phrase
+        neutre — comportement attendu dans les 4 cas). Dédoublonnage vérifié avec de
+        vraies clés (cascade partiel→final supprimée, nouvel énoncé affiché, référence
+        différente jamais supprimée). Recherche biblique réelle réussie (82ms).
+        Résultats rafraîchis dans `live-tests/last-run-results.json` (fichier suivi,
+        mis à jour intentionnellement).
+      - `live-tests/silero-probability-timeline.js` (modèle Silero réel, aucune clé API
+        requise — j'aurais pu le lancer avant même d'avoir les clés) sur les 4 WAV
+        `test{A,B,C,D}_16k.wav` : mode **STATEFUL** (comportement de production, celui
+        qui a reçu le correctif préfixe-contexte STFT) — médiane **0,9987 à 0,9999**,
+        moyenne **0,74 à 0,78** sur les 4 fichiers, cohérent partout. **Confirme
+        enfin, sur audio réel et non plus seulement en test unitaire, que le correctif
+        A.4 fonctionne** (le document de mission demandait exactement cette mesure
+        terrain, jamais faite avant faute de résultat concret). Mode **STATELESS**
+        (comparaison — état LSTM réinitialisé à chaque fenêtre, l'ANCIEN bug) : médiane
+        **0,15**, moyenne **0,32** — étonnamment proche des ~0,193 rapportés à
+        l'origine dans le document de mission comme le symptôme du bug. Preuve
+        indirecte forte que l'hypothèse retenue par le chantier B (2026-08-16 —
+        "état h/c non réinitialisé entre appels") était la bonne cause racine, et que
+        le correctif déjà en place la résout réellement.
+      **A.4 est maintenant intégralement vérifié**, les 4 volets (STFT fix, session
+      language forcée, ABI better-sqlite3, mesure terrain) confirmés sur du code et
+      des données réelles.
