@@ -1837,13 +1837,14 @@ l'allowlist existante`), jamais le nom venu du zip. `media-library.js`/
 
 1. Les .wav du corpus (régénérés sur Windows) ou un accès à une machine Windows pour
    A.5 — bloque aussi la mesure d'impact de §4.1.
-2. ~~Une clé Gemini~~ **FOURNIE (2026-08-25)**. A débloqué un bug latent
-   réel au passage (voir entrée dédiée plus loin : `text-embedding-004`
-   n'existe plus côté API, la recherche sémantique était inopérante en
-   permanence depuis son introduction, quelle que soit la clé). Génération
-   de l'index réel (~31 000 versets) lancée — le palier gratuit impose un
-   rythme lent (429 fréquents malgré la nouvelle tentative automatique),
-   voir l'entrée dédiée pour le résultat final.
+2. ~~Une clé Gemini~~ **FOURNIE puis REMPLACÉE PAR OLLAMA LOCAL (2026-08-25)**.
+   A débloqué un bug latent réel au passage (voir entrée dédiée : `text-
+embedding-004` n'existe plus côté API, la recherche sémantique était
+   inopérante en permanence depuis son introduction, quelle que soit la
+   clé). Le palier gratuit Gemini s'est ensuite révélé non seulement lent
+   mais NON FIABLE d'un jour à l'autre (voir entrée dédiée) — Ollama +
+   `bge-m3` installés en local, préférés désormais (aucune clé, aucun
+   quota), Gemini gardé en repli automatique. Rien à faire de plus ici.
 3. Rien — "séquence" est tranché (voir entrée dédiée plus loin : le rundown
    existant, glisser-déposer jugé non prioritaire une fois le bouton ➕ déjà
    équivalent fonctionnellement).
@@ -2000,3 +2001,58 @@ que cette génération tournait en arrière-plan (voir Partie 2 plus haut,
 section "RÉVISÉ — test de charge à 200 médias FAIT") : mesuré 46,5ms/9,1ms
 pour 200 médias et 379ms pour la copie d'un fichier de 150 Mo, largement
 sous le critère <300ms du document.
+
+---
+
+### 2026-08-25 — Ollama local préféré à Gemini pour les embeddings : le vrai plafond n'était même pas fiable d'un jour à l'autre
+
+Relancé le lendemain (quota revenu — un appel de test unique a réussi) :
+génération relancée, mais échouée DÈS LE PREMIER LOT cette fois (0 verset,
+alors que la veille elle en avait fait ~900 avant de buter). Le `quotaId` du
+corps d'erreur a changé entre les deux échecs :
+`...PerDay**PerUser**PerProject...` la veille contre
+`...PerDay**PerProject**...` (sans "PerUser") cette fois — signe que ce
+quota gratuit peut être partagé au niveau du PROJET Google Cloud, pas
+garanti dédié à cette seule tâche. Conclusion : le palier gratuit Gemini
+n'est pas seulement lent, il n'est pas FIABLE d'un jour à l'autre — aucune
+base sur laquelle planifier "combien de jours pour finir l'index".
+
+Sur suggestion de l'utilisateur ("essaie Ollama ou DeepSeek") : vérifié
+DeepSeek d'abord — sa documentation officielle (`api-docs.deepseek.com`) ne
+liste QUE des modèles de chat completion, aucun endpoint d'embeddings ; des
+tickets GitHub ouverts par deepseek-ai eux-mêmes confirment "there is no
+dedicated embedding for any of the deep seek models". Écarté : pas une
+option technique, indépendamment de toute question de coût.
+
+Ollama installé (script officiel `ollama.com/install.sh`, systemd absent
+dans ce conteneur donc `ollama serve` lancé manuellement en arrière-plan) +
+`bge-m3` (1,2 Go, multilingue). Vérifié sur du français réel avant de
+committer quoi que ce soit : "Jean 3:16" vs un résumé du même thème
+("l'amour de Dieu...") -> similarité cosinus 0,588 ; vs un sujet sans
+rapport (lois de pureté rituelle / généalogie) -> 0,26/0,38 — séparation
+sémantique nette, pas un vague "ça a l'air de marcher".
+
+`embedding-provider.js` restructuré : Ollama essayé EN PREMIER (aucune clé,
+aucun quota, 100% local — `isOllamaAvailable()` interroge `/api/version`
+avec un timeout de 1,5s avant chaque appel), Gemini devient un REPLI
+automatique (jamais supprimé, pour ne rien casser chez qui n'a pas Ollama
+installé) si Ollama ne répond pas ET qu'une clé est configurée. Les deux
+fournisseurs produisent des espaces vectoriels incompatibles (1024 vs 768,
+pas de troncature Matryoshka côté bge-m3) : `getActiveProviderInfo()`
+nouvellement exposé dit AVANT la création du fichier lequel des deux sera
+utilisé, pour que `scripts/generate-bible-embeddings.js` configure la bonne
+dimension — plus de valeur codée en dur.
+
+Testé : 33/33 dans `test/test-embedding-provider.js` (mock de `global.fetch`
+pour Ollama, même technique d'injection de module qu'avant pour Gemini —
+TOUS les tests Gemini simulent explicitement "Ollama indisponible", sinon
+ils auraient silencieusement utilisé le VRAI Ollama qui tournait dans cette
+session). `test-bible-semantic-search.js`/`test-bible-vector-store.js`
+inchangés et toujours verts (aucune de leurs hypothèses ne dépendait du
+fournisseur).
+
+Génération réelle relancée avec Ollama actif — sans plafond, juste plus
+lente (inférence CPU locale, pas de GPU détecté à l'installation) :
+~100 versets en quelques minutes au démarrage. Pas de risque à la laisser
+tourner longtemps : le correctif `.building` de l'entrée précédente
+s'applique identiquement, quel que soit le fournisseur.

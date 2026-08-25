@@ -1,26 +1,52 @@
 'use strict';
 /**
  * ============================================================================
- * embedding-provider.js — Génération d'embeddings de texte (Gemini)
+ * embedding-provider.js — Génération d'embeddings de texte (Ollama local, repli Gemini)
  * ----------------------------------------------------------------------------
  * AJOUT (chantier 4.2 — recherche sémantique biblique) : bible-semantic-search.js
  * a besoin d'un vecteur par verset (index, à la construction) ET d'un vecteur
- * par requête (à l'exécution, recherche par sujet). Seul GEMINI_API_KEY donne
- * accès à un modèle d'embedding dans cette stack (Groq n'expose pas
- * d'endpoint d'embeddings) — voir groq-wrapper.js pour le même choix de
- * fournisseur côté chat. Absent délibérément du mode "gratuit/léger" suivi
- * par sermon-qa.js/sermon-archive.js (voir leurs en-têtes) : cette extension
- * a été demandée explicitement pour bible-semantic-search.js malgré le coût
- * d'un appel API, décision prise en session le 2026-08-18 (voir
- * JOURNAL-MISSION.md).
+ * par requête (à l'exécution, recherche par sujet).
  *
- * Comportement en l'absence de GEMINI_API_KEY : embedTexts()/embedQuery()
- * renvoient null (jamais d'exception non attrapée) — même discipline que
- * chatCompletion() ailleurs dans ce dépôt (mode dégradé, pas de crash).
+ * CORRECTIF (2026-08-25) : Gemini (seul fournisseur au départ, Groq n'expose
+ * pas d'endpoint d'embeddings) s'est révélé imprévisible pour ce volume —
+ * générer l'index réel (~31 000 versets) s'est heurté à un plafond
+ * JOURNALIER gratuit (voir JOURNAL-MISSION.md), qui ne s'est même pas révélé
+ * fiable d'un jour à l'autre (une tentative a échoué au tout premier lot).
+ * Ollama tourne EN LOCAL (aucune clé, aucun quota, aucun coût — voir
+ * JOURNAL-MISSION.md pour l'installation) : préféré quand disponible
+ * (`bge-m3`, modèle multilingue — vérifié en session sur du français réel,
+ * bonne séparation sémantique). Gemini reste un repli automatique si Ollama
+ * n'est pas joignable ET qu'une clé est configurée — jamais supprimé,
+ * seulement rétrogradé, pour ne rien casser chez qui n'a pas Ollama installé.
+ *
+ * Les deux fournisseurs produisent des espaces vectoriels DIFFÉRENTS et
+ * INCOMPATIBLES (dimensions différentes, 1024 vs 768) : mélanger les deux
+ * dans le même index n'aurait aucun sens. getActiveProviderInfo() permet à
+ * scripts/generate-bible-embeddings.js de savoir, AVANT de créer le fichier,
+ * quel fournisseur sera réellement utilisé et quelle dimension configurer.
+ *
+ * Comportement si NI Ollama NI GEMINI_API_KEY ne sont disponibles :
+ * embedTexts()/embedQuery() renvoient null (jamais d'exception non
+ * attrapée) — même discipline que chatCompletion() ailleurs dans ce dépôt
+ * (mode dégradé, pas de crash) — bible-semantic-search.js retombe alors sur
+ * la recherche mot-clé, honnête et fonctionnelle.
  * ============================================================================
  */
 
 const { GoogleGenAI } = require('@google/genai');
+
+const OLLAMA_CONFIG = {
+  BASE_URL: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
+  MODEL: process.env.OLLAMA_EMBED_MODEL || 'bge-m3',
+  // Dimension native de bge-m3 (pas de troncature Matryoshka comme Gemini —
+  // vérifié : le modèle ne prend aucun paramètre de dimension de sortie).
+  DIMENSION: 1024,
+  BATCH_SIZE: 50,
+  // Une requête localhost qui ne répond pas en 1,5s signale un serveur
+  // absent/bloqué, pas une génération lente — évite d'attendre longtemps
+  // avant de basculer vers le repli Gemini.
+  AVAILABILITY_TIMEOUT_MS: 1500,
+};
 
 const CONFIG = {
   // CORRECTIF (2026-08-25) : text-embedding-004 n'existe plus côté API
@@ -63,6 +89,46 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Vérifie qu'un serveur Ollama répond réellement — pas juste que l'URL est
+ * configurée. Ne lève jamais (toute erreur réseau = indisponible).
+ * @returns {Promise<boolean>}
+ */
+async function isOllamaAvailable() {
+  try {
+    const res = await fetch(`${OLLAMA_CONFIG.BASE_URL}/api/version`, {
+      signal: AbortSignal.timeout(OLLAMA_CONFIG.AVAILABILITY_TIMEOUT_MS),
+    });
+    return res.ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function embedTextsViaOllama(texts) {
+  const results = [];
+  for (const batch of chunk(texts, OLLAMA_CONFIG.BATCH_SIZE)) {
+    const res = await fetch(`${OLLAMA_CONFIG.BASE_URL}/api/embed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: OLLAMA_CONFIG.MODEL, input: batch }),
+    });
+    if (!res.ok) {
+      const bodyText = await res.text().catch(() => '');
+      throw new Error(`Ollama a répondu ${res.status} : ${bodyText.slice(0, 300)}`);
+    }
+    const data = await res.json();
+    const embeddings = data.embeddings || [];
+    if (embeddings.length !== batch.length) {
+      throw new Error(
+        `Réponse Ollama incomplète : ${embeddings.length} embeddings pour ${batch.length} textes.`
+      );
+    }
+    results.push(...embeddings);
+  }
+  return results;
+}
+
 // CORRECTIF (2026-08-25) : constaté en générant l'index réel — un même code
 // HTTP 429 recouvre en réalité DEUX quotas Gemini bien distincts, visibles
 // uniquement dans le "quotaId" du corps JSON de l'erreur :
@@ -85,21 +151,9 @@ function isDailyQuotaError(err) {
   }
 }
 
-/**
- * Génère un embedding par texte, dans l'ordre. Renvoie null (pas
- * d'exception) si GEMINI_API_KEY est absent ou si l'appel échoue.
- * @param {string[]} texts
- * @param {{ taskType?: string }} [options]
- * @returns {Promise<number[][]|null>}
- */
-async function embedTexts(texts, options = {}) {
-  if (!Array.isArray(texts) || texts.length === 0) return [];
-
+async function embedTextsViaGemini(texts, options) {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.warn('[embedding-provider] GEMINI_API_KEY non défini — embeddings indisponibles.');
-    return null;
-  }
+  if (!apiKey) return null;
 
   const { taskType = 'RETRIEVAL_DOCUMENT' } = options;
   const ai = new GoogleGenAI({ apiKey });
@@ -124,13 +178,13 @@ async function embedTexts(texts, options = {}) {
           if (err.status !== 429 || attempt >= CONFIG.MAX_RETRIES_ON_RATE_LIMIT) throw err;
           if (isDailyQuotaError(err)) {
             console.warn(
-              '[embedding-provider] 429 (quota JOURNALIER, pas un simple palier de débit) — abandon immédiat, retenter demain plutôt que de gaspiller le reste du quota en tentatives vaines.'
+              '[embedding-provider] Gemini 429 (quota JOURNALIER, pas un simple palier de débit) — abandon immédiat, retenter demain plutôt que de gaspiller le reste du quota en tentatives vaines.'
             );
             throw err;
           }
           const delayMs = CONFIG.RETRY_BASE_DELAY_MS * 2 ** attempt;
           console.warn(
-            `[embedding-provider] 429 (palier gratuit) — nouvelle tentative dans ${delayMs}ms (${attempt + 1}/${CONFIG.MAX_RETRIES_ON_RATE_LIMIT})`
+            `[embedding-provider] Gemini 429 (palier gratuit) — nouvelle tentative dans ${delayMs}ms (${attempt + 1}/${CONFIG.MAX_RETRIES_ON_RATE_LIMIT})`
           );
           await sleep(delayMs);
           attempt++;
@@ -151,15 +205,68 @@ async function embedTexts(texts, options = {}) {
     }
     return results;
   } catch (err) {
-    console.warn('[embedding-provider] Échec embedContent:', err.message);
+    console.warn('[embedding-provider] Échec embedContent (Gemini):', err.message);
     return null;
   }
 }
 
 /**
- * Raccourci pour un seul texte de requête (taskType=RETRIEVAL_QUERY —
- * asymétrique par rapport à RETRIEVAL_DOCUMENT utilisé à l'indexation,
- * recommandation Google pour ce modèle).
+ * Indique quel fournisseur SERAIT utilisé maintenant, sans faire d'appel
+ * d'embedding réel — utilisé par scripts/generate-bible-embeddings.js pour
+ * savoir quelle dimension configurer AVANT de créer le fichier d'index (les
+ * deux fournisseurs produisent des espaces vectoriels incompatibles).
+ * @returns {Promise<{provider: 'ollama'|'gemini'|null, dimension: number|null}>}
+ */
+async function getActiveProviderInfo() {
+  if (await isOllamaAvailable()) {
+    return { provider: 'ollama', dimension: OLLAMA_CONFIG.DIMENSION };
+  }
+  if (process.env.GEMINI_API_KEY) {
+    return { provider: 'gemini', dimension: CONFIG.OUTPUT_DIMENSIONALITY };
+  }
+  return { provider: null, dimension: null };
+}
+
+/**
+ * Génère un embedding par texte, dans l'ordre. Préfère Ollama (local, sans
+ * clé ni quota) s'il répond ; sinon retombe sur Gemini si GEMINI_API_KEY est
+ * défini. Renvoie null (jamais d'exception) si aucun des deux n'est
+ * disponible ou si l'appel échoue.
+ * @param {string[]} texts
+ * @param {{ taskType?: string }} [options]
+ * @returns {Promise<number[][]|null>}
+ */
+async function embedTexts(texts, options = {}) {
+  if (!Array.isArray(texts) || texts.length === 0) return [];
+
+  if (await isOllamaAvailable()) {
+    try {
+      return await embedTextsViaOllama(texts);
+    } catch (err) {
+      console.warn(
+        '[embedding-provider] Échec embedContent (Ollama), repli sur Gemini si disponible :',
+        err.message
+      );
+      // Continue vers Gemini plutôt que de renvoyer null tout de suite —
+      // un Ollama momentanément instable ne doit pas priver d'un repli
+      // fonctionnel s'il existe.
+    }
+  }
+
+  if (!process.env.GEMINI_API_KEY) {
+    console.warn(
+      '[embedding-provider] Ni Ollama (voir OLLAMA_BASE_URL) ni GEMINI_API_KEY — embeddings indisponibles.'
+    );
+    return null;
+  }
+  return embedTextsViaGemini(texts, options);
+}
+
+/**
+ * Raccourci pour un seul texte de requête (taskType=RETRIEVAL_QUERY côté
+ * Gemini — asymétrique par rapport à RETRIEVAL_DOCUMENT utilisé à
+ * l'indexation, recommandation Google pour ce modèle ; ignoré côté Ollama,
+ * bge-m3 ne distingue pas document/requête).
  * @param {string} text
  * @returns {Promise<number[]|null>}
  */
@@ -168,4 +275,11 @@ async function embedQuery(text) {
   return result && result.length > 0 ? result[0] : null;
 }
 
-module.exports = { embedTexts, embedQuery, CONFIG };
+module.exports = {
+  embedTexts,
+  embedQuery,
+  getActiveProviderInfo,
+  isOllamaAvailable,
+  CONFIG,
+  OLLAMA_CONFIG,
+};

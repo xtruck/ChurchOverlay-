@@ -8,18 +8,21 @@
  *   1. Télécharge la Bible complète (fra_lsg) via bible-offline-cache.js
  *      (même source/rythme que le cache hors-ligne déjà utilisé en
  *      production — bible.helloao.org, aucune clé requise pour cette étape).
- *   2. Embed chaque verset (Gemini text-embedding-004, voir
- *      embedding-provider.js — REQUIERT GEMINI_API_KEY).
+ *   2. Embed chaque verset (Ollama local si joignable — voir
+ *      embedding-provider.js, `ollama pull bge-m3` au préalable —, sinon
+ *      repli Gemini si GEMINI_API_KEY est défini).
  *   3. Écrit le tout dans models/bible-vector-index.sqlite3 via
  *      bible-vector-store.js (sqlite-vec) — fichier binaire volumineux,
  *      délibérément PAS committé (voir .gitignore), livré via le pipeline de
  *      build/release comme models/silero_vad.onnx.
  *
- * Usage : GEMINI_API_KEY=... node scripts/generate-bible-embeddings.js
+ * Usage : node scripts/generate-bible-embeddings.js
  * (~66 livres à télécharger si le cache local n'existe pas encore : prévoir
  * plusieurs minutes rien que pour cette étape, à cause du rythme poli
  * REQUEST_DELAY_MS envers l'API gratuite helloao. L'embedding d'environ
- * 31 000 versets suit, par lots — coût et durée dépendent du quota Gemini.)
+ * 31 000 versets suit, par lots — CORRECTIF 2026-08-25 : Ollama local est
+ * préféré précisément parce que le palier gratuit Gemini s'est révélé
+ * impraticable pour ce volume, voir JOURNAL-MISSION.md.)
  * ============================================================================
  */
 
@@ -28,7 +31,7 @@ const path = require('path');
 const fs = require('fs');
 
 const bibleOfflineCache = require('../bible-offline-cache');
-const { embedTexts } = require('../embedding-provider');
+const { embedTexts, getActiveProviderInfo } = require('../embedding-provider');
 const { BibleVectorStore, DEFAULT_DB_PATH } = require('../bible-vector-store');
 
 const TRANSLATION = bibleOfflineCache.DEFAULT_TRANSLATION;
@@ -100,13 +103,24 @@ function chunk(array, size) {
 }
 
 async function main() {
-  if (!process.env.GEMINI_API_KEY) {
+  // CORRECTIF (2026-08-25) : Gemini seul, sur son palier gratuit, s'est
+  // révélé impraticable pour ~31 000 versets (plafond journalier atteint
+  // avant la fin, voir JOURNAL-MISSION.md) — Ollama local (aucune clé, aucun
+  // quota) est maintenant préféré quand disponible. getActiveProviderInfo()
+  // dit AVANT de créer le fichier lequel des deux sera réellement utilisé,
+  // pour configurer la bonne dimension (les deux espaces vectoriels sont
+  // incompatibles entre eux).
+  const { provider, dimension } = await getActiveProviderInfo();
+  if (!provider) {
     console.error(
-      '[generate-bible-embeddings] GEMINI_API_KEY non défini — impossible de générer des embeddings. ' +
+      '[generate-bible-embeddings] Ni Ollama (voir OLLAMA_BASE_URL) ni GEMINI_API_KEY — impossible de générer des embeddings. ' +
         'Voir embedding-provider.js.'
     );
     process.exit(1);
   }
+  console.log(
+    `[generate-bible-embeddings] Fournisseur actif : ${provider} (dimension ${dimension}).`
+  );
 
   const books = await ensureBibleTextDownloaded();
   const verses = flattenVerses(books);
@@ -123,7 +137,7 @@ async function main() {
   // seulement après un succès complet — un ancien index valide (s'il en
   // existe un) reste donc intact tant qu'un nouveau n'a pas fini.
   const buildingPath = `${DEFAULT_DB_PATH}.building`;
-  const store = new BibleVectorStore({ dbPath: buildingPath, vectorDim: 768 });
+  const store = new BibleVectorStore({ dbPath: buildingPath, vectorDim: dimension });
   store.createForWriting();
 
   const batches = chunk(verses, EMBED_BATCH_SIZE);

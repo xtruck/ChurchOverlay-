@@ -1,8 +1,15 @@
 'use strict';
 /**
- * Tests unitaires pour embedding-provider.js — embedTexts()/embedQuery().
- * @google/genai est mocké via injection de module (même technique que
- * integration-quote-match.js) — aucun appel réseau réel.
+ * Tests unitaires pour embedding-provider.js — embedTexts()/embedQuery()/
+ * getActiveProviderInfo(), fournisseurs Ollama (préféré, mocke global.fetch)
+ * et Gemini (repli, mocke @google/genai via injection de module — même
+ * technique que integration-quote-match.js). Aucun appel réseau réel.
+ *
+ * AJOUT (2026-08-25 — Ollama préféré) : TOUS les blocs Gemini ci-dessous
+ * mockent explicitement global.fetch pour simuler "Ollama indisponible" —
+ * indispensable pour rester déterministe : cette machine peut très bien
+ * avoir un VRAI serveur Ollama qui tourne (c'est le cas dans cette session),
+ * et embedTexts() l'essaie toujours EN PREMIER désormais.
  */
 const Module = require('module');
 
@@ -43,28 +50,188 @@ function check(name, cond) {
   }
 }
 
+// Simule "aucun serveur Ollama joignable" -- un rejet réseau générique,
+// exactement ce que produirait un fetch() vers un port fermé.
+function mockFetchOllamaUnavailable() {
+  global.fetch = async () => {
+    throw new Error('connect ECONNREFUSED 127.0.0.1:11434');
+  };
+}
+
 async function run() {
   const originalKey = process.env.GEMINI_API_KEY;
+  const originalFetch = global.fetch;
 
-  // --- Sans GEMINI_API_KEY : jamais d'exception, renvoie null ---
+  // --- Sans Ollama ni GEMINI_API_KEY : jamais d'exception, renvoie null ---
+  mockFetchOllamaUnavailable();
   delete process.env.GEMINI_API_KEY;
   delete require.cache[require.resolve('../embedding-provider')];
   {
     const { embedTexts, embedQuery } = require('../embedding-provider');
     const r1 = await embedTexts(['jean 3:16']);
-    check('embedTexts sans clé: renvoie null', r1 === null);
+    check('embedTexts sans fournisseur: renvoie null', r1 === null);
     const r2 = await embedQuery('amour');
-    check('embedQuery sans clé: renvoie null', r2 === null);
+    check('embedQuery sans fournisseur: renvoie null', r2 === null);
   }
 
-  // --- Tableau vide : pas d'appel réseau, renvoie [] même sans clé ---
+  // --- Tableau vide : pas d'appel réseau du tout, renvoie [] ---
   {
+    let fetchCalled = false;
+    global.fetch = async () => {
+      fetchCalled = true;
+      throw new Error('ne devrait jamais être appelé');
+    };
     const { embedTexts } = require('../embedding-provider');
     const r = await embedTexts([]);
     check('embedTexts([]): renvoie [] sans appel réseau', Array.isArray(r) && r.length === 0);
+    check('embedTexts([]): fetch jamais appelé', !fetchCalled);
+  }
+
+  // =====================================================================
+  // --- OLLAMA (préféré) ---
+  // =====================================================================
+
+  // --- Ollama joignable et fonctionnel : utilisé en priorité ---
+  {
+    let lastBody = null;
+    global.fetch = async (url, opts) => {
+      if (String(url).endsWith('/api/version')) {
+        return { ok: true };
+      }
+      if (String(url).endsWith('/api/embed')) {
+        lastBody = JSON.parse(opts.body);
+        return {
+          ok: true,
+          json: async () => ({
+            embeddings: lastBody.input.map((_, i) => [i, i + 1, i + 2]),
+          }),
+        };
+      }
+      throw new Error('URL inattendue: ' + url);
+    };
+    delete require.cache[require.resolve('../embedding-provider')];
+    const {
+      embedTexts,
+      embedQuery,
+      isOllamaAvailable,
+      OLLAMA_CONFIG,
+    } = require('../embedding-provider');
+
+    check('isOllamaAvailable(): true quand /api/version répond ok', await isOllamaAvailable());
+
+    const r = await embedTexts(['Jean 3:16', 'Psaume 23:1']);
+    check('embedTexts (Ollama): 2 vecteurs pour 2 textes', Array.isArray(r) && r.length === 2);
+    check("embedTexts (Ollama): vecteur dans l'ordre d'entrée", r[0][0] === 0 && r[1][0] === 1);
+    check('embedTexts (Ollama): modèle correct transmis', lastBody.model === OLLAMA_CONFIG.MODEL);
+
+    const q = await embedQuery('la grace de dieu');
+    check(
+      'embedQuery (Ollama): renvoie le premier (et seul) vecteur',
+      Array.isArray(q) && q.length === 3
+    );
+  }
+
+  // --- Ollama : découpage en lots respecté (BATCH_SIZE) ---
+  {
+    const callSizes = [];
+    global.fetch = async (url, opts) => {
+      if (String(url).endsWith('/api/version')) return { ok: true };
+      const body = JSON.parse(opts.body);
+      callSizes.push(body.input.length);
+      return { ok: true, json: async () => ({ embeddings: body.input.map(() => [1, 2, 3]) }) };
+    };
+    delete require.cache[require.resolve('../embedding-provider')];
+    const { embedTexts, OLLAMA_CONFIG } = require('../embedding-provider');
+    const texts = Array.from({ length: OLLAMA_CONFIG.BATCH_SIZE + 5 }, (_, i) => `verset ${i}`);
+    const r = await embedTexts(texts);
+    check(
+      'embedTexts (Ollama): tous les textes embeddés malgré le découpage',
+      r.length === texts.length
+    );
+    check(
+      'embedTexts (Ollama): découpé en 2 lots respectant BATCH_SIZE',
+      callSizes.length === 2 && callSizes[0] === OLLAMA_CONFIG.BATCH_SIZE && callSizes[1] === 5
+    );
+  }
+
+  // --- Ollama joignable mais échoue en cours de route : repli sur Gemini si disponible ---
+  {
+    global.fetch = async (url) => {
+      if (String(url).endsWith('/api/version')) return { ok: true };
+      return { ok: false, status: 500, text: async () => 'erreur interne Ollama' };
+    };
+    process.env.GEMINI_API_KEY = 'fake-key-for-test';
+    let geminiWasCalled = false;
+    injectFakeModule('@google/genai', {
+      GoogleGenAI: class {
+        constructor() {}
+        get models() {
+          return {
+            embedContent: async (params) => {
+              geminiWasCalled = true;
+              return { embeddings: params.contents.map(() => ({ values: [9, 9, 9] })) };
+            },
+          };
+        }
+      },
+    });
+    delete require.cache[require.resolve('../embedding-provider')];
+    const { embedTexts } = require('../embedding-provider');
+    const r = await embedTexts(['jean 3:16']);
+    check('embedTexts: Ollama en échec -> repli automatique sur Gemini', geminiWasCalled);
+    check(
+      'embedTexts: le repli Gemini renvoie bien un résultat',
+      Array.isArray(r) && r[0][0] === 9
+    );
+  }
+
+  // --- getActiveProviderInfo() : reflète Ollama quand joignable ---
+  {
+    global.fetch = async (url) =>
+      String(url).endsWith('/api/version') ? { ok: true } : { ok: false, status: 404 };
+    delete require.cache[require.resolve('../embedding-provider')];
+    const { getActiveProviderInfo, OLLAMA_CONFIG } = require('../embedding-provider');
+    const info = await getActiveProviderInfo();
+    check('getActiveProviderInfo(): provider=ollama quand joignable', info.provider === 'ollama');
+    check(
+      'getActiveProviderInfo(): dimension Ollama correcte',
+      info.dimension === OLLAMA_CONFIG.DIMENSION
+    );
+  }
+
+  // =====================================================================
+  // --- GEMINI (repli — tous les blocs simulent Ollama indisponible) ---
+  // =====================================================================
+
+  // --- getActiveProviderInfo() : reflète Gemini quand Ollama indisponible + clé présente ---
+  mockFetchOllamaUnavailable();
+  process.env.GEMINI_API_KEY = 'fake-key-for-test';
+  {
+    delete require.cache[require.resolve('../embedding-provider')];
+    const { getActiveProviderInfo, CONFIG } = require('../embedding-provider');
+    const info = await getActiveProviderInfo();
+    check(
+      'getActiveProviderInfo(): provider=gemini si Ollama indisponible et clé présente',
+      info.provider === 'gemini'
+    );
+    check(
+      'getActiveProviderInfo(): dimension Gemini correcte',
+      info.dimension === CONFIG.OUTPUT_DIMENSIONALITY
+    );
+  }
+  {
+    delete require.cache[require.resolve('../embedding-provider')];
+    delete process.env.GEMINI_API_KEY;
+    const { getActiveProviderInfo } = require('../embedding-provider');
+    const info = await getActiveProviderInfo();
+    check(
+      'getActiveProviderInfo(): provider=null si ni Ollama ni clé',
+      info.provider === null && info.dimension === null
+    );
   }
 
   // --- Avec clé, mock GoogleGenAI : appel réussi ---
+  mockFetchOllamaUnavailable();
   process.env.GEMINI_API_KEY = 'fake-key-for-test';
   let lastCall = null;
   injectFakeModule('@google/genai', {
@@ -86,17 +253,26 @@ async function run() {
   {
     const { embedTexts, embedQuery, CONFIG } = require('../embedding-provider');
     const r = await embedTexts(['Jean 3:16', 'Psaume 23:1']);
-    check('embedTexts avec clé: 2 vecteurs pour 2 textes', Array.isArray(r) && r.length === 2);
-    check("embedTexts: vecteur dans l'ordre d'entrée", r[0][0] === 0 && r[1][0] === 1);
-    check('embedTexts: modèle correct transmis', lastCall.model === CONFIG.MODEL);
     check(
-      'embedTexts: taskType par défaut = RETRIEVAL_DOCUMENT',
+      'embedTexts (Gemini) avec clé: 2 vecteurs pour 2 textes',
+      Array.isArray(r) && r.length === 2
+    );
+    check("embedTexts (Gemini): vecteur dans l'ordre d'entrée", r[0][0] === 0 && r[1][0] === 1);
+    check('embedTexts (Gemini): modèle correct transmis', lastCall.model === CONFIG.MODEL);
+    check(
+      'embedTexts (Gemini): taskType par défaut = RETRIEVAL_DOCUMENT',
       lastCall.config.taskType === 'RETRIEVAL_DOCUMENT'
     );
 
     const q = await embedQuery('la grace de dieu');
-    check('embedQuery: renvoie le premier (et seul) vecteur', Array.isArray(q) && q.length === 3);
-    check('embedQuery: taskType = RETRIEVAL_QUERY', lastCall.config.taskType === 'RETRIEVAL_QUERY');
+    check(
+      'embedQuery (Gemini): renvoie le premier (et seul) vecteur',
+      Array.isArray(q) && q.length === 3
+    );
+    check(
+      'embedQuery (Gemini): taskType = RETRIEVAL_QUERY',
+      lastCall.config.taskType === 'RETRIEVAL_QUERY'
+    );
   }
 
   // --- Réponse Gemini incomplète (moins d'embeddings que de textes) ---
@@ -112,7 +288,10 @@ async function run() {
   {
     const { embedTexts } = require('../embedding-provider');
     const r = await embedTexts(['un', 'deux', 'trois']);
-    check('embedTexts: réponse incomplète -> null (pas de crash, pas de silence)', r === null);
+    check(
+      'embedTexts (Gemini): réponse incomplète -> null (pas de crash, pas de silence)',
+      r === null
+    );
   }
 
   // --- Erreur réseau/API (générique, sans .status) : jamais de nouvelle tentative ---
@@ -134,9 +313,9 @@ async function run() {
   {
     const { embedTexts } = require('../embedding-provider');
     const r = await embedTexts(['jean 3:16']);
-    check('embedTexts: erreur API -> null (pas de crash)', r === null);
+    check('embedTexts (Gemini): erreur API -> null (pas de crash)', r === null);
     check(
-      'embedTexts: erreur générique (pas .status=429) -> aucune nouvelle tentative',
+      'embedTexts (Gemini): erreur générique (pas .status=429) -> aucune nouvelle tentative',
       genericErrorCallCount === 1
     );
   }
@@ -167,10 +346,13 @@ async function run() {
     CONFIG.RETRY_BASE_DELAY_MS = 1; // test rapide -- la vraie valeur de prod reste 5000ms
     const r = await embedTexts(['jean 3:16']);
     check(
-      "embedTexts: 429 -> nouvelle tentative automatique jusqu'au succès",
+      "embedTexts (Gemini): 429 -> nouvelle tentative automatique jusqu'au succès",
       Array.isArray(r) && r.length === 1
     );
-    check('embedTexts: exactement 3 appels (2 échecs 429 + 1 succès)', rateLimitCallCount === 3);
+    check(
+      'embedTexts (Gemini): exactement 3 appels (2 échecs 429 + 1 succès)',
+      rateLimitCallCount === 3
+    );
   }
 
   // --- 429 persistant au-delà du nombre max de tentatives : null, pas de boucle infinie ---
@@ -196,9 +378,9 @@ async function run() {
     CONFIG.RETRY_BASE_DELAY_MS = 1;
     CONFIG.MAX_RETRIES_ON_RATE_LIMIT = 2;
     const r = await embedTexts(['jean 3:16']);
-    check('embedTexts: 429 persistant -> null (pas de crash)', r === null);
+    check('embedTexts (Gemini): 429 persistant -> null (pas de crash)', r === null);
     check(
-      'embedTexts: 429 persistant -> exactement 1+MAX_RETRIES appels, pas de boucle infinie',
+      'embedTexts (Gemini): 429 persistant -> exactement 1+MAX_RETRIES appels, pas de boucle infinie',
       persistentRateLimitCallCount === 3
     );
   }
@@ -242,9 +424,9 @@ async function run() {
     CONFIG.RETRY_BASE_DELAY_MS = 1;
     CONFIG.MAX_RETRIES_ON_RATE_LIMIT = 6;
     const r = await embedTexts(['jean 3:16']);
-    check('embedTexts: 429 quota journalier -> null (pas de crash)', r === null);
+    check('embedTexts (Gemini): 429 quota journalier -> null (pas de crash)', r === null);
     check(
-      'embedTexts: 429 quota journalier -> UN SEUL appel, aucune nouvelle tentative gaspillée',
+      'embedTexts (Gemini): 429 quota journalier -> UN SEUL appel, aucune nouvelle tentative gaspillée',
       dailyQuotaCallCount === 1
     );
   }
@@ -254,6 +436,7 @@ async function run() {
   delete require.cache[require.resolve('../embedding-provider')];
   if (originalKey === undefined) delete process.env.GEMINI_API_KEY;
   else process.env.GEMINI_API_KEY = originalKey;
+  global.fetch = originalFetch;
 
   console.log(`\n=== Résultat embedding-provider : ${passed}/${passed + failed} ===`);
   if (failed > 0) process.exit(1);
