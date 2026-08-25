@@ -3327,6 +3327,114 @@ Aucune exécution agent.</pre>
               </button>
             </div>
 
+            <!-- AJOUT (§7.1.5 — promouvoir l'existant sous-exploité) :
+                 companion.html/stage-display.html/announcement-loop.html
+                 existent, fonctionnent, sont testés — mais n'apparaissaient
+                 nulle part dans l'interface. Liens réseau (même machine,
+                 IP locale) plutôt que file:// : ces pages s'ouvrent sur un
+                 AUTRE appareil (téléphone d'un membre de l'assemblée, écran
+                 de scène séparé, écran d'accueil), pas dans OBS. -->
+            <details style="margin-bottom: 1rem">
+              <summary style="cursor: pointer; color: var(--text-dim); font-size: 0.85rem">
+                Autres écrans (téléphone, scène, accueil)
+              </summary>
+              <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem">
+                <div class="field-hint" style="margin: 0">
+                  📱 Compagnon (sous-titres traduits, présence) — à ouvrir sur le téléphone d'un
+                  membre de l'assemblée
+                </div>
+                <div style="display: flex; gap: 0.5rem; align-items: center">
+                  <input
+                    type="text"
+                    id="companionUrlInput"
+                    readonly
+                    value="Chargement du lien..."
+                    onclick="this.select()"
+                    style="
+                      flex: 1;
+                      padding: 0.5rem;
+                      border-radius: var(--radius-sm);
+                      border: 1px solid var(--border-subtle);
+                      background: var(--bg-input);
+                      color: var(--text-main);
+                      font-family: monospace;
+                      font-size: 0.72rem;
+                    "
+                  />
+                  <button
+                    class="btn btn-secondary"
+                    onclick="copyCompanionUrl()"
+                    style="flex-shrink: 0; font-size: 0.78rem"
+                  >
+                    📋 Copier
+                  </button>
+                </div>
+                <div class="field-hint" style="margin: 0.5rem 0 0">
+                  🎤 Écran de scène — conducteur de louange (messages opérateur → scène)
+                </div>
+                <div style="display: flex; gap: 0.5rem; align-items: center">
+                  <input
+                    type="text"
+                    id="stageDisplayUrlInput"
+                    readonly
+                    value="Chargement du lien..."
+                    onclick="this.select()"
+                    style="
+                      flex: 1;
+                      padding: 0.5rem;
+                      border-radius: var(--radius-sm);
+                      border: 1px solid var(--border-subtle);
+                      background: var(--bg-input);
+                      color: var(--text-main);
+                      font-family: monospace;
+                      font-size: 0.72rem;
+                    "
+                  />
+                  <button
+                    class="btn btn-secondary"
+                    onclick="copyStageDisplayUrl()"
+                    style="flex-shrink: 0; font-size: 0.78rem"
+                  >
+                    📋 Copier
+                  </button>
+                </div>
+                <div class="field-hint" style="margin: 0.5rem 0 0">
+                  📢 Diaporama d'annonces en boucle — écran d'accueil/du hall
+                </div>
+                <div style="display: flex; gap: 0.5rem; align-items: center">
+                  <input
+                    type="text"
+                    id="announcementLoopUrlInput"
+                    readonly
+                    value="Chargement du lien..."
+                    onclick="this.select()"
+                    style="
+                      flex: 1;
+                      padding: 0.5rem;
+                      border-radius: var(--radius-sm);
+                      border: 1px solid var(--border-subtle);
+                      background: var(--bg-input);
+                      color: var(--text-main);
+                      font-family: monospace;
+                      font-size: 0.72rem;
+                    "
+                  />
+                  <button
+                    class="btn btn-secondary"
+                    onclick="copyAnnouncementLoopUrl()"
+                    style="flex-shrink: 0; font-size: 0.78rem"
+                  >
+                    📋 Copier
+                  </button>
+                </div>
+                <div class="field-hint" style="margin: 0.5rem 0 0">
+                  ⚠️ Ces liens ne fonctionnent que si le serveur est accessible sur le réseau
+                  (Réglages → Réseau, WS_HOST ≠ 127.0.0.1) — comme pour le jumelage caméra
+                  téléphone.
+                </div>
+              </div>
+            </details>
+
             <!-- Aperçu/Programme dual view -->
             <div id="previewProgramContainer" style="display: flex; gap: 0.5rem">
               <div id="previewPane" style="flex: 1; display: none">

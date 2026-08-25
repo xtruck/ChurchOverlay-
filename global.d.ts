@@ -42,6 +42,9 @@ declare global {
     logs: string[];
     overlayUrl: string;
     brandingOverlayUrl: string;
+    companionUrl: string | null;
+    stageDisplayUrl: string | null;
+    announcementLoopUrl: string | null;
   }
 
   interface ChurchOverlaySettings {

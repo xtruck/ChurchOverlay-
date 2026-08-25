@@ -40,6 +40,12 @@ export const state = {
   overlayUrl: null,
   // AJOUT (habillage caméra) : même mécanisme, pour branding-overlay.html.
   brandingOverlayUrl: null,
+  // AJOUT (§7.1.5 — promouvoir l'existant sous-exploité) : URLs réseau
+  // (http://, IP locale) pour companion.html/stage-display.html/
+  // announcement-loop.html — voir pipeline-health.js.
+  companionUrl: null,
+  stageDisplayUrl: null,
+  announcementLoopUrl: null,
   // AJOUT (bandeau d'état permanent — status-strip.js) : les deux moitiés du
   // statut "réseau caméra" arrivent de deux sources séparées (getNetworkStatus
   // dans network-settings.js, renderIpCameras dans ip-cameras.js) — partagées

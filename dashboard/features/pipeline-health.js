@@ -152,10 +152,73 @@ export function copyBrandingOverlayUrl() {
     });
 }
 
+// AJOUT (§7.1.5 — promouvoir l'existant sous-exploité) : companion.html/
+// stage-display.html/announcement-loop.html existaient, fonctionnaient et
+// étaient testés, mais leur lien n'était affiché NULLE PART dans
+// l'interface — exactement le défaut déjà corrigé pour overlay.html/
+// branding-overlay.html ci-dessus. Même mécanisme (apply = mémorise + pousse
+// dans le champ, copy = presse-papiers + toast), factorisé ici plutôt que
+// triplé : ces 3 pages n'ont pas d'iframe à recharger (contrairement à
+// overlay.html), donc pas besoin de la logique dataset.loadedWithToken.
+function makeNetworkUrlHandlers(stateKey, inputId, copyHintText) {
+  return {
+    apply(url) {
+      if (!url || url === state[stateKey]) return;
+      state[stateKey] = url;
+      const input = document.getElementById(inputId);
+      if (input) input.value = url;
+    },
+    copy() {
+      if (!state[stateKey]) {
+        showToast('Lien pas encore disponible — attendez que le pipeline démarre.', 'error');
+        return;
+      }
+      navigator.clipboard
+        .writeText(state[stateKey])
+        .then(() => showToast(copyHintText, 'success'))
+        .catch(() =>
+          showToast(
+            'Copie automatique impossible — sélectionnez le champ et copiez manuellement.',
+            'error'
+          )
+        );
+    },
+  };
+}
+
+const companionUrlHandlers = makeNetworkUrlHandlers(
+  'companionUrl',
+  'companionUrlInput',
+  "Lien copié — ouvrez-le sur le téléphone/tablette d'un membre de l'assemblée (même réseau Wi-Fi)"
+);
+export const applyCompanionUrl = companionUrlHandlers.apply;
+export const copyCompanionUrl = companionUrlHandlers.copy;
+
+const stageDisplayUrlHandlers = makeNetworkUrlHandlers(
+  'stageDisplayUrl',
+  'stageDisplayUrlInput',
+  'Lien copié — ouvrez-le sur un écran/tablette dédié au conducteur de louange'
+);
+export const applyStageDisplayUrl = stageDisplayUrlHandlers.apply;
+export const copyStageDisplayUrl = stageDisplayUrlHandlers.copy;
+
+const announcementLoopUrlHandlers = makeNetworkUrlHandlers(
+  'announcementLoopUrl',
+  'announcementLoopUrlInput',
+  "Lien copié — ouvrez-le sur l'écran d'accueil/du hall pour un diaporama d'annonces en boucle"
+);
+export const applyAnnouncementLoopUrl = announcementLoopUrlHandlers.apply;
+export const copyAnnouncementLoopUrl = announcementLoopUrlHandlers.copy;
+
 if (window.churchOverlay && window.churchOverlay.onStatusUpdate) {
   window.churchOverlay.onStatusUpdate((payload) => {
     if (payload && payload.overlayUrl) applyOverlayUrl(payload.overlayUrl);
     if (payload && payload.brandingOverlayUrl) applyBrandingOverlayUrl(payload.brandingOverlayUrl);
+    if (payload && payload.companionUrl) applyCompanionUrl(payload.companionUrl);
+    if (payload && payload.stageDisplayUrl) applyStageDisplayUrl(payload.stageDisplayUrl);
+    if (payload && payload.announcementLoopUrl) {
+      applyAnnouncementLoopUrl(payload.announcementLoopUrl);
+    }
   });
 }
 
@@ -176,4 +239,7 @@ export async function restartPipeline() {
 
 window.copyOverlayUrl = copyOverlayUrl;
 window.copyBrandingOverlayUrl = copyBrandingOverlayUrl;
+window.copyCompanionUrl = copyCompanionUrl;
+window.copyStageDisplayUrl = copyStageDisplayUrl;
+window.copyAnnouncementLoopUrl = copyAnnouncementLoopUrl;
 window.restartPipeline = restartPipeline;

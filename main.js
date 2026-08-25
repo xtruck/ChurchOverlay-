@@ -874,6 +874,37 @@ function getBrandingOverlayUrl() {
   params.set('port', String(SERVER_PORT));
   return `${base}?${params.toString()}`;
 }
+
+// AJOUT (§7.1.5 — promouvoir l'existant sous-exploité) : companion.html
+// (télécommande/second écran audience, sous-titres traduits, présence
+// anonyme), stage-display.html (écran de scène pour le conducteur de
+// louange) et announcement-loop.html (diaporama d'annonces en boucle)
+// existaient, fonctionnaient, et étaient testés — mais leur lien n'était
+// affiché NULLE PART dans l'interface, exactement le défaut déjà corrigé
+// pour overlay.html/branding-overlay.html ci-dessus (voir son commentaire).
+// Différence : ce sont des pages ouvertes sur un AUTRE appareil sur le
+// réseau (téléphone, écran de scène séparé), pas une Source Navigateur OBS
+// locale — l'URL doit donc utiliser l'IP réseau locale et le protocole
+// http://, même construction que le QR de jumelage caméra téléphone (voir
+// generateCameraPairing dans server.js), pas file://.
+function getNetworkPageUrl(filename) {
+  const lanIp = getLanIpAddress();
+  if (!lanIp) return null;
+  const token = (process.env.WS_VIEWER_TOKEN || '').trim();
+  const params = new URLSearchParams();
+  if (token) params.set('token', token);
+  params.set('port', String(SERVER_PORT));
+  return `http://${lanIp}:${SERVER_PORT}/${filename}?${params.toString()}`;
+}
+function getCompanionUrl() {
+  return getNetworkPageUrl('companion.html');
+}
+function getStageDisplayUrl() {
+  return getNetworkPageUrl('stage-display.html');
+}
+function getAnnouncementLoopUrl() {
+  return getNetworkPageUrl('announcement-loop.html');
+}
 const recentLogs = [];
 let dashboardFlushTimer = null;
 let dashboardDirty = false;
@@ -923,6 +954,9 @@ function flushDashboard() {
     logs: recentLogs.slice(-30),
     overlayUrl: getOverlayUrl(),
     brandingOverlayUrl: getBrandingOverlayUrl(),
+    companionUrl: getCompanionUrl(),
+    stageDisplayUrl: getStageDisplayUrl(),
+    announcementLoopUrl: getAnnouncementLoopUrl(),
   });
 }
 
@@ -1032,6 +1066,9 @@ ipcMain.handle('get-status', async () => ({
   logs: recentLogs.slice(-30),
   overlayUrl: getOverlayUrl(),
   brandingOverlayUrl: getBrandingOverlayUrl(),
+  companionUrl: getCompanionUrl(),
+  stageDisplayUrl: getStageDisplayUrl(),
+  announcementLoopUrl: getAnnouncementLoopUrl(),
 }));
 
 ipcMain.handle('request-restart', async () => restartServer());
