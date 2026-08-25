@@ -1505,3 +1505,74 @@ gitignoré, jamais commité — vérifié `git check-ignore` et `git status` ava
       82/83, même constat.
       Gate : eslint 0 erreur, tsc clean, npm audit 0 vuln, check-build-files OK,
       test:e2e 19/19.
+
+### 2026-08-25 — Mur Média (Partie 2.3), suite continue sur directive "termine seul"
+
+Après confirmation explicite de l'utilisateur ("continue au suivant" puis "travaille
+sans t'arrêter, termine la mission, prends toutes les décisions seul") : plusieurs
+chantiers Mur Média enchaînés sans repasser par l'utilisateur entre chacun, chacun
+commité et vérifié séparément (voir git log — 4 commits `feat:` + 1 `docs:`
+pour les liens réseau).
+
+- [x] **États par tuile** (préchargé/à l'écran/déjà utilisé/fichier manquant du §2.3) :
+      `media-library.js#listItems()` calcule `fileMissing` contre le vrai disque.
+      `markMediaOnScreen()`/`clearMediaOnScreen()` (dashboard) basculent des classes CSS
+      sur les tuiles déjà rendues plutôt que de reconstruire la grille — nécessaire pour
+      le test de charge 200 médias du cahier des charges, un média peut être déclenché
+      des dizaines de fois par culte. Câblé sur showMedia/hideMedia ET showVerse/
+      showScene (l'overlay n'affiche qu'une seule chose à la fois). **"Préchargé"
+      délibérément PAS implémenté** : aucun signal réel pour ça sans construire un vrai
+      système de préchargement — inventer un badge sans le vrai mécanisme derrière
+      aurait été exactement le genre de dette documentaire que ce chantier corrige par
+      ailleurs. Même chose pour "en aperçu" : pas de vraie séparation Aperçu/Programme
+      aujourd'hui (juste un label qui bascule), un état "aperçu" serait fictif tant que
+      ça n'est pas construit pour de vrai.
+      2 tests e2e (fichier manquant barré/inerte ; à l'écran/déjà utilisé sans
+      reconstruction de grille).
+- [x] **Bouton "essayer"** : nouvelle action WS `testTriggerPhrase` — rejoue LE MÊME
+      code que la détection vocale réelle (mediaLibrary → songLibrary → sceneStore
+      .matchTriggerPhrase, même ordre que processTranscript), jamais une simulation
+      séparée qui pourrait diverger. Champ + bouton dans la carte Mur Média.
+      1 test d'intégration (5 cas, vrai server.js) écrivant dans le vrai dossier
+      userData avec nettoyage en fin de test (même convention que
+      integration-media-poster-on-add.js).
+- [x] **Recherche instantanée + touches 1-9** : `filterMediaWall()` bascule
+      `display` sur les tuiles déjà rendues (même discipline de perf que les états par
+      tuile). Les touches 1-9 déclenchent les 9 premières tuiles VISIBLES (après
+      filtre), gardées par `isTypingContext()` — déplacé de trust-mode.js vers
+      utils.js, les deux fonctionnalités avaient besoin exactement du même garde-fou.
+      Badge de numérotation recalculé à chaque filtre (jamais un numéro qui mentirait
+      sur ce qu'une touche va déclencher). 2 tests e2e.
+- [x] **Collisions phonétiques à l'import** (déjà fait plus tôt le même jour — voir
+      commit dédié) : `findPhoneticCollisions()` dans voice-trigger-matcher.js,
+      vérifié contre médiathèque ET bibliothèque de chants à l'ajout d'un média.
+
+**§2.3 — ce qui reste volontairement non fait** : groupes nommés déclenchables à la
+voix (changement de modèle de données non trivial), mode apprentissage (formulation
+réellement entendue après 2 échecs — demande de corréler transcriptions récentes et
+déclenchements manuels, pas tenté ici faute de pouvoir le valider sans vraies
+conditions de culte), glisser-déposer vers une séquence (aucune notion de "séquence"
+distincte du rundown déjà existant — clarifier avec l'utilisateur ce que "séquence"
+désigne avant de construire quoi que ce soit), test de charge réel à 200 médias dont
+vidéos >1 Go (les optimisations de perf faites ici — pas de reconstruction de grille
+sur les états qui changent souvent — visent directement ce critère, mais aucune
+mesure réelle à cette échelle n'a été faite, faute de 200 fichiers médias réels
+disponibles dans ce bac à sable).
+
+- [x] **Partie 4.5 — promouvoir l'existant sous-exploité** : `companion.html`/
+      `stage-display.html`/`announcement-loop.html` fonctionnaient, étaient testés,
+      mais leur lien n'apparaissait NULLE PART dans l'interface. `main.js` calcule
+      maintenant leurs URLs réseau (IP locale, comme le QR de jumelage caméra
+      téléphone — ce sont des pages pour un AUTRE appareil, pas des Sources
+      Navigateur OBS locales comme overlay.html/branding-overlay.html). 3 champs
+      copiables dans un tiroir repliable RÉGIE → Overlay. Pas de test (wiring
+      Electron IPC pur, même angle mort déjà accepté pour overlayUrlInput/
+      copyOverlayUrl, qui n'ont pas de test non plus).
+      Documenté aussi : lien mort `API.md` dans README.md (déplacé vers
+      `docs/archive/API.md` sans que le renvoi soit mis à jour), MCP server jamais
+      mentionné nulle part en dehors de son propre commentaire d'en-tête (ajouté une
+      section "AI Control" dans README.md), et une affirmation périmée dans
+      AI-AGENT.md ("confirmation UI à ajouter" — déjà fait, dashboard/features/agent.js).
+      Gate (tous les chantiers ci-dessus, vérifié à chaque commit) : eslint 0 erreur,
+      tsc clean, npm audit 0 vuln, check-build-files OK, npm test 84/85 (clip-exporter
+      pré-existant), test:e2e 23/23.
