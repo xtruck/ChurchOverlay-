@@ -64,6 +64,8 @@ const CLIENT_ACTIONS = {
   getTopics: { category: 'bible', description: 'Liste des sujets bibliques' },
 
   // IA
+  agentRun: { category: 'ai', description: 'Exécuter une demande avec l’agent opérateur' },
+  agentResume: { category: 'ai', description: 'Reprendre une exécution agent confirmée' },
   getMoods: { category: 'ai', description: "Thèmes d'ambiance disponibles" },
   getLiveSummary: { category: 'ai', description: 'Résumé IA du culte en direct' },
   getSermonTheme: { category: 'ai', description: 'Détection du thème du sermon' },
@@ -152,6 +154,7 @@ const CLIENT_ACTIONS = {
 
 const SERVER_ACTIONS = {
   init: { description: 'État initial à la connexion WS' },
+  agentEvent: { description: 'Événement de progression de l’agent opérateur' },
   showVerse: { description: 'Afficher un verset' },
   hideVerse: { description: 'Masquer le verset' },
   transcript: { description: 'Texte transcrit final' },
