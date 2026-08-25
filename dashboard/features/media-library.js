@@ -436,3 +436,37 @@ window.triggerMediaWallItem = function (filename) {
   }
   if (item) triggerMediaLibraryItem(item.id);
 };
+
+// AJOUT (Partie 2.3 — bouton "essayer") : envoie le texte tapé au VRAI
+// moteur de détection côté serveur (action WS testTriggerPhrase) — voir
+// dashboard.html pour le champ/bouton, et ws-dispatch.js pour
+// 'triggerPhraseTestResult' qui affiche la réponse ci-dessous.
+export function testTriggerPhrase() {
+  const input = document.getElementById('triggerPhraseTestInput');
+  const text = input ? input.value.trim() : '';
+  if (!text) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur — impossible de tester.', 'error');
+    return;
+  }
+  ws.send(JSON.stringify({ action: 'testTriggerPhrase', text }));
+}
+window.testTriggerPhrase = testTriggerPhrase;
+
+const TRIGGER_KIND_LABELS = { media: 'média', song: 'chant', scene: 'scène' };
+
+export function renderTriggerPhraseTestResult(result) {
+  const el = document.getElementById('triggerPhraseTestResult');
+  if (!el) return;
+  if (!result.text) {
+    el.textContent = '';
+    return;
+  }
+  if (result.matched) {
+    el.textContent = `✅ Déclencherait le ${TRIGGER_KIND_LABELS[result.kind] || result.kind} « ${result.label} »`;
+    el.style.color = 'var(--accent-green, #22c55e)';
+  } else {
+    el.textContent = '❌ Aucune correspondance — cette phrase ne déclencherait rien';
+    el.style.color = 'var(--accent-red, #ef4444)';
+  }
+}

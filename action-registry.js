@@ -211,6 +211,11 @@ const CLIENT_ACTIONS = {
     category: 'media',
     description: 'Définir le poster principal',
   },
+  testTriggerPhrase: {
+    operatorOnly: true,
+    category: 'media',
+    description: 'Tester une phrase déclencheuse avant le culte (bouton "essayer")',
+  },
 
   // Studio de scènes
   getSceneLibrary: { operatorOnly: true, category: 'scenes', description: 'Liste des scènes' },
@@ -427,6 +432,9 @@ const SERVER_ACTIONS = {
   defaultMediaChanged: { description: 'Poster principal changé' },
   defaultSceneChanged: { description: 'Scène par défaut changée' },
   mediaLibraryUpdated: { description: 'Médiathèque mise à jour' },
+  triggerPhraseTestResult: {
+    description: 'Résultat du test "essayer" une phrase déclencheuse',
+  },
   mediaTriggerCollisions: {
     description: "Collision(s) phonétique(s) détectée(s) entre phrases déclencheuses à l'import",
   },

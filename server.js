@@ -3092,6 +3092,44 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
+    // AJOUT (Partie 2.3 — Mur Média, bouton "essayer") : rejoue EXACTEMENT le
+    // même chemin que la détection vocale réelle (mediaLibrary/songLibrary/
+    // sceneStore.matchTriggerPhrase, dans le même ordre qu'au-dessus dans
+    // processTranscript) sur un texte tapé au clavier — permet de vérifier
+    // AVANT le culte qu'une phrase déclencheuse fonctionne vraiment, sans
+    // attendre de la dire en plein direct. Honnête par construction : ce
+    // n'est pas une simulation séparée qui pourrait diverger du
+    // comportement réel, c'est le même code.
+    if (sanitized.action === 'testTriggerPhrase') {
+      const text = String(sanitized.text || '').trim();
+      if (!text) {
+        ws.send(JSON.stringify({ action: 'triggerPhraseTestResult', matched: false, text }));
+        return;
+      }
+      let result = { matched: false, kind: null, label: null, text };
+      const mediaMatch = mediaLibrary.matchTriggerPhrase(text);
+      if (mediaMatch) {
+        result = { matched: true, kind: 'media', label: mediaMatch.label, text };
+      } else {
+        const songMatch = songLibrary.matchTriggerPhrase(text);
+        if (songMatch) {
+          result = {
+            matched: true,
+            kind: 'song',
+            label: `${songMatch.song.title} — ${songMatch.song.sections[songMatch.sectionIndex]?.label || ''}`,
+            text,
+          };
+        } else {
+          const sceneMatch = sceneStore.matchTriggerPhrase(text);
+          if (sceneMatch) {
+            result = { matched: true, kind: 'scene', label: sceneMatch.name, text };
+          }
+        }
+      }
+      ws.send(JSON.stringify({ action: 'triggerPhraseTestResult', ...result }));
+      return;
+    }
+
     if (sanitized.action === 'addMediaItem') {
       try {
         // AJOUT (Partie 2.3 — Mur Média, collisions phonétiques "dès

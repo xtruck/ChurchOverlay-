@@ -3377,6 +3377,32 @@ Aucune exécution agent.</pre>
               <span class="card-title">Mur Média</span>
               <span id="mediaWallCount" class="status-badge">0</span>
             </div>
+            <!-- AJOUT (Partie 2.3 — bouton "essayer") : rejoue le VRAI moteur
+                 de détection (mediaLibrary/songLibrary/sceneStore.matchTriggerPhrase,
+                 le même code que la voix en plein culte — voir server.js,
+                 action WS testTriggerPhrase) sur un texte tapé, pour vérifier
+                 une phrase déclencheuse AVANT le culte plutôt qu'en plein direct. -->
+            <div class="field-hint" style="margin-bottom: 0.5rem">
+              🎤 Essayer une phrase déclencheuse : tapez ce que vous diriez à voix haute, le
+              résultat est celui que donnerait la reconnaissance vocale réelle.
+            </div>
+            <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem">
+              <input
+                type="text"
+                id="triggerPhraseTestInput"
+                placeholder="ex. montrez la photo du groupe jeunesse"
+                style="flex: 1"
+                onkeydown="if(event.key==='Enter') testTriggerPhrase()"
+              />
+              <button type="button" class="btn btn-secondary" onclick="testTriggerPhrase()">
+                Essayer
+              </button>
+            </div>
+            <div
+              id="triggerPhraseTestResult"
+              class="field-hint"
+              style="margin-bottom: 0.75rem; min-height: 1.2em"
+            ></div>
             <div id="mediaWallGrid" class="media-gallery-grid" style="min-height: 120px">
               <div class="empty-state-note" style="grid-column: 1 / -1">
                 Aucun média chargé. Ajoutez des photos/vidéos dans la médiathèque d'abord.

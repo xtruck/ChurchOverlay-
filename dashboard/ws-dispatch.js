@@ -44,6 +44,7 @@ import {
   renderMediaWall,
   markMediaOnScreen,
   clearMediaOnScreen,
+  renderTriggerPhraseTestResult,
 } from './features/media-library.js';
 import { renderSceneStudioGallery } from './features/scene-studio.js';
 import { renderRundown, applyRundownActiveCue } from './features/rundown.js';
@@ -498,6 +499,10 @@ export function handleMessage(message) {
     case 'mediaLibraryUpdated':
       renderMediaLibrary(message.items);
       renderMediaWall(message.items);
+      break;
+    // AJOUT (Partie 2.3 — bouton "essayer")
+    case 'triggerPhraseTestResult':
+      renderTriggerPhraseTestResult(message);
       break;
     // AJOUT (Partie 2.3 — Mur Média, collisions phonétiques dès l'import) :
     // non bloquant — le média est déjà ajouté (voir 'mediaLibraryUpdated'
