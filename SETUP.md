@@ -16,7 +16,7 @@ app's own on-screen setup window.
 
 ```bash
 git clone https://github.com/xtruck/ChurchOverlay-.git
-cd xtruck
+cd ChurchOverlay-
 npm install
 ```
 

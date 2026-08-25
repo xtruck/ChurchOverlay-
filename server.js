@@ -108,6 +108,19 @@ const SESSION_STARTED_AT = Date.now();
 const songLibrary = require('./song-library');
 const featuresStore = require('./features-store');
 const validation = require('./validation');
+const { createChurchOverlayAgent } = require('./ai-agent');
+
+let churchAgent = null;
+
+function closeChurchAgent() {
+  if (!churchAgent) return;
+  try {
+    churchAgent.close();
+  } catch (err) {
+    warn('Agent IA : fermeture de la mémoire impossible : ' + err.message);
+  }
+  churchAgent = null;
+}
 
 // ---------------------------------------------------------------------------
 // AJOUT (chantier 4.4 — accessibilité, sous-titres traduits sur companion.html)
@@ -1986,6 +1999,8 @@ function getDashboardBrandingState() {
 // renvoient que des données statiques/publiques ou des métadonnées déjà
 // visibles côté overlay.
 const OPERATOR_ACTIONS = new Set([
+  'agentRun',
+  'agentResume',
   'transcript',
   'showVerse',
   'hideVerse',
@@ -2276,6 +2291,38 @@ wss.on('connection', (ws, req) => {
     }
 
     // --- Speech or audio transcript input ---
+    if (sanitized.action === 'agentRun' || sanitized.action === 'agentResume') {
+      if (!churchAgent) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Agent IA indisponible.' }));
+        return;
+      }
+      const sessionId =
+        typeof sanitized.sessionId === 'string' && sanitized.sessionId.trim()
+          ? sanitized.sessionId.trim()
+          : `service-${new Date().toISOString().slice(0, 10)}`;
+      const input = typeof sanitized.input === 'string' ? sanitized.input.trim() : '';
+      if (sanitized.action === 'agentRun' && (!input || input.length > 4000)) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Requête agent vide ou trop longue.' }));
+        return;
+      }
+      try {
+        const runOptions =
+          sanitized.action === 'agentResume'
+            ? {
+                sessionId,
+                runId: sanitized.runId,
+                approvedToolCallIds: sanitized.approvedToolCallIds,
+              }
+            : { sessionId, input };
+        for await (const event of churchAgent.run(runOptions)) {
+          ws.send(JSON.stringify({ action: 'agentEvent', ...event }));
+        }
+      } catch (err) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Agent IA : ' + err.message }));
+      }
+      return;
+    }
+
     if (sanitized.action === 'transcript') {
       const text = String(sanitized.text || '').trim();
       if (text) {
@@ -4080,6 +4127,7 @@ if (parentPort) {
       wss.close();
       connRateLimiter.stopCleanup();
       sessionStore.close();
+      closeChurchAgent();
       if (parentPort) parentPort.postMessage({ type: 'status', status: 'stopped' });
       const finish = () => process.exit(0);
       if (plugins) {
@@ -4218,6 +4266,24 @@ try {
 // ===========================================================================
 sessionStore.init(USER_DATA_DIR, { onError: warn });
 
+try {
+  churchAgent = createChurchOverlayAgent({
+    userDataDir: USER_DATA_DIR,
+    services: {
+      bibleLookup,
+      detector,
+      songLibrary,
+      mediaLibrary,
+      sceneStore,
+      sessionState,
+      broadcast,
+    },
+  });
+  log('Agent IA chargé');
+} catch (err) {
+  warn('Agent IA indisponible : ' + err.message);
+}
+
 // ===========================================================================
 // Startup
 // ===========================================================================
@@ -4236,6 +4302,7 @@ process.on('SIGTERM', () => {
   wss.close();
   connRateLimiter.stopCleanup();
   sessionStore.close();
+  closeChurchAgent();
   if (plugins) plugins.shutdown().catch(() => {});
   process.exit(0);
 });
@@ -4260,6 +4327,7 @@ process.on('SIGINT', () => {
   // SIGTERM.
   connRateLimiter.stopCleanup();
   sessionStore.close();
+  closeChurchAgent();
   if (plugins) plugins.shutdown().catch(() => {});
   process.exit(0);
 });

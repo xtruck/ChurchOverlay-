@@ -101,6 +101,29 @@ const SCHEMAS = {
       action: (value) => value === 'diagnostic',
     },
   },
+  agentRun: {
+    required: ['action', 'input'],
+    optional: ['sessionId'],
+    validators: {
+      action: (value) => value === 'agentRun',
+      input: (value) =>
+        typeof value === 'string' && value.trim().length > 0 && value.length <= 4000,
+      sessionId: (value) => typeof value === 'string' && value.length > 0 && value.length <= 120,
+    },
+  },
+  agentResume: {
+    required: ['action', 'runId', 'approvedToolCallIds'],
+    optional: ['sessionId'],
+    validators: {
+      action: (value) => value === 'agentResume',
+      runId: (value) => typeof value === 'string' && value.length > 0 && value.length <= 120,
+      approvedToolCallIds: (value) =>
+        Array.isArray(value) &&
+        value.length <= 10 &&
+        value.every((id) => typeof id === 'string' && id.length <= 120),
+      sessionId: (value) => typeof value === 'string' && value.length > 0 && value.length <= 120,
+    },
+  },
   getSessionStats: {
     required: ['action'],
     optional: ['days'],

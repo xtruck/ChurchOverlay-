@@ -1705,6 +1705,39 @@
             >
               Cliquez sur "Récap fin de culte" dans Fonctions IA pour générer ce résumé.
             </div>
+          <div class="card" style="margin-top: 1.5rem">
+            <div class="card-header">
+              <span class="card-title">Agent opérateur</span>
+              <span class="status-badge">Actions contrôlées</span>
+            </div>
+            <div class="field-hint" style="margin-bottom: 0.75rem">
+              L'agent consulte les ressources existantes et demande confirmation avant toute action
+              publique.
+            </div>
+            <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 1rem">
+              <input
+                type="text"
+                id="agentInput"
+                placeholder="Ex. Trouve Jean 3:16 et prépare son affichage"
+                style="flex: 1; min-width: 240px"
+                onkeydown="if (event.key === 'Enter') runAgent();"
+              />
+              <button class="btn btn-secondary" onclick="runAgent()">Lancer</button>
+              <button
+                class="btn btn-primary"
+                id="agentApproveBtn"
+                onclick="approveAgentTool()"
+                style="display: none"
+              >
+                Confirmer l'action
+              </button>
+            </div>
+            <pre
+              id="agentOutput"
+              class="stat-row"
+              style="display: block; white-space: pre-wrap; min-height: 3rem"
+            >
+Aucune exécution agent.</pre>
           </div>
 
           <!-- AJOUT (cahier des charges — assistant sermons, Point 5 "outil

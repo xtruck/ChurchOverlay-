@@ -64,9 +64,13 @@ import {
 } from './features/translation-picker.js';
 import { applyDashboardBranding } from './features/dashboard-branding.js';
 import { updateAudioVumeter } from './features/audio-vumeter.js';
+import { renderAgentEvent } from './features/agent.js';
 
 export function handleMessage(message) {
   switch (message.action) {
+    case 'agentEvent':
+      renderAgentEvent(message);
+      break;
     // AJOUT (sélecteur de version biblique / identité de marque du tableau
     // de bord) : 'init', le tout premier message envoyé par le serveur à
     // chaque connexion (voir server.js), n'avait jusqu'ici AUCUN case ici —
