@@ -1243,3 +1243,33 @@ pas non plus supposer que c'est fini.
 - [ ] **A.2 : rejouer le corpus (fr + multi)** pour mesurer l'impact réel sur B2/H1/H2/I2
       — toujours pas fait (déjà noté non fait le 2026-08-16), aucun changement de
       comportement par défaut ici donc pas bloquant, mais reste à mesurer.
+- [x] **A.3 — vérifié DÉJÀ CORRIGÉ ET CORPUS-MESURÉ (2026-08-16)** : rejoué `detect()` en
+      direct sur "Ésaïe 48, le verset 3" et "Jean 14, le verset 6" — toujours corrects
+      aujourd'hui (`verseStart: 3`/`6`, pas de repli verset 1). `test-detector.js` et
+      `integration-chapter-only-verse1.js` passent. Aucune régression, rien à refaire.
+- [x] **A.4 — vérifié DÉJÀ CORRIGÉ pour 3 des 4 volets** : préfixe de contexte STFT
+      Silero présent (`silero-vad.js`, `CONTEXT_SAMPLES`) ; `transcriptionLanguage` par
+      défaut `'fr'` (pas `null`) dans `session-state.js` ; `test/session-store.js` passe
+      (ABI better-sqlite3 OK). **Bloqué** : remesurer les probabilités Silero avec un
+      vrai micro — impossible dans ce bac à sable (aucun matériel audio). Idem pour
+      A.5 (rejouer `live-tests/corpus-bench.js`) : exige GROQ_API_KEY/DEEPGRAM_API_KEY
+      réelles, absentes ici (dernier run connu : 2026-08-16, machine Windows de
+      l'utilisateur, 84,6 % multi/FP 0/8). Signalé à l'utilisateur — décision : passer à
+      la Partie 3 pendant qu'il peut relancer le bench lui-même de son côté.
+- [x] **Partie 3.1 — StreamStart/StreamStop OBS (TERMINÉ)** : `obs-controller.js`
+      n'avait que `toggleRecording()` (StartRecord/StopRecord), pas d'équivalent stream
+      — exactement le manque signalé par le document. Ajouté `toggleStreaming()` (même
+      forme, `GetStreamStatus`/`StartStream`/`StopStream`), câblé de bout en bout :
+      IPC `obs-toggle-streaming` (main.js), `window.churchOverlay.obsToggleStreaming`
+      (preload.js + global.d.ts), `toggleObsStreaming()` + bouton dans le panneau OBS
+      du dashboard (dashboard/features/obs-scenes.js, dashboard.html). Pas de nouveau
+      test unitaire : `toggleRecording()`, dont c'est le miroir exact, n'en a pas non
+      plus (obsClient est un état de module, non injectable sans refonte plus large —
+      hors scope ici).
+      Gate : eslint 0 erreur, tsc clean, npm audit 0 vuln, check-build-files OK,
+      npm test vert (idem ci-dessus), test:e2e 15/15.
+      **Reste (Partie 3.1)** : assistant de connexion OBS (détection auto du port,
+      message d'échec clair) et reconnexion automatique visible dans le bandeau — pas
+      encore faits. **Partie 3.2 (NDI)** : voie A retenue par le document (passer par
+      OBS) — rien à construire tant que personne ne le demande, conforme à la
+      recommandation du document lui-même.
