@@ -179,8 +179,26 @@ Open the app's setup screen and click "Refresh" — it lists microphones via
 (Windows: Settings → Privacy → Microphone → "Allow desktop apps to access
 your microphone").
 
+## AI Control
+
+Two separate ways an AI assistant can drive ChurchOverlay, both opt-in:
+
+- **In-app operator agent** (`bin/church-agent.js`, WS actions `agentRun`/
+  `agentResume`) — see `AI-AGENT.md`. Runs inside the app's own session,
+  confirmation-gated for anything that changes what the assembly sees.
+- **MCP server** (`mcp/server.js`) — lets an external MCP client (Claude
+  Desktop, Claude Code, any other MCP-compatible tool) control a running
+  ChurchOverlay instance in natural language ("show John 3:16", "trigger the
+  welcome scene"). Connects as a normal operator WS client, same
+  `WS_AUTH_TOKEN` as everything else — see the header comment in
+  `mcp/server.js` for the exact tool list, deliberate omissions, and
+  install/config instructions.
+
 ## Next Steps
 
 - Read `SETUP.md` for full installation guide
-- Read `API.md` for WebSocket protocol
-- Read `ARCHITECTURE.md` for technical details
+- Read `docs/archive/API.md` for the WebSocket protocol (archived — predates
+  several action additions, see `action-registry.js` for the current,
+  authoritative list)
+- Read `ARCHITECTURE.md` for technical details — largely outdated (it
+  predates the removal of local Whisper), see its own banner at the top

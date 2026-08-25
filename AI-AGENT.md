@@ -25,7 +25,7 @@ node bin/church-agent.js chat service-2026-08-25
 node bin/church-agent.js run RUN_ID
 ```
 
-After a write tool is requested, the run pauses for confirmation. The current WebSocket integration exposes the same lifecycle through `agentEvent`; confirmation UI and `agentResume` calls should be added to the dashboard before enabling automatic live actions.
+After a write tool is requested, the run pauses for confirmation. The WebSocket integration exposes the same lifecycle through `agentEvent`; the dashboard's confirmation UI and `agentResume` call are already wired (see `dashboard/features/agent.js`).
 
 ## Runtime Contract
 
