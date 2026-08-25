@@ -23,11 +23,20 @@
 const { GoogleGenAI } = require('@google/genai');
 
 const CONFIG = {
-  MODEL: 'text-embedding-004',
-  // 768 = dimension native de text-embedding-004. sqlite-vec ne demande
-  // aucune dimension particulière — ce choix fixe simplement la taille de
-  // colonne vec0 utilisée par bible-vector-store.js, à garder synchronisée
-  // avec elle si ce modèle change un jour.
+  // CORRECTIF (2026-08-25) : text-embedding-004 n'existe plus côté API
+  // (404 "not found for API version v1beta, or is not supported for
+  // embedContent") — vérifié en session contre une vraie clé, voir
+  // JOURNAL-MISSION.md. gemini-embedding-001 est le modèle stable actuel
+  // (ListModels le confirme). embedTexts() dégrade en repli silencieux
+  // (renvoie null, jamais d'exception) sur un échec d'appel — ce qui
+  // signifie que la recherche sémantique était rendue INDISPONIBLE en
+  // permanence par ce nom de modèle périmé, quelle que soit la clé fournie,
+  // sans jamais que rien ne le signale (repli mot-clé silencieux).
+  MODEL: 'gemini-embedding-001',
+  // 768 = dimension choisie pour la colonne vec0 de bible-vector-store.js.
+  // gemini-embedding-001 supporte une troncature Matryoshka vers 768/1536/
+  // 3072 via outputDimensionality (passé ci-dessous) — 768 reste la valeur
+  // à garder synchronisée avec bible-vector-store.js si ce modèle change.
   OUTPUT_DIMENSIONALITY: 768,
   // L'API Gemini limite la taille des lots d'embedContent — valeur prudente,
   // pas de valeur officielle documentée dans le SDK à ce jour.

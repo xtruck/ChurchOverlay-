@@ -1786,3 +1786,66 @@ montré (rotation round-robin), jamais tous les membres à la fois.
       compris que `dryRun` n'avance vraiment jamais le curseur.
       Gate : eslint 0 erreur, tsc clean, npm audit 0 vuln, check-build-files OK,
       npm test 85/86 (clip-exporter pré-existant), test:e2e 24/24.
+
+---
+
+### 2026-08-25 — Import PowerPoint (§7.1.1) + Export service portable (§7.1.2), sur directive "termine seul"
+
+Reconsidéré les deux items §7.1.1/§7.1.2 (voir le détail déjà inséré plus haut
+dans le bilan, sections correspondantes) plutôt que de les laisser reportés
+indéfiniment :
+
+- **§7.1.1** : `propresenter-controller.js` audité (télécommande à distance,
+  ne lit aucun fichier — confirme que l'import ProPresenter natif reste hors
+  de portée). `.pptx` en revanche est OOXML, un format ouvert documenté :
+  `pptx-importer.js` (lecteur ZIP + extracteur de texte maison, zéro nouvelle
+  dépendance) + handler WS `importPptxSlides` + bouton dans le Studio de
+  scènes. Ordre réel du diaporama résolu via `presentation.xml` (pas l'ordre
+  alphabétique des fichiers). 15 tests (8 unitaires + 7 de bout en bout).
+- **§7.1.2** : le lecteur ZIP ci-dessus a changé le calcul pour l'export du
+  service — plus besoin d'une nouvelle dépendance, juste d'un écrivain.
+  `service-export.js` : écrivain ZIP EN STREAMING (jamais un média entier en
+  mémoire — vidéos 1 Go+ mentionnées dans le document), méthode STORED +
+  "data descriptor" pour ne jamais revenir en arrière dans le flux de
+  sortie. Produit un .zip = manifest.json + médias réellement copiés. Vérifié
+  contre `unzip` ET `python3 zipfile` (implémentations indépendantes, pas
+  seulement notre propre lecteur), CRC32 confirmé sur un fichier de 2 Mo
+  streamé. IMPORT (réception) volontairement non fait : nécessite une
+  protection zip-slip + un remappage d'id cohérent entre médias/scènes/
+  repères de feuille de route qui se référencent entre eux — jugé mériter sa
+  propre revue de sécurité dédiée plutôt qu'un ajout précipité.
+
+Gate : eslint 0 erreur, tsc clean, npm audit 0 vuln, check-build-files OK,
+npm test 88/89 (clip-exporter pré-existant, seul échec).
+
+### 2026-08-25 — Clé Gemini fournie : index vectoriel sémantique débloqué + bug latent corrigé
+
+L'utilisateur a fourni une clé Gemini en réponse directe à la demande
+formulée dans le bilan ci-dessus. Avant de lancer la génération de l'index
+(~31 000 versets, ~310 appels API), validé la clé avec un appel minimal
+réel (`embedTexts(['test'])`) — réponse `404 models/text-embedding-004 is
+not found for API version v1beta, or is not supported for embedContent`.
+Pas un problème de clé : `ListModels` confirme la clé valide, mais
+`text-embedding-004` (nom codé en dur dans `embedding-provider.js` depuis le
+chantier 4.2 du 2026-08-18) n'existe simplement plus côté API Google.
+
+**Implication corrigée** : `embedTexts()` est conçu pour dégrader
+silencieusement (renvoie `null`, jamais d'exception, même discipline que
+`chatCompletion()` ailleurs dans ce dépôt) — ce qui signifie que la
+recherche sémantique biblique était rendue **indisponible en permanence**
+par ce nom de modèle périmé depuis son introduction, quelle que soit la clé
+fournie par quiconque, sans qu'aucun signal ne le révèle (repli mot-clé
+silencieux, indiscernable d'un simple "pas de clé configurée"). Un bug latent
+réel, pas seulement un blocage résolu.
+
+Corrigé : `CONFIG.MODEL` -> `gemini-embedding-001` (modèle stable confirmé
+par `ListModels` avec cette clé), `OUTPUT_DIMENSIONALITY` inchangé (768,
+supporté nativement par troncature Matryoshka sur ce modèle). Revalidé avec
+un appel réel (`embedTexts(['Dieu est amour'])` -> vecteur de dimension 768).
+`test/test-embedding-provider.js` (11/11, mocké — le nom de modèle transite
+via `CONFIG.MODEL` donc rien à changer dans le test lui-même),
+`test/test-bible-semantic-search.js` (11/11) et `test/test-bible-vector-store.js`
+(13/13) tous verts après rebuild de `better-sqlite3`.
+
+Génération de l'index réel (`scripts/generate-bible-embeddings.js`) lancée
+en arrière-plan juste après — voir l'entrée suivante pour le résultat.
