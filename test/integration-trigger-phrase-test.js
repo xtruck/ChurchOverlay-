@@ -153,7 +153,9 @@ function makeSourceFile(filename) {
       JSON.stringify(exact)
     );
 
-    console.log('\n=== testTriggerPhrase : phrase noyée dans une longue transcription -> match quand même ===\n');
+    console.log(
+      '\n=== testTriggerPhrase : phrase noyée dans une longue transcription -> match quand même ===\n'
+    );
     ws.send(
       JSON.stringify({
         action: 'testTriggerPhrase',
@@ -187,7 +189,9 @@ function makeSourceFile(filename) {
 
   // Nettoyage : ne rien laisser derrière dans le VRAI dossier userData
   // (même discipline que integration-media-poster-on-add.js).
-  const leftover = mediaLibrary.listItems().find((i) => i.label.startsWith('Photo groupe jeunesse'));
+  const leftover = mediaLibrary
+    .listItems()
+    .find((i) => i.label.startsWith('Photo groupe jeunesse'));
   if (leftover) mediaLibrary.deleteItem(leftover.id);
 
   ws.close();

@@ -1269,34 +1269,30 @@ pas non plus supposer que c'est fini.
       Gate : eslint 0 erreur, tsc clean, npm audit 0 vuln, check-build-files OK,
       npm test vert (idem ci-dessus), test:e2e 15/15.
 - [x] **Partie 3.1 — assistant de connexion + reconnexion automatique OBS (TERMINÉ)** :
-      les deux points restants du chantier ci-dessus.
-      - **Messages d'échec clairs** : `humanizeObsError()` (obs-controller.js) traduit
-        les erreurs brutes (`ECONNREFUSED`, `ENOTFOUND`/`EAI_AGAIN`, `ETIMEDOUT`, code
-        `4009` = authentification) en phrase actionnable ("OBS ne répond pas sur ce
-        port — vérifiez qu'OBS est ouvert et que Outils → Serveur WebSocket
-        obs-websocket est activé.", etc.). Détection du port par défaut et rappel
-        d'activer le serveur WS : déjà présents (placeholder `ws://localhost:4455` +
-        hint statique dans le panneau) — rien à ajouter là.
-      - **Reconnexion automatique** : `obsClient.on('ConnectionClosed', ...)` enregistré
-        UNE FOIS, seulement APRÈS une première connexion réussie (sinon cet écouteur se
-        déclenche aussi pendant un `.connect()` initial qui échoue — le socket interne
-        se ferme dans les deux cas — ce qui aurait démarré une boucle de reconnexion
-        même pour une config définitivement fausse, au lieu d'une vraie coupure en
-        cours de culte). Délai croissant 3s/6s/9s… plafonné à 30s
-        (`scheduleReconnect`), même instance `obsClient` réutilisée (les écouteurs
-        persistent across reconnects sur obs-websocket-js).
-      - **État visible** : nouveau callback `onStatusChange(status, reason)` sur
-        `connect()`, relayé main.js → `worker.postMessage({type:'obs-connection-status'})`
-        → server.js → broadcast WS `obsConnectionStatus` (ajouté à action-registry.js)
-        → dashboard (`ws-dispatch.js`, `updateObsConnectionStatus()`) : met à jour le
-        panneau OBS, journalise dans l'activité, toast à chaque transition (pas de
-        throttle ici contrairement à `aiModuleError` — une coupure OBS est rare par
-        nature, pas un événement par segment transcrit).
-      - **Tests** : 5 nouveaux cas dans `test/test-obs-gating.js` pour
-        `humanizeObsError()` (pure function, exportée). Pas de test pour la boucle de
-        reconnexion elle-même ni pour `connect()` : `obsClient`/le minuteur sont un état
-        de module non injectable sans refonte plus large (même limite déjà notée pour
-        `toggleStreaming()`).
+      les deux points restants du chantier ci-dessus. - **Messages d'échec clairs** : `humanizeObsError()` (obs-controller.js) traduit
+      les erreurs brutes (`ECONNREFUSED`, `ENOTFOUND`/`EAI_AGAIN`, `ETIMEDOUT`, code
+      `4009` = authentification) en phrase actionnable ("OBS ne répond pas sur ce
+      port — vérifiez qu'OBS est ouvert et que Outils → Serveur WebSocket
+      obs-websocket est activé.", etc.). Détection du port par défaut et rappel
+      d'activer le serveur WS : déjà présents (placeholder `ws://localhost:4455` +
+      hint statique dans le panneau) — rien à ajouter là. - **Reconnexion automatique** : `obsClient.on('ConnectionClosed', ...)` enregistré
+      UNE FOIS, seulement APRÈS une première connexion réussie (sinon cet écouteur se
+      déclenche aussi pendant un `.connect()` initial qui échoue — le socket interne
+      se ferme dans les deux cas — ce qui aurait démarré une boucle de reconnexion
+      même pour une config définitivement fausse, au lieu d'une vraie coupure en
+      cours de culte). Délai croissant 3s/6s/9s… plafonné à 30s
+      (`scheduleReconnect`), même instance `obsClient` réutilisée (les écouteurs
+      persistent across reconnects sur obs-websocket-js). - **État visible** : nouveau callback `onStatusChange(status, reason)` sur
+      `connect()`, relayé main.js → `worker.postMessage({type:'obs-connection-status'})`
+      → server.js → broadcast WS `obsConnectionStatus` (ajouté à action-registry.js)
+      → dashboard (`ws-dispatch.js`, `updateObsConnectionStatus()`) : met à jour le
+      panneau OBS, journalise dans l'activité, toast à chaque transition (pas de
+      throttle ici contrairement à `aiModuleError` — une coupure OBS est rare par
+      nature, pas un événement par segment transcrit). - **Tests** : 5 nouveaux cas dans `test/test-obs-gating.js` pour
+      `humanizeObsError()` (pure function, exportée). Pas de test pour la boucle de
+      reconnexion elle-même ni pour `connect()` : `obsClient`/le minuteur sont un état
+      de module non injectable sans refonte plus large (même limite déjà notée pour
+      `toggleStreaming()`).
       Gate : eslint 0 erreur, tsc clean, npm audit 0 vuln, check-build-files OK,
       npm test vert (266 assertions action-registry, sauf clip-exporter pré-existant),
       test:e2e 15/15.
@@ -1308,14 +1304,14 @@ pas non plus supposer que c'est fini.
 
 **Audit réel des 4 briques déjà construites (Steps 2-14, jamais vérifiées en détail)** :
 
-| Brique | État réel |
-|---|---|
-| Trois espaces DIRECT/PRÉPARATION/RÉGIE | Réelle (`data-sections`), conforme |
-| Bande d'écoute (`listeningBar`) | Basique (point + barre + statut) — pas la version riche du document (transcription défilante, verset préchargé, latence ms) |
-| **Mode confiance** | **Collision de nom** : `confidence-mode.js` (33 lignes) est un slider de seuil ASR + toggle de badges — PAS les 3 niveaux auto/semi-auto (barre d'espace)/manuel du document. Cette fonctionnalité n'existe pas encore. |
-| **Palette Ctrl+K** | Fonctionnelle mais liste `COMMANDS` codée en dur, déconnectée d'`action-registry.js` — corrigé ce jour, voir ci-dessous. Bug trouvé au passage : raccourci `'Ctrl+Alt+aj+H'` (Maj tronqué). |
-| **Mur Média** | Grille basique clic-pour-déclencher, nom toujours visible (bon point). Rien d'autre du §2.3 : pas d'états par tuile, pas de groupes, pas de collisions phonétiques, pas de bouton "essayer", pas de mode apprentissage, pas de parité clavier/glisser-déposer, jamais testé à 200 médias. |
-| Dual view Aperçu/Programme | Bascule d'étiquette simple, pas la vraie séparation stricte du §2.5 |
+| Brique                                 | État réel                                                                                                                                                                                                                                                                                 |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Trois espaces DIRECT/PRÉPARATION/RÉGIE | Réelle (`data-sections`), conforme                                                                                                                                                                                                                                                        |
+| Bande d'écoute (`listeningBar`)        | Basique (point + barre + statut) — pas la version riche du document (transcription défilante, verset préchargé, latence ms)                                                                                                                                                               |
+| **Mode confiance**                     | **Collision de nom** : `confidence-mode.js` (33 lignes) est un slider de seuil ASR + toggle de badges — PAS les 3 niveaux auto/semi-auto (barre d'espace)/manuel du document. Cette fonctionnalité n'existe pas encore.                                                                   |
+| **Palette Ctrl+K**                     | Fonctionnelle mais liste `COMMANDS` codée en dur, déconnectée d'`action-registry.js` — corrigé ce jour, voir ci-dessous. Bug trouvé au passage : raccourci `'Ctrl+Alt+aj+H'` (Maj tronqué).                                                                                               |
+| **Mur Média**                          | Grille basique clic-pour-déclencher, nom toujours visible (bon point). Rien d'autre du §2.3 : pas d'états par tuile, pas de groupes, pas de collisions phonétiques, pas de bouton "essayer", pas de mode apprentissage, pas de parité clavier/glisser-déposer, jamais testé à 200 médias. |
+| Dual view Aperçu/Programme             | Bascule d'étiquette simple, pas la vraie séparation stricte du §2.5                                                                                                                                                                                                                       |
 
 - [x] **Palette Ctrl+K → action-registry.js (TERMINÉ)** : `action-registry.js` ne
       tournait que côté Node (`module.exports`). Rendu isomorphe (garde
@@ -1448,32 +1444,30 @@ gitignoré, jamais commité — vérifié `git check-ignore` et `git status` ava
       machine Windows et les transmette, soit qu'il lance lui-même
       `node live-tests/generate-tts-corpus.js` puis `corpus-bench.js` localement.
 - [x] **A.4 — mesure Silero sur audio réel, ENFIN FAITE** (dernier point resté ouvert
-      depuis le 2026-08-17) :
-      - `live-tests/deepgram-live-test.js` (vrai pipeline de production : Silero →
-        audio-capture.js → deepgram-streaming.js → detector-compat.js →
-        transcription-corrector.js → session-state.js → vraie API Bible), sur les WAV
-        français déjà présents dans le dépôt (`testA`-`D_16k.wav`, non liés au corpus
-        A.5 ci-dessus) : **4/4 tests PASS** (Jean 3:16, 1 Corinthiens 13:4, Jean 3:16
-        avec détection utile sur un partial à +4,71s, aucune référence sur une phrase
-        neutre — comportement attendu dans les 4 cas). Dédoublonnage vérifié avec de
-        vraies clés (cascade partiel→final supprimée, nouvel énoncé affiché, référence
-        différente jamais supprimée). Recherche biblique réelle réussie (82ms).
-        Résultats rafraîchis dans `live-tests/last-run-results.json` (fichier suivi,
-        mis à jour intentionnellement).
-      - `live-tests/silero-probability-timeline.js` (modèle Silero réel, aucune clé API
-        requise — j'aurais pu le lancer avant même d'avoir les clés) sur les 4 WAV
-        `test{A,B,C,D}_16k.wav` : mode **STATEFUL** (comportement de production, celui
-        qui a reçu le correctif préfixe-contexte STFT) — médiane **0,9987 à 0,9999**,
-        moyenne **0,74 à 0,78** sur les 4 fichiers, cohérent partout. **Confirme
-        enfin, sur audio réel et non plus seulement en test unitaire, que le correctif
-        A.4 fonctionne** (le document de mission demandait exactement cette mesure
-        terrain, jamais faite avant faute de résultat concret). Mode **STATELESS**
-        (comparaison — état LSTM réinitialisé à chaque fenêtre, l'ANCIEN bug) : médiane
-        **0,15**, moyenne **0,32** — étonnamment proche des ~0,193 rapportés à
-        l'origine dans le document de mission comme le symptôme du bug. Preuve
-        indirecte forte que l'hypothèse retenue par le chantier B (2026-08-16 —
-        "état h/c non réinitialisé entre appels") était la bonne cause racine, et que
-        le correctif déjà en place la résout réellement.
+      depuis le 2026-08-17) : - `live-tests/deepgram-live-test.js` (vrai pipeline de production : Silero →
+      audio-capture.js → deepgram-streaming.js → detector-compat.js →
+      transcription-corrector.js → session-state.js → vraie API Bible), sur les WAV
+      français déjà présents dans le dépôt (`testA`-`D_16k.wav`, non liés au corpus
+      A.5 ci-dessus) : **4/4 tests PASS** (Jean 3:16, 1 Corinthiens 13:4, Jean 3:16
+      avec détection utile sur un partial à +4,71s, aucune référence sur une phrase
+      neutre — comportement attendu dans les 4 cas). Dédoublonnage vérifié avec de
+      vraies clés (cascade partiel→final supprimée, nouvel énoncé affiché, référence
+      différente jamais supprimée). Recherche biblique réelle réussie (82ms).
+      Résultats rafraîchis dans `live-tests/last-run-results.json` (fichier suivi,
+      mis à jour intentionnellement). - `live-tests/silero-probability-timeline.js` (modèle Silero réel, aucune clé API
+      requise — j'aurais pu le lancer avant même d'avoir les clés) sur les 4 WAV
+      `test{A,B,C,D}_16k.wav` : mode **STATEFUL** (comportement de production, celui
+      qui a reçu le correctif préfixe-contexte STFT) — médiane **0,9987 à 0,9999**,
+      moyenne **0,74 à 0,78** sur les 4 fichiers, cohérent partout. **Confirme
+      enfin, sur audio réel et non plus seulement en test unitaire, que le correctif
+      A.4 fonctionne** (le document de mission demandait exactement cette mesure
+      terrain, jamais faite avant faute de résultat concret). Mode **STATELESS**
+      (comparaison — état LSTM réinitialisé à chaque fenêtre, l'ANCIEN bug) : médiane
+      **0,15**, moyenne **0,32** — étonnamment proche des ~0,193 rapportés à
+      l'origine dans le document de mission comme le symptôme du bug. Preuve
+      indirecte forte que l'hypothèse retenue par le chantier B (2026-08-16 —
+      "état h/c non réinitialisé entre appels") était la bonne cause racine, et que
+      le correctif déjà en place la résout réellement.
       **A.4 est maintenant intégralement vérifié**, les 4 volets (STFT fix, session
       language forcée, ABI better-sqlite3, mesure terrain) confirmés sur du code et
       des données réelles.
@@ -1493,7 +1487,7 @@ gitignoré, jamais commité — vérifié `git check-ignore` et `git status` ava
       Python de l'ancienne liste `&&`-séparée, JSON réécrit) pour n'introduire aucune
       erreur de transcription sur ~85 noms de fichiers — liste et ordre IDENTIQUES à
       avant, seul l'enchaînement change (`node scripts/run-tests.js <liste
-      espace-séparée>` au lieu de `node fichier1 && node fichier2 && …`). La différence
+  espace-séparée>` au lieu de `node fichier1 && node fichier2 && …`). La différence
       pré-existante entre `test` (inclut `test-action-registry.js`) et `test-all` (ne
       l'inclut pas) est préservée telle quelle, pas comprise ni tranchée ici.
 - [x] **Vérifié** : `npm test` fictif avec un fichier inexistant au milieu de la

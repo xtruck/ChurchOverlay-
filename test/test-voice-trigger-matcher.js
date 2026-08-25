@@ -90,7 +90,9 @@ check(
   'phrase identique (exacte) -> collision distance 0, exact=true',
   (() => {
     const c = findPhoneticCollisions(['groupe jeunes'], existing);
-    return c.length === 1 && c[0].distance === 0 && c[0].exact === true && c[0].withItem.id === 'm1';
+    return (
+      c.length === 1 && c[0].distance === 0 && c[0].exact === true && c[0].withItem.id === 'm1'
+    );
   })()
 );
 

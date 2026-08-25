@@ -156,7 +156,8 @@ check(
 
 check(
   'code 4009 (authentification) -> message actionnable (mot de passe incorrect)',
-  humanizeObsError({ code: 4009, message: 'Authentication failed.' }) === 'Mot de passe OBS incorrect.'
+  humanizeObsError({ code: 4009, message: 'Authentication failed.' }) ===
+    'Mot de passe OBS incorrect.'
 );
 
 check(

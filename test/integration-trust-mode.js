@@ -160,7 +160,7 @@ async function simulateSegment(text) {
   await simulateSegment('Jean chapitre 3 verset 16');
   await sleep(400);
   check(
-    "auto : showVerse diffusé immédiatement (Jean 3:16)",
+    'auto : showVerse diffusé immédiatement (Jean 3:16)',
     received.some((m) => m.action === 'showVerse' && m.reference === 'Jean 3:16'),
     JSON.stringify(received)
   );

@@ -146,7 +146,10 @@ async function runAsyncTests() {
     c7ErrorMessage = message;
   };
   const r7 = await c7.correct('christ a beaucoup souffert', 'smart');
-  check('erreur LLM: texte inchangé (repli identique à avant)', r7 === 'christ a beaucoup souffert');
+  check(
+    'erreur LLM: texte inchangé (repli identique à avant)',
+    r7 === 'christ a beaucoup souffert'
+  );
   check('erreur LLM: onError notifié', c7ErrorMessage === 'rate limited');
   check('erreur LLM: getStats().errors incrémenté', c7.getStats().errors === 1);
 }

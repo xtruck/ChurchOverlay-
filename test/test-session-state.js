@@ -242,7 +242,11 @@ console.log('[TEST] ✓ Purge du résidu fautif : fusion C2 correcte\n');
 // --- Mode confiance (Partie 2 — auto/semi-auto/manuel) ---
 console.log('[TEST] Test 12: getTrustMode/setTrustMode...');
 {
-  assert.strictEqual(sessionState.getTrustMode(), 'auto', "défaut 'auto' (comportement historique)");
+  assert.strictEqual(
+    sessionState.getTrustMode(),
+    'auto',
+    "défaut 'auto' (comportement historique)"
+  );
   assert.strictEqual(sessionState.setTrustMode('semi-auto'), true, 'semi-auto accepté');
   assert.strictEqual(sessionState.getTrustMode(), 'semi-auto');
   assert.strictEqual(sessionState.setTrustMode('manual'), true, 'manual accepté');

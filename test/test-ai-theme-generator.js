@@ -45,7 +45,10 @@ async function runAsyncTests() {
   check('erreur LLM: repli sur le thème par règles', t2.source === 'rule');
   check('erreur LLM: onError notifié', g2ErrorMessage === 'Groq indisponible');
   check('erreur LLM: getStats().errorCount incrémenté', g2.getStats().errorCount === 1);
-  check('erreur LLM: getStats().lastError renseigné', g2.getStats().lastError.message === 'Groq indisponible');
+  check(
+    'erreur LLM: getStats().lastError renseigné',
+    g2.getStats().lastError.message === 'Groq indisponible'
+  );
 
   // --- Groq répond correctement : thème IA utilisé, pas d'erreur comptée ---
   const mockGroqOk = {

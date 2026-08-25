@@ -4,9 +4,27 @@
 const { test, expect } = require('./fixtures');
 
 const ITEMS = [
-  { id: 'm1', label: 'Photo groupe jeunesse', filename: 'm1.jpg', mediaType: 'image', triggerPhrases: ['photo jeunesse'] },
-  { id: 'm2', label: 'Vidéo intro culte', filename: 'm2.mp4', mediaType: 'video', triggerPhrases: ['video intro'] },
-  { id: 'm3', label: 'Poster annonces', filename: 'm3.jpg', mediaType: 'image', triggerPhrases: ['annonces'] },
+  {
+    id: 'm1',
+    label: 'Photo groupe jeunesse',
+    filename: 'm1.jpg',
+    mediaType: 'image',
+    triggerPhrases: ['photo jeunesse'],
+  },
+  {
+    id: 'm2',
+    label: 'Vidéo intro culte',
+    filename: 'm2.mp4',
+    mediaType: 'video',
+    triggerPhrases: ['video intro'],
+  },
+  {
+    id: 'm3',
+    label: 'Poster annonces',
+    filename: 'm3.jpg',
+    mediaType: 'image',
+    triggerPhrases: ['annonces'],
+  },
 ];
 
 test.describe('Mur Média — recherche instantanée et touches 1-9', () => {
