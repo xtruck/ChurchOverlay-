@@ -48,6 +48,72 @@ let gatingConfig = null;
 const currentObsState = { sceneName: null, streaming: false, recording: false };
 let lastGateOpen = null; // null = jamais évalué ; évite un log/callback redondant
 
+// AJOUT (Partie 3.1 — assistant de connexion + reconnexion automatique) :
+// une coupure OBS en plein culte ne doit jamais être silencieuse.
+let statusChangeCallback = null;
+let reconnectTimer = null;
+let reconnectAttempts = 0;
+const RECONNECT_BASE_DELAY_MS = 3000;
+const RECONNECT_MAX_DELAY_MS = 30000;
+
+function notifyStatus(status, reason) {
+  if (typeof statusChangeCallback === 'function') {
+    try {
+      statusChangeCallback(status, reason);
+    } catch (e) {
+      console.error('[obs] Erreur dans le callback de statut de connexion:', e.message);
+    }
+  }
+}
+
+// Traduit les erreurs de connexion (souvent un message Node brut type
+// "connect ECONNREFUSED 127.0.0.1:4455", ou un OBSWebSocketError avec un
+// code numérique) en message actionnable pour l'opérateur — pas pour un
+// développeur qui lirait les logs.
+function humanizeObsError(e) {
+  const msg = (e && e.message) || String(e || '');
+  if (/ECONNREFUSED/.test(msg)) {
+    return "OBS ne répond pas sur ce port — vérifiez qu'OBS est ouvert et que Outils → Serveur WebSocket obs-websocket est activé.";
+  }
+  if (/ENOTFOUND|EAI_AGAIN/.test(msg)) {
+    return "Adresse introuvable — vérifiez l'URL (ws://localhost:4455 par défaut).";
+  }
+  if (/ETIMEDOUT|timeout/i.test(msg)) {
+    return "Délai de connexion dépassé — vérifiez l'adresse et qu'aucun pare-feu ne bloque la connexion.";
+  }
+  if ((e && e.code === 4009) || /authentication/i.test(msg)) {
+    return 'Mot de passe OBS incorrect.';
+  }
+  return msg || 'Erreur de connexion inconnue.';
+}
+
+/**
+ * Reconnexion automatique avec délai croissant (3s, 6s, 9s… plafonné à 30s)
+ * — pas de tempête de tentatives si OBS reste indisponible plusieurs
+ * minutes. `cfg` est capturé au moment de la connexion initiale (pas relu
+ * depuis features-store à chaque tentative) : un changement d'URL/mot de
+ * passe pendant une reconnexion en cours n'est pris en compte qu'à la
+ * prochaine connexion manuelle, comportement volontairement simple.
+ */
+function scheduleReconnect(cfg) {
+  if (reconnectTimer) return; // déjà une tentative programmée
+  reconnectAttempts++;
+  const delayMs = Math.min(RECONNECT_BASE_DELAY_MS * reconnectAttempts, RECONNECT_MAX_DELAY_MS);
+  notifyStatus('reconnecting', `Reconnexion à OBS dans ${Math.round(delayMs / 1000)}s…`);
+  reconnectTimer = setTimeout(async () => {
+    reconnectTimer = null;
+    try {
+      await obsClient.connect(cfg.obsWebsocketUrl, resolvePassword(cfg));
+      reconnectAttempts = 0;
+      console.log('[obs] Reconnecté à OBS Studio');
+      notifyStatus('connected', 'Reconnecté à OBS Studio.');
+    } catch (e) {
+      notifyStatus('disconnected', humanizeObsError(e));
+      scheduleReconnect(cfg);
+    }
+  }, delayMs);
+}
+
 // CORRECTIF (audit round 4) — le mot de passe OBS est désormais chiffré par
 // main.js (safeStorage) avant d'être écrit dans config/features.json (voir
 // obs-set-config dans main.js). On le déchiffre ici avant de s'en servir ;
@@ -79,8 +145,12 @@ function resolvePassword(cfg) {
  *   change (jamais à chaque événement OBS brut — voir emitGateIfChanged).
  *   Optionnel : si omis, le gating n'est simplement pas activé, même si
  *   features.broadcast.multiScene.gating.enabled = true dans la config.
+ * @param {(status: 'connected'|'disconnected'|'reconnecting'|'error', reason: string) => void} [onStatusChange]
+ *   AJOUT (Partie 3.1 — assistant de connexion) : appelé à chaque
+ *   changement d'état de connexion, y compris les tentatives de
+ *   reconnexion automatique après une coupure. Optionnel.
  */
-async function connect(onGateChange) {
+async function connect(onGateChange, onStatusChange) {
   // CORRECTIF (audit round 5) : la config est relue à CHAQUE connexion (via
   // features-store, qui fusionne la config livrée et les réglages
   // utilisateur écrits dans userData). Avant, elle était figée au premier
@@ -89,6 +159,13 @@ async function connect(onGateChange) {
   // compte — et faisait perdre la connexion OBS déjà établie au passage.
   const cfg = (featuresStore.readFeatures().broadcast || {}).multiScene || {};
   if (!cfg.enabled) return null;
+
+  statusChangeCallback = onStatusChange || null;
+  reconnectAttempts = 0;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
 
   // Import dynamique — n'installe la dépendance que si feature activée
   const { OBSWebSocket } = await import('obs-websocket-js');
@@ -103,6 +180,23 @@ async function connect(onGateChange) {
   try {
     await obsClient.connect(cfg.obsWebsocketUrl, resolvePassword(cfg));
     console.log('[obs] Connecté à OBS Studio');
+    notifyStatus('connected', 'Connecté à OBS Studio.');
+
+    // AJOUT (Partie 3.1 — reconnexion automatique) : enregistré seulement
+    // APRÈS une connexion réussie. Cet écouteur se déclenche aussi pendant
+    // un .connect() initial qui échoue (le socket interne se ferme dans
+    // les deux cas) — l'enregistrer plus tôt déclencherait une boucle de
+    // reconnexion même pour une config définitivement fausse (mauvais
+    // port/URL) au lieu d'une vraie coupure en cours de culte. Une fois
+    // enregistré ici, il survit aux reconnexions suivantes sur la même
+    // instance `obsClient` (scheduleReconnect réutilise cette instance).
+    obsClient.on('ConnectionClosed', (err) => {
+      notifyStatus(
+        'disconnected',
+        `Connexion OBS perdue (${humanizeObsError(err)}) — nouvelle tentative…`
+      );
+      scheduleReconnect(cfg);
+    });
 
     if (gatingConfig.enabled && typeof onGateChange === 'function') {
       await setupGating(onGateChange);
@@ -110,7 +204,9 @@ async function connect(onGateChange) {
 
     return obsClient;
   } catch (e) {
-    console.warn("[obs] Impossible de se connecter — vérifiez qu'OBS tourne :", e.message);
+    const reason = humanizeObsError(e);
+    console.warn('[obs] Impossible de se connecter —', reason);
+    notifyStatus('error', reason);
     return null;
   }
 }
@@ -274,4 +370,5 @@ module.exports = {
   toggleRecording,
   toggleStreaming,
   evaluateGate, // exporté pour les tests unitaires (pure function, sans obsClient)
+  humanizeObsError, // exporté pour les tests unitaires (pure function)
 };

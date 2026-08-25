@@ -436,6 +436,9 @@ const SERVER_ACTIONS = {
   aiModuleError: {
     description: "Échec d'appel d'un module IA (corrector/semanticDetector/themeGenerator)",
   },
+  obsConnectionStatus: {
+    description: 'État de connexion OBS (connected/disconnected/reconnecting/error)',
+  },
   confidenceThresholdChanged: { description: 'Seuil de confiance mis à jour' },
   error: { description: "Message d'erreur" },
 };

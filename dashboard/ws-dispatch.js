@@ -200,6 +200,14 @@ export function handleMessage(message) {
         showToast(`⚠️ Module IA « ${message.module} » en échec — repli automatique actif`, 'error');
       }
       break;
+    // AJOUT (Partie 3.1 — reconnexion automatique OBS) : une coupure OBS en
+    // plein culte ne doit jamais être silencieuse — visible dans le
+    // panneau OBS (RÉGIE) et dans l'activité, avec un toast à chaque
+    // changement d'état (peu fréquent par nature, pas besoin de throttle
+    // comme pour aiModuleError ci-dessus).
+    case 'obsConnectionStatus':
+      updateObsConnectionStatus(message.status, message.reason);
+      break;
     // AJOUT (A.1 — gain micro) : diagnostics de niveau audio temps réel
     // pour le vumètre du dashboard.
     case 'audioDiagnostics':
@@ -556,6 +564,26 @@ function shouldToastAiModuleError(moduleName) {
   if (now - last < AI_MODULE_ERROR_TOAST_COOLDOWN_MS) return false;
   aiModuleErrorLastToastAt.set(moduleName, now);
   return true;
+}
+
+// AJOUT (Partie 3.1 — assistant de connexion + reconnexion automatique
+// OBS) : met à jour le panneau OBS (RÉGIE) à chaque changement d'état de
+// connexion, y compris les tentatives de reconnexion après une coupure.
+const OBS_STATUS_LABELS = {
+  connected: { icon: '✅', label: (r) => r || 'Connecté à OBS Studio.' },
+  disconnected: { icon: '❌', label: (r) => r || 'Connexion OBS perdue.' },
+  reconnecting: { icon: '🔄', label: (r) => r || 'Reconnexion à OBS en cours…' },
+  error: { icon: '❌', label: (r) => r || 'Échec de connexion à OBS.' },
+};
+function updateObsConnectionStatus(status, reason) {
+  const style = OBS_STATUS_LABELS[status] || OBS_STATUS_LABELS.error;
+  const text = `${style.icon} ${style.label(reason)}`;
+  const statusEl = document.getElementById('obsStatus');
+  if (statusEl) statusEl.textContent = text;
+  addActivity(`OBS : ${text}`, status === 'connected' ? 'success' : 'warning');
+  if (status !== 'connected') {
+    showToast(text, 'error');
+  }
 }
 
 // Listening bar — état audio compact en haut de l'espace Direct

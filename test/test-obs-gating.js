@@ -22,7 +22,7 @@ const assert = require('assert');
 // evaluateGate() n'appelle jamais safeStorage (utilisé uniquement par
 // resolvePassword(), non exercé ici) : requérir obs-controller.js
 // directement suffit, même hors contexte Electron réel.
-const { evaluateGate } = require('../obs-controller');
+const { evaluateGate, humanizeObsError } = require('../obs-controller');
 
 console.log('=== Test OBS Gating (evaluateGate) ===\n');
 
@@ -130,6 +130,38 @@ check(
   'cfg enabled=true sans autre clé -> ouvert (aucune restriction configurée)',
   evaluateGate({ sceneName: 'X', streaming: false, recording: false }, { enabled: true }).open ===
     true
+);
+
+// --- humanizeObsError() (Partie 3.1 — assistant de connexion) --------------
+// Traduit les erreurs de connexion brutes (obs-websocket-js / Node) en
+// message actionnable pour l'opérateur — c'est ce message qui apparaît dans
+// le panneau OBS et dans l'action WS 'obsConnectionStatus'.
+
+check(
+  'ECONNREFUSED -> message actionnable (OBS pas ouvert / WS pas activé)',
+  /Outils.*Serveur WebSocket/.test(
+    humanizeObsError(new Error('connect ECONNREFUSED 127.0.0.1:4455'))
+  )
+);
+
+check(
+  'ENOTFOUND -> message actionnable (adresse introuvable)',
+  /Adresse introuvable/.test(humanizeObsError(new Error('getaddrinfo ENOTFOUND obs.local')))
+);
+
+check(
+  'timeout -> message actionnable (délai dépassé)',
+  /Délai de connexion dépassé/.test(humanizeObsError(new Error('connect ETIMEDOUT')))
+);
+
+check(
+  'code 4009 (authentification) -> message actionnable (mot de passe incorrect)',
+  humanizeObsError({ code: 4009, message: 'Authentication failed.' }) === 'Mot de passe OBS incorrect.'
+);
+
+check(
+  'erreur inconnue -> message brut conservé (pas de message générique qui masque la vraie cause)',
+  humanizeObsError(new Error('Something else entirely')) === 'Something else entirely'
 );
 
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);

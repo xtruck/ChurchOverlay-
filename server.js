@@ -4069,6 +4069,15 @@ if (parentPort) {
       return;
     }
 
+    // AJOUT (Partie 3.1 — reconnexion automatique) : une coupure OBS en
+    // plein culte ne doit jamais être silencieuse — diffusée telle quelle
+    // au dashboard (voir action-registry.js, dashboard/ws-dispatch.js).
+    if (msg.type === 'obs-connection-status') {
+      log(`OBS connexion : ${msg.status} (${msg.reason || ''})`);
+      broadcast({ action: 'obsConnectionStatus', status: msg.status, reason: msg.reason || '' });
+      return;
+    }
+
     if (msg.type === 'audio-pcm-chunk') {
       audioCapture.feedPcmChunk(Buffer.from(msg.buffer));
       return;

@@ -1118,13 +1118,27 @@ ipcMain.handle('obs-set-config', async (_evt, { enabled, obsWebsocketUrl, passwo
 ipcMain.handle('obs-connect', async () => {
   try {
     const obs = getObsController();
-    const client = await obs.connect((open, reason, state) => {
-      if (worker) {
-        try {
-          worker.postMessage({ type: 'obs-gate-changed', open, reason, state });
-        } catch (_) {}
+    const client = await obs.connect(
+      (open, reason, state) => {
+        if (worker) {
+          try {
+            worker.postMessage({ type: 'obs-gate-changed', open, reason, state });
+          } catch (_) {}
+        }
+      },
+      // AJOUT (Partie 3.1 — reconnexion automatique) : relaie chaque
+      // changement d'état de connexion (y compris les tentatives de
+      // reconnexion après une coupure) vers le worker, qui le diffuse en
+      // WS pour que le dashboard l'affiche — une coupure OBS en plein
+      // culte ne doit jamais être silencieuse.
+      (status, reason) => {
+        if (worker) {
+          try {
+            worker.postMessage({ type: 'obs-connection-status', status, reason });
+          } catch (_) {}
+        }
       }
-    });
+    );
     return client
       ? { ok: true, connected: true }
       : { ok: false, connected: false, error: "Connexion impossible — vérifiez qu'OBS tourne." };
