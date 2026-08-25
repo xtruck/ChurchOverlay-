@@ -1149,3 +1149,72 @@ all and even add amelioration to them", reçue juste après ce nettoyage).
 **Reste à faire** : la détection automatique en direct n'affiche jamais de traduction
 secondaire (décision de scope assumée, pas un oubli). Pas de commande vocale dédiée à ce
 réglage (le menu déroulant du tableau de bord suffit pour un réglage occasionnel).
+
+---
+
+### 2026-08-25 — Reprise sur nouveau document de mission ("PROMPT FINAL")
+
+**Constat important** : le document de mission reçu ce jour (Partie 0, audit daté du
+2026-08-25) affirme **« PARTIE 2 — refonte interface : PAS COMMENCÉE »** en s'appuyant
+apparemment sur le dernier état connu de CE journal (2026-08-18), sans recroiser le
+`git log` réel. Or entre le 2026-08-17 et le 2026-08-18, une séquence de 14 commits
+(`eb8413f` → `88ed21c`, messages "Step 2" à "Step 14") a livré : navigation trois
+espaces (DIRECT/PRÉPARATION/RÉGIE, `data-space` dans dashboard.html), bande d'écoute
+(`listeningBar`/`updateListeningBar`), mode confiance (`confidence-mode.js`), palette
+Ctrl+K (`command-palette.js`), un mur média basique (ajout à `media-library.js`, PAS
+un fichier dédié), un bascule Aperçu/Programme basique, un mode formation
+(`training-mode.js`), et l'assistant de démarrage (`startup-wizard.js`). Rien de tout
+cela n'a été consigné ici — d'où l'erreur du document de mission.
+
+**État réel de la Partie 2 (vérifié aujourd'hui, pas supposé)** : la structure existe et
+fonctionne (15/15 e2e verts), mais chaque brique est probablement **minimale** par
+rapport au cahier des charges détaillé de la Partie 2 (mur média : pas de test de charge
+200 médias, pas de détection de collisions phonétiques, pas de bouton "essayer" ; dual
+view Aperçu/Programme : bascule simple, pas la vraie séparation OBS-style stricte). À
+auditer précisément avant de décider quoi compléter — ne pas repartir de zéro, mais ne
+pas non plus supposer que c'est fini.
+
+- [x] **Chantier "audit de vérité" (§0.3/§0.5/§0.6 du document)** : confirmé mort et
+      supprimé — `professional-scene-manager.js`, `propresenter-features.js`,
+      `innovative-features.js`, `creative-presentation-features.js`,
+      `advanced-media-manager.js`, `PROFESSIONAL-INTEGRATION.js` (île fermée du commit
+      `5b2d458`, jamais chargée par server.js/main.js/preload.js/dashboard) + leurs 5 docs
+      de présentation mensongères. Trouvé en plus (même origine, pas listé dans le
+      document) : 5 composants `dashboard/components/*.js` (canva-editor,
+      contextual-toolbar, professional-scene-gallery, propresenter-ui,
+      verse-display-card) — `customElements.define()` jamais instanciés. Supprimés.
+      `context-tracker.js` supprimé (dupliquait le dedup déjà câblé dans
+      `session-state.js`). `scene-render.js` : FAUX POSITIF du document — il est bien
+      chargé par `<script src>` dans overlay.html/dashboard.html et testé
+      (`test-render-scene-dom.js`), ne pas y toucher. NDI : aucune doc vivante
+      n'affirme une sortie NDI — rien à corriger.
+      Gate : eslint 0 erreur, tsc clean, npm audit 0 vuln, check-build-files OK,
+      npm test vert (sauf test-clip-exporter, échec ffmpeg pré-existant du bac à sable,
+      confirmé identique sur main propre avant tout changement).
+- [x] **Chantier §0.4 — brancher action-registry.js (RBAC uniquement)** : le test de
+      parité (`test-action-registry.js`) utilisait une regex `/'([a-zA-Z]+)'/g` qui
+      ignorait silencieusement toute action avec un tiret. Ça avait laissé
+      `'obs-toggle-recording'`/`'obs-switch-scene'` dans `OPERATOR_ACTIONS` (server.js)
+      alors que ce sont des canaux IPC Electron (`preload.js` → `ipcRenderer.invoke`),
+      jamais des actions WS — mortes dans le gate RBAC sans que rien ne le détecte.
+      `OPERATOR_ACTIONS` est maintenant `new Set(actionRegistry.listOperatorOnlyActions())`
+      — dérivé du registre (flag `operatorOnly: true` par action), plus une liste dupliquée
+      à la main. Test réécrit pour vérifier la dérivation + les 5 actions volontairement
+      viewer-safe (ping/getTopics/getMoods/listPlugins/getAiStats). Corrigé au passage :
+      artefact de traduction (caractères chinois "延长") dans deux descriptions.
+      **Pas fait** (plus gros chantier, pas tenté sans plan validé) : voice-commands.js ne
+      consomme pas encore VOICE_COMMANDS du registre ; le dispatch WS de server.js reste un
+      if/else de ~2000 lignes, pas une table pilotée par le registre.
+      Gate : identique ci-dessus, tous verts.
+- [x] **A.1 (gain micro) — assistant de calibrage** : l'instrumentation RMS/crête/
+      écrêtage et le vumètre permanent étaient déjà livrés le 2026-08-17 (voir plus haut)
+      mais jamais l'assistant de calibrage au premier démarrage. Ajouté dans
+      `startup-wizard.js` (étape 2) : barre de niveau + verdict actionnable en français
+      par zone (silence/trop faible/correct/fort/écrêté), alimentée par le même broadcast
+      `audioDiagnostics` que le vumètre/la bande d'écoute (aucune capture audio dupliquée).
+      Exposé via `window.updateWizardMicCalibration` (même convention que
+      `window.openStartupWizard` déjà en place dans ce fichier), appelé depuis
+      `ws-dispatch.js`. **Pas fait** : mesure des 4 combinaisons de contraintes
+      getUserMedia en conditions réelles (aucun micro physique dans ce bac à sable) —
+      reste la seule partie de A.1 qui exige du matériel réel.
+      Gate : eslint 0 erreur, tsc clean, npm test vert (idem ci-dessus), test:e2e 15/15.
