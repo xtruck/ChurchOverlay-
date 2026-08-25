@@ -300,6 +300,12 @@ class SemanticDetector {
   constructor(groqWrapper) {
     this.groq = groqWrapper;
     this.contextHistory = []; // Rolling window of recent transcripts
+    this.errorCount = 0;
+    this.lastError = null;
+    // AJOUT (A.2 — visibilité des échecs IA) : câblé par server.js (voir
+    // ai-modules-loader.js) pour diffuser en WS plutôt que de rester dans
+    // la seule console. `null` par défaut.
+    this.onError = null;
   }
 
   addContext(text) {
@@ -356,6 +362,15 @@ class SemanticDetector {
       return result;
     } catch (err) {
       console.error('[semantic] LLM detection failed:', err.message);
+      this.errorCount++;
+      this.lastError = { message: err.message, at: Date.now() };
+      if (typeof this.onError === 'function') {
+        try {
+          this.onError(err.message);
+        } catch (_) {
+          /* observateur best-effort, ne doit jamais faire échouer la détection */
+        }
+      }
       return null;
     }
   }
@@ -365,6 +380,8 @@ class SemanticDetector {
       cacheSize: semanticCache.size,
       recentCalls: recentCalls.length,
       contextWindow: this.contextHistory.length,
+      errorCount: this.errorCount,
+      lastError: this.lastError,
     };
   }
 

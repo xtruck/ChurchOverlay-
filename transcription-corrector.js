@@ -237,7 +237,7 @@ function correctFast(text) {
 // SMART mode: Groq LLM correction
 // BULLETPROOF: Returns original text if groq is unavailable
 // -----------------------------------------------------------------------
-async function correctSmart(text, groqWrapper) {
+async function correctSmart(text, groqWrapper, onError) {
   // Defensive: check groq wrapper is valid
   if (!groqWrapper || typeof groqWrapper.chatCompletion !== 'function') {
     return text;
@@ -302,6 +302,17 @@ Rules:
     return corrected;
   } catch (err) {
     console.warn('[corrector] Smart correction failed:', err.message);
+    // AJOUT (A.2 — visibilité des échecs IA) : jusqu'ici uniquement dans la
+    // console, invisible côté opérateur. `text` reste retourné inchangé
+    // (comportement de repli identique à avant) ; onError() est un
+    // observateur pur, jamais dans le chemin de retour.
+    if (typeof onError === 'function') {
+      try {
+        onError(err.message);
+      } catch (_) {
+        /* observateur best-effort, ne doit jamais faire échouer la correction */
+      }
+    }
     return text;
   }
 }
@@ -319,7 +330,12 @@ function calculateSimilarity(a, b) {
 class TranscriptionCorrector {
   constructor(groqWrapper) {
     this.groq = groqWrapper;
-    this.stats = { fastCorrections: 0, smartCorrections: 0, skipped: 0 };
+    this.stats = { fastCorrections: 0, smartCorrections: 0, skipped: 0, errors: 0 };
+    // AJOUT (A.2 — visibilité des échecs IA) : câblé par server.js (voir
+    // ai-modules-loader.js) pour diffuser en WS plutôt que de rester dans
+    // la seule console. `null` par défaut : aucun effet si personne ne
+    // l'assigne (ex. dans les tests unitaires de ce module).
+    this.onError = null;
   }
 
   async correct(text, mode = 'auto') {
@@ -337,7 +353,11 @@ class TranscriptionCorrector {
       this.groq &&
       typeof this.groq.chatCompletion === 'function'
     ) {
-      const smartResult = await correctSmart(result, this.groq);
+      const smartResult = await correctSmart(result, this.groq, (message) => {
+        this.stats.errors++;
+        this.stats.lastError = { message, at: Date.now() };
+        if (typeof this.onError === 'function') this.onError(message);
+      });
       if (smartResult !== result) {
         this.stats.smartCorrections++;
         result = smartResult;
@@ -356,7 +376,7 @@ class TranscriptionCorrector {
   }
 
   resetStats() {
-    this.stats = { fastCorrections: 0, smartCorrections: 0, skipped: 0 };
+    this.stats = { fastCorrections: 0, smartCorrections: 0, skipped: 0, errors: 0 };
   }
 }
 

@@ -187,6 +187,19 @@ export function handleMessage(message) {
       addActivity(message.message, 'warning');
       showToast(`⚠️ ${message.message}`, 'error');
       break;
+    // AJOUT (A.2 — visibilité des échecs IA) : jusqu'ici un échec d'appel
+    // (Groq indisponible, timeout…) dans corrector/semanticDetector/
+    // themeGenerator ne remontait que dans les logs serveur — invisible
+    // depuis le dashboard, pendant tout un culte s'il le fallait. Toast
+    // throttlé par module (30s) pour ne pas noyer l'opérateur si un même
+    // module échoue à chaque segment ; l'activité, elle, reste non
+    // throttlée (déjà un flux tolérant au volume).
+    case 'aiModuleError':
+      addActivity(`Module IA en échec (${message.module}) : ${message.message}`, 'warning');
+      if (shouldToastAiModuleError(message.module)) {
+        showToast(`⚠️ Module IA « ${message.module} » en échec — repli automatique actif`, 'error');
+      }
+      break;
     // AJOUT (A.1 — gain micro) : diagnostics de niveau audio temps réel
     // pour le vumètre du dashboard.
     case 'audioDiagnostics':
@@ -530,6 +543,19 @@ export function handleMessage(message) {
       }
       break;
   }
+}
+
+// AJOUT (A.2 — visibilité des échecs IA) : un seul toast par module IA
+// toutes les 30s, pour ne pas noyer l'opérateur si Groq est indisponible
+// pendant tout un culte (un échec par segment transcrit sinon).
+const AI_MODULE_ERROR_TOAST_COOLDOWN_MS = 30000;
+const aiModuleErrorLastToastAt = new Map();
+function shouldToastAiModuleError(moduleName) {
+  const now = Date.now();
+  const last = aiModuleErrorLastToastAt.get(moduleName) || 0;
+  if (now - last < AI_MODULE_ERROR_TOAST_COOLDOWN_MS) return false;
+  aiModuleErrorLastToastAt.set(moduleName, now);
+  return true;
 }
 
 // Listening bar — état audio compact en haut de l'espace Direct

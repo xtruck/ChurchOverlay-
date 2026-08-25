@@ -131,6 +131,24 @@ async function runAsyncTests() {
     r6 === 'christ a beaucoup souffert'
   );
   check('smart rejeté: smartCorrections = 0', c6.getStats().smartCorrections === 0);
+
+  // --- SMART mode: erreur LLM → texte inchangé, mais onError notifié ---
+  // AJOUT (A.2 — visibilité des échecs IA) : jusqu'ici uniquement un
+  // console.warn invisible côté opérateur.
+  const mockGroqError = {
+    chatCompletion: async () => {
+      throw new Error('rate limited');
+    },
+  };
+  const c7 = new TranscriptionCorrector(mockGroqError);
+  let c7ErrorMessage = null;
+  c7.onError = (message) => {
+    c7ErrorMessage = message;
+  };
+  const r7 = await c7.correct('christ a beaucoup souffert', 'smart');
+  check('erreur LLM: texte inchangé (repli identique à avant)', r7 === 'christ a beaucoup souffert');
+  check('erreur LLM: onError notifié', c7ErrorMessage === 'rate limited');
+  check('erreur LLM: getStats().errors incrémenté', c7.getStats().errors === 1);
 }
 
 runAsyncTests().then(() => {

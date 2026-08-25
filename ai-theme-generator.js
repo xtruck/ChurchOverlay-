@@ -469,7 +469,7 @@ function detectMood(text) {
 // -----------------------------------------------------------------------
 // AI-Powered Theme Generation (requires Groq)
 // -----------------------------------------------------------------------
-async function generateAITheme(verseText, sermonContext, groqWrapper) {
+async function generateAITheme(verseText, sermonContext, groqWrapper, onError) {
   if (!groqWrapper) return null;
 
   try {
@@ -518,6 +518,16 @@ Rules:
     return theme;
   } catch (err) {
     console.warn('[theme-generator] AI theme generation failed:', err.message);
+    // AJOUT (A.2 — visibilité des échecs IA) : jusqu'ici uniquement dans la
+    // console. Le repli vers le thème par règles reste inchangé ; onError()
+    // est un observateur pur.
+    if (typeof onError === 'function') {
+      try {
+        onError(err.message);
+      } catch (_) {
+        /* observateur best-effort, ne doit jamais faire échouer la génération */
+      }
+    }
     return null;
   }
 }
@@ -530,6 +540,12 @@ class AIThemeGenerator {
     this.groq = groqWrapper;
     this.currentMood = 'default';
     this.aiEnabled = !!groqWrapper;
+    this.errorCount = 0;
+    this.lastError = null;
+    // AJOUT (A.2 — visibilité des échecs IA) : câblé par server.js (voir
+    // ai-modules-loader.js) pour diffuser en WS plutôt que de rester dans
+    // la seule console. `null` par défaut.
+    this.onError = null;
   }
 
   /**
@@ -545,7 +561,11 @@ class AIThemeGenerator {
 
     // If AI mode requested and available
     if ((mode === 'ai' || mode === 'auto') && this.aiEnabled && mood !== 'default') {
-      const aiTheme = await generateAITheme(verseText, sermonContext, this.groq);
+      const aiTheme = await generateAITheme(verseText, sermonContext, this.groq, (message) => {
+        this.errorCount++;
+        this.lastError = { message, at: Date.now() };
+        if (typeof this.onError === 'function') this.onError(message);
+      });
       if (aiTheme) {
         console.log(`[theme] AI theme generated: "${aiTheme.name}" (${aiTheme.mood})`);
         return aiTheme;
@@ -556,6 +576,14 @@ class AIThemeGenerator {
     const theme = MOOD_THEMES[mood] || MOOD_THEMES.default;
     theme.source = 'rule';
     return theme;
+  }
+
+  /**
+   * Stats exposées via l'action WS 'getAiStats' (voir server.js), même forme
+   * que SemanticDetector.getStats()/TranscriptionCorrector.getStats().
+   */
+  getStats() {
+    return { errorCount: this.errorCount, lastError: this.lastError };
   }
 
   /**

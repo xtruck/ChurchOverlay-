@@ -131,8 +131,17 @@ const mockGroqError = {
 };
 const d8 = new SemanticDetector(mockGroqError);
 d8.clearCache();
+// AJOUT (A.2 — visibilité des échecs IA) : un échec d'appel LLM ne doit plus
+// se limiter à un console.error invisible — onError() doit être notifié
+// pour que server.js puisse le diffuser (voir action WS 'aiModuleError').
+let d8OnErrorMessage = null;
+d8.onError = (message) => {
+  d8OnErrorMessage = message;
+};
 d8.detect('jesus guerit les malades').then((r) => {
   check('erreur LLM: retourne null sans crash', r === null);
+  check('erreur LLM: onError notifié', d8OnErrorMessage === 'API limit');
+  check('erreur LLM: getStats().errorCount incrémenté', d8.getStats().errorCount === 1);
 });
 
 // --- clearCache ---

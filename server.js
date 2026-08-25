@@ -211,6 +211,24 @@ const {
   groqHasChatCompletion,
 } = loadAIModules({ groq, appRoot: APP_ROOT });
 
+// CORRECTIF (A.2 — visibilité des échecs IA) : `aiLoadErrors` ci-dessus ne
+// couvre que les échecs de CHARGEMENT (au démarrage) — un échec d'APPEL
+// (ex. Groq indisponible en pleine prédication alors que le module a bien
+// chargé) restait invisible, seulement loggé en console (voir
+// transcription-corrector.js/semantic-detector.js/ai-theme-generator.js,
+// tous trois câblés ici sur `.onError`). `broadcast` est une function
+// déclaration (hoisted, définie plus bas dans ce fichier) — sûr à
+// référencer ici, elle ne sera appelée qu'au runtime, bien après.
+function wireAiModuleErrorBroadcast(mod, moduleName) {
+  if (!mod) return;
+  mod.onError = (message) => {
+    broadcast({ action: 'aiModuleError', module: moduleName, message, at: Date.now() });
+  };
+}
+wireAiModuleErrorBroadcast(corrector, 'corrector');
+wireAiModuleErrorBroadcast(semanticDetector, 'semanticDetector');
+wireAiModuleErrorBroadcast(themeGenerator, 'themeGenerator');
+
 // ---------------------------------------------------------------------------
 // HTTP & WebSocket server
 // ---------------------------------------------------------------------------
@@ -2707,6 +2725,7 @@ wss.on('connection', (ws, req) => {
           action: 'aiStats',
           semanticDetector: semanticDetector ? semanticDetector.getStats() : null,
           corrector: corrector ? corrector.getStats() : null,
+          themeGenerator: themeGenerator ? themeGenerator.getStats() : null,
           plugins: plugins ? plugins.metadata : null,
           aiEnricher: !!aiEnricher,
           loadErrors: aiLoadErrors,

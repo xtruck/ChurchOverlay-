@@ -433,6 +433,9 @@ const SERVER_ACTIONS = {
   offlineBibleStatus: { description: 'État Bible hors-ligne' },
   audioDiagnostics: { description: 'Diagnostics audio' },
   dedupSuppressed: { description: 'Verset supprimé par dédoublonnage' },
+  aiModuleError: {
+    description: "Échec d'appel d'un module IA (corrector/semanticDetector/themeGenerator)",
+  },
   confidenceThresholdChanged: { description: 'Seuil de confiance mis à jour' },
   error: { description: "Message d'erreur" },
 };
