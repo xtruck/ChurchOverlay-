@@ -1353,6 +1353,15 @@ better-sqlite3` (dans cet ordre) le corrige à chaque fois, mais quelque chose d
 environnement bac à sable semble le réinitialiser périodiquement. Signalé ici pour que
 la prochaine session ne perde pas de temps à chercher une régression de code qui n'existe pas.
 
+**Correction (même jour, trouvée en corrigeant le script npm test ci-dessous)** : ce
+n'était pas un incident d'environnement mystérieux — c'est `"pretest"` dans
+package.json, qui **supprime et reconstruit `better-sqlite3` avant CHAQUE `npm test`**
+(`rmSync(build)` + `npm rebuild better-sqlite3`, sans passer par `@electron/rebuild`
+d'abord). Comportement voulu et documenté, pas un bug : je l'avais juste manqué en
+diagnostiquant à la main. Explique tout : lancer `node test/xxx.js` isolément entre
+deux `npm test` voit un binaire dans l'état où le DERNIER `npm test` (ou ma propre
+correction manuelle) l'a laissé.
+
 ### 2026-08-25 — Mode confiance à 3 niveaux (Partie 2.5, TERMINÉ)
 
 - [x] **session-state.js** : `getTrustMode()`/`setTrustMode(mode)` — `'auto'` (défaut,
@@ -1468,3 +1477,31 @@ gitignoré, jamais commité — vérifié `git check-ignore` et `git status` ava
       **A.4 est maintenant intégralement vérifié**, les 4 volets (STFT fix, session
       language forcée, ABI better-sqlite3, mesure terrain) confirmés sur du code et
       des données réelles.
+
+### 2026-08-25 — Correction du masquage silencieux de `npm test` (TERMINÉ)
+
+- [x] **scripts/run-tests.js** (nouveau) : exécute chaque fichier de test dans un
+      process séparé (`spawnSync`, `stdio: 'inherit'`) et **continue après un échec**,
+      au lieu de l'ancien enchaînement `&&` de ~85 fichiers qui arrêtait toute la
+      suite en silence au premier échec (voir plus haut — 5 fichiers, dont
+      `integration-trust-mode.js`, n'avaient jamais tourné pendant toute une session à
+      cause de ça). Résumé final clair : `N/M fichiers de test réussis`, liste des
+      échecs avec code de sortie. Même contrat de code de sortie qu'avant (0 si tout
+      vert, 1 sinon) — CI (`.github/workflows/ci.yml`, simple `run: npm test`) pas
+      affecté au-delà d'une meilleure visibilité dans les logs.
+- [x] **package.json** : `test`/`test-all` reconstruits programmatiquement (extraction
+      Python de l'ancienne liste `&&`-séparée, JSON réécrit) pour n'introduire aucune
+      erreur de transcription sur ~85 noms de fichiers — liste et ordre IDENTIQUES à
+      avant, seul l'enchaînement change (`node scripts/run-tests.js <liste
+      espace-séparée>` au lieu de `node fichier1 && node fichier2 && …`). La différence
+      pré-existante entre `test` (inclut `test-action-registry.js`) et `test-all` (ne
+      l'inclut pas) est préservée telle quelle, pas comprise ni tranchée ici.
+- [x] **Vérifié** : `npm test` fictif avec un fichier inexistant au milieu de la
+      liste → continue bien après, résumé correct, exit 1. Puis le VRAI `npm test` :
+      **83/84 réussis**, seul `test-clip-exporter.js` échoue (ffmpeg pré-existant du
+      bac à sable) — et surtout, les 5 fichiers auparavant masqués tournent bien
+      maintenant et sont TOUS verts, avec un résumé qui le prouve noir sur blanc au
+      lieu d'une vérification manuelle fichier par fichier. `npm run test-all` :
+      82/83, même constat.
+      Gate : eslint 0 erreur, tsc clean, npm audit 0 vuln, check-build-files OK,
+      test:e2e 19/19.
