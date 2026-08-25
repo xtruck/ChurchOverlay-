@@ -58,6 +58,7 @@ process.env.PORT = process.env.PORT || '8793'; // distinct des autres tests
 process.env.CHURCHOVERLAY_SKIP_BIBLE_DOWNLOAD = '1';
 require('../server.js');
 const mediaLibrary = require('../media-library');
+const songLibrary = require('../song-library');
 
 const WebSocket = require('ws');
 const { readZipEntries } = require('../pptx-importer');
@@ -82,6 +83,7 @@ function sleep(ms) {
   await sleep(300);
 
   let addedMediaId = null;
+  let addedSongId = null;
   let tmpSourcePath = null;
   let zipOutPath = null;
 
@@ -130,6 +132,12 @@ function sleep(ms) {
     addedMediaId = added ? added.id : null;
     check('le média existe bien dans le vrai index', !!added);
 
+    const song = songLibrary.addSong({
+      title: `Chant export test ${Date.now()}`,
+      lyrics: 'Grand est le Seigneur\net magnifique',
+    });
+    addedSongId = song.id;
+
     console.log('\n=== exportService produit un vrai .zip avec ce média dedans ===\n');
     zipOutPath = path.join(os.tmpdir(), `churchoverlay-export-out-${Date.now()}.zip`);
     received.length = 0;
@@ -151,6 +159,16 @@ function sleep(ms) {
       !!manifest &&
         entries.has(`media/${manifest.media.find((m) => m.id === addedMediaId).filename}`)
     );
+    check(
+      'le chant exporté contient les VRAIES paroles (pas juste sectionCount)',
+      !!manifest &&
+        manifest.songs.some(
+          (s) =>
+            s.id === addedSongId &&
+            Array.isArray(s.sections) &&
+            s.sections[0].text.includes('Grand est le Seigneur')
+        )
+    );
 
     console.log('\n=== Un destPath dans un dossier inexistant renvoie une erreur propre ===\n');
     received.length = 0;
@@ -163,6 +181,11 @@ function sleep(ms) {
     const errMsg = await waitForAction('error');
     check('un message error est renvoyé, pas un crash', !!errMsg.error);
   } finally {
+    if (addedSongId) {
+      try {
+        songLibrary.deleteSong(addedSongId);
+      } catch (_) {}
+    }
     if (addedMediaId) {
       try {
         mediaLibrary.deleteItem(addedMediaId);

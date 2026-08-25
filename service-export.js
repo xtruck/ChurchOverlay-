@@ -211,6 +211,16 @@ function buildExportPlan(stores, userDataDir) {
     manifestMedia.push(item);
   }
 
+  // CORRECTIF : songLibrary.listSongs() ne renvoie QUE des métadonnées
+  // légères (sectionCount, pas le texte des sections — voir son en-tête
+  // "métadonnées seulement, pour une liste légère") : un export qui s'en
+  // contenterait produirait des chants sans paroles, impossibles à
+  // reconstruire. getSong(id) donne l'enregistrement complet.
+  const songs = songLibrary
+    .listSongs()
+    .map((s) => songLibrary.getSong(s.id))
+    .filter(Boolean);
+
   const manifest = {
     exportedAt: new Date().toISOString(),
     appVersion: require('./package.json').version,
@@ -218,7 +228,7 @@ function buildExportPlan(stores, userDataDir) {
     scenes: sceneStore.listItems(),
     media: manifestMedia,
     skippedMedia,
-    songs: songLibrary.listSongs(),
+    songs,
   };
 
   entries.unshift({ name: 'manifest.json', content: JSON.stringify(manifest, null, 2) });

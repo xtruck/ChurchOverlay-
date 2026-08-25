@@ -151,7 +151,17 @@ print('OK')
           { id: 'm2', label: 'Vidéo disparue', filename: 'video-manquante.mp4' }, // fichier absent du disque exprès
         ],
       },
-      songLibrary: { listSongs: () => [{ id: 'song1', title: 'Grand est le Seigneur' }] },
+      songLibrary: {
+        listSongs: () => [{ id: 'song1', title: 'Grand est le Seigneur', sectionCount: 1 }],
+        getSong: (id) =>
+          id === 'song1'
+            ? {
+                id: 'song1',
+                title: 'Grand est le Seigneur',
+                sections: [{ type: 'verse', label: 'Couplet 1', text: 'Grand est le Seigneur' }],
+              }
+            : null,
+      },
     };
 
     check(
@@ -165,6 +175,19 @@ print('OK')
         assert.ok(entries.some((e) => e.name === 'media/photo-jeunesse.jpg'));
         assert.ok(!entries.some((e) => e.name.includes('video-manquante')));
         assert.ok(entries.some((e) => e.name === 'manifest.json'));
+      }
+    );
+
+    check(
+      'buildExportPlan : les chants exportés contiennent les VRAIES paroles, pas juste les métadonnées',
+      () => {
+        // CORRECTIF : listSongs() seul ne renvoie que sectionCount (pas le
+        // texte) — buildExportPlan doit passer par getSong(id) pour chaque
+        // chant, sinon un chant exporté serait impossible à reconstruire.
+        const { manifest } = buildExportPlan(fakeStores, userDataDir);
+        assert.strictEqual(manifest.songs.length, 1);
+        assert.ok(Array.isArray(manifest.songs[0].sections));
+        assert.strictEqual(manifest.songs[0].sections[0].text, 'Grand est le Seigneur');
       }
     );
 
