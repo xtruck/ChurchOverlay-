@@ -10,7 +10,7 @@
  * caméra alors qu'il appartient conceptuellement à ce fichier).
  */
 import { ws, getHttpOrigin } from '../state.js';
-import { showToast, escapeHtmlDashboard } from '../utils.js';
+import { showToast, escapeHtmlDashboard, isTypingContext } from '../utils.js';
 import { updatePosterCardMediaItems } from './poster-principal-card.js';
 
 /* ======================================================================
@@ -417,6 +417,7 @@ export function renderMediaWall(items) {
         <div class="media-gallery-card${stateClasses}" data-media-id="${item.id}" style="cursor:pointer" onclick="triggerMediaWallItem('${escapeHtmlDashboard(item.filename)}')">
           <div class="media-gallery-thumb">
             ${thumbMarkup}
+            <span class="media-gallery-hotkey"></span>
             ${badges.map((b) => `<span class="media-gallery-badge">${b}</span>`).join('')}
           </div>
           <div class="media-gallery-label" style="font-size:0.75rem;padding:0.3rem 0.5rem;text-align:center;">
@@ -425,8 +426,31 @@ export function renderMediaWall(items) {
         </div>`;
     })
     .join('');
+  renumberVisibleTiles();
 }
 window.renderMediaWall = renderMediaWall;
+
+// AJOUT (Partie 2.3 — touches 1-9, affordance visible) : numérote les 9
+// premières tuiles VISIBLES avec un badge discret dans le coin — sans ça,
+// l'opérateur devrait deviner quelle touche correspond à quelle tuile.
+// Recalculé à chaque rendu ET à chaque filtre (voir filterMediaWall), qui
+// change forcément quelles tuiles sont "les 9 premières visibles".
+function renumberVisibleTiles() {
+  const cards = Array.from(document.querySelectorAll('#mediaWallGrid .media-gallery-card'));
+  let hotkeyIndex = 0;
+  for (const card of cards) {
+    const badge = card.querySelector('.media-gallery-hotkey');
+    if (!badge) continue;
+    if (card.style.display !== 'none' && hotkeyIndex < 9) {
+      hotkeyIndex++;
+      badge.textContent = String(hotkeyIndex);
+      badge.style.display = 'block';
+    } else {
+      badge.textContent = '';
+      badge.style.display = 'none';
+    }
+  }
+}
 
 window.triggerMediaWallItem = function (filename) {
   const item = mediaLibraryItems.find((i) => i.filename === filename);
@@ -470,3 +494,47 @@ export function renderTriggerPhraseTestResult(result) {
     el.style.color = 'var(--accent-red, #ef4444)';
   }
 }
+
+// AJOUT (Partie 2.3 — recherche instantanée) : filtre la grille EN PLACE
+// (affiche/masque des tuiles déjà rendues, comme markMediaOnScreen ci-dessus)
+// plutôt que de la reconstruire — même souci de performance sur une grosse
+// médiathèque (cahier des charges : 200 médias).
+function normalizeForSearch(text) {
+  return (text || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+}
+
+export function filterMediaWall(query) {
+  const q = normalizeForSearch(query);
+  const cards = document.querySelectorAll('#mediaWallGrid .media-gallery-card');
+  cards.forEach((card) => {
+    const item = mediaLibraryItems.find((i) => i.id === card.dataset.mediaId);
+    if (!item) return;
+    const haystack = normalizeForSearch([item.label, ...(item.triggerPhrases || [])].join(' '));
+    card.style.display = !q || haystack.includes(q) ? '' : 'none';
+  });
+  renumberVisibleTiles();
+}
+window.filterMediaWall = filterMediaWall;
+
+// AJOUT (Partie 2.3 — parité clavier, touches 1-9) : les 9 premières tuiles
+// VISIBLES (après filtre — voir filterMediaWall ci-dessus) se déclenchent au
+// clavier, sans quitter le clavier pour attraper la souris en plein culte.
+// Actif uniquement quand le Mur Média est la section réellement affichée
+// (l'opérateur peut être sur un tout autre onglet de RÉGIE en même temps),
+// et jamais pendant une saisie ailleurs (garde-fou partagé avec la barre
+// d'espace du mode confiance — voir utils.js#isTypingContext).
+document.addEventListener('keydown', (e) => {
+  if (!/^[1-9]$/.test(e.key)) return;
+  if (isTypingContext()) return;
+  const section = document.getElementById('media-wall');
+  if (!section || section.style.display === 'none') return;
+  const visibleCards = Array.from(
+    document.querySelectorAll('#mediaWallGrid .media-gallery-card')
+  ).filter((card) => card.style.display !== 'none');
+  const index = Number(e.key) - 1;
+  const card = visibleCards[index];
+  if (!card) return;
+  e.preventDefault();
+  const item = mediaLibraryItems.find((i) => i.id === card.dataset.mediaId);
+  if (item && !item.fileMissing) triggerMediaLibraryItem(item.id);
+});

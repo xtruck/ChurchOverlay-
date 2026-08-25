@@ -18,7 +18,7 @@
  * jamais dépendre de l'état d'un onglet dashboard particulier).
  */
 import { ws } from '../state.js';
-import { showToast } from '../utils.js';
+import { showToast, isTypingContext } from '../utils.js';
 
 export function setTrustMode(mode) {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -55,13 +55,6 @@ export function showPendingVerseBanner(message) {
 export function hidePendingVerseBanner() {
   const banner = document.getElementById('pendingVerseBanner');
   if (banner) banner.style.display = 'none';
-}
-
-function isTypingContext() {
-  const el = document.activeElement;
-  if (!el) return false;
-  const tag = (el.tagName || '').toLowerCase();
-  return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable;
 }
 
 // Barre d'espace = confirmer le verset en attente — jamais si l'opérateur

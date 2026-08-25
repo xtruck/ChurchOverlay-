@@ -3403,6 +3403,19 @@ Aucune exécution agent.</pre>
               class="field-hint"
               style="margin-bottom: 0.75rem; min-height: 1.2em"
             ></div>
+            <!-- AJOUT (Partie 2.3 — recherche instantanée + parité clavier) :
+                 filtre la grille en direct (nom OU phrase déclencheuse), et
+                 les touches 1-9 déclenchent les 9 premières tuiles VISIBLES
+                 (après filtre) sans quitter le clavier — voir
+                 dashboard/features/media-library.js, filterMediaWall()/le
+                 gestionnaire keydown global. -->
+            <input
+              type="text"
+              id="mediaWallSearchInput"
+              placeholder="🔍 Filtrer (nom ou phrase déclencheuse)… — touches 1-9 pour déclencher"
+              style="margin-bottom: 0.5rem; width: 100%"
+              oninput="filterMediaWall(this.value)"
+            />
             <div id="mediaWallGrid" class="media-gallery-grid" style="min-height: 120px">
               <div class="empty-state-note" style="grid-column: 1 / -1">
                 Aucun média chargé. Ajoutez des photos/vidéos dans la médiathèque d'abord.

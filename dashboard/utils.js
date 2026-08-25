@@ -15,6 +15,19 @@ export function escapeHtmlDashboard(str) {
   return div.innerHTML;
 }
 
+// AJOUT (Partie 2 — garde-fou clavier partagé) : utilisé par tout
+// écouteur keydown global qui doit rester muet pendant une saisie ailleurs
+// (recherche biblique, palette Ctrl+K, filtre du mur média…) — d'abord
+// écrit dans trust-mode.js (barre d'espace = confirmer un verset en
+// attente), déplacé ici car media-library.js (touches 1-9 du mur média) en
+// a besoin exactement de la même façon.
+export function isTypingContext() {
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = (el.tagName || '').toLowerCase();
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable;
+}
+
 export function createToastContainer() {
   const container = document.createElement('div');
   container.className = 'toast-container';

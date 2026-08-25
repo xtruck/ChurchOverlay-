@@ -1290,6 +1290,26 @@ body {
   border-radius: var(--radius-sm);
 }
 
+/* AJOUT (Partie 2.3 — touches 1-9) : coin opposé aux badges d'état
+   ci-dessus, pour ne jamais les recouvrir. Vide (display:none) tant
+   qu'aucun numéro ne lui a été assigné (voir renumberVisibleTiles() dans
+   dashboard/features/media-library.js). */
+.media-gallery-hotkey {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-width: 1.4em;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.4;
+  background: rgba(99, 102, 241, 0.85);
+  color: #fff;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  display: none;
+}
+
 .media-gallery-body {
   padding: 0.55rem 0.65rem 0.15rem;
   display: flex;
