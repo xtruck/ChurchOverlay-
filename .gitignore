@@ -48,6 +48,11 @@ dist-ts/
 # le pipeline de build/release, pas commité (à la différence du petit
 # models/silero_vad.onnx, 2,3 Mo, qui lui reste commité).
 models/bible-vector-index.sqlite3
+# CORRECTIF (2026-08-25) : scripts/generate-bible-embeddings.js construit
+# maintenant dans ce fichier temporaire avant de le renommer vers le chemin
+# ci-dessus une fois la génération complète (voir son en-tête) -- sans cette
+# ligne, une génération interrompue laisserait un .building non ignoré.
+models/bible-vector-index.sqlite3.building
 
 # Sortie de "npm run test:e2e" (Playwright — voir playwright.config.js) :
 # rapport HTML + traces/captures d'écran des tests échoués. Régénérés à

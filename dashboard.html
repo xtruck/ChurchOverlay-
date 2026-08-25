@@ -3083,8 +3083,8 @@ Aucune exécution agent.</pre>
               <span class="stat-label">Statut Capture Micro (Whisper/Groq/Deepgram)</span>
               <span class="status-badge warning" id="speechStatus">Capture arrêtée</span>
             </div>
-            <!-- AJOUT (Partie 7.1.2 — service portable, export uniquement,
-                         voir service-export.js pour la portée assumée) : un seul
+            <!-- AJOUT (Partie 7.1.2 — service portable, voir service-export.js/
+                         service-import.js pour la portée assumée) : un seul
                          .zip (feuille de route + scènes + chants + médias
                          RÉELLEMENT copiés dedans, pas juste leurs métadonnées) à
                          transférer sur une autre machine ChurchOverlay. -->
@@ -3097,6 +3097,18 @@ Aucune exécution agent.</pre>
                   onclick="exportServicePortable()"
                 >
                   💾 Exporter en .zip
+                </button>
+              </span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Importer un service (fichier .zip exporté)</span>
+              <span class="stat-value">
+                <button
+                  class="btn btn-secondary"
+                  style="padding: 2px 8px; font-size: 0.75rem"
+                  onclick="importServicePortable()"
+                >
+                  📥 Importer un .zip
                 </button>
               </span>
             </div>

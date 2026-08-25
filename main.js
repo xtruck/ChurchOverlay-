@@ -1481,6 +1481,19 @@ ipcMain.handle('pick-export-zip-path', async () => {
   return result.filePath;
 });
 
+// --- AJOUT (Partie 7.1.2 — import du service portable) --------------------
+// showOpenDialog (fichier .zip existant à importer) — écriture réelle dans
+// service-import.js, côté worker.
+ipcMain.handle('pick-import-zip-path', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Importer un service (fichier .zip exporté par ChurchOverlay)',
+    properties: ['openFile'],
+    filters: [{ name: 'Archive ZIP', extensions: ['zip'] }],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
 // ---------------------------------------------------------------------------
 // Auto-updater (optional — won't crash if not installed)
 // ---------------------------------------------------------------------------

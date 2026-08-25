@@ -68,6 +68,9 @@ const pptxImporter = require('./pptx-importer');
 // AJOUT (Partie 7.1.2 — service portable, export uniquement, voir
 // service-export.js pour le pourquoi de cette portée).
 const serviceExport = require('./service-export');
+// AJOUT (Partie 7.1.2 — service portable, IMPORT, voir service-import.js en
+// tête pour la protection zip slip et la logique de remappage d'id).
+const serviceImport = require('./service-import');
 // AJOUT (chantier 4.3 — sortie broadcast, feuille de route/cue-list) : une
 // séquence PRÉ-PLANIFIÉE de repères verset/média/scène que l'opérateur
 // construit à l'avance et déclenche dans l'ordre — voir rundown-store.js.
@@ -3495,6 +3498,39 @@ wss.on('connection', (ws, req) => {
         ws.send(JSON.stringify({ action: 'serviceExportResult', ...summary }));
       } catch (err) {
         ws.send(JSON.stringify({ action: 'error', error: 'Export du service : ' + err.message }));
+      }
+      return;
+    }
+
+    // AJOUT (Partie 7.1.2 — service portable, IMPORT, voir service-import.js
+    // en tête pour la protection zip slip) : sourcePath vient du sélecteur
+    // natif main.js#pick-import-zip-path, jamais un chemin envoyé librement
+    // par le client (même garde que pour exportService/importPptxSlides).
+    if (sanitized.action === 'importService') {
+      try {
+        const summary = await serviceImport.importService(sanitized.sourcePath, {
+          mediaLibrary,
+          sceneStore,
+          songLibrary,
+          rundownStore,
+        });
+        log(
+          `Import service : ${summary.mediaImported} média(s) (${summary.mediaSkipped} sauté(s)), ${summary.scenesImported} scène(s) (${summary.scenesSkipped} sautée(s)), ${summary.songsImported} chant(s) (${summary.songsSkipped} sauté(s)), ${summary.cuesImported} repère(s) (${summary.cuesSkipped} sauté(s)) <- ${sanitized.sourcePath}`
+        );
+        broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
+        broadcast({
+          action: 'sceneLibraryUpdated',
+          scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
+        });
+        broadcast({ action: 'songLibraryUpdated', songs: songLibrary.listSongs() });
+        broadcast({
+          action: 'rundownUpdated',
+          cues: rundownStore.listCues(),
+          activeIndex: currentRundownIndex,
+        });
+        ws.send(JSON.stringify({ action: 'serviceImportResult', ...summary }));
+      } catch (err) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Import du service : ' + err.message }));
       }
       return;
     }

@@ -1697,15 +1697,50 @@ zipfile` — deux implémentations RÉELLES et totalement indépendantes de la
     le VRAI server.js (vrai média ajouté via addMediaItem, retrouvé
     intact dans le .zip produit).
 
-  L'IMPORT (côté réception) reste délibérément non fait : extraire un ZIP en
-  sécurité exige de se protéger contre le "zip slip" (une entrée nommée
-  `../../etc/quelquechose` pourrait sinon écrire hors du dossier de
-  destination) — un sujet de sécurité qui mérite sa propre revue dédiée
-  plutôt qu'un ajout précipité en fin de session, documenté en toutes
-  lettres en pied de `service-export.js`. En attendant, le .zip produit
-  s'ouvre avec n'importe quel outil standard (vérifié ci-dessus) : utilisable
-  manuellement (copier `media/`, relire `manifest.json`) même sans import
-  intégré à l'app.
+  **RÉVISÉ (2026-08-25, suite) — IMPORT construit.** En le concevant, la
+  vraie forme du risque zip-slip est apparue plus étroite que redouté :
+  l'importeur n'a jamais besoin d'extraire une entrée ZIP QUELCONQUE vers un
+  chemin QU'ELLE indique elle-même — il ne lit que deux clés fixes
+  (`manifest.json`, et `media/<filename>` pour chaque média DÉCRIT PAR ce
+  manifeste), et chaque fichier extrait est écrit sous un nom entièrement
+  choisi côté code (`crypto.randomUUID() + extension déjà validée contre
+l'allowlist existante`), jamais le nom venu du zip. `media-library.js`/
+  `scene-store.js` copient ensuite ce fichier temporaire vers LEUR PROPRE nom
+  interne. Résultat : aucune écriture sur disque, à aucune étape, ne dérive
+  d'un chemin non fiable — pas une garantie a priori, PROUVÉE par 2 tests
+  adversariaux dans `test/test-service-import.js` (nom de fichier
+  `"../evil-marker.jpg"` : importe normalement car .jpg reste une extension
+  valide, MAIS rien n'apparaît au chemin naïvement traversé qu'un
+  implémenteur moins prudent aurait utilisé ; `"../../evil.exe"` : sauté par
+  l'allowlist d'extensions).
+
+  Second problème : scenes/rundown référencent médias/scènes PAR ID, et
+  `addItem()`/`addScene()` régénèrent TOUJOURS un nouvel id (jamais fait
+  confiance à un id venu de l'extérieur) — les id du manifeste ne
+  correspondent donc plus à rien après import. `service-import.js` construit
+  une table ancien-id → nouvel-id à chaque étape (médias d'abord, puis
+  scènes), réutilisée pour réécrire `background.mediaId`/`elements[].mediaId`
+  d'une scène et `mediaId`/`sceneId` d'un repère de feuille de route. Une
+  scène dont la référence média a été sautée dégrade gracieusement (même
+  philosophie que `scene-store.js` lui-même) ; un repère de feuille de route
+  dont la cible n'a pas pu être remappée est sauté entièrement plutôt que
+  créé cassé (`addCue()` l'exigerait de toute façon).
+
+  Bug trouvé EN CONCEVANT l'import (pas signalé par l'utilisateur) : l'export
+  des chants utilisait `songLibrary.listSongs()`, qui ne renvoie QUE des
+  métadonnées légères (`sectionCount`, jamais le texte — conception
+  pré-existante, "liste légère") — un chant exporté était donc impossible à
+  reconstruire. Corrigé côté `service-export.js` (`getSong(id)` pour chaque
+  chant), testé aux deux niveaux (unitaire + intégration réelle).
+
+  Testé à 3 niveaux : `test/test-service-import.js` (7 cas, stores RÉELS —
+  media-library.js/scene-store.js/song-library.js/rundown-store.js — contre
+  un dossier userData temporaire, pas des doublures, pour que les preuves de
+  sécurité portent sur le comportement réel) + `test/integration-service-import.js`
+  (round-trip complet export→import contre le VRAI server.js : média + scène
+  qui le référence + chant créés via les vraies actions WS, exportés,
+  réimportés, la scène réimportée vérifiée pointer vers le média RÉIMPORTÉ,
+  pas l'original ni un id fantôme).
 
 - §7.1.1 (importeur ProPresenter/PowerPoint) — **RÉVISÉ, PARTIEL PAR DÉCISION
   ASSUMÉE (2026-08-25)**. `propresenter-controller.js` audité (cette entrée
@@ -1738,8 +1773,13 @@ zipfile` — deux implémentations RÉELLES et totalement indépendantes de la
 
 1. Les .wav du corpus (régénérés sur Windows) ou un accès à une machine Windows pour
    A.5 — bloque aussi la mesure d'impact de §4.1.
-2. Une clé Gemini, si l'index vectoriel sémantique est jugé prioritaire (sinon le
-   repli mot-clé actuel reste honnête et fonctionnel).
+2. ~~Une clé Gemini~~ **FOURNIE (2026-08-25)**. A débloqué un bug latent
+   réel au passage (voir entrée dédiée plus loin : `text-embedding-004`
+   n'existe plus côté API, la recherche sémantique était inopérante en
+   permanence depuis son introduction, quelle que soit la clé). Génération
+   de l'index réel (~31 000 versets) lancée — le palier gratuit impose un
+   rythme lent (429 fréquents malgré la nouvelle tentative automatique),
+   voir l'entrée dédiée pour le résultat final.
 3. Rien — "séquence" est tranché (voir entrée dédiée plus loin : le rundown
    existant, glisser-déposer jugé non prioritaire une fois le bouton ➕ déjà
    équivalent fonctionnellement).
