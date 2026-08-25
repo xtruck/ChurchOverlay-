@@ -1303,3 +1303,52 @@ pas non plus supposer que c'est fini.
       **Partie 3.2 (NDI)** : voie A retenue par le document (passer par OBS) — rien à
       construire tant que personne ne le demande, conforme à la recommandation du
       document lui-même.
+
+### 2026-08-25 — Audit Partie 2 (interface) et chantier palette Ctrl+K → registre
+
+**Audit réel des 4 briques déjà construites (Steps 2-14, jamais vérifiées en détail)** :
+
+| Brique | État réel |
+|---|---|
+| Trois espaces DIRECT/PRÉPARATION/RÉGIE | Réelle (`data-sections`), conforme |
+| Bande d'écoute (`listeningBar`) | Basique (point + barre + statut) — pas la version riche du document (transcription défilante, verset préchargé, latence ms) |
+| **Mode confiance** | **Collision de nom** : `confidence-mode.js` (33 lignes) est un slider de seuil ASR + toggle de badges — PAS les 3 niveaux auto/semi-auto (barre d'espace)/manuel du document. Cette fonctionnalité n'existe pas encore. |
+| **Palette Ctrl+K** | Fonctionnelle mais liste `COMMANDS` codée en dur, déconnectée d'`action-registry.js` — corrigé ce jour, voir ci-dessous. Bug trouvé au passage : raccourci `'Ctrl+Alt+aj+H'` (Maj tronqué). |
+| **Mur Média** | Grille basique clic-pour-déclencher, nom toujours visible (bon point). Rien d'autre du §2.3 : pas d'états par tuile, pas de groupes, pas de collisions phonétiques, pas de bouton "essayer", pas de mode apprentissage, pas de parité clavier/glisser-déposer, jamais testé à 200 médias. |
+| Dual view Aperçu/Programme | Bascule d'étiquette simple, pas la vraie séparation stricte du §2.5 |
+
+- [x] **Palette Ctrl+K → action-registry.js (TERMINÉ)** : `action-registry.js` ne
+      tournait que côté Node (`module.exports`). Rendu isomorphe (garde
+      `typeof module !== 'undefined'`, expose aussi `window.ACTION_REGISTRY`) et
+      chargé en `<script>` classique dans dashboard.html (même raisonnement que
+      scene-render.js — avant `dashboard/main.js`, qui est différé). `command-palette.js`
+      dérive maintenant `label`/`category` de `CLIENT_ACTIONS[action].description`/
+      `.category` (traduits en français via une petite table `CATEGORY_LABELS` — le
+      registre garde des clés techniques comme 'infra' qu'un opérateur regroupe
+      mentalement sous "Système"). La LISTE des ~30 actions présentes dans la palette
+      reste curée à la main (`PALETTE_ACTIONS`) : `executeCommand()` ne sait exécuter
+      qu'un sous-ensemble des ~90 actions du registre, la plupart exigeant un
+      payload/formulaire qu'aucune génération automatique ne peut deviner. Les 3
+      variantes `setLanguage-{fr,en,both}` gardent un label écrit à la main
+      (`labelOverride`) : ce sont des valeurs de PARAMÈTRE de `setLanguage`, pas des
+      actions que le registre peut décrire. Bug de raccourci corrigé
+      (`Ctrl+Alt+Maj+H`, vérifié contre le vrai `globalShortcut.register` de main.js).
+      Test e2e ajouté (`test/e2e/command-palette.spec.js`) : vérifie dans un vrai
+      navigateur que `window.ACTION_REGISTRY` existe et que le libellé affiché pour
+      `emergencyClear` est EXACTEMENT `CLIENT_ACTIONS.emergencyClear.description` — un
+      futur changement de description dans le registre sans toucher la palette ferait
+      échouer ce test, au lieu de laisser les deux dériver en silence.
+      Gate : eslint 0 erreur, tsc clean, npm audit 0 vuln, check-build-files OK, npm test
+      vert (sauf clip-exporter pré-existant), test:e2e 16/16.
+      **Reste (Partie 2)** : mode confiance à 3 niveaux (à construire, n'existe pas) et
+      mur média conforme au §2.3 (chantier le plus lourd, plusieurs jours) — décision de
+      l'utilisateur en attente sur l'ordre.
+
+**Incident d'environnement (sans rapport avec le code)** : le binaire natif
+`better-sqlite3` (`build/Release/better_sqlite3.node`) a disparu et réapparu à
+plusieurs reprises pendant cette session, indépendamment de toute action de ma part
+(aucun fichier source touché) — tantôt absent, tantôt compilé pour la mauvaise ABI
+(148/Electron au lieu de 137/Node). `npx @electron/rebuild && npm rebuild
+better-sqlite3` (dans cet ordre) le corrige à chaque fois, mais quelque chose dans cet
+environnement bac à sable semble le réinitialiser périodiquement. Signalé ici pour que
+la prochaine session ne perde pas de temps à chercher une régression de code qui n'existe pas.
