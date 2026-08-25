@@ -41,6 +41,14 @@ const CONFIG = {
   // L'API Gemini limite la taille des lots d'embedContent — valeur prudente,
   // pas de valeur officielle documentée dans le SDK à ce jour.
   BATCH_SIZE: 100,
+  // CORRECTIF (2026-08-25) : constaté en générant l'index réel (voir
+  // JOURNAL-MISSION.md) — le palier gratuit renvoie 429 "RESOURCE_EXHAUSTED"
+  // bien avant la fin d'un index de ~31 000 versets/~312 lots. err.status
+  // (champ numérique du SDK @google/genai, pas juste err.message) identifie
+  // sans ambiguïté ce cas précis — jamais déclenché par une erreur générique
+  // (voir test/test-embedding-provider.js, qui vérifie ce non-déclenchement).
+  MAX_RETRIES_ON_RATE_LIMIT: 6,
+  RETRY_BASE_DELAY_MS: 5000, // doublé à chaque tentative (5s, 10s, 20s, ...)
 };
 
 function chunk(array, size) {
@@ -49,6 +57,10 @@ function chunk(array, size) {
     out.push(array.slice(i, i + size));
   }
   return out;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -73,14 +85,29 @@ async function embedTexts(texts, options = {}) {
 
   try {
     for (const batch of chunk(texts, CONFIG.BATCH_SIZE)) {
-      const res = await ai.models.embedContent({
-        model: CONFIG.MODEL,
-        contents: batch,
-        config: {
-          taskType,
-          outputDimensionality: CONFIG.OUTPUT_DIMENSIONALITY,
-        },
-      });
+      let res;
+      let attempt = 0;
+      for (;;) {
+        try {
+          res = await ai.models.embedContent({
+            model: CONFIG.MODEL,
+            contents: batch,
+            config: {
+              taskType,
+              outputDimensionality: CONFIG.OUTPUT_DIMENSIONALITY,
+            },
+          });
+          break;
+        } catch (err) {
+          if (err.status !== 429 || attempt >= CONFIG.MAX_RETRIES_ON_RATE_LIMIT) throw err;
+          const delayMs = CONFIG.RETRY_BASE_DELAY_MS * 2 ** attempt;
+          console.warn(
+            `[embedding-provider] 429 (palier gratuit) — nouvelle tentative dans ${delayMs}ms (${attempt + 1}/${CONFIG.MAX_RETRIES_ON_RATE_LIMIT})`
+          );
+          await sleep(delayMs);
+          attempt++;
+        }
+      }
       const embeddings = res.embeddings || [];
       if (embeddings.length !== batch.length) {
         throw new Error(

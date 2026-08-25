@@ -33,6 +33,17 @@ const { BibleVectorStore, DEFAULT_DB_PATH } = require('../bible-vector-store');
 
 const TRANSLATION = bibleOfflineCache.DEFAULT_TRANSLATION;
 const EMBED_BATCH_SIZE = 100;
+// CORRECTIF (2026-08-25) : constaté en générant l'index réel — le palier
+// gratuit Gemini renvoie 429 (RESOURCE_EXHAUSTED) bien avant la fin d'un
+// index de ~312 lots à la suite. embedTexts() gère déjà les 429 isolés avec
+// sa propre nouvelle tentative (voir embedding-provider.js), mais un rythme
+// poli ENTRE lots (même principe que REQUEST_DELAY_MS dans
+// bible-offline-cache.js) réduit combien de fois ce cas se produit du tout.
+const EMBED_BATCH_DELAY_MS = 2000;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 async function ensureBibleTextDownloaded() {
   // Répertoire de travail dédié à ce script — distinct du userData d'une
@@ -101,7 +112,18 @@ async function main() {
   const verses = flattenVerses(books);
   console.log(`[generate-bible-embeddings] ${verses.length} versets à embedder.`);
 
-  const store = new BibleVectorStore({ dbPath: DEFAULT_DB_PATH, vectorDim: 768 });
+  // CORRECTIF (2026-08-25) : createForWriting() écrit directement sur
+  // dbPath dès le premier verset — le commentaire d'erreur ci-dessous disait
+  // déjà "index partiel non écrit sur disque final" mais le code n'honorait
+  // pas cette intention : un échec à mi-parcours (ex. 429 persistant)
+  // laissait un index INCOMPLET au VRAI chemin de production
+  // (models/bible-vector-index.sqlite3), silencieusement pris pour un index
+  // complet par bible-semantic-search.js au prochain démarrage. Écrit
+  // maintenant dans un fichier temporaire, renommé vers DEFAULT_DB_PATH
+  // seulement après un succès complet — un ancien index valide (s'il en
+  // existe un) reste donc intact tant qu'un nouveau n'a pas fini.
+  const buildingPath = `${DEFAULT_DB_PATH}.building`;
+  const store = new BibleVectorStore({ dbPath: buildingPath, vectorDim: 768 });
   store.createForWriting();
 
   const batches = chunk(verses, EMBED_BATCH_SIZE);
@@ -113,9 +135,12 @@ async function main() {
     );
     if (!vectors) {
       console.error(
-        '[generate-bible-embeddings] Échec embedTexts — arrêt (index partiel non écrit sur disque final).'
+        `[generate-bible-embeddings] Échec embedTexts — arrêt (index partiel supprimé, ${buildingPath} jamais promu vers ${DEFAULT_DB_PATH}).`
       );
       store.close();
+      try {
+        fs.unlinkSync(buildingPath);
+      } catch (_) {}
       process.exit(1);
     }
     for (let i = 0; i < batch.length; i++) {
@@ -123,9 +148,11 @@ async function main() {
     }
     done += batch.length;
     console.log(`[generate-bible-embeddings] ${done}/${verses.length} versets embeddés.`);
+    if (done < verses.length) await sleep(EMBED_BATCH_DELAY_MS);
   }
 
   store.close();
+  fs.renameSync(buildingPath, DEFAULT_DB_PATH);
   console.log(`[generate-bible-embeddings] Terminé : ${DEFAULT_DB_PATH}`);
 }
 

@@ -115,13 +115,15 @@ async function run() {
     check('embedTexts: réponse incomplète -> null (pas de crash, pas de silence)', r === null);
   }
 
-  // --- Erreur réseau/API ---
+  // --- Erreur réseau/API (générique, sans .status) : jamais de nouvelle tentative ---
+  let genericErrorCallCount = 0;
   injectFakeModule('@google/genai', {
     GoogleGenAI: class {
       constructor() {}
       get models() {
         return {
           embedContent: async () => {
+            genericErrorCallCount++;
             throw new Error('quota exceeded');
           },
         };
@@ -133,6 +135,72 @@ async function run() {
     const { embedTexts } = require('../embedding-provider');
     const r = await embedTexts(['jean 3:16']);
     check('embedTexts: erreur API -> null (pas de crash)', r === null);
+    check(
+      'embedTexts: erreur générique (pas .status=429) -> aucune nouvelle tentative',
+      genericErrorCallCount === 1
+    );
+  }
+
+  // --- 429 (palier gratuit) : nouvelle tentative automatique, succès au final ---
+  let rateLimitCallCount = 0;
+  injectFakeModule('@google/genai', {
+    GoogleGenAI: class {
+      constructor() {}
+      get models() {
+        return {
+          embedContent: async (params) => {
+            rateLimitCallCount++;
+            if (rateLimitCallCount < 3) {
+              const err = new Error('RESOURCE_EXHAUSTED');
+              err.status = 429;
+              throw err;
+            }
+            return { embeddings: params.contents.map(() => ({ values: [1, 2, 3] })) };
+          },
+        };
+      }
+    },
+  });
+  delete require.cache[require.resolve('../embedding-provider')];
+  {
+    const { embedTexts, CONFIG } = require('../embedding-provider');
+    CONFIG.RETRY_BASE_DELAY_MS = 1; // test rapide -- la vraie valeur de prod reste 5000ms
+    const r = await embedTexts(['jean 3:16']);
+    check(
+      "embedTexts: 429 -> nouvelle tentative automatique jusqu'au succès",
+      Array.isArray(r) && r.length === 1
+    );
+    check('embedTexts: exactement 3 appels (2 échecs 429 + 1 succès)', rateLimitCallCount === 3);
+  }
+
+  // --- 429 persistant au-delà du nombre max de tentatives : null, pas de boucle infinie ---
+  let persistentRateLimitCallCount = 0;
+  injectFakeModule('@google/genai', {
+    GoogleGenAI: class {
+      constructor() {}
+      get models() {
+        return {
+          embedContent: async () => {
+            persistentRateLimitCallCount++;
+            const err = new Error('RESOURCE_EXHAUSTED');
+            err.status = 429;
+            throw err;
+          },
+        };
+      }
+    },
+  });
+  delete require.cache[require.resolve('../embedding-provider')];
+  {
+    const { embedTexts, CONFIG } = require('../embedding-provider');
+    CONFIG.RETRY_BASE_DELAY_MS = 1;
+    CONFIG.MAX_RETRIES_ON_RATE_LIMIT = 2;
+    const r = await embedTexts(['jean 3:16']);
+    check('embedTexts: 429 persistant -> null (pas de crash)', r === null);
+    check(
+      'embedTexts: 429 persistant -> exactement 1+MAX_RETRIES appels, pas de boucle infinie',
+      persistentRateLimitCallCount === 3
+    );
   }
 
   // --- Nettoyage ---
