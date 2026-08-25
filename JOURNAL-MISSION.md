@@ -1352,3 +1352,73 @@ plusieurs reprises pendant cette session, indépendamment de toute action de ma 
 better-sqlite3` (dans cet ordre) le corrige à chaque fois, mais quelque chose dans cet
 environnement bac à sable semble le réinitialiser périodiquement. Signalé ici pour que
 la prochaine session ne perde pas de temps à chercher une régression de code qui n'existe pas.
+
+### 2026-08-25 — Mode confiance à 3 niveaux (Partie 2.5, TERMINÉ)
+
+- [x] **session-state.js** : `getTrustMode()`/`setTrustMode(mode)` — `'auto'` (défaut,
+      comportement historique), `'semi-auto'`, `'manual'`. Non persisté (volontaire :
+      un bénévole qui gagne en confiance re-choisit son niveau à chaque démarrage,
+      n'hérite jamais silencieusement du dernier réglage d'un autre opérateur).
+- [x] **server.js — les 2 SEULS points d'affichage automatique réels** (sur 10
+      occurrences de `broadcast({action:'showVerse'...})`, vérifié un par un) :
+      `processTranscript()` (détection en direct) et `displayChapterFallback()` (repli
+      chapitre seul). Les 8 autres sont soit déjà `triggeredManually`/voix explicite
+      (recherche/palette/rundown/voice command "montre X"), soit le mode lecture
+      (navigation opérateur délibérée, pas de la détection implicite) — hors scope de
+      "mode confiance", qui ne concerne que la détection AUTOMATIQUE et non sollicitée
+      d'un verset cité dans une prédication.
+      Refactor sans risque : tout le code qui affichait réellement le verset
+      (broadcast showVerse + latence + relais ProPresenter + historique + plugin +
+      annulation du repli chapitre + activation mode lecture) est capturé dans une
+      closure `finalizeDisplay` — appelée IMMÉDIATEMENT en mode 'auto' (comportement
+      strictement identique à avant, zéro changement de défaut), ou stockée dans
+      `pendingVerse` (état de module, un seul à la fois — une nouvelle détection
+      remplace la précédente, jamais empilée, même sémantique que candidateVerse) en
+      'semi-auto'/'manual', en attendant `confirmPendingVerse`/`dismissPendingVerse`.
+      Changer de mode alors qu'un verset est en attente le rejette proprement
+      (`pendingVerseDismissed`) plutôt que de le laisser orphelin.
+- [x] **action-registry.js** : `setTrustMode`/`confirmPendingVerse`/`dismissPendingVerse`
+      (operatorOnly) + `trustModeChanged`/`pendingVerseConfirmation`/`pendingVerseDismissed`
+      côté serveur→client. `trustMode` ajouté au payload `init`.
+- [x] **Dashboard** : `dashboard/features/trust-mode.js` (nouveau) — 3 boutons
+      Automatique/Semi-automatique/Manuel dans l'espace DIRECT (juste sous la bande
+      d'écoute), bandeau de confirmation ambré avec boutons Confirmer/Ignorer (JAMAIS
+      de timeout automatique, contrairement au bandeau candidateVerse informatif —
+      un verset non confirmé reste visible jusqu'à action opérateur), écouteur clavier
+      global pour la barre d'espace (garde stricte : `document.activeElement` doit ne
+      pas être input/textarea/select/contentEditable, sinon la frappe passe telle
+      quelle — vérifié explicitement contre la palette Ctrl+K).
+      **Bug trouvé par le test e2e lui-même** : le bandeau `pendingVerseBanner` avait
+      DEUX déclarations `display` dans le même attribut `style` (`none` puis `flip`
+      plus bas) — la seconde l'emportait toujours, bandeau visible dès le chargement.
+      Aucun test manuel ne l'aurait forcément remarqué ; le test e2e "doit être caché
+      au chargement" l'a immédiatement révélé. Corrigé.
+- [x] **Tests** : `test/integration-trust-mode.js` (nouveau, 11 cas — vrai server.js,
+      mocks réseau/micro comme `integration-chapter-only-verse1.js`) : auto = showVerse
+      immédiat (comportement inchangé) ; semi-auto = pendingVerseConfirmation puis
+      confirmPendingVerse déclenche le vrai showVerse ; dismissPendingVerse = jamais
+      affiché ; changer de mode avec une attente en cours la rejette proprement.
+      `test/e2e/trust-mode.spec.js` (nouveau, 3 cas navigateur réel) : bascule de mode
+      (round-trip serveur réel), bandeau show/hide, et surtout le garde-fou barre
+      d'espace (tape dans la palette Ctrl+K pendant que le bandeau est visible — le
+      caractère espace doit atterrir dans le champ, pas déclencher confirmPendingVerse).
+      +1 cas dans `test-session-state.js` (défaut/transitions/rejet d'une valeur
+      invalide).
+      Gate : eslint 0 erreur, tsc clean, npm audit 0 vuln, check-build-files OK,
+      test:e2e 19/19.
+
+**Découverte de process (sans rapport avec le code de ce chantier, mais sérieuse)** :
+le script `test` de package.json enchaîne ~85 fichiers de test avec `&&`. Le premier
+échec (ici `test-clip-exporter.js`, pré-existant/environnemental, voir plus haut)
+**arrête silencieusement toute la suite** — aucun message "N tests non exécutés",
+juste un exit code 1 après le dernier test qui a pu tourner. Conséquence concrète
+vérifiée : `test-rundown-store.js`, `test-rundown-actions.js`,
+`test-bible-lookup-dual-translation.js`, `test-secondary-translation-actions.js` et
+mon nouveau `integration-trust-mode.js` n'ont JAMAIS tourné dans aucun des `npm test`
+complets de cette session (tous listés après clip-exporter dans la chaîne) — vérifiés
+individuellement après coup, tous verts, donc pas de régression réelle, mais un vrai
+angle mort de confiance : toute session future doit soit lancer chaque fichier de test
+individuellement pour ce qui suit un échec connu, soit corriger le script lui-même
+(remplacer l'enchaînement `&&` par un vrai runner qui continue après un échec et
+rapporte un résumé complet). Pas corrigé ici — hors scope de ce chantier, à trancher
+avec l'utilisateur.
