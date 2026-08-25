@@ -3510,6 +3510,14 @@ Aucune exécution agent.</pre>
          dans l'aperçu du studio" et "ce qui est diffusé" ne peuvent donc
          jamais diverger, par construction. -->
     <script src="scene-render.js"></script>
+    <!-- AJOUT (Partie 2.4 — palette Ctrl+K, un seul vocabulaire pour la voix
+         et le manuel) : même raisonnement que camera-capture.js/scene-render.js
+         ci-dessus — script classique chargé avant le tableau de bord pour que
+         window.ACTION_REGISTRY soit prêt quand command-palette.js s'exécute.
+         Fichier PARTAGÉ avec server.js (le registre d'actions réel) : la
+         palette ne peut donc plus dériver silencieusement de ce que le
+         serveur traite vraiment. -->
+    <script src="action-registry.js"></script>
     <script type="module" src="dashboard/main.js"></script>
   </body>
 </html>

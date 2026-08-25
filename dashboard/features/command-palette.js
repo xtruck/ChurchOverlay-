@@ -1,87 +1,104 @@
 /**
  * dashboard/features/command-palette.js — Palette de commandes Ctrl+K
  * Recherche floue parmi toutes les actions disponibles, exécution en 1 clic ou Enter.
+ *
+ * AJOUT (Partie 2.4 — un seul vocabulaire pour la voix et le manuel) :
+ * label/catégorie ne sont plus dupliqués à la main ici — ils viennent de
+ * action-registry.js (window.ACTION_REGISTRY, chargé en <script> classique
+ * par dashboard.html avant ce module, voir son commentaire). Seule la LISTE
+ * des actions présentes dans la palette reste choisie ici (executeCommand()
+ * ci-dessous ne sait exécuter qu'un sous-ensemble curé des ~90 actions du
+ * registre — la plupart exigent un payload/formulaire qu'aucune génération
+ * automatique ne peut deviner), avec un raccourci clavier optionnel quand un
+ * vrai raccourci global existe (voir main.js, globalShortcut.register).
  */
 (function () {
-  const COMMANDS = [
-    { label: 'Afficher un verset', action: 'showVerse', category: 'Affichage', shortcut: '' },
-    { label: 'Masquer le verset', action: 'hideVerse', category: 'Affichage', shortcut: '' },
+  // Traduction catégorie (clé technique du registre) -> libellé affiché.
+  // Volontairement plus courte que les catégories du registre : le registre
+  // distingue des usages internes (ex. sendStageMessage/exportHighlights/
+  // getNetworkStatus sont tous 'infra') qu'un opérateur regroupe mentalement
+  // sous "Système".
+  const CATEGORY_LABELS = {
+    display: 'Affichage',
+    media: 'Média',
+    scenes: 'Scènes',
+    emergency: 'Urgence',
+    timer: 'Timer',
+    ai: 'IA',
+    accessibility: 'Accessibilité',
+    theme: 'Thème',
+    language: 'Langue',
+    bible: 'Bible',
+    reading: 'Mode lecture',
+    infra: 'Système',
+    songs: 'Chants',
+  };
+
+  // Liste curée : quelles actions du registre apparaissent dans la palette,
+  // avec leur raccourci clavier réel s'il en existe un (voir main.js,
+  // CommandOrControl+Alt+Shift+{C,H,M,S}). `labelOverride`/`categoryOverride`
+  // uniquement pour les 3 entrées setLanguage-* ci-dessous : ce sont trois
+  // valeurs de PARAMÈTRE de la même action 'setLanguage', que le registre ne
+  // peut pas connaître (il décrit l'action, pas ses valeurs possibles).
+  const PALETTE_ACTIONS = [
+    { action: 'showVerse' },
+    { action: 'hideVerse', shortcut: 'Ctrl+Alt+Maj+H' },
+    { action: 'hideMedia', shortcut: 'Ctrl+Alt+Maj+M' },
+    { action: 'hideScene', shortcut: 'Ctrl+Alt+Maj+S' },
+    { action: 'emergencyClear', shortcut: 'Ctrl+Alt+Maj+C' },
+    { action: 'pauseTimer' },
+    { action: 'resumeTimer' },
+    { action: 'extendTime' },
+    { action: 'preServiceCheck' },
+    { action: 'setHighContrast' },
+    { action: 'setCaptions' },
+    { action: 'setTranslatedCaptions' },
+    { action: 'setTestPattern' },
+    { action: 'setBackgroundPattern' },
+    { action: 'setLanguage-fr', registryAction: 'setLanguage', labelOverride: 'Changer langue FR' },
+    { action: 'setLanguage-en', registryAction: 'setLanguage', labelOverride: 'Changer langue EN' },
     {
-      label: 'Masquer le média',
-      action: 'hideMedia',
-      category: 'Affichage',
-      shortcut: 'Ctrl+Alt+Maj+M',
+      action: 'setLanguage-both',
+      registryAction: 'setLanguage',
+      labelOverride: 'Bilingue FR+EN',
     },
-    {
-      label: 'Masquer la scène',
-      action: 'hideScene',
-      category: 'Affichage',
-      shortcut: 'Ctrl+Alt+Maj+S',
-    },
-    {
-      label: "Effacement d'urgence",
-      action: 'emergencyClear',
-      category: 'Urgence',
-      shortcut: 'Ctrl+Alt+Maj+C',
-    },
-    {
-      label: 'Masquer le verset overlay',
-      action: 'hideVerse',
-      category: 'Urgence',
-      shortcut: 'Ctrl+Alt+aj+H',
-    },
-    { label: 'Mettre en pause', action: 'pauseTimer', category: 'Timer', shortcut: '' },
-    { label: 'Reprendre', action: 'resumeTimer', category: 'Timer', shortcut: '' },
-    { label: 'Étendre la durée', action: 'extendTime', category: 'Timer', shortcut: '' },
-    {
-      label: 'Vérification pré-culte',
-      action: 'preServiceCheck',
-      category: 'Système',
-      shortcut: '',
-    },
-    {
-      label: 'Basculer haute intensité',
-      action: 'setHighContrast',
-      category: 'Accessibilité',
-      shortcut: '',
-    },
-    { label: 'Sous-titres ON/OFF', action: 'setCaptions', category: 'Accessibilité', shortcut: '' },
-    {
-      label: 'Sous-titres traduits',
-      action: 'setTranslatedCaptions',
-      category: 'Accessibilité',
-      shortcut: '',
-    },
-    { label: 'Motif de test', action: 'setTestPattern', category: 'Affichage', shortcut: '' },
-    { label: 'Motif de fond', action: 'setBackgroundPattern', category: 'Affichage', shortcut: '' },
-    { label: 'Changer langue FR', action: 'setLanguage-fr', category: 'Langue', shortcut: '' },
-    { label: 'Changer langue EN', action: 'setLanguage-en', category: 'Langue', shortcut: '' },
-    { label: 'Bilingue FR+EN', action: 'setLanguage-both', category: 'Langue', shortcut: '' },
-    { label: 'Rechercher dans la Bible', action: 'searchBible', category: 'Bible', shortcut: '' },
-    { label: 'Mode lecture', action: 'startReading', category: 'Mode lecture', shortcut: '' },
-    {
-      label: 'Arrêter mode lecture',
-      action: 'stopReading',
-      category: 'Mode lecture',
-      shortcut: '',
-    },
-    { label: 'Stats session', action: 'getSessionStats', category: 'Système', shortcut: '' },
-    { label: 'Résumé IA du sermon', action: 'getLiveSummary', category: 'IA', shortcut: '' },
-    { label: 'Thème du sermon', action: 'getSermonTheme', category: 'IA', shortcut: '' },
-    { label: 'Envoyer message scène', action: 'sendStageMessage', category: 'Scène', shortcut: '' },
-    {
-      label: 'Effacer message scène',
-      action: 'clearStageMessage',
-      category: 'Scène',
-      shortcut: '',
-    },
-    { label: 'Exporter temps forts', action: 'exportHighlights', category: 'Export', shortcut: '' },
-    { label: 'Médiathèque', action: 'getMediaLibrary', category: 'Média', shortcut: '' },
-    { label: 'Studio de scènes', action: 'getSceneLibrary', category: 'Scènes', shortcut: '' },
-    { label: 'Bibliothèque chants', action: 'getSongLibrary', category: 'Chants', shortcut: '' },
-    { label: 'État réseau', action: 'getNetworkStatus', category: 'Système', shortcut: '' },
-    { label: 'Recap post-culte', action: 'getPostServiceRecap', category: 'IA', shortcut: '' },
+    { action: 'searchBible' },
+    { action: 'startReading' },
+    { action: 'stopReading' },
+    { action: 'getSessionStats' },
+    { action: 'getLiveSummary' },
+    { action: 'getSermonTheme' },
+    { action: 'sendStageMessage' },
+    { action: 'clearStageMessage' },
+    { action: 'exportHighlights' },
+    { action: 'getMediaLibrary' },
+    { action: 'getSceneLibrary' },
+    { action: 'getSongLibrary' },
+    { action: 'getNetworkStatus' },
+    { action: 'getPostServiceRecap' },
   ];
+
+  // Construit la liste réellement rendue en résolvant label/catégorie
+  // depuis le registre — fait une seule fois au chargement, pas à chaque
+  // frappe dans filterCommands().
+  function buildCommands() {
+    const registry = window.ACTION_REGISTRY;
+    const clientActions = (registry && registry.CLIENT_ACTIONS) || {};
+    if (!registry) {
+      console.warn(
+        '[command-palette] window.ACTION_REGISTRY absent — labels de repli utilisés (voir action-registry.js et son <script> dans dashboard.html).'
+      );
+    }
+    return PALETTE_ACTIONS.map((entry) => {
+      const registryAction = entry.registryAction || entry.action;
+      const meta = clientActions[registryAction];
+      const category = (meta && CATEGORY_LABELS[meta.category]) || 'Système';
+      const label = entry.labelOverride || (meta && meta.description) || entry.action;
+      return { label, action: entry.action, category, shortcut: entry.shortcut || '' };
+    });
+  }
+
+  const COMMANDS = buildCommands();
 
   let overlay = null;
   let input = null;

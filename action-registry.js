@@ -503,7 +503,7 @@ function listOperatorOnlyActions() {
     .sort();
 }
 
-module.exports = {
+const ACTION_REGISTRY_EXPORTS = {
   CLIENT_ACTIONS,
   SERVER_ACTIONS,
   VOICE_COMMANDS,
@@ -514,3 +514,18 @@ module.exports = {
   listOperatorOnlyActions,
   listKeyboardShortcuts,
 };
+
+// AJOUT (Partie 2.4 — palette Ctrl+K, un seul vocabulaire pour la voix et le
+// manuel) : ce fichier tournait jusqu'ici uniquement côté Node (server.js,
+// tests) via module.exports. Chargé aussi en <script> classique par
+// dashboard.html (avant dashboard/main.js, même raisonnement que
+// scene-render.js ci-dessus) pour que command-palette.js lise CLIENT_ACTIONS
+// au lieu d'une liste dupliquée à la main. `module` n'existe pas dans un
+// navigateur : le garde ci-dessous évite un crash au chargement dans ce
+// contexte, sans rien changer côté Node.
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = ACTION_REGISTRY_EXPORTS;
+}
+if (typeof window !== 'undefined') {
+  window.ACTION_REGISTRY = ACTION_REGISTRY_EXPORTS;
+}
