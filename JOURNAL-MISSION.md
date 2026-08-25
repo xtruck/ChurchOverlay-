@@ -1268,8 +1268,38 @@ pas non plus supposer que c'est fini.
       hors scope ici).
       Gate : eslint 0 erreur, tsc clean, npm audit 0 vuln, check-build-files OK,
       npm test vert (idem ci-dessus), test:e2e 15/15.
-      **Reste (Partie 3.1)** : assistant de connexion OBS (détection auto du port,
-      message d'échec clair) et reconnexion automatique visible dans le bandeau — pas
-      encore faits. **Partie 3.2 (NDI)** : voie A retenue par le document (passer par
-      OBS) — rien à construire tant que personne ne le demande, conforme à la
-      recommandation du document lui-même.
+- [x] **Partie 3.1 — assistant de connexion + reconnexion automatique OBS (TERMINÉ)** :
+      les deux points restants du chantier ci-dessus.
+      - **Messages d'échec clairs** : `humanizeObsError()` (obs-controller.js) traduit
+        les erreurs brutes (`ECONNREFUSED`, `ENOTFOUND`/`EAI_AGAIN`, `ETIMEDOUT`, code
+        `4009` = authentification) en phrase actionnable ("OBS ne répond pas sur ce
+        port — vérifiez qu'OBS est ouvert et que Outils → Serveur WebSocket
+        obs-websocket est activé.", etc.). Détection du port par défaut et rappel
+        d'activer le serveur WS : déjà présents (placeholder `ws://localhost:4455` +
+        hint statique dans le panneau) — rien à ajouter là.
+      - **Reconnexion automatique** : `obsClient.on('ConnectionClosed', ...)` enregistré
+        UNE FOIS, seulement APRÈS une première connexion réussie (sinon cet écouteur se
+        déclenche aussi pendant un `.connect()` initial qui échoue — le socket interne
+        se ferme dans les deux cas — ce qui aurait démarré une boucle de reconnexion
+        même pour une config définitivement fausse, au lieu d'une vraie coupure en
+        cours de culte). Délai croissant 3s/6s/9s… plafonné à 30s
+        (`scheduleReconnect`), même instance `obsClient` réutilisée (les écouteurs
+        persistent across reconnects sur obs-websocket-js).
+      - **État visible** : nouveau callback `onStatusChange(status, reason)` sur
+        `connect()`, relayé main.js → `worker.postMessage({type:'obs-connection-status'})`
+        → server.js → broadcast WS `obsConnectionStatus` (ajouté à action-registry.js)
+        → dashboard (`ws-dispatch.js`, `updateObsConnectionStatus()`) : met à jour le
+        panneau OBS, journalise dans l'activité, toast à chaque transition (pas de
+        throttle ici contrairement à `aiModuleError` — une coupure OBS est rare par
+        nature, pas un événement par segment transcrit).
+      - **Tests** : 5 nouveaux cas dans `test/test-obs-gating.js` pour
+        `humanizeObsError()` (pure function, exportée). Pas de test pour la boucle de
+        reconnexion elle-même ni pour `connect()` : `obsClient`/le minuteur sont un état
+        de module non injectable sans refonte plus large (même limite déjà notée pour
+        `toggleStreaming()`).
+      Gate : eslint 0 erreur, tsc clean, npm audit 0 vuln, check-build-files OK,
+      npm test vert (266 assertions action-registry, sauf clip-exporter pré-existant),
+      test:e2e 15/15.
+      **Partie 3.2 (NDI)** : voie A retenue par le document (passer par OBS) — rien à
+      construire tant que personne ne le demande, conforme à la recommandation du
+      document lui-même.
