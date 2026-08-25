@@ -45,6 +45,7 @@ const DEFAULT_TRANSITION_STYLE = 'fade';
 
 let indexPath = null;
 let mediaDir = null;
+let groupsPath = null;
 
 /**
  * @param {string} dir - Dossier utilisateur de l'app (hors app.asar)
@@ -52,6 +53,7 @@ let mediaDir = null;
 function setUserDataDir(dir) {
   indexPath = path.join(dir, 'media-library.json');
   mediaDir = path.join(dir, 'media');
+  groupsPath = path.join(dir, 'media-groups.json');
 }
 
 function readIndex() {
@@ -63,6 +65,159 @@ function readIndex() {
     console.warn('[media-library] Lecture impossible, index ignoré:', e.message);
     return [];
   }
+}
+
+// AJOUT (Partie 2.3 — groupes nommés déclenchables à la voix) : fichier JSON
+// SÉPARÉ (media-groups.json) plutôt qu'un champ de plus dans l'index média —
+// un groupe référence des `memberIds` (media-library.js) mais pourrait tout
+// aussi bien un jour référencer des chants ; les garder distincts évite de
+// coupler la forme de l'index média à ce concept transversal.
+function readGroups() {
+  if (!groupsPath || !fs.existsSync(groupsPath)) return [];
+  try {
+    const data = JSON.parse(fs.readFileSync(groupsPath, 'utf8'));
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    console.warn('[media-library] Lecture des groupes impossible, ignorée:', e.message);
+    return [];
+  }
+}
+
+function writeGroups(groups) {
+  if (!groupsPath) return;
+  fs.mkdirSync(path.dirname(groupsPath), { recursive: true });
+  fs.writeFileSync(groupsPath, JSON.stringify(groups, null, 2), 'utf8');
+}
+
+/**
+ * Liste les groupes (nom, phrases déclencheuses, membres, curseur de
+ * rotation) — métadonnées seulement.
+ * @returns {Array<Object>}
+ */
+function listGroups() {
+  return readGroups();
+}
+
+/**
+ * Crée un groupe nommé, déclenchable à la voix par ses PROPRES phrases
+ * déclencheuses (distinctes de celles de ses membres). DÉCISION DE SCOPE
+ * (aucune autre interprétation univoque dans le cahier des charges) : dire
+ * la phrase du groupe affiche le PROCHAIN membre non encore montré depuis
+ * le début du culte (rotation), pas tous les membres à la fois — sert le cas
+ * d'usage réel "j'ai 5 photos de la sortie jeunesse, une seule phrase à
+ * retenir, chacune apparaît à son tour au fil du culte".
+ * @param {{name: string, triggerPhrases?: string[]}} data
+ * @returns {Object} le groupe créé
+ */
+function addGroup(data) {
+  if (!data || !data.name || !data.name.trim()) throw new Error('Nom de groupe manquant');
+  const groups = readGroups();
+  const triggerPhrases = (Array.isArray(data.triggerPhrases) ? data.triggerPhrases : [])
+    .map((p) => (typeof p === 'string' ? p.trim() : ''))
+    .filter(Boolean)
+    .slice(0, 20)
+    .map((p) => p.slice(0, 200));
+  const group = {
+    id: crypto.randomUUID(),
+    name: data.name.trim().slice(0, 200),
+    triggerPhrases: triggerPhrases.length ? triggerPhrases : [data.name.trim()],
+    memberIds: [],
+    cursor: 0,
+    addedAt: new Date().toISOString(),
+  };
+  groups.unshift(group);
+  writeGroups(groups);
+  return group;
+}
+
+function deleteGroup(id) {
+  const groups = readGroups();
+  const idx = groups.findIndex((g) => g.id === id);
+  if (idx === -1) return false;
+  groups.splice(idx, 1);
+  writeGroups(groups);
+  // Les membres perdent leur rattachement (le champ `group` de chaque item
+  // pointait vers cet id — voir setItemGroup) : nettoyé pour ne pas laisser
+  // un item pointer vers un groupe qui n'existe plus.
+  const items = readIndex();
+  let changed = false;
+  for (const item of items) {
+    if (item.group === id) {
+      item.group = null;
+      changed = true;
+    }
+  }
+  if (changed) writeIndex(items);
+  return true;
+}
+
+/**
+ * Rattache (ou détache si groupId est null) un média à un groupe. Un média
+ * appartient à AU PLUS UN groupe à la fois — le retirer d'abord de tout
+ * groupe précédent évite qu'il soit montré deux fois par deux phrases
+ * différentes.
+ * @param {string} itemId
+ * @param {string|null} groupId
+ * @returns {boolean} true si l'item existe et a été mis à jour
+ */
+function setItemGroup(itemId, groupId) {
+  const items = readIndex();
+  const item = items.find((i) => i.id === itemId);
+  if (!item) return false;
+
+  const groups = readGroups();
+  for (const g of groups) {
+    g.memberIds = g.memberIds.filter((id) => id !== itemId);
+  }
+  item.group = null;
+
+  if (groupId) {
+    const target = groups.find((g) => g.id === groupId);
+    if (!target) return false;
+    target.memberIds.push(itemId);
+    item.group = groupId;
+  }
+
+  writeGroups(groups);
+  writeIndex(items);
+  return true;
+}
+
+/**
+ * Cherche si un texte transcrit contient la phrase déclencheuse d'un
+ * groupe, et si oui renvoie le PROCHAIN membre (rotation, curseur persisté)
+ * — jamais le même membre deux fois de suite tant que le groupe compte plus
+ * d'un élément. Groupe vide (aucun membre) : correspondance ignorée,
+ * comportement identique à "aucune correspondance" plutôt que de planter ou
+ * de déclencher un média inexistant.
+ * @param {string} text
+ * @returns {Object|null} l'élément média à afficher, ou null
+ */
+/**
+ * @param {string} text
+ * @param {{dryRun?: boolean}} [opts] - dryRun: ne fait AVANCER ni persister le
+ *   curseur de rotation — utilisé par le bouton "essayer" (server.js,
+ *   action WS testTriggerPhrase) pour vérifier qu'une phrase de groupe
+ *   matche sans consommer un tour de rotation destiné au vrai culte.
+ */
+function matchGroupTriggerPhrase(text, opts = {}) {
+  const groups = readGroups();
+  const matchedGroup = findTriggerMatch(groups, text);
+  if (!matchedGroup || matchedGroup.memberIds.length === 0) return null;
+
+  const items = readIndex();
+  const nextIndex = matchedGroup.cursor % matchedGroup.memberIds.length;
+  const nextItem = items.find((i) => i.id === matchedGroup.memberIds[nextIndex]);
+
+  if (!opts.dryRun) {
+    // Curseur avancé et persisté même si l'item référencé a depuis été
+    // supprimé (nextItem null) — une entrée fantôme dans memberIds ne doit
+    // jamais bloquer la rotation des suivantes indéfiniment sur la même case.
+    matchedGroup.cursor = (matchedGroup.cursor + 1) % matchedGroup.memberIds.length;
+    writeGroups(groups);
+  }
+
+  return nextItem || null;
 }
 
 function writeIndex(items) {
@@ -170,6 +325,10 @@ function addItem(data) {
     // AJOUT (demande explicite — "poster principal") : voir setDefaultItem()
     // plus bas. Un seul élément à la fois peut être vrai.
     isDefault: false,
+    // AJOUT (Partie 2.3 — groupes) : id du groupe (media-groups.json) auquel
+    // cet élément appartient, ou null. Rattaché après coup via setItemGroup(),
+    // jamais à la création (le groupe doit déjà exister).
+    group: null,
   };
 
   const items = readIndex();
@@ -342,6 +501,11 @@ module.exports = {
   clearDefaultItem,
   matchTriggerPhrase,
   checkTriggerCollisions,
+  listGroups,
+  addGroup,
+  deleteGroup,
+  setItemGroup,
+  matchGroupTriggerPhrase,
   // Exposées pour tests unitaires (test-media-library.js).
   ALLOWED_EXTENSIONS,
   DEFAULT_IMAGE_DURATION_MS,

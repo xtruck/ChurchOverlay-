@@ -45,6 +45,7 @@ import {
   markMediaOnScreen,
   clearMediaOnScreen,
   renderTriggerPhraseTestResult,
+  renderMediaGroupsPanel,
 } from './features/media-library.js';
 import { renderSceneStudioGallery } from './features/scene-studio.js';
 import { renderRundown, applyRundownActiveCue } from './features/rundown.js';
@@ -503,6 +504,10 @@ export function handleMessage(message) {
     // AJOUT (Partie 2.3 — bouton "essayer")
     case 'triggerPhraseTestResult':
       renderTriggerPhraseTestResult(message);
+      break;
+    // AJOUT (Partie 2.3 — groupes nommés déclenchables à la voix)
+    case 'mediaGroupsUpdated':
+      renderMediaGroupsPanel(message.groups);
       break;
     // AJOUT (Partie 2.3 — Mur Média, collisions phonétiques dès l'import) :
     // non bloquant — le média est déjà ajouté (voir 'mediaLibraryUpdated'

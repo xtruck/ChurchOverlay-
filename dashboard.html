@@ -754,6 +754,43 @@
                 il reste affiché en continu tant que rien d'autre (verset, autre média) n'est à
                 l'écran — jamais d'écran vide entre deux versets.
               </div>
+              <!-- AJOUT (Partie 2.3 — groupes nommés déclenchables à la voix) :
+                   un groupe a ses propres phrases déclencheuses. Les dire
+                   affiche le PROCHAIN membre du groupe (rotation), jamais tous
+                   les membres à la fois — rattachez un média à un groupe via le
+                   sélecteur "Groupe" qui apparaît sous chaque média ci-dessous. -->
+              <details style="margin-bottom: 0.75rem">
+                <summary style="cursor: pointer; color: var(--text-dim); font-size: 0.85rem">
+                  Groupes de médias (rotation à la voix)
+                </summary>
+                <div style="margin-top: 0.5rem">
+                  <div class="field-hint" style="margin-bottom: 0.5rem">
+                    Ex. "Photos jeunesse" avec 5 photos — dire la phrase du groupe affiche une
+                    photo différente à chaque fois, dans l'ordre, jusqu'à la 5e puis on
+                    recommence.
+                  </div>
+                  <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem">
+                    <input
+                      type="text"
+                      id="mediaGroupNameInput"
+                      placeholder="Nom du groupe (ex. Photos jeunesse)"
+                      style="flex: 1"
+                    />
+                    <input
+                      type="text"
+                      id="mediaGroupPhrasesInput"
+                      placeholder="Phrases déclencheuses, séparées par des virgules"
+                      style="flex: 1"
+                    />
+                    <button class="btn btn-secondary" onclick="addMediaGroup()" style="flex-shrink: 0">
+                      + Créer le groupe
+                    </button>
+                  </div>
+                  <div id="mediaGroupsList">
+                    <div class="empty-state-note">Aucun groupe créé.</div>
+                  </div>
+                </div>
+              </details>
               <div class="media-gallery-grid" id="mediaLibraryList"></div>
             </div>
 

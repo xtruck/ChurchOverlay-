@@ -1154,6 +1154,37 @@ async function processTranscript(text, tracker, opts = {}) {
     warn('Media cue detection error: ' + e.message);
   }
 
+  // AJOUT (Partie 2.3 — groupes nommés déclenchables à la voix) : même
+  // emplacement/philosophie que le média individuel ci-dessus — vérifié
+  // APRÈS (une phrase déclencheuse d'un média précis reste prioritaire sur
+  // une phrase de groupe plus générale), avant les chants. Affiche le
+  // PROCHAIN membre du groupe (rotation, voir matchGroupTriggerPhrase dans
+  // media-library.js), jamais tous les membres à la fois.
+  try {
+    const groupMatch = mediaLibrary.matchGroupTriggerPhrase(text);
+    if (groupMatch) {
+      log('Media group cue detected: ' + groupMatch.label);
+      broadcast({
+        action: 'showMedia',
+        id: groupMatch.id,
+        mediaType: groupMatch.mediaType,
+        mediaUrl: `/media/${groupMatch.filename}`,
+        label: groupMatch.label,
+        displayDurationMs: groupMatch.displayDurationMs,
+        transitionStyle: groupMatch.transitionStyle,
+        detectedBy: 'voice-cue-group',
+      });
+      sessionStore.recordVerseShown({
+        reference: `📷 ${groupMatch.label}`,
+        detectedBy: 'media-group',
+        timestamp: Date.now(),
+      });
+      return;
+    }
+  } catch (e) {
+    warn('Media group cue detection error: ' + e.message);
+  }
+
   // AJOUT (bibliothèque de chants) : même emplacement/philosophie que le
   // médiathèque ci-dessus. Diffusée comme un 'showVerse' synthétique — voir
   // showSongSection() plus bas — donc overlay.html n'a besoin d'aucune
@@ -3111,18 +3142,31 @@ wss.on('connection', (ws, req) => {
       if (mediaMatch) {
         result = { matched: true, kind: 'media', label: mediaMatch.label, text };
       } else {
-        const songMatch = songLibrary.matchTriggerPhrase(text);
-        if (songMatch) {
+        // AJOUT (Partie 2.3 — groupes) : dryRun:true — un test "essayer" ne
+        // doit jamais consommer un tour de rotation destiné au vrai culte
+        // (voir matchGroupTriggerPhrase dans media-library.js).
+        const groupMatch = mediaLibrary.matchGroupTriggerPhrase(text, { dryRun: true });
+        if (groupMatch) {
           result = {
             matched: true,
-            kind: 'song',
-            label: `${songMatch.song.title} — ${songMatch.song.sections[songMatch.sectionIndex]?.label || ''}`,
+            kind: 'media',
+            label: `${groupMatch.label} (groupe, prochain à tour de rôle)`,
             text,
           };
         } else {
-          const sceneMatch = sceneStore.matchTriggerPhrase(text);
-          if (sceneMatch) {
-            result = { matched: true, kind: 'scene', label: sceneMatch.name, text };
+          const songMatch = songLibrary.matchTriggerPhrase(text);
+          if (songMatch) {
+            result = {
+              matched: true,
+              kind: 'song',
+              label: `${songMatch.song.title} — ${songMatch.song.sections[songMatch.sectionIndex]?.label || ''}`,
+              text,
+            };
+          } else {
+            const sceneMatch = sceneStore.matchTriggerPhrase(text);
+            if (sceneMatch) {
+              result = { matched: true, kind: 'scene', label: sceneMatch.name, text };
+            }
           }
         }
       }
@@ -3266,6 +3310,88 @@ wss.on('connection', (ws, req) => {
         if (wasDefault) broadcast({ action: 'defaultMediaChanged', item: null });
       } else {
         ws.send(JSON.stringify({ action: 'error', error: 'Médiathèque : élément introuvable' }));
+      }
+      return;
+    }
+
+    // ---------------------------------------------------------------------
+    // AJOUT (Partie 2.3 — groupes nommés déclenchables à la voix) : un média
+    // ne peut appartenir qu'à un seul groupe (voir setItemGroup dans
+    // media-library.js) ; dire la phrase déclencheuse du groupe affiche le
+    // membre suivant, en rotation (voir matchGroupTriggerPhrase, câblé dans
+    // processTranscript juste après la détection média individuelle).
+    // ---------------------------------------------------------------------
+    if (sanitized.action === 'getMediaGroups') {
+      ws.send(JSON.stringify({ action: 'mediaGroupsUpdated', groups: mediaLibrary.listGroups() }));
+      return;
+    }
+
+    if (sanitized.action === 'addMediaGroup') {
+      try {
+        const candidatePhrases = Array.isArray(sanitized.triggerPhrases)
+          ? sanitized.triggerPhrases
+          : sanitized.name
+            ? [sanitized.name]
+            : [];
+        // Même vérification "dès l'import" que pour un média (voir
+        // addMediaItem ci-dessus) : la phrase d'un groupe partage le même
+        // moteur de détection que les médias/chants individuels.
+        const collisions = mediaLibrary
+          .checkTriggerCollisions(candidatePhrases)
+          .concat(
+            voiceTriggerMatcher.findPhoneticCollisions(candidatePhrases, songLibrary.listSongs())
+          )
+          .concat(
+            voiceTriggerMatcher.findPhoneticCollisions(candidatePhrases, mediaLibrary.listGroups())
+          );
+        const group = mediaLibrary.addGroup({
+          name: sanitized.name,
+          triggerPhrases: sanitized.triggerPhrases,
+        });
+        log(`Médiathèque : groupe "${group.name}" créé`);
+        if (collisions.length > 0) {
+          ws.send(
+            JSON.stringify({
+              action: 'mediaTriggerCollisions',
+              itemId: group.id,
+              itemLabel: group.name,
+              collisions: collisions.map((c) => ({
+                phrase: c.phrase,
+                withLabel: c.withItem.label || c.withItem.title || c.withItem.name,
+                withPhrase: c.withPhrase,
+                distance: c.distance,
+                exact: c.exact,
+              })),
+            })
+          );
+        }
+        broadcast({ action: 'mediaGroupsUpdated', groups: mediaLibrary.listGroups() });
+      } catch (err) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Groupe média : ' + err.message }));
+      }
+      return;
+    }
+
+    if (sanitized.action === 'deleteMediaGroup') {
+      const removed = mediaLibrary.deleteGroup(sanitized.id);
+      if (removed) {
+        broadcast({ action: 'mediaGroupsUpdated', groups: mediaLibrary.listGroups() });
+        broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
+      } else {
+        ws.send(JSON.stringify({ action: 'error', error: 'Groupe média : introuvable' }));
+      }
+      return;
+    }
+
+    if (sanitized.action === 'setMediaItemGroup') {
+      const ok = mediaLibrary.setItemGroup(sanitized.itemId, sanitized.groupId || null);
+      if (ok) {
+        broadcast({ action: 'mediaGroupsUpdated', groups: mediaLibrary.listGroups() });
+        broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
+      } else {
+        ws.send(
+          JSON.stringify({ action: 'error', error: 'Groupe média : média ou groupe introuvable' })
+        );
       }
       return;
     }

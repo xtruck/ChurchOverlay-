@@ -320,5 +320,100 @@ console.log('[TEST] Test 16: checkTriggerCollisions()...');
 }
 console.log('[TEST] ✓ checkTriggerCollisions() détecte et exclut correctement\n');
 
+// Test 17 : groupes nommés déclenchables à la voix (Partie 2.3) — rotation
+// round-robin sur les membres, jamais le même deux fois de suite.
+console.log('[TEST] Test 17: groupes (addGroup/setItemGroup/matchGroupTriggerPhrase)...');
+{
+  const photoA = mediaLibrary.addItem({
+    sourcePath: makeSourceFile('groupe-a.png'),
+    label: 'Photo jeunesse A',
+  });
+  const photoB = mediaLibrary.addItem({
+    sourcePath: makeSourceFile('groupe-b.png'),
+    label: 'Photo jeunesse B',
+  });
+
+  const group = mediaLibrary.addGroup({
+    name: 'Photos jeunesse',
+    triggerPhrases: ['photo du groupe jeunesse'],
+  });
+  assert.deepStrictEqual(group.memberIds, [], 'un groupe naît sans membre');
+
+  assert.strictEqual(mediaLibrary.setItemGroup(photoA.id, group.id), true);
+  assert.strictEqual(mediaLibrary.setItemGroup(photoB.id, group.id), true);
+  assert.strictEqual(mediaLibrary.getItem(photoA.id).group, group.id, "l'item connaît son groupe");
+  assert.deepStrictEqual(
+    mediaLibrary.listGroups().find((g) => g.id === group.id).memberIds,
+    [photoA.id, photoB.id],
+    'le groupe connaît ses membres'
+  );
+
+  // Rotation : 3 déclenchements successifs -> A, B, A (jamais A, A).
+  const first = mediaLibrary.matchGroupTriggerPhrase('on va montrer la photo du groupe jeunesse');
+  const second = mediaLibrary.matchGroupTriggerPhrase('photo du groupe jeunesse encore une fois');
+  const third = mediaLibrary.matchGroupTriggerPhrase('et une dernière photo du groupe jeunesse');
+  assert.strictEqual(first.id, photoA.id, '1er déclenchement -> premier membre');
+  assert.strictEqual(second.id, photoB.id, '2e déclenchement -> membre suivant, jamais le même');
+  assert.strictEqual(third.id, photoA.id, '3e déclenchement -> retour au début (rotation)');
+
+  // dryRun (bouton "essayer") : ne consomme jamais un tour de rotation réel.
+  // Cursor est à 1 (memberIds[1]=photoB) après les 3 rotations ci-dessus.
+  {
+    const dry1 = mediaLibrary.matchGroupTriggerPhrase('photo du groupe jeunesse', {
+      dryRun: true,
+    });
+    const dry2 = mediaLibrary.matchGroupTriggerPhrase('photo du groupe jeunesse', {
+      dryRun: true,
+    });
+    assert.strictEqual(dry1.id, photoB.id, 'dryRun renvoie le prochain membre sans avancer');
+    assert.strictEqual(
+      dry2.id,
+      photoB.id,
+      'un second dryRun renvoie ENCORE le même membre (curseur inchangé)'
+    );
+  }
+
+  // Un média ne peut appartenir qu'à un seul groupe à la fois.
+  const otherGroup = mediaLibrary.addGroup({ name: 'Autre groupe' });
+  mediaLibrary.setItemGroup(photoA.id, otherGroup.id);
+  assert.strictEqual(
+    mediaLibrary
+      .listGroups()
+      .find((g) => g.id === group.id)
+      .memberIds.includes(photoA.id),
+    false,
+    "photoA doit avoir quitté l'ancien groupe en rejoignant le nouveau"
+  );
+
+  // Groupe vide -> aucune correspondance (jamais un crash, jamais un item fantôme).
+  const emptyGroup = mediaLibrary.addGroup({
+    name: 'Groupe vide',
+    triggerPhrases: ['groupe vide'],
+  });
+  assert.strictEqual(
+    mediaLibrary.matchGroupTriggerPhrase('déclenche le groupe vide'),
+    null,
+    'un groupe sans membre ne déclenche jamais rien'
+  );
+
+  // deleteGroup() détache proprement ses membres restants.
+  mediaLibrary.deleteGroup(otherGroup.id);
+  assert.strictEqual(
+    mediaLibrary.getItem(photoA.id).group,
+    null,
+    'supprimer un groupe détache ses membres (item.group -> null)'
+  );
+  assert.strictEqual(
+    mediaLibrary.listGroups().some((g) => g.id === otherGroup.id),
+    false
+  );
+
+  mediaLibrary.deleteGroup(group.id);
+  mediaLibrary.deleteGroup(emptyGroup.id);
+  mediaLibrary.deleteItem(photoA.id);
+  mediaLibrary.deleteItem(photoB.id);
+}
+console.log('[TEST] ✓ Groupes : rotation round-robin, appartenance exclusive, nettoyage propre\n');
+
 fs.rmSync(userDataDir, { recursive: true, force: true });
 console.log('=== Tous les tests media-library sont passés ===');

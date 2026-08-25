@@ -225,6 +225,9 @@ function initWebSocket() {
       // vocal doit y accéder même sans tableau de bord ouvert) — récupérée
       // à chaque connexion/reconnexion pour rester synchronisée.
       ws.send(JSON.stringify({ action: 'getMediaLibrary' }));
+      // AJOUT (Partie 2.3 — groupes de médias) : même raisonnement —
+      // persistés côté serveur, récupérés à chaque connexion/reconnexion.
+      ws.send(JSON.stringify({ action: 'getMediaGroups' }));
       // AJOUT (studio de scènes) : même raisonnement que getMediaLibrary.
       ws.send(JSON.stringify({ action: 'getSceneLibrary' }));
       // AJOUT (chantier 4.3 — feuille de route) : même raisonnement que

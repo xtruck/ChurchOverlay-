@@ -21,6 +21,11 @@ import { updatePosterCardMediaItems } from './poster-principal-card.js';
    le culte, même si aucun tableau de bord n'est ouvert à ce moment-là.
    ====================================================================== */
 let mediaLibraryItems = [];
+// AJOUT (Partie 2.3 — groupes nommés déclenchables à la voix) : même
+// raisonnement que mediaLibraryItems ci-dessus — tenu à jour à chaque
+// diffusion serveur (mediaGroupsUpdated), consulté par renderMediaLibrary()
+// pour peupler le sélecteur de groupe de chaque média.
+let mediaGroups = [];
 
 // AJOUT (studio de scènes, lot 6/6 — composeur) : le composeur a besoin de
 // lister les médias déjà uploadés pour son fond et ses éléments image/logo
@@ -245,6 +250,24 @@ export function renderMediaLibrary(items) {
                             </select>
                             <button class="queue-icon-btn" onclick="saveMediaItemDetails('${item.id}')" title="Enregistrer la durée/le style">💾</button>
                         </div>
+                        <!-- AJOUT (Partie 2.3 — groupes) : un média n'appartient qu'à
+                             AU PLUS UN groupe à la fois (voir setItemGroup côté
+                             serveur) — changer ce sélecteur retire automatiquement
+                             l'ancien rattachement. -->
+                        <select
+                          id="mediaGroup-${item.id}"
+                          title="Groupe (rotation à la voix)"
+                          onchange="setMediaItemGroup('${item.id}', this.value || null)"
+                          style="margin-top: 0.35rem; width: 100%"
+                        >
+                          <option value="">— Aucun groupe —</option>
+                          ${mediaGroups
+                            .map(
+                              (g) =>
+                                `<option value="${g.id}" ${item.group === g.id ? 'selected' : ''}>${escapeHtmlDashboard(g.name)} (${g.memberIds.length})</option>`
+                            )
+                            .join('')}
+                        </select>
                     </div>
                     <div class="media-gallery-actions">
                         <button class="btn btn-primary" onclick="triggerMediaLibraryItem('${item.id}')" title="Afficher maintenant sur l'overlay">▶ Afficher</button>
@@ -538,3 +561,77 @@ document.addEventListener('keydown', (e) => {
   const item = mediaLibraryItems.find((i) => i.id === card.dataset.mediaId);
   if (item && !item.fileMissing) triggerMediaLibraryItem(item.id);
 });
+
+// AJOUT (Partie 2.3 — groupes nommés déclenchables à la voix) : dire la
+// phrase déclencheuse d'un groupe affiche le PROCHAIN membre (rotation),
+// jamais tous les membres à la fois — voir matchGroupTriggerPhrase dans
+// media-library.js côté serveur pour la décision de scope complète.
+export function renderMediaGroupsPanel(groups) {
+  mediaGroups = Array.isArray(groups) ? groups : [];
+  // Les groupes disponibles au sélecteur de chaque média changent — pas de
+  // second aller-retour serveur, un simple re-rendu avec les données déjà en
+  // main suffit (mediaLibraryItems est déjà à jour depuis mediaLibraryUpdated).
+  renderMediaLibrary(mediaLibraryItems);
+
+  const list = document.getElementById('mediaGroupsList');
+  if (!list) return;
+  if (mediaGroups.length === 0) {
+    list.innerHTML = '<div class="empty-state-note">Aucun groupe créé.</div>';
+    return;
+  }
+  list.innerHTML = mediaGroups
+    .map(
+      (g) => `
+        <div class="media-group-row" style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--border-subtle);">
+          <div style="flex:1">
+            <strong>${escapeHtmlDashboard(g.name)}</strong>
+            <span style="color:var(--text-dim);font-size:0.78rem"> — ${g.memberIds.length} média(s) — "${escapeHtmlDashboard((g.triggerPhrases || []).join('", "'))}"</span>
+          </div>
+          <button class="queue-icon-btn queue-remove" onclick="deleteMediaGroup('${g.id}')" title="Supprimer le groupe (les médias restent, juste détachés)">✕</button>
+        </div>`
+    )
+    .join('');
+}
+
+export function addMediaGroup() {
+  const nameInput = document.getElementById('mediaGroupNameInput');
+  const phrasesInput = document.getElementById('mediaGroupPhrasesInput');
+  const name = nameInput ? nameInput.value.trim() : '';
+  if (!name) {
+    showToast('Nom de groupe requis.', 'error');
+    return;
+  }
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur — impossible de créer un groupe.', 'error');
+    return;
+  }
+  const triggerPhrases = phrasesInput
+    ? phrasesInput.value
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean)
+    : [];
+  ws.send(JSON.stringify({ action: 'addMediaGroup', name, triggerPhrases }));
+  if (nameInput) nameInput.value = '';
+  if (phrasesInput) phrasesInput.value = '';
+}
+
+export function deleteMediaGroup(id) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  ws.send(JSON.stringify({ action: 'deleteMediaGroup', id }));
+}
+
+export function setMediaItemGroup(itemId, groupId) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  ws.send(JSON.stringify({ action: 'setMediaItemGroup', itemId, groupId: groupId || null }));
+}
+
+window.addMediaGroup = addMediaGroup;
+window.deleteMediaGroup = deleteMediaGroup;
+window.setMediaItemGroup = setMediaItemGroup;

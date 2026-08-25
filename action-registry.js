@@ -216,6 +216,26 @@ const CLIENT_ACTIONS = {
     category: 'media',
     description: 'Tester une phrase déclencheuse avant le culte (bouton "essayer")',
   },
+  getMediaGroups: {
+    operatorOnly: true,
+    category: 'media',
+    description: 'Liste des groupes de médias',
+  },
+  addMediaGroup: {
+    operatorOnly: true,
+    category: 'media',
+    description: 'Créer un groupe de médias déclenchable à la voix',
+  },
+  deleteMediaGroup: {
+    operatorOnly: true,
+    category: 'media',
+    description: 'Supprimer un groupe de médias',
+  },
+  setMediaItemGroup: {
+    operatorOnly: true,
+    category: 'media',
+    description: "Rattacher/détacher un média d'un groupe",
+  },
 
   // Studio de scènes
   getSceneLibrary: { operatorOnly: true, category: 'scenes', description: 'Liste des scènes' },
@@ -432,6 +452,7 @@ const SERVER_ACTIONS = {
   defaultMediaChanged: { description: 'Poster principal changé' },
   defaultSceneChanged: { description: 'Scène par défaut changée' },
   mediaLibraryUpdated: { description: 'Médiathèque mise à jour' },
+  mediaGroupsUpdated: { description: 'Groupes de médias mis à jour' },
   triggerPhraseTestResult: {
     description: 'Résultat du test "essayer" une phrase déclencheuse',
   },
