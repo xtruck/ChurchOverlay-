@@ -48,6 +48,7 @@ import {
   renderMediaGroupsPanel,
 } from './features/media-library.js';
 import { renderSceneStudioGallery, handlePptxImportResult } from './features/scene-studio.js';
+import { handleServiceExportResult } from './features/service-export.js';
 import { renderRundown, applyRundownActiveCue } from './features/rundown.js';
 import { renderNetworkStatus } from './features/network-settings.js';
 import { renderIpCameras, showCameraPairingQr } from './features/ip-cameras.js';
@@ -544,6 +545,11 @@ export function handleMessage(message) {
     // afficher le résumé du résultat à l'opérateur qui a lancé l'import.
     case 'pptxImportResult':
       handlePptxImportResult(message);
+      break;
+    // AJOUT (Partie 7.1.2 — export du service portable) : même raisonnement
+    // que pptxImportResult ci-dessus (réponse ciblée, pas un broadcast).
+    case 'serviceExportResult':
+      handleServiceExportResult(message);
       break;
     // AJOUT (chantier 4.3 — feuille de route/cue-list) : même raisonnement
     // que sceneLibraryUpdated ci-dessus (liste persistée côté serveur,

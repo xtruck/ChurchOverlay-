@@ -65,6 +65,9 @@ const sceneStore = require('./scene-store');
 // AJOUT (Partie 7.1.1 — import PowerPoint, portée réduite au texte des
 // diapositives) : voir pptx-importer.js pour le pourquoi de cette portée.
 const pptxImporter = require('./pptx-importer');
+// AJOUT (Partie 7.1.2 — service portable, export uniquement, voir
+// service-export.js pour le pourquoi de cette portée).
+const serviceExport = require('./service-export');
 // AJOUT (chantier 4.3 — sortie broadcast, feuille de route/cue-list) : une
 // séquence PRÉ-PLANIFIÉE de repères verset/média/scène que l'opérateur
 // construit à l'avance et déclenche dans l'ordre — voir rundown-store.js.
@@ -3470,6 +3473,28 @@ wss.on('connection', (ws, req) => {
         );
       } catch (err) {
         ws.send(JSON.stringify({ action: 'error', error: 'Import PowerPoint : ' + err.message }));
+      }
+      return;
+    }
+
+    // AJOUT (Partie 7.1.2 — service portable, EXPORT uniquement, voir
+    // service-export.js en tête pour le pourquoi de cette portée) :
+    // destPath vient du sélecteur natif main.js#pick-export-zip-path, jamais
+    // un chemin envoyé librement par le client (même garde que sourcePath
+    // pour importPptxSlides ci-dessus).
+    if (sanitized.action === 'exportService') {
+      try {
+        const summary = await serviceExport.exportService(
+          sanitized.destPath,
+          { rundownStore, sceneStore, mediaLibrary, songLibrary },
+          USER_DATA_DIR
+        );
+        log(
+          `Export service : ${summary.mediaCount} média(s), ${summary.sceneCount} scène(s), ${summary.rundownCount} repère(s), ${summary.songCount} chant(s) -> ${sanitized.destPath}`
+        );
+        ws.send(JSON.stringify({ action: 'serviceExportResult', ...summary }));
+      } catch (err) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Export du service : ' + err.message }));
       }
       return;
     }

@@ -1675,13 +1675,38 @@ le demande.
   irait contre l'esprit même de cette règle.
 - §4.2 (diarisation) — pas tenté, le document lui-même dit "à explorer, pas à
   promettre".
-- §7.1.2 (fichier de service portable, médias compris) — **PAS TENTÉ**. Évalué :
-  un vrai bundle "médias compris" exige soit un format d'archive (nouvelle
-  dépendance zip, gestion de fichiers potentiellement volumineux en streaming), soit
-  un export JSON seul qui ne satisferait pas le critère du document ("médias
-  compris"). Un export partiel qui ne tient pas sa promesse serait pire qu'honnêtement
-  pas fait — jugé comme méritant son propre chantier dédié plutôt qu'une passe
-  précipitée en fin de session.
+- §7.1.2 (fichier de service portable, médias compris) — **RÉVISÉ, EXPORT
+  FAIT, IMPORT PAS FAIT PAR DÉCISION ASSUMÉE (2026-08-25)**. Reconsidéré après
+  §7.1.1 ci-dessous : le lecteur ZIP maison écrit pour l'import PowerPoint
+  changeait le calcul — plus besoin d'une "nouvelle dépendance zip" pour
+  résoudre le blocage noté ici, juste d'un ÉCRIVAIN ZIP (pas encore
+  existant). Construit : `service-export.js` — écrivain ZIP EN STREAMING
+  (jamais un média entier en mémoire, le document mission mentionne des
+  vidéos de 1 Go+ ; méthode STORED + "data descriptor" pour ne jamais avoir
+  besoin de revenir en arrière dans le flux de sortie) produisant un seul
+  .zip = manifest.json (feuille de route + scènes + chants + médiathèque)
+  - les fichiers médias RÉELLEMENT copiés dedans — un vrai bundle "médias
+    compris", pas un export JSON qui mentirait sur ce critère. Handler WS
+    `exportService` + bouton "💾 Exporter en .zip" (carte "Informations Système
+    & Connexion" du dashboard). Vérifié à 3 niveaux, pas seulement
+    auto-cohérent avec notre propre lecteur : relu par NOTRE lecteur
+    (pptx-importer.js#readZipEntries), ET par `unzip` ET par `python3
+zipfile` — deux implémentations RÉELLES et totalement indépendantes de la
+    nôtre (`test/test-service-export.js`, CRC32 vérifié sur un fichier de 2 Mo
+    streamé) — + `test/integration-service-export.js` de bout en bout contre
+    le VRAI server.js (vrai média ajouté via addMediaItem, retrouvé
+    intact dans le .zip produit).
+
+  L'IMPORT (côté réception) reste délibérément non fait : extraire un ZIP en
+  sécurité exige de se protéger contre le "zip slip" (une entrée nommée
+  `../../etc/quelquechose` pourrait sinon écrire hors du dossier de
+  destination) — un sujet de sécurité qui mérite sa propre revue dédiée
+  plutôt qu'un ajout précipité en fin de session, documenté en toutes
+  lettres en pied de `service-export.js`. En attendant, le .zip produit
+  s'ouvre avec n'importe quel outil standard (vérifié ci-dessus) : utilisable
+  manuellement (copier `media/`, relire `manifest.json`) même sans import
+  intégré à l'app.
+
 - §7.1.1 (importeur ProPresenter/PowerPoint) — **RÉVISÉ, PARTIEL PAR DÉCISION
   ASSUMÉE (2026-08-25)**. `propresenter-controller.js` audité (cette entrée
   disait juste "pas encore audité" — corrigé) : c'est un client de

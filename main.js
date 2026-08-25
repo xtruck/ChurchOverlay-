@@ -1467,6 +1467,20 @@ ipcMain.handle('pick-pptx-file', async () => {
   return result.filePaths[0];
 });
 
+// --- AJOUT (Partie 7.1.2 — export du service portable, médias compris) ----
+// showSaveDialog (destination du .zip), pas showOpenDialog — même
+// raisonnement que pick-pptx-file ci-dessus pour le reste (écriture réelle
+// dans service-export.js, côté worker).
+ipcMain.handle('pick-export-zip-path', async () => {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Exporter le service (feuille de route + scènes + médias)',
+    defaultPath: `churchoverlay-service-${new Date().toISOString().slice(0, 10)}.zip`,
+    filters: [{ name: 'Archive ZIP', extensions: ['zip'] }],
+  });
+  if (result.canceled || !result.filePath) return null;
+  return result.filePath;
+});
+
 // ---------------------------------------------------------------------------
 // Auto-updater (optional — won't crash if not installed)
 // ---------------------------------------------------------------------------

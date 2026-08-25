@@ -224,6 +224,9 @@ declare global {
 
       // --- Import PowerPoint (Partie 7.1.1) ---
       pickPptxFile: () => Promise<string | null>;
+
+      // --- Export du service portable (Partie 7.1.2) ---
+      pickExportZipPath: () => Promise<string | null>;
     };
   }
 }

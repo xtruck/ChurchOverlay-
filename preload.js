@@ -168,6 +168,8 @@ contextBridge.exposeInMainWorld('churchOverlay', {
   pickClipOutputDir: () => ipcRenderer.invoke('pick-clip-output-dir'),
   // AJOUT (Partie 7.1.1 — import PowerPoint) : mêmes raisons que pickMediaFile.
   pickPptxFile: () => ipcRenderer.invoke('pick-pptx-file'),
+  // AJOUT (Partie 7.1.2 — export du service portable) : mêmes raisons.
+  pickExportZipPath: () => ipcRenderer.invoke('pick-export-zip-path'),
   // AJOUT (glisser-déposer médiathèque) : File.path a été retiré d'Electron
   // (depuis la v32) pour raisons de sécurité — webUtils.getPathForFile() est
   // son remplacement officiel, disponible uniquement dans le script de
