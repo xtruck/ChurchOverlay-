@@ -1487,7 +1487,7 @@ gitignoré, jamais commité — vérifié `git check-ignore` et `git status` ava
       Python de l'ancienne liste `&&`-séparée, JSON réécrit) pour n'introduire aucune
       erreur de transcription sur ~85 noms de fichiers — liste et ordre IDENTIQUES à
       avant, seul l'enchaînement change (`node scripts/run-tests.js <liste
-  espace-séparée>` au lieu de `node fichier1 && node fichier2 && …`). La différence
+espace-séparée>` au lieu de `node fichier1 && node fichier2 && …`). La différence
       pré-existante entre `test` (inclut `test-action-registry.js`) et `test-all` (ne
       l'inclut pas) est préservée telle quelle, pas comprise ni tranchée ici.
 - [x] **Vérifié** : `npm test` fictif avec un fichier inexistant au milieu de la
@@ -1544,9 +1544,13 @@ pour les liens réseau).
 **§2.3 — ce qui reste volontairement non fait** : mode apprentissage (formulation
 réellement entendue après 2 échecs — demande de corréler transcriptions récentes et
 déclenchements manuels, pas tenté ici faute de pouvoir le valider sans vraies
-conditions de culte), glisser-déposer vers une séquence (aucune notion de "séquence"
-distincte du rundown déjà existant — clarifier avec l'utilisateur ce que "séquence"
-désigne avant de construire quoi que ce soit), test de charge réel à 200 médias dont
+conditions de culte), glisser-déposer vers une séquence (voir entrée dédiée plus
+loin — "séquence" tranché comme le rundown existant, mais le vrai glisser-déposer
+n'a pas été construit : le panneau Feuille de route vit dans l'espace DIRECT tandis
+que le Mur Média vit dans PRÉPARATION, deux sections jamais visibles en même temps
+— un glisser-déposer entre les deux est physiquement impossible sans déplacer l'un
+des deux panneaux, une décision de disposition plus large que ce chantier),
+test de charge réel à 200 médias dont
 vidéos >1 Go (les optimisations de perf faites ici — pas de reconstruction de grille
 sur les états qui changent souvent — visent directement ce critère, mais aucune
 mesure réelle à cette échelle n'a été faite, faute de 200 fichiers médias réels
@@ -1573,7 +1577,9 @@ disponibles dans ce bac à sable).
 ---
 
 ## ÉTAT DE LA MISSION — bilan complet, 2026-08-25 (fin de session, sur directive
+
 ## explicite "travaille sans t'arrêter, termine la mission, prends toutes les
+
 ## décisions seul")
 
 24 commits cette session (voir git log `f2b4a63..HEAD`). Bilan honnête, structuré
@@ -1581,11 +1587,13 @@ comme le document de mission lui-même, pour qu'une future session (ou l'utilisa
 sache exactement où reprendre.
 
 ### Partie 0 (audit) — TERMINÉ
+
 Code mort supprimé (§0.3, 16 fichiers + docs de présentation), orphelins traités
 (§0.5), NDI vérifié honnête (§0.6). Un faux positif du document corrigé
 (`scene-render.js` est bien branché).
 
 ### §0.4 — action-registry.js comme source unique de vérité — PARTIEL, assumé
+
 Fait : le trust tier RBAC (`OPERATOR_ACTIONS`) et la palette Ctrl+K dérivent
 maintenant du registre. **Pas fait, décision assumée** : `voice-commands.js` ne lit
 pas encore `VOICE_COMMANDS` du registre (juste vérifié en parité par le test), et le
@@ -1595,6 +1603,7 @@ fonctionnalité en direct de l'app, jugé trop risqué pour une passe non superv
 sans plan validé au préalable.
 
 ### Partie 1 (A.1-A.7) — TERMINÉ dans les limites de ce bac à sable
+
 - A.1 (gain micro) : instrumentation + vumètre + assistant de calibrage — TERMINÉ.
 - A.2 (wrapper LLM) : déjà corrigé avant cette session ; visibilité des échecs dans
   le dashboard (au lieu de la seule console) ajoutée — TERMINÉ.
@@ -1620,9 +1629,11 @@ sans plan validé au préalable.
   (recherche par mot-clé) déjà actif, aucune régression fonctionnelle.
 
 ### Partie 2 (interface) — TERMINÉ pour les points à spécification claire
+
 Contrairement à ce qu'affirmait le document de mission ("PAS COMMENCÉE"), la
 structure existait déjà (commits "Step 2" à "Step 14", 17-18 août, jamais journalisés
 avant cette session). Cette session a livré, par-dessus l'existant :
+
 - Mode confiance à 3 niveaux (auto/semi-auto/manuel) — construit de zéro, la
   collision de nom avec `confidence-mode.js` (un simple seuil ASR) est résolue.
 - Palette Ctrl+K → dérive d'`action-registry.js` au lieu d'une 3e liste dupliquée.
@@ -1632,22 +1643,25 @@ avant cette session). Cette session a livré, par-dessus l'existant :
   nommés déclenchables à la voix en rotation (décision de scope assumée — voir
   l'entrée dédiée plus loin, construit après la directive explicite de l'utilisateur
   "prends toutes les décisions seul" plutôt que laissé de côté pour ambiguïté).
-**Volontairement non fait, avec raison à chaque fois** : "préchargé"/"en aperçu"
-(aucun vrai signal derrière, aurait été un badge mensonger — voir §2.3 dans cette
-session), mode apprentissage (exige de vraies conditions de culte pour valider),
-glisser-déposer vers une
-"séquence" (le mot n'a pas de référent clair dans le code existant — rundown ?
-autre chose ? à clarifier), test de charge réel à 200 médias (aucun jeu de 200
-fichiers réels disponible ici — les optimisations perf faites visent directement ce
-critère mais ne sont pas mesurées à cette échelle).
+  **Volontairement non fait, avec raison à chaque fois** : "préchargé"/"en aperçu"
+  (aucun vrai signal derrière, aurait été un badge mensonger — voir §2.3 dans cette
+  session), mode apprentissage (exige de vraies conditions de culte pour valider),
+  vrai glisser-déposer vers la feuille de route ("séquence" tranché = le rundown
+  existant, mais Feuille de route vit dans DIRECT et Mur Média dans PRÉPARATION —
+  jamais visibles ensemble, glisser-déposer entre eux impossible sans déplacer un
+  panneau ; le bouton ➕ déjà présent atteint le même résultat), test de charge réel à
+  200 médias (aucun jeu de 200 fichiers réels disponible ici — les optimisations perf
+  faites visent directement ce critère mais ne sont pas mesurées à cette échelle).
 
 ### Partie 3 (OBS/NDI) — TERMINÉ
+
 StreamStart/StreamStop, assistant de connexion (messages d'erreur clairs),
 reconnexion automatique avec état visible. NDI : voie A (passer par OBS) retenue
 comme le recommandait le document lui-même — rien à construire tant que personne ne
 le demande.
 
 ### Partie 4 (différenciation) — PARTIEL, assumé
+
 - §4.4 (sous-titres traduits), §4.6 (téléphone-caméra) : déjà faits avant cette
   session, vérifiés toujours fonctionnels.
 - §4.5 (MCP + modules sous-exploités) : liens companion.html/stage-display.html/
@@ -1674,14 +1688,14 @@ le demande.
   que ce soit ici.
 
 ### Ce qu'il faut de l'utilisateur pour continuer
+
 1. Les .wav du corpus (régénérés sur Windows) ou un accès à une machine Windows pour
    A.5 — bloque aussi la mesure d'impact de §4.1.
 2. Une clé Gemini, si l'index vectoriel sémantique est jugé prioritaire (sinon le
    repli mot-clé actuel reste honnête et fonctionnel).
-3. Clarification sur "séquence" (le rundown existant, ou autre chose ?) avant de
-   construire le glisser-déposer du Mur Média — "groupes" a depuis été tranché et
-   construit moi-même (rotation round-robin, voir entrée dédiée plus loin), sur
-   directive explicite de décider seul plutôt que d'attendre une clarification.
+3. Rien — "séquence" est tranché (voir entrée dédiée plus loin : le rundown
+   existant, glisser-déposer jugé non prioritaire une fois le bouton ➕ déjà
+   équivalent fonctionnellement).
 4. Décision produit sur la licence MIT (§5.5 du document — signalée, jamais
    tranchée par moi, comme demandé).
 
