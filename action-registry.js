@@ -18,133 +18,341 @@
 
 const CLIENT_ACTIONS = {
   // Affichage core
-  transcript: { category: 'display', description: 'Texte transcrit pour détection de verset' },
-  showVerse: { category: 'display', description: 'Afficher un verset par référence' },
-  hideVerse: { category: 'display', description: 'Masquer le verset affiché' },
+  transcript: {
+    operatorOnly: true,
+    category: 'display',
+    description: 'Texte transcrit pour détection de verset',
+  },
+  showVerse: {
+    operatorOnly: true,
+    category: 'display',
+    description: 'Afficher un verset par référence',
+  },
+  hideVerse: { operatorOnly: true, category: 'display', description: 'Masquer le verset affiché' },
 
   // Mode lecture
-  startReading: { category: 'reading', description: 'Démarrer le mode lecture' },
-  stopReading: { category: 'reading', description: 'Arrêter le mode lecture' },
-  nextReadingVerse: { category: 'reading', description: 'Verset suivant en mode lecture' },
-  previousReadingVerse: { category: 'reading', description: 'Verset précédent en mode lecture' },
+  startReading: {
+    operatorOnly: true,
+    category: 'reading',
+    description: 'Démarrer le mode lecture',
+  },
+  stopReading: { operatorOnly: true, category: 'reading', description: 'Arrêter le mode lecture' },
+  nextReadingVerse: {
+    operatorOnly: true,
+    category: 'reading',
+    description: 'Verset suivant en mode lecture',
+  },
+  previousReadingVerse: {
+    operatorOnly: true,
+    category: 'reading',
+    description: 'Verset précédent en mode lecture',
+  },
 
   // Langue & traduction
-  setLanguage: { category: 'language', description: "Langue d'affichage (fr/en/both)" },
-  setTranslation: { category: 'language', description: 'Traduction biblique' },
+  setLanguage: {
+    operatorOnly: true,
+    category: 'language',
+    description: "Langue d'affichage (fr/en/both)",
+  },
+  setTranslation: { operatorOnly: true, category: 'language', description: 'Traduction biblique' },
   setSecondaryTranslation: {
+    operatorOnly: true,
     category: 'language',
     description: 'Traduction secondaire (affichage côte à côte, verset manuel)',
   },
-  translateText: { category: 'language', description: 'Traduction IA en direct' },
-  hideTranslation: { category: 'language', description: 'Masquer la traduction' },
-  setConfidenceThreshold: { category: 'transcription', description: 'Seuil de confiance ASR' },
+  translateText: {
+    operatorOnly: true,
+    category: 'language',
+    description: 'Traduction IA en direct',
+  },
+  hideTranslation: {
+    operatorOnly: true,
+    category: 'language',
+    description: 'Masquer la traduction',
+  },
+  setConfidenceThreshold: {
+    operatorOnly: true,
+    category: 'transcription',
+    description: 'Seuil de confiance ASR',
+  },
 
   // Thème & affichage
-  applyTheme: { category: 'theme', description: 'Appliquer un thème CSS' },
-  setMoodTheme: { category: 'theme', description: "Thème d'ambiance IA" },
-  setHighContrast: { category: 'accessibility', description: 'Contraste élevé' },
-  setCaptions: { category: 'accessibility', description: 'Sous-titres en direct' },
-  setTranslatedCaptions: { category: 'accessibility', description: 'Sous-titres traduits' },
-  setTestPattern: { category: 'display', description: 'Motif de test couleur' },
-  setBackgroundPattern: { category: 'theme', description: 'Motif de fond' },
-  setBlackScreen: { category: 'emergency', description: "Écran noir d'urgence" },
-  startCountdown: { category: 'timer', description: 'Lancer le compteur avant culte' },
-  stopCountdown: { category: 'timer', description: 'Arrêter le compteur avant culte' },
+  applyTheme: { operatorOnly: true, category: 'theme', description: 'Appliquer un thème CSS' },
+  setMoodTheme: { operatorOnly: true, category: 'theme', description: "Thème d'ambiance IA" },
+  setHighContrast: {
+    operatorOnly: true,
+    category: 'accessibility',
+    description: 'Contraste élevé',
+  },
+  setCaptions: {
+    operatorOnly: true,
+    category: 'accessibility',
+    description: 'Sous-titres en direct',
+  },
+  setTranslatedCaptions: {
+    operatorOnly: true,
+    category: 'accessibility',
+    description: 'Sous-titres traduits',
+  },
+  setTestPattern: { operatorOnly: true, category: 'display', description: 'Motif de test couleur' },
+  setBackgroundPattern: { operatorOnly: true, category: 'theme', description: 'Motif de fond' },
+  setBlackScreen: {
+    operatorOnly: true,
+    category: 'emergency',
+    description: "Écran noir d'urgence",
+  },
+  startCountdown: {
+    operatorOnly: true,
+    category: 'timer',
+    description: 'Lancer le compteur avant culte',
+  },
+  stopCountdown: {
+    operatorOnly: true,
+    category: 'timer',
+    description: 'Arrêter le compteur avant culte',
+  },
   setAmbientMode: {
+    operatorOnly: true,
     category: 'theme',
     description: "Activer/désactiver le cycle auto d'ambiances",
   },
-  extendTime: { category: 'timer', description: "延长 durée d'affichage" },
-  pauseTimer: { category: 'timer', description: 'Mettre en pause le timer' },
-  resumeTimer: { category: 'timer', description: 'Reprendre le timer' },
-  emergencyClear: { category: 'emergency', description: 'Effacer tout immédiatement' },
+  extendTime: {
+    operatorOnly: true,
+    category: 'timer',
+    description: "Prolonger la durée d'affichage",
+  },
+  pauseTimer: { operatorOnly: true, category: 'timer', description: 'Mettre en pause le timer' },
+  resumeTimer: { operatorOnly: true, category: 'timer', description: 'Reprendre le timer' },
+  emergencyClear: {
+    operatorOnly: true,
+    category: 'emergency',
+    description: 'Effacer tout immédiatement',
+  },
 
   // Recherche biblique
-  searchBible: { category: 'bible', description: 'Recherche biblique par mot-clé' },
+  searchBible: {
+    operatorOnly: true,
+    category: 'bible',
+    description: 'Recherche biblique par mot-clé',
+  },
   getTopics: { category: 'bible', description: 'Liste des sujets bibliques' },
 
   // IA
-  agentRun: { category: 'ai', description: 'Exécuter une demande avec l’agent opérateur' },
-  agentResume: { category: 'ai', description: 'Reprendre une exécution agent confirmée' },
+  agentRun: {
+    operatorOnly: true,
+    category: 'ai',
+    description: 'Exécuter une demande avec l’agent opérateur',
+  },
+  agentResume: {
+    operatorOnly: true,
+    category: 'ai',
+    description: 'Reprendre une exécution agent confirmée',
+  },
   getMoods: { category: 'ai', description: "Thèmes d'ambiance disponibles" },
-  getLiveSummary: { category: 'ai', description: 'Résumé IA du culte en direct' },
-  getSermonTheme: { category: 'ai', description: 'Détection du thème du sermon' },
-  getPostServiceRecap: { category: 'ai', description: 'Récapitulatif post-culte IA' },
-  getCrossReferences: { category: 'ai', description: 'Références croisées' },
+  getLiveSummary: {
+    operatorOnly: true,
+    category: 'ai',
+    description: 'Résumé IA du culte en direct',
+  },
+  getSermonTheme: {
+    operatorOnly: true,
+    category: 'ai',
+    description: 'Détection du thème du sermon',
+  },
+  getPostServiceRecap: {
+    operatorOnly: true,
+    category: 'ai',
+    description: 'Récapitulatif post-culte IA',
+  },
+  getCrossReferences: { operatorOnly: true, category: 'ai', description: 'Références croisées' },
   getAiStats: { category: 'ai', description: 'Statistiques des modules IA' },
-  getArchiveMatches: { category: 'ai', description: 'Recherche dans les archives' },
-  askSermonQuestion: { category: 'ai', description: 'Question Q&A sur les sermons' },
-  preServiceCheck: { category: 'ai', description: 'Vérification pré-culte' },
+  getArchiveMatches: {
+    operatorOnly: true,
+    category: 'ai',
+    description: 'Recherche dans les archives',
+  },
+  askSermonQuestion: {
+    operatorOnly: true,
+    category: 'ai',
+    description: 'Question Q&A sur les sermons',
+  },
+  preServiceCheck: { operatorOnly: true, category: 'ai', description: 'Vérification pré-culte' },
 
   // Médiathèque
-  getMediaLibrary: { category: 'media', description: 'Liste des médias' },
-  addMediaItem: { category: 'media', description: 'Ajouter un média' },
-  updateMediaItem: { category: 'media', description: 'Modifier un média' },
-  deleteMediaItem: { category: 'media', description: 'Supprimer un média' },
-  triggerMediaItem: { category: 'media', description: "Déclencher l'affichage d'un média" },
-  hideMedia: { category: 'media', description: 'Masquer le média affiché' },
-  setDefaultMediaItem: { category: 'media', description: 'Définir le poster principal' },
+  getMediaLibrary: { operatorOnly: true, category: 'media', description: 'Liste des médias' },
+  addMediaItem: { operatorOnly: true, category: 'media', description: 'Ajouter un média' },
+  updateMediaItem: { operatorOnly: true, category: 'media', description: 'Modifier un média' },
+  deleteMediaItem: { operatorOnly: true, category: 'media', description: 'Supprimer un média' },
+  triggerMediaItem: {
+    operatorOnly: true,
+    category: 'media',
+    description: "Déclencher l'affichage d'un média",
+  },
+  hideMedia: { operatorOnly: true, category: 'media', description: 'Masquer le média affiché' },
+  setDefaultMediaItem: {
+    operatorOnly: true,
+    category: 'media',
+    description: 'Définir le poster principal',
+  },
 
   // Studio de scènes
-  getSceneLibrary: { category: 'scenes', description: 'Liste des scènes' },
-  addScene: { category: 'scenes', description: 'Ajouter une scène' },
-  updateScene: { category: 'scenes', description: 'Modifier une scène' },
-  deleteScene: { category: 'scenes', description: 'Supprimer une scène' },
-  triggerScene: { category: 'scenes', description: 'Déclencher une scène' },
-  hideScene: { category: 'scenes', description: 'Masquer la scène affichée' },
-  setDefaultScene: { category: 'scenes', description: 'Scène par défaut' },
+  getSceneLibrary: { operatorOnly: true, category: 'scenes', description: 'Liste des scènes' },
+  addScene: { operatorOnly: true, category: 'scenes', description: 'Ajouter une scène' },
+  updateScene: { operatorOnly: true, category: 'scenes', description: 'Modifier une scène' },
+  deleteScene: { operatorOnly: true, category: 'scenes', description: 'Supprimer une scène' },
+  triggerScene: { operatorOnly: true, category: 'scenes', description: 'Déclencher une scène' },
+  hideScene: { operatorOnly: true, category: 'scenes', description: 'Masquer la scène affichée' },
+  setDefaultScene: { operatorOnly: true, category: 'scenes', description: 'Scène par défaut' },
 
   // Bibliothèque de chants
-  getSongLibrary: { category: 'songs', description: 'Liste des chants' },
-  addSong: { category: 'songs', description: 'Ajouter un chant' },
-  deleteSong: { category: 'songs', description: 'Supprimer un chant' },
-  showSongSection: { category: 'songs', description: 'Afficher une section de chant' },
+  getSongLibrary: { operatorOnly: true, category: 'songs', description: 'Liste des chants' },
+  addSong: { operatorOnly: true, category: 'songs', description: 'Ajouter un chant' },
+  deleteSong: { operatorOnly: true, category: 'songs', description: 'Supprimer un chant' },
+  showSongSection: {
+    operatorOnly: true,
+    category: 'songs',
+    description: 'Afficher une section de chant',
+  },
 
   // Caméras IP
-  getIpCameras: { category: 'cameras', description: 'Liste des caméras IP' },
-  addIpCamera: { category: 'cameras', description: 'Ajouter une caméra IP' },
-  deleteIpCamera: { category: 'cameras', description: 'Supprimer une caméra IP' },
-  generateCameraPairing: { category: 'cameras', description: 'Générer un code QR de jumelage' },
+  getIpCameras: { operatorOnly: true, category: 'cameras', description: 'Liste des caméras IP' },
+  addIpCamera: { operatorOnly: true, category: 'cameras', description: 'Ajouter une caméra IP' },
+  deleteIpCamera: {
+    operatorOnly: true,
+    category: 'cameras',
+    description: 'Supprimer une caméra IP',
+  },
+  generateCameraPairing: {
+    operatorOnly: true,
+    category: 'cameras',
+    description: 'Générer un code QR de jumelage',
+  },
 
   // Habillage caméra
-  getBranding: { category: 'branding', description: "État de l'habillage caméra" },
-  setBrandingLogo: { category: 'branding', description: "Logo d'habillage" },
-  clearBrandingLogo: { category: 'branding', description: 'Effacer le logo' },
-  setBrandingPosition: { category: 'branding', description: "Position de l'habillage" },
-  setBrandingSize: { category: 'branding', description: "Taille de l'habillage" },
-  setBrandingText: { category: 'branding', description: "Titre/sous-titre d'habillage" },
-  setBrandingVisible: { category: 'branding', description: "Visibilité de l'habillage" },
+  getBranding: {
+    operatorOnly: true,
+    category: 'branding',
+    description: "État de l'habillage caméra",
+  },
+  setBrandingLogo: { operatorOnly: true, category: 'branding', description: "Logo d'habillage" },
+  clearBrandingLogo: { operatorOnly: true, category: 'branding', description: 'Effacer le logo' },
+  setBrandingPosition: {
+    operatorOnly: true,
+    category: 'branding',
+    description: "Position de l'habillage",
+  },
+  setBrandingSize: {
+    operatorOnly: true,
+    category: 'branding',
+    description: "Taille de l'habillage",
+  },
+  setBrandingText: {
+    operatorOnly: true,
+    category: 'branding',
+    description: "Titre/sous-titre d'habillage",
+  },
+  setBrandingVisible: {
+    operatorOnly: true,
+    category: 'branding',
+    description: "Visibilité de l'habillage",
+  },
 
   // Branding tableau de bord
-  getDashboardBranding: { category: 'dashboard-branding', description: 'Identité du dashboard' },
-  setDashboardOrgName: { category: 'dashboard-branding', description: "Nom de l'organisation" },
-  setDashboardAccentColor: { category: 'dashboard-branding', description: "Couleur d'accent" },
-  setDashboardLogo: { category: 'dashboard-branding', description: 'Logo du dashboard' },
-  clearDashboardLogo: { category: 'dashboard-branding', description: 'Effacer le logo dashboard' },
+  getDashboardBranding: {
+    operatorOnly: true,
+    category: 'dashboard-branding',
+    description: 'Identité du dashboard',
+  },
+  setDashboardOrgName: {
+    operatorOnly: true,
+    category: 'dashboard-branding',
+    description: "Nom de l'organisation",
+  },
+  setDashboardAccentColor: {
+    operatorOnly: true,
+    category: 'dashboard-branding',
+    description: "Couleur d'accent",
+  },
+  setDashboardLogo: {
+    operatorOnly: true,
+    category: 'dashboard-branding',
+    description: 'Logo du dashboard',
+  },
+  clearDashboardLogo: {
+    operatorOnly: true,
+    category: 'dashboard-branding',
+    description: 'Effacer le logo dashboard',
+  },
 
   // Infrastructure
-  getNetworkStatus: { category: 'infra', description: 'État du réseau' },
-  getSessionStats: { category: 'infra', description: 'Statistiques de session' },
-  exportHighlights: { category: 'infra', description: 'Exporter les temps forts' },
-  exportClips: { category: 'infra', description: 'Générer des extraits vidéo des temps forts' },
-  getRundown: { category: 'infra', description: 'Lire la feuille de route (rundown/cue-list)' },
-  addRundownCue: { category: 'infra', description: 'Ajouter un repère à la feuille de route' },
-  removeRundownCue: { category: 'infra', description: 'Retirer un repère de la feuille de route' },
-  reorderRundownCues: { category: 'infra', description: 'Réordonner la feuille de route' },
+  getNetworkStatus: { operatorOnly: true, category: 'infra', description: 'État du réseau' },
+  getSessionStats: {
+    operatorOnly: true,
+    category: 'infra',
+    description: 'Statistiques de session',
+  },
+  exportHighlights: {
+    operatorOnly: true,
+    category: 'infra',
+    description: 'Exporter les temps forts',
+  },
+  exportClips: {
+    operatorOnly: true,
+    category: 'infra',
+    description: 'Générer des extraits vidéo des temps forts',
+  },
+  getRundown: {
+    operatorOnly: true,
+    category: 'infra',
+    description: 'Lire la feuille de route (rundown/cue-list)',
+  },
+  addRundownCue: {
+    operatorOnly: true,
+    category: 'infra',
+    description: 'Ajouter un repère à la feuille de route',
+  },
+  removeRundownCue: {
+    operatorOnly: true,
+    category: 'infra',
+    description: 'Retirer un repère de la feuille de route',
+  },
+  reorderRundownCues: {
+    operatorOnly: true,
+    category: 'infra',
+    description: 'Réordonner la feuille de route',
+  },
   triggerRundownCue: {
+    operatorOnly: true,
     category: 'infra',
     description: 'Déclencher un repère précis de la feuille de route',
   },
   nextRundownCue: {
+    operatorOnly: true,
     category: 'infra',
     description: 'Déclencher le repère suivant de la feuille de route',
   },
-  clearRundown: { category: 'infra', description: 'Vider la feuille de route' },
-  sendStageMessage: { category: 'infra', description: "Message sur l'écran de piste" },
-  clearStageMessage: { category: 'infra', description: 'Effacer le message de piste' },
-  getOfflineBibleStatus: { category: 'infra', description: 'État de la Bible hors-ligne' },
+  clearRundown: { operatorOnly: true, category: 'infra', description: 'Vider la feuille de route' },
+  sendStageMessage: {
+    operatorOnly: true,
+    category: 'infra',
+    description: "Message sur l'écran de piste",
+  },
+  clearStageMessage: {
+    operatorOnly: true,
+    category: 'infra',
+    description: 'Effacer le message de piste',
+  },
+  getOfflineBibleStatus: {
+    operatorOnly: true,
+    category: 'infra',
+    description: 'État de la Bible hors-ligne',
+  },
   listPlugins: { category: 'infra', description: 'Liste des plugins' },
-  togglePlugin: { category: 'infra', description: 'Activer/désactiver un plugin' },
+  togglePlugin: {
+    operatorOnly: true,
+    category: 'infra',
+    description: 'Activer/désactiver un plugin',
+  },
   ping: { category: 'infra', description: 'Heartbeat' },
 };
 
@@ -244,7 +452,7 @@ const VOICE_COMMANDS = {
   setLanguage: { description: "Changer la langue d'affichage" },
   setTranscriptionLanguage: { description: 'Changer la langue de transcription' },
   setTranslation: { description: 'Changer la traduction biblique' },
-  extendTime: { description: '延长 durée' },
+  extendTime: { description: 'Prolonger la durée' },
   pauseTimer: { description: 'Pause le timer' },
   resumeTimer: { description: 'Reprend le timer' },
 };
@@ -280,6 +488,15 @@ function listKeyboardShortcuts() {
   return Object.keys(KEYBOARD_SHORTCUTS).sort();
 }
 
+// Source unique de vérité pour le contrôle d'accès WS (rôle 'operator' vs
+// 'viewer', voir server.js). Une action CLIENT_ACTIONS sans `operatorOnly`
+// est accessible aux deux rôles (ex. ping, les listes en lecture seule).
+function listOperatorOnlyActions() {
+  return Object.keys(CLIENT_ACTIONS)
+    .filter((action) => CLIENT_ACTIONS[action].operatorOnly)
+    .sort();
+}
+
 module.exports = {
   CLIENT_ACTIONS,
   SERVER_ACTIONS,
@@ -288,5 +505,6 @@ module.exports = {
   listClientActions,
   listServerActions,
   listVoiceCommands,
+  listOperatorOnlyActions,
   listKeyboardShortcuts,
 };

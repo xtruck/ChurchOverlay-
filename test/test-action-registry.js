@@ -54,25 +54,28 @@ for (const action of clientActions) {
   assert(handled, `CLIENT action '${action}' not found in server.js dispatch`);
 }
 
-// Vérification inverse : les actions dans OPERATOR_ACTIONS sont dans le registre
-const operatorActionsMatch = serverSrc.match(/OPERATOR_ACTIONS\s*=\s*new\s*Set\(\[([\s\S]*?)\]\)/);
-if (operatorActionsMatch) {
-  // Strip JS comments before extracting action names
-  const opsSrc = operatorActionsMatch[1].replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-  const actionRegex = /'([a-zA-Z]+)'/g;
-  let m;
-  const orphanActions = [];
-  while ((m = actionRegex.exec(opsSrc)) !== null) {
-    if (!CLIENT_ACTIONS[m[1]]) {
-      orphanActions.push(m[1]);
-    }
-  }
+// Vérification : le trust tier RBAC (viewer vs operator) DOIT être dérivé du
+// registre, pas d'une liste dupliquée à la main (c'est exactement ce qui a
+// permis à 'obs-toggle-recording'/'obs-switch-scene' — des canaux IPC
+// Electron, pas des actions WS — de traîner sans être détecté : la
+// précédente vérification par regex ne matchait que des noms d'action
+// purement alphabétiques, donc ignorait silencieusement tout ce qui contient
+// un tiret).
+assert(
+  /OPERATOR_ACTIONS\s*=\s*new\s*Set\(\s*actionRegistry\.listOperatorOnlyActions\(\)\s*\)/.test(
+    serverSrc
+  ),
+  "OPERATOR_ACTIONS doit être dérivé de actionRegistry.listOperatorOnlyActions(), pas d'une liste dupliquée à la main"
+);
+
+// Sanity check : quelques actions de lecture seule doivent rester
+// volontairement accessibles aux viewers (voir commentaire au-dessus de
+// OPERATOR_ACTIONS dans server.js).
+for (const viewerSafe of ['ping', 'getTopics', 'getMoods', 'listPlugins', 'getAiStats']) {
   assert(
-    orphanActions.length === 0,
-    `Orphan OPERATOR_ACTIONS not in registry: ${orphanActions.join(', ')}`
+    !CLIENT_ACTIONS[viewerSafe]?.operatorOnly,
+    `'${viewerSafe}' devrait rester accessible aux viewers (operatorOnly ne doit pas être défini)`
   );
-} else {
-  assert(false, 'Could not find OPERATOR_ACTIONS Set in server.js');
 }
 
 // ---------------------------------------------------------------------------

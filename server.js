@@ -34,6 +34,7 @@ const APP_VERSION = require(path.join(APP_ROOT, 'package.json')).version;
 // ---------------------------------------------------------------------------
 // Core modules (REQUIRED)
 // ---------------------------------------------------------------------------
+const actionRegistry = require('./action-registry');
 const audioCapture = require('./audio-capture');
 const groq = require('./groq-wrapper');
 const deepgramWrapper = require('./deepgram-wrapper');
@@ -1998,119 +1999,15 @@ function getDashboardBrandingState() {
 // 'getState'…) restent volontairement accessibles aux viewers : elles ne
 // renvoient que des données statiques/publiques ou des métadonnées déjà
 // visibles côté overlay.
-const OPERATOR_ACTIONS = new Set([
-  'agentRun',
-  'agentResume',
-  'transcript',
-  'showVerse',
-  'hideVerse',
-  'setLanguage',
-  'setTranslation',
-  'setSecondaryTranslation',
-  'startReading',
-  'stopReading',
-  // AJOUT (mode lecture — bouton manuel) : mutent l'état du programme en
-  // direct exactement comme startReading/stopReading juste au-dessus —
-  // un client 'viewer' ne doit pas pouvoir avancer le mode lecture.
-  'nextReadingVerse',
-  'previousReadingVerse',
-  'applyTheme',
-  'setMoodTheme',
-  'searchBible',
-  'togglePlugin',
-  'obs-toggle-recording',
-  'obs-switch-scene',
-  'extendTime',
-  'pauseTimer',
-  'resumeTimer',
-  'emergencyClear',
-  'hideTranslation',
-  'translateText',
-  'preServiceCheck',
-  'getNetworkStatus',
-  'getLiveSummary',
-  'getSermonTheme',
-  'getPostServiceRecap',
-  'getCrossReferences',
-  'getSessionStats',
-  'getArchiveMatches',
-  'setHighContrast',
-  'setCaptions',
-  'setTranslatedCaptions',
-  'setTestPattern',
-  'setBackgroundPattern',
-  'setBlackScreen',
-  'startCountdown',
-  'stopCountdown',
-  'setAmbientMode',
-  // AJOUT (médiathèque — déclenchement vocal de photos/vidéos)
-  'getMediaLibrary',
-  'addMediaItem',
-  'deleteMediaItem',
-  'triggerMediaItem',
-  'hideMedia',
-  'setDefaultMediaItem',
-  // AJOUT (studio de scènes — texte/logo/image composés) : même trust tier
-  // que la médiathèque ci-dessus — un viewer ne doit ni créer/modifier de
-  // scène ni changer le poster principal ni la déclencher à l'écran.
-  'getSceneLibrary',
-  'addScene',
-  'updateScene',
-  'deleteScene',
-  'setDefaultScene',
-  'triggerScene',
-  'hideScene',
-  // AJOUT (chantier 4.3 — feuille de route/cue-list, voir rundown-store.js) :
-  // même trust tier que la médiathèque/le studio de scènes ci-dessus — un
-  // viewer ne doit ni construire la feuille de route ni la déclencher.
-  'getRundown',
-  'addRundownCue',
-  'removeRundownCue',
-  'reorderRundownCues',
-  'triggerRundownCue',
-  'nextRundownCue',
-  'clearRundown',
-  // AJOUT (caméras de téléphone)
-  'getIpCameras',
-  'addIpCamera',
-  'deleteIpCamera',
-  'generateCameraPairing',
-  // AJOUT (habillage caméra — logo/titre)
-  'getBranding',
-  'setBrandingLogo',
-  'clearBrandingLogo',
-  'setBrandingPosition',
-  'setBrandingSize',
-  'setBrandingText',
-  'setBrandingVisible',
-  // AJOUT (identité de marque du tableau de bord — revente en produit "clé
-  // en main") : même trust tier que l'habillage caméra ci-dessus — un
-  // viewer ne doit pas pouvoir renommer/rebrander l'outil d'un autre.
-  'getDashboardBranding',
-  'setDashboardOrgName',
-  'setDashboardAccentColor',
-  'setDashboardLogo',
-  'clearDashboardLogo',
-  // AJOUT (bibliothèque de chants)
-  'getSongLibrary',
-  'addSong',
-  'deleteSong',
-  'showSongSection',
-  // AJOUT (cahier des charges — base biblique hors-ligne + assistant sermons)
-  'getOfflineBibleStatus',
-  'askSermonQuestion',
-  // AJOUT (stage display — messages opérateur vers l'écran scène)
-  'sendStageMessage',
-  'clearStageMessage',
-  // AJOUT (export des temps forts d'un culte — voir highlight-export.js)
-  'exportHighlights',
-  // AJOUT (extraits vidéo autour des temps forts — voir clip-exporter.js)
-  'exportClips',
-  // AJOUT (détails d'affichage média — durée/style)
-  'updateMediaItem',
-  // AJOUT (mode confiance — seuil ASR configuré par l'opérateur)
-  'setConfidenceThreshold',
-]);
+// CORRECTIF (branchement action-registry.js — source unique de vérité,
+// voir action-registry.js) : cet ensemble était auparavant une liste
+// dupliquée à la main, désynchronisée du registre sans qu'aucun test ne
+// le détecte (deux entrées 'obs-toggle-recording'/'obs-switch-scene'
+// s'y trouvaient alors qu'il s'agit de canaux IPC Electron — voir
+// preload.js — jamais d'actions WS ; elles ne faisaient donc rien ici).
+// Toute action ajoutée au trust tier opérateur doit maintenant l'être
+// via `operatorOnly: true` dans action-registry.js, pas ici.
+const OPERATOR_ACTIONS = new Set(actionRegistry.listOperatorOnlyActions());
 
 // SECURITY: role is derived from WHICH token the client authenticated with
 // (ws.protocol, set by the handshake), never from the request path. The old
