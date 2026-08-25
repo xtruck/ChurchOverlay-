@@ -329,6 +329,48 @@ window.saveMediaItemDetails = saveMediaItemDetails;
 window.toggleDefaultMediaItem = toggleDefaultMediaItem;
 window.updateMediaPosterFormState = updateMediaPosterFormState;
 
+// AJOUT (Partie 2.3 — Mur Média, états par tuile) : "à l'écran" et "déjà
+// utilisé" changent à CHAQUE déclenchement — un média peut être montré des
+// dizaines de fois pendant un culte. Reconstruire toute la grille en
+// innerHTML à chaque fois (comme mediaLibraryUpdated, plus bas) ne passerait
+// pas le test de charge du cahier des charges (200 médias, déclenchement
+// <300ms) : on bascule seulement les classes CSS des tuiles concernées,
+// jamais un re-rendu complet pour ces deux états. mediaOnScreenId/
+// mediaUsedIds vivent ici (pas dans ws-dispatch.js) pour rester à côté du
+// rendu qu'ils pilotent.
+let mediaOnScreenId = null;
+const mediaUsedIds = new Set();
+
+/**
+ * Appelé par ws-dispatch.js sur 'showMedia' : marque la tuile comme "à
+ * l'écran" (et "déjà utilisé" en permanence, pour le reste de la session
+ * dashboard) sans reconstruire la grille.
+ */
+export function markMediaOnScreen(id) {
+  if (mediaOnScreenId && mediaOnScreenId !== id) {
+    const prev = document.querySelector(`.media-gallery-card[data-media-id="${mediaOnScreenId}"]`);
+    if (prev) prev.classList.remove('is-on-screen');
+  }
+  mediaOnScreenId = id || null;
+  mediaUsedIds.add(id);
+  const card = document.querySelector(`.media-gallery-card[data-media-id="${id}"]`);
+  if (card) {
+    card.classList.add('is-on-screen', 'is-used');
+  }
+}
+
+/**
+ * Appelé par ws-dispatch.js sur 'hideMedia'/'showVerse'/'showScene' : plus
+ * rien de la médiathèque n'est à l'écran (l'overlay n'affiche qu'une seule
+ * chose à la fois).
+ */
+export function clearMediaOnScreen() {
+  if (!mediaOnScreenId) return;
+  const card = document.querySelector(`.media-gallery-card[data-media-id="${mediaOnScreenId}"]`);
+  if (card) card.classList.remove('is-on-screen');
+  mediaOnScreenId = null;
+}
+
 // Mur Média — grille visuelle pour déclenchement rapide pendant le culte
 export function renderMediaWall(items) {
   const grid = document.getElementById('mediaWallGrid');
@@ -344,13 +386,35 @@ export function renderMediaWall(items) {
   grid.innerHTML = list
     .map((item) => {
       const thumbUrl = getHttpOrigin() + '/media/' + encodeURIComponent(item.filename || '');
+      // AJOUT (Partie 2.3 — état "fichier manquant") : voir media-library.js
+      // listItems() côté serveur — l'entrée existe dans l'index mais le
+      // fichier réel a disparu du disque. Barré, jamais cliquable : mieux
+      // vaut ne rien déclencher que déclencher un média cassé en plein culte.
+      if (item.fileMissing) {
+        return `
+          <div class="media-gallery-card is-missing" data-media-id="${item.id}" title="Fichier introuvable sur le disque">
+            <div class="media-gallery-thumb media-gallery-thumb-missing">⚠️</div>
+            <div class="media-gallery-label" style="font-size:0.75rem;padding:0.3rem 0.5rem;text-align:center;text-decoration:line-through;opacity:0.6;">
+              ${escapeHtmlDashboard(item.label || item.filename)}
+            </div>
+          </div>`;
+      }
       const thumbMarkup =
         item.mediaType === 'video'
           ? `<video src="${thumbUrl}" muted preload="metadata" playsinline></video>`
           : `<img src="${thumbUrl}" alt="${escapeHtmlDashboard(item.label || item.filename)}" loading="lazy">`;
-      const badges = [item.isDefault ? '⭐' : '', item.includeInLoop ? '🔁' : ''].filter(Boolean);
+      const badges = [
+        item.isDefault ? '⭐' : '',
+        item.includeInLoop ? '🔁' : '',
+        mediaUsedIds.has(item.id) ? '✓' : '',
+      ].filter(Boolean);
+      const stateClasses = [
+        item.isDefault ? ' is-default' : '',
+        item.id === mediaOnScreenId ? ' is-on-screen' : '',
+        mediaUsedIds.has(item.id) ? ' is-used' : '',
+      ].join('');
       return `
-        <div class="media-gallery-card${item.isDefault ? ' is-default' : ''}" style="cursor:pointer" onclick="triggerMediaWallItem('${escapeHtmlDashboard(item.filename)}')">
+        <div class="media-gallery-card${stateClasses}" data-media-id="${item.id}" style="cursor:pointer" onclick="triggerMediaWallItem('${escapeHtmlDashboard(item.filename)}')">
           <div class="media-gallery-thumb">
             ${thumbMarkup}
             ${badges.map((b) => `<span class="media-gallery-badge">${b}</span>`).join('')}
@@ -366,5 +430,9 @@ window.renderMediaWall = renderMediaWall;
 
 window.triggerMediaWallItem = function (filename) {
   const item = mediaLibraryItems.find((i) => i.filename === filename);
+  if (item && item.fileMissing) {
+    showToast(`❌ "${item.label}" : fichier introuvable sur le disque, non déclenché.`, 'error');
+    return;
+  }
   if (item) triggerMediaLibraryItem(item.id);
 };

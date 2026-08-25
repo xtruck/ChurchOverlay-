@@ -76,8 +76,20 @@ function writeIndex(items) {
  * octets du fichier).
  * @returns {Array<Object>}
  */
+/**
+ * AJOUT (Partie 2.3 — Mur Média, état "fichier manquant") : l'index JSON et
+ * le fichier réel sur disque peuvent diverger (suppression manuelle du
+ * dossier media/, disque externe débranché, migration incomplète…) —
+ * jusqu'ici listItems() renvoyait la métadonnée comme si de rien n'était,
+ * et cliquer dessus échouait silencieusement côté overlay (image cassée).
+ * `fileMissing` rend ce cas visible AVANT le clic, pas après, dans le mur
+ * média (voir dashboard/features/media-library.js#renderMediaWall).
+ */
 function listItems() {
-  return readIndex();
+  return readIndex().map((item) => ({
+    ...item,
+    fileMissing: !mediaDir || !fs.existsSync(path.join(mediaDir, item.filename)),
+  }));
 }
 
 /**

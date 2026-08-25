@@ -39,7 +39,12 @@ import {
   renderClipExportProgress,
   renderClipExportComplete,
 } from './features/preservice-ai.js';
-import { renderMediaLibrary, renderMediaWall } from './features/media-library.js';
+import {
+  renderMediaLibrary,
+  renderMediaWall,
+  markMediaOnScreen,
+  clearMediaOnScreen,
+} from './features/media-library.js';
 import { renderSceneStudioGallery } from './features/scene-studio.js';
 import { renderRundown, applyRundownActiveCue } from './features/rundown.js';
 import { renderNetworkStatus } from './features/network-settings.js';
@@ -117,6 +122,9 @@ export function handleMessage(message) {
       // auto) vient d'être affiché — le bandeau de confirmation, s'il était
       // visible, n'a plus lieu d'être.
       hidePendingVerseBanner();
+      // AJOUT (Partie 2.3 — état "à l'écran" du mur média) : l'overlay
+      // n'affiche qu'une seule chose à la fois.
+      clearMediaOnScreen();
       // AJOUT (frontend — mode lecture "pro") : le serveur diffuse la
       // position courante dans le chapitre à chaque avancement (voir
       // server.js > readingModePosition) — affichée dans la carte mode
@@ -552,13 +560,19 @@ export function handleMessage(message) {
           (message.detectedBy === 'voice-cue' ? ' (déclenché à la voix)' : ''),
         'info'
       );
+      markMediaOnScreen(message.id);
       break;
     case 'hideMedia':
+      clearMediaOnScreen();
       break;
     // AJOUT (studio de scènes) : même raisonnement que showMedia/hideMedia
     // ci-dessus.
     case 'showScene':
       addActivity(`Scène affichée : ${message.name}`, 'info');
+      // AJOUT (Partie 2.3 — état "à l'écran" du mur média) : l'overlay
+      // n'affiche qu'une seule chose à la fois — une scène qui s'affiche
+      // remplace forcément un média qui l'était.
+      clearMediaOnScreen();
       break;
     case 'hideScene':
       break;
