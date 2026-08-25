@@ -15,7 +15,7 @@
  *    - audio-capture.js          → segments audio simulés (déclenchés à la main)
  *
  *  server.js lui-même, detector.js, sentence-buffer.js, reading-mode.js,
- *  context-tracker.js, etc. tournent SANS AUCUNE modification.
+ *  etc. tournent SANS AUCUNE modification.
  * ============================================================================
  */
 'use strict';
