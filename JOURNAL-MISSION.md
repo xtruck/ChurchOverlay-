@@ -1541,8 +1541,7 @@ pour les liens réseau).
       commit dédié) : `findPhoneticCollisions()` dans voice-trigger-matcher.js,
       vérifié contre médiathèque ET bibliothèque de chants à l'ajout d'un média.
 
-**§2.3 — ce qui reste volontairement non fait** : groupes nommés déclenchables à la
-voix (changement de modèle de données non trivial), mode apprentissage (formulation
+**§2.3 — ce qui reste volontairement non fait** : mode apprentissage (formulation
 réellement entendue après 2 échecs — demande de corréler transcriptions récentes et
 déclenchements manuels, pas tenté ici faute de pouvoir le valider sans vraies
 conditions de culte), glisser-déposer vers une séquence (aucune notion de "séquence"
@@ -1629,12 +1628,14 @@ avant cette session). Cette session a livré, par-dessus l'existant :
 - Palette Ctrl+K → dérive d'`action-registry.js` au lieu d'une 3e liste dupliquée.
 - Mur Média : états par tuile (à l'écran/déjà utilisé/fichier manquant), bouton
   "essayer" (rejoue le vrai moteur de détection), recherche instantanée, touches 1-9,
-  détection de collisions phonétiques à l'import (médiathèque ET chants).
+  détection de collisions phonétiques à l'import (médiathèque ET chants), groupes
+  nommés déclenchables à la voix en rotation (décision de scope assumée — voir
+  l'entrée dédiée plus loin, construit après la directive explicite de l'utilisateur
+  "prends toutes les décisions seul" plutôt que laissé de côté pour ambiguïté).
 **Volontairement non fait, avec raison à chaque fois** : "préchargé"/"en aperçu"
 (aucun vrai signal derrière, aurait été un badge mensonger — voir §2.3 dans cette
-session), groupes nommés déclenchables à la voix (spec ambiguë — cycler ? afficher
-tout ? à clarifier avec l'utilisateur avant de construire), mode apprentissage
-(exige de vraies conditions de culte pour valider), glisser-déposer vers une
+session), mode apprentissage (exige de vraies conditions de culte pour valider),
+glisser-déposer vers une
 "séquence" (le mot n'a pas de référent clair dans le code existant — rundown ?
 autre chose ? à clarifier), test de charge réel à 200 médias (aucun jeu de 200
 fichiers réels disponible ici — les optimisations perf faites visent directement ce
@@ -1677,7 +1678,50 @@ le demande.
    A.5 — bloque aussi la mesure d'impact de §4.1.
 2. Une clé Gemini, si l'index vectoriel sémantique est jugé prioritaire (sinon le
    repli mot-clé actuel reste honnête et fonctionnel).
-3. Clarification sur "groupes" (cycler/afficher tout ?) et "séquence" (le rundown
-   existant, ou autre chose ?) avant de construire ces deux points du Mur Média.
+3. Clarification sur "séquence" (le rundown existant, ou autre chose ?) avant de
+   construire le glisser-déposer du Mur Média — "groupes" a depuis été tranché et
+   construit moi-même (rotation round-robin, voir entrée dédiée plus loin), sur
+   directive explicite de décider seul plutôt que d'attendre une clarification.
 4. Décision produit sur la licence MIT (§5.5 du document — signalée, jamais
    tranchée par moi, comme demandé).
+
+---
+
+### 2026-08-25 — Groupes de médias déclenchables à la voix (Partie 2.3, TERMINÉ)
+
+Sur directive explicite de l'utilisateur ("travaille sans t'arrêter, termine la
+mission, prends toutes les décisions seul") : reconsidéré la décision de reporter
+"groupes" pour ambiguïté — la bonne réponse à une spec ambiguë quand on me demande de
+trancher moi-même est de trancher, pas de reporter. Décision de scope assumée
+(documentée dans le commit et ici) : un groupe a ses PROPRES phrases déclencheuses,
+distinctes de celles de ses membres ; les dire affiche le PROCHAIN membre non encore
+montré (rotation round-robin), jamais tous les membres à la fois.
+
+- [x] **media-library.js** : fichier séparé `media-groups.json` (pas un champ de
+      plus dans l'index média — un groupe pourrait un jour référencer des chants
+      aussi, pas de raison de coupler les deux formes maintenant).
+      `addGroup`/`deleteGroup`/`setItemGroup` (appartenance à AU PLUS UN groupe —
+      réaffecter retire automatiquement de l'ancien) / `matchGroupTriggerPhrase`
+      (curseur de rotation persisté, avance même si l'item référencé a depuis été
+      supprimé — une entrée fantôme ne doit jamais bloquer la rotation indéfiniment
+      sur la même case). Option `dryRun` : ne fait PAS avancer le curseur — le
+      bouton "essayer" teste maintenant aussi les phrases de groupe, et un essai ne
+      doit jamais consommer un tour de rotation destiné au vrai culte.
+- [x] **server.js** : `matchGroupTriggerPhrase` câblé dans le VRAI
+      `processTranscript` (après la détection média individuelle, avant les
+      chants — une phrase précise pour un média reste prioritaire sur une phrase de
+      groupe plus générale). 4 nouvelles actions WS (`getMediaGroups`/
+      `addMediaGroup`/`deleteMediaGroup`/`setMediaItemGroup`), même vérification de
+      collision phonétique "dès l'import" qu'un média individuel (contre médiathèque
+      ET chants ET autres groupes).
+- [x] **Dashboard** : panneau repliable "Groupes de médias" (liste + création) dans
+      la carte médiathèque, sélecteur "Groupe" sur chaque média reflétant/changeant
+      son rattachement.
+- [x] **Tests** : `test/integration-media-groups.js` (7 cas, vrai server.js) —
+      vérifie que le VRAI pipeline `processTranscript` fait tourner la rotation à
+      partir d'un texte transcrit, pas seulement les actions WS de gestion en
+      isolation. `test/e2e/media-groups.spec.js` (rendu/câblage navigateur). +17
+      assertions dans `test-media-library.js` pour la logique du store elle-même, y
+      compris que `dryRun` n'avance vraiment jamais le curseur.
+      Gate : eslint 0 erreur, tsc clean, npm audit 0 vuln, check-build-files OK,
+      npm test 85/86 (clip-exporter pré-existant), test:e2e 24/24.
