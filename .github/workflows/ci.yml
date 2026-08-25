@@ -35,11 +35,11 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
-      - name: Tests
-        run: npm test
-
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
+
+      - name: Tests
+        run: npm test
 
       - name: E2E tests (dashboard smoke tests)
         run: npm run test:e2e
