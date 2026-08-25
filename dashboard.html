@@ -765,9 +765,8 @@
                 </summary>
                 <div style="margin-top: 0.5rem">
                   <div class="field-hint" style="margin-bottom: 0.5rem">
-                    Ex. "Photos jeunesse" avec 5 photos — dire la phrase du groupe affiche une
-                    photo différente à chaque fois, dans l'ordre, jusqu'à la 5e puis on
-                    recommence.
+                    Ex. "Photos jeunesse" avec 5 photos — dire la phrase du groupe affiche une photo
+                    différente à chaque fois, dans l'ordre, jusqu'à la 5e puis on recommence.
                   </div>
                   <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem">
                     <input
@@ -782,7 +781,11 @@
                       placeholder="Phrases déclencheuses, séparées par des virgules"
                       style="flex: 1"
                     />
-                    <button class="btn btn-secondary" onclick="addMediaGroup()" style="flex-shrink: 0">
+                    <button
+                      class="btn btn-secondary"
+                      onclick="addMediaGroup()"
+                      style="flex-shrink: 0"
+                    >
                       + Créer le groupe
                     </button>
                   </div>
@@ -993,7 +996,10 @@
               flex-wrap: wrap;
             "
           >
-            <span style="font-weight: 600; font-size: 0.88rem; flex: 1" id="pendingVerseText"></span>
+            <span
+              style="font-weight: 600; font-size: 0.88rem; flex: 1"
+              id="pendingVerseText"
+            ></span>
             <button
               type="button"
               class="btn btn-primary"
@@ -3537,7 +3543,7 @@ Aucune exécution agent.</pre>
                 id="triggerPhraseTestInput"
                 placeholder="ex. montrez la photo du groupe jeunesse"
                 style="flex: 1"
-                onkeydown="if(event.key==='Enter') testTriggerPhrase()"
+                onkeydown="if (event.key === 'Enter') testTriggerPhrase();"
               />
               <button type="button" class="btn btn-secondary" onclick="testTriggerPhrase()">
                 Essayer
@@ -3592,6 +3598,13 @@ Aucune exécution agent.</pre>
                 <button
                   class="btn btn-secondary"
                   style="padding: 0.4rem 0.8rem; font-size: 0.8rem"
+                  onclick="importPptxSlides()"
+                >
+                  📥 Importer PowerPoint
+                </button>
+                <button
+                  class="btn btn-secondary"
+                  style="padding: 0.4rem 0.8rem; font-size: 0.8rem"
                   onclick="hideSceneNow()"
                 >
                   ⏹ Masquer
@@ -3602,6 +3615,9 @@ Aucune exécution agent.</pre>
               Composez un fond + du texte + un logo, puis déclenchez la scène sur l'overlay ou
               épinglez-la comme poster principal (⭐) — elle reviendra automatiquement après chaque
               verset, exactement comme un média épinglé dans la Médiathèque.
+              <br />
+              <strong>Importer PowerPoint</strong> crée une scène texte par diapositive (le texte
+              seul — pas les images ni la mise en forme d'origine), dans l'ordre réel du diaporama.
             </div>
             <div class="media-gallery-grid" id="sceneStudioList"></div>
           </div>

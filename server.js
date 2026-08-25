@@ -62,6 +62,9 @@ const mediaLibrary = require('./media-library');
 // un poster) : voir scene-store.js. Une scène référence des éléments de
 // media-library.js par id, ne possède aucun fichier propre.
 const sceneStore = require('./scene-store');
+// AJOUT (Partie 7.1.1 — import PowerPoint, portée réduite au texte des
+// diapositives) : voir pptx-importer.js pour le pourquoi de cette portée.
+const pptxImporter = require('./pptx-importer');
 // AJOUT (chantier 4.3 — sortie broadcast, feuille de route/cue-list) : une
 // séquence PRÉ-PLANIFIÉE de repères verset/média/scène que l'opérateur
 // construit à l'avance et déclenche dans l'ordre — voir rundown-store.js.
@@ -3429,6 +3432,44 @@ wss.on('connection', (ws, req) => {
         });
       } catch (err) {
         ws.send(JSON.stringify({ action: 'error', error: 'Studio de scènes : ' + err.message }));
+      }
+      return;
+    }
+
+    // AJOUT (Partie 7.1.1 — import PowerPoint, texte seul, voir
+    // pptx-importer.js pour la portée assumée) : sourcePath vient du
+    // sélecteur natif main.js#pick-pptx-file, jamais un chemin envoyé
+    // librement par le client (même garde que pick-media-file).
+    if (sanitized.action === 'importPptxSlides') {
+      try {
+        const buf = fs.readFileSync(sanitized.sourcePath);
+        const slides = pptxImporter.extractPptxSlidesText(buf);
+        let scenesCreated = 0;
+        for (const slide of slides) {
+          if (!slide.text.trim()) continue; // diapositive sans texte (image seule, séparateur...) : ignorée, pas une scène vide
+          sceneStore.addScene({
+            name: `Diapositive ${slide.slideIndex}`,
+            background: { type: 'none' },
+            elements: [{ type: 'text', text: slide.text }],
+          });
+          scenesCreated++;
+        }
+        log(
+          `Import PowerPoint : ${scenesCreated} scène(s) créée(s) sur ${slides.length} diapositive(s)`
+        );
+        broadcast({
+          action: 'sceneLibraryUpdated',
+          scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
+        });
+        ws.send(
+          JSON.stringify({
+            action: 'pptxImportResult',
+            slidesFound: slides.length,
+            scenesCreated,
+          })
+        );
+      } catch (err) {
+        ws.send(JSON.stringify({ action: 'error', error: 'Import PowerPoint : ' + err.message }));
       }
       return;
     }

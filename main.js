@@ -1453,6 +1453,20 @@ ipcMain.handle('pick-clip-output-dir', async () => {
   return result.filePaths[0];
 });
 
+// --- AJOUT (Partie 7.1.1 — import PowerPoint, texte des diapositives) ------
+// Même raisonnement que pick-media-file ci-dessus : le sélecteur de fichier
+// natif vit ici, la lecture/le dézippage/l'extraction (pptx-importer.js)
+// vivent dans le worker server.js.
+ipcMain.handle('pick-pptx-file', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choisir une présentation PowerPoint (.pptx)',
+    properties: ['openFile'],
+    filters: [{ name: 'PowerPoint', extensions: ['pptx'] }],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
 // ---------------------------------------------------------------------------
 // Auto-updater (optional — won't crash if not installed)
 // ---------------------------------------------------------------------------

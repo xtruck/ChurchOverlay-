@@ -47,7 +47,7 @@ import {
   renderTriggerPhraseTestResult,
   renderMediaGroupsPanel,
 } from './features/media-library.js';
-import { renderSceneStudioGallery } from './features/scene-studio.js';
+import { renderSceneStudioGallery, handlePptxImportResult } from './features/scene-studio.js';
 import { renderRundown, applyRundownActiveCue } from './features/rundown.js';
 import { renderNetworkStatus } from './features/network-settings.js';
 import { renderIpCameras, showCameraPairingQr } from './features/ip-cameras.js';
@@ -537,6 +537,13 @@ export function handleMessage(message) {
     // bord ouverts après chaque ajout/suppression/modification.
     case 'sceneLibraryUpdated':
       renderSceneStudioGallery(message.scenes);
+      break;
+    // AJOUT (Partie 7.1.1 — import PowerPoint) : réponse ciblée (pas un
+    // broadcast) à importPptxSlides — sceneLibraryUpdated ci-dessus arrive
+    // séparément et rafraîchit déjà la galerie ; ce message ne sert qu'à
+    // afficher le résumé du résultat à l'opérateur qui a lancé l'import.
+    case 'pptxImportResult':
+      handlePptxImportResult(message);
       break;
     // AJOUT (chantier 4.3 — feuille de route/cue-list) : même raisonnement
     // que sceneLibraryUpdated ci-dessus (liste persistée côté serveur,

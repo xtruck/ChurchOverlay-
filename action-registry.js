@@ -240,6 +240,11 @@ const CLIENT_ACTIONS = {
   // Studio de scènes
   getSceneLibrary: { operatorOnly: true, category: 'scenes', description: 'Liste des scènes' },
   addScene: { operatorOnly: true, category: 'scenes', description: 'Ajouter une scène' },
+  importPptxSlides: {
+    operatorOnly: true,
+    category: 'scenes',
+    description: "Importer le texte des diapositives d'un .pptx en scènes",
+  },
   updateScene: { operatorOnly: true, category: 'scenes', description: 'Modifier une scène' },
   deleteScene: { operatorOnly: true, category: 'scenes', description: 'Supprimer une scène' },
   triggerScene: { operatorOnly: true, category: 'scenes', description: 'Déclencher une scène' },
@@ -460,6 +465,7 @@ const SERVER_ACTIONS = {
     description: "Collision(s) phonétique(s) détectée(s) entre phrases déclencheuses à l'import",
   },
   sceneLibraryUpdated: { description: 'Scènes mises à jour' },
+  pptxImportResult: { description: "Résultat de l'import PowerPoint" },
   rundownUpdated: { description: 'Feuille de route mise à jour' },
   rundownActiveCue: { description: 'Repère actif de la feuille de route changé' },
   songLibraryUpdated: { description: 'Bibliothèque chants mise à jour' },

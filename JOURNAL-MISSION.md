@@ -1682,10 +1682,32 @@ le demande.
   compris"). Un export partiel qui ne tient pas sa promesse serait pire qu'honnêtement
   pas fait — jugé comme méritant son propre chantier dédié plutôt qu'une passe
   précipitée en fin de session.
-- §7.1.1 (importeur ProPresenter/PowerPoint) — pas tenté : exige de rétro-ingénierier
-  des formats de fichiers propriétaires, `propresenter-controller.js` existe déjà
-  mais n'a pas été audité pour savoir ce qu'il fait réellement avant d'ajouter quoi
-  que ce soit ici.
+- §7.1.1 (importeur ProPresenter/PowerPoint) — **RÉVISÉ, PARTIEL PAR DÉCISION
+  ASSUMÉE (2026-08-25)**. `propresenter-controller.js` audité (cette entrée
+  disait juste "pas encore audité" — corrigé) : c'est un client de
+  télécommande à DISTANCE (WebSocket vers une instance ProPresenter déjà
+  lancée), pas un lecteur de fichier — confirme que le format .pro6/.pro
+  (plist binaire non documenté publiquement) resterait de la vraie
+  rétro-ingénierie, hors de portée. En revanche le .pptx EST un format
+  ouvert documenté (OOXML = zip + XML) — pas de rétro-ingénierie du tout à
+  faire pour lui. Construit : `pptx-importer.js` (lecteur ZIP + extracteur de
+  texte maison, ~200 lignes, zéro nouvelle dépendance npm — le format ZIP
+  n'a rien de "propriétaire", contrairement à .pro6) + handler WS
+  `importPptxSlides` (server.js) + bouton "📥 Importer PowerPoint" dans le
+  Studio de scènes (dashboard.html/scene-studio.js) : chaque diapositive avec
+  du texte devient une scène texte, DANS L'ORDRE RÉEL du diaporama (résolu
+  via `ppt/presentation.xml` + ses relations, pas l'ordre alphabétique des
+  noms de fichier — PowerPoint peut réordonner sans renommer). Portée
+  DÉLIBÉRÉMENT réduite et documentée en tête de fichier : le TEXTE
+  uniquement, jamais les images/la mise en forme/le rendu visuel des
+  diapositives (les reproduire exigerait un moteur de rendu PowerPoint
+  complet — ç'aurait été mentir sur ce que fait le bouton). Testé à 3
+  niveaux : 8 cas purs (`test/test-pptx-importer.js`, extraction/ordre/
+  entités XML/erreurs) + 7 cas de bout en bout contre le VRAI server.js
+  (`test/integration-pptx-import.js`, .pptx réel construit en mémoire par un
+  mini-écrivain ZIP, jusqu'aux scènes réellement créées dans scene-store.js).
+  L'import ProPresenter lui-même reste non fait, pour la raison désormais
+  confirmée par l'audit plutôt que supposée.
 
 ### Ce qu'il faut de l'utilisateur pour continuer
 

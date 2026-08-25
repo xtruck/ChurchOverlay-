@@ -336,6 +336,41 @@ export function hideSceneNow() {
   ws.send(JSON.stringify({ action: 'hideScene' }));
 }
 
+// AJOUT (Partie 7.1.1 — import PowerPoint, texte des diapositives) : même
+// pattern que addMediaLibraryItem() dans media-library.js (sélecteur natif
+// côté main.js, traitement réel côté worker server.js — voir
+// pptx-importer.js pour la portée assumée).
+export async function importPptxSlides() {
+  if (!window.churchOverlay || !window.churchOverlay.pickPptxFile) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast("Non connecté au serveur — impossible d'importer.", 'error');
+    return;
+  }
+  try {
+    const sourcePath = await window.churchOverlay.pickPptxFile();
+    if (!sourcePath) return; // sélection annulée par l'opérateur
+    ws.send(JSON.stringify({ action: 'importPptxSlides', sourcePath }));
+  } catch (err) {
+    showToast(
+      'Échec de la sélection du fichier : ' + (err && err.message ? err.message : err),
+      'error'
+    );
+  }
+}
+
+// AJOUT : réponse à importPptxSlides ci-dessus — voir ws-dispatch.js
+// (case 'pptxImportResult').
+export function handlePptxImportResult(result) {
+  if (!result || result.scenesCreated === 0) {
+    showToast('Import PowerPoint : aucune diapositive avec du texte trouvée.', 'warning');
+    return;
+  }
+  showToast(
+    `Import PowerPoint : ${result.scenesCreated} scène(s) créée(s) sur ${result.slidesFound} diapositive(s).`,
+    'success'
+  );
+}
+
 // AJOUT (poster principal) : même mécanisme que toggleDefaultMediaItem()
 // dans media-library.js — un seul poster principal à la fois, désigner
 // celui-ci démarque automatiquement l'ancien (scène OU média, voir
@@ -420,6 +455,7 @@ export function renderSceneStudioGallery(scenes) {
 window.triggerSceneStudioItem = triggerSceneStudioItem;
 window.deleteSceneStudioItem = deleteSceneStudioItem;
 window.hideSceneNow = hideSceneNow;
+window.importPptxSlides = importPptxSlides;
 window.toggleDefaultScene = toggleDefaultScene;
 // AJOUT (studio de scènes, lot 6/6 — composeur) : onclick/onchange/oninput
 // inline dans le HTML généré ci-dessus (dashboard.html et les rangées

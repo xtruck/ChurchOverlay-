@@ -221,6 +221,9 @@ declare global {
       // --- Extraits vidéo (chantier 4.6) ---
       pickSourceVideoFile: () => Promise<string | null>;
       pickClipOutputDir: () => Promise<string | null>;
+
+      // --- Import PowerPoint (Partie 7.1.1) ---
+      pickPptxFile: () => Promise<string | null>;
     };
   }
 }
