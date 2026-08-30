@@ -10,7 +10,14 @@
 import { ws, getHttpOrigin } from '../state.js';
 import { showToast } from '../utils.js';
 
-const DEFAULT_ACCENT_COLOR = '#7c8cf5';
+// CORRECTIF (redesign — direction "console de diffusion") : ce repli était
+// resté sur l'ancien violet (#7c8cf5) après le changement de --primary dans
+// dashboard.css (:root) — dashboard-branding.js écrase --primary en style
+// inline sur <html> à CHAQUE connexion (même sans accentColor configuré côté
+// serveur), qui gagne toujours sur la valeur de la feuille de style. Un
+// nouvel utilisateur sans branding personnalisé voyait donc l'ancienne
+// couleur malgré le nouveau thème.
+const DEFAULT_ACCENT_COLOR = '#ff8a3d';
 
 export function applyDashboardBranding(branding) {
   if (!branding) return;

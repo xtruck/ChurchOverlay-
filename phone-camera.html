@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ChurchOverlay — Caméra téléphone</title>
 <!--
   ============================================================================
@@ -42,8 +42,8 @@
   html, body {
     width: 100%;
     height: 100%;
-    background: #0a0e1c;
-    color: #f6f3ec;
+    background: #0b0c10;
+    color: #e8eaf0;
     font-family: 'Segoe UI', -apple-system, sans-serif;
     overflow: hidden;
   }
@@ -74,9 +74,9 @@
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: #f4607a;
+    background: #ff5a5a;
     flex-shrink: 0;
-    box-shadow: 0 0 8px #f4607a;
+    box-shadow: 0 0 8px #ff5a5a;
   }
   #status-dot.live {
     background: #34d399;
@@ -95,7 +95,7 @@
     border-radius: 50%;
     border: none;
     background: rgba(255,255,255,0.16);
-    color: #f6f3ec;
+    color: #e8eaf0;
     font-size: 18px;
     display: flex;
     align-items: center;
@@ -112,10 +112,12 @@
     font-size: 17px;
     line-height: 1.5;
     z-index: 3;
-    background: #0a0e1c;
+    background: #0b0c10;
   }
   #message.hidden { display: none; }
   #message strong { display: block; margin-bottom: 8px; font-size: 20px; }
+  #switch-camera-btn.hidden { display: none; }
+  #canvas { display: none; }
 </style>
 </head>
 <body>
@@ -123,11 +125,11 @@
 <div id="status-bar">
   <div id="status-dot"></div>
   <span id="status-text">Connexion…</span>
-  <button id="switch-camera-btn" type="button" title="Changer de caméra (avant/arrière)" style="display:none;">🔄</button>
+  <button id="switch-camera-btn" type="button" title="Changer de caméra (avant/arrière)">🔄</button>
 </div>
 
-<video id="video" autoplay playsinline muted></video>
-<canvas id="canvas" style="display:none;"></canvas>
+<video id="video" autoplay muted></video>
+<canvas id="canvas"></canvas>
 
 <div id="message">
   <div>
@@ -164,6 +166,7 @@ const statusText = document.getElementById('status-text');
 const messageEl = document.getElementById('message');
 const messageDetail = document.getElementById('message-detail');
 const video = document.getElementById('video');
+video.playsInline = true;
 const canvas = document.getElementById('canvas');
 const switchCameraBtn = document.getElementById('switch-camera-btn');
 

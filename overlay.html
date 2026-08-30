@@ -16,7 +16,7 @@
    sans empattement décoratif, conçues pour la lisibilité à l'écran/projeté.
    Cormorant Garamond et Plus Jakarta Sans restent chargées (thèmes
    personnalisés existants/futurs qui les référencent encore). */
-      @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Manrope:wght@500;600;700&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Manrope:wght@500;600;700&display=swap');
 
       /* ==========================================================================
    CSS Variables for Dynamic Themes (AI Innovation Pack)
@@ -26,10 +26,10 @@
      profond en fond, lumière de cierge (or) en accent unique. Avant, ce
      fichier tournait sur un thème générique bleu marine/rose sans rapport
      avec le dashboard — l'opérateur voyait deux apps différentes. */
-        --overlay-bg: linear-gradient(160deg, #0a0e1c 0%, #0d1226 55%, #10152b 100%);
-        --overlay-text: #f6f3ec;
-        --overlay-text-muted: #a8adc9;
-        --overlay-accent: #d9bb6c;
+        --overlay-bg: linear-gradient(160deg, #0b0c10 0%, #101218 55%, #14151c 100%);
+        --overlay-text: #e8eaf0;
+        --overlay-text-muted: #9aa0b0;
+        --overlay-accent: #ff8a3d;
         /* CORRECTIF (audit — police jugée "fantaisiste"/pas assez professionnelle) :
      Cormorant Garamond a un style calligraphique (empattements fins, courbes
      prononcées) qui peut se lire comme italique/décoratif projeté en grand,
@@ -37,11 +37,11 @@
      thème "nuit" par défaut, voir config/themes/nuit.json) — un serif
      sobre, épais et très lisible à distance, sans fioriture. */
         --overlay-font: 'Merriweather', Georgia, serif;
-        --overlay-font-ui: 'Plus Jakarta Sans', 'Open Sans', sans-serif;
-        --overlay-border: rgba(220, 180, 106, 0.2);
-        --overlay-glow: rgba(220, 180, 106, 0.32);
+        --overlay-font-ui: 'IBM Plex Sans', 'Open Sans', sans-serif;
+        --overlay-border: rgba(255, 138, 61, 0.2);
+        --overlay-glow: rgba(255, 138, 61, 0.32);
         --overlay-shadow: rgba(0, 0, 0, 0.55);
-        --overlay-particle: #dcb46a;
+        --overlay-particle: #ff8a3d;
         /* AJOUT (thèmes — champs déclarés dans config/themes/*.json mais
      jamais consommés par applyTheme(), voir plus bas) : valeurs par
      défaut identiques aux constantes qui étaient codées en dur dans
@@ -65,22 +65,22 @@
       @property --overlay-glow {
         syntax: '<color>';
         inherits: true;
-        initial-value: rgba(220, 180, 106, 0.32);
+        initial-value: rgba(255, 138, 61, 0.32);
       }
       @property --overlay-accent {
         syntax: '<color>';
         inherits: true;
-        initial-value: #d9bb6c;
+        initial-value: #ff8a3d;
       }
       @property --overlay-border {
         syntax: '<color>';
         inherits: true;
-        initial-value: rgba(220, 180, 106, 0.2);
+        initial-value: rgba(255, 138, 61, 0.2);
       }
       @property --overlay-particle {
         syntax: '<color>';
         inherits: true;
-        initial-value: #dcb46a;
+        initial-value: #ff8a3d;
       }
 
       * {
@@ -282,7 +282,7 @@
       }
 
       .source-badge.manual {
-        background: rgba(220, 180, 106, 0.18);
+        background: rgba(255, 138, 61, 0.18);
         color: var(--overlay-accent);
       }
 
@@ -415,7 +415,7 @@
         z-index: 100;
         pointer-events: none;
         backdrop-filter: blur(8px);
-        box-shadow: 0 4px 18px rgba(220, 180, 106, 0.2);
+        box-shadow: 0 4px 18px rgba(255, 138, 61, 0.2);
       }
 
       #reading-indicator.visible {

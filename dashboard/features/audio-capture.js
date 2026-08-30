@@ -80,9 +80,13 @@ export function drawRealAudioVisualizer() {
       lastHeight = h;
       // Le dégradé dépend de la hauteur : recalculé seulement quand la
       // taille change réellement, pas à chaque frame.
+      // CORRECTIF (redesign — direction "console de diffusion") : dégradé
+      // indigo->cyan d'origine remplacé par le nouveau ton orange/ambré —
+      // Canvas ne lit pas les variables CSS, donc pas suivi automatiquement
+      // par le changement de --primary (dashboard.css).
       barGradient = ctx.createLinearGradient(0, h, 0, 0);
-      barGradient.addColorStop(0, '#6366f1');
-      barGradient.addColorStop(1, '#06b6d4');
+      barGradient.addColorStop(0, '#ff8a3d');
+      barGradient.addColorStop(1, '#f0b429');
     }
   }
 

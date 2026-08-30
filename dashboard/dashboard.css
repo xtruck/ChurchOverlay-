@@ -3,12 +3,15 @@
    d'un <style> inline vers ce fichier, chargé via <link rel="stylesheet">. */
 
 :root {
-  /* --- Fond : nuit de sanctuaire, verrière de nuit -------------- */
-  --bg-base: #0a0e1c;
-  --bg-surface: rgba(22, 27, 46, 0.55);
-  --bg-card: rgba(255, 255, 255, 0.055);
-  --bg-card-hover: rgba(255, 255, 255, 0.09);
-  --bg-input: rgba(8, 11, 22, 0.55);
+  /* --- AJOUT (redesign — direction "console de diffusion") : fond
+     neutre quasi-noir plutôt que la teinte bleu nuit d'origine — cohérent
+     avec le nouveau --primary orange (plus de sens à teinter le fond de
+     bleu quand l'accent n'est plus bleu-violet). ------------------- */
+  --bg-base: #0b0c10;
+  --bg-surface: rgba(20, 22, 28, 0.55);
+  --bg-card: rgba(255, 255, 255, 0.045);
+  --bg-card-hover: rgba(255, 255, 255, 0.08);
+  --bg-input: rgba(6, 7, 10, 0.55);
 
   --border-subtle: rgba(255, 255, 255, 0.1);
   --border-light: rgba(255, 255, 255, 0.22);
@@ -33,7 +36,11 @@
              dérivés par rapport aux valeurs choisies à la main
              précédemment (quelques % près) pour le thème par défaut —
              accepté, confirmé par capture d'écran avant/après. */
-  --primary: #7c8cf5;
+  /* AJOUT (redesign — direction "console de diffusion") : accent orange
+     signal (façon régie broadcast) plutôt que le violet-bleu d'origine —
+     seule valeur à changer ici, tout le reste du fichier suit via
+     color-mix() (voir commentaire au-dessus sur dashboard-branding.js). */
+  --primary: #ff8a3d;
   --primary-hover: color-mix(in srgb, var(--primary) 85%, black);
   --primary-glow: color-mix(in srgb, var(--primary) 38%, transparent);
 
@@ -47,9 +54,14 @@
              utilisait déjà var(--accent-amber, #d9a441) avec un repli
              ambré : l'intention d'une couleur distincte existait déjà,
              juste jamais branchée. Restaurée ici. */
-  --accent-amber: #f5a623;
-  --accent-amber-bg: rgba(245, 166, 35, 0.15);
-  --accent-rose: #f4607a;
+  /* AJOUT (redesign) : --primary étant désormais lui-même orange, l'ancien
+     amber (#f5a623) devenait visuellement confondable avec l'accent
+     principal — exactement le flou que le correctif ci-dessus visait à
+     éviter pour un badge "warning". Décalé vers un jaune-or plus franc
+     pour rester net à côté du nouvel orange. */
+  --accent-amber: #f0b429;
+  --accent-amber-bg: rgba(240, 180, 41, 0.15);
+  --accent-rose: #ff5a5a;
 
   --gold: var(--primary);
   --gold-soft: color-mix(in srgb, var(--primary) 20%, transparent);
@@ -60,9 +72,9 @@
   --sapphire: var(--primary);
   --sapphire-soft: color-mix(in srgb, var(--primary) 16%, transparent);
 
-  --text-main: #f6f3ec;
-  --text-muted: #a8adc9;
-  --text-dim: #6c7292;
+  --text-main: #e8eaf0;
+  --text-muted: #9aa0b0;
+  --text-dim: #6b7280;
 
   --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.35);
   --shadow-md: 0 16px 40px rgba(0, 0, 0, 0.5);
@@ -91,12 +103,12 @@
   --primary-700: color-mix(in srgb, var(--primary) 68%, black);
   --accent-emerald-600: #1fb886;
   --accent-rose-600: #e14264;
-  --accent-amber-600: #d98d12;
+  --accent-amber-600: #c99416;
 
   /* Profondeur : un niveau au-dessus de --bg-surface, pour les éléments
      qui doivent se détacher des cartes (popovers, dropdowns) — introuvable
      ailleurs dans ce fichier aujourd'hui. */
-  --bg-elevated: #141a30;
+  --bg-elevated: #171922;
 
   /* Échelle typographique — les tailles existantes restent en dur tant
      qu'un lot ne les migre pas explicitement (pas de réécriture en masse). */
@@ -159,6 +171,15 @@
   box-sizing: border-box;
 }
 
+/* AJOUT (redesign) : sans ceci, les cases à cocher natives gardent le bleu
+   par défaut du navigateur (accent-color non hérité de --primary) — seul
+   .media-poster-toggle avait déjà sa propre règle ambrée, plus spécifique,
+   donc non affectée ici. */
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--primary);
+}
+
 /* CORRECTIF (redesign visuel) : fusionné avec le second bloc
    prefers-reduced-motion qui existait plus bas dans ce fichier (mêmes
    règles éclatées en deux endroits) — un seul bloc désormais, la garde
@@ -205,7 +226,7 @@ body.animations-paused .speech-trigger-btn.active {
 
 body {
   font-family:
-    'Plus Jakarta Sans',
+    'IBM Plex Sans',
     -apple-system,
     BlinkMacSystemFont,
     sans-serif;
@@ -216,8 +237,8 @@ body {
   overflow-x: hidden;
   position: relative;
   background-image:
-    radial-gradient(circle at 12% 8%, rgba(124, 140, 245, 0.16) 0%, transparent 42%),
-    linear-gradient(180deg, #0a0e1c 0%, #0d1226 55%, #0a0e1c 100%);
+    radial-gradient(circle at 12% 8%, rgba(255, 138, 61, 0.1) 0%, transparent 42%),
+    linear-gradient(180deg, #0b0c10 0%, #101218 55%, #0b0c10 100%);
 }
 
 .dashboard {
@@ -230,9 +251,9 @@ body {
 
 /* Sidebar Styling */
 .sidebar {
-  background: rgba(13, 17, 32, 0.55);
-  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  background: rgba(11, 12, 16, 0.55);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
   border-right: 1px solid var(--border-subtle);
   box-shadow: 1px 0 0 rgba(255, 255, 255, 0.04) inset;
   padding: 1.75rem 1.25rem;
@@ -268,6 +289,7 @@ body {
     rgba(255, 255, 255, 0.14),
     rgba(255, 255, 255, 0.03) 60%
   );
+  -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   border: 1px solid var(--gold-soft);
   display: flex;
@@ -349,9 +371,9 @@ body {
 }
 
 .nav-item.active {
-  background: linear-gradient(90deg, rgba(124, 140, 245, 0.18) 0%, rgba(220, 180, 106, 0.05) 100%);
+  background: linear-gradient(90deg, rgba(255, 138, 61, 0.18) 0%, rgba(220, 180, 106, 0.05) 100%);
   color: #ffffff;
-  border-color: rgba(124, 140, 245, 0.32);
+  border-color: rgba(255, 138, 61, 0.32);
   font-weight: 600;
 }
 
@@ -398,6 +420,7 @@ body {
   border-radius: var(--radius-sm);
   color: var(--accent-emerald);
   font-weight: 600;
+  -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   transition:
     background var(--ease-silk) 0.3s,
@@ -497,7 +520,7 @@ body {
 }
 
 .header-title-group h1 {
-  font-family: 'Cormorant Garamond', 'Plus Jakarta Sans', serif;
+  font-family: 'Cormorant Garamond', 'IBM Plex Sans', serif;
   font-size: 2.1rem;
   font-weight: 700;
   letter-spacing: -0.01em;
@@ -522,8 +545,8 @@ body {
 /* Custom Input Bar */
 .search-detector-bar {
   background: var(--bg-card);
-  backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   padding: 0.5rem 0.5rem 0.5rem 1.25rem;
@@ -570,6 +593,7 @@ body {
 
 .chip-btn {
   background: rgba(255, 255, 255, 0.045);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border: 1px solid var(--border-subtle);
   color: var(--text-muted);
@@ -604,6 +628,7 @@ body {
 
 .mood-btn {
   background: rgba(255, 255, 255, 0.045);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border: 1px solid var(--border-subtle);
   color: var(--text-muted);
@@ -1374,8 +1399,8 @@ body {
 /* Panneau de verre — la brique de base de tout le tableau de bord */
 .card {
   background: var(--bg-card);
-  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   padding: 1.5rem;
@@ -1465,9 +1490,9 @@ body {
     var(--gold-soft) 75%,
     var(--garnet-soft) 100%
   );
-  backdrop-filter: blur(var(--glass-blur)) saturate(170%);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(170%);
-  border: 1px solid rgba(124, 140, 245, 0.28);
+  backdrop-filter: blur(var(--glass-blur)) saturate(170%);
+  border: 1px solid rgba(255, 138, 61, 0.28);
   box-shadow:
     var(--shadow-glow),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
@@ -1591,7 +1616,7 @@ body {
 }
 
 .verse-ref-large {
-  font-family: 'Cormorant Garamond', 'Plus Jakarta Sans', serif;
+  font-family: 'Cormorant Garamond', 'IBM Plex Sans', serif;
   font-size: 1.9rem;
   font-weight: 700;
   color: var(--gold);
@@ -1602,7 +1627,7 @@ body {
 }
 
 .verse-body-large {
-  font-family: 'Cormorant Garamond', 'Plus Jakarta Sans', serif;
+  font-family: 'Cormorant Garamond', 'IBM Plex Sans', serif;
   font-size: 1.4rem;
   line-height: 1.65;
   color: var(--text-main);
@@ -1620,7 +1645,7 @@ body {
            défaut ; affichée uniquement par displayVerse() si un texte
            anglais est disponible. */
 .verse-body-bilingual {
-  font-family: 'Cormorant Garamond', 'Plus Jakarta Sans', serif;
+  font-family: 'Cormorant Garamond', 'IBM Plex Sans', serif;
   font-size: 1.15rem;
   line-height: 1.6;
   color: var(--text-dim);
@@ -1672,16 +1697,17 @@ body {
 .btn-primary {
   background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
   color: #ffffff;
-  box-shadow: 0 4px 14px rgba(124, 140, 245, 0.35);
+  box-shadow: 0 4px 14px rgba(255, 138, 61, 0.35);
 }
 
 .btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(124, 140, 245, 0.5);
+  box-shadow: 0 6px 18px rgba(255, 138, 61, 0.5);
 }
 
 .btn-secondary {
   background: rgba(255, 255, 255, 0.06);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border-color: var(--border-subtle);
   color: var(--text-main);
@@ -1753,6 +1779,7 @@ body {
 
 .transcript-item {
   background: rgba(255, 255, 255, 0.035);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
@@ -1805,7 +1832,7 @@ body {
   color: var(--accent-rose);
 }
 .activity-icon.info {
-  background: rgba(124, 140, 245, 0.15);
+  background: rgba(255, 138, 61, 0.15);
   color: var(--primary);
 }
 .activity-icon.warning {
@@ -1830,6 +1857,7 @@ body {
 /* Audio Visualizer */
 .audio-visualizer-container {
   background: var(--bg-surface);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
   backdrop-filter: blur(var(--glass-blur));
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
@@ -1849,6 +1877,7 @@ body {
 /* Overlay Frame Container */
 .overlay-preview-card {
   background: var(--bg-card);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
   backdrop-filter: blur(var(--glass-blur));
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
@@ -1897,7 +1926,7 @@ body {
   background: var(--primary);
   border-color: var(--primary);
   color: #ffffff;
-  box-shadow: 0 2px 12px rgba(124, 140, 245, 0.35);
+  box-shadow: 0 2px 12px rgba(255, 138, 61, 0.35);
 }
 
 /* Stat rows */
@@ -2044,7 +2073,7 @@ body {
            .activity-icon.info (--primary), qui porte déjà ce sens
            "informatif neutre" ailleurs dans l'app. */
 .status-badge.ai {
-  background: rgba(124, 140, 245, 0.15);
+  background: rgba(255, 138, 61, 0.15);
   color: var(--primary);
 }
 
@@ -2082,8 +2111,8 @@ body {
 .toast {
   pointer-events: auto;
   background: rgba(22, 27, 46, 0.7);
-  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   padding: 0.85rem 1.25rem;
@@ -2151,9 +2180,9 @@ body {
   bottom: 0;
   z-index: 60;
   padding: var(--space-1) 0;
-  background: rgba(13, 17, 32, 0.85);
-  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  background: rgba(11, 12, 16, 0.85);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
   border-top: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-e2);
 }
@@ -2220,9 +2249,10 @@ body {
   display: flex;
   align-items: center;
   gap: 0.85rem;
-  background: rgba(124, 140, 245, 0.1);
+  background: rgba(255, 138, 61, 0.1);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
   backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid rgba(124, 140, 245, 0.35);
+  border: 1px solid rgba(255, 138, 61, 0.35);
   border-radius: var(--radius-md);
   padding: 0.9rem 1.1rem;
   margin-bottom: 1rem;
@@ -2322,14 +2352,14 @@ body {
 }
 
 #apiSettingsCard.needs-setup {
-  border-color: rgba(124, 140, 245, 0.4);
-  box-shadow: 0 0 0 1px rgba(124, 140, 245, 0.18);
+  border-color: rgba(255, 138, 61, 0.4);
+  box-shadow: 0 0 0 1px rgba(255, 138, 61, 0.18);
 }
 
 /* Bannière d'alerte pipeline (voir dashboard.js) */
 #pipelineAlertBanner {
-  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
 }
 
 /* Entrée orchestrée au chargement — la lumière "trouve sa place"
@@ -2462,7 +2492,7 @@ body {
   max-width: 320px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   z-index: 10000;
-  border: 1px solid #3b82f6;
+  border: 1px solid var(--primary);
   pointer-events: none;
 }
 .training-guide-bar {
@@ -2471,7 +2501,7 @@ body {
   left: 50%;
   transform: translateX(-50%);
   background: #1e293b;
-  border: 1px solid #3b82f6;
+  border: 1px solid var(--primary);
   border-radius: 12px;
   padding: 0.75rem 1rem;
   display: flex;
@@ -2491,7 +2521,7 @@ body {
 .training-guide-step {
   font-weight: 700;
   font-size: 0.85rem;
-  color: #3b82f6;
+  color: var(--primary);
 }
 .training-guide-text {
   font-size: 0.8rem;
@@ -2649,7 +2679,13 @@ body {
 
   --pp-border-subtle: #202330;
   --pp-border-medium: #2d3142;
-  --pp-border-active: #3b82f6;
+  /* AJOUT (redesign — accent unique orange) : bleu d'origine remplacé pour
+     rester cohérent avec --primary (dashboard.css :root, plus haut) — même
+     changement, appliqué séparément ici car Studio Pro a son propre jeu de
+     tokens --pp-*, pas dérivé de --primary. Noms --pp-border-active/
+     --pp-blue-accent conservés tels quels (juste la valeur change) pour ne
+     pas devoir retrouver tous leurs usages. */
+  --pp-border-active: #ff8a3d;
   --pp-border-live: #ef4444;
 
   --pp-text-main: #f1f3f9;
@@ -2657,7 +2693,7 @@ body {
   --pp-text-dim: #54596c;
 
   /* Restrained Professional Palette */
-  --pp-blue-accent: #3b82f6;
+  --pp-blue-accent: #ff8a3d;
   --pp-live-red: #ef4444;
   --pp-green-ok: #10b981;
   --pp-gold-subtle: #d97706;
