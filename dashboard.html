@@ -247,39 +247,39 @@
              ============================================================================ -->
         <section id="propresenter-live" class="section" style="display: block; padding: 0; margin: 0; max-width: 100%;">
           <div class="pp-studio-layout">
-            <!-- 1. Top Master Control Bar -->
+            <!-- 1. Top Master Control Bar (Professional Minimalist) -->
             <div class="pp-top-bar">
               <div class="pp-brand-group">
                 <div class="pp-brand-logo">✝</div>
                 <div>
-                  <div class="pp-brand-name">ChurchOverlay <span style="font-size: 11px; color: var(--pp-cyan-active); font-weight: 800;">PRO STUDIO</span></div>
-                  <div style="font-size: 9px; color: var(--pp-text-muted);">ProPresenter 7 Broadcast Engine</div>
+                  <div class="pp-brand-name">ChurchOverlay <span style="font-size: 11px; color: var(--pp-blue-accent); font-weight: 700;">STUDIO</span></div>
+                  <div style="font-size: 9px; color: var(--pp-text-dim);">Broadcast Presentation Engine</div>
                 </div>
               </div>
 
-              <!-- Master Clear Buttons (F1 - F4) -->
+              <!-- Master Clear Controls (F1 - F4) -->
               <div class="pp-clear-cluster">
                 <button class="pp-clear-btn pp-clear-all" onclick="window.ppClearAll()" title="Masquer tout l'affichage (F1 ou Échap)">
-                  <span>CLEAR ALL</span>
+                  <span>Clear All</span>
                   <span class="pp-keycap">F1</span>
                 </button>
-                <button class="pp-clear-btn pp-clear-slide" onclick="window.ppClearSlide()" title="Masquer le texte / verset actuel (F2)">
-                  <span>CLEAR SLIDE</span>
+                <button class="pp-clear-btn" onclick="window.ppClearSlide()" title="Masquer le texte / verset actuel (F2)">
+                  <span>Clear Slide</span>
                   <span class="pp-keycap">F2</span>
                 </button>
-                <button class="pp-clear-btn pp-clear-media" onclick="window.ppClearMedia()" title="Masquer le média d'arrière-plan (F3)">
-                  <span>CLEAR MEDIA</span>
+                <button class="pp-clear-btn" onclick="window.ppClearMedia()" title="Masquer le média d'arrière-plan (F3)">
+                  <span>Clear Media</span>
                   <span class="pp-keycap">F3</span>
                 </button>
-                <button class="pp-clear-btn pp-clear-props" onclick="window.ppClearProps()" title="Masquer l'habillage logo/scène (F4)">
-                  <span>CLEAR PROPS</span>
+                <button class="pp-clear-btn" onclick="window.ppClearProps()" title="Masquer l'habillage / scène (F4)">
+                  <span>Clear Props</span>
                   <span class="pp-keycap">F4</span>
                 </button>
               </div>
 
               <!-- Audio VU Meter & Microphone Control -->
               <div class="pp-audio-strip">
-                <button class="btn btn-secondary" onclick="toggleRealMicCapture()" id="ppMicBtn" style="height: 32px; padding: 0 10px; font-size: 11px; font-weight: 700;">
+                <button class="btn btn-secondary" onclick="toggleRealMicCapture()" id="ppMicBtn" style="height: 28px; padding: 0 8px; font-size: 11px; font-weight: 600;">
                   🎤 Micro
                 </button>
                 <div class="pp-vu-track" title="Vumètre audio d'entrée micro">
@@ -288,15 +288,17 @@
                 <span style="font-size: 10px; font-family: var(--pp-font-mono); color: var(--pp-text-muted);" id="ppVuStatusText">OK</span>
               </div>
 
-              <!-- Live Beacon & Clocks -->
+              <!-- AI Copilot Status, OBS Link & Clock -->
               <div style="display: flex; align-items: center; gap: 10px;">
-                <div class="live-status-pill status" style="padding: 4px 10px; font-size: 11px; font-weight: 700;">
-                  <div class="status-dot"></div>
-                  <span>OBS DIRECT</span>
+                <div style="display: flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 4px; background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); font-size: 10px; font-weight: 600; color: #93c5fd;">
+                  <span>🤖 IA Copilot</span>
+                </div>
+                <div class="pp-obs-pill">
+                  <span>● OBS DIRECT</span>
                 </div>
                 <div style="display: flex; flex-direction: column; align-items: flex-end;">
-                  <span style="font-family: var(--pp-font-mono); font-size: 13px; font-weight: 800; color: #fff;" id="ppStudioClock">00:00:00</span>
-                  <span style="font-size: 9px; color: var(--pp-cyan-active); font-family: var(--pp-font-mono);" id="ppStudioTimer">00:00:00</span>
+                  <span class="pp-clock-text" id="ppStudioClock">00:00:00</span>
+                  <span style="font-size: 9px; color: var(--pp-text-dim); font-family: var(--pp-font-mono);" id="ppStudioTimer">00:00:00</span>
                 </div>
               </div>
             </div>
@@ -304,21 +306,21 @@
             <!-- 2. Three-Pane Studio Workspace -->
             <div class="pp-studio-grid">
               
-              <!-- LEFT PANE: Service Flow, Scriptures, Media & Songs -->
+              <!-- LEFT PANE: Rundown, Scriptures, AI Copilot, Media & Songs -->
               <div class="pp-left-column">
                 <div class="pp-tab-nav">
                   <button class="pp-nav-tab active" data-target="tabRundown">Feuille</button>
                   <button class="pp-nav-tab" data-target="tabScripture">Écritures</button>
+                  <button class="pp-nav-tab" data-target="tabAiCopilot">🤖 IA Copilot</button>
                   <button class="pp-nav-tab" data-target="tabMedia">Médias</button>
                   <button class="pp-nav-tab" data-target="tabSongs">Chants</button>
-                  <button class="pp-nav-tab" data-target="tabCameras">Caméras</button>
                 </div>
 
                 <!-- Tab 1: Service Rundown / Cue List -->
                 <div class="pp-tab-pane active" id="tabRundown">
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                    <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--pp-text-muted);">Feuille de Culte</span>
-                    <button class="btn btn-secondary" onclick="window.nextRundownCue ? window.nextRundownCue() : null" style="font-size: 10px; padding: 2px 8px; font-weight: 700;">
+                    <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--pp-text-muted);">Feuille de Culte</span>
+                    <button class="btn btn-secondary" onclick="window.nextRundownCue ? window.nextRundownCue() : null" style="font-size: 10px; padding: 2px 8px; font-weight: 600;">
                       ▶ Suivant (Espace)
                     </button>
                   </div>
@@ -332,31 +334,31 @@
                         <span class="pp-cue-label">📖 Jean 3:16 (Verset Clé)</span>
                         <span class="pp-cue-meta">Prédication · LSG 1910</span>
                       </div>
-                      <span class="pp-cue-action-icon">▶</span>
+                      <span style="font-size: 11px; color: var(--pp-blue-accent);">▶</span>
                     </div>
                     <div class="pp-cue-item">
                       <div class="pp-cue-info">
                         <span class="pp-cue-label">🎵 Louange : Saint, Saint, Saint</span>
                         <span class="pp-cue-meta">Chant 1 · 4 Sections</span>
                       </div>
-                      <span class="pp-cue-action-icon">▶</span>
+                      <span style="font-size: 11px; color: var(--pp-text-dim);">▶</span>
                     </div>
                     <div class="pp-cue-item">
                       <div class="pp-cue-info">
                         <span class="pp-cue-label">📖 Psaume 23:1-6</span>
                         <span class="pp-cue-meta">Lecture d'ouverture</span>
                       </div>
-                      <span class="pp-cue-action-icon">▶</span>
+                      <span style="font-size: 11px; color: var(--pp-text-dim);">▶</span>
                     </div>
                   </div>
                 </div>
 
                 <!-- Tab 2: Quick Scripture Keypad -->
                 <div class="pp-tab-pane" id="tabScripture">
-                  <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--pp-text-muted);">Sélecteur Rapide Biblique</span>
+                  <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--pp-text-muted);">Sélecteur Biblique Rapide</span>
                   <div style="display: flex; flex-direction: column; gap: 8px;">
                     <div>
-                      <label style="font-size: 10px; font-weight: 700; color: var(--pp-text-muted);">LIVRE</label>
+                      <label style="font-size: 10px; font-weight: 600; color: var(--pp-text-muted);">LIVRE</label>
                       <select id="ppQuickBook" class="pp-select">
                         <option value="Genèse">Genèse</option>
                         <option value="Exode">Exode</option>
@@ -379,54 +381,86 @@
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                       <div>
-                        <label style="font-size: 10px; font-weight: 700; color: var(--pp-text-muted);">CHAPITRE</label>
+                        <label style="font-size: 10px; font-weight: 600; color: var(--pp-text-muted);">CHAPITRE</label>
                         <input type="number" id="ppQuickChapter" class="pp-input" value="3" min="1" max="150" />
                       </div>
                       <div>
-                        <label style="font-size: 10px; font-weight: 700; color: var(--pp-text-muted);">VERSET</label>
+                        <label style="font-size: 10px; font-weight: 600; color: var(--pp-text-muted);">VERSET</label>
                         <input type="number" id="ppQuickVerse" class="pp-input" value="16" min="1" max="176" />
                       </div>
                     </div>
                     <div>
-                      <label style="font-size: 10px; font-weight: 700; color: var(--pp-text-muted);">LANGUE / TRADUCTION</label>
+                      <label style="font-size: 10px; font-weight: 600; color: var(--pp-text-muted);">TRADUCTION</label>
                       <select id="ppQuickLang" class="pp-select">
                         <option value="fr" selected>Français (Louis Segond 1910)</option>
                         <option value="en">Anglais (KJV)</option>
                         <option value="both">Bilingue (FR + EN)</option>
                       </select>
                     </div>
-                    <button class="pp-btn-fire-scripture" onclick="window.fireQuickScripture()">
-                      🔥 ENVOYER LE VERSET
+                    <button class="btn btn-primary" onclick="window.fireQuickScripture()" style="height: 34px; font-size: 11px; font-weight: 600;">
+                      Diffuser le Verset
                     </button>
                   </div>
                 </div>
 
-                <!-- Tab 3: Media Library -->
-                <div class="pp-tab-pane" id="tabMedia">
-                  <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--pp-text-muted);">Médiathèque Vidéo & Arrière-plans</span>
-                  <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;" id="ppMediaThumbnailGrid">
-                    <div class="pp-media-thumb" onclick="if(window.triggerMediaById) window.triggerMediaById('bg-gold')">
-                      <div style="background: linear-gradient(135deg, #4a3b00 0%, #1a1200 100%); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 20px;">✨</div>
-                      <div class="pp-media-thumb-label">Gold Ambient</div>
+                <!-- Tab 3: AI Copilot & Semantic Search -->
+                <div class="pp-tab-pane" id="tabAiCopilot">
+                  <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--pp-text-muted);">Recherche Biblique par Sens (IA)</span>
+                  <div style="display: flex; gap: 4px;">
+                    <input type="text" id="ppAiSearchInput" class="pp-input" placeholder="Ex: marcher sur l'eau, paix dans l'épreuve..." style="height: 30px; font-size: 11px;" onkeydown="if(event.key==='Enter') window.executeAiSemanticSearch();" />
+                    <button class="btn btn-secondary" onclick="window.executeAiSemanticSearch()" style="height: 30px; padding: 0 10px; font-size: 11px;">🔍</button>
+                  </div>
+
+                  <!-- Quick Semantic Topic Chips -->
+                  <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;">
+                    <button class="pp-chip-btn" onclick="window.quickSemanticQuery('paix et réconfort dans l\'épreuve')">🕊️ Paix</button>
+                    <button class="pp-chip-btn" onclick="window.quickSemanticQuery('l\'amour inconditionnel de Dieu')">❤️ Amour</button>
+                    <button class="pp-chip-btn" onclick="window.quickSemanticQuery('la foi et la persévérance')">⚓ Foi</button>
+                    <button class="pp-chip-btn" onclick="window.quickSemanticQuery('toutes choses concourent au bien')">✨ Espérance</button>
+                  </div>
+
+                  <!-- AI Search Results Container -->
+                  <div id="ppAiSearchResults" style="display: flex; flex-direction: column; gap: 6px; margin-top: 8px;">
+                    <div style="font-size: 10px; color: var(--pp-text-dim); text-align: center; padding: 12px;">
+                      Posez une requête en langage naturel pour retrouver instantanément un passage biblique.
                     </div>
-                    <div class="pp-media-thumb" onclick="if(window.triggerMediaById) window.triggerMediaById('bg-blue')">
-                      <div style="background: linear-gradient(135deg, #0d47a1 0%, #001030 100%); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 20px;">🌌</div>
-                      <div class="pp-media-thumb-label">Deep Worship</div>
-                    </div>
-                    <div class="pp-media-thumb" onclick="if(window.triggerMediaById) window.triggerMediaById('bg-purple')">
-                      <div style="background: linear-gradient(135deg, #4a148c 0%, #160030 100%); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 20px;">🍇</div>
-                      <div class="pp-media-thumb-label">Royal Purple</div>
-                    </div>
-                    <div class="pp-media-thumb" onclick="if(window.triggerMediaById) window.triggerMediaById('bg-green')">
-                      <div style="background: linear-gradient(135deg, #1b5e20 0%, #002205 100%); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 20px;">🌿</div>
-                      <div class="pp-media-thumb-label">Grace Green</div>
+                  </div>
+
+                  <div style="border-top: 1px solid var(--pp-border-subtle); padding-top: 10px; margin-top: 6px;">
+                    <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--pp-text-muted);">Outils IA en Direct</span>
+                    <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
+                      <button class="btn btn-secondary" onclick="window.generateKeyPointFromSpeech()" style="font-size: 10px; height: 30px; justify-content: flex-start;">
+                        🧠 Extraire le Point Clé de la Prédication
+                      </button>
+                      <button class="btn btn-secondary" onclick="window.toggleAiAutoTheme()" id="ppAiAutoThemeBtn" style="font-size: 10px; height: 30px; justify-content: flex-start;">
+                        🤖 Activer l'Auto-Thème IA (Ambiance)
+                      </button>
                     </div>
                   </div>
                 </div>
 
-                <!-- Tab 4: Song Library -->
+                <!-- Tab 4: Media Library -->
+                <div class="pp-tab-pane" id="tabMedia">
+                  <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--pp-text-muted);">Médiathèque & Arrière-plans</span>
+                  <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;" id="ppMediaThumbnailGrid">
+                    <div class="pp-cue-item" onclick="if(window.triggerMediaById) window.triggerMediaById('bg-gold')">
+                      <span class="pp-cue-label">✨ Gold Ambient</span>
+                    </div>
+                    <div class="pp-cue-item" onclick="if(window.triggerMediaById) window.triggerMediaById('bg-blue')">
+                      <span class="pp-cue-label">🌌 Deep Worship</span>
+                    </div>
+                    <div class="pp-cue-item" onclick="if(window.triggerMediaById) window.triggerMediaById('bg-purple')">
+                      <span class="pp-cue-label">🍇 Royal Purple</span>
+                    </div>
+                    <div class="pp-cue-item" onclick="if(window.triggerMediaById) window.triggerMediaById('bg-green')">
+                      <span class="pp-cue-label">🌿 Grace Green</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Tab 5: Song Library -->
                 <div class="pp-tab-pane" id="tabSongs">
-                  <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--pp-text-muted);">Bibliothèque de Chants</span>
+                  <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--pp-text-muted);">Bibliothèque de Chants</span>
                   <input type="text" class="pp-input" placeholder="Rechercher un chant..." style="height: 30px; font-size: 11px; margin-bottom: 8px;" />
                   <div style="display: flex; flex-direction: column; gap: 6px;">
                     <div class="pp-cue-item" onclick="showToast('Chant sélectionné', 'info')">
@@ -444,25 +478,14 @@
                   </div>
                 </div>
 
-                <!-- Tab 5: Cameras & Stage -->
-                <div class="pp-tab-pane" id="tabCameras">
-                  <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--pp-text-muted);">Régie Caméras & Scène</span>
-                  <div style="background: #000; border-radius: 6px; padding: 12px; text-align: center; border: 1px solid var(--pp-border-subtle);">
-                    <div style="font-size: 24px; margin-bottom: 4px;">📹</div>
-                    <div style="font-size: 12px; font-weight: 700; color: #fff;">Caméra Smartphone Sans Fil</div>
-                    <div style="font-size: 10px; color: var(--pp-text-muted); margin-top: 4px;">Scannez le QR code sur companion.html</div>
-                  </div>
-                </div>
-
               </div>
 
               <!-- CENTER PANE: Slide Presentation Grid & Live Teleprompter -->
               <div class="pp-center-column">
                 
                 <div class="pp-slide-canvas-header">
-                  <span class="pp-section-title">
-                    <span>🎬 GRILLE DE PRÉSENTATION</span>
-                    <span style="font-size: 10px; color: var(--pp-cyan-active); font-weight: 700; background: rgba(0,229,255,0.1); padding: 2px 6px; border-radius: 4px;">16:9 TILES</span>
+                  <span style="font-size: 12px; font-weight: 700; color: #fff;">
+                    GRILLE DE PRÉSENTATION 16:9
                   </span>
                   <div style="font-size: 11px; color: var(--pp-text-muted); display: flex; align-items: center; gap: 8px;">
                     <span>Raccourcis : <b>Espace</b> (Suivant), <b>←/→</b> (Naviguer)</span>
@@ -476,27 +499,33 @@
                   </div>
                 </div>
 
-                <!-- Reading Mode Navigation Carousel Bar -->
+                <!-- Reading Mode Navigation Bar -->
                 <div class="pp-reading-nav-bar">
                   <div style="display: flex; gap: 6px;">
                     <button class="pp-btn-nav" onclick="if(window.prevChapter) window.prevChapter();">⏮ Chap. Préc.</button>
                     <button class="pp-btn-nav" onclick="if(window.prevReadingVerse) window.prevReadingVerse();">◀ Verset Préc.</button>
                   </div>
-                  <span style="font-size: 11px; font-weight: 700; color: var(--pp-cyan-active);" id="ppReadingNavLabel">Navigation Lecture Pas-à-Pas</span>
+                  <span style="font-size: 11px; font-weight: 600; color: var(--pp-text-muted);" id="ppReadingNavLabel">Navigation Lecture Pas-à-Pas</span>
                   <div style="display: flex; gap: 6px;">
                     <button class="pp-btn-nav" onclick="if(window.nextReadingVerse) window.nextReadingVerse();">Verset Suiv. ▶</button>
                     <button class="pp-btn-nav" onclick="if(window.nextChapter) window.nextChapter();">Chap. Suiv. ⏭</button>
                   </div>
                 </div>
 
+                <!-- AI Smart Cross-References & Suggestions Bar -->
+                <div id="ppAiSuggestionsRow" style="display: none; align-items: center; gap: 8px; padding: 6px 14px; background: #10131c; border-top: 1px solid var(--pp-border-subtle); font-size: 11px;">
+                  <span style="font-weight: 600; color: var(--pp-blue-accent);">🤖 Versets Liés (IA) :</span>
+                  <div id="ppAiSuggestionsChips" style="display: flex; gap: 6px; overflow-x: auto;"></div>
+                </div>
+
                 <!-- Live Speech-to-Text Teleprompter -->
                 <div class="pp-teleprompter-box">
                   <div class="pp-teleprompter-title">
-                    <span>🎙️ TÉLÉPROMPTEUR EN DIRECT (IA TRANSCRIPTION &lt; 2S)</span>
-                    <span style="font-size: 9px; color: var(--pp-green-ok);">● FLUX CONTINU</span>
+                    <span>🎙️ Transcription en direct (IA &lt; 2s)</span>
+                    <span style="font-size: 9px; color: var(--pp-green-ok);">● Flux continu</span>
                   </div>
                   <div class="pp-teleprompter-text" id="ppTeleprompterFeed">
-                    <span>En attente de la parole... Activez le micro pour afficher la transcription en temps réel avec surbrillance automatique des versets.</span>
+                    <span style="color: var(--pp-text-dim);">En attente de la parole... Activez le micro pour afficher la transcription en temps réel avec détection automatique des versets.</span>
                   </div>
                 </div>
 
@@ -506,10 +535,10 @@
               <div class="pp-right-column">
                 
                 <!-- Live Program Output (PGM) Monitor -->
-                <div class="pp-monitor-card">
-                  <div class="pp-monitor-header">
-                    <span class="pp-monitor-title">PROGRAMME (PGM) DIRECT</span>
-                    <span style="font-size: 9px; font-weight: 800; color: var(--pp-live-red); font-family: var(--pp-font-mono);">1080p 60FPS</span>
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 11px; font-weight: 700; color: var(--pp-text-muted);">PROGRAMME (PGM)</span>
+                    <span style="font-size: 9px; color: var(--pp-text-dim); font-family: var(--pp-font-mono);">1080p 60FPS</span>
                   </div>
                   <div class="pp-pgm-monitor" id="ppPgmMonitor">
                     <div class="pp-live-onair-badge" id="ppLiveOnAirBadge">● ON AIR</div>
@@ -521,10 +550,10 @@
                 </div>
 
                 <!-- Stage Display (Confidence Monitor) Preview -->
-                <div class="pp-monitor-card">
-                  <div class="pp-monitor-header">
-                    <span class="pp-monitor-title">ÉCRAN SCÈNE (CONFIDENCE)</span>
-                    <span style="font-size: 9px; color: var(--pp-gold-scripture); font-family: var(--pp-font-mono);">PASTEUR / LOUANGE</span>
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 11px; font-weight: 700; color: var(--pp-text-muted);">ÉCRAN SCÈNE (CONFIDENCE)</span>
+                    <span style="font-size: 9px; color: var(--pp-text-dim); font-family: var(--pp-font-mono);">PASTEUR / LOUANGE</span>
                   </div>
                   <div class="pp-stage-preview-box" id="ppStagePreviewBox">
                     <div class="pp-stage-ref-title" id="ppStageRef">ÉCRAN SCÈNE</div>
@@ -532,24 +561,24 @@
                   </div>
                 </div>
 
-                <!-- Theme Mood Presets Palette -->
+                <!-- Theme Mood Presets Palette (Restrained Professional) -->
                 <div style="display: flex; flex-direction: column; gap: 6px;">
-                  <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--pp-text-muted);">Ambiance Visuelle (Mood)</span>
+                  <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--pp-text-muted);">Ambiance Visuelle</span>
                   <div class="pp-mood-palette">
-                    <button class="pp-mood-pill" style="background: #3e2723; color: #ffcc80;" onclick="window.setStudioMood('warm')">Or / Chaud</button>
-                    <button class="pp-mood-pill" style="background: #0d47a1; color: #90caf9;" onclick="window.setStudioMood('cool')">Bleu / Nuit</button>
-                    <button class="pp-mood-pill" style="background: #1b5e20; color: #a5d6a7;" onclick="window.setStudioMood('celebration')">Célébration</button>
-                    <button class="pp-mood-pill" style="background: #4a148c; color: #e1bee7;" onclick="window.setStudioMood('purple')">Pourpre</button>
-                    <button class="pp-mood-pill" style="background: #121212; color: #e0e0e0;" onclick="window.setStudioMood('dark')">Minimal Noir</button>
-                    <button class="pp-mood-pill" style="background: #4a3b00; color: #fff59d;" onclick="window.setStudioMood('regal')">Rayonnant</button>
+                    <button class="pp-mood-pill" onclick="window.setStudioMood('dark')">Minimal Sombre</button>
+                    <button class="pp-mood-pill" onclick="window.setStudioMood('warm')">Or Solennel</button>
+                    <button class="pp-mood-pill" onclick="window.setStudioMood('cool')">Bleu Nuit</button>
+                    <button class="pp-mood-pill" onclick="window.setStudioMood('celebration')">Célébration</button>
+                    <button class="pp-mood-pill" onclick="window.setStudioMood('purple')">Pourpre Royal</button>
+                    <button class="pp-mood-pill" onclick="window.setStudioMood('regal')">Rayonnant</button>
                   </div>
                 </div>
 
                 <!-- Transition Speed Slider -->
-                <div style="display: flex; flex-direction: column; gap: 6px; background: var(--pp-bg-card); padding: 10px; border-radius: 8px; border: 1px solid var(--pp-border-subtle);">
+                <div style="display: flex; flex-direction: column; gap: 6px; background: var(--pp-bg-card); padding: 10px; border-radius: 6px; border: 1px solid var(--pp-border-subtle);">
                   <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-size: 11px; font-weight: 700; color: var(--pp-text-muted);">VITESSE TRANSITION</span>
-                    <span style="font-size: 10px; font-family: var(--pp-font-mono); color: var(--pp-cyan-active);" id="ppTransitionVal">0.5s</span>
+                    <span style="font-size: 11px; font-weight: 600; color: var(--pp-text-muted);">VITESSE TRANSITION</span>
+                    <span style="font-size: 10px; font-family: var(--pp-font-mono); color: #fff;" id="ppTransitionVal">0.5s</span>
                   </div>
                   <input type="range" min="100" max="2000" value="500" class="pp-slider" oninput="document.getElementById('ppTransitionVal').textContent = (this.value / 1000).toFixed(1) + 's'" />
                 </div>
@@ -558,6 +587,7 @@
 
             </div>
           </div>
+
         </section>
 
         <!-- Overview Section (Direct Classique) -->
@@ -4097,7 +4127,22 @@ Aucune exécution agent.</pre>
          visible uniquement sous 1024px. -->
     <nav class="bottom-tab-bar" aria-label="Navigation principale">
       <ul class="nav-list">
-        <li class="nav-item active" data-sections="overview,transcript,controls">
+        <li class="nav-item active" data-sections="propresenter-live">
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+            <line x1="8" y1="21" x2="16" y2="21" />
+            <line x1="12" y1="17" x2="12" y2="21" />
+          </svg>
+          <span>Studio</span>
+        </li>
+        <li class="nav-item" data-sections="overview,transcript,controls">
           <svg
             width="20"
             height="20"
@@ -4112,6 +4157,7 @@ Aucune exécution agent.</pre>
           <span>Direct</span>
         </li>
         <li class="nav-item" data-sections="analysis,studio,media-wall">
+
           <svg
             width="20"
             height="20"

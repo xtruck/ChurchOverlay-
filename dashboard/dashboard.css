@@ -2569,35 +2569,41 @@ body {
    ChurchOverlay — ProPresenter 7 Broadcast Studio Layout & Components
    ============================================================================ */
 
+/* ============================================================================
+   ChurchOverlay — Minimalist Professional Broadcast Studio Interface
+   (Inspired by ProPresenter 7, DaVinci Resolve, and Apple Pro Apps)
+   ============================================================================ */
+
 :root {
-  --pp-bg-root: #090a0e;
-  --pp-bg-surface: #10121a;
-  --pp-bg-card: #161824;
-  --pp-bg-card-hover: #202434;
-  --pp-bg-card-active: #132234;
-  --pp-bg-elevated: #24293a;
-  --pp-bg-input: #0c0e14;
+  --pp-bg-root: #0b0c10;
+  --pp-bg-surface: #12141a;
+  --pp-bg-card: #171922;
+  --pp-bg-card-hover: #1f222e;
+  --pp-bg-card-active: #182335;
+  --pp-bg-elevated: #222534;
+  --pp-bg-input: #0e0f14;
 
-  --pp-border-subtle: #1e2230;
-  --pp-border-medium: #2c3246;
-  --pp-border-active: #00e5ff;
-  --pp-border-live: #ff1744;
+  --pp-border-subtle: #202330;
+  --pp-border-medium: #2d3142;
+  --pp-border-active: #3b82f6;
+  --pp-border-live: #ef4444;
 
-  --pp-text-main: #f3f5fb;
-  --pp-text-muted: #8e96ad;
-  --pp-text-dim: #5c6278;
+  --pp-text-main: #f1f3f9;
+  --pp-text-muted: #8b92a6;
+  --pp-text-dim: #54596c;
 
-  --pp-live-red: #ff1744;
-  --pp-live-red-glow: rgba(255, 23, 68, 0.45);
-  --pp-cyan-active: #00e5ff;
-  --pp-cyan-glow: rgba(0, 229, 255, 0.35);
-  --pp-green-ok: #00e676;
-  --pp-green-glow: rgba(0, 230, 118, 0.35);
-  --pp-gold-scripture: #ffd600;
-  --pp-orange-clear: #ff9100;
+  /* Restrained Professional Palette */
+  --pp-blue-accent: #3b82f6;
+  --pp-live-red: #ef4444;
+  --pp-green-ok: #10b981;
+  --pp-gold-subtle: #d97706;
+
+  --pp-radius-sm: 4px;
+  --pp-radius-md: 6px;
+  --pp-radius-lg: 8px;
 }
 
-/* ProPresenter Master Container */
+/* Master Studio Layout */
 .pp-studio-layout {
   display: flex;
   flex-direction: column;
@@ -2606,20 +2612,21 @@ body {
   background: var(--pp-bg-root);
   color: var(--pp-text-main);
   overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
 }
 
-/* Top Master Control Bar */
+/* 1. Top Master Control Bar (Clean, Minimalist) */
 .pp-top-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 60px;
+  height: 52px;
   padding: 0 16px;
-  background: linear-gradient(180deg, #161924 0%, #0e1017 100%);
-  border-bottom: 1px solid var(--pp-border-medium);
+  background: var(--pp-bg-surface);
+  border-bottom: 1px solid var(--pp-border-subtle);
   z-index: 100;
   flex-shrink: 0;
-  gap: 14px;
+  gap: 16px;
 }
 
 .pp-brand-group {
@@ -2630,117 +2637,92 @@ body {
 }
 
 .pp-brand-logo {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #00e5ff 0%, #7c4dff 100%);
+  width: 28px;
+  height: 28px;
+  border-radius: var(--pp-radius-sm);
+  background: #1e2230;
+  border: 1px solid var(--pp-border-medium);
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-weight: 800;
-  box-shadow: 0 0 12px rgba(0, 229, 255, 0.4);
+  font-weight: 700;
+  font-size: 13px;
 }
 
 .pp-brand-name {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
   color: #fff;
   letter-spacing: -0.2px;
 }
 
-/* Master Clear Buttons */
+/* Restrained Master Clear Buttons */
 .pp-clear-cluster {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: rgba(0, 0, 0, 0.4);
-  padding: 4px 6px;
-  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 3px 5px;
+  border-radius: var(--pp-radius-md);
   border: 1px solid var(--pp-border-subtle);
 }
 
 .pp-clear-btn {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  height: 38px;
+  gap: 6px;
+  height: 32px;
   padding: 0 12px;
-  border-radius: 4px;
-  border: 1px solid transparent;
-  font-size: 10px;
-  font-weight: 800;
+  border-radius: var(--pp-radius-sm);
+  border: 1px solid var(--pp-border-subtle);
+  background: #1a1c26;
+  color: var(--pp-text-muted);
+  font-size: 11px;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.2px;
 }
 
-.pp-clear-all {
-  background: rgba(255, 23, 68, 0.2);
-  color: #ff5252;
-  border-color: rgba(255, 23, 68, 0.4);
-}
-.pp-clear-all:hover {
-  background: var(--pp-live-red);
-  color: #fff;
-  box-shadow: 0 0 14px var(--pp-live-red-glow);
-}
-
-.pp-clear-slide {
-  background: rgba(255, 145, 0, 0.18);
-  color: #ffab40;
-  border-color: rgba(255, 145, 0, 0.35);
-}
-.pp-clear-slide:hover {
-  background: var(--pp-orange-clear);
-  color: #000;
-}
-
-.pp-clear-media {
-  background: rgba(255, 214, 0, 0.14);
-  color: #ffd740;
-  border-color: rgba(255, 214, 0, 0.3);
-}
-.pp-clear-media:hover {
-  background: var(--pp-gold-scripture);
-  color: #000;
-}
-
-.pp-clear-props {
-  background: rgba(142, 150, 173, 0.15);
+.pp-clear-btn:hover {
+  background: #252838;
   color: var(--pp-text-main);
-  border-color: var(--pp-border-subtle);
+  border-color: var(--pp-border-medium);
 }
-.pp-clear-props:hover {
-  background: var(--pp-text-muted);
-  color: #000;
+
+.pp-clear-all:hover {
+  background: #3b1820;
+  color: #f87171;
+  border-color: #7f1d1d;
 }
 
 .pp-keycap {
-  font-size: 8px;
+  font-size: 9px;
   font-family: var(--pp-font-mono);
-  opacity: 0.75;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: var(--pp-text-dim);
 }
 
-/* Audio VU Meter & Mic Strip */
+/* Audio VU Meter & Micro Strip */
 .pp-audio-strip {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: #0b0d13;
-  padding: 4px 12px;
-  border-radius: 8px;
+  background: #0e1017;
+  padding: 3px 12px;
+  border-radius: var(--pp-radius-md);
   border: 1px solid var(--pp-border-subtle);
-  min-width: 240px;
+  min-width: 260px;
 }
 
 .pp-vu-track {
   flex: 1;
-  height: 10px;
-  background: #191c28;
-  border-radius: 3px;
+  height: 8px;
+  background: #181a24;
+  border-radius: 2px;
   position: relative;
   overflow: hidden;
 }
@@ -2748,21 +2730,54 @@ body {
 .pp-vu-live-bar {
   height: 100%;
   width: 0%;
-  background: linear-gradient(90deg, #00e676 0%, #00e676 70%, #ffd600 85%, #ff1744 100%);
+  background: linear-gradient(90deg, #10b981 0%, #10b981 70%, #f59e0b 85%, #ef4444 100%);
   transition: width 0.08s ease-out;
+  border-radius: 2px;
+}
+
+/* Live Indicators & Clock */
+.pp-live-beacon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: var(--pp-radius-sm);
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.pp-obs-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--pp-radius-sm);
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.pp-clock-text {
+  font-family: var(--pp-font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
 }
 
 /* 3-Pane Studio Workspace */
 .pp-studio-grid {
   display: grid;
-  grid-template-columns: 280px 1fr 330px;
+  grid-template-columns: 280px 1fr 320px;
   flex: 1;
-  height: calc(100vh - 60px);
+  height: calc(100vh - 52px);
   overflow: hidden;
   background: var(--pp-bg-root);
 }
 
-/* Left Pane: Service Flow & Library */
+/* Left Column: Service Cue Rundown & Library */
 .pp-left-column {
   background: var(--pp-bg-surface);
   border-right: 1px solid var(--pp-border-subtle);
@@ -2775,7 +2790,7 @@ body {
 .pp-tab-nav {
   display: flex;
   align-items: center;
-  background: #0a0c12;
+  background: #0f1016;
   border-bottom: 1px solid var(--pp-border-subtle);
   padding: 0 4px;
   height: 38px;
@@ -2786,22 +2801,21 @@ body {
 .pp-nav-tab {
   padding: 6px 10px;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--pp-text-muted);
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
   cursor: pointer;
   transition: all 0.15s ease;
-  text-transform: uppercase;
 }
 .pp-nav-tab:hover {
   color: var(--pp-text-main);
 }
 .pp-nav-tab.active {
-  color: var(--pp-cyan-active);
-  border-bottom-color: var(--pp-cyan-active);
-  background: rgba(0, 229, 255, 0.06);
+  color: #fff;
+  border-bottom-color: var(--pp-blue-accent);
+  background: rgba(59, 130, 246, 0.08);
 }
 
 .pp-tab-pane {
@@ -2816,7 +2830,45 @@ body {
   gap: 10px;
 }
 
-/* Center Pane: Slide Grid & Teleprompter */
+/* Clean Minimal Cue List */
+.pp-cue-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: var(--pp-radius-sm);
+  background: var(--pp-bg-card);
+  border: 1px solid var(--pp-border-subtle);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.pp-cue-item:hover {
+  background: var(--pp-bg-card-hover);
+  border-color: var(--pp-border-medium);
+}
+.pp-cue-item.active {
+  background: var(--pp-bg-card-active);
+  border-color: var(--pp-blue-accent);
+}
+
+.pp-cue-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pp-cue-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pp-text-main);
+}
+
+.pp-cue-meta {
+  font-size: 10px;
+  color: var(--pp-text-dim);
+}
+
+/* Center Column: 16:9 Presentation Slides & Teleprompter */
 .pp-center-column {
   display: flex;
   flex-direction: column;
@@ -2830,7 +2882,7 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 8px 16px;
-  background: #0f1118;
+  background: #0f1016;
   border-bottom: 1px solid var(--pp-border-subtle);
   flex-shrink: 0;
 }
@@ -2847,60 +2899,94 @@ body {
   gap: 14px;
 }
 
-/* 16:9 Presentation Slide Card */
+/* 16:9 Minimalist Slide Card */
 .pp-presentation-slide {
   aspect-ratio: 16/9;
   background: var(--pp-bg-card);
-  border: 2px solid var(--pp-border-subtle);
-  border-radius: 8px;
-  padding: 10px;
+  border: 1px solid var(--pp-border-subtle);
+  border-radius: var(--pp-radius-md);
+  padding: 12px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   cursor: pointer;
   position: relative;
-  transition: all 0.18s ease;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  transition: all 0.15s ease;
 }
 
 .pp-presentation-slide:hover {
   background: var(--pp-bg-card-hover);
   border-color: var(--pp-border-medium);
-  transform: translateY(-2px);
 }
 
 .pp-presentation-slide.active {
-  border-color: var(--pp-cyan-active);
-  box-shadow: 0 0 16px var(--pp-cyan-glow);
+  border: 1.5px solid var(--pp-blue-accent);
   background: var(--pp-bg-card-active);
 }
 
 .pp-presentation-slide.is-live {
-  border-color: var(--pp-live-red);
-  box-shadow: 0 0 18px var(--pp-live-red-glow);
+  border: 1.5px solid var(--pp-live-red);
 }
 
 .pp-slide-header-ref {
   font-size: 12px;
-  font-weight: 800;
-  color: var(--pp-cyan-active);
+  font-weight: 700;
+  color: #fff;
 }
 
 .pp-slide-content-preview {
   font-size: 11px;
   line-height: 1.4;
-  color: var(--pp-text-main);
+  color: var(--pp-text-muted);
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
-/* Teleprompter Drawer */
+.pp-slide-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 9px;
+  color: var(--pp-text-dim);
+  font-family: var(--pp-font-mono);
+}
+
+/* Reading Navigation Bar */
+.pp-reading-nav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  background: #11131a;
+  border-top: 1px solid var(--pp-border-subtle);
+  border-bottom: 1px solid var(--pp-border-subtle);
+  flex-shrink: 0;
+}
+
+.pp-btn-nav {
+  height: 28px;
+  padding: 0 10px;
+  background: var(--pp-bg-card);
+  border: 1px solid var(--pp-border-subtle);
+  border-radius: var(--pp-radius-sm);
+  color: var(--pp-text-main);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.pp-btn-nav:hover {
+  background: var(--pp-bg-card-hover);
+  border-color: var(--pp-border-medium);
+}
+
+/* Minimalist Teleprompter Drawer */
 .pp-teleprompter-box {
-  height: 140px;
-  background: #08090d;
-  border-top: 1px solid var(--pp-border-medium);
+  height: 135px;
+  background: #0c0d12;
+  border-top: 1px solid var(--pp-border-subtle);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -2911,37 +2997,77 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 6px 14px;
-  background: #0f1118;
+  background: #11131a;
   border-bottom: 1px solid var(--pp-border-subtle);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   color: var(--pp-text-muted);
   text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .pp-teleprompter-text {
   flex: 1;
   overflow-y: auto;
   padding: 8px 14px;
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 12.5px;
+  line-height: 1.55;
   color: var(--pp-text-main);
 }
 
 .pp-scripture-tag {
-  background: rgba(0, 229, 255, 0.2);
-  color: var(--pp-cyan-active);
-  border: 1px solid rgba(0, 229, 255, 0.4);
-  padding: 1px 6px;
+  background: rgba(245, 158, 11, 0.18);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  padding: 2px 7px;
   border-radius: 4px;
   font-weight: 700;
-  font-size: 11px;
-  margin: 0 2px;
-  display: inline-block;
+  font-size: 11.5px;
+  margin: 0 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.2);
+}
+.pp-scripture-tag:hover {
+  background: #f59e0b;
+  color: #000;
+  transform: translateY(-1px);
 }
 
-/* Right Pane: Live Program & Stage Monitor */
+.pp-word-divine {
+  color: #60a5fa;
+  font-weight: 600;
+  background: rgba(59, 130, 246, 0.14);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.pp-word-grace {
+  color: #34d399;
+  font-weight: 600;
+  background: rgba(16, 185, 129, 0.14);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.pp-word-faith {
+  color: #c084fc;
+  font-weight: 600;
+  background: rgba(168, 85, 247, 0.14);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.pp-word-chapter {
+  color: #fb923c;
+  font-weight: 600;
+}
+
+
+/* Right Column: Live Program (PGM) & Stage Confidence */
 .pp-right-column {
   background: var(--pp-bg-surface);
   border-left: 1px solid var(--pp-border-subtle);
@@ -2950,39 +3076,36 @@ body {
   height: 100%;
   overflow-y: auto;
   padding: 12px;
-  gap: 14px;
+  gap: 12px;
 }
 
 .pp-pgm-monitor {
   aspect-ratio: 16/9;
   background: #000;
-  border: 2px solid var(--pp-border-medium);
-  border-radius: 8px;
+  border: 1px solid var(--pp-border-medium);
+  border-radius: var(--pp-radius-md);
   position: relative;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
 }
 
 .pp-pgm-monitor.is-live {
   border-color: var(--pp-live-red);
-  box-shadow: 0 0 20px var(--pp-live-red-glow);
 }
 
 .pp-live-onair-badge {
   position: absolute;
   top: 6px;
   right: 6px;
-  background: var(--pp-live-red);
+  background: #dc2626;
   color: #fff;
   font-size: 9px;
-  font-weight: 800;
+  font-weight: 700;
   padding: 2px 6px;
   border-radius: 3px;
   letter-spacing: 0.5px;
-  box-shadow: 0 0 8px var(--pp-live-red-glow);
   display: none;
 }
 .pp-pgm-monitor.is-live .pp-live-onair-badge {
@@ -2994,23 +3117,22 @@ body {
   bottom: 8px;
   left: 8px;
   right: 8px;
-  background: rgba(16, 18, 26, 0.94);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 6px;
+  background: rgba(14, 15, 20, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--pp-radius-sm);
   padding: 8px 10px;
 }
 
 .pp-pgm-ref-text {
-  font-size: 12px;
-  font-weight: 800;
-  color: var(--pp-cyan-active);
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
 }
 
 .pp-pgm-body-text {
   font-size: 10px;
   line-height: 1.35;
-  color: #fff;
+  color: var(--pp-text-muted);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -3020,9 +3142,9 @@ body {
 /* Stage Display Box */
 .pp-stage-preview-box {
   aspect-ratio: 16/9;
-  background: #050608;
+  background: #06070a;
   border: 1px solid var(--pp-border-subtle);
-  border-radius: 6px;
+  border-radius: var(--pp-radius-md);
   padding: 10px;
   display: flex;
   flex-direction: column;
@@ -3031,18 +3153,18 @@ body {
 }
 
 .pp-stage-ref-title {
-  font-size: 13px;
-  font-weight: 800;
-  color: var(--pp-gold-scripture);
+  font-size: 12px;
+  font-weight: 700;
+  color: #e2e8f0;
 }
 
 .pp-stage-text-preview {
   font-size: 11px;
-  color: #fff;
+  color: #94a3b8;
   line-height: 1.35;
 }
 
-/* Mood Presets Palette */
+/* Restrained Preset Theme Switcher */
 .pp-mood-palette {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -3050,21 +3172,24 @@ body {
 }
 
 .pp-mood-pill {
-  height: 32px;
-  border-radius: 4px;
+  height: 30px;
+  border-radius: var(--pp-radius-sm);
   border: 1px solid var(--pp-border-subtle);
+  background: #1a1c26;
+  color: var(--pp-text-muted);
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  text-transform: uppercase;
   transition: all 0.15s ease;
 }
 .pp-mood-pill:hover, .pp-mood-pill.active {
-  transform: scale(1.02);
-  border-color: #fff;
-  box-shadow: 0 0 10px rgba(255,255,255,0.25);
+  background: #272a38;
+  color: #fff;
+  border-color: var(--pp-border-medium);
 }
+
+
 

@@ -16,7 +16,7 @@ import {
 } from './audio-capture.js';
 import { showToast, addActivity, escapeHtmlDashboard } from '../utils.js';
 import { setStatusStripItem } from './status-strip.js';
-import { addSlideToStudio, updatePgmDisplay, updateStageDisplay } from './propresenter-studio.js';
+import { addSlideToStudio, updatePgmDisplay, updateStageDisplay, updateAiCrossReferences } from './propresenter-studio.js';
 
 export function displayVerse(message) {
   const refEl = document.getElementById('verseReference');
@@ -45,6 +45,11 @@ export function displayVerse(message) {
     langMode: message.langMode,
     provider: message.bibleVersion || 'LSG 1910',
   });
+
+  // Trigger AI Smart Cross-References
+  if (message.reference) {
+    updateAiCrossReferences(message.reference);
+  }
 
 
   if (message.confidence && refEl) {
@@ -104,15 +109,42 @@ export function addTranscript(message) {
     const time = new Date(message.timestamp || Date.now()).toLocaleTimeString([], { hour12: false });
     const p = document.createElement('div');
     p.style.marginBottom = '6px';
-    // Highlight potential Bible citations
-    const highlighted = escapeHtmlDashboard(text).replace(
+    
+    // 1. Highlight potential Bible citations (Gold Amber tags)
+    let highlighted = escapeHtmlDashboard(text).replace(
       /\b(Genèse|Exode|Lévitique|Nombres|Deutéronome|Josué|Juges|Ruth|Samuel|Rois|Chroniques|Esdras|Néhémie|Esther|Job|Psaume[s]?|Proverbe[s]?|Ecclésiaste|Cantique|Ésaïe|Jérémie|Lamentations|Ézéchiel|Daniel|Osée|Joël|Amos|Abdias|Jonas|Michée|Nahum|Habacuc|Sophonie|Aggée|Zacharie|Malachie|Matthieu|Marc|Luc|Jean|Actes|Romains|Corinthiens|Galates|Éphésiens|Philippiens|Colossiens|Thessaloniciens|Timothée|Tite|Philémon|Hébreux|Jacques|Pierre|Jude|Apocalypse)\s+\d+(:\d+)?/gi,
       '<span class="pp-scripture-tag" onclick="if(window.quickLookupVerse) window.quickLookupVerse(\'$&\');">📖 $&</span>'
     );
+
+    // 2. Highlight Divine Names (Blue Cyan)
+    highlighted = highlighted.replace(
+      /\b(Jésus|Christ|Jésus-Christ|Dieu|Seigneur|Père céleste|Saint-Esprit|Yahvé|Éternel|Messie|Sauveur|Agneau de Dieu)\b/gi,
+      '<span class="pp-word-divine">$&</span>'
+    );
+
+    // 3. Highlight Grace, Love & Salvation words (Emerald Green)
+    highlighted = highlighted.replace(
+      /\b(Grâce|Amour|Pardon|Salut|Rédemption|Croix|Sang|Résurrection|Vie éternelle|Réconciliation|Miséricorde)\b/gi,
+      '<span class="pp-word-grace">$&</span>'
+    );
+
+    // 4. Highlight Faith, Prayer & Praise words (Purple Violet)
+    highlighted = highlighted.replace(
+      /\b(Foi|Prière|Louange|Adoration|Alléluia|Amen|Gloire|Bénédiction|Sainteté|Miracle|Espérance|Persévérance)\b/gi,
+      '<span class="pp-word-faith">$&</span>'
+    );
+
+    // 5. Highlight chapters and verses spoken
+    highlighted = highlighted.replace(
+      /\b(chapitre\s+\d+|verset\s+\d+)\b/gi,
+      '<span class="pp-word-chapter">$&</span>'
+    );
+
     p.innerHTML = `<span style="color: var(--pp-text-dim); font-size: 10px; font-family: var(--pp-font-mono); margin-right: 6px;">[${time}]</span> ${highlighted}`;
     ppFeed.insertBefore(p, ppFeed.firstChild);
     while (ppFeed.children.length > 30) ppFeed.removeChild(ppFeed.lastChild);
   }
+
 
   if (!feed) return;
 
