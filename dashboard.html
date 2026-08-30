@@ -771,12 +771,8 @@
           <div class="card" style="margin-bottom: 1.75rem">
             <div class="card-header">
               <span class="card-title">Aperçu en direct</span>
-              <button
-                class="btn btn-secondary"
-                style="padding: 0.4rem 0.8rem; font-size: 0.8rem"
-                id="livePreviewToggleBtn"
-                onclick="toggleLivePreview()"
-              >
+              <button class="btn btn-secondary chip-sm" id="livePreviewToggleBtn"
+                onclick="toggleLivePreview()">
                 👁 Afficher l'aperçu
               </button>
             </div>
@@ -879,11 +875,7 @@
             <div class="card">
               <div class="queue-panel-header">
                 <span class="card-title">File d'attente (<span id="queueCount">0</span>)</span>
-                <button
-                  class="btn btn-secondary"
-                  style="padding: 0.4rem 0.8rem; font-size: 0.8rem"
-                  onclick="sendNextInQueue()"
-                >
+                <button class="btn btn-secondary chip-sm" onclick="sendNextInQueue()">
                   ▶ Suivant
                 </button>
               </div>
@@ -916,19 +908,11 @@
               <div class="queue-panel-header">
                 <span class="card-title">Feuille de route (<span id="rundownCount">0</span>)</span>
                 <div style="display: flex; gap: 0.4rem">
-                  <button
-                    class="btn btn-secondary"
-                    style="padding: 0.4rem 0.8rem; font-size: 0.8rem"
-                    onclick="clearRundown()"
-                    title="Vider toute la feuille de route"
-                  >
+                  <button class="btn btn-secondary chip-sm" onclick="clearRundown()"
+                    title="Vider toute la feuille de route">
                     🗑 Vider
                   </button>
-                  <button
-                    class="btn btn-secondary"
-                    style="padding: 0.4rem 0.8rem; font-size: 0.8rem"
-                    onclick="nextRundownCue()"
-                  >
+                  <button class="btn btn-secondary chip-sm" onclick="nextRundownCue()">
                     ▶ Suivant
                   </button>
                 </div>
@@ -1002,11 +986,7 @@
             <div class="card">
               <div class="queue-panel-header">
                 <span class="card-title">Médiathèque (<span id="mediaLibraryCount">0</span>)</span>
-                <button
-                  class="btn btn-secondary"
-                  style="padding: 0.4rem 0.8rem; font-size: 0.8rem"
-                  onclick="hideMediaNow()"
-                >
+                <button class="btn btn-secondary chip-sm" onclick="hideMediaNow()">
                   ⏹ Masquer
                 </button>
               </div>
@@ -1107,7 +1087,7 @@
                   + Choisir un fichier
                 </button>
               </div>
-              <div class="field-hint" style="margin-bottom: 0.5rem">
+              <div class="field-hint mb-2">
                 Dites simplement le nom du média (ex. « affiche Poster annonces ») pour l'afficher à
                 l'écran, ou tapez une phrase déclencheuse dédiée si vous préférez un mot-clé
                 différent. Durée et style sont aussi modifiables après coup, directement dans la
@@ -1123,12 +1103,12 @@
                    affiche le PROCHAIN membre du groupe (rotation), jamais tous
                    les membres à la fois — rattachez un média à un groupe via le
                    sélecteur "Groupe" qui apparaît sous chaque média ci-dessous. -->
-              <details style="margin-bottom: 0.75rem">
+              <details class="mb-3">
                 <summary style="cursor: pointer; color: var(--text-dim); font-size: 0.85rem">
                   Groupes de médias (rotation à la voix)
                 </summary>
                 <div style="margin-top: 0.5rem">
-                  <div class="field-hint" style="margin-bottom: 0.5rem">
+                  <div class="field-hint mb-2">
                     Ex. "Photos jeunesse" avec 5 photos — dire la phrase du groupe affiche une photo
                     différente à chaque fois, dans l'ordre, jusqu'à la 5e puis on recommence.
                   </div>
@@ -2207,7 +2187,7 @@
               <span class="card-title">Agent opérateur</span>
               <span class="status-badge">Actions contrôlées</span>
             </div>
-            <div class="field-hint" style="margin-bottom: 0.75rem">
+            <div class="field-hint mb-3">
               L'agent consulte les ressources existantes et demande confirmation avant toute action
               publique.
             </div>
@@ -2248,7 +2228,7 @@ Aucune exécution agent.</pre>
             <div class="card-header">
               <span class="card-title">Assistant Q&R — Prédications archivées</span>
             </div>
-            <div class="field-hint" style="margin-bottom: 0.75rem">
+            <div class="field-hint mb-3">
               Répond uniquement à partir des prédications déjà archivées (voir "Récap fin de culte"
               ci-dessus) — jamais de théologie générée sans passage réel à citer.
             </div>
@@ -2287,7 +2267,7 @@ Aucune exécution agent.</pre>
             <div class="card-header">
               <span class="card-title">Recherche de versets par thème</span>
             </div>
-            <div class="field-hint" style="margin-bottom: 0.75rem">
+            <div class="field-hint mb-3">
               Recherche par mot-clé sur des thèmes courants (amour, foi, pardon, grâce, paix...) —
               pas une recherche IA/sémantique.
             </div>
@@ -2353,7 +2333,7 @@ Aucune exécution agent.</pre>
                   🎬 Exporter les temps forts (culte en cours)
                 </button>
               </div>
-              <div class="field-hint" style="margin-bottom: 0.5rem">
+              <div class="field-hint mb-2">
                 Versets, chants et médias affichés depuis le démarrage du serveur, au format
                 "chapitres YouTube" (à coller dans la description de la vidéo) — un export CSV est
                 aussi copié.
@@ -2905,7 +2885,7 @@ Aucune exécution agent.</pre>
                 choisi — chacun peut être ouvert simultanément sur un écran différent (voir
                 recommandations "Stage Display" / "présentation secondaire indépendante").
               </div>
-              <div class="input-row" style="margin-bottom: 0.75rem">
+              <div class="input-row mb-3">
                 <select id="displaySelect">
                   <option value="">Recherche des écrans…</option>
                 </select>
@@ -3008,7 +2988,7 @@ Aucune exécution agent.</pre>
               <span class="status-badge warning" id="cameraStatus">Capture arrêtée</span>
             </div>
 
-            <div class="field-hint" style="margin-bottom: 0.5rem">
+            <div class="field-hint mb-2">
               <strong>Webcam USB</strong> — aperçu local pour l'opérateur. Pas encore diffusé sur
               l'overlay public, aperçu seulement.
             </div>
@@ -3025,7 +3005,7 @@ Aucune exécution agent.</pre>
                          normale. Voir le panneau "Caméras IP (téléphones)" plus bas pour
                          l'alternative sans pilote PC (flux réseau direct, ex. app "IP
                          Webcam"). -->
-            <div class="field-hint" style="margin-bottom: 0.75rem">
+            <div class="field-hint mb-3">
               <strong>Caméra NDI / téléphone (pilote PC)</strong> — caméra NDI (PTZ, régie) :
               installez le NDI Tools gratuit de NewTek/Vizrt et activez "NDI Virtual Input" ; ou
               téléphone via DroidCam, Iriun Webcam ou EpocCam — une fois leur client de bureau
@@ -3033,7 +3013,7 @@ Aucune exécution agent.</pre>
               normale.
             </div>
 
-            <div class="input-row" style="margin-bottom: 0.75rem">
+            <div class="input-row mb-3">
               <select id="cameraSelect">
                 <option value="">Recherche des caméras…</option>
               </select>
@@ -3140,7 +3120,7 @@ Aucune exécution agent.</pre>
               réseau local — pas seulement sur lui-même. Renseignez son adresse Wi-Fi ci-dessous (le
               bouton propose automatiquement celle détectée sur ce PC).
             </div>
-            <div class="input-row" style="margin-bottom: 0.5rem">
+            <div class="input-row mb-2">
               <input type="text" id="networkWsHostInput" placeholder="ex. 192.168.1.42" />
               <button
                 type="button"
@@ -3173,7 +3153,7 @@ Aucune exécution agent.</pre>
               <span class="card-title">Caméras IP (téléphones)</span>
               <span id="ipCameraCount" class="status-badge warning">0</span>
             </div>
-            <div class="field-hint" style="margin-bottom: 0.75rem">
+            <div class="field-hint mb-3">
               Pour utiliser plusieurs téléphones comme caméras, sans rien installer sur ce PC. Le
               bouton 📋 sur chaque caméra copie le lien à coller directement dans une Source
               Navigateur OBS.
@@ -3241,12 +3221,12 @@ Aucune exécution agent.</pre>
 
             <div class="camera-pairing-subsection">
               <h4>🔧 Manuel (app « IP Webcam » ou équivalent)</h4>
-              <div class="field-hint" style="margin-bottom: 0.5rem">
+              <div class="field-hint mb-2">
                 Pour une app déjà en cours d'exécution sur un téléphone : notez son adresse (ex.
                 <code>http://192.168.1.50:8080</code>), ajoutez <code>/video</code>, et collez-la
                 ci-dessous.
               </div>
-              <div class="input-row" style="margin-bottom: 0.75rem">
+              <div class="input-row mb-3">
                 <input
                   type="text"
                   id="ipCameraLabelInput"
@@ -3275,7 +3255,7 @@ Aucune exécution agent.</pre>
               <span class="card-title">Habillage caméra (logo, titre)</span>
               <span id="brandingStatus" class="status-badge warning">Masqué</span>
             </div>
-            <div class="field-hint" style="margin-bottom: 0.75rem">
+            <div class="field-hint mb-3">
               Réglage unique : collez le lien ci-dessous dans OBS comme Source Navigateur, empilée
               au-dessus de votre source caméra (DroidCam, caméra IP...) dans la scène. Ensuite,
               logo/titre/sous-titre se pilotent depuis ici, en direct — plus besoin de rouvrir OBS.
@@ -3307,7 +3287,7 @@ Aucune exécution agent.</pre>
               </button>
             </div>
 
-            <div class="field-hint" style="margin-bottom: 0.5rem">
+            <div class="field-hint mb-2">
               Logo : image, GIF animé ou vidéo courte (.mp4/.webm, lue en boucle silencieuse) — un
               fichier vaut pour toute la session, jusqu'à ce qu'il soit remplacé ou retiré.
             </div>
@@ -3371,7 +3351,7 @@ Aucune exécution agent.</pre>
               </select>
             </div>
 
-            <div class="input-row" style="margin-bottom: 0.75rem">
+            <div class="input-row mb-3">
               <input
                 type="text"
                 id="brandingTitleInput"
@@ -3508,7 +3488,7 @@ Aucune exécution agent.</pre>
             >
               OBS Studio (scènes multiples)
             </div>
-            <div class="field-hint" style="margin-bottom: 0.5rem">
+            <div class="field-hint mb-2">
               Outils → obs-websocket → Activer serveur WebSocket (déjà intégré depuis OBS 28+).
             </div>
             <div class="form-group">
@@ -3560,7 +3540,7 @@ Aucune exécution agent.</pre>
                 🔴 Démarrer/arrêter le direct
               </button>
             </div>
-            <div class="field-hint" id="obsStatus" style="margin-bottom: 0.75rem"></div>
+            <div class="field-hint mb-3" id="obsStatus"></div>
             <div
               id="obsScenesList"
               style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem"
@@ -3662,7 +3642,7 @@ Aucune exécution agent.</pre>
             >
               Planning Center Services (ordre du culte)
             </div>
-            <div class="field-hint" style="margin-bottom: 0.5rem">
+            <div class="field-hint mb-2">
               Jeton d'accès personnel :
               <a
                 href="#"
@@ -3711,7 +3691,7 @@ Aucune exécution agent.</pre>
                 📋 Charger l'ordre du culte
               </button>
             </div>
-            <div class="field-hint" id="pcoStatus" style="margin-bottom: 0.5rem"></div>
+            <div class="field-hint mb-2" id="pcoStatus"></div>
             <div id="pcoPlanItems" style="font-size: 0.85rem"></div>
           </div>
         </section>
@@ -3926,7 +3906,7 @@ Aucune exécution agent.</pre>
                  le même code que la voix en plein culte — voir server.js,
                  action WS testTriggerPhrase) sur un texte tapé, pour vérifier
                  une phrase déclencheuse AVANT le culte plutôt qu'en plein direct. -->
-            <div class="field-hint" style="margin-bottom: 0.5rem">
+            <div class="field-hint mb-2">
               🎤 Essayer une phrase déclencheuse : tapez ce que vous diriez à voix haute, le
               résultat est celui que donnerait la reconnaissance vocale réelle.
             </div>
@@ -3981,30 +3961,18 @@ Aucune exécution agent.</pre>
                 >Studio de scènes (<span id="sceneStudioCount">0</span>)</span
               >
               <div style="display: flex; gap: 0.5rem">
-                <button
-                  class="btn btn-primary"
-                  style="padding: 0.4rem 0.8rem; font-size: 0.8rem"
-                  onclick="openSceneComposer(null)"
-                >
+                <button class="btn btn-primary chip-sm" onclick="openSceneComposer(null)">
                   + Nouvelle scène
                 </button>
-                <button
-                  class="btn btn-secondary"
-                  style="padding: 0.4rem 0.8rem; font-size: 0.8rem"
-                  onclick="importPptxSlides()"
-                >
+                <button class="btn btn-secondary chip-sm" onclick="importPptxSlides()">
                   📥 Importer PowerPoint
                 </button>
-                <button
-                  class="btn btn-secondary"
-                  style="padding: 0.4rem 0.8rem; font-size: 0.8rem"
-                  onclick="hideSceneNow()"
-                >
+                <button class="btn btn-secondary chip-sm" onclick="hideSceneNow()">
                   ⏹ Masquer
                 </button>
               </div>
             </div>
-            <div class="field-hint" style="margin-bottom: 0.75rem">
+            <div class="field-hint mb-3">
               Composez un fond + du texte + un logo, puis déclenchez la scène sur l'overlay ou
               épinglez-la comme poster principal (⭐) — elle reviendra automatiquement après chaque
               verset, exactement comme un média épinglé dans la Médiathèque.
@@ -4024,11 +3992,7 @@ Aucune exécution agent.</pre>
           <div class="card" id="sceneComposerCard" style="display: none">
             <div class="queue-panel-header">
               <span class="card-title" id="sceneComposerTitle">Nouvelle scène</span>
-              <button
-                class="btn btn-secondary"
-                style="padding: 0.4rem 0.8rem; font-size: 0.8rem"
-                onclick="closeSceneComposer()"
-              >
+              <button class="btn btn-secondary chip-sm" onclick="closeSceneComposer()">
                 ✕ Fermer
               </button>
             </div>
