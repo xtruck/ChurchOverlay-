@@ -16,7 +16,7 @@
  * qu'on ajoute/retire/déclenche un par un), pas de nouveau système visuel.
  */
 import { ws } from '../state.js';
-import { showToast, escapeHtmlDashboard } from '../utils.js';
+import { showToast, escapeHtmlDashboard, confirmDialog } from '../utils.js';
 
 let rundownCues = [];
 let rundownActiveIndex = -1;
@@ -86,10 +86,16 @@ export function nextRundownCue() {
   ws.send(JSON.stringify({ action: 'nextRundownCue' }));
 }
 
-export function clearRundown() {
+export async function clearRundown() {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   if (rundownCues.length === 0) return;
-  if (!window.confirm('Vider toute la feuille de route ? Cette action est irréversible.')) return;
+  const ok = await confirmDialog(
+    'Vider toute la feuille de route ? Cette action est irréversible.',
+    {
+      danger: true,
+    }
+  );
+  if (!ok) return;
   ws.send(JSON.stringify({ action: 'clearRundown' }));
 }
 

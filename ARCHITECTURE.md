@@ -26,6 +26,17 @@
 > Toutes les mentions de FFmpeg, DirectShow, `ffmpeg -list_devices`, ou
 > `list-audio-devices.js` plus bas dans ce document sont également
 > obsolètes.
+>
+> **Mise à jour — Studio Pro** : le tableau de bord opérateur
+> (`dashboard.html` + `dashboard/`) dispose désormais d'un espace "Studio
+> Pro" (`dashboard/features/propresenter-studio.js`), une interface façon
+> ProPresenter 7 (grille de diapositives, moniteur PGM/aperçu, raccourcis
+> Master Clear F1-F4) qui est l'espace actif par défaut à l'ouverture — les
+> panneaux classiques ("Direct Classique", "Préparation", "Régie") restent
+> accessibles via la barre latérale. Ce document ne couvre pas le tableau
+> de bord (uniquement le pipeline audio→verset→overlay ci-dessus) ; voir le
+> commentaire d'en-tête de `dashboard/features/propresenter-studio.js` pour
+> le détail de cette interface.
 
 ## Vue d'ensemble
 

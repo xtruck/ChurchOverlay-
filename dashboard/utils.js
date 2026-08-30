@@ -83,6 +83,69 @@ export function addActivity(title, type = 'info') {
   }
 }
 
+// AJOUT (polish — cohérence UI) : remplace les confirm()/prompt() natifs du
+// navigateur (bloquants, non stylés, incohérents avec le reste du tableau
+// de bord) par une petite modale asynchrone, même structure/z-index que
+// .startup-wizard-overlay (dashboard.css) — le seul autre overlay
+// plein-écran existant ici, pas un nouveau pattern inventé.
+// - confirmDialog(message) résout true/false (remplace confirm()).
+// - confirmDialog(message, { input: true, defaultValue }) affiche un champ
+//   texte et résout la valeur saisie, ou null si annulé (même contrat que
+//   prompt() : null au lieu d'une chaîne vide sur annulation).
+export function confirmDialog(message, { input = false, defaultValue = '', danger = false } = {}) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-dialog-overlay';
+    overlay.innerHTML = `
+      <div class="confirm-dialog" role="alertdialog" aria-modal="true">
+        <div class="confirm-dialog-message">${escapeHtmlDashboard(message)}</div>
+        ${input ? `<input type="text" class="confirm-dialog-input" value="${escapeHtmlDashboard(defaultValue)}">` : ''}
+        <div class="confirm-dialog-actions">
+          <button type="button" class="confirm-dialog-cancel">Annuler</button>
+          <button type="button" class="confirm-dialog-ok${danger ? ' danger' : ''}">${input ? 'Valider' : 'Confirmer'}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const inputEl = overlay.querySelector('.confirm-dialog-input');
+    const finish = (value) => {
+      overlay.remove();
+      resolve(value);
+    };
+
+    overlay.querySelector('.confirm-dialog-cancel').addEventListener('click', () => {
+      finish(input ? null : false);
+    });
+    overlay.querySelector('.confirm-dialog-ok').addEventListener('click', () => {
+      finish(input ? inputEl.value : true);
+    });
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) finish(input ? null : false);
+    });
+    document.addEventListener(
+      'keydown',
+      function onKey(e) {
+        if (e.key === 'Escape') {
+          document.removeEventListener('keydown', onKey);
+          finish(input ? null : false);
+        } else if (e.key === 'Enter' && (!input || document.activeElement === inputEl)) {
+          document.removeEventListener('keydown', onKey);
+          finish(input ? inputEl.value : true);
+        }
+      },
+      { capture: true }
+    );
+
+    if (inputEl) {
+      inputEl.focus();
+      inputEl.select();
+    } else {
+      overlay.querySelector('.confirm-dialog-ok').focus();
+    }
+  });
+}
+
 export function requireWsOrWarn() {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     showToast("Non connecté au serveur — impossible de lancer l'analyse IA.", 'error');

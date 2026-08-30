@@ -22,12 +22,14 @@ let activeSlideId = null;
 // ---------------------------------------------------------------------------
 
 export function ppClearAll() {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ action: 'emergencyClear' }));
-    ws.send(JSON.stringify({ action: 'hideVerse' }));
-    ws.send(JSON.stringify({ action: 'hideMedia' }));
-    ws.send(JSON.stringify({ action: 'hideScene' }));
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur — rien à masquer.', 'error');
+    return;
   }
+  ws.send(JSON.stringify({ action: 'emergencyClear' }));
+  ws.send(JSON.stringify({ action: 'hideVerse' }));
+  ws.send(JSON.stringify({ action: 'hideMedia' }));
+  ws.send(JSON.stringify({ action: 'hideScene' }));
   activeSlideId = null;
   updatePgmDisplay(null);
   updateStageDisplay(null);
@@ -36,9 +38,11 @@ export function ppClearAll() {
 }
 
 export function ppClearSlide() {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ action: 'hideVerse' }));
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur — rien à masquer.', 'error');
+    return;
   }
+  ws.send(JSON.stringify({ action: 'hideVerse' }));
   if (state.currentVerse) {
     state.currentVerse = null;
   }
@@ -48,16 +52,20 @@ export function ppClearSlide() {
 }
 
 export function ppClearMedia() {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ action: 'hideMedia' }));
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur — rien à masquer.', 'error');
+    return;
   }
+  ws.send(JSON.stringify({ action: 'hideMedia' }));
   showToast('Média d’arrière-plan masqué.', 'info');
 }
 
 export function ppClearProps() {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ action: 'hideScene' }));
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur — rien à masquer.', 'error');
+    return;
   }
+  ws.send(JSON.stringify({ action: 'hideScene' }));
   showToast('Habillage / Scène masqué.', 'info');
 }
 
@@ -186,18 +194,20 @@ export function renderStudioSlides() {
 window.fireStudioSlide = function (idx) {
   const slide = slideGridItems[idx];
   if (!slide) return;
-  activeSlideId = slide.id || slide.reference;
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(
-      JSON.stringify({
-        action: 'showVerse',
-        reference: slide.reference,
-        text: slide.text,
-        langMode: slide.langMode || 'fr',
-        durationMs: 120000,
-      })
-    );
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur — diapositive non envoyée.', 'error');
+    return;
   }
+  activeSlideId = slide.id || slide.reference;
+  ws.send(
+    JSON.stringify({
+      action: 'showVerse',
+      reference: slide.reference,
+      text: slide.text,
+      langMode: slide.langMode || 'fr',
+      durationMs: 120000,
+    })
+  );
   updatePgmDisplay(slide);
   updateStageDisplay(slide);
   renderStudioSlides();
@@ -258,27 +268,31 @@ export function fireQuickScripture() {
 
   const ref = `${book} ${chapter}:${verseNum}`;
 
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(
-      JSON.stringify({
-        action: 'showVerse',
-        reference: ref,
-        langMode: lang,
-        durationMs: 120000,
-      })
-    );
-    showToast(`Envoi de ${ref}...`, 'info');
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur — verset non envoyé.', 'error');
+    return;
   }
+  ws.send(
+    JSON.stringify({
+      action: 'showVerse',
+      reference: ref,
+      langMode: lang,
+      durationMs: 120000,
+    })
+  );
+  showToast(`Envoi de ${ref}...`, 'info');
 }
 
 // ---------------------------------------------------------------------------
 // 7. MOOD PRESET PICKER
 // ---------------------------------------------------------------------------
 export function setStudioMood(mood) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ action: 'setTheme', theme: mood }));
-    showToast(`Ambiance appliquée : ${mood}`, 'success');
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur — ambiance non appliquée.', 'error');
+    return;
   }
+  ws.send(JSON.stringify({ action: 'setTheme', theme: mood }));
+  showToast(`Ambiance appliquée : ${mood}`, 'success');
 }
 
 // ---------------------------------------------------------------------------
@@ -330,17 +344,19 @@ export function updateAiCrossReferences(reference) {
 
 export function quickLookupVerse(ref) {
   if (!ref) return;
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(
-      JSON.stringify({
-        action: 'showVerse',
-        reference: ref,
-        langMode: 'fr',
-        durationMs: 120000,
-      })
-    );
-    showToast(`Diffusion IA : ${ref}`, 'info');
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur — verset non envoyé.', 'error');
+    return;
   }
+  ws.send(
+    JSON.stringify({
+      action: 'showVerse',
+      reference: ref,
+      langMode: 'fr',
+      durationMs: 120000,
+    })
+  );
+  showToast(`Diffusion IA : ${ref}`, 'info');
 }
 
 export function quickSemanticQuery(query) {

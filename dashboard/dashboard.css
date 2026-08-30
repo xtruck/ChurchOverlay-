@@ -2506,6 +2506,70 @@ body {
   transition: outline 0.3s ease;
 }
 
+/* AJOUT (polish — cohérence UI) : remplace confirm()/prompt() natifs,
+   même structure que .startup-wizard-overlay ci-dessus. */
+.confirm-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 10002;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.confirm-dialog {
+  background: var(--bg-card, #1e1e2e);
+  border: 1px solid var(--border-subtle, #333);
+  border-radius: 12px;
+  padding: 1.25rem;
+  max-width: 420px;
+  width: 90%;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+.confirm-dialog-message {
+  font-size: 0.9rem;
+  color: var(--text-main);
+  line-height: 1.4;
+  margin-bottom: 1rem;
+}
+.confirm-dialog-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem 0.65rem;
+  margin-bottom: 1rem;
+  background: var(--bg-input, #12141a);
+  border: 1px solid var(--border-subtle, #333);
+  border-radius: 8px;
+  color: var(--text-main);
+  font-size: 0.85rem;
+}
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.confirm-dialog-cancel,
+.confirm-dialog-ok {
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border-subtle, #333);
+  background: transparent;
+  color: var(--text-main);
+}
+.confirm-dialog-ok {
+  background: var(--accent-cyan);
+  border-color: var(--accent-cyan);
+  color: #0b0c10;
+}
+.confirm-dialog-ok.danger {
+  background: var(--accent-rose);
+  border-color: var(--accent-rose);
+  color: #fff;
+}
+
 /* Assistant de démarrage */
 .startup-wizard-overlay {
   position: fixed;

@@ -14,7 +14,7 @@ import {
   startRealAudioCapture,
   stopRealAudioCapture,
 } from './audio-capture.js';
-import { showToast, addActivity, escapeHtmlDashboard } from '../utils.js';
+import { showToast, addActivity, escapeHtmlDashboard, confirmDialog } from '../utils.js';
 import { setStatusStripItem } from './status-strip.js';
 import {
   addSlideToStudio,
@@ -385,8 +385,10 @@ export function sendCustomSpeechText(customText) {
   }
 }
 
-export function showManualVerse() {
-  const reference = prompt('Entrez une référence biblique (ex. Jean 3:16) :');
+export async function showManualVerse() {
+  const reference = await confirmDialog('Entrez une référence biblique (ex. Jean 3:16) :', {
+    input: true,
+  });
   if (reference) {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(
@@ -435,8 +437,11 @@ export function resumeTimer() {
   }
 }
 
-export function emergencyStop() {
-  if (confirm("Confirmez-vous l'arrêt d'urgence de l'affichage ?")) {
+export async function emergencyStop() {
+  const ok = await confirmDialog("Confirmez-vous l'arrêt d'urgence de l'affichage ?", {
+    danger: true,
+  });
+  if (ok) {
     hideVerse();
     addActivity("Arrêt d'urgence déclenché", 'error');
     showToast("Arrêt d'urgence activé", 'error');

@@ -203,7 +203,6 @@ function initWebSocket() {
   }
 
   ws.onopen = () => {
-    console.log('Connecté au serveur ChurchOverlay');
     updateStatus(true);
     reconnectAttempts = 0;
     if (reconnectTimer) {
@@ -269,7 +268,6 @@ function initWebSocket() {
   };
 
   ws.onclose = () => {
-    console.log('Déconnecté du serveur ChurchOverlay');
     updateStatus(false);
     stopSermonModeAutoDetect();
     scheduleReconnect();

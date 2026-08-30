@@ -2,7 +2,7 @@
  * dashboard/features/api-settings.js — panneau Clés API & Microphone.
  * Extrait de dashboard/legacy-core.js (chantier de modularisation).
  */
-import { showToast } from '../utils.js';
+import { showToast, confirmDialog } from '../utils.js';
 import { setStatusStripItem } from './status-strip.js';
 
 // ---------------------------------------------------------------
@@ -193,7 +193,8 @@ import { setStatusStripItem } from './status-strip.js';
 
   async function clearKey(provider, inputEl, badgeEl) {
     const label = provider === 'groq' ? 'Groq' : provider === 'deepgram' ? 'Deepgram' : 'Gemini';
-    if (!confirm(`Retirer la clé API ${label} enregistrée ?`)) return;
+    if (!(await confirmDialog(`Retirer la clé API ${label} enregistrée ?`, { danger: true })))
+      return;
     try {
       await window.churchOverlay.clearApiKey(provider);
       inputEl.value = '';
