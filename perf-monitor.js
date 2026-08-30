@@ -13,7 +13,10 @@
  *      principal Electron (main.js) à un intervalle configurable (défaut 2s).
  *    - Calcule un % CPU normalisé (delta CPU / delta wall time / cpuCount).
  *    - Expose getStats() qui retourne { cpuPercent, rssMB, heapUsedMB,
- *      externalMB, uptimeSec } — utilisé par l'IPC handler `get-perf-stats`.
+ *      externalMB, uptimeSec, worker } — utilisé par l'IPC handler
+ *      `get-perf-stats`. `worker` (AJOUT mémoire — polish) est le dernier
+ *      échantillon process.memoryUsage() poussé par le worker server.js
+ *      (voir setWorkerStats() / main.js), `null` si absent.
  *
  *  DESIGN :
  *    - Zéro dépendance (uniquement `os` et `process` built-in).
@@ -39,6 +42,17 @@ let lastStats = {
   uptimeSec: 0,
 };
 let timer = null;
+
+// AJOUT (mémoire — polish) : le worker server.js (le pipeline audio/ASR/
+// Bible réel, voir main.js > startServer) s'échantillonne lui-même et
+// pousse son process.memoryUsage() via parentPort — reçu ici en dernier
+// stade et fusionné dans getStats(). `null` tant qu'aucun échantillon n'est
+// arrivé (worker pas encore démarré, ou hors mode worker en test/dev).
+let workerStats = null;
+
+function setWorkerStats(stats) {
+  workerStats = stats;
+}
 
 function sample() {
   const nowCpu = process.cpuUsage();
@@ -82,7 +96,7 @@ function stop() {
 }
 
 function getStats() {
-  return { ...lastStats };
+  return { ...lastStats, worker: workerStats };
 }
 
-module.exports = { start, stop, getStats };
+module.exports = { start, stop, getStats, setWorkerStats };

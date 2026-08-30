@@ -25,7 +25,15 @@
     if (!stats) return;
     const cpu = Math.round(stats.cpuPercent || 0);
     const ram = Math.round(stats.rssMB || 0);
-    text.textContent = `CPU ${cpu}% · RAM ${ram} Mo`;
+    // AJOUT (mémoire — polish) : RAM du worker server.js (pipeline audio/
+    // ASR/Bible réel, voir perf-monitor.js > setWorkerStats) affichée à
+    // côté de celle du process principal — absente tant qu'aucun
+    // échantillon n'est encore arrivé (worker pas démarré).
+    const workerRam = stats.worker ? Math.round(stats.worker.rssMB || 0) : null;
+    text.textContent =
+      workerRam == null
+        ? `CPU ${cpu}% · RAM ${ram} Mo`
+        : `CPU ${cpu}% · RAM ${ram} Mo (pipeline ${workerRam} Mo)`;
     const color =
       cpu >= 70
         ? 'var(--accent-rose)'

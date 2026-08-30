@@ -683,6 +683,19 @@ function startServer() {
       return;
     }
 
+    // AJOUT (mémoire — polish) : échantillon process.memoryUsage() du
+    // worker server.js (voir server.js > workerMemTimer), là où tourne
+    // réellement le pipeline audio/ASR/Bible — perf-monitor.js ne
+    // mesurait jusqu'ici que ce process principal Electron.
+    if (msg.type === 'worker-mem') {
+      perfMonitor.setWorkerStats({
+        rssMB: msg.rssMB,
+        heapUsedMB: msg.heapUsedMB,
+        externalMB: msg.externalMB,
+      });
+      return;
+    }
+
     if (msg.type === 'alert') {
       lastAlertCode = msg.code || null;
       lastAlertMessage = msg.message || '';
@@ -708,6 +721,10 @@ function startServer() {
 
   worker.on('exit', (code) => {
     clearWorkerRecycle();
+    // AJOUT (mémoire — polish) : évite d'afficher indéfiniment le dernier
+    // échantillon d'un worker mort (crash, recyclage, arrêt) jusqu'au
+    // premier échantillon du suivant.
+    perfMonitor.setWorkerStats(null);
     const wasIntentional = shuttingDownWorker;
     shuttingDownWorker = false;
     worker = null;

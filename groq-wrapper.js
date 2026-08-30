@@ -469,6 +469,14 @@ async function chatCompletion(prompt, options = {}) {
       if (json_mode) {
         config.responseMimeType = 'application/json';
       }
+      // CORRECTIF (latence — polish) : contrairement à la branche Groq
+      // plus bas (AbortController + timeoutMs), cet appel Gemini n'avait
+      // aucune limite de temps — un souci en particulier pour
+      // semantic-detector.js, qui l'appelle en plein chemin chaud par
+      // énoncé sans aucun timeout visible côté appelant. Même mécanisme
+      // que embedding-provider.js (AbortSignal.timeout) plutôt qu'un
+      // nouveau pattern.
+      config.abortSignal = AbortSignal.timeout(timeoutMs);
       const res = await ai.models.generateContent({
         model: geminiModel,
         contents: prompt,

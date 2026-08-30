@@ -1709,18 +1709,29 @@ async function processTranscript(text, tracker, opts = {}) {
     plugins.emit('onVerseDetected', { ...verse, reference: verse.reference }).catch(() => {});
   }
 
-  let theme = null;
+  // CORRECTIF (latence — polish) : la génération de thème (appel LLM Groq,
+  // voir ai-theme-generator.js) était attendue ICI, avant l'affichage du
+  // verset — un aller-retour LLM complet posé entre "référence résolue" et
+  // "verset visible sur l'overlay". Elle tourne désormais en arrière-plan :
+  // applyTheme part séparément dès qu'elle est prête, sans retarder
+  // showVerse. Le champ `theme` du payload showVerse (voir finalizeDisplay
+  // plus bas) n'était lu par aucun client (overlay.js ni le dashboard,
+  // vérifié avant ce changement — seul le message applyTheme séparé
+  // compte réellement) : rien ne dépend de l'attendre ici.
+  const theme = null;
   if (themeGenerator) {
-    try {
-      const recentContext = getRecentContext();
-      theme = await themeGenerator.generate(verse.text, recentContext, 'auto');
-      if (theme && (theme.source === 'ai' || theme.mood !== 'default')) {
-        log(`Theme applied: "${theme.name}" (${theme.mood || 'default'})`);
-        broadcast({ action: 'applyTheme', ...themeGenerator.themeToCss(theme) });
-      }
-    } catch (e) {
-      warn('Theme generation error: ' + e.message);
-    }
+    const recentContext = getRecentContext();
+    themeGenerator
+      .generate(verse.text, recentContext, 'auto')
+      .then((generated) => {
+        if (generated && (generated.source === 'ai' || generated.mood !== 'default')) {
+          log(`Theme applied: "${generated.name}" (${generated.mood || 'default'})`);
+          broadcast({ action: 'applyTheme', ...themeGenerator.themeToCss(generated) });
+        }
+      })
+      .catch((e) => {
+        warn('Theme generation error: ' + e.message);
+      });
   }
 
   const features = featuresStore.readFeatures();
@@ -4523,6 +4534,22 @@ if (parentPort) {
   });
 
   parentPort.postMessage({ type: 'status', status: 'running' });
+
+  // AJOUT (mémoire — polish) : perf-monitor.js (main.js) n'échantillonnait
+  // que le process principal Electron — le pipeline audio/ASR/Bible réel
+  // tourne ici, dans ce worker, resté invisible côté dashboard sur un
+  // culte de plusieurs heures. Même cadence que main.js (PERF_PUSH_MS =
+  // 2000ms) pour rester cohérent avec l'échantillon déjà affiché.
+  const workerMemTimer = setInterval(() => {
+    const mem = process.memoryUsage();
+    parentPort.postMessage({
+      type: 'worker-mem',
+      rssMB: Math.round((mem.rss / 1024 / 1024) * 10) / 10,
+      heapUsedMB: Math.round((mem.heapUsed / 1024 / 1024) * 10) / 10,
+      externalMB: Math.round((mem.external / 1024 / 1024) * 10) / 10,
+    });
+  }, 2000);
+  workerMemTimer.unref();
 }
 
 // ===========================================================================
