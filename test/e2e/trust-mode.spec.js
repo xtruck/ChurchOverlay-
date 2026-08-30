@@ -15,6 +15,11 @@ const { test, expect } = require('./fixtures');
 test.describe('Mode confiance', () => {
   test('cliquer un mode le rend actif (round-trip serveur réel)', async ({ page }) => {
     await page.goto('/');
+    // CORRECTIF (audit e2e — stale depuis PR #259, refonte "Studio Pro") :
+    // "Studio Pro" (propresenter-live) est désormais l'espace actif par
+    // défaut au chargement — les boutons de mode confiance vivent dans
+    // #overview, qui fait partie de l'espace "Direct Classique".
+    await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
 
     const autoBtn = page.locator('.trust-mode-btn[data-trust-mode="auto"]');
     const semiAutoBtn = page.locator('.trust-mode-btn[data-trust-mode="semi-auto"]');
@@ -35,6 +40,10 @@ test.describe('Mode confiance', () => {
     page,
   }) => {
     await page.goto('/');
+    // CORRECTIF (audit e2e — stale depuis PR #259) : #pendingVerseBanner
+    // vit dans #overview ("Direct Classique"), plus l'espace actif par
+    // défaut (voir le test précédent).
+    await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
     const banner = page.locator('#pendingVerseBanner');
     await expect(banner).toBeHidden();
 
@@ -79,6 +88,10 @@ test.describe('Mode confiance', () => {
     page,
   }) => {
     await page.goto('/');
+    // CORRECTIF (audit e2e — stale depuis PR #259) : #pendingVerseBanner
+    // vit dans #overview ("Direct Classique"), plus l'espace actif par
+    // défaut.
+    await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
 
     // Bandeau visible : si le garde-fou "contexte de saisie" échouait, la
     // frappe Espace ci-dessous serait avalée par confirmPendingVerse() au

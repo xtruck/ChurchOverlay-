@@ -15,27 +15,30 @@ test.describe('Tableau de bord — fumée', () => {
     await page.goto('/');
 
     await expect(page.locator('.sidebar')).toBeVisible();
-    await expect(page.locator('#verseDisplay')).toBeVisible();
-    // CORRECTIF (audit e2e — stale depuis la refonte "trois espaces") : le
-    // dashboard a depuis été réorganisé en 3 espaces (Direct/Préparation/
-    // Régie, voir dashboard/state.js), pas les 2 anciens onglets "En
-    // Direct"/"Réglages" que cette assertion et les sélecteurs
-    // data-sections ci-dessous supposaient encore. showSectionsFor()
-    // (dashboard/state.js) affiche TOUTES les sections listées dans
-    // data-sections de l'item actif, y compris au chargement initial (pas
-    // seulement "overview" sans display:none en dur) — #controls fait donc
-    // partie du groupe "Direct" actif par défaut, il n'est plus masqué.
-    await expect(page.locator('.sidebar .nav-item.active')).toContainText('Direct');
+    // CORRECTIF (audit e2e — stale depuis PR #259, refonte "Studio Pro") :
+    // le dashboard a désormais 4 espaces (voir dashboard.html sidebar),
+    // pas les 3 précédents — "Studio Pro" (data-sections="propresenter-live")
+    // a été ajouté et est maintenant l'espace actif par défaut au
+    // chargement, avant "Direct Classique" (overview/transcript/controls,
+    // ex-"Direct"). #verseDisplay/#overview/#controls vivent dans l'espace
+    // "Direct Classique" et ne sont donc plus visibles au chargement.
+    await expect(page.locator('.sidebar .nav-item.active')).toContainText('Studio Pro');
+    await expect(page.locator('#propresenter-live')).toBeVisible();
+    await expect(page.locator('#overview')).toBeHidden();
 
-    // Espace "Direct" (actif par défaut) : ses 3 sections groupées sont
-    // visibles ensemble, celles des 2 autres espaces sont masquées.
+    // Clic sur "Direct Classique" -> ses sections apparaissent, "Studio Pro"
+    // disparaît.
+    await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
+    await expect(page.locator('.sidebar .nav-item.active')).toContainText('Direct Classique');
+    await expect(page.locator('#verseDisplay')).toBeVisible();
     await expect(page.locator('#overview')).toBeVisible();
     await expect(page.locator('#controls')).toBeVisible();
+    await expect(page.locator('#propresenter-live')).toBeHidden();
     await expect(page.locator('#analysis')).toBeHidden();
     await expect(page.locator('#settings')).toBeHidden();
 
     // Clic sur "Préparation" -> ses sections (analysis/studio/media-wall)
-    // apparaissent, celles de "Direct" disparaissent.
+    // apparaissent, celles de "Direct Classique" disparaissent.
     await page.locator('.sidebar .nav-item[data-sections="analysis,studio,media-wall"]').click();
     await expect(page.locator('#analysis')).toBeVisible();
     await expect(page.locator('#overview')).toBeHidden();
@@ -46,7 +49,7 @@ test.describe('Tableau de bord — fumée', () => {
     await expect(page.locator('#settings')).toBeVisible();
     await expect(page.locator('#analysis')).toBeHidden();
 
-    // Retour à "Direct".
+    // Retour à "Direct Classique".
     await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
     await expect(page.locator('#overview')).toBeVisible();
     await expect(page.locator('#controls')).toBeVisible();

@@ -158,6 +158,18 @@ injectFakeModule('audio-capture.js', {
 
 process.env.PORT = process.env.PORT || '8770'; // distinct des ports déjà utilisés par test/*.js
 process.env.WS_HOST = '127.0.0.1';
+// CORRECTIF (e2e — pollution du dossier utilisateur réel) : sans workerData
+// (ce script lance server.js directement via `node`, pas via le worker
+// Electron), USER_DATA_DIR (server.js) retombait sur le vrai ~/.churchoverlay
+// de la machine qui exécute la suite — un opérateur réel utilisant l'app en
+// parallèle (ou ayant déjà des scènes/médias réels) verrait la suite e2e
+// écrire des scènes factices ("Bienvenue !"...) dedans à chaque exécution.
+// Dossier temporaire dédié, jamais réutilisé entre exécutions.
+const os = require('os');
+process.env.CHURCHOVERLAY_DATA_DIR = path.join(
+  os.tmpdir(),
+  `churchoverlay-e2e-${process.pid}-${Date.now()}`
+);
 // CORRECTIF (débogage e2e) : le limiteur de débit (rate-limiter.js) compte
 // par IP cliente — TOUTES les connexions Playwright de TOUTE la suite
 // e2e (un seul processus serveur partagé pour tous les fichiers .spec.js,

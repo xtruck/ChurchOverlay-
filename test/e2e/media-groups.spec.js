@@ -12,6 +12,10 @@ test.describe('Groupes de médias', () => {
     page,
   }) => {
     await page.goto('/');
+    // CORRECTIF (audit e2e — stale depuis PR #259, refonte "Studio Pro") :
+    // #mediaGroupsList vit dans #overview ("Direct Classique"), plus
+    // l'espace actif par défaut (voir dashboard.spec.js).
+    await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
 
     const groups = [
       { id: 'g1', name: 'Photos jeunesse', triggerPhrases: ['photo jeunesse'], memberIds: ['m1'] },

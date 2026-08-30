@@ -24,8 +24,18 @@ const os = require('os');
 // Environment & paths
 // ---------------------------------------------------------------------------
 const APP_ROOT = (workerData && workerData.appRoot) || __dirname;
+// CORRECTIF (e2e — pollution du dossier utilisateur réel) : hors du worker
+// Electron (workerData absent), ce chemin retombait sur le VRAI
+// ~/.churchoverlay de la machine — celui d'un opérateur réel. test/e2e/
+// start-server.js lance ce fichier directement via `node` (pas de worker),
+// donc chaque suite e2e écrivait ses scènes/médias factices dans ce
+// dossier réel au lieu d'un dossier de test isolé. CHURCHOVERLAY_DATA_DIR
+// (déjà le nom utilisé par bin/church-agent.js pour le même besoin) permet
+// à start-server.js de pointer vers un dossier temporaire dédié.
 const USER_DATA_DIR =
-  (workerData && workerData.userDataDir) || path.join(os.homedir(), '.churchoverlay');
+  (workerData && workerData.userDataDir) ||
+  process.env.CHURCHOVERLAY_DATA_DIR ||
+  path.join(os.homedir(), '.churchoverlay');
 // AJOUT (Chantier 2 — health system) : version de l'app affichée par
 // /api/health et /api/status (diagnostic). Chargée une seule fois au boot,
 // jamais relue.
