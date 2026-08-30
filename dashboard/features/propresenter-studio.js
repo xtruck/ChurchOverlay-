@@ -13,8 +13,8 @@ import { state, ws } from '../state.js';
 import { showToast } from '../utils.js';
 import { nextRundownCue } from './rundown.js';
 
-let serviceStartTime = Date.now();
-let slideGridItems = [];
+const serviceStartTime = Date.now();
+const slideGridItems = [];
 let activeSlideId = null;
 
 // ---------------------------------------------------------------------------
@@ -188,13 +188,15 @@ window.fireStudioSlide = function (idx) {
   if (!slide) return;
   activeSlideId = slide.id || slide.reference;
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({
-      action: 'showVerse',
-      reference: slide.reference,
-      text: slide.text,
-      langMode: slide.langMode || 'fr',
-      durationMs: 120000,
-    }));
+    ws.send(
+      JSON.stringify({
+        action: 'showVerse',
+        reference: slide.reference,
+        text: slide.text,
+        langMode: slide.langMode || 'fr',
+        durationMs: 120000,
+      })
+    );
   }
   updatePgmDisplay(slide);
   updateStageDisplay(slide);
@@ -257,12 +259,14 @@ export function fireQuickScripture() {
   const ref = `${book} ${chapter}:${verseNum}`;
 
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({
-      action: 'showVerse',
-      reference: ref,
-      langMode: lang,
-      durationMs: 120000,
-    }));
+    ws.send(
+      JSON.stringify({
+        action: 'showVerse',
+        reference: ref,
+        langMode: lang,
+        durationMs: 120000,
+      })
+    );
     showToast(`Envoi de ${ref}...`, 'info');
   }
 }
@@ -280,7 +284,6 @@ export function setStudioMood(mood) {
 // ---------------------------------------------------------------------------
 // 8. AI COPILOT: SEMANTIC SEARCH & SCRIPTURE INTELLIGENCE
 // ---------------------------------------------------------------------------
-
 
 const SCRIPTURE_CROSS_REFS = {
   'jean 3:16': ['Romains 5:8', '1 Jean 4:9', 'Éphésiens 2:8'],
@@ -367,21 +370,74 @@ export function executeAiSemanticSearch() {
   // Fast client-side fallback / instant matching
   setTimeout(() => {
     const semanticDictionary = [
-      { q: 'paix', ref: 'Jean 14:27', text: 'Je vous laisse la paix, je vous donne ma paix. Je ne vous donne pas comme le monde donne.', score: 98 },
-      { q: 'amour', ref: 'Jean 3:16', text: 'Car Dieu a tant aimé le monde qu’il a donné son Fils unique...', score: 99 },
-      { q: 'amour', ref: '1 Corinthiens 13:4', text: 'L’amour est patient, il est plein de bonté; l’amour n’est point envieux...', score: 96 },
-      { q: 'foi', ref: 'Hébreux 11:1', text: 'Or la foi est une ferme assurance des choses qu’on espère, une démonstration de celles qu’on ne voit pas.', score: 97 },
-      { q: 'tempête', ref: 'Marc 4:39', text: 'S’étant réveillé, il menaça le vent, et dit à la mer: Silence! tais-toi! Et le vent cessa, et il y eut un grand calme.', score: 95 },
-      { q: 'eau', ref: 'Matthieu 14:29', text: 'Pierre sortit de la barque, et marcha sur les eaux, pour aller vers Jésus.', score: 94 },
-      { q: 'force', ref: 'Philippiens 4:13', text: 'Je puis tout par celui qui me fortifie.', score: 98 },
-      { q: 'bien', ref: 'Romains 8:28', text: 'Nous savons, du reste, que toutes choses concourent au bien de ceux qui aiment Dieu.', score: 99 },
-      { q: 'berger', ref: 'Psaume 23:1', text: 'L’Éternel est mon berger: je ne manquerai de rien.', score: 99 },
-      { q: 'armure', ref: 'Éphésiens 6:11', text: 'Revêtez-vous de toutes les armes de Dieu, afin de pouvoir tenir ferme contre les ruses du diable.', score: 96 },
+      {
+        q: 'paix',
+        ref: 'Jean 14:27',
+        text: 'Je vous laisse la paix, je vous donne ma paix. Je ne vous donne pas comme le monde donne.',
+        score: 98,
+      },
+      {
+        q: 'amour',
+        ref: 'Jean 3:16',
+        text: 'Car Dieu a tant aimé le monde qu’il a donné son Fils unique...',
+        score: 99,
+      },
+      {
+        q: 'amour',
+        ref: '1 Corinthiens 13:4',
+        text: 'L’amour est patient, il est plein de bonté; l’amour n’est point envieux...',
+        score: 96,
+      },
+      {
+        q: 'foi',
+        ref: 'Hébreux 11:1',
+        text: 'Or la foi est une ferme assurance des choses qu’on espère, une démonstration de celles qu’on ne voit pas.',
+        score: 97,
+      },
+      {
+        q: 'tempête',
+        ref: 'Marc 4:39',
+        text: 'S’étant réveillé, il menaça le vent, et dit à la mer: Silence! tais-toi! Et le vent cessa, et il y eut un grand calme.',
+        score: 95,
+      },
+      {
+        q: 'eau',
+        ref: 'Matthieu 14:29',
+        text: 'Pierre sortit de la barque, et marcha sur les eaux, pour aller vers Jésus.',
+        score: 94,
+      },
+      {
+        q: 'force',
+        ref: 'Philippiens 4:13',
+        text: 'Je puis tout par celui qui me fortifie.',
+        score: 98,
+      },
+      {
+        q: 'bien',
+        ref: 'Romains 8:28',
+        text: 'Nous savons, du reste, que toutes choses concourent au bien de ceux qui aiment Dieu.',
+        score: 99,
+      },
+      {
+        q: 'berger',
+        ref: 'Psaume 23:1',
+        text: 'L’Éternel est mon berger: je ne manquerai de rien.',
+        score: 99,
+      },
+      {
+        q: 'armure',
+        ref: 'Éphésiens 6:11',
+        text: 'Revêtez-vous de toutes les armes de Dieu, afin de pouvoir tenir ferme contre les ruses du diable.',
+        score: 96,
+      },
     ];
 
     const qLower = query.toLowerCase();
     const matches = semanticDictionary.filter(
-      (item) => qLower.includes(item.q) || item.ref.toLowerCase().includes(qLower) || item.text.toLowerCase().includes(qLower)
+      (item) =>
+        qLower.includes(item.q) ||
+        item.ref.toLowerCase().includes(qLower) ||
+        item.text.toLowerCase().includes(qLower)
     );
 
     const displayMatches = matches.length > 0 ? matches : semanticDictionary.slice(0, 3);
@@ -411,7 +467,8 @@ export function generateKeyPointFromSpeech() {
 
   const firstEntry = teleprompter.firstElementChild;
   const rawText = firstEntry ? firstEntry.innerText : '';
-  const cleanText = rawText.replace(/\[.*?\]/g, '').trim() || 'La fidélité de Dieu dans notre marche quotidienne';
+  const cleanText =
+    rawText.replace(/\[.*?\]/g, '').trim() || 'La fidélité de Dieu dans notre marche quotidienne';
 
   const pointTitle = `Point Clé : ${cleanText.substring(0, 75)}${cleanText.length > 75 ? '...' : ''}`;
 
@@ -432,7 +489,9 @@ export function toggleAiAutoTheme() {
   isAutoThemeActive = !isAutoThemeActive;
   const btn = document.getElementById('ppAiAutoThemeBtn');
   if (btn) {
-    btn.textContent = isAutoThemeActive ? '✅ Auto-Thème IA (Actif)' : '🤖 Activer l\'Auto-Thème IA (Ambiance)';
+    btn.textContent = isAutoThemeActive
+      ? '✅ Auto-Thème IA (Actif)'
+      : "🤖 Activer l'Auto-Thème IA (Ambiance)";
     btn.style.borderColor = isAutoThemeActive ? 'var(--pp-green-ok)' : '';
   }
   showToast(`Auto-Thème IA : ${isAutoThemeActive ? 'ACTIVÉ' : 'DÉSACTIVÉ'}`, 'info');
@@ -467,5 +526,3 @@ if (document.readyState === 'loading') {
   initStudioTabs();
   initStudioClock();
 }
-
-

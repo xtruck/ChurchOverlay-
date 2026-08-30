@@ -16,7 +16,12 @@ import {
 } from './audio-capture.js';
 import { showToast, addActivity, escapeHtmlDashboard } from '../utils.js';
 import { setStatusStripItem } from './status-strip.js';
-import { addSlideToStudio, updatePgmDisplay, updateStageDisplay, updateAiCrossReferences } from './propresenter-studio.js';
+import {
+  addSlideToStudio,
+  updatePgmDisplay,
+  updateStageDisplay,
+  updateAiCrossReferences,
+} from './propresenter-studio.js';
 
 export function displayVerse(message) {
   const refEl = document.getElementById('verseReference');
@@ -50,7 +55,6 @@ export function displayVerse(message) {
   if (message.reference) {
     updateAiCrossReferences(message.reference);
   }
-
 
   if (message.confidence && refEl) {
     const confidenceEl = document.createElement('span');
@@ -99,17 +103,18 @@ export function hideVerseDisplay() {
   updateStageDisplay(null);
 }
 
-
 export function addTranscript(message) {
   const feed = document.getElementById('transcriptFeed');
   const ppFeed = document.getElementById('ppTeleprompterFeed');
   const text = message.text || '';
 
   if (ppFeed && text) {
-    const time = new Date(message.timestamp || Date.now()).toLocaleTimeString([], { hour12: false });
+    const time = new Date(message.timestamp || Date.now()).toLocaleTimeString([], {
+      hour12: false,
+    });
     const p = document.createElement('div');
     p.style.marginBottom = '6px';
-    
+
     // 1. Highlight potential Bible citations (Gold Amber tags)
     let highlighted = escapeHtmlDashboard(text).replace(
       /\b(Genèse|Exode|Lévitique|Nombres|Deutéronome|Josué|Juges|Ruth|Samuel|Rois|Chroniques|Esdras|Néhémie|Esther|Job|Psaume[s]?|Proverbe[s]?|Ecclésiaste|Cantique|Ésaïe|Jérémie|Lamentations|Ézéchiel|Daniel|Osée|Joël|Amos|Abdias|Jonas|Michée|Nahum|Habacuc|Sophonie|Aggée|Zacharie|Malachie|Matthieu|Marc|Luc|Jean|Actes|Romains|Corinthiens|Galates|Éphésiens|Philippiens|Colossiens|Thessaloniciens|Timothée|Tite|Philémon|Hébreux|Jacques|Pierre|Jude|Apocalypse)\s+\d+(:\d+)?/gi,
@@ -145,7 +150,6 @@ export function addTranscript(message) {
     while (ppFeed.children.length > 30) ppFeed.removeChild(ppFeed.lastChild);
   }
 
-
   if (!feed) return;
 
   const item = document.createElement('div');
@@ -169,7 +173,6 @@ export function addTranscript(message) {
   state.transcripts.unshift(message);
   if (state.transcripts.length > 50) state.transcripts.pop();
 }
-
 
 // AJOUT (frontend — candidateVerse) : formate une référence reçue en objet
 // ({ book, chapter, verseStart }) ou en chaîne toute faite en un libellé

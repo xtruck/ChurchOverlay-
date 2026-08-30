@@ -120,4 +120,3 @@ export function resetAudioVumeter() {
   if (vumeterPeak) vumeterPeak.style.display = 'none';
   if (vumeterInfo) vumeterInfo.textContent = '';
 }
-
