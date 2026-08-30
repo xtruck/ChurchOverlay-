@@ -2564,3 +2564,507 @@ body {
   color: var(--accent-cyan);
   font-style: italic;
 }
+
+/* ============================================================================
+   ChurchOverlay — ProPresenter 7 Broadcast Studio Layout & Components
+   ============================================================================ */
+
+:root {
+  --pp-bg-root: #090a0e;
+  --pp-bg-surface: #10121a;
+  --pp-bg-card: #161824;
+  --pp-bg-card-hover: #202434;
+  --pp-bg-card-active: #132234;
+  --pp-bg-elevated: #24293a;
+  --pp-bg-input: #0c0e14;
+
+  --pp-border-subtle: #1e2230;
+  --pp-border-medium: #2c3246;
+  --pp-border-active: #00e5ff;
+  --pp-border-live: #ff1744;
+
+  --pp-text-main: #f3f5fb;
+  --pp-text-muted: #8e96ad;
+  --pp-text-dim: #5c6278;
+
+  --pp-live-red: #ff1744;
+  --pp-live-red-glow: rgba(255, 23, 68, 0.45);
+  --pp-cyan-active: #00e5ff;
+  --pp-cyan-glow: rgba(0, 229, 255, 0.35);
+  --pp-green-ok: #00e676;
+  --pp-green-glow: rgba(0, 230, 118, 0.35);
+  --pp-gold-scripture: #ffd600;
+  --pp-orange-clear: #ff9100;
+}
+
+/* ProPresenter Master Container */
+.pp-studio-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100%;
+  background: var(--pp-bg-root);
+  color: var(--pp-text-main);
+  overflow: hidden;
+}
+
+/* Top Master Control Bar */
+.pp-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 60px;
+  padding: 0 16px;
+  background: linear-gradient(180deg, #161924 0%, #0e1017 100%);
+  border-bottom: 1px solid var(--pp-border-medium);
+  z-index: 100;
+  flex-shrink: 0;
+  gap: 14px;
+}
+
+.pp-brand-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 180px;
+}
+
+.pp-brand-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #00e5ff 0%, #7c4dff 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 800;
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.4);
+}
+
+.pp-brand-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.2px;
+}
+
+/* Master Clear Buttons */
+.pp-clear-cluster {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 4px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--pp-border-subtle);
+}
+
+.pp-clear-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.pp-clear-all {
+  background: rgba(255, 23, 68, 0.2);
+  color: #ff5252;
+  border-color: rgba(255, 23, 68, 0.4);
+}
+.pp-clear-all:hover {
+  background: var(--pp-live-red);
+  color: #fff;
+  box-shadow: 0 0 14px var(--pp-live-red-glow);
+}
+
+.pp-clear-slide {
+  background: rgba(255, 145, 0, 0.18);
+  color: #ffab40;
+  border-color: rgba(255, 145, 0, 0.35);
+}
+.pp-clear-slide:hover {
+  background: var(--pp-orange-clear);
+  color: #000;
+}
+
+.pp-clear-media {
+  background: rgba(255, 214, 0, 0.14);
+  color: #ffd740;
+  border-color: rgba(255, 214, 0, 0.3);
+}
+.pp-clear-media:hover {
+  background: var(--pp-gold-scripture);
+  color: #000;
+}
+
+.pp-clear-props {
+  background: rgba(142, 150, 173, 0.15);
+  color: var(--pp-text-main);
+  border-color: var(--pp-border-subtle);
+}
+.pp-clear-props:hover {
+  background: var(--pp-text-muted);
+  color: #000;
+}
+
+.pp-keycap {
+  font-size: 8px;
+  font-family: var(--pp-font-mono);
+  opacity: 0.75;
+}
+
+/* Audio VU Meter & Mic Strip */
+.pp-audio-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #0b0d13;
+  padding: 4px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--pp-border-subtle);
+  min-width: 240px;
+}
+
+.pp-vu-track {
+  flex: 1;
+  height: 10px;
+  background: #191c28;
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+}
+
+.pp-vu-live-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #00e676 0%, #00e676 70%, #ffd600 85%, #ff1744 100%);
+  transition: width 0.08s ease-out;
+}
+
+/* 3-Pane Studio Workspace */
+.pp-studio-grid {
+  display: grid;
+  grid-template-columns: 280px 1fr 330px;
+  flex: 1;
+  height: calc(100vh - 60px);
+  overflow: hidden;
+  background: var(--pp-bg-root);
+}
+
+/* Left Pane: Service Flow & Library */
+.pp-left-column {
+  background: var(--pp-bg-surface);
+  border-right: 1px solid var(--pp-border-subtle);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.pp-tab-nav {
+  display: flex;
+  align-items: center;
+  background: #0a0c12;
+  border-bottom: 1px solid var(--pp-border-subtle);
+  padding: 0 4px;
+  height: 38px;
+  flex-shrink: 0;
+  gap: 2px;
+}
+
+.pp-nav-tab {
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--pp-text-muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-transform: uppercase;
+}
+.pp-nav-tab:hover {
+  color: var(--pp-text-main);
+}
+.pp-nav-tab.active {
+  color: var(--pp-cyan-active);
+  border-bottom-color: var(--pp-cyan-active);
+  background: rgba(0, 229, 255, 0.06);
+}
+
+.pp-tab-pane {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: none;
+}
+.pp-tab-pane.active {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Center Pane: Slide Grid & Teleprompter */
+.pp-center-column {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--pp-bg-root);
+  overflow: hidden;
+}
+
+.pp-slide-canvas-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: #0f1118;
+  border-bottom: 1px solid var(--pp-border-subtle);
+  flex-shrink: 0;
+}
+
+.pp-slide-grid-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.pp-slides-wrapper {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 14px;
+}
+
+/* 16:9 Presentation Slide Card */
+.pp-presentation-slide {
+  aspect-ratio: 16/9;
+  background: var(--pp-bg-card);
+  border: 2px solid var(--pp-border-subtle);
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.18s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.pp-presentation-slide:hover {
+  background: var(--pp-bg-card-hover);
+  border-color: var(--pp-border-medium);
+  transform: translateY(-2px);
+}
+
+.pp-presentation-slide.active {
+  border-color: var(--pp-cyan-active);
+  box-shadow: 0 0 16px var(--pp-cyan-glow);
+  background: var(--pp-bg-card-active);
+}
+
+.pp-presentation-slide.is-live {
+  border-color: var(--pp-live-red);
+  box-shadow: 0 0 18px var(--pp-live-red-glow);
+}
+
+.pp-slide-header-ref {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--pp-cyan-active);
+}
+
+.pp-slide-content-preview {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--pp-text-main);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Teleprompter Drawer */
+.pp-teleprompter-box {
+  height: 140px;
+  background: #08090d;
+  border-top: 1px solid var(--pp-border-medium);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.pp-teleprompter-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  background: #0f1118;
+  border-bottom: 1px solid var(--pp-border-subtle);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--pp-text-muted);
+  text-transform: uppercase;
+}
+
+.pp-teleprompter-text {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--pp-text-main);
+}
+
+.pp-scripture-tag {
+  background: rgba(0, 229, 255, 0.2);
+  color: var(--pp-cyan-active);
+  border: 1px solid rgba(0, 229, 255, 0.4);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 11px;
+  margin: 0 2px;
+  display: inline-block;
+  cursor: pointer;
+}
+
+/* Right Pane: Live Program & Stage Monitor */
+.pp-right-column {
+  background: var(--pp-bg-surface);
+  border-left: 1px solid var(--pp-border-subtle);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  padding: 12px;
+  gap: 14px;
+}
+
+.pp-pgm-monitor {
+  aspect-ratio: 16/9;
+  background: #000;
+  border: 2px solid var(--pp-border-medium);
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+.pp-pgm-monitor.is-live {
+  border-color: var(--pp-live-red);
+  box-shadow: 0 0 20px var(--pp-live-red-glow);
+}
+
+.pp-live-onair-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: var(--pp-live-red);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+  box-shadow: 0 0 8px var(--pp-live-red-glow);
+  display: none;
+}
+.pp-pgm-monitor.is-live .pp-live-onair-badge {
+  display: block;
+}
+
+.pp-pgm-card-preview {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  background: rgba(16, 18, 26, 0.94);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.pp-pgm-ref-text {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--pp-cyan-active);
+}
+
+.pp-pgm-body-text {
+  font-size: 10px;
+  line-height: 1.35;
+  color: #fff;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Stage Display Box */
+.pp-stage-preview-box {
+  aspect-ratio: 16/9;
+  background: #050608;
+  border: 1px solid var(--pp-border-subtle);
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+}
+
+.pp-stage-ref-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--pp-gold-scripture);
+}
+
+.pp-stage-text-preview {
+  font-size: 11px;
+  color: #fff;
+  line-height: 1.35;
+}
+
+/* Mood Presets Palette */
+.pp-mood-palette {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.pp-mood-pill {
+  height: 32px;
+  border-radius: 4px;
+  border: 1px solid var(--pp-border-subtle);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-transform: uppercase;
+  transition: all 0.15s ease;
+}
+.pp-mood-pill:hover, .pp-mood-pill.active {
+  transform: scale(1.02);
+  border-color: #fff;
+  box-shadow: 0 0 10px rgba(255,255,255,0.25);
+}
+

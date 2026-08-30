@@ -16,26 +16,16 @@ import {
 } from './audio-capture.js';
 import { showToast, addActivity, escapeHtmlDashboard } from '../utils.js';
 import { setStatusStripItem } from './status-strip.js';
+import { addSlideToStudio, updatePgmDisplay, updateStageDisplay } from './propresenter-studio.js';
 
 export function displayVerse(message) {
   const refEl = document.getElementById('verseReference');
   const textEl = document.getElementById('verseText');
   const bilingualEl = document.getElementById('verseTextBilingual');
-  // AJOUT (redesign visuel — carte verset en direct) : jusqu'ici cette
-  // carte avait le même aspect qu'un verset soit réellement à l'écran
-  // devant l'assemblée ou non — .live-badge affichait "Diffusion Overlay
-  // En Direct" en permanence, sans lien avec l'état réel. .is-live donne
-  // une confirmation visuelle immédiate (voir .hero-verse-card.is-live
-  // dans dashboard.css), retirée par hideVerseDisplay() ci-dessous.
   const heroCard = document.getElementById('verseDisplay');
   if (heroCard) heroCard.classList.add('is-live');
   if (refEl) refEl.textContent = message.reference;
   if (textEl) textEl.textContent = message.text;
-  // CORRECTIF (bilingue dashboard) : jusqu'ici seule verseReference
-  // recevait le texte bilingue ("Jean 3:16 · John 3:16") construit
-  // côté serveur ; verseText n'affichait que message.text (FR), et
-  // message.text_en n'était jamais lu. Même condition que
-  // overlay.html : langMode === 'both' ET texte EN réellement reçu.
   if (bilingualEl) {
     if (message.langMode === 'both' && message.text_en) {
       bilingualEl.textContent = 'EN: ' + message.text_en;
@@ -46,6 +36,16 @@ export function displayVerse(message) {
     }
   }
   state.currentVerse = message;
+
+  // Synchronise with ProPresenter Studio layout
+  addSlideToStudio({
+    reference: message.reference,
+    text: message.text,
+    confidence: message.confidence,
+    langMode: message.langMode,
+    provider: message.bibleVersion || 'LSG 1910',
+  });
+
 
   if (message.confidence && refEl) {
     const confidenceEl = document.createElement('span');
@@ -90,21 +90,34 @@ export function hideVerseDisplay() {
     bilingualEl.style.display = 'none';
   }
   state.currentVerse = null;
+  updatePgmDisplay(null);
+  updateStageDisplay(null);
 }
+
 
 export function addTranscript(message) {
   const feed = document.getElementById('transcriptFeed');
+  const ppFeed = document.getElementById('ppTeleprompterFeed');
+  const text = message.text || '';
+
+  if (ppFeed && text) {
+    const time = new Date(message.timestamp || Date.now()).toLocaleTimeString([], { hour12: false });
+    const p = document.createElement('div');
+    p.style.marginBottom = '6px';
+    // Highlight potential Bible citations
+    const highlighted = escapeHtmlDashboard(text).replace(
+      /\b(Genèse|Exode|Lévitique|Nombres|Deutéronome|Josué|Juges|Ruth|Samuel|Rois|Chroniques|Esdras|Néhémie|Esther|Job|Psaume[s]?|Proverbe[s]?|Ecclésiaste|Cantique|Ésaïe|Jérémie|Lamentations|Ézéchiel|Daniel|Osée|Joël|Amos|Abdias|Jonas|Michée|Nahum|Habacuc|Sophonie|Aggée|Zacharie|Malachie|Matthieu|Marc|Luc|Jean|Actes|Romains|Corinthiens|Galates|Éphésiens|Philippiens|Colossiens|Thessaloniciens|Timothée|Tite|Philémon|Hébreux|Jacques|Pierre|Jude|Apocalypse)\s+\d+(:\d+)?/gi,
+      '<span class="pp-scripture-tag" onclick="if(window.quickLookupVerse) window.quickLookupVerse(\'$&\');">📖 $&</span>'
+    );
+    p.innerHTML = `<span style="color: var(--pp-text-dim); font-size: 10px; font-family: var(--pp-font-mono); margin-right: 6px;">[${time}]</span> ${highlighted}`;
+    ppFeed.insertBefore(p, ppFeed.firstChild);
+    while (ppFeed.children.length > 30) ppFeed.removeChild(ppFeed.lastChild);
+  }
+
   if (!feed) return;
 
   const item = document.createElement('div');
   item.className = 'transcript-item';
-
-  // CORRECTIF (audit production — XSS) : message.text vient soit du moteur
-  // STT (Groq/Deepgram, jamais passé par le filtre <>">' appliqué aux
-  // SEULS messages entrants côté serveur), soit d'un client déjà
-  // authentifié opérateur. escapeHtmlDashboard() existait déjà mais
-  // n'était jamais appliqué ici, le point d'entrée le plus direct entre
-  // "parole captée" et innerHTML.
   const time = new Date(message.timestamp || Date.now()).toLocaleTimeString();
   const confidenceHtml =
     typeof message.confidence === 'number'
@@ -124,6 +137,7 @@ export function addTranscript(message) {
   state.transcripts.unshift(message);
   if (state.transcripts.length > 50) state.transcripts.pop();
 }
+
 
 // AJOUT (frontend — candidateVerse) : formate une référence reçue en objet
 // ({ book, chapter, verseStart }) ou en chaîne toute faite en un libellé

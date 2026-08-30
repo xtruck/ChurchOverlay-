@@ -53,7 +53,8 @@ function ensureDom() {
  */
 export function updateAudioVumeter(info) {
   ensureDom();
-  if (!vumeterBar) return;
+  const ppBar = document.getElementById('ppVuLiveBar');
+  const ppStatus = document.getElementById('ppVuStatusText');
 
   const level = info.level || 'unknown';
   const style = LEVEL_LABELS[level] || LEVEL_LABELS.unknown;
@@ -63,8 +64,17 @@ export function updateAudioVumeter(info) {
     100,
     Math.max(0, (Math.log10(Math.max(info.rmsMean, 0.0001)) + 4) * 25)
   );
-  vumeterBar.style.width = rmsPercent + '%';
-  vumeterBar.style.backgroundColor = style.color;
+
+  if (ppBar) ppBar.style.width = rmsPercent + '%';
+  if (ppStatus) {
+    ppStatus.textContent = style.text;
+    ppStatus.style.color = style.color;
+  }
+
+  if (vumeterBar) {
+    vumeterBar.style.width = rmsPercent + '%';
+    vumeterBar.style.backgroundColor = style.color;
+  }
 
   // Label de zone
   if (vumeterLabel) {
@@ -95,6 +105,13 @@ export function updateAudioVumeter(info) {
  */
 export function resetAudioVumeter() {
   ensureDom();
+  const ppBar = document.getElementById('ppVuLiveBar');
+  const ppStatus = document.getElementById('ppVuStatusText');
+  if (ppBar) ppBar.style.width = '0%';
+  if (ppStatus) {
+    ppStatus.textContent = '—';
+    ppStatus.style.color = '#6b7280';
+  }
   if (vumeterBar) vumeterBar.style.width = '0%';
   if (vumeterLabel) {
     vumeterLabel.textContent = '—';
@@ -103,3 +120,4 @@ export function resetAudioVumeter() {
   if (vumeterPeak) vumeterPeak.style.display = 'none';
   if (vumeterInfo) vumeterInfo.textContent = '';
 }
+

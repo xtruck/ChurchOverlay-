@@ -47,11 +47,5 @@ import './features/propresenter-planning-center.js';
 // son loadObsConfig() initial et ses window.x ne s'exécuteraient jamais.
 import './features/obs-scenes.js';
 import './features/agent.js';
-// AJOUT (redesign — sous-navigation Réglages) : purement DOM/CSS, n'importe
-// aucun autre module et n'est importé par personne d'autre.
-import './features/settings-subnav.js';
-// AJOUT (bandeau d'état permanent) : status-strip.js est déjà chargé
-// indirectement (verse-session-display.js/network-settings.js/ip-cameras.js,
-// importés par ws-dispatch.js ; api-settings.js, importé juste au-dessus,
-// l'importent tous les quatre pour appeler setStatusStripItem/
-// updateNetworkStatusStrip) — pas besoin de le lister ici aussi.
+// AJOUT : ProPresenter 7 style studio workspace
+import './features/propresenter-studio.js';
