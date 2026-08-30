@@ -41,86 +41,31 @@ const CONFIG = {
   sampleRate: 16000, // recommandé pour Whisper large-v3 (Groq)
   channels: 1, // Mono
   bitDepth: 16, // PCM 16-bit
-  // AJOUT (audit — reflexes plus rapides, gratuit) : 5000ms → 4000ms.
-  // whisper-large-v3-turbo (voir groq-wrapper.js) transcrit un segment plus
-  // vite que l'ancien modèle, donc raccourcir la fenêtre réduit la latence
-  // perçue sans changer de fournisseur ni de coût — juste moins d'audio à
-  // attendre avant l'envoi. 4s reste au-dessus du plancher usuel pour une
-  // bonne précision Whisper (le contexte se dégrade nettement sous ~3s).
-  segmentDuration: 4000, // 4 secondes (optimisé pour réactivité)
-  overlapDuration: 400, // 400ms de chevauchement (meilleur contexte)
-  // CORRECTIF (VAD réel) : ces deux valeurs existaient déjà mais n'étaient
-  // lues nulle part dans ce fichier — la segmentation était purement
-  // temporelle, aucun filtrage de silence n'avait lieu malgré le commentaire
-  // d'en-tête "Segmentation intelligente (VAD)". 0.3 était un placeholder
-  // jamais calibré : pour une RMS normalisée par l'amplitude max int16
-  // (échelle 0-1, voir computeRms ci-dessous), la parole normale tourne
-  // plutôt autour de 0.01-0.08 selon le gain micro — 0.3 aurait classé
-  // quasiment tout en "silence". Valeur de départ raisonnable ; À CALIBRER
-  // avec de vrais enregistrements de culte (variation de gain micro d'un
-  // lieu à l'autre) avant de considérer ce seuil comme définitif.
+  // OPTIMISATION LATENCE (v0.9.2 - temps d'exécution < 3s) :
+  // Raccourcissement de la fenêtre de capture et de l'intervalle de flush
+  // pour garantir une transcription et détection en moins de 1.5 - 2s en batch.
+  segmentDuration: Number(process.env.SEGMENT_DURATION_MS) || 2200, // 2.2 secondes (plafond de sécurité)
+  overlapDuration: Number(process.env.OVERLAP_DURATION_MS) || 300, // 300ms de chevauchement
   silenceThreshold: 0.02, // Seuil RMS de silence pour VAD (0-1)
-  minSpeechDuration: 500, // Durée minimum de voix détectée dans un segment (ms) pour l'envoyer au STT
+  minSpeechDuration: Number(process.env.MIN_SPEECH_DURATION_MS) || 300, // Durée minimum de voix détectée (ms)
 
   // AJOUT (VAD neuronal — Silero) : le RMS seul ne distingue pas "fort"
   // de "parole" (musique, sono, ventilateur passent le seuil aussi
   // facilement qu'une voix) — voir silero-vad.js pour le détail du modèle.
-  // 'auto' : Silero si le modèle charge, repli RMS silencieux sinon (voir
-  // initVadProvider). 'rms' : force l'ancien comportement (désactive
-  // Silero explicitement, ex. VAD_PROVIDER=rms en environnement contraint).
-  // 'silero' : force Silero — si le chargement échoue, on retombe quand
-  // même sur RMS (jamais d'échec dur du pipeline audio pour une préférence
-  // de VAD, voir §25 — un composant indisponible ne doit jamais arrêter le
-  // reste du pipeline).
   vadProviderPreference:
     process.env.VAD_PROVIDER === 'rms' || process.env.VAD_PROVIDER === 'silero'
       ? process.env.VAD_PROVIDER
       : 'auto',
-  // Seuil de probabilité Silero (0-1) au-dessus duquel une fenêtre de 32ms
-  // est classée "voix" — 0.5 est la valeur par défaut documentée par
-  // l'équipe Silero, point de départ raisonnable avant calibration terrain.
   sileroSpeechThreshold: 0.5,
 
-  // AJOUT (VAD streaming — capture de phrases plus rapide) : jusqu'ici la
-  // segmentation était PUREMENT temporelle (fenêtre fixe segmentDuration),
-  // donc une phrase courte suivie d'un silence attendait quand même la fin
-  // des 4s avant d'être transcrite. Ces réglages pilotent une coupure
-  // anticipée dès qu'un silence de fin de phrase est détecté (voir
-  // processStreamingFrame/flushSegment) — segmentDuration devient un
-  // plafond de sécurité plutôt que le seul déclencheur.
-  // AJOUT (Chantier A.4/B, mission autonome — piste D5 « Sophonie ») :
-  // réglable via TRAILING_SILENCE_MS (comme VAD_PROVIDER ci-dessus) pour
-  // pouvoir MESURER le compromis avant de changer le défaut du direct
-  // (verrou dur n°2 — jamais de bascule de défaut sans validation).
-  // Diagnostic mesuré (BASELINE_CHANTIER_1.md, Chantier A.4) : un nom de
-  // livre isolé ("Sophonie") suivi d'une pause de réflexion avant
-  // "chapitre 3 verset 17" peut dépasser 600ms et couper l'énoncé trop
-  // tôt côté VAD local, avant même que le complément soit prononcé.
-  trailingSilenceMs: Number(process.env.TRAILING_SILENCE_MS) || 600, // silence continu après de la voix => on considère la phrase terminée et on coupe tout de suite
-  noiseFloorAdaptRate: 0.1, // vitesse d'adaptation (moyenne mobile exponentielle) de l'estimation du bruit ambiant
-  noiseMarginMultiplier: 3, // un niveau doit dépasser (bruit ambiant × ce facteur) pour compter comme "voix" côté détection anticipée
-  minAdaptiveThreshold: 0.01, // plancher absolu : ne jamais déclencher sur du bruit de quantification même si la pièce est très calme
-  maxAdaptiveThreshold: 0.06, // plafond absolu : ne jamais exiger plus fort qu'une voix normale, même dans une pièce bruyante
-  initialNoiseFloor: 0.01, // estimation de départ avant calibration (affinée en continu pendant les silences)
-  // CORRECTIF (2026-08-07 — protection quota gratuit Groq) : whisper-large-v3-
-  // turbo est plafonné à 20 requêtes/minute côté gratuit Groq (confirmé via
-  // console.groq.com/docs/rate-limits). Sans plancher, une coupure anticipée
-  // sur CHAQUE petite pause entre phrases (parole hachée, plusieurs phrases
-  // courtes rapprochées) pourrait dépasser ce débit et déclencher des 429 en
-  // plein culte. Ce plancher ne s'applique qu'aux coupures ANTICIPÉES (voir
-  // processStreamingFrame) — le plafond de sécurité segmentDuration (4000ms)
-  // reste, lui, naturellement sous 20/min et n'a pas besoin de ce garde-fou.
-  minFlushIntervalMs: 3200, // ~18.75 requêtes/min max, marge sous le plafond Groq de 20/min
-  // CORRECTIF (audit — même famille de bug que ffmpeg.exe dans setup-ffmpeg.js) :
-  // était path.join(__dirname, 'temp-audio'). Dans l'app empaquetée
-  // (asar: true), __dirname pointe à l'intérieur de app.asar, un fichier
-  // archive à LECTURE SEULE — fs.mkdirSync() y échoue systématiquement avec
-  // "ENOTDIR: not a directory". Contrairement au cas ffmpeg.exe, il n'y a
-  // ici aucun binaire à exécuter (juste des fichiers .wav à écrire puis
-  // relire), donc pas besoin d'un chemin "asar.unpacked" spécifique : le
-  // dossier temporaire de l'OS (os.tmpdir()) est le bon choix dans TOUS les
-  // modes d'exécution (empaqueté, dev, `node server.js` standalone) sans
-  // dépendre d'aucune configuration de packaging.
+  // Détection de fin de phrase anticipée
+  trailingSilenceMs: Number(process.env.TRAILING_SILENCE_MS) || 380, // silence continu après de la voix => coupure rapide
+  noiseFloorAdaptRate: 0.1, // vitesse d'adaptation de l'estimation du bruit ambiant
+  noiseMarginMultiplier: 3, // facteur de dépassement du bruit ambiant pour voix
+  minAdaptiveThreshold: 0.01,
+  maxAdaptiveThreshold: 0.06,
+  initialNoiseFloor: 0.01,
+  minFlushIntervalMs: Number(process.env.MIN_FLUSH_INTERVAL_MS) || 1400, // intervalle min entre flushes anticipés
   tempDir: path.join(os.tmpdir(), 'churchoverlay-audio'),
 };
 

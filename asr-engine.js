@@ -43,11 +43,12 @@ const deepgram = require('./deepgram-wrapper');
 // aucun risque de dépendance circulaire à le requérir ici.
 const sessionState = require('./session-state');
 
-const VALID_PROVIDERS = ['auto', 'groq', 'deepgram', 'qwen-local'];
+const VALID_PROVIDERS = ['auto', 'groq', 'deepgram', 'streaming', 'qwen-local'];
 
 /** @returns {string} un provider de VALID_PROVIDERS — 'auto' si non réglé ou invalide. */
 function resolveProvider() {
   const raw = (process.env.ASR_PROVIDER || 'auto').toLowerCase();
+  if (raw === 'streaming') return 'deepgram';
   return VALID_PROVIDERS.includes(raw) ? raw : 'auto';
 }
 

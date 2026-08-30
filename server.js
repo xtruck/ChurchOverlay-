@@ -1273,7 +1273,8 @@ async function processTranscript(text, tracker, opts = {}) {
 
   if (!reference && corrector) {
     try {
-      const mode = groqHasChatCompletion ? 'auto' : 'fast';
+      const defaultMode = (process.env.TRANSCRIPTION_CORRECTOR_MODE || 'fast').toLowerCase();
+      const mode = defaultMode === 'smart' && groqHasChatCompletion ? 'smart' : 'fast';
       correctedText = await corrector.correct(text, mode);
       if (correctedText !== text) {
         log('Transcription corrected: ' + correctedText.substring(0, 80) + '...');
