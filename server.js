@@ -702,12 +702,21 @@ function resolveSceneMediaUrls(scene) {
 // implicite à tout server.js.
 // ---------------------------------------------------------------------------
 const mediaWsHandlers = require('./media-ws-handlers');
+const sceneWsHandlers = require('./scene-ws-handlers');
 const CATEGORY_HANDLERS = new Map([
   ...mediaWsHandlers.createHandlers({
     mediaLibrary,
     songLibrary,
     sceneStore,
     voiceTriggerMatcher,
+    sessionStore,
+    broadcast,
+    log,
+    resolveSceneMediaUrls,
+  }),
+  ...sceneWsHandlers.createHandlers({
+    sceneStore,
+    mediaLibrary,
     sessionStore,
     broadcast,
     log,
@@ -3236,42 +3245,8 @@ wss.on('connection', (ws, req) => {
     // media-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS plus haut.
 
     // ---------------------------------------------------------------------
-    // AJOUT (studio de scènes, lot 3/6 — texte/logo/image composés) : mêmes
-    // formes de message que la médiathèque ci-dessus (scene-store.js est un
-    // clone assumé de media-library.js), voir le plan approuvé. Aucun
-    // branchement dashboard/overlay.html pour l'instant (lots 4-6) — ces
-    // handlers ne sont exercés que par test/integration-scene-crud.js
-    // jusque-là, via des messages WS écrits à la main.
-    // ---------------------------------------------------------------------
-    if (sanitized.action === 'getSceneLibrary') {
-      ws.send(
-        JSON.stringify({
-          action: 'sceneLibraryUpdated',
-          scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
-          ...(requestId ? { requestId } : {}),
-        })
-      );
-      return;
-    }
-
-    if (sanitized.action === 'addScene') {
-      try {
-        const scene = sceneStore.addScene({
-          name: sanitized.name,
-          background: sanitized.background,
-          elements: sanitized.elements,
-          triggerPhrases: sanitized.triggerPhrases,
-        });
-        log(`Studio de scènes : "${scene.name}" créée`);
-        broadcast({
-          action: 'sceneLibraryUpdated',
-          scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
-        });
-      } catch (err) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Studio de scènes : ' + err.message }));
-      }
-      return;
-    }
+    // getSceneLibrary/addScene — extraits vers scene-ws-handlers.js
+    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
 
     // AJOUT (Partie 7.1.1 — import PowerPoint, texte seul, voir
     // pptx-importer.js pour la portée assumée) : sourcePath vient du
@@ -3377,121 +3352,9 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    if (sanitized.action === 'updateScene') {
-      const updated = sceneStore.updateScene(sanitized.id, {
-        name: sanitized.name,
-        background: sanitized.background,
-        elements: sanitized.elements,
-        triggerPhrases: sanitized.triggerPhrases,
-      });
-      if (updated) {
-        log(`Studio de scènes : "${updated.name}" mise à jour`);
-        broadcast({
-          action: 'sceneLibraryUpdated',
-          scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
-        });
-      } else {
-        ws.send(JSON.stringify({ action: 'error', error: 'Studio de scènes : scène introuvable' }));
-      }
-      return;
-    }
-
-    if (sanitized.action === 'deleteScene') {
-      const wasDefault = !!(sceneStore.getItem(sanitized.id) || {}).isDefault;
-      const removed = sceneStore.deleteItem(sanitized.id);
-      if (removed) {
-        broadcast({
-          action: 'sceneLibraryUpdated',
-          scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
-        });
-        // Même raisonnement que deleteMediaItem ci-dessus : la scène par
-        // défaut supprimée ne doit pas rester "fantôme" côté overlay.
-        if (wasDefault) broadcast({ action: 'defaultSceneChanged', item: null });
-      } else {
-        ws.send(JSON.stringify({ action: 'error', error: 'Studio de scènes : scène introuvable' }));
-      }
-      return;
-    }
-
-    // --- Poster principal (scène) — voir setDefaultScene() dans
-    // scene-store.js. sanitized.id absent/vide = retire le poster principal
-    // (scène) actuel sans en désigner un nouveau. ---
-    if (sanitized.action === 'setDefaultScene') {
-      const updated = sanitized.id
-        ? sceneStore.setDefaultScene(sanitized.id)
-        : sceneStore.clearDefaultScene();
-      if (sanitized.id && !updated) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Studio de scènes : scène introuvable' }));
-        return;
-      }
-      log(
-        sanitized.id
-          ? `Studio de scènes : "${updated.name}" désignée comme poster principal`
-          : 'Studio de scènes : poster principal (scène) retiré'
-      );
-      broadcast({
-        action: 'sceneLibraryUpdated',
-        scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
-      });
-      // AJOUT (studio de scènes, lot 4) : resolveSceneMediaUrls() ici, PAS
-      // l'item brut du store (mediaId nus, inexploitables tels quels par
-      // renderSceneDom() côté overlay.html) — voir aussi triggerScene plus
-      // bas, même besoin de résolution.
-      const newDefaultScene = sceneStore.getDefaultScene();
-      broadcast({
-        action: 'defaultSceneChanged',
-        item: newDefaultScene ? resolveSceneMediaUrls(newDefaultScene) : null,
-      });
-      // AJOUT (arbitrage croisé, lot 2) : désigner une scène par défaut
-      // démarque silencieusement tout média par défaut existant
-      // (scene-store.js#setDefaultScene) — symétrique au correctif du même
-      // nom sur setDefaultMediaItem ci-dessus.
-      if (sanitized.id) {
-        broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
-        broadcast({ action: 'defaultMediaChanged', item: mediaLibrary.getDefaultItem() });
-      }
-      return;
-    }
-
-    // triggerMediaItem/hideMedia — extraits vers media-ws-handlers.js
-    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
-
-    // AJOUT (studio de scènes, lot 4/6 — déclenchement à l'écran) : miroir
-    // de triggerMediaItem/hideMedia ci-dessus, distinct de setDefaultScene
-    // (poster PERSISTANT) — un déclenchement ponctuel, comme un média
-    // manuel. Résout CHAQUE mediaId référencé (fond + éléments image) en URL
-    // `/media/<filename>` ICI, côté serveur — jamais confiance au tableau de
-    // bord pour avoir une URL à jour (voir le plan approuvé). Un mediaId
-    // dont l'élément a été supprimé de la médiathèque se dégrade proprement
-    // (mediaUrl omis pour cet élément seul) plutôt que de faire planter la
-    // diffusion entière.
-    if (sanitized.action === 'triggerScene') {
-      const scene = sceneStore.getItem(sanitized.id);
-      if (!scene) {
-        sendError('Studio de scènes : scène introuvable');
-        return;
-      }
-      log(`Studio de scènes : "${scene.name}" déclenchée manuellement`);
-      broadcast({
-        action: 'showScene',
-        ...resolveSceneMediaUrls(scene),
-        detectedBy: 'manual',
-        ...(requestId ? { requestId } : {}),
-      });
-      sessionStore.recordVerseShown({
-        reference: `🎬 ${scene.name}`,
-        detectedBy: 'scene',
-        timestamp: Date.now(),
-      });
-      return;
-    }
-
-    if (sanitized.action === 'hideScene') {
-      const hideScenePayload = { action: 'hideScene' };
-      if (requestId) hideScenePayload.requestId = requestId;
-      broadcast(hideScenePayload);
-      return;
-    }
+    // updateScene/deleteScene/setDefaultScene/triggerScene/hideScene —
+    // extraits vers scene-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS
+    // plus haut.
 
     // ---------------------------------------------------------------------
     // AJOUT (chantier 4.3 — feuille de route/cue-list, voir rundown-store.js

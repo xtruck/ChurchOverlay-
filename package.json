@@ -137,6 +137,7 @@
       "phone-camera-routes.js",
       "http-routes.js",
       "media-ws-handlers.js",
+      "scene-ws-handlers.js",
       "ai-modules-loader.js",
       "session-state.js",
       "dotenv-loader.js",
