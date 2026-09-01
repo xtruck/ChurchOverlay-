@@ -169,6 +169,70 @@ const SCHEMAS = {
       },
     },
   },
+  // AJOUT (audit backend — Phase 1F, couverture de validation.SCHEMAS) :
+  // famille médiathèque — sourcePath/label/triggerPhrases atteignaient
+  // mediaLibrary.addItem() (media-library.js) sans aucune borne de type ou
+  // de taille avant lui (media-library.js sanitize déjà en profondeur —
+  // extension autorisée, tronque triggerPhrases/label — mais seulement
+  // APRÈS avoir accepté n'importe quel JSON, y compris des tableaux/objets
+  // là où une string est attendue). Valeurs alignées sur les constantes
+  // réelles de media-library.js (TRANSITION_STYLES, limites internes).
+  addMediaItem: {
+    required: ['action', 'sourcePath'],
+    optional: [
+      'label',
+      'triggerPhrases',
+      'displayDurationMs',
+      'includeInLoop',
+      'transitionStyle',
+      'setAsPoster',
+    ],
+    validators: {
+      action: (value) => value === 'addMediaItem',
+      sourcePath: (value) => typeof value === 'string' && value.length > 0 && value.length <= 1000,
+      label: (value) => typeof value === 'string' && value.length <= 200,
+      triggerPhrases: (value) =>
+        Array.isArray(value) &&
+        value.length <= 50 &&
+        value.every((p) => typeof p === 'string' && p.length <= 300),
+      displayDurationMs: (value) =>
+        value === null || (typeof value === 'number' && value > 0 && value <= 3600000),
+      includeInLoop: (value) => typeof value === 'boolean',
+      transitionStyle: (value) =>
+        typeof value === 'string' && ['fade', 'slide', 'zoom', 'cut'].includes(value),
+      setAsPoster: (value) => typeof value === 'boolean',
+    },
+  },
+  updateMediaItem: {
+    required: ['action', 'id'],
+    optional: ['displayDurationMs', 'transitionStyle'],
+    validators: {
+      action: (value) => value === 'updateMediaItem',
+      id: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
+      displayDurationMs: (value) =>
+        value === null || (typeof value === 'number' && value > 0 && value <= 3600000),
+      transitionStyle: (value) =>
+        typeof value === 'string' && ['fade', 'slide', 'zoom', 'cut'].includes(value),
+    },
+  },
+  deleteMediaItem: {
+    required: ['action', 'id'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'deleteMediaItem',
+      id: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
+    },
+  },
+  // id absent/vide = retire le poster principal sans en désigner un nouveau
+  // (voir server.js#setDefaultMediaItem) — donc requis seulement pour 'action'.
+  setDefaultMediaItem: {
+    required: ['action'],
+    optional: ['id'],
+    validators: {
+      action: (value) => value === 'setDefaultMediaItem',
+      id: (value) => typeof value === 'string' && value.length <= 100,
+    },
+  },
 };
 
 /**

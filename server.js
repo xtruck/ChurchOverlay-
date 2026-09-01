@@ -2393,16 +2393,16 @@ wss.on('connection', (ws, req) => {
     }
 
     // CORRECTIF (audit backend — validation.js jamais branché) : pour les
-    // actions déjà couvertes par validation.SCHEMAS (showVerse, hideVerse,
-    // updateVerse, lookupReference, setLanguage, setTranslation, getState,
-    // getHistory, replayVerse, diagnostic), on applique en plus le contrôle
-    // strict de type/longueur/valeurs autorisées de ce module — jusqu'ici
-    // testé en isolation (test-validation.js) mais jamais appelé ici. Fait
-    // volontairement de façon additive : les actions plus récentes non
-    // couvertes par SCHEMAS (transcript, preServiceCheck, startReading,
-    // obs-*, etc.) ne passent pas par ce gate et continuent de fonctionner
-    // exactement comme avant. `applyTheme` a été ajouté à SCHEMAS (audit
-    // backend) car son payload `css` était diffusé sans aucune validation.
+    // actions déjà couvertes par validation.SCHEMAS (voir validation.js pour
+    // la liste à jour — showVerse, hideVerse, updateVerse, lookupReference,
+    // setLanguage, setTranslation, getState, getHistory, replayVerse,
+    // diagnostic, applyTheme, la famille médiathèque addMediaItem/
+    // updateMediaItem/deleteMediaItem/setDefaultMediaItem, ...), on applique
+    // en plus le contrôle strict de type/longueur/valeurs autorisées de ce
+    // module. Fait volontairement de façon additive (Phase 1F, en cours —
+    // 221 actions au registre, SCHEMAS n'en couvre encore qu'une partie) :
+    // les actions non encore couvertes ne passent pas par ce gate et
+    // continuent de fonctionner exactement comme avant.
     if (VALIDATE_MESSAGES_ENABLED && validation.SCHEMAS[sanitized.action]) {
       const strict = validation.validateMessage(sanitized);
       if (!strict.valid) {

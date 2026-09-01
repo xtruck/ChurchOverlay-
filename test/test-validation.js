@@ -166,5 +166,59 @@ assert(SCHEMAS.updateVerse, 'Schéma updateVerse devrait exister');
 assert(SCHEMAS.lookupReference, 'Schéma lookupReference devrait exister');
 console.log('[TEST] ✓ Tous les schémas requis sont présents');
 
+// Test 14: Validation addMediaItem — payload minimal valide
+console.log('[TEST] Test 14: Validation addMediaItem valide...');
+const validAddMedia = {
+  action: 'addMediaItem',
+  sourcePath: 'C:\\Users\\op\\Pictures\\poster.png',
+  label: 'Affiche de bienvenue',
+  triggerPhrases: ['affiche accueil'],
+  transitionStyle: 'fade',
+  includeInLoop: true,
+};
+const result14 = validateMessage(validAddMedia);
+assert.strictEqual(result14.valid, true, `addMediaItem valide devrait passer : ${result14.error}`);
+console.log('[TEST] ✓ addMediaItem valide accepté');
+
+// Test 15: addMediaItem — sourcePath manquant rejeté
+console.log('[TEST] Test 15: addMediaItem sans sourcePath rejeté...');
+const result15 = validateMessage({ action: 'addMediaItem', label: 'Sans fichier' });
+assert.strictEqual(result15.valid, false, 'addMediaItem sans sourcePath devrait être rejeté');
+console.log('[TEST] ✓ addMediaItem sans sourcePath rejeté');
+
+// Test 16: addMediaItem — transitionStyle hors de la liste autorisée rejeté
+console.log('[TEST] Test 16: addMediaItem avec transitionStyle invalide rejeté...');
+const result16 = validateMessage({
+  action: 'addMediaItem',
+  sourcePath: 'C:\\media\\x.png',
+  transitionStyle: 'explode', // n'existe pas dans TRANSITION_STYLES (media-library.js)
+});
+assert.strictEqual(result16.valid, false, 'transitionStyle inconnu devrait être rejeté');
+console.log('[TEST] ✓ transitionStyle invalide rejeté');
+
+// Test 17: deleteMediaItem / setDefaultMediaItem
+console.log('[TEST] Test 17: deleteMediaItem et setDefaultMediaItem...');
+assert.strictEqual(
+  validateMessage({ action: 'deleteMediaItem', id: 'abc123' }).valid,
+  true,
+  'deleteMediaItem avec id valide devrait passer'
+);
+assert.strictEqual(
+  validateMessage({ action: 'deleteMediaItem' }).valid,
+  false,
+  'deleteMediaItem sans id devrait être rejeté'
+);
+assert.strictEqual(
+  validateMessage({ action: 'setDefaultMediaItem' }).valid,
+  true,
+  "setDefaultMediaItem sans id devrait passer (retire le poster principal, voir server.js)"
+);
+assert.strictEqual(
+  validateMessage({ action: 'setDefaultMediaItem', id: 'abc123' }).valid,
+  true,
+  'setDefaultMediaItem avec id devrait passer'
+);
+console.log('[TEST] ✓ deleteMediaItem et setDefaultMediaItem corrects');
+
 console.log('\n=== Tests terminés ===');
 console.log('[TEST] ✓ Tous les tests de validation sont passés');
