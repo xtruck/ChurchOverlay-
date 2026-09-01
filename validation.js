@@ -363,6 +363,102 @@ const SCHEMAS = {
       sectionIndex: (value) => Number.isInteger(value) && value >= 0 && value <= 200,
     },
   },
+  // AJOUT (audit backend — Phase 1F, 3e lot) : mode confiance (Partie 2 —
+  // auto/semi-auto/manuel, voir session-state.js#TRUST_MODES).
+  setTrustMode: {
+    required: ['action', 'mode'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'setTrustMode',
+      mode: (value) => ['auto', 'semi-auto', 'manual'].includes(value),
+    },
+  },
+  confirmPendingVerse: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'confirmPendingVerse' },
+  },
+  dismissPendingVerse: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'dismissPendingVerse' },
+  },
+  // Feuille de route / cue-list — bornes alignées sur rundown-store.js
+  // (CUE_TYPES, MAX_LABEL_LENGTH) ; ce module sanitize aussi label/reference
+  // en profondeur, comme pour la médiathèque et le studio de scènes.
+  addRundownCue: {
+    required: ['action', 'type', 'label'],
+    optional: ['reference', 'mediaId', 'sceneId'],
+    validators: {
+      action: (value) => value === 'addRundownCue',
+      type: (value) => ['verse', 'media', 'scene'].includes(value),
+      label: (value) => typeof value === 'string' && value.trim().length > 0 && value.length <= 200,
+      reference: (value) => typeof value === 'string' && value.length > 0 && value.length <= 200,
+      mediaId: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
+      sceneId: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
+    },
+  },
+  removeRundownCue: {
+    required: ['action', 'id'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'removeRundownCue',
+      id: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
+    },
+  },
+  reorderRundownCues: {
+    required: ['action', 'orderedIds'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'reorderRundownCues',
+      orderedIds: (value) =>
+        Array.isArray(value) &&
+        value.length <= 200 &&
+        value.every((id) => typeof id === 'string' && id.length <= 100),
+    },
+  },
+  clearRundown: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'clearRundown' },
+  },
+  triggerRundownCue: {
+    required: ['action', 'id'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'triggerRundownCue',
+      id: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
+    },
+  },
+  nextRundownCue: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'nextRundownCue' },
+  },
+  // Caméras IP — ip-camera-store.js valide déjà url via URL_PATTERN ; ces
+  // bornes ferment seulement la porte au niveau type/longueur avant lui.
+  addIpCamera: {
+    required: ['action', 'label', 'url'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'addIpCamera',
+      label: (value) => typeof value === 'string' && value.trim().length > 0 && value.length <= 200,
+      url: (value) => typeof value === 'string' && value.length > 0 && value.length <= 500,
+    },
+  },
+  deleteIpCamera: {
+    required: ['action', 'id'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'deleteIpCamera',
+      id: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
+    },
+  },
+  generateCameraPairing: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'generateCameraPairing' },
+  },
 };
 
 /**

@@ -298,5 +298,67 @@ assert.strictEqual(
 );
 console.log('[TEST] ✓ Bibliothèque de chants correcte');
 
+// Test 23: mode confiance
+console.log('[TEST] Test 23: setTrustMode/confirmPendingVerse/dismissPendingVerse...');
+assert.strictEqual(validateMessage({ action: 'setTrustMode', mode: 'semi-auto' }).valid, true);
+assert.strictEqual(
+  validateMessage({ action: 'setTrustMode', mode: 'yolo' }).valid,
+  false,
+  'mode inconnu devrait être rejeté'
+);
+assert.strictEqual(validateMessage({ action: 'confirmPendingVerse' }).valid, true);
+assert.strictEqual(validateMessage({ action: 'dismissPendingVerse' }).valid, true);
+console.log('[TEST] ✓ Mode confiance correct');
+
+// Test 24: feuille de route (rundown/cue-list)
+console.log('[TEST] Test 24: addRundownCue/removeRundownCue/reorderRundownCues/...');
+assert.strictEqual(
+  validateMessage({
+    action: 'addRundownCue',
+    type: 'verse',
+    label: 'Ouverture',
+    reference: 'Jean 3:16',
+  }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'addRundownCue', type: 'bogus', label: 'X' }).valid,
+  false,
+  'type de repère inconnu devrait être rejeté'
+);
+assert.strictEqual(validateMessage({ action: 'removeRundownCue', id: 'abc' }).valid, true);
+assert.strictEqual(
+  validateMessage({ action: 'reorderRundownCues', orderedIds: ['a', 'b', 'c'] }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'reorderRundownCues', orderedIds: 'not-an-array' }).valid,
+  false,
+  'orderedIds non-tableau devrait être rejeté'
+);
+assert.strictEqual(validateMessage({ action: 'clearRundown' }).valid, true);
+assert.strictEqual(validateMessage({ action: 'triggerRundownCue', id: 'abc' }).valid, true);
+assert.strictEqual(validateMessage({ action: 'nextRundownCue' }).valid, true);
+console.log('[TEST] ✓ Feuille de route correcte');
+
+// Test 25: caméras IP
+console.log('[TEST] Test 25: addIpCamera/deleteIpCamera/generateCameraPairing...');
+assert.strictEqual(
+  validateMessage({
+    action: 'addIpCamera',
+    label: 'Caméra fond de salle',
+    url: 'http://192.168.1.50:8080/video',
+  }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'addIpCamera', label: 'X' }).valid,
+  false,
+  'addIpCamera sans url devrait être rejeté'
+);
+assert.strictEqual(validateMessage({ action: 'deleteIpCamera', id: 'abc' }).valid, true);
+assert.strictEqual(validateMessage({ action: 'generateCameraPairing' }).valid, true);
+console.log('[TEST] ✓ Caméras IP correctes');
+
 console.log('\n=== Tests terminés ===');
 console.log('[TEST] ✓ Tous les tests de validation sont passés');
