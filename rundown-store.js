@@ -23,6 +23,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { writeJsonAtomic } = require('./persistence/atomic-json-store');
 
 const MAX_CUES = 200; // un ordre de culte complet, large marge — pas un CMS
 const MAX_LABEL_LENGTH = 200; // même borne que le label d'un élément de médiathèque
@@ -50,8 +51,7 @@ function readIndex() {
 
 function writeIndex(items) {
   if (!indexPath) return;
-  fs.mkdirSync(path.dirname(indexPath), { recursive: true });
-  fs.writeFileSync(indexPath, JSON.stringify(items, null, 2), 'utf8');
+  writeJsonAtomic(indexPath, items);
 }
 
 /**

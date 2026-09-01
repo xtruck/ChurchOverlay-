@@ -21,6 +21,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { writeJsonAtomic } = require('./persistence/atomic-json-store');
 const crypto = require('crypto');
 
 // Quelques téléphones utilisés en régie, pas un parc de caméras IP — large
@@ -49,8 +50,7 @@ function readIndex() {
 
 function writeIndex(items) {
   if (!indexPath) return;
-  fs.mkdirSync(path.dirname(indexPath), { recursive: true });
-  fs.writeFileSync(indexPath, JSON.stringify(items, null, 2), 'utf8');
+  writeJsonAtomic(indexPath, items);
 }
 
 /**

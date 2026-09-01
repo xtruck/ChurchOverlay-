@@ -28,6 +28,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { writeJsonAtomic } = require('./persistence/atomic-json-store');
 
 const BUILTIN_FILE = path.join(__dirname, 'config', 'features.json');
 
@@ -76,15 +77,13 @@ function readFeatures() {
 
 /**
  * Écrit la config complète dans le fichier inscriptible (userData si
- * configuré, sinon config/features.json). Écriture atomique (tmp + rename)
- * pour ne jamais laisser un JSON à moitié écrit derrière un crash.
+ * configuré, sinon config/features.json). Écriture atomique (voir
+ * persistence/atomic-json-store.js — même module partagé maintenant utilisé
+ * par tous les autres stores JSON) pour ne jamais laisser un JSON à moitié
+ * écrit derrière un crash.
  */
 function writeFeatures(features) {
-  const target = getWritableFile();
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  const tmp = `${target}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(features, null, 2), 'utf8');
-  fs.renameSync(tmp, target);
+  writeJsonAtomic(getWritableFile(), features);
 }
 
 module.exports = { setUserDataDir, readFeatures, writeFeatures, getWritableFile };

@@ -16,6 +16,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { writeJsonAtomic } = require('./persistence/atomic-json-store');
 
 const MAX_ENTRIES = 200; // ~4 ans de cultes hebdomadaires — largement suffisant, fichier toujours petit
 
@@ -41,8 +42,7 @@ function readArchive() {
 
 function writeArchive(entries) {
   if (!archivePath) return;
-  fs.mkdirSync(path.dirname(archivePath), { recursive: true });
-  fs.writeFileSync(archivePath, JSON.stringify(entries, null, 2), 'utf8');
+  writeJsonAtomic(archivePath, entries);
 }
 
 /**

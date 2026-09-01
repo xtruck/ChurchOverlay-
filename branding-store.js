@@ -21,6 +21,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { writeJsonAtomic } = require('./persistence/atomic-json-store');
 
 // AJOUT (demande explicite — "pas seulement des logos ou du texte, des
 // masques, plein de fichiers différents, même vidéo, même GIF") : au-delà
@@ -83,8 +84,7 @@ function readConfig() {
 
 function writeConfig(config) {
   if (!configPath) return;
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+  writeJsonAtomic(configPath, config);
 }
 
 /**

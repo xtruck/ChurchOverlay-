@@ -22,6 +22,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { findTriggerMatch, findPhoneticCollisions } = require('./voice-trigger-matcher');
+const { writeJsonAtomic } = require('./persistence/atomic-json-store');
 
 const MAX_ITEMS = 100; // médiathèque d'un culte, pas un CMS — largement suffisant
 const DEFAULT_IMAGE_DURATION_MS = 15000; // "moment poster" court, pas un verset (120s par défaut)
@@ -85,8 +86,7 @@ function readGroups() {
 
 function writeGroups(groups) {
   if (!groupsPath) return;
-  fs.mkdirSync(path.dirname(groupsPath), { recursive: true });
-  fs.writeFileSync(groupsPath, JSON.stringify(groups, null, 2), 'utf8');
+  writeJsonAtomic(groupsPath, groups);
 }
 
 /**
@@ -222,8 +222,7 @@ function matchGroupTriggerPhrase(text, opts = {}) {
 
 function writeIndex(items) {
   if (!indexPath) return;
-  fs.mkdirSync(path.dirname(indexPath), { recursive: true });
-  fs.writeFileSync(indexPath, JSON.stringify(items, null, 2), 'utf8');
+  writeJsonAtomic(indexPath, items);
 }
 
 /**

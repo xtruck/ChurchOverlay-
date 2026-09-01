@@ -19,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { findTriggerMatch } = require('./voice-trigger-matcher');
+const { writeJsonAtomic } = require('./persistence/atomic-json-store');
 
 const MAX_SONGS = 300; // recueil d'une église, pas un catalogue commercial — largement suffisant
 const MAX_SECTIONS_PER_SONG = 40;
@@ -45,8 +46,7 @@ function readIndex() {
 
 function writeIndex(songs) {
   if (!indexPath) return;
-  fs.mkdirSync(path.dirname(indexPath), { recursive: true });
-  fs.writeFileSync(indexPath, JSON.stringify(songs, null, 2), 'utf8');
+  writeJsonAtomic(indexPath, songs);
 }
 
 /**

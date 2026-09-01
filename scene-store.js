@@ -26,6 +26,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { writeJsonAtomic } = require('./persistence/atomic-json-store');
 
 const MAX_SCENES = 100; // médiathèque d'un culte, pas un CMS — même borne que media-library.js
 const MAX_ELEMENTS_PER_SCENE = 20; // large marge pour un usage réel, évite un index qui explose
@@ -104,8 +105,7 @@ function readIndex() {
 
 function writeIndex(items) {
   if (!indexPath) return;
-  fs.mkdirSync(path.dirname(indexPath), { recursive: true });
-  fs.writeFileSync(indexPath, JSON.stringify(items, null, 2), 'utf8');
+  writeJsonAtomic(indexPath, items);
 }
 
 /**

@@ -169,6 +169,7 @@
       "validation.js",
       "theme-loader.js",
       "features-store.js",
+      "persistence/atomic-json-store.js",
       "obs-controller.js",
       "auto-updater.js",
       "semantic-detector.js",
