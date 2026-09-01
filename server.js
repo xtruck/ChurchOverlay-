@@ -704,6 +704,7 @@ function resolveSceneMediaUrls(scene) {
 const mediaWsHandlers = require('./media-ws-handlers');
 const sceneWsHandlers = require('./scene-ws-handlers');
 const songWsHandlers = require('./song-ws-handlers');
+const rundownWsHandlers = require('./rundown-ws-handlers');
 const CATEGORY_HANDLERS = new Map([
   ...mediaWsHandlers.createHandlers({
     mediaLibrary,
@@ -728,6 +729,16 @@ const CATEGORY_HANDLERS = new Map([
     broadcast,
     log,
     broadcastSongSection,
+  }),
+  ...rundownWsHandlers.createHandlers({
+    rundownStore,
+    broadcast,
+    log,
+    getCurrentRundownIndex: () => currentRundownIndex,
+    setCurrentRundownIndex: (index) => {
+      currentRundownIndex = index;
+    },
+    executeCue,
   }),
 ]);
 
@@ -3363,122 +3374,10 @@ wss.on('connection', (ws, req) => {
     // extraits vers scene-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS
     // plus haut.
 
-    // ---------------------------------------------------------------------
-    // AJOUT (chantier 4.3 — feuille de route/cue-list, voir rundown-store.js
-    // et executeCue() plus haut) : séquence pré-planifiée de repères
-    // verset/média/scène, construite à l'avance et déclenchée dans l'ordre
-    // pendant le culte. Toute mutation de la structure (ajout/retrait/
-    // réordonnancement/vidage) réinitialise currentRundownIndex à -1 (aucun
-    // repère "actif") plutôt que de tenter de suivre le repère actif à
-    // travers un remaniement — plus simple et sans zone grise, le pire cas
-    // est juste que le badge "actif" s'efface un peu tôt.
-    // ---------------------------------------------------------------------
-    if (sanitized.action === 'getRundown') {
-      ws.send(
-        JSON.stringify({
-          action: 'rundownUpdated',
-          cues: rundownStore.listCues(),
-          activeIndex: currentRundownIndex,
-        })
-      );
-      return;
-    }
-
-    if (sanitized.action === 'addRundownCue') {
-      try {
-        const cue = rundownStore.addCue({
-          type: sanitized.type,
-          label: sanitized.label,
-          reference: sanitized.reference,
-          mediaId: sanitized.mediaId,
-          sceneId: sanitized.sceneId,
-        });
-        currentRundownIndex = -1;
-        log(`Feuille de route : repère "${cue.label}" ajouté (${cue.type})`);
-        broadcast({
-          action: 'rundownUpdated',
-          cues: rundownStore.listCues(),
-          activeIndex: currentRundownIndex,
-        });
-      } catch (err) {
-        ws.send(JSON.stringify({ action: 'error', error: err.message }));
-      }
-      return;
-    }
-
-    if (sanitized.action === 'removeRundownCue') {
-      const removed = rundownStore.removeCue(sanitized.id);
-      if (removed) {
-        currentRundownIndex = -1;
-        broadcast({
-          action: 'rundownUpdated',
-          cues: rundownStore.listCues(),
-          activeIndex: currentRundownIndex,
-        });
-      }
-      return;
-    }
-
-    if (sanitized.action === 'reorderRundownCues') {
-      rundownStore.reorderCues(Array.isArray(sanitized.orderedIds) ? sanitized.orderedIds : []);
-      currentRundownIndex = -1;
-      broadcast({
-        action: 'rundownUpdated',
-        cues: rundownStore.listCues(),
-        activeIndex: currentRundownIndex,
-      });
-      return;
-    }
-
-    if (sanitized.action === 'clearRundown') {
-      rundownStore.clearCues();
-      currentRundownIndex = -1;
-      log('Feuille de route : vidée');
-      broadcast({ action: 'rundownUpdated', cues: [], activeIndex: -1 });
-      return;
-    }
-
-    if (sanitized.action === 'triggerRundownCue') {
-      const cues = rundownStore.listCues();
-      const idx = cues.findIndex((c) => c.id === sanitized.id);
-      if (idx === -1) {
-        ws.send(
-          JSON.stringify({ action: 'error', error: 'Feuille de route : repère introuvable' })
-        );
-        return;
-      }
-      const result = await executeCue(cues[idx]);
-      currentRundownIndex = idx;
-      broadcast({ action: 'rundownActiveCue', id: cues[idx].id, index: idx });
-      if (!result.ok) {
-        ws.send(JSON.stringify({ action: 'error', error: result.error }));
-      }
-      return;
-    }
-
-    if (sanitized.action === 'nextRundownCue') {
-      const cues = rundownStore.listCues();
-      const nextIdx = currentRundownIndex + 1;
-      if (nextIdx >= cues.length) {
-        ws.send(
-          JSON.stringify({
-            action: 'error',
-            error:
-              cues.length === 0
-                ? 'Feuille de route vide.'
-                : 'Fin de la feuille de route — aucun repère suivant.',
-          })
-        );
-        return;
-      }
-      const result = await executeCue(cues[nextIdx]);
-      currentRundownIndex = nextIdx;
-      broadcast({ action: 'rundownActiveCue', id: cues[nextIdx].id, index: nextIdx });
-      if (!result.ok) {
-        ws.send(JSON.stringify({ action: 'error', error: result.error }));
-      }
-      return;
-    }
+    // Feuille de route (getRundown/addRundownCue/removeRundownCue/
+    // reorderRundownCues/clearRundown/triggerRundownCue/nextRundownCue) —
+    // extraite vers rundown-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS
+    // plus haut. executeCue() reste défini ci-dessus (passé en dépendance).
 
     // --- Caméras de téléphone (flux MJPEG réseau, voir ip-camera-store.js).
     // Contrairement à la médiathèque, il n'y a rien à diffuser à l'overlay
