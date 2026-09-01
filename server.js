@@ -693,86 +693,6 @@ function resolveSceneMediaUrls(scene) {
 }
 
 // ---------------------------------------------------------------------------
-// AJOUT (Phase 2 — modularisation du dispatch WS) : table de handlers extraits
-// par catégorie (voir media-ws-handlers.js et ses pairs à venir), consultée
-// EN PREMIER dans le message handler (ws.on('message', ...) plus bas), avant
-// la chaîne if/else historique pour les actions pas encore migrées. Construite
-// UNE SEULE FOIS au démarrage (pas par message) — chaque module reçoit ses
-// dépendances explicitement via un objet de contexte, jamais un accès
-// implicite à tout server.js.
-// ---------------------------------------------------------------------------
-const mediaWsHandlers = require('./media-ws-handlers');
-const sceneWsHandlers = require('./scene-ws-handlers');
-const songWsHandlers = require('./song-ws-handlers');
-const rundownWsHandlers = require('./rundown-ws-handlers');
-const cameraWsHandlers = require('./camera-ws-handlers');
-const brandingWsHandlers = require('./branding-ws-handlers');
-const accessibilityWsHandlers = require('./accessibility-ws-handlers');
-const CATEGORY_HANDLERS = new Map([
-  ...mediaWsHandlers.createHandlers({
-    mediaLibrary,
-    songLibrary,
-    sceneStore,
-    voiceTriggerMatcher,
-    sessionStore,
-    broadcast,
-    log,
-    resolveSceneMediaUrls,
-  }),
-  ...sceneWsHandlers.createHandlers({
-    sceneStore,
-    mediaLibrary,
-    sessionStore,
-    broadcast,
-    log,
-    resolveSceneMediaUrls,
-  }),
-  ...songWsHandlers.createHandlers({
-    songLibrary,
-    broadcast,
-    log,
-    broadcastSongSection,
-  }),
-  ...rundownWsHandlers.createHandlers({
-    rundownStore,
-    broadcast,
-    log,
-    getCurrentRundownIndex: () => currentRundownIndex,
-    setCurrentRundownIndex: (index) => {
-      currentRundownIndex = index;
-    },
-    executeCue,
-  }),
-  ...cameraWsHandlers.createHandlers({
-    ipCameraStore,
-    cleanupPhoneCameraStateForItem,
-    broadcast,
-    log,
-    wsHost: WS_HOST,
-    getLanIpAddress,
-    phoneCameraPairing,
-    serverPort: SERVER_PORT,
-    QRCode,
-  }),
-  ...brandingWsHandlers.createHandlers({
-    brandingStore,
-    dashboardBrandingStore,
-    sessionState,
-    broadcast,
-    log,
-    getBrandingState,
-    getDashboardBrandingState,
-  }),
-  ...accessibilityWsHandlers.createHandlers({
-    sessionState,
-    broadcast,
-    log,
-    startAmbientMoodLoop,
-    stopAmbientMoodLoop,
-  }),
-]);
-
-// ---------------------------------------------------------------------------
 // AJOUT (chantier 4.3 — feuille de route/cue-list) : déclenche UN repère,
 // quel que soit son type — même comportement de diffusion que showVerse/
 // triggerMediaItem/triggerScene ci-dessous (delibérément dupliqué plutôt que
@@ -918,6 +838,102 @@ function advanceReadingModeVerse(direction) {
 // partagé et plus complet prompt-sanitizer.js. Utilise désormais la même
 // défense partout — une seule source de vérité.
 const { sanitizeForPrompt } = require('./prompt-sanitizer');
+
+// ---------------------------------------------------------------------------
+// AJOUT (Phase 2 — modularisation du dispatch WS) : table de handlers extraits
+// par catégorie (voir media-ws-handlers.js et ses pairs à venir), consultée
+// EN PREMIER dans le message handler (ws.on('message', ...) plus bas), avant
+// la chaîne if/else historique pour les actions pas encore migrées. Construite
+// UNE SEULE FOIS au démarrage (pas par message) — chaque module reçoit ses
+// dépendances explicitement via un objet de contexte, jamais un accès
+// implicite à tout server.js.
+// ---------------------------------------------------------------------------
+const mediaWsHandlers = require('./media-ws-handlers');
+const sceneWsHandlers = require('./scene-ws-handlers');
+const songWsHandlers = require('./song-ws-handlers');
+const rundownWsHandlers = require('./rundown-ws-handlers');
+const cameraWsHandlers = require('./camera-ws-handlers');
+const brandingWsHandlers = require('./branding-ws-handlers');
+const accessibilityWsHandlers = require('./accessibility-ws-handlers');
+const readingTranslationWsHandlers = require('./reading-translation-ws-handlers');
+const CATEGORY_HANDLERS = new Map([
+  ...mediaWsHandlers.createHandlers({
+    mediaLibrary,
+    songLibrary,
+    sceneStore,
+    voiceTriggerMatcher,
+    sessionStore,
+    broadcast,
+    log,
+    resolveSceneMediaUrls,
+  }),
+  ...sceneWsHandlers.createHandlers({
+    sceneStore,
+    mediaLibrary,
+    sessionStore,
+    broadcast,
+    log,
+    resolveSceneMediaUrls,
+  }),
+  ...songWsHandlers.createHandlers({
+    songLibrary,
+    broadcast,
+    log,
+    broadcastSongSection,
+  }),
+  ...rundownWsHandlers.createHandlers({
+    rundownStore,
+    broadcast,
+    log,
+    getCurrentRundownIndex: () => currentRundownIndex,
+    setCurrentRundownIndex: (index) => {
+      currentRundownIndex = index;
+    },
+    executeCue,
+  }),
+  ...cameraWsHandlers.createHandlers({
+    ipCameraStore,
+    cleanupPhoneCameraStateForItem,
+    broadcast,
+    log,
+    wsHost: WS_HOST,
+    getLanIpAddress,
+    phoneCameraPairing,
+    serverPort: SERVER_PORT,
+    QRCode,
+  }),
+  ...brandingWsHandlers.createHandlers({
+    brandingStore,
+    dashboardBrandingStore,
+    sessionState,
+    broadcast,
+    log,
+    getBrandingState,
+    getDashboardBrandingState,
+  }),
+  ...accessibilityWsHandlers.createHandlers({
+    sessionState,
+    broadcast,
+    log,
+    startAmbientMoodLoop,
+    stopAmbientMoodLoop,
+  }),
+  ...readingTranslationWsHandlers.createHandlers({
+    sessionState,
+    bibleLookup,
+    detector,
+    readingMode,
+    themeGenerator,
+    aiEnricher,
+    sanitizeForPrompt,
+    broadcast,
+    log,
+    pushHistory,
+    getVerseDurationMs,
+    readingModePosition,
+    advanceReadingModeVerse,
+  }),
+]);
 
 // ---------------------------------------------------------------------------
 // Update transcript context for AI features (délègue à session-state.js
@@ -2776,99 +2792,9 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // AJOUT (Multi-Bible côte à côte, déclenchement manuel — voir showVerse
-    // ci-dessus) : {lang, code} pour activer, ou lang/code absents/vides
-    // pour désactiver la comparaison. Validé contre bibleLookup.listTranslations()
-    // plutôt que de faire confiance au client — un code de traduction inconnu
-    // échouerait de toute façon dans getVerseDualTranslation, mais autant le
-    // signaler clairement ici, au moment du réglage.
-    if (sanitized.action === 'setSecondaryTranslation') {
-      const lang = sanitized.lang || null;
-      const code = sanitized.code || null;
-      if (!lang || !code) {
-        sessionState.setSecondaryTranslation(null, null);
-        broadcast({ action: 'secondaryTranslationChanged', lang: null, code: null });
-        log('Traduction secondaire : désactivée');
-        return;
-      }
-      const known = (bibleLookup.listTranslations()[lang] || []).some((t) => t.code === code);
-      if (!known) {
-        ws.send(JSON.stringify({ action: 'error', error: `Traduction inconnue: ${lang}/${code}` }));
-        return;
-      }
-      sessionState.setSecondaryTranslation(lang, code);
-      broadcast({ action: 'secondaryTranslationChanged', lang, code });
-      log(`Traduction secondaire : ${lang}/${code}`);
-      return;
-    }
-
-    // --- Reading mode ---
-    if (sanitized.action === 'startReading') {
-      const ref = detector.parseReference(sanitized.reference);
-      if (!ref) {
-        ws.send(
-          JSON.stringify({ action: 'error', error: 'Référence invalide pour le mode lecture.' })
-        );
-        return;
-      }
-      try {
-        const firstVerse = await readingMode.start(ref.book, ref.chapter, ref.verseStart);
-        broadcast({ action: 'readingStarted', reference: ref });
-        if (firstVerse) {
-          const label = bibleLookup.buildReferenceLabel(
-            { book: ref.book, chapter: ref.chapter, verseStart: firstVerse.num },
-            sessionState.getDisplayLanguage()
-          );
-          broadcast({
-            action: 'showVerse',
-            reference: label,
-            text: firstVerse.text,
-            text_fr: firstVerse.text_fr || null,
-            text_en: firstVerse.text_en || null,
-            langMode: sessionState.getDisplayLanguage(),
-            durationMs: getVerseDurationMs(),
-            readingMode: true,
-            readingModePos: readingModePosition(readingMode, firstVerse.num),
-          });
-          pushHistory({
-            reference: label,
-            text: firstVerse.text.substring(0, 200),
-            readingMode: true,
-            timestamp: Date.now(),
-          });
-          broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
-        }
-      } catch (err) {
-        ws.send(JSON.stringify({ action: 'error', error: err.message }));
-      }
-      return;
-    }
-
-    if (sanitized.action === 'stopReading') {
-      readingMode.stop();
-      broadcast({ action: 'readingStopped' });
-      return;
-    }
-
-    // AJOUT (mode lecture — bouton manuel) : avant ce correctif, avancer
-    // verset par verset en mode lecture n'était possible QUE par commande
-    // vocale ('nextVerse'/'previousVerse' dans handleVoiceCommand()
-    // ci-dessus) — aucune action WS directe n'existait pour un clic
-    // Suivant/Précédent depuis le tableau de bord. Réutilise
-    // advanceReadingModeVerse(), le même helper que le chemin vocal ;
-    // triggeredByVoice:false permet aux deux chemins de rester
-    // distinguables côté client si besoin un jour.
-    if (sanitized.action === 'nextReadingVerse') {
-      broadcast({ action: 'nextVerse', triggeredByVoice: false });
-      advanceReadingModeVerse(1);
-      return;
-    }
-
-    if (sanitized.action === 'previousReadingVerse') {
-      broadcast({ action: 'previousVerse', triggeredByVoice: false });
-      advanceReadingModeVerse(-1);
-      return;
-    }
+    // setSecondaryTranslation/startReading/stopReading/nextReadingVerse/
+    // previousReadingVerse — extraits vers reading-translation-ws-handlers.js
+    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
 
     // --- Bible Semantic Search ---
     if (sanitized.action === 'searchBible') {
@@ -2933,18 +2859,8 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // --- Set theme by mood ---
-    if (sanitized.action === 'setMoodTheme') {
-      if (!themeGenerator) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Générateur de thèmes non disponible' }));
-        return;
-      }
-      const mood = sanitized.mood;
-      const theme = themeGenerator.getTheme(mood);
-      broadcast({ action: 'applyTheme', ...themeGenerator.themeToCss(theme) });
-      ws.send(JSON.stringify({ action: 'themeApplied', mood, themeName: theme.name }));
-      return;
-    }
+    // setMoodTheme — extrait vers reading-translation-ws-handlers.js
+    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
 
     // --- Plugin management ---
     if (sanitized.action === 'listPlugins') {
@@ -3082,40 +2998,9 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // --- AI Live Translation (with prompt sanitization) ---
-    if (sanitized.action === 'translateText') {
-      if (!aiEnricher) {
-        ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
-        return;
-      }
-      const targetLang = sanitized.targetLang || 'en';
-      const safeText = sanitizeForPrompt(sanitized.text || '');
-      const translation = await aiEnricher.translateSegment(safeText, targetLang);
-      if (sanitized.autoBroadcast) {
-        broadcast({
-          action: 'showTranslation',
-          translation,
-          targetLang,
-          reference: sanitized.reference || null,
-        });
-      }
-      ws.send(
-        JSON.stringify({
-          action: 'textTranslated',
-          original: sanitized.text,
-          targetLang,
-          translation,
-          autoBroadcast: !!sanitized.autoBroadcast,
-        })
-      );
-      return;
-    }
-
-    // --- Live translation off ---
-    if (sanitized.action === 'hideTranslation') {
-      broadcast({ action: 'hideTranslation' });
-      return;
-    }
+    // translateText/hideTranslation — extraits vers
+    // reading-translation-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS
+    // plus haut.
 
     // --- Theme application ---
     if (sanitized.action === 'applyTheme') {
