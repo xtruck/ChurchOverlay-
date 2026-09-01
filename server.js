@@ -860,6 +860,7 @@ const trustWsHandlers = require('./trust-ws-handlers');
 const aiAssistantWsHandlers = require('./ai-assistant-ws-handlers');
 const serviceImportExportWsHandlers = require('./service-import-export-ws-handlers');
 const coreVerseWsHandlers = require('./core-verse-ws-handlers');
+const timerWsHandlers = require('./timer-ws-handlers');
 const CATEGORY_HANDLERS = new Map([
   ...mediaWsHandlers.createHandlers({
     mediaLibrary,
@@ -985,6 +986,10 @@ const CATEGORY_HANDLERS = new Map([
     pushHistory,
     log,
     warn,
+  }),
+  ...timerWsHandlers.createHandlers({
+    broadcast,
+    log,
   }),
 ]);
 
@@ -2853,40 +2858,8 @@ wss.on('connection', (ws, req) => {
     // extraits vers accessibility-ws-handlers.js (Phase 2), voir
     // CATEGORY_HANDLERS plus haut.
 
-    // CORRECTIF (audit Phase 1F — actions mortes) : emergencyClear/
-    // pauseTimer/resumeTimer/extendTime sont enregistrées dans
-    // action-registry.js et le tableau de bord les envoie bien comme de
-    // vrais messages WS (voir propresenter-studio.js#ppClearAll,
-    // verse-session-display.js#pauseTimer/resumeTimer, command-palette.js) —
-    // mais SEUL handleVoiceCommand() (déclenché uniquement par la voix) les
-    // traitait. Un opérateur cliquant directement sur ces boutons/raccourcis
-    // n'obtenait donc aucun effet côté overlay (le message WS était reçu
-    // puis silencieusement ignoré, faute de `if (sanitized.action === ...)`
-    // correspondant ici). Diffusions identiques à celles de
-    // handleVoiceCommand() ci-dessus, pour un comportement 100% cohérent
-    // entre déclenchement vocal et manuel.
-    if (sanitized.action === 'emergencyClear') {
-      broadcast({ action: 'hideVerse', emergency: true });
-      broadcast({ action: 'emergencyClear' });
-      log('Effacement d’urgence déclenché manuellement');
-      return;
-    }
-
-    if (sanitized.action === 'pauseTimer') {
-      broadcast({ action: 'pauseTimer', triggeredByVoice: false });
-      return;
-    }
-
-    if (sanitized.action === 'resumeTimer') {
-      broadcast({ action: 'resumeTimer', triggeredByVoice: false });
-      return;
-    }
-
-    if (sanitized.action === 'extendTime') {
-      broadcast({ action: 'extendTime', extraMs: sanitized.extraMs, triggeredByVoice: false });
-      log(`Temps prolongé manuellement de ${Math.round(sanitized.extraMs / 60000)} min`);
-      return;
-    }
+    // emergencyClear/pauseTimer/resumeTimer/extendTime — extraits vers
+    // timer-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS plus haut.
 
     // Médiathèque (getMediaLibrary/testTriggerPhrase/addMediaItem/
     // updateMediaItem/setDefaultMediaItem/deleteMediaItem/getMediaGroups/
