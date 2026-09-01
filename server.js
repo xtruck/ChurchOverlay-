@@ -703,6 +703,7 @@ function resolveSceneMediaUrls(scene) {
 // ---------------------------------------------------------------------------
 const mediaWsHandlers = require('./media-ws-handlers');
 const sceneWsHandlers = require('./scene-ws-handlers');
+const songWsHandlers = require('./song-ws-handlers');
 const CATEGORY_HANDLERS = new Map([
   ...mediaWsHandlers.createHandlers({
     mediaLibrary,
@@ -721,6 +722,12 @@ const CATEGORY_HANDLERS = new Map([
     broadcast,
     log,
     resolveSceneMediaUrls,
+  }),
+  ...songWsHandlers.createHandlers({
+    songLibrary,
+    broadcast,
+    log,
+    broadcastSongSection,
   }),
 ]);
 
@@ -3675,50 +3682,9 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // --- Bibliothèque de chants (mêmes conventions que la médiathèque
-    // ci-dessus : réponse directe au demandeur pour la lecture/mutation de
-    // la liste, broadcast() pour ce que tous les clients doivent voir) ---
-    if (sanitized.action === 'getSongLibrary') {
-      ws.send(JSON.stringify({ action: 'songLibraryUpdated', songs: songLibrary.listSongs() }));
-      return;
-    }
-
-    if (sanitized.action === 'addSong') {
-      try {
-        const song = songLibrary.addSong({
-          title: sanitized.title,
-          artist: sanitized.artist,
-          lyrics: sanitized.lyrics,
-          triggerPhrases: sanitized.triggerPhrases,
-        });
-        log(`Bibliothèque de chants : "${song.title}" ajouté (${song.sections.length} section(s))`);
-        broadcast({ action: 'songLibraryUpdated', songs: songLibrary.listSongs() });
-      } catch (err) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Chants : ' + err.message }));
-      }
-      return;
-    }
-
-    if (sanitized.action === 'deleteSong') {
-      const removed = songLibrary.deleteSong(sanitized.id);
-      if (removed) {
-        broadcast({ action: 'songLibraryUpdated', songs: songLibrary.listSongs() });
-      } else {
-        ws.send(JSON.stringify({ action: 'error', error: 'Chants : chant introuvable' }));
-      }
-      return;
-    }
-
-    if (sanitized.action === 'showSongSection') {
-      const song = songLibrary.getSong(sanitized.id);
-      if (!song) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Chants : chant introuvable' }));
-        return;
-      }
-      const sectionIndex = Number.isInteger(sanitized.sectionIndex) ? sanitized.sectionIndex : 0;
-      broadcastSongSection(song, sectionIndex, 'manual');
-      return;
-    }
+    // Bibliothèque de chants (getSongLibrary/addSong/deleteSong/
+    // showSongSection) — extraite vers song-ws-handlers.js (Phase 2), voir
+    // CATEGORY_HANDLERS plus haut.
 
     // --- Stage display : messages opérateur visibles uniquement côté scène,
     // jamais sur l'overlay public (voir stage-display.html) ---
