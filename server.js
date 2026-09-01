@@ -862,6 +862,7 @@ const serviceImportExportWsHandlers = require('./service-import-export-ws-handle
 const coreVerseWsHandlers = require('./core-verse-ws-handlers');
 const timerWsHandlers = require('./timer-ws-handlers');
 const pluginsExportsWsHandlers = require('./plugins-exports-ws-handlers');
+const diagnosticsWsHandlers = require('./diagnostics-ws-handlers');
 const CATEGORY_HANDLERS = new Map([
   ...mediaWsHandlers.createHandlers({
     mediaLibrary,
@@ -1004,6 +1005,17 @@ const CATEGORY_HANDLERS = new Map([
     },
     broadcast,
     log,
+  }),
+  ...diagnosticsWsHandlers.createHandlers({
+    groq,
+    deepgramWrapper,
+    wsAuthToken: WS_AUTH_TOKEN,
+    wsHost: WS_HOST,
+    mediaLibrary,
+    brandingStore,
+    bibleOfflineCache,
+    ipCameraStore,
+    sessionStore,
   }),
 ]);
 
@@ -2588,110 +2600,8 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // --- Pre-service test ---
-    if (sanitized.action === 'preServiceCheck') {
-      try {
-        const [groqResult, deepgramResult] = await Promise.all([
-          groq.checkKey(),
-          deepgramWrapper.checkKey(),
-        ]);
-        // AJOUT (checkup — "vérifier que tout ce qui a été ajouté fonctionne
-        // bien, un seul endroit avant le culte") : ce contrôle ne portait
-        // jusqu'ici que sur la transcription (Groq/Deepgram) et
-        // l'authentification WebSocket — datant d'avant la médiathèque, le
-        // poster principal, l'habillage caméra, la caméra téléphone par QR
-        // et la base biblique hors-ligne. Plutôt que de laisser l'équipe
-        // vérifier chaque panneau séparément, ce même bouton couvre
-        // désormais tout — lecture seule, aucun appel réseau supplémentaire
-        // (tout est déjà en mémoire/disque local).
-        ws.send(
-          JSON.stringify({
-            action: 'preServiceCheckResult',
-            wsConnected: true,
-            wsAuthEnabled: !!WS_AUTH_TOKEN,
-            wsHost: WS_HOST,
-            groq: groqResult,
-            deepgram: deepgramResult,
-            mediaLibraryCount: mediaLibrary.listItems().length,
-            hasDefaultPoster: !!mediaLibrary.getDefaultItem(),
-            brandingLogoConfigured: !!brandingStore.getConfig().logoFilename,
-            offlineBibleStatus: bibleOfflineCache.getStatus().status,
-            ipCameraCount: ipCameraStore.listItems().length,
-            qrCameraReady: WS_HOST !== '127.0.0.1' && WS_HOST !== 'localhost',
-            timestamp: Date.now(),
-          })
-        );
-      } catch (err) {
-        ws.send(
-          JSON.stringify({
-            action: 'error',
-            error: 'Échec de la vérification pré-culte : ' + err.message,
-          })
-        );
-      }
-      return;
-    }
-
-    // AJOUT (carte réseau — "Réseau / caméra téléphone (QR)") : statut de
-    // lecture seule séparé de preServiceCheck ci-dessus pour que rafraîchir
-    // cette carte (au chargement des Réglages, après un enregistrement) ne
-    // déclenche pas au passage un appel réseau Groq/Deepgram inutile.
-    if (sanitized.action === 'getNetworkStatus') {
-      ws.send(
-        JSON.stringify({
-          action: 'networkStatus',
-          wsHost: WS_HOST,
-          wsAuthEnabled: !!WS_AUTH_TOKEN,
-          qrCameraReady: WS_HOST !== '127.0.0.1' && WS_HOST !== 'localhost',
-        })
-      );
-      return;
-    }
-
-    // --- Session stats (historique persistant SQLite — voir session-store.js) ---
-    // AJOUT (audit round 9) : session-store.js écrit déjà chaque verset
-    // affiché et chaque erreur de pipeline en SQLite depuis le chantier de
-    // fiabilité du 2026-08-05 (jour de survie à un crash, trace consultable
-    // après un culte), mais rien ne relisait jamais cette base — aucune
-    // action WebSocket ne l'exposait, donc aucun panneau du tableau de bord
-    // ne pouvait la montrer. La persistance tournait "dans le vide".
-    if (sanitized.action === 'getSessionStats') {
-      try {
-        const days = Math.min(Math.max(Number.parseInt(sanitized.days, 10) || 1, 1), 30);
-        const sinceMs = Date.now() - days * 24 * 60 * 60 * 1000;
-        const verses = sessionStore.getVerseHistorySince(sinceMs);
-        const errors = sessionStore.getPipelineErrorsSince(sinceMs);
-        const errorsByType = {};
-        for (const e of errors) {
-          errorsByType[e.type] = (errorsByType[e.type] || 0) + 1;
-        }
-        ws.send(
-          JSON.stringify({
-            action: 'sessionStats',
-            persistenceEnabled: sessionStore.isEnabled(),
-            days,
-            sinceMs,
-            verseCount: verses.length,
-            verses: verses.slice(0, 100),
-            errorCount: errors.length,
-            errors: errors.slice(0, 50),
-            errorsByType,
-            // AJOUT (chantier 4.6 — présence anonyme via companion.html) :
-            // même fenêtre `days`/`sinceMs` que le reste de cette réponse.
-            checkinCount: sessionStore.getCheckinCountSince(sinceMs),
-            timestamp: Date.now(),
-          })
-        );
-      } catch (err) {
-        ws.send(
-          JSON.stringify({
-            action: 'error',
-            error: 'Impossible de récupérer les statistiques de session : ' + err.message,
-          })
-        );
-      }
-      return;
-    }
+    // preServiceCheck/getNetworkStatus/getSessionStats — extraits vers
+    // diagnostics-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS plus haut.
 
     // exportHighlights/exportClips — extraits vers
     // plugins-exports-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS
@@ -2827,11 +2737,8 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // --- Base biblique hors-ligne (cahier des charges — Point 1B) ---------
-    if (sanitized.action === 'getOfflineBibleStatus') {
-      ws.send(JSON.stringify({ action: 'offlineBibleStatus', ...bibleOfflineCache.getStatus() }));
-      return;
-    }
+    // getOfflineBibleStatus — extrait vers diagnostics-ws-handlers.js
+    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
 
     // askSermonQuestion — extrait vers ai-assistant-ws-handlers.js
     // (Phase 2), voir CATEGORY_HANDLERS plus haut.
