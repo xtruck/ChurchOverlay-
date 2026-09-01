@@ -459,6 +459,89 @@ const SCHEMAS = {
     optional: [],
     validators: { action: (value) => value === 'generateCameraPairing' },
   },
+  // AJOUT (audit backend — Phase 1F, 4e lot) : habillage caméra
+  // (branding-store.js — sourcePath même sélecteur natif que la
+  // médiathèque ; position/size ont déjà un repli silencieux vers une
+  // valeur par défaut côté store si la valeur est inconnue, mais un client
+  // qui envoie une valeur invalide mérite une erreur claire plutôt qu'un
+  // "ça n'a rien fait" silencieux — même logique que setLanguage/setTrustMode).
+  setBrandingLogo: {
+    required: ['action', 'sourcePath'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'setBrandingLogo',
+      sourcePath: (value) => typeof value === 'string' && value.length > 0 && value.length <= 1000,
+    },
+  },
+  clearBrandingLogo: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'clearBrandingLogo' },
+  },
+  setBrandingPosition: {
+    required: ['action', 'position'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'setBrandingPosition',
+      position: (value) => ['top-left', 'top-right', 'bottom-left', 'bottom-right'].includes(value),
+    },
+  },
+  setBrandingSize: {
+    required: ['action', 'size'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'setBrandingSize',
+      size: (value) => ['small', 'medium', 'large'].includes(value),
+    },
+  },
+  setBrandingText: {
+    required: ['action'],
+    optional: ['title', 'subtitle'],
+    validators: {
+      action: (value) => value === 'setBrandingText',
+      title: (value) => typeof value === 'string' && value.length <= 120,
+      subtitle: (value) => typeof value === 'string' && value.length <= 160,
+    },
+  },
+  setBrandingVisible: {
+    required: ['action', 'visible'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'setBrandingVisible',
+      visible: (value) => typeof value === 'boolean',
+    },
+  },
+  // Identité de marque du tableau de bord — bornes alignées sur
+  // dashboard-branding-store.js (MAX_ORG_NAME_LENGTH, HEX_COLOR_RE).
+  setDashboardOrgName: {
+    required: ['action', 'organizationName'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'setDashboardOrgName',
+      organizationName: (value) => typeof value === 'string' && value.length <= 60,
+    },
+  },
+  setDashboardAccentColor: {
+    required: ['action', 'accentColor'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'setDashboardAccentColor',
+      accentColor: (value) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value),
+    },
+  },
+  setDashboardLogo: {
+    required: ['action', 'sourcePath'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'setDashboardLogo',
+      sourcePath: (value) => typeof value === 'string' && value.length > 0 && value.length <= 1000,
+    },
+  },
+  clearDashboardLogo: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'clearDashboardLogo' },
+  },
 };
 
 /**

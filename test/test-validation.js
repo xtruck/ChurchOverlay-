@@ -360,5 +360,70 @@ assert.strictEqual(validateMessage({ action: 'deleteIpCamera', id: 'abc' }).vali
 assert.strictEqual(validateMessage({ action: 'generateCameraPairing' }).valid, true);
 console.log('[TEST] ✓ Caméras IP correctes');
 
+// Test 26: habillage caméra (branding)
+console.log('[TEST] Test 26: setBrandingLogo/Position/Size/Text/Visible...');
+assert.strictEqual(
+  validateMessage({ action: 'setBrandingLogo', sourcePath: 'C:\\logos\\x.png' }).valid,
+  true
+);
+assert.strictEqual(validateMessage({ action: 'clearBrandingLogo' }).valid, true);
+assert.strictEqual(
+  validateMessage({ action: 'setBrandingPosition', position: 'top-left' }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'setBrandingPosition', position: 'middle' }).valid,
+  false,
+  'position hors énumération devrait être rejetée'
+);
+assert.strictEqual(validateMessage({ action: 'setBrandingSize', size: 'medium' }).valid, true);
+assert.strictEqual(
+  validateMessage({ action: 'setBrandingSize', size: 'huge' }).valid,
+  false,
+  'size hors énumération devrait être rejetée'
+);
+assert.strictEqual(
+  validateMessage({ action: 'setBrandingText', title: 'Église XYZ', subtitle: 'Culte du dimanche' })
+    .valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'setBrandingText' }).valid,
+  true,
+  'setBrandingText sans title/subtitle devrait passer (les deux optionnels)'
+);
+assert.strictEqual(
+  validateMessage({ action: 'setBrandingVisible', visible: true }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'setBrandingVisible' }).valid,
+  false,
+  'setBrandingVisible sans visible devrait être rejeté'
+);
+console.log('[TEST] ✓ Habillage caméra correct');
+
+// Test 27: identité de marque du tableau de bord
+console.log('[TEST] Test 27: setDashboardOrgName/AccentColor/Logo...');
+assert.strictEqual(
+  validateMessage({ action: 'setDashboardOrgName', organizationName: 'Église XYZ' }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'setDashboardAccentColor', accentColor: '#7c8cf5' }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'setDashboardAccentColor', accentColor: 'red' }).valid,
+  false,
+  'couleur non hexadécimale devrait être rejetée'
+);
+assert.strictEqual(
+  validateMessage({ action: 'setDashboardLogo', sourcePath: 'C:\\logos\\dash.png' }).valid,
+  true
+);
+assert.strictEqual(validateMessage({ action: 'clearDashboardLogo' }).valid, true);
+console.log('[TEST] ✓ Identité de marque du tableau de bord correcte');
+
 console.log('\n=== Tests terminés ===');
 console.log('[TEST] ✓ Tous les tests de validation sont passés');
