@@ -65,10 +65,24 @@ function staticCouplingCheck() {
     'le handler setLanguage (affichage) ne doit JAMAIS appeler sessionState.setTranscriptionLanguage'
   );
 
-  const manualLangMatch = serverSrc.match(
-    /if \(sanitized\.action === 'setLanguage'\) \{[\s\S]*?\n\s*return;\s*\n\s*\}/
+  // CORRECTIF (Phase 2 — modularisation du dispatch WS) : le handler WS
+  // manuel 'setLanguage' a été extrait vers core-verse-ws-handlers.js (même
+  // chantier que media-ws-handlers.js), avec une forme syntaxique différente
+  // (handlers.set('setLanguage', async (...) => {...}) plutôt qu'un
+  // `if (sanitized.action === ...) {...}` inline) — le contrôle statique
+  // porte donc maintenant sur ce fichier, pas server.js, avec un motif
+  // adapté à cette forme.
+  const coreVerseSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'core-verse-ws-handlers.js'),
+    'utf8'
   );
-  assert.ok(manualLangMatch, "handler WS manuel 'setLanguage' introuvable dans server.js");
+  const manualLangMatch = coreVerseSrc.match(
+    /handlers\.set\('setLanguage',\s*async[\s\S]*?\n {2}\}\);/
+  );
+  assert.ok(
+    manualLangMatch,
+    "handler WS manuel 'setLanguage' introuvable dans core-verse-ws-handlers.js"
+  );
   assert.ok(
     !manualLangMatch[0].includes('setTranscriptionLanguage'),
     'le handler WS manuel setLanguage ne doit JAMAIS appeler sessionState.setTranscriptionLanguage'

@@ -859,6 +859,7 @@ const readingTranslationWsHandlers = require('./reading-translation-ws-handlers'
 const trustWsHandlers = require('./trust-ws-handlers');
 const aiAssistantWsHandlers = require('./ai-assistant-ws-handlers');
 const serviceImportExportWsHandlers = require('./service-import-export-ws-handlers');
+const coreVerseWsHandlers = require('./core-verse-ws-handlers');
 const CATEGORY_HANDLERS = new Map([
   ...mediaWsHandlers.createHandlers({
     mediaLibrary,
@@ -974,6 +975,16 @@ const CATEGORY_HANDLERS = new Map([
     resolveSceneMediaUrls,
     broadcast,
     log,
+  }),
+  ...coreVerseWsHandlers.createHandlers({
+    detector,
+    sessionState,
+    bibleLookup,
+    getVerseDurationMs,
+    broadcast,
+    pushHistory,
+    log,
+    warn,
   }),
 ]);
 
@@ -2539,68 +2550,8 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // --- Manual verse display ---
-    if (sanitized.action === 'showVerse') {
-      const ref = detector.parseReference(sanitized.reference);
-      if (!ref) {
-        sendError('Référence invalide.');
-        return;
-      }
-      try {
-        const displayLang = sessionState.getDisplayLanguage();
-        const verse = await bibleLookup.getVerseMultilang(ref, displayLang);
-        const durationMs = sanitized.durationMs || getVerseDurationMs();
-        const payload = { action: 'showVerse', ...verse, durationMs, triggeredManually: true };
-        if (requestId) payload.requestId = requestId;
-
-        // AJOUT (Multi-Bible côte à côte, déclenchement MANUEL uniquement —
-        // voir bibleLookup.getVerseDualTranslation) : si une traduction
-        // secondaire est configurée (voir setSecondaryTranslation ci-dessous)
-        // ET qu'on n'est pas déjà en mode bilingue 'both' (qui affiche déjà
-        // 2 textes — un 3e surchargerait l'overlay plutôt que d'aider),
-        // récupère AUSSI le verset dans cette traduction pour comparaison.
-        // Best-effort strict : un échec ici (réseau, traduction retirée
-        // entre-temps...) n'empêche jamais l'affichage du verset principal,
-        // il fait juste manquer secondaryText — jamais d'erreur bloquante
-        // pour un réglage de confort.
-        const secondary = sessionState.getSecondaryTranslation();
-        if (secondary && displayLang !== 'both') {
-          try {
-            const activeEntry = (bibleLookup.listTranslations()[displayLang] || []).find(
-              (t) => t.active
-            );
-            if (activeEntry) {
-              const dual = await bibleLookup.getVerseDualTranslation(
-                ref,
-                { lang: displayLang, code: activeEntry.code },
-                secondary
-              );
-              payload.secondaryText = dual.secondary.text;
-              payload.secondaryLabel = dual.secondary.label;
-              payload.secondaryLang = dual.secondary.lang;
-            }
-          } catch (secErr) {
-            warn('Traduction secondaire indisponible : ' + secErr.message);
-          }
-        }
-
-        broadcast(payload);
-        pushHistory({ ...verse, triggeredManually: true, timestamp: Date.now() });
-        broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
-      } catch (err) {
-        sendError(err.message);
-      }
-      return;
-    }
-
-    // --- Hide overlay ---
-    if (sanitized.action === 'hideVerse') {
-      const hidePayload = { action: 'hideVerse' };
-      if (requestId) hidePayload.requestId = requestId;
-      broadcast(hidePayload);
-      sessionState.clearLastReference();
-      return;
-    }
+    // showVerse/hideVerse — extraits vers core-verse-ws-handlers.js
+    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
 
     // --- Confidence threshold ---
     if (sanitized.action === 'setConfidenceThreshold') {
@@ -2806,33 +2757,8 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // --- Language switch ---
-    if (sanitized.action === 'setLanguage') {
-      const lang = sanitized.language;
-      if (['fr', 'en', 'both'].includes(lang)) {
-        sessionState.setDisplayLanguage(lang);
-        broadcast({ action: 'languageChanged', language: lang });
-        log('Language changed: ' + lang);
-      }
-      return;
-    }
-
-    // --- Translation switch ---
-    if (sanitized.action === 'setTranslation') {
-      try {
-        const newId = bibleLookup.setTranslation(sanitized.language, sanitized.code);
-        broadcast({
-          action: 'translationChanged',
-          language: sanitized.language,
-          code: sanitized.code,
-          translationId: newId,
-        });
-        log(`Translation: ${sanitized.language} → ${sanitized.code}`);
-      } catch (err) {
-        ws.send(JSON.stringify({ action: 'error', error: err.message }));
-      }
-      return;
-    }
+    // setLanguage/setTranslation — extraits vers core-verse-ws-handlers.js
+    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
 
     // setSecondaryTranslation/startReading/stopReading/nextReadingVerse/
     // previousReadingVerse — extraits vers reading-translation-ws-handlers.js
@@ -2915,11 +2841,8 @@ wss.on('connection', (ws, req) => {
     // reading-translation-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS
     // plus haut.
 
-    // --- Theme application ---
-    if (sanitized.action === 'applyTheme') {
-      broadcast({ action: 'applyTheme', ...sanitized.css });
-      return;
-    }
+    // applyTheme — extrait vers core-verse-ws-handlers.js (Phase 2), voir
+    // CATEGORY_HANDLERS plus haut.
 
     // setTrustMode/confirmPendingVerse/dismissPendingVerse — extraits vers
     // trust-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS plus haut.
