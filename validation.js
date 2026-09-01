@@ -454,10 +454,24 @@ const SCHEMAS = {
       id: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
     },
   },
+  // CORRECTIF (audit backend, Phase 2) : ce schéma n'autorisait QUE `action`
+  // — mais le tableau de bord (dashboard/features/ip-cameras.js) envoie
+  // TOUJOURS label/quality avec cette action (le formulaire "nom du
+  // téléphone + qualité du flux" AVANT de générer le QR), et le handler
+  // serveur les lit bien (server.js/camera-ws-handlers.js). Résultat réel :
+  // toute génération de QR de jumelage caméra téléphone était rejetée par
+  // validation.js ("Champ non autorisé: label") depuis l'ajout de ce
+  // schéma — fonctionnalité cassée en silence pour quiconque utilise
+  // vraiment le formulaire (trouvé en écrivant un test bout-en-bout contre
+  // le VRAI serveur, pas seulement validation.js en isolation).
   generateCameraPairing: {
     required: ['action'],
-    optional: [],
-    validators: { action: (value) => value === 'generateCameraPairing' },
+    optional: ['label', 'quality'],
+    validators: {
+      action: (value) => value === 'generateCameraPairing',
+      label: (value) => typeof value === 'string' && value.length <= 200,
+      quality: (value) => ['low', 'medium', 'high'].includes(value),
+    },
   },
   // AJOUT (audit backend — Phase 1F, 4e lot) : habillage caméra
   // (branding-store.js — sourcePath même sélecteur natif que la
@@ -779,13 +793,24 @@ const SCHEMAS = {
   // (confiance ASR, countdown pré-culte, mode ambiance), assistant IA
   // (résumé/thème/recap/questions/références croisées/archives), et le
   // reste des getters en lecture seule (aucun champ hors 'action').
+  // CORRECTIF (audit backend, Phase 2 — même classe de bug que
+  // generateCameraPairing ci-dessous) : n'autorisait pas `timestamp`, alors
+  // que dashboard/features/verse-session-display.js (saisie manuelle d'une
+  // phrase, comme si prononcée — rejoue le VRAI pipeline de détection) en
+  // envoie TOUJOURS un. Le handler serveur calcule de toute façon son PROPRE
+  // Date.now() (voir server.js) — celui du client n'est jamais lu, mais son
+  // seul PRÉSENCE faisait rejeter tout le message ("Champ non autorisé").
+  // Fonctionnalité cassée en silence depuis ce schéma ; trouvé par un audit
+  // croisé dashboard/validation.js après avoir détecté le même problème sur
+  // generateCameraPairing.
   transcript: {
     required: ['action', 'text'],
-    optional: ['source'],
+    optional: ['source', 'timestamp'],
     validators: {
       action: (value) => value === 'transcript',
       text: (value) => typeof value === 'string' && value.length <= 5000,
       source: (value) => typeof value === 'string' && value.length <= 50,
+      timestamp: (value) => typeof value === 'number' && value > 0,
     },
   },
   setConfidenceThreshold: {

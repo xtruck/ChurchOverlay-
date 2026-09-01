@@ -358,6 +358,23 @@ assert.strictEqual(
 );
 assert.strictEqual(validateMessage({ action: 'deleteIpCamera', id: 'abc' }).valid, true);
 assert.strictEqual(validateMessage({ action: 'generateCameraPairing' }).valid, true);
+// CORRECTIF (audit backend, Phase 2) : dashboard/features/ip-cameras.js
+// envoie TOUJOURS label/quality avec cette action — un test qui ne
+// vérifiait QUE le payload minimal {action} n'aurait jamais détecté que le
+// schéma d'origine rejetait le payload RÉEL (label/quality absents de
+// `optional`, trouvé par un test bout-en-bout contre le vrai serveur, pas
+// celui-ci). Voir camera-ws-handlers.js.
+assert.strictEqual(
+  validateMessage({ action: 'generateCameraPairing', label: 'Téléphone scène', quality: 'high' })
+    .valid,
+  true,
+  'generateCameraPairing avec le payload RÉELLEMENT envoyé par le tableau de bord (label+quality) devrait passer'
+);
+assert.strictEqual(
+  validateMessage({ action: 'generateCameraPairing', quality: 'ultra' }).valid,
+  false,
+  'quality hors énumération devrait être rejetée'
+);
 console.log('[TEST] ✓ Caméras IP correctes');
 
 // Test 26: habillage caméra (branding)

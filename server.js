@@ -705,6 +705,7 @@ const mediaWsHandlers = require('./media-ws-handlers');
 const sceneWsHandlers = require('./scene-ws-handlers');
 const songWsHandlers = require('./song-ws-handlers');
 const rundownWsHandlers = require('./rundown-ws-handlers');
+const cameraWsHandlers = require('./camera-ws-handlers');
 const CATEGORY_HANDLERS = new Map([
   ...mediaWsHandlers.createHandlers({
     mediaLibrary,
@@ -739,6 +740,17 @@ const CATEGORY_HANDLERS = new Map([
       currentRundownIndex = index;
     },
     executeCue,
+  }),
+  ...cameraWsHandlers.createHandlers({
+    ipCameraStore,
+    cleanupPhoneCameraStateForItem,
+    broadcast,
+    log,
+    wsHost: WS_HOST,
+    getLanIpAddress,
+    phoneCameraPairing,
+    serverPort: SERVER_PORT,
+    QRCode,
   }),
 ]);
 
@@ -3379,103 +3391,9 @@ wss.on('connection', (ws, req) => {
     // extraite vers rundown-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS
     // plus haut. executeCue() reste défini ci-dessus (passé en dépendance).
 
-    // --- Caméras de téléphone (flux MJPEG réseau, voir ip-camera-store.js).
-    // Contrairement à la médiathèque, il n'y a rien à diffuser à l'overlay
-    // ici : c'est un outil de suivi côté opérateur uniquement, le flux
-    // lui-même est chargé directement par le navigateur du dashboard depuis
-    // le téléphone (pas relayé par ce serveur). broadcast() seulement pour
-    // que plusieurs tableaux de bord ouverts restent synchronisés. ---
-    if (sanitized.action === 'getIpCameras') {
-      ws.send(JSON.stringify({ action: 'ipCamerasUpdated', items: ipCameraStore.listItems() }));
-      return;
-    }
-
-    if (sanitized.action === 'addIpCamera') {
-      try {
-        const item = ipCameraStore.addItem(
-          { label: sanitized.label, url: sanitized.url },
-          cleanupPhoneCameraStateForItem
-        );
-        log(`Caméra IP : "${item.label}" ajoutée`);
-        broadcast({ action: 'ipCamerasUpdated', items: ipCameraStore.listItems() });
-      } catch (err) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Caméra IP : ' + err.message }));
-      }
-      return;
-    }
-
-    if (sanitized.action === 'deleteIpCamera') {
-      // AJOUT (caméra téléphone QR) : si l'élément supprimé est un téléphone
-      // jumelé par QR (voir POST /phone-camera-pair), on invalide aussi son
-      // secret de flux et on oublie sa dernière image — sinon le téléphone
-      // continuerait d'envoyer des images pour rien, indéfiniment.
-      const item = ipCameraStore.listItems().find((i) => i.id === sanitized.id);
-      cleanupPhoneCameraStateForItem(item);
-      const removed = ipCameraStore.deleteItem(sanitized.id);
-      if (removed) {
-        broadcast({ action: 'ipCamerasUpdated', items: ipCameraStore.listItems() });
-      } else {
-        ws.send(JSON.stringify({ action: 'error', error: 'Caméra IP : élément introuvable' }));
-      }
-      return;
-    }
-
-    // --- Caméra téléphone par QR code (voir phone-camera-pairing.js,
-    // phone-camera.html, et les routes HTTP /phone-camera-* plus haut) ---
-    if (sanitized.action === 'generateCameraPairing') {
-      // Le téléphone doit pouvoir atteindre ce serveur sur le réseau — un
-      // QR généré alors que WS_HOST reste sur 127.0.0.1 (le défaut, voulu
-      // pour la sécurité) ne mènerait nulle part. On le signale clairement
-      // plutôt que de générer un QR silencieusement inutilisable.
-      if (WS_HOST === '127.0.0.1' || WS_HOST === 'localhost') {
-        ws.send(
-          JSON.stringify({
-            action: 'error',
-            error:
-              "Caméra téléphone : le serveur doit être accessible sur le réseau (WS_HOST) pour que le téléphone puisse s'y connecter. Voir README.md.",
-          })
-        );
-        return;
-      }
-      const lanIp = getLanIpAddress();
-      if (!lanIp) {
-        ws.send(
-          JSON.stringify({
-            action: 'error',
-            error: 'Caméra téléphone : aucune adresse réseau locale détectée sur ce poste.',
-          })
-        );
-        return;
-      }
-      try {
-        // AJOUT (demande explicite — "plus de paramètres") : nom choisi par
-        // l'opérateur AVANT de générer le QR (sinon plusieurs téléphones
-        // jumelés apparaissent tous sous le même nom générique, impossible
-        // à distinguer dans la liste — voir redeemPairingCode()) et qualité
-        // du flux (Basse/Moyenne/Haute — voir QUALITY_PRESETS ci-dessous),
-        // portée dans l'URL elle-même puisque c'est le TÉLÉPHONE qui doit
-        // configurer sa propre capture, sans pouvoir demander à l'opérateur
-        // après coup.
-        const label = typeof sanitized.label === 'string' ? sanitized.label : '';
-        const quality = ['low', 'medium', 'high'].includes(sanitized.quality)
-          ? sanitized.quality
-          : 'medium';
-        const pairCode = phoneCameraPairing.generatePairingCode(label);
-        const pairUrl = `http://${lanIp}:${SERVER_PORT}/phone-camera.html?pair=${pairCode}&q=${quality}`;
-        const qrDataUrl = await QRCode.toDataURL(pairUrl, { margin: 1, width: 320 });
-        ws.send(
-          JSON.stringify({
-            action: 'cameraPairingGenerated',
-            qrDataUrl,
-            url: pairUrl,
-            expiresInMs: phoneCameraPairing.PAIRING_TTL_MS,
-          })
-        );
-      } catch (err) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Caméra téléphone : ' + err.message }));
-      }
-      return;
-    }
+    // Caméras IP/téléphone (getIpCameras/addIpCamera/deleteIpCamera/
+    // generateCameraPairing) — extraites vers camera-ws-handlers.js
+    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
 
     // --- Habillage caméra (logo + titre/sous-titre, voir branding-store.js
     // et branding-overlay.html) : broadcast() à chaque changement — TOUS les
