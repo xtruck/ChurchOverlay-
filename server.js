@@ -864,6 +864,7 @@ const timerWsHandlers = require('./timer-ws-handlers');
 const pluginsExportsWsHandlers = require('./plugins-exports-ws-handlers');
 const diagnosticsWsHandlers = require('./diagnostics-ws-handlers');
 const miscWsHandlers = require('./misc-ws-handlers');
+const agentWsHandlers = require('./agent-ws-handlers');
 const CATEGORY_HANDLERS = new Map([
   ...mediaWsHandlers.createHandlers({
     mediaLibrary,
@@ -1025,6 +1026,9 @@ const CATEGORY_HANDLERS = new Map([
     featuresStore,
     semanticSearch,
     sanitizeForPrompt,
+  }),
+  ...agentWsHandlers.createHandlers({
+    getChurchAgent: () => churchAgent,
   }),
 ]);
 
@@ -2532,146 +2536,21 @@ wss.on('connection', (ws, req) => {
       ws.send(JSON.stringify(obj));
     }
 
-    // AJOUT (Phase 2 — modularisation du dispatch WS) : consulte d'abord la
-    // table des handlers déjà extraits par catégorie (voir CATEGORY_HANDLERS
-    // plus haut) — seulement si l'action y figure ; sinon la chaîne if/else
-    // historique ci-dessous continue de s'en charger normalement (migration
-    // progressive, jamais de rupture pour les actions pas encore extraites).
+    // AJOUT (Phase 2 — modularisation du dispatch WS, terminée) : toutes les
+    // actions ont un handler dans CATEGORY_HANDLERS (voir sa construction
+    // plus haut, et chaque <categorie>-ws-handlers.js pour le détail par
+    // action) — server.js n'est plus qu'un point de composition/bootstrap
+    // pour ce dispatch, plus une seule action n'y est traitée directement.
     if (CATEGORY_HANDLERS.has(sanitized.action)) {
       await CATEGORY_HANDLERS.get(sanitized.action)(ws, sanitized, requestId, sendError);
       return;
     }
 
-    // --- Speech or audio transcript input ---
-    if (sanitized.action === 'agentRun' || sanitized.action === 'agentResume') {
-      if (!churchAgent) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Agent IA indisponible.' }));
-        return;
-      }
-      const sessionId =
-        typeof sanitized.sessionId === 'string' && sanitized.sessionId.trim()
-          ? sanitized.sessionId.trim()
-          : `service-${new Date().toISOString().slice(0, 10)}`;
-      const input = typeof sanitized.input === 'string' ? sanitized.input.trim() : '';
-      if (sanitized.action === 'agentRun' && (!input || input.length > 4000)) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Requête agent vide ou trop longue.' }));
-        return;
-      }
-      try {
-        const runOptions =
-          sanitized.action === 'agentResume'
-            ? {
-                sessionId,
-                runId: sanitized.runId,
-                approvedToolCallIds: sanitized.approvedToolCallIds,
-              }
-            : { sessionId, input };
-        for await (const event of churchAgent.run(runOptions)) {
-          ws.send(JSON.stringify({ action: 'agentEvent', ...event }));
-        }
-      } catch (err) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Agent IA : ' + err.message }));
-      }
-      return;
-    }
-
-    // transcript/setConfidenceThreshold — extraits vers misc-ws-handlers.js
-    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
-
-    // preServiceCheck/getNetworkStatus/getSessionStats — extraits vers
-    // diagnostics-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS plus haut.
-
-    // exportHighlights/exportClips — extraits vers
-    // plugins-exports-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS
-    // plus haut.
-
-    // setLanguage/setTranslation — extraits vers core-verse-ws-handlers.js
-    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
-
-    // setSecondaryTranslation/startReading/stopReading/nextReadingVerse/
-    // previousReadingVerse — extraits vers reading-translation-ws-handlers.js
-    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
-
-    // searchBible — extrait vers misc-ws-handlers.js (Phase 2), voir
-    // CATEGORY_HANDLERS plus haut.
-
-    // getTopics/getMoods — extraits vers ai-assistant-ws-handlers.js
-    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
-
-    // setMoodTheme — extrait vers reading-translation-ws-handlers.js
-    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
-
-    // listPlugins/togglePlugin — extraits vers plugins-exports-ws-handlers.js
-    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
-
-    // getAiStats/getLiveSummary/getSermonTheme/getPostServiceRecap/
-    // getArchiveMatches/getCrossReferences — extraits vers
-    // ai-assistant-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS plus haut.
-
-    // translateText/hideTranslation — extraits vers
-    // reading-translation-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS
-    // plus haut.
-
-    // applyTheme — extrait vers core-verse-ws-handlers.js (Phase 2), voir
-    // CATEGORY_HANDLERS plus haut.
-
-    // setTrustMode/confirmPendingVerse/dismissPendingVerse — extraits vers
-    // trust-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS plus haut.
-
-    // Accessibilité/affichage (setHighContrast/setCaptions/
-    // setTranslatedCaptions/setTestPattern/setBackgroundPattern/
-    // setBlackScreen/startCountdown/stopCountdown/setAmbientMode) —
-    // extraits vers accessibility-ws-handlers.js (Phase 2), voir
-    // CATEGORY_HANDLERS plus haut.
-
-    // emergencyClear/pauseTimer/resumeTimer/extendTime — extraits vers
-    // timer-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS plus haut.
-
-    // Médiathèque (getMediaLibrary/testTriggerPhrase/addMediaItem/
-    // updateMediaItem/setDefaultMediaItem/deleteMediaItem/getMediaGroups/
-    // addMediaGroup/deleteMediaGroup/setMediaItemGroup) — extraite vers
-    // media-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS plus haut.
-
-    // ---------------------------------------------------------------------
-    // getSceneLibrary/addScene — extraits vers scene-ws-handlers.js
-    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
-
-    // importPptxSlides/exportService/importService — extraits vers
-    // service-import-export-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS
-    // plus haut.
-
-    // updateScene/deleteScene/setDefaultScene/triggerScene/hideScene —
-    // extraits vers scene-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS
-    // plus haut.
-
-    // Feuille de route (getRundown/addRundownCue/removeRundownCue/
-    // reorderRundownCues/clearRundown/triggerRundownCue/nextRundownCue) —
-    // extraite vers rundown-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS
-    // plus haut. executeCue() reste défini ci-dessus (passé en dépendance).
-
-    // Caméras IP/téléphone (getIpCameras/addIpCamera/deleteIpCamera/
-    // generateCameraPairing) — extraites vers camera-ws-handlers.js
-    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
-
-    // Habillage caméra + identité de marque du tableau de bord
-    // (getBranding/setBrandingLogo/clearBrandingLogo/setBrandingPosition/
-    // setBrandingSize/setBrandingText/setBrandingVisible/getDashboardBranding/
-    // setDashboardOrgName/setDashboardAccentColor/setDashboardLogo/
-    // clearDashboardLogo) — extraits vers branding-ws-handlers.js (Phase 2),
-    // voir CATEGORY_HANDLERS plus haut.
-
-    // Bibliothèque de chants (getSongLibrary/addSong/deleteSong/
-    // showSongSection) — extraite vers song-ws-handlers.js (Phase 2), voir
-    // CATEGORY_HANDLERS plus haut.
-
-    // sendStageMessage/clearStageMessage/ping — extraits vers
-    // misc-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS plus haut.
-    //
-    // getOfflineBibleStatus — extrait vers diagnostics-ws-handlers.js
-    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
-    //
-    // askSermonQuestion — extrait vers ai-assistant-ws-handlers.js
-    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
+    // Phase 2 terminée : toutes les actions du dispatch WS sont couvertes
+    // par CATEGORY_HANDLERS (voir sa construction plus haut, et chaque
+    // <categorie>-ws-handlers.js pour le détail par action) — cette ligne
+    // n'est jamais atteinte en fonctionnement normal, seulement si
+    // CATEGORY_HANDLERS ne connaît pas l'action (garde-fou).
   });
 
   ws.on('close', () => {

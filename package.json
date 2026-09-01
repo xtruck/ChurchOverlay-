@@ -152,6 +152,7 @@
       "plugins-exports-ws-handlers.js",
       "diagnostics-ws-handlers.js",
       "misc-ws-handlers.js",
+      "agent-ws-handlers.js",
       "ai-modules-loader.js",
       "session-state.js",
       "dotenv-loader.js",
