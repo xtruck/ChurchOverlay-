@@ -671,13 +671,61 @@ function warn(msg) {
 // charges bilingue. showScene (studio de scènes, lot 4) : même raisonnement.
 const REPEATABLE_ACTIONS = new Set(['showVerse', 'showMedia', 'showScene']);
 
+// AJOUT (protection contre les clients lents) : un client WebSocket dont le
+// buffer d'envoi (bufferedAmount, TCP+userland côté `ws`) grossit signifie
+// qu'il consomme plus lentement qu'on ne lui envoie — une connexion lente/
+// gelée (overlay OBS sur un poste distant surchargé, tablette Wi-Fi faible).
+// Sans protection, ws.send() continue d'empiler en mémoire indéfiniment
+// pour CE client, et surtout .forEach() ne saute jamais son tour : un seul
+// client à la traîne ne doit jamais retarder ou dégrader l'expérience de
+// tous les autres (opérateur y compris) en pleine diffusion.
+// Seuil : les messages diffusés ici sont du JSON (texte de verset, scènes
+// avec URLs média, listes) — quelques Ko à quelques dizaines de Ko dans le
+// pire cas, jamais des médias binaires (servis par HTTP, pas par ce socket).
+// 2 Mo est donc un plafond très généreux qui ne se déclenche que pour un
+// client réellement bloqué, pas une variation normale de débit.
+// Configurable (mêmes conventions que MAX_CONNECTIONS/MAX_MESSAGES_PER_MINUTE,
+// voir config-validator.js) — surtout utile en test, pour ne pas avoir à
+// gonfler artificiellement 2 Mo de trafic réel pour exercer cette logique.
+const WS_BACKPRESSURE_THRESHOLD_BYTES =
+  Number(process.env.WS_BACKPRESSURE_THRESHOLD_BYTES) || 2 * 1024 * 1024;
+// Un client resté au-dessus du seuil plus longtemps que ça est considéré
+// perdu — mieux vaut fermer proprement (il se reconnectera) que de laisser
+// grossir indéfiniment la mémoire du process pour une connexion qui ne
+// rattrapera probablement jamais son retard.
+const WS_BACKPRESSURE_CLOSE_AFTER_MS = Number(process.env.WS_BACKPRESSURE_CLOSE_AFTER_MS) || 5000;
+
 function broadcast(obj) {
   if (REPEATABLE_ACTIONS.has(obj.action)) {
     sessionState.setLastBroadcast(obj.action, obj);
   }
   const json = JSON.stringify(obj);
+  const now = Date.now();
   wss.clients.forEach((ws) => {
-    if (ws.readyState === WebSocket.OPEN) ws.send(json);
+    if (ws.readyState !== WebSocket.OPEN) return;
+
+    if (ws.bufferedAmount > WS_BACKPRESSURE_THRESHOLD_BYTES) {
+      if (!ws._backpressureSince) {
+        ws._backpressureSince = now;
+        warn(
+          `Client WebSocket (role: ${ws.clientRole || 'inconnu'}) en retard d'envoi ` +
+            `(bufferedAmount=${ws.bufferedAmount} octets > seuil ${WS_BACKPRESSURE_THRESHOLD_BYTES}) — ` +
+            "messages ignorés pour ce client tant qu'il ne rattrape pas son retard."
+        );
+      } else if (now - ws._backpressureSince > WS_BACKPRESSURE_CLOSE_AFTER_MS) {
+        warn(
+          `Client WebSocket (role: ${ws.clientRole || 'inconnu'}) toujours bloqué après ` +
+            `${WS_BACKPRESSURE_CLOSE_AFTER_MS}ms — fermeture forcée (il pourra se reconnecter).`
+        );
+        ws.terminate();
+      }
+      return; // Ce client saute ce message — les autres continuent normalement.
+    }
+
+    if (ws._backpressureSince) {
+      ws._backpressureSince = null; // rattrapé — reprend l'envoi normal, silencieusement
+    }
+    ws.send(json);
   });
 }
 
@@ -4762,3 +4810,19 @@ process.on('unhandledRejection', (reason) => {
   } catch (_) {}
   process.exit(1);
 });
+
+// AJOUT (tests uniquement — voir test/test-ws-backpressure.js) : ce fichier
+// s'exécute comme un script (worker_thread entry point ou `node server.js`
+// direct), jamais require()'d pour sa valeur de retour en production — ce
+// module.exports n'a donc aucun effet sur main.js/le worker réel. Il existe
+// uniquement pour donner aux tests un accès en LECTURE au vrai `wss` déjà
+// utilisé partout ci-dessus (mêmes clients, même bufferedAmount réel) —
+// impossible à observer autrement depuis l'extérieur : un test qui se
+// contente de connecter un vrai client WebSocket ne voit que SON PROPRE
+// bufferedAmount (toujours ~0, il n'envoie presque rien), jamais celui que
+// le SERVEUR accumule en essayant de lui envoyer des messages qu'il ne lit
+// plus (voir la logique de backpressure de broadcast() plus haut). Même
+// principe que deepgramStreaming.setWsFactoryForTesting() : un point
+// d'injection/observation explicite pour les tests, sans changer le
+// comportement réel.
+module.exports = { wss };
