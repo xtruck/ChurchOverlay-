@@ -135,6 +135,7 @@
       "companion.html",
       "server.js",
       "phone-camera-routes.js",
+      "http-routes.js",
       "ai-modules-loader.js",
       "session-state.js",
       "dotenv-loader.js",
