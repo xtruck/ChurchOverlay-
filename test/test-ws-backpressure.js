@@ -198,7 +198,9 @@ function connect() {
   const serverSideNormalClient = findServerSideFor(normalClient);
   check(
     'corrélation client<->serveur réussie pour les deux connexions',
-    !!serverSideSlowClient && !!serverSideNormalClient && serverSideSlowClient !== serverSideNormalClient,
+    !!serverSideSlowClient &&
+      !!serverSideNormalClient &&
+      serverSideSlowClient !== serverSideNormalClient,
     `slow trouvé=${!!serverSideSlowClient} normal trouvé=${!!serverSideNormalClient}`
   );
 
@@ -234,9 +236,7 @@ function connect() {
   // testées ici sont bien le code réel de production, seule la façon dont
   // bufferedAmount devient élevé est simulée plutôt qu'obtenue par une
   // vraie saturation réseau.
-  console.log(
-    '[TEST] Simulation d\'un bufferedAmount élevé côté serveur pour le client lent...'
-  );
+  console.log("[TEST] Simulation d'un bufferedAmount élevé côté serveur pour le client lent...");
   Object.defineProperty(serverSideSlowClient, 'bufferedAmount', {
     value: 500_000,
     configurable: true,
@@ -246,8 +246,14 @@ function connect() {
   // fausser la mesure.
   slowMessagesBeforeStub.length = 0;
 
-  console.log('[TEST] Déclenchement d\'une vraie diffusion (broadcast() réel côté serveur)...');
-  normalClient.send(JSON.stringify({ action: 'showVerse', reference: 'Jean 3:16', text: 'placeholder (ignoré par le handler, qui refait son propre lookup)' }));
+  console.log("[TEST] Déclenchement d'une vraie diffusion (broadcast() réel côté serveur)...");
+  normalClient.send(
+    JSON.stringify({
+      action: 'showVerse',
+      reference: 'Jean 3:16',
+      text: 'placeholder (ignoré par le handler, qui refait son propre lookup)',
+    })
+  );
   // Le handler showVerse fait un vrai aller-retour asynchrone
   // (bibleLookup.getVerseMultilang() + sessionState + persistance de
   // l'historique) avant d'appeler broadcast() — un délai FIXE s'est avéré
@@ -284,7 +290,13 @@ function connect() {
   // minuteur en tâche de fond, voir server.js) — il faut donc redéclencher
   // une diffusion réelle après le délai pour que la logique de fermeture
   // s'exécute effectivement, pas seulement attendre passivement.
-  normalClient.send(JSON.stringify({ action: 'showVerse', reference: 'Jean 3:16', text: 'placeholder (ignoré par le handler, qui refait son propre lookup)' }));
+  normalClient.send(
+    JSON.stringify({
+      action: 'showVerse',
+      reference: 'Jean 3:16',
+      text: 'placeholder (ignoré par le handler, qui refait son propre lookup)',
+    })
+  );
   // Même raisonnement que plus haut : attend le signal réel (fermeture
   // effective côté client) plutôt qu'un délai fixe deviné.
   await waitUntil(() => slowClient.readyState !== WebSocket.OPEN, 3000).catch(() => {});

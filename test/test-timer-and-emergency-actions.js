@@ -162,10 +162,7 @@ function sleep(ms) {
     received.length = 0;
     ws.send(JSON.stringify({ action: 'resumeTimer' }));
     const resumeMsg = await waitForAction('resumeTimer');
-    check(
-      'resumeTimer diffusé avec triggeredByVoice:false',
-      resumeMsg.triggeredByVoice === false
-    );
+    check('resumeTimer diffusé avec triggeredByVoice:false', resumeMsg.triggeredByVoice === false);
 
     console.log('--- extendTime ---');
     received.length = 0;
@@ -185,9 +182,7 @@ function sleep(ms) {
     ws.close();
   }
 
-  console.log(
-    `\n=== Résultat actions timer/urgence : ${passed} passés, ${failed} échoués ===`
-  );
+  console.log(`\n=== Résultat actions timer/urgence : ${passed} passés, ${failed} échoués ===`);
   process.exit(failed > 0 ? 1 : 0);
 })().catch((err) => {
   console.error("Erreur fatale dans le test d'intégration:", err);

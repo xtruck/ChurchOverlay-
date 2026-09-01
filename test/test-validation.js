@@ -211,7 +211,7 @@ assert.strictEqual(
 assert.strictEqual(
   validateMessage({ action: 'setDefaultMediaItem' }).valid,
   true,
-  "setDefaultMediaItem sans id devrait passer (retire le poster principal, voir server.js)"
+  'setDefaultMediaItem sans id devrait passer (retire le poster principal, voir server.js)'
 );
 assert.strictEqual(
   validateMessage({ action: 'setDefaultMediaItem', id: 'abc123' }).valid,
@@ -245,9 +245,17 @@ console.log('[TEST] ✓ background/elements mal typés rejetés');
 console.log('[TEST] Test 20: deleteScene/triggerScene/hideScene/setDefaultScene...');
 assert.strictEqual(validateMessage({ action: 'deleteScene', id: 'abc' }).valid, true);
 assert.strictEqual(validateMessage({ action: 'triggerScene', id: 'abc' }).valid, true);
-assert.strictEqual(validateMessage({ action: 'triggerScene' }).valid, false, 'triggerScene sans id devrait être rejeté');
+assert.strictEqual(
+  validateMessage({ action: 'triggerScene' }).valid,
+  false,
+  'triggerScene sans id devrait être rejeté'
+);
 assert.strictEqual(validateMessage({ action: 'hideScene' }).valid, true);
-assert.strictEqual(validateMessage({ action: 'setDefaultScene' }).valid, true, 'setDefaultScene sans id devrait passer (retire la scène par défaut)');
+assert.strictEqual(
+  validateMessage({ action: 'setDefaultScene' }).valid,
+  true,
+  'setDefaultScene sans id devrait passer (retire la scène par défaut)'
+);
 console.log('[TEST] ✓ Actions du studio de scènes correctes');
 
 // Test 21: import/export de service
@@ -277,7 +285,7 @@ const result22 = validateMessage({
   action: 'addSong',
   title: 'Amazing Grace',
   artist: 'John Newton',
-  lyrics: "Amazing grace, how sweet the sound\n\nThat saved a wretch like me",
+  lyrics: 'Amazing grace, how sweet the sound\n\nThat saved a wretch like me',
   triggerPhrases: ['amazing grace'],
 });
 assert.strictEqual(result22.valid, true, `addSong valide devrait passer : ${result22.error}`);
@@ -409,10 +417,7 @@ assert.strictEqual(
   true,
   'setBrandingText sans title/subtitle devrait passer (les deux optionnels)'
 );
-assert.strictEqual(
-  validateMessage({ action: 'setBrandingVisible', visible: true }).valid,
-  true
-);
+assert.strictEqual(validateMessage({ action: 'setBrandingVisible', visible: true }).valid, true);
 assert.strictEqual(
   validateMessage({ action: 'setBrandingVisible' }).valid,
   false,
@@ -453,10 +458,7 @@ assert.strictEqual(
   true,
   'setSecondaryTranslation sans lang/code devrait passer (désactive la traduction secondaire)'
 );
-assert.strictEqual(
-  validateMessage({ action: 'startReading', reference: 'Jean 3:1' }).valid,
-  true
-);
+assert.strictEqual(validateMessage({ action: 'startReading', reference: 'Jean 3:1' }).valid, true);
 assert.strictEqual(
   validateMessage({ action: 'startReading' }).valid,
   false,
@@ -471,8 +473,11 @@ console.log('[TEST] ✓ Traduction secondaire et mode lecture corrects');
 console.log('[TEST] Test 29: setMoodTheme/translateText/hideTranslation...');
 assert.strictEqual(validateMessage({ action: 'setMoodTheme', mood: 'joy' }).valid, true);
 assert.strictEqual(
-  validateMessage({ action: 'translateText', text: 'Car Dieu a tant aimé le monde', targetLang: 'en' })
-    .valid,
+  validateMessage({
+    action: 'translateText',
+    text: 'Car Dieu a tant aimé le monde',
+    targetLang: 'en',
+  }).valid,
   true
 );
 assert.strictEqual(
@@ -484,7 +489,9 @@ assert.strictEqual(validateMessage({ action: 'hideTranslation' }).valid, true);
 console.log('[TEST] ✓ Thème d’ambiance et traduction IA corrects');
 
 // Test 30: accessibilité et affichage
-console.log('[TEST] Test 30: setHighContrast/setCaptions/setTranslatedCaptions/setTestPattern/setBackgroundPattern/setBlackScreen...');
+console.log(
+  '[TEST] Test 30: setHighContrast/setCaptions/setTranslatedCaptions/setTestPattern/setBackgroundPattern/setBlackScreen...'
+);
 assert.strictEqual(validateMessage({ action: 'setHighContrast', enabled: true }).valid, true);
 assert.strictEqual(
   validateMessage({ action: 'setHighContrast' }).valid,
@@ -576,10 +583,7 @@ console.log('[TEST] Test 34: emergencyClear/pauseTimer/resumeTimer/extendTime...
 assert.strictEqual(validateMessage({ action: 'emergencyClear' }).valid, true);
 assert.strictEqual(validateMessage({ action: 'pauseTimer' }).valid, true);
 assert.strictEqual(validateMessage({ action: 'resumeTimer' }).valid, true);
-assert.strictEqual(
-  validateMessage({ action: 'extendTime', extraMs: 5 * 60 * 1000 }).valid,
-  true
-);
+assert.strictEqual(validateMessage({ action: 'extendTime', extraMs: 5 * 60 * 1000 }).valid, true);
 assert.strictEqual(
   validateMessage({ action: 'extendTime' }).valid,
   false,
@@ -598,7 +602,9 @@ assert.strictEqual(
 console.log('[TEST] ✓ emergencyClear/pauseTimer/resumeTimer/extendTime corrects');
 
 // Test 35: transcript / réglages ponctuels (confiance, countdown, ambiance)
-console.log('[TEST] Test 35: transcript/setConfidenceThreshold/startCountdown/stopCountdown/setAmbientMode...');
+console.log(
+  '[TEST] Test 35: transcript/setConfidenceThreshold/startCountdown/stopCountdown/setAmbientMode...'
+);
 assert.strictEqual(
   validateMessage({ action: 'transcript', text: 'Jean chapitre trois verset seize' }).valid,
   true
@@ -631,7 +637,9 @@ assert.strictEqual(
 console.log('[TEST] ✓ transcript / réglages ponctuels corrects');
 
 // Test 36: assistant IA (résumé/thème/recap/questions/références/archives)
-console.log('[TEST] Test 36: getLiveSummary/getSermonTheme/getPostServiceRecap/getCrossReferences/getArchiveMatches/askSermonQuestion...');
+console.log(
+  '[TEST] Test 36: getLiveSummary/getSermonTheme/getPostServiceRecap/getCrossReferences/getArchiveMatches/askSermonQuestion...'
+);
 assert.strictEqual(validateMessage({ action: 'getLiveSummary' }).valid, true);
 assert.strictEqual(validateMessage({ action: 'getSermonTheme', silent: true }).valid, true);
 assert.strictEqual(validateMessage({ action: 'getPostServiceRecap' }).valid, true);
@@ -639,10 +647,7 @@ assert.strictEqual(
   validateMessage({ action: 'getCrossReferences', reference: 'Jean 3:16' }).valid,
   true
 );
-assert.strictEqual(
-  validateMessage({ action: 'getArchiveMatches', query: 'grâce' }).valid,
-  true
-);
+assert.strictEqual(validateMessage({ action: 'getArchiveMatches', query: 'grâce' }).valid, true);
 assert.strictEqual(
   validateMessage({ action: 'askSermonQuestion', question: 'De quoi parlait le sermon ?' }).valid,
   true
@@ -677,7 +682,11 @@ const readOnlyGetters = [
 ];
 for (const action of readOnlyGetters) {
   const result = validateMessage({ action });
-  assert.strictEqual(result.valid, true, `${action} sans autre champ devrait passer : ${result.error}`);
+  assert.strictEqual(
+    result.valid,
+    true,
+    `${action} sans autre champ devrait passer : ${result.error}`
+  );
 }
 assert.strictEqual(validateMessage({ action: 'triggerMediaItem', id: 'abc' }).valid, true);
 assert.strictEqual(
@@ -698,6 +707,53 @@ assert.strictEqual(
 );
 console.log(
   `[TEST] ✓ Les ${Object.keys(CLIENT_ACTIONS).length} actions client de action-registry.js ont toutes un schéma`
+);
+
+// Test 39: RÉGRESSION — setSecondaryTranslation avec lang:null/code:null
+// (option "Aucune" du sélecteur, dashboard/features/translation-picker.js)
+// doit passer : reading-translation-ws-handlers.js traite explicitement ce
+// cas comme la désactivation volontaire de la traduction secondaire, pas
+// une valeur malformée. Trouvé cassé (rejeté par validateMessage avant même
+// d'atteindre le handler) pendant la vérification post-synchronisation.
+console.log('[TEST] Test 39: setSecondaryTranslation lang:null/code:null (désactivation)...');
+{
+  const result = validateMessage({
+    action: 'setSecondaryTranslation',
+    lang: null,
+    code: null,
+  });
+  assert.strictEqual(
+    result.valid,
+    true,
+    `lang:null/code:null (désactivation) devrait être accepté : ${result.error}`
+  );
+}
+{
+  const result = validateMessage({
+    action: 'setSecondaryTranslation',
+    lang: 'fr',
+    code: 'lsg',
+  });
+  assert.strictEqual(
+    result.valid,
+    true,
+    `lang/code valides devraient rester acceptés : ${result.error}`
+  );
+}
+{
+  const result = validateMessage({
+    action: 'setSecondaryTranslation',
+    lang: 'de',
+    code: 'lsg',
+  });
+  assert.strictEqual(
+    result.valid,
+    false,
+    'une langue non supportée (ni fr/en, ni null) doit toujours être rejetée'
+  );
+}
+console.log(
+  '[TEST] ✓ setSecondaryTranslation accepte la désactivation (null) et rejette toujours les valeurs invalides'
 );
 
 console.log('\n=== Tests terminés ===');

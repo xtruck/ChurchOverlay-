@@ -561,12 +561,24 @@ const SCHEMAS = {
   // affichage. lang/code alignés sur setTranslation ci-dessus (même forme
   // de code de traduction).
   setSecondaryTranslation: {
+    // CORRECTIF (audit — régression validation.js) : le handler
+    // (reading-translation-ws-handlers.js) traite explicitement
+    // lang:null/code:null comme la désactivation volontaire de la
+    // traduction secondaire (option "Aucune" du sélecteur, voir
+    // dashboard/features/translation-picker.js#onSecondaryTranslationChange)
+    // — un cas légitime, pas une valeur malformée. Les validateurs
+    // n'acceptaient que des chaînes, donc rejetaient ce message avant même
+    // qu'il n'atteigne le handler : désactiver la traduction secondaire ne
+    // fonctionnait plus dès que VALIDATE_MESSAGES_ENABLED est actif (le
+    // défaut). null explicitement autorisé en plus des chaînes valides.
     required: ['action'],
     optional: ['lang', 'code'],
     validators: {
       action: (value) => value === 'setSecondaryTranslation',
-      lang: (value) => typeof value === 'string' && ['fr', 'en'].includes(value.toLowerCase()),
-      code: (value) => typeof value === 'string' && /^[a-z0-9_-]{2,20}$/i.test(value),
+      lang: (value) =>
+        value === null || (typeof value === 'string' && ['fr', 'en'].includes(value.toLowerCase())),
+      code: (value) =>
+        value === null || (typeof value === 'string' && /^[a-z0-9_-]{2,20}$/i.test(value)),
     },
   },
   startReading: {

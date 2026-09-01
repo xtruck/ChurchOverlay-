@@ -435,7 +435,9 @@ const readDisplayState = () => {
     await browser.close();
   }
 
-  console.log(`\n=== Résultat hydratation à la reconnexion : ${passed} passés, ${failed} échoués ===`);
+  console.log(
+    `\n=== Résultat hydratation à la reconnexion : ${passed} passés, ${failed} échoués ===`
+  );
   process.exit(failed > 0 ? 1 : 0);
 })().catch((err) => {
   console.error("Erreur fatale dans le test d'intégration:", err);

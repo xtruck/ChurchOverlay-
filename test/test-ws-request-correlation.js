@@ -180,7 +180,9 @@ function sleep(ms) {
     const hideVerseMsg = await waitForRequestId('req-3');
     check('hideVerse porte le requestId de la requête', hideVerseMsg.action === 'hideVerse');
 
-    console.log('--- searchBible : réponse directe (searchError si moteur indisponible en test) ---');
+    console.log(
+      '--- searchBible : réponse directe (searchError si moteur indisponible en test) ---'
+    );
     received.length = 0;
     ws.send(JSON.stringify({ action: 'searchBible', query: 'grâce', requestId: 'req-4' }));
     const searchMsg = await waitForRequestId('req-4');
@@ -209,9 +211,14 @@ function sleep(ms) {
 
     console.log('--- triggerMediaItem : erreur (id inconnu) ---');
     received.length = 0;
-    ws.send(JSON.stringify({ action: 'triggerMediaItem', id: 'id-inexistant', requestId: 'req-7' }));
+    ws.send(
+      JSON.stringify({ action: 'triggerMediaItem', id: 'id-inexistant', requestId: 'req-7' })
+    );
     const triggerMediaErr = await waitForRequestId('req-7');
-    check('triggerMediaItem erreur porte le requestId de la requête', triggerMediaErr.action === 'error');
+    check(
+      'triggerMediaItem erreur porte le requestId de la requête',
+      triggerMediaErr.action === 'error'
+    );
 
     console.log('--- hideMedia (via broadcast) ---');
     received.length = 0;
@@ -223,7 +230,10 @@ function sleep(ms) {
     received.length = 0;
     ws.send(JSON.stringify({ action: 'triggerScene', id: 'id-inexistant', requestId: 'req-9' }));
     const triggerSceneErr = await waitForRequestId('req-9');
-    check('triggerScene erreur porte le requestId de la requête', triggerSceneErr.action === 'error');
+    check(
+      'triggerScene erreur porte le requestId de la requête',
+      triggerSceneErr.action === 'error'
+    );
 
     console.log('--- hideScene (via broadcast) ---');
     received.length = 0;
@@ -232,14 +242,14 @@ function sleep(ms) {
     check('hideScene porte le requestId de la requête', hideSceneMsg.action === 'hideScene');
 
     console.log(
-      '--- Un client qui n\'envoie AUCUN requestId (tout le tableau de bord aujourd\'hui) : comportement inchangé ---'
+      "--- Un client qui n'envoie AUCUN requestId (tout le tableau de bord aujourd'hui) : comportement inchangé ---"
     );
     received.length = 0;
     ws.send(JSON.stringify({ action: 'hideVerse' }));
     await sleep(300);
     const noIdMsg = received.find((m) => m.action === 'hideVerse');
     check(
-      "aucun requestId envoyé -> aucun requestId dans la réponse (pas de champ ajouté à tort)",
+      'aucun requestId envoyé -> aucun requestId dans la réponse (pas de champ ajouté à tort)',
       !!noIdMsg && !('requestId' in noIdMsg)
     );
 
@@ -266,14 +276,16 @@ function sleep(ms) {
       waitForRequestId('concur-B'),
     ]);
     check(
-      'chaque requestId concurrent est associé à SA PROPRE référence, pas celle de l\'autre',
+      "chaque requestId concurrent est associé à SA PROPRE référence, pas celle de l'autre",
       msgA.book === 'jean' && msgB.book === 'romains'
     );
   } finally {
     ws.close();
   }
 
-  console.log(`\n=== Résultat corrélation requestId (VRAI server.js) : ${passed} passés, ${failed} échoués ===`);
+  console.log(
+    `\n=== Résultat corrélation requestId (VRAI server.js) : ${passed} passés, ${failed} échoués ===`
+  );
   process.exit(failed > 0 ? 1 : 0);
 })().catch((err) => {
   console.error("Erreur fatale dans le test d'intégration:", err);

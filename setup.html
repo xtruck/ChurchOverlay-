@@ -2,6 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <!-- AJOUT (audit sécurité Electron, Phase 3) : script-src garde
      'unsafe-inline' ici — contrairement à dashboard.html/overlay.html, ce
      fichier a un vrai <script> inline (ligne ~344) avec la logique de
@@ -60,6 +61,7 @@
     width: 100%;
     max-width: 520px;
     background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(20px);
     backdrop-filter: blur(20px);
     border: 1px solid var(--glass-border);
     border-radius: 20px;
@@ -101,6 +103,7 @@
     margin-bottom: 8px;
     background: linear-gradient(135deg, var(--accent), var(--success));
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
   }
 
@@ -122,6 +125,11 @@
     margin-bottom: 10px;
     color: var(--text-primary);
     font-size: 14px;
+  }
+
+  .optional-label {
+    color: var(--text-muted);
+    font-weight: 400;
   }
 
   .input-row {
@@ -268,6 +276,7 @@
      preload.js n'expose plus ensureFfmpeg/onFfmpegSetupProgress/
      onFfmpegStartupProgress (capture native, plus de binaire externe à
      installer). Le formulaire (#setup-form) s'affiche directement. */
+</style>
 </head>
 <body>
   <div class="container">
@@ -287,7 +296,7 @@
           <span>🎤</span> Microphone
         </label>
         <div class="input-row">
-          <select id="mic-select">
+          <select id="mic-select" title="Sélectionner un microphone">
             <option value="">Recherche des microphones…</option>
           </select>
           <button class="btn btn-secondary" id="btn-refresh">
@@ -314,7 +323,7 @@
       <!-- Deepgram API Key (Optional) -->
       <div class="form-group">
         <label>
-          <span>🔐</span> Clé API Deepgram <span style="color: var(--text-muted); font-weight: 400;">(optionnel)</span>
+          <span>🔐</span> Clé API Deepgram <span class="optional-label">(optionnel)</span>
         </label>
         <input type="password" id="deepgram-key" placeholder="Laisser vide si non utilisé" autocomplete="off" />
         <button class="toggle-password" id="btn-toggle-deepgram">Afficher</button>
@@ -327,7 +336,7 @@
       <!-- Gemini API Key (Optional) -->
       <div class="form-group">
         <label>
-          <span>✨</span> Clé API Gemini <span style="color: var(--text-muted); font-weight: 400;">(optionnel)</span>
+          <span>✨</span> Clé API Gemini <span class="optional-label">(optionnel)</span>
         </label>
         <input type="password" id="gemini-key" placeholder="Laisser vide si non utilisé" autocomplete="off" />
         <button class="toggle-password" id="btn-toggle-gemini">Afficher</button>
