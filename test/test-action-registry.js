@@ -36,7 +36,19 @@ function assert(condition, message) {
 // ---------------------------------------------------------------------------
 
 const ROOT = path.join(__dirname, '..');
-const serverSrc = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
+// CORRECTIF (Phase 2 — modularisation du dispatch WS) : les handlers de
+// certaines actions ont commencé à migrer hors de server.js vers des
+// modules dédiés (voir media-ws-handlers.js, CATEGORY_HANDLERS dans
+// server.js) — une vérification qui ne lisait QUE server.js ne les trouvait
+// plus, alors que le comportement réel est inchangé (juste déplacé). Inclut
+// donc le texte de tous les modules `*-ws-handlers.js` du dépôt en plus de
+// server.js, automatiquement (glob, pas une liste à maintenir à la main —
+// chaque future extraction de catégorie n'a donc rien à changer ici).
+const wsHandlerFiles = fs.readdirSync(ROOT).filter((f) => f.endsWith('-ws-handlers.js'));
+const serverSrc =
+  fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8') +
+  '\n' +
+  wsHandlerFiles.map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
 const overlaySrc = fs.readFileSync(path.join(ROOT, 'overlay.js'), 'utf8');
 
 // ---------------------------------------------------------------------------
