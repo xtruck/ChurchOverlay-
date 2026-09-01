@@ -707,6 +707,7 @@ const songWsHandlers = require('./song-ws-handlers');
 const rundownWsHandlers = require('./rundown-ws-handlers');
 const cameraWsHandlers = require('./camera-ws-handlers');
 const brandingWsHandlers = require('./branding-ws-handlers');
+const accessibilityWsHandlers = require('./accessibility-ws-handlers');
 const CATEGORY_HANDLERS = new Map([
   ...mediaWsHandlers.createHandlers({
     mediaLibrary,
@@ -761,6 +762,13 @@ const CATEGORY_HANDLERS = new Map([
     log,
     getBrandingState,
     getDashboardBrandingState,
+  }),
+  ...accessibilityWsHandlers.createHandlers({
+    sessionState,
+    broadcast,
+    log,
+    startAmbientMoodLoop,
+    stopAmbientMoodLoop,
   }),
 ]);
 
@@ -3154,95 +3162,11 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    if (sanitized.action === 'setHighContrast') {
-      sessionState.setHighContrast(!!sanitized.enabled);
-      const highContrast = sessionState.getHighContrast();
-      broadcast({ action: 'accessibilityMode', highContrast });
-      log('Accessibilité : mode grand contraste ' + (highContrast ? 'activé' : 'désactivé'));
-      return;
-    }
-
-    // --- Accessibility: live caption strip (audit — free/light) ---
-    if (sanitized.action === 'setCaptions') {
-      sessionState.setCaptionsEnabled(!!sanitized.enabled);
-      const captions = sessionState.getCaptionsEnabled();
-      broadcast({ action: 'captionsMode', captions });
-      log('Accessibilité : sous-titres ' + (captions ? 'activés' : 'désactivés'));
-      return;
-    }
-
-    // --- Sous-titres traduits en direct (opt-in, coût quota supplémentaire
-    // Groq/Gemini — voir caption-translator.js et son garde-fou) ---
-    if (sanitized.action === 'setTranslatedCaptions') {
-      sessionState.setTranslatedCaptionsEnabled(!!sanitized.enabled);
-      if (sanitized.targetLang) sessionState.setCaptionTargetLang(sanitized.targetLang);
-      const translatedCaptions = sessionState.getTranslatedCaptionsEnabled();
-      const targetLang = sessionState.getCaptionTargetLang();
-      broadcast({ action: 'translatedCaptionsMode', enabled: translatedCaptions, targetLang });
-      log(
-        'Accessibilité : sous-titres traduits ' +
-          (translatedCaptions ? `activés (${targetLang})` : 'désactivés')
-      );
-      return;
-    }
-
-    // --- Display: test pattern (audit — affichage/sortie, free/light) ---
-    if (sanitized.action === 'setTestPattern') {
-      sessionState.setTestPattern(!!sanitized.enabled);
-      const enabled = sessionState.getTestPattern();
-      broadcast({ action: 'testPatternMode', enabled });
-      log('Affichage : motif de test ' + (enabled ? 'activé' : 'désactivé'));
-      return;
-    }
-
-    // --- Display: background pattern (audit — affichage/sortie, free/light) ---
-    if (sanitized.action === 'setBackgroundPattern') {
-      const allowed = ['none', 'dots', 'grid', 'diagonal'];
-      const pattern = allowed.includes(sanitized.pattern) ? sanitized.pattern : 'none';
-      sessionState.setBackgroundPattern(pattern);
-      broadcast({ action: 'backgroundPatternMode', pattern });
-      log('Affichage : motif de fond -> ' + pattern);
-      return;
-    }
-
-    // --- Black screen (écran noir d'urgence) ---
-    if (sanitized.action === 'setBlackScreen') {
-      broadcast({ action: 'blackScreenMode', enabled: !!sanitized.enabled });
-      log('Affichage : écran noir ' + (sanitized.enabled ? 'activé' : 'désactivé'));
-      return;
-    }
-
-    // --- Service countdown ---
-    if (sanitized.action === 'startCountdown') {
-      const endTimeMs = Number(sanitized.endTimeMs);
-      if (endTimeMs > Date.now()) {
-        broadcast({
-          action: 'countdownMode',
-          endTimeMs,
-          label: sanitized.label || 'Le culte commence dans',
-        });
-        log("Affichage : countdown démarré jusqu'à " + new Date(endTimeMs).toLocaleTimeString());
-      }
-      return;
-    }
-    if (sanitized.action === 'stopCountdown') {
-      broadcast({ action: 'countdownStop' });
-      log('Affichage : countdown arrêté');
-      return;
-    }
-
-    // --- Ambient mode override (manual pause/resume) ---
-    if (sanitized.action === 'setAmbientMode') {
-      if (sanitized.enabled === false) {
-        stopAmbientMoodLoop();
-        log("Ambiance automatique désactivée par l'opérateur");
-      } else {
-        startAmbientMoodLoop();
-        log("Ambiance automatique réactivée par l'opérateur");
-      }
-      broadcast({ action: 'ambientModeChanged', enabled: sanitized.enabled !== false });
-      return;
-    }
+    // Accessibilité/affichage (setHighContrast/setCaptions/
+    // setTranslatedCaptions/setTestPattern/setBackgroundPattern/
+    // setBlackScreen/startCountdown/stopCountdown/setAmbientMode) —
+    // extraits vers accessibility-ws-handlers.js (Phase 2), voir
+    // CATEGORY_HANDLERS plus haut.
 
     // CORRECTIF (audit Phase 1F — actions mortes) : emergencyClear/
     // pauseTimer/resumeTimer/extendTime sont enregistrées dans

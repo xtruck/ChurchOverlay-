@@ -142,6 +142,7 @@
       "rundown-ws-handlers.js",
       "camera-ws-handlers.js",
       "branding-ws-handlers.js",
+      "accessibility-ws-handlers.js",
       "ai-modules-loader.js",
       "session-state.js",
       "dotenv-loader.js",

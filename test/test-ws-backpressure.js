@@ -131,6 +131,26 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// CORRECTIF (fragilité de test) : un `sleep(500)` fixe suivi d'une lecture
+// immédiate de `normalMessages.length` s'est avéré parfois trop court sous
+// charge machine plus lourde (la diffusion showVerse arrive bien, juste
+// après ce délai fixe plutôt que dans le délai — voir instrumentation qui
+// l'a confirmé) — pas un bug de la logique de backpressure elle-même (les
+// autres assertions de ce test, elles, passent systématiquement). Remplace
+// l'attente fixe par un polling généreux là où c'est utilisé, même
+// convention que test-rundown-actions.js/test-ws-request-correlation.js.
+function waitUntil(predicate, timeoutMs = 3000) {
+  const start = Date.now();
+  return new Promise((resolve, reject) => {
+    const poll = () => {
+      if (predicate()) return resolve();
+      if (Date.now() - start > timeoutMs) return reject(new Error('waitUntil: timeout'));
+      setTimeout(poll, 20);
+    };
+    poll();
+  });
+}
+
 function connect() {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://127.0.0.1:${process.env.PORT}/`);
@@ -228,11 +248,17 @@ function connect() {
 
   console.log('[TEST] Déclenchement d\'une vraie diffusion (broadcast() réel côté serveur)...');
   normalClient.send(JSON.stringify({ action: 'showVerse', reference: 'Jean 3:16', text: 'placeholder (ignoré par le handler, qui refait son propre lookup)' }));
-  // Généreux : le handler showVerse fait un vrai aller-retour asynchrone
+  // Le handler showVerse fait un vrai aller-retour asynchrone
   // (bibleLookup.getVerseMultilang() + sessionState + persistance de
-  // l'historique) avant d'appeler broadcast() — 200ms s'est avéré parfois
-  // trop court (le message showVerse arrivait après cette attente).
-  await sleep(500);
+  // l'historique) avant d'appeler broadcast() — un délai FIXE s'est avéré
+  // parfois trop court sous charge machine plus lourde (le message
+  // showVerse arrivait quand même, juste après le délai fixe — voir
+  // waitUntil() plus haut). Attend le signal réel (le message arrive) au
+  // lieu de deviner une durée ; un plafond généreux (3s) reste en filet de
+  // sécurité si la diffusion n'arrive vraiment jamais (le test continue
+  // alors avec normalMessages vide, et l'assertion suivante le signale
+  // clairement plutôt que de faire planter tout le test ici).
+  await waitUntil(() => normalMessages.length > 0, 3000).catch(() => {});
 
   check(
     "broadcast() détecte le bufferedAmount élevé et saute l'envoi au client lent",
@@ -259,7 +285,9 @@ function connect() {
   // une diffusion réelle après le délai pour que la logique de fermeture
   // s'exécute effectivement, pas seulement attendre passivement.
   normalClient.send(JSON.stringify({ action: 'showVerse', reference: 'Jean 3:16', text: 'placeholder (ignoré par le handler, qui refait son propre lookup)' }));
-  await sleep(500);
+  // Même raisonnement que plus haut : attend le signal réel (fermeture
+  // effective côté client) plutôt qu'un délai fixe deviné.
+  await waitUntil(() => slowClient.readyState !== WebSocket.OPEN, 3000).catch(() => {});
 
   check(
     'le client resté bloqué au-delà du délai est fermé par le serveur',
