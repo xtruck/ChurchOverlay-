@@ -1,433 +1,250 @@
-# Architecture Pipeline Speech-to-Text - Église Mesev
+# Architecture — ChurchOverlay
 
-> ⚠️ **Document en grande partie obsolète.** Il décrit une version plus
-> ancienne du pipeline (Whisper local comme moteur principal). Depuis
-> v0.3.0, Whisper local a été **retiré entièrement** du projet (c'était le
-> plus gros consommateur CPU de l'app). Le pipeline réel est maintenant :
->
-> ```
-> Micro → capture.html (getUserMedia/AudioWorklet, fenêtre Electron cachée)
->       → main.js → audio-capture.js → groq-wrapper.js (cloud)
->       → deepgram-wrapper.js (repli, si configuré) → detector.js
->       → bible-lookup-with-api.js → server.js (WebSocket) → overlay.html (OBS)
-> ```
->
-> Tout ce qui suit ce bandeau concernant `whisper-wrapper.js`,
-> `whisper-server.exe`, ou les modèles `.bin` ne s'applique plus. Ce
-> fichier mériterait une réécriture complète — non faite ici pour rester
-> concentré sur la suppression de Whisper, le pipeline et les logs.
->
-> **Mise à jour v0.5.0** : FFmpeg/DirectShow a lui aussi été retiré (voir
-> CHANGELOG en tête de `audio-capture.js` et de `main.js`). FFmpeg ne
-> voyait tout simplement pas certains micros — un problème de couche de
-> capture, indépendant du nom affiché. La capture micro passe désormais
-> par `capture.html`, une fenêtre Electron cachée qui utilise
-> `getUserMedia`/`AudioWorklet` (la même couche audio que Windows/Chromium).
-> Toutes les mentions de FFmpeg, DirectShow, `ffmpeg -list_devices`, ou
-> `list-audio-devices.js` plus bas dans ce document sont également
-> obsolètes.
->
-> **Mise à jour — Studio Pro** : le tableau de bord opérateur
-> (`dashboard.html` + `dashboard/`) dispose désormais d'un espace "Studio
-> Pro" (`dashboard/features/propresenter-studio.js`), une interface façon
-> ProPresenter 7 (grille de diapositives, moniteur PGM/aperçu, raccourcis
-> Master Clear F1-F4) qui est l'espace actif par défaut à l'ouverture — les
-> panneaux classiques ("Direct Classique", "Préparation", "Régie") restent
-> accessibles via la barre latérale. Ce document ne couvre pas le tableau
-> de bord (uniquement le pipeline audio→verset→overlay ci-dessus) ; voir le
-> commentaire d'en-tête de `dashboard/features/propresenter-studio.js` pour
-> le détail de cette interface.
+Ce document décrit l'application telle qu'elle existe réellement à ce jour
+(0.9.1). Il remplace l'ancienne version, obsolète depuis le retrait de
+Whisper local (v0.3.0) et de FFmpeg/DirectShow (v0.5.0) — ce contenu n'a
+plus aucun rapport avec le pipeline actuel et a été supprimé plutôt que
+mis à jour au fil de l'eau.
 
 ## Vue d'ensemble
 
-Système complet de transcription audio en temps réel pour affichage automatique de versets bibliques via OBS Studio.
+ChurchOverlay est une application Electron pour la conduite d'un culte en
+direct : transcription vocale en continu, détection automatique de
+versets bibliques, et diffusion d'un overlay (verset, scène, média) vers
+un vidéoprojecteur ou une source Navigateur OBS. Un tableau de bord
+opérateur pilote tout le reste (médiathèque, chants, feuille de route,
+IA, branding, caméras réseau).
 
-```
-Micro → audio-capture.js → whisper-wrapper.js → server.js → overlay.html (OBS)
-```
-
-## Composants
-
-### 1. `audio-capture.js` - Capture Audio en Continu
-
-**Rôle**: Capture l'audio du micro et segmente intelligemment pour transcription.
-
-**Fonctionnalités**:
-
-- Capture audio via FFmpeg (DirectShow sur Windows)
-- Segmentation automatique (3 secondes par défaut)
-- Chevauchement entre segments (500ms) pour éviter la perte de contexte
-- Création de fichiers WAV pour chaque segment
-- Gestion du buffer circulaire
-
-**Configuration**:
-
-```javascript
-{
-  sampleRate: 16000,      // Whisper recommande 16000 Hz
-  channels: 1,            // Mono
-  bitDepth: 16,           // PCM 16-bit
-  segmentDuration: 3000,  // 3 secondes par segment
-  overlapDuration: 500,   // 500ms de chevauchement
-  silenceThreshold: 0.3,  // Seuil VAD
-  minSpeechDuration: 500, // Durée minimum parole
-}
+```text
+Micro (getUserMedia/AudioWorklet, capture.html)
+  → audio-capture.js → groq-wrapper.js (cloud, principal)
+  → deepgram-wrapper.js (repli, si configuré)
+  → detector.js/detector-en.js/semantic-detector.js (détection de référence)
+  → bible-lookup-with-api.js (texte du verset, cache disque)
+  → server.js (WebSocket) → overlay.html (OBS / vidéoprojecteur)
+                          → dashboard.html (opérateur)
 ```
 
-**API**:
+Aucun modèle ML local, aucun binaire externe (Whisper/FFmpeg) : toute la
+transcription passe par une API cloud (Groq Whisper, repli Deepgram). La
+capture audio elle-même utilise l'API Web Audio standard d'un navigateur
+Chromium (Electron), pas de couche native séparée.
 
-```javascript
-audioCapture.startRecording();
-audioCapture.stopRecording();
-audioCapture.on({ onAudioSegment, onError });
-audioCapture.isRecording();
-audioCapture.cleanupTempFiles();
+## Processus Electron
+
+- **main.js** — processus principal Electron. Crée la fenêtre du tableau
+  de bord (`dashboard.html`), gère les fenêtres d'affichage secondaires
+  (`overlay.html`, `stage-display.html`, `announcement-loop.html` — voir
+  `DISPLAY_MODES`/`createDisplayWindow()`), la persistance chiffrée des
+  clés API et jetons WS (`safeStorage`), l'auto-updater, le tray, et
+  démarre le pipeline serveur (voir plus bas).
+- **preload.js** — pont `contextBridge` entre le processus principal et le
+  renderer. `contextIsolation: true` et `nodeIntegration: false` partout
+  (toutes les `BrowserWindow`) ; le renderer n'a accès qu'aux fonctions
+  explicitement exposées via `window.churchOverlay`, jamais à Node/`fs`
+  directement.
+- **Content-Security-Policy + sandboxing** — chaque fenêtre reçoit une CSP
+  explicite (voir les `<meta http-equiv="Content-Security-Policy">` en
+  tête de chaque page HTML) et `webPreferences.sandbox: true`. La
+  navigation renderer→URL externe et `window.open()` sont restreints
+  (voir `main.js`, gestion de `will-navigate`/`setWindowOpenHandler`).
+- **server.js** — tourne comme un **Worker** `worker_threads` (pas un
+  process séparé), spawné par `main.js` avec `resourceLimits.
+maxOldGenerationSizeMb` borné et un **recyclage automatique toutes les
+  4h** (`scheduleWorkerRecycle()`), pour qu'une fuite mémoire lente sur
+  un culte de plusieurs heures ne s'accumule jamais indéfiniment.
+  Communication avec `main.js` via `parentPort.postMessage`/`.on('message')`
+  (statut, logs, PCM audio brut, changement de thème, état de la porte OBS).
+
+## server.js et les gestionnaires WebSocket
+
+`server.js` (~3200 lignes, réduit depuis ~4700 par l'extraction ci-dessous)
+reste le point d'entrée : configuration, middlewares HTTP
+(`http-routes.js`), authentification/gate WebSocket, et la construction de
+`CATEGORY_HANDLERS` — une `Map` fusionnant les gestionnaires de chaque
+domaine, chacun extrait dans son propre module :
+
+```text
+media-ws-handlers.js               scene-ws-handlers.js
+song-ws-handlers.js                rundown-ws-handlers.js
+camera-ws-handlers.js              branding-ws-handlers.js
+accessibility-ws-handlers.js       reading-translation-ws-handlers.js
+trust-ws-handlers.js               ai-assistant-ws-handlers.js
+service-import-export-ws-handlers.js
+core-verse-ws-handlers.js          timer-ws-handlers.js
+plugins-exports-ws-handlers.js     diagnostics-ws-handlers.js
+misc-ws-handlers.js                agent-ws-handlers.js
 ```
 
-**Dépendance**: FFmpeg (doit être installé et dans PATH)
+Chaque module exporte `createHandlers(ctx)`, où `ctx` regroupe les
+dépendances partagées dont ce domaine a besoin (stores, `broadcast`,
+`log`, etc. — injection explicite, pas d'import direct de `server.js`
+depuis un handler). `createHandlers()` retourne une `Map<action,
+handler>` ; `server.js` fusionne toutes ces `Map` dans `CATEGORY_HANDLERS`
+au démarrage et route chaque message entrant via
+`CATEGORY_HANDLERS.get(sanitized.action)`. Un gestionnaire a la
+signature `async (ws, sanitized, requestId, sendError) => {}`.
 
----
+**Ajouter une nouvelle action** : créer (ou étendre) le fichier
+`*-ws-handlers.js` du domaine concerné, l'enregistrer dans son
+`createHandlers()`, ajouter l'entrée correspondante dans
+`action-registry.js` (métadonnées RBAC — voir plus bas) et, si l'action
+prend un payload, un schéma dans `validation.js`.
 
-### 2. `whisper-wrapper.js` - Wrapper Whisper Speech-to-Text
+## Authentification et autorisation
 
-**Rôle**: Gère le processus whisper-server.exe et fournit une API structurée.
+Deux jetons indépendants, générés aléatoirement (32 octets) au premier
+lancement de l'app installée et persistés chiffrés (`safeStorage`) par
+`main.js` (`ensureWsToken()`) :
 
-**Fonctionnalités**:
+- **`WS_AUTH_TOKEN`** — opérateur, contrôle complet du pipeline.
+- **`WS_VIEWER_TOKEN`** — lecture seule, utilisé par l'overlay/OBS et les
+  autres écrans d'affichage. Une fuite de ce jeton (ex. URL copiée dans
+  une scène OBS partagée par erreur) ne donne jamais accès aux actions
+  opérateur.
 
-- Gestion automatique du processus whisper-server.exe
-- Configuration VAD (Voice Activity Detection) intégrée
-- API HTTP vers whisper-server (port 8080)
-- Support transcription fichier et buffer
-- Callbacks pour événements (ready, transcript, error)
+Le jeton voyage via l'en-tête de handshake `Sec-WebSocket-Protocol` (pas
+`?token=` dans l'URL WebSocket — un proxy/CDN devant un serveur exposé
+journalise typiquement l'URI de requête). `determineClientRole()`
+détermine le rôle depuis le jeton présenté, jamais depuis le chemin de
+connexion. Le rôle attribué (`ws.clientRole`) gate en entrée
+(`OPERATOR_ACTIONS`, construit depuis `action-registry.js` via
+`listOperatorOnlyActions()`) — la seule source de vérité RBAC.
 
-**Configuration**:
+**Validation d'origine** (`validateOrigin()`) — défense en profondeur
+pour un bind non local (`WS_HOST` différent de `127.0.0.1`/`localhost`),
+comparaison **exacte** contre `ALLOWED_ORIGINS` (pas de préfixe — un
+`origin.startsWith(...)` aurait laissé passer un Origin forgé du type
+`http://localhost:<port>.attacker.example`). Un bind non local exige de
+toute façon `WS_AUTH_TOKEN` configuré (le serveur refuse de démarrer
+sinon) : l'origine seule n'a jamais été le vrai contrôle d'accès.
 
-```javascript
-{
-  whisperServerPath: './whisper/whisper-server.exe',
-  modelPath: './whisper/models/ggml-small.bin',
-  host: '127.0.0.1',
-  port: 8080,
-  language: 'fr',
-  threads: 4,
-  vadEnabled: true,
-  vadThreshold: 0.5,
-  vadMinSpeechDuration: 250,
-  vadMinSilenceDuration: 1000,
-}
-```
+## Validation des messages
 
-**API**:
+`validation.js` définit un schéma (`{required, optional, validators}`)
+pour chacune des **103 actions client** de `action-registry.js` (objet
+`CLIENT_ACTIONS`, couverture vérifiée par test, voir
+`test/test-validation.js` Test 38). Chaque champ non listé dans le schéma
+est rejeté (`Champ non autorisé`), chaque valeur est typée/bornée. Un
+champ optionnel dont le client envoie explicitement `null` (ex.
+"désactiver la traduction secondaire") doit l'accepter dans son
+validateur — une erreur déjà rencontrée une fois (voir historique Git,
+`setSecondaryTranslation`).
 
-```javascript
-whisper.startServer(options);
-whisper.stopServer();
-whisper.transcribeFile(audioFilePath);
-whisper.transcribeBuffer(audioBuffer);
-whisper.on({ onTranscript, onError, onReady });
-whisper.isRunning();
-whisper.getConfig();
-```
+`action-registry.js` reste la source de vérité pour l'autorisation
+(`operatorOnly`) et les métadonnées affichées côté client (palette de
+commandes Ctrl+K).
 
-**Dépendances**:
+## Persistance
 
-- whisper-server.exe (inclus dans dossier whisper/)
-- ggml-small.bin (modèle Whisper, 487 MB)
-- form-data (npm)
+Tous les stores JSON locaux (médiathèque, scènes, chants, feuille de
+route, archive de sermons, branding — caméra et tableau de bord) écrivent
+via **`persistence/atomic-json-store.js`** : fichier temporaire à suffixe
+unique (PID + compteur), `fsync` explicite avant `rename()` atomique sur
+la cible, nettoyage du fichier temporaire si une étape échoue. Chaque
+store garde son API existante (`writeIndex`/`writeConfig`/...) — seule
+l'implémentation interne appelle le module partagé. Chaque lecture
+(`readIndex`/...) tolère un fichier corrompu ou absent (repli sur un
+index vide, avertissement en log).
 
----
+`session-store.js` est à part : une base **SQLite** (`better-sqlite3`,
+mode WAL) pour l'historique de session (versets affichés, erreurs) — un
+mécanisme best-effort, ses écritures ne doivent jamais faire échouer le
+pipeline principal.
 
-### 3. `server.js` - Serveur WebSocket Pont
+## File de tâches (opérations coûteuses)
 
-**Rôle**: Coordination centrale et relai vers overlay.html.
+**`task-queue.js`** — file FIFO bornée, concurrence 1 par défaut,
+indépendante de tout serveur HTTP/WebSocket. Utilisée pour sortir les
+opérations d'I/O disque potentiellement lourdes du chemin synchrone des
+gestionnaires WebSocket (import PowerPoint aujourd'hui — lecture async du
+fichier + parsing, en file plutôt qu'inline dans le handler). `enqueue()`
+rend une Promise ; une tâche qui échoue n'arrête jamais la file pour les
+tâches suivantes.
 
-**Fonctionnalités**:
+## Contre-pression WebSocket
 
-- Serveur WebSocket (port 8765) pour communication avec overlay.html
-- Démarrage automatique de whisper-server au lancement
-- Relai des transcriptions vers clients connectés
-- Gestion des connexions WebSocket
-- Arrêt propre de tous les processus
+`broadcast()` (server.js) vérifie `ws.bufferedAmount` de chaque client
+avant l'envoi (**`websocket-backpressure.js`**, fonction pure et
+testable) : sous 1 Mo, envoi normal ; entre 1 et 4 Mo, ce message précis
+est sauté pour ce client (log limité à 1 avertissement/10s) ; au-delà de
+4 Mo, la connexion est terminée (`ws.terminate()`) — un socket qui ne
+draine plus du tout n'accumule pas indéfiniment. `broadcast()` accepte
+aussi un flag `operatorOnly` (filtre les clients `viewer`) — le mécanisme
+existe mais n'est volontairement câblé sur aucune action existante : un
+audit complet de ce que consomme chaque page pouvant se connecter en
+`viewer` (`overlay.js`, `stage-display.html`, `branding-overlay.html`,
+`announcement-loop.html` — chacune un sous-ensemble différent d'actions)
+est nécessaire avant de restreindre une diffusion sans risquer de casser
+un affichage public en direct.
 
-**Flux de données**:
+## Tableau de bord (dashboard.html)
 
-```
-audio-capture → whisper-wrapper → server.js → overlay.html
-```
+- **`dashboard/state.js`** — état partagé (`state`), connexion WebSocket
+  et reconnexion.
+- **`dashboard/ws-dispatch.js`** — un grand `switch` sur `message.action`
+  reçu du serveur, délègue à la feature concernée.
+- **`dashboard/utils.js`** — `showToast`, `addActivity`,
+  `escapeHtmlDashboard`, `confirmDialog` (remplace les `confirm()`/
+  `prompt()` natifs du navigateur par une modale stylée cohérente avec le
+  reste du tableau de bord).
+- **`dashboard/features/*.js`** (37 fichiers) — un module par panneau
+  (médiathèque, studio de scènes, feuille de route, réglages API,
+  branding, caméras IP, palette de commandes...).
 
-**API WebSocket**:
+**Reconnexion** : à la reconnexion WebSocket, le tableau de bord
+redemande explicitement l'état à jour (scène active, feuille de route,
+médiathèque, overlays, clients connectés) plutôt que de laisser un état
+mémorisé périmé s'afficher comme s'il était toujours courant — voir
+`test/integration-dashboard-reconnect-hydration.js` pour le scénario
+complet.
 
-```javascript
-// Client → Server
-{ action: "showVerse", reference: "...", text: "...", durationMs: 5000 }
-{ action: "hideVerse" }
-{ action: "updateVerse", reference: "...", text: "..." }
+**HTML/JS** : dashboard.html utilise encore majoritairement des
+gestionnaires `onclick="..."` inline plutôt que `addEventListener` — un
+chantier de nettoyage identifié mais pas encore fait (voir « Limites
+connues » plus bas), à ne pas confondre avec un risque de sécurité actif
+(aucune valeur contrôlée par l'utilisateur n'est interpolée dans ces
+attributs).
 
-// Server → Client (overlay.html)
-// Même format relayé à tous les clients connectés
-```
+## Tests
 
----
+- `npm test` — suite Node native (~99 fichiers), stores/détection/
+  validation/WS en isolation ou avec un vrai `server.js` démarré
+  (`test/integration-*.js`, `test/test-ws-*.js`). Utilise
+  `CHURCHOVERLAY_DATA_DIR` pour isoler son propre dossier de données —
+  **toujours le définir en environnement de développement partagé**, sans
+  quoi plusieurs exécutions successives polluent le vrai dossier
+  `userData` de la machine et peuvent produire des échecs qui n'ont rien
+  à voir avec le code (constaté en pratique).
+- `npm run test:e2e` — Playwright, dashboard réel dans un vrai navigateur
+  contre un vrai `server.js`.
+- `npm run lint` / `npm run format:check` / `npm run type-check` — ESLint,
+  Prettier (`**/*.{ts,js,json,md}` uniquement — pas le HTML/CSS), `tsc
+--noEmit` (JSDoc typé, pas de migration TypeScript des fichiers `.js`).
 
-### 4. `overlay.html` - Interface Overlay OBS
-
-**Rôle**: Affichage des versets dans OBS Studio via Browser Source.
-
-**Fonctionnalités**:
-
-- Animations sophistiquées (croix, halo, particules)
-- API JavaScript complète (window.ChurchOverlay)
-- Gestion du temps d'affichage avec barre de progression
-- Contrôles pause/reprise/extension
-- Mode démo pour tests (?demo=1)
-
-**API**):
-
-```javascript
-ChurchOverlay.showVerse({ reference, text, durationMs });
-ChurchOverlay.updateVerse({ reference, text });
-ChurchOverlay.hideVerse();
-ChurchOverlay.pauseTimer();
-ChurchOverlay.resumeTimer();
-ChurchOverlay.extendTime(extraMs);
-ChurchOverlay.getStatus();
-```
-
----
-
-## Pipeline Complet
-
-### Étape 1: Capture Audio
-
-```
-Micro → FFmpeg → audio-capture.js
-```
-
-- FFmpeg capture le micro en continu
-- audio-capture.js segmente en fichiers WAV de 3 secondes
-- Chevauchement de 500ms entre segments
-
-### Étape 2: Transcription
-
-```
-Segment WAV → whisper-wrapper.js → whisper-server.exe
-```
-
-- whisper-wrapper envoie chaque segment à whisper-server
-- Whisper transcrit le texte en français
-- VAD intégré filtre les silences
-
-### Étape 3: Relai vers Overlay
-
-```
-Transcription → server.js → overlay.html
-```
-
-- server.js reçoit la transcription
-- Analyse pour détecter les versets bibliques (TODO: detector.js)
-- Envoi vers overlay.html via WebSocket
-
-### Étape 4: Affichage
-
-```
-overlay.html → OBS Studio → Église
-```
-
-- overlay.html affiche le verset avec animations
-- Barre de temps gère l'affichage automatique
-- Opérateur peut contrôler (pause, extension, annulation)
-
----
-
-## Scripts de Test
-
-### `test-whisper.js`
-
-Teste le module whisper-wrapper indépendamment:
+## Commandes de développement
 
 ```bash
-node test-whisper.js
+npm install         # installe les dépendances, rebuild better-sqlite3
+cp .env.example .env  # puis renseigner au moins GROQ_API_KEY
+npm start            # lance l'app Electron complète
+npm run dev           # server.js seul (node), sans Electron — pas de capture micro native
+npm test              # suite de tests complète
+npm run test:e2e      # suite Playwright
 ```
 
-### `test-audio-capture.js`
+## Limites connues et chantiers de suite
 
-Teste la capture audio (requiert FFmpeg et micro):
-
-```bash
-node test-audio-capture.js
-```
-
-### `test-envoi.js`
-
-Teste le circuit WebSocket complet:
-
-```bash
-node test-envoi.js           # Envoi verset par défaut
-node test-envoi.js hide      # Masquer overlay
-```
-
----
-
-## Démarrage du Système
-
-### 1. Installation des dépendances
-
-```bash
-npm install
-```
-
-### 2. Installation de FFmpeg (requis pour audio-capture)
-
-```bash
-# Télécharger FFmpeg depuis https://ffmpeg.org/download.html
-# Ajouter à PATH Windows
-# Vérifier: ffmpeg -version
-```
-
-### 3. Démarrage du serveur
-
-```bash
-node server.js
-```
-
-Le serveur démarre automatiquement:
-
-- Serveur WebSocket sur ws://localhost:8765
-- Serveur Whisper sur http://127.0.0.1:8080
-
-### 4. Configuration OBS
-
-1. Ajouter Browser Source dans OBS
-2. URL: `file:///C:/ChurchOverlay/overlay.html`
-3. Largeur: 1920, Hauteur: 1080
-4. Activer "Control audio via OBS" si nécessaire
-
----
-
-## Prochaines Étapes
-
-### Étape 5: Pipeline Audio Complet
-
-- [ ] Intégrer audio-capture dans server.js
-- [ ] Connecter audio-capture → whisper-wrapper automatiquement
-- [ ] Implémenter detector.js (détection de versets bibliques)
-- [ ] Implémenter context-tracker.js (suivi du contexte)
-- [ ] Implémenter bible-lookup.js (recherche versets dans Bible)
-
-### Étape 6: Interface Opérateur
-
-- [ ] Panneau de contrôle pour l'opérateur
-- [ ] Visualisation en temps réel des transcriptions
-- [ ] Validation manuelle des versets détectés
-- [ ] Contrôles avancés (volume, sensibilité micro)
-
-### Étape 7: Optimisation
-
-- [ ] Cache des transcriptions pour éviter doublons
-- [ ] Ajustement dynamique des paramètres VAD
-- [ ] Mode "apprentissage" pour améliorer la détection
-- [ ] Statistiques et logs détaillés
-
----
-
-## Structure des Fichiers
-
-```
-ChurchOverlay/
-├── server.js                    # Serveur WebSocket principal
-├── whisper-wrapper.js          # Wrapper Whisper Speech-to-Text
-├── audio-capture.js            # Capture audio en continu
-├── overlay.html                # Interface overlay OBS
-├── test-envoi.js              # Test WebSocket
-├── test-whisper.js            # Test Whisper
-├── test-audio-capture.js      # Test capture audio
-├── package.json               # Dépendances npm
-├── ARCHITECTURE.md            # Ce fichier
-├── whisper/
-│   ├── whisper-server.exe     # Serveur Whisper HTTP
-│   ├── ggml-small.bin         # Modèle Whisper (487 MB)
-│   └── models/                # Autres modèles potentiels
-└── temp-audio/                # Fichiers audio temporaires (créé auto)
-```
-
----
-
-## Performances
-
-### Whisper
-
-- **Modèle**: ggml-small (487 MB)
-- **Latence**: ~1-2 secondes par segment de 3 secondes
-- **CPU**: 4 threads recommandés
-- **Mémoire**: ~600 MB (modèle + buffers)
-
-### Audio Capture
-
-- **Taux d'échantillonnage**: 16000 Hz
-- **Segmentation**: 3 secondes
-- **Chevauchement**: 500 ms
-- **Format**: PCM 16-bit mono
-
-### Latence Totale
-
-- **Micro → Transcription**: ~3-4 secondes
-- **Transcription → Overlay**: <100 ms (WebSocket)
-- **Total**: ~4 secondes (acceptable pour usage culte)
-
----
-
-## Dépannage
-
-### Whisper ne démarre pas
-
-- Vérifier que ggml-small.bin existe dans whisper/models/
-- Vérifier que whisper-server.exe existe dans whisper/
-- Logs: `[whisper-wrapper]` et `[whisper-server]`
-
-### Capture audio ne fonctionne pas
-
-- Vérifier que FFmpeg est installé: `ffmpeg -version`
-- Vérifier que le micro est connecté
-- Logs: `[audio-capture]` et `[audio-capture FFmpeg]`
-
-### Overlay ne reçoit pas les messages
-
-- Vérifier que server.js tourne: `node server.js`
-- Vérifier que overlay.html est ouvert dans OBS
-- Vérifier la console du navigateur OBS (F12)
-- Logs: `[server]`
-
----
-
-## Notes Techniques
-
-### Pourquoi whisper-server.exe au lieu de whisper-stream.exe?
-
-- **API structurée**: HTTP REST plus facile à intégrer
-- **VAD intégré**: Voice Activity Detection natif
-- **Contrôle total**: Paramètres ajustables dynamiquement
-- **Séparation**: Architecture plus modulaire et testable
-
-### Pourquoi FFmpeg pour capture audio?
-
-- **Cross-platform**: Fonctionne sur Windows, Linux, macOS
-- **Formats supportés**: WAV, MP3, FLAC, OGG
-- **DirectShow**: Accès direct aux périphériques Windows
-- **Mature**: Stable et largement utilisé
-
-### Pourquoi segmentation 3 secondes?
-
-- **Équilibre**: Assez long pour contexte, assez court pour latence
-- **Whisper**: Optimal pour le modèle small
-- **VAD**: Permet détection précise des segments de parole
-
----
-
-## Licence et Crédits
-
-- **Whisper**: OpenAI (MIT License)
-- **FFmpeg**: GPL v2+
-- **ws (WebSocket)**: MIT License
-- **form-data**: MIT License
-
-Projet développé pour l'Église Mesev.
+- **Inline `onclick=`/styles dans dashboard.html** — 34+ fichiers
+  `dashboard/features/*.js` exposent leurs fonctions sur `window` pour
+  que le HTML puisse les appeler en `onclick="..."` ; migrer vers
+  `addEventListener` + `data-action` déléguée est un chantier séparé,
+  volontairement pas fait en une seule passe (trop de surface pour être
+  vérifié en une fois sans risquer de régression sur un outil utilisé en
+  direct).
+- **`broadcast({operatorOnly: true})`** — mécanisme prêt, pas encore
+  appliqué à des diffusions existantes (voir plus haut).
+- **`server.js` reste ~3200 lignes** — composition/bootstrap + logique
+  HTTP/auth encore en place ; les ~17 domaines de gestionnaires WS sont
+  extraits, une extraction plus poussée (routes HTTP, cycle de vie du
+  worker) reste possible mais n'apporterait plus le même gain.
