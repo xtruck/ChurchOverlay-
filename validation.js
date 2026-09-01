@@ -772,6 +772,197 @@ const SCHEMAS = {
       extraMs: (value) => typeof value === 'number' && value > 0 && value <= 3600000,
     },
   },
+  // AJOUT (audit backend — Phase 1F, 8e lot, dernier lot — couverture
+  // complète des 103 actions client de action-registry.js) : transcript
+  // (chemin de test/débogage qui rejoue un segment comme si prononcé — voir
+  // le commentaire de server.js à cet endroit), réglages ponctuels
+  // (confiance ASR, countdown pré-culte, mode ambiance), assistant IA
+  // (résumé/thème/recap/questions/références croisées/archives), et le
+  // reste des getters en lecture seule (aucun champ hors 'action').
+  transcript: {
+    required: ['action', 'text'],
+    optional: ['source'],
+    validators: {
+      action: (value) => value === 'transcript',
+      text: (value) => typeof value === 'string' && value.length <= 5000,
+      source: (value) => typeof value === 'string' && value.length <= 50,
+    },
+  },
+  setConfidenceThreshold: {
+    required: ['action', 'threshold'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'setConfidenceThreshold',
+      threshold: (value) => typeof value === 'number' && value >= 0 && value <= 1,
+    },
+  },
+  startCountdown: {
+    required: ['action', 'endTimeMs'],
+    optional: ['label'],
+    validators: {
+      action: (value) => value === 'startCountdown',
+      endTimeMs: (value) => typeof value === 'number' && value > 0,
+      label: (value) => typeof value === 'string' && value.length <= 200,
+    },
+  },
+  stopCountdown: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'stopCountdown' },
+  },
+  setAmbientMode: {
+    required: ['action'],
+    optional: ['enabled'],
+    validators: {
+      action: (value) => value === 'setAmbientMode',
+      enabled: (value) => typeof value === 'boolean',
+    },
+  },
+  getTopics: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'getTopics' },
+  },
+  getMoods: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'getMoods' },
+  },
+  getLiveSummary: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'getLiveSummary' },
+  },
+  getSermonTheme: {
+    required: ['action'],
+    optional: ['silent'],
+    validators: {
+      action: (value) => value === 'getSermonTheme',
+      silent: (value) => typeof value === 'boolean',
+    },
+  },
+  getPostServiceRecap: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'getPostServiceRecap' },
+  },
+  getCrossReferences: {
+    required: ['action'],
+    optional: ['reference', 'text'],
+    validators: {
+      action: (value) => value === 'getCrossReferences',
+      reference: (value) => typeof value === 'string' && value.length <= 200,
+      text: (value) => typeof value === 'string' && value.length <= 2000,
+    },
+  },
+  getAiStats: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'getAiStats' },
+  },
+  getArchiveMatches: {
+    required: ['action'],
+    optional: ['query'],
+    validators: {
+      action: (value) => value === 'getArchiveMatches',
+      query: (value) => typeof value === 'string' && value.length <= 500,
+    },
+  },
+  askSermonQuestion: {
+    required: ['action', 'question'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'askSermonQuestion',
+      question: (value) =>
+        typeof value === 'string' && value.trim().length > 0 && value.length <= 2000,
+    },
+  },
+  preServiceCheck: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'preServiceCheck' },
+  },
+  getMediaLibrary: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'getMediaLibrary' },
+  },
+  triggerMediaItem: {
+    required: ['action', 'id'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'triggerMediaItem',
+      id: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
+    },
+  },
+  hideMedia: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'hideMedia' },
+  },
+  getSceneLibrary: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'getSceneLibrary' },
+  },
+  getSongLibrary: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'getSongLibrary' },
+  },
+  getIpCameras: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'getIpCameras' },
+  },
+  getBranding: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'getBranding' },
+  },
+  getDashboardBranding: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'getDashboardBranding' },
+  },
+  getNetworkStatus: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'getNetworkStatus' },
+  },
+  getRundown: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'getRundown' },
+  },
+  sendStageMessage: {
+    required: ['action', 'text'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'sendStageMessage',
+      text: (value) => typeof value === 'string',
+    },
+  },
+  clearStageMessage: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'clearStageMessage' },
+  },
+  getOfflineBibleStatus: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'getOfflineBibleStatus' },
+  },
+  listPlugins: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'listPlugins' },
+  },
+  ping: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'ping' },
+  },
 };
 
 /**

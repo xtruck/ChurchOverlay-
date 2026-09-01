@@ -580,5 +580,108 @@ assert.strictEqual(
 );
 console.log('[TEST] ✓ emergencyClear/pauseTimer/resumeTimer/extendTime corrects');
 
+// Test 35: transcript / réglages ponctuels (confiance, countdown, ambiance)
+console.log('[TEST] Test 35: transcript/setConfidenceThreshold/startCountdown/stopCountdown/setAmbientMode...');
+assert.strictEqual(
+  validateMessage({ action: 'transcript', text: 'Jean chapitre trois verset seize' }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'transcript' }).valid,
+  false,
+  'transcript sans text devrait être rejeté'
+);
+assert.strictEqual(
+  validateMessage({ action: 'setConfidenceThreshold', threshold: 0.7 }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'setConfidenceThreshold', threshold: 1.5 }).valid,
+  false,
+  'threshold hors [0,1] devrait être rejeté'
+);
+assert.strictEqual(
+  validateMessage({ action: 'startCountdown', endTimeMs: Date.now() + 60000 }).valid,
+  true
+);
+assert.strictEqual(validateMessage({ action: 'stopCountdown' }).valid, true);
+assert.strictEqual(validateMessage({ action: 'setAmbientMode', enabled: false }).valid, true);
+assert.strictEqual(
+  validateMessage({ action: 'setAmbientMode' }).valid,
+  true,
+  'setAmbientMode sans enabled devrait passer (réactive par défaut, voir server.js)'
+);
+console.log('[TEST] ✓ transcript / réglages ponctuels corrects');
+
+// Test 36: assistant IA (résumé/thème/recap/questions/références/archives)
+console.log('[TEST] Test 36: getLiveSummary/getSermonTheme/getPostServiceRecap/getCrossReferences/getArchiveMatches/askSermonQuestion...');
+assert.strictEqual(validateMessage({ action: 'getLiveSummary' }).valid, true);
+assert.strictEqual(validateMessage({ action: 'getSermonTheme', silent: true }).valid, true);
+assert.strictEqual(validateMessage({ action: 'getPostServiceRecap' }).valid, true);
+assert.strictEqual(
+  validateMessage({ action: 'getCrossReferences', reference: 'Jean 3:16' }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'getArchiveMatches', query: 'grâce' }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'askSermonQuestion', question: 'De quoi parlait le sermon ?' }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'askSermonQuestion' }).valid,
+  false,
+  'askSermonQuestion sans question devrait être rejeté'
+);
+console.log('[TEST] ✓ Assistant IA correct');
+
+// Test 37: reste des getters en lecture seule (aucun champ hors action)
+console.log('[TEST] Test 37: getters en lecture seule...');
+const readOnlyGetters = [
+  'getTopics',
+  'getMoods',
+  'getAiStats',
+  'preServiceCheck',
+  'getMediaLibrary',
+  'hideMedia',
+  'getSceneLibrary',
+  'getSongLibrary',
+  'getIpCameras',
+  'getBranding',
+  'getDashboardBranding',
+  'getNetworkStatus',
+  'getRundown',
+  'clearStageMessage',
+  'getOfflineBibleStatus',
+  'listPlugins',
+  'ping',
+];
+for (const action of readOnlyGetters) {
+  const result = validateMessage({ action });
+  assert.strictEqual(result.valid, true, `${action} sans autre champ devrait passer : ${result.error}`);
+}
+assert.strictEqual(validateMessage({ action: 'triggerMediaItem', id: 'abc' }).valid, true);
+assert.strictEqual(
+  validateMessage({ action: 'sendStageMessage', text: 'Micro coupé au pupitre' }).valid,
+  true
+);
+console.log('[TEST] ✓ Getters en lecture seule corrects');
+
+// Test 38: couverture complète — toutes les actions de action-registry.js
+// ont un schéma dans validation.SCHEMAS (0 action client sans validation).
+console.log('[TEST] Test 38: couverture complète de action-registry.js#CLIENT_ACTIONS...');
+const { CLIENT_ACTIONS } = require('../action-registry');
+const missing = Object.keys(CLIENT_ACTIONS).filter((a) => !SCHEMAS[a]);
+assert.strictEqual(
+  missing.length,
+  0,
+  `Actions client sans schéma de validation : ${missing.join(', ')}`
+);
+console.log(
+  `[TEST] ✓ Les ${Object.keys(CLIENT_ACTIONS).length} actions client de action-registry.js ont toutes un schéma`
+);
+
 console.log('\n=== Tests terminés ===');
 console.log('[TEST] ✓ Tous les tests de validation sont passés');
