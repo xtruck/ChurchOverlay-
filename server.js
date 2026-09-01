@@ -861,6 +861,7 @@ const aiAssistantWsHandlers = require('./ai-assistant-ws-handlers');
 const serviceImportExportWsHandlers = require('./service-import-export-ws-handlers');
 const coreVerseWsHandlers = require('./core-verse-ws-handlers');
 const timerWsHandlers = require('./timer-ws-handlers');
+const pluginsExportsWsHandlers = require('./plugins-exports-ws-handlers');
 const CATEGORY_HANDLERS = new Map([
   ...mediaWsHandlers.createHandlers({
     mediaLibrary,
@@ -988,6 +989,19 @@ const CATEGORY_HANDLERS = new Map([
     warn,
   }),
   ...timerWsHandlers.createHandlers({
+    broadcast,
+    log,
+  }),
+  ...pluginsExportsWsHandlers.createHandlers({
+    sessionStore,
+    highlightExport,
+    clipExporter,
+    plugins,
+    sessionStartedAt: SESSION_STARTED_AT,
+    getClipExportInProgress: () => clipExportInProgress,
+    setClipExportInProgress: (value) => {
+      clipExportInProgress = value;
+    },
     broadcast,
     log,
   }),
@@ -2679,88 +2693,9 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // --- Export des temps forts (chapitres YouTube / CSV) — voir
-    // highlight-export.js. Réutilise l'historique déjà persistant, aucune
-    // nouvelle collecte de données ici. ---
-    if (sanitized.action === 'exportHighlights') {
-      try {
-        const entries = sessionStore.getVerseHistorySince(SESSION_STARTED_AT);
-        ws.send(
-          JSON.stringify({
-            action: 'highlightsExported',
-            youtubeChapters: highlightExport.buildYoutubeChapters(entries, SESSION_STARTED_AT),
-            csv: highlightExport.buildCsv(entries, SESSION_STARTED_AT),
-            count: entries.length,
-          })
-        );
-      } catch (err) {
-        ws.send(
-          JSON.stringify({
-            action: 'error',
-            error: "Impossible d'exporter les temps forts : " + err.message,
-          })
-        );
-      }
-      return;
-    }
-
-    // --- Extraits vidéo autour des temps forts (chantier 4.6) ---
-    if (sanitized.action === 'exportClips') {
-      if (clipExportInProgress) {
-        ws.send(
-          JSON.stringify({
-            action: 'error',
-            error:
-              'Un export de clips est déjà en cours — attendez sa fin avant den lancer un nouveau.',
-          })
-        );
-        return;
-      }
-      const sourcePath = String(sanitized.sourcePath || '').trim();
-      const outputDir = String(sanitized.outputDir || '').trim();
-      if (!sourcePath || !outputDir) {
-        ws.send(
-          JSON.stringify({
-            action: 'error',
-            error: 'Fichier source et dossier de destination requis.',
-          })
-        );
-        return;
-      }
-      clipExportInProgress = true;
-      broadcast({ action: 'clipExportStarted' });
-      try {
-        const entries = sessionStore.getVerseHistorySince(SESSION_STARTED_AT);
-        const result = await clipExporter.exportClips(
-          sourcePath,
-          outputDir,
-          entries,
-          SESSION_STARTED_AT,
-          {
-            clipDurationSec: Number(sanitized.clipDurationSec) || undefined,
-            onProgress: (done, total) => broadcast({ action: 'clipExportProgress', done, total }),
-          }
-        );
-        broadcast({
-          action: 'clipExportComplete',
-          ok: result.ok,
-          clips: result.clips,
-          errors: result.errors,
-          outputDir,
-        });
-        log(
-          `Extraits vidéo : ${result.clips.length} généré(s), ${result.errors.length} échec(s) — ${outputDir}`
-        );
-      } catch (err) {
-        broadcast({
-          action: 'error',
-          error: "Échec de l'export des extraits vidéo : " + err.message,
-        });
-      } finally {
-        clipExportInProgress = false;
-      }
-      return;
-    }
+    // exportHighlights/exportClips — extraits vers
+    // plugins-exports-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS
+    // plus haut.
 
     // setLanguage/setTranslation — extraits vers core-verse-ws-handlers.js
     // (Phase 2), voir CATEGORY_HANDLERS plus haut.
@@ -2816,27 +2751,8 @@ wss.on('connection', (ws, req) => {
     // setMoodTheme — extrait vers reading-translation-ws-handlers.js
     // (Phase 2), voir CATEGORY_HANDLERS plus haut.
 
-    // --- Plugin management ---
-    if (sanitized.action === 'listPlugins') {
-      ws.send(
-        JSON.stringify({ action: 'pluginsList', plugins: plugins ? plugins.getPluginList() : [] })
-      );
-      return;
-    }
-
-    if (sanitized.action === 'togglePlugin') {
-      if (plugins) {
-        plugins.setEnabled(sanitized.pluginName, sanitized.enabled);
-        ws.send(
-          JSON.stringify({
-            action: 'pluginToggled',
-            pluginName: sanitized.pluginName,
-            enabled: sanitized.enabled,
-          })
-        );
-      }
-      return;
-    }
+    // listPlugins/togglePlugin — extraits vers plugins-exports-ws-handlers.js
+    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
 
     // getAiStats/getLiveSummary/getSermonTheme/getPostServiceRecap/
     // getArchiveMatches/getCrossReferences — extraits vers
