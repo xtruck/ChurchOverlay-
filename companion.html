@@ -292,8 +292,8 @@
       <div class="verse-text">${escapeHtml(v.text || '')}</div>
       ${v.timestamp ? `<div class="verse-time">${formatTime(v.timestamp)}</div>` : ''}
       <div class="verse-actions">
-        <button class="verse-action-btn${entry.highlighted ? ' active' : ''}" data-action="highlight" data-key="${keyAttr}">⭐ Marquer</button>
-        <button class="verse-action-btn" data-action="toggle-note" data-key="${keyAttr}">📝 Ma note</button>
+        <button type="button" class="verse-action-btn${entry.highlighted ? ' active' : ''}" data-action="highlight" data-key="${keyAttr}">⭐ Marquer</button>
+        <button type="button" class="verse-action-btn" data-action="toggle-note" data-key="${keyAttr}">📝 Ma note</button>
       </div>
       <div class="verse-note" data-note-key="${keyAttr}">
         <textarea placeholder="Votre note personnelle (visible uniquement sur cet appareil)..." data-key="${keyAttr}">${escapeHtml(entry.note || '')}</textarea>

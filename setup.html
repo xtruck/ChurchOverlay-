@@ -299,7 +299,7 @@
           <select id="mic-select" title="Sélectionner un microphone">
             <option value="">Recherche des microphones…</option>
           </select>
-          <button class="btn btn-secondary" id="btn-refresh">
+          <button type="button" class="btn btn-secondary" id="btn-refresh">
             🔄 Actualiser
           </button>
         </div>
@@ -312,7 +312,7 @@
           <span>🔑</span> Clé API Groq
         </label>
         <input type="password" id="groq-key" placeholder="gsk_..." autocomplete="off" />
-        <button class="toggle-password" id="btn-toggle-groq">Afficher</button>
+        <button type="button" class="toggle-password" id="btn-toggle-groq">Afficher</button>
         <div class="hint">
           Obtenez une clé gratuite sur
           <a id="link-groq" href="#">console.groq.com/keys</a>
@@ -326,7 +326,7 @@
           <span>🔐</span> Clé API Deepgram <span class="optional-label">(optionnel)</span>
         </label>
         <input type="password" id="deepgram-key" placeholder="Laisser vide si non utilisé" autocomplete="off" />
-        <button class="toggle-password" id="btn-toggle-deepgram">Afficher</button>
+        <button type="button" class="toggle-password" id="btn-toggle-deepgram">Afficher</button>
         <div class="hint">
           Secours automatique si Groq ne répond pas. Facultatif.
           <a id="link-deepgram" href="#">console.deepgram.com</a>
@@ -339,7 +339,7 @@
           <span>✨</span> Clé API Gemini <span class="optional-label">(optionnel)</span>
         </label>
         <input type="password" id="gemini-key" placeholder="Laisser vide si non utilisé" autocomplete="off" />
-        <button class="toggle-password" id="btn-toggle-gemini">Afficher</button>
+        <button type="button" class="toggle-password" id="btn-toggle-gemini">Afficher</button>
         <div class="hint">
           Améliore les fonctionnalités IA (thèmes, enrichissement). Repli automatique sur Groq si absente. Facultatif.
           <a id="link-gemini" href="#">aistudio.google.com/apikey</a>
@@ -347,7 +347,7 @@
       </div>
 
       <!-- Save Button -->
-      <button class="btn btn-primary" id="btn-save" disabled>
+      <button type="button" class="btn btn-primary" id="btn-save" disabled>
         🚀 Enregistrer et démarrer
       </button>
       <div class="status" id="save-status"></div>
