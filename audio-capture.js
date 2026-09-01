@@ -287,6 +287,7 @@ function startBrowserCapture(options = {}) {
   // seule source du TEXTE transcrit.
   STATE.lastStreamingPartialText = '';
   STATE.lastStreamingPartialMeta = null;
+  STATE.lastLocallyFinalizedText = '';
   if (STATE.asrProvider === 'deepgram') {
     startDeepgramStreamingSession(config);
   }
@@ -501,6 +502,22 @@ function startDeepgramStreamingSession(config) {
           // (STATE.deepgramSession devenu null) laisse toujours passer ce
           // dernier résultat.
           if (STATE.deepgramSession !== session && STATE.deepgramSession !== null) return;
+          // CORRECTIF (revue de code — coût IA doublé) : ce 'final' officiel
+          // arrive presque toujours ~7,5s APRÈS que finalizeStreamingUtteranceLocally()
+          // a déjà promu ce même texte en "final" (voir son commentaire) —
+          // sans ce garde, processTranscript() (correction IA + détection
+          // biblique, coût Groq/Gemini) tournait une seconde fois pour RIEN.
+          // Comparaison texte pour texte, pas juste "un final a déjà eu
+          // lieu" : si Deepgram corrige son texte dans ce final tardif
+          // (texte différent du dernier partial promu), on veut quand même
+          // le traiter — seul un texte IDENTIQUE est sauté.
+          if (text && text === STATE.lastLocallyFinalizedText) {
+            console.log(
+              `[audio-capture] ASR : final officiel Deepgram tardif ignoré (déjà finalisé localement, texte identique) : "${text.substring(0, 80)}"`
+            );
+            STATE.lastLocallyFinalizedText = '';
+            return;
+          }
           const tracker = STATE.utteranceTracker;
           if (tracker) tracker.mark('asrFinal');
           if (STATE.callbacks.onFinalTranscript) {
@@ -518,8 +535,17 @@ function startDeepgramStreamingSession(config) {
           // en continu par onPartial ci-dessus).
           STATE.lastStreamingPartialText = '';
           STATE.lastStreamingPartialMeta = null;
+          STATE.lastLocallyFinalizedText = '';
         },
         onError: (err) => {
+          // CORRECTIF (revue de code — trouvé par un test, pas supposé) :
+          // sans ce garde, une erreur TARDIVE d'une session déjà REMPLACÉE
+          // (ex. redémarrage rapide du pipeline pendant qu'un évènement
+          // réseau de l'ancienne connexion est encore en vol) désactivait à
+          // tort le streaming de la session ACTUELLE, pourtant saine —
+          // exactement le même risque que onFinal gérait déjà (voir son
+          // garde `STATE.deepgramSession !== session`), qui manquait ici.
+          if (STATE.deepgramSession !== session && STATE.deepgramSession !== null) return;
           console.warn(
             `[audio-capture] ASR : erreur streaming Deepgram (${err.message}) — repli sur le ` +
               'pipeline segment/Groq pour le reste de la session.'
@@ -534,6 +560,10 @@ function startDeepgramStreamingSession(config) {
           // session.finish() et ignore ce cas car isRecording est déjà false) :
           // même traitement qu'une erreur — reste de la session en repli.
           if (!STATE.isRecording) return;
+          // CORRECTIF (revue de code — même garde que onError ci-dessus,
+          // même raison) : une fermeture tardive d'une session remplacée ne
+          // doit jamais affecter la session active courante.
+          if (STATE.deepgramSession !== session && STATE.deepgramSession !== null) return;
           if (STATE.deepgramStreamingActive) {
             console.warn(
               '[audio-capture] ASR : session streaming Deepgram fermée de façon inattendue — repli.'
@@ -983,6 +1013,16 @@ function finalizeStreamingUtteranceLocally() {
   STATE.lastFlushAt = Date.now();
   STATE.lastStreamingPartialText = '';
   STATE.lastStreamingPartialMeta = null;
+  // AJOUT (revue de code — coût IA doublé) : le 'final' officiel Deepgram
+  // arrive presque toujours APRÈS celui-ci (mesuré ~7,5s de délai réel côté
+  // Deepgram) — sans ce marqueur, le handler onFinal plus bas relançait
+  // processTranscript() une seconde fois pour le MÊME énoncé (correction IA
+  // + détection biblique refaites en double, coût Groq/Gemini doublé) dès
+  // que ce texte tardif arrivait. Comparé texte pour texte (pas juste "un
+  // final a déjà eu lieu") : si le texte tardif diffère (Deepgram a parfois
+  // une meilleure transcription finale que son dernier partial), on veut
+  // toujours le traiter.
+  STATE.lastLocallyFinalizedText = text;
   // Prêt pour le prochain énoncé : mêmes réinitialisations que flushSegment(),
   // moins l'état du buffer WAV (inexistant côté streaming).
   STATE.segmentHasSpeech = false;
@@ -1239,6 +1279,7 @@ function stopRecording() {
   STATE.deepgramSession = null;
   STATE.deepgramStreamingActive = false;
   STATE.utteranceTracker = null;
+  STATE.lastLocallyFinalizedText = '';
   // AJOUT (A.1 — gain micro) : arrête l'émission continue des diagnostics
   // de niveau audio quand la capture s'arrête.
   stopDiagnosticsEmission();
