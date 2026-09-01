@@ -75,6 +75,11 @@ const sceneStore = require('./scene-store');
 // AJOUT (Partie 7.1.1 — import PowerPoint, portée réduite au texte des
 // diapositives) : voir pptx-importer.js pour le pourquoi de cette portée.
 const pptxImporter = require('./pptx-importer');
+// AJOUT (modularisation backend — perf) : voir task-queue.js. Sort l'import
+// PowerPoint (lecture disque + parsing XML) du chemin WS synchrone —
+// concurrence 1 par défaut, largement suffisant (import PPTX = action rare,
+// jamais deux à la fois en pratique).
+const { createTaskQueue } = require('./task-queue');
 // AJOUT (Partie 7.1.2 — service portable, export uniquement, voir
 // service-export.js pour le pourquoi de cette portée).
 const serviceExport = require('./service-export');
@@ -630,6 +635,11 @@ const BROADCAST_LIMIT_KEY = { _socket: { remoteAddress: 'internal-broadcast' } }
 function isRateLimited() {
   return !broadcastRateLimiter.checkMessage(BROADCAST_LIMIT_KEY).allowed;
 }
+
+// ---------------------------------------------------------------------------
+// File de tâches (import PowerPoint pour l'instant — voir task-queue.js)
+// ---------------------------------------------------------------------------
+const importJobQueue = createTaskQueue({ concurrency: 1, maxPending: 10 });
 
 // ---------------------------------------------------------------------------
 // Logging helpers
@@ -3470,20 +3480,31 @@ wss.on('connection', (ws, req) => {
     // librement par le client (même garde que pick-media-file).
     if (sanitized.action === 'importPptxSlides') {
       try {
-        const buf = fs.readFileSync(sanitized.sourcePath);
-        const slides = pptxImporter.extractPptxSlidesText(buf);
-        let scenesCreated = 0;
-        for (const slide of slides) {
-          if (!slide.text.trim()) continue; // diapositive sans texte (image seule, séparateur...) : ignorée, pas une scène vide
-          sceneStore.addScene({
-            name: `Diapositive ${slide.slideIndex}`,
-            background: { type: 'none' },
-            elements: [{ type: 'text', text: slide.text }],
-          });
-          scenesCreated++;
-        }
+        // CORRECTIF (modularisation backend — perf) : fs.readFileSync()
+        // bloquait tout le thread JS (pipeline audio/transcription inclus)
+        // le temps de lire le fichier .pptx entier depuis le disque.
+        // Lecture async + passage par task-queue.js (concurrence 1) : le
+        // handler WS reste réactif pendant la lecture, et deux imports
+        // PowerPoint lancés coup sur coup s'exécutent en séquence plutôt
+        // qu'en parallèle. Réponse/erreur envoyées au client inchangées —
+        // un seul message pptxImportResult ou error, comme avant.
+        const { slidesFound, scenesCreated } = await importJobQueue.enqueue(async () => {
+          const buf = await fs.promises.readFile(sanitized.sourcePath);
+          const slides = pptxImporter.extractPptxSlidesText(buf);
+          let created = 0;
+          for (const slide of slides) {
+            if (!slide.text.trim()) continue; // diapositive sans texte (image seule, séparateur...) : ignorée, pas une scène vide
+            sceneStore.addScene({
+              name: `Diapositive ${slide.slideIndex}`,
+              background: { type: 'none' },
+              elements: [{ type: 'text', text: slide.text }],
+            });
+            created++;
+          }
+          return { slidesFound: slides.length, scenesCreated: created };
+        });
         log(
-          `Import PowerPoint : ${scenesCreated} scène(s) créée(s) sur ${slides.length} diapositive(s)`
+          `Import PowerPoint : ${scenesCreated} scène(s) créée(s) sur ${slidesFound} diapositive(s)`
         );
         broadcast({
           action: 'sceneLibraryUpdated',
@@ -3492,7 +3513,7 @@ wss.on('connection', (ws, req) => {
         ws.send(
           JSON.stringify({
             action: 'pptxImportResult',
-            slidesFound: slides.length,
+            slidesFound,
             scenesCreated,
           })
         );
