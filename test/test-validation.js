@@ -492,5 +492,65 @@ assert.strictEqual(
 assert.strictEqual(validateMessage({ action: 'setBlackScreen', enabled: true }).valid, true);
 console.log('[TEST] ✓ Accessibilité et affichage corrects');
 
+// Test 31: temps forts / extraits vidéo
+console.log('[TEST] Test 31: exportHighlights/exportClips...');
+assert.strictEqual(validateMessage({ action: 'exportHighlights' }).valid, true);
+assert.strictEqual(
+  validateMessage({
+    action: 'exportClips',
+    sourcePath: 'C:\\rec\\service.mp4',
+    outputDir: 'C:\\rec\\clips',
+    clipDurationSec: 30,
+  }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'exportClips', sourcePath: 'C:\\rec\\service.mp4' }).valid,
+  false,
+  'exportClips sans outputDir devrait être rejeté'
+);
+console.log('[TEST] ✓ Temps forts / extraits vidéo corrects');
+
+// Test 32: recherche biblique, plugins, essai de phrase déclencheuse
+console.log('[TEST] Test 32: searchBible/togglePlugin/testTriggerPhrase...');
+assert.strictEqual(
+  validateMessage({ action: 'searchBible', query: 'amour de Dieu', topK: 3 }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'searchBible', query: '' }).valid,
+  false,
+  'searchBible avec query vide devrait être rejeté'
+);
+assert.strictEqual(
+  validateMessage({ action: 'togglePlugin', pluginName: 'mon-plugin', enabled: true }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'testTriggerPhrase', text: 'affiche accueil' }).valid,
+  true
+);
+console.log('[TEST] ✓ Recherche biblique / plugins / essai de phrase corrects');
+
+// Test 33: groupes de médiathèque
+console.log('[TEST] Test 33: getMediaGroups/addMediaGroup/deleteMediaGroup/setMediaItemGroup...');
+assert.strictEqual(validateMessage({ action: 'getMediaGroups' }).valid, true);
+assert.strictEqual(
+  validateMessage({ action: 'addMediaGroup', name: 'Annonces', triggerPhrases: ['annonces'] })
+    .valid,
+  true
+);
+assert.strictEqual(validateMessage({ action: 'deleteMediaGroup', id: 'abc' }).valid, true);
+assert.strictEqual(
+  validateMessage({ action: 'setMediaItemGroup', itemId: 'abc', groupId: 'def' }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'setMediaItemGroup', itemId: 'abc', groupId: null }).valid,
+  true,
+  'groupId null devrait passer (retire le média de son groupe)'
+);
+console.log('[TEST] ✓ Groupes de médiathèque corrects');
+
 console.log('\n=== Tests terminés ===');
 console.log('[TEST] ✓ Tous les tests de validation sont passés');

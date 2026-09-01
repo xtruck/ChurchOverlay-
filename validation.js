@@ -659,6 +659,90 @@ const SCHEMAS = {
       enabled: (value) => typeof value === 'boolean',
     },
   },
+  // AJOUT (audit backend — Phase 1F, 6e lot) : temps forts/extraits vidéo,
+  // recherche biblique sémantique, plugins, phrase déclencheuse (essai) et
+  // groupes de médiathèque.
+  exportHighlights: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'exportHighlights' },
+  },
+  // sourcePath/outputDir viennent du sélecteur natif Electron (même garde
+  // que pour la médiathèque/import-export de service) ; clipDurationSec est
+  // déjà borné par clip-exporter.js (Math.min/Math.max) quelle que soit la
+  // valeur reçue — juste une vérification de type ici.
+  exportClips: {
+    required: ['action', 'sourcePath', 'outputDir'],
+    optional: ['clipDurationSec'],
+    validators: {
+      action: (value) => value === 'exportClips',
+      sourcePath: (value) => typeof value === 'string' && value.length > 0 && value.length <= 1000,
+      outputDir: (value) => typeof value === 'string' && value.length > 0 && value.length <= 1000,
+      clipDurationSec: (value) => typeof value === 'number' && value > 0,
+    },
+  },
+  searchBible: {
+    required: ['action', 'query'],
+    optional: ['topK'],
+    validators: {
+      action: (value) => value === 'searchBible',
+      query: (value) => typeof value === 'string' && value.trim().length > 0 && value.length <= 500,
+      topK: (value) => Number.isInteger(value) && value > 0 && value <= 50,
+    },
+  },
+  togglePlugin: {
+    required: ['action', 'pluginName', 'enabled'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'togglePlugin',
+      pluginName: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
+      enabled: (value) => typeof value === 'boolean',
+    },
+  },
+  testTriggerPhrase: {
+    required: ['action', 'text'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'testTriggerPhrase',
+      text: (value) => typeof value === 'string' && value.length <= 500,
+    },
+  },
+  getMediaGroups: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'getMediaGroups' },
+  },
+  addMediaGroup: {
+    required: ['action', 'name'],
+    optional: ['triggerPhrases'],
+    validators: {
+      action: (value) => value === 'addMediaGroup',
+      name: (value) => typeof value === 'string' && value.trim().length > 0 && value.length <= 200,
+      triggerPhrases: (value) =>
+        Array.isArray(value) &&
+        value.length <= 50 &&
+        value.every((p) => typeof p === 'string' && p.length <= 300),
+    },
+  },
+  deleteMediaGroup: {
+    required: ['action', 'id'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'deleteMediaGroup',
+      id: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
+    },
+  },
+  // groupId absent/null = retire le média de son groupe actuel (voir
+  // server.js#setMediaItemGroup / mediaLibrary.setItemGroup).
+  setMediaItemGroup: {
+    required: ['action', 'itemId'],
+    optional: ['groupId'],
+    validators: {
+      action: (value) => value === 'setMediaItemGroup',
+      itemId: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
+      groupId: (value) => value === null || (typeof value === 'string' && value.length <= 100),
+    },
+  },
 };
 
 /**
