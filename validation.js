@@ -1019,8 +1019,23 @@ function validateMessage(message) {
     }
   }
 
+  // AJOUT (Phase 1G — corrélation requête/réponse) : requestId est un champ
+  // optionnel autorisé sur TOUTE action, pas seulement les 109 schémas
+  // ci-dessus — l'ajouter à `optional` un par un aurait dupliqué la même
+  // règle 109 fois pour rien. Un client (ex. mcp/church-ws-client.js) qui en
+  // fournit un le récupère tel quel dans la/les réponse(s) directement liées
+  // à SA requête (voir server.js) ; un client qui n'en envoie aucun (tout le
+  // tableau de bord aujourd'hui) n'est affecté en rien, ce champ restant
+  // absent de ses messages comme avant.
+  if ('requestId' in message) {
+    const value = message.requestId;
+    if (typeof value !== 'string' || value.length === 0 || value.length > 100) {
+      return { valid: false, error: 'Valeur invalide pour le champ: requestId' };
+    }
+  }
+
   // Vérifier qu'il n'y a pas de champs supplémentaires non autorisés
-  const allowedFields = new Set([...schema.required, ...schema.optional]);
+  const allowedFields = new Set([...schema.required, ...schema.optional, 'requestId']);
   for (const field of Object.keys(message)) {
     if (!allowedFields.has(field)) {
       return { valid: false, error: `Champ non autorisé: ${field}` };

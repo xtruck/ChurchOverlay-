@@ -2393,12 +2393,13 @@ wss.on('connection', (ws, req) => {
     }
 
     // CORRECTIF (audit backend — validation.js jamais branché) : pour les
-    // actions déjà couvertes par validation.SCHEMAS (voir validation.js pour
-    // la liste à jour et à mesure qu'elle grandit — Phase 1F, 221 actions au
-    // registre, en cours), on applique en plus le contrôle strict de
+    // actions déjà couvertes par validation.SCHEMAS (voir validation.js —
+    // Phase 1F terminée, les 103 actions client de action-registry.js y
+    // sont toutes couvertes), on applique en plus le contrôle strict de
     // type/longueur/valeurs autorisées de ce module. Fait volontairement de
-    // façon additive : les actions non encore couvertes ne passent pas par
-    // ce gate et continuent de fonctionner exactement comme avant.
+    // façon additive : une action qui perdrait sa couverture resterait
+    // fonctionnelle (voir test 38 de test-validation.js pour le garde-fou
+    // inverse — aucune action ne doit manquer de schéma).
     if (VALIDATE_MESSAGES_ENABLED && validation.SCHEMAS[sanitized.action]) {
       const strict = validation.validateMessage(sanitized);
       if (!strict.valid) {
@@ -2406,6 +2407,29 @@ wss.on('connection', (ws, req) => {
         ws.send(JSON.stringify({ action: 'error', error: strict.error }));
         return;
       }
+    }
+
+    // AJOUT (Phase 1G — corrélation requête/réponse) : un client (ex.
+    // mcp/church-ws-client.js#callAction) peut joindre un requestId à sa
+    // requête pour distinguer SA réponse de celle d'une autre requête
+    // concurrente de MÊME type d'action — jusqu'ici, un client devait
+    // deviner par ordre d'arrivée/type de message, fragile dès que deux
+    // requêtes du même type sont en vol en même temps (voir l'ancien
+    // en-tête de church-ws-client.js, qui documentait explicitement cette
+    // limite comme acceptée faute de mieux). requestId est validé plus haut
+    // (validation.js, autorisé sur toute action) — repris tel quel ici,
+    // uniquement pour les actions qui l'échoient dans leur réponse
+    // (voir chaque handler concerné ci-dessous ; tous ne le font pas encore
+    // — adoption progressive, sans effet sur les clients qui n'en envoient
+    // pas, c'est-à-dire tout le tableau de bord aujourd'hui).
+    const requestId = typeof sanitized.requestId === 'string' ? sanitized.requestId : null;
+    // Petit utilitaire pour les handlers ci-dessous qui échoient requestId
+    // (voir chacun) : évite de répéter "if (requestId) obj.requestId = ..."
+    // à chaque envoi d'erreur pour ces actions-là.
+    function sendError(error) {
+      const obj = { action: 'error', error };
+      if (requestId) obj.requestId = requestId;
+      ws.send(JSON.stringify(obj));
     }
 
     // --- Speech or audio transcript input ---
@@ -2460,7 +2484,7 @@ wss.on('connection', (ws, req) => {
     if (sanitized.action === 'showVerse') {
       const ref = detector.parseReference(sanitized.reference);
       if (!ref) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Référence invalide.' }));
+        sendError('Référence invalide.');
         return;
       }
       try {
@@ -2468,6 +2492,7 @@ wss.on('connection', (ws, req) => {
         const verse = await bibleLookup.getVerseMultilang(ref, displayLang);
         const durationMs = sanitized.durationMs || getVerseDurationMs();
         const payload = { action: 'showVerse', ...verse, durationMs, triggeredManually: true };
+        if (requestId) payload.requestId = requestId;
 
         // AJOUT (Multi-Bible côte à côte, déclenchement MANUEL uniquement —
         // voir bibleLookup.getVerseDualTranslation) : si une traduction
@@ -2504,14 +2529,16 @@ wss.on('connection', (ws, req) => {
         pushHistory({ ...verse, triggeredManually: true, timestamp: Date.now() });
         broadcast({ action: 'historyUpdated', history: sessionState.getVerseHistory() });
       } catch (err) {
-        ws.send(JSON.stringify({ action: 'error', error: err.message }));
+        sendError(err.message);
       }
       return;
     }
 
     // --- Hide overlay ---
     if (sanitized.action === 'hideVerse') {
-      broadcast({ action: 'hideVerse' });
+      const hidePayload = { action: 'hideVerse' };
+      if (requestId) hidePayload.requestId = requestId;
+      broadcast(hidePayload);
       sessionState.clearLastReference();
       return;
     }
@@ -2846,20 +2873,39 @@ wss.on('connection', (ws, req) => {
     if (sanitized.action === 'searchBible') {
       if (!semanticSearch) {
         ws.send(
-          JSON.stringify({ action: 'searchError', error: 'Recherche biblique non disponible' })
+          JSON.stringify({
+            action: 'searchError',
+            error: 'Recherche biblique non disponible',
+            ...(requestId ? { requestId } : {}),
+          })
         );
         return;
       }
       const query = String(sanitized.query || '').trim();
       if (!query) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Requête requise.' }));
+        sendError('Requête requise.');
         return;
       }
       try {
         const results = await semanticSearch.search(query, sanitized.topK || 5);
-        ws.send(JSON.stringify({ action: 'searchResults', query, results, timestamp: Date.now() }));
+        ws.send(
+          JSON.stringify({
+            action: 'searchResults',
+            query,
+            results,
+            timestamp: Date.now(),
+            ...(requestId ? { requestId } : {}),
+          })
+        );
       } catch (err) {
-        ws.send(JSON.stringify({ action: 'searchError', query, error: err.message }));
+        ws.send(
+          JSON.stringify({
+            action: 'searchError',
+            query,
+            error: err.message,
+            ...(requestId ? { requestId } : {}),
+          })
+        );
       }
       return;
     }
@@ -3247,7 +3293,13 @@ wss.on('connection', (ws, req) => {
     // doivent voir (affichage/masquage réel, mise à jour de la liste pour
     // les autres tableaux de bord éventuellement ouverts).
     if (sanitized.action === 'getMediaLibrary') {
-      ws.send(JSON.stringify({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() }));
+      ws.send(
+        JSON.stringify({
+          action: 'mediaLibraryUpdated',
+          items: mediaLibrary.listItems(),
+          ...(requestId ? { requestId } : {}),
+        })
+      );
       return;
     }
 
@@ -3537,6 +3589,7 @@ wss.on('connection', (ws, req) => {
         JSON.stringify({
           action: 'sceneLibraryUpdated',
           scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
+          ...(requestId ? { requestId } : {}),
         })
       );
       return;
@@ -3744,7 +3797,7 @@ wss.on('connection', (ws, req) => {
     if (sanitized.action === 'triggerMediaItem') {
       const item = mediaLibrary.getItem(sanitized.id);
       if (!item) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Médiathèque : élément introuvable' }));
+        sendError('Médiathèque : élément introuvable');
         return;
       }
       log(`Médiathèque : "${item.label}" déclenché manuellement`);
@@ -3757,6 +3810,7 @@ wss.on('connection', (ws, req) => {
         displayDurationMs: item.displayDurationMs,
         transitionStyle: item.transitionStyle,
         detectedBy: 'manual',
+        ...(requestId ? { requestId } : {}),
       });
       sessionStore.recordVerseShown({
         reference: `📷 ${item.label}`,
@@ -3767,7 +3821,9 @@ wss.on('connection', (ws, req) => {
     }
 
     if (sanitized.action === 'hideMedia') {
-      broadcast({ action: 'hideMedia' });
+      const hideMediaPayload = { action: 'hideMedia' };
+      if (requestId) hideMediaPayload.requestId = requestId;
+      broadcast(hideMediaPayload);
       return;
     }
 
@@ -3783,11 +3839,16 @@ wss.on('connection', (ws, req) => {
     if (sanitized.action === 'triggerScene') {
       const scene = sceneStore.getItem(sanitized.id);
       if (!scene) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Studio de scènes : scène introuvable' }));
+        sendError('Studio de scènes : scène introuvable');
         return;
       }
       log(`Studio de scènes : "${scene.name}" déclenchée manuellement`);
-      broadcast({ action: 'showScene', ...resolveSceneMediaUrls(scene), detectedBy: 'manual' });
+      broadcast({
+        action: 'showScene',
+        ...resolveSceneMediaUrls(scene),
+        detectedBy: 'manual',
+        ...(requestId ? { requestId } : {}),
+      });
       sessionStore.recordVerseShown({
         reference: `🎬 ${scene.name}`,
         detectedBy: 'scene',
@@ -3797,7 +3858,9 @@ wss.on('connection', (ws, req) => {
     }
 
     if (sanitized.action === 'hideScene') {
-      broadcast({ action: 'hideScene' });
+      const hideScenePayload = { action: 'hideScene' };
+      if (requestId) hideScenePayload.requestId = requestId;
+      broadcast(hideScenePayload);
       return;
     }
 

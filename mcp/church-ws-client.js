@@ -10,18 +10,31 @@
  * `ws.protocol`, voir determineClientRole() dans server.js), aucune
  * nouvelle voie d'accès.
  *
- * Le protocole WS de ce projet n'a pas de corrélation requête/réponse
- * intégrée : une action envoyée déclenche soit un ws.send() direct au
- * client (ex. searchBible -> searchResults/searchError), soit un
- * broadcast() à TOUS les clients connectés, y compris l'émetteur lui-même
- * (voir broadcast() dans server.js — aucune exclusion du socket source),
- * soit les deux selon succès/échec (ex. showVerse -> broadcast 'showVerse'
- * si succès, ws.send 'error' sinon). callAction() couvre les deux cas :
- * on résout dès que l'un des messages "attendus" (successActions) ou un
- * message 'error' arrive, sur cette même connexion.
+ * Une action envoyée déclenche soit un ws.send() direct au client (ex.
+ * searchBible -> searchResults/searchError), soit un broadcast() à TOUS les
+ * clients connectés, y compris l'émetteur lui-même (voir broadcast() dans
+ * server.js — aucune exclusion du socket source), soit les deux selon
+ * succès/échec (ex. showVerse -> broadcast 'showVerse' si succès, ws.send
+ * 'error' sinon).
+ *
+ * CORRECTIF (Phase 1G — corrélation requête/réponse) : le protocole WS de ce
+ * projet n'avait PAS de corrélation requête/réponse intégrée jusqu'ici — la
+ * correspondance se faisait par simple type de message (successActions),
+ * en ordre FIFO parmi les requêtes en attente. Correct tant qu'"un outil MCP
+ * à la fois" est réellement respecté, mais silencieusement FAUX dès que deux
+ * requêtes de MÊME action sont en vol simultanément et répondent dans un
+ * ordre différent de leur envoi (ex. deux show_verse concurrents où la 2e
+ * référence répond avant la 1re) : chaque requête recevrait la réponse de
+ * l'AUTRE. callAction() génère maintenant un requestId (voir server.js —
+ * repris tel quel dans la réponse pour les actions qui l'échoient) et
+ * privilégie une correspondance EXACTE par requestId ; l'ancienne
+ * correspondance par type de message reste le repli pour les messages sans
+ * requestId (toute action côté serveur qui ne l'échoue pas encore, ou tout
+ * bruit ambiant type historyUpdated).
  * ============================================================================
  */
 
+const crypto = require('crypto');
 const WebSocket = require('ws');
 
 class ChurchOverlayClient {
@@ -72,14 +85,24 @@ class ChurchOverlayClient {
     }
     if (!msg || typeof msg !== 'object' || typeof msg.action !== 'string') return;
 
-    // Le premier en attente dont ce message correspond au critère de succès
-    // (ou toute erreur, qui peut concerner n'importe quelle requête en
-    // attente puisque le protocole ne porte pas d'identifiant de
-    // corrélation) — voir l'en-tête de fichier. Ordre FIFO : les appels de
-    // ce client sont censés être séquentiels (un outil MCP à la fois).
-    const idx = this.pending.findIndex(
-      (p) => msg.action === 'error' || p.successActions.has(msg.action)
-    );
+    let idx;
+    if (typeof msg.requestId === 'string') {
+      // Correspondance EXACTE par requestId (voir en-tête de fichier) —
+      // fiable même sous requêtes concurrentes de même type d'action. Une
+      // requête introuvable ici (déjà résolue, expirée, ou requestId destiné
+      // à un autre suivi que le nôtre) n'est PAS un candidat pour le repli
+      // FIFO ci-dessous : un requestId explicite change la nature du
+      // message, il vise potentiellement une requête précise, jamais
+      // "n'importe laquelle en attente".
+      idx = this.pending.findIndex((p) => p.requestId === msg.requestId);
+    } else {
+      // Pas de requestId sur ce message (action côté serveur qui ne l'échoue
+      // pas encore, ou bruit ambiant type historyUpdated) — repli sur
+      // l'ancienne correspondance par type de message, en ordre FIFO.
+      idx = this.pending.findIndex(
+        (p) => msg.action === 'error' || p.successActions.has(msg.action)
+      );
+    }
     if (idx === -1) return;
     const p = this.pending.splice(idx, 1)[0];
     clearTimeout(p.timer);
@@ -93,13 +116,18 @@ class ChurchOverlayClient {
   /**
    * Envoie une action et attend la réponse correspondante.
    * @param {string} action
-   * @param {object} [payload] - fusionné avec { action } dans le message envoyé
+   * @param {object} [payload] - fusionné avec { action, requestId } dans le message envoyé
    * @param {{ successActions: string[], timeoutMs?: number }} options
    * @returns {Promise<object>} le message de réponse complet
    */
   async callAction(action, payload, options) {
     await this.connect();
     const { successActions, timeoutMs = this.defaultTimeoutMs } = options;
+    // Un requestId par appel — voir en-tête de fichier. Toujours généré,
+    // même si le handler serveur correspondant ne l'échoue pas encore (le
+    // repli FIFO de _handleMessage() s'applique alors normalement) : ça
+    // prépare aussi les futurs outils MCP sans rien à changer ici.
+    const requestId = crypto.randomUUID();
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -109,10 +137,10 @@ class ChurchOverlayClient {
           new Error(`Timeout (${timeoutMs}ms) en attente de réponse pour l'action "${action}".`)
         );
       }, timeoutMs);
-      const entry = { successActions: new Set(successActions), resolve, reject, timer };
+      const entry = { requestId, successActions: new Set(successActions), resolve, reject, timer };
       this.pending.push(entry);
 
-      this.ws.send(JSON.stringify({ action, ...payload }), (err) => {
+      this.ws.send(JSON.stringify({ action, ...payload, requestId }), (err) => {
         if (err) {
           const idx = this.pending.indexOf(entry);
           if (idx !== -1) this.pending.splice(idx, 1);

@@ -160,6 +160,43 @@ async function run() {
     wss.close();
   }
 
+  // --- Corrélation requête/réponse sous requêtes concurrentes de MÊME type
+  // d'action, répondues dans l'ordre INVERSE (voir Phase 1G — l'en-tête de
+  // church-ws-client.js documentait cette fragilité : correspondance FIFO
+  // par simple type d'action, "un outil MCP à la fois" supposé). Un vrai
+  // requestId doit garantir que chaque appel reçoit SA PROPRE réponse, peu
+  // importe l'ordre d'arrivée — pas juste "une réponse de ce type-là".
+  {
+    const wss = await startFakeServer((ws, msg) => {
+      if (msg.action === 'showVerse') {
+        // Répond en ordre INVERSE de réception : la référence B (2e requête
+        // envoyée) répond EN PREMIER — le pire cas pour une corrélation FIFO.
+        const delay = msg.reference === 'A' ? 40 : 5;
+        setTimeout(() => {
+          ws.send(
+            JSON.stringify({
+              action: 'showVerse',
+              reference: msg.reference,
+              requestId: msg.requestId,
+            })
+          );
+        }, delay);
+      }
+    });
+    const port = wss.address().port;
+    const client = new ChurchOverlayClient({ url: `ws://127.0.0.1:${port}` });
+    const [resA, resB] = await Promise.all([
+      client.callAction('showVerse', { reference: 'A' }, { successActions: ['showVerse'] }),
+      client.callAction('showVerse', { reference: 'B' }, { successActions: ['showVerse'] }),
+    ]);
+    check(
+      'callAction: deux requêtes concurrentes de même action, répondues en ordre inverse, résolvent CHACUNE avec sa propre réponse',
+      resA.reference === 'A' && resB.reference === 'B'
+    );
+    client.close();
+    wss.close();
+  }
+
   console.log(`\n=== Résultat mcp/church-ws-client : ${passed}/${passed + failed} ===`);
   if (failed > 0) process.exit(1);
 }
