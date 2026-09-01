@@ -220,5 +220,83 @@ assert.strictEqual(
 );
 console.log('[TEST] ✓ deleteMediaItem et setDefaultMediaItem corrects');
 
+// Test 18: addScene — payload valide (background objet, elements tableau)
+console.log('[TEST] Test 18: Validation addScene valide...');
+const validAddScene = {
+  action: 'addScene',
+  name: 'Intro culte',
+  background: { type: 'color', color: '#000000' },
+  elements: [{ type: 'text', text: 'Bienvenue' }],
+  triggerPhrases: ['scène intro'],
+};
+const result18 = validateMessage(validAddScene);
+assert.strictEqual(result18.valid, true, `addScene valide devrait passer : ${result18.error}`);
+console.log('[TEST] ✓ addScene valide accepté');
+
+// Test 19: addScene — background/elements de mauvais type rejetés
+console.log('[TEST] Test 19: addScene avec background de mauvais type rejeté...');
+const result19a = validateMessage({ action: 'addScene', name: 'X', background: 'not-an-object' });
+assert.strictEqual(result19a.valid, false, 'background non-objet devrait être rejeté');
+const result19b = validateMessage({ action: 'addScene', name: 'X', elements: { not: 'an-array' } });
+assert.strictEqual(result19b.valid, false, 'elements non-tableau devrait être rejeté');
+console.log('[TEST] ✓ background/elements mal typés rejetés');
+
+// Test 20: studio de scènes — reste des actions
+console.log('[TEST] Test 20: deleteScene/triggerScene/hideScene/setDefaultScene...');
+assert.strictEqual(validateMessage({ action: 'deleteScene', id: 'abc' }).valid, true);
+assert.strictEqual(validateMessage({ action: 'triggerScene', id: 'abc' }).valid, true);
+assert.strictEqual(validateMessage({ action: 'triggerScene' }).valid, false, 'triggerScene sans id devrait être rejeté');
+assert.strictEqual(validateMessage({ action: 'hideScene' }).valid, true);
+assert.strictEqual(validateMessage({ action: 'setDefaultScene' }).valid, true, 'setDefaultScene sans id devrait passer (retire la scène par défaut)');
+console.log('[TEST] ✓ Actions du studio de scènes correctes');
+
+// Test 21: import/export de service
+console.log('[TEST] Test 21: importPptxSlides/exportService/importService...');
+assert.strictEqual(
+  validateMessage({ action: 'importPptxSlides', sourcePath: 'C:\\x\\y.pptx' }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'exportService', destPath: 'C:\\x\\out.zip' }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'importService', sourcePath: 'C:\\x\\in.zip' }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'exportService' }).valid,
+  false,
+  'exportService sans destPath devrait être rejeté'
+);
+console.log('[TEST] ✓ Import/export de service corrects');
+
+// Test 22: bibliothèque de chants
+console.log('[TEST] Test 22: addSong/deleteSong/showSongSection...');
+const result22 = validateMessage({
+  action: 'addSong',
+  title: 'Amazing Grace',
+  artist: 'John Newton',
+  lyrics: "Amazing grace, how sweet the sound\n\nThat saved a wretch like me",
+  triggerPhrases: ['amazing grace'],
+});
+assert.strictEqual(result22.valid, true, `addSong valide devrait passer : ${result22.error}`);
+assert.strictEqual(
+  validateMessage({ action: 'addSong' }).valid,
+  false,
+  'addSong sans title devrait être rejeté'
+);
+assert.strictEqual(validateMessage({ action: 'deleteSong', id: 'abc' }).valid, true);
+assert.strictEqual(
+  validateMessage({ action: 'showSongSection', id: 'abc', sectionIndex: 2 }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'showSongSection', id: 'abc', sectionIndex: -1 }).valid,
+  false,
+  'sectionIndex négatif devrait être rejeté'
+);
+console.log('[TEST] ✓ Bibliothèque de chants correcte');
+
 console.log('\n=== Tests terminés ===');
 console.log('[TEST] ✓ Tous les tests de validation sont passés');

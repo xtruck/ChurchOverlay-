@@ -2396,13 +2396,17 @@ wss.on('connection', (ws, req) => {
     // actions déjà couvertes par validation.SCHEMAS (voir validation.js pour
     // la liste à jour — showVerse, hideVerse, updateVerse, lookupReference,
     // setLanguage, setTranslation, getState, getHistory, replayVerse,
-    // diagnostic, applyTheme, la famille médiathèque addMediaItem/
-    // updateMediaItem/deleteMediaItem/setDefaultMediaItem, ...), on applique
-    // en plus le contrôle strict de type/longueur/valeurs autorisées de ce
-    // module. Fait volontairement de façon additive (Phase 1F, en cours —
-    // 221 actions au registre, SCHEMAS n'en couvre encore qu'une partie) :
-    // les actions non encore couvertes ne passent pas par ce gate et
-    // continuent de fonctionner exactement comme avant.
+    // diagnostic, applyTheme, la famille médiathèque (addMediaItem/
+    // updateMediaItem/deleteMediaItem/setDefaultMediaItem), le studio de
+    // scènes (addScene/updateScene/deleteScene/triggerScene/hideScene/
+    // setDefaultScene), import/export de service (importPptxSlides/
+    // exportService/importService), la bibliothèque de chants (addSong/
+    // deleteSong/showSongSection), ...), on applique en plus le contrôle
+    // strict de type/longueur/valeurs autorisées de ce module. Fait
+    // volontairement de façon additive (Phase 1F, en cours — 221 actions au
+    // registre, SCHEMAS n'en couvre encore qu'une partie) : les actions non
+    // encore couvertes ne passent pas par ce gate et continuent de
+    // fonctionner exactement comme avant.
     if (VALIDATE_MESSAGES_ENABLED && validation.SCHEMAS[sanitized.action]) {
       const strict = validation.validateMessage(sanitized);
       if (!strict.valid) {

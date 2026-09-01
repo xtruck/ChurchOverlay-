@@ -233,7 +233,149 @@ const SCHEMAS = {
       id: (value) => typeof value === 'string' && value.length <= 100,
     },
   },
+  // AJOUT (audit backend — Phase 1F, 2e lot) : studio de scènes. Comme pour
+  // la médiathèque, scene-store.js sanitize déjà en profondeur (bornes par
+  // élément, MAX_ELEMENTS_PER_SCENE, etc. — voir scene-store.js) ; ces
+  // schémas ferment seulement la porte au niveau FORME (types, pas
+  // string/array là où un objet/array est attendu) avant d'y arriver.
+  addScene: {
+    required: ['action', 'name'],
+    optional: ['background', 'elements', 'triggerPhrases'],
+    validators: {
+      action: (value) => value === 'addScene',
+      name: (value) => typeof value === 'string' && value.trim().length > 0 && value.length <= 200,
+      background: (value) => isPlainObject(value),
+      elements: (value) => Array.isArray(value) && value.length <= 50,
+      triggerPhrases: (value) =>
+        Array.isArray(value) &&
+        value.length <= 50 &&
+        value.every((p) => typeof p === 'string' && p.length <= 300),
+    },
+  },
+  updateScene: {
+    required: ['action', 'id'],
+    optional: ['name', 'background', 'elements', 'triggerPhrases'],
+    validators: {
+      action: (value) => value === 'updateScene',
+      id: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
+      name: (value) => typeof value === 'string' && value.trim().length > 0 && value.length <= 200,
+      background: (value) => isPlainObject(value),
+      elements: (value) => Array.isArray(value) && value.length <= 50,
+      triggerPhrases: (value) =>
+        Array.isArray(value) &&
+        value.length <= 50 &&
+        value.every((p) => typeof p === 'string' && p.length <= 300),
+    },
+  },
+  deleteScene: {
+    required: ['action', 'id'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'deleteScene',
+      id: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
+    },
+  },
+  triggerScene: {
+    required: ['action', 'id'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'triggerScene',
+      id: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
+    },
+  },
+  hideScene: {
+    required: ['action'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'hideScene',
+    },
+  },
+  // id absent/vide = retire la scène par défaut (voir server.js#setDefaultScene).
+  setDefaultScene: {
+    required: ['action'],
+    optional: ['id'],
+    validators: {
+      action: (value) => value === 'setDefaultScene',
+      id: (value) => typeof value === 'string' && value.length <= 100,
+    },
+  },
+  // sourcePath/destPath viennent du sélecteur de fichier natif Electron
+  // (main.js#pick-pptx-file / pick-export-zip-path / pick-import-zip-path),
+  // jamais un chemin construit librement par l'UI — voir les commentaires
+  // dans server.js à côté de ces handlers. Bornes de type/longueur ici,
+  // comme pour sourcePath de la médiathèque.
+  importPptxSlides: {
+    required: ['action', 'sourcePath'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'importPptxSlides',
+      sourcePath: (value) => typeof value === 'string' && value.length > 0 && value.length <= 1000,
+    },
+  },
+  exportService: {
+    required: ['action', 'destPath'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'exportService',
+      destPath: (value) => typeof value === 'string' && value.length > 0 && value.length <= 1000,
+    },
+  },
+  importService: {
+    required: ['action', 'sourcePath'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'importService',
+      sourcePath: (value) => typeof value === 'string' && value.length > 0 && value.length <= 1000,
+    },
+  },
+  // Bibliothèque de chants — song-library.js sanitize aussi en profondeur
+  // (parseSections/MAX_SECTIONS_PER_SONG) ; lyrics plafonné très large ici
+  // (aucun sermon/chant légitime ne l'atteint) juste pour éviter un payload
+  // JSON abusif avant même d'atteindre ce parsing.
+  addSong: {
+    required: ['action', 'title'],
+    optional: ['artist', 'lyrics', 'triggerPhrases'],
+    validators: {
+      action: (value) => value === 'addSong',
+      title: (value) => typeof value === 'string' && value.trim().length > 0 && value.length <= 200,
+      artist: (value) => typeof value === 'string' && value.length <= 200,
+      lyrics: (value) => typeof value === 'string' && value.length <= 50000,
+      triggerPhrases: (value) =>
+        Array.isArray(value) &&
+        value.length <= 50 &&
+        value.every((p) => typeof p === 'string' && p.length <= 300),
+    },
+  },
+  deleteSong: {
+    required: ['action', 'id'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'deleteSong',
+      id: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
+    },
+  },
+  showSongSection: {
+    required: ['action', 'id'],
+    optional: ['sectionIndex'],
+    validators: {
+      action: (value) => value === 'showSongSection',
+      id: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
+      sectionIndex: (value) => Number.isInteger(value) && value >= 0 && value <= 200,
+    },
+  },
 };
+
+/**
+ * Un objet JSON "plain" (pas un tableau, pas null) — utilisé pour les
+ * champs structurés (background de scène, etc.) où la forme détaillée est
+ * déjà validée plus loin (scene-store.js) : on ferme seulement la porte au
+ * niveau type ici (pas de string/array/number là où un objet est attendu).
+ * @param {*} value
+ * @returns {boolean}
+ */
+function isPlainObject(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
 
 /**
  * Valide un message WebSocket
