@@ -53,6 +53,13 @@ export const state = {
   // sans dépendre de l'ordre d'arrivée des deux messages WS.
   qrCameraReady: false,
   ipCameraCount: 0,
+  // AJOUT (rôle opérateur/spectateur) : 'operator' | 'viewer', posé par
+  // ws-dispatch.js depuis le champ yourRole du message 'init' (voir
+  // server.js > determineClientRole). Mémorisé seulement : le contrôle
+  // d'accès réel reste côté serveur (OPERATOR_ACTIONS), ce champ n'est pas
+  // une autorisation et ne doit jamais servir de garde de sécurité — un
+  // éventuel masquage des commandes en mode spectateur reste à faire.
+  yourRole: null,
 };
 
 // AJOUT : intervalle d'auto-détection du mode de culte (louange, prédication,

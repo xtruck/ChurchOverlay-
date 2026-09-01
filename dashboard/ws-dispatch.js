@@ -104,6 +104,41 @@ export function handleMessage(message) {
       }
       applyDashboardBranding(message.dashboardBranding);
       updateTrustModeButtons(message.trustMode || 'auto');
+      // CORRECTIF (état obsolète après reconnexion) : le serveur renvoie un
+      // 'init' complet à CHAQUE connexion, reconnexion comprise (server.js >
+      // wss.on('connection')), mais ce case n'en lisait que les 4 champs
+      // ci-dessus. Les bibliothèques (médias/scènes/chants/feuille de route…)
+      // s'en sortent car state.js les redemande explicitement à chaque
+      // onopen ; la langue et les bascules d'affichage, elles, n'ont AUCUNE
+      // requête équivalente — leur seule source est ce message. Résultat en
+      // production : coupure réseau / redémarrage serveur / veille du
+      // portable pendant le culte, un autre poste change la langue ou coupe
+      // les sous-titres entre-temps, et ce tableau de bord se reconnecte en
+      // affichant encore l'ancien état — l'opérateur croit piloter ce qu'il
+      // voit alors que l'overlay fait autre chose. On réapplique donc ici
+      // EXACTEMENT les mêmes fonctions que les diffusions live appellent
+      // (applyLanguageButtons/applyAccessibilityToggle/…), jamais une
+      // seconde implémentation qui pourrait diverger.
+      //
+      // Sans toast, volontairement : ces helpers sont partagés avec les case
+      // de diffusion ci-dessous, qui gardent leur toast (un changement fait
+      // par quelqu'un d'autre mérite d'être signalé). Ici ce n'est qu'une
+      // resynchronisation — 6 toasts empilés à chaque reconnexion masqueraient
+      // les vrais messages en plein direct.
+      applyLanguageButtons(message.language || 'fr');
+      applyAccessibilityToggle(message.highContrast);
+      applyCaptionsToggle(message.captions);
+      applyTranslatedCaptionsToggle(message.translatedCaptions, message.captionTargetLang);
+      applyTestPatternToggle(message.testPattern);
+      applyBackgroundPattern(message.backgroundPattern || 'none');
+      // AJOUT (rôle opérateur/spectateur) : le serveur distingue déjà les deux
+      // rôles (server.js > determineClientRole, OPERATOR_ACTIONS) et refuse
+      // côté serveur les actions d'opérateur à un client 'viewer' — mais rien
+      // côté tableau de bord ne lisait ce champ. On se contente de le mémoriser
+      // pour que les modules puissent s'y référer ; masquer/désactiver les
+      // commandes selon le rôle est une fonctionnalité à part entière (bien
+      // plus large que ce correctif de reconnexion) et n'est pas faite ici.
+      state.yourRole = message.yourRole || null;
       break;
     case 'translationChanged':
       updateActiveTranslationButton(message.language, message.code);
@@ -409,26 +444,19 @@ export function handleMessage(message) {
     // état sans jamais l'apprendre. Chaque case resynchronise la case à
     // cocher/le bouton correspondant (pas seulement un toast) pour que ça
     // reste vrai même sur un tableau de bord qui n'a pas cliqué lui-même.
-    case 'accessibilityMode': {
-      const cb = document.getElementById('highContrastToggle');
-      if (cb) cb.checked = !!message.highContrast;
+    case 'accessibilityMode':
+      applyAccessibilityToggle(message.highContrast);
       showToast(
         message.highContrast ? 'Mode grand contraste activé.' : 'Mode grand contraste désactivé.',
         'info'
       );
       break;
-    }
-    case 'captionsMode': {
-      const cb = document.getElementById('captionsToggle');
-      if (cb) cb.checked = !!message.captions;
+    case 'captionsMode':
+      applyCaptionsToggle(message.captions);
       showToast(message.captions ? 'Sous-titres activés.' : 'Sous-titres désactivés.', 'info');
       break;
-    }
-    case 'translatedCaptionsMode': {
-      const cb = document.getElementById('translatedCaptionsToggle');
-      if (cb) cb.checked = !!message.enabled;
-      const langSelect = document.getElementById('captionTargetLangSelect');
-      if (langSelect && message.targetLang) langSelect.value = message.targetLang;
+    case 'translatedCaptionsMode':
+      applyTranslatedCaptionsToggle(message.enabled, message.targetLang);
       showToast(
         message.enabled
           ? `Sous-titres traduits activés (${message.targetLang}).`
@@ -436,26 +464,17 @@ export function handleMessage(message) {
         'info'
       );
       break;
-    }
-    case 'testPatternMode': {
-      const cb = document.getElementById('testPatternToggle');
-      if (cb) cb.checked = !!message.enabled;
+    case 'testPatternMode':
+      applyTestPatternToggle(message.enabled);
       showToast(message.enabled ? 'Motif de test activé.' : 'Motif de test désactivé.', 'info');
       break;
-    }
-    case 'backgroundPatternMode': {
-      const labels = {
-        none: 'Aucun motif',
-        dots: 'Points',
-        grid: 'Grille',
-        diagonal: 'Diagonales',
-      };
-      document.querySelectorAll('#patternPicker .mood-btn').forEach((btn) => {
-        btn.classList.toggle('active', btn.id === `pattern-btn-${message.pattern}`);
-      });
-      showToast(`Motif de fond : ${labels[message.pattern] || message.pattern}`, 'success');
+    case 'backgroundPatternMode':
+      applyBackgroundPattern(message.pattern);
+      showToast(
+        `Motif de fond : ${BACKGROUND_PATTERN_LABELS[message.pattern] || message.pattern}`,
+        'success'
+      );
       break;
-    }
     // AJOUT (audit — état de repli visible, session parallèle) : émises par
     // transcribeWithRetry() côté serveur (server.js) — un échec de
     // transcription tente désormais un nouvel essai automatique avant
@@ -632,16 +651,72 @@ export function handleMessage(message) {
     // de bord connecté) mais rien n'écoutait ici — les boutons de langue
     // restaient figés sur FR même après un changement effectif.
     case 'languageChanged':
-      state.activeLanguage = (message.language || 'fr').toUpperCase();
-      document.querySelectorAll('.lang-btn').forEach((btn) => {
-        btn.classList.toggle('active', btn.dataset.lang === message.language);
-      });
-      updateDashboard();
+      applyLanguageButtons(message.language || 'fr');
       if (message.triggeredByVoice) {
         addActivity(`Langue changée par commande vocale : ${state.activeLanguage}`, 'info');
       }
       break;
   }
+}
+
+/* ============================================================================
+   CORRECTIF (état obsolète après reconnexion) : ces six fonctions étaient
+   auparavant écrites en ligne dans les case de diffusion ('languageChanged',
+   'accessibilityMode', 'captionsMode', 'translatedCaptionsMode',
+   'testPatternMode', 'backgroundPatternMode'). Extraites ici pour que le case
+   'init' puisse réappliquer LE MÊME code à chaque (re)connexion : deux
+   implémentations parallèles finiraient par diverger, et c'est justement une
+   divergence silencieuse de ce genre (un id de case à cocher renommé d'un côté
+   seulement) qui laisserait de nouveau l'opérateur devant un tableau de bord
+   qui ment sur l'état réel de l'overlay, en plein culte.
+
+   Elles ne font QUE mettre l'UI en cohérence : aucun toast, aucun envoi WS
+   (sinon 'init' rediffuserait vers le serveur l'état qu'il vient d'en
+   recevoir, et une reconnexion écraserait un changement fait ailleurs). Les
+   toasts restent dans les case appelants.
+   ============================================================================ */
+
+function applyLanguageButtons(language) {
+  state.activeLanguage = String(language).toUpperCase();
+  document.querySelectorAll('.lang-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.lang === language);
+  });
+  updateDashboard();
+}
+
+function applyAccessibilityToggle(highContrast) {
+  const cb = document.getElementById('highContrastToggle');
+  if (cb) cb.checked = !!highContrast;
+}
+
+function applyCaptionsToggle(captions) {
+  const cb = document.getElementById('captionsToggle');
+  if (cb) cb.checked = !!captions;
+}
+
+function applyTranslatedCaptionsToggle(enabled, targetLang) {
+  const cb = document.getElementById('translatedCaptionsToggle');
+  if (cb) cb.checked = !!enabled;
+  const langSelect = document.getElementById('captionTargetLangSelect');
+  if (langSelect && targetLang) langSelect.value = targetLang;
+}
+
+function applyTestPatternToggle(enabled) {
+  const cb = document.getElementById('testPatternToggle');
+  if (cb) cb.checked = !!enabled;
+}
+
+const BACKGROUND_PATTERN_LABELS = {
+  none: 'Aucun motif',
+  dots: 'Points',
+  grid: 'Grille',
+  diagonal: 'Diagonales',
+};
+
+function applyBackgroundPattern(pattern) {
+  document.querySelectorAll('#patternPicker .mood-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.id === `pattern-btn-${pattern}`);
+  });
 }
 
 // AJOUT (A.2 — visibilité des échecs IA) : un seul toast par module IA
