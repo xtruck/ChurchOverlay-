@@ -863,6 +863,7 @@ const coreVerseWsHandlers = require('./core-verse-ws-handlers');
 const timerWsHandlers = require('./timer-ws-handlers');
 const pluginsExportsWsHandlers = require('./plugins-exports-ws-handlers');
 const diagnosticsWsHandlers = require('./diagnostics-ws-handlers');
+const miscWsHandlers = require('./misc-ws-handlers');
 const CATEGORY_HANDLERS = new Map([
   ...mediaWsHandlers.createHandlers({
     mediaLibrary,
@@ -1016,6 +1017,14 @@ const CATEGORY_HANDLERS = new Map([
     bibleOfflineCache,
     ipCameraStore,
     sessionStore,
+  }),
+  ...miscWsHandlers.createHandlers({
+    log,
+    broadcast,
+    enqueueTranscript,
+    featuresStore,
+    semanticSearch,
+    sanitizeForPrompt,
   }),
 ]);
 
@@ -2566,39 +2575,8 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    if (sanitized.action === 'transcript') {
-      const text = String(sanitized.text || '').trim();
-      if (text) {
-        log(`WebSocket transcript received: "${text.substring(0, 80)}"`);
-        broadcast({
-          action: 'transcript',
-          text,
-          timestamp: Date.now(),
-          source: sanitized.source || 'browser',
-        });
-        await enqueueTranscript(text);
-      }
-      return;
-    }
-
-    // showVerse/hideVerse — extraits vers core-verse-ws-handlers.js
+    // transcript/setConfidenceThreshold — extraits vers misc-ws-handlers.js
     // (Phase 2), voir CATEGORY_HANDLERS plus haut.
-
-    // --- Confidence threshold ---
-    if (sanitized.action === 'setConfidenceThreshold') {
-      const val = Number(sanitized.threshold);
-      if (typeof val === 'number' && val >= 0 && val <= 1) {
-        const rounded = Math.round(val * 100) / 100;
-        // Persister dans features.json pour que getTranscriptionConfidenceThreshold() le lit
-        const features = featuresStore.readFeatures();
-        if (!features.audio) features.audio = {};
-        features.audio.transcriptionConfidenceThreshold = rounded > 0 ? rounded : 0;
-        featuresStore.writeFeatures(features);
-        broadcast({ action: 'confidenceThresholdChanged', threshold: rounded });
-        log('Seuil de confiance mis à jour : ' + rounded);
-      }
-      return;
-    }
 
     // preServiceCheck/getNetworkStatus/getSessionStats — extraits vers
     // diagnostics-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS plus haut.
@@ -2614,46 +2592,8 @@ wss.on('connection', (ws, req) => {
     // previousReadingVerse — extraits vers reading-translation-ws-handlers.js
     // (Phase 2), voir CATEGORY_HANDLERS plus haut.
 
-    // --- Bible Semantic Search ---
-    if (sanitized.action === 'searchBible') {
-      if (!semanticSearch) {
-        ws.send(
-          JSON.stringify({
-            action: 'searchError',
-            error: 'Recherche biblique non disponible',
-            ...(requestId ? { requestId } : {}),
-          })
-        );
-        return;
-      }
-      const query = String(sanitized.query || '').trim();
-      if (!query) {
-        sendError('Requête requise.');
-        return;
-      }
-      try {
-        const results = await semanticSearch.search(query, sanitized.topK || 5);
-        ws.send(
-          JSON.stringify({
-            action: 'searchResults',
-            query,
-            results,
-            timestamp: Date.now(),
-            ...(requestId ? { requestId } : {}),
-          })
-        );
-      } catch (err) {
-        ws.send(
-          JSON.stringify({
-            action: 'searchError',
-            query,
-            error: err.message,
-            ...(requestId ? { requestId } : {}),
-          })
-        );
-      }
-      return;
-    }
+    // searchBible — extrait vers misc-ws-handlers.js (Phase 2), voir
+    // CATEGORY_HANDLERS plus haut.
 
     // getTopics/getMoods — extraits vers ai-assistant-ws-handlers.js
     // (Phase 2), voir CATEGORY_HANDLERS plus haut.
@@ -2724,30 +2664,14 @@ wss.on('connection', (ws, req) => {
     // showSongSection) — extraite vers song-ws-handlers.js (Phase 2), voir
     // CATEGORY_HANDLERS plus haut.
 
-    // --- Stage display : messages opérateur visibles uniquement côté scène,
-    // jamais sur l'overlay public (voir stage-display.html) ---
-    if (sanitized.action === 'sendStageMessage') {
-      const text = sanitizeForPrompt((sanitized.text || '').slice(0, 500));
-      broadcast({ action: 'stageMessage', text, timestamp: Date.now() });
-      return;
-    }
-
-    if (sanitized.action === 'clearStageMessage') {
-      broadcast({ action: 'stageMessageClear' });
-      return;
-    }
-
+    // sendStageMessage/clearStageMessage/ping — extraits vers
+    // misc-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS plus haut.
+    //
     // getOfflineBibleStatus — extrait vers diagnostics-ws-handlers.js
     // (Phase 2), voir CATEGORY_HANDLERS plus haut.
-
+    //
     // askSermonQuestion — extrait vers ai-assistant-ws-handlers.js
     // (Phase 2), voir CATEGORY_HANDLERS plus haut.
-
-    // --- Ping ---
-    if (sanitized.action === 'ping') {
-      ws.send(JSON.stringify({ action: 'pong', timestamp: Date.now() }));
-      return;
-    }
   });
 
   ws.on('close', () => {
