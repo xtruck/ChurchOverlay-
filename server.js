@@ -706,6 +706,7 @@ const sceneWsHandlers = require('./scene-ws-handlers');
 const songWsHandlers = require('./song-ws-handlers');
 const rundownWsHandlers = require('./rundown-ws-handlers');
 const cameraWsHandlers = require('./camera-ws-handlers');
+const brandingWsHandlers = require('./branding-ws-handlers');
 const CATEGORY_HANDLERS = new Map([
   ...mediaWsHandlers.createHandlers({
     mediaLibrary,
@@ -751,6 +752,15 @@ const CATEGORY_HANDLERS = new Map([
     phoneCameraPairing,
     serverPort: SERVER_PORT,
     QRCode,
+  }),
+  ...brandingWsHandlers.createHandlers({
+    brandingStore,
+    dashboardBrandingStore,
+    sessionState,
+    broadcast,
+    log,
+    getBrandingState,
+    getDashboardBrandingState,
   }),
 ]);
 
@@ -3395,109 +3405,12 @@ wss.on('connection', (ws, req) => {
     // generateCameraPairing) — extraites vers camera-ws-handlers.js
     // (Phase 2), voir CATEGORY_HANDLERS plus haut.
 
-    // --- Habillage caméra (logo + titre/sous-titre, voir branding-store.js
-    // et branding-overlay.html) : broadcast() à chaque changement — TOUS les
-    // clients doivent voir la mise à jour, notamment branding-overlay.html
-    // lui-même, posé au-dessus de la caméra dans OBS. ---
-    if (sanitized.action === 'getBranding') {
-      ws.send(JSON.stringify({ action: 'brandingUpdate', branding: getBrandingState() }));
-      return;
-    }
-
-    if (sanitized.action === 'setBrandingLogo') {
-      try {
-        brandingStore.setLogo(sanitized.sourcePath);
-        log('Habillage caméra : logo mis à jour');
-        broadcast({ action: 'brandingUpdate', branding: getBrandingState() });
-      } catch (err) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Habillage caméra : ' + err.message }));
-      }
-      return;
-    }
-
-    if (sanitized.action === 'clearBrandingLogo') {
-      brandingStore.clearLogo();
-      log('Habillage caméra : logo retiré');
-      broadcast({ action: 'brandingUpdate', branding: getBrandingState() });
-      return;
-    }
-
-    if (sanitized.action === 'setBrandingPosition') {
-      brandingStore.setPosition(sanitized.position);
-      broadcast({ action: 'brandingUpdate', branding: getBrandingState() });
-      return;
-    }
-
-    if (sanitized.action === 'setBrandingSize') {
-      brandingStore.setSize(sanitized.size);
-      broadcast({ action: 'brandingUpdate', branding: getBrandingState() });
-      return;
-    }
-
-    if (sanitized.action === 'setBrandingText') {
-      sessionState.setBrandingText(sanitized.title, sanitized.subtitle);
-      broadcast({ action: 'brandingUpdate', branding: getBrandingState() });
-      return;
-    }
-
-    if (sanitized.action === 'setBrandingVisible') {
-      sessionState.setBrandingVisible(!!sanitized.visible);
-      log('Habillage caméra : ' + (sanitized.visible ? 'affiché' : 'masqué'));
-      broadcast({ action: 'brandingUpdate', branding: getBrandingState() });
-      return;
-    }
-
-    // --- Identité de marque du tableau de bord (nom d'organisation/couleur
-    // d'accent/logo dans la barre latérale — voir dashboard-branding-store.js
-    // et son en-tête pour la distinction avec l'habillage caméra ci-dessus).
-    // Même convention broadcast() : un second tableau de bord ouvert doit
-    // voir la même marque que le premier. ---
-    if (sanitized.action === 'getDashboardBranding') {
-      ws.send(
-        JSON.stringify({ action: 'dashboardBrandingUpdate', branding: getDashboardBrandingState() })
-      );
-      return;
-    }
-
-    if (sanitized.action === 'setDashboardOrgName') {
-      dashboardBrandingStore.setOrganizationName(sanitized.organizationName);
-      log('Identité tableau de bord : nom d’organisation mis à jour');
-      broadcast({ action: 'dashboardBrandingUpdate', branding: getDashboardBrandingState() });
-      return;
-    }
-
-    if (sanitized.action === 'setDashboardAccentColor') {
-      try {
-        dashboardBrandingStore.setAccentColor(sanitized.accentColor);
-        log('Identité tableau de bord : couleur d’accent mise à jour');
-        broadcast({ action: 'dashboardBrandingUpdate', branding: getDashboardBrandingState() });
-      } catch (err) {
-        ws.send(
-          JSON.stringify({ action: 'error', error: 'Identité tableau de bord : ' + err.message })
-        );
-      }
-      return;
-    }
-
-    if (sanitized.action === 'setDashboardLogo') {
-      try {
-        dashboardBrandingStore.setLogo(sanitized.sourcePath);
-        log('Identité tableau de bord : logo mis à jour');
-        broadcast({ action: 'dashboardBrandingUpdate', branding: getDashboardBrandingState() });
-      } catch (err) {
-        ws.send(
-          JSON.stringify({ action: 'error', error: 'Identité tableau de bord : ' + err.message })
-        );
-      }
-      return;
-    }
-
-    if (sanitized.action === 'clearDashboardLogo') {
-      dashboardBrandingStore.clearLogo();
-      log('Identité tableau de bord : logo retiré');
-      broadcast({ action: 'dashboardBrandingUpdate', branding: getDashboardBrandingState() });
-      return;
-    }
+    // Habillage caméra + identité de marque du tableau de bord
+    // (getBranding/setBrandingLogo/clearBrandingLogo/setBrandingPosition/
+    // setBrandingSize/setBrandingText/setBrandingVisible/getDashboardBranding/
+    // setDashboardOrgName/setDashboardAccentColor/setDashboardLogo/
+    // clearDashboardLogo) — extraits vers branding-ws-handlers.js (Phase 2),
+    // voir CATEGORY_HANDLERS plus haut.
 
     // Bibliothèque de chants (getSongLibrary/addSong/deleteSong/
     // showSongSection) — extraite vers song-ws-handlers.js (Phase 2), voir
