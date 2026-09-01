@@ -552,5 +552,33 @@ assert.strictEqual(
 );
 console.log('[TEST] ✓ Groupes de médiathèque corrects');
 
+// Test 34: emergencyClear/pauseTimer/resumeTimer/extendTime — voir le
+// correctif dans server.js (actions mortes : aucun handler direct n'existait
+// avant, seul le chemin vocal les traitait).
+console.log('[TEST] Test 34: emergencyClear/pauseTimer/resumeTimer/extendTime...');
+assert.strictEqual(validateMessage({ action: 'emergencyClear' }).valid, true);
+assert.strictEqual(validateMessage({ action: 'pauseTimer' }).valid, true);
+assert.strictEqual(validateMessage({ action: 'resumeTimer' }).valid, true);
+assert.strictEqual(
+  validateMessage({ action: 'extendTime', extraMs: 5 * 60 * 1000 }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'extendTime' }).valid,
+  false,
+  'extendTime sans extraMs devrait être rejeté'
+);
+assert.strictEqual(
+  validateMessage({ action: 'extendTime', extraMs: -1000 }).valid,
+  false,
+  'extraMs négatif devrait être rejeté'
+);
+assert.strictEqual(
+  validateMessage({ action: 'extendTime', extraMs: 7200000 }).valid,
+  false,
+  'extraMs au-delà d’1h devrait être rejeté'
+);
+console.log('[TEST] ✓ emergencyClear/pauseTimer/resumeTimer/extendTime corrects');
+
 console.log('\n=== Tests terminés ===');
 console.log('[TEST] ✓ Tous les tests de validation sont passés');

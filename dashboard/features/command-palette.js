@@ -191,8 +191,14 @@
     // Actions courtes : exécuter directement
     const shortActions = {
       hideVerse: () => send({ action: 'hideVerse' }),
+      // CORRECTIF (audit Phase 1F — actions mortes) : appelait
+      // window.emergencyClear(), une fonction qui n'a jamais existé nulle
+      // part dans le tableau de bord (aucun `window.emergencyClear = ...`) —
+      // ce raccourci ne faisait donc littéralement rien. Le vrai "Master
+      // Clear" est ppClearAll() (propresenter-studio.js, exposé en
+      // window.ppClearAll, déjà utilisé par ses propres raccourcis F1-F4).
       emergencyClear: () => {
-        if (typeof window.emergencyClear === 'function') window.emergencyClear();
+        if (typeof window.ppClearAll === 'function') window.ppClearAll();
       },
       pauseTimer: () => {
         if (typeof window.pauseTimer === 'function') window.pauseTimer();
@@ -200,7 +206,15 @@
       resumeTimer: () => {
         if (typeof window.resumeTimer === 'function') window.resumeTimer();
       },
-      extendTime: () => send({ action: 'extendTime' }),
+      // CORRECTIF (audit Phase 1F — actions mortes) : envoyait
+      // { action: 'extendTime' } SANS extraMs — server.js n'avait de toute
+      // façon aucun handler pour cette action reçue en direct (voir
+      // server.js, corrigé dans le même audit), et même une fois corrigé
+      // là-bas, extraMs manquant l'aurait rejeté. Cette entrée de palette
+      // est une action rapide sans formulaire (comme tous ses voisins
+      // ci-dessus) : 5 minutes par défaut, une durée de prolongation de
+      // service courante et facile à redéclencher si besoin de plus.
+      extendTime: () => send({ action: 'extendTime', extraMs: 5 * 60 * 1000 }),
       setHighContrast: () => send({ action: 'setHighContrast', enabled: true }),
       setCaptions: () => send({ action: 'setCaptions', enabled: true }),
       setTranslatedCaptions: () => send({ action: 'setTranslatedCaptions', enabled: true }),

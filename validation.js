@@ -743,6 +743,35 @@ const SCHEMAS = {
       groupId: (value) => value === null || (typeof value === 'string' && value.length <= 100),
     },
   },
+  // AJOUT (audit backend — Phase 1F, 7e lot) : emergencyClear/pauseTimer/
+  // resumeTimer/extendTime — actions du registre envoyées comme de vrais
+  // messages WS par le tableau de bord, mais qui n'avaient JUSQU'ICI aucun
+  // handler serveur direct (seul le chemin vocal les traitait) — voir le
+  // correctif juste au-dessus de ces handlers dans server.js. extraMs plafonné
+  // comme durationMs ailleurs (max 1h) — pas de prolongation absurde d'un clic.
+  emergencyClear: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'emergencyClear' },
+  },
+  pauseTimer: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'pauseTimer' },
+  },
+  resumeTimer: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'resumeTimer' },
+  },
+  extendTime: {
+    required: ['action', 'extraMs'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'extendTime',
+      extraMs: (value) => typeof value === 'number' && value > 0 && value <= 3600000,
+    },
+  },
 };
 
 /**
