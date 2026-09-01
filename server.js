@@ -856,6 +856,7 @@ const cameraWsHandlers = require('./camera-ws-handlers');
 const brandingWsHandlers = require('./branding-ws-handlers');
 const accessibilityWsHandlers = require('./accessibility-ws-handlers');
 const readingTranslationWsHandlers = require('./reading-translation-ws-handlers');
+const trustWsHandlers = require('./trust-ws-handlers');
 const CATEGORY_HANDLERS = new Map([
   ...mediaWsHandlers.createHandlers({
     mediaLibrary,
@@ -932,6 +933,14 @@ const CATEGORY_HANDLERS = new Map([
     getVerseDurationMs,
     readingModePosition,
     advanceReadingModeVerse,
+  }),
+  ...trustWsHandlers.createHandlers({
+    sessionState,
+    getPendingVerse: () => pendingVerse,
+    confirmPendingVerse,
+    dismissPendingVerse,
+    broadcast,
+    log,
   }),
 ]);
 
@@ -3008,44 +3017,8 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // --- Accessibility: high-contrast mode (audit — free/light) ---
-    // --- Mode confiance (Partie 2) ---
-    if (sanitized.action === 'setTrustMode') {
-      const ok = sessionState.setTrustMode(sanitized.mode);
-      if (!ok) {
-        ws.send(
-          JSON.stringify({ action: 'error', error: `Mode confiance invalide : ${sanitized.mode}` })
-        );
-        return;
-      }
-      // Changer de mode en cours de route ne doit jamais laisser un verset
-      // orphelin en attente d'un mode qui n'existe plus (ex. bascule vers
-      // 'auto' pendant qu'une confirmation était en attente) — rejeté
-      // proprement plutôt que silencieusement oublié.
-      if (pendingVerse) {
-        const dismissed = dismissPendingVerse();
-        broadcast({ action: 'pendingVerseDismissed', reference: dismissed.reference });
-      }
-      broadcast({ action: 'trustModeChanged', trustMode: sessionState.getTrustMode() });
-      log('Mode confiance : ' + sessionState.getTrustMode());
-      return;
-    }
-
-    if (sanitized.action === 'confirmPendingVerse') {
-      const result = await confirmPendingVerse();
-      if (!result.ok) {
-        ws.send(JSON.stringify({ action: 'error', error: result.reason }));
-      }
-      return;
-    }
-
-    if (sanitized.action === 'dismissPendingVerse') {
-      const result = dismissPendingVerse();
-      if (result.ok) {
-        broadcast({ action: 'pendingVerseDismissed', reference: result.reference });
-      }
-      return;
-    }
+    // setTrustMode/confirmPendingVerse/dismissPendingVerse — extraits vers
+    // trust-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS plus haut.
 
     // Accessibilité/affichage (setHighContrast/setCaptions/
     // setTranslatedCaptions/setTestPattern/setBackgroundPattern/
