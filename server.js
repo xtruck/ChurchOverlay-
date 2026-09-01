@@ -2202,10 +2202,18 @@ function validateOrigin(req) {
   }
   const origin = req.headers.origin || '';
   if (!origin) return true; // native/file:// clients have no origin
-  for (const allowed of ALLOWED_ORIGINS) {
-    if (origin.startsWith(allowed)) return true;
-  }
-  return false;
+  // CORRECTIF (modularisation backend — sécurité) : origin.startsWith(allowed)
+  // acceptait tout origin ayant un des ALLOWED_ORIGINS comme PRÉFIXE — un
+  // Origin forgé comme "http://localhost:<port>.attacker.example" passait
+  // ce contrôle (préfixe exact), alors que ce n'est ni localhost ni le port
+  // configuré. Les entrées de ALLOWED_ORIGINS sont des origines complètes
+  // (schéma+hôte+port, jamais un préfixe partiel voulu), donc une
+  // comparaison EXACTE est strictement correcte ici — un en-tête Origin ne
+  // contient jamais de chemin/segment supplémentaire à tolérer. Rappel du
+  // commentaire ci-dessus : ceci reste une défense en profondeur, le
+  // véritable contrôle d'accès pour un bind non local est le jeton
+  // WS_AUTH_TOKEN/WS_VIEWER_TOKEN vérifié juste après cet appel.
+  return ALLOWED_ORIGINS.has(origin);
 }
 
 wss.on('connection', (ws, req) => {
