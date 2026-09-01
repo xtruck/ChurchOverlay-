@@ -857,6 +857,7 @@ const brandingWsHandlers = require('./branding-ws-handlers');
 const accessibilityWsHandlers = require('./accessibility-ws-handlers');
 const readingTranslationWsHandlers = require('./reading-translation-ws-handlers');
 const trustWsHandlers = require('./trust-ws-handlers');
+const aiAssistantWsHandlers = require('./ai-assistant-ws-handlers');
 const CATEGORY_HANDLERS = new Map([
   ...mediaWsHandlers.createHandlers({
     mediaLibrary,
@@ -941,6 +942,21 @@ const CATEGORY_HANDLERS = new Map([
     dismissPendingVerse,
     broadcast,
     log,
+  }),
+  ...aiAssistantWsHandlers.createHandlers({
+    semanticSearch,
+    themeGenerator,
+    aiEnricher,
+    semanticDetector,
+    corrector,
+    plugins,
+    aiLoadErrors,
+    sessionState,
+    sermonArchive,
+    sermonQa,
+    sanitizeForPrompt,
+    log,
+    warn,
   }),
 ]);
 
@@ -2846,27 +2862,8 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // --- Get topics ---
-    if (sanitized.action === 'getTopics') {
-      ws.send(
-        JSON.stringify({
-          action: 'topicsList',
-          topics: semanticSearch ? semanticSearch.getTopics() : [],
-        })
-      );
-      return;
-    }
-
-    // --- Get moods ---
-    if (sanitized.action === 'getMoods') {
-      ws.send(
-        JSON.stringify({
-          action: 'moodsList',
-          moods: themeGenerator ? themeGenerator.getMoods() : [],
-        })
-      );
-      return;
-    }
+    // getTopics/getMoods — extraits vers ai-assistant-ws-handlers.js
+    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
 
     // setMoodTheme — extrait vers reading-translation-ws-handlers.js
     // (Phase 2), voir CATEGORY_HANDLERS plus haut.
@@ -2893,119 +2890,9 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // --- AI stats ---
-    if (sanitized.action === 'getAiStats') {
-      ws.send(
-        JSON.stringify({
-          action: 'aiStats',
-          semanticDetector: semanticDetector ? semanticDetector.getStats() : null,
-          corrector: corrector ? corrector.getStats() : null,
-          themeGenerator: themeGenerator ? themeGenerator.getStats() : null,
-          plugins: plugins ? plugins.metadata : null,
-          aiEnricher: !!aiEnricher,
-          loadErrors: aiLoadErrors,
-        })
-      );
-      return;
-    }
-
-    // --- AI Live Summary (with prompt sanitization) ---
-    if (sanitized.action === 'getLiveSummary') {
-      if (!aiEnricher) {
-        ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
-        return;
-      }
-      const fullTranscript = sanitizeForPrompt(sessionState.getRecentTranscripts().join(' '));
-      const summary = await aiEnricher.generateLiveSummary(fullTranscript);
-      ws.send(JSON.stringify({ action: 'liveSummary', summary, timestamp: Date.now() }));
-      return;
-    }
-
-    // --- AI Sermon Theme (with prompt sanitization) ---
-    if (sanitized.action === 'getSermonTheme') {
-      if (!aiEnricher) {
-        ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
-        return;
-      }
-      const fullTranscript = sanitizeForPrompt(sessionState.getRecentTranscripts().join(' '));
-      const themeData = await aiEnricher.detectSermonTheme(fullTranscript);
-      ws.send(
-        JSON.stringify({
-          action: 'sermonTheme',
-          ...themeData,
-          silent: !!sanitized.silent,
-          timestamp: Date.now(),
-        })
-      );
-      return;
-    }
-
-    // --- AI Post-Service Recap (with prompt sanitization) ---
-    if (sanitized.action === 'getPostServiceRecap') {
-      if (!aiEnricher) {
-        ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
-        return;
-      }
-      // CORRECTIF (audit — mémoire des cultes) : sessionState.getRecentTranscripts()
-      // est une fenêtre glissante de 10 fragments (pensée pour le contexte
-      // court du détecteur sémantique, voir session-state.js), donc trop
-      // étroite pour un "récap fin de culte" fidèle — il ne portait en
-      // réalité que sur les dernières secondes du service.
-      // sessionState.getFullServiceTranscript() couvre tout le culte en
-      // cours (borné à MAX_SERVICE_TRANSCRIPT_CHARS caractères).
-      const fullTranscript = sanitizeForPrompt(sessionState.getFullServiceTranscript());
-      const recap = await aiEnricher.generatePostServiceRecap(
-        fullTranscript,
-        sessionState.getVerseHistory()
-      );
-      ws.send(JSON.stringify({ action: 'postServiceRecap', recap, timestamp: Date.now() }));
-
-      // AJOUT (audit — mémoire des cultes, gratuit/léger) : le clic "Récap
-      // fin de culte" est le seul geste explicite de fin de service déjà
-      // présent dans l'app — on l'utilise aussi pour archiver localement
-      // (voir sermon-archive.js) et repartir à zéro pour le prochain culte.
-      try {
-        sermonArchive.saveServiceEntry({
-          theme: recap && recap.title,
-          keyPoints: recap && recap.keyPoints,
-          transcriptExcerpt: sessionState.getFullServiceTranscript().slice(-4000),
-          // AJOUT (cahier des charges — assistant sermons) : texte complet,
-          // pas seulement les 4000 derniers caractères — voir sermon-qa.js.
-          fullTranscript: sessionState.getFullServiceTranscript(),
-          versesShown: sessionState.getVerseHistory(),
-        });
-        log('Culte archivé localement (sermon-archive.js)');
-      } catch (err) {
-        warn('Archivage du culte échoué: ' + err.message);
-      }
-      sessionState.resetFullServiceTranscript();
-      return;
-    }
-
-    // --- Sermon archive search (audit — mémoire des cultes, gratuit/léger) ---
-    if (sanitized.action === 'getArchiveMatches') {
-      const query = sanitizeForPrompt(sanitized.query || '');
-      const matches = query ? sermonArchive.search(query) : [];
-      ws.send(
-        JSON.stringify({ action: 'archiveMatches', query: sanitized.query, results: matches })
-      );
-      return;
-    }
-
-    // --- AI Cross References (with prompt sanitization) ---
-    if (sanitized.action === 'getCrossReferences') {
-      if (!aiEnricher) {
-        ws.send(JSON.stringify({ action: 'error', error: 'AI Enricher non disponible' }));
-        return;
-      }
-      const safeRef = sanitizeForPrompt(sanitized.reference || '');
-      const safeText = sanitizeForPrompt(sanitized.text || '');
-      const refs = await aiEnricher.findCrossReferences(safeRef, safeText);
-      ws.send(
-        JSON.stringify({ action: 'crossReferences', reference: sanitized.reference, results: refs })
-      );
-      return;
-    }
+    // getAiStats/getLiveSummary/getSermonTheme/getPostServiceRecap/
+    // getArchiveMatches/getCrossReferences — extraits vers
+    // ai-assistant-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS plus haut.
 
     // translateText/hideTranslation — extraits vers
     // reading-translation-ws-handlers.js (Phase 2), voir CATEGORY_HANDLERS
@@ -3217,24 +3104,8 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // --- Assistant Q&R sur les prédications (cahier des charges — Point 5,
-    // voir sermon-qa.js pour le garde-fou "jamais de réponse sans source") ---
-    if (sanitized.action === 'askSermonQuestion') {
-      try {
-        const safeQuestion = sanitizeForPrompt(sanitized.question || '');
-        const result = await sermonQa.askQuestion(safeQuestion);
-        ws.send(
-          JSON.stringify({
-            action: 'sermonQuestionAnswered',
-            question: sanitized.question,
-            ...result,
-          })
-        );
-      } catch (err) {
-        ws.send(JSON.stringify({ action: 'error', error: 'Assistant sermons : ' + err.message }));
-      }
-      return;
-    }
+    // askSermonQuestion — extrait vers ai-assistant-ws-handlers.js
+    // (Phase 2), voir CATEGORY_HANDLERS plus haut.
 
     // --- Ping ---
     if (sanitized.action === 'ping') {

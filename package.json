@@ -145,6 +145,7 @@
       "accessibility-ws-handlers.js",
       "reading-translation-ws-handlers.js",
       "trust-ws-handlers.js",
+      "ai-assistant-ws-handlers.js",
       "ai-modules-loader.js",
       "session-state.js",
       "dotenv-loader.js",
