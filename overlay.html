@@ -3,6 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- AJOUT (audit sécurité Electron, Phase 3) : même politique et mêmes
+         raisons que dashboard.html (voir son commentaire) — script-src/
+         object-src/base-uri/form-action stricts, img-src/connect-src/
+         media-src larges (port serveur dynamique, caméras IP LAN). style-src
+         garde 'unsafe-inline' pour le <style>@import ci-dessous ET les
+         thèmes qui appliquent des variables CSS inline (root.style.setProperty,
+         voir overlay.js). -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: http: https:; media-src 'self' http:; connect-src 'self' ws: wss: http: https:; object-src 'none'; base-uri 'none'; form-action 'none';"
+    />
     <title>ChurchOverlay — Affichage</title>
     <style>
       /* CORRECTIF (audit — police du verset jamais chargée) : @import doit être

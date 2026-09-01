@@ -2,6 +2,15 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8" />
+<!-- AJOUT (audit sécurité Electron, Phase 3) : script-src garde
+     'unsafe-inline' ici — contrairement à dashboard.html/overlay.html, ce
+     fichier a un vrai <script> inline (ligne ~344) avec la logique de
+     l'assistant de config ; le refactorer vers un .js externe est un
+     chantier séparé. object-src/base-uri/form-action restent stricts. -->
+<meta
+  http-equiv="Content-Security-Policy"
+  content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none';"
+/>
 <title>ChurchOverlay — Configuration initiale</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');

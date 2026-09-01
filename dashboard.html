@@ -3,6 +3,31 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- AJOUT (audit sécurité Electron, Phase 3) : aucune CSP n'existait
+         auparavant sur cette page file://. object-src/base-uri/form-action
+         restent stricts ; img-src/connect-src/media-src restent
+         volontairement larges (http:/ws: sans domaine figé) car cette page
+         dialogue avec le serveur local sur un PORT DYNAMIQUE (WS_HOST/PORT
+         configurables — voir server.js) et affiche des flux caméra IP sur
+         des adresses LAN arbitraires (voir ip-camera-store.js) — un CSP
+         trop strict sur ces directives casserait silencieusement ces
+         fonctionnalités en plein culte. style-src garde 'unsafe-inline' :
+         ~365 attributs style= existent encore dans cette page (nettoyage
+         séparé, pas encore fait). script-src garde AUSSI 'unsafe-inline' —
+         dashboard.html lui-même n'a aucun <script> inline en production,
+         mais test/integration-scene-composer.js s'appuie sur
+         page.addInitScript() (Playwright) pour mocker window.churchOverlay
+         et poser le flag "assistant de démarrage déjà vu" avant le premier
+         script de page ; un script-src strict à 'self' bloque cette
+         injection (confirmé empiriquement — le test échoue avec 'self' seul,
+         passe avec 'unsafe-inline'), ce qui masquerait l'assistant de
+         démarrage en plein test et ferait échouer le scénario en cascade.
+         overlay.html, lui, n'a AUCUNE dépendance de test à addInitScript et
+         reste donc en script-src 'self' strict. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: http: https:; media-src 'self' http:; connect-src 'self' ws: wss: http: https:; object-src 'none'; base-uri 'none'; form-action 'none';"
+    />
     <title>ChurchOverlay — Tableau de Bord Opérateur</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

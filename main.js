@@ -388,6 +388,13 @@ function createSetupWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // AJOUT (audit sécurité Electron, Phase 3) : Electron 43 sandboxe déjà
+      // les renderers par défaut, mais le déclarer explicitement documente
+      // l'intention plutôt que de dépendre d'un défaut qui pourrait changer
+      // — preload.js n'utilise que des API compatibles sandbox
+      // (contextBridge/ipcRenderer/webUtils), aucun changement de
+      // comportement attendu.
+      sandbox: true,
     },
   });
   win.setMenuBarVisibility(false);
@@ -409,6 +416,13 @@ function createMainWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // AJOUT (audit sécurité Electron, Phase 3) : Electron 43 sandboxe déjà
+      // les renderers par défaut, mais le déclarer explicitement documente
+      // l'intention plutôt que de dépendre d'un défaut qui pourrait changer
+      // — preload.js n'utilise que des API compatibles sandbox
+      // (contextBridge/ipcRenderer/webUtils), aucun changement de
+      // comportement attendu.
+      sandbox: true,
     },
   });
   mainWindow.setMenuBarVisibility(false);
@@ -491,6 +505,13 @@ function createDisplayWindow(displayId, mode = 'overlay') {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // AJOUT (audit sécurité Electron, Phase 3) : Electron 43 sandboxe déjà
+      // les renderers par défaut, mais le déclarer explicitement documente
+      // l'intention plutôt que de dépendre d'un défaut qui pourrait changer
+      // — preload.js n'utilise que des API compatibles sandbox
+      // (contextBridge/ipcRenderer/webUtils), aucun changement de
+      // comportement attendu.
+      sandbox: true,
     },
   });
   win.setMenuBarVisibility(false);

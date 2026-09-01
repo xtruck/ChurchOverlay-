@@ -2,6 +2,13 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
+<!-- AJOUT (audit sécurité Electron, Phase 3) : même politique et mêmes
+     raisons que setup.html (script inline existant, connect-src large pour
+     le port serveur dynamique). -->
+<meta
+  http-equiv="Content-Security-Policy"
+  content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; connect-src 'self' ws: wss: http: https:; object-src 'none'; base-uri 'none'; form-action 'none';"
+/>
 <title>ChurchOverlay — Écran scène</title>
 <!--
   ============================================================================
