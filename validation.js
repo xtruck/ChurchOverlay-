@@ -542,6 +542,123 @@ const SCHEMAS = {
     optional: [],
     validators: { action: (value) => value === 'clearDashboardLogo' },
   },
+  // AJOUT (audit backend — Phase 1F, 5e lot) : traduction secondaire, mode
+  // lecture, thème d'ambiance, traduction IA à la volée, accessibilité et
+  // affichage. lang/code alignés sur setTranslation ci-dessus (même forme
+  // de code de traduction).
+  setSecondaryTranslation: {
+    required: ['action'],
+    optional: ['lang', 'code'],
+    validators: {
+      action: (value) => value === 'setSecondaryTranslation',
+      lang: (value) => typeof value === 'string' && ['fr', 'en'].includes(value.toLowerCase()),
+      code: (value) => typeof value === 'string' && /^[a-z0-9_-]{2,20}$/i.test(value),
+    },
+  },
+  startReading: {
+    required: ['action', 'reference'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'startReading',
+      reference: (value) => typeof value === 'string' && value.length > 0 && value.length <= 200,
+    },
+  },
+  stopReading: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'stopReading' },
+  },
+  nextReadingVerse: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'nextReadingVerse' },
+  },
+  previousReadingVerse: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'previousReadingVerse' },
+  },
+  // mood : ai-theme-generator.js#getTheme() retombe déjà silencieusement sur
+  // le thème par défaut si le mood est inconnu — juste une borne de type/
+  // longueur ici, pas une énumération stricte (la liste des moods peut
+  // évoluer côté ai-theme-generator.js sans avoir à la dupliquer ici).
+  setMoodTheme: {
+    required: ['action', 'mood'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'setMoodTheme',
+      mood: (value) => typeof value === 'string' && value.length > 0 && value.length <= 50,
+    },
+  },
+  translateText: {
+    required: ['action', 'text'],
+    optional: ['targetLang', 'autoBroadcast', 'reference'],
+    validators: {
+      action: (value) => value === 'translateText',
+      text: (value) => typeof value === 'string' && value.length > 0 && value.length <= 5000,
+      targetLang: (value) => typeof value === 'string' && value.length > 0 && value.length <= 20,
+      autoBroadcast: (value) => typeof value === 'boolean',
+      reference: (value) => typeof value === 'string' && value.length <= 200,
+    },
+  },
+  hideTranslation: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'hideTranslation' },
+  },
+  setHighContrast: {
+    required: ['action', 'enabled'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'setHighContrast',
+      enabled: (value) => typeof value === 'boolean',
+    },
+  },
+  setCaptions: {
+    required: ['action', 'enabled'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'setCaptions',
+      enabled: (value) => typeof value === 'boolean',
+    },
+  },
+  setTranslatedCaptions: {
+    required: ['action', 'enabled'],
+    optional: ['targetLang'],
+    validators: {
+      action: (value) => value === 'setTranslatedCaptions',
+      enabled: (value) => typeof value === 'boolean',
+      targetLang: (value) => typeof value === 'string' && value.length > 0 && value.length <= 20,
+    },
+  },
+  setTestPattern: {
+    required: ['action', 'enabled'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'setTestPattern',
+      enabled: (value) => typeof value === 'boolean',
+    },
+  },
+  // pattern : session-state.js#setBackgroundPattern retombe déjà
+  // silencieusement sur 'none' si la valeur est hors énumération (voir
+  // server.js) — validé ici quand même pour un message d'erreur clair côté
+  // client plutôt qu'un repli silencieux, même logique que setBrandingPosition.
+  setBackgroundPattern: {
+    required: ['action', 'pattern'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'setBackgroundPattern',
+      pattern: (value) => ['none', 'dots', 'grid', 'diagonal'].includes(value),
+    },
+  },
+  setBlackScreen: {
+    required: ['action', 'enabled'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'setBlackScreen',
+      enabled: (value) => typeof value === 'boolean',
+    },
+  },
 };
 
 /**

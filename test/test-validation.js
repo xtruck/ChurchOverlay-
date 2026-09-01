@@ -425,5 +425,72 @@ assert.strictEqual(
 assert.strictEqual(validateMessage({ action: 'clearDashboardLogo' }).valid, true);
 console.log('[TEST] ✓ Identité de marque du tableau de bord correcte');
 
+// Test 28: traduction secondaire et mode lecture
+console.log('[TEST] Test 28: setSecondaryTranslation/startReading/stopReading/...');
+assert.strictEqual(
+  validateMessage({ action: 'setSecondaryTranslation', lang: 'en', code: 'kjv' }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'setSecondaryTranslation' }).valid,
+  true,
+  'setSecondaryTranslation sans lang/code devrait passer (désactive la traduction secondaire)'
+);
+assert.strictEqual(
+  validateMessage({ action: 'startReading', reference: 'Jean 3:1' }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'startReading' }).valid,
+  false,
+  'startReading sans reference devrait être rejeté'
+);
+assert.strictEqual(validateMessage({ action: 'stopReading' }).valid, true);
+assert.strictEqual(validateMessage({ action: 'nextReadingVerse' }).valid, true);
+assert.strictEqual(validateMessage({ action: 'previousReadingVerse' }).valid, true);
+console.log('[TEST] ✓ Traduction secondaire et mode lecture corrects');
+
+// Test 29: thème d'ambiance et traduction IA à la volée
+console.log('[TEST] Test 29: setMoodTheme/translateText/hideTranslation...');
+assert.strictEqual(validateMessage({ action: 'setMoodTheme', mood: 'joy' }).valid, true);
+assert.strictEqual(
+  validateMessage({ action: 'translateText', text: 'Car Dieu a tant aimé le monde', targetLang: 'en' })
+    .valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'translateText' }).valid,
+  false,
+  'translateText sans text devrait être rejeté'
+);
+assert.strictEqual(validateMessage({ action: 'hideTranslation' }).valid, true);
+console.log('[TEST] ✓ Thème d’ambiance et traduction IA corrects');
+
+// Test 30: accessibilité et affichage
+console.log('[TEST] Test 30: setHighContrast/setCaptions/setTranslatedCaptions/setTestPattern/setBackgroundPattern/setBlackScreen...');
+assert.strictEqual(validateMessage({ action: 'setHighContrast', enabled: true }).valid, true);
+assert.strictEqual(
+  validateMessage({ action: 'setHighContrast' }).valid,
+  false,
+  'setHighContrast sans enabled devrait être rejeté'
+);
+assert.strictEqual(validateMessage({ action: 'setCaptions', enabled: false }).valid, true);
+assert.strictEqual(
+  validateMessage({ action: 'setTranslatedCaptions', enabled: true, targetLang: 'es' }).valid,
+  true
+);
+assert.strictEqual(validateMessage({ action: 'setTestPattern', enabled: true }).valid, true);
+assert.strictEqual(
+  validateMessage({ action: 'setBackgroundPattern', pattern: 'dots' }).valid,
+  true
+);
+assert.strictEqual(
+  validateMessage({ action: 'setBackgroundPattern', pattern: 'stripes' }).valid,
+  false,
+  'pattern hors énumération devrait être rejeté'
+);
+assert.strictEqual(validateMessage({ action: 'setBlackScreen', enabled: true }).valid, true);
+console.log('[TEST] ✓ Accessibilité et affichage corrects');
+
 console.log('\n=== Tests terminés ===');
 console.log('[TEST] ✓ Tous les tests de validation sont passés');
