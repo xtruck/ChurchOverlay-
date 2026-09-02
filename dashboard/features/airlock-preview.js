@@ -66,6 +66,20 @@ function buildCuePreviewData(cue) {
   return { type: 'verse', label: cue.label, reference: cue.reference };
 }
 
+// AJOUT (Focus Mode — voir focus-mode.js) : même rendu que la colonne "en
+// direct" du sas — un opérateur en mode focus doit voir EXACTEMENT le même
+// aperçu qu'ailleurs dans l'app, jamais une seconde implémentation qui
+// pourrait diverger. Exporté sous ce nom (pas `renderInto`, trop générique
+// hors de ce fichier) pour rester lisible depuis un autre module.
+export const renderContentPreview = renderInto;
+
+// AJOUT (Focus Mode) : source de vérité unique de "qu'est-ce qui est
+// réellement à l'écran" — reste privée à ce module (currentLive), lue via ce
+// getter plutôt que dupliquée dans un second état ailleurs.
+export function getCurrentLive() {
+  return currentLive;
+}
+
 function renderInto(container, data) {
   if (!container) return;
   container.innerHTML = '';

@@ -1067,6 +1067,101 @@ body {
   white-space: nowrap;
 }
 
+/* AJOUT (Focus Mode — brief produit, priorité #6, voir
+           dashboard/features/focus-mode.js) : recouvre TOUT le reste du
+           tableau de bord (z-index élevé, comme .command-palette-overlay) —
+           créé une seule fois par createOverlay(), visibilité pilotée par
+           .active plutôt qu'un montage/démontage du DOM à chaque bascule. */
+.focus-mode-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: var(--bg-primary, #0b0c10);
+  flex-direction: column;
+  padding: var(--space-4, 1.5rem);
+}
+.focus-mode-overlay.active {
+  display: flex;
+}
+.focus-mode-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.focus-mode-clock {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.4rem;
+  color: var(--text-main);
+  letter-spacing: 0.05em;
+}
+.focus-mode-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5, 2.5rem);
+  flex-wrap: wrap;
+  padding: var(--space-4, 1.5rem) 0;
+}
+.focus-mode-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  width: min(42vw, 640px);
+}
+.focus-mode-panel-label {
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.focus-mode-preview-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #05070d;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  container-type: size;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.focus-mode-preview-frame img,
+.focus-mode-preview-frame video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.focus-mode-next-cue {
+  font-size: 1.3rem;
+  color: var(--text-main);
+  text-align: center;
+  min-height: 2.5rem;
+  display: flex;
+  align-items: center;
+}
+.focus-mode-emergency {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+.focus-mode-emergency .btn {
+  font-size: 1.1rem;
+  padding: 0.9rem 1.8rem;
+}
+
 /* AJOUT (médiathèque — déclenchement vocal de photos/vidéos) : réutilise
            .queue-list/.queue-item/.queue-item-actions/.queue-icon-btn ci-dessus
            (déjà assez génériques), juste ces quelques classes en plus pour le

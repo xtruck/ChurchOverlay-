@@ -35,6 +35,13 @@ export function getRundownCues() {
   return rundownCues;
 }
 
+// AJOUT (Focus Mode — voir focus-mode.js) : même raisonnement — "quel est le
+// prochain repère" (activeIndex + 1) ne peut se répondre depuis l'extérieur
+// sans exposer aussi le pointeur, jusqu'ici privé à ce module.
+export function getRundownActiveIndex() {
+  return rundownActiveIndex;
+}
+
 const CUE_TYPE_ICON = { verse: '📖', media: '📷', scene: '🎬' };
 
 export function addVerseToRundown() {

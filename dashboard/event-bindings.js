@@ -43,6 +43,9 @@ import { showToast } from './utils.js';
  * document pour rester relisible en regard de dashboard.html.
  */
 const CLICK_BINDINGS = {
+  // --- Mode focus ---
+  focusModeToggleBtn: () => window.toggleFocusMode(),
+
   // --- Barre d'état / pipeline ---
   speechBtn: () => window.toggleRealMicCapture(),
   restartPipelineBtn: () => window.restartPipeline(),

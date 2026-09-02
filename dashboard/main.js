@@ -49,6 +49,8 @@ import './features/obs-scenes.js';
 import './features/agent.js';
 // AJOUT : ProPresenter 7 style studio workspace
 import './features/propresenter-studio.js';
+// AJOUT (Focus Mode — brief produit, priorité #6)
+import './features/focus-mode.js';
 // AJOUT (phase 3, point 2 — plus aucun onclick inline dans dashboard.html) :
 // câblage des 153 écouteurs de clic, DÉLIBÉRÉMENT EN DERNIER. Le module ne
 // fait que des addEventListener sur des id déjà présents dans le document
