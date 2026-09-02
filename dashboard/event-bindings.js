@@ -167,6 +167,7 @@ const CLICK_BINDINGS = {
 
   // --- Carte "verset en direct" (héros) ---
   heroShowManualVerseBtn: () => window.showManualVerse(),
+  heroShareImageBtn: () => window.exportVerseAsImage(),
   heroHideVerseBtn: () => window.hideVerse(),
   heroEmergencyStopBtn: () => window.emergencyStop(),
 
