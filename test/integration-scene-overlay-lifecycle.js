@@ -111,6 +111,23 @@ function makeSourceFile(dir, filename) {
   return p;
 }
 
+// PNG 1x1 transparent RÉEL et décodable (voir le même besoin/raisonnement
+// dans integration-overlay-broken-media-fallback.js) — nécessaire pour
+// bgMedia ci-dessous : le Scénario 6 le désigne aussi comme poster
+// principal (setDefaultMediaItem) et vérifie qu'il s'affiche réellement à
+// l'écran, ce qu'un fichier illisible ne pourrait jamais faire (voir
+// overlay.js#maybeShowDefaultContent, qui abandonne désormais définitivement
+// un poster par défaut cassé après son premier échec au lieu de le retenter
+// indéfiniment).
+const VALID_PNG_1X1_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+
+function makeValidPngFile(dir, filename) {
+  const p = path.join(dir, filename);
+  fs.writeFileSync(p, Buffer.from(VALID_PNG_1X1_BASE64, 'base64'));
+  return p;
+}
+
 (async () => {
   let passed = 0,
     failed = 0;
@@ -167,7 +184,7 @@ function makeSourceFile(dir, filename) {
   try {
     // Média de fond pour la scène (référencé par mediaId, résolu côté serveur).
     const bgMedia = mediaLibrary.addItem({
-      sourcePath: makeSourceFile(tmpDir, 'fond.png'),
+      sourcePath: makeValidPngFile(tmpDir, 'fond.png'),
       label: 'Fond de scène test',
     });
     addedMediaIds.push(bgMedia.id);

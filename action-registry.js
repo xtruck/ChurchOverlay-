@@ -206,6 +206,15 @@ const CLIENT_ACTIONS = {
     description: "Déclencher l'affichage d'un média",
   },
   hideMedia: { operatorOnly: true, category: 'media', description: 'Masquer le média affiché' },
+  // AJOUT (Operator activity log — priorité #10) : PAS operatorOnly (champ
+  // omis, convention déjà établie dans ce fichier pour une action non
+  // réservée à l'opérateur) — envoyé par overlay.js (repli automatique
+  // média cassé, Smart Fallback Mode), un simple signalement informatif,
+  // jamais une action d'état.
+  reportMediaLoadFailure: {
+    category: 'media',
+    description: 'Signaler un échec de chargement média (repli automatique)',
+  },
   setDefaultMediaItem: {
     operatorOnly: true,
     category: 'media',

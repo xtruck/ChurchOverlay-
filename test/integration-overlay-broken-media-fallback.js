@@ -124,6 +124,18 @@ function waitForOpen(ws) {
 
     opWs = new WebSocket(`ws://127.0.0.1:${process.env.PORT}`);
     await waitForOpen(opWs);
+    // AJOUT (Operator activity log — priorité #10) : capture les diffusions
+    // reçues par ce client "opérateur" brut pour vérifier que
+    // reportMediaLoadFailure() (overlay.js) atteint bien tous les tableaux
+    // de bord ouverts, pas seulement la console du projecteur.
+    const receivedBroadcasts = [];
+    opWs.on('message', (data) => {
+      try {
+        receivedBroadcasts.push(JSON.parse(data.toString()));
+      } catch {
+        /* message non-JSON, sans rapport avec ce test */
+      }
+    });
 
     browser = await chromium.launch();
     const page = await browser.newPage();
@@ -155,6 +167,21 @@ function waitForOpen(ws) {
       (await page.evaluate(() =>
         document.getElementById('media-layer-img').getAttribute('src')
       )) === null
+    );
+    // AJOUT (Operator activity log) : le repli automatique doit aussi être
+    // signalé au serveur (voir reportMediaLoadFailure() dans overlay.js),
+    // rediffusé à tous les tableaux de bord — pas seulement géré en silence
+    // côté overlay.
+    const failureReport = receivedBroadcasts.find((m) => m.action === 'mediaLoadFailureReported');
+    check(
+      'le repli automatique est signalé au serveur (mediaLoadFailureReported diffusé)',
+      !!failureReport,
+      `diffusions reçues: ${JSON.stringify(receivedBroadcasts.map((m) => m.action))}`
+    );
+    check(
+      'le signalement porte le bon libellé de média',
+      failureReport && failureReport.label === 'Média cassé (test)',
+      `libellé observé: ${failureReport && failureReport.label}`
     );
 
     // ============================================================

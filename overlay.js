@@ -653,6 +653,23 @@ let mediaHideTimeout = null;
 // d'erreur le plus récent d'un gestionnaire supplanté par un chargement
 // plus récent (le repli lui-même déclenche un nouveau showMediaItem()).
 let mediaLoadGeneration = 0;
+
+// AJOUT (Operator activity log — brief produit, priorité #10) : jusqu'ici un
+// média cassé ne laissait de trace que dans la console du projecteur (F12) —
+// jamais consultée pendant un culte — alors que le tableau de bord a déjà un
+// flux d'activité fait exactement pour ça. Premier message que l'overlay
+// envoie réellement au serveur (jusqu'ici purement récepteur, voir l'absence
+// totale de ws.send() dans ce fichier avant ce correctif) — un simple
+// signalement, pas une action d'opérateur (voir action-registry.js,
+// PAS operatorOnly : ce même token de connexion sert déjà de rôle 'operator'
+// par défaut, mais ce message reste volontairement inoffensif même reçu
+// d'un rôle 'viewer').
+function reportMediaLoadFailure(label) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: 'reportMediaLoadFailure', label: label || '' }));
+  }
+}
+
 function showMediaItem(msg) {
   const layer = document.getElementById('media-layer');
   const img = document.getElementById('media-layer-img');
@@ -703,12 +720,19 @@ function showMediaItem(msg) {
     if (myMediaLoadGeneration !== mediaLoadGeneration) return;
     if (img.hidden || !img.src) return;
     console.warn('[overlay] Image introuvable/corrompue, repli automatique :', img.src);
+    reportMediaLoadFailure(msg.label);
+    // voir brokenDefaultMediaId plus bas : évite de retenter indéfiniment
+    // CE MÊME poster principal cassé (maybeShowDefaultContent() est
+    // appelée juste en-dessous, via hideMediaItem()).
+    if (msg.detectedBy === 'default' && msg.id) brokenDefaultMediaId = msg.id;
     hideMediaItem();
   };
   video.onerror = () => {
     if (myMediaLoadGeneration !== mediaLoadGeneration) return;
     if (video.hidden || !video.src) return;
     console.warn('[overlay] Vidéo introuvable/corrompue, repli automatique :', video.src);
+    reportMediaLoadFailure(msg.label);
+    if (msg.detectedBy === 'default' && msg.id) brokenDefaultMediaId = msg.id;
     hideMediaItem();
   };
 
@@ -858,6 +882,20 @@ function hideScene() {
    ========================================================================== */
 let currentDefaultMedia = null; // { id, mediaType, filename, label, transitionStyle } ou null
 let currentDefaultScene = null; // scène résolue (mediaUrl, pas mediaId) ou null
+// CORRECTIF (trouvé en testant Operator activity log avec
+// integration-scene-overlay-lifecycle.js) : un poster principal dont le
+// fichier est cassé faisait boucler maybeShowDefaultContent() indéfiniment
+// (showMediaItem() échoue -> hideMediaItem() -> maybeShowDefaultContent()
+// retente aussitôt LE MÊME poster cassé -> échoue -> ...), une boucle déjà
+// présente avant ce chantier mais jusqu'ici silencieuse (aucun effet
+// observable hors la console). Le signalement ws.send() de
+// reportMediaLoadFailure() ajouté par ce même chantier rendait cette boucle
+// visible et coûteuse : elle épuisait le quota du limiteur de débit
+// (Trop de messages/minute), faisant échouer d'autres actions légitimes
+// sur la même connexion. Retient l'id du dernier poster par défaut connu
+// cassé pour ne plus jamais le retenter tant qu'un poster différent n'a
+// pas été désigné (voir setCurrentDefaultMedia() ci-dessous).
+let brokenDefaultMediaId = null;
 // CORRECTIF (studio de scènes, lot 4/6 — arbitrage croisé scène/média
 // trouvé en testant CE lot avec un vrai navigateur, voir
 // integration-scene-overlay-lifecycle.js) : distingue "un verset, un
@@ -879,6 +917,7 @@ let screenOccupiedByExplicitContent = false;
 
 function setCurrentDefaultMedia(item) {
   currentDefaultMedia = item || null;
+  brokenDefaultMediaId = null;
   maybeShowDefaultContent();
 }
 
@@ -896,11 +935,12 @@ function maybeShowDefaultContent() {
     showScene({ ...currentDefaultScene, detectedBy: 'default' });
     return;
   }
-  if (currentDefaultMedia) {
+  if (currentDefaultMedia && currentDefaultMedia.id !== brokenDefaultMediaId) {
     showMediaItem({
       mediaType: currentDefaultMedia.mediaType,
       mediaUrl: `/media/${currentDefaultMedia.filename}`,
       label: currentDefaultMedia.label,
+      id: currentDefaultMedia.id,
       displayDurationMs: null,
       transitionStyle: currentDefaultMedia.transitionStyle,
       detectedBy: 'default',

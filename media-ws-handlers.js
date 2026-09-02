@@ -272,6 +272,17 @@ function createHandlers(ctx) {
     });
   });
 
+  // AJOUT (Operator activity log — brief produit, priorité #10) : signalement
+  // envoyé par overlay.js quand un média échoue à charger (repli automatique
+  // déjà géré côté overlay, voir Smart Fallback Mode) — jusqu'ici visible
+  // seulement dans la console du projecteur. Rediffusé à tous les tableaux
+  // de bord ouverts pour qu'addActivity() (voir ws-dispatch.js) le rende
+  // enfin visible à un opérateur pendant le culte, pas seulement en F12.
+  handlers.set('reportMediaLoadFailure', async (ws, sanitized) => {
+    log(`Média introuvable/corrompu à la diffusion : "${sanitized.label || '(sans nom)'}"`);
+    broadcast({ action: 'mediaLoadFailureReported', label: sanitized.label || '' });
+  });
+
   handlers.set('hideMedia', async (ws, sanitized, requestId) => {
     const hideMediaPayload = { action: 'hideMedia' };
     if (requestId) hideMediaPayload.requestId = requestId;

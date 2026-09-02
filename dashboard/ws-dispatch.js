@@ -629,6 +629,17 @@ export function handleMessage(message) {
       clearMediaOnScreen();
       clearCurrentLive();
       break;
+    // AJOUT (Operator activity log — brief produit, priorité #10) : jusqu'ici
+    // un média cassé sur l'overlay (repli automatique, voir Smart Fallback
+    // Mode) ne laissait de trace que dans la console du projecteur, jamais
+    // vu par l'opérateur pendant le culte — voir reportMediaLoadFailure()
+    // dans overlay.js/media-ws-handlers.js.
+    case 'mediaLoadFailureReported':
+      addActivity(
+        `Média introuvable/corrompu, repli automatique : « ${message.label || '(sans nom)'} »`,
+        'error'
+      );
+      break;
     // AJOUT (studio de scènes) : même raisonnement que showMedia/hideMedia
     // ci-dessus.
     case 'showScene':

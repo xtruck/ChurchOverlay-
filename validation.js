@@ -946,6 +946,18 @@ const SCHEMAS = {
       id: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
     },
   },
+  // AJOUT (Operator activity log — priorité #10) : envoyé par overlay.js,
+  // label optionnel (un média sans label ne devrait pas arriver, mais la
+  // diffusion ne doit jamais bloquer sur un signalement informatif — voir
+  // media-ws-handlers.js, qui retombe déjà sur '(sans nom)' si absent).
+  reportMediaLoadFailure: {
+    required: ['action'],
+    optional: ['label'],
+    validators: {
+      action: (value) => value === 'reportMediaLoadFailure',
+      label: (value) => typeof value === 'string' && value.length <= 200,
+    },
+  },
   hideMedia: {
     required: ['action'],
     optional: [],
