@@ -3715,4 +3715,271 @@ body {
   margin-top: 0.5rem;
 }
 
+/* ==========================================================================
+   AJOUT (accessibilité/maintenance) : extraction des style="..." en ligne de
+   la section #propresenter-live (Studio) de dashboard.html vers des classes.
+   REFACTOR PUR — aucune valeur n'a été modifiée, seulement déplacée. Comme le
+   bloc d'utilitaires ci-dessus, ces règles sont volontairement en FIN de
+   fichier : à spécificité égale (0,1,0) elles doivent gagner sur .btn /
+   .pp-nav-tab / etc. déclarés plus haut, exactement comme le faisait le
+   style en ligne qu'elles remplacent.
+   NB : les `display` pilotés par JS restent EN LIGNE dans dashboard.html
+   (voir commentaires ci-dessous) — les déplacer casserait les bascules qui
+   lisent ou réinitialisent element.style.display.
+   ========================================================================== */
+
+/* --- Barre supérieure (top bar) --- */
+.pp-live-section {
+  padding: 0;
+  margin: 0;
+  max-width: 100%;
+}
+.pp-brand-studio-tag {
+  font-size: 11px;
+  color: var(--pp-blue-accent);
+  font-weight: 700;
+}
+.pp-brand-tagline {
+  font-size: 9px;
+  color: var(--pp-text-dim);
+}
+.pp-mic-btn {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.pp-vu-status-text {
+  font-size: 10px;
+  font-family: var(--pp-font-mono);
+  color: var(--pp-text-muted);
+}
+.pp-status-cluster {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pp-ai-copilot-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  font-size: 10px;
+  font-weight: 600;
+  color: #93c5fd;
+}
+.pp-clock-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+/* Partagé : horloge secondaire (top bar) + métadonnées PGM/Scène (colonne droite) */
+.pp-meta-mono {
+  font-size: 9px;
+  color: var(--pp-text-dim);
+  font-family: var(--pp-font-mono);
+}
+
+/* --- Colonne gauche : onglets Feuille / Écritures / IA / Médias / Chants --- */
+.pp-pane-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.pp-pane-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--pp-text-muted);
+}
+.pp-next-cue-btn {
+  font-size: 10px;
+  padding: 2px 8px;
+  font-weight: 600;
+}
+.pp-input-row {
+  display: flex;
+  gap: 4px;
+}
+.pp-input-row-mb {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.pp-input-compact {
+  height: 30px;
+  font-size: 11px;
+}
+.pp-song-search-input {
+  height: 30px;
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+.pp-btn-compact-8 {
+  height: 30px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+.pp-btn-compact-10 {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+.pp-stack-6 {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pp-stack-8 {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pp-stack-6-mt6 {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.pp-stack-6-mt8 {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.pp-cue-arrow {
+  font-size: 11px;
+  color: var(--pp-text-dim);
+}
+.pp-cue-arrow-active {
+  font-size: 11px;
+  color: var(--pp-blue-accent);
+}
+.pp-field-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--pp-text-muted);
+}
+.pp-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.pp-btn-fire {
+  height: 34px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.pp-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.pp-empty-hint {
+  font-size: 10px;
+  color: var(--pp-text-dim);
+  text-align: center;
+  padding: 12px;
+}
+.pp-section-divider {
+  border-top: 1px solid var(--pp-border-subtle);
+  padding-top: 10px;
+  margin-top: 6px;
+}
+.pp-ai-tool-btn {
+  font-size: 10px;
+  height: 30px;
+  justify-content: flex-start;
+}
+.pp-media-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+/* --- Colonne centrale : grille de présentation, navigation, téléprompteur --- */
+.pp-canvas-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+}
+.pp-canvas-hints {
+  font-size: 11px;
+  color: var(--pp-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pp-nav-btn-group {
+  display: flex;
+  gap: 6px;
+}
+.pp-nav-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pp-text-muted);
+}
+/* #ppAiSuggestionsRow : `display` reste en ligne (propresenter-studio.js
+   bascule element.style.display = 'flex'), seul le reste est déplacé ici. */
+.pp-ai-suggestions-row {
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: #10131c;
+  border-top: 1px solid var(--pp-border-subtle);
+  font-size: 11px;
+}
+.pp-ai-suggestions-label {
+  font-weight: 600;
+  color: var(--pp-blue-accent);
+}
+.pp-ai-suggestions-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+.pp-stream-status {
+  font-size: 9px;
+  color: var(--pp-green-ok);
+}
+.pp-teleprompter-placeholder {
+  color: var(--pp-text-dim);
+}
+
+/* --- Colonne droite : PGM, écran scène, ambiance, transition --- */
+.pp-monitor-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pp-row-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.pp-monitor-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--pp-text-muted);
+}
+.pp-transition-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--pp-bg-card);
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid var(--pp-border-subtle);
+}
+.pp-transition-val {
+  font-size: 10px;
+  font-family: var(--pp-font-mono);
+  color: #fff;
+}
+
 
