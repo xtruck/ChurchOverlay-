@@ -59,3 +59,9 @@ models/bible-vector-index.sqlite3.building
 # chaque exécution, jamais du code source.
 test-results/
 playwright-report/
+
+# Modèles VAD alternatifs comparés à models/silero_vad.onnx (chantier VAD,
+# voir live-tests/BASELINE_CHANTIER_1.md) — expérimentation locale, pas le
+# modèle de prod (celui-ci reste commité, même principe que le paragraphe
+# poc-qwen3-asr ci-dessus).
+live-tests/alt-models/*.onnx

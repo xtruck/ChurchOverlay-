@@ -3280,6 +3280,7 @@ body {
   color: var(--pp-text-muted);
   display: -webkit-box;
   -webkit-line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -3474,6 +3475,7 @@ body {
   color: var(--pp-text-muted);
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -3554,9 +3556,9 @@ body {
    partagées ou nommées par élément — pur déplacement, aucun changement visuel.
    Voir les commentaires "AJOUT" au fil du fichier pour le contexte de chaque
    panneau. Les toggles pilotés en JS (element.style.display = ...) gardent
-   volontairement leur style="display:none/flex" inline — seule la partie
-   statique de leur style est déplacée ici (voir vérif dans dashboard/**/
-*.js
+  volontairement leur style="display:none/flex" inline — seule la partie
+  statique de leur style est déplacée ici (voir vérif dans les fichiers JS du
+  dossier dashboard
    avant ce lot). */
 .setup-banner-icon {
   font-size: 1.3rem;
@@ -3668,6 +3670,7 @@ body {
   align-items: center;
   gap: 0.5rem;
   cursor: pointer;
+  -webkit-user-select: none;
   user-select: none;
 }
 .settings-select-inline {
@@ -3789,11 +3792,6 @@ body {
 }
 .camera-pairing-label-input {
   max-width: 220px;
-}
-.camera-pairing-quality-select {
-  /* AJOUT : pas de propriétés propres pour l'instant — classe posée pour
-     nommer l'élément (voir consigne "camera-pairing-quality-select" du lot
-     accessibilité/inline-styles) ; réservée si un style dédié est ajouté. */
 }
 .camera-pairing-box {
   margin-bottom: 0.5rem;
@@ -4819,6 +4817,7 @@ body {
   align-items: center;
   gap: 0.5rem;
   cursor: pointer;
+  -webkit-user-select: none;
   user-select: none;
 }
 .subsection-title {
