@@ -3315,4 +3315,404 @@ body {
   font-size: 0.8rem;
 }
 
+/* AJOUT (polish, lot 2 — settings/overlay/media-wall/studio) : extraction des
+   style="..." inline dans dashboard.html (lignes 2424+) vers des classes
+   partagées ou nommées par élément — pur déplacement, aucun changement visuel.
+   Voir les commentaires "AJOUT" au fil du fichier pour le contexte de chaque
+   panneau. Les toggles pilotés en JS (element.style.display = ...) gardent
+   volontairement leur style="display:none/flex" inline — seule la partie
+   statique de leur style est déplacée ici (voir vérif dans dashboard/**/*.js
+   avant ce lot). */
+.setup-banner-icon {
+  font-size: 1.3rem;
+}
+.setup-banner-subtext {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.settings-card-spaced {
+  margin-bottom: 1.25rem;
+}
+.card-icon-wrap-emerald {
+  color: var(--accent-emerald);
+}
+.field-hint-flush {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+}
+.field-hint-flush-top {
+  margin-top: 0;
+}
+.field-hint-mt10 {
+  margin-top: 10px;
+}
+.btn-full-width {
+  width: 100%;
+}
+.preservice-check-results {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+}
+.branding-org-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.85rem;
+}
+.branding-org-name-input {
+  flex: 1;
+  min-width: 220px;
+}
+.branding-accent-color-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.85rem;
+}
+.branding-accent-color-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.branding-accent-color-input {
+  width: 48px;
+  height: 32px;
+  padding: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.btn-row-wrap {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.settings-unavailable-note {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+.badge-ml8 {
+  margin-left: 8px;
+}
+.settings-key-optional-note {
+  color: var(--text-dim);
+  font-weight: 400;
+}
+.settings-toggle-field-group {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.save-status-ml {
+  margin-left: 10px;
+}
+.settings-encryption-note {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+}
+.settings-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+}
+.settings-toggle-row--mt {
+  margin-top: 0.6rem;
+}
+.settings-toggle-row--mt-lg {
+  margin-top: 1rem;
+}
+.settings-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+}
+.settings-select-inline {
+  padding: 0.35rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-main);
+  font-size: 0.82rem;
+}
+.display-window-hint {
+  margin-bottom: 8px;
+}
+.stage-message-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.8rem;
+  margin-top: 1rem;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+}
+.stage-message-input {
+  flex: 1;
+  min-width: 200px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+.camera-preview-frame {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  aspect-ratio: 16/9;
+  background: #000;
+  border-radius: var(--radius-sm, 8px);
+  overflow: hidden;
+  margin-bottom: 0.75rem;
+}
+.camera-preview-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.camera-preview-placeholder {
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  text-align: center;
+  padding: 1rem;
+}
+.card-header-icon-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.camera-pairing-qr-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+.camera-pairing-label-input {
+  max-width: 220px;
+}
+.camera-pairing-quality-select {
+  /* AJOUT : pas de propriétés propres pour l'instant — classe posée pour
+     nommer l'élément (voir consigne "camera-pairing-quality-select" du lot
+     accessibilité/inline-styles) ; réservée si un style dédié est ajouté. */
+}
+.camera-pairing-box {
+  margin-bottom: 0.5rem;
+  padding: 1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+.camera-pairing-qr-img {
+  width: 200px;
+  height: 200px;
+  margin-bottom: 0.5rem;
+}
+.share-link-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.share-link-input {
+  flex: 1;
+  padding: 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-main);
+  font-family: monospace;
+  font-size: 0.78rem;
+}
+.share-link-input-sm {
+  padding: 0.5rem;
+  font-size: 0.72rem;
+}
+.share-link-copy-btn {
+  flex-shrink: 0;
+}
+.branding-logo-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+.branding-logo-thumb {
+  width: 80px;
+  height: 45px;
+  background: #000;
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.branding-logo-media {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.branding-logo-placeholder {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  text-align: center;
+}
+.companion-link-color {
+  color: var(--primary, #d9bb6c);
+}
+.stat-btn-sm {
+  padding: 2px 8px;
+  font-size: 0.75rem;
+}
+.mb-4 {
+  margin-bottom: 1rem;
+}
+.mb-5 {
+  margin-bottom: 1.25rem;
+}
+.settings-subsection-heading {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 0.5rem;
+}
+.settings-subsection-heading--divider {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-subtle);
+}
+.settings-toggle-label-compact {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+.obs-scenes-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.pp-host-input {
+  max-width: 180px;
+}
+.pp-port-input {
+  max-width: 110px;
+}
+.pco-plan-items {
+  font-size: 0.85rem;
+}
+.overlay-preview-mode-label {
+  font-weight: 700;
+  color: var(--text-main);
+}
+.overlay-preview-header-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.overlay-preview-toggle-btn {
+  font-size: 0.75rem;
+}
+.other-screens-details {
+  margin-bottom: 1rem;
+}
+.other-screens-summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+.other-screens-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.other-screen-link-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.other-screen-copy-btn {
+  font-size: 0.78rem;
+}
+.other-screen-hint {
+  margin: 0.5rem 0 0;
+}
+.preview-program-container {
+  display: flex;
+  gap: 0.5rem;
+}
+.preview-pane {
+  flex: 1;
+}
+.preview-program-caption {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  margin-bottom: 0.25rem;
+  text-align: center;
+}
+.preview-frame-iframe {
+  width: 100%;
+  aspect-ratio: 16/9;
+  border: 2px solid #3b82f6;
+  border-radius: 8px;
+}
+.trigger-phrase-test-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.trigger-phrase-test-input {
+  flex: 1;
+}
+.trigger-phrase-test-result {
+  margin-bottom: 0.75rem;
+  min-height: 1.2em;
+}
+.media-wall-search-input {
+  margin-bottom: 0.5rem;
+  width: 100%;
+}
+.media-wall-grid {
+  min-height: 120px;
+}
+.media-wall-empty-note {
+  grid-column: 1 / -1;
+}
+.btn-row-tight {
+  display: flex;
+  gap: 0.5rem;
+}
+.composer-trigger-hint {
+  margin-top: -0.5rem;
+  margin-bottom: 0.85rem;
+}
+.field-hint-zero-margin {
+  margin: 0;
+}
+.composer-add-element-btn {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.78rem;
+}
+.composer-save-row {
+  margin-top: 0.5rem;
+}
+
 

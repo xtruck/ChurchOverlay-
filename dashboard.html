@@ -2423,10 +2423,10 @@ Aucune exécution agent.</pre>
         <!-- Settings Section -->
         <section id="settings" class="section" style="display: none">
           <div id="setupBanner" class="setup-banner" style="display: none">
-            <span style="font-size: 1.3rem">⚠️</span>
+            <span class="setup-banner-icon">⚠️</span>
             <div>
               <strong>Configuration requise pour démarrer</strong>
-              <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px">
+              <div class="setup-banner-subtext">
                 Choisissez un microphone et renseignez au moins la clé API Groq ci-dessous.
               </div>
             </div>
@@ -2439,15 +2439,10 @@ Aucune exécution agent.</pre>
                        Déplacement de balisage uniquement — runPreServiceCheck()/
                        renderPreServiceCheckResult() référencent les éléments par id, pas
                        par position, donc aucun comportement JS ne change ici. -->
-          <div
-            class="card"
-            id="preServiceCheckCard"
-            data-group="systeme"
-            style="margin-bottom: 1.25rem"
-          >
+          <div class="card settings-card-spaced" id="preServiceCheckCard" data-group="systeme">
             <div class="card-header">
               <span class="card-title">Vérification avant le culte</span>
-              <div class="card-icon-wrap" style="color: var(--accent-emerald)">
+              <div class="card-icon-wrap card-icon-wrap-emerald">
                 <svg
                   width="18"
                   height="18"
@@ -2461,23 +2456,15 @@ Aucune exécution agent.</pre>
                 </svg>
               </div>
             </div>
-            <div class="field-hint" style="margin-top: 0; margin-bottom: 0.75rem">
+            <div class="field-hint field-hint-flush">
               Vérifie en un clic les clés API, l'authentification WebSocket, la médiathèque, le
               poster principal, l'habillage caméra, la base biblique hors-ligne, les caméras IP et
               la caméra téléphone par QR code.
             </div>
-            <button
-              type="button"
-              class="btn btn-primary"
-              id="preServiceCheckBtn"
-              style="width: 100%"
-            >
+            <button type="button" class="btn btn-primary btn-full-width" id="preServiceCheckBtn">
               ✅ Tester avant le culte
             </button>
-            <div
-              id="preServiceCheckResults"
-              style="display: none; margin-top: 0.75rem; font-size: 0.85rem"
-            ></div>
+            <div id="preServiceCheckResults" class="preservice-check-results" style="display: none"></div>
           </div>
 
           <!-- AJOUT (identité de marque du tableau de bord — revente en produit
@@ -2488,12 +2475,7 @@ Aucune exécution agent.</pre>
                        entreprise porte leur identité, pas "ChurchOverlay". Voir
                        dashboard/features/dashboard-branding.js et
                        dashboard-branding-store.js côté serveur. -->
-          <div
-            class="card"
-            id="dashboardBrandingCard"
-            data-group="systeme"
-            style="margin-bottom: 1.25rem"
-          >
+          <div class="card settings-card-spaced" id="dashboardBrandingCard" data-group="systeme">
             <div class="card-header">
               <span class="card-title">Identité de la marque (tableau de bord)</span>
               <div class="card-icon-wrap">
@@ -2512,43 +2494,26 @@ Aucune exécution agent.</pre>
                 </svg>
               </div>
             </div>
-            <div class="field-hint" style="margin-top: 0; margin-bottom: 0.75rem">
+            <div class="field-hint field-hint-flush">
               Personnalise l'apparence de cet outil pour votre organisation — nom, couleur d'accent
               et logo affichés dans la barre latérale. Sans rapport avec l'habillage caméra
               ci-dessous (qui concerne ce que la caméra diffuse dans OBS).
             </div>
-            <div
-              style="
-                display: flex;
-                align-items: center;
-                gap: 0.6rem;
-                flex-wrap: wrap;
-                margin-bottom: 0.85rem;
-              "
-            >
+            <div class="branding-org-name-row">
               <input
                 type="text"
                 id="dashboardOrgNameInput"
                 placeholder="Nom de l'organisation (ex. Église de la Grâce)"
-                style="flex: 1; min-width: 220px"
+                aria-label="Nom de l'organisation"
+                class="branding-org-name-input"
                 onkeydown="if (event.key === 'Enter') saveDashboardOrgName();"
               />
               <button id="saveDashboardOrgNameBtn" class="btn btn-secondary">
                 Enregistrer le nom
               </button>
             </div>
-            <div
-              style="
-                display: flex;
-                align-items: center;
-                gap: 0.75rem;
-                flex-wrap: wrap;
-                margin-bottom: 0.85rem;
-              "
-            >
-              <label
-                for="dashboardAccentColorInput"
-                style="font-size: 0.85rem; color: var(--text-muted)"
+            <div class="branding-accent-color-row">
+              <label for="dashboardAccentColorInput" class="branding-accent-color-label"
                 >Couleur d'accent</label
               >
               <input
@@ -2556,10 +2521,10 @@ Aucune exécution agent.</pre>
                 id="dashboardAccentColorInput"
                 value="#7c8cf5"
                 onchange="saveDashboardAccentColor()"
-                style="width: 48px; height: 32px; padding: 0; border-radius: 6px; cursor: pointer"
+                class="branding-accent-color-input"
               />
             </div>
-            <div style="display: flex; gap: 0.6rem; flex-wrap: wrap">
+            <div class="btn-row-wrap">
               <button id="pickDashboardLogoBtn" class="btn btn-secondary">
                 🖼️ Choisir un logo
               </button>
@@ -2569,12 +2534,7 @@ Aucune exécution agent.</pre>
             </div>
           </div>
 
-          <div
-            class="card"
-            id="apiSettingsCard"
-            data-group="systeme"
-            style="margin-bottom: 1.25rem"
-          >
+          <div class="card settings-card-spaced" id="apiSettingsCard" data-group="systeme">
             <div class="card-header">
               <span class="card-title">Clés API & Microphone</span>
               <div id="setupRequiredBadge" class="status-badge warning" style="display: none">
@@ -2585,10 +2545,7 @@ Aucune exécution agent.</pre>
             <!-- Affiché uniquement si la page est ouverte hors de l'app Electron
                          (ex: mode "serveur seul" dans un navigateur) : window.churchOverlay
                          n'existe alors pas, le pont IPC n'étant fourni que par preload.js. -->
-            <div
-              id="apiSettingsUnavailable"
-              style="display: none; color: var(--text-muted); font-size: 0.82rem; line-height: 1.6"
-            >
+            <div id="apiSettingsUnavailable" class="settings-unavailable-note" style="display: none">
               La configuration des clés API n'est possible que depuis l'application de bureau
               ChurchOverlay (elle passe par le pont sécurisé Electron). En mode « serveur seul »
               dans un navigateur, définissez <code>GROQ_API_KEY</code> /
@@ -2613,7 +2570,7 @@ Aucune exécution agent.</pre>
               <div class="form-group">
                 <label for="settingsGroqKey">
                   🔑 Clé API Groq
-                  <span class="status-badge" id="groqKeyBadge" style="margin-left: 8px"></span>
+                  <span class="status-badge badge-ml8" id="groqKeyBadge"></span>
                 </label>
                 <div class="input-row">
                   <input
@@ -2644,8 +2601,8 @@ Aucune exécution agent.</pre>
               <div class="form-group">
                 <label for="settingsDeepgramKey">
                   🔐 Clé API Deepgram
-                  <span style="color: var(--text-dim); font-weight: 400">(optionnel, secours)</span>
-                  <span class="status-badge" id="deepgramKeyBadge" style="margin-left: 8px"></span>
+                  <span class="settings-key-optional-note">(optionnel, secours)</span>
+                  <span class="status-badge badge-ml8" id="deepgramKeyBadge"></span>
                 </label>
                 <div class="input-row">
                   <input
@@ -2679,11 +2636,12 @@ Aucune exécution agent.</pre>
                            Groq par segments (2-4s de latence) même quand une clé Deepgram était
                            configurée. Désactivée tant qu'aucune clé Deepgram n'est enregistrée
                            (voir refreshSettingsUi() dans api-settings.js). -->
-              <div class="form-group" style="display: flex; align-items: center; gap: 0.6rem">
+              <div class="form-group settings-toggle-field-group">
                 <label class="toggle-switch">
                   <input
                     type="checkbox"
                     id="streamingModeToggle"
+                    aria-label="Mode streaming (Deepgram)"
                     onchange="onStreamingModeToggle()"
                   />
                   <span class="toggle-slider"></span>
@@ -2700,10 +2658,8 @@ Aucune exécution agent.</pre>
               <div class="form-group">
                 <label for="settingsGeminiKey">
                   ✨ Clé API Gemini
-                  <span style="color: var(--text-dim); font-weight: 400"
-                    >(optionnel, features IA)</span
-                  >
-                  <span class="status-badge" id="geminiKeyBadge" style="margin-left: 8px"></span>
+                  <span class="settings-key-optional-note">(optionnel, features IA)</span>
+                  <span class="status-badge badge-ml8" id="geminiKeyBadge"></span>
                 </label>
                 <div class="input-row">
                   <input
@@ -2737,17 +2693,10 @@ Aucune exécution agent.</pre>
               <button type="submit" class="btn btn-primary" id="settingsBtnSave">
                 💾 Enregistrer
               </button>
-              <span class="field-hint" id="settingsSaveStatus" style="margin-left: 10px"></span>
+              <span class="field-hint save-status-ml" id="settingsSaveStatus"></span>
             </form>
 
-            <div
-              class="field-hint"
-              style="
-                margin-top: 16px;
-                padding-top: 14px;
-                border-top: 1px solid var(--border-subtle);
-              "
-            >
+            <div class="field-hint settings-encryption-note">
               🔒 Les clés sont chiffrées sur cet ordinateur (Electron safeStorage) et ne sont jamais
               renvoyées en clair à cet écran — un champ laissé vide conserve la clé déjà
               enregistrée.
@@ -2763,56 +2712,19 @@ Aucune exécution agent.</pre>
             <div class="card-header">
               <span class="card-title">Accessibilité de l'overlay</span>
             </div>
-            <div
-              style="
-                display: flex;
-                align-items: center;
-                gap: 0.75rem;
-                flex-wrap: wrap;
-                padding: 0.6rem 0.8rem;
-                border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
-                border-radius: 8px;
-              "
-            >
-              <label
-                style="
-                  display: flex;
-                  align-items: center;
-                  gap: 0.5rem;
-                  cursor: pointer;
-                  user-select: none;
-                "
-              >
+            <div class="settings-toggle-row">
+              <label class="settings-toggle-label">
                 <input type="checkbox" id="highContrastToggle" onchange="onHighContrastToggle()" />
                 <span>Mode grand contraste (texte agrandi, sans animation)</span>
               </label>
             </div>
-            <div
-              style="
-                display: flex;
-                align-items: center;
-                gap: 0.75rem;
-                flex-wrap: wrap;
-                padding: 0.6rem 0.8rem;
-                margin-top: 0.6rem;
-                border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
-                border-radius: 8px;
-              "
-            >
-              <label
-                style="
-                  display: flex;
-                  align-items: center;
-                  gap: 0.5rem;
-                  cursor: pointer;
-                  user-select: none;
-                "
-              >
+            <div class="settings-toggle-row settings-toggle-row--mt">
+              <label class="settings-toggle-label">
                 <input type="checkbox" id="captionsToggle" onchange="onCaptionsToggle()" />
                 <span>Sous-titres en direct (transcription brute au bas de l'overlay)</span>
               </label>
             </div>
-            <div class="field-hint" style="margin-top: 10px">
+            <div class="field-hint field-hint-mt10">
               Pour les malvoyants, les malentendants et les salles avec un écran éloigné —
               s'applique immédiatement sur l'overlay projeté.
             </div>
@@ -2821,27 +2733,8 @@ Aucune exécution agent.</pre>
                          VERSETS (bouton "Bilingue FR/EN"). Traduit ce qui est en train
                          d'être DIT, en direct. Opt-in explicite : appel LLM supplémentaire
                          par segment de parole (quota Groq/Gemini gratuit partagé). -->
-            <div
-              style="
-                display: flex;
-                align-items: center;
-                gap: 0.75rem;
-                flex-wrap: wrap;
-                padding: 0.6rem 0.8rem;
-                margin-top: 0.6rem;
-                border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
-                border-radius: 8px;
-              "
-            >
-              <label
-                style="
-                  display: flex;
-                  align-items: center;
-                  gap: 0.5rem;
-                  cursor: pointer;
-                  user-select: none;
-                "
-              >
+            <div class="settings-toggle-row settings-toggle-row--mt">
+              <label class="settings-toggle-label">
                 <input
                   type="checkbox"
                   id="translatedCaptionsToggle"
@@ -2852,14 +2745,8 @@ Aucune exécution agent.</pre>
               <select
                 id="captionTargetLangSelect"
                 onchange="onTranslatedCaptionsToggle()"
-                style="
-                  padding: 0.35rem 0.6rem;
-                  border-radius: var(--radius-sm);
-                  border: 1px solid var(--border-subtle);
-                  background: var(--bg-input);
-                  color: var(--text-main);
-                  font-size: 0.82rem;
-                "
+                aria-label="Langue cible des sous-titres traduits"
+                class="settings-select-inline"
               >
                 <option value="en">Anglais</option>
                 <option value="es">Espagnol</option>
@@ -2867,7 +2754,7 @@ Aucune exécution agent.</pre>
                 <option value="de">Allemand</option>
               </select>
             </div>
-            <div class="field-hint" style="margin-top: 10px">
+            <div class="field-hint field-hint-mt10">
               Traduit en direct ce qui est DIT (pas seulement les versets cités) — utilise un appel
               IA gratuit supplémentaire par segment de parole. Laissez désactivé si votre assemblée
               n'en a pas besoin.
@@ -2884,13 +2771,8 @@ Aucune exécution agent.</pre>
 
             <div
               id="displayWindowUnavailable"
-              style="
-                display: none;
-                color: var(--text-muted);
-                font-size: 0.82rem;
-                line-height: 1.6;
-                margin-bottom: 0.75rem;
-              "
+              class="settings-unavailable-note field-hint-flush"
+              style="display: none"
             >
               La fenêtre d'affichage direct n'est disponible que depuis l'application de bureau
               ChurchOverlay. En mode « serveur seul » dans un navigateur, ouvrez plutôt
@@ -2898,16 +2780,16 @@ Aucune exécution agent.</pre>
             </div>
 
             <div id="displayWindowControls" style="display: none">
-              <div class="field-hint" style="margin-bottom: 8px">
+              <div class="field-hint display-window-hint">
                 Ouvre l'overlay, l'écran scène ou le diaporama d'annonces en plein écran sur l'écran
                 choisi — chacun peut être ouvert simultanément sur un écran différent (voir
                 recommandations "Stage Display" / "présentation secondaire indépendante").
               </div>
               <div class="input-row mb-3">
-                <select id="displaySelect">
+                <select id="displaySelect" aria-label="Écran d'affichage">
                   <option value="">Recherche des écrans…</option>
                 </select>
-                <select id="displayModeSelect">
+                <select id="displayModeSelect" aria-label="Mode d'affichage">
                   <option value="overlay">Overlay (public)</option>
                   <option value="stage">Écran scène</option>
                   <option value="announcements">Diaporama annonces</option>
@@ -2916,7 +2798,7 @@ Aucune exécution agent.</pre>
                   🔄 Actualiser
                 </button>
               </div>
-              <div style="display: flex; gap: 0.6rem; flex-wrap: wrap">
+              <div class="btn-row-wrap">
                 <button id="openDisplayWindowBtn" type="button" class="btn btn-primary">
                   🖥️ Afficher en plein écran
                 </button>
@@ -2928,33 +2810,13 @@ Aucune exécution agent.</pre>
 
             <!-- AJOUT (stage display) : message texte visible UNIQUEMENT sur
                          l'écran scène, jamais sur l'overlay public. -->
-            <div
-              style="
-                display: flex;
-                gap: 0.5rem;
-                align-items: center;
-                flex-wrap: wrap;
-                padding: 0.6rem 0.8rem;
-                margin-top: 1rem;
-                border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
-                border-radius: 8px;
-              "
-            >
+            <div class="stage-message-row">
               <input
                 type="text"
                 id="stageMessageInput"
                 placeholder="Message pour l'écran scène (ex. « 2 min avant la fin »)"
-                style="
-                  flex: 1;
-                  min-width: 200px;
-                  background: var(--bg-input);
-                  border: 1px solid var(--border-subtle);
-                  border-radius: var(--radius-sm);
-                  padding: 0.5rem 0.75rem;
-                  color: var(--text-main);
-                  font-family: inherit;
-                  font-size: 0.85rem;
-                "
+                aria-label="Message pour l'écran scène"
+                class="stage-message-input"
                 onkeydown="if (event.key === 'Enter') sendStageMessage();"
               />
               <button id="sendStageMessageBtn" type="button" class="btn btn-secondary">
@@ -2965,27 +2827,8 @@ Aucune exécution agent.</pre>
               </button>
             </div>
 
-            <div
-              style="
-                display: flex;
-                align-items: center;
-                gap: 0.75rem;
-                flex-wrap: wrap;
-                padding: 0.6rem 0.8rem;
-                margin-top: 1rem;
-                border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
-                border-radius: 8px;
-              "
-            >
-              <label
-                style="
-                  display: flex;
-                  align-items: center;
-                  gap: 0.5rem;
-                  cursor: pointer;
-                  user-select: none;
-                "
-              >
+            <div class="settings-toggle-row settings-toggle-row--mt-lg">
+              <label class="settings-toggle-label">
                 <input type="checkbox" id="testPatternToggle" onchange="onTestPatternToggle()" />
                 <span
                   >Motif de test (barres de couleur) — pour régler OBS/projecteur avant le
@@ -3032,7 +2875,7 @@ Aucune exécution agent.</pre>
             </div>
 
             <div class="input-row mb-3">
-              <select id="cameraSelect">
+              <select id="cameraSelect" aria-label="Caméra">
                 <option value="">Recherche des caméras…</option>
               </select>
               <button id="refreshCameraListBtn" type="button" class="btn btn-secondary">
@@ -3042,57 +2885,29 @@ Aucune exécution agent.</pre>
 
             <div
               id="cameraErrorHint"
-              style="
-                display: none;
-                color: var(--text-muted);
-                font-size: 0.82rem;
-                line-height: 1.6;
-                margin-bottom: 0.75rem;
-              "
+              class="settings-unavailable-note field-hint-flush"
+              style="display: none"
             ></div>
 
-            <div
-              style="
-                position: relative;
-                width: 100%;
-                max-width: 480px;
-                aspect-ratio: 16/9;
-                background: #000;
-                border-radius: var(--radius-sm, 8px);
-                overflow: hidden;
-                margin-bottom: 0.75rem;
-              "
-            >
+            <div class="camera-preview-frame">
               <video
                 id="cameraPreview"
                 autoplay
                 playsinline
                 muted
-                style="width: 100%; height: 100%; object-fit: cover; display: none"
+                class="camera-preview-video"
+                style="display: none"
               ></video>
               <div
                 id="cameraPreviewPlaceholder"
-                style="
-                  position: absolute;
-                  inset: 0;
-                  display: flex;
-                  align-items: center;
-                  justify-content: center;
-                  color: var(--text-muted);
-                  font-size: 0.82rem;
-                  text-align: center;
-                  padding: 1rem;
-                "
+                class="camera-preview-placeholder"
+                style="display: flex"
               >
                 Aucun aperçu — démarrez la caméra
               </div>
             </div>
 
-            <button
-              type="button"
-              class="btn btn-primary"
-              id="cameraToggleBtn"
-            >
+            <button type="button" class="btn btn-primary" id="cameraToggleBtn">
               📷 Démarrer la caméra
             </button>
           </div>
@@ -3109,11 +2924,11 @@ Aucune exécution agent.</pre>
             class="card"
             id="networkSettingsCard"
             data-group="cameras"
-            style="margin-bottom: 1.25rem"
+            class="settings-card-spaced"
           >
             <div class="card-header">
               <span class="card-title">Réseau (caméra téléphone par QR)</span>
-              <div style="display: flex; align-items: center; gap: 0.5rem">
+              <div class="card-header-icon-badge-row">
                 <div class="card-icon-wrap">
                   <svg
                     width="18"
@@ -3132,13 +2947,18 @@ Aucune exécution agent.</pre>
                 <span id="networkQrReadyBadge" class="status-badge warning">Indisponible</span>
               </div>
             </div>
-            <div class="field-hint" style="margin-top: 0; margin-bottom: 0.75rem">
+            <div class="field-hint field-hint-flush">
               Le jumelage par QR code (panneau suivant) a besoin que ce PC soit joignable sur le
               réseau local — pas seulement sur lui-même. Renseignez son adresse Wi-Fi ci-dessous (le
               bouton propose automatiquement celle détectée sur ce PC).
             </div>
             <div class="input-row mb-2">
-              <input type="text" id="networkWsHostInput" placeholder="ex. 192.168.1.42" />
+              <input
+                type="text"
+                id="networkWsHostInput"
+                placeholder="ex. 192.168.1.42"
+                aria-label="Adresse IP ou nom d'hôte du serveur sur le réseau local"
+              />
               <button
                 type="button"
                 class="btn btn-secondary"
@@ -3151,7 +2971,7 @@ Aucune exécution agent.</pre>
                 Enregistrer
               </button>
             </div>
-            <div class="field-hint" style="margin-top: 0">
+            <div class="field-hint field-hint-flush-top">
               Actuellement : <strong id="networkCurrentHost">127.0.0.1 (local uniquement)</strong> —
               Jeton de sécurité : <span id="networkTokenStatus">généré automatiquement ✓</span>
             </div>
@@ -3185,24 +3005,19 @@ Aucune exécution agent.</pre>
                          il ne peut pas le demander à l'opérateur après coup. -->
             <div class="camera-pairing-subsection">
               <h4>📷 Sans application (QR code)</h4>
-              <div
-                style="
-                  display: flex;
-                  gap: 0.6rem;
-                  align-items: center;
-                  margin-bottom: 0.75rem;
-                  flex-wrap: wrap;
-                "
-              >
+              <div class="camera-pairing-qr-row">
                 <input
                   type="text"
                   id="cameraPairingLabelInput"
                   placeholder="Nom (ex. Téléphone scène)"
-                  style="max-width: 220px"
+                  aria-label="Nom de la caméra"
+                  class="camera-pairing-label-input"
                 />
                 <select
                   id="cameraPairingQualitySelect"
                   title="Qualité du flux — plus haut = meilleure image mais plus de données sur le Wi-Fi"
+                  aria-label="Qualité du flux vidéo"
+                  class="camera-pairing-quality-select"
                 >
                   <option value="low">Qualité basse (Wi-Fi faible)</option>
                   <option value="medium" selected>Qualité moyenne</option>
@@ -3212,20 +3027,10 @@ Aucune exécution agent.</pre>
                   📷 Générer un QR code (téléphone, sans app)
                 </button>
               </div>
-              <div
-                id="cameraPairingBox"
-                style="
-                  display: none;
-                  margin-bottom: 0.5rem;
-                  padding: 1rem;
-                  border: 1px solid var(--border-subtle);
-                  border-radius: var(--radius-sm);
-                  text-align: center;
-                "
-              >
+              <div id="cameraPairingBox" class="camera-pairing-box" style="display: none">
                 <img
                   id="cameraPairingQr"
-                  style="width: 200px; height: 200px; margin-bottom: 0.5rem"
+                  class="camera-pairing-qr-img"
                   alt="QR code de jumelage caméra"
                 />
                 <div class="field-hint">
@@ -3247,11 +3052,13 @@ Aucune exécution agent.</pre>
                   type="text"
                   id="ipCameraLabelInput"
                   placeholder="Nom (ex. Téléphone scène)"
+                  aria-label="Nom de la caméra IP"
                 />
                 <input
                   type="text"
                   id="ipCameraUrlInput"
                   placeholder="http://192.168.1.50:8080/video"
+                  aria-label="URL du flux vidéo de la caméra IP"
                 />
                 <button id="addIpCameraBtn" type="button" class="btn btn-secondary">
                   + Ajouter
@@ -3276,28 +3083,16 @@ Aucune exécution agent.</pre>
               au-dessus de votre source caméra (DroidCam, caméra IP...) dans la scène. Ensuite,
               logo/titre/sous-titre se pilotent depuis ici, en direct — plus besoin de rouvrir OBS.
             </div>
-            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem">
+            <div class="share-link-row">
               <input
                 type="text"
                 id="brandingOverlayUrlInput"
                 readonly
                 value="Chargement du lien..."
-                style="
-                  flex: 1;
-                  padding: 0.6rem;
-                  border-radius: var(--radius-sm);
-                  border: 1px solid var(--border-subtle);
-                  background: var(--bg-input);
-                  color: var(--text-main);
-                  font-family: monospace;
-                  font-size: 0.78rem;
-                "
+                aria-label="Lien de l'habillage caméra à coller dans OBS"
+                class="share-link-input"
               />
-              <button
-                id="copyBrandingOverlayUrlBtn"
-                class="btn btn-primary"
-                style="flex-shrink: 0"
-              >
+              <button id="copyBrandingOverlayUrlBtn" class="btn btn-primary share-link-copy-btn">
                 📋 Copier le lien pour OBS
               </button>
             </div>
@@ -3306,31 +3101,12 @@ Aucune exécution agent.</pre>
               Logo : image, GIF animé ou vidéo courte (.mp4/.webm, lue en boucle silencieuse) — un
               fichier vaut pour toute la session, jusqu'à ce qu'il soit remplacé ou retiré.
             </div>
-            <div
-              style="
-                display: flex;
-                align-items: center;
-                gap: 0.75rem;
-                flex-wrap: wrap;
-                margin-bottom: 0.75rem;
-              "
-            >
-              <div
-                style="
-                  width: 80px;
-                  height: 45px;
-                  background: #000;
-                  border-radius: 6px;
-                  overflow: hidden;
-                  display: flex;
-                  align-items: center;
-                  justify-content: center;
-                  flex-shrink: 0;
-                "
-              >
+            <div class="branding-logo-row">
+              <div class="branding-logo-thumb">
                 <img
                   id="brandingLogoImg"
-                  style="max-width: 100%; max-height: 100%; object-fit: contain; display: none"
+                  class="branding-logo-media"
+                  style="display: none"
                   alt=""
                 />
                 <video
@@ -3339,11 +3115,10 @@ Aucune exécution agent.</pre>
                   loop
                   autoplay
                   playsinline
-                  style="max-width: 100%; max-height: 100%; object-fit: contain; display: none"
+                  class="branding-logo-media"
+                  style="display: none"
                 ></video>
-                <span
-                  id="brandingLogoPlaceholder"
-                  style="font-size: 0.68rem; color: var(--text-dim); text-align: center"
+                <span id="brandingLogoPlaceholder" class="branding-logo-placeholder"
                   >Aucun logo</span
                 >
               </div>
@@ -3353,13 +3128,21 @@ Aucune exécution agent.</pre>
               <button id="clearBrandingLogoBtn" type="button" class="btn btn-secondary">
                 Retirer le logo
               </button>
-              <select id="brandingPositionSelect" onchange="onBrandingPositionChange()">
+              <select
+                id="brandingPositionSelect"
+                onchange="onBrandingPositionChange()"
+                aria-label="Position du logo"
+              >
                 <option value="top-left">Coin haut-gauche</option>
                 <option value="top-right">Coin haut-droit</option>
                 <option value="bottom-left">Coin bas-gauche</option>
                 <option value="bottom-right" selected>Coin bas-droit</option>
               </select>
-              <select id="brandingSizeSelect" onchange="onBrandingSizeChange()">
+              <select
+                id="brandingSizeSelect"
+                onchange="onBrandingSizeChange()"
+                aria-label="Taille du logo"
+              >
                 <option value="small">Petit</option>
                 <option value="medium" selected>Moyen</option>
                 <option value="large">Grand</option>
@@ -3371,22 +3154,20 @@ Aucune exécution agent.</pre>
                 type="text"
                 id="brandingTitleInput"
                 placeholder="Titre (ex. Pasteur Jean Dupont)"
+                aria-label="Titre affiché sur l'habillage caméra"
               />
               <input
                 type="text"
                 id="brandingSubtitleInput"
                 placeholder="Sous-titre (ex. Culte du dimanche)"
+                aria-label="Sous-titre affiché sur l'habillage caméra"
               />
             </div>
-            <div style="display: flex; gap: 0.6rem; flex-wrap: wrap">
+            <div class="btn-row-wrap">
               <button id="saveBrandingTextBtn" type="button" class="btn btn-secondary">
                 💾 Enregistrer le texte
               </button>
-              <button
-                type="button"
-                class="btn btn-primary"
-                id="brandingVisibleToggleBtn"
-              >
+              <button type="button" class="btn btn-primary" id="brandingVisibleToggleBtn">
                 👁️ Afficher sur la diffusion
               </button>
             </div>
@@ -3404,15 +3185,10 @@ Aucune exécution agent.</pre>
             <div class="stat-row">
               <span class="stat-label">Page compagnon (QR code)</span>
               <span class="stat-value">
-                <a
-                  href="#"
-                  id="companionLink"
-                  style="color: var(--primary, #d9bb6c)"
-                ></a>
+                <a href="#" id="companionLink" class="companion-link-color"></a>
                 <button
                   id="copyCompanionLinkBtn"
-                  class="btn btn-secondary"
-                  style="padding: 2px 8px; font-size: 0.75rem; margin-left: 8px"
+                  class="btn btn-secondary stat-btn-sm badge-ml8"
                 >
                   Copier
                 </button>
@@ -3448,11 +3224,7 @@ Aucune exécution agent.</pre>
             <div class="stat-row">
               <span class="stat-label">Exporter le service (feuille de route, scènes, médias)</span>
               <span class="stat-value">
-                <button
-                  id="exportServicePortableBtn"
-                  class="btn btn-secondary"
-                  style="padding: 2px 8px; font-size: 0.75rem"
-                >
+                <button id="exportServicePortableBtn" class="btn btn-secondary stat-btn-sm">
                   💾 Exporter en .zip
                 </button>
               </span>
@@ -3462,8 +3234,7 @@ Aucune exécution agent.</pre>
               <span class="stat-value">
                 <button
                   id="importServicePortableBtn"
-                  class="btn btn-secondary"
-                  style="padding: 2px 8px; font-size: 0.75rem"
+                  class="btn btn-secondary stat-btn-sm"
                 >
                   📥 Importer un .zip
                 </button>
@@ -3477,7 +3248,7 @@ Aucune exécution agent.</pre>
                      l'opérateur ne le configure pas explicitement ici — voir
                      config/features.json > broadcast.propresenter, même principe
                      que le module OBS (obs-controller.js). -->
-          <div class="card" data-group="integrations" style="margin-bottom: 1.25rem">
+          <div class="card settings-card-spaced" data-group="integrations">
             <div class="card-header">
               <span class="card-title">Intégrations</span>
             </div>
@@ -3491,21 +3262,12 @@ Aucune exécution agent.</pre>
                  passe obs-websocket. Même principe que ProPresenter/Planning
                  Center ci-dessous : entièrement optionnel, "enabled" reste à
                  false tant que l'opérateur ne l'active pas explicitement ici. -->
-            <div
-              style="
-                font-size: 0.85rem;
-                font-weight: 600;
-                color: var(--text-main);
-                margin-bottom: 0.5rem;
-              "
-            >
-              OBS Studio (scènes multiples)
-            </div>
+            <div class="settings-subsection-heading">OBS Studio (scènes multiples)</div>
             <div class="field-hint mb-2">
               Outils → obs-websocket → Activer serveur WebSocket (déjà intégré depuis OBS 28+).
             </div>
             <div class="form-group">
-              <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer">
+              <label class="settings-toggle-label-compact">
                 <input type="checkbox" id="obsEnabledInput" /> Activer la connexion OBS
               </label>
             </div>
@@ -3536,7 +3298,7 @@ Aucune exécution agent.</pre>
                 </button>
               </div>
             </div>
-            <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.75rem">
+            <div class="btn-row-wrap mb-3">
               <button id="saveObsConfigBtn" type="button" class="btn btn-secondary">
                 Enregistrer
               </button>
@@ -3554,25 +3316,13 @@ Aucune exécution agent.</pre>
               </button>
             </div>
             <div class="field-hint mb-3" id="obsStatus"></div>
-            <div
-              id="obsScenesList"
-              style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem"
-            ></div>
+            <div id="obsScenesList" class="obs-scenes-list"></div>
 
-            <div
-              style="
-                font-size: 0.85rem;
-                font-weight: 600;
-                color: var(--text-main);
-                margin-bottom: 0.5rem;
-                padding-top: 0.75rem;
-                border-top: 1px solid var(--border-subtle);
-              "
-            >
+            <div class="settings-subsection-heading settings-subsection-heading--divider">
               ProPresenter (écran scène)
             </div>
             <div class="form-group">
-              <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer">
+              <label class="settings-toggle-label-compact">
                 <input type="checkbox" id="ppEnabledInput" /> Activer la connexion ProPresenter
               </label>
             </div>
@@ -3585,13 +3335,14 @@ Aucune exécution agent.</pre>
                   type="text"
                   id="ppHostInput"
                   placeholder="localhost"
-                  style="max-width: 180px"
+                  class="pp-host-input"
                 />
                 <input
                   type="number"
                   id="ppPortInput"
                   placeholder="50001"
-                  style="max-width: 110px"
+                  aria-label="Port de l'API Remote ProPresenter"
+                  class="pp-port-input"
                 />
               </div>
             </div>
@@ -3614,12 +3365,12 @@ Aucune exécution agent.</pre>
               </div>
             </div>
             <div class="form-group">
-              <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer">
+              <label class="settings-toggle-label-compact">
                 <input type="checkbox" id="ppAutoSendInput" /> Envoyer automatiquement chaque verset
                 détecté vers l'écran scène ProPresenter
               </label>
             </div>
-            <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.75rem">
+            <div class="btn-row-wrap mb-3">
               <button id="saveProPresenterConfigBtn" type="button" class="btn btn-secondary">
                 Enregistrer
               </button>
@@ -3627,12 +3378,13 @@ Aucune exécution agent.</pre>
                 🔌 Se connecter
               </button>
             </div>
-            <div class="field-hint" id="ppStatus" style="margin-bottom: 1rem"></div>
-            <div class="input-row" style="margin-bottom: 1.25rem">
+            <div class="field-hint mb-4" id="ppStatus"></div>
+            <div class="input-row mb-5">
               <input
                 type="text"
                 id="ppTestMessageInput"
                 placeholder="Message de test vers l'écran scène ProPresenter"
+                aria-label="Message de test vers l'écran scène ProPresenter"
               />
               <button
                 id="sendProPresenterTestMessageBtn"
@@ -3643,16 +3395,7 @@ Aucune exécution agent.</pre>
               </button>
             </div>
 
-            <div
-              style="
-                font-size: 0.85rem;
-                font-weight: 600;
-                color: var(--text-main);
-                margin-bottom: 0.5rem;
-                padding-top: 0.75rem;
-                border-top: 1px solid var(--border-subtle);
-              "
-            >
+            <div class="settings-subsection-heading settings-subsection-heading--divider">
               Planning Center Services (ordre du culte)
             </div>
             <div class="field-hint mb-2">
@@ -3665,7 +3408,7 @@ Aucune exécution agent.</pre>
               >
             </div>
             <div class="form-group">
-              <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer">
+              <label class="settings-toggle-label-compact">
                 <input type="checkbox" id="pcoEnabledInput" /> Activer Planning Center
               </label>
             </div>
@@ -3696,7 +3439,7 @@ Aucune exécution agent.</pre>
                 </button>
               </div>
             </div>
-            <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.75rem">
+            <div class="btn-row-wrap mb-3">
               <button id="savePlanningCenterConfigBtn" type="button" class="btn btn-secondary">
                 Enregistrer
               </button>
@@ -3705,7 +3448,7 @@ Aucune exécution agent.</pre>
               </button>
             </div>
             <div class="field-hint mb-2" id="pcoStatus"></div>
-            <div id="pcoPlanItems" style="font-size: 0.85rem"></div>
+            <div id="pcoPlanItems" class="pco-plan-items"></div>
           </div>
         </section>
 
@@ -3713,14 +3456,13 @@ Aucune exécution agent.</pre>
         <section id="overlay" class="section" style="display: none">
           <div class="overlay-preview-card" data-group="diffusion">
             <div class="overlay-preview-header">
-              <div style="font-weight: 700; color: var(--text-main)">
+              <div class="overlay-preview-mode-label">
                 <span id="previewModeLabel">Aperçu en direct</span>
               </div>
-              <div style="display: flex; gap: 0.5rem">
+              <div class="overlay-preview-header-actions">
                 <button
                   id="togglePreviewProgramModeBtn"
-                  class="btn btn-secondary"
-                  style="font-size: 0.75rem"
+                  class="btn btn-secondary overlay-preview-toggle-btn"
                 >
                   Aperçu / Programme
                 </button>
@@ -3733,24 +3475,16 @@ Aucune exécution agent.</pre>
             <!-- AJOUT (audit — lien OBS manquant) : URL à coller dans OBS comme
                          Source Navigateur. Calculée côté main.js (avec le jeton
                          WS_VIEWER_TOKEN requis), poussée ici via onStatusUpdate. -->
-            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem">
+            <div class="share-link-row">
               <input
                 type="text"
                 id="overlayUrlInput"
                 readonly
                 value="Chargement du lien..."
-                style="
-                  flex: 1;
-                  padding: 0.6rem;
-                  border-radius: var(--radius-sm);
-                  border: 1px solid var(--border-subtle);
-                  background: var(--bg-input);
-                  color: var(--text-main);
-                  font-family: monospace;
-                  font-size: 0.78rem;
-                "
+                aria-label="Lien de l'overlay à coller dans OBS"
+                class="share-link-input"
               />
-              <button id="copyOverlayUrlBtn" class="btn btn-primary" style="flex-shrink: 0">
+              <button id="copyOverlayUrlBtn" class="btn btn-primary share-link-copy-btn">
                 📋 Copier le lien pour OBS
               </button>
             </div>
@@ -3762,97 +3496,70 @@ Aucune exécution agent.</pre>
                  IP locale) plutôt que file:// : ces pages s'ouvrent sur un
                  AUTRE appareil (téléphone d'un membre de l'assemblée, écran
                  de scène séparé, écran d'accueil), pas dans OBS. -->
-            <details style="margin-bottom: 1rem">
-              <summary style="cursor: pointer; color: var(--text-dim); font-size: 0.85rem">
+            <details class="other-screens-details">
+              <summary class="other-screens-summary">
                 Autres écrans (téléphone, scène, accueil)
               </summary>
-              <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem">
-                <div class="field-hint" style="margin: 0">
+              <div class="other-screens-list">
+                <div class="field-hint field-hint-flush">
                   📱 Compagnon (sous-titres traduits, présence) — à ouvrir sur le téléphone d'un
                   membre de l'assemblée
                 </div>
-                <div style="display: flex; gap: 0.5rem; align-items: center">
+                <div class="other-screen-link-row">
                   <input
                     type="text"
                     id="companionUrlInput"
                     readonly
                     value="Chargement du lien..."
-                    style="
-                      flex: 1;
-                      padding: 0.5rem;
-                      border-radius: var(--radius-sm);
-                      border: 1px solid var(--border-subtle);
-                      background: var(--bg-input);
-                      color: var(--text-main);
-                      font-family: monospace;
-                      font-size: 0.72rem;
-                    "
+                    aria-label="Lien de la page compagnon"
+                    class="share-link-input share-link-input-sm"
                   />
                   <button
                     id="copyCompanionUrlBtn"
-                    class="btn btn-secondary"
-                    style="flex-shrink: 0; font-size: 0.78rem"
+                    class="btn btn-secondary share-link-copy-btn other-screen-copy-btn"
                   >
                     📋 Copier
                   </button>
                 </div>
-                <div class="field-hint" style="margin: 0.5rem 0 0">
+                <div class="field-hint other-screen-hint">
                   🎤 Écran de scène — conducteur de louange (messages opérateur → scène)
                 </div>
-                <div style="display: flex; gap: 0.5rem; align-items: center">
+                <div class="other-screen-link-row">
                   <input
                     type="text"
                     id="stageDisplayUrlInput"
                     readonly
                     value="Chargement du lien..."
-                    style="
-                      flex: 1;
-                      padding: 0.5rem;
-                      border-radius: var(--radius-sm);
-                      border: 1px solid var(--border-subtle);
-                      background: var(--bg-input);
-                      color: var(--text-main);
-                      font-family: monospace;
-                      font-size: 0.72rem;
-                    "
+                    aria-label="Lien de l'écran de scène"
+                    class="share-link-input share-link-input-sm"
                   />
                   <button
                     id="copyStageDisplayUrlBtn"
-                    class="btn btn-secondary"
-                    style="flex-shrink: 0; font-size: 0.78rem"
+                    class="btn btn-secondary share-link-copy-btn other-screen-copy-btn"
                   >
                     📋 Copier
                   </button>
                 </div>
-                <div class="field-hint" style="margin: 0.5rem 0 0">
+                <div class="field-hint other-screen-hint">
                   📢 Diaporama d'annonces en boucle — écran d'accueil/du hall
                 </div>
-                <div style="display: flex; gap: 0.5rem; align-items: center">
+                <div class="other-screen-link-row">
                   <input
                     type="text"
                     id="announcementLoopUrlInput"
                     readonly
                     value="Chargement du lien..."
-                    style="
-                      flex: 1;
-                      padding: 0.5rem;
-                      border-radius: var(--radius-sm);
-                      border: 1px solid var(--border-subtle);
-                      background: var(--bg-input);
-                      color: var(--text-main);
-                      font-family: monospace;
-                      font-size: 0.72rem;
-                    "
+                    aria-label="Lien du diaporama d'annonces en boucle"
+                    class="share-link-input share-link-input-sm"
                   />
                   <button
                     id="copyAnnouncementLoopUrlBtn"
-                    class="btn btn-secondary"
-                    style="flex-shrink: 0; font-size: 0.78rem"
+                    class="btn btn-secondary share-link-copy-btn other-screen-copy-btn"
                   >
                     📋 Copier
                   </button>
                 </div>
-                <div class="field-hint" style="margin: 0.5rem 0 0">
+                <div class="field-hint other-screen-hint">
                   ⚠️ Ces liens ne fonctionnent que si le serveur est accessible sur le réseau
                   (Réglages → Réseau, WS_HOST ≠ 127.0.0.1) — comme pour le jumelage caméra
                   téléphone.
@@ -3861,40 +3568,13 @@ Aucune exécution agent.</pre>
             </details>
 
             <!-- Aperçu/Programme dual view -->
-            <div id="previewProgramContainer" style="display: flex; gap: 0.5rem">
-              <div id="previewPane" style="flex: 1; display: none">
-                <div
-                  style="
-                    font-size: 0.7rem;
-                    color: var(--text-dim);
-                    margin-bottom: 0.25rem;
-                    text-align: center;
-                  "
-                >
-                  APERÇU
-                </div>
-                <iframe
-                  id="previewFrame"
-                  src="overlay.html"
-                  style="
-                    width: 100%;
-                    aspect-ratio: 16/9;
-                    border: 2px solid #3b82f6;
-                    border-radius: 8px;
-                  "
-                ></iframe>
+            <div id="previewProgramContainer" class="preview-program-container">
+              <div id="previewPane" class="preview-pane" style="display: none">
+                <div class="preview-program-caption">APERÇU</div>
+                <iframe id="previewFrame" src="overlay.html" class="preview-frame-iframe"></iframe>
               </div>
-              <div id="programPane" style="flex: 1">
-                <div
-                  id="programLabel"
-                  style="
-                    font-size: 0.7rem;
-                    color: var(--text-dim);
-                    margin-bottom: 0.25rem;
-                    text-align: center;
-                    display: none;
-                  "
-                >
+              <div id="programPane" class="preview-pane">
+                <div id="programLabel" class="preview-program-caption" style="display: none">
                   PROGRAMME
                 </div>
                 <iframe id="overlayFrame" src="overlay.html"></iframe>
@@ -3919,23 +3599,20 @@ Aucune exécution agent.</pre>
               🎤 Essayer une phrase déclencheuse : tapez ce que vous diriez à voix haute, le
               résultat est celui que donnerait la reconnaissance vocale réelle.
             </div>
-            <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem">
+            <div class="trigger-phrase-test-row">
               <input
                 type="text"
                 id="triggerPhraseTestInput"
                 placeholder="ex. montrez la photo du groupe jeunesse"
-                style="flex: 1"
+                aria-label="Phrase déclencheuse à essayer"
+                class="trigger-phrase-test-input"
                 onkeydown="if (event.key === 'Enter') testTriggerPhrase();"
               />
               <button id="testTriggerPhraseBtn" type="button" class="btn btn-secondary">
                 Essayer
               </button>
             </div>
-            <div
-              id="triggerPhraseTestResult"
-              class="field-hint"
-              style="margin-bottom: 0.75rem; min-height: 1.2em"
-            ></div>
+            <div id="triggerPhraseTestResult" class="field-hint trigger-phrase-test-result"></div>
             <!-- AJOUT (Partie 2.3 — recherche instantanée + parité clavier) :
                  filtre la grille en direct (nom OU phrase déclencheuse), et
                  les touches 1-9 déclenchent les 9 premières tuiles VISIBLES
@@ -3946,11 +3623,12 @@ Aucune exécution agent.</pre>
               type="text"
               id="mediaWallSearchInput"
               placeholder="🔍 Filtrer (nom ou phrase déclencheuse)… — touches 1-9 pour déclencher"
-              style="margin-bottom: 0.5rem; width: 100%"
+              aria-label="Filtrer le mur média"
+              class="media-wall-search-input"
               oninput="filterMediaWall(this.value)"
             />
-            <div id="mediaWallGrid" class="media-gallery-grid" style="min-height: 120px">
-              <div class="empty-state-note" style="grid-column: 1 / -1">
+            <div id="mediaWallGrid" class="media-gallery-grid media-wall-grid">
+              <div class="empty-state-note media-wall-empty-note">
                 Aucun média chargé. Ajoutez des photos/vidéos dans la médiathèque d'abord.
               </div>
             </div>
@@ -3969,7 +3647,7 @@ Aucune exécution agent.</pre>
               <span class="card-title"
                 >Studio de scènes (<span id="sceneStudioCount">0</span>)</span
               >
-              <div style="display: flex; gap: 0.5rem">
+              <div class="btn-row-tight">
                 <button id="openSceneComposerBtn" class="btn btn-primary chip-sm">
                   + Nouvelle scène
                 </button>
@@ -4010,6 +3688,7 @@ Aucune exécution agent.</pre>
                 type="text"
                 id="composerNameInput"
                 placeholder="Nom de la scène (ex. Bienvenue — dimanche)"
+                aria-label="Nom de la scène"
               />
             </div>
             <!-- AJOUT (déclenchement vocal des scènes) : même champ/même
@@ -4024,9 +3703,10 @@ Aucune exécution agent.</pre>
                 type="text"
                 id="composerPhrasesInput"
                 placeholder="Phrases déclencheuses (optionnel, séparées par des virgules)"
+                aria-label="Phrases déclencheuses de la scène"
               />
             </div>
-            <div class="field-hint" style="margin-top: -0.5rem; margin-bottom: 0.85rem">
+            <div class="field-hint composer-trigger-hint">
               Dites l'une de ces phrases (ou le nom ci-dessus, par défaut) pendant le culte pour
               afficher cette scène automatiquement — en plus du bouton "Afficher" manuel.
             </div>
@@ -4042,6 +3722,7 @@ Aucune exécution agent.</pre>
                   <select
                     id="composerBgMediaSelect"
                     onchange="onComposerBgMediaChange()"
+                    aria-label="Image de fond (médiathèque)"
                     style="display: none"
                   ></select>
                   <input
@@ -4049,37 +3730,36 @@ Aucune exécution agent.</pre>
                     id="composerBgColorInput"
                     value="#0b0f1a"
                     onchange="onComposerBgColorChange()"
+                    aria-label="Couleur de fond"
                     style="display: none"
                   />
                 </div>
                 <div class="scene-composer-elements-header">
-                  <span class="field-hint" style="margin: 0">Éléments</span>
-                  <div style="display: flex; gap: 0.5rem">
+                  <span class="field-hint field-hint-zero-margin">Éléments</span>
+                  <div class="btn-row-tight">
                     <button
                       id="addComposerElementTextBtn"
-                      class="btn btn-secondary"
-                      style="padding: 0.35rem 0.7rem; font-size: 0.78rem"
+                      class="btn btn-secondary composer-add-element-btn"
                     >
                       + Texte
                     </button>
                     <button
                       id="addComposerElementImageBtn"
-                      class="btn btn-secondary"
-                      style="padding: 0.35rem 0.7rem; font-size: 0.78rem"
+                      class="btn btn-secondary composer-add-element-btn"
                     >
                       + Image / logo
                     </button>
                   </div>
                 </div>
                 <div id="composerElementsList"></div>
-                <div class="queue-add-row" style="margin-top: 0.5rem">
+                <div class="queue-add-row composer-save-row">
                   <button id="saveComposerSceneBtn" class="btn btn-primary">
                     💾 Enregistrer la scène
                   </button>
                 </div>
               </div>
               <div class="scene-composer-preview-col">
-                <div class="field-hint" style="margin-top: 0">Aperçu</div>
+                <div class="field-hint field-hint-flush-top">Aperçu</div>
                 <div class="scene-composer-preview-frame" id="composerPreviewFrame"></div>
               </div>
             </div>
