@@ -37,5 +37,42 @@ test.describe('Palette de commandes (Ctrl+K)', () => {
     await expect(page.locator('.command-palette-item[data-action="setLanguage-fr"]')).toContainText(
       'Changer langue FR'
     );
+
+    // AJOUT (audit — repères manquants relevés en ajoutant Airlock Preview/
+    // Focus Mode à la palette) : trois entrées purement côté tableau de
+    // bord (aucune action WS propre) doivent apparaître avec LEUR PROPRE
+    // catégorie (categoryOverride), pas retomber dans "Système" faute d'une
+    // entrée dans action-registry.js à traduire.
+    await expect(
+      page.locator('.command-palette-item[data-action="toggleFocusMode"]')
+    ).toContainText('Mode focus');
+    const focusModeCategory = await page
+      .locator('.command-palette-item[data-action="toggleFocusMode"]')
+      .getAttribute('data-category');
+    expect(focusModeCategory).toBe('Affichage');
+
+    const airlockCategory = await page
+      .locator('.command-palette-item[data-action="disarmAirlock"]')
+      .getAttribute('data-category');
+    expect(airlockCategory).toBe('Média');
+
+    // "Suivant" existait déjà côté feuille de route (bouton "▶") mais
+    // n'avait jamais été ajouté à la palette — vérifie que le libellé vient
+    // bien du registre (nextRundownCue y est déjà décrit), pas une valeur
+    // de repli.
+    await expect(page.locator('.command-palette-item[data-action="nextRundownCue"]')).toContainText(
+      'Déclencher le repère suivant'
+    );
+
+    // AJOUT : au-delà du rendu, vérifie que cliquer l'exécute VRAIMENT —
+    // toggleFocusMode() est un pur appel côté tableau de bord (pas de
+    // message WS à intercepter), donc l'effet observable est la surcouche
+    // #focusModeOverlay qui devient active.
+    await page.locator('.command-palette-item[data-action="toggleFocusMode"]').click();
+    await expect(page.locator('#focusModeOverlay')).toHaveClass(/active/);
+    // Nettoyage : referme le mode focus pour ne pas laisser la page dans un
+    // état surprenant pour un test suivant qui réutiliserait cette session.
+    await page.locator('#focusModeExitBtn').click();
+    await expect(page.locator('#focusModeOverlay')).not.toHaveClass(/active/);
   });
 });

@@ -37,9 +37,11 @@
   // Liste curée : quelles actions du registre apparaissent dans la palette,
   // avec leur raccourci clavier réel s'il en existe un (voir main.js,
   // CommandOrControl+Alt+Shift+{C,H,M,S}). `labelOverride`/`categoryOverride`
-  // uniquement pour les 3 entrées setLanguage-* ci-dessous : ce sont trois
-  // valeurs de PARAMÈTRE de la même action 'setLanguage', que le registre ne
-  // peut pas connaître (il décrit l'action, pas ses valeurs possibles).
+  // pour une entrée qui ne correspond pas 1:1 à une action du registre —
+  // soit un PARAMÈTRE d'une action existante (les 3 entrées setLanguage-*,
+  // que le registre ne peut pas connaître : il décrit l'action, pas ses
+  // valeurs possibles), soit une fonction purement côté tableau de bord sans
+  // action WS propre (armer/désarmer le sas, mode focus — voir plus bas).
   const PALETTE_ACTIONS = [
     { action: 'showVerse' },
     { action: 'hideVerse', shortcut: 'Ctrl+Alt+Maj+H' },
@@ -76,6 +78,34 @@
     { action: 'getSongLibrary' },
     { action: 'getNetworkStatus' },
     { action: 'getPostServiceRecap' },
+    // AJOUT (audit — repère manquant, pas seulement les fonctionnalités de
+    // ce chantier : nextRundownCue()/toggleBlackScreen() existent depuis
+    // bien avant la feuille de route/Smart Fallback Mode mais n'avaient
+    // jamais été ajoutés ici) : "suivant" est justement le genre d'action
+    // répétée qu'un opérateur veut pouvoir déclencher sans lâcher le
+    // clavier.
+    { action: 'nextRundownCue' },
+    { action: 'toggleBlackScreen', registryAction: 'setBlackScreen' },
+    // AJOUT (Airlock Preview — priorité #2) : pas de bouton "Armer"
+    // générique ici (armer exige de choisir QUEL repère, un id que la
+    // palette ne peut pas deviner) — mais désarmer/aller en direct depuis
+    // le sas n'ont besoin d'aucun paramètre, comme leurs voisins ci-dessus.
+    {
+      action: 'disarmAirlock',
+      labelOverride: 'Désarmer le sas de diffusion',
+      categoryOverride: 'media',
+    },
+    {
+      action: 'goLiveFromAirlock',
+      labelOverride: 'Aller en direct (sas de diffusion)',
+      categoryOverride: 'media',
+    },
+    // AJOUT (Focus Mode — priorité #6)
+    {
+      action: 'toggleFocusMode',
+      labelOverride: 'Mode focus (bascule)',
+      categoryOverride: 'display',
+    },
   ];
 
   // Construit la liste réellement rendue en résolvant label/catégorie
@@ -92,7 +122,14 @@
     return PALETTE_ACTIONS.map((entry) => {
       const registryAction = entry.registryAction || entry.action;
       const meta = clientActions[registryAction];
-      const category = (meta && CATEGORY_LABELS[meta.category]) || 'Système';
+      // CORRECTIF (audit — categoryOverride documenté en tête de fichier
+      // mais jamais lu ici) : une entrée purement côté tableau de bord
+      // (armer/désarmer le sas, mode focus) n'a pas de meta.category dans
+      // le registre à traduire — sans ceci, elle retombait toujours dans
+      // "Système" quel que soit categoryOverride fourni.
+      const category = entry.categoryOverride
+        ? CATEGORY_LABELS[entry.categoryOverride] || entry.categoryOverride
+        : (meta && CATEGORY_LABELS[meta.category]) || 'Système';
       const label = entry.labelOverride || (meta && meta.description) || entry.action;
       return { label, action: entry.action, category, shortcut: entry.shortcut || '' };
     });
@@ -132,6 +169,21 @@
     });
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) close();
+    });
+    // CORRECTIF (audit — trouvé en écrivant le test e2e des nouvelles
+    // entrées) : aucun écouteur de clic n'existait sur les éléments
+    // .command-palette-item eux-mêmes — seul le clavier (flèches + Entrée,
+    // voir keydown ci-dessus) exécutait réellement une commande. Un clic
+    // souris sur une commande ne faisait donc STRICTEMENT rien depuis la
+    // toute première version de ce fichier. Délégation sur listEl (un seul
+    // écouteur pour la trentaine d'éléments de la liste) plutôt qu'un
+    // écouteur par élément — filterCommands() ne fait que basculer
+    // .style.display sans jamais recréer les nœuds, mais la délégation
+    // reste la manière la plus simple de couvrir tous les éléments d'un
+    // coup.
+    listEl.addEventListener('click', (e) => {
+      const item = e.target.closest('.command-palette-item');
+      if (item) executeCommand(item.dataset.action);
     });
   }
 
@@ -227,6 +279,19 @@
       },
       stopReading: () => {
         if (typeof window.stopReadingMode === 'function') window.stopReadingMode();
+      },
+      nextRundownCue: () => send({ action: 'nextRundownCue' }),
+      toggleBlackScreen: () => {
+        if (typeof window.toggleBlackScreen === 'function') window.toggleBlackScreen();
+      },
+      disarmAirlock: () => {
+        if (typeof window.disarmAirlock === 'function') window.disarmAirlock();
+      },
+      goLiveFromAirlock: () => {
+        if (typeof window.goLiveFromAirlock === 'function') window.goLiveFromAirlock();
+      },
+      toggleFocusMode: () => {
+        if (typeof window.toggleFocusMode === 'function') window.toggleFocusMode();
       },
     };
     if (shortActions[action]) {
