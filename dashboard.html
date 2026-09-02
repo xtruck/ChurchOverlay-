@@ -845,6 +845,52 @@
               <div class="queue-list" id="rundownList"></div>
             </div>
 
+            <!-- AJOUT (Airlock Preview — brief produit, priorité #2) : plutôt que
+                         "▶ Déclencher" un repère de la feuille de route directement en
+                         direct, l'opérateur peut d'abord l'"armer" (bouton "Armer" ajouté
+                         par rundown.js sur chaque repère) — cette carte affiche alors
+                         côte à côte ce qui est réellement à l'écran maintenant et ce qui
+                         est prêt à partir, avant un dernier geste explicite "Aller en
+                         direct". Portée V1 volontairement limitée à la feuille de route
+                         (pas de bouton "Armer" sur les galeries média/scène séparément) —
+                         c'est déjà l'endroit où un opérateur prépare la suite du culte à
+                         l'avance, l'étendre à un déclenchement direct depuis la
+                         médiathèque/le studio de scènes est un chantier séparé si le
+                         besoin s'en fait sentir. Voir dashboard/features/airlock-preview.js. -->
+            <div class="card" id="airlockCard">
+              <div class="queue-panel-header">
+                <span class="card-title">Sas de diffusion</span>
+                <button
+                  id="airlockDisarmBtn"
+                  class="btn btn-secondary chip-sm"
+                  title="Désarmer sans diffuser"
+                  disabled
+                >
+                  ✕ Désarmer
+                </button>
+              </div>
+              <div class="airlock-columns">
+                <div class="airlock-column">
+                  <div class="airlock-column-label">En direct maintenant</div>
+                  <div class="airlock-preview-frame" id="airlockLivePreview">
+                    <div class="airlock-empty-note">Rien à l'écran</div>
+                  </div>
+                </div>
+                <div class="airlock-column">
+                  <div class="airlock-column-label">Prêt à diffuser</div>
+                  <div class="airlock-preview-frame" id="airlockArmedPreview">
+                    <div class="airlock-empty-note">
+                      Aucun élément armé — bouton "Armer" sur un repère de la feuille de
+                      route
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <button id="airlockGoLiveBtn" class="btn btn-primary btn-full-width" disabled>
+                ▶ Aller en direct
+              </button>
+            </div>
+
             <!-- AJOUT (poster principal — carte dédiée) : jusqu'ici l'état du
                          poster principal n'était visible que sous forme de texte
                          explicatif dans la carte Médiathèque ci-dessous (il fallait

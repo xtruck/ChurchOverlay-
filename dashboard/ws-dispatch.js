@@ -78,6 +78,7 @@ import {
   showPendingVerseBanner,
   hidePendingVerseBanner,
 } from './features/trust-mode.js';
+import { setCurrentLive, clearCurrentLive } from './features/airlock-preview.js';
 
 export function handleMessage(message) {
   switch (message.action) {
@@ -169,6 +170,11 @@ export function handleMessage(message) {
       // lecture, sans que le dashboard ait à compter lui-même.
       if (message.readingModePos) setReadingPosition(message.readingModePos);
       displayVerse(message);
+      // AJOUT (Airlock Preview) : la colonne "en direct" reflète TOUJOURS ce
+      // que l'overlay affiche réellement, quelle que soit sa source (repère
+      // de feuille de route, détection vocale, saisie manuelle) — voir
+      // airlock-preview.js.
+      setCurrentLive({ type: 'verse', reference: message.reference, text: message.text });
       state.totalVerses++;
       updateDashboard();
       addActivity(`Verset affiché : ${message.reference}`, 'success');
@@ -192,6 +198,7 @@ export function handleMessage(message) {
     case 'hideVerse':
       hideVerseDisplay();
       clearCandidateNotices();
+      clearCurrentLive();
       addActivity('Verset masqué', 'info');
       break;
     case 'transcript':
@@ -611,9 +618,16 @@ export function handleMessage(message) {
         'info'
       );
       markMediaOnScreen(message.id);
+      setCurrentLive({
+        type: 'media',
+        label: message.label,
+        mediaType: message.mediaType,
+        mediaUrl: message.mediaUrl,
+      });
       break;
     case 'hideMedia':
       clearMediaOnScreen();
+      clearCurrentLive();
       break;
     // AJOUT (studio de scènes) : même raisonnement que showMedia/hideMedia
     // ci-dessus.
@@ -623,8 +637,13 @@ export function handleMessage(message) {
       // n'affiche qu'une seule chose à la fois — une scène qui s'affiche
       // remplace forcément un média qui l'était.
       clearMediaOnScreen();
+      // AJOUT (Airlock Preview) : message porte déjà background/elements
+      // résolus (resolveSceneMediaUrls() côté serveur) — passé tel quel à
+      // renderSceneDom() par airlock-preview.js.
+      setCurrentLive({ type: 'scene', label: message.name, scene: message });
       break;
     case 'hideScene':
+      clearCurrentLive();
       break;
     // AJOUT (bibliothèque de chants) : même raisonnement que mediaLibraryUpdated.
     case 'songLibraryUpdated':

@@ -961,6 +961,64 @@ body {
   color: var(--accent-rose);
 }
 
+/* AJOUT (Airlock Preview — brief produit, priorité #2, voir
+           dashboard/features/airlock-preview.js) : deux colonnes côte à
+           côte ("en direct" / "prêt à diffuser"), même ratio 16:9 que
+           .scene-composer-preview-frame pour qu'une scène armée s'y rende
+           identique à ce qu'elle sera réellement à l'écran. */
+.airlock-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  margin-bottom: 0.85rem;
+}
+.airlock-column-label {
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.4rem;
+}
+.airlock-preview-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #05070d;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  container-type: size;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.airlock-preview-frame img,
+.airlock-preview-frame video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.airlock-empty-note {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  text-align: center;
+  padding: 0 var(--space-3);
+}
+.airlock-verse-preview {
+  color: var(--text-main);
+  font-size: var(--text-sm);
+  text-align: center;
+  padding: 0 var(--space-3);
+}
+.airlock-verse-preview .airlock-verse-ref {
+  display: block;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 0.3rem;
+}
+
 /* AJOUT (médiathèque — déclenchement vocal de photos/vidéos) : réutilise
            .queue-list/.queue-item/.queue-item-actions/.queue-icon-btn ci-dessus
            (déjà assez génériques), juste ces quelques classes en plus pour le

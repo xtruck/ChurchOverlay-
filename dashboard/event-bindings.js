@@ -147,6 +147,10 @@ const CLICK_BINDINGS = {
   nextRundownCueBtn: () => window.nextRundownCue(),
   addVerseToRundownBtn: () => window.addVerseToRundown(),
 
+  // --- Sas de diffusion (Airlock Preview) ---
+  airlockDisarmBtn: () => window.disarmAirlock(),
+  airlockGoLiveBtn: () => window.goLiveFromAirlock(),
+
   // --- Médiathèque / chants ---
   clearDefaultPosterFromCardBtn: () => window.clearDefaultPosterFromCard(),
   hideMediaNowBtn: () => window.hideMediaNow(),

@@ -22,6 +22,14 @@ import { checkCueReadiness, READINESS_LABELS } from './next-cue-confidence.js';
 let rundownCues = [];
 let rundownActiveIndex = -1;
 
+// AJOUT (Airlock Preview — voir airlock-preview.js) : même raisonnement que
+// getMediaLibraryItems()/getSceneStudioItems() — armRundownCue() a besoin du
+// repère COMPLET (mediaId/sceneId/reference selon le type, jamais transmis à
+// onclick="armRundownCue('id')" lui-même) pour construire son aperçu.
+export function getRundownCues() {
+  return rundownCues;
+}
+
 const CUE_TYPE_ICON = { verse: '📖', media: '📷', scene: '🎬' };
 
 export function addVerseToRundown() {
@@ -165,7 +173,8 @@ export function renderRundown(message) {
                     <div class="queue-item-actions">
                         <button class="queue-icon-btn" onclick="moveRundownCue('${cue.id}', -1)" title="Monter" ${i === 0 ? 'disabled' : ''}>↑</button>
                         <button class="queue-icon-btn" onclick="moveRundownCue('${cue.id}', 1)" title="Descendre" ${i === rundownCues.length - 1 ? 'disabled' : ''}>↓</button>
-                        <button class="queue-icon-btn queue-send" onclick="triggerRundownCue('${cue.id}')" title="Déclencher maintenant">▶</button>
+                        <button class="queue-icon-btn" onclick="armRundownCue('${cue.id}')" title="Armer dans le sas de diffusion (aperçu avant direct)">⏏</button>
+                        <button class="queue-icon-btn queue-send" onclick="triggerRundownCue('${cue.id}')" title="Déclencher maintenant, sans passer par le sas">▶</button>
                         <button class="queue-icon-btn queue-remove" onclick="removeRundownCue('${cue.id}')" title="Retirer">✕</button>
                     </div>
                 </div>
