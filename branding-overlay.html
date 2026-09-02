@@ -2,6 +2,7 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- AJOUT (audit sécurité, extension aux pages Electron/OBS restantes) :
          même politique qu'overlay.html pour les mêmes raisons — connexion
          WebSocket sur un PORT DYNAMIQUE (WS_HOST/PORT configurables) et logo
@@ -141,6 +142,7 @@
        sans rapport — pour que le bandeau et la carte de verset se lisent
        comme la même identité visuelle une fois empilés dans OBS. */
         background: linear-gradient(165deg, rgba(10, 14, 28, 0.8), rgba(13, 18, 38, 0.8));
+        -webkit-backdrop-filter: blur(6px);
         backdrop-filter: blur(6px);
         border: 1px solid rgba(255, 255, 255, 0.14);
         color: #ffffff;
@@ -194,7 +196,7 @@
   </head>
   <body>
     <img id="branding-logo-img" class="branding-logo" alt="" />
-    <video id="branding-logo-video" class="branding-logo" autoplay loop muted playsinline></video>
+    <video id="branding-logo-video" class="branding-logo" autoplay loop muted></video>
 
     <div id="branding-lowerthird">
       <div id="branding-title"></div>
@@ -229,6 +231,7 @@
         // (.mp4/.webm) par <video> en boucle muette.
         const logoImg = document.getElementById('branding-logo-img');
         const logoVideo = document.getElementById('branding-logo-video');
+        if (logoVideo) logoVideo.playsInline = true;
         const isVideo = data.logoType === 'video';
         const activeLogo = isVideo ? logoVideo : logoImg;
         const inactiveLogo = isVideo ? logoImg : logoVideo;
