@@ -219,6 +219,28 @@ if (window.churchOverlay && window.churchOverlay.onStatusUpdate) {
     if (payload && payload.announcementLoopUrl) {
       applyAnnouncementLoopUrl(payload.announcementLoopUrl);
     }
+    // CORRECTIF (audit — Offline/reconnect status, priorité #9) : ce canal
+    // porte payload.status ('starting'/'running'/'error'/'stopped', voir
+    // serverStatus dans main.js) depuis le tout début, mais rien ici ne le
+    // lisait jamais — un commentaire plus bas dans ce fichier affirmait même
+    // à tort que pipelineAlertBanner "couvre déjà le crash-loop du worker",
+    // alors que ce cas précis (worker.on('exit') dans main.js : port déjà
+    // utilisé, ou trop de crashes rapprochés -> pipeline arrêté) ne déclenche
+    // JAMAIS de message pipeline-alert — seulement ce status-update ignoré.
+    // Résultat réel : un opérateur ne voyait alors QUE "Déconnecté —
+    // reconnexion en cours" indéfiniment (le symptôme WS), jamais la vraie
+    // raison ni le bouton "Redémarrer" déjà prêt dans la bannière existante.
+    // 'stopped' n'alerte pas : main.js ne le pose que pour un arrêt VOLONTAIRE
+    // (voir wasIntentional dans main.js), pas un signal de panne. Se résorbe
+    // tout seul via le clear existant (pipeline-alert{clear:true}, envoyé
+    // par main.js dès que le worker redémarré signale 'running').
+    if (payload && payload.status === 'error') {
+      setPipelineAlert({
+        severity: 'error',
+        message:
+          "Le pipeline s'est arrêté suite à une erreur (voir les journaux dans l'icône de la zone de notification) — cliquez sur Redémarrer.",
+      });
+    }
   });
 }
 
