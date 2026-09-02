@@ -119,6 +119,15 @@ function waitForOpen(ws) {
   let opWs;
 
   try {
+    // CORRECTIF (pollution inter-fichiers) : ce test suppose cueA à l'index
+    // 0 (voir plus bas, "premier segment" -> pastille "running") — une
+    // hypothèse fragile si un AUTRE fichier de test de cette même invocation
+    // npm test (même CHURCHOVERLAY_DATA_DIR partagé pour toute la suite,
+    // voir scripts/run-tests.js) a laissé des repères derrière lui avant
+    // celui-ci. rundown-store.js n'a pas de notion de "session de test" —
+    // clearCues() ici garantit un état connu, quel que soit ce qui s'est
+    // exécuté avant, sans dépendre de l'ordre des fichiers.
+    rundownStore.clearCues();
     const cueA = rundownStore.addCue({
       type: 'verse',
       label: 'Ouverture (test heartbeat)',

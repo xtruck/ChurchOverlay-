@@ -127,6 +127,12 @@ function waitForOpen(ws) {
   let opWs;
 
   try {
+    // CORRECTIF (pollution inter-fichiers) : voir le même correctif dans
+    // integration-service-heartbeat.js — ce test suppose cueA à l'index 0,
+    // fragile si un autre fichier de la même invocation npm test a laissé
+    // des repères derrière lui (même CHURCHOVERLAY_DATA_DIR partagé pour
+    // toute la suite). clearCues() garantit un état connu.
+    rundownStore.clearCues();
     const cueA = rundownStore.addCue({
       type: 'verse',
       label: 'Ouverture (test)',
