@@ -8,6 +8,16 @@
 import { state } from '../state.js';
 import { showToast } from '../utils.js';
 
+// AJOUT (Confidence Rail — idée créative, brief produit) : lu par
+// confidence-rail.js pour composer son message unique prioritaire — reste
+// privé à ce module (pipelineAlertActive), jamais un second état dupliqué
+// ailleurs, voir le même principe pour getArmedCueId()/getCurrentLive() dans
+// airlock-preview.js.
+let pipelineAlertActive = false;
+export function isPipelineAlertActive() {
+  return pipelineAlertActive;
+}
+
 // --- Bannière d'erreur pipeline (voir CORRECTIF plus haut dans le HTML) ---
 export function setPipelineAlert(payload) {
   const banner = document.getElementById('pipelineAlertBanner');
@@ -18,6 +28,7 @@ export function setPipelineAlert(payload) {
   if (!payload || payload.clear) {
     banner.style.display = 'none';
     banner.classList.remove('pipeline-banner--error', 'pipeline-banner--warning');
+    pipelineAlertActive = false;
     return;
   }
 
@@ -27,6 +38,7 @@ export function setPipelineAlert(payload) {
   banner.style.display = 'flex';
   if (icon) icon.textContent = isError ? '⛔' : '⚠️';
   msg.textContent = payload.message || 'Le pipeline a rencontré un problème.';
+  pipelineAlertActive = true;
 }
 
 if (window.churchOverlay && window.churchOverlay.onPipelineAlert) {
