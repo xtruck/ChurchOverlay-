@@ -648,6 +648,11 @@ function setBackgroundPattern(pattern) {
    naturellement la carte).
    ========================================================================== */
 let mediaHideTimeout = null;
+// AJOUT (Smart Fallback Mode — repli automatique média cassé) : voir le
+// commentaire dans showMediaItem() plus bas — distingue le gestionnaire
+// d'erreur le plus récent d'un gestionnaire supplanté par un chargement
+// plus récent (le repli lui-même déclenche un nouveau showMediaItem()).
+let mediaLoadGeneration = 0;
 function showMediaItem(msg) {
   const layer = document.getElementById('media-layer');
   const img = document.getElementById('media-layer-img');
@@ -669,6 +674,43 @@ function showMediaItem(msg) {
   screenOccupiedByExplicitContent = msg.detectedBy !== 'default';
   clearTimeout(mediaHideTimeout);
   mediaHideTimeout = null;
+
+  // AJOUT (Smart Fallback Mode — brief produit, priorité #3, "Hide broken
+  // media automatically") : jusqu'ici un fichier introuvable/corrompu
+  // restait affiché indéfiniment (icône d'image cassée, ou vidéo noire
+  // silencieuse) — l'assemblée voyait l'erreur, sans repli. `.onerror =`
+  // (pas addEventListener, pour rester idempotent à chaque appel de
+  // showMediaItem() sans empiler des écouteurs) déclenche désormais
+  // hideMediaItem(), qui appelle déjà maybeShowDefaultContent() — le
+  // poster principal reprend sa place automatiquement, exactement comme
+  // pour un hideMedia() manuel.
+  //
+  // CORRECTIF (trouvé en testant ce repli avec Playwright) : un simple
+  // `img.hidden || !img.src` ne suffit pas à écarter une erreur tardive.
+  // Scénario réel observé : un média cassé échoue -> hideMediaItem() ->
+  // maybeShowDefaultContent() affiche le poster (encore DANS le même
+  // gestionnaire d'erreur, donc AVANT que le navigateur n'ait fini de
+  // traiter la requête ratée d'origine) -> l'événement error d'origine
+  // arrive ensuite, mais `.onerror` pointe déjà vers un nouveau
+  // gestionnaire lié au POSTER, qui voit alors un `img` NI caché NI sans
+  // src (le poster est légitimement affiché) -> le repli se redéclenchait
+  // à tort sur le poster qui, lui, avait pourtant réussi à charger. Un
+  // jeton de génération (incrémenté à chaque showMediaItem()) permet à
+  // chaque gestionnaire de reconnaître qu'il a été supplanté et de ne
+  // jamais agir pour un chargement qui n'est plus le plus récent.
+  const myMediaLoadGeneration = ++mediaLoadGeneration;
+  img.onerror = () => {
+    if (myMediaLoadGeneration !== mediaLoadGeneration) return;
+    if (img.hidden || !img.src) return;
+    console.warn('[overlay] Image introuvable/corrompue, repli automatique :', img.src);
+    hideMediaItem();
+  };
+  video.onerror = () => {
+    if (myMediaLoadGeneration !== mediaLoadGeneration) return;
+    if (video.hidden || !video.src) return;
+    console.warn('[overlay] Vidéo introuvable/corrompue, repli automatique :', video.src);
+    hideMediaItem();
+  };
 
   if (msg.mediaType === 'video') {
     img.hidden = true;
