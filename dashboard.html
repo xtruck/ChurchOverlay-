@@ -773,7 +773,7 @@
               <!-- AJOUT (audit — affichage/sortie, gratuit/léger) : motif de fond
                              optionnel, CSS pur (voir #pattern-layer dans overlay.html) — en
                              plus du dégradé de thème déjà choisi ci-dessus. -->
-              <div class="mood-picker-row pattern-picker-row" id="patternPicker">
+              <div class="mood-picker-row mt-tight" id="patternPicker">
                 <button
                   class="mood-btn active"
                   id="pattern-btn-none"
@@ -1482,13 +1482,7 @@
 
         <!-- Analysis Section -->
         <section id="analysis" class="section" style="display: none">
-          <div
-            style="
-              display: grid;
-              grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-              gap: 1.5rem;
-            "
-          >
+          <div class="analysis-stats-grid">
             <div class="card" data-group="analyse">
               <div class="card-header">
                 <span class="card-title">Analyse du Discours</span>
@@ -1526,7 +1520,7 @@
             </div>
           </div>
 
-          <div class="card" data-group="analyse" style="margin-top: 1.5rem">
+          <div class="card mt-6" data-group="analyse">
             <div class="card-header">
               <span class="card-title">Thèmes Principaux</span>
             </div>
@@ -1538,7 +1532,7 @@
           </div>
 
           <!-- Références croisées — affichées automatiquement quand un verset est diffusé -->
-          <div class="card" data-group="analyse" style="margin-top: 1.5rem">
+          <div class="card mt-6" data-group="analyse">
             <div class="card-header">
               <span class="card-title">Références Croisées</span>
               <span id="crossRefStatus" class="status-badge" style="display: none"></span>
@@ -1554,21 +1548,14 @@
           </div>
 
           <!-- Résumé IA en direct — rolling summary pendant le sermon -->
-          <div class="card" data-group="analyse" style="margin-top: 1.5rem">
+          <div class="card mt-6" data-group="analyse">
             <div class="card-header">
               <span class="card-title">Résumé IA en Direct</span>
-              <button
-                id="liveSummaryRefreshBtn"
-                class="btn btn-secondary"
-                style="font-size: 0.7rem; padding: 0.2rem 0.5rem"
-              >
+              <button id="liveSummaryRefreshBtn" class="btn btn-secondary btn-2xs">
                 Actualiser
               </button>
             </div>
-            <div
-              id="liveSummaryContent"
-              style="font-size: 0.8rem; color: var(--text-dim); line-height: 1.5; min-height: 60px"
-            >
+            <div class="ai-summary-box" id="liveSummaryContent">
               Le résumé se génère automatiquement pendant le sermon.
             </div>
           </div>
@@ -1578,7 +1565,7 @@
                      translateText / getPostServiceRecap) mais sans aucun bouton pour les
                      déclencher — les modules IA étaient donc invisibles et inutilisables
                      malgré l'activation dans config/features.json. -->
-          <div class="card" data-group="analyse" style="margin-top: 1.5rem">
+          <div class="card mt-6" data-group="analyse">
             <div class="card-header">
               <span class="card-title">Fonctions IA Avancées</span>
               <!-- AJOUT : badge de mode de culte auto-détecté (rafraîchi en tâche de
@@ -1586,7 +1573,7 @@
                              détection n'a encore eu lieu. -->
               <span id="sermonModeBadge" class="status-badge" style="display: none"></span>
             </div>
-            <div style="display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem">
+            <div class="wrap-btn-row mb-4">
               <button id="requestSermonThemeBtn" class="btn btn-secondary">
                 Détecter le thème
               </button>
@@ -1625,27 +1612,8 @@
             <!-- AJOUT : traduction live automatique — quand activé, chaque verset
                          affiché est traduit automatiquement et envoyé à l'overlay (double
                          affichage FR/langue cible), sans clic manuel par verset. -->
-            <div
-              style="
-                display: flex;
-                align-items: center;
-                gap: 0.75rem;
-                flex-wrap: wrap;
-                margin-bottom: 1rem;
-                padding: 0.6rem 0.8rem;
-                border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
-                border-radius: 8px;
-              "
-            >
-              <label
-                style="
-                  display: flex;
-                  align-items: center;
-                  gap: 0.5rem;
-                  cursor: pointer;
-                  user-select: none;
-                "
-              >
+            <div class="auto-translate-row">
+              <label class="checkbox-label">
                 <input
                   type="checkbox"
                   id="autoTranslateToggle"
@@ -1653,11 +1621,7 @@
                 />
                 <span>Traduction live sur l'overlay</span>
               </label>
-              <select
-                id="autoTranslateLang"
-                onchange="onAutoTranslateLangChange()"
-                style="margin-left: auto"
-              >
+              <select class="ml-auto" id="autoTranslateLang" onchange="onAutoTranslateLangChange()" aria-label="Langue de la traduction live">
                 <option value="en">Anglais</option>
                 <option value="es">Espagnol</option>
                 <option value="dyu">Dioula</option>
@@ -1668,67 +1632,37 @@
                          par mots-clés dans les cultes archivés (voir sermon-archive.js) —
                          chaque clic sur "Récap fin de culte" ci-dessus alimente cette
                          archive. Pas d'appel API, pas d'embedding, juste un fichier local. -->
-            <div
-              style="
-                display: flex;
-                align-items: center;
-                gap: 0.6rem;
-                flex-wrap: wrap;
-                margin-bottom: 1rem;
-              "
-            >
-              <input
-                type="text"
-                id="archiveSearchInput"
-                placeholder="Ai-je déjà prêché sur... ?"
-                style="flex: 1; min-width: 220px"
-                onkeydown="if (event.key === 'Enter') requestArchiveSearch();"
-              />
+            <div class="inline-form-row mb-4">
+              <input class="input-flex-220" type="text" id="archiveSearchInput" placeholder="Ai-je déjà prêché sur... ?" onkeydown="if (event.key === 'Enter') requestArchiveSearch();" aria-label="Rechercher dans les prédications archivées" />
               <button id="requestArchiveSearchBtn" class="btn btn-secondary">
                 🔎 Chercher dans l'historique
               </button>
             </div>
 
-            <div id="aiEnricherOutput" class="stat-row" style="display: block">
+            <div id="aiEnricherOutput" class="stat-row stat-row-block">
               <span class="stat-label">Aucune analyse IA lancée pour le moment.</span>
             </div>
           </div>
 
           <!-- Récap post-culte — affiché quand le culte est terminé -->
-          <div
-            class="card"
-            data-group="analyse"
-            style="margin-top: 1.5rem; display: none"
-            id="postServiceRecapCard"
-          >
+          <div class="card mt-6" data-group="analyse" style="display: none" id="postServiceRecapCard">
             <div class="card-header">
               <span class="card-title">Récap Post-Culte</span>
-              <div style="display: flex; gap: 0.4rem">
-                <button
-                  id="exportPostServiceRecapArchiveBtn"
-                  class="btn btn-secondary"
-                  style="font-size: 0.7rem; padding: 0.2rem 0.5rem"
-                >
+              <div class="btn-group-sm">
+                <button id="exportPostServiceRecapArchiveBtn" class="btn btn-secondary btn-2xs">
                   📄 Exporter .txt
                 </button>
-                <button
-                  id="exportHighlightsArchiveBtn"
-                  class="btn btn-secondary"
-                  style="font-size: 0.7rem; padding: 0.2rem 0.5rem"
-                >
+                <button id="exportHighlightsArchiveBtn" class="btn btn-secondary btn-2xs">
                   📊 Exporter temps forts
                 </button>
               </div>
             </div>
-            <div
-              id="postServiceRecapContent"
-              style="font-size: 0.8rem; color: var(--text-dim); line-height: 1.6; min-height: 80px"
-            >
+            <div class="ai-recap-box" id="postServiceRecapContent">
               Cliquez sur "Récap fin de culte" dans Fonctions IA pour générer ce résumé.
             </div>
           </div>
 
-          <div class="card" style="margin-top: 1.5rem">
+          <div class="card mt-6">
             <div class="card-header">
               <span class="card-title">Agent opérateur</span>
               <span class="status-badge">Actions contrôlées</span>
@@ -1737,14 +1671,8 @@
               L'agent consulte les ressources existantes et demande confirmation avant toute action
               publique.
             </div>
-            <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 1rem">
-              <input
-                type="text"
-                id="agentInput"
-                placeholder="Ex. Trouve Jean 3:16 et prépare son affichage"
-                style="flex: 1; min-width: 240px"
-                onkeydown="if (event.key === 'Enter') runAgent();"
-              />
+            <div class="wrap-btn-row mb-4">
+              <input class="input-flex-240" type="text" id="agentInput" placeholder="Ex. Trouve Jean 3:16 et prépare son affichage" onkeydown="if (event.key === 'Enter') runAgent();" aria-label="Instruction pour l'agent opérateur" />
               <button id="runAgentBtn" class="btn btn-secondary">Lancer</button>
               <button
                 class="btn btn-primary"
@@ -1754,11 +1682,7 @@
                 Confirmer l'action
               </button>
             </div>
-            <pre
-              id="agentOutput"
-              class="stat-row"
-              style="display: block; white-space: pre-wrap; min-height: 3rem"
-            >
+            <pre id="agentOutput" class="stat-row agent-output">
 Aucune exécution agent.</pre>
           </div>
 
@@ -1769,7 +1693,7 @@ Aucune exécution agent.</pre>
                      réellement archivées, jamais de contenu généré sans source (voir
                      sermon-qa.js). Réservé à l'opérateur : jamais exposé sur
                      companion.html/overlay.html. -->
-          <div class="card" data-group="analyse" style="margin-top: 1.5rem">
+          <div class="card mt-6" data-group="analyse">
             <div class="card-header">
               <span class="card-title">Assistant Q&R — Prédications archivées</span>
             </div>
@@ -1777,28 +1701,14 @@ Aucune exécution agent.</pre>
               Répond uniquement à partir des prédications déjà archivées (voir "Récap fin de culte"
               ci-dessus) — jamais de théologie générée sans passage réel à citer.
             </div>
-            <div
-              style="
-                display: flex;
-                align-items: center;
-                gap: 0.6rem;
-                flex-wrap: wrap;
-                margin-bottom: 1rem;
-              "
-            >
-              <input
-                type="text"
-                id="sermonQaInput"
-                placeholder="Qu'a dit le pasteur sur... ?"
-                style="flex: 1; min-width: 220px"
-                onkeydown="if (event.key === 'Enter') askSermonQuestion();"
-              />
+            <div class="inline-form-row mb-4">
+              <input class="input-flex-220" type="text" id="sermonQaInput" placeholder="Qu'a dit le pasteur sur... ?" onkeydown="if (event.key === 'Enter') askSermonQuestion();" aria-label="Question sur une prédication archivée" />
               <button id="askSermonQuestionBtn" class="btn btn-secondary">💬 Demander</button>
             </div>
-            <div id="sermonQaOutput" class="stat-row" style="display: block">
+            <div id="sermonQaOutput" class="stat-row stat-row-block">
               <span class="stat-label">Posez une question sur une prédication passée.</span>
             </div>
-            <div id="sermonQaSources" style="margin-top: 0.75rem"></div>
+            <div class="mt-3" id="sermonQaSources"></div>
           </div>
 
           <!-- AJOUT (recherche de versets par thème — fonctionnalité déjà codée
@@ -1808,7 +1718,7 @@ Aucune exécution agent.</pre>
                      pas implémenté côté serveur, le matching réel est un
                      rapprochement par mot-clé sur une douzaine de thèmes
                      prédéfinis. Ne pas survendre. -->
-          <div class="card" data-group="analyse" style="margin-top: 1.5rem">
+          <div class="card mt-6" data-group="analyse">
             <div class="card-header">
               <span class="card-title">Recherche de versets par thème</span>
             </div>
@@ -1816,28 +1726,14 @@ Aucune exécution agent.</pre>
               Recherche par mot-clé sur des thèmes courants (amour, foi, pardon, grâce, paix...) —
               pas une recherche IA/sémantique.
             </div>
-            <div class="mood-picker-row" id="bibleTopicChips" style="margin-bottom: 1rem"></div>
-            <div
-              style="
-                display: flex;
-                align-items: center;
-                gap: 0.6rem;
-                flex-wrap: wrap;
-                margin-bottom: 1rem;
-              "
-            >
-              <input
-                type="text"
-                id="bibleSearchInput"
-                placeholder="Rechercher un thème (ex. pardon, espérance...)"
-                style="flex: 1; min-width: 220px"
-                onkeydown="if (event.key === 'Enter') searchBibleByTopic();"
-              />
+            <div class="mood-picker-row mb-4" id="bibleTopicChips"></div>
+            <div class="inline-form-row mb-4">
+              <input class="input-flex-220" type="text" id="bibleSearchInput" placeholder="Rechercher un thème (ex. pardon, espérance...)" onkeydown="if (event.key === 'Enter') searchBibleByTopic();" aria-label="Rechercher des versets par thème" />
               <button id="searchBibleByTopicBtn" class="btn btn-secondary">
                 🔎 Rechercher
               </button>
             </div>
-            <div id="bibleSearchOutput" class="stat-row" style="display: block">
+            <div id="bibleSearchOutput" class="stat-row stat-row-block">
               <span class="stat-label">Choisissez un thème ou tapez une recherche.</span>
             </div>
           </div>
@@ -1846,11 +1742,11 @@ Aucune exécution agent.</pre>
                      chaque verset affiché et chaque erreur de pipeline, mais rien ne
                      relisait cette base côté tableau de bord — la persistance tournait
                      "dans le vide". Panneau de consultation de l'historique. -->
-          <div class="card" data-group="analyse" style="margin-top: 1.5rem">
+          <div class="card mt-6" data-group="analyse">
             <div class="card-header">
               <span class="card-title">Historique de session (persistant)</span>
             </div>
-            <div style="display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem">
+            <div class="wrap-btn-row mb-4">
               <button id="requestSessionStats1Btn" class="btn btn-secondary">
                 Dernières 24h
               </button>
@@ -1858,7 +1754,7 @@ Aucune exécution agent.</pre>
                 7 derniers jours
               </button>
             </div>
-            <div id="sessionStatsOutput" class="stat-row" style="display: block">
+            <div id="sessionStatsOutput" class="stat-row stat-row-block">
               <span class="stat-label">Cliquez sur une période pour charger l'historique.</span>
             </div>
 
@@ -1866,14 +1762,8 @@ Aucune exécution agent.</pre>
                          réutilise le même historique persistant ci-dessus, juste
                          mis en forme pour un enregistrement vidéo du culte en cours
                          (chapitres YouTube à coller dans la description, ou CSV). -->
-            <div
-              style="
-                margin-top: 1.25rem;
-                padding-top: 1rem;
-                border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
-              "
-            >
-              <div style="display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.75rem">
+            <div class="section-divider-block">
+              <div class="wrap-btn-row mb-3">
                 <button id="exportHighlightsBtn" class="btn btn-secondary">
                   🎬 Exporter les temps forts (culte en cours)
                 </button>
@@ -1883,22 +1773,7 @@ Aucune exécution agent.</pre>
                 "chapitres YouTube" (à coller dans la description de la vidéo) — un export CSV est
                 aussi copié.
               </div>
-              <textarea
-                id="highlightsExportOutput"
-                readonly
-                rows="6"
-                style="
-                  display: none;
-                  width: 100%;
-                  font-family: monospace;
-                  font-size: 0.8rem;
-                  padding: 0.6rem;
-                  border-radius: var(--radius-sm);
-                  border: 1px solid var(--border-subtle);
-                  background: var(--bg-input);
-                  color: var(--text-main);
-                "
-              ></textarea>
+              <textarea class="highlights-export-output" id="highlightsExportOutput" readonly rows="6" style="display: none" aria-label="Temps forts exportés (chapitres YouTube)"></textarea>
             </div>
 
             <!-- AJOUT (chantier 4.6 — extraits vidéo autour des temps forts) :
@@ -1906,30 +1781,17 @@ Aucune exécution agent.</pre>
                          au bloc "Exporter les temps forts" ci-dessus qui ne produit que du
                          texte (chapitres/CSV). Nécessite un enregistrement vidéo du culte
                          déjà terminé sur disque (l'app n'enregistre pas elle-même). -->
-            <div
-              style="
-                margin-top: 1.25rem;
-                padding-top: 1rem;
-                border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
-              "
-            >
-              <div style="font-weight: 600; margin-bottom: 0.5rem">
+            <div class="section-divider-block">
+              <div class="subsection-title mb-2">
                 🎞️ Générer des extraits vidéo (réseaux sociaux)
               </div>
-              <div class="field-hint" style="margin-bottom: 0.6rem">
+              <div class="field-hint mb-tight">
                 Découpe un extrait de
-                <input
-                  type="number"
-                  id="clipDurationInput"
-                  value="45"
-                  min="15"
-                  max="120"
-                  style="width: 4rem"
-                />
+                <input class="input-w-4rem" type="number" id="clipDurationInput" value="45" min="15" max="120" aria-label="Durée de chaque extrait vidéo, en secondes" />
                 s autour de chaque temps fort, depuis un enregistrement vidéo déjà terminé sur
                 disque.
               </div>
-              <div style="display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.6rem">
+              <div class="wrap-btn-row mb-tight">
                 <button id="pickClipSourceVideoBtn" class="btn btn-secondary">
                   📂 Choisir la vidéo source
                 </button>
@@ -1937,11 +1799,11 @@ Aucune exécution agent.</pre>
                   📁 Choisir le dossier de destination
                 </button>
               </div>
-              <div id="clipExportPaths" class="field-hint" style="margin-bottom: 0.6rem"></div>
+              <div id="clipExportPaths" class="field-hint mb-tight"></div>
               <button class="btn btn-primary" id="clipExportBtn">
                 ✂️ Générer les extraits
               </button>
-              <div id="clipExportStatus" class="field-hint" style="margin-top: 0.6rem"></div>
+              <div id="clipExportStatus" class="field-hint mt-tight"></div>
             </div>
           </div>
         </section>
