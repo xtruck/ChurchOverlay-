@@ -2,6 +2,22 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
+    <!-- AJOUT (audit sécurité, extension aux pages Electron/OBS restantes) :
+         même politique qu'overlay.html pour les mêmes raisons — connexion
+         WebSocket sur un PORT DYNAMIQUE (WS_HOST/PORT configurables) et logo
+         (#branding-logo-img/-video) dont l'URL vient du serveur via ce
+         WebSocket, donc connect-src/img-src/media-src restent volontairement
+         larges (http:/ws: sans domaine figé) plutôt que de risquer de casser
+         l'habillage caméra en silence. style-src garde 'unsafe-inline' pour
+         le <style>@import Google Fonts ci-dessous ; script-src également,
+         pour le <script> de connexion/rendu du logo (pas de dépendance de
+         test à addInitScript ici, mais 'self' seul casserait ce <script>
+         inline de la même façon que documenté pour dashboard.html/setup.html
+         plus haut dans ce chantier). -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: http: https:; media-src 'self' http:; connect-src 'self' ws: wss: http: https:; object-src 'none'; base-uri 'none'; form-action 'none';"
+    />
     <title>ChurchOverlay — Habillage caméra</title>
     <!--
   ============================================================================

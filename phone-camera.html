@@ -3,6 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- AJOUT (audit sécurité, extension aux pages servies sur le réseau) : page
+     ouverte par le téléphone d'un opérateur en scannant un QR code (voir
+     phone-camera-pairing.js) — servie en HTTP sur le réseau local, même
+     raisonnement que companion.html pour la nécessité d'une CSP ici.
+     script-src garde 'unsafe-inline' pour le <script> de la page (appairage,
+     capture caméra via getUserMedia(), boucle canvas -> JPEG -> POST).
+     connect-src reste 'self' : les seuls appels sont /phone-camera-pair et
+     /phone-camera-frame/<id>, toujours relatifs à la même origine. Le flux
+     vidéo lui-même passe par video.srcObject (un MediaStream, jamais une
+     URL) — aucune directive media-src/img-src n'est donc nécessaire pour ça.
+     object-src/base-uri/form-action restent stricts. -->
+<meta
+  http-equiv="Content-Security-Policy"
+  content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none';"
+/>
 <title>ChurchOverlay — Caméra téléphone</title>
 <!--
   ============================================================================

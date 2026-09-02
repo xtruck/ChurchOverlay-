@@ -3,6 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- AJOUT (audit sécurité, extension aux pages servies sur le réseau) :
+         contrairement aux fenêtres Electron déjà durcies (setup/overlay/
+         dashboard/...), cette page est servie en HTTP à des appareils
+         quelconques du réseau local qui scannent un QR code (voir
+         http-routes.js > GET /companion) — c'est la surface la plus exposée
+         de l'app, une CSP y a donc plus de valeur qu'ailleurs. script-src
+         garde 'unsafe-inline' pour le <script> de la page (logique de
+         polling/notes personnelles, pas encore externalisée) ; connect-src
+         reste 'self' car tous les appels fetch() sont vers des chemins
+         relatifs (/api/verses, /api/captions, /api/checkin) — toujours
+         même origine que la page, quel que soit l'IP:port LAN utilisé pour
+         y accéder. object-src/base-uri/form-action restent stricts. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none';"
+    />
     <title>ChurchOverlay — Mes versets</title>
     <style>
       /* Même identité "verrière nocturne" que dashboard.html/overlay.html — bleu
@@ -296,7 +312,7 @@
         <button type="button" class="verse-action-btn" data-action="toggle-note" data-key="${keyAttr}">📝 Ma note</button>
       </div>
       <div class="verse-note" data-note-key="${keyAttr}">
-        <textarea placeholder="Votre note personnelle (visible uniquement sur cet appareil)..." data-key="${keyAttr}">${escapeHtml(entry.note || '')}</textarea>
+        <textarea aria-label="Votre note personnelle" placeholder="Votre note personnelle (visible uniquement sur cet appareil)..." data-key="${keyAttr}">${escapeHtml(entry.note || '')}</textarea>
         <div class="saved-hint" data-hint-key="${keyAttr}">Enregistré</div>
       </div>
     </div>
