@@ -36,6 +36,26 @@ export function addVerseToRundown() {
 }
 
 /**
+ * AJOUT (câblage des écouteurs, cf. dashboard/event-bindings.js) : le
+ * panneau studio a son propre champ de saisie (#ppRundownInput), alors
+ * qu'addVerseToRundown() ci-dessus lit #rundownRefInput (le champ de la
+ * carte "Feuille de culte" historique). Cette passerelle recopie la valeur
+ * de l'un vers l'autre avant de déclencher l'ajout — logique qui vivait
+ * jusqu'ici en clair dans un attribut onclick de dashboard.html, donc
+ * ni testable ni relisible. Comportement identique à l'octet près, y
+ * compris le vidage inconditionnel du champ studio même quand la
+ * référence était vide (addVerseToRundown ressort alors sans rien faire).
+ */
+export function addVerseToRundownFromStudio() {
+  const studioInput = document.getElementById('ppRundownInput');
+  const legacyInput = document.getElementById('rundownRefInput');
+  if (!studioInput || !legacyInput) return;
+  legacyInput.value = studioInput.value;
+  addVerseToRundown();
+  studioInput.value = '';
+}
+
+/**
  * Appelée depuis media-library.js/scene-studio.js (bouton "➕ Feuille de
  * route" de chaque élément de galerie) — un seul point d'entrée générique
  * pour les deux types, plutôt qu'une fonction dupliquée par type.
@@ -147,6 +167,7 @@ export function renderRundown(message) {
 }
 
 window.addVerseToRundown = addVerseToRundown;
+window.addVerseToRundownFromStudio = addVerseToRundownFromStudio;
 window.addToRundown = addToRundown;
 window.removeRundownCue = removeRundownCue;
 window.moveRundownCue = moveRundownCue;

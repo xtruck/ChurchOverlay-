@@ -189,7 +189,7 @@
               <span>Connecté</span>
             </div>
 
-            <button class="btn btn-secondary" onclick="toggleRealMicCapture()" id="speechBtn">
+            <button class="btn btn-secondary" id="speechBtn">
               <svg
                 width="16"
                 height="16"
@@ -248,7 +248,7 @@
             <span id="pipelineAlertIcon">⚠️</span>
             <span id="pipelineAlertMessage" style="font-size: 0.9rem"></span>
           </div>
-          <button class="btn btn-secondary" onclick="restartPipeline()" style="flex-shrink: 0">
+          <button id="restartPipelineBtn" class="btn btn-secondary" style="flex-shrink: 0">
             Redémarrer le pipeline
           </button>
         </div>
@@ -284,19 +284,19 @@
 
               <!-- Master Clear Controls (F1 - F4) -->
               <div class="pp-clear-cluster">
-                <button class="pp-clear-btn pp-clear-all" onclick="window.ppClearAll()" title="Masquer tout l'affichage (F1 ou Échap)">
+                <button id="ppClearAllBtn" class="pp-clear-btn pp-clear-all" title="Masquer tout l'affichage (F1 ou Échap)">
                   <span>Clear All</span>
                   <span class="pp-keycap">F1</span>
                 </button>
-                <button class="pp-clear-btn" onclick="window.ppClearSlide()" title="Masquer le texte / verset actuel (F2)">
+                <button id="ppClearSlideBtn" class="pp-clear-btn" title="Masquer le texte / verset actuel (F2)">
                   <span>Clear Slide</span>
                   <span class="pp-keycap">F2</span>
                 </button>
-                <button class="pp-clear-btn" onclick="window.ppClearMedia()" title="Masquer le média d'arrière-plan (F3)">
+                <button id="ppClearMediaBtn" class="pp-clear-btn" title="Masquer le média d'arrière-plan (F3)">
                   <span>Clear Media</span>
                   <span class="pp-keycap">F3</span>
                 </button>
-                <button class="pp-clear-btn" onclick="window.ppClearProps()" title="Masquer l'habillage / scène (F4)">
+                <button id="ppClearPropsBtn" class="pp-clear-btn" title="Masquer l'habillage / scène (F4)">
                   <span>Clear Props</span>
                   <span class="pp-keycap">F4</span>
                 </button>
@@ -304,7 +304,7 @@
 
               <!-- Audio VU Meter & Microphone Control -->
               <div class="pp-audio-strip">
-                <button class="btn btn-secondary" onclick="toggleRealMicCapture()" id="ppMicBtn" style="height: 28px; padding: 0 8px; font-size: 11px; font-weight: 600;">
+                <button class="btn btn-secondary" id="ppMicBtn" style="height: 28px; padding: 0 8px; font-size: 11px; font-weight: 600;">
                   🎤 Micro
                 </button>
                 <div class="pp-vu-track" title="Vumètre audio d'entrée micro">
@@ -345,13 +345,13 @@
                 <div class="pp-tab-pane active" id="tabRundown">
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                     <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--pp-text-muted);">Feuille de Culte</span>
-                    <button class="btn btn-secondary" onclick="window.nextRundownCue ? window.nextRundownCue() : null" style="font-size: 10px; padding: 2px 8px; font-weight: 600;">
+                    <button id="ppRundownNextCueBtn" class="btn btn-secondary" style="font-size: 10px; padding: 2px 8px; font-weight: 600;">
                       ▶ Suivant (Espace)
                     </button>
                   </div>
                   <div style="display: flex; gap: 4px; margin-bottom: 8px;">
                     <input type="text" id="ppRundownInput" class="pp-input" placeholder="Ajouter verset (ex: Jean 3:16)..." style="height: 30px; font-size: 11px;" />
-                    <button class="btn btn-secondary" onclick="if(window.addVerseToRundown) { const i=document.getElementById('ppRundownInput'); const old=document.getElementById('rundownRefInput'); if(old&&i){old.value=i.value; window.addVerseToRundown(); i.value='';} }" style="height: 30px; padding: 0 8px; font-size: 11px;">➕</button>
+                    <button id="ppRundownAddBtn" class="btn btn-secondary" style="height: 30px; padding: 0 8px; font-size: 11px;">➕</button>
                   </div>
                   <div id="ppRundownList" style="display: flex; flex-direction: column; gap: 6px;">
                     <div class="pp-cue-item active">
@@ -422,7 +422,7 @@
                         <option value="both">Bilingue (FR + EN)</option>
                       </select>
                     </div>
-                    <button class="btn btn-primary" onclick="window.fireQuickScripture()" style="height: 34px; font-size: 11px; font-weight: 600;">
+                    <button id="fireQuickScriptureBtn" class="btn btn-primary" style="height: 34px; font-size: 11px; font-weight: 600;">
                       Diffuser le Verset
                     </button>
                   </div>
@@ -433,15 +433,15 @@
                   <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--pp-text-muted);">Recherche Biblique par Sens (IA)</span>
                   <div style="display: flex; gap: 4px;">
                     <input type="text" id="ppAiSearchInput" class="pp-input" placeholder="Ex: marcher sur l'eau, paix dans l'épreuve..." style="height: 30px; font-size: 11px;" onkeydown="if(event.key==='Enter') window.executeAiSemanticSearch();" />
-                    <button class="btn btn-secondary" onclick="window.executeAiSemanticSearch()" style="height: 30px; padding: 0 10px; font-size: 11px;">🔍</button>
+                    <button id="executeAiSemanticSearchBtn" class="btn btn-secondary" style="height: 30px; padding: 0 10px; font-size: 11px;">🔍</button>
                   </div>
 
                   <!-- Quick Semantic Topic Chips -->
                   <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;">
-                    <button class="pp-chip-btn" onclick="window.quickSemanticQuery('paix et réconfort dans l\'épreuve')">🕊️ Paix</button>
-                    <button class="pp-chip-btn" onclick="window.quickSemanticQuery('l\'amour inconditionnel de Dieu')">❤️ Amour</button>
-                    <button class="pp-chip-btn" onclick="window.quickSemanticQuery('la foi et la persévérance')">⚓ Foi</button>
-                    <button class="pp-chip-btn" onclick="window.quickSemanticQuery('toutes choses concourent au bien')">✨ Espérance</button>
+                    <button id="ppQuickQueryPaixBtn" class="pp-chip-btn">🕊️ Paix</button>
+                    <button id="ppQuickQueryAmourBtn" class="pp-chip-btn">❤️ Amour</button>
+                    <button id="ppQuickQueryFoiBtn" class="pp-chip-btn">⚓ Foi</button>
+                    <button id="ppQuickQueryEsperanceBtn" class="pp-chip-btn">✨ Espérance</button>
                   </div>
 
                   <!-- AI Search Results Container -->
@@ -454,10 +454,10 @@
                   <div style="border-top: 1px solid var(--pp-border-subtle); padding-top: 10px; margin-top: 6px;">
                     <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--pp-text-muted);">Outils IA en Direct</span>
                     <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
-                      <button class="btn btn-secondary" onclick="window.generateKeyPointFromSpeech()" style="font-size: 10px; height: 30px; justify-content: flex-start;">
+                      <button id="generateKeyPointFromSpeechBtn" class="btn btn-secondary" style="font-size: 10px; height: 30px; justify-content: flex-start;">
                         🧠 Extraire le Point Clé de la Prédication
                       </button>
-                      <button class="btn btn-secondary" onclick="window.toggleAiAutoTheme()" id="ppAiAutoThemeBtn" style="font-size: 10px; height: 30px; justify-content: flex-start;">
+                      <button class="btn btn-secondary" id="ppAiAutoThemeBtn" style="font-size: 10px; height: 30px; justify-content: flex-start;">
                         🤖 Activer l'Auto-Thème IA (Ambiance)
                       </button>
                     </div>
@@ -468,16 +468,16 @@
                 <div class="pp-tab-pane" id="tabMedia">
                   <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--pp-text-muted);">Médiathèque & Arrière-plans</span>
                   <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;" id="ppMediaThumbnailGrid">
-                    <div class="pp-cue-item" onclick="if(window.triggerMediaById) window.triggerMediaById('bg-gold')">
+                    <div id="ppMediaCueBgGold" role="button" tabindex="0" class="pp-cue-item">
                       <span class="pp-cue-label">✨ Gold Ambient</span>
                     </div>
-                    <div class="pp-cue-item" onclick="if(window.triggerMediaById) window.triggerMediaById('bg-blue')">
+                    <div id="ppMediaCueBgBlue" role="button" tabindex="0" class="pp-cue-item">
                       <span class="pp-cue-label">🌌 Deep Worship</span>
                     </div>
-                    <div class="pp-cue-item" onclick="if(window.triggerMediaById) window.triggerMediaById('bg-purple')">
+                    <div id="ppMediaCueBgPurple" role="button" tabindex="0" class="pp-cue-item">
                       <span class="pp-cue-label">🍇 Royal Purple</span>
                     </div>
-                    <div class="pp-cue-item" onclick="if(window.triggerMediaById) window.triggerMediaById('bg-green')">
+                    <div id="ppMediaCueBgGreen" role="button" tabindex="0" class="pp-cue-item">
                       <span class="pp-cue-label">🌿 Grace Green</span>
                     </div>
                   </div>
@@ -488,13 +488,13 @@
                   <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--pp-text-muted);">Bibliothèque de Chants</span>
                   <input type="text" class="pp-input" placeholder="Rechercher un chant..." style="height: 30px; font-size: 11px; margin-bottom: 8px;" />
                   <div style="display: flex; flex-direction: column; gap: 6px;">
-                    <div class="pp-cue-item" onclick="showToast('Chant sélectionné', 'info')">
+                    <div id="ppSongCue1" role="button" tabindex="0" class="pp-cue-item">
                       <div class="pp-cue-info">
                         <span class="pp-cue-label">🎵 Bénis l'Éternel, ô mon âme</span>
                         <span class="pp-cue-meta">10,000 Reasons · Matt Redman</span>
                       </div>
                     </div>
-                    <div class="pp-cue-item" onclick="showToast('Chant sélectionné', 'info')">
+                    <div id="ppSongCue2" role="button" tabindex="0" class="pp-cue-item">
                       <div class="pp-cue-info">
                         <span class="pp-cue-label">🎵 Grâce Infinie (Amazing Grace)</span>
                         <span class="pp-cue-meta">Hymne classique · John Newton</span>
@@ -527,13 +527,13 @@
                 <!-- Reading Mode Navigation Bar -->
                 <div class="pp-reading-nav-bar">
                   <div style="display: flex; gap: 6px;">
-                    <button class="pp-btn-nav" onclick="if(window.prevChapter) window.prevChapter();">⏮ Chap. Préc.</button>
-                    <button class="pp-btn-nav" onclick="if(window.prevReadingVerse) window.prevReadingVerse();">◀ Verset Préc.</button>
+                    <button id="ppPrevChapterBtn" class="pp-btn-nav">⏮ Chap. Préc.</button>
+                    <button id="ppPrevReadingVerseBtn" class="pp-btn-nav">◀ Verset Préc.</button>
                   </div>
                   <span style="font-size: 11px; font-weight: 600; color: var(--pp-text-muted);" id="ppReadingNavLabel">Navigation Lecture Pas-à-Pas</span>
                   <div style="display: flex; gap: 6px;">
-                    <button class="pp-btn-nav" onclick="if(window.nextReadingVerse) window.nextReadingVerse();">Verset Suiv. ▶</button>
-                    <button class="pp-btn-nav" onclick="if(window.nextChapter) window.nextChapter();">Chap. Suiv. ⏭</button>
+                    <button id="ppNextReadingVerseBtn" class="pp-btn-nav">Verset Suiv. ▶</button>
+                    <button id="ppNextChapterBtn" class="pp-btn-nav">Chap. Suiv. ⏭</button>
                   </div>
                 </div>
 
@@ -590,12 +590,12 @@
                 <div style="display: flex; flex-direction: column; gap: 6px;">
                   <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--pp-text-muted);">Ambiance Visuelle</span>
                   <div class="pp-mood-palette">
-                    <button class="pp-mood-pill" onclick="window.setStudioMood('dark')">Minimal Sombre</button>
-                    <button class="pp-mood-pill" onclick="window.setStudioMood('warm')">Or Solennel</button>
-                    <button class="pp-mood-pill" onclick="window.setStudioMood('cool')">Bleu Nuit</button>
-                    <button class="pp-mood-pill" onclick="window.setStudioMood('celebration')">Célébration</button>
-                    <button class="pp-mood-pill" onclick="window.setStudioMood('purple')">Pourpre Royal</button>
-                    <button class="pp-mood-pill" onclick="window.setStudioMood('regal')">Rayonnant</button>
+                    <button id="setStudioMoodDarkBtn" class="pp-mood-pill">Minimal Sombre</button>
+                    <button id="setStudioMoodWarmBtn" class="pp-mood-pill">Or Solennel</button>
+                    <button id="setStudioMoodCoolBtn" class="pp-mood-pill">Bleu Nuit</button>
+                    <button id="setStudioMoodCelebrationBtn" class="pp-mood-pill">Célébration</button>
+                    <button id="setStudioMoodPurpleBtn" class="pp-mood-pill">Pourpre Royal</button>
+                    <button id="setStudioMoodRegalBtn" class="pp-mood-pill">Rayonnant</button>
                   </div>
                 </div>
 
@@ -709,26 +709,26 @@
           >
             <span style="color: var(--text-dim)">Mode confiance :</span>
             <button
+              id="setTrustModeAutoBtn"
               type="button"
               class="mood-btn trust-mode-btn active"
               data-trust-mode="auto"
-              onclick="setTrustMode('auto')"
             >
               Automatique
             </button>
             <button
+              id="setTrustModeSemiAutoBtn"
               type="button"
               class="mood-btn trust-mode-btn"
               data-trust-mode="semi-auto"
-              onclick="setTrustMode('semi-auto')"
             >
               Semi-automatique
             </button>
             <button
+              id="setTrustModeManualBtn"
               type="button"
               class="mood-btn trust-mode-btn"
               data-trust-mode="manual"
-              onclick="setTrustMode('manual')"
             >
               Manuel
             </button>
@@ -753,7 +753,7 @@
               placeholder="Saisir ou simuler une phrase (ex: 'Ouvrons nos bibles dans Jean 3:16' ou 'Psaume 23:1')..."
               onkeydown="if (event.key === 'Enter') sendCustomSpeechText();"
             />
-            <button class="btn btn-primary" onclick="sendCustomSpeechText()">
+            <button id="sendCustomSpeechTextBtn" class="btn btn-primary">
               Détecter & Afficher
             </button>
           </div>
@@ -765,24 +765,24 @@
               >Essayer:</span
             >
             <button
+              id="speechChipJean316Btn"
               class="chip-btn"
-              onclick="sendCustomSpeechText('Lisons dans Jean chapitre 3 verset 16')"
             >
               📖 Jean 3:16
             </button>
-            <button class="chip-btn" onclick="sendCustomSpeechText('Psaume 23 verset 1')">
+            <button id="speechChipPsaume231Btn" class="chip-btn">
               🛡️ Psaume 23:1
             </button>
             <button
+              id="speechChip1Cor134Btn"
               class="chip-btn"
-              onclick="sendCustomSpeechText('1 Corinthiens chapitre 13 verset 4')"
             >
               ❤️ 1 Cor 13:4
             </button>
-            <button class="chip-btn" onclick="sendCustomSpeechText('Romains chapitre 8 verset 28')">
+            <button id="speechChipRomains828Btn" class="chip-btn">
               ✨ Romains 8:28
             </button>
-            <button class="chip-btn" onclick="sendCustomSpeechText('Esaie 40 verset 31')">
+            <button id="speechChipEsaie4031Btn" class="chip-btn">
               🦅 Ésaïe 40:31
             </button>
           </div>
@@ -797,7 +797,7 @@
             <div class="card-header">
               <span class="card-title">Aperçu en direct</span>
               <button class="btn btn-secondary chip-sm" id="livePreviewToggleBtn"
-                onclick="toggleLivePreview()">
+>
                 👁 Afficher l'aperçu
               </button>
             </div>
@@ -869,28 +869,24 @@
                 <button
                   class="mood-btn active"
                   id="pattern-btn-none"
-                  onclick="setBackgroundPattern('none')"
                 >
                   Aucun motif
                 </button>
                 <button
                   class="mood-btn"
                   id="pattern-btn-dots"
-                  onclick="setBackgroundPattern('dots')"
                 >
                   Points
                 </button>
                 <button
                   class="mood-btn"
                   id="pattern-btn-grid"
-                  onclick="setBackgroundPattern('grid')"
                 >
                   Grille
                 </button>
                 <button
                   class="mood-btn"
                   id="pattern-btn-diagonal"
-                  onclick="setBackgroundPattern('diagonal')"
                 >
                   Diagonales
                 </button>
@@ -900,7 +896,7 @@
             <div class="card">
               <div class="queue-panel-header">
                 <span class="card-title">File d'attente (<span id="queueCount">0</span>)</span>
-                <button class="btn btn-secondary chip-sm" onclick="sendNextInQueue()">
+                <button id="sendNextInQueueBtn" class="btn btn-secondary chip-sm">
                   ▶ Suivant
                 </button>
               </div>
@@ -912,9 +908,9 @@
                   onkeydown="if (event.key === 'Enter') addToQueue();"
                 />
                 <button
+                  id="addToQueueBtn"
                   class="btn btn-secondary"
                   style="padding: 0.55rem 0.9rem"
-                  onclick="addToQueue()"
                 >
                   + Ajouter
                 </button>
@@ -933,11 +929,11 @@
               <div class="queue-panel-header">
                 <span class="card-title">Feuille de route (<span id="rundownCount">0</span>)</span>
                 <div style="display: flex; gap: 0.4rem">
-                  <button class="btn btn-secondary chip-sm" onclick="clearRundown()"
+                  <button id="clearRundownBtn" class="btn btn-secondary chip-sm"
                     title="Vider toute la feuille de route">
                     🗑 Vider
                   </button>
-                  <button class="btn btn-secondary chip-sm" onclick="nextRundownCue()">
+                  <button id="nextRundownCueBtn" class="btn btn-secondary chip-sm">
                     ▶ Suivant
                   </button>
                 </div>
@@ -950,9 +946,9 @@
                   onkeydown="if (event.key === 'Enter') addVerseToRundown();"
                 />
                 <button
+                  id="addVerseToRundownBtn"
                   class="btn btn-secondary"
                   style="padding: 0.55rem 0.9rem"
-                  onclick="addVerseToRundown()"
                 >
                   + Ajouter
                 </button>
@@ -996,9 +992,9 @@
               <div id="defaultPosterActive" class="default-poster-active">
                 <span style="font-size: 0.85rem; font-weight: 600" id="defaultPosterLabel"></span>
                 <button
+                  id="clearDefaultPosterFromCardBtn"
                   class="btn btn-secondary"
                   style="padding: 0.35rem 0.7rem; font-size: 0.75rem; flex-shrink: 0"
-                  onclick="clearDefaultPosterFromCard()"
                 >
                   Retirer
                 </button>
@@ -1011,7 +1007,7 @@
             <div class="card">
               <div class="queue-panel-header">
                 <span class="card-title">Médiathèque (<span id="mediaLibraryCount">0</span>)</span>
-                <button class="btn btn-secondary chip-sm" onclick="hideMediaNow()">
+                <button id="hideMediaNowBtn" class="btn btn-secondary chip-sm">
                   ⏹ Masquer
                 </button>
               </div>
@@ -1105,9 +1101,9 @@
                   <input type="checkbox" id="mediaLoopInput" /> Diaporama
                 </label>
                 <button
+                  id="addMediaLibraryItemBtn"
                   class="btn btn-secondary"
                   style="padding: 0.55rem 0.9rem"
-                  onclick="addMediaLibraryItem()"
                 >
                   + Choisir un fichier
                 </button>
@@ -1151,8 +1147,8 @@
                       style="flex: 1"
                     />
                     <button
+                      id="addMediaGroupBtn"
                       class="btn btn-secondary"
-                      onclick="addMediaGroup()"
                       style="flex-shrink: 0"
                     >
                       + Créer le groupe
@@ -1200,9 +1196,9 @@
               </div>
               <div class="queue-add-row">
                 <button
+                  id="addSongToLibraryBtn"
                   class="btn btn-secondary"
                   style="padding: 0.55rem 0.9rem"
-                  onclick="addSongToLibrary()"
                 >
                   + Ajouter le chant
                 </button>
@@ -1370,18 +1366,18 @@
               id="pendingVerseText"
             ></span>
             <button
+              id="confirmPendingVerseBtn"
               type="button"
               class="btn btn-primary"
               style="padding: 0.35rem 0.9rem; font-size: 0.8rem"
-              onclick="confirmPendingVerse()"
             >
               ✅ Confirmer (Espace)
             </button>
             <button
+              id="dismissPendingVerseBtn"
               type="button"
               class="btn btn-secondary"
               style="padding: 0.35rem 0.9rem; font-size: 0.8rem"
-              onclick="dismissPendingVerse()"
             >
               ✕ Ignorer
             </button>
@@ -1399,15 +1395,15 @@
                   </div>
                   <div style="display: flex; gap: 0.5rem">
                     <button
+                      id="heroShowManualVerseBtn"
                       class="btn btn-secondary"
-                      onclick="showManualVerse()"
                       style="padding: 0.4rem 0.85rem; font-size: 0.8rem"
                     >
                       Saisir Réf
                     </button>
                     <button
+                      id="heroHideVerseBtn"
                       class="btn btn-danger"
-                      onclick="hideVerse()"
                       style="padding: 0.4rem 0.85rem; font-size: 0.8rem"
                     >
                       Masquer
@@ -1447,8 +1443,8 @@
                   >Source: Louis Segond (LSG) & World English Bible</span
                 >
                 <button
+                  id="heroEmergencyStopBtn"
                   class="btn btn-secondary"
-                  onclick="emergencyStop()"
                   style="font-size: 0.78rem; color: var(--accent-rose)"
                 >
                   🛑 Arrêt d'Urgence
@@ -1499,23 +1495,23 @@
                 gap: 1rem;
               "
             >
-              <button class="btn btn-primary" onclick="showManualVerse()">
+              <button id="showManualVerseBtn" class="btn btn-primary">
                 📖 Afficher un Verset
               </button>
-              <button class="btn btn-secondary" onclick="hideVerse()">👁️ Masquer l'Overlay</button>
-              <button class="btn btn-secondary" onclick="pauseTimer()">⏸️ Mettre en Pause</button>
-              <button class="btn btn-secondary" onclick="resumeTimer()">▶️ Reprendre</button>
-              <button class="btn btn-danger" onclick="emergencyStop()">🛑 Arrêt d'Urgence</button>
+              <button id="hideVerseBtn" class="btn btn-secondary">👁️ Masquer l'Overlay</button>
+              <button id="pauseTimerBtn" class="btn btn-secondary">⏸️ Mettre en Pause</button>
+              <button id="resumeTimerBtn" class="btn btn-secondary">▶️ Reprendre</button>
+              <button id="emergencyStopBtn" class="btn btn-danger">🛑 Arrêt d'Urgence</button>
               <button
+                id="toggleBlackScreenBtn"
                 class="btn btn-danger"
-                onclick="toggleBlackScreen()"
                 style="background: #1a1a1a; border: 1px solid #555"
               >
                 ⬛ Écran Noir
               </button>
               <button
+                id="toggleTrainingModeBtn"
                 class="btn btn-secondary"
-                onclick="toggleTrainingMode()"
                 title="Mode formation — guide pas à pas pour les nouveaux opérateurs (Ctrl+Shift+T)"
               >
                 🎓 Mode Formation
@@ -1551,15 +1547,15 @@
                   <option value="60">1 h</option>
                 </select>
                 <button
+                  id="startServiceCountdownBtn"
                   class="btn btn-primary"
-                  onclick="startServiceCountdown()"
                   style="font-size: 0.75rem"
                 >
                   ▶ Lancer
                 </button>
                 <button
+                  id="stopServiceCountdownBtn"
                   class="btn btn-secondary"
-                  onclick="stopServiceCountdown()"
                   style="font-size: 0.75rem"
                 >
                   ⏹ Arrêter
@@ -1632,23 +1628,22 @@
                 style="flex: 1; min-width: 220px"
                 onkeydown="if (event.key === 'Enter') startReadingMode();"
               />
-              <button class="btn btn-primary" id="readingModeStartBtn" onclick="startReadingMode()">
+              <button class="btn btn-primary" id="readingModeStartBtn">
                 ▶️ Démarrer
               </button>
               <button
                 class="btn btn-danger"
                 id="readingModeStopBtn"
-                onclick="stopReadingMode()"
                 style="display: none"
               >
                 ⏹️ Arrêter
               </button>
             </div>
             <div id="readingModeAdvanceRow" style="display: none; gap: 0.6rem">
-              <button class="btn btn-secondary" onclick="previousReadingVerse()">
+              <button id="previousReadingVerseBtn" class="btn btn-secondary">
                 ◀ Précédent
               </button>
-              <button class="btn btn-secondary" onclick="nextReadingVerse()">Suivant ▶</button>
+              <button id="nextReadingVerseBtn" class="btn btn-secondary">Suivant ▶</button>
             </div>
           </div>
 
@@ -1712,13 +1707,13 @@
               <span class="card-title">Configuration de la Langue de Projection</span>
             </div>
             <div class="language-selector">
-              <button class="lang-btn active" data-lang="fr" onclick="setLanguage('fr')">
+              <button id="setLanguageFrBtn" class="lang-btn active" data-lang="fr">
                 Français (LSG)
               </button>
-              <button class="lang-btn" data-lang="en" onclick="setLanguage('en')">
+              <button id="setLanguageEnBtn" class="lang-btn" data-lang="en">
                 English (WEB)
               </button>
-              <button class="lang-btn" data-lang="both" onclick="setLanguage('both')">
+              <button id="setLanguageBothBtn" class="lang-btn" data-lang="both">
                 🌐 Bilingue (FR + EN)
               </button>
             </div>
@@ -1794,7 +1789,7 @@
                   />
                   Réduction de bruit
                 </label>
-                <button class="btn btn-secondary" onclick="clearTranscript()">Effacer</button>
+                <button id="clearTranscriptBtn" class="btn btn-secondary">Effacer</button>
               </div>
             </div>
 
@@ -2037,8 +2032,8 @@
             <div class="card-header">
               <span class="card-title">Résumé IA en Direct</span>
               <button
+                id="liveSummaryRefreshBtn"
                 class="btn btn-secondary"
-                onclick="requestLiveSummary()"
                 style="font-size: 0.7rem; padding: 0.2rem 0.5rem"
               >
                 Actualiser
@@ -2066,24 +2061,24 @@
               <span id="sermonModeBadge" class="status-badge" style="display: none"></span>
             </div>
             <div style="display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem">
-              <button class="btn btn-secondary" onclick="requestSermonTheme()">
+              <button id="requestSermonThemeBtn" class="btn btn-secondary">
                 Détecter le thème
               </button>
-              <button class="btn btn-secondary" onclick="requestLiveSummary()">
+              <button id="requestLiveSummaryBtn" class="btn btn-secondary">
                 Résumé en direct
               </button>
-              <button class="btn btn-secondary" onclick="requestCrossReferences()">
+              <button id="requestCrossReferencesBtn" class="btn btn-secondary">
                 Références croisées
               </button>
-              <button class="btn btn-secondary" onclick="requestLiveTranslation()">
+              <button id="requestLiveTranslationBtn" class="btn btn-secondary">
                 Traduire (EN)
               </button>
-              <button class="btn btn-secondary" onclick="requestPostServiceRecap()">
+              <button id="requestPostServiceRecapBtn" class="btn btn-secondary">
                 Récap fin de culte
               </button>
               <button
+                id="exportPostServiceRecapBtn"
                 class="btn btn-secondary"
-                onclick="exportPostServiceRecap()"
                 title="Génère d'abord le récap si nécessaire"
               >
                 📄 Exporter le récap (.txt)
@@ -2093,8 +2088,8 @@
                            informatif (cache/appels du détecteur, corrections
                            appliquées...), pas une action pour le culte en cours. -->
               <button
+                id="requestAiStatsBtn"
                 class="btn btn-secondary"
-                onclick="requestAiStats()"
                 title="Diagnostic — cache/appels du détecteur sémantique, corrections appliquées"
               >
                 📊 Statistiques IA
@@ -2163,7 +2158,7 @@
                 style="flex: 1; min-width: 220px"
                 onkeydown="if (event.key === 'Enter') requestArchiveSearch();"
               />
-              <button class="btn btn-secondary" onclick="requestArchiveSearch()">
+              <button id="requestArchiveSearchBtn" class="btn btn-secondary">
                 🔎 Chercher dans l'historique
               </button>
             </div>
@@ -2184,15 +2179,15 @@
               <span class="card-title">Récap Post-Culte</span>
               <div style="display: flex; gap: 0.4rem">
                 <button
+                  id="exportPostServiceRecapArchiveBtn"
                   class="btn btn-secondary"
-                  onclick="exportPostServiceRecap()"
                   style="font-size: 0.7rem; padding: 0.2rem 0.5rem"
                 >
                   📄 Exporter .txt
                 </button>
                 <button
+                  id="exportHighlightsArchiveBtn"
                   class="btn btn-secondary"
-                  onclick="exportHighlights()"
                   style="font-size: 0.7rem; padding: 0.2rem 0.5rem"
                 >
                   📊 Exporter temps forts
@@ -2224,11 +2219,10 @@
                 style="flex: 1; min-width: 240px"
                 onkeydown="if (event.key === 'Enter') runAgent();"
               />
-              <button class="btn btn-secondary" onclick="runAgent()">Lancer</button>
+              <button id="runAgentBtn" class="btn btn-secondary">Lancer</button>
               <button
                 class="btn btn-primary"
                 id="agentApproveBtn"
-                onclick="approveAgentTool()"
                 style="display: none"
               >
                 Confirmer l'action
@@ -2273,7 +2267,7 @@ Aucune exécution agent.</pre>
                 style="flex: 1; min-width: 220px"
                 onkeydown="if (event.key === 'Enter') askSermonQuestion();"
               />
-              <button class="btn btn-secondary" onclick="askSermonQuestion()">💬 Demander</button>
+              <button id="askSermonQuestionBtn" class="btn btn-secondary">💬 Demander</button>
             </div>
             <div id="sermonQaOutput" class="stat-row" style="display: block">
               <span class="stat-label">Posez une question sur une prédication passée.</span>
@@ -2313,7 +2307,7 @@ Aucune exécution agent.</pre>
                 style="flex: 1; min-width: 220px"
                 onkeydown="if (event.key === 'Enter') searchBibleByTopic();"
               />
-              <button class="btn btn-secondary" onclick="searchBibleByTopic()">
+              <button id="searchBibleByTopicBtn" class="btn btn-secondary">
                 🔎 Rechercher
               </button>
             </div>
@@ -2331,10 +2325,10 @@ Aucune exécution agent.</pre>
               <span class="card-title">Historique de session (persistant)</span>
             </div>
             <div style="display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem">
-              <button class="btn btn-secondary" onclick="requestSessionStats(1)">
+              <button id="requestSessionStats1Btn" class="btn btn-secondary">
                 Dernières 24h
               </button>
-              <button class="btn btn-secondary" onclick="requestSessionStats(7)">
+              <button id="requestSessionStats7Btn" class="btn btn-secondary">
                 7 derniers jours
               </button>
             </div>
@@ -2354,7 +2348,7 @@ Aucune exécution agent.</pre>
               "
             >
               <div style="display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.75rem">
-                <button class="btn btn-secondary" onclick="exportHighlights()">
+                <button id="exportHighlightsBtn" class="btn btn-secondary">
                   🎬 Exporter les temps forts (culte en cours)
                 </button>
               </div>
@@ -2410,15 +2404,15 @@ Aucune exécution agent.</pre>
                 disque.
               </div>
               <div style="display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.6rem">
-                <button class="btn btn-secondary" onclick="pickClipSourceVideo()">
+                <button id="pickClipSourceVideoBtn" class="btn btn-secondary">
                   📂 Choisir la vidéo source
                 </button>
-                <button class="btn btn-secondary" onclick="pickClipOutputFolder()">
+                <button id="pickClipOutputFolderBtn" class="btn btn-secondary">
                   📁 Choisir le dossier de destination
                 </button>
               </div>
               <div id="clipExportPaths" class="field-hint" style="margin-bottom: 0.6rem"></div>
-              <button class="btn btn-primary" onclick="startClipExport()" id="clipExportBtn">
+              <button class="btn btn-primary" id="clipExportBtn">
                 ✂️ Générer les extraits
               </button>
               <div id="clipExportStatus" class="field-hint" style="margin-top: 0.6rem"></div>
@@ -2476,7 +2470,6 @@ Aucune exécution agent.</pre>
               type="button"
               class="btn btn-primary"
               id="preServiceCheckBtn"
-              onclick="runPreServiceCheck()"
               style="width: 100%"
             >
               ✅ Tester avant le culte
@@ -2540,7 +2533,7 @@ Aucune exécution agent.</pre>
                 style="flex: 1; min-width: 220px"
                 onkeydown="if (event.key === 'Enter') saveDashboardOrgName();"
               />
-              <button class="btn btn-secondary" onclick="saveDashboardOrgName()">
+              <button id="saveDashboardOrgNameBtn" class="btn btn-secondary">
                 Enregistrer le nom
               </button>
             </div>
@@ -2567,10 +2560,10 @@ Aucune exécution agent.</pre>
               />
             </div>
             <div style="display: flex; gap: 0.6rem; flex-wrap: wrap">
-              <button class="btn btn-secondary" onclick="pickDashboardLogo()">
+              <button id="pickDashboardLogoBtn" class="btn btn-secondary">
                 🖼️ Choisir un logo
               </button>
-              <button class="btn btn-secondary" onclick="clearDashboardLogo()">
+              <button id="clearDashboardLogoBtn" class="btn btn-secondary">
                 Retirer le logo
               </button>
             </div>
@@ -2919,15 +2912,15 @@ Aucune exécution agent.</pre>
                   <option value="stage">Écran scène</option>
                   <option value="announcements">Diaporama annonces</option>
                 </select>
-                <button type="button" class="btn btn-secondary" onclick="refreshDisplays()">
+                <button id="refreshDisplaysBtn" type="button" class="btn btn-secondary">
                   🔄 Actualiser
                 </button>
               </div>
               <div style="display: flex; gap: 0.6rem; flex-wrap: wrap">
-                <button type="button" class="btn btn-primary" onclick="openDisplayWindow()">
+                <button id="openDisplayWindowBtn" type="button" class="btn btn-primary">
                   🖥️ Afficher en plein écran
                 </button>
-                <button type="button" class="btn btn-secondary" onclick="closeDisplayWindow()">
+                <button id="closeDisplayWindowBtn" type="button" class="btn btn-secondary">
                   Fermer la fenêtre
                 </button>
               </div>
@@ -2964,10 +2957,10 @@ Aucune exécution agent.</pre>
                 "
                 onkeydown="if (event.key === 'Enter') sendStageMessage();"
               />
-              <button type="button" class="btn btn-secondary" onclick="sendStageMessage()">
+              <button id="sendStageMessageBtn" type="button" class="btn btn-secondary">
                 📣 Envoyer
               </button>
-              <button type="button" class="btn btn-secondary" onclick="clearStageMessage()">
+              <button id="clearStageMessageBtn" type="button" class="btn btn-secondary">
                 Effacer
               </button>
             </div>
@@ -3042,7 +3035,7 @@ Aucune exécution agent.</pre>
               <select id="cameraSelect">
                 <option value="">Recherche des caméras…</option>
               </select>
-              <button type="button" class="btn btn-secondary" onclick="refreshCameraList()">
+              <button id="refreshCameraListBtn" type="button" class="btn btn-secondary">
                 🔄 Actualiser
               </button>
             </div>
@@ -3099,7 +3092,6 @@ Aucune exécution agent.</pre>
               type="button"
               class="btn btn-primary"
               id="cameraToggleBtn"
-              onclick="toggleCameraCapture()"
             >
               📷 Démarrer la caméra
             </button>
@@ -3151,12 +3143,11 @@ Aucune exécution agent.</pre>
                 type="button"
                 class="btn btn-secondary"
                 id="networkSuggestBtn"
-                onclick="useSuggestedLanIp()"
                 title="Utiliser l'adresse détectée sur ce PC"
               >
                 📍 Utiliser cette adresse
               </button>
-              <button type="button" class="btn btn-primary" onclick="saveNetworkSettings()">
+              <button id="saveNetworkSettingsBtn" type="button" class="btn btn-primary">
                 Enregistrer
               </button>
             </div>
@@ -3217,7 +3208,7 @@ Aucune exécution agent.</pre>
                   <option value="medium" selected>Qualité moyenne</option>
                   <option value="high">Qualité haute</option>
                 </select>
-                <button type="button" class="btn btn-primary" onclick="generateCameraPairing()">
+                <button id="generateCameraPairingBtn" type="button" class="btn btn-primary">
                   📷 Générer un QR code (téléphone, sans app)
                 </button>
               </div>
@@ -3262,7 +3253,7 @@ Aucune exécution agent.</pre>
                   id="ipCameraUrlInput"
                   placeholder="http://192.168.1.50:8080/video"
                 />
-                <button type="button" class="btn btn-secondary" onclick="addIpCamera()">
+                <button id="addIpCameraBtn" type="button" class="btn btn-secondary">
                   + Ajouter
                 </button>
               </div>
@@ -3291,7 +3282,6 @@ Aucune exécution agent.</pre>
                 id="brandingOverlayUrlInput"
                 readonly
                 value="Chargement du lien..."
-                onclick="this.select()"
                 style="
                   flex: 1;
                   padding: 0.6rem;
@@ -3304,8 +3294,8 @@ Aucune exécution agent.</pre>
                 "
               />
               <button
+                id="copyBrandingOverlayUrlBtn"
                 class="btn btn-primary"
-                onclick="copyBrandingOverlayUrl()"
                 style="flex-shrink: 0"
               >
                 📋 Copier le lien pour OBS
@@ -3357,10 +3347,10 @@ Aucune exécution agent.</pre>
                   >Aucun logo</span
                 >
               </div>
-              <button type="button" class="btn btn-secondary" onclick="pickBrandingLogo()">
+              <button id="pickBrandingLogoBtn" type="button" class="btn btn-secondary">
                 + Choisir un logo
               </button>
-              <button type="button" class="btn btn-secondary" onclick="clearBrandingLogo()">
+              <button id="clearBrandingLogoBtn" type="button" class="btn btn-secondary">
                 Retirer le logo
               </button>
               <select id="brandingPositionSelect" onchange="onBrandingPositionChange()">
@@ -3389,14 +3379,13 @@ Aucune exécution agent.</pre>
               />
             </div>
             <div style="display: flex; gap: 0.6rem; flex-wrap: wrap">
-              <button type="button" class="btn btn-secondary" onclick="saveBrandingText()">
+              <button id="saveBrandingTextBtn" type="button" class="btn btn-secondary">
                 💾 Enregistrer le texte
               </button>
               <button
                 type="button"
                 class="btn btn-primary"
                 id="brandingVisibleToggleBtn"
-                onclick="toggleBrandingVisible()"
               >
                 👁️ Afficher sur la diffusion
               </button>
@@ -3418,13 +3407,12 @@ Aucune exécution agent.</pre>
                 <a
                   href="#"
                   id="companionLink"
-                  onclick="return false;"
                   style="color: var(--primary, #d9bb6c)"
                 ></a>
                 <button
+                  id="copyCompanionLinkBtn"
                   class="btn btn-secondary"
                   style="padding: 2px 8px; font-size: 0.75rem; margin-left: 8px"
-                  onclick="copyCompanionLink()"
                 >
                   Copier
                 </button>
@@ -3461,9 +3449,9 @@ Aucune exécution agent.</pre>
               <span class="stat-label">Exporter le service (feuille de route, scènes, médias)</span>
               <span class="stat-value">
                 <button
+                  id="exportServicePortableBtn"
                   class="btn btn-secondary"
                   style="padding: 2px 8px; font-size: 0.75rem"
-                  onclick="exportServicePortable()"
                 >
                   💾 Exporter en .zip
                 </button>
@@ -3473,9 +3461,9 @@ Aucune exécution agent.</pre>
               <span class="stat-label">Importer un service (fichier .zip exporté)</span>
               <span class="stat-value">
                 <button
+                  id="importServicePortableBtn"
                   class="btn btn-secondary"
                   style="padding: 2px 8px; font-size: 0.75rem"
-                  onclick="importServicePortable()"
                 >
                   📥 Importer un .zip
                 </button>
@@ -3549,19 +3537,19 @@ Aucune exécution agent.</pre>
               </div>
             </div>
             <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.75rem">
-              <button type="button" class="btn btn-secondary" onclick="saveObsConfig()">
+              <button id="saveObsConfigBtn" type="button" class="btn btn-secondary">
                 Enregistrer
               </button>
-              <button type="button" class="btn btn-secondary" onclick="connectObs()">
+              <button id="connectObsBtn" type="button" class="btn btn-secondary">
                 🔌 Se connecter
               </button>
-              <button type="button" class="btn btn-secondary" onclick="refreshObsScenes()">
+              <button id="refreshObsScenesBtn" type="button" class="btn btn-secondary">
                 🔄 Rafraîchir les scènes
               </button>
-              <button type="button" class="btn btn-secondary" onclick="toggleObsRecording()">
+              <button id="toggleObsRecordingBtn" type="button" class="btn btn-secondary">
                 ⏺ Démarrer/arrêter l'enregistrement
               </button>
-              <button type="button" class="btn btn-secondary" onclick="toggleObsStreaming()">
+              <button id="toggleObsStreamingBtn" type="button" class="btn btn-secondary">
                 🔴 Démarrer/arrêter le direct
               </button>
             </div>
@@ -3632,10 +3620,10 @@ Aucune exécution agent.</pre>
               </label>
             </div>
             <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.75rem">
-              <button type="button" class="btn btn-secondary" onclick="saveProPresenterConfig()">
+              <button id="saveProPresenterConfigBtn" type="button" class="btn btn-secondary">
                 Enregistrer
               </button>
-              <button type="button" class="btn btn-secondary" onclick="connectProPresenter()">
+              <button id="connectProPresenterBtn" type="button" class="btn btn-secondary">
                 🔌 Se connecter
               </button>
             </div>
@@ -3647,9 +3635,9 @@ Aucune exécution agent.</pre>
                 placeholder="Message de test vers l'écran scène ProPresenter"
               />
               <button
+                id="sendProPresenterTestMessageBtn"
                 type="button"
                 class="btn btn-secondary"
-                onclick="sendProPresenterTestMessage()"
               >
                 Envoyer
               </button>
@@ -3709,10 +3697,10 @@ Aucune exécution agent.</pre>
               </div>
             </div>
             <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.75rem">
-              <button type="button" class="btn btn-secondary" onclick="savePlanningCenterConfig()">
+              <button id="savePlanningCenterConfigBtn" type="button" class="btn btn-secondary">
                 Enregistrer
               </button>
-              <button type="button" class="btn btn-secondary" onclick="fetchPlanningCenterPlan()">
+              <button id="fetchPlanningCenterPlanBtn" type="button" class="btn btn-secondary">
                 📋 Charger l'ordre du culte
               </button>
             </div>
@@ -3730,13 +3718,13 @@ Aucune exécution agent.</pre>
               </div>
               <div style="display: flex; gap: 0.5rem">
                 <button
+                  id="togglePreviewProgramModeBtn"
                   class="btn btn-secondary"
-                  onclick="togglePreviewProgramMode()"
                   style="font-size: 0.75rem"
                 >
                   Aperçu / Programme
                 </button>
-                <button class="btn btn-secondary" onclick="refreshOverlay()">
+                <button id="refreshOverlayBtn" class="btn btn-secondary">
                   Actualiser Iframe
                 </button>
               </div>
@@ -3751,7 +3739,6 @@ Aucune exécution agent.</pre>
                 id="overlayUrlInput"
                 readonly
                 value="Chargement du lien..."
-                onclick="this.select()"
                 style="
                   flex: 1;
                   padding: 0.6rem;
@@ -3763,7 +3750,7 @@ Aucune exécution agent.</pre>
                   font-size: 0.78rem;
                 "
               />
-              <button class="btn btn-primary" onclick="copyOverlayUrl()" style="flex-shrink: 0">
+              <button id="copyOverlayUrlBtn" class="btn btn-primary" style="flex-shrink: 0">
                 📋 Copier le lien pour OBS
               </button>
             </div>
@@ -3790,7 +3777,6 @@ Aucune exécution agent.</pre>
                     id="companionUrlInput"
                     readonly
                     value="Chargement du lien..."
-                    onclick="this.select()"
                     style="
                       flex: 1;
                       padding: 0.5rem;
@@ -3803,8 +3789,8 @@ Aucune exécution agent.</pre>
                     "
                   />
                   <button
+                    id="copyCompanionUrlBtn"
                     class="btn btn-secondary"
-                    onclick="copyCompanionUrl()"
                     style="flex-shrink: 0; font-size: 0.78rem"
                   >
                     📋 Copier
@@ -3819,7 +3805,6 @@ Aucune exécution agent.</pre>
                     id="stageDisplayUrlInput"
                     readonly
                     value="Chargement du lien..."
-                    onclick="this.select()"
                     style="
                       flex: 1;
                       padding: 0.5rem;
@@ -3832,8 +3817,8 @@ Aucune exécution agent.</pre>
                     "
                   />
                   <button
+                    id="copyStageDisplayUrlBtn"
                     class="btn btn-secondary"
-                    onclick="copyStageDisplayUrl()"
                     style="flex-shrink: 0; font-size: 0.78rem"
                   >
                     📋 Copier
@@ -3848,7 +3833,6 @@ Aucune exécution agent.</pre>
                     id="announcementLoopUrlInput"
                     readonly
                     value="Chargement du lien..."
-                    onclick="this.select()"
                     style="
                       flex: 1;
                       padding: 0.5rem;
@@ -3861,8 +3845,8 @@ Aucune exécution agent.</pre>
                     "
                   />
                   <button
+                    id="copyAnnouncementLoopUrlBtn"
                     class="btn btn-secondary"
-                    onclick="copyAnnouncementLoopUrl()"
                     style="flex-shrink: 0; font-size: 0.78rem"
                   >
                     📋 Copier
@@ -3943,7 +3927,7 @@ Aucune exécution agent.</pre>
                 style="flex: 1"
                 onkeydown="if (event.key === 'Enter') testTriggerPhrase();"
               />
-              <button type="button" class="btn btn-secondary" onclick="testTriggerPhrase()">
+              <button id="testTriggerPhraseBtn" type="button" class="btn btn-secondary">
                 Essayer
               </button>
             </div>
@@ -3986,13 +3970,13 @@ Aucune exécution agent.</pre>
                 >Studio de scènes (<span id="sceneStudioCount">0</span>)</span
               >
               <div style="display: flex; gap: 0.5rem">
-                <button class="btn btn-primary chip-sm" onclick="openSceneComposer(null)">
+                <button id="openSceneComposerBtn" class="btn btn-primary chip-sm">
                   + Nouvelle scène
                 </button>
-                <button class="btn btn-secondary chip-sm" onclick="importPptxSlides()">
+                <button id="importPptxSlidesBtn" class="btn btn-secondary chip-sm">
                   📥 Importer PowerPoint
                 </button>
-                <button class="btn btn-secondary chip-sm" onclick="hideSceneNow()">
+                <button id="hideSceneNowBtn" class="btn btn-secondary chip-sm">
                   ⏹ Masquer
                 </button>
               </div>
@@ -4017,7 +4001,7 @@ Aucune exécution agent.</pre>
           <div class="card" id="sceneComposerCard" style="display: none">
             <div class="queue-panel-header">
               <span class="card-title" id="sceneComposerTitle">Nouvelle scène</span>
-              <button class="btn btn-secondary chip-sm" onclick="closeSceneComposer()">
+              <button id="closeSceneComposerBtn" class="btn btn-secondary chip-sm">
                 ✕ Fermer
               </button>
             </div>
@@ -4072,16 +4056,16 @@ Aucune exécution agent.</pre>
                   <span class="field-hint" style="margin: 0">Éléments</span>
                   <div style="display: flex; gap: 0.5rem">
                     <button
+                      id="addComposerElementTextBtn"
                       class="btn btn-secondary"
                       style="padding: 0.35rem 0.7rem; font-size: 0.78rem"
-                      onclick="addComposerElement('text')"
                     >
                       + Texte
                     </button>
                     <button
+                      id="addComposerElementImageBtn"
                       class="btn btn-secondary"
                       style="padding: 0.35rem 0.7rem; font-size: 0.78rem"
-                      onclick="addComposerElement('image')"
                     >
                       + Image / logo
                     </button>
@@ -4089,7 +4073,7 @@ Aucune exécution agent.</pre>
                 </div>
                 <div id="composerElementsList"></div>
                 <div class="queue-add-row" style="margin-top: 0.5rem">
-                  <button class="btn btn-primary" onclick="saveComposerScene()">
+                  <button id="saveComposerSceneBtn" class="btn btn-primary">
                     💾 Enregistrer la scène
                   </button>
                 </div>
