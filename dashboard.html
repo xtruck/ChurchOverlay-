@@ -1250,17 +1250,11 @@
 
         <!-- Controls Section — Espace Direct (contrôles de diffusion en temps réel) -->
         <section id="controls" class="section" style="display: none">
-          <div class="card" data-group="diffusion" style="margin-bottom: 1.5rem">
+          <div class="card mb-6" data-group="diffusion">
             <div class="card-header">
               <span class="card-title">Panneau de Contrôle Opérateur</span>
             </div>
-            <div
-              style="
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                gap: 1rem;
-              "
-            >
+            <div class="operator-controls-grid">
               <button id="showManualVerseBtn" class="btn btn-primary">
                 📖 Afficher un Verset
               </button>
@@ -1268,11 +1262,7 @@
               <button id="pauseTimerBtn" class="btn btn-secondary">⏸️ Mettre en Pause</button>
               <button id="resumeTimerBtn" class="btn btn-secondary">▶️ Reprendre</button>
               <button id="emergencyStopBtn" class="btn btn-danger">🛑 Arrêt d'Urgence</button>
-              <button
-                id="toggleBlackScreenBtn"
-                class="btn btn-danger"
-                style="background: #1a1a1a; border: 1px solid #555"
-              >
+              <button id="toggleBlackScreenBtn" class="btn btn-danger btn-black-screen">
                 ⬛ Écran Noir
               </button>
               <button
@@ -1284,46 +1274,22 @@
               </button>
             </div>
             <!-- Compteur avant culte -->
-            <div
-              style="
-                margin-top: 1rem;
-                padding-top: 0.85rem;
-                border-top: 1px solid var(--border-subtle);
-              "
-            >
-              <div style="font-size: 0.78rem; color: var(--text-dim); margin-bottom: 0.5rem">
+            <div class="card-divider-block">
+              <div class="hint-text-xs mb-2">
                 ⏱ Compteur avant culte
               </div>
-              <div style="display: flex; gap: 0.5rem; align-items: center">
-                <select
-                  id="countdownDuration"
-                  style="
-                    padding: 0.4rem;
-                    border-radius: var(--radius-sm);
-                    border: 1px solid var(--border-subtle);
-                    background: var(--bg-input);
-                    color: var(--text-main);
-                    font-size: 0.8rem;
-                  "
-                >
+              <div class="countdown-row">
+                <select class="countdown-select" id="countdownDuration" aria-label="Durée du compteur avant culte">
                   <option value="5">5 min</option>
                   <option value="10" selected>10 min</option>
                   <option value="15">15 min</option>
                   <option value="30">30 min</option>
                   <option value="60">1 h</option>
                 </select>
-                <button
-                  id="startServiceCountdownBtn"
-                  class="btn btn-primary"
-                  style="font-size: 0.75rem"
-                >
+                <button id="startServiceCountdownBtn" class="btn btn-primary text-xs">
                   ▶ Lancer
                 </button>
-                <button
-                  id="stopServiceCountdownBtn"
-                  class="btn btn-secondary"
-                  style="font-size: 0.75rem"
-                >
+                <button id="stopServiceCountdownBtn" class="btn btn-secondary text-xs">
                   ⏹ Arrêter
                 </button>
               </div>
@@ -1333,18 +1299,7 @@
                          registerGlobalHotkeys() dans main.js). Combinaisons fixes pour
                          l'instant, choisies pour ne quasiment jamais entrer en conflit
                          avec d'autres logiciels. -->
-            <div
-              style="
-                margin-top: 1rem;
-                padding-top: 0.85rem;
-                border-top: 1px solid var(--border-subtle);
-                font-size: 0.78rem;
-                color: var(--text-dim);
-                display: flex;
-                flex-wrap: wrap;
-                gap: 0.4rem 1.5rem;
-              "
-            >
+            <div class="hotkeys-block">
               <span>⌨️ Raccourcis globaux (fonctionnent même sans le focus) :</span>
               <span><code>Ctrl+Alt+Maj+C</code> Effacement d'urgence</span>
               <span><code>Ctrl+Alt+Maj+H</code> Masquer le verset</span>
@@ -1361,39 +1316,16 @@
                      masqués tant que le mode lecture n'est pas actif (voir
                      readingStarted/readingStopped -> setReadingModeActive()
                      dans reading-mode.js). -->
-          <div class="card" data-group="diffusion" style="margin-bottom: 1.5rem">
+          <div class="card mb-6" data-group="diffusion">
             <div class="card-header">
               <span class="card-title">Mode lecture (verset par verset)</span>
               <span id="readingModeBadge" class="status-badge success" style="display: none"
                 >Actif</span
               >
-              <span
-                id="readingModePosition"
-                style="
-                  display: none;
-                  align-items: center;
-                  font-size: 0.8rem;
-                  font-weight: 600;
-                  color: var(--accent-cyan);
-                "
-              ></span>
+              <span class="reading-mode-position" id="readingModePosition" style="display: none"></span>
             </div>
-            <div
-              style="
-                display: flex;
-                align-items: center;
-                gap: 0.6rem;
-                flex-wrap: wrap;
-                margin-bottom: 0.75rem;
-              "
-            >
-              <input
-                type="text"
-                id="readingModeInput"
-                placeholder="Référence de départ (ex. Jean 3:1)"
-                style="flex: 1; min-width: 220px"
-                onkeydown="if (event.key === 'Enter') startReadingMode();"
-              />
+            <div class="inline-form-row mb-3">
+              <input class="input-flex-220" type="text" id="readingModeInput" placeholder="Référence de départ (ex. Jean 3:1)" onkeydown="if (event.key === 'Enter') startReadingMode();" aria-label="Référence de départ du mode lecture" />
               <button class="btn btn-primary" id="readingModeStartBtn">
                 ▶️ Démarrer
               </button>
@@ -1405,7 +1337,7 @@
                 ⏹️ Arrêter
               </button>
             </div>
-            <div id="readingModeAdvanceRow" style="display: none; gap: 0.6rem">
+            <div class="reading-advance-row" id="readingModeAdvanceRow" style="display: none">
               <button id="previousReadingVerseBtn" class="btn btn-secondary">
                 ◀ Précédent
               </button>
@@ -1414,46 +1346,23 @@
           </div>
 
           <!-- Mode confiance — seuil ASR + toggle indicateurs -->
-          <div class="card" data-group="diffusion" style="margin-bottom: 1.5rem">
+          <div class="card mb-6" data-group="diffusion">
             <div class="card-header">
               <span class="card-title">Mode Confiance</span>
             </div>
-            <div style="display: flex; flex-direction: column; gap: 0.75rem">
-              <div style="display: flex; align-items: center; gap: 0.75rem">
-                <label for="confidenceThreshold" style="font-size: 0.8rem; min-width: 120px"
-                  >Seuil ASR</label
+            <div class="stack-3">
+              <div class="row-center-3">
+                <label class="form-label-fixed" for="confidenceThreshold">Seuil ASR</label
                 >
-                <input
-                  type="range"
-                  id="confidenceThreshold"
-                  min="0"
-                  max="100"
-                  value="30"
-                  step="5"
-                  style="flex: 1"
-                  oninput="
-                    document.getElementById('confidenceThresholdValue').textContent =
-                      this.value + '%';
-                    setConfidenceThreshold(this.value / 100);
-                  "
-                />
-                <span
-                  id="confidenceThresholdValue"
-                  style="
-                    font-family: var(--font-mono);
-                    font-size: 0.8rem;
-                    min-width: 3em;
-                    text-align: right;
-                  "
-                  >30%</span
+                <input class="flex-1" type="range" id="confidenceThreshold" min="0" max="100" value="30" step="5" oninput=" document.getElementById('confidenceThresholdValue').textContent = this.value + '%'; setConfidenceThreshold(this.value / 100); " />
+                <span class="mono-value-right" id="confidenceThresholdValue">30%</span
                 >
               </div>
-              <div style="font-size: 0.75rem; color: var(--text-dim)">
+              <div class="hint-text-2xs">
                 Segments ASR en dessous de ce seuil sont rejetés automatiquement.
               </div>
-              <div style="display: flex; align-items: center; gap: 0.75rem">
-                <label for="confidenceToggle" style="font-size: 0.8rem; min-width: 120px"
-                  >Afficher badges</label
+              <div class="row-center-3">
+                <label class="form-label-fixed" for="confidenceToggle">Afficher badges</label
                 >
                 <label class="toggle-switch">
                   <input
@@ -1489,39 +1398,18 @@
                          dashboard/features/translation-picker.js. Peuplé dynamiquement
                          depuis le message 'init' (bibleLookup.listTranslations()), pas
                          codé en dur ici. -->
-            <div
-              id="translationPicker"
-              style="
-                margin-top: 1rem;
-                padding-top: 1rem;
-                border-top: 1px solid var(--border-subtle);
-                display: flex;
-                flex-direction: column;
-                gap: 0.5rem;
-              "
-            ></div>
+            <div class="translation-picker-block" id="translationPicker"></div>
             <!-- AJOUT (Multi-Bible côte à côte, déclenchement manuel) : montre une
                          DEUXIÈME traduction sous la référence quand on affiche un verset
                          via "Afficher un Verset" — jamais en mode Bilingue ci-dessus (qui a
                          déjà 2 textes). Voir dashboard/features/translation-picker.js et
                          server.js#showVerse. -->
-            <div
-              style="
-                margin-top: 0.75rem;
-                padding-top: 0.75rem;
-                border-top: 1px solid var(--border-subtle);
-                display: flex;
-                align-items: center;
-                gap: 0.5rem;
-                flex-wrap: wrap;
-              "
-            >
-              <span class="field-hint" style="min-width: 70px">Comparer avec</span>
-              <select id="secondaryTranslationSelect" onchange="onSecondaryTranslationChange()">
+            <div class="secondary-translation-row">
+              <span class="field-hint field-hint-fixed">Comparer avec</span>
+              <select id="secondaryTranslationSelect" onchange="onSecondaryTranslationChange()" aria-label="Comparer avec une traduction secondaire">
                 <option value="">Aucune</option>
               </select>
-              <span class="field-hint" style="opacity: 0.7"
-                >Affichée sous le verset, uniquement au déclenchement manuel</span
+              <span class="field-hint opacity-70">Affichée sous le verset, uniquement au déclenchement manuel</span
               >
             </div>
           </div>
@@ -1532,21 +1420,12 @@
           <div class="card">
             <div class="card-header">
               <span class="card-title">Transcription Vocale en Temps Réel</span>
-              <div style="display: flex; gap: 0.85rem; align-items: center">
+              <div class="transcript-header-actions">
                 <!-- AJOUT (filtre audio — recommandation "filtres audio" façon OBS) :
                                  réduction de bruit côté micro (voir audio-capture-worklet.js),
                                  activée par défaut. Utile de pouvoir la désactiver si le micro
                                  est déjà propre/pré-traité (mixeur externe, etc.). -->
-                <label
-                  style="
-                    display: flex;
-                    align-items: center;
-                    gap: 0.4rem;
-                    font-size: 0.8rem;
-                    color: var(--text-dim);
-                    cursor: pointer;
-                  "
-                >
+                <label class="noise-gate-toggle">
                   <input
                     type="checkbox"
                     id="noiseGateToggle"
@@ -1567,145 +1446,26 @@
                          Trois zones colorées (silence / trop faible / correct / fort / écrêté),
                          lisible à trois mètres en salle de culte. Le niveau est mis à jour en
                          continu toutes les 250 ms via les diagnostics du serveur. -->
-            <div
-              id="audioVumeterWrap"
-              style="
-                padding: 0.6rem 1rem;
-                background: var(--surface);
-                border-radius: var(--radius);
-                margin-top: 0.5rem;
-              "
-            >
-              <div
-                style="
-                  display: flex;
-                  align-items: center;
-                  justify-content: space-between;
-                  margin-bottom: 0.35rem;
-                "
-              >
-                <span
-                  style="
-                    font-size: 0.75rem;
-                    color: var(--text-dim);
-                    font-weight: 600;
-                    text-transform: uppercase;
-                    letter-spacing: 0.05em;
-                  "
-                  >Niveau Micro</span
+            <div class="audio-vumeter-wrap" id="audioVumeterWrap">
+              <div class="vumeter-head">
+                <span class="vumeter-title">Niveau Micro</span
                 >
-                <span id="vumeterLabel" style="font-size: 0.8rem; font-weight: 600; color: #6b7280"
-                  >—</span
+                <span class="vumeter-label" id="vumeterLabel">—</span
                 >
               </div>
-              <div
-                style="
-                  position: relative;
-                  height: 10px;
-                  background: #1f2937;
-                  border-radius: 5px;
-                  overflow: visible;
-                "
-              >
+              <div class="vumeter-track">
                 <!-- Zones colorées en fond -->
-                <div
-                  style="
-                    position: absolute;
-                    left: 0;
-                    width: 15%;
-                    height: 100%;
-                    background: #7f1d1d;
-                    opacity: 0.4;
-                    border-radius: 5px 0 0 5px;
-                  "
-                  title="Silence"
-                ></div>
-                <div
-                  style="
-                    position: absolute;
-                    left: 15%;
-                    width: 15%;
-                    height: 100%;
-                    background: #991b1b;
-                    opacity: 0.4;
-                  "
-                  title="Trop faible"
-                ></div>
-                <div
-                  style="
-                    position: absolute;
-                    left: 30%;
-                    width: 35%;
-                    height: 100%;
-                    background: #14532d;
-                    opacity: 0.4;
-                  "
-                  title="Correct"
-                ></div>
-                <div
-                  style="
-                    position: absolute;
-                    left: 65%;
-                    width: 20%;
-                    height: 100%;
-                    background: #78350f;
-                    opacity: 0.4;
-                  "
-                  title="Fort"
-                ></div>
-                <div
-                  style="
-                    position: absolute;
-                    left: 85%;
-                    width: 15%;
-                    height: 100%;
-                    background: #7f1d1d;
-                    opacity: 0.4;
-                    border-radius: 0 5px 5px 0;
-                  "
-                  title="Écrêté"
-                ></div>
+                <div class="vumeter-zone vumeter-zone--silence" title="Silence"></div>
+                <div class="vumeter-zone vumeter-zone--low" title="Trop faible"></div>
+                <div class="vumeter-zone vumeter-zone--ok" title="Correct"></div>
+                <div class="vumeter-zone vumeter-zone--loud" title="Fort"></div>
+                <div class="vumeter-zone vumeter-zone--clip" title="Écrêté"></div>
                 <!-- Barre de niveau animée -->
-                <div
-                  id="vumeterBar"
-                  style="
-                    position: absolute;
-                    left: 0;
-                    top: 0;
-                    height: 100%;
-                    width: 0%;
-                    background: #6b7280;
-                    border-radius: 5px;
-                    transition:
-                      width 0.15s ease-out,
-                      background-color 0.2s ease;
-                  "
-                ></div>
+                <div class="vumeter-bar" id="vumeterBar"></div>
                 <!-- Marqueur de pic -->
-                <div
-                  id="vumeterPeak"
-                  style="
-                    position: absolute;
-                    top: -2px;
-                    left: 0;
-                    width: 3px;
-                    height: 14px;
-                    background: #ffffff;
-                    border-radius: 1px;
-                    display: none;
-                    box-shadow: 0 0 4px rgba(255, 255, 255, 0.5);
-                  "
-                ></div>
+                <div class="vumeter-peak" id="vumeterPeak" style="display: none"></div>
               </div>
-              <div
-                id="vumeterInfo"
-                style="
-                  font-size: 0.7rem;
-                  color: var(--text-dim);
-                  margin-top: 0.3rem;
-                  font-family: var(--font-mono);
-                "
-              ></div>
+              <div class="vumeter-info" id="vumeterInfo"></div>
             </div>
 
             <div class="transcript-feed" id="transcriptFeed">
