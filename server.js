@@ -182,6 +182,19 @@ let clipExportInProgress = false;
 // (jamais de repère sauté par erreur de reprise).
 let currentRundownIndex = -1;
 
+// AJOUT (Timeline-Based Service Flow — brief produit, priorité #5) : horaire
+// RÉEL de départ de chaque repère effectivement déclenché pendant CE culte
+// (cueId -> epoch ms), permettant de comparer "temps réellement écoulé"
+// contre "durée estimée cumulée" (voir rundown-ws-handlers.js). Volontairement
+// NON réinitialisé par addRundownCue/removeRundownCue/reorderRundownCues
+// (contrairement à currentRundownIndex ci-dessus) : ajouter un repère de plus
+// en cours de culte ne doit pas faire oublier l'heure de départ déjà connue —
+// seul clearRundown ("nouveau culte, on repart de zéro", voir son commentaire)
+// réinitialise l'historique. Volontairement NON persisté, même raisonnement
+// que currentRundownIndex : un redémarrage serveur reprend sans historique de
+// retard plutôt que de risquer un calcul basé sur un horaire obsolète.
+let cueTimeline = new Map();
+
 // ---------------------------------------------------------------------------
 // Mode confiance (Partie 2) — verset détecté automatiquement en attente de
 // confirmation opérateur ('semi-auto'/'manual', voir session-state.js
@@ -897,6 +910,13 @@ const CATEGORY_HANDLERS = new Map([
     getCurrentRundownIndex: () => currentRundownIndex,
     setCurrentRundownIndex: (index) => {
       currentRundownIndex = index;
+    },
+    getCueTimeline: () => cueTimeline,
+    recordCueStart: (cueId) => {
+      cueTimeline.set(cueId, Date.now());
+    },
+    clearCueTimeline: () => {
+      cueTimeline = new Map();
     },
     executeCue,
   }),

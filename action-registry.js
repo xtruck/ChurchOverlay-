@@ -368,6 +368,11 @@ const CLIENT_ACTIONS = {
     category: 'infra',
     description: 'Ajouter un repère à la feuille de route',
   },
+  setRundownCueDuration: {
+    operatorOnly: true,
+    category: 'infra',
+    description: "Définir la durée estimée d'un repère de la feuille de route",
+  },
   removeRundownCue: {
     operatorOnly: true,
     category: 'infra',

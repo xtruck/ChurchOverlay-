@@ -25,6 +25,11 @@
  * @param {(msg: string) => void} ctx.log
  * @param {() => number} ctx.getCurrentRundownIndex
  * @param {(index: number) => void} ctx.setCurrentRundownIndex
+ * @param {() => Map<string, number>} ctx.getCueTimeline
+ *   - AJOUT (Timeline-Based Service Flow) : cueId -> epoch ms de déclenchement
+ *   réel pendant ce culte, voir cueTimeline dans server.js.
+ * @param {(cueId: string) => void} ctx.recordCueStart
+ * @param {() => void} ctx.clearCueTimeline
  * @param {(cue: object) => Promise<{ok: boolean, error?: string}>} ctx.executeCue
  *   - déclenche un repère (verset/média/scène), quel que soit son type ;
  *   reste défini dans server.js (dépendances propres : detector, bibleLookup,
@@ -38,10 +43,23 @@ function createHandlers(ctx) {
     log,
     getCurrentRundownIndex,
     setCurrentRundownIndex,
+    getCueTimeline,
+    recordCueStart,
+    clearCueTimeline,
     executeCue,
   } = ctx;
 
   const handlers = new Map();
+
+  // AJOUT (Timeline-Based Service Flow) : Map non sérialisable telle quelle
+  // en JSON — convertie en objet {cueId: startedAtMs} pour le fil WS, seule
+  // forme dont le tableau de bord a besoin (voir next-cue-confidence.js/
+  // airlock-preview.js pour le même genre de conversion côté client, ici
+  // c'est l'inverse : côté serveur, pour rester cohérent avec le style déjà
+  // établi de ce fichier plutôt que d'exposer une Map brute).
+  function serializeTimeline() {
+    return Object.fromEntries(getCueTimeline());
+  }
 
   handlers.set('getRundown', async (ws) => {
     ws.send(
@@ -49,6 +67,7 @@ function createHandlers(ctx) {
         action: 'rundownUpdated',
         cues: rundownStore.listCues(),
         activeIndex: getCurrentRundownIndex(),
+        cueTimeline: serializeTimeline(),
       })
     );
   });
@@ -68,6 +87,35 @@ function createHandlers(ctx) {
         action: 'rundownUpdated',
         cues: rundownStore.listCues(),
         activeIndex: getCurrentRundownIndex(),
+        cueTimeline: serializeTimeline(),
+      });
+    } catch (err) {
+      ws.send(JSON.stringify({ action: 'error', error: err.message }));
+    }
+  });
+
+  // AJOUT (Timeline-Based Service Flow — brief produit, priorité #5) : seul
+  // champ modifiable après coup d'un repère (voir rundown-store.js#updateCueDuration) —
+  // un opérateur affine ses estimations directement dans la feuille de
+  // route au fil de la préparation, sans dupliquer un champ "durée" dans les
+  // trois flux d'ajout différents (verset/média/scène).
+  handlers.set('setRundownCueDuration', async (ws, sanitized) => {
+    try {
+      const updated = rundownStore.updateCueDuration(
+        sanitized.id,
+        typeof sanitized.expectedDurationMs === 'number' ? sanitized.expectedDurationMs : null
+      );
+      if (!updated) {
+        ws.send(
+          JSON.stringify({ action: 'error', error: 'Feuille de route : repère introuvable' })
+        );
+        return;
+      }
+      broadcast({
+        action: 'rundownUpdated',
+        cues: rundownStore.listCues(),
+        activeIndex: getCurrentRundownIndex(),
+        cueTimeline: serializeTimeline(),
       });
     } catch (err) {
       ws.send(JSON.stringify({ action: 'error', error: err.message }));
@@ -82,6 +130,7 @@ function createHandlers(ctx) {
         action: 'rundownUpdated',
         cues: rundownStore.listCues(),
         activeIndex: getCurrentRundownIndex(),
+        cueTimeline: serializeTimeline(),
       });
     }
   });
@@ -93,14 +142,21 @@ function createHandlers(ctx) {
       action: 'rundownUpdated',
       cues: rundownStore.listCues(),
       activeIndex: getCurrentRundownIndex(),
+      cueTimeline: serializeTimeline(),
     });
   });
 
   handlers.set('clearRundown', async () => {
     rundownStore.clearCues();
     setCurrentRundownIndex(-1);
+    // AJOUT (Timeline-Based Service Flow) : "nouveau culte, on repart de
+    // zéro" (voir clearCues() dans rundown-store.js) — le seul point qui
+    // réinitialise aussi l'historique des horaires réels, contrairement à
+    // add/remove/reorder ci-dessus qui le préservent délibérément (voir le
+    // commentaire de cueTimeline dans server.js).
+    clearCueTimeline();
     log('Feuille de route : vidée');
-    broadcast({ action: 'rundownUpdated', cues: [], activeIndex: -1 });
+    broadcast({ action: 'rundownUpdated', cues: [], activeIndex: -1, cueTimeline: {} });
   });
 
   handlers.set('triggerRundownCue', async (ws, sanitized) => {
@@ -112,7 +168,13 @@ function createHandlers(ctx) {
     }
     const result = await executeCue(cues[idx]);
     setCurrentRundownIndex(idx);
-    broadcast({ action: 'rundownActiveCue', id: cues[idx].id, index: idx });
+    if (result.ok) recordCueStart(cues[idx].id);
+    broadcast({
+      action: 'rundownActiveCue',
+      id: cues[idx].id,
+      index: idx,
+      cueTimeline: serializeTimeline(),
+    });
     if (!result.ok) {
       ws.send(JSON.stringify({ action: 'error', error: result.error }));
     }
@@ -135,7 +197,13 @@ function createHandlers(ctx) {
     }
     const result = await executeCue(cues[nextIdx]);
     setCurrentRundownIndex(nextIdx);
-    broadcast({ action: 'rundownActiveCue', id: cues[nextIdx].id, index: nextIdx });
+    if (result.ok) recordCueStart(cues[nextIdx].id);
+    broadcast({
+      action: 'rundownActiveCue',
+      id: cues[nextIdx].id,
+      index: nextIdx,
+      cueTimeline: serializeTimeline(),
+    });
     if (!result.ok) {
       ws.send(JSON.stringify({ action: 'error', error: result.error }));
     }

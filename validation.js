@@ -398,6 +398,20 @@ const SCHEMAS = {
       sceneId: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
     },
   },
+  // AJOUT (Timeline-Based Service Flow — brief produit, priorité #5) :
+  // expectedDurationMs absent/null retire l'estimation (voir
+  // rundown-store.js#updateCueDuration) — bornes larges vérifiées ici ET
+  // côté store (défense en profondeur, comme le reste de ce fichier).
+  setRundownCueDuration: {
+    required: ['action', 'id'],
+    optional: ['expectedDurationMs'],
+    validators: {
+      action: (value) => value === 'setRundownCueDuration',
+      id: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
+      expectedDurationMs: (value) =>
+        value === null || (typeof value === 'number' && value > 0 && value <= 4 * 60 * 60 * 1000),
+    },
+  },
   removeRundownCue: {
     required: ['action', 'id'],
     optional: [],

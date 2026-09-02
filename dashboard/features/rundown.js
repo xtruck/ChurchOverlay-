@@ -21,6 +21,11 @@ import { checkCueReadiness, READINESS_LABELS } from './next-cue-confidence.js';
 
 let rundownCues = [];
 let rundownActiveIndex = -1;
+// AJOUT (Timeline-Based Service Flow — brief produit, priorité #5) : cueId ->
+// epoch ms de déclenchement réel pendant ce culte (voir cueTimeline dans
+// server.js — cet objet EST sa forme sérialisée, reçue telle quelle dans
+// rundownUpdated/rundownActiveCue).
+let cueTimeline = {};
 
 // AJOUT (Airlock Preview — voir airlock-preview.js) : même raisonnement que
 // getMediaLibraryItems()/getSceneStudioItems() — armRundownCue() a besoin du
@@ -107,6 +112,23 @@ export function triggerRundownCue(id) {
   ws.send(JSON.stringify({ action: 'triggerRundownCue', id }));
 }
 
+// AJOUT (Timeline-Based Service Flow) : minutesInput vient d'un <input
+// type="number"> (voir renderRundown()) — vide/0/négatif retire
+// l'estimation plutôt que de rejeter la saisie, pour qu'effacer le champ
+// soit le geste naturel pour "je ne sais plus", cohérent avec
+// rundown-store.js#updateCueDuration qui traite explicitement null comme un
+// retrait valide, pas une erreur.
+export function setCueDuration(id, minutesInput) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return;
+  }
+  const minutes = parseFloat(minutesInput);
+  const expectedDurationMs =
+    Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60000) : null;
+  ws.send(JSON.stringify({ action: 'setRundownCueDuration', id, expectedDurationMs }));
+}
+
 export function nextRundownCue() {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     showToast('Non connecté au serveur.', 'error');
@@ -138,17 +160,102 @@ export async function clearRundown() {
  */
 export function applyRundownActiveCue(message) {
   rundownActiveIndex = typeof message.index === 'number' ? message.index : -1;
-  renderRundown({ cues: rundownCues, activeIndex: rundownActiveIndex });
+  if (message.cueTimeline && typeof message.cueTimeline === 'object') {
+    cueTimeline = message.cueTimeline;
+  }
+  renderRundown({ cues: rundownCues, activeIndex: rundownActiveIndex, cueTimeline });
+}
+
+// AJOUT (Timeline-Based Service Flow) : "5 min", ou "1h 05" au-delà d'une
+// heure — jamais de décimales (une estimation à la minute près est déjà
+// plus précise que ce qu'un opérateur peut réellement saisir/tenir).
+function formatDurationMinutes(ms) {
+  const totalMin = Math.round(ms / 60000);
+  if (totalMin < 60) return `${totalMin} min`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `${h}h ${String(m).padStart(2, '0')}`;
+}
+
+/**
+ * Retard/avance accumulé par les segments déjà TERMINÉS (indices
+ * [0, rundownActiveIndex[), comparés à leur durée estimée cumulée — pas une
+ * horloge qui tourne en continu pendant le segment en cours (voir en-tête de
+ * fichier) : recalculé à chaque transition, pas chaque seconde. Un segment en
+ * cours qui dépasse largement son budget reste visible à l'œil nu par
+ * l'opérateur qui le pilote ; ce chiffre répond à une question différente et
+ * complémentaire : "les segments déjà passés ont-ils, en cumulé, pris plus
+ * ou moins de temps que prévu ?"
+ * @returns {{state:string, delayMs?:number}}
+ */
+function computeScheduleStatus() {
+  if (rundownCues.length === 0 || rundownActiveIndex < 0) return { state: 'not-started' };
+  const firstStartedAt = cueTimeline[rundownCues[0].id];
+  if (!firstStartedAt) return { state: 'not-started' };
+  if (rundownActiveIndex === 0) return { state: 'first-segment' };
+
+  let totalExpectedMs = 0;
+  for (let i = 0; i < rundownActiveIndex; i++) {
+    const d = rundownCues[i].expectedDurationMs;
+    if (typeof d !== 'number') return { state: 'incomplete-estimates' };
+    totalExpectedMs += d;
+  }
+  const currentStartedAt = cueTimeline[rundownCues[rundownActiveIndex].id];
+  if (!currentStartedAt) return { state: 'not-started' };
+  const actualElapsedMs = currentStartedAt - firstStartedAt;
+  return { state: 'ok', delayMs: actualElapsedMs - totalExpectedMs };
+}
+
+const SCHEDULE_STATUS_TOLERANCE_MS = 60000; // ±1 min : "à l'heure", pas un faux positif au moindre écart
+
+function renderScheduleStatus() {
+  const el = document.getElementById('rundownScheduleStatus');
+  if (!el) return;
+  const status = computeScheduleStatus();
+  switch (status.state) {
+    case 'not-started':
+      el.textContent = '';
+      el.className = 'rundown-schedule-status';
+      return;
+    case 'first-segment':
+      el.textContent = 'Culte démarré — retard/avance visible après le 2ᵉ repère.';
+      el.className = 'rundown-schedule-status rundown-schedule-neutral';
+      return;
+    case 'incomplete-estimates':
+      el.textContent =
+        'Retard/avance non calculable — durée estimée manquante sur un repère déjà passé.';
+      el.className = 'rundown-schedule-status rundown-schedule-neutral';
+      return;
+    case 'ok': {
+      const { delayMs } = status;
+      if (Math.abs(delayMs) < SCHEDULE_STATUS_TOLERANCE_MS) {
+        el.textContent = 'Culte à l’heure.';
+        el.className = 'rundown-schedule-status rundown-schedule-ontime';
+      } else if (delayMs > 0) {
+        el.textContent = `Culte ${formatDurationMinutes(delayMs)} en retard.`;
+        el.className = 'rundown-schedule-status rundown-schedule-late';
+      } else {
+        el.textContent = `Culte ${formatDurationMinutes(-delayMs)} en avance.`;
+        el.className = 'rundown-schedule-status rundown-schedule-early';
+      }
+      return;
+    }
+  }
 }
 
 export function renderRundown(message) {
   rundownCues = Array.isArray(message.cues) ? message.cues : [];
   rundownActiveIndex = typeof message.activeIndex === 'number' ? message.activeIndex : -1;
+  if (message.cueTimeline && typeof message.cueTimeline === 'object') {
+    cueTimeline = message.cueTimeline;
+  }
 
   const countEl = document.getElementById('rundownCount');
   if (countEl) countEl.textContent = rundownCues.length;
   const list = document.getElementById('rundownList');
   if (!list) return;
+
+  renderScheduleStatus();
 
   if (rundownCues.length === 0) {
     list.innerHTML =
@@ -160,6 +267,32 @@ export function renderRundown(message) {
     .map((cue, i) => {
       const isActive = i === rundownActiveIndex;
       const checking = READINESS_LABELS.checking;
+      const durationMinutes =
+        typeof cue.expectedDurationMs === 'number'
+          ? Math.round(cue.expectedDurationMs / 60000)
+          : '';
+
+      // AJOUT (Timeline-Based Service Flow) : durée RÉELLE affichée seulement
+      // pour un segment déjà terminé — a un horaire de départ ET un repère
+      // suivant qui, lui aussi, a démarré (sinon "terminé" n'a pas de sens :
+      // le dernier repère de la liste, une fois déclenché, ne "finit" jamais
+      // au sens de cette mesure). Comparée à l'estimation pour l'écart
+      // (+/-), seulement si une estimation existait.
+      let actualBadge = '';
+      const startedAt = cueTimeline[cue.id];
+      const nextCue = rundownCues[i + 1];
+      const nextStartedAt = nextCue ? cueTimeline[nextCue.id] : null;
+      if (startedAt && nextStartedAt) {
+        const actualMs = nextStartedAt - startedAt;
+        let deltaText = '';
+        if (typeof cue.expectedDurationMs === 'number') {
+          const deltaMs = actualMs - cue.expectedDurationMs;
+          const deltaMin = Math.round(deltaMs / 60000);
+          if (deltaMin !== 0) deltaText = ` (${deltaMin > 0 ? '+' : ''}${deltaMin} min)`;
+        }
+        actualBadge = `<span class="queue-item-actual-duration" title="Durée réelle">${formatDurationMinutes(actualMs)}${deltaText}</span>`;
+      }
+
       return `
                 <div class="queue-item${isActive ? ' is-active-rundown-cue' : ''}">
                     <span class="queue-item-position">${i + 1}</span>
@@ -170,6 +303,17 @@ export function renderRundown(message) {
                       >${checking.icon}</span
                     >
                     <span class="queue-item-ref" title="${escapeHtmlDashboard(cue.label)}">${CUE_TYPE_ICON[cue.type] || ''} ${escapeHtmlDashboard(cue.label)}</span>
+                    <input
+                      type="number"
+                      class="queue-item-duration-input"
+                      min="0"
+                      step="1"
+                      placeholder="min"
+                      title="Durée estimée (minutes) — vide = aucune estimation"
+                      value="${durationMinutes}"
+                      onchange="setCueDuration('${cue.id}', this.value)"
+                    />
+                    ${actualBadge}
                     <div class="queue-item-actions">
                         <button class="queue-icon-btn" onclick="moveRundownCue('${cue.id}', -1)" title="Monter" ${i === 0 ? 'disabled' : ''}>↑</button>
                         <button class="queue-icon-btn" onclick="moveRundownCue('${cue.id}', 1)" title="Descendre" ${i === rundownCues.length - 1 ? 'disabled' : ''}>↓</button>
@@ -215,6 +359,7 @@ function applyCueReadinessBadge(cueId, result) {
 window.addVerseToRundown = addVerseToRundown;
 window.addVerseToRundownFromStudio = addVerseToRundownFromStudio;
 window.addToRundown = addToRundown;
+window.setCueDuration = setCueDuration;
 window.removeRundownCue = removeRundownCue;
 window.moveRundownCue = moveRundownCue;
 window.triggerRundownCue = triggerRundownCue;

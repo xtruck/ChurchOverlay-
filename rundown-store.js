@@ -123,6 +123,50 @@ function addCue(data) {
   return cue;
 }
 
+// AJOUT (Timeline-Based Service Flow — brief produit, priorité #5) : bornes
+// larges mais réelles — une estimation de 4h+ pour un seul repère sent
+// l'erreur de saisie (minutes tapées comme si c'était des heures) plutôt
+// qu'une contrainte de service légitime.
+const MIN_EXPECTED_DURATION_MS = 1000; // 1s
+const MAX_EXPECTED_DURATION_MS = 4 * 60 * 60 * 1000; // 4h
+
+/**
+ * Définit/retire la durée estimée d'un repère — seul champ modifiable après
+ * coup (voir en-tête de fichier : un repère n'a sinon aucun flux
+ * d'édition, "supprimer + rajouter" couvre déjà le reste). Édité séparément
+ * de l'ajout plutôt que demandé à la création : un repère média/scène
+ * s'ajoute depuis sa propre galerie (media-library.js/scene-studio.js),
+ * jamais depuis un formulaire qui pourrait aussi demander une durée — un
+ * seul point de saisie (la feuille de route elle-même) reste plus simple
+ * qu'en dupliquer trois.
+ * @param {string} id
+ * @param {number|null} expectedDurationMs - null retire l'estimation
+ * @returns {Object|null} le repère mis à jour, ou null si introuvable
+ */
+function updateCueDuration(id, expectedDurationMs) {
+  const items = readIndex();
+  const idx = items.findIndex((cue) => cue.id === id);
+  if (idx === -1) return null;
+
+  if (expectedDurationMs === null) {
+    delete items[idx].expectedDurationMs;
+  } else {
+    if (
+      typeof expectedDurationMs !== 'number' ||
+      !Number.isFinite(expectedDurationMs) ||
+      expectedDurationMs < MIN_EXPECTED_DURATION_MS ||
+      expectedDurationMs > MAX_EXPECTED_DURATION_MS
+    ) {
+      throw new Error(
+        `Durée estimée invalide (entre ${MIN_EXPECTED_DURATION_MS / 1000}s et ${MAX_EXPECTED_DURATION_MS / 60000}min)`
+      );
+    }
+    items[idx].expectedDurationMs = Math.round(expectedDurationMs);
+  }
+  writeIndex(items);
+  return items[idx];
+}
+
 /**
  * Retire un repère de la feuille de route.
  * @param {string} id
@@ -182,6 +226,7 @@ module.exports = {
   listCues,
   getCue,
   addCue,
+  updateCueDuration,
   removeCue,
   reorderCues,
   clearCues,
@@ -189,4 +234,6 @@ module.exports = {
   CUE_TYPES,
   MAX_CUES,
   MAX_LABEL_LENGTH,
+  MIN_EXPECTED_DURATION_MS,
+  MAX_EXPECTED_DURATION_MS,
 };

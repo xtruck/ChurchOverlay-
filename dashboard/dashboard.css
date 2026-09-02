@@ -1019,6 +1019,54 @@ body {
   margin-bottom: 0.3rem;
 }
 
+/* AJOUT (Timeline-Based Service Flow — brief produit, priorité #5, voir
+           dashboard/features/rundown.js) : retard/avance cumulé du culte,
+           mêmes tons sémantiques que .cue-readiness-badge (émeraude/ambre)
+           plutôt qu'introduire une nouvelle palette de statut. */
+.rundown-schedule-status {
+  font-size: var(--text-xs);
+  padding: 0.35rem 0.6rem;
+  border-radius: var(--radius-sm);
+  margin-bottom: 0.6rem;
+}
+.rundown-schedule-status:empty {
+  display: none;
+}
+.rundown-schedule-status.rundown-schedule-neutral {
+  color: var(--text-dim);
+  background: var(--bg-card-hover);
+}
+.rundown-schedule-status.rundown-schedule-ontime {
+  color: var(--accent-emerald);
+  background: rgba(52, 211, 153, 0.12);
+}
+.rundown-schedule-status.rundown-schedule-late {
+  color: var(--accent-amber);
+  background: var(--accent-amber-bg);
+}
+.rundown-schedule-status.rundown-schedule-early {
+  color: var(--primary);
+  background: rgba(255, 138, 61, 0.12);
+}
+
+.queue-item-duration-input {
+  width: 3.2rem;
+  flex-shrink: 0;
+  padding: 0.2rem 0.35rem;
+  font-size: var(--text-xs);
+  background: var(--bg-card-hover);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  text-align: center;
+}
+.queue-item-actual-duration {
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 /* AJOUT (médiathèque — déclenchement vocal de photos/vidéos) : réutilise
            .queue-list/.queue-item/.queue-item-actions/.queue-icon-btn ci-dessus
            (déjà assez génériques), juste ces quelques classes en plus pour le
