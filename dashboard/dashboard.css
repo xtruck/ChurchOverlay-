@@ -3982,4 +3982,279 @@ body {
   color: #fff;
 }
 
+/* ==========================================================================
+   AJOUT : extraction des style="..." en ligne de la section #overview vers
+   des classes. REFACTOR PUR — valeurs déplacées, jamais modifiées.
+   Comme ci-dessus, en fin de fichier pour garder la cascade face aux règles
+   de composants (.card, .card-value, .card-icon-wrap...) à spécificité égale.
+   ========================================================================== */
+
+/* --- Utilitaires d'espacement : prolongent l'échelle existante
+       (.mb-2 = 0.5rem, .mb-3 = 0.75rem, soit n × 0.25rem). --- */
+.mb-4 {
+  margin-bottom: 1rem;
+}
+.mb-5 {
+  margin-bottom: 1.25rem;
+}
+.mb-7 {
+  margin-bottom: 1.75rem;
+}
+.mt-2 {
+  margin-top: 0.5rem;
+}
+.flex-1 {
+  flex: 1;
+}
+.flex-shrink-0 {
+  flex-shrink: 0;
+}
+
+/* --- Utilitaires de texte/couleur récurrents --- */
+.text-dim {
+  color: var(--text-dim);
+}
+.text-emerald {
+  color: var(--accent-emerald);
+}
+.text-amber {
+  color: var(--accent-amber);
+}
+.text-cyan {
+  color: var(--accent-cyan);
+}
+.hint-text-sm {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+.hint-text-xs {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+/* --- Boutons : gabarits de padding réutilisés --- */
+.queue-add-btn {
+  padding: 0.55rem 0.9rem;
+}
+.btn-sm {
+  padding: 0.4rem 0.85rem;
+  font-size: 0.8rem;
+}
+.btn-xs {
+  padding: 0.35rem 0.9rem;
+  font-size: 0.8rem;
+}
+.btn-remove-xs {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+.btn-group {
+  display: flex;
+  gap: 0.5rem;
+}
+.btn-group-sm {
+  display: flex;
+  gap: 0.4rem;
+}
+
+/* --- Barre d'écoute (état micro en un coup d'œil) --- */
+.listening-bar {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+}
+.listening-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6b7280;
+  flex-shrink: 0;
+}
+.listening-level-track {
+  flex: 1;
+  height: 4px;
+  background: #1f2937;
+  border-radius: 2px;
+  overflow: hidden;
+  min-width: 60px;
+}
+.listening-level-bar {
+  height: 100%;
+  width: 0%;
+  background: #6b7280;
+  border-radius: 2px;
+  transition:
+    width 0.15s ease-out,
+    background 0.2s;
+}
+/* Pas de `display` ici : confidence-mode.js remet element.style.display = ''
+   pour réafficher le badge — une règle display dans la feuille reprendrait
+   alors le dessus et le champ resterait masqué. */
+.listening-confidence {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  min-width: 3em;
+  text-align: right;
+}
+.listening-lang {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  min-width: 2em;
+}
+.trust-mode-selector {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+/* --- Recherche rapide / chips de suggestion --- */
+.quick-chips-label {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+}
+
+/* --- Aperçu en direct (iframe overlay) --- */
+.live-preview-frame {
+  width: 100%;
+  aspect-ratio: 16/9;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: #000;
+  display: block;
+}
+
+/* --- Grille des panneaux (ambiance / file / feuille de route / médias) --- */
+.overview-panels-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+.ambient-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+.pattern-picker-row {
+  margin-top: 0.6rem;
+}
+
+/* --- Carte poster principal --- */
+.icon-amber-star {
+  color: var(--accent-amber, #d9a441);
+}
+.default-poster-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* --- Médiathèque : formulaire d'ajout et groupes --- */
+.input-w-100 {
+  width: 100px;
+}
+.media-loop-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.details-summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+.media-group-add-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+/* --- Bibliothèque de chants --- */
+.song-lyrics-input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.85rem;
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 0.85rem;
+  resize: vertical;
+}
+
+/* --- Bandeaux de notification (fuzzy / candidate / confirmation) ---
+   `display` reste EN LIGNE sur les trois : verse-session-display.js bascule
+   element.style.display, et trust-mode.js LIT
+   `banner.style.display === 'none'` pour décider si la barre d'espace doit
+   confirmer — déplacer ce display casserait ce garde-fou.
+   Pas de `display` non plus dans .notice-banner, pour la même raison. */
+/* font-weight/font-size restent dans les variantes : le bandeau de
+   confirmation (--pending) n'en avait AUCUN en ligne, seuls fuzzy et
+   candidate en portaient. Les mettre dans la base le mettrait en gras. */
+.notice-banner {
+  margin-bottom: 1.25rem;
+  padding: 0.85rem 1.25rem;
+  border-radius: var(--radius-md);
+}
+.notice-banner--fuzzy {
+  background: rgba(124, 140, 245, 0.15);
+  border: 1px solid rgba(124, 140, 245, 0.3);
+  color: var(--accent-amber);
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+.notice-banner--candidate {
+  background: rgba(80, 200, 180, 0.12);
+  border: 1px solid rgba(80, 200, 180, 0.35);
+  color: var(--accent-cyan);
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+.notice-banner--pending {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: var(--accent-amber, #f59e0b);
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.pending-verse-text {
+  font-weight: 600;
+  font-size: 0.88rem;
+  flex: 1;
+}
+
+/* --- Ligne principale : verset héros + flux d'activité --- */
+.main-display-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1.5rem;
+}
+.hero-verse-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 1rem;
+}
+.btn-emergency-inline {
+  font-size: 0.78rem;
+  color: var(--accent-rose);
+}
+
 
