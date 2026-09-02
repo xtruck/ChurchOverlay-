@@ -17,6 +17,7 @@
  */
 import { ws } from '../state.js';
 import { showToast, escapeHtmlDashboard, confirmDialog } from '../utils.js';
+import { checkCueReadiness, READINESS_LABELS } from './next-cue-confidence.js';
 
 let rundownCues = [];
 let rundownActiveIndex = -1;
@@ -150,9 +151,16 @@ export function renderRundown(message) {
   list.innerHTML = rundownCues
     .map((cue, i) => {
       const isActive = i === rundownActiveIndex;
+      const checking = READINESS_LABELS.checking;
       return `
                 <div class="queue-item${isActive ? ' is-active-rundown-cue' : ''}">
                     <span class="queue-item-position">${i + 1}</span>
+                    <span
+                      class="cue-readiness-badge ${checking.className}"
+                      id="cueReadiness-${cue.id}"
+                      title="Vérification en cours…"
+                      >${checking.icon}</span
+                    >
                     <span class="queue-item-ref" title="${escapeHtmlDashboard(cue.label)}">${CUE_TYPE_ICON[cue.type] || ''} ${escapeHtmlDashboard(cue.label)}</span>
                     <div class="queue-item-actions">
                         <button class="queue-icon-btn" onclick="moveRundownCue('${cue.id}', -1)" title="Monter" ${i === 0 ? 'disabled' : ''}>↑</button>
@@ -164,6 +172,35 @@ export function renderRundown(message) {
             `;
     })
     .join('');
+
+  refreshCueReadinessBadges(rundownCues);
+}
+
+// AJOUT (Next Cue Confidence) : les vérifications sont asynchrones (sondes
+// réseau/police/rendu hors-écran, voir next-cue-confidence.js) — la liste
+// s'affiche donc d'abord avec un badge "…", chaque badge est ensuite corrigé
+// en place une fois son résultat connu. Une reconnexion/réordonnancement
+// pendant que des vérifications sont en vol est sans risque : chaque callback
+// ne touche que SON PROPRE élément `#cueReadiness-<id>` (getElementById
+// renvoie null silencieusement si la liste a été redessinée entre-temps).
+function refreshCueReadinessBadges(cues) {
+  for (const cue of cues) {
+    checkCueReadiness(cue)
+      .then((result) => applyCueReadinessBadge(cue.id, result))
+      .catch(() => {
+        /* une vérification en échec ne doit jamais casser le reste de la liste */
+      });
+  }
+}
+
+function applyCueReadinessBadge(cueId, result) {
+  const badge = document.getElementById(`cueReadiness-${cueId}`);
+  if (!badge) return;
+  const meta = READINESS_LABELS[result.status] || READINESS_LABELS.checking;
+  badge.className = `cue-readiness-badge ${meta.className}`;
+  badge.textContent = meta.icon;
+  const problems = result.checks.filter((c) => !c.ok).map((c) => c.message);
+  badge.title = problems.length ? `${meta.text} — ${problems.join(' · ')}` : meta.text;
 }
 
 window.addVerseToRundown = addVerseToRundown;

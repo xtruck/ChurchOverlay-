@@ -874,6 +874,39 @@ body {
   text-align: center;
 }
 
+/* AJOUT (Next Cue Confidence — brief produit, priorité #1, voir
+           dashboard/features/next-cue-confidence.js) : badge de préparation
+           par repère de la feuille de route. Mêmes tons que .status-badge
+           (success/warning/error) pour rester cohérent avec le reste de
+           l'app plutôt qu'introduire une nouvelle palette de statut. */
+.cue-readiness-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: var(--radius-full);
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.cue-readiness-badge.cue-readiness-checking {
+  background: var(--bg-card-hover);
+  color: var(--text-dim);
+}
+.cue-readiness-badge.cue-readiness-ready {
+  background: rgba(52, 211, 153, 0.15);
+  color: var(--accent-emerald);
+}
+.cue-readiness-badge.cue-readiness-attention {
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber);
+}
+.cue-readiness-badge.cue-readiness-blocked {
+  background: rgba(244, 96, 122, 0.15);
+  color: var(--accent-rose);
+}
+
 .queue-item-ref {
   flex: 1;
   font-size: var(--text-sm);
@@ -3172,7 +3205,6 @@ body {
   font-weight: 600;
 }
 
-
 /* Right Column: Live Program (PGM) & Stage Confidence */
 .pp-right-column {
   background: var(--pp-bg-surface);
@@ -3291,7 +3323,8 @@ body {
   justify-content: center;
   transition: all 0.15s ease;
 }
-.pp-mood-pill:hover, .pp-mood-pill.active {
+.pp-mood-pill:hover,
+.pp-mood-pill.active {
   background: #272a38;
   color: #fff;
   border-color: var(--pp-border-medium);
@@ -3321,7 +3354,8 @@ body {
    Voir les commentaires "AJOUT" au fil du fichier pour le contexte de chaque
    panneau. Les toggles pilotés en JS (element.style.display = ...) gardent
    volontairement leur style="display:none/flex" inline — seule la partie
-   statique de leur style est déplacée ici (voir vérif dans dashboard/**/*.js
+   statique de leur style est déplacée ici (voir vérif dans dashboard/**/
+*.js
    avant ce lot). */
 .setup-banner-icon {
   font-size: 1.3rem;
@@ -4626,5 +4660,3 @@ body {
 .transcription-health-message {
   font-size: 0.85rem;
 }
-
-

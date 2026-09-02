@@ -25,6 +25,17 @@ import { getMediaLibraryItems } from './media-library.js';
 
 let sceneStudioItems = [];
 
+// AJOUT (Next Cue Confidence — vérification de préparation avant diffusion,
+// voir next-cue-confidence.js) : même raisonnement que getMediaLibraryItems()
+// dans media-library.js — la liste vit déjà ici, tenue à jour à chaque
+// diffusion serveur (sceneLibraryUpdated), pas de second aller-retour WS pour
+// que le module de vérification puisse résoudre un sceneId de repère de
+// feuille de route vers la scène complète (background/elements, mediaUrl déjà
+// résolues côté serveur).
+export function getSceneStudioItems() {
+  return sceneStudioItems;
+}
+
 // AJOUT (studio de scènes, lot 6/6 — composeur) : état local du formulaire de
 // composition, distinct de sceneStudioItems (qui reflète la galerie déjà
 // enregistrée côté serveur). `composerEditingId` null = création d'une
