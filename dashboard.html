@@ -64,18 +64,7 @@
                 <path d="M12 2v20M6 8h12" />
               </svg>
             </div>
-            <img
-              id="brandLogoImg"
-              alt="Logo de l'organisation"
-              style="
-                display: none;
-                width: 44px;
-                height: 44px;
-                border-radius: var(--radius-full);
-                object-fit: cover;
-                flex-shrink: 0;
-              "
-            />
+            <img class="brand-logo-img" id="brandLogoImg" alt="Logo de l'organisation" style="display: none" />
             <div>
               <div class="brand-title" id="brandTitle">ChurchOverlay</div>
               <div class="brand-tag">Opérateur Pro</div>
@@ -184,7 +173,7 @@
           </div>
 
           <div class="header-actions">
-            <div class="live-status-pill status" style="padding: 0.65rem 1.1rem">
+            <div class="live-status-pill status live-status-pill-lg">
               <div class="status-dot"></div>
               <span>Connecté</span>
             </div>
@@ -244,11 +233,11 @@
                  raison ni moyen de le relancer depuis la fenêtre principale
                  (seule l'icône de la zone de notification l'avait). -->
         <div id="pipelineAlertBanner" class="pipeline-banner pipeline-banner--with-action">
-          <div style="display: flex; align-items: center; gap: 0.6rem">
+          <div class="pipeline-banner-content">
             <span id="pipelineAlertIcon">⚠️</span>
-            <span id="pipelineAlertMessage" style="font-size: 0.9rem"></span>
+            <span class="pipeline-alert-message" id="pipelineAlertMessage"></span>
           </div>
-          <button id="restartPipelineBtn" class="btn btn-secondary" style="flex-shrink: 0">
+          <button id="restartPipelineBtn" class="btn btn-secondary flex-shrink-0">
             Redémarrer le pipeline
           </button>
         </div>
@@ -264,7 +253,7 @@
                  serveur (voir transcribeWithRetry() dans server.js). -->
         <div id="transcriptionHealthBanner" class="pipeline-banner">
           <span id="transcriptionHealthIcon">⚠️</span>
-          <span id="transcriptionHealthMessage" style="font-size: 0.85rem"></span>
+          <span class="transcription-health-message" id="transcriptionHealthMessage"></span>
         </div>
 
         <!-- ============================================================================

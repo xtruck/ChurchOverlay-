@@ -4598,4 +4598,33 @@ body {
   color: var(--text-main);
 }
 
+/* ==========================================================================
+   AJOUT : extraction des style="..." en ligne de l'en-tête / barre latérale
+   / bannières d'alerte. REFACTOR PUR — valeurs déplacées, jamais modifiées.
+   ========================================================================== */
+
+/* `display` reste en ligne : dashboard-branding.js bascule le logo entre
+   'block' et 'none' selon qu'une image de marque est configurée. */
+.brand-logo-img {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.live-status-pill-lg {
+  padding: 0.65rem 1.1rem;
+}
+.pipeline-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.pipeline-alert-message {
+  font-size: 0.9rem;
+}
+.transcription-health-message {
+  font-size: 0.85rem;
+}
+
 
