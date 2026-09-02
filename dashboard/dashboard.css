@@ -907,6 +907,51 @@ body {
   color: var(--accent-rose);
 }
 
+/* AJOUT (Cue Cards — idée créative, brief produit) : statut opérationnel
+           grossier par repère (En direct/Armé/Diffusé) — complète, sans le
+           dupliquer, .cue-readiness-badge ci-dessus (qui couvre déjà
+           Prêt/À vérifier/Bloqué pour un repère pas encore en jeu). Vide
+           (aucune classe de modificateur) et donc invisible pour un repère
+           qui n'est dans AUCUN de ces trois états — voir
+           dashboard/features/rundown.js#computeCueStatus. */
+.cue-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-full);
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+.cue-status-chip:empty {
+  padding: 0;
+}
+.cue-status-chip.cue-status-live {
+  background: rgba(255, 90, 90, 0.15);
+  color: var(--accent-rose);
+  animation: cueStatusLivePulse 2s ease-in-out infinite;
+}
+.cue-status-chip.cue-status-armed {
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--accent-cyan);
+}
+.cue-status-chip.cue-status-played {
+  background: var(--bg-card-hover);
+  color: var(--text-dim);
+}
+@keyframes cueStatusLivePulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
 .queue-item-ref {
   flex: 1;
   font-size: var(--text-sm);
@@ -1047,6 +1092,58 @@ body {
 .rundown-schedule-status.rundown-schedule-early {
   color: var(--primary);
   background: rgba(255, 138, 61, 0.12);
+}
+
+/* AJOUT (Service Heartbeat — idée créative, brief produit, voir
+           dashboard/features/rundown.js#setHeartbeatDot) : pastille animée
+           lisible d'un coup d'œil, mêmes tons que .rundown-schedule-status
+           juste au-dessus (jamais une seconde palette). "waiting"/"running"
+           n'ont pas d'équivalent .rundown-schedule-* dédié (état neutre),
+           gris plutôt qu'une couleur qui suggérerait à tort un problème. */
+.rundown-heartbeat {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.rundown-heartbeat-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+  background: var(--text-dim);
+}
+.rundown-heartbeat-dot.rundown-heartbeat-waiting {
+  background: var(--text-dim);
+}
+.rundown-heartbeat-dot.rundown-heartbeat-running {
+  background: var(--primary);
+  animation: rundownHeartbeatPulse 1.6s ease-in-out infinite;
+}
+.rundown-heartbeat-dot.rundown-heartbeat-ontime {
+  background: var(--accent-emerald);
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.6);
+  animation: rundownHeartbeatPulse 1.6s ease-in-out infinite;
+}
+.rundown-heartbeat-dot.rundown-heartbeat-behind {
+  background: var(--accent-amber);
+  box-shadow: 0 0 6px rgba(240, 180, 41, 0.6);
+  animation: rundownHeartbeatPulse 0.9s ease-in-out infinite;
+}
+.rundown-heartbeat-dot.rundown-heartbeat-ahead {
+  background: var(--primary);
+  box-shadow: 0 0 6px rgba(255, 138, 61, 0.6);
+  animation: rundownHeartbeatPulse 1.6s ease-in-out infinite;
+}
+@keyframes rundownHeartbeatPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 0.6;
+  }
 }
 
 .queue-item-duration-input {

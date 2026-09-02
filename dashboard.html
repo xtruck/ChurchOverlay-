@@ -859,7 +859,22 @@
                            renderScheduleStatus() dans rundown.js) — vide tant que le
                            culte n'a pas commencé ou qu'aucune estimation n'est
                            renseignée, jamais un chiffre inventé. -->
-              <div id="rundownScheduleStatus" class="rundown-schedule-status"></div>
+              <div class="rundown-heartbeat">
+                <!-- AJOUT (Service Heartbeat — idée créative, brief produit) :
+                             pastille animée résumant le même état que le texte
+                             ci-dessous, lisible d'un coup d'œil sans lire les mots
+                             (voir renderScheduleStatus() dans rundown.js, qui pilote
+                             les deux ensemble). "Paused" (cité dans le brief) n'a
+                             aucun signal réel à détecter dans cette app (aucun
+                             concept de pause de culte) — délibérément absent plutôt
+                             que simulé, même discipline que next-cue-confidence.js. -->
+                <span
+                  id="rundownHeartbeatDot"
+                  class="rundown-heartbeat-dot"
+                  aria-hidden="true"
+                ></span>
+                <div id="rundownScheduleStatus" class="rundown-schedule-status"></div>
+              </div>
               <div class="queue-list" id="rundownList"></div>
             </div>
 

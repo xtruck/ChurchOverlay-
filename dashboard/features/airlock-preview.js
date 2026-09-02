@@ -30,7 +30,7 @@ import { ws, getHttpOrigin } from '../state.js';
 import { showToast } from '../utils.js';
 import { getMediaLibraryItems } from './media-library.js';
 import { getSceneStudioItems } from './scene-studio.js';
-import { getRundownCues, triggerRundownCue } from './rundown.js';
+import { getRundownCues, triggerRundownCue, refreshCueStatusChips } from './rundown.js';
 
 let armedItem = null; // { cueId, type, label, previewItem } | null
 let currentLive = null; // { type:'verse'|'media'|'scene', ... } | null
@@ -78,6 +78,17 @@ export const renderContentPreview = renderInto;
 // getter plutôt que dupliquée dans un second état ailleurs.
 export function getCurrentLive() {
   return currentLive;
+}
+
+// AJOUT (Cue Cards — idée créative, brief produit) : rundown.js a besoin de
+// savoir "ce repère est-il actuellement armé ?" pour afficher son statut
+// opérationnel (Armé), sans dupliquer armedItem dans un second état. Import
+// circulaire avec rundown.js (qui importe déjà triggerRundownCue/
+// getRundownCues d'ici) — sans risque : aucun des deux modules n'appelle ces
+// fonctions au chargement, seulement depuis des gestionnaires déclenchés plus
+// tard (voir la même discipline dans focus-mode.js, qui importe déjà les deux).
+export function getArmedCueId() {
+  return armedItem ? armedItem.cueId : null;
 }
 
 function renderInto(container, data) {
@@ -157,12 +168,17 @@ export function armRundownCue(cueId) {
   if (!cue) return;
   armedItem = { cueId, previewItem: buildCuePreviewData(cue) };
   renderArmedColumn();
+  // AJOUT (Cue Cards) : voir le commentaire de getArmedCueId() ci-dessus —
+  // ce changement d'état est purement local, la feuille de route doit être
+  // prévenue explicitement pour que son badge "⏏ Armé" apparaisse.
+  refreshCueStatusChips();
   showToast(`« ${cue.label} » armé — prêt dans le sas de diffusion.`, 'info');
 }
 
 export function disarmAirlock() {
   armedItem = null;
   renderArmedColumn();
+  refreshCueStatusChips();
 }
 
 export function goLiveFromAirlock() {

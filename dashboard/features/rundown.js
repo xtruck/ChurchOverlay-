@@ -18,6 +18,11 @@
 import { ws } from '../state.js';
 import { showToast, escapeHtmlDashboard, confirmDialog } from '../utils.js';
 import { checkCueReadiness, READINESS_LABELS } from './next-cue-confidence.js';
+// AJOUT (Cue Cards) : getArmedCueId() ci-dessous a besoin de savoir quel
+// repère est armé — import circulaire avec airlock-preview.js (qui importe
+// déjà getRundownCues/triggerRundownCue d'ici), sans risque, voir le
+// commentaire d'en-tête de getArmedCueId() dans airlock-preview.js.
+import { getArmedCueId } from './airlock-preview.js';
 
 let rundownCues = [];
 let rundownActiveIndex = -1;
@@ -213,7 +218,55 @@ function computeScheduleStatus() {
   return { state: 'ok', delayMs: actualElapsedMs - totalExpectedMs };
 }
 
+// AJOUT (Cue Cards — idée créative, brief produit) : statut opérationnel
+// grossier d'un repère — En direct/Armé/Diffusé. Volontairement PAS
+// Prêt/À vérifier/Bloqué (déjà couvert par .cue-readiness-badge, voir
+// next-cue-confidence.js) : `null` ici laisse ce badge existant parler seul
+// pour un repère qui n'est encore dans aucun de ces trois états. "Diffusé"
+// se base sur cueTimeline (pas sur i < rundownActiveIndex) pour rester
+// correct même après un réordonnancement de la feuille de route — voir
+// server.js#cueTimeline, jamais réinitialisé par un simple réordonnancement.
+function computeCueStatus(cue, i) {
+  if (i === rundownActiveIndex) return { key: 'live', icon: '●', text: 'En direct' };
+  if (cueTimeline[cue.id]) return { key: 'played', icon: '✓', text: 'Diffusé' };
+  if (getArmedCueId() === cue.id) return { key: 'armed', icon: '⏏', text: 'Armé' };
+  return null;
+}
+
+function cueStatusChipHtml(cue, i) {
+  const status = computeCueStatus(cue, i);
+  const cls = status ? ` cue-status-${status.key}` : '';
+  const content = status ? escapeHtmlDashboard(`${status.icon} ${status.text}`) : '';
+  return `<span class="cue-status-chip${cls}" id="cueStatus-${cue.id}">${content}</span>`;
+}
+
+// AJOUT (Cue Cards) : appelé depuis airlock-preview.js après un armement/
+// désarmement — ce changement d'état est purement local à ce module-là,
+// aucune diffusion serveur ne redessine donc la feuille de route toute
+// seule. Met à jour uniquement le chip de chaque repère (pas de
+// re-déclenchement des vérifications réseau de refreshCueReadinessBadges,
+// inutile ici et source de scintillement pour un simple armement).
+export function refreshCueStatusChips() {
+  rundownCues.forEach((cue, i) => {
+    const el = document.getElementById(`cueStatus-${cue.id}`);
+    if (!el) return;
+    const status = computeCueStatus(cue, i);
+    el.className = status ? `cue-status-chip cue-status-${status.key}` : 'cue-status-chip';
+    el.textContent = status ? `${status.icon} ${status.text}` : '';
+  });
+}
+
 const SCHEDULE_STATUS_TOLERANCE_MS = 60000; // ±1 min : "à l'heure", pas un faux positif au moindre écart
+
+// AJOUT (Service Heartbeat — idée créative, brief produit) : pastille animée
+// dans #rundownHeartbeatDot (voir dashboard.html), pilotée par le MÊME état
+// que le texte de #rundownScheduleStatus ci-dessous — jamais un second calcul
+// qui pourrait diverger. `key` correspond à une classe rundown-heartbeat-<key>
+// (voir dashboard.css).
+function setHeartbeatDot(key) {
+  const dot = document.getElementById('rundownHeartbeatDot');
+  if (dot) dot.className = `rundown-heartbeat-dot rundown-heartbeat-${key}`;
+}
 
 function renderScheduleStatus() {
   const el = document.getElementById('rundownScheduleStatus');
@@ -223,27 +276,33 @@ function renderScheduleStatus() {
     case 'not-started':
       el.textContent = '';
       el.className = 'rundown-schedule-status';
+      setHeartbeatDot('waiting');
       return;
     case 'first-segment':
       el.textContent = 'Culte démarré — retard/avance visible après le 2ᵉ repère.';
       el.className = 'rundown-schedule-status rundown-schedule-neutral';
+      setHeartbeatDot('running');
       return;
     case 'incomplete-estimates':
       el.textContent =
         'Retard/avance non calculable — durée estimée manquante sur un repère déjà passé.';
       el.className = 'rundown-schedule-status rundown-schedule-neutral';
+      setHeartbeatDot('running');
       return;
     case 'ok': {
       const { delayMs } = status;
       if (Math.abs(delayMs) < SCHEDULE_STATUS_TOLERANCE_MS) {
         el.textContent = 'Culte à l’heure.';
         el.className = 'rundown-schedule-status rundown-schedule-ontime';
+        setHeartbeatDot('ontime');
       } else if (delayMs > 0) {
         el.textContent = `Culte ${formatDurationMinutes(delayMs)} en retard.`;
         el.className = 'rundown-schedule-status rundown-schedule-late';
+        setHeartbeatDot('behind');
       } else {
         el.textContent = `Culte ${formatDurationMinutes(-delayMs)} en avance.`;
         el.className = 'rundown-schedule-status rundown-schedule-early';
+        setHeartbeatDot('ahead');
       }
       return;
     }
@@ -309,6 +368,7 @@ export function renderRundown(message) {
                       title="Vérification en cours…"
                       >${checking.icon}</span
                     >
+                    ${cueStatusChipHtml(cue, i)}
                     <span class="queue-item-ref" title="${escapeHtmlDashboard(cue.label)}">${CUE_TYPE_ICON[cue.type] || ''} ${escapeHtmlDashboard(cue.label)}</span>
                     <input
                       type="number"
