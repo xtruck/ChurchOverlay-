@@ -64,12 +64,7 @@
                 <path d="M12 2v20M6 8h12" />
               </svg>
             </div>
-            <img
-              class="brand-logo-img"
-              id="brandLogoImg"
-              alt="Logo de l'organisation"
-              style="display: none"
-            />
+            <img class="brand-logo-img" id="brandLogoImg" alt="Logo de l'organisation" style="display: none" />
             <div>
               <div class="brand-title" id="brandTitle">ChurchOverlay</div>
               <div class="brand-tag">Opérateur Pro</div>
@@ -295,44 +290,26 @@
               <div class="pp-brand-group">
                 <div class="pp-brand-logo">✝</div>
                 <div>
-                  <div class="pp-brand-name">
-                    ChurchOverlay <span class="pp-brand-studio-tag">STUDIO</span>
-                  </div>
+                  <div class="pp-brand-name">ChurchOverlay <span class="pp-brand-studio-tag">STUDIO</span></div>
                   <div class="pp-brand-tagline">Broadcast Presentation Engine</div>
                 </div>
               </div>
 
               <!-- Master Clear Controls (F1 - F4) -->
               <div class="pp-clear-cluster">
-                <button
-                  id="ppClearAllBtn"
-                  class="pp-clear-btn pp-clear-all"
-                  title="Masquer tout l'affichage (F1 ou Échap)"
-                >
+                <button id="ppClearAllBtn" class="pp-clear-btn pp-clear-all" title="Masquer tout l'affichage (F1 ou Échap)">
                   <span>Clear All</span>
                   <span class="pp-keycap">F1</span>
                 </button>
-                <button
-                  id="ppClearSlideBtn"
-                  class="pp-clear-btn"
-                  title="Masquer le texte / verset actuel (F2)"
-                >
+                <button id="ppClearSlideBtn" class="pp-clear-btn" title="Masquer le texte / verset actuel (F2)">
                   <span>Clear Slide</span>
                   <span class="pp-keycap">F2</span>
                 </button>
-                <button
-                  id="ppClearMediaBtn"
-                  class="pp-clear-btn"
-                  title="Masquer le média d'arrière-plan (F3)"
-                >
+                <button id="ppClearMediaBtn" class="pp-clear-btn" title="Masquer le média d'arrière-plan (F3)">
                   <span>Clear Media</span>
                   <span class="pp-keycap">F3</span>
                 </button>
-                <button
-                  id="ppClearPropsBtn"
-                  class="pp-clear-btn"
-                  title="Masquer l'habillage / scène (F4)"
-                >
+                <button id="ppClearPropsBtn" class="pp-clear-btn" title="Masquer l'habillage / scène (F4)">
                   <span>Clear Props</span>
                   <span class="pp-keycap">F4</span>
                 </button>
@@ -340,7 +317,9 @@
 
               <!-- Audio VU Meter & Microphone Control -->
               <div class="pp-audio-strip">
-                <button class="btn btn-secondary pp-mic-btn" id="ppMicBtn">🎤 Micro</button>
+                <button class="btn btn-secondary pp-mic-btn" id="ppMicBtn">
+                  🎤 Micro
+                </button>
                 <div class="pp-vu-track" title="Vumètre audio d'entrée micro">
                   <div class="pp-vu-live-bar" id="ppVuLiveBar"></div>
                 </div>
@@ -364,6 +343,7 @@
 
             <!-- 2. Three-Pane Studio Workspace -->
             <div class="pp-studio-grid">
+              
               <!-- LEFT PANE: Rundown, Scriptures, AI Copilot, Media & Songs -->
               <div class="pp-left-column">
                 <div class="pp-tab-nav">
@@ -383,16 +363,8 @@
                     </button>
                   </div>
                   <div class="pp-input-row-mb">
-                    <input
-                      type="text"
-                      id="ppRundownInput"
-                      class="pp-input pp-input-compact"
-                      placeholder="Ajouter verset (ex: Jean 3:16)..."
-                      aria-label="Ajouter un verset à la feuille de culte"
-                    />
-                    <button id="ppRundownAddBtn" class="btn btn-secondary pp-btn-compact-8">
-                      ➕
-                    </button>
+                    <input type="text" id="ppRundownInput" class="pp-input pp-input-compact" placeholder="Ajouter verset (ex: Jean 3:16)..." aria-label="Ajouter un verset à la feuille de culte" />
+                    <button id="ppRundownAddBtn" class="btn btn-secondary pp-btn-compact-8">➕</button>
                   </div>
                   <div id="ppRundownList" class="pp-stack-6">
                     <div class="pp-cue-item active">
@@ -448,25 +420,11 @@
                     <div class="pp-grid-2">
                       <div>
                         <label for="ppQuickChapter" class="pp-field-label">CHAPITRE</label>
-                        <input
-                          type="number"
-                          id="ppQuickChapter"
-                          class="pp-input"
-                          value="3"
-                          min="1"
-                          max="150"
-                        />
+                        <input type="number" id="ppQuickChapter" class="pp-input" value="3" min="1" max="150" />
                       </div>
                       <div>
                         <label for="ppQuickVerse" class="pp-field-label">VERSET</label>
-                        <input
-                          type="number"
-                          id="ppQuickVerse"
-                          class="pp-input"
-                          value="16"
-                          min="1"
-                          max="176"
-                        />
+                        <input type="number" id="ppQuickVerse" class="pp-input" value="16" min="1" max="176" />
                       </div>
                     </div>
                     <div>
@@ -487,20 +445,8 @@
                 <div class="pp-tab-pane" id="tabAiCopilot">
                   <span class="pp-pane-title">Recherche Biblique par Sens (IA)</span>
                   <div class="pp-input-row">
-                    <input
-                      type="text"
-                      id="ppAiSearchInput"
-                      class="pp-input pp-input-compact"
-                      placeholder="Ex: marcher sur l'eau, paix dans l'épreuve..."
-                      aria-label="Recherche biblique par sens (IA)"
-                      onkeydown="if (event.key === 'Enter') window.executeAiSemanticSearch();"
-                    />
-                    <button
-                      id="executeAiSemanticSearchBtn"
-                      class="btn btn-secondary pp-btn-compact-10"
-                    >
-                      🔍
-                    </button>
+                    <input type="text" id="ppAiSearchInput" class="pp-input pp-input-compact" placeholder="Ex: marcher sur l'eau, paix dans l'épreuve..." aria-label="Recherche biblique par sens (IA)" onkeydown="if(event.key==='Enter') window.executeAiSemanticSearch();" />
+                    <button id="executeAiSemanticSearchBtn" class="btn btn-secondary pp-btn-compact-10">🔍</button>
                   </div>
 
                   <!-- Quick Semantic Topic Chips -->
@@ -514,18 +460,14 @@
                   <!-- AI Search Results Container -->
                   <div id="ppAiSearchResults" class="pp-stack-6-mt8">
                     <div class="pp-empty-hint">
-                      Posez une requête en langage naturel pour retrouver instantanément un passage
-                      biblique.
+                      Posez une requête en langage naturel pour retrouver instantanément un passage biblique.
                     </div>
                   </div>
 
                   <div class="pp-section-divider">
                     <span class="pp-pane-title">Outils IA en Direct</span>
                     <div class="pp-stack-6-mt6">
-                      <button
-                        id="generateKeyPointFromSpeechBtn"
-                        class="btn btn-secondary pp-ai-tool-btn"
-                      >
+                      <button id="generateKeyPointFromSpeechBtn" class="btn btn-secondary pp-ai-tool-btn">
                         🧠 Extraire le Point Clé de la Prédication
                       </button>
                       <button class="btn btn-secondary pp-ai-tool-btn" id="ppAiAutoThemeBtn">
@@ -557,12 +499,7 @@
                 <!-- Tab 5: Song Library -->
                 <div class="pp-tab-pane" id="tabSongs">
                   <span class="pp-pane-title">Bibliothèque de Chants</span>
-                  <input
-                    type="text"
-                    class="pp-input pp-song-search-input"
-                    placeholder="Rechercher un chant..."
-                    aria-label="Rechercher un chant"
-                  />
+                  <input type="text" class="pp-input pp-song-search-input" placeholder="Rechercher un chant..." aria-label="Rechercher un chant" />
                   <div class="pp-stack-6">
                     <div id="ppSongCue1" role="button" tabindex="0" class="pp-cue-item">
                       <div class="pp-cue-info">
@@ -578,12 +515,16 @@
                     </div>
                   </div>
                 </div>
+
               </div>
 
               <!-- CENTER PANE: Slide Presentation Grid & Live Teleprompter -->
               <div class="pp-center-column">
+                
                 <div class="pp-slide-canvas-header">
-                  <span class="pp-canvas-title"> GRILLE DE PRÉSENTATION 16:9 </span>
+                  <span class="pp-canvas-title">
+                    GRILLE DE PRÉSENTATION 16:9
+                  </span>
                   <div class="pp-canvas-hints">
                     <span>Raccourcis : <b>Espace</b> (Suivant), <b>←/→</b> (Naviguer)</span>
                   </div>
@@ -602,9 +543,7 @@
                     <button id="ppPrevChapterBtn" class="pp-btn-nav">⏮ Chap. Préc.</button>
                     <button id="ppPrevReadingVerseBtn" class="pp-btn-nav">◀ Verset Préc.</button>
                   </div>
-                  <span class="pp-nav-label" id="ppReadingNavLabel"
-                    >Navigation Lecture Pas-à-Pas</span
-                  >
+                  <span class="pp-nav-label" id="ppReadingNavLabel">Navigation Lecture Pas-à-Pas</span>
                   <div class="pp-nav-btn-group">
                     <button id="ppNextReadingVerseBtn" class="pp-btn-nav">Verset Suiv. ▶</button>
                     <button id="ppNextChapterBtn" class="pp-btn-nav">Chap. Suiv. ⏭</button>
@@ -624,16 +563,15 @@
                     <span class="pp-stream-status">● Flux continu</span>
                   </div>
                   <div class="pp-teleprompter-text" id="ppTeleprompterFeed">
-                    <span class="pp-teleprompter-placeholder"
-                      >En attente de la parole... Activez le micro pour afficher la transcription en
-                      temps réel avec détection automatique des versets.</span
-                    >
+                    <span class="pp-teleprompter-placeholder">En attente de la parole... Activez le micro pour afficher la transcription en temps réel avec détection automatique des versets.</span>
                   </div>
                 </div>
+
               </div>
 
               <!-- RIGHT PANE: Program Output (PGM) & Stage Confidence -->
               <div class="pp-right-column">
+                
                 <!-- Live Program Output (PGM) Monitor -->
                 <div class="pp-monitor-group">
                   <div class="pp-row-between">
@@ -644,9 +582,7 @@
                     <div class="pp-live-onair-badge" id="ppLiveOnAirBadge">● ON AIR</div>
                     <div class="pp-pgm-card-preview">
                       <div class="pp-pgm-ref-text" id="ppPgmRef">PROGRAMME HORS LIGNE</div>
-                      <div class="pp-pgm-body-text" id="ppPgmText">
-                        Aucun élément diffusé actuellement sur l'overlay.
-                      </div>
+                      <div class="pp-pgm-body-text" id="ppPgmText">Aucun élément diffusé actuellement sur l'overlay.</div>
                     </div>
                   </div>
                 </div>
@@ -659,9 +595,7 @@
                   </div>
                   <div class="pp-stage-preview-box" id="ppStagePreviewBox">
                     <div class="pp-stage-ref-title" id="ppStageRef">ÉCRAN SCÈNE</div>
-                    <div class="pp-stage-text-preview" id="ppStageText">
-                      En attente du prochain texte...
-                    </div>
+                    <div class="pp-stage-text-preview" id="ppStageText">En attente du prochain texte...</div>
                   </div>
                 </div>
 
@@ -672,9 +606,7 @@
                     <button id="setStudioMoodDarkBtn" class="pp-mood-pill">Minimal Sombre</button>
                     <button id="setStudioMoodWarmBtn" class="pp-mood-pill">Or Solennel</button>
                     <button id="setStudioMoodCoolBtn" class="pp-mood-pill">Bleu Nuit</button>
-                    <button id="setStudioMoodCelebrationBtn" class="pp-mood-pill">
-                      Célébration
-                    </button>
+                    <button id="setStudioMoodCelebrationBtn" class="pp-mood-pill">Célébration</button>
                     <button id="setStudioMoodPurpleBtn" class="pp-mood-pill">Pourpre Royal</button>
                     <button id="setStudioMoodRegalBtn" class="pp-mood-pill">Rayonnant</button>
                   </div>
@@ -686,26 +618,19 @@
                     <span class="pp-nav-label">VITESSE TRANSITION</span>
                     <span class="pp-transition-val" id="ppTransitionVal">0.5s</span>
                   </div>
-                  <input
-                    type="range"
-                    min="100"
-                    max="2000"
-                    value="500"
-                    class="pp-slider"
-                    aria-label="Vitesse de transition"
-                    oninput="
-                      document.getElementById('ppTransitionVal').textContent =
-                        (this.value / 1000).toFixed(1) + 's'
-                    "
-                  />
+                  <input type="range" min="100" max="2000" value="500" class="pp-slider" aria-label="Vitesse de transition" oninput="document.getElementById('ppTransitionVal').textContent = (this.value / 1000).toFixed(1) + 's'" />
                 </div>
+
               </div>
+
             </div>
           </div>
+
         </section>
 
         <!-- Overview Section (Direct Classique) -->
         <section id="overview" class="section" style="display: none">
+
           <!-- Listening Bar — état audio en un coup d'œil -->
           <div id="listeningBar" class="card listening-bar">
             <div class="listening-dot" id="listeningDot" title="État du micro"></div>
@@ -713,8 +638,10 @@
             <div class="listening-level-track">
               <div class="listening-level-bar" id="listeningLevel"></div>
             </div>
-            <span class="listening-confidence" id="listeningConfidence">—</span>
-            <span class="listening-lang" id="listeningLang">FR</span>
+            <span class="listening-confidence" id="listeningConfidence">—</span
+            >
+            <span class="listening-lang" id="listeningLang">FR</span
+            >
           </div>
 
           <!-- AJOUT (Partie 2 — mode confiance) : un bénévole débutant
@@ -769,8 +696,7 @@
               type="text"
               id="speechTextInput"
               placeholder="Saisir ou simuler une phrase (ex: 'Ouvrons nos bibles dans Jean 3:16' ou 'Psaume 23:1')..."
-              onkeydown="if (event.key === 'Enter') sendCustomSpeechText();"
-              aria-label="Phrase à analyser pour détecter une référence biblique"
+              onkeydown="if (event.key === 'Enter') sendCustomSpeechText();" aria-label="Phrase à analyser pour détecter une référence biblique"
             />
             <button id="sendCustomSpeechTextBtn" class="btn btn-primary">
               Détecter & Afficher
@@ -779,12 +705,29 @@
 
           <!-- Suggestion Chips -->
           <div class="quick-chips">
-            <span class="quick-chips-label">Essayer:</span>
-            <button id="speechChipJean316Btn" class="chip-btn">📖 Jean 3:16</button>
-            <button id="speechChipPsaume231Btn" class="chip-btn">🛡️ Psaume 23:1</button>
-            <button id="speechChip1Cor134Btn" class="chip-btn">❤️ 1 Cor 13:4</button>
-            <button id="speechChipRomains828Btn" class="chip-btn">✨ Romains 8:28</button>
-            <button id="speechChipEsaie4031Btn" class="chip-btn">🦅 Ésaïe 40:31</button>
+            <span class="quick-chips-label">Essayer:</span
+            >
+            <button
+              id="speechChipJean316Btn"
+              class="chip-btn"
+            >
+              📖 Jean 3:16
+            </button>
+            <button id="speechChipPsaume231Btn" class="chip-btn">
+              🛡️ Psaume 23:1
+            </button>
+            <button
+              id="speechChip1Cor134Btn"
+              class="chip-btn"
+            >
+              ❤️ 1 Cor 13:4
+            </button>
+            <button id="speechChipRomains828Btn" class="chip-btn">
+              ✨ Romains 8:28
+            </button>
+            <button id="speechChipEsaie4031Btn" class="chip-btn">
+              🦅 Ésaïe 40:31
+            </button>
           </div>
 
           <!-- AJOUT (aperçu en direct — recommandation "prévisualisation" façon
@@ -796,16 +739,13 @@
           <div class="card mb-7">
             <div class="card-header">
               <span class="card-title">Aperçu en direct</span>
-              <button class="btn btn-secondary chip-sm" id="livePreviewToggleBtn">
+              <button class="btn btn-secondary chip-sm" id="livePreviewToggleBtn"
+>
                 👁 Afficher l'aperçu
               </button>
             </div>
             <div id="livePreviewWrap" style="display: none">
-              <iframe
-                class="live-preview-frame"
-                id="livePreviewFrame"
-                title="Aperçu de l'overlay"
-              ></iframe>
+              <iframe class="live-preview-frame" id="livePreviewFrame" title="Aperçu de l'overlay"></iframe>
             </div>
           </div>
 
@@ -822,7 +762,8 @@
                 <span class="card-title">Ambiance</span>
               </div>
               <div class="mood-picker-row" id="moodPicker">
-                <span class="hint-text-sm">Connexion au serveur en cours...</span>
+                <span class="hint-text-sm">Connexion au serveur en cours...</span
+                >
               </div>
               <div class="ambient-toggle-row">
                 <label class="toggle-switch">
@@ -846,25 +787,46 @@
                              optionnel, CSS pur (voir #pattern-layer dans overlay.html) — en
                              plus du dégradé de thème déjà choisi ci-dessus. -->
               <div class="mood-picker-row mt-tight" id="patternPicker">
-                <button class="mood-btn active" id="pattern-btn-none">Aucun motif</button>
-                <button class="mood-btn" id="pattern-btn-dots">Points</button>
-                <button class="mood-btn" id="pattern-btn-grid">Grille</button>
-                <button class="mood-btn" id="pattern-btn-diagonal">Diagonales</button>
+                <button
+                  class="mood-btn active"
+                  id="pattern-btn-none"
+                >
+                  Aucun motif
+                </button>
+                <button
+                  class="mood-btn"
+                  id="pattern-btn-dots"
+                >
+                  Points
+                </button>
+                <button
+                  class="mood-btn"
+                  id="pattern-btn-grid"
+                >
+                  Grille
+                </button>
+                <button
+                  class="mood-btn"
+                  id="pattern-btn-diagonal"
+                >
+                  Diagonales
+                </button>
               </div>
             </div>
 
             <div class="card">
               <div class="queue-panel-header">
                 <span class="card-title">File d'attente (<span id="queueCount">0</span>)</span>
-                <button id="sendNextInQueueBtn" class="btn btn-secondary chip-sm">▶ Suivant</button>
+                <button id="sendNextInQueueBtn" class="btn btn-secondary chip-sm">
+                  ▶ Suivant
+                </button>
               </div>
               <div class="queue-add-row">
                 <input
                   type="text"
                   id="queueRefInput"
                   placeholder="Référence (ex. Romains 8:28)"
-                  onkeydown="if (event.key === 'Enter') addToQueue();"
-                  aria-label="Référence à ajouter à la file d'attente"
+                  onkeydown="if (event.key === 'Enter') addToQueue();" aria-label="Référence à ajouter à la file d'attente"
                 />
                 <button id="addToQueueBtn" class="btn btn-secondary queue-add-btn">
                   + Ajouter
@@ -884,11 +846,8 @@
               <div class="queue-panel-header">
                 <span class="card-title">Feuille de route (<span id="rundownCount">0</span>)</span>
                 <div class="btn-group-sm">
-                  <button
-                    id="clearRundownBtn"
-                    class="btn btn-secondary chip-sm"
-                    title="Vider toute la feuille de route"
-                  >
+                  <button id="clearRundownBtn" class="btn btn-secondary chip-sm"
+                    title="Vider toute la feuille de route">
                     🗑 Vider
                   </button>
                   <button id="nextRundownCueBtn" class="btn btn-secondary chip-sm">
@@ -901,8 +860,7 @@
                   type="text"
                   id="rundownRefInput"
                   placeholder="Référence (ex. Romains 8:28)"
-                  onkeydown="if (event.key === 'Enter') addVerseToRundown();"
-                  aria-label="Référence à ajouter à la feuille de route"
+                  onkeydown="if (event.key === 'Enter') addVerseToRundown();" aria-label="Référence à ajouter à la feuille de route"
                 />
                 <button id="addVerseToRundownBtn" class="btn btn-secondary queue-add-btn">
                   + Ajouter
@@ -967,7 +925,8 @@
                   <div class="airlock-column-label">Prêt à diffuser</div>
                   <div class="airlock-preview-frame" id="airlockArmedPreview">
                     <div class="airlock-empty-note">
-                      Aucun élément armé — bouton "Armer" sur un repère de la feuille de route
+                      Aucun élément armé — bouton "Armer" sur un repère de la feuille de
+                      route
                     </div>
                   </div>
                 </div>
@@ -1024,11 +983,12 @@
             <div class="card">
               <div class="queue-panel-header">
                 <span class="card-title">Médiathèque (<span id="mediaLibraryCount">0</span>)</span>
-                <button id="hideMediaNowBtn" class="btn btn-secondary chip-sm">⏹ Masquer</button>
+                <button id="hideMediaNowBtn" class="btn btn-secondary chip-sm">
+                  ⏹ Masquer
+                </button>
               </div>
               <div class="queue-add-row" id="mediaLibraryUnavailable" style="display: none">
-                <span class="hint-text-sm"
-                  >Ajout de média disponible uniquement dans l'application ChurchOverlay (pas dans
+                <span class="hint-text-sm">Ajout de média disponible uniquement dans l'application ChurchOverlay (pas dans
                   un navigateur).</span
                 >
               </div>
@@ -1055,36 +1015,17 @@
                 >
               </div>
               <div class="queue-add-row" id="mediaLibraryAddRow">
-                <input
-                  type="text"
-                  id="mediaLabelInput"
-                  placeholder="Nom (ex. Poster annonces)"
-                  aria-label="Nom du média"
-                />
+                <input type="text" id="mediaLabelInput" placeholder="Nom (ex. Poster annonces)" aria-label="Nom du média" />
                 <input
                   type="text"
                   id="mediaPhrasesInput"
-                  placeholder="Phrase(s) déclencheuse(s) (optionnel — vide = le nom sert de phrase)"
-                  aria-label="Phrases déclencheuses du média"
+                  placeholder="Phrase(s) déclencheuse(s) (optionnel — vide = le nom sert de phrase)" aria-label="Phrases déclencheuses du média"
                 />
                 <!-- AJOUT (détails d'affichage média — durée + style d'apparition) :
                                  réglables dès l'ajout, et modifiables ensuite pour les médias
                                  déjà uploadés directement dans la liste ci-dessous. -->
-                <input
-                  class="input-w-100"
-                  type="number"
-                  min="1"
-                  step="1"
-                  id="mediaDurationInput"
-                  placeholder="Durée (s)"
-                  title="Durée d'affichage en secondes — vide = 15s pour une image, jusqu'à la fin pour une vidéo (sauf si « Poster » est coché)"
-                  aria-label="Durée d'affichage en secondes"
-                />
-                <select
-                  id="mediaStyleInput"
-                  title="Style d'apparition à l'écran"
-                  aria-label="Style d'apparition à l'écran"
-                >
+                <input class="input-w-100" type="number" min="1" step="1" id="mediaDurationInput" placeholder="Durée (s)" title="Durée d'affichage en secondes — vide = 15s pour une image, jusqu'à la fin pour une vidéo (sauf si « Poster » est coché)" aria-label="Durée d'affichage en secondes" />
+                <select id="mediaStyleInput" title="Style d'apparition à l'écran" aria-label="Style d'apparition à l'écran">
                   <option value="fade" selected>Fondu</option>
                   <option value="slide">Glissement</option>
                   <option value="zoom">Zoom</option>
@@ -1138,27 +1079,17 @@
                    les membres à la fois — rattachez un média à un groupe via le
                    sélecteur "Groupe" qui apparaît sous chaque média ci-dessous. -->
               <details class="mb-3">
-                <summary class="details-summary">Groupes de médias (rotation à la voix)</summary>
+                <summary class="details-summary">
+                  Groupes de médias (rotation à la voix)
+                </summary>
                 <div class="mt-2">
                   <div class="field-hint mb-2">
                     Ex. "Photos jeunesse" avec 5 photos — dire la phrase du groupe affiche une photo
                     différente à chaque fois, dans l'ordre, jusqu'à la 5e puis on recommence.
                   </div>
                   <div class="media-group-add-row">
-                    <input
-                      class="flex-1"
-                      type="text"
-                      id="mediaGroupNameInput"
-                      placeholder="Nom du groupe (ex. Photos jeunesse)"
-                      aria-label="Nom du groupe de médias"
-                    />
-                    <input
-                      class="flex-1"
-                      type="text"
-                      id="mediaGroupPhrasesInput"
-                      placeholder="Phrases déclencheuses, séparées par des virgules"
-                      aria-label="Phrases déclencheuses du groupe"
-                    />
+                    <input class="flex-1" type="text" id="mediaGroupNameInput" placeholder="Nom du groupe (ex. Photos jeunesse)" aria-label="Nom du groupe de médias" />
+                    <input class="flex-1" type="text" id="mediaGroupPhrasesInput" placeholder="Phrases déclencheuses, séparées par des virgules" aria-label="Phrases déclencheuses du groupe" />
                     <button id="addMediaGroupBtn" class="btn btn-secondary flex-shrink-0">
                       + Créer le groupe
                     </button>
@@ -1178,27 +1109,15 @@
                 <span class="card-title">Chants (<span id="songLibraryCount">0</span>)</span>
               </div>
               <div class="queue-add-row">
-                <input
-                  type="text"
-                  id="songTitleInput"
-                  placeholder="Titre du chant"
-                  aria-label="Titre du chant"
-                />
+                <input type="text" id="songTitleInput" placeholder="Titre du chant" aria-label="Titre du chant" />
                 <input
                   type="text"
                   id="songPhrasesInput"
-                  placeholder="Phrase(s) déclencheuse(s) (optionnel)"
-                  aria-label="Phrases déclencheuses du chant"
+                  placeholder="Phrase(s) déclencheuse(s) (optionnel)" aria-label="Phrases déclencheuses du chant"
                 />
               </div>
               <div class="queue-add-row">
-                <textarea
-                  class="song-lyrics-input"
-                  id="songLyricsInput"
-                  placeholder="Collez les paroles ici — séparez chaque couplet/refrain par une ligne vide"
-                  rows="3"
-                  aria-label="Paroles du chant"
-                ></textarea>
+                <textarea class="song-lyrics-input" id="songLyricsInput" placeholder="Collez les paroles ici — séparez chaque couplet/refrain par une ligne vide" rows="3" aria-label="Paroles du chant"></textarea>
               </div>
               <div class="queue-add-row">
                 <button id="addSongToLibraryBtn" class="btn btn-secondary queue-add-btn">
@@ -1249,7 +1168,9 @@
                   </svg>
                 </div>
               </div>
-              <div class="card-value text-emerald" id="detectionRate">100%</div>
+              <div class="card-value text-emerald" id="detectionRate">
+                100%
+              </div>
               <div class="card-subtitle">Confiance Moteur ML</div>
             </div>
 
@@ -1270,7 +1191,9 @@
                   </svg>
                 </div>
               </div>
-              <div class="card-value text-amber" id="activeLanguage">FR</div>
+              <div class="card-value text-amber" id="activeLanguage">
+                FR
+              </div>
               <div class="card-subtitle">Traduction Auto</div>
             </div>
 
@@ -1291,17 +1214,15 @@
                   </svg>
                 </div>
               </div>
-              <div class="card-value text-cyan" id="sessionDuration">00:00</div>
+              <div class="card-value text-cyan" id="sessionDuration">
+                00:00
+              </div>
               <div class="card-subtitle">Temps d'utilisation</div>
             </div>
           </div>
 
           <!-- Fuzzy match notice element -->
-          <div
-            class="notice-banner notice-banner--fuzzy"
-            id="fuzzyMatchNotice"
-            style="display: none"
-          ></div>
+          <div class="notice-banner notice-banner--fuzzy" id="fuzzyMatchNotice" style="display: none"></div>
 
           <!-- AJOUT (Étape 5 — candidateVerse spéculative) : bandeau distinct
                du bandeau fuzzy (Correction automatique) ci-dessus. Signale à
@@ -1310,11 +1231,7 @@
                tout affichage (jamais de référence ambiguë affichée
                aveuglément — principe mission). Effacé quand le vrai showVerse
                arrive, remplacé par la candidate suivante, ou sur timeout. -->
-          <div
-            class="notice-banner notice-banner--candidate"
-            id="candidateNotice"
-            style="display: none"
-          ></div>
+          <div class="notice-banner notice-banner--candidate" id="candidateNotice" style="display: none"></div>
 
           <!-- AJOUT (Partie 2 — mode confiance) : distinct du bandeau
                candidateVerse ci-dessus (informatif, s'efface tout seul) —
@@ -1324,11 +1241,7 @@
                automatique : un verset non confirmé doit rester visible
                jusqu'à ce que l'opérateur agisse, ou soit remplacé par une
                détection plus récente. -->
-          <div
-            class="notice-banner notice-banner--pending"
-            id="pendingVerseBanner"
-            style="display: none"
-          >
+          <div class="notice-banner notice-banner--pending" id="pendingVerseBanner" style="display: none">
             <span class="pending-verse-text" id="pendingVerseText"></span>
             <button id="confirmPendingVerseBtn" type="button" class="btn btn-primary btn-xs">
               ✅ Confirmer (Espace)
@@ -1366,7 +1279,9 @@
                     >
                       🖼️ Partager
                     </button>
-                    <button id="heroHideVerseBtn" class="btn btn-danger btn-sm">Masquer</button>
+                    <button id="heroHideVerseBtn" class="btn btn-danger btn-sm">
+                      Masquer
+                    </button>
                   </div>
                 </div>
 
@@ -1389,7 +1304,8 @@
               </div>
 
               <div class="hero-verse-footer">
-                <span class="hint-text-xs">Source: Louis Segond (LSG) & World English Bible</span>
+                <span class="hint-text-xs">Source: Louis Segond (LSG) & World English Bible</span
+                >
                 <button id="heroEmergencyStopBtn" class="btn btn-secondary btn-emergency-inline">
                   🛑 Arrêt d'Urgence
                 </button>
@@ -1433,7 +1349,9 @@
               <span class="card-title">Panneau de Contrôle Opérateur</span>
             </div>
             <div class="operator-controls-grid">
-              <button id="showManualVerseBtn" class="btn btn-primary">📖 Afficher un Verset</button>
+              <button id="showManualVerseBtn" class="btn btn-primary">
+                📖 Afficher un Verset
+              </button>
               <button id="hideVerseBtn" class="btn btn-secondary">👁️ Masquer l'Overlay</button>
               <button id="pauseTimerBtn" class="btn btn-secondary">⏸️ Mettre en Pause</button>
               <button id="resumeTimerBtn" class="btn btn-secondary">▶️ Reprendre</button>
@@ -1451,13 +1369,11 @@
             </div>
             <!-- Compteur avant culte -->
             <div class="card-divider-block">
-              <div class="hint-text-xs mb-2">⏱ Compteur avant culte</div>
+              <div class="hint-text-xs mb-2">
+                ⏱ Compteur avant culte
+              </div>
               <div class="countdown-row">
-                <select
-                  class="countdown-select"
-                  id="countdownDuration"
-                  aria-label="Durée du compteur avant culte"
-                >
+                <select class="countdown-select" id="countdownDuration" aria-label="Durée du compteur avant culte">
                   <option value="5">5 min</option>
                   <option value="10" selected>10 min</option>
                   <option value="15">15 min</option>
@@ -1500,28 +1416,25 @@
               <span id="readingModeBadge" class="status-badge success" style="display: none"
                 >Actif</span
               >
-              <span
-                class="reading-mode-position"
-                id="readingModePosition"
-                style="display: none"
-              ></span>
+              <span class="reading-mode-position" id="readingModePosition" style="display: none"></span>
             </div>
             <div class="inline-form-row mb-3">
-              <input
-                class="input-flex-220"
-                type="text"
-                id="readingModeInput"
-                placeholder="Référence de départ (ex. Jean 3:1)"
-                onkeydown="if (event.key === 'Enter') startReadingMode();"
-                aria-label="Référence de départ du mode lecture"
-              />
-              <button class="btn btn-primary" id="readingModeStartBtn">▶️ Démarrer</button>
-              <button class="btn btn-danger" id="readingModeStopBtn" style="display: none">
+              <input class="input-flex-220" type="text" id="readingModeInput" placeholder="Référence de départ (ex. Jean 3:1)" onkeydown="if (event.key === 'Enter') startReadingMode();" aria-label="Référence de départ du mode lecture" />
+              <button class="btn btn-primary" id="readingModeStartBtn">
+                ▶️ Démarrer
+              </button>
+              <button
+                class="btn btn-danger"
+                id="readingModeStopBtn"
+                style="display: none"
+              >
                 ⏹️ Arrêter
               </button>
             </div>
             <div class="reading-advance-row" id="readingModeAdvanceRow" style="display: none">
-              <button id="previousReadingVerseBtn" class="btn btn-secondary">◀ Précédent</button>
+              <button id="previousReadingVerseBtn" class="btn btn-secondary">
+                ◀ Précédent
+              </button>
               <button id="nextReadingVerseBtn" class="btn btn-secondary">Suivant ▶</button>
             </div>
           </div>
@@ -1533,28 +1446,18 @@
             </div>
             <div class="stack-3">
               <div class="row-center-3">
-                <label class="form-label-fixed" for="confidenceThreshold">Seuil ASR</label>
-                <input
-                  class="flex-1"
-                  type="range"
-                  id="confidenceThreshold"
-                  min="0"
-                  max="100"
-                  value="30"
-                  step="5"
-                  oninput="
-                    document.getElementById('confidenceThresholdValue').textContent =
-                      this.value + '%';
-                    setConfidenceThreshold(this.value / 100);
-                  "
-                />
-                <span class="mono-value-right" id="confidenceThresholdValue">30%</span>
+                <label class="form-label-fixed" for="confidenceThreshold">Seuil ASR</label
+                >
+                <input class="flex-1" type="range" id="confidenceThreshold" min="0" max="100" value="30" step="5" oninput=" document.getElementById('confidenceThresholdValue').textContent = this.value + '%'; setConfidenceThreshold(this.value / 100); " />
+                <span class="mono-value-right" id="confidenceThresholdValue">30%</span
+                >
               </div>
               <div class="hint-text-2xs">
                 Segments ASR en dessous de ce seuil sont rejetés automatiquement.
               </div>
               <div class="row-center-3">
-                <label class="form-label-fixed" for="confidenceToggle">Afficher badges</label>
+                <label class="form-label-fixed" for="confidenceToggle">Afficher badges</label
+                >
                 <label class="toggle-switch">
                   <input
                     type="checkbox"
@@ -1576,7 +1479,9 @@
               <button id="setLanguageFrBtn" class="lang-btn active" data-lang="fr">
                 Français (LSG)
               </button>
-              <button id="setLanguageEnBtn" class="lang-btn" data-lang="en">English (WEB)</button>
+              <button id="setLanguageEnBtn" class="lang-btn" data-lang="en">
+                English (WEB)
+              </button>
               <button id="setLanguageBothBtn" class="lang-btn" data-lang="both">
                 🌐 Bilingue (FR + EN)
               </button>
@@ -1595,15 +1500,10 @@
                          server.js#showVerse. -->
             <div class="secondary-translation-row">
               <span class="field-hint field-hint-fixed">Comparer avec</span>
-              <select
-                id="secondaryTranslationSelect"
-                onchange="onSecondaryTranslationChange()"
-                aria-label="Comparer avec une traduction secondaire"
-              >
+              <select id="secondaryTranslationSelect" onchange="onSecondaryTranslationChange()" aria-label="Comparer avec une traduction secondaire">
                 <option value="">Aucune</option>
               </select>
-              <span class="field-hint opacity-70"
-                >Affichée sous le verset, uniquement au déclenchement manuel</span
+              <span class="field-hint opacity-70">Affichée sous le verset, uniquement au déclenchement manuel</span
               >
             </div>
           </div>
@@ -1642,8 +1542,10 @@
                          continu toutes les 250 ms via les diagnostics du serveur. -->
             <div class="audio-vumeter-wrap" id="audioVumeterWrap">
               <div class="vumeter-head">
-                <span class="vumeter-title">Niveau Micro</span>
-                <span class="vumeter-label" id="vumeterLabel">—</span>
+                <span class="vumeter-title">Niveau Micro</span
+                >
+                <span class="vumeter-label" id="vumeterLabel">—</span
+                >
               </div>
               <div class="vumeter-track">
                 <!-- Zones colorées en fond -->
@@ -1769,7 +1671,9 @@
               <button id="requestSermonThemeBtn" class="btn btn-secondary">
                 Détecter le thème
               </button>
-              <button id="requestLiveSummaryBtn" class="btn btn-secondary">Résumé en direct</button>
+              <button id="requestLiveSummaryBtn" class="btn btn-secondary">
+                Résumé en direct
+              </button>
               <button id="requestCrossReferencesBtn" class="btn btn-secondary">
                 Références croisées
               </button>
@@ -1811,12 +1715,7 @@
                 />
                 <span>Traduction live sur l'overlay</span>
               </label>
-              <select
-                class="ml-auto"
-                id="autoTranslateLang"
-                onchange="onAutoTranslateLangChange()"
-                aria-label="Langue de la traduction live"
-              >
+              <select class="ml-auto" id="autoTranslateLang" onchange="onAutoTranslateLangChange()" aria-label="Langue de la traduction live">
                 <option value="en">Anglais</option>
                 <option value="es">Espagnol</option>
                 <option value="dyu">Dioula</option>
@@ -1828,14 +1727,7 @@
                          chaque clic sur "Récap fin de culte" ci-dessus alimente cette
                          archive. Pas d'appel API, pas d'embedding, juste un fichier local. -->
             <div class="inline-form-row mb-4">
-              <input
-                class="input-flex-220"
-                type="text"
-                id="archiveSearchInput"
-                placeholder="Ai-je déjà prêché sur... ?"
-                onkeydown="if (event.key === 'Enter') requestArchiveSearch();"
-                aria-label="Rechercher dans les prédications archivées"
-              />
+              <input class="input-flex-220" type="text" id="archiveSearchInput" placeholder="Ai-je déjà prêché sur... ?" onkeydown="if (event.key === 'Enter') requestArchiveSearch();" aria-label="Rechercher dans les prédications archivées" />
               <button id="requestArchiveSearchBtn" class="btn btn-secondary">
                 🔎 Chercher dans l'historique
               </button>
@@ -1847,12 +1739,7 @@
           </div>
 
           <!-- Récap post-culte — affiché quand le culte est terminé -->
-          <div
-            class="card mt-6"
-            data-group="analyse"
-            style="display: none"
-            id="postServiceRecapCard"
-          >
+          <div class="card mt-6" data-group="analyse" style="display: none" id="postServiceRecapCard">
             <div class="card-header">
               <span class="card-title">Récap Post-Culte</span>
               <div class="btn-group-sm">
@@ -1879,20 +1766,18 @@
               publique.
             </div>
             <div class="wrap-btn-row mb-4">
-              <input
-                class="input-flex-240"
-                type="text"
-                id="agentInput"
-                placeholder="Ex. Trouve Jean 3:16 et prépare son affichage"
-                onkeydown="if (event.key === 'Enter') runAgent();"
-                aria-label="Instruction pour l'agent opérateur"
-              />
+              <input class="input-flex-240" type="text" id="agentInput" placeholder="Ex. Trouve Jean 3:16 et prépare son affichage" onkeydown="if (event.key === 'Enter') runAgent();" aria-label="Instruction pour l'agent opérateur" />
               <button id="runAgentBtn" class="btn btn-secondary">Lancer</button>
-              <button class="btn btn-primary" id="agentApproveBtn" style="display: none">
+              <button
+                class="btn btn-primary"
+                id="agentApproveBtn"
+                style="display: none"
+              >
                 Confirmer l'action
               </button>
             </div>
-            <pre id="agentOutput" class="stat-row agent-output">Aucune exécution agent.</pre>
+            <pre id="agentOutput" class="stat-row agent-output">
+Aucune exécution agent.</pre>
           </div>
 
           <!-- AJOUT (cahier des charges — assistant sermons, Point 5 "outil
@@ -1911,14 +1796,7 @@
               ci-dessus) — jamais de théologie générée sans passage réel à citer.
             </div>
             <div class="inline-form-row mb-4">
-              <input
-                class="input-flex-220"
-                type="text"
-                id="sermonQaInput"
-                placeholder="Qu'a dit le pasteur sur... ?"
-                onkeydown="if (event.key === 'Enter') askSermonQuestion();"
-                aria-label="Question sur une prédication archivée"
-              />
+              <input class="input-flex-220" type="text" id="sermonQaInput" placeholder="Qu'a dit le pasteur sur... ?" onkeydown="if (event.key === 'Enter') askSermonQuestion();" aria-label="Question sur une prédication archivée" />
               <button id="askSermonQuestionBtn" class="btn btn-secondary">💬 Demander</button>
             </div>
             <div id="sermonQaOutput" class="stat-row stat-row-block">
@@ -1944,15 +1822,10 @@
             </div>
             <div class="mood-picker-row mb-4" id="bibleTopicChips"></div>
             <div class="inline-form-row mb-4">
-              <input
-                class="input-flex-220"
-                type="text"
-                id="bibleSearchInput"
-                placeholder="Rechercher un thème (ex. pardon, espérance...)"
-                onkeydown="if (event.key === 'Enter') searchBibleByTopic();"
-                aria-label="Rechercher des versets par thème"
-              />
-              <button id="searchBibleByTopicBtn" class="btn btn-secondary">🔎 Rechercher</button>
+              <input class="input-flex-220" type="text" id="bibleSearchInput" placeholder="Rechercher un thème (ex. pardon, espérance...)" onkeydown="if (event.key === 'Enter') searchBibleByTopic();" aria-label="Rechercher des versets par thème" />
+              <button id="searchBibleByTopicBtn" class="btn btn-secondary">
+                🔎 Rechercher
+              </button>
             </div>
             <div id="bibleSearchOutput" class="stat-row stat-row-block">
               <span class="stat-label">Choisissez un thème ou tapez une recherche.</span>
@@ -1968,7 +1841,9 @@
               <span class="card-title">Historique de session (persistant)</span>
             </div>
             <div class="wrap-btn-row mb-4">
-              <button id="requestSessionStats1Btn" class="btn btn-secondary">Dernières 24h</button>
+              <button id="requestSessionStats1Btn" class="btn btn-secondary">
+                Dernières 24h
+              </button>
               <button id="requestSessionStats7Btn" class="btn btn-secondary">
                 7 derniers jours
               </button>
@@ -1992,14 +1867,7 @@
                 "chapitres YouTube" (à coller dans la description de la vidéo) — un export CSV est
                 aussi copié.
               </div>
-              <textarea
-                class="highlights-export-output"
-                id="highlightsExportOutput"
-                readonly
-                rows="6"
-                style="display: none"
-                aria-label="Temps forts exportés (chapitres YouTube)"
-              ></textarea>
+              <textarea class="highlights-export-output" id="highlightsExportOutput" readonly rows="6" style="display: none" aria-label="Temps forts exportés (chapitres YouTube)"></textarea>
             </div>
 
             <!-- AJOUT (chantier 4.6 — extraits vidéo autour des temps forts) :
@@ -2013,15 +1881,7 @@
               </div>
               <div class="field-hint mb-tight">
                 Découpe un extrait de
-                <input
-                  class="input-w-4rem"
-                  type="number"
-                  id="clipDurationInput"
-                  value="45"
-                  min="15"
-                  max="120"
-                  aria-label="Durée de chaque extrait vidéo, en secondes"
-                />
+                <input class="input-w-4rem" type="number" id="clipDurationInput" value="45" min="15" max="120" aria-label="Durée de chaque extrait vidéo, en secondes" />
                 s autour de chaque temps fort, depuis un enregistrement vidéo déjà terminé sur
                 disque.
               </div>
@@ -2034,7 +1894,9 @@
                 </button>
               </div>
               <div id="clipExportPaths" class="field-hint mb-tight"></div>
-              <button class="btn btn-primary" id="clipExportBtn">✂️ Générer les extraits</button>
+              <button class="btn btn-primary" id="clipExportBtn">
+                ✂️ Générer les extraits
+              </button>
               <div id="clipExportStatus" class="field-hint mt-tight"></div>
             </div>
           </div>
@@ -2084,11 +1946,7 @@
             <button type="button" class="btn btn-primary btn-full-width" id="preServiceCheckBtn">
               ✅ Tester avant le culte
             </button>
-            <div
-              id="preServiceCheckResults"
-              class="preservice-check-results"
-              style="display: none"
-            ></div>
+            <div id="preServiceCheckResults" class="preservice-check-results" style="display: none"></div>
           </div>
 
           <!-- AJOUT (identité de marque du tableau de bord — revente en produit
@@ -2152,7 +2010,9 @@
               <button id="pickDashboardLogoBtn" class="btn btn-secondary">
                 🖼️ Choisir un logo
               </button>
-              <button id="clearDashboardLogoBtn" class="btn btn-secondary">Retirer le logo</button>
+              <button id="clearDashboardLogoBtn" class="btn btn-secondary">
+                Retirer le logo
+              </button>
             </div>
           </div>
 
@@ -2167,11 +2027,7 @@
             <!-- Affiché uniquement si la page est ouverte hors de l'app Electron
                          (ex: mode "serveur seul" dans un navigateur) : window.churchOverlay
                          n'existe alors pas, le pont IPC n'étant fourni que par preload.js. -->
-            <div
-              id="apiSettingsUnavailable"
-              class="settings-unavailable-note"
-              style="display: none"
-            >
+            <div id="apiSettingsUnavailable" class="settings-unavailable-note" style="display: none">
               La configuration des clés API n'est possible que depuis l'application de bureau
               ChurchOverlay (elle passe par le pont sécurisé Electron). En mode « serveur seul »
               dans un navigateur, définissez <code>GROQ_API_KEY</code> /
@@ -2421,7 +2277,10 @@
                 <div class="output-matrix-row" data-mode="overlay">
                   <div class="output-matrix-label">
                     <span class="output-matrix-name">Overlay (public)</span>
-                    <span class="output-matrix-status" id="outputStatus-overlay" data-open="false"
+                    <span
+                      class="output-matrix-status"
+                      id="outputStatus-overlay"
+                      data-open="false"
                       >Fermé</span
                     >
                   </div>
@@ -2431,7 +2290,11 @@
                     aria-label="Écran pour Overlay (public)"
                   ></select>
                   <div class="output-matrix-actions">
-                    <button id="outputOpenOverlayBtn" type="button" class="btn btn-primary chip-sm">
+                    <button
+                      id="outputOpenOverlayBtn"
+                      type="button"
+                      class="btn btn-primary chip-sm"
+                    >
                       Afficher
                     </button>
                     <button
@@ -2501,11 +2364,7 @@
                   </div>
                 </div>
               </div>
-              <button
-                id="refreshDisplaysBtn"
-                type="button"
-                class="btn btn-secondary chip-sm mt-tight"
-              >
+              <button id="refreshDisplaysBtn" type="button" class="btn btn-secondary chip-sm mt-tight">
                 🔄 Actualiser les écrans
               </button>
             </div>
@@ -2888,7 +2747,10 @@
               <span class="stat-label">Page compagnon (QR code)</span>
               <span class="stat-value">
                 <a href="#" id="companionLink" class="companion-link-color"></a>
-                <button id="copyCompanionLinkBtn" class="btn btn-secondary stat-btn-sm badge-ml8">
+                <button
+                  id="copyCompanionLinkBtn"
+                  class="btn btn-secondary stat-btn-sm badge-ml8"
+                >
                   Copier
                 </button>
               </span>
@@ -2951,7 +2813,10 @@
             <div class="stat-row">
               <span class="stat-label">Importer un service (fichier .zip exporté)</span>
               <span class="stat-value">
-                <button id="importServicePortableBtn" class="btn btn-secondary stat-btn-sm">
+                <button
+                  id="importServicePortableBtn"
+                  class="btn btn-secondary stat-btn-sm"
+                >
                   📥 Importer un .zip
                 </button>
               </span>
@@ -3047,7 +2912,12 @@
                 >Hôte / Port (Réglages → Réseau → API Remote dans ProPresenter)</label
               >
               <div class="input-row">
-                <input type="text" id="ppHostInput" placeholder="localhost" class="pp-host-input" />
+                <input
+                  type="text"
+                  id="ppHostInput"
+                  placeholder="localhost"
+                  class="pp-host-input"
+                />
                 <input
                   type="number"
                   id="ppPortInput"
@@ -3097,7 +2967,11 @@
                 placeholder="Message de test vers l'écran scène ProPresenter"
                 aria-label="Message de test vers l'écran scène ProPresenter"
               />
-              <button id="sendProPresenterTestMessageBtn" type="button" class="btn btn-secondary">
+              <button
+                id="sendProPresenterTestMessageBtn"
+                type="button"
+                class="btn btn-secondary"
+              >
                 Envoyer
               </button>
             </div>
@@ -3173,7 +3047,9 @@
                 >
                   Aperçu / Programme
                 </button>
-                <button id="refreshOverlayBtn" class="btn btn-secondary">Actualiser Iframe</button>
+                <button id="refreshOverlayBtn" class="btn btn-secondary">
+                  Actualiser Iframe
+                </button>
               </div>
             </div>
 
@@ -3359,7 +3235,9 @@
                 <button id="importPptxSlidesBtn" class="btn btn-secondary chip-sm">
                   📥 Importer PowerPoint
                 </button>
-                <button id="hideSceneNowBtn" class="btn btn-secondary chip-sm">⏹ Masquer</button>
+                <button id="hideSceneNowBtn" class="btn btn-secondary chip-sm">
+                  ⏹ Masquer
+                </button>
               </div>
             </div>
             <div class="field-hint mb-3">
@@ -3382,7 +3260,9 @@
           <div class="card" id="sceneComposerCard" style="display: none">
             <div class="queue-panel-header">
               <span class="card-title" id="sceneComposerTitle">Nouvelle scène</span>
-              <button id="closeSceneComposerBtn" class="btn btn-secondary chip-sm">✕ Fermer</button>
+              <button id="closeSceneComposerBtn" class="btn btn-secondary chip-sm">
+                ✕ Fermer
+              </button>
             </div>
             <div class="queue-add-row">
               <input
@@ -3511,6 +3391,7 @@
           <span>Direct</span>
         </li>
         <li class="nav-item" data-sections="analysis,studio,media-wall">
+
           <svg
             width="20"
             height="20"
