@@ -3538,6 +3538,54 @@ body {
 .display-window-hint {
   margin-bottom: 8px;
 }
+
+/* AJOUT (Multi-Output Matrix — brief produit, priorité #4, voir
+           dashboard/features/preservice-ai.js) : une ligne par destination
+           (overlay/écran scène/diaporama), chacune avec son propre statut,
+           sélecteur d'écran et actions Afficher/Fermer indépendantes. */
+.output-matrix {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.output-matrix-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.55rem 0.7rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+.output-matrix-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 9rem;
+  flex: 1;
+}
+.output-matrix-name {
+  font-size: var(--text-sm);
+  color: var(--text-main);
+  font-weight: 600;
+}
+.output-matrix-status {
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+}
+.output-matrix-status[data-open='true'] {
+  color: var(--accent-emerald);
+}
+.output-matrix-screen {
+  flex: 1;
+  min-width: 8rem;
+}
+.output-matrix-actions {
+  display: flex;
+  gap: 0.4rem;
+}
 .stage-message-row {
   display: flex;
   gap: 0.5rem;

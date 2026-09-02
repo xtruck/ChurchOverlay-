@@ -404,11 +404,23 @@ export function onTranslatedCaptionsToggle() {
   );
 }
 
-// AJOUT (audit — plusieurs façons d'afficher l'overlay, gratuit/léger,
-// session parallèle) : fenêtre plein écran indépendante d'OBS (voir
-// createDisplayWindow dans main.js). Même garde que les autres panneaux
-// Electron-only : n'existe que côté application de bureau (le pont IPC
-// vient de preload.js).
+// AJOUT (Multi-Output Matrix — brief produit, priorité #4) : jusqu'ici un
+// unique menu déroulant "un mode à la fois" sans aucun retour visuel sur ce
+// qui était réellement ouvert. Remplacé par une vraie matrice — une ligne
+// par destination (overlay/stage/announcements, voir DISPLAY_MODES dans
+// main.js), chacune avec son propre sélecteur d'écran, ses propres boutons
+// Afficher/Fermer, et un statut tenu à jour en direct (voir
+// refreshDisplayWindowStatus() plus bas) — y compris quand une fenêtre est
+// fermée autrement que par son bouton "Fermer" (Alt+F4, écran débranché...).
+// Même garde que les autres panneaux Electron-only : n'existe que côté
+// application de bureau (le pont IPC vient de preload.js).
+const OUTPUT_MODES = ['overlay', 'stage', 'announcements'];
+const OUTPUT_MODE_LABELS = {
+  overlay: 'Overlay (public)',
+  stage: 'Écran scène',
+  announcements: 'Diaporama annonces',
+};
+
 (function initDisplayWindowPanel() {
   const unavailable = document.getElementById('displayWindowUnavailable');
   const controls = document.getElementById('displayWindowControls');
@@ -420,16 +432,23 @@ export function onTranslatedCaptionsToggle() {
   }
   controls.style.display = 'block';
   refreshDisplays();
+  refreshDisplayWindowStatus();
+  if (window.churchOverlay.onDisplayWindowStatusChanged) {
+    window.churchOverlay.onDisplayWindowStatusChanged(refreshDisplayWindowStatus);
+  }
 })();
 
 export async function refreshDisplays() {
-  const select = document.getElementById('displaySelect');
-  if (!select || !window.churchOverlay || !window.churchOverlay.listDisplays) return;
+  if (!window.churchOverlay || !window.churchOverlay.listDisplays) return;
   try {
     const displays = await window.churchOverlay.listDisplays();
-    select.innerHTML = (displays || [])
+    const optionsHtml = (displays || [])
       .map((d) => `<option value="${d.id}">${d.label}</option>`)
       .join('');
+    for (const mode of OUTPUT_MODES) {
+      const select = document.getElementById(`outputScreen-${mode}`);
+      if (select) select.innerHTML = optionsHtml;
+    }
   } catch (err) {
     showToast(
       'Impossible de lister les écrans : ' + (err && err.message ? err.message : err),
@@ -438,40 +457,42 @@ export async function refreshDisplays() {
   }
 }
 
-// AJOUT (stage display / diaporama d'annonces) : le mode sélectionné décide
-// QUELLE page (overlay.html / stage-display.html / announcement-loop.html)
-// s'ouvre — voir DISPLAY_MODES dans main.js. Chaque mode a sa PROPRE fenêtre
-// (peuvent être ouvertes simultanément sur des écrans différents).
-export function getSelectedDisplayMode() {
-  const modeSelect = document.getElementById('displayModeSelect');
-  return modeSelect ? modeSelect.value || 'overlay' : 'overlay';
+export async function refreshDisplayWindowStatus() {
+  if (!window.churchOverlay || !window.churchOverlay.getDisplayWindowStatus) return;
+  try {
+    const status = await window.churchOverlay.getDisplayWindowStatus();
+    for (const mode of OUTPUT_MODES) {
+      const badge = document.getElementById(`outputStatus-${mode}`);
+      if (!badge) continue;
+      const modeStatus = (status && status[mode]) || { open: false };
+      badge.dataset.open = String(!!modeStatus.open);
+      badge.textContent = modeStatus.open ? `Ouvert — ${modeStatus.screenLabel}` : 'Fermé';
+    }
+  } catch (err) {
+    // AJOUT : silencieux — une erreur de statut ne doit pas noyer l'opérateur
+    // de toasts à chaque changement (contrairement à un échec d'action
+    // Afficher/Fermer ci-dessous, qui reste une action explicite ratée).
+    console.warn('[preservice-ai] Statut des fenêtres de sortie indisponible :', err);
+  }
 }
 
-const DISPLAY_MODE_LABELS = {
-  overlay: 'Overlay',
-  stage: 'Écran scène',
-  announcements: 'Diaporama annonces',
-};
-
-export async function openDisplayWindow() {
-  const select = document.getElementById('displaySelect');
+export async function openOutputWindow(mode) {
+  const select = document.getElementById(`outputScreen-${mode}`);
   if (!select || !window.churchOverlay || !window.churchOverlay.openDisplayWindow) return;
   const displayId = select.value ? Number(select.value) : undefined;
-  const mode = getSelectedDisplayMode();
   try {
     await window.churchOverlay.openDisplayWindow(displayId, mode);
-    showToast(`${DISPLAY_MODE_LABELS[mode] || mode} affiché en plein écran.`, 'success');
+    showToast(`${OUTPUT_MODE_LABELS[mode] || mode} affiché en plein écran.`, 'success');
   } catch (err) {
     showToast("Échec de l'affichage : " + (err && err.message ? err.message : err), 'error');
   }
 }
 
-export async function closeDisplayWindow() {
+export async function closeOutputWindow(mode) {
   if (!window.churchOverlay || !window.churchOverlay.closeDisplayWindow) return;
-  const mode = getSelectedDisplayMode();
   try {
     await window.churchOverlay.closeDisplayWindow(mode);
-    showToast(`Fenêtre "${DISPLAY_MODE_LABELS[mode] || mode}" fermée.`, 'info');
+    showToast(`Fenêtre "${OUTPUT_MODE_LABELS[mode] || mode}" fermée.`, 'info');
   } catch (err) {
     showToast('Échec de la fermeture : ' + (err && err.message ? err.message : err), 'error');
   }
@@ -738,8 +759,8 @@ window.requestPostServiceRecap = requestPostServiceRecap;
 window.requestSessionStats = requestSessionStats;
 window.exportHighlights = exportHighlights;
 window.refreshDisplays = refreshDisplays;
-window.openDisplayWindow = openDisplayWindow;
-window.closeDisplayWindow = closeDisplayWindow;
+window.openOutputWindow = openOutputWindow;
+window.closeOutputWindow = closeOutputWindow;
 window.sendStageMessage = sendStageMessage;
 window.clearStageMessage = clearStageMessage;
 window.requestArchiveSearch = requestArchiveSearch;

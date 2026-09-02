@@ -235,8 +235,12 @@ const CLICK_BINDINGS = {
 
   // --- Écrans / affichage scène ---
   refreshDisplaysBtn: () => window.refreshDisplays(),
-  openDisplayWindowBtn: () => window.openDisplayWindow(),
-  closeDisplayWindowBtn: () => window.closeDisplayWindow(),
+  outputOpenOverlayBtn: () => window.openOutputWindow('overlay'),
+  outputCloseOverlayBtn: () => window.closeOutputWindow('overlay'),
+  outputOpenStageBtn: () => window.openOutputWindow('stage'),
+  outputCloseStageBtn: () => window.closeOutputWindow('stage'),
+  outputOpenAnnouncementsBtn: () => window.openOutputWindow('announcements'),
+  outputCloseAnnouncementsBtn: () => window.closeOutputWindow('announcements'),
   sendStageMessageBtn: () => window.sendStageMessage(),
   clearStageMessageBtn: () => window.clearStageMessage(),
 

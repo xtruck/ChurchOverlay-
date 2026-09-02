@@ -155,6 +155,19 @@ contextBridge.exposeInMainWorld('churchOverlay', {
   openDisplayWindow: (displayId, mode) =>
     ipcRenderer.invoke('open-display-window', { displayId, mode }),
   closeDisplayWindow: (mode) => ipcRenderer.invoke('close-display-window', { mode }),
+  // AJOUT (Multi-Output Matrix — brief produit, priorité #4) : quelle
+  // fenêtre est RÉELLEMENT ouverte à cet instant, et sur quel écran — voir
+  // getDisplayWindowStatus() dans main.js. onDisplayWindowStatusChanged
+  // suit le même contrat que onStatusUpdate/onPerfUpdate ci-dessus (fonction
+  // de nettoyage retournée), pour que le tableau de bord se mette à jour
+  // tout seul (ouverture, fermeture par bouton OU fermeture externe de la
+  // fenêtre) sans avoir à re-cliquer "Actualiser".
+  getDisplayWindowStatus: () => ipcRenderer.invoke('get-display-window-status'),
+  onDisplayWindowStatusChanged: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('display-window-status-changed', listener);
+    return () => ipcRenderer.removeListener('display-window-status-changed', listener);
+  },
 
   // --- AJOUT (médiathèque — déclenchement vocal de photos/vidéos) ---------
   // Seul accès natif nécessaire : le sélecteur de fichier (dialog n'existe

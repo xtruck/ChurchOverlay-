@@ -2202,33 +2202,112 @@ Aucune exécution agent.</pre>
               <code>/overlay</code> dans un onglet et passez-le en plein écran (F11).
             </div>
 
+            <!-- AJOUT (Multi-Output Matrix — brief produit, priorité #4) : jusqu'ici
+                         un seul menu déroulant "un mode à la fois", sans aucun retour sur
+                         ce qui était réellement ouvert — remplacé par une vraie matrice,
+                         une ligne par destination, chacune avec son propre statut vivant
+                         (voir getDisplayWindowStatus()/onDisplayWindowStatusChanged() dans
+                         main.js/preload.js) et ses propres actions indépendantes. -->
             <div id="displayWindowControls" style="display: none">
               <div class="field-hint display-window-hint">
-                Ouvre l'overlay, l'écran scène ou le diaporama d'annonces en plein écran sur l'écran
-                choisi — chacun peut être ouvert simultanément sur un écran différent (voir
-                recommandations "Stage Display" / "présentation secondaire indépendante").
+                Chaque destination a sa propre fenêtre plein écran, ouvrable simultanément sur un
+                écran différent (voir recommandations "Stage Display" / "présentation secondaire
+                indépendante").
               </div>
-              <div class="input-row mb-3">
-                <select id="displaySelect" aria-label="Écran d'affichage">
-                  <option value="">Recherche des écrans…</option>
-                </select>
-                <select id="displayModeSelect" aria-label="Mode d'affichage">
-                  <option value="overlay">Overlay (public)</option>
-                  <option value="stage">Écran scène</option>
-                  <option value="announcements">Diaporama annonces</option>
-                </select>
-                <button id="refreshDisplaysBtn" type="button" class="btn btn-secondary">
-                  🔄 Actualiser
-                </button>
+              <div class="output-matrix" id="outputMatrix">
+                <div class="output-matrix-row" data-mode="overlay">
+                  <div class="output-matrix-label">
+                    <span class="output-matrix-name">Overlay (public)</span>
+                    <span
+                      class="output-matrix-status"
+                      id="outputStatus-overlay"
+                      data-open="false"
+                      >Fermé</span
+                    >
+                  </div>
+                  <select
+                    class="output-matrix-screen"
+                    id="outputScreen-overlay"
+                    aria-label="Écran pour Overlay (public)"
+                  ></select>
+                  <div class="output-matrix-actions">
+                    <button
+                      id="outputOpenOverlayBtn"
+                      type="button"
+                      class="btn btn-primary chip-sm"
+                    >
+                      Afficher
+                    </button>
+                    <button
+                      id="outputCloseOverlayBtn"
+                      type="button"
+                      class="btn btn-secondary chip-sm"
+                    >
+                      Fermer
+                    </button>
+                  </div>
+                </div>
+                <div class="output-matrix-row" data-mode="stage">
+                  <div class="output-matrix-label">
+                    <span class="output-matrix-name">Écran scène</span>
+                    <span class="output-matrix-status" id="outputStatus-stage" data-open="false"
+                      >Fermé</span
+                    >
+                  </div>
+                  <select
+                    class="output-matrix-screen"
+                    id="outputScreen-stage"
+                    aria-label="Écran pour Écran scène"
+                  ></select>
+                  <div class="output-matrix-actions">
+                    <button id="outputOpenStageBtn" type="button" class="btn btn-primary chip-sm">
+                      Afficher
+                    </button>
+                    <button
+                      id="outputCloseStageBtn"
+                      type="button"
+                      class="btn btn-secondary chip-sm"
+                    >
+                      Fermer
+                    </button>
+                  </div>
+                </div>
+                <div class="output-matrix-row" data-mode="announcements">
+                  <div class="output-matrix-label">
+                    <span class="output-matrix-name">Diaporama annonces</span>
+                    <span
+                      class="output-matrix-status"
+                      id="outputStatus-announcements"
+                      data-open="false"
+                      >Fermé</span
+                    >
+                  </div>
+                  <select
+                    class="output-matrix-screen"
+                    id="outputScreen-announcements"
+                    aria-label="Écran pour Diaporama annonces"
+                  ></select>
+                  <div class="output-matrix-actions">
+                    <button
+                      id="outputOpenAnnouncementsBtn"
+                      type="button"
+                      class="btn btn-primary chip-sm"
+                    >
+                      Afficher
+                    </button>
+                    <button
+                      id="outputCloseAnnouncementsBtn"
+                      type="button"
+                      class="btn btn-secondary chip-sm"
+                    >
+                      Fermer
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div class="btn-row-wrap">
-                <button id="openDisplayWindowBtn" type="button" class="btn btn-primary">
-                  🖥️ Afficher en plein écran
-                </button>
-                <button id="closeDisplayWindowBtn" type="button" class="btn btn-secondary">
-                  Fermer la fenêtre
-                </button>
-              </div>
+              <button id="refreshDisplaysBtn" type="button" class="btn btn-secondary chip-sm mt-tight">
+                🔄 Actualiser les écrans
+              </button>
             </div>
 
             <!-- AJOUT (stage display) : message texte visible UNIQUEMENT sur

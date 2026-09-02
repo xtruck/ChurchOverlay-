@@ -523,8 +523,15 @@ function createDisplayWindow(displayId, mode = 'overlay') {
   });
   win.on('closed', () => {
     displayWindows[mode] = null;
+    // AJOUT (Multi-Output Matrix — brief produit, priorité #4) : une
+    // fermeture peut venir d'ailleurs que du bouton "Fermer" du tableau de
+    // bord (Alt+F4, Échap si un raccourci le fait, fenêtre déplacée sur un
+    // écran débranché...) — le tableau de bord doit s'en apercevoir sans
+    // devoir re-cliquer "Actualiser" lui-même pour le découvrir.
+    notifyDisplayWindowStatusChanged();
   });
   displayWindows[mode] = win;
+  notifyDisplayWindowStatusChanged();
   return { opened: true, mode };
 }
 
@@ -534,7 +541,49 @@ function closeDisplayWindow(mode = 'overlay') {
     win.close();
   }
   displayWindows[mode] = null;
+  notifyDisplayWindowStatusChanged();
   return { closed: true, mode };
+}
+
+// AJOUT (Multi-Output Matrix — brief produit, priorité #4) : jusqu'ici le
+// tableau de bord pouvait ouvrir/fermer une fenêtre d'affichage mais ne
+// pouvait jamais savoir laquelle était RÉELLEMENT ouverte à un instant donné
+// (aucun état côté rendu, tout venait d'un unique menu déroulant "un mode à
+// la fois" sans retour visuel) — cette fonction répond enfin "qu'est-ce qui
+// tourne, et sur quel écran", une ligne par mode, pour une vraie vue matrice
+// plutôt qu'un simple bouton ouvrir/fermer.
+function getDisplayWindowStatus() {
+  const displays = screen.getAllDisplays();
+  const primaryId = screen.getPrimaryDisplay().id;
+  const status = {};
+  for (const mode of Object.keys(DISPLAY_MODES)) {
+    const win = displayWindows[mode];
+    if (!win || win.isDestroyed()) {
+      status[mode] = { open: false };
+      continue;
+    }
+    const bounds = win.getBounds();
+    // AJOUT : BrowserWindow n'a pas de getDisplay() natif — on retrouve
+    // l'écran par correspondance de coordonnées (celles passées à la
+    // création, voir createDisplayWindow ci-dessus), robuste tant que la
+    // fenêtre n'a pas été glissée manuellement vers un autre écran.
+    const matched =
+      displays.find((d) => d.bounds.x === bounds.x && d.bounds.y === bounds.y) || null;
+    const matchedIndex = matched ? displays.indexOf(matched) : -1;
+    status[mode] = {
+      open: true,
+      screenLabel: matched
+        ? `Écran ${matchedIndex + 1}${matched.id === primaryId ? ' (principal)' : ''}`
+        : 'Écran inconnu (déplacée manuellement ?)',
+    };
+  }
+  return status;
+}
+
+function notifyDisplayWindowStatusChanged() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('display-window-status-changed');
+  }
 }
 
 function createTray() {
@@ -1440,6 +1489,7 @@ ipcMain.handle('open-display-window', async (_evt, { displayId, mode }) =>
   createDisplayWindow(displayId, mode)
 );
 ipcMain.handle('close-display-window', async (_evt, { mode } = {}) => closeDisplayWindow(mode));
+ipcMain.handle('get-display-window-status', async () => getDisplayWindowStatus());
 
 // --- AJOUT (médiathèque — déclenchement vocal de photos/vidéos) ------------
 // Seul point d'accès natif nécessaire côté main.js : le choix du fichier
