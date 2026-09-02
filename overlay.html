@@ -30,6 +30,61 @@
       @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Manrope:wght@500;600;700&display=swap');
 
       /* ==========================================================================
+   CSS Classes for Inline Styles
+   ========================================================================== */
+      .hidden-display {
+        display: none;
+      }
+
+      #black-screen {
+        position: fixed;
+        inset: 0;
+        background: #000;
+        z-index: 200;
+      }
+
+      #service-countdown {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 180;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        color: #fff;
+        font-family: var(--font-display, serif);
+      }
+
+      #countdown-label {
+        font-size: 1.2rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        opacity: 0.7;
+        margin-bottom: 1rem;
+      }
+
+      #countdown-time {
+        font-size: 5rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+      }
+
+      #countdown-sub {
+        font-size: 0.9rem;
+        opacity: 0.5;
+        margin-top: 1rem;
+      }
+
+      .source-badge {
+        display: none;
+      }
+
+      .verse-text-bilingual {
+        display: none;
+      }
+
+      /* ==========================================================================
    CSS Variables for Dynamic Themes (AI Innovation Pack)
    ========================================================================== */
       :root {
@@ -959,10 +1014,10 @@
       <div class="verse-card" id="verse-card">
         <div class="verse-reference" id="verse-reference">
           <span id="ref-text">ChurchOverlay</span>
-          <span class="source-badge" id="source-badge" style="display: none"></span>
+          <span class="source-badge" id="source-badge"></span>
         </div>
         <div class="verse-text" id="verse-text">En attente d'une référence biblique...</div>
-        <div class="verse-text-bilingual" id="verse-text-bilingual" style="display: none"></div>
+        <div class="verse-text-bilingual" id="verse-text-bilingual"></div>
       </div>
     </div>
 
@@ -992,13 +1047,13 @@
     </div>
 
     <!-- Écran noir — masque tout (test pattern, média, versets) pour coupure immédiate -->
-    <div id="black-screen" style="display:none;position:fixed;inset:0;background:#000;z-index:200;" aria-hidden="true"></div>
+    <div id="black-screen" class="hidden-display" aria-hidden="true"></div>
 
     <!-- Compteur avant culte — affiche un countdown avant le début du culte -->
-    <div id="service-countdown" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:180;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#fff;font-family:var(--font-display,serif);">
-      <div id="countdown-label" style="font-size:1.2rem;letter-spacing:0.1em;text-transform:uppercase;opacity:0.7;margin-bottom:1rem;">Le culte commence dans</div>
-      <div id="countdown-time" style="font-size:5rem;font-weight:700;letter-spacing:0.05em;">00:00</div>
-      <div id="countdown-sub" style="font-size:0.9rem;opacity:0.5;margin-top:1rem;"></div>
+    <div id="service-countdown" class="hidden-display">
+      <div id="countdown-label">Le culte commence dans</div>
+      <div id="countdown-time">00:00</div>
+      <div id="countdown-sub"></div>
     </div>
 
     <!-- AJOUT (studio de scènes, lot 5/6) : SCENE_POSITION_PCT/renderSceneDom

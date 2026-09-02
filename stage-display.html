@@ -2,6 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AJOUT (audit sécurité Electron, Phase 3) : même politique et mêmes
      raisons que setup.html (script inline existant, connect-src large pour
      le port serveur dynamique). -->
@@ -81,6 +82,10 @@
     font-size: 3vh;
     color: var(--text-dim);
   }
+  #reference,
+  #text {
+    display: none;
+  }
   #stageMessage {
     display: none;
     position: fixed;
@@ -110,8 +115,8 @@
 
 <div id="main">
   <div id="placeholder">En attente...</div>
-  <div id="reference" style="display:none;"></div>
-  <div id="text" style="display:none;"></div>
+  <div id="reference"></div>
+  <div id="text"></div>
 </div>
 
 <div id="stageMessage"></div>
