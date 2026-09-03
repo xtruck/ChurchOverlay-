@@ -12,14 +12,26 @@ class ReadingMode {
     this.verses = [];
     this.currentIndex = -1; // index dans this.verses
     this.overlapThreshold = 0.4; // 40% de chevauchement de mots
+    // AJOUT (suivi auto d'une plage annoncée, ex. "verset 5 à 7") : borne de
+    // fin, en NUMÉRO de verset (pas index). `null` = pas de plage annoncée,
+    // avance sans limite comme avant.
+    this.endVerseNumber = null;
   }
 
-  async start(book, chapter, startVerseNumber) {
+  async start(book, chapter, startVerseNumber, endVerseNumber) {
     this.book = book;
     this.chapter = chapter;
     this.verses = await this.getChapterVerses(book, chapter);
     this.currentIndex = this.verses.findIndex((v) => v.num === startVerseNumber);
     if (this.currentIndex === -1) this.currentIndex = 0;
+    // Une plage n'est "réelle" que si la fin dépasse le début (voir
+    // detector.js, verseEnd vaut toujours verseStart quand aucune plage
+    // n'a été prononcée) — sinon on garde le comportement historique
+    // (avance sans limite).
+    this.endVerseNumber =
+      typeof endVerseNumber === 'number' && endVerseNumber > startVerseNumber
+        ? endVerseNumber
+        : null;
     this.active = true;
     return this.verses[this.currentIndex];
   }
@@ -30,6 +42,7 @@ class ReadingMode {
     this.chapter = null;
     this.verses = [];
     this.currentIndex = -1;
+    this.endVerseNumber = null;
   }
 
   _wordOverlapScore(transcriptFragment, verseText) {
@@ -92,8 +105,16 @@ class ReadingMode {
     }
 
     // Comparaison au verset courant ET aux 2 suivants (tolère un saut de ligne manqué)
+    // AJOUT (plage annoncée, ex. "verset 5 à 7") : un candidat AU-DELÀ de
+    // endVerseNumber est exclu — on tient le dernier verset de la plage
+    // plutôt que de continuer à suivre un contenu que le pasteur n'a pas
+    // annoncé. `verset N`/`chapitre suivant` (ci-dessus) restent des
+    // dérogations explicites, non affectées par cette borne.
     const candidates = [this.currentIndex, this.currentIndex + 1, this.currentIndex + 2].filter(
-      (i) => i >= 0 && i < this.verses.length
+      (i) =>
+        i >= 0 &&
+        i < this.verses.length &&
+        (this.endVerseNumber === null || this.verses[i].num <= this.endVerseNumber)
     );
 
     let best = null;

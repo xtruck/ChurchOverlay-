@@ -301,6 +301,60 @@ async function simulateSegment(text) {
     JSON.stringify(fuzzy)
   );
 
+  // 7) Plage annoncée ("verset 3 à 5") : le suivi auto doit avancer À
+  //    L'INTÉRIEUR de la plage (4, puis 5) mais TENIR sur le verset 5 sans
+  //    continuer sur le verset 6, même lu mot pour mot juste après — c'est
+  //    le comportement demandé ("verset 5 à 7" → suit jusqu'à 7, pas
+  //    au-delà) tant que le pasteur n'a pas cité une nouvelle référence.
+  console.log(
+    '\n=== Scénario : plage annoncée ("Jean 3, verset 3 à 5") — suivi jusqu\'à la borne, pas au-delà ===\n'
+  );
+  received.length = 0;
+  await simulateSegment('Jean chapitre 3, verset 3 à 5');
+  await sleep(400);
+  const rangeStart = received.find((m) => m.action === 'showVerse');
+  check(
+    'plage annoncée : verset 3 affiché (début de la plage)',
+    !!rangeStart && /3:3$/.test(rangeStart.reference || ''),
+    JSON.stringify(rangeStart)
+  );
+
+  received.length = 0;
+  await simulateSegment(
+    'Nicodeme lui dit Comment un homme peut il naitre quand il est vieux Peut il rentrer dans le sein de sa mere et naitre'
+  );
+  await sleep(400);
+  const rangeAdvance4 = received.find((m) => m.action === 'showVerse');
+  check(
+    'plage annoncée : avance au verset 4 (dans la plage)',
+    !!rangeAdvance4 && /4$/.test(rangeAdvance4.reference || ''),
+    JSON.stringify(rangeAdvance4)
+  );
+
+  received.length = 0;
+  await simulateSegment(
+    "Jesus repondit En verite en verite je te le dis si un homme ne nait d'eau et d'Esprit il ne peut entrer dans le royaume de Dieu"
+  );
+  await sleep(400);
+  const rangeAdvance5 = received.find((m) => m.action === 'showVerse');
+  check(
+    'plage annoncée : avance au verset 5 (fin de la plage)',
+    !!rangeAdvance5 && /5$/.test(rangeAdvance5.reference || ''),
+    JSON.stringify(rangeAdvance5)
+  );
+
+  received.length = 0;
+  await simulateSegment(
+    "Ce qui est ne de la chair est chair et ce qui est ne de l'Esprit est esprit"
+  );
+  await sleep(400);
+  const beyondRange = received.find((m) => m.action === 'showVerse');
+  check(
+    'plage annoncée : ne dépasse PAS le verset 5 même en lisant le verset 6 mot pour mot',
+    !beyondRange,
+    JSON.stringify(beyondRange)
+  );
+
   ws.close();
 
   console.log(`\n=== Résultat intégration live : ${passed} passés, ${failed} échoués ===`);

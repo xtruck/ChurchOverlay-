@@ -185,6 +185,53 @@ function makeReadingMode(overrides = {}) {
     assert.strictEqual(calls.onVerseAdvance.length, 0);
   });
 
+  // Tests 9-12 : plage annoncée ("verset 3 à 4") — suivi auto de lecture,
+  // voir reading-mode.js#start/processFragment (endVerseNumber).
+  await checkAsync(
+    'start() avec une plage réelle (fin > début) enregistre endVerseNumber',
+    async () => {
+      const { rm } = makeReadingMode();
+      await rm.start('jean', 3, 3, 4);
+      assert.strictEqual(rm.endVerseNumber, 4);
+    }
+  );
+
+  await checkAsync(
+    'start() sans plage (verseEnd omis ou égal au début) ne pose pas de borne',
+    async () => {
+      const { rm } = makeReadingMode();
+      await rm.start('jean', 3, 3, 3); // verseEnd === verseStart, comme detector.js sans plage
+      assert.strictEqual(rm.endVerseNumber, null);
+    }
+  );
+
+  await checkAsync('avance normalement à l’intérieur de la plage annoncée', async () => {
+    const { rm, calls } = makeReadingMode();
+    await rm.start('jean', 3, 3, 4); // plage : verset 3 à 4
+    const result = rm.processFragment(
+      'nicodeme lui dit comment un homme peut il naitre quand il est vieux'
+    );
+    assert.ok(result, 'devrait avancer jusqu’au verset 4 (encore dans la plage)');
+    assert.strictEqual(result.num, 4);
+    assert.strictEqual(rm.currentIndex, 3);
+    assert.strictEqual(calls.onVerseAdvance.length, 1);
+  });
+
+  await checkAsync('tient le dernier verset de la plage au lieu de continuer au-delà', async () => {
+    const { rm, calls } = makeReadingMode();
+    await rm.start('jean', 3, 3, 4); // plage : verset 3 à 4
+    // Le pasteur enchaîne sur le verset 5, hors plage annoncée.
+    rm.processFragment('nicodeme lui dit comment un homme peut il naitre quand il est vieux');
+    const result = rm.processFragment('jesus repondit en verite en verite je te le dis');
+    assert.strictEqual(result, null, 'ne devrait pas avancer au-delà de la plage annoncée');
+    assert.strictEqual(rm.currentIndex, 3, 'reste sur le dernier verset de la plage (4)');
+    assert.strictEqual(
+      calls.onVerseAdvance.length,
+      1,
+      'onVerseAdvance ne doit pas être rappelé pour un verset hors plage'
+    );
+  });
+
   console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
   if (failed > 0) process.exit(1);
 })();

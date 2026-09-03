@@ -817,9 +817,9 @@ function readingModePosition(rm, verseNum) {
   };
 }
 
-async function activateReadingMode(book, chapter, verseStart) {
+async function activateReadingMode(book, chapter, verseStart, verseEnd) {
   try {
-    await readingMode.start(book, chapter, verseStart);
+    await readingMode.start(book, chapter, verseStart, verseEnd);
   } catch (err) {
     warn('Reading mode: activation impossible pour ' + book + ' ' + chapter + ': ' + err.message);
   }
@@ -1993,9 +1993,29 @@ async function processTranscript(text, tracker, opts = {}) {
     }
 
     if (reference.book && reference.chapter) {
-      await activateReadingMode(reference.book, reference.chapter, reference.verseStart || 1);
+      await activateReadingMode(
+        reference.book,
+        reference.chapter,
+        reference.verseStart || 1,
+        reference.verseEnd
+      );
     }
   };
+
+  // CORRECTIF (course fallback chapitre vs confirmation en attente) : dès
+  // qu'un verset EXACT est trouvé, le fallback chapitre pour ce
+  // livre:chapitre est obsolète — QUEL QUE SOIT le mode de confiance. En
+  // mode 'auto', finalizeDisplay() l'annule déjà lui-même (ci-dessus) ;
+  // mais en 'semi-auto'/'manual', finalizeDisplay() n'est appelé qu'APRÈS
+  // confirmation opérateur (voir setPendingVerse plus bas) — pendant ce
+  // délai, un timer de fallback chapitre déjà armé (par un fragment
+  // "chapitre seul" antérieur) pouvait encore se déclencher et afficher le
+  // CHAPITRE ENTIER par-dessus le verset en attente de confirmation. On
+  // annule donc ici, immédiatement, dès que le verset précis est connu —
+  // pas seulement une fois confirmé.
+  if (reference.book && reference.chapter) {
+    cancelChapterFallback(reference.book, reference.chapter);
+  }
 
   if (sessionState.getTrustMode() === 'auto') {
     await finalizeDisplay();
