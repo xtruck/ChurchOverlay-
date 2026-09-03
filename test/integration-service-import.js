@@ -91,9 +91,7 @@ function sleep(ms) {
 
   let tmpSourcePath = null;
   let zipPath = null;
-  const cleanupMediaIds = [];
-  const cleanupSceneIds = [];
-  const cleanupSongIds = [];
+  let uniq = null;
 
   const ws = new WebSocket(`ws://127.0.0.1:${process.env.PORT}`);
   const received = [];
@@ -124,7 +122,7 @@ function sleep(ms) {
     console.log(
       '\n=== Préparation : média + scène + chant + repère, via les VRAIES actions WS ===\n'
     );
-    const uniq = Date.now();
+    uniq = Date.now();
     tmpSourcePath = path.join(os.tmpdir(), `churchoverlay-roundtrip-${uniq}.jpg`);
     fs.writeFileSync(tmpSourcePath, 'contenu-image-roundtrip');
 
@@ -141,7 +139,6 @@ function sleep(ms) {
       .listItems()
       .find((m) => m.label === `Roundtrip media ${uniq}`);
     check('le média original existe', !!originalMedia);
-    cleanupMediaIds.push(originalMedia.id);
 
     base = received.length;
     ws.send(
@@ -155,7 +152,6 @@ function sleep(ms) {
     await waitForActionFrom(base, 'sceneLibraryUpdated');
     const originalScene = sceneStore.listItems().find((s) => s.name === `Roundtrip scene ${uniq}`);
     check('la scène originale existe et référence le média original', !!originalScene);
-    cleanupSceneIds.push(originalScene.id);
 
     base = received.length;
     ws.send(
@@ -168,7 +164,6 @@ function sleep(ms) {
     await waitForActionFrom(base, 'songLibraryUpdated');
     const originalSong = songLibrary.listSongs().find((s) => s.title === `Roundtrip song ${uniq}`);
     check('le chant original existe', !!originalSong);
-    cleanupSongIds.push(originalSong.id);
 
     console.log('\n=== exportService puis importService, via le VRAI pipeline ===\n');
     zipPath = path.join(os.tmpdir(), `churchoverlay-roundtrip-out-${uniq}.zip`);
@@ -193,7 +188,6 @@ function sleep(ms) {
           m.id !== originalMedia.id
       );
     check('un DEUXIÈME média (réimporté, id différent) existe', !!importedMedia);
-    if (importedMedia) cleanupMediaIds.push(importedMedia.id);
 
     const importedScene = sceneStore
       .listItems()
@@ -208,13 +202,11 @@ function sleep(ms) {
       "la scène réimportée référence le média RÉIMPORTÉ, pas l'original",
       !!importedScene && !!importedMedia && importedScene.background.mediaId === importedMedia.id
     );
-    if (importedScene) cleanupSceneIds.push(importedScene.id);
 
     const importedSong = songLibrary
       .listSongs()
       .find((s) => s.title === `Roundtrip song ${uniq}` && !songsBefore.has(s.id));
     check('un DEUXIÈME chant (réimporté) existe', !!importedSong);
-    if (importedSong) cleanupSongIds.push(importedSong.id);
 
     console.log('\n=== Un sourcePath invalide renvoie une erreur propre, pas un crash ===\n');
     base = received.length;
@@ -227,20 +219,52 @@ function sleep(ms) {
     const errMsg = await waitForActionFrom(base, 'error');
     check('un message error est renvoyé', !!errMsg.error);
   } finally {
-    for (const id of cleanupMediaIds) {
-      try {
-        mediaLibrary.deleteItem(id);
-      } catch (_) {}
-    }
-    for (const id of cleanupSceneIds) {
-      try {
-        sceneStore.deleteItem(id);
-      } catch (_) {}
-    }
-    for (const id of cleanupSongIds) {
-      try {
-        songLibrary.deleteSong(id);
-      } catch (_) {}
+    // CORRECTIF (pollution accumulée — le VRAI ~/.churchoverlay grossissait
+    // sans fin à chaque exécution) : le nettoyage ne retenait auparavant que
+    // des ids collectés au fil d'un chemin qui peut être interrompu à tout
+    // moment (ex. 'serviceImportResult' trop lent à arriver sous charge) —
+    // si ça arrive APRÈS qu'importService a réellement réimporté la
+    // bibliothèque COMPLÈTE existante côté serveur (aucune déduplication,
+    // voir service-import.js) mais AVANT que le client n'ait pu enregistrer
+    // les nouveaux ids, ces dizaines/centaines de doublons restaient
+    // orphelins pour de bon.
+    // PREMIÈRE tentative de correctif ici : un balayage "tout ce qui est
+    // nouveau depuis mediaBefore/scenesBefore/songsBefore" (capturés en
+    // haut du fichier). Rejetée après coup — un simple aléa de lecture
+    // transitoire au moment de CETTE capture (readIndex() dans
+    // media-library.js avale silencieusement toute erreur de lecture/parse
+    // et renvoie [], voir son commentaire) suffit à vider le Set, et le
+    // balayage supprime alors TOUT le VRAI contenu existant, pas seulement
+    // ce que ce test a créé — exactement ce qui est arrivé une fois en
+    // testant ce correctif (média 97 -> 1, scènes 98 -> 0, chants 300 -> 0).
+    // Balayage PAR ÉTIQUETTE à la place : ne touche QUE les entrées dont le
+    // label/nom/titre correspond exactement au marqueur unique `uniq` de
+    // CETTE exécution (Date.now(), collision impossible avec du contenu
+    // réel) — couvre l'original ET la copie réimportée quel que soit
+    // l'endroit où le code ci-dessus s'est arrêté, sans jamais pouvoir
+    // toucher à autre chose.
+    if (uniq !== null) {
+      for (const item of mediaLibrary.listItems()) {
+        if (item.label === `Roundtrip media ${uniq}`) {
+          try {
+            mediaLibrary.deleteItem(item.id);
+          } catch (_) {}
+        }
+      }
+      for (const scene of sceneStore.listItems()) {
+        if (scene.name === `Roundtrip scene ${uniq}`) {
+          try {
+            sceneStore.deleteItem(scene.id);
+          } catch (_) {}
+        }
+      }
+      for (const song of songLibrary.listSongs()) {
+        if (song.title === `Roundtrip song ${uniq}`) {
+          try {
+            songLibrary.deleteSong(song.id);
+          } catch (_) {}
+        }
+      }
     }
     for (const cue of rundownStore.listCues()) {
       if (!cuesBefore.has(cue.id)) {
