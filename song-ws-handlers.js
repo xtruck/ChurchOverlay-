@@ -30,8 +30,10 @@ function createHandlers(ctx) {
 
   // --- Bibliothèque de chants (mêmes conventions que la médiathèque —
   // media-ws-handlers.js : réponse directe au demandeur pour la lecture/
-  // mutation de la liste, broadcast() pour ce que tous les clients doivent
-  // voir) ---
+  // mutation de la liste ; broadcast({ operatorOnly: true }) pour la
+  // resynchronisation d'un second dashboard — la liste inclut les paroles
+  // complètes de chaque chant, jamais destinée à une connexion viewer,
+  // l'overlay ne reçoit que la section active via broadcastSongSection) ---
   handlers.set('getSongLibrary', async (ws) => {
     ws.send(JSON.stringify({ action: 'songLibraryUpdated', songs: songLibrary.listSongs() }));
   });
@@ -45,7 +47,10 @@ function createHandlers(ctx) {
         triggerPhrases: sanitized.triggerPhrases,
       });
       log(`Bibliothèque de chants : "${song.title}" ajouté (${song.sections.length} section(s))`);
-      broadcast({ action: 'songLibraryUpdated', songs: songLibrary.listSongs() });
+      broadcast(
+        { action: 'songLibraryUpdated', songs: songLibrary.listSongs() },
+        { operatorOnly: true }
+      );
     } catch (err) {
       ws.send(JSON.stringify({ action: 'error', error: 'Chants : ' + err.message }));
     }
@@ -54,7 +59,10 @@ function createHandlers(ctx) {
   handlers.set('deleteSong', async (ws, sanitized) => {
     const removed = songLibrary.deleteSong(sanitized.id);
     if (removed) {
-      broadcast({ action: 'songLibraryUpdated', songs: songLibrary.listSongs() });
+      broadcast(
+        { action: 'songLibraryUpdated', songs: songLibrary.listSongs() },
+        { operatorOnly: true }
+      );
     } else {
       ws.send(JSON.stringify({ action: 'error', error: 'Chants : chant introuvable' }));
     }

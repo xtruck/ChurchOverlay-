@@ -48,9 +48,17 @@ function createHandlers(ctx) {
   // --- Médiathèque (déclenchement vocal de photos/vidéos) ---------------
   // Réponse directe au demandeur (ws.send) pour la lecture/mutation de la
   // liste, même convention que getArchiveMatches/getSessionStats (server.js) ;
-  // broadcast() uniquement pour ce que TOUS les clients (overlay compris)
-  // doivent voir (affichage/masquage réel, mise à jour de la liste pour
-  // les autres tableaux de bord éventuellement ouverts).
+  // broadcast() pour ce que TOUS les clients (overlay compris) doivent voir
+  // (affichage/masquage réel). La resynchronisation de la LISTE elle-même
+  // pour d'autres tableaux de bord éventuellement ouverts (mediaLibraryUpdated/
+  // mediaGroupsUpdated après ajout/modif/suppression) passe désormais par
+  // { operatorOnly: true } (voir broadcast() dans server.js) : l'overlay ne
+  // lit jamais ces deux actions, seul un second dashboard opérateur en a
+  // besoin — inutile de les exposer à une connexion viewer (stage-display,
+  // companion...). announcement-loop.html (rôle viewer) n'est pas concerné
+  // par CE filtre : il dépend d'une réponse ws.send() directe à SA PROPRE
+  // requête getMediaLibrary ci-dessous, jamais de ces diffusions — code
+  // séparé, non touché ici.
   handlers.set('getMediaLibrary', async (ws, sanitized, requestId) => {
     ws.send(
       JSON.stringify({
@@ -176,7 +184,10 @@ function createHandlers(ctx) {
         item = mediaLibrary.setDefaultItem(item.id) || item;
         broadcast({ action: 'defaultMediaChanged', item: mediaLibrary.getDefaultItem() });
       }
-      broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
+      broadcast(
+        { action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() },
+        { operatorOnly: true }
+      );
     } catch (err) {
       ws.send(JSON.stringify({ action: 'error', error: 'Médiathèque : ' + err.message }));
     }
@@ -195,7 +206,10 @@ function createHandlers(ctx) {
     });
     if (updated) {
       log(`Médiathèque : détails d'affichage mis à jour pour "${updated.label}"`);
-      broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
+      broadcast(
+        { action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() },
+        { operatorOnly: true }
+      );
     } else {
       ws.send(JSON.stringify({ action: 'error', error: 'Médiathèque : élément introuvable' }));
     }
@@ -218,7 +232,10 @@ function createHandlers(ctx) {
         ? `Médiathèque : "${updated.label}" désigné comme poster principal`
         : 'Médiathèque : poster principal retiré'
     );
-    broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
+    broadcast(
+      { action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() },
+      { operatorOnly: true }
+    );
     broadcast({ action: 'defaultMediaChanged', item: mediaLibrary.getDefaultItem() });
     // AJOUT (studio de scènes, lot 3 — arbitrage croisé, voir lot 2) :
     // désigner un média par défaut démarque silencieusement toute scène par
@@ -226,10 +243,13 @@ function createHandlers(ctx) {
     // diffusions, un tableau de bord resterait persuadé qu'une scène déjà
     // démarquée côté serveur est toujours le poster principal.
     if (sanitized.id) {
-      broadcast({
-        action: 'sceneLibraryUpdated',
-        scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
-      });
+      broadcast(
+        {
+          action: 'sceneLibraryUpdated',
+          scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
+        },
+        { operatorOnly: true }
+      );
       broadcast({ action: 'defaultSceneChanged', item: sceneStore.getDefaultScene() });
     }
   });
@@ -238,7 +258,10 @@ function createHandlers(ctx) {
     const wasDefault = !!(mediaLibrary.getItem(sanitized.id) || {}).isDefault;
     const removed = mediaLibrary.deleteItem(sanitized.id);
     if (removed) {
-      broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
+      broadcast(
+        { action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() },
+        { operatorOnly: true }
+      );
       // Le poster principal supprimé ne doit pas rester "fantôme" côté
       // overlay (URL cassée réaffichée à la prochaine minute d'inactivité).
       if (wasDefault) broadcast({ action: 'defaultMediaChanged', item: null });
@@ -340,7 +363,10 @@ function createHandlers(ctx) {
           })
         );
       }
-      broadcast({ action: 'mediaGroupsUpdated', groups: mediaLibrary.listGroups() });
+      broadcast(
+        { action: 'mediaGroupsUpdated', groups: mediaLibrary.listGroups() },
+        { operatorOnly: true }
+      );
     } catch (err) {
       ws.send(JSON.stringify({ action: 'error', error: 'Groupe média : ' + err.message }));
     }
@@ -349,8 +375,14 @@ function createHandlers(ctx) {
   handlers.set('deleteMediaGroup', async (ws, sanitized) => {
     const removed = mediaLibrary.deleteGroup(sanitized.id);
     if (removed) {
-      broadcast({ action: 'mediaGroupsUpdated', groups: mediaLibrary.listGroups() });
-      broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
+      broadcast(
+        { action: 'mediaGroupsUpdated', groups: mediaLibrary.listGroups() },
+        { operatorOnly: true }
+      );
+      broadcast(
+        { action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() },
+        { operatorOnly: true }
+      );
     } else {
       ws.send(JSON.stringify({ action: 'error', error: 'Groupe média : introuvable' }));
     }
@@ -359,8 +391,14 @@ function createHandlers(ctx) {
   handlers.set('setMediaItemGroup', async (ws, sanitized) => {
     const ok = mediaLibrary.setItemGroup(sanitized.itemId, sanitized.groupId || null);
     if (ok) {
-      broadcast({ action: 'mediaGroupsUpdated', groups: mediaLibrary.listGroups() });
-      broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
+      broadcast(
+        { action: 'mediaGroupsUpdated', groups: mediaLibrary.listGroups() },
+        { operatorOnly: true }
+      );
+      broadcast(
+        { action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() },
+        { operatorOnly: true }
+      );
     } else {
       ws.send(
         JSON.stringify({ action: 'error', error: 'Groupe média : média ou groupe introuvable' })

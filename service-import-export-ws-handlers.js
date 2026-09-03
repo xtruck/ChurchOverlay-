@@ -90,10 +90,13 @@ function createHandlers(ctx) {
       log(
         `Import PowerPoint : ${scenesCreated} scène(s) créée(s) sur ${slidesFound} diapositive(s)`
       );
-      broadcast({
-        action: 'sceneLibraryUpdated',
-        scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
-      });
+      broadcast(
+        {
+          action: 'sceneLibraryUpdated',
+          scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
+        },
+        { operatorOnly: true }
+      );
       ws.send(JSON.stringify({ action: 'pptxImportResult', slidesFound, scenesCreated }));
     } catch (err) {
       ws.send(JSON.stringify({ action: 'error', error: 'Import PowerPoint : ' + err.message }));
@@ -136,12 +139,21 @@ function createHandlers(ctx) {
       log(
         `Import service : ${summary.mediaImported} média(s) (${summary.mediaSkipped} sauté(s)), ${summary.scenesImported} scène(s) (${summary.scenesSkipped} sautée(s)), ${summary.songsImported} chant(s) (${summary.songsSkipped} sauté(s)), ${summary.cuesImported} repère(s) (${summary.cuesSkipped} sauté(s)) <- ${sanitized.sourcePath}`
       );
-      broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
-      broadcast({
-        action: 'sceneLibraryUpdated',
-        scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
-      });
-      broadcast({ action: 'songLibraryUpdated', songs: songLibrary.listSongs() });
+      broadcast(
+        { action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() },
+        { operatorOnly: true }
+      );
+      broadcast(
+        {
+          action: 'sceneLibraryUpdated',
+          scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
+        },
+        { operatorOnly: true }
+      );
+      broadcast(
+        { action: 'songLibraryUpdated', songs: songLibrary.listSongs() },
+        { operatorOnly: true }
+      );
       broadcast({
         action: 'rundownUpdated',
         cues: rundownStore.listCues(),

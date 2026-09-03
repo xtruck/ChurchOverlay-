@@ -53,7 +53,10 @@ function createHandlers(ctx) {
   // ici : c'est un outil de suivi côté opérateur uniquement, le flux
   // lui-même est chargé directement par le navigateur du dashboard depuis
   // le téléphone (pas relayé par ce serveur). broadcast() seulement pour
-  // que plusieurs tableaux de bord ouverts restent synchronisés. ---
+  // que plusieurs tableaux de bord ouverts restent synchronisés — et
+  // désormais { operatorOnly: true } (voir broadcast() dans server.js) pour
+  // que ça reste vrai même si une connexion viewer traîne (elle révélerait
+  // sinon les IP/labels des caméras du réseau local). ---
   handlers.set('getIpCameras', async (ws) => {
     ws.send(JSON.stringify({ action: 'ipCamerasUpdated', items: ipCameraStore.listItems() }));
   });
@@ -65,7 +68,10 @@ function createHandlers(ctx) {
         cleanupPhoneCameraStateForItem
       );
       log(`Caméra IP : "${item.label}" ajoutée`);
-      broadcast({ action: 'ipCamerasUpdated', items: ipCameraStore.listItems() });
+      broadcast(
+        { action: 'ipCamerasUpdated', items: ipCameraStore.listItems() },
+        { operatorOnly: true }
+      );
     } catch (err) {
       ws.send(JSON.stringify({ action: 'error', error: 'Caméra IP : ' + err.message }));
     }
@@ -80,7 +86,10 @@ function createHandlers(ctx) {
     cleanupPhoneCameraStateForItem(item);
     const removed = ipCameraStore.deleteItem(sanitized.id);
     if (removed) {
-      broadcast({ action: 'ipCamerasUpdated', items: ipCameraStore.listItems() });
+      broadcast(
+        { action: 'ipCamerasUpdated', items: ipCameraStore.listItems() },
+        { operatorOnly: true }
+      );
     } else {
       ws.send(JSON.stringify({ action: 'error', error: 'Caméra IP : élément introuvable' }));
     }

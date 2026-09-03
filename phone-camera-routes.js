@@ -62,7 +62,10 @@ function registerRoutes(ctx) {
           },
           cleanupPhoneCameraStateForItem
         );
-        broadcast({ action: 'ipCamerasUpdated', items: ipCameraStore.listItems() });
+        broadcast(
+          { action: 'ipCamerasUpdated', items: ipCameraStore.listItems() },
+          { operatorOnly: true }
+        );
       } catch (err) {
         warn('Phone camera: échec ajout médiathèque IP: ' + err.message);
       }

@@ -310,6 +310,49 @@ function waitForMessage(ws, predicate, timeoutMs = 1000) {
   }
 
   console.log(
+    '\n=== operatorOnly : *Updated (médiathèque/scènes/chants) ne fuient pas au viewer ===\n'
+  );
+
+  // 6) Un viewer connecté en parallèle ne doit PAS recevoir les diffusions
+  //    *Updated déclenchées par une mutation opérateur (voir { operatorOnly:
+  //    true } dans broadcast(), server.js) — ces listes ne sont là que pour
+  //    resynchroniser un second tableau de bord opérateur, jamais l'overlay/
+  //    stage-display/companion. L'opérateur qui déclenche la mutation, lui,
+  //    doit toujours la recevoir.
+  {
+    const { ws: opWs } = await connect({ token: OPERATOR_TOKEN, path: '/' });
+    await waitForMessage(opWs, (m) => m.action === 'init');
+    const { ws: viewerWs } = await connect({ token: VIEWER_TOKEN, path: '/' });
+    await waitForMessage(viewerWs, (m) => m.action === 'init');
+
+    opWs.send(
+      JSON.stringify({
+        action: 'addMediaGroup',
+        name: 'Groupe test operatorOnly',
+        triggerPhrases: ['phrase test operator only xyz'],
+      })
+    );
+
+    const opMsg = await waitForMessage(opWs, (m) => m.action === 'mediaGroupsUpdated');
+    check(
+      "mediaGroupsUpdated reçu par l'opérateur qui a déclenché la mutation",
+      !!opMsg,
+      JSON.stringify(opMsg)
+    );
+
+    let viewerReceivedIt = true;
+    try {
+      await waitForMessage(viewerWs, (m) => m.action === 'mediaGroupsUpdated', 400);
+    } catch (_) {
+      viewerReceivedIt = false;
+    }
+    check("mediaGroupsUpdated NE fuit PAS vers une connexion 'viewer'", !viewerReceivedIt);
+
+    opWs.close();
+    viewerWs.close();
+  }
+
+  console.log(
     `\n=== Résultat authentification WebSocket : ${passed} passés, ${failed} échoués ===`
   );
   process.exit(failed > 0 ? 1 : 0);

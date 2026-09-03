@@ -57,10 +57,13 @@ function createHandlers(ctx) {
         triggerPhrases: sanitized.triggerPhrases,
       });
       log(`Studio de scènes : "${scene.name}" créée`);
-      broadcast({
-        action: 'sceneLibraryUpdated',
-        scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
-      });
+      broadcast(
+        {
+          action: 'sceneLibraryUpdated',
+          scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
+        },
+        { operatorOnly: true }
+      );
     } catch (err) {
       ws.send(JSON.stringify({ action: 'error', error: 'Studio de scènes : ' + err.message }));
     }
@@ -75,10 +78,13 @@ function createHandlers(ctx) {
     });
     if (updated) {
       log(`Studio de scènes : "${updated.name}" mise à jour`);
-      broadcast({
-        action: 'sceneLibraryUpdated',
-        scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
-      });
+      broadcast(
+        {
+          action: 'sceneLibraryUpdated',
+          scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
+        },
+        { operatorOnly: true }
+      );
     } else {
       ws.send(JSON.stringify({ action: 'error', error: 'Studio de scènes : scène introuvable' }));
     }
@@ -88,10 +94,13 @@ function createHandlers(ctx) {
     const wasDefault = !!(sceneStore.getItem(sanitized.id) || {}).isDefault;
     const removed = sceneStore.deleteItem(sanitized.id);
     if (removed) {
-      broadcast({
-        action: 'sceneLibraryUpdated',
-        scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
-      });
+      broadcast(
+        {
+          action: 'sceneLibraryUpdated',
+          scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
+        },
+        { operatorOnly: true }
+      );
       // Même raisonnement que deleteMediaItem (media-ws-handlers.js) : la
       // scène par défaut supprimée ne doit pas rester "fantôme" côté overlay.
       if (wasDefault) broadcast({ action: 'defaultSceneChanged', item: null });
@@ -116,10 +125,13 @@ function createHandlers(ctx) {
         ? `Studio de scènes : "${updated.name}" désignée comme poster principal`
         : 'Studio de scènes : poster principal (scène) retiré'
     );
-    broadcast({
-      action: 'sceneLibraryUpdated',
-      scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
-    });
+    broadcast(
+      {
+        action: 'sceneLibraryUpdated',
+        scenes: sceneStore.listItems().map(resolveSceneMediaUrls),
+      },
+      { operatorOnly: true }
+    );
     // AJOUT (studio de scènes, lot 4) : resolveSceneMediaUrls() ici, PAS
     // l'item brut du store (mediaId nus, inexploitables tels quels par
     // renderSceneDom() côté overlay.html) — même besoin de résolution que
@@ -134,7 +146,10 @@ function createHandlers(ctx) {
     // (scene-store.js#setDefaultScene) — symétrique au correctif du même
     // nom sur setDefaultMediaItem (media-ws-handlers.js).
     if (sanitized.id) {
-      broadcast({ action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() });
+      broadcast(
+        { action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() },
+        { operatorOnly: true }
+      );
       broadcast({ action: 'defaultMediaChanged', item: mediaLibrary.getDefaultItem() });
     }
   });

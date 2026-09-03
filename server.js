@@ -619,14 +619,33 @@ const WS_BACKPRESSURE_THRESHOLD_BYTES =
 // rattrapera probablement jamais son retard.
 const WS_BACKPRESSURE_CLOSE_AFTER_MS = Number(process.env.WS_BACKPRESSURE_CLOSE_AFTER_MS) || 5000;
 
-function broadcast(obj) {
+// AJOUT (audit — fuite d'état opérateur vers les connexions viewer) :
+// broadcast() envoyait jusqu'ici à TOUS les clients sans distinction de rôle
+// — correct pour ce que l'overlay/l'écran de scène affichent réellement
+// (showVerse/showMedia/showScene/applyTheme…), mais plusieurs diffusions
+// *Updated (médiathèque, groupes média, scènes, chants, caméras IP)
+// n'existent que pour resynchroniser un second tableau de bord opérateur
+// éventuellement ouvert (voir les commentaires dans media-ws-handlers.js/
+// scene-ws-handlers.js/song-ws-handlers.js/camera-ws-handlers.js) — ni
+// overlay.html ni stage-display.html/companion.html/branding-overlay.html
+// ne les lisent. { operatorOnly: true } restreint l'envoi aux connexions
+// ws.clientRole === 'operator' (voir determineClientRole()) sans toucher au
+// comportement par défaut (obj seul, comme avant) pour tous les autres
+// appels. NE PAS l'utiliser pour 'mediaLibraryUpdated' en dehors de ces
+// diffusions de resynchronisation : announcement-loop.html (rôle viewer)
+// dépend d'une réponse ws.send() directe à sa propre requête
+// 'getMediaLibrary' — un chemin de code entièrement différent, non affecté
+// par ce filtre.
+function broadcast(obj, opts) {
   if (REPEATABLE_ACTIONS.has(obj.action)) {
     sessionState.setLastBroadcast(obj.action, obj);
   }
+  const operatorOnly = !!(opts && opts.operatorOnly);
   const json = JSON.stringify(obj);
   const now = Date.now();
   wss.clients.forEach((ws) => {
     if (ws.readyState !== WebSocket.OPEN) return;
+    if (operatorOnly && ws.clientRole !== 'operator') return;
 
     if (ws.bufferedAmount > WS_BACKPRESSURE_THRESHOLD_BYTES) {
       if (!ws._backpressureSince) {
