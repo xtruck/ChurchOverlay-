@@ -1956,6 +1956,80 @@ Aucune exécution agent.</pre>
 
         <!-- Settings Section -->
         <section id="settings" class="section" style="display: none">
+          <!-- AJOUT (sous-navigation par catégorie — filtre visuel des cartes
+                     de l'onglet Régie) : dashboard/features/settings-subnav.js
+                     et les attributs data-group="..." sur chaque carte
+                     existaient déjà, mais ce fichier n'était importé nulle
+                     part dans dashboard/main.js — et cette barre n'existait
+                     pas dans le HTML. Ce bloc ajoute ce que le script attend
+                     déjà (voir son commentaire d'en-tête), replacé ici plutôt
+                     que dans <section id="controls"> comme suggéré par ce
+                     commentaire : cette section-là appartient à l'onglet
+                     "Direct Classique" (voir data-sections sur .nav-item plus
+                     haut), pas à "Régie" — le commentaire du script date d'une
+                     structure de navigation antérieure (6 onglets, puis 2 vues
+                     "En Direct"/"Réglages", voir showSectionsFor() dans
+                     state.js) à la structure actuelle à 4 onglets. "Régie"
+                     n'affiche que #settings + #overlay : seuls les groupes qui
+                     y existent réellement (systeme/diffusion/cameras/
+                     integrations, voir grep data-group) sont listés
+                     ci-dessous — pas analyse/studio/media, qui vivent dans
+                     #analysis/#studio/#media-wall sous l'onglet "Préparation"
+                     (media-wall) ou "Direct Classique" (aucun ici, groupes
+                     confirmés carte par carte, pas seulement par un simple
+                     grep qui inclurait à tort le contenu de sections
+                     voisines). -->
+          <div
+            class="settings-subnav"
+            role="tablist"
+            aria-label="Filtrer les réglages par catégorie"
+          >
+            <button
+              type="button"
+              class="subnav-btn active"
+              data-group="all"
+              role="tab"
+              aria-selected="true"
+            >
+              Tout
+            </button>
+            <button
+              type="button"
+              class="subnav-btn"
+              data-group="systeme"
+              role="tab"
+              aria-selected="false"
+            >
+              Système
+            </button>
+            <button
+              type="button"
+              class="subnav-btn"
+              data-group="diffusion"
+              role="tab"
+              aria-selected="false"
+            >
+              Diffusion
+            </button>
+            <button
+              type="button"
+              class="subnav-btn"
+              data-group="cameras"
+              role="tab"
+              aria-selected="false"
+            >
+              Caméras
+            </button>
+            <button
+              type="button"
+              class="subnav-btn"
+              data-group="integrations"
+              role="tab"
+              aria-selected="false"
+            >
+              Intégrations
+            </button>
+          </div>
           <div id="setupBanner" class="setup-banner" style="display: none">
             <span class="setup-banner-icon">⚠️</span>
             <div>

@@ -44,6 +44,12 @@ import './features/api-settings.js';
 import './features/camera-panel.js';
 import './features/ui-effects.js';
 import './features/perf-pill.js';
+// AJOUT : settings-subnav.js existait déjà (attributs data-group posés sur
+// ~23 cartes de l'onglet Réglages), mais n'était importé nulle part — sans
+// cette ligne, son initSettingsSubnav() ne s'exécute jamais, la barre de
+// filtre reste un <div> inerte (voir la barre ajoutée dans dashboard.html
+// juste avant la <section id="controls">).
+import './features/settings-subnav.js';
 import './features/confidence-mode.js';
 import './features/command-palette.js';
 import './features/training-mode.js';
