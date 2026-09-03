@@ -267,6 +267,7 @@ const CLICK_BINDINGS = {
 
   // --- Page compagnon ---
   copyCompanionLinkBtn: () => window.copyCompanionLink(),
+  copyMcpTokenBtn: () => window.copyMcpToken(),
 
   // --- Export / import de culte ---
   exportServicePortableBtn: () => window.exportServicePortable(),

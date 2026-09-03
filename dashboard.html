@@ -2743,6 +2743,26 @@ Aucune exécution agent.</pre>
                 </button>
               </span>
             </div>
+            <!-- AJOUT (intégration MCP — jeton opérateur introuvable pour le
+                         process MCP séparé, source du spam "jeton invalide" dans les
+                         journaux WS) : mcp/church-ws-client.js a besoin de WS_AUTH_TOKEN
+                         dans SON PROPRE environnement, que rien n'exposait jusqu'ici.
+                         Même jeton opérateur que celui déjà présent dans l'URL de cette
+                         page (voir getWsToken() dans dashboard/state.js) — juste rendu
+                         copiable. Masqué par défaut, avertissement explicite. -->
+            <div class="stat-row">
+              <span
+                class="stat-label"
+                title="Donne le contrôle complet du pipeline — à ne coller que dans la configuration MCP locale, jamais à partager."
+                >Jeton MCP (intégration Claude) ⚠️</span
+              >
+              <span class="stat-value">
+                <span id="mcpTokenValue" class="companion-link-color">••••••••</span>
+                <button id="copyMcpTokenBtn" class="btn btn-secondary stat-btn-sm badge-ml8">
+                  Copier
+                </button>
+              </span>
+            </div>
             <div class="stat-row">
               <span class="stat-label">Canal WebSocket</span>
               <span class="stat-value">Port 8765 / Reverse Proxy</span>

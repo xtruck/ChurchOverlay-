@@ -4,6 +4,7 @@
  * Extrait de dashboard/legacy-core.js (chantier de modularisation).
  */
 import { showToast } from '../utils.js';
+import { getWsToken } from '../state.js';
 
 (function initCompanionLink() {
   const link = document.getElementById('companionLink');
@@ -26,3 +27,26 @@ export function copyCompanionLink() {
 }
 
 window.copyCompanionLink = copyCompanionLink;
+
+// AJOUT (intégration MCP) : mcp/church-ws-client.js tourne dans son PROPRE
+// process, sans accès à cette page — il a besoin du même jeton opérateur
+// que celui déjà présent dans l'URL du tableau de bord (voir getWsToken()
+// dans state.js, injecté par main.js via l'option `query` de loadFile).
+// On ne fait ici que le rendre copiable, pas une nouvelle génération/canal.
+export function copyMcpToken() {
+  const token = getWsToken();
+  if (!token) {
+    showToast('Aucun jeton disponible — redémarrez le tableau de bord.', 'error');
+    return;
+  }
+  navigator.clipboard
+    .writeText(token)
+    .then(() => {
+      showToast('Jeton copié — collez-le dans la configuration MCP (WS_AUTH_TOKEN).', 'success');
+    })
+    .catch(() => {
+      showToast('Copie impossible.', 'error');
+    });
+}
+
+window.copyMcpToken = copyMcpToken;
