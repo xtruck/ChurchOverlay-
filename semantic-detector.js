@@ -120,8 +120,14 @@ const CONFIG = {
   // Cache settings
   CACHE_MAX_SIZE: 200,
   CACHE_TTL_MS: 1000 * 60 * 30, // 30 minutes
-  // Rate limiting — don't hammer Groq
-  MAX_CALLS_PER_MINUTE: 20,
+  // Rate limiting — don't hammer Groq. Reste sous le plafond partagé réel
+  // (30/min, voir le commentaire MODEL ci-dessus) avec de la marge pour les
+  // autres appelants de chatCompletion() (transcription-corrector en mode
+  // 'auto', ai-enricher, ambient mood) — relevé de 20 à 24 maintenant que
+  // le repli file d'attente ci-dessous (server.js, SEMANTIC_QUEUE_DEPTH_LIMIT)
+  // empêche ce budget d'être consommé par un backlog plutôt que par de
+  // vraies détections.
+  MAX_CALLS_PER_MINUTE: 24,
   // Recent context window (last N transcripts for context)
   CONTEXT_WINDOW_SIZE: 5,
 };
@@ -315,7 +321,7 @@ class SemanticDetector {
     }
   }
 
-  async detect(text) {
+  async detect(text, opts) {
     // 1. Pre-filter: must look biblical
     if (!looksBiblical(text)) {
       return null;
@@ -330,8 +336,20 @@ class SemanticDetector {
     }
 
     // 3. Rate limit check
+    // CORRECTIF (A.2 — visibilité) : jusqu'ici ce cas restait silencieux
+    // (console.log seul) — l'opérateur n'avait aucun moyen de savoir que la
+    // détection sémantique était temporairement désactivée par son propre
+    // budget local. Même canal onError que les échecs LLM ci-dessous, avec
+    // une raison distincte pour ne pas les confondre côté dashboard.
     if (!canMakeCall()) {
       console.log('[semantic] Rate limited, skipping');
+      if (typeof this.onError === 'function') {
+        try {
+          this.onError('rate-limited');
+        } catch (_) {
+          /* observateur best-effort */
+        }
+      }
       return null;
     }
 
@@ -345,6 +363,11 @@ class SemanticDetector {
         model: CONFIG.MODEL,
         temperature: 0.1, // Low temp for consistency
         max_tokens: 256,
+        // AJOUT (borne de latence) : timeoutMs optionnel transmis par
+        // l'appelant (voir server.js) — un repli sémantique ne doit pas
+        // pouvoir immobiliser le transcriptQueue aussi longtemps qu'un
+        // appel LLM "normal" (8s par défaut dans groq-wrapper.js).
+        ...(opts && typeof opts.timeoutMs === 'number' ? { timeoutMs: opts.timeoutMs } : {}),
       });
 
       const result = parseResponse(extractResponseText(response));

@@ -1146,12 +1146,28 @@ function logLatencySummary(tracker) {
 // suivant (qui reset le buffer s'il porte un livre) ne démarre.
 let transcriptQueue = Promise.resolve();
 
+// AJOUT (borne de latence — pic observé 372s sur un énoncé) : profondeur du
+// transcriptQueue, incrémentée à chaque mise en file et décrémentée une
+// fois le traitement réglé (succès ou échec). Sert uniquement à décider si
+// la détection sémantique (LLM, potentiellement lente) doit être SAUTÉE
+// pour ne pas empiler davantage de retard sur un énoncé déjà en retard —
+// voir son usage dans processTranscript ci-dessous. N'affecte pas l'ORDRE
+// de traitement, seulement quel travail optionnel s'exécute.
+let transcriptQueueDepth = 0;
+function getTranscriptQueueDepth() {
+  return transcriptQueueDepth;
+}
+
 function enqueueTranscript(text, tracker, opts) {
+  transcriptQueueDepth++;
   const run = transcriptQueue.then(() => processTranscript(text, tracker, opts));
   transcriptQueue = run.then(
     () => undefined,
     () => undefined
   );
+  run.finally(() => {
+    transcriptQueueDepth--;
+  });
   return run;
 }
 
@@ -1634,9 +1650,20 @@ async function processTranscript(text, tracker, opts = {}) {
     });
   }
 
-  if (!reference && semanticDetector) {
+  // AJOUT (borne de latence — pic observé 372s sur un énoncé) : le
+  // transcriptQueue est sérialisé à dessein (voir plus haut, correctif
+  // "course de finals") — un appel LLM lent ici retarde donc TOUS les
+  // énoncés déjà en attente derrière lui. Une fois une profondeur de file
+  // significative atteinte, on saute la détection sémantique (repli déjà
+  // silencieux et attendu, même sémantique que le rate-limit local
+  // ci-dessus) plutôt que d'empiler encore du retard sur un backlog déjà
+  // en train de se former — la file peut ainsi se vider via les fragments
+  // rapides (regex) restants.
+  const SEMANTIC_QUEUE_DEPTH_LIMIT = 3;
+  const semanticQueueBackedUp = getTranscriptQueueDepth() > SEMANTIC_QUEUE_DEPTH_LIMIT;
+  if (!reference && semanticDetector && !semanticQueueBackedUp) {
     try {
-      const semanticResult = await semanticDetector.detect(correctedText);
+      const semanticResult = await semanticDetector.detect(correctedText, { timeoutMs: 4000 });
       if (semanticResult) {
         reference = semanticResult;
         log(
