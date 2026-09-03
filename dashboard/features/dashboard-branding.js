@@ -10,14 +10,17 @@
 import { ws, getHttpOrigin } from '../state.js';
 import { showToast } from '../utils.js';
 
-// CORRECTIF (redesign — direction "console de diffusion") : ce repli était
-// resté sur l'ancien violet (#7c8cf5) après le changement de --primary dans
+// CORRECTIF (redesign Studio Clair) : ce repli était resté sur l'orange
+// "console de diffusion" (#ff8a3d, lui-même un correctif d'un violet encore
+// plus ancien — voir commentaire au-dessus dans l'historique du fichier)
+// après le passage de --primary au terracotta Studio Clair dans
 // dashboard.css (:root) — dashboard-branding.js écrase --primary en style
 // inline sur <html> à CHAQUE connexion (même sans accentColor configuré côté
 // serveur), qui gagne toujours sur la valeur de la feuille de style. Un
-// nouvel utilisateur sans branding personnalisé voyait donc l'ancienne
-// couleur malgré le nouveau thème.
-const DEFAULT_ACCENT_COLOR = '#ff8a3d';
+// nouvel utilisateur sans branding personnalisé voyait donc l'ancien thème
+// malgré le nouveau redesign — même piège que la première fois, cette valeur
+// doit être mise à jour à chaque fois que --primary change dans dashboard.css.
+const DEFAULT_ACCENT_COLOR = '#b8622f';
 
 export function applyDashboardBranding(branding) {
   if (!branding) return;

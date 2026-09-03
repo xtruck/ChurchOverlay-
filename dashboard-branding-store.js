@@ -28,11 +28,14 @@ const crypto = require('crypto');
 const { writeJsonAtomic } = require('./persistence/atomic-json-store');
 
 const ALLOWED_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.svg', '.gif']);
-// CORRECTIF (redesign — direction "console de diffusion") : gardé cohérent
-// avec le repli côté client (dashboard/features/dashboard-branding.js) même
-// si aucun consommateur actuel de cet export ne l'utilise encore côté
-// serveur — évite une valeur qui redeviendrait silencieusement fausse.
-const DEFAULT_ACCENT_COLOR = '#ff8a3d';
+// CORRECTIF (redesign Studio Clair) : gardé cohérent avec le repli côté
+// client (dashboard/features/dashboard-branding.js) même si aucun
+// consommateur actuel de cet export ne l'utilise encore côté serveur — évite
+// une valeur qui redeviendrait silencieusement fausse. Cette valeur était
+// déjà passée une fois de l'orange "console de diffusion" au terracotta
+// Studio Clair (#b8622f, voir dashboard/dashboard.css :root --primary) côté
+// client sans que ce repli serveur suive — corrigé ici pour de bon.
+const DEFAULT_ACCENT_COLOR = '#b8622f';
 const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
 const MAX_ORG_NAME_LENGTH = 60;
 
