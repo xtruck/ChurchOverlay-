@@ -261,6 +261,24 @@ function waitForMessage(ws, predicate, timeoutMs = 1000) {
       /opérateur|operator/i.test(err.error || ''),
       JSON.stringify(err)
     );
+
+    // CORRECTIF (audit — diaporama d'annonces cassé) : getMediaLibrary n'est
+    // PLUS operatorOnly (voir action-registry.js) — announcement-loop.html
+    // se connecte en 'viewer' (WS_VIEWER_TOKEN) et envoie cette action lui-
+    // même au chargement pour récupérer les médias inclus dans la boucle ;
+    // avec operatorOnly, ce message était rejeté et le diaporama restait
+    // vide en permanence. Verrouille le comportement inverse.
+    ws.send(JSON.stringify({ action: 'getMediaLibrary' }));
+    const mediaLibMsg = await waitForMessage(
+      ws,
+      (m) => m.action === 'mediaLibraryUpdated' || m.action === 'error'
+    );
+    check(
+      "getMediaLibrary envoyé par un 'viewer' est accepté (diaporama d'annonces)",
+      mediaLibMsg.action === 'mediaLibraryUpdated' && Array.isArray(mediaLibMsg.items),
+      JSON.stringify(mediaLibMsg)
+    );
+
     ws.close();
   }
 

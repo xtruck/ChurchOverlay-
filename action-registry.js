@@ -196,7 +196,18 @@ const CLIENT_ACTIONS = {
   preServiceCheck: { operatorOnly: true, category: 'ai', description: 'Vérification pré-culte' },
 
   // Médiathèque
-  getMediaLibrary: { operatorOnly: true, category: 'media', description: 'Liste des médias' },
+  // CORRECTIF (audit — diaporama d'annonces cassé) : operatorOnly retiré.
+  // announcement-loop.html (rôle 'viewer', voir main.js#getNetworkPageUrl)
+  // envoie lui-même cette action au chargement pour récupérer les médias
+  // marqués includeInLoop (voir connectAndLoad() dans announcement-loop.html)
+  // — avec operatorOnly, le RBAC (server.js) la rejetait systématiquement
+  // ("Action réservée aux opérateurs."), donc le diaporama ne chargeait
+  // jamais rien. Probablement un effet de bord non voulu du verrouillage
+  // RBAC en masse (commit 4f29673) : la réponse reste un ws.send() direct
+  // au seul demandeur (jamais un broadcast), et les champs renvoyés
+  // (label/filename/durée...) ne sont pas plus sensibles que l'URL /media/
+  // déjà publique que ce même fichier construit avec.
+  getMediaLibrary: { category: 'media', description: 'Liste des médias' },
   addMediaItem: { operatorOnly: true, category: 'media', description: 'Ajouter un média' },
   updateMediaItem: { operatorOnly: true, category: 'media', description: 'Modifier un média' },
   deleteMediaItem: { operatorOnly: true, category: 'media', description: 'Supprimer un média' },
