@@ -48,7 +48,18 @@
         inset: 0;
         background: rgba(0, 0, 0, 0.85);
         z-index: 180;
-        display: flex;
+        /* CORRECTIF (découvert lors des captures d'écran Studio Clair) :
+           display: flex ici, sur un sélecteur #id, l'emportait TOUJOURS sur
+           .hidden-display { display: none } (classe, spécificité plus
+           faible), quel que soit l'ordre des règles — ce voile plein écran
+           à 85% de noir restait donc affiché en permanence au-dessus de
+           tout l'overlay, sur n'importe quel thème. Aucun JS ne pilote
+           d'ailleurs cet élément (compteur avant-culte jamais branché) :
+           display retiré d'ici pour laisser .hidden-display s'appliquer
+           comme prévu ; align-items/justify-content/flex-direction
+           restent au cas où ce disposition serait un jour réactivée avec
+           display: flex posé en style inline par du JS (qui l'emporterait
+           alors sur .hidden-display via la spécificité du style en ligne). */
         align-items: center;
         justify-content: center;
         flex-direction: column;
