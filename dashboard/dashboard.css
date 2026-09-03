@@ -3,18 +3,24 @@
    d'un <style> inline vers ce fichier, chargé via <link rel="stylesheet">. */
 
 :root {
-  /* --- AJOUT (redesign — direction "console de diffusion") : fond
-     neutre quasi-noir plutôt que la teinte bleu nuit d'origine — cohérent
-     avec le nouveau --primary orange (plus de sens à teinter le fond de
-     bleu quand l'accent n'est plus bleu-violet). ------------------- */
-  --bg-base: #0b0c10;
-  --bg-surface: rgba(20, 22, 28, 0.55);
-  --bg-card: rgba(255, 255, 255, 0.045);
-  --bg-card-hover: rgba(255, 255, 255, 0.08);
-  --bg-input: rgba(6, 7, 10, 0.55);
+  /* CORRECTIF (chantier Studio Clair, Track A1) : logiciel SaaS premium et
+     chaleureux — fond clair, cartes blanches SOLIDES (plus de glass
+     translucide sur fond sombre), accent terracotta. Mêmes NOMS de
+     variables que le thème précédent, seules les valeurs changent — les
+     dizaines de règles qui les consomment déjà via var(...) se re-thèment
+     donc sans être touchées une par une. Voir plus bas dans ce fichier
+     pour le reste de la palette (texte/ombres/rayons) et le "PIÈGE"
+     rgba(255,255,255,...)/backdrop-filter : ces déclarations pensées pour
+     un effet verre-sur-fond-sombre sont inversées ou retirées au cas par
+     cas dans tout le fichier, pas seulement ici dans les tokens. */
+  --bg-base: #faf8f5;
+  --bg-surface: #fbfaf8;
+  --bg-card: #ffffff;
+  --bg-card-hover: color-mix(in srgb, var(--bg-card) 96%, var(--primary));
+  --bg-input: #f7f4ee;
 
-  --border-subtle: rgba(255, 255, 255, 0.1);
-  --border-light: rgba(255, 255, 255, 0.22);
+  --border-subtle: #e8e3db;
+  --border-light: #d8d0c2;
   --border-active: var(--primary);
 
   /* --- Couleur unique de l'app (demande : "one color", plus de
@@ -40,12 +46,12 @@
      signal (façon régie broadcast) plutôt que le violet-bleu d'origine —
      seule valeur à changer ici, tout le reste du fichier suit via
      color-mix() (voir commentaire au-dessus sur dashboard-branding.js). */
-  --primary: #ff8a3d;
+  --primary: #b8622f;
   --primary-hover: color-mix(in srgb, var(--primary) 85%, black);
-  --primary-glow: color-mix(in srgb, var(--primary) 38%, transparent);
+  --primary-glow: color-mix(in srgb, var(--primary) 18%, transparent);
 
   --accent-cyan: var(--primary);
-  --accent-emerald: #34d399;
+  --accent-emerald: #2f8f6f;
   /* CORRECTIF (redesign visuel) : cet alias pointait vers --primary depuis
              la consolidation "one color" ci-dessus, ce qui faisait qu'un
              badge "warning" se lisait visuellement comme une action
@@ -54,14 +60,9 @@
              utilisait déjà var(--accent-amber, #d9a441) avec un repli
              ambré : l'intention d'une couleur distincte existait déjà,
              juste jamais branchée. Restaurée ici. */
-  /* AJOUT (redesign) : --primary étant désormais lui-même orange, l'ancien
-     amber (#f5a623) devenait visuellement confondable avec l'accent
-     principal — exactement le flou que le correctif ci-dessus visait à
-     éviter pour un badge "warning". Décalé vers un jaune-or plus franc
-     pour rester net à côté du nouvel orange. */
-  --accent-amber: #f0b429;
-  --accent-amber-bg: rgba(240, 180, 41, 0.15);
-  --accent-rose: #ff5a5a;
+  --accent-amber: #b8863a;
+  --accent-amber-bg: rgba(184, 134, 58, 0.14);
+  --accent-rose: #c0392b;
 
   --gold: var(--primary);
   --gold-soft: color-mix(in srgb, var(--primary) 20%, transparent);
@@ -72,19 +73,19 @@
   --sapphire: var(--primary);
   --sapphire-soft: color-mix(in srgb, var(--primary) 16%, transparent);
 
-  --text-main: #e8eaf0;
-  --text-muted: #9aa0b0;
-  --text-dim: #6b7280;
+  --text-main: #2b2620;
+  --text-muted: #756d60;
+  --text-dim: #a49c8d;
 
-  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 16px 40px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 1px 2px rgba(43, 38, 32, 0.04);
+  --shadow-md: 0 10px 28px rgba(43, 38, 32, 0.05);
   --shadow-glow: 0 0 26px var(--primary-glow);
   --shadow-gold: 0 0 26px var(--gold-glow);
-  --shadow-lift: 0 20px 48px rgba(0, 0, 0, 0.5), 0 2px 0 rgba(255, 255, 255, 0.05) inset;
+  --shadow-lift: 0 20px 48px rgba(43, 38, 32, 0.1), 0 1px 0 rgba(255, 255, 255, 0.6) inset;
 
   --radius-sm: 8px;
   --radius-md: 14px;
-  --radius-lg: 22px;
+  --radius-lg: 16px;
   --radius-xl: 20px;
   --radius-full: 9999px;
 
@@ -101,14 +102,17 @@
   --primary-300: color-mix(in srgb, var(--primary) 70%, white);
   --primary-600: color-mix(in srgb, var(--primary) 88%, black);
   --primary-700: color-mix(in srgb, var(--primary) 68%, black);
-  --accent-emerald-600: #1fb886;
-  --accent-rose-600: #e14264;
-  --accent-amber-600: #c99416;
+  /* CORRECTIF (Studio Clair) : variantes plus foncées des nouvelles teintes
+     de base (émeraude/rose/ambre), pas des anciennes — mêmes usages
+     (survol/actif) qu'avant, juste recalculées pour rester cohérentes. */
+  --accent-emerald-600: #26735a;
+  --accent-rose-600: #a52f21;
+  --accent-amber-600: #96661f;
 
   /* Profondeur : un niveau au-dessus de --bg-surface, pour les éléments
      qui doivent se détacher des cartes (popovers, dropdowns) — introuvable
      ailleurs dans ce fichier aujourd'hui. */
-  --bg-elevated: #171922;
+  --bg-elevated: #fffdf9;
 
   /* Échelle typographique — les tailles existantes restent en dur tant
      qu'un lot ne les migre pas explicitement (pas de réécriture en masse). */
@@ -140,12 +144,12 @@
   /* Niveaux d'élévation (repos/survol/modale) et variantes "glow" par
      accent, pour les micro-interactions des lots suivants (carte verset
      en direct, pastille de connexion). */
-  --shadow-e1: 0 2px 10px rgba(0, 0, 0, 0.3);
-  --shadow-e2: 0 10px 28px rgba(0, 0, 0, 0.42);
-  --shadow-e3: 0 24px 56px rgba(0, 0, 0, 0.55);
+  --shadow-e1: 0 2px 10px rgba(43, 38, 32, 0.05);
+  --shadow-e2: 0 10px 28px rgba(43, 38, 32, 0.06);
+  --shadow-e3: 0 24px 56px rgba(43, 38, 32, 0.08);
   --shadow-glow-primary: 0 0 26px var(--primary-glow);
-  --shadow-glow-emerald: 0 0 22px rgba(52, 211, 153, 0.4);
-  --shadow-glow-rose: 0 0 22px rgba(244, 96, 122, 0.4);
+  --shadow-glow-emerald: 0 0 22px rgba(47, 143, 111, 0.35);
+  --shadow-glow-rose: 0 0 22px rgba(192, 57, 43, 0.35);
 
   --duration-fast: 120ms;
   --duration-base: 220ms;
@@ -561,9 +565,16 @@ body {
   min-height: 100vh;
   overflow-x: hidden;
   position: relative;
+  /* CORRECTIF (Studio Clair) : ce background-image, opaque, peignait
+     PAR-DESSUS background-color: var(--bg-base) juste au-dessus — même
+     avec --bg-base redéfini en ivoire, la page restait visuellement
+     sombre tant que ce dégradé figé en dur n'était pas lui aussi
+     recalé. Lueur d'accent orange -> terracotta, dégradé bleu-nuit ->
+     ivoire (mêmes trois arrêts, même esprit "légère respiration" de
+     teinte plutôt qu'un aplat). */
   background-image:
-    radial-gradient(circle at 12% 8%, rgba(255, 138, 61, 0.1) 0%, transparent 42%),
-    linear-gradient(180deg, #0b0c10 0%, #101218 55%, #0b0c10 100%);
+    radial-gradient(circle at 12% 8%, rgba(184, 98, 47, 0.06) 0%, transparent 42%),
+    linear-gradient(180deg, #faf8f5 0%, #f4efe6 55%, #faf8f5 100%);
 }
 
 .dashboard {
@@ -576,11 +587,17 @@ body {
 
 /* Sidebar Styling */
 .sidebar {
-  background: rgba(11, 12, 16, 0.55);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  /* CORRECTIF (Studio Clair) : var(--bg-surface) directement (panneau
+     clair quasi-blanc) au lieu d'un noir translucide figé en dur —
+     l'effet "verre" gardait un sens sur fond sombre (laisse deviner le
+     fond derrière), plus sur fond clair où il n'y a plus de contraste à
+     révéler ; conservé quand même en très subtil (saturate atténué) pour
+     la même texture de profondeur que le reste de l'app. */
+  background: var(--bg-surface);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(105%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(105%);
   border-right: 1px solid var(--border-subtle);
-  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.04) inset;
+  box-shadow: 1px 0 0 rgba(43, 38, 32, 0.04) inset;
   padding: 1.75rem 1.25rem;
   display: flex;
   flex-direction: column;
@@ -654,7 +671,11 @@ body {
   font-size: 1.15rem;
   font-weight: 800;
   letter-spacing: -0.02em;
-  background: linear-gradient(135deg, #ffffff 25%, var(--gold) 120%);
+  /* CORRECTIF (Studio Clair) : le dégradé de texte partait de #ffffff —
+     sur fond clair, un texte qui COMMENCE en blanc pur se fond dans le
+     fond au lieu de rester lisible. Part de --text-main (sombre) à la
+     place, toujours vers --gold (terracotta). */
+  background: linear-gradient(135deg, var(--text-main) 25%, var(--gold) 120%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -691,14 +712,18 @@ body {
 }
 
 .nav-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(43, 38, 32, 0.05);
   color: var(--text-main);
 }
 
 .nav-item.active {
-  background: linear-gradient(90deg, rgba(255, 138, 61, 0.18) 0%, rgba(220, 180, 106, 0.05) 100%);
-  color: #ffffff;
-  border-color: rgba(255, 138, 61, 0.32);
+  /* CORRECTIF (Studio Clair) : dégradé recalé sur le terracotta (au lieu
+     de l'ancien orange figé en dur, invisible à la redéfinition de
+     --primary) ; color passe de #ffffff (illisible sur un fond devenu
+     clair) à --text-main. */
+  background: linear-gradient(90deg, rgba(184, 98, 47, 0.16) 0%, rgba(184, 98, 47, 0.04) 100%);
+  color: var(--text-main);
+  border-color: rgba(184, 98, 47, 0.3);
   font-weight: 600;
 }
 
@@ -740,8 +765,8 @@ body {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 0.75rem;
-  background: rgba(52, 211, 153, 0.1);
-  border: 1px solid rgba(52, 211, 153, 0.22);
+  background: rgba(47, 143, 111, 0.1);
+  border: 1px solid rgba(47, 143, 111, 0.22);
   border-radius: var(--radius-sm);
   color: var(--accent-emerald);
   font-weight: 600;
@@ -759,8 +784,8 @@ body {
            doit basculer pour que la perte de connexion soit impossible à
            manquer. */
 .live-status-pill.offline {
-  background: rgba(244, 96, 122, 0.14);
-  border-color: rgba(244, 96, 122, 0.4);
+  background: rgba(192, 57, 43, 0.14);
+  border-color: rgba(192, 57, 43, 0.4);
   color: var(--accent-rose);
   animation: offlineAttention 1.6s ease-in-out infinite;
 }
@@ -768,10 +793,10 @@ body {
 @keyframes offlineAttention {
   0%,
   100% {
-    box-shadow: 0 0 0 rgba(244, 96, 122, 0);
+    box-shadow: 0 0 0 rgba(192, 57, 43, 0);
   }
   50% {
-    box-shadow: 0 0 14px rgba(244, 96, 122, 0.35);
+    box-shadow: 0 0 14px rgba(192, 57, 43, 0.35);
   }
 }
 
@@ -845,11 +870,14 @@ body {
 }
 
 .header-title-group h1 {
-  font-family: 'Cormorant Garamond', 'IBM Plex Sans', serif;
+  font-family: 'Newsreader', 'IBM Plex Sans', serif;
   font-size: 2.1rem;
   font-weight: 700;
   letter-spacing: -0.01em;
-  color: #ffffff;
+  /* CORRECTIF (Studio Clair) : titre de page en blanc fixe — illisible
+     posé directement sur --bg-base désormais clair (aucune carte sombre
+     dessous). */
+  color: var(--text-main);
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -917,7 +945,7 @@ body {
 }
 
 .chip-btn {
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(43, 38, 32, 0.04);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border: 1px solid var(--border-subtle);
@@ -936,7 +964,7 @@ body {
 
 .chip-btn:hover {
   background: var(--gold-soft);
-  border-color: rgba(220, 180, 106, 0.45);
+  border-color: rgba(184, 98, 47, 0.45);
   color: var(--text-main);
   transform: translateY(-1px);
 }
@@ -952,7 +980,7 @@ body {
 }
 
 .mood-btn {
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(43, 38, 32, 0.04);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border: 1px solid var(--border-subtle);
@@ -968,7 +996,7 @@ body {
 
 .mood-btn:hover {
   background: var(--gold-soft);
-  border-color: rgba(220, 180, 106, 0.45);
+  border-color: rgba(184, 98, 47, 0.45);
   color: var(--text-main);
   transform: translateY(-1px);
 }
@@ -1001,7 +1029,7 @@ body {
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-full);
   border: 1px solid var(--border-subtle);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(43, 38, 32, 0.03);
   color: var(--text-muted);
   font-family: inherit;
   font-size: var(--text-sm);
@@ -1029,7 +1057,11 @@ body {
 .subnav-btn.active {
   background: var(--primary-glow);
   border-color: var(--primary);
-  color: #ffffff;
+  /* CORRECTIF (Studio Clair) : texte blanc fixe sur un fond translucide à
+     18% (--primary-glow) — quasi illisible. Même logique que
+     .status-badge.ai juste au-dessus : fond teinté léger + texte dans la
+     couleur d'accent plutôt que blanc. */
+  color: var(--primary);
   box-shadow: 0 0 0 1px var(--primary) inset;
 }
 
@@ -1117,18 +1149,18 @@ body {
 }
 .confidence-rail.confidence-rail-ok {
   color: var(--accent-emerald);
-  background: rgba(52, 211, 153, 0.1);
-  border-color: rgba(52, 211, 153, 0.25);
+  background: rgba(47, 143, 111, 0.1);
+  border-color: rgba(47, 143, 111, 0.25);
 }
 .confidence-rail.confidence-rail-warn {
   color: var(--accent-amber);
   background: var(--accent-amber-bg);
-  border-color: rgba(240, 180, 41, 0.3);
+  border-color: rgba(184, 134, 58, 0.3);
 }
 .confidence-rail.confidence-rail-error {
   color: var(--accent-rose);
-  background: rgba(255, 90, 90, 0.1);
-  border-color: rgba(255, 90, 90, 0.3);
+  background: rgba(192, 57, 43, 0.1);
+  border-color: rgba(192, 57, 43, 0.3);
 }
 
 /* AJOUT (innovation frontend) : file d'attente de versets. */
@@ -1184,7 +1216,7 @@ body {
   border-radius: var(--radius-md);
   color: var(--text-dim);
   font-size: var(--text-sm);
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(43, 38, 32, 0.02);
   transition:
     border-color var(--duration-fast) ease,
     background var(--duration-fast) ease,
@@ -1258,7 +1290,7 @@ body {
   color: var(--text-dim);
 }
 .cue-readiness-badge.cue-readiness-ready {
-  background: rgba(52, 211, 153, 0.15);
+  background: rgba(47, 143, 111, 0.15);
   color: var(--accent-emerald);
 }
 .cue-readiness-badge.cue-readiness-attention {
@@ -1266,7 +1298,7 @@ body {
   color: var(--accent-amber);
 }
 .cue-readiness-badge.cue-readiness-blocked {
-  background: rgba(244, 96, 122, 0.15);
+  background: rgba(192, 57, 43, 0.15);
   color: var(--accent-rose);
 }
 
@@ -1293,12 +1325,12 @@ body {
   padding: 0;
 }
 .cue-status-chip.cue-status-live {
-  background: rgba(255, 90, 90, 0.15);
+  background: rgba(192, 57, 43, 0.15);
   color: var(--accent-rose);
   animation: cueStatusLivePulse 2s ease-in-out infinite;
 }
 .cue-status-chip.cue-status-armed {
-  background: rgba(56, 189, 248, 0.15);
+  background: rgba(184, 98, 47, 0.15);
   color: var(--accent-cyan);
 }
 .cue-status-chip.cue-status-played {
@@ -1327,7 +1359,7 @@ body {
 }
 
 .queue-icon-btn {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(43, 38, 32, 0.04);
   border: 1px solid var(--border-subtle);
   color: var(--text-muted);
   width: 26px;
@@ -1358,13 +1390,13 @@ body {
            l'app (émeraude = action positive/succès, rose = destructif —
            voir .status-badge.success/.btn-danger). */
 .queue-icon-btn.queue-send:hover:not(:disabled) {
-  background: rgba(52, 211, 153, 0.16);
+  background: rgba(47, 143, 111, 0.16);
   border-color: var(--accent-emerald);
   color: var(--accent-emerald);
 }
 
 .queue-icon-btn.queue-remove:hover:not(:disabled) {
-  background: rgba(244, 96, 122, 0.16);
+  background: rgba(192, 57, 43, 0.16);
   border-color: var(--accent-rose);
   color: var(--accent-rose);
 }
@@ -1446,7 +1478,7 @@ body {
 }
 .rundown-schedule-status.rundown-schedule-ontime {
   color: var(--accent-emerald);
-  background: rgba(52, 211, 153, 0.12);
+  background: rgba(47, 143, 111, 0.12);
 }
 .rundown-schedule-status.rundown-schedule-late {
   color: var(--accent-amber);
@@ -1454,7 +1486,7 @@ body {
 }
 .rundown-schedule-status.rundown-schedule-early {
   color: var(--primary);
-  background: rgba(255, 138, 61, 0.12);
+  background: rgba(184, 98, 47, 0.12);
 }
 
 /* AJOUT (Service Heartbeat — idée créative, brief produit, voir
@@ -1484,17 +1516,17 @@ body {
 }
 .rundown-heartbeat-dot.rundown-heartbeat-ontime {
   background: var(--accent-emerald);
-  box-shadow: 0 0 6px rgba(52, 211, 153, 0.6);
+  box-shadow: 0 0 6px rgba(47, 143, 111, 0.6);
   animation: rundownHeartbeatPulse 1.6s ease-in-out infinite;
 }
 .rundown-heartbeat-dot.rundown-heartbeat-behind {
   background: var(--accent-amber);
-  box-shadow: 0 0 6px rgba(240, 180, 41, 0.6);
+  box-shadow: 0 0 6px rgba(184, 134, 58, 0.6);
   animation: rundownHeartbeatPulse 0.9s ease-in-out infinite;
 }
 .rundown-heartbeat-dot.rundown-heartbeat-ahead {
   background: var(--primary);
-  box-shadow: 0 0 6px rgba(255, 138, 61, 0.6);
+  box-shadow: 0 0 6px rgba(184, 98, 47, 0.6);
   animation: rundownHeartbeatPulse 1.6s ease-in-out infinite;
 }
 @keyframes rundownHeartbeatPulse {
@@ -1537,7 +1569,13 @@ body {
   position: fixed;
   inset: 0;
   z-index: 900;
-  background: var(--bg-primary, #0b0c10);
+  /* CORRECTIF (Studio Clair) : --bg-primary n'est défini nulle part dans ce
+     fichier — ce plein écran retombait donc toujours sur son repli littéral
+     #0b0c10 (quasi noir), avec .focus-mode-clock/.focus-mode-next-cue en
+     var(--text-main) par-dessus. Sous l'ancien thème sombre, --text-main
+     était clair : illisible maintenant qu'il est sombre. Remplacé par le
+     vrai token de fond de l'app, qui suit désormais le thème. */
+  background: var(--bg-base);
   flex-direction: column;
   padding: var(--space-4, 1.5rem);
 }
@@ -2105,12 +2143,16 @@ body {
     background 0.45s var(--ease-silk);
   position: relative;
   overflow: hidden;
-  box-shadow:
-    var(--shadow-sm),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: var(--shadow-sm);
 }
 
-/* Reflet fin en haut du panneau — le bord "poli" du verre */
+/* CORRECTIF (Studio Clair) : ce reflet simulait un bord "poli" de verre
+   sombre — invisible (blanc sur blanc) maintenant que --bg-card est une
+   carte claire solide. Devient un léger filet d'accent, cohérent avec le
+   reste des touches terracotta du redesign plutôt qu'un effet devenu
+   sans objet. Le halo inset blanc que ce box-shadow portait auparavant sur
+   la même arête (même rôle que ce ::before) est retiré plutôt que teinté :
+   les deux ensemble auraient fait doublon visuellement. */
 .card::before {
   content: '';
   position: absolute;
@@ -2118,7 +2160,7 @@ body {
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  background: linear-gradient(90deg, transparent, rgba(184, 98, 47, 0.18), transparent);
 }
 
 /* RETIRÉ (sur demande) : l'effet de reflet qui suivait le curseur au
@@ -2152,7 +2194,7 @@ body {
   width: 36px;
   height: 36px;
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(43, 38, 32, 0.04);
   border: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
@@ -2164,7 +2206,9 @@ body {
   font-size: 2.2rem;
   font-weight: 800;
   letter-spacing: -0.03em;
-  color: #ffffff;
+  /* CORRECTIF (Studio Clair) : #ffffff figé en dur était illisible une
+     fois --bg-card devenu blanc solide (texte blanc sur carte blanche). */
+  color: var(--text-main);
   line-height: 1.1;
 }
 
@@ -2186,7 +2230,7 @@ body {
   );
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(170%);
   backdrop-filter: blur(var(--glass-blur)) saturate(170%);
-  border: 1px solid rgba(255, 138, 61, 0.28);
+  border: 1px solid rgba(184, 98, 47, 0.28);
   box-shadow:
     var(--shadow-glow),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
@@ -2205,7 +2249,7 @@ body {
            aussi — voir le commentaire équivalent sur .card. */
 
 .hero-verse-card:hover {
-  border-color: rgba(220, 180, 106, 0.4);
+  border-color: rgba(184, 98, 47, 0.4);
   box-shadow:
     var(--shadow-glow),
     var(--shadow-gold),
@@ -2273,7 +2317,7 @@ body {
   50% {
     box-shadow:
       var(--shadow-glow),
-      0 0 34px rgba(52, 211, 153, 0.55),
+      0 0 34px rgba(47, 143, 111, 0.55),
       inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 }
@@ -2295,8 +2339,8 @@ body {
 }
 
 .live-badge {
-  background: rgba(52, 211, 153, 0.14);
-  border: 1px solid rgba(52, 211, 153, 0.3);
+  background: rgba(47, 143, 111, 0.14);
+  border: 1px solid rgba(47, 143, 111, 0.3);
   color: var(--accent-emerald);
   padding: 0.3rem 0.75rem;
   border-radius: var(--radius-full);
@@ -2310,7 +2354,7 @@ body {
 }
 
 .verse-ref-large {
-  font-family: 'Cormorant Garamond', 'IBM Plex Sans', serif;
+  font-family: 'Newsreader', 'IBM Plex Sans', serif;
   font-size: 1.9rem;
   font-weight: 700;
   color: var(--gold);
@@ -2321,7 +2365,7 @@ body {
 }
 
 .verse-body-large {
-  font-family: 'Cormorant Garamond', 'IBM Plex Sans', serif;
+  font-family: 'Newsreader', 'IBM Plex Sans', serif;
   font-size: 1.4rem;
   line-height: 1.65;
   color: var(--text-main);
@@ -2339,7 +2383,7 @@ body {
            défaut ; affichée uniquement par displayVerse() si un texte
            anglais est disponible. */
 .verse-body-bilingual {
-  font-family: 'Cormorant Garamond', 'IBM Plex Sans', serif;
+  font-family: 'Newsreader', 'IBM Plex Sans', serif;
   font-size: 1.15rem;
   line-height: 1.6;
   color: var(--text-dim);
@@ -2391,16 +2435,16 @@ body {
 .btn-primary {
   background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
   color: #ffffff;
-  box-shadow: 0 4px 14px rgba(255, 138, 61, 0.35);
+  box-shadow: 0 4px 14px rgba(184, 98, 47, 0.35);
 }
 
 .btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(255, 138, 61, 0.5);
+  box-shadow: 0 6px 18px rgba(184, 98, 47, 0.5);
 }
 
 .btn-secondary {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(43, 38, 32, 0.04);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border-color: var(--border-subtle);
@@ -2408,7 +2452,7 @@ body {
 }
 
 .btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.13);
+  background: rgba(43, 38, 32, 0.07);
   border-color: var(--border-light);
   transform: translateY(-1px);
 }
@@ -2424,13 +2468,13 @@ body {
 }
 
 .btn-danger {
-  background: rgba(244, 96, 122, 0.15);
-  border-color: rgba(244, 96, 122, 0.32);
+  background: rgba(192, 57, 43, 0.15);
+  border-color: rgba(192, 57, 43, 0.32);
   color: var(--accent-rose);
 }
 
 .btn-danger:hover {
-  background: rgba(244, 96, 122, 0.25);
+  background: rgba(192, 57, 43, 0.25);
   transform: translateY(-1px);
 }
 
@@ -2444,19 +2488,19 @@ body {
 .speech-trigger-btn.active {
   background: linear-gradient(135deg, #f4607a 0%, #dd3358 100%);
   color: #fff;
-  box-shadow: 0 0 20px rgba(244, 96, 122, 0.45);
+  box-shadow: 0 0 20px rgba(192, 57, 43, 0.45);
   animation: mic-pulse 1.8s infinite;
 }
 
 @keyframes mic-pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(244, 96, 122, 0.6);
+    box-shadow: 0 0 0 0 rgba(192, 57, 43, 0.6);
   }
   70% {
-    box-shadow: 0 0 0 14px rgba(244, 96, 122, 0);
+    box-shadow: 0 0 0 14px rgba(192, 57, 43, 0);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(244, 96, 122, 0);
+    box-shadow: 0 0 0 0 rgba(192, 57, 43, 0);
   }
 }
 
@@ -2472,7 +2516,7 @@ body {
 }
 
 .transcript-item {
-  background: rgba(255, 255, 255, 0.035);
+  background: rgba(43, 38, 32, 0.03);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border: 1px solid var(--border-subtle);
@@ -2485,7 +2529,7 @@ body {
 }
 
 .transcript-item:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(43, 38, 32, 0.05);
 }
 
 .transcript-time {
@@ -2503,7 +2547,7 @@ body {
   gap: 0.85rem;
   padding: 0.75rem;
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.025);
+  background: rgba(43, 38, 32, 0.025);
   border: 1px solid var(--border-subtle);
 }
 
@@ -2518,15 +2562,15 @@ body {
 }
 
 .activity-icon.success {
-  background: rgba(52, 211, 153, 0.15);
+  background: rgba(47, 143, 111, 0.15);
   color: var(--accent-emerald);
 }
 .activity-icon.error {
-  background: rgba(244, 96, 122, 0.15);
+  background: rgba(192, 57, 43, 0.15);
   color: var(--accent-rose);
 }
 .activity-icon.info {
-  background: rgba(255, 138, 61, 0.15);
+  background: rgba(184, 98, 47, 0.15);
   color: var(--primary);
 }
 .activity-icon.warning {
@@ -2584,7 +2628,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(43, 38, 32, 0.025);
 }
 
 .overlay-preview-card iframe {
@@ -2607,7 +2651,7 @@ body {
   padding: 0.5rem 1.1rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(43, 38, 32, 0.04);
   color: var(--text-muted);
   font-weight: 600;
   font-size: 0.85rem;
@@ -2620,7 +2664,7 @@ body {
   background: var(--primary);
   border-color: var(--primary);
   color: #ffffff;
-  box-shadow: 0 2px 12px rgba(255, 138, 61, 0.35);
+  box-shadow: 0 2px 12px rgba(184, 98, 47, 0.35);
 }
 
 /* Stat rows */
@@ -2821,7 +2865,7 @@ body {
 }
 
 .status-badge.success {
-  background: rgba(52, 211, 153, 0.15);
+  background: rgba(47, 143, 111, 0.15);
   color: var(--accent-emerald);
 }
 .status-badge.warning {
@@ -2834,7 +2878,7 @@ body {
            .activity-icon.info (--primary), qui porte déjà ce sens
            "informatif neutre" ailleurs dans l'app. */
 .status-badge.ai {
-  background: rgba(255, 138, 61, 0.15);
+  background: rgba(184, 98, 47, 0.15);
   color: var(--primary);
 }
 
@@ -2853,7 +2897,7 @@ body {
   font-size: 0.78rem;
 }
 .status-badge.error {
-  background: rgba(244, 96, 122, 0.15);
+  background: rgba(192, 57, 43, 0.15);
   color: var(--accent-rose);
 }
 
@@ -2871,7 +2915,11 @@ body {
 
 .toast {
   pointer-events: auto;
-  background: rgba(22, 27, 46, 0.7);
+  /* CORRECTIF (Studio Clair) : fond bleu-nuit figé en dur sous un texte
+     déjà var(--text-main) (donc sombre) — invisible une fois le texte
+     passé au sombre pour le thème clair. Carte claire quasi-opaque,
+     cohérente avec --bg-card. */
+  background: rgba(255, 255, 255, 0.92);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   border: 1px solid var(--border-light);
@@ -2888,13 +2936,13 @@ body {
 }
 
 .toast.success {
-  border-color: rgba(52, 211, 153, 0.4);
+  border-color: rgba(47, 143, 111, 0.4);
 }
 .toast.error {
-  border-color: rgba(244, 96, 122, 0.4);
+  border-color: rgba(192, 57, 43, 0.4);
 }
 .toast.warning {
-  border-color: rgba(245, 166, 35, 0.4);
+  border-color: rgba(184, 134, 58, 0.4);
 }
 
 @keyframes slideInRight {
@@ -2915,7 +2963,11 @@ body {
 .btn-ripple {
   position: absolute;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.35);
+  /* CORRECTIF (Studio Clair) : une onde blanche disparaissait sur les
+     boutons clairs (.btn-secondary) désormais quasi blancs eux-mêmes ;
+     une encre sombre translucide reste visible aussi bien sur les boutons
+     clairs que sur le terracotta saturé de .btn-primary. */
+  background: rgba(43, 38, 32, 0.15);
   transform: scale(0);
   opacity: 0.6;
   pointer-events: none;
@@ -2999,21 +3051,21 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(43, 38, 32, 0.14);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(220, 180, 106, 0.4);
+  background: rgba(184, 98, 47, 0.4);
 }
 /* --- Panneau Clés API & Microphone (section Paramètres) ------------ */
 .setup-banner {
   display: flex;
   align-items: center;
   gap: 0.85rem;
-  background: rgba(255, 138, 61, 0.1);
+  background: rgba(184, 98, 47, 0.1);
   -webkit-backdrop-filter: blur(var(--glass-blur));
   backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid rgba(255, 138, 61, 0.35);
+  border: 1px solid rgba(184, 98, 47, 0.35);
   border-radius: var(--radius-md);
   padding: 0.9rem 1.1rem;
   margin-bottom: 1rem;
@@ -3113,8 +3165,8 @@ body {
 }
 
 #apiSettingsCard.needs-setup {
-  border-color: rgba(255, 138, 61, 0.4);
-  box-shadow: 0 0 0 1px rgba(255, 138, 61, 0.18);
+  border-color: rgba(184, 98, 47, 0.4);
+  box-shadow: 0 0 0 1px rgba(184, 98, 47, 0.18);
 }
 
 /* Bannière d'alerte pipeline (voir dashboard.js) */
@@ -3187,10 +3239,10 @@ body {
 .command-palette {
   width: 520px;
   max-height: 440px;
-  background: var(--bg-card, #1e1e2e);
-  border: 1px solid var(--border-subtle, #333);
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-subtle, #e8e3db);
   border-radius: 12px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 16px 48px rgba(43, 38, 32, 0.18);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -3199,13 +3251,13 @@ body {
   padding: 0.75rem 1rem;
   background: transparent;
   border: none;
-  border-bottom: 1px solid var(--border-subtle, #333);
-  color: var(--text-main, #fff);
+  border-bottom: 1px solid var(--border-subtle, #e8e3db);
+  color: var(--text-main, #2b2620);
   font-size: 0.95rem;
   outline: none;
 }
 .command-palette-input::placeholder {
-  color: var(--text-dim, #888);
+  color: var(--text-dim, #a49c8d);
 }
 .command-palette-list {
   overflow-y: auto;
@@ -3218,7 +3270,7 @@ body {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-dim, #888);
+  color: var(--text-dim, #a49c8d);
 }
 .command-palette-item {
   display: flex;
@@ -3227,31 +3279,35 @@ body {
   padding: 0.5rem 1rem;
   cursor: pointer;
   font-size: 0.85rem;
-  color: var(--text-main, #e0e0e0);
+  color: var(--text-main, #2b2620);
 }
 .command-palette-item:hover,
 .command-palette-item.active {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(43, 38, 32, 0.05);
 }
 .command-palette-item kbd {
   font-size: 0.65rem;
   padding: 0.15rem 0.4rem;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(43, 38, 32, 0.06);
   border-radius: 4px;
   font-family: var(--font-mono, monospace);
-  color: var(--text-dim, #888);
+  color: var(--text-dim, #a49c8d);
 }
 
+/* CORRECTIF (Studio Clair) : #1e293b (bleu-nuit)/#e2e8f0/#cbd5e1 figés en
+   dur, jamais recalés au thème clair — bascule sur --bg-elevated (une
+   carte qui se détache du fond, voir sa définition dans :root) et
+   --text-main/--text-muted, comme le reste des popovers de l'app. */
 /* Mode formation */
 .training-tooltip {
   position: absolute;
-  background: #1e293b;
-  color: #e2e8f0;
+  background: var(--bg-elevated);
+  color: var(--text-main);
   padding: 0.5rem 0.75rem;
   border-radius: 8px;
   font-size: 0.8rem;
   max-width: 320px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-md);
   z-index: 10000;
   border: 1px solid var(--primary);
   pointer-events: none;
@@ -3261,7 +3317,7 @@ body {
   bottom: 60px;
   left: 50%;
   transform: translateX(-50%);
-  background: #1e293b;
+  background: var(--bg-elevated);
   border: 1px solid var(--primary);
   border-radius: 12px;
   padding: 0.75rem 1rem;
@@ -3269,7 +3325,7 @@ body {
   align-items: center;
   gap: 1rem;
   z-index: 10001;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-lift);
   max-width: 600px;
   width: 90%;
 }
@@ -3286,7 +3342,7 @@ body {
 }
 .training-guide-text {
   font-size: 0.8rem;
-  color: #cbd5e1;
+  color: var(--text-muted);
 }
 .training-guide-actions {
   display: flex;
@@ -3309,8 +3365,8 @@ body {
   justify-content: center;
 }
 .confirm-dialog {
-  background: var(--bg-card, #1e1e2e);
-  border: 1px solid var(--border-subtle, #333);
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-subtle, #e8e3db);
   border-radius: 12px;
   padding: 1.25rem;
   max-width: 420px;
@@ -3328,8 +3384,8 @@ body {
   box-sizing: border-box;
   padding: 0.5rem 0.65rem;
   margin-bottom: 1rem;
-  background: var(--bg-input, #12141a);
-  border: 1px solid var(--border-subtle, #333);
+  background: var(--bg-input, #f7f4ee);
+  border: 1px solid var(--border-subtle, #e8e3db);
   border-radius: 8px;
   color: var(--text-main);
   font-size: 0.85rem;
@@ -3346,7 +3402,7 @@ body {
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
-  border: 1px solid var(--border-subtle, #333);
+  border: 1px solid var(--border-subtle, #e8e3db);
   background: transparent;
   color: var(--text-main);
 }
@@ -3379,8 +3435,8 @@ body {
   pointer-events: auto;
 }
 .startup-wizard {
-  background: var(--bg-card, #1e1e2e);
-  border: 1px solid var(--border-subtle, #333);
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-subtle, #e8e3db);
   border-radius: 12px;
   padding: 1.5rem;
   max-width: 520px;
@@ -3391,9 +3447,9 @@ body {
 }
 .wizard-step {
   padding: 0.75rem;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(43, 38, 32, 0.025);
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(43, 38, 32, 0.06);
 }
 .wizard-step-header {
   display: flex;
@@ -3430,34 +3486,44 @@ body {
    ============================================================================ */
 
 :root {
-  --pp-bg-root: #0b0c10;
-  --pp-bg-surface: #12141a;
-  --pp-bg-card: #171922;
-  --pp-bg-card-hover: #1f222e;
-  --pp-bg-card-active: #182335;
-  --pp-bg-elevated: #222534;
-  --pp-bg-input: #0e0f14;
+  /* CORRECTIF (chantier Studio Clair, Track A1) : Studio Pro a son propre
+     jeu de tokens --pp-*, jamais dérivé de --primary/--bg-.../--text-...
+     plus haut dans ce fichier (voir le AJOUT d'origine sous --pp-border-active
+     ci-dessous) — c'est aussi l'espace ACTIF PAR DÉFAUT au chargement du
+     tableau de bord, donc la première chose vue. Recalé ici au niveau des
+     TOKENS seulement (passe automatiquement à tout ce qui les consomme
+     déjà via var(...)) — pas une reprise composant par composant de
+     chaque règle --pp-* individuelle de cette section (~1500 lignes,
+     certaines couleurs y restent codées en dur, ex. .pp-word-grace plus
+     bas) : portée non couverte par la demande initiale, qui nommait des
+     "Motifs de composants" précis (verset/rundown/copilote/médiathèque/
+     sidebar), pas Studio Pro. Même principe déjà appliqué pour le thème
+     cabine-mono plus haut dans ce fichier. */
+  --pp-bg-root: #faf8f5;
+  --pp-bg-surface: #fbfaf8;
+  --pp-bg-card: #ffffff;
+  --pp-bg-card-hover: #f4efe6;
+  --pp-bg-card-active: #eee7dc;
+  --pp-bg-elevated: #fffdf9;
+  --pp-bg-input: #f7f4ee;
 
-  --pp-border-subtle: #202330;
-  --pp-border-medium: #2d3142;
-  /* AJOUT (redesign — accent unique orange) : bleu d'origine remplacé pour
-     rester cohérent avec --primary (dashboard.css :root, plus haut) — même
-     changement, appliqué séparément ici car Studio Pro a son propre jeu de
-     tokens --pp-*, pas dérivé de --primary. Noms --pp-border-active/
-     --pp-blue-accent conservés tels quels (juste la valeur change) pour ne
-     pas devoir retrouver tous leurs usages. */
-  --pp-border-active: #ff8a3d;
-  --pp-border-live: #ef4444;
+  --pp-border-subtle: #e8e3db;
+  --pp-border-medium: #d8d0c2;
+  /* AJOUT (redesign — accent unique orange, puis terracotta) : noms
+     --pp-border-active/--pp-blue-accent conservés tels quels (juste la
+     valeur change) pour ne pas devoir retrouver tous leurs usages. */
+  --pp-border-active: #b8622f;
+  --pp-border-live: #c0392b;
 
-  --pp-text-main: #f1f3f9;
-  --pp-text-muted: #8b92a6;
-  --pp-text-dim: #54596c;
+  --pp-text-main: #2b2620;
+  --pp-text-muted: #756d60;
+  --pp-text-dim: #a49c8d;
 
   /* Restrained Professional Palette */
-  --pp-blue-accent: #ff8a3d;
-  --pp-live-red: #ef4444;
-  --pp-green-ok: #10b981;
-  --pp-gold-subtle: #d97706;
+  --pp-blue-accent: #b8622f;
+  --pp-live-red: #c0392b;
+  --pp-green-ok: #2f8f6f;
+  --pp-gold-subtle: #b8863a;
 
   --pp-radius-sm: 4px;
   --pp-radius-md: 6px;
@@ -4183,7 +4249,7 @@ body {
   gap: 0.75rem;
   flex-wrap: wrap;
   padding: 0.6rem 0.8rem;
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
 }
 .settings-toggle-row--mt {
@@ -4266,7 +4332,7 @@ body {
   flex-wrap: wrap;
   padding: 0.6rem 0.8rem;
   margin-top: 1rem;
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
 }
 .stage-message-input {
@@ -4384,7 +4450,7 @@ body {
   text-align: center;
 }
 .companion-link-color {
-  color: var(--primary, #d9bb6c);
+  color: var(--primary, #b8622f);
 }
 .stat-btn-sm {
   padding: 2px 8px;
@@ -5381,7 +5447,7 @@ body {
   flex-wrap: wrap;
   margin-bottom: 1rem;
   padding: 0.6rem 0.8rem;
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
 }
 .agent-output {
@@ -5392,7 +5458,7 @@ body {
 .section-divider-block {
   margin-top: 1.25rem;
   padding-top: 1rem;
-  border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  border-top: 1px solid var(--border-subtle);
 }
 /* `display` reste en ligne : preservice-ai.js bascule la zone d'export
    entre 'none' et 'block'. */
