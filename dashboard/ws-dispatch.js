@@ -53,7 +53,7 @@ import { renderRundown, applyRundownActiveCue } from './features/rundown.js';
 import { renderNetworkStatus } from './features/network-settings.js';
 import { renderIpCameras, showCameraPairingQr } from './features/ip-cameras.js';
 import { renderBranding } from './features/branding.js';
-import { setTranscriptionHealth } from './features/pipeline-health.js';
+import { setTranscriptionHealth, setAiDegradedStatus } from './features/pipeline-health.js';
 import {
   renderBibleTopics,
   renderBibleSearchResults,
@@ -140,6 +140,11 @@ export function handleMessage(message) {
       // commandes selon le rôle est une fonctionnalité à part entière (bien
       // plus large que ce correctif de reconnexion) et n'est pas faite ici.
       state.yourRole = message.yourRole || null;
+      // AJOUT (audit fonctionnel — statut IA en mode dégradé invisible) :
+      // aiLoadErrors est déjà présent dans CHAQUE message 'init' (voir
+      // server.js), jamais lu ici avant ce correctif — voir
+      // setAiDegradedStatus() dans pipeline-health.js.
+      setAiDegradedStatus(message.aiLoadErrors);
       break;
     case 'translationChanged':
       updateActiveTranslationButton(message.language, message.code);

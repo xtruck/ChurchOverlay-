@@ -34,6 +34,7 @@
  * @param {() => number} ctx.getVerseDurationMs
  * @param {(rm: object, verseNum: number) => object} ctx.readingModePosition
  * @param {(direction: number) => void} ctx.advanceReadingModeVerse
+ * @param {(direction: number) => Promise<void>} ctx.advanceReadingModeChapter
  * @returns {Map<string, (ws: object, sanitized: object, requestId: string|null, sendError: (error: string) => void) => Promise<void>>}
  */
 function createHandlers(ctx) {
@@ -51,6 +52,7 @@ function createHandlers(ctx) {
     getVerseDurationMs,
     readingModePosition,
     advanceReadingModeVerse,
+    advanceReadingModeChapter,
   } = ctx;
 
   const handlers = new Map();
@@ -141,6 +143,21 @@ function createHandlers(ctx) {
   handlers.set('previousReadingVerse', async () => {
     broadcast({ action: 'previousVerse', triggeredByVoice: false });
     advanceReadingModeVerse(-1);
+  });
+
+  // AJOUT (audit fonctionnel — ppPrevChapterBtn/ppNextChapterBtn du studio
+  // n'appelaient aucune fonction existante) : équivalent chapitre des deux
+  // handlers ci-dessus, même principe (réutilise advanceReadingModeChapter(),
+  // le même helper que le chemin vocal 'nextChapter'/'previousChapter' dans
+  // handleVoiceCommand() de server.js).
+  handlers.set('nextReadingChapter', async () => {
+    broadcast({ action: 'nextChapter', triggeredByVoice: false });
+    await advanceReadingModeChapter(1);
+  });
+
+  handlers.set('previousReadingChapter', async () => {
+    broadcast({ action: 'previousChapter', triggeredByVoice: false });
+    await advanceReadingModeChapter(-1);
   });
 
   // --- Set theme by mood ---

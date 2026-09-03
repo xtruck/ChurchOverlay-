@@ -415,5 +415,114 @@ console.log('[TEST] Test 17: groupes (addGroup/setItemGroup/matchGroupTriggerPhr
 }
 console.log('[TEST] ✓ Groupes : rotation round-robin, appartenance exclusive, nettoyage propre\n');
 
+// AJOUT (audit fonctionnel — boutons "Media Cue" bg-gold/bg-blue/bg-purple/
+// bg-green sans média correspondant) : seedDefaultBackgrounds()/
+// generateSolidColorPng(), voir media-library.js.
+console.log('[TEST] Test 18: generateSolidColorPng() produit un PNG valide et décodable...');
+{
+  const zlib = require('zlib');
+  const png = mediaLibrary.generateSolidColorPng(4, 3, [212, 175, 55]);
+  assert(
+    png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
+    'signature PNG attendue en tête de fichier'
+  );
+
+  // Reparse les chunks à la main (aucune dépendance de décodage image dans
+  // ce projet) pour vérifier que le contenu réellement produit correspond
+  // à ce que déclare l'en-tête — pas seulement que ça "ressemble" à un PNG.
+  let offset = 8;
+  const chunks = [];
+  while (offset < png.length) {
+    const len = png.readUInt32BE(offset);
+    const type = png.subarray(offset + 4, offset + 8).toString('ascii');
+    chunks.push({ type, data: png.subarray(offset + 8, offset + 8 + len) });
+    offset += 8 + len + 4;
+  }
+  assert.deepStrictEqual(
+    chunks.map((c) => c.type),
+    ['IHDR', 'IDAT', 'IEND'],
+    'un PNG uni minimal doit porter exactement ces trois chunks, dans cet ordre'
+  );
+
+  const ihdr = chunks[0].data;
+  assert.strictEqual(ihdr.readUInt32BE(0), 4, 'largeur');
+  assert.strictEqual(ihdr.readUInt32BE(4), 3, 'hauteur');
+  assert.strictEqual(ihdr[8], 8, 'profondeur 8 bits/canal');
+  assert.strictEqual(ihdr[9], 2, 'colorType truecolor RGB');
+
+  const raw = zlib.inflateSync(chunks[1].data);
+  const rowBytes = 1 + 4 * 3;
+  assert.strictEqual(raw.length, rowBytes * 3, 'une ligne de filtre + RGB par pixel, x3 lignes');
+  for (let y = 0; y < 3; y++) {
+    const rowStart = y * rowBytes;
+    assert.strictEqual(raw[rowStart], 0, `ligne ${y} : type de filtre "aucun"`);
+    for (let x = 0; x < 4; x++) {
+      const px = rowStart + 1 + x * 3;
+      assert.deepStrictEqual(
+        [raw[px], raw[px + 1], raw[px + 2]],
+        [212, 175, 55],
+        `ligne ${y} pixel ${x} : couleur demandée`
+      );
+    }
+  }
+}
+console.log('[TEST] ✓ generateSolidColorPng() produit exactement les pixels demandés\n');
+
+console.log('[TEST] Test 19: seedDefaultBackgrounds()...');
+{
+  const seedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'churchoverlay-media-seed-test-'));
+  mediaLibrary.setUserDataDir(seedDir);
+  try {
+    mediaLibrary.seedDefaultBackgrounds();
+    const expectedIds = ['bg-gold', 'bg-blue', 'bg-purple', 'bg-green'];
+    const items = mediaLibrary.listItems();
+    assert.deepStrictEqual(
+      items.map((i) => i.id).sort(),
+      [...expectedIds].sort(),
+      'les quatre fonds par défaut doivent exister avec exactement ces ids'
+    );
+    for (const item of items) {
+      assert.strictEqual(item.mediaType, 'image');
+      assert.strictEqual(
+        item.displayDurationMs,
+        null,
+        'un fond reste à l’écran jusqu’à masquage manuel, pas de minuterie auto'
+      );
+      assert(
+        fs.existsSync(path.join(seedDir, 'media', item.filename)),
+        `le fichier ${item.filename} doit exister sur disque`
+      );
+    }
+
+    // Idempotence : un second appel ne duplique rien.
+    mediaLibrary.seedDefaultBackgrounds();
+    assert.strictEqual(
+      mediaLibrary.listItems().length,
+      4,
+      'un second appel ne doit créer aucun doublon'
+    );
+
+    // CORRECTIF (relevé en écrivant ce test) : la vérification porte sur la
+    // PRÉSENCE de l'id dans l'index, pas sur un historique "déjà créé une
+    // fois" — un opérateur qui supprime bg-gold puis redémarre le VERRA
+    // donc revenir. Documenté (voir le commentaire de seedDefaultBackgrounds
+    // dans media-library.js) — verrouillé ici pour que ce comportement
+    // reste un choix explicite, pas une régression silencieuse dans un
+    // sens ou dans l'autre.
+    mediaLibrary.deleteItem('bg-gold');
+    mediaLibrary.seedDefaultBackgrounds();
+    assert(
+      mediaLibrary.listItems().some((i) => i.id === 'bg-gold'),
+      'bg-gold supprimé PUIS reseedé doit réapparaître (vérification par présence, pas par historique)'
+    );
+  } finally {
+    fs.rmSync(seedDir, { recursive: true, force: true });
+    mediaLibrary.setUserDataDir(userDataDir);
+  }
+}
+console.log(
+  '[TEST] ✓ seedDefaultBackgrounds() : 4 fonds créés, idempotent, comportement de reseed documenté\n'
+);
+
 fs.rmSync(userDataDir, { recursive: true, force: true });
 console.log('=== Tous les tests media-library sont passés ===');

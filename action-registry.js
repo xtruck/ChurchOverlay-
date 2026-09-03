@@ -47,6 +47,19 @@ const CLIENT_ACTIONS = {
     category: 'reading',
     description: 'Verset précédent en mode lecture',
   },
+  // AJOUT (audit fonctionnel — ppPrevChapterBtn/ppNextChapterBtn du studio
+  // n'appelaient aucune fonction existante) : équivalent chapitre de
+  // nextReadingVerse/previousReadingVerse ci-dessus, même trust tier.
+  nextReadingChapter: {
+    operatorOnly: true,
+    category: 'reading',
+    description: 'Chapitre suivant en mode lecture (verset 1)',
+  },
+  previousReadingChapter: {
+    operatorOnly: true,
+    category: 'reading',
+    description: 'Chapitre précédent en mode lecture (verset 1)',
+  },
 
   // Langue & traduction
   setLanguage: {
@@ -434,6 +447,16 @@ const CLIENT_ACTIONS = {
     operatorOnly: true,
     category: 'infra',
     description: 'Activer/désactiver un plugin',
+  },
+  // AJOUT (audit fonctionnel — training-mode.js envoyait ce message dans le
+  // vide) : simple signalement d'état UI (voir misc-ws-handlers.js), aucun
+  // effet côté serveur — le mode formation fonctionne déjà entièrement
+  // côté client sans lui, juste pour que ça arrête d'atterrir comme une
+  // action inconnue.
+  trainingModeChanged: {
+    operatorOnly: true,
+    category: 'infra',
+    description: 'Signalement : mode formation activé/désactivé (opérateur)',
   },
   ping: { category: 'infra', description: 'Heartbeat' },
 };

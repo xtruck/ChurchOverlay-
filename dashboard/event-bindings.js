@@ -49,6 +49,7 @@ const CLICK_BINDINGS = {
   // --- Barre d'état / pipeline ---
   speechBtn: () => window.toggleRealMicCapture(),
   restartPipelineBtn: () => window.restartPipeline(),
+  aiDegradedDismissBtn: () => window.dismissAiDegradedBanner(),
   // AJOUT (audit — bannière "hors ligne / mode manuel") : setTrustMode()
   // vit dans trust-mode.js, acknowledgeOfflineManualBanner() dans
   // pipeline-health.js — deux modules qui ne s'importent pas l'un l'autre
@@ -90,17 +91,23 @@ const CLICK_BINDINGS = {
   ppAiAutoThemeBtn: () => window.toggleAiAutoTheme(),
 
   // --- Studio : médiathèque (pseudo-boutons, voir CUE_BINDINGS) ---
+  // CORRECTIF (audit fonctionnel) : appelaient window.triggerMediaById(),
+  // qui n'a jamais existé — la vraie fonction est triggerMediaLibraryItem(id)
+  // dans dashboard/features/media-library.js (déjà republiée sur window).
+  // Les quatre ids bg-gold/bg-blue/bg-purple/bg-green doivent exister dans
+  // la médiathèque pour que ces boutons déclenchent réellement quelque
+  // chose — voir le média par défaut correspondant, séparément.
   ppMediaCueBgGold: () => {
-    if (window.triggerMediaById) window.triggerMediaById('bg-gold');
+    if (window.triggerMediaLibraryItem) window.triggerMediaLibraryItem('bg-gold');
   },
   ppMediaCueBgBlue: () => {
-    if (window.triggerMediaById) window.triggerMediaById('bg-blue');
+    if (window.triggerMediaLibraryItem) window.triggerMediaLibraryItem('bg-blue');
   },
   ppMediaCueBgPurple: () => {
-    if (window.triggerMediaById) window.triggerMediaById('bg-purple');
+    if (window.triggerMediaLibraryItem) window.triggerMediaLibraryItem('bg-purple');
   },
   ppMediaCueBgGreen: () => {
-    if (window.triggerMediaById) window.triggerMediaById('bg-green');
+    if (window.triggerMediaLibraryItem) window.triggerMediaLibraryItem('bg-green');
   },
 
   // CORRECTIF (relevé pendant ce chantier) : ces deux repères appelaient

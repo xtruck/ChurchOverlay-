@@ -106,6 +106,42 @@ export function acknowledgeOfflineManualBanner() {
 }
 window.acknowledgeOfflineManualBanner = acknowledgeOfflineManualBanner;
 
+// AJOUT (audit fonctionnel — statut IA en mode dégradé invisible) : server.js
+// envoie déjà aiLoadErrors (messages lisibles, un par module IA en repli —
+// voir ai-modules-loader.js) dans CHAQUE message 'init' (voir
+// dashboard/ws-dispatch.js, case 'init'), jamais lu côté tableau de bord
+// avant ce correctif. Prend seulement aiLoadErrors : ces messages nomment
+// déjà le module concerné (ex. "SemanticDetector: ..."), donc relire aussi
+// aiFeatures (booléens) n'ajouterait qu'un second calcul redondant, jamais
+// affiché. Dismissible (demande explicite) via dismissAiDegradedBanner()
+// ci-dessous — pas de drapeau "masqué" à maintenir : setAiDegradedStatus()
+// n'est appelée qu'une fois par connexion (case 'init'), donc fermer la
+// bannière puis se reconnecter (le seul moment où elle pourrait
+// réapparaître) redemande légitimement l'attention de l'opérateur si le
+// problème persiste toujours.
+export function setAiDegradedStatus(aiLoadErrors) {
+  const banner = document.getElementById('aiDegradedBanner');
+  const msg = document.getElementById('aiDegradedMessage');
+  if (!banner || !msg) return;
+
+  if (!Array.isArray(aiLoadErrors) || aiLoadErrors.length === 0) {
+    banner.style.display = 'none';
+    return;
+  }
+
+  msg.textContent =
+    aiLoadErrors.length === 1
+      ? `Fonctionnalité IA en mode limité : ${aiLoadErrors[0]}`
+      : `${aiLoadErrors.length} fonctionnalités IA en mode limité : ${aiLoadErrors.join(' · ')}`;
+  banner.style.display = 'flex';
+}
+
+export function dismissAiDegradedBanner() {
+  const banner = document.getElementById('aiDegradedBanner');
+  if (banner) banner.style.display = 'none';
+}
+window.dismissAiDegradedBanner = dismissAiDegradedBanner;
+
 // Au chargement, on récupère aussi l'état courant (utile si l'alerte a
 // été émise avant que le tableau de bord ait fini de charger).
 if (window.churchOverlay && window.churchOverlay.getStatus) {

@@ -618,6 +618,16 @@ const SCHEMAS = {
     optional: [],
     validators: { action: (value) => value === 'previousReadingVerse' },
   },
+  nextReadingChapter: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'nextReadingChapter' },
+  },
+  previousReadingChapter: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'previousReadingChapter' },
+  },
   // mood : ai-theme-generator.js#getTheme() retombe déjà silencieusement sur
   // le thème par défaut si le mood est inconnu — juste une borne de type/
   // longueur ici, pas une énumération stricte (la liste des moods peut
@@ -1010,6 +1020,14 @@ const SCHEMAS = {
     required: ['action'],
     optional: [],
     validators: { action: (value) => value === 'clearStageMessage' },
+  },
+  trainingModeChanged: {
+    required: ['action', 'enabled'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'trainingModeChanged',
+      enabled: (value) => typeof value === 'boolean',
+    },
   },
   getOfflineBibleStatus: {
     required: ['action'],

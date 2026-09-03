@@ -306,6 +306,32 @@
           <span class="transcription-health-message" id="transcriptionHealthMessage"></span>
         </div>
 
+        <!-- AJOUT (audit fonctionnel — statut IA en mode dégradé invisible) :
+                 server.js calcule déjà aiFeatures (booléens par module) et
+                 aiLoadErrors (messages lisibles, ex. "SemanticDetector: ...")
+                 et les envoie dans CHAQUE message 'init' (voir server.js,
+                 wss.on('connection')), mais rien côté tableau de bord ne les
+                 lisait jamais — un module IA en repli (clé API absente,
+                 échec de chargement...) restait invisible à l'opérateur,
+                 visible seulement dans les journaux serveur. Même famille
+                 visuelle que pipelineAlertBanner/transcriptionHealthBanner
+                 ci-dessus (voir setAiDegradedStatus() dans
+                 dashboard/features/pipeline-health.js), avec un bouton
+                 "Fermer" en plus (demande explicite : bannière dismissible)
+                 — masquée jusqu'à la prochaine reconnexion/rechargement
+                 (nouveau message 'init'), pas définitivement pour la
+                 session : un problème qui persiste doit pouvoir se
+                 rerappeler à l'opérateur après une coupure réseau. -->
+        <div id="aiDegradedBanner" class="pipeline-banner pipeline-banner--with-action">
+          <div class="pipeline-banner-content">
+            <span id="aiDegradedIcon">⚠️</span>
+            <span class="ai-degraded-message" id="aiDegradedMessage"></span>
+          </div>
+          <button id="aiDegradedDismissBtn" class="btn btn-secondary flex-shrink-0">
+            ✕ Fermer
+          </button>
+        </div>
+
         <!-- ============================================================================
              PROPRESENTER 7 BROADCAST STUDIO WORKSPACE
              ============================================================================ -->

@@ -860,6 +860,26 @@ function advanceReadingModeVerse(direction) {
   return true;
 }
 
+// AJOUT (audit fonctionnel — navigation par chapitre) : extrait du corps
+// auparavant dupliqué dans les case 'nextChapter'/'previousChapter' de
+// handleVoiceCommand() plus bas — partagé maintenant avec les nouvelles
+// actions WS directes 'nextReadingChapter'/'previousReadingChapter' (voir
+// reading-translation-ws-handlers.js), même principe que
+// advanceReadingModeVerse() ci-dessus pour nextReadingVerse/
+// previousReadingVerse. Plancher au chapitre 1 ; pas de plafond côté
+// conception d'origine (voir le AJOUT bilingue FR/EN sur l'ancien case
+// 'previousChapter', non modifié ici, hors périmètre) — un chapitre
+// inexistant échoue proprement via activateReadingMode() (try/catch).
+async function advanceReadingModeChapter(direction) {
+  if (!readingMode.active) return false;
+  if (direction < 0 && (readingMode.chapter || 1) <= 1) return false;
+  await activateReadingMode(readingMode.book, (readingMode.chapter || 0) + direction, 1);
+  if (readingMode.active && readingMode.currentIndex >= 0) {
+    readingMode.onVerseAdvance(readingMode.verses[readingMode.currentIndex]);
+  }
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Prompt injection filter for LLM-bound text
 // ---------------------------------------------------------------------------
@@ -980,6 +1000,7 @@ const CATEGORY_HANDLERS = new Map([
     getVerseDurationMs,
     readingModePosition,
     advanceReadingModeVerse,
+    advanceReadingModeChapter,
   }),
   ...trustWsHandlers.createHandlers({
     sessionState,
@@ -2172,25 +2193,12 @@ async function handleVoiceCommand(command, _originalText) {
     }
     case 'nextChapter': {
       broadcast({ action: 'nextChapter', triggeredByVoice: true });
-      if (readingMode.active) {
-        await activateReadingMode(readingMode.book, (readingMode.chapter || 0) + 1, 1);
-        if (readingMode.active && readingMode.currentIndex >= 0) {
-          readingMode.onVerseAdvance(readingMode.verses[readingMode.currentIndex]);
-        }
-      }
+      await advanceReadingModeChapter(1);
       break;
     }
-    // AJOUT (support bilingue FR/EN) : symétrique de nextChapter ci-dessus,
-    // avec un plancher au chapitre 1 (nextChapter n'a pas de plafond côté
-    // conception d'origine — non modifié ici, hors périmètre).
     case 'previousChapter': {
       broadcast({ action: 'previousChapter', triggeredByVoice: true });
-      if (readingMode.active && (readingMode.chapter || 1) > 1) {
-        await activateReadingMode(readingMode.book, readingMode.chapter - 1, 1);
-        if (readingMode.active && readingMode.currentIndex >= 0) {
-          readingMode.onVerseAdvance(readingMode.verses[readingMode.currentIndex]);
-        }
-      }
+      await advanceReadingModeChapter(-1);
       break;
     }
     case 'setTheme': {
@@ -3143,6 +3151,10 @@ try {
 
 try {
   mediaLibrary.setUserDataDir(USER_DATA_DIR);
+  // AJOUT (audit fonctionnel — boutons "Media Cue" sans média correspondant) :
+  // voir seedDefaultBackgrounds() dans media-library.js — idempotent, sans
+  // effet après le tout premier démarrage.
+  mediaLibrary.seedDefaultBackgrounds();
 } catch (err) {
   warn('Failed to set media library dir: ' + err.message);
 }

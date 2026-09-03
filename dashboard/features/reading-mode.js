@@ -36,6 +36,24 @@ export function previousReadingVerse() {
   ws.send(JSON.stringify({ action: 'previousReadingVerse' }));
 }
 
+// AJOUT (audit fonctionnel — ppPrevChapterBtn/ppNextChapterBtn du studio
+// ProPresenter appelaient déjà window.prevChapter()/window.nextChapter()
+// dans event-bindings.js, mais ni l'une ni l'autre n'existait nulle part :
+// les deux boutons ne faisaient rien. Équivalent chapitre de
+// nextReadingVerse/previousReadingVerse ci-dessus, même schéma — avance/
+// recule d'un chapitre entier (verset 1), toute la logique (limites de
+// chapitre, lecture du chapitre suivant) reste côté serveur (voir
+// advanceReadingModeChapter() dans server.js), rien à dupliquer ici.
+export function nextChapter() {
+  if (!requireWsOrWarn()) return;
+  ws.send(JSON.stringify({ action: 'nextReadingChapter' }));
+}
+
+export function prevChapter() {
+  if (!requireWsOrWarn()) return;
+  ws.send(JSON.stringify({ action: 'previousReadingChapter' }));
+}
+
 export function setReadingModeActive(active) {
   const badge = document.getElementById('readingModeBadge');
   const startBtn = document.getElementById('readingModeStartBtn');
@@ -78,5 +96,7 @@ window.startReadingMode = startReadingMode;
 window.stopReadingMode = stopReadingMode;
 window.nextReadingVerse = nextReadingVerse;
 window.previousReadingVerse = previousReadingVerse;
+window.nextChapter = nextChapter;
+window.prevChapter = prevChapter;
 window.setReadingPosition = setReadingPosition;
 window.clearReadingPosition = clearReadingPosition;

@@ -113,6 +113,16 @@ function createHandlers(ctx) {
     broadcast({ action: 'stageMessageClear' });
   });
 
+  // AJOUT (audit fonctionnel — training-mode.js envoyait 'trainingModeChanged'
+  // sans qu'aucun handler n'existe : rejeté comme action inconnue à chaque
+  // Ctrl+Shift+T). Signalement d'état pur, aucun effet côté serveur — le
+  // mode formation reste entièrement piloté côté client (voir
+  // dashboard/features/training-mode.js) ; juste de quoi tracer dans les
+  // journaux qui a activé/désactivé le mode formation et quand.
+  handlers.set('trainingModeChanged', async (ws, sanitized) => {
+    log(`Mode formation : ${sanitized.enabled ? 'activé' : 'désactivé'}`);
+  });
+
   // --- Ping ---
   handlers.set('ping', async (ws) => {
     ws.send(JSON.stringify({ action: 'pong', timestamp: Date.now() }));

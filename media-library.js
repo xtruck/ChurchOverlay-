@@ -21,6 +21,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const zlib = require('zlib');
 const { findTriggerMatch, findPhoneticCollisions } = require('./voice-trigger-matcher');
 const { writeJsonAtomic } = require('./persistence/atomic-json-store');
 
@@ -344,6 +345,147 @@ function addItem(data) {
   return item;
 }
 
+// ---------------------------------------------------------------------------
+// AJOUT (audit fonctionnel — boutons "Media Cue" bg-gold/bg-blue/bg-purple/
+// bg-green sans média correspondant) : dashboard/event-bindings.js appelle
+// déjà triggerMediaLibraryItem() avec ces quatre ids fixes, mais aucun média
+// portant ces ids n'existait nulle part — les boutons ne déclenchaient
+// jamais rien de réel. addItem() ne convient pas ici : il exige un vrai
+// fichier source à copier ET mint toujours un id aléatoire
+// (crypto.randomUUID()), jamais un id choisi par l'appelant. seedDefault
+// Backgrounds() ci-dessous génère quatre PNG unis à la volée (encodeur PNG
+// minimal fait main juste en dessous — signature/IHDR/IDAT/IEND, zlib du
+// coeur de Node pour la compression — plutôt que d'ajouter une dépendance
+// pour quatre aplats de couleur) et écrit directement dans l'index avec des
+// ids FIXES, en contournant le mint aléatoire d'addItem() UNIQUEMENT pour ce
+// tout premier peuplement. Idempotent au sens strict "vérifie l'existant
+// avant d'écrire" (pas de doublon si déjà présent) — appelée à chaque
+// démarrage de server.js. ATTENTION, comportement volontairement simple :
+// la vérification porte sur la PRÉSENCE de l'id, pas sur un historique de
+// création — si un opérateur supprime bg-gold puis redémarre l'app, il
+// réapparaît (id de nouveau absent de l'index -> reseedé). Accepté pour des
+// aplats de couleur utilitaires plutôt qu'un vrai contenu opérateur ; à
+// revoir si ça s'avère gênant en usage réel.
+// ---------------------------------------------------------------------------
+const DEFAULT_BACKGROUNDS = [
+  { id: 'bg-gold', label: 'Fond Or', color: [212, 175, 55] },
+  { id: 'bg-blue', label: 'Fond Bleu', color: [37, 99, 235] },
+  { id: 'bg-purple', label: 'Fond Violet', color: [124, 58, 237] },
+  { id: 'bg-green', label: 'Fond Vert', color: [22, 163, 74] },
+];
+const BACKGROUND_PNG_WIDTH = 640;
+const BACKGROUND_PNG_HEIGHT = 360; // 16:9, cohérent avec le ratio de l'overlay
+
+// Table CRC-32 standard (polynôme IEEE 802.3, celui qu'exige le format PNG
+// pour chaque chunk) — calculée une fois au chargement du module, jamais
+// recalculée par appel.
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(buf) {
+  let crc = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) {
+    crc = CRC32_TABLE[(crc ^ buf[i]) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data) {
+  const typeBuf = Buffer.from(type, 'ascii');
+  const lenBuf = Buffer.alloc(4);
+  lenBuf.writeUInt32BE(data.length, 0);
+  const crcBuf = Buffer.alloc(4);
+  crcBuf.writeUInt32BE(crc32(Buffer.concat([typeBuf, data])), 0);
+  return Buffer.concat([lenBuf, typeBuf, data, crcBuf]);
+}
+
+/**
+ * Encodeur PNG minimal — une seule couleur unie, sans transparence
+ * (colorType 2 = truecolor RGB, profondeur 8 bits). Chaque ligne porte un
+ * octet de filtre à 0 (aucun filtre) suivi de width*3 octets RGB, le tout
+ * compressé en zlib/DEFLATE standard (zlib.deflateSync — exactement le
+ * format qu'exige le chunk IDAT du PNG).
+ * @param {number} width
+ * @param {number} height
+ * @param {[number, number, number]} rgb
+ * @returns {Buffer}
+ */
+function generateSolidColorPng(width, height, [r, g, b]) {
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+
+  const ihdrData = Buffer.alloc(13);
+  ihdrData.writeUInt32BE(width, 0);
+  ihdrData.writeUInt32BE(height, 4);
+  ihdrData[8] = 8; // profondeur : 8 bits/canal
+  ihdrData[9] = 2; // colorType : truecolor RGB (pas de palette, pas d'alpha)
+  ihdrData[10] = 0; // méthode de compression (seule valeur valide du format)
+  ihdrData[11] = 0; // méthode de filtre (idem)
+  ihdrData[12] = 0; // entrelacement : aucun
+  const ihdr = pngChunk('IHDR', ihdrData);
+
+  const rowBytes = 1 + width * 3;
+  const raw = Buffer.alloc(rowBytes * height);
+  for (let y = 0; y < height; y++) {
+    const rowStart = y * rowBytes;
+    raw[rowStart] = 0; // type de filtre de la ligne : aucun
+    for (let x = 0; x < width; x++) {
+      const px = rowStart + 1 + x * 3;
+      raw[px] = r;
+      raw[px + 1] = g;
+      raw[px + 2] = b;
+    }
+  }
+  const idat = pngChunk('IDAT', zlib.deflateSync(raw));
+  const iend = pngChunk('IEND', Buffer.alloc(0));
+
+  return Buffer.concat([signature, ihdr, idat, iend]);
+}
+
+function seedDefaultBackgrounds() {
+  if (!indexPath || !mediaDir) return;
+  const items = readIndex();
+  const existingIds = new Set(items.map((i) => i.id));
+  let changed = false;
+  for (const bg of DEFAULT_BACKGROUNDS) {
+    if (existingIds.has(bg.id)) continue;
+    try {
+      fs.mkdirSync(mediaDir, { recursive: true });
+      const filename = `${bg.id}.png`;
+      const png = generateSolidColorPng(BACKGROUND_PNG_WIDTH, BACKGROUND_PNG_HEIGHT, bg.color);
+      fs.writeFileSync(path.join(mediaDir, filename), png);
+      items.push({
+        id: bg.id,
+        label: bg.label,
+        triggerPhrases: [bg.label],
+        mediaType: 'image',
+        filename,
+        addedAt: new Date().toISOString(),
+        // Fond destiné à rester à l'écran jusqu'à masquage manuel, pas un
+        // "moment poster" chronométré (voir DEFAULT_IMAGE_DURATION_MS plus
+        // haut, qui ne s'applique qu'à addItem()).
+        displayDurationMs: null,
+        includeInLoop: false,
+        transitionStyle: DEFAULT_TRANSITION_STYLE,
+        isDefault: false,
+        group: null,
+      });
+      changed = true;
+    } catch (e) {
+      console.warn(`[media-library] Échec génération fond par défaut ${bg.id} :`, e.message);
+    }
+  }
+  if (changed) writeIndex(items);
+}
+
 function deleteMediaFile(filename) {
   if (!mediaDir || !filename) return;
   try {
@@ -505,9 +647,11 @@ module.exports = {
   deleteGroup,
   setItemGroup,
   matchGroupTriggerPhrase,
+  seedDefaultBackgrounds,
   // Exposées pour tests unitaires (test-media-library.js).
   ALLOWED_EXTENSIONS,
   DEFAULT_IMAGE_DURATION_MS,
   TRANSITION_STYLES,
   DEFAULT_TRANSITION_STYLE,
+  generateSolidColorPng,
 };

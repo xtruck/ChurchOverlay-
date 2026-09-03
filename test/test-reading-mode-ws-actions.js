@@ -13,11 +13,16 @@
  *   1. startReading -> readingStarted + showVerse (premier verset)
  *   2. nextReadingVerse -> showVerse (verset suivant)
  *   3. previousReadingVerse -> showVerse (retour au verset précédent)
- *   4. stopReading -> readingStopped
- *   5. RBAC : un client 'viewer' ne peut pas envoyer nextReadingVerse/
- *      previousReadingVerse (doivent être dans OPERATOR_ACTIONS, comme
- *      startReading/stopReading) — même famille de test que
- *      test/test-ws-auth.js.
+ *   4. nextReadingChapter/previousReadingChapter -> showVerse (chapitre
+ *      voisin, verset 1) — AJOUT (audit fonctionnel, ppPrevChapterBtn/
+ *      ppNextChapterBtn du studio n'appelaient auparavant aucune fonction
+ *      existante), même principe : réutilise advanceReadingModeChapter(),
+ *      le même helper que le chemin vocal 'nextChapter'/'previousChapter'.
+ *   5. stopReading -> readingStopped
+ *   6. RBAC : un client 'viewer' ne peut pas envoyer nextReadingVerse/
+ *      previousReadingVerse/nextReadingChapter/previousReadingChapter
+ *      (doivent être dans OPERATOR_ACTIONS, comme startReading/
+ *      stopReading) — même famille de test que test/test-ws-auth.js.
  *
  *  Même approche que test/test-ws-auth.js : server.js tourne réellement ;
  *  seuls le réseau (API bibliques) et le micro sont mockés. detector.js/
@@ -45,6 +50,14 @@ const FAKE_JEAN_3 = [
   { num: 3, text: 'Jesus lui repondit en verite en verite je te le dis.' },
 ];
 
+// AJOUT (audit fonctionnel — nextReadingChapter/previousReadingChapter) :
+// chapitre factice voisin, juste pour vérifier que la navigation traverse
+// bien une frontière de chapitre et retombe au verset 1.
+const FAKE_JEAN_4 = [
+  { num: 1, text: 'Jesus donc sut que les pharisiens avaient appris.' },
+  { num: 2, text: 'Bien que Jesus lui meme ne baptisat pas.' },
+];
+
 injectFakeModule('bible-lookup-with-api.js', {
   async getChapterVerses() {
     throw new Error('non utilisé dans ce test');
@@ -57,6 +70,7 @@ injectFakeModule('bible-lookup-with-api.js', {
     // nom du livre en minuscules ("jean", pas "Jean") — vérifié en
     // inspectant le message readingStarted réel avant ce correctif.
     if (String(book).toLowerCase() === 'jean' && chapter === 3) return FAKE_JEAN_3;
+    if (String(book).toLowerCase() === 'jean' && chapter === 4) return FAKE_JEAN_4;
     return [];
   },
   buildReferenceLabel(reference) {
@@ -218,6 +232,24 @@ function waitForMessage(ws, predicate, timeoutMs = 5000) {
     JSON.stringify(back)
   );
 
+  console.log('\n=== Mode lecture — navigation par chapitre (bouton manuel) ===\n');
+
+  ws.send(JSON.stringify({ action: 'nextReadingChapter' }));
+  const nextChap = await waitForMessage(ws, (m) => m.action === 'showVerse');
+  check(
+    'nextReadingChapter avance au chapitre suivant, verset 1 (Jean 4:1)',
+    nextChap.reference === 'Jean 4:1',
+    JSON.stringify(nextChap)
+  );
+
+  ws.send(JSON.stringify({ action: 'previousReadingChapter' }));
+  const prevChap = await waitForMessage(ws, (m) => m.action === 'showVerse');
+  check(
+    'previousReadingChapter revient au chapitre précédent, verset 1 (Jean 3:1)',
+    prevChap.reference === 'Jean 3:1',
+    JSON.stringify(prevChap)
+  );
+
   ws.send(JSON.stringify({ action: 'stopReading' }));
   await waitForMessage(ws, (m) => m.action === 'readingStopped');
   check('stopReading confirme bien l’arrêt', true);
@@ -245,6 +277,22 @@ function waitForMessage(ws, predicate, timeoutMs = 5000) {
     "previousReadingVerse envoyé par un 'viewer' est refusé",
     /opérateur|operator/i.test(err2.error || ''),
     JSON.stringify(err2)
+  );
+
+  viewerWs.send(JSON.stringify({ action: 'nextReadingChapter' }));
+  const err3 = await waitForMessage(viewerWs, (m) => m.action === 'error');
+  check(
+    "nextReadingChapter envoyé par un 'viewer' est refusé",
+    /opérateur|operator/i.test(err3.error || ''),
+    JSON.stringify(err3)
+  );
+
+  viewerWs.send(JSON.stringify({ action: 'previousReadingChapter' }));
+  const err4 = await waitForMessage(viewerWs, (m) => m.action === 'error');
+  check(
+    "previousReadingChapter envoyé par un 'viewer' est refusé",
+    /opérateur|operator/i.test(err4.error || ''),
+    JSON.stringify(err4)
   );
 
   ws.close();
