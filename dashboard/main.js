@@ -16,6 +16,28 @@
  * <script type="module"> s'exécute), donc leur ordre relatif entre elles
  * n'a pas d'importance.
  */
+
+// AJOUT (thème "cabine-mono" — demande produit, activation temporaire pour
+// test) : ?theme=cabine-mono dans l'URL ou localStorage.churchOverlayTheme
+// active le thème noir et blanc "salle de contrôle broadcast" (voir
+// :root[data-theme="cabine-mono"] dans dashboard.css) — additif, le thème
+// par défaut reste inchangé tant qu'aucun des deux n'est présent. Placé
+// avant les imports pour rester le premier repère du fichier, même si
+// l'ordre d'évaluation réel des imports (hissés par le moteur JS) passe de
+// toute façon avant ce bloc — un vrai bascule utilisateur (pas seulement
+// un paramètre de test) devra le déplacer plus tôt (ex. balise <script>
+// inline dans le <head> de dashboard.html) pour éviter le flash visuel du
+// thème par défaut avant bascule.
+(function applyThemeOverride() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const theme = params.get('theme') || localStorage.getItem('churchOverlayTheme');
+    if (theme) document.documentElement.dataset.theme = theme;
+  } catch (_) {
+    // localStorage indisponible (navigation privée stricte...) : thème par défaut, sans planter.
+  }
+})();
+
 import './state.js';
 import './utils.js';
 import './features/api-settings.js';

@@ -153,6 +153,331 @@
   --duration-breathe: 2400ms;
 }
 
+/* ===========================================================================
+   THÈME "cabine-mono" — régie broadcast noir et blanc (demande produit)
+   ===========================================================================
+   Additif, jamais destructif : un bloc :root[data-theme="cabine-mono"]
+   redéfinit les tokens ci-dessus, le thème par défaut (aucun attribut
+   data-theme) reste image pour image identique à avant ce chantier.
+   Activation temporaire pour test (voir dashboard/main.js — ?theme=
+   cabine-mono ou localStorage), pas encore un vrai sélecteur dans l'UI.
+
+   Panneaux plats, sans flou ni lueur, rayons plus petits que le
+   glassmorphism par défaut — voir les tokens ci-dessous. */
+:root[data-theme='cabine-mono'] {
+  --bg-base: #0a0a0a;
+  --bg-surface: rgba(255, 255, 255, 0.03);
+  --bg-card: rgba(255, 255, 255, 0.04);
+  --bg-card-hover: rgba(255, 255, 255, 0.07);
+  --bg-input: rgba(0, 0, 0, 0.5);
+
+  --border-subtle: rgba(255, 255, 255, 0.09);
+  --border-light: rgba(255, 255, 255, 0.18);
+  --border-active: #ffffff;
+
+  --primary: #ffffff;
+  --primary-hover: #d9d9d9;
+  --primary-glow: transparent;
+
+  --text-main: #f2f2f2;
+  --text-muted: #9c9c9c;
+  --text-dim: #6b6b6b;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 8px;
+
+  --glass-blur: 0px;
+  --shadow-glow: none;
+  --shadow-gold: none;
+  --shadow-md: 0 12px 28px rgba(0, 0, 0, 0.45);
+
+  /* --gold/--garnet/--sapphire pointent déjà tous vers var(--primary) (voir
+     tokens par défaut plus haut) : les redéfinir n'est pas nécessaire, ils
+     deviennent blancs automatiquement en cascade — pas de doublon ici. */
+
+  /* CORRECTIF (survit au niveau de gris) : --accent-emerald/-amber/-rose
+     distinguent aujourd'hui succès/avertissement/erreur par la TEINTE
+     seule (vert/ambre/rouge) — strictement invisible une fois désaturé.
+     Filet de sécurité pour les dizaines d'usages de ces 3 variables NON
+     repris explicitement plus bas (icônes, bordures, .status-badge.ai...) :
+     trois niveaux de LUMINOSITÉ distincts (au lieu de trois teintes) —
+     c'est la définition même de ce qui survit à un niveau de gris. Les
+     familles de statut ci-dessous (pastilles/puces/badges) reçoivent EN
+     PLUS un traitement de forme dédié (rempli/contour/plein inversé), ce
+     filet reste leur repli pour tout usage non explicitement couvert. */
+  --accent-emerald: #d4d4d4;
+  --accent-amber: #8f8f8f;
+  --accent-rose: #ffffff;
+
+  /* AJOUT (demande produit — direction typographique) : --pp-font-mono est
+     déjà consommé par .pp-keycap/.pp-clock-text/.pp-slide-footer/
+     .pp-vu-status-text/.pp-meta-mono/.pp-transition-val (studio
+     ProPresenter — voir plus bas dans ce fichier) mais n'a jamais été
+     DÉFINI nulle part : ces horloges/lectures numériques héritent donc
+     silencieusement la police du corps du texte au lieu du mono prévu par
+     leur propre nom de variable. Corrigé UNIQUEMENT sous ce thème (ne pas
+     changer le rendu par défaut, même bug latent ou non) — 'JetBrains
+     Mono', déjà chargée (voir <link> Google Fonts dans dashboard.html),
+     jamais une nouvelle police introduite ici. */
+  --pp-font-mono: 'JetBrains Mono', monospace;
+}
+
+/* Étend le même repère "JetBrains Mono = lecture numérique/étiquette
+   d'état" aux autres endroits déjà dans cet esprit — .status-badge (inclut
+   les badges de confiance ASR en %, voir confidence-mode.js) et le
+   bandeau d'état permanent (Micro/Clés API/Réseau caméra). */
+:root[data-theme='cabine-mono'] .status-badge,
+:root[data-theme='cabine-mono'] .status-strip-label,
+:root[data-theme='cabine-mono'] .status-strip-detail {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ---------------------------------------------------------------------
+   Pastilles/puces/badges d'état — la distinction "par teinte seule" (voir
+   commentaire ci-dessus) est remplacée ICI par une distinction de FORME,
+   pour chaque famille de statut trouvée dans ce fichier :
+     - "terminé/bon"      -> pastille pleine, gris atténué
+     - "en direct/urgent"  -> pastille pleine INVERSÉE (blanc, texte noir),
+                              contraste maximal — reprend l'esprit d'origine
+                              ("est-ce sûr d'aller en direct MAINTENANT")
+     - "à venir/attention" -> pastille en contour seul (pas de remplissage)
+     - "inactif/désactivé" -> contour très atténué, faible opacité
+   Les animations (pulsations existantes) restent inchangées — seule la
+   couleur qu'elles animent change ici, jamais leur rythme.
+   --------------------------------------------------------------------- */
+
+/* Pastille de connexion (en-tête) — .live-status-pill/.status-dot */
+:root[data-theme='cabine-mono'] .live-status-pill {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border-light);
+  color: var(--text-main);
+}
+:root[data-theme='cabine-mono'] .status-dot {
+  background: #d4d4d4;
+  box-shadow: none;
+}
+:root[data-theme='cabine-mono'] .live-status-pill.offline {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #0a0a0a;
+}
+:root[data-theme='cabine-mono'] .live-status-pill.offline .status-dot {
+  background: #0a0a0a;
+}
+
+/* Bandeau d'état permanent (Micro/Clés API/Réseau caméra) — .status-strip-dot */
+:root[data-theme='cabine-mono'] .status-strip-dot--off {
+  background: transparent;
+  border: 1px solid var(--border-light);
+  opacity: 0.5;
+}
+:root[data-theme='cabine-mono'] .status-strip-dot--ok {
+  background: #d4d4d4;
+  box-shadow: none;
+}
+:root[data-theme='cabine-mono'] .status-strip-dot--warn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: none;
+}
+:root[data-theme='cabine-mono'] .status-strip-dot--error {
+  background: #ffffff;
+  box-shadow: none;
+}
+
+/* Service Heartbeat (feuille de route) — .rundown-heartbeat-dot */
+:root[data-theme='cabine-mono'] .rundown-heartbeat-dot.rundown-heartbeat-waiting {
+  background: transparent;
+  border: 1px solid var(--border-light);
+  opacity: 0.5;
+}
+:root[data-theme='cabine-mono'] .rundown-heartbeat-dot.rundown-heartbeat-running {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+:root[data-theme='cabine-mono'] .rundown-heartbeat-dot.rundown-heartbeat-ontime,
+:root[data-theme='cabine-mono'] .rundown-heartbeat-dot.rundown-heartbeat-ahead {
+  background: #d4d4d4;
+  box-shadow: none;
+}
+:root[data-theme='cabine-mono'] .rundown-heartbeat-dot.rundown-heartbeat-behind {
+  background: #ffffff;
+  box-shadow: none;
+}
+:root[data-theme='cabine-mono'] .rundown-schedule-status.rundown-schedule-neutral {
+  color: var(--text-dim);
+  background: var(--bg-card-hover);
+}
+:root[data-theme='cabine-mono'] .rundown-schedule-status.rundown-schedule-ontime,
+:root[data-theme='cabine-mono'] .rundown-schedule-status.rundown-schedule-early {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.08);
+}
+:root[data-theme='cabine-mono'] .rundown-schedule-status.rundown-schedule-late {
+  background: #ffffff;
+  color: #0a0a0a;
+}
+
+/* Cue Cards (En direct/Armé/Diffusé) — .cue-status-chip */
+:root[data-theme='cabine-mono'] .cue-status-chip.cue-status-played {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-muted);
+}
+:root[data-theme='cabine-mono'] .cue-status-chip.cue-status-armed {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  color: var(--text-main);
+}
+:root[data-theme='cabine-mono'] .cue-status-chip.cue-status-live {
+  background: #ffffff;
+  color: #0a0a0a;
+}
+
+/* Badge de préparation d'un repère (Prêt/À vérifier/Bloqué/Vérification…) —
+   .cue-readiness-badge — conserve ses glyphes existants (✓/⚠/✕/…), seul le
+   fond/la bordure changent ici. */
+:root[data-theme='cabine-mono'] .cue-readiness-badge.cue-readiness-checking {
+  background: transparent;
+  border: 1px solid var(--border-light);
+  color: var(--text-dim);
+  opacity: 0.6;
+}
+:root[data-theme='cabine-mono'] .cue-readiness-badge.cue-readiness-ready {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--text-main);
+}
+:root[data-theme='cabine-mono'] .cue-readiness-badge.cue-readiness-attention {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  color: var(--text-main);
+}
+:root[data-theme='cabine-mono'] .cue-readiness-badge.cue-readiness-blocked {
+  background: #ffffff;
+  color: #0a0a0a;
+}
+
+/* Confidence Rail ("est-ce sûr d'aller en direct ?") — .confidence-rail */
+:root[data-theme='cabine-mono'] .confidence-rail.confidence-rail-ok {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border-light);
+}
+:root[data-theme='cabine-mono'] .confidence-rail.confidence-rail-warn {
+  color: var(--text-main);
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.6);
+}
+:root[data-theme='cabine-mono'] .confidence-rail.confidence-rail-error {
+  color: #0a0a0a;
+  background: #ffffff;
+  border-color: #ffffff;
+}
+
+/* Badges d'état génériques (résultats import/export, collisions...) —
+   .status-badge.success/.warning/.error (.ai laissé intact : neutre, pas
+   un statut à distinguer). */
+:root[data-theme='cabine-mono'] .status-badge.success {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--text-main);
+}
+:root[data-theme='cabine-mono'] .status-badge.warning {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  color: var(--text-main);
+}
+:root[data-theme='cabine-mono'] .status-badge.error {
+  background: #ffffff;
+  color: #0a0a0a;
+}
+
+/* CORRECTIF (audit contraste — texte invisible) : plusieurs boutons/badges
+   "primaires" du thème par défaut peignent un fond DÉRIVÉ de --primary (ou
+   --accent-rose) sous un texte BLANC figé en dur (`color: #fff`) — sans
+   risque tant que --primary reste orange, mais --primary devient blanc
+   sous ce thème (voir bloc de tokens plus haut) : texte blanc sur fond
+   blanc, invisible. Repéré par script d'audit (contraste calculé sur
+   chaque bouton/badge du tableau de bord chargé avec ce thème), pas par
+   relecture manuelle — la liste ci-dessous est exhaustive pour les cas
+   trouvés, pas une supposition. */
+:root[data-theme='cabine-mono'] .btn-primary,
+:root[data-theme='cabine-mono'] .btn-primary:hover {
+  color: #0a0a0a;
+  box-shadow: none;
+}
+:root[data-theme='cabine-mono'] .lang-btn.active {
+  color: #0a0a0a;
+  box-shadow: none;
+}
+:root[data-theme='cabine-mono'] .confirm-dialog-ok.danger {
+  color: #0a0a0a;
+}
+:root[data-theme='cabine-mono'] .offline-manual-banner .btn-danger {
+  color: #0a0a0a;
+}
+
+/* CORRECTIF (audit couleur — fuites hors palette N&B) : ces deux éléments
+   peignent un orange figé en dur (rgba(255, 138, 61, ...), copie littérale
+   de l'ancien --primary, jamais réécrite en var()) qui ne répond donc à
+   aucune redéfinition de token — repéré par le même script d'audit
+   (recherche de toute couleur calculée proche de #ff8a3d sur la page
+   chargée avec ce thème). Aplati ici en gris/blanc translucide, cohérent
+   avec le reste du thème plutôt qu'un résidu de couleur isolé. */
+:root[data-theme='cabine-mono'] .nav-item.active {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--border-light);
+}
+:root[data-theme='cabine-mono'] #setupBanner {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border-light);
+}
+:root[data-theme='cabine-mono'] .hero-verse-card {
+  border-color: var(--border-light);
+}
+
+/* CORRECTIF (audit couleur — second système de tokens découvert en cours
+   de route) : le Studio ProPresenter (--pp-*, voir plus bas dans ce
+   fichier, section "ProPresenter 7 Broadcast Studio") est un système de
+   tokens COMPLET et SÉPARÉ, pas dérivé de --primary/--accent-* ci-dessus
+   (voir son propre commentaire "Studio Pro a son propre jeu de tokens
+   --pp-*, pas dérivé de --primary") — c'est aussi l'ONGLET ACTIF PAR
+   DÉFAUT au chargement du tableau de bord, donc la première chose vue.
+   Repéré par audit de couleur automatisé (page chargée avec ce thème,
+   recherche de toute couleur calculée proche de l'orange par défaut),
+   pas par relecture manuelle des ~1500 lignes de cette section — filet de
+   sécurité au niveau des tokens seulement, pas une reprise composant par
+   composant comme les familles de statut ci-dessus (portée non couverte
+   par la demande initiale, qui nommait --accent-emerald/-amber/-rose/
+   --gold spécifiquement). */
+:root[data-theme='cabine-mono'] {
+  --pp-bg-root: #0a0a0a;
+  --pp-bg-surface: #121212;
+  --pp-bg-card: #161616;
+  --pp-bg-card-hover: #1e1e1e;
+  --pp-bg-card-active: #202020;
+  --pp-bg-elevated: #242424;
+  --pp-bg-input: #000000;
+
+  --pp-border-subtle: #262626;
+  --pp-border-medium: #333333;
+  --pp-border-active: #ffffff;
+  --pp-border-live: #ffffff;
+
+  --pp-text-main: #f2f2f2;
+  --pp-text-muted: #9c9c9c;
+  --pp-text-dim: #6b6b6b;
+
+  --pp-blue-accent: #ffffff;
+  --pp-live-red: #ffffff;
+  --pp-green-ok: #d4d4d4;
+  --pp-gold-subtle: #8f8f8f;
+
+  --pp-radius-sm: 4px;
+  --pp-radius-md: 6px;
+  --pp-radius-lg: 8px;
+}
+
 /* Grain de verre très subtil, superposé à tout le fond — évite l'effet
            "plastique lisse" typique du glassmorphism généré par défaut. */
 .grain {

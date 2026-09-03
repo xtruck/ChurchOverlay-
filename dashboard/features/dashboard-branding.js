@@ -29,10 +29,20 @@ export function applyDashboardBranding(branding) {
   // l'outil — dashboard.css dérive --primary-hover/--primary-300/600/700
   // et les alias --gold/--garnet/--sapphire-*soft via color-mix() à partir
   // de cette valeur, donc tout le système de tons suit automatiquement.
-  document.documentElement.style.setProperty(
-    '--primary',
-    branding.accentColor || DEFAULT_ACCENT_COLOR
-  );
+  // CORRECTIF (thème "cabine-mono") : un style inline sur <html> gagne
+  // TOUJOURS sur n'importe quelle règle de feuille de style, aussi
+  // spécifique soit-elle (voir :root[data-theme="cabine-mono"] dans
+  // dashboard.css) — sans cette garde, la couleur d'accent de
+  // l'organisation continuerait de percer à travers un thème dont le but
+  // est justement de n'avoir AUCUNE couleur. Seule exception à "le CSS
+  // gère tout" dans ce fichier, imposée par cette contrainte de
+  // spécificité, pas par choix.
+  if (document.documentElement.dataset.theme !== 'cabine-mono') {
+    document.documentElement.style.setProperty(
+      '--primary',
+      branding.accentColor || DEFAULT_ACCENT_COLOR
+    );
+  }
 
   const defaultIcon = document.getElementById('brandIconDefault');
   const logoImg = document.getElementById('brandLogoImg');
