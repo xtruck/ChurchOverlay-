@@ -29,10 +29,20 @@
   ============================================================================
 -->
 <style>
+  /* CORRECTIF (chantier Studio Clair, Track C) : palette figée en dur à
+     celle de config/themes/studio-clair-ivoire.json — cette page n'est
+     pas branchée sur le système de thèmes overlay (theme-loader.js), elle
+     a son propre petit bloc de styles locaux comme branding-overlay.html/
+     stage-display.html ; la rebrancher serait un vrai chantier
+     d'architecture séparé, hors périmètre ici. Le fond passe du noir plein
+     écran à l'ivoire Studio Clair : les photos/vidéos restent centrées et
+     contenues (object-fit: contain) exactement comme avant, seule la
+     couleur derrière une image qui ne remplit pas tout l'écran change. */
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0; width: 100%; height: 100%;
-    background: #000000; overflow: hidden;
+    background: linear-gradient(165deg, #faf8f5 0%, #f4efe6 48%, #eee7dc 88%);
+    overflow: hidden;
   }
   #stage {
     position: fixed; inset: 0;
@@ -43,8 +53,8 @@
   }
   #empty {
     display: none;
-    color: #6b7280;
-    font-family: 'Segoe UI', system-ui, sans-serif;
+    color: #756d60;
+    font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
     font-size: 3vh;
     text-align: center;
   }

@@ -35,10 +35,19 @@
 -->
 <style>
   :root {
+    /* CORRECTIF (chantier Studio Clair) : exception délibérée au reste de
+       l'app — cet écran est consulté sous un éclairage de scène déjà très
+       lumineux, souvent dans une salle par ailleurs obscurcie ; un fond
+       clair y serait un vrai problème d'usage (éblouissement, casse
+       l'adaptation à l'obscurité), pas juste un choix esthétique
+       différent. --bg/--text/--text-dim restent donc INCHANGÉS — seul
+       --accent est aligné sur le terracotta Studio Clair, pour un minimum
+       de cohérence de marque avec le reste de l'app sans toucher au fond
+       sombre ni au contraste. */
     --bg: #0a0a0f;
     --text: #f5f5f7;
     --text-dim: #8a8a94;
-    --accent: #ff8a3d;
+    --accent: #b8622f;
   }
   * { box-sizing: border-box; }
   html, body {

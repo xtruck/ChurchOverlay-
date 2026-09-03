@@ -48,14 +48,17 @@
   ============================================================================
 -->
     <style>
-      /* AJOUT (cohérence visuelle avec overlay.html) : le titre du bandeau
-     utilise désormais la même serif dorée que la carte de verset
-     (Merriweather) — jusqu'ici cette page tournait entièrement en police
-     système, visuellement déconnectée du verset alors que les deux sont
-     empilés dans la même scène OBS pendant le même culte. Import isolé
-     (une seule graisse) plutôt que de dupliquer tout l'@import de
-     overlay.html, cette page restant volontairement indépendante. */
-      @import url('https://fonts.googleapis.com/css2?family=Merriweather:wght@700&display=swap');
+      /* CORRECTIF (chantier Studio Clair, Track C) : palette figée en dur
+     à celle de config/themes/studio-clair-ivoire.json (fond/accent/texte/
+     police) — cette page n'est PAS branchée sur le système de thèmes
+     overlay (theme-loader.js), elle a son propre petit bloc de styles
+     locaux comme stage-display.html/announcement-loop.html ; la
+     rebrancher serait un vrai chantier d'architecture séparé, hors
+     périmètre ici. AJOUT d'origine (cohérence visuelle avec overlay.html) :
+     le titre du bandeau utilise la même serif display que la carte de
+     verset — Newsreader remplace Merriweather ici, cohérent avec le
+     nouveau thème par défaut de l'overlay (Track B du même chantier). */
+      @import url('https://fonts.googleapis.com/css2?family=Newsreader:wght@600&display=swap');
       * {
         margin: 0;
         padding: 0;
@@ -137,15 +140,18 @@
         max-width: 82vw;
         padding: 16px 28px 14px;
         border-radius: 10px;
-        /* AJOUT (cohérence visuelle) : même famille bleu-nuit que --overlay-bg
-       dans overlay.html (#0b0c10/#101218), au lieu d'un gris-noir neutre
-       sans rapport — pour que le bandeau et la carte de verset se lisent
-       comme la même identité visuelle une fois empilés dans OBS. */
-        background: linear-gradient(165deg, rgba(10, 14, 28, 0.8), rgba(13, 18, 38, 0.8));
+        /* CORRECTIF (Studio Clair) : même dégradé ivoire que le fond
+       overlay par défaut (studio-clair-ivoire.json), translucide pour
+       rester un bandeau composité PAR-DESSUS la caméra dans OBS, pas un
+       fond opaque. Bordure sombre à faible opacité (pas --border-subtle
+       clair, qui se fondrait dans un fond de caméra lui-même clair) —
+       garde une délimitation visible quelle que soit la luminosité de
+       l'image caméra en dessous. */
+        background: linear-gradient(165deg, rgba(250, 248, 245, 0.92), rgba(244, 239, 230, 0.92));
         -webkit-backdrop-filter: blur(6px);
         backdrop-filter: blur(6px);
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        color: #ffffff;
+        border: 1px solid rgba(43, 38, 32, 0.14);
+        color: #2b2620;
         text-align: center;
         opacity: 0;
         overflow: hidden;
@@ -158,8 +164,9 @@
         transform: translateX(-50%) translateY(0);
       }
       /* AJOUT (cohérence visuelle avec .verse-card::before dans overlay.html) :
-     même fin trait doré en dégradé, pour que le bandeau titre porte la
-     même signature visuelle que la carte de verset. */
+     même fin trait en dégradé, désormais terracotta (accent Studio Clair)
+     au lieu de l'ancien or, pour que le bandeau titre porte la même
+     signature visuelle que la carte de verset. */
       #branding-lowerthird::before {
         content: '';
         position: absolute;
@@ -167,19 +174,19 @@
         left: 8px;
         right: 8px;
         height: 2px;
-        background: linear-gradient(90deg, transparent, #ff8a3d, transparent);
+        background: linear-gradient(90deg, transparent, #b8622f, transparent);
       }
       #branding-title {
-        font-family: 'Merriweather', Georgia, serif;
+        font-family: 'Newsreader', Georgia, serif;
         font-size: clamp(18px, 2.2vw, 28px);
-        font-weight: 700;
+        font-weight: 600;
         line-height: 1.3;
       }
       #branding-subtitle {
         margin-top: 4px;
         font-size: clamp(13px, 1.3vw, 17px);
         font-weight: 500;
-        color: rgba(255, 255, 255, 0.78);
+        color: rgba(43, 38, 32, 0.72);
         line-height: 1.3;
       }
       #branding-subtitle:empty {
