@@ -69,7 +69,8 @@
   "overrides": {
     "brace-expansion": "^5.0.9",
     "minimatch": "^10.2.6",
-    "adm-zip": "^0.6.0"
+    "adm-zip": "^0.6.0",
+    "qs": "^6.16.0"
   },
   "build": {
     "appId": "com.mesev.churchoverlay",
