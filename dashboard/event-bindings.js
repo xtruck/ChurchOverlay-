@@ -49,6 +49,16 @@ const CLICK_BINDINGS = {
   // --- Barre d'état / pipeline ---
   speechBtn: () => window.toggleRealMicCapture(),
   restartPipelineBtn: () => window.restartPipeline(),
+  // AJOUT (audit — bannière "hors ligne / mode manuel") : setTrustMode()
+  // vit dans trust-mode.js, acknowledgeOfflineManualBanner() dans
+  // pipeline-health.js — deux modules qui ne s'importent pas l'un l'autre
+  // (voir pipeline-health.js), câblés ici plutôt que d'ajouter une arête
+  // d'import croisée entre eux pour un seul clic.
+  offlineManualModeSwitchBtn: () => {
+    window.setTrustMode('manual');
+    window.acknowledgeOfflineManualBanner();
+    showToast('Mode manuel activé — continuez le service sans attendre le rétablissement.', 'info');
+  },
 
   // --- Studio ProPresenter : effacement d'urgence (F1-F4) ---
   ppClearAllBtn: () => window.ppClearAll(),

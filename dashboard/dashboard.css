@@ -2419,6 +2419,73 @@ body {
   border: 1px solid var(--accent-rose);
 }
 
+/* AJOUT (audit — bannière "hors ligne / mode manuel") : distincte des deux
+           bannières pipeline ci-dessus (fond teinté discret, pensées pour un
+           souci ponctuel déjà en cours de résorption automatique). Celle-ci
+           ne s'affiche qu'après plusieurs échecs de transcription CONSÉCUTIFS
+           (voir OFFLINE_BANNER_THRESHOLD dans pipeline-health.js) — le signe
+           d'une vraie coupure réseau (Groq/Deepgram injoignables), pas un
+           hoquet isolé. Traitement volontairement plus appuyé (fond plein,
+           pulsation) : la transcription reste 100% cloud, sans repli local
+           (voir ARCHITECTURE.md) — cette bannière EST la parade tant que
+           l'opérateur n'a pas basculé en mode manuel lui-même. position:
+           sticky pour rester visible même en scrollant plus bas dans un
+           onglet chargé, même logique déjà utilisée par .sidebar ci-dessus. */
+.offline-manual-banner {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-5) 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: 10px;
+  background: rgba(244, 63, 94, 0.92);
+  border: 1px solid var(--accent-rose);
+  color: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  animation: offlineManualBannerPulse 1.6s ease-in-out infinite;
+}
+
+.offline-manual-banner-content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.offline-manual-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.offline-manual-banner-text span {
+  font-size: 0.85rem;
+  opacity: 0.92;
+}
+
+.offline-manual-banner .btn-danger {
+  background: #fff;
+  border-color: #fff;
+  color: var(--accent-rose);
+  font-weight: 700;
+}
+
+.offline-manual-banner .btn-danger:hover {
+  background: rgba(255, 255, 255, 0.88);
+}
+
+@keyframes offlineManualBannerPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(244, 63, 94, 0);
+  }
+  50% {
+    box-shadow: 0 0 18px rgba(244, 63, 94, 0.55);
+  }
+}
+
 .status-badge {
   display: inline-flex;
   align-items: center;

@@ -60,6 +60,8 @@ export function setTranscriptionHealth(payload) {
   if (!payload || payload.status === 'ok') {
     banner.style.display = 'none';
     banner.classList.remove('pipeline-banner--error', 'pipeline-banner--warning');
+    setOfflineManualBanner(false);
+    offlineBannerAcknowledged = false; // rétabli — une prochaine coupure devra réalerter.
     return;
   }
 
@@ -71,7 +73,38 @@ export function setTranscriptionHealth(payload) {
   msg.textContent = isDegraded
     ? `Transcription en difficulté (${payload.consecutiveFailures || 1} échec(s) d'affilée) — nouvelle tentative automatique en cours.`
     : `Nouvelle tentative de transcription (${payload.attempt}/${payload.maxAttempts})...`;
+
+  if (isDegraded && (payload.consecutiveFailures || 0) >= OFFLINE_BANNER_THRESHOLD) {
+    setOfflineManualBanner(true);
+  }
 }
+
+// AJOUT (audit — bannière "hors ligne / mode manuel") : un échec isolé (une
+// seule paire de tentatives, voir transcribeWithRetry() dans server.js) se
+// résorbe déjà tout seul via la retry automatique et le bandeau discret
+// ci-dessus — pas de quoi interrompre l'opérateur. À partir de
+// OFFLINE_BANNER_THRESHOLD échecs CONSÉCUTIFS (~un par segment audio, voir
+// startPipeline() côté serveur), c'est le signe d'une vraie coupure réseau
+// (Groq/Deepgram injoignables), pas un hoquet : voir dashboard.html pour le
+// marquage de la bannière elle-même.
+const OFFLINE_BANNER_THRESHOLD = 3;
+// Une fois l'opérateur passé en mode manuel depuis CETTE bannière (voir
+// event-bindings.js), inutile de continuer à le relancer pour la même
+// coupure en cours — il a déjà agi. Se réarme au prochain statut 'ok'
+// ci-dessus (nouvelle coupure = nouvelle alerte).
+let offlineBannerAcknowledged = false;
+
+function setOfflineManualBanner(visible) {
+  const banner = document.getElementById('offlineManualModeBanner');
+  if (!banner) return;
+  banner.style.display = visible && !offlineBannerAcknowledged ? 'flex' : 'none';
+}
+
+export function acknowledgeOfflineManualBanner() {
+  offlineBannerAcknowledged = true;
+  setOfflineManualBanner(false);
+}
+window.acknowledgeOfflineManualBanner = acknowledgeOfflineManualBanner;
 
 // Au chargement, on récupère aussi l'état courant (utile si l'alerte a
 // été émise avant que le tableau de bord ait fini de charger).

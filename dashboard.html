@@ -208,6 +208,32 @@
           </div>
         </header>
 
+        <!-- AJOUT (audit — bannière "hors ligne / mode manuel") : voir
+                 OFFLINE_BANNER_THRESHOLD dans dashboard/features/pipeline-health.js.
+                 Placée avant même le bandeau d'état permanent ci-dessous et en
+                 position sticky (voir dashboard.css) pour rester la toute
+                 première chose visible, y compris en scrollant plus bas dans
+                 un onglet chargé — objectif : réduire au minimum le temps
+                 avant qu'un opérateur remarque que la détection automatique
+                 ne répond plus et bascule en mode manuel, seule vraie parade
+                 tant que la transcription reste 100% cloud (aucun modèle
+                 local, voir ARCHITECTURE.md). -->
+        <div id="offlineManualModeBanner" class="offline-manual-banner" role="alert">
+          <div class="offline-manual-banner-content">
+            <span aria-hidden="true">🔴</span>
+            <div class="offline-manual-banner-text">
+              <strong>Hors ligne — la détection automatique ne répond plus</strong>
+              <span
+                >Plusieurs transcriptions ont échoué d'affilée (coupure réseau probable). Passez en
+                mode manuel pour continuer le service sans attendre le rétablissement.</span
+              >
+            </div>
+          </div>
+          <button id="offlineManualModeSwitchBtn" class="btn btn-danger flex-shrink-0">
+            Passer en mode manuel
+          </button>
+        </div>
+
         <!-- AJOUT (bandeau d'état permanent — recommandation "control room") :
                  TOUJOURS visible, contrairement aux bannières d'alerte ci-dessous
                  qui n'apparaissent qu'en cas de problème — permet de confirmer
