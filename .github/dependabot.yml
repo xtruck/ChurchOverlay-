@@ -5,7 +5,6 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
-    automerged_updates: true
     ignore:
       - dependency-name: "electron"
         update-types: ["version-update:semver-major"]
