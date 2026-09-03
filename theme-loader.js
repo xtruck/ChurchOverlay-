@@ -5,7 +5,10 @@ const path = require('path');
 const featuresStore = require('./features-store');
 
 const THEMES_DIR = path.join(__dirname, 'config', 'themes');
-const DEFAULT_THEME_ID = 'nuit';
+// CORRECTIF (Studio Clair — nouveau thème par défaut à l'installation) :
+// 'nuit' reste un thème système parfaitement sélectionnable, juste plus le
+// réglage de sortie de boîte — voir config/themes/studio-clair-ivoire.json.
+const DEFAULT_THEME_ID = 'studio-clair-ivoire';
 
 // CORRECTIF (audit round 5) : les thèmes livrés vivent dans app.asar, en
 // lecture seule une fois l'app packagée — créer/dupliquer/supprimer un

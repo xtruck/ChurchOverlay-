@@ -1,0 +1,51 @@
+{
+  "id": "studio-clair-azur",
+  "name": "Studio Clair — Azur",
+  "author": "system",
+  "readonly": true,
+  "description": "Fond bleu-gris très clair et aéré, accent bleu océan. Variante claire pour les églises attachées à l'identité bleue historique, sans repasser à un fond sombre.",
+  "colors": {
+    "background": {
+      "type": "gradient",
+      "stops": [
+        { "color": "#F7FAFD", "position": 0 },
+        { "color": "#EBF2F9", "position": 48 },
+        { "color": "#DCE7F2", "position": 88 }
+      ],
+      "angle": 165
+    },
+    "accent": "#2E6FA3",
+    "accentBright": "#4E8FC0",
+    "text": "#1E2A38",
+    "reference": "#2E6FA3"
+  },
+  "typography": {
+    "verseFontFamily": "'Newsreader', Georgia, serif",
+    "verseFontWeight": 500,
+    "verseFontSize": "clamp(2.2rem, 4vw, 4.8rem)",
+    "referenceFontFamily": "'IBM Plex Sans', sans-serif",
+    "referenceLetterSpacing": "0.08em"
+  },
+  "effects": {
+    "showCross": false,
+    "showRays": false,
+    "showHalo": false,
+    "showParticles": false,
+    "showGrain": false,
+    "borderRadius": "16px",
+    "blurBackdrop": "20px",
+    "goldSeparator": true
+  },
+  "animations": {
+    "entryAnimation": "focus-in",
+    "entrySpeed": 1.0,
+    "exitAnimation": "fondu",
+    "kineticTypography": false
+  },
+  "backgroundImage": {
+    "type": "none",
+    "source": null,
+    "kenBurns": false,
+    "opacity": 0
+  }
+}

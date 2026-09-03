@@ -1,0 +1,51 @@
+{
+  "id": "studio-clair-marine",
+  "name": "Studio Clair — Marine",
+  "author": "system",
+  "readonly": true,
+  "description": "Bleu marine profond sur fond clair bleuté, plus affirmé que Azur. Le pendant bleu de Studio Clair — Terracotta.",
+  "colors": {
+    "background": {
+      "type": "gradient",
+      "stops": [
+        { "color": "#F4F7FB", "position": 0 },
+        { "color": "#E3EAF4", "position": 50 },
+        { "color": "#CBD9EA", "position": 100 }
+      ],
+      "angle": 160
+    },
+    "accent": "#1F4E79",
+    "accentBright": "#2E6FA3",
+    "text": "#16232F",
+    "reference": "#1F4E79"
+  },
+  "typography": {
+    "verseFontFamily": "'Newsreader', Georgia, serif",
+    "verseFontWeight": 600,
+    "verseFontSize": "clamp(2.4rem, 4.4vw, 5rem)",
+    "referenceFontFamily": "'IBM Plex Sans', sans-serif",
+    "referenceLetterSpacing": "0.08em"
+  },
+  "effects": {
+    "showCross": false,
+    "showRays": false,
+    "showHalo": false,
+    "showParticles": false,
+    "showGrain": true,
+    "borderRadius": "20px",
+    "blurBackdrop": "24px",
+    "goldSeparator": true
+  },
+  "animations": {
+    "entryAnimation": "focus-in",
+    "entrySpeed": 1.1,
+    "exitAnimation": "fondu",
+    "kineticTypography": false
+  },
+  "backgroundImage": {
+    "type": "none",
+    "source": null,
+    "kenBurns": false,
+    "opacity": 0
+  }
+}

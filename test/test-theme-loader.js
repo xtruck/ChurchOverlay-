@@ -63,16 +63,25 @@ assert(css.variables['--verse-font'].includes('Merriweather'), 'themeToCss : pol
 assert(css.effects.showCross === true, 'themeToCss : effets propagés');
 assert(css.background.type === 'none', 'themeToCss : backgroundImage propagé');
 
+// CORRECTIF (Studio Clair — nouveau thème par défaut) : ces deux
+// assertions vérifient le repli sur DEFAULT_THEME_ID pour les champs
+// absents — leurs valeurs attendues suivent donc le thème par défaut
+// ACTUEL (studio-clair-ivoire : Newsreader, pas de croix), pas une valeur
+// figée sur 'nuit'. Le mécanisme testé (repli sur le défaut) est
+// inchangé, seul le défaut lui-même a changé.
 const partial = { id: '_test_partial', name: 'Partiel', colors: { accent: '#FF0000' } };
 themeLoader.saveTheme(partial);
 const loadedPartial = themeLoader.loadTheme('_test_partial');
 const cssPartial = themeLoader.themeToCss(loadedPartial);
 assert(cssPartial.variables['--accent'] === '#FF0000', 'themeToCss : accent personnalisé conservé');
 assert(
-  cssPartial.variables['--verse-font'].includes('Merriweather'),
-  'themeToCss : typographie héritée du défaut (nuit)'
+  cssPartial.variables['--verse-font'].includes('Newsreader'),
+  'themeToCss : typographie héritée du défaut (studio-clair-ivoire)'
 );
-assert(cssPartial.effects.showCross === true, 'themeToCss : effets hérités du défaut (nuit)');
+assert(
+  cssPartial.effects.showCross === false,
+  'themeToCss : effets hérités du défaut (studio-clair-ivoire)'
+);
 themeLoader.deleteTheme('_test_partial');
 
 const testTheme = {

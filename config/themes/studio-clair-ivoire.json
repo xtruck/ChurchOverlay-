@@ -1,0 +1,51 @@
+{
+  "id": "studio-clair-ivoire",
+  "name": "Studio Clair — Ivoire",
+  "author": "system",
+  "readonly": true,
+  "description": "Fond ivoire chaleureux, accent terracotta, carte flottante en verre clair. La direction par défaut du nouveau langage visuel Studio Clair — équilibrée, adaptée à la plupart des salles éclairées.",
+  "colors": {
+    "background": {
+      "type": "gradient",
+      "stops": [
+        { "color": "#FAF8F5", "position": 0 },
+        { "color": "#F4EFE6", "position": 48 },
+        { "color": "#EEE7DC", "position": 88 }
+      ],
+      "angle": 165
+    },
+    "accent": "#B8622F",
+    "accentBright": "#D68B54",
+    "text": "#2B2620",
+    "reference": "#B8622F"
+  },
+  "typography": {
+    "verseFontFamily": "'Newsreader', Georgia, serif",
+    "verseFontWeight": 500,
+    "verseFontSize": "clamp(2.2rem, 4vw, 4.8rem)",
+    "referenceFontFamily": "'IBM Plex Sans', sans-serif",
+    "referenceLetterSpacing": "0.08em"
+  },
+  "effects": {
+    "showCross": false,
+    "showRays": false,
+    "showHalo": false,
+    "showParticles": false,
+    "showGrain": false,
+    "borderRadius": "16px",
+    "blurBackdrop": "20px",
+    "goldSeparator": true
+  },
+  "animations": {
+    "entryAnimation": "focus-in",
+    "entrySpeed": 1.0,
+    "exitAnimation": "fondu",
+    "kineticTypography": false
+  },
+  "backgroundImage": {
+    "type": "none",
+    "source": null,
+    "kenBurns": false,
+    "opacity": 0
+  }
+}

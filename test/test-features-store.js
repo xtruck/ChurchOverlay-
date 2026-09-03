@@ -109,8 +109,11 @@ try {
     !themeLoader.listThemes().some((t) => t.id === '_test_user_theme'),
     'deleteTheme retire le thème utilisateur'
   );
+  // CORRECTIF (Studio Clair — nouveau thème par défaut) : ce test vérifie
+  // le repli sur DEFAULT_THEME_ID, pas une valeur figée sur 'nuit' — voir
+  // le même correctif dans test-theme-loader.js.
   assert(
-    themeLoader.getActiveTheme().id === 'nuit',
+    themeLoader.getActiveTheme().id === 'studio-clair-ivoire',
     'le thème actif retombe sur le thème par défaut si le thème choisi disparaît'
   );
 } finally {

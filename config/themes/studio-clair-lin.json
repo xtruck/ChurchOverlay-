@@ -1,0 +1,51 @@
+{
+  "id": "studio-clair-lin",
+  "name": "Studio Clair — Lin",
+  "author": "system",
+  "readonly": true,
+  "description": "Fond quasi blanc, accent discret, aucun arrondi ni flou. Lisibilité maximale en plein jour ou vidéoprojecteur faible luminosité — variante la plus sobre de Studio Clair.",
+  "colors": {
+    "background": {
+      "type": "gradient",
+      "stops": [
+        { "color": "#FFFFFF", "position": 0 },
+        { "color": "#F7F5F1", "position": 50 },
+        { "color": "#EFEBE3", "position": 100 }
+      ],
+      "angle": 180
+    },
+    "accent": "#A9714A",
+    "accentBright": "#C68F5E",
+    "text": "#2B2620",
+    "reference": "#A9714A"
+  },
+  "typography": {
+    "verseFontFamily": "'Newsreader', Georgia, serif",
+    "verseFontWeight": 400,
+    "verseFontSize": "clamp(2rem, 3.8vw, 4.4rem)",
+    "referenceFontFamily": "'IBM Plex Sans', sans-serif",
+    "referenceLetterSpacing": "0.12em"
+  },
+  "effects": {
+    "showCross": false,
+    "showRays": false,
+    "showHalo": false,
+    "showParticles": false,
+    "showGrain": false,
+    "borderRadius": "0px",
+    "blurBackdrop": "0px",
+    "goldSeparator": true
+  },
+  "animations": {
+    "entryAnimation": "focus-in",
+    "entrySpeed": 1.1,
+    "exitAnimation": "fondu",
+    "kineticTypography": false
+  },
+  "backgroundImage": {
+    "type": "none",
+    "source": null,
+    "kenBurns": false,
+    "opacity": 0
+  }
+}
