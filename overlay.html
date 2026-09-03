@@ -976,6 +976,18 @@
     <!-- Médiathèque : photo/vidéo affichée en plein écran (voir action 'showMedia') -->
     <div id="media-layer" aria-hidden="true">
       <img id="media-layer-img" alt="" hidden />
+      <!-- CORRECTIF : l'attribut playsinline a de nouveau été retiré ici par
+           quelque chose dans cet environnement réagissant à l'avertissement
+           "not supported by Firefox" (voir commit 73c8890), et remplacé par
+           un <script> inline posant video.playsInline = true en JS — sauf
+           que la CSP de CETTE page est script-src 'self' STRICT (pas de
+           'unsafe-inline', volontairement, voir le commentaire de CSP en
+           haut du fichier) : ce script inline était bloqué au chargement, et
+           polluait la console de chaque page qui embarque overlay.html en
+           iframe (le panneau PROGRAMME du Studio ProPresenter, voir
+           #overlayFrame dans dashboard.html) sans même corriger quoi que ce
+           soit. L'attribut HTML est la seule option qui fonctionne
+           réellement sous cette CSP — restauré, script inline retiré. -->
       <video id="media-layer-video" hidden playsinline></video>
     </div>
 
