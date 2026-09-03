@@ -17,17 +17,20 @@
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
   
   :root {
-    --bg-primary: #0b0c10;
-    --glass-bg: rgba(17, 24, 39, 0.8);
-    --glass-border: rgba(255, 255, 255, 0.1);
-    --text-primary: #f9fafb;
-    --text-secondary: #9ca3af;
-    --text-muted: #6b7280;
-    --accent: #ff8a3d;
-    --accent-hover: #ffa869;
-    --success: #10b981;
+    /* CORRECTIF (chantier Studio Clair, Track A2) : mêmes noms de
+       variables, nouvelles valeurs — fond clair, carte blanche solide
+       (plus de glass sombre translucide), accent terracotta. */
+    --bg-primary: #faf8f5;
+    --glass-bg: #ffffff;
+    --glass-border: #e8e3db;
+    --text-primary: #2b2620;
+    --text-secondary: #756d60;
+    --text-muted: #a49c8d;
+    --accent: #b8622f;
+    --accent-hover: #8f4a20;
+    --success: #2f8f6f;
     --error: #ef4444;
-    --warning: #f59e0b;
+    --warning: #b8863a;
   }
 
   * {
@@ -38,7 +41,12 @@
 
   body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: linear-gradient(135deg, #0b0c10 0%, #1a1f3a 100%);
+    /* CORRECTIF (Studio Clair) : même dégradé ivoire que le fond des
+       autres écrans du chantier (studio-clair-ivoire.json), au lieu du
+       bleu-nuit d'origine — ce fond de page n'était pas tokenisé, laissé
+       tel quel il aurait produit une carte claire flottant sur un fond
+       resté sombre. */
+    background: linear-gradient(135deg, #faf8f5 0%, #eee7dc 100%);
     color: var(--text-primary);
     min-height: 100vh;
     display: flex;
@@ -52,7 +60,11 @@
     content: '';
     position: fixed;
     inset: 0;
-    background: radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+    /* CORRECTIF (Studio Clair) : lueur décorative indigo -> terracotta
+       (--accent), opacité fortement réduite — un fond clair n'a besoin
+       que d'une touche très discrète, pas d'un halo saturé comme sur
+       fond sombre. */
+    background: radial-gradient(circle at 50% 50%, rgba(184, 98, 47, 0.08) 0%, transparent 70%);
     pointer-events: none;
   }
 
@@ -60,13 +72,14 @@
     position: relative;
     width: 100%;
     max-width: 520px;
+    /* CORRECTIF (Studio Clair) : --glass-bg est maintenant un blanc SOLIDE
+       (voir :root) — plus de fond à flouter, le backdrop-filter d'origine
+       est donc retiré (il ne faisait plus rien). */
     background: var(--glass-bg);
-    -webkit-backdrop-filter: blur(20px);
-    backdrop-filter: blur(20px);
     border: 1px solid var(--glass-border);
     border-radius: 20px;
     padding: 40px;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 20px 48px rgba(43, 38, 32, 0.1);
     animation: slideIn 0.4s ease-out;
   }
 
@@ -139,7 +152,7 @@
 
   select, input {
     width: 100%;
-    background: rgba(0, 0, 0, 0.3);
+    background: #f7f4ee;
     border: 1px solid var(--glass-border);
     color: var(--text-primary);
     border-radius: 10px;
@@ -152,7 +165,7 @@
   select:focus, input:focus {
     outline: none;
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    box-shadow: 0 0 0 3px rgba(184, 98, 47, 0.15);
   }
 
   .btn {
@@ -167,13 +180,13 @@
   }
 
   .btn-secondary {
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(43, 38, 32, 0.04);
     color: var(--text-primary);
     border: 1px solid var(--glass-border);
   }
 
   .btn-secondary:hover {
-    background: rgba(255, 255, 255, 0.12);
+    background: rgba(43, 38, 32, 0.07);
     border-color: var(--accent);
   }
 
@@ -183,12 +196,12 @@
     color: white;
     padding: 14px 20px;
     font-size: 14px;
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    box-shadow: 0 4px 12px rgba(184, 98, 47, 0.3);
   }
 
   .btn-primary:hover:not(:disabled) {
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+    box-shadow: 0 6px 20px rgba(184, 98, 47, 0.4);
   }
 
   .btn-primary:disabled {

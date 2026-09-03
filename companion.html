@@ -21,17 +21,18 @@
     />
     <title>ChurchOverlay — Mes versets</title>
     <style>
-      /* Même identité "verrière nocturne" que dashboard.html/overlay.html — bleu
-   nuit profond, lumière de cierge (or) en accent unique. Page volontairement
-   simple : lecture seule, pensée pour un téléphone qui vient de scanner un
-   QR code affiché en salle, pas une app à installer. */
+      /* CORRECTIF (chantier Studio Clair, Track A3) : identité "verrière
+   nocturne" remplacée par la palette Studio Clair — fond ivoire, carte
+   blanche, accent terracotta. Page volontairement simple : lecture
+   seule, pensée pour un téléphone qui vient de scanner un QR code
+   affiché en salle, pas une app à installer. */
       :root {
-        --bg: #0b0c10;
-        --bg-card: #141620;
-        --text: #e8eaf0;
-        --text-muted: #9aa0b0;
-        --accent: #ff8a3d;
-        --border: rgba(220, 180, 106, 0.2);
+        --bg: #faf8f5;
+        --bg-card: #ffffff;
+        --text: #2b2620;
+        --text-muted: #756d60;
+        --accent: #b8622f;
+        --border: rgba(184, 98, 47, 0.18);
       }
       * {
         box-sizing: border-box;
@@ -39,7 +40,7 @@
       body {
         margin: 0;
         min-height: 100vh;
-        background: linear-gradient(160deg, #0b0c10 0%, #101218 55%, #14151c 100%);
+        background: linear-gradient(160deg, #faf8f5 0%, #f4efe6 55%, #eee7dc 100%);
         color: var(--text);
         font-family: 'Georgia', 'Cormorant Garamond', serif;
         padding: 20px 16px 60px;
@@ -118,7 +119,7 @@
       .verse-action-btn.active {
         color: var(--accent);
         border-color: var(--accent);
-        background: rgba(217, 187, 108, 0.12);
+        background: rgba(184, 98, 47, 0.12);
       }
       .verse-note {
         display: none;
@@ -130,7 +131,7 @@
       .verse-note textarea {
         width: 100%;
         min-height: 60px;
-        background: rgba(255, 255, 255, 0.04);
+        background: rgba(43, 38, 32, 0.04);
         border: 1px solid var(--border);
         border-radius: 8px;
         color: var(--text);
