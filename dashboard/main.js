@@ -68,6 +68,11 @@ import './features/propresenter-planning-center.js';
 // verse-queue.js, n'est importé par personne d'autre — sans cette ligne,
 // son loadObsConfig() initial et ses window.x ne s'exécuteraient jamais.
 import './features/obs-scenes.js';
+// AJOUT (sélecteur de thème overlay) : même famille qu'obs-scenes.js
+// ci-dessus — n'est importé par personne d'autre, sans cette ligne son
+// chargement initial de la liste des thèmes et ses window.x ne
+// s'exécuteraient jamais.
+import './features/overlay-theme-selector.js';
 import './features/agent.js';
 // AJOUT : ProPresenter 7 style studio workspace
 import './features/propresenter-studio.js';

@@ -2068,6 +2068,43 @@ Aucune exécution agent.</pre>
             </div>
           </div>
 
+          <!-- AJOUT (sélecteur de thème overlay) : theme-loader.js et son
+                     pont IPC (main.js > list-themes/get-active-theme/
+                     set-active-theme, exposés via preload.js) existaient
+                     déjà et étaient testés (test/test-theme-loader.js), mais
+                     sans aucune interface pour changer de thème depuis le
+                     tableau de bord — voir
+                     dashboard/features/overlay-theme-selector.js. Distinct
+                     de « Identité de la marque » ci-dessus : change ce que
+                     l'ASSEMBLÉE voit sur overlay.html, pas cet outil. -->
+          <div class="card settings-card-spaced" id="overlayThemeCard" data-group="systeme">
+            <div class="card-header">
+              <span class="card-title">Thème de l'affichage overlay</span>
+              <div class="card-icon-wrap">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="7" cy="12" r="4" fill="currentColor" opacity="0.35" stroke="none" />
+                  <circle cx="12" cy="8" r="4" fill="currentColor" opacity="0.6" stroke="none" />
+                  <circle cx="17" cy="12" r="4" fill="currentColor" stroke="none" />
+                </svg>
+              </div>
+            </div>
+            <div class="field-hint field-hint-flush">
+              Change l'apparence de l'overlay projeté à l'assemblée (overlay.html), en direct, sans
+              redémarrer le pipeline. Sans rapport avec « Identité de la marque » ci-dessus (qui ne
+              change que cet outil).
+            </div>
+            <div id="overlayThemeList" class="mood-picker-row">
+              <span class="stat-label">Chargement des thèmes...</span>
+            </div>
+          </div>
+
           <div class="card settings-card-spaced" id="apiSettingsCard" data-group="systeme">
             <div class="card-header">
               <span class="card-title">Clés API & Microphone</span>
