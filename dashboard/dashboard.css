@@ -3720,35 +3720,46 @@ body {
   overflow: hidden;
 }
 
+/* CORRECTIF (Le Plateau — Changement 1, rail d'icônes) : les 5 boutons
+           .pp-nav-tab (mêmes classe/data-target, initStudioTabs() ne change
+           pas) passent de longs libellés texte à des icônes SVG seules
+           (title="..." pour l'infobulle) — d'où le passage à une rangée
+           centrée plus haute plutôt que des onglets texte alignés à gauche
+           avec soulignement. */
 .pp-tab-nav {
   display: flex;
   align-items: center;
+  justify-content: center;
   background: #0f1016;
   border-bottom: 1px solid var(--pp-border-subtle);
-  padding: 0 4px;
-  height: 38px;
+  padding: 6px 4px;
+  height: 44px;
   flex-shrink: 0;
-  gap: 2px;
+  gap: 4px;
 }
 
 .pp-nav-tab {
-  padding: 6px 10px;
-  font-size: 11px;
-  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
   color: var(--pp-text-muted);
   background: transparent;
   border: none;
-  border-bottom: 2px solid transparent;
+  border-radius: var(--pp-radius-sm);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 .pp-nav-tab:hover {
   color: var(--pp-text-main);
+  background: rgba(255, 255, 255, 0.06);
 }
 .pp-nav-tab.active {
   color: #fff;
-  border-bottom-color: var(--pp-blue-accent);
-  background: rgba(59, 130, 246, 0.08);
+  background: rgba(59, 130, 246, 0.16);
+  box-shadow: 0 0 0 1px var(--pp-blue-accent) inset;
 }
 
 .pp-tab-pane {
@@ -3820,20 +3831,37 @@ body {
   flex-shrink: 0;
 }
 
+/* CORRECTIF (Le Plateau — Changement 3) : "bande défilante" façon
+   pellicule, directement sous le moniteur PGM agrandi (voir
+   .pp-monitor-group--hero) plutôt qu'une grille qui s'étire. overflow-x
+   remplace overflow-y : ce conteneur ne défile plus que horizontalement,
+   sur une seule rangée. */
 .pp-slide-grid-container {
   flex: 1;
-  overflow-y: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
   padding: 16px;
 }
 
+/* CORRECTIF : align-items: stretch (comportement flex par défaut) donnait
+   à chaque carte une hauteur = 100% du conteneur, et aspect-ratio calculait
+   alors la largeur À PARTIR de cette hauteur étirée plutôt que l'inverse —
+   une carte se retrouvait bien plus large que les 190px de flex-basis
+   visés (confirmé par capture d'écran, pas juste en lisant le CSS).
+   flex-start laisse chaque carte se dimensionner depuis sa largeur fixe. */
 .pp-slides-wrapper {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  display: flex;
+  align-items: flex-start;
   gap: 14px;
 }
 
-/* 16:9 Minimalist Slide Card */
+/* 16:9 Minimalist Slide Card — largeur fixe (pellicule), plus une grille
+   qui s'étire : chaque diapositive garde sa taille quel que soit le nombre
+   de diapositives sur la rangée. width explicite en plus de flex-basis :
+   ceinture et bretelles contre le même piège aspect-ratio-vs-stretch. */
 .pp-presentation-slide {
+  flex: 0 0 190px;
+  width: 190px;
   aspect-ratio: 16/9;
   background: var(--pp-bg-card);
   border: 1px solid var(--pp-border-subtle);
@@ -3900,6 +3928,9 @@ body {
 }
 
 .pp-btn-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   height: 28px;
   padding: 0 10px;
   background: var(--pp-bg-card);
@@ -3914,6 +3945,15 @@ body {
 .pp-btn-nav:hover {
   background: var(--pp-bg-card-hover);
   border-color: var(--pp-border-medium);
+}
+
+/* AJOUT (Le Plateau — Changement 4, emoji -> SVG) : petite icône décorative
+           posée juste avant un texte à l'intérieur d'un <span>/<button> déjà
+           en flux normal (pas flex) — évite d'ajouter display:flex partout,
+           un simple alignement vertical suffit pour une icône aussi petite. */
+.pp-icon-inline {
+  vertical-align: -2px;
+  margin-right: 4px;
 }
 
 /* Minimalist Teleprompter Drawer */
@@ -4000,7 +4040,11 @@ body {
   font-weight: 600;
 }
 
-/* Right Column: Live Program (PGM) & Stage Confidence */
+/* Right Column: Stage Confidence & Ambiance (inspecteur étroit — le
+   moniteur PGM, désormais pièce centrale dominante, a déménagé en haut de
+   .pp-center-column, voir .pp-monitor-group--hero plus bas). 320px reste
+   déjà dans la fourchette "300-320px" visée pour une colonne inspecteur,
+   aucun changement de largeur nécessaire ici. */
 .pp-right-column {
   background: var(--pp-bg-surface);
   border-left: 1px solid var(--pp-border-subtle);
@@ -4031,7 +4075,7 @@ body {
 .pp-live-onair-badge {
   position: absolute;
   top: 6px;
-  right: 6px;
+  left: 6px;
   background: #dc2626;
   color: #fff;
   font-size: 9px;
@@ -4043,6 +4087,45 @@ body {
 }
 .pp-pgm-monitor.is-live .pp-live-onair-badge {
   display: block;
+}
+
+/* AJOUT (Le Plateau — Changement 2) : le moniteur PGM devient la pièce
+   centrale dominante (~45-55% de la hauteur de .pp-center-column), fond
+   sombre volontaire (un vrai moniteur de diffusion a son propre boîtier —
+   exception délibérée dans une interface Studio Clair par ailleurs claire,
+   pas une incohérence à corriger). #ppPgmMonitor garde sa hiérarchie
+   interne exacte (> .pp-pgm-card-preview > #ppPgmRef/#ppPgmText) —
+   updatePgmDisplay() ne regarde que ces id, jamais leur position. */
+.pp-monitor-group--hero {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  height: 48%;
+  min-height: 300px;
+  padding: 14px 16px 0;
+  gap: 8px;
+}
+.pp-monitor-group--hero .pp-pgm-monitor {
+  flex: 1;
+  aspect-ratio: unset;
+  border-radius: 16px;
+  background: linear-gradient(160deg, #0a0b10 0%, #14151c 100%);
+}
+.pp-monitor-group--hero .pp-pgm-card-preview {
+  padding: 16px 22px;
+}
+.pp-monitor-group--hero .pp-pgm-ref-text {
+  font-family: 'Newsreader', Georgia, serif;
+  font-size: 22px;
+  font-weight: 600;
+  color: #f5f2ec;
+}
+.pp-monitor-group--hero .pp-pgm-body-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(245, 242, 236, 0.72);
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
 }
 
 .pp-pgm-card-preview {

@@ -335,33 +335,66 @@
         <!-- ============================================================================
              PROPRESENTER 7 BROADCAST STUDIO WORKSPACE
              ============================================================================ -->
-        <section id="propresenter-live" class="section pp-live-section" style="display: block">
+        <section id="propresenter-live" class="section pp-live-section">
           <div class="pp-studio-layout">
             <!-- 1. Top Master Control Bar (Professional Minimalist) -->
             <div class="pp-top-bar">
               <div class="pp-brand-group">
-                <div class="pp-brand-logo">✝</div>
+                <div class="pp-brand-logo">
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.75"
+                  >
+                    <line x1="12" y1="2" x2="12" y2="22" />
+                    <line x1="6" y1="8" x2="18" y2="8" />
+                  </svg>
+                </div>
                 <div>
-                  <div class="pp-brand-name">ChurchOverlay <span class="pp-brand-studio-tag">STUDIO</span></div>
-                  <div class="pp-brand-tagline">Broadcast Presentation Engine</div>
+                  <div class="pp-brand-name">
+                    ChurchOverlay
+                    <span class="pp-brand-studio-tag">STUDIO</span>
+                  </div>
+                  <div class="pp-brand-tagline">
+                    Broadcast Presentation Engine
+                  </div>
                 </div>
               </div>
 
               <!-- Master Clear Controls (F1 - F4) -->
               <div class="pp-clear-cluster">
-                <button id="ppClearAllBtn" class="pp-clear-btn pp-clear-all" title="Masquer tout l'affichage (F1 ou Échap)">
+                <button
+                  id="ppClearAllBtn"
+                  class="pp-clear-btn pp-clear-all"
+                  title="Masquer tout l'affichage (F1 ou Échap)"
+                >
                   <span>Clear All</span>
                   <span class="pp-keycap">F1</span>
                 </button>
-                <button id="ppClearSlideBtn" class="pp-clear-btn" title="Masquer le texte / verset actuel (F2)">
+                <button
+                  id="ppClearSlideBtn"
+                  class="pp-clear-btn"
+                  title="Masquer le texte / verset actuel (F2)"
+                >
                   <span>Clear Slide</span>
                   <span class="pp-keycap">F2</span>
                 </button>
-                <button id="ppClearMediaBtn" class="pp-clear-btn" title="Masquer le média d'arrière-plan (F3)">
+                <button
+                  id="ppClearMediaBtn"
+                  class="pp-clear-btn"
+                  title="Masquer le média d'arrière-plan (F3)"
+                >
                   <span>Clear Media</span>
                   <span class="pp-keycap">F3</span>
                 </button>
-                <button id="ppClearPropsBtn" class="pp-clear-btn" title="Masquer l'habillage / scène (F4)">
+                <button
+                  id="ppClearPropsBtn"
+                  class="pp-clear-btn"
+                  title="Masquer l'habillage / scène (F4)"
+                >
                   <span>Clear Props</span>
                   <span class="pp-keycap">F4</span>
                 </button>
@@ -370,7 +403,22 @@
               <!-- Audio VU Meter & Microphone Control -->
               <div class="pp-audio-strip">
                 <button class="btn btn-secondary pp-mic-btn" id="ppMicBtn">
-                  🎤 Micro
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.75"
+                  >
+                    <path
+                      d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"
+                    />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    <line x1="12" y1="19" x2="12" y2="23" />
+                    <line x1="8" y1="23" x2="16" y2="23" />
+                  </svg>
+                  Micro
                 </button>
                 <div class="pp-vu-track" title="Vumètre audio d'entrée micro">
                   <div class="pp-vu-live-bar" id="ppVuLiveBar"></div>
@@ -381,7 +429,17 @@
               <!-- AI Copilot Status, OBS Link & Clock -->
               <div class="pp-status-cluster">
                 <div class="pp-ai-copilot-pill">
-                  <span>🤖 IA Copilot</span>
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.75"
+                  >
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                  </svg>
+                  <span>IA Copilot</span>
                 </div>
                 <div class="pp-obs-pill">
                   <span>● OBS DIRECT</span>
@@ -395,47 +453,205 @@
 
             <!-- 2. Three-Pane Studio Workspace -->
             <div class="pp-studio-grid">
-              
               <!-- LEFT PANE: Rundown, Scriptures, AI Copilot, Media & Songs -->
               <div class="pp-left-column">
+                <!-- CORRECTIF (Le Plateau — rail d'icônes) : "colonne verticale
+                           d'icônes" demandé au sens rail de navigation, pas
+                           littéralement empilées verticalement — une rangée
+                           horizontale d'icônes en haut de .pp-left-column reste
+                           la disposition la plus sûre/cohérente pour 5 onglets
+                           sur une colonne de 280px de large (une vraie colonne
+                           verticale y laisserait un vide énorme à droite des
+                           icônes). initStudioTabs() ne regarde que
+                           .pp-nav-tab/data-target par sélecteur, jamais la
+                           disposition : aucune modification JS nécessaire. -->
                 <div class="pp-tab-nav">
-                  <button class="pp-nav-tab active" data-target="tabRundown">Feuille</button>
-                  <button class="pp-nav-tab" data-target="tabScripture">Écritures</button>
-                  <button class="pp-nav-tab" data-target="tabAiCopilot">🤖 IA Copilot</button>
-                  <button class="pp-nav-tab" data-target="tabMedia">Médias</button>
-                  <button class="pp-nav-tab" data-target="tabSongs">Chants</button>
+                  <button
+                    class="pp-nav-tab active"
+                    data-target="tabRundown"
+                    title="Feuille de culte"
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.75"
+                    >
+                      <line x1="8" y1="6" x2="21" y2="6" />
+                      <line x1="8" y1="12" x2="21" y2="12" />
+                      <line x1="8" y1="18" x2="21" y2="18" />
+                      <line x1="3" y1="6" x2="3.01" y2="6" />
+                      <line x1="3" y1="12" x2="3.01" y2="12" />
+                      <line x1="3" y1="18" x2="3.01" y2="18" />
+                    </svg>
+                  </button>
+                  <button
+                    class="pp-nav-tab"
+                    data-target="tabScripture"
+                    title="Écritures"
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.75"
+                    >
+                      <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                      <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+                    </svg>
+                  </button>
+                  <button
+                    class="pp-nav-tab"
+                    data-target="tabAiCopilot"
+                    title="IA Copilot"
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.75"
+                    >
+                      <polygon
+                        points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    class="pp-nav-tab"
+                    data-target="tabMedia"
+                    title="Médias"
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.75"
+                    >
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                      <circle cx="8.5" cy="8.5" r="1.5" />
+                      <polyline points="21 15 16 10 5 21" />
+                    </svg>
+                  </button>
+                  <button
+                    class="pp-nav-tab"
+                    data-target="tabSongs"
+                    title="Chants"
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.75"
+                    >
+                      <path d="M9 18V5l12-2v13" />
+                      <circle cx="6" cy="18" r="3" />
+                      <circle cx="18" cy="16" r="3" />
+                    </svg>
+                  </button>
                 </div>
 
                 <!-- Tab 1: Service Rundown / Cue List -->
                 <div class="pp-tab-pane active" id="tabRundown">
                   <div class="pp-pane-head">
                     <span class="pp-pane-title">Feuille de Culte</span>
-                    <button id="ppRundownNextCueBtn" class="btn btn-secondary pp-next-cue-btn">
+                    <button
+                      id="ppRundownNextCueBtn"
+                      class="btn btn-secondary pp-next-cue-btn"
+                    >
                       ▶ Suivant (Espace)
                     </button>
                   </div>
                   <div class="pp-input-row-mb">
-                    <input type="text" id="ppRundownInput" class="pp-input pp-input-compact" placeholder="Ajouter verset (ex: Jean 3:16)..." aria-label="Ajouter un verset à la feuille de culte" />
-                    <button id="ppRundownAddBtn" class="btn btn-secondary pp-btn-compact-8">➕</button>
+                    <input
+                      type="text"
+                      id="ppRundownInput"
+                      class="pp-input pp-input-compact"
+                      placeholder="Ajouter verset (ex: Jean 3:16)..."
+                      aria-label="Ajouter un verset à la feuille de culte"
+                    />
+                    <button
+                      id="ppRundownAddBtn"
+                      class="btn btn-secondary pp-btn-compact-8"
+                    >
+                      ➕
+                    </button>
                   </div>
                   <div id="ppRundownList" class="pp-stack-6">
                     <div class="pp-cue-item active">
                       <div class="pp-cue-info">
-                        <span class="pp-cue-label">📖 Jean 3:16 (Verset Clé)</span>
+                        <span class="pp-cue-label"
+                          ><svg
+                            class="pp-icon-inline"
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.75"
+                          >
+                            <path
+                              d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"
+                            />
+                            <path
+                              d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"
+                            /></svg
+                          >Jean 3:16 (Verset Clé)</span
+                        >
                         <span class="pp-cue-meta">Prédication · LSG 1910</span>
                       </div>
                       <span class="pp-cue-arrow-active">▶</span>
                     </div>
                     <div class="pp-cue-item">
                       <div class="pp-cue-info">
-                        <span class="pp-cue-label">🎵 Louange : Saint, Saint, Saint</span>
+                        <span class="pp-cue-label"
+                          ><svg
+                            class="pp-icon-inline"
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.75"
+                          >
+                            <path d="M9 18V5l12-2v13" />
+                            <circle cx="6" cy="18" r="3" />
+                            <circle cx="18" cy="16" r="3" /></svg
+                          >Louange : Saint, Saint, Saint</span
+                        >
                         <span class="pp-cue-meta">Chant 1 · 4 Sections</span>
                       </div>
                       <span class="pp-cue-arrow">▶</span>
                     </div>
                     <div class="pp-cue-item">
                       <div class="pp-cue-info">
-                        <span class="pp-cue-label">📖 Psaume 23:1-6</span>
+                        <span class="pp-cue-label"
+                          ><svg
+                            class="pp-icon-inline"
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.75"
+                          >
+                            <path
+                              d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"
+                            />
+                            <path
+                              d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"
+                            /></svg
+                          >Psaume 23:1-6</span
+                        >
                         <span class="pp-cue-meta">Lecture d'ouverture</span>
                       </div>
                       <span class="pp-cue-arrow">▶</span>
@@ -448,7 +664,9 @@
                   <span class="pp-pane-title">Sélecteur Biblique Rapide</span>
                   <div class="pp-stack-8">
                     <div>
-                      <label for="ppQuickBook" class="pp-field-label">LIVRE</label>
+                      <label for="ppQuickBook" class="pp-field-label"
+                        >LIVRE</label
+                      >
                       <select id="ppQuickBook" class="pp-select">
                         <option value="Genèse">Genèse</option>
                         <option value="Exode">Exode</option>
@@ -471,23 +689,48 @@
                     </div>
                     <div class="pp-grid-2">
                       <div>
-                        <label for="ppQuickChapter" class="pp-field-label">CHAPITRE</label>
-                        <input type="number" id="ppQuickChapter" class="pp-input" value="3" min="1" max="150" />
+                        <label for="ppQuickChapter" class="pp-field-label"
+                          >CHAPITRE</label
+                        >
+                        <input
+                          type="number"
+                          id="ppQuickChapter"
+                          class="pp-input"
+                          value="3"
+                          min="1"
+                          max="150"
+                        />
                       </div>
                       <div>
-                        <label for="ppQuickVerse" class="pp-field-label">VERSET</label>
-                        <input type="number" id="ppQuickVerse" class="pp-input" value="16" min="1" max="176" />
+                        <label for="ppQuickVerse" class="pp-field-label"
+                          >VERSET</label
+                        >
+                        <input
+                          type="number"
+                          id="ppQuickVerse"
+                          class="pp-input"
+                          value="16"
+                          min="1"
+                          max="176"
+                        />
                       </div>
                     </div>
                     <div>
-                      <label for="ppQuickLang" class="pp-field-label">TRADUCTION</label>
+                      <label for="ppQuickLang" class="pp-field-label"
+                        >TRADUCTION</label
+                      >
                       <select id="ppQuickLang" class="pp-select">
-                        <option value="fr" selected>Français (Louis Segond 1910)</option>
+                        <option value="fr" selected>
+                          Français (Louis Segond 1910)
+                        </option>
                         <option value="en">Anglais (KJV)</option>
                         <option value="both">Bilingue (FR + EN)</option>
                       </select>
                     </div>
-                    <button id="fireQuickScriptureBtn" class="btn btn-primary pp-btn-fire">
+                    <button
+                      id="fireQuickScriptureBtn"
+                      class="btn btn-primary pp-btn-fire"
+                    >
                       Diffuser le Verset
                     </button>
                   </div>
@@ -495,35 +738,81 @@
 
                 <!-- Tab 3: AI Copilot & Semantic Search -->
                 <div class="pp-tab-pane" id="tabAiCopilot">
-                  <span class="pp-pane-title">Recherche Biblique par Sens (IA)</span>
+                  <span class="pp-pane-title"
+                    >Recherche Biblique par Sens (IA)</span
+                  >
                   <div class="pp-input-row">
-                    <input type="text" id="ppAiSearchInput" class="pp-input pp-input-compact" placeholder="Ex: marcher sur l'eau, paix dans l'épreuve..." aria-label="Recherche biblique par sens (IA)" onkeydown="if(event.key==='Enter') window.executeAiSemanticSearch();" />
-                    <button id="executeAiSemanticSearchBtn" class="btn btn-secondary pp-btn-compact-10">🔍</button>
+                    <input
+                      type="text"
+                      id="ppAiSearchInput"
+                      class="pp-input pp-input-compact"
+                      placeholder="Ex: marcher sur l'eau, paix dans l'épreuve..."
+                      aria-label="Recherche biblique par sens (IA)"
+                      onkeydown="
+                        if (event.key === 'Enter')
+                          window.executeAiSemanticSearch();
+                      "
+                    />
+                    <button
+                      id="executeAiSemanticSearchBtn"
+                      class="btn btn-secondary pp-btn-compact-10"
+                    >
+                      🔍
+                    </button>
                   </div>
 
                   <!-- Quick Semantic Topic Chips -->
                   <div class="pp-chip-row">
-                    <button id="ppQuickQueryPaixBtn" class="pp-chip-btn">🕊️ Paix</button>
-                    <button id="ppQuickQueryAmourBtn" class="pp-chip-btn">❤️ Amour</button>
-                    <button id="ppQuickQueryFoiBtn" class="pp-chip-btn">⚓ Foi</button>
-                    <button id="ppQuickQueryEsperanceBtn" class="pp-chip-btn">✨ Espérance</button>
+                    <button id="ppQuickQueryPaixBtn" class="pp-chip-btn">
+                      🕊️ Paix
+                    </button>
+                    <button id="ppQuickQueryAmourBtn" class="pp-chip-btn">
+                      ❤️ Amour
+                    </button>
+                    <button id="ppQuickQueryFoiBtn" class="pp-chip-btn">
+                      ⚓ Foi
+                    </button>
+                    <button id="ppQuickQueryEsperanceBtn" class="pp-chip-btn">
+                      ✨ Espérance
+                    </button>
                   </div>
 
                   <!-- AI Search Results Container -->
                   <div id="ppAiSearchResults" class="pp-stack-6-mt8">
                     <div class="pp-empty-hint">
-                      Posez une requête en langage naturel pour retrouver instantanément un passage biblique.
+                      Posez une requête en langage naturel pour retrouver
+                      instantanément un passage biblique.
                     </div>
                   </div>
 
                   <div class="pp-section-divider">
                     <span class="pp-pane-title">Outils IA en Direct</span>
                     <div class="pp-stack-6-mt6">
-                      <button id="generateKeyPointFromSpeechBtn" class="btn btn-secondary pp-ai-tool-btn">
+                      <button
+                        id="generateKeyPointFromSpeechBtn"
+                        class="btn btn-secondary pp-ai-tool-btn"
+                      >
                         🧠 Extraire le Point Clé de la Prédication
                       </button>
-                      <button class="btn btn-secondary pp-ai-tool-btn" id="ppAiAutoThemeBtn">
-                        🤖 Activer l'Auto-Thème IA (Ambiance)
+                      <button
+                        class="btn btn-secondary pp-ai-tool-btn"
+                        id="ppAiAutoThemeBtn"
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.75"
+                        >
+                          <polygon
+                            points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"
+                          />
+                        </svg>
+                        <span id="ppAiAutoThemeBtnLabel"
+                          >Activer l'Auto-Thème IA (Ambiance)</span
+                        >
                       </button>
                     </div>
                   </div>
@@ -533,16 +822,36 @@
                 <div class="pp-tab-pane" id="tabMedia">
                   <span class="pp-pane-title">Médiathèque & Arrière-plans</span>
                   <div class="pp-media-grid" id="ppMediaThumbnailGrid">
-                    <div id="ppMediaCueBgGold" role="button" tabindex="0" class="pp-cue-item">
+                    <div
+                      id="ppMediaCueBgGold"
+                      role="button"
+                      tabindex="0"
+                      class="pp-cue-item"
+                    >
                       <span class="pp-cue-label">✨ Gold Ambient</span>
                     </div>
-                    <div id="ppMediaCueBgBlue" role="button" tabindex="0" class="pp-cue-item">
+                    <div
+                      id="ppMediaCueBgBlue"
+                      role="button"
+                      tabindex="0"
+                      class="pp-cue-item"
+                    >
                       <span class="pp-cue-label">🌌 Deep Worship</span>
                     </div>
-                    <div id="ppMediaCueBgPurple" role="button" tabindex="0" class="pp-cue-item">
+                    <div
+                      id="ppMediaCueBgPurple"
+                      role="button"
+                      tabindex="0"
+                      class="pp-cue-item"
+                    >
                       <span class="pp-cue-label">🍇 Royal Purple</span>
                     </div>
-                    <div id="ppMediaCueBgGreen" role="button" tabindex="0" class="pp-cue-item">
+                    <div
+                      id="ppMediaCueBgGreen"
+                      role="button"
+                      tabindex="0"
+                      class="pp-cue-item"
+                    >
                       <span class="pp-cue-label">🌿 Grace Green</span>
                     </div>
                   </div>
@@ -551,34 +860,115 @@
                 <!-- Tab 5: Song Library -->
                 <div class="pp-tab-pane" id="tabSongs">
                   <span class="pp-pane-title">Bibliothèque de Chants</span>
-                  <input type="text" class="pp-input pp-song-search-input" placeholder="Rechercher un chant..." aria-label="Rechercher un chant" />
+                  <input
+                    type="text"
+                    class="pp-input pp-song-search-input"
+                    placeholder="Rechercher un chant..."
+                    aria-label="Rechercher un chant"
+                  />
                   <div class="pp-stack-6">
-                    <div id="ppSongCue1" role="button" tabindex="0" class="pp-cue-item">
+                    <div
+                      id="ppSongCue1"
+                      role="button"
+                      tabindex="0"
+                      class="pp-cue-item"
+                    >
                       <div class="pp-cue-info">
-                        <span class="pp-cue-label">🎵 Bénis l'Éternel, ô mon âme</span>
-                        <span class="pp-cue-meta">10,000 Reasons · Matt Redman</span>
+                        <span class="pp-cue-label"
+                          ><svg
+                            class="pp-icon-inline"
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.75"
+                          >
+                            <path d="M9 18V5l12-2v13" />
+                            <circle cx="6" cy="18" r="3" />
+                            <circle cx="18" cy="16" r="3" /></svg
+                          >Bénis l'Éternel, ô mon âme</span
+                        >
+                        <span class="pp-cue-meta"
+                          >10,000 Reasons · Matt Redman</span
+                        >
                       </div>
                     </div>
-                    <div id="ppSongCue2" role="button" tabindex="0" class="pp-cue-item">
+                    <div
+                      id="ppSongCue2"
+                      role="button"
+                      tabindex="0"
+                      class="pp-cue-item"
+                    >
                       <div class="pp-cue-info">
-                        <span class="pp-cue-label">🎵 Grâce Infinie (Amazing Grace)</span>
-                        <span class="pp-cue-meta">Hymne classique · John Newton</span>
+                        <span class="pp-cue-label"
+                          ><svg
+                            class="pp-icon-inline"
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.75"
+                          >
+                            <path d="M9 18V5l12-2v13" />
+                            <circle cx="6" cy="18" r="3" />
+                            <circle cx="18" cy="16" r="3" /></svg
+                          >Grâce Infinie (Amazing Grace)</span
+                        >
+                        <span class="pp-cue-meta"
+                          >Hymne classique · John Newton</span
+                        >
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- CENTER PANE: Slide Presentation Grid & Live Teleprompter -->
+              <div class="pp-center-column">
+                <!-- AJOUT (Le Plateau — Changement 2) : le moniteur PGM
+                           devient la pièce centrale dominante, déplacé ici
+                           depuis .pp-right-column (voir plus bas) où il était
+                           noyé parmi d'autres blocs de taille comparable.
+                           #ppPgmMonitor > .pp-pgm-card-preview >
+                           #ppPgmRef/#ppPgmText reste la hiérarchie exacte que
+                           updatePgmDisplay() (propresenter-studio.js) attend
+                           — seule la position du bloc parent .pp-monitor-group
+                           change, pas la structure relative interne. Fond
+                           sombre volontaire (--pp-bg-root/#000, jamais
+                           reclairci) : un vrai moniteur de diffusion a son
+                           propre boîtier, contraste voulu face au reste de
+                           l'interface Studio Clair désormais claire. -->
+                <div class="pp-monitor-group pp-monitor-group--hero">
+                  <div class="pp-row-between">
+                    <span class="pp-monitor-label">SORTIE PROJECTEUR</span>
+                    <span class="pp-meta-mono">1080p 60FPS</span>
+                  </div>
+                  <div class="pp-pgm-monitor" id="ppPgmMonitor">
+                    <div class="pp-live-onair-badge" id="ppLiveOnAirBadge">
+                      ● ON AIR
+                    </div>
+                    <div class="pp-pgm-card-preview">
+                      <div class="pp-pgm-ref-text" id="ppPgmRef">
+                        PROGRAMME HORS LIGNE
+                      </div>
+                      <div class="pp-pgm-body-text" id="ppPgmText">
+                        Aucun élément diffusé actuellement sur l'overlay.
                       </div>
                     </div>
                   </div>
                 </div>
 
-              </div>
-
-              <!-- CENTER PANE: Slide Presentation Grid & Live Teleprompter -->
-              <div class="pp-center-column">
-                
                 <div class="pp-slide-canvas-header">
                   <span class="pp-canvas-title">
                     GRILLE DE PRÉSENTATION 16:9
                   </span>
                   <div class="pp-canvas-hints">
-                    <span>Raccourcis : <b>Espace</b> (Suivant), <b>←/→</b> (Naviguer)</span>
+                    <span
+                      >Raccourcis : <b>Espace</b> (Suivant),
+                      <b>←/→</b> (Naviguer)</span
+                    >
                   </div>
                 </div>
 
@@ -592,62 +982,149 @@
                 <!-- Reading Mode Navigation Bar -->
                 <div class="pp-reading-nav-bar">
                   <div class="pp-nav-btn-group">
-                    <button id="ppPrevChapterBtn" class="pp-btn-nav">⏮ Chap. Préc.</button>
-                    <button id="ppPrevReadingVerseBtn" class="pp-btn-nav">◀ Verset Préc.</button>
+                    <button id="ppPrevChapterBtn" class="pp-btn-nav">
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.75"
+                      >
+                        <polyline points="11 17 6 12 11 7" />
+                        <polyline points="18 17 13 12 18 7" />
+                      </svg>
+                      Chap. Préc.
+                    </button>
+                    <button id="ppPrevReadingVerseBtn" class="pp-btn-nav">
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.75"
+                      >
+                        <polyline points="15 18 9 12 15 6" />
+                      </svg>
+                      Verset Préc.
+                    </button>
                   </div>
-                  <span class="pp-nav-label" id="ppReadingNavLabel">Navigation Lecture Pas-à-Pas</span>
+                  <span class="pp-nav-label" id="ppReadingNavLabel"
+                    >Navigation Lecture Pas-à-Pas</span
+                  >
                   <div class="pp-nav-btn-group">
-                    <button id="ppNextReadingVerseBtn" class="pp-btn-nav">Verset Suiv. ▶</button>
-                    <button id="ppNextChapterBtn" class="pp-btn-nav">Chap. Suiv. ⏭</button>
+                    <button id="ppNextReadingVerseBtn" class="pp-btn-nav">
+                      Verset Suiv.
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.75"
+                      >
+                        <polyline points="9 18 15 12 9 6" />
+                      </svg>
+                    </button>
+                    <button id="ppNextChapterBtn" class="pp-btn-nav">
+                      Chap. Suiv.
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.75"
+                      >
+                        <polyline points="13 17 18 12 13 7" />
+                        <polyline points="6 17 11 12 6 7" />
+                      </svg>
+                    </button>
                   </div>
                 </div>
 
                 <!-- AI Smart Cross-References & Suggestions Bar -->
-                <div id="ppAiSuggestionsRow" class="pp-ai-suggestions-row" style="display: none">
-                  <span class="pp-ai-suggestions-label">🤖 Versets Liés (IA) :</span>
-                  <div id="ppAiSuggestionsChips" class="pp-ai-suggestions-chips"></div>
+                <div
+                  id="ppAiSuggestionsRow"
+                  class="pp-ai-suggestions-row"
+                  style="display: none"
+                >
+                  <span class="pp-ai-suggestions-label"
+                    ><svg
+                      class="pp-icon-inline"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.75"
+                    >
+                      <polygon
+                        points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"
+                      /></svg
+                    >Versets Liés (IA) :</span
+                  >
+                  <div
+                    id="ppAiSuggestionsChips"
+                    class="pp-ai-suggestions-chips"
+                  ></div>
                 </div>
 
                 <!-- Live Speech-to-Text Teleprompter -->
                 <div class="pp-teleprompter-box">
                   <div class="pp-teleprompter-title">
-                    <span>🎙️ Transcription en direct (IA &lt; 2s)</span>
+                    <span>
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.75"
+                        class="pp-icon-inline"
+                      >
+                        <path
+                          d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"
+                        />
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                        <line x1="12" y1="19" x2="12" y2="23" />
+                        <line x1="8" y1="23" x2="16" y2="23" />
+                      </svg>
+                      Transcription en direct (IA &lt; 2s)
+                    </span>
                     <span class="pp-stream-status">● Flux continu</span>
                   </div>
                   <div class="pp-teleprompter-text" id="ppTeleprompterFeed">
-                    <span class="pp-teleprompter-placeholder">En attente de la parole... Activez le micro pour afficher la transcription en temps réel avec détection automatique des versets.</span>
+                    <span class="pp-teleprompter-placeholder"
+                      >En attente de la parole... Activez le micro pour afficher
+                      la transcription en temps réel avec détection automatique
+                      des versets.</span
+                    >
                   </div>
                 </div>
-
               </div>
 
-              <!-- RIGHT PANE: Program Output (PGM) & Stage Confidence -->
+              <!-- RIGHT PANE: Stage Confidence & Ambiance (inspecteur étroit —
+                           le moniteur PGM, désormais pièce centrale dominante,
+                           a été déplacé en haut de .pp-center-column, voir
+                           Changement 2 "Le Plateau"). -->
               <div class="pp-right-column">
-                
-                <!-- Live Program Output (PGM) Monitor -->
-                <div class="pp-monitor-group">
-                  <div class="pp-row-between">
-                    <span class="pp-monitor-label">PROGRAMME (PGM)</span>
-                    <span class="pp-meta-mono">1080p 60FPS</span>
-                  </div>
-                  <div class="pp-pgm-monitor" id="ppPgmMonitor">
-                    <div class="pp-live-onair-badge" id="ppLiveOnAirBadge">● ON AIR</div>
-                    <div class="pp-pgm-card-preview">
-                      <div class="pp-pgm-ref-text" id="ppPgmRef">PROGRAMME HORS LIGNE</div>
-                      <div class="pp-pgm-body-text" id="ppPgmText">Aucun élément diffusé actuellement sur l'overlay.</div>
-                    </div>
-                  </div>
-                </div>
-
                 <!-- Stage Display (Confidence Monitor) Preview -->
                 <div class="pp-monitor-group">
                   <div class="pp-row-between">
-                    <span class="pp-monitor-label">ÉCRAN SCÈNE (CONFIDENCE)</span>
+                    <span class="pp-monitor-label"
+                      >ÉCRAN SCÈNE (CONFIDENCE)</span
+                    >
                     <span class="pp-meta-mono">PASTEUR / LOUANGE</span>
                   </div>
                   <div class="pp-stage-preview-box" id="ppStagePreviewBox">
-                    <div class="pp-stage-ref-title" id="ppStageRef">ÉCRAN SCÈNE</div>
-                    <div class="pp-stage-text-preview" id="ppStageText">En attente du prochain texte...</div>
+                    <div class="pp-stage-ref-title" id="ppStageRef">
+                      ÉCRAN SCÈNE
+                    </div>
+                    <div class="pp-stage-text-preview" id="ppStageText">
+                      En attente du prochain texte...
+                    </div>
                   </div>
                 </div>
 
@@ -655,12 +1132,27 @@
                 <div class="pp-stack-6">
                   <span class="pp-pane-title">Ambiance Visuelle</span>
                   <div class="pp-mood-palette">
-                    <button id="setStudioMoodDarkBtn" class="pp-mood-pill">Minimal Sombre</button>
-                    <button id="setStudioMoodWarmBtn" class="pp-mood-pill">Or Solennel</button>
-                    <button id="setStudioMoodCoolBtn" class="pp-mood-pill">Bleu Nuit</button>
-                    <button id="setStudioMoodCelebrationBtn" class="pp-mood-pill">Célébration</button>
-                    <button id="setStudioMoodPurpleBtn" class="pp-mood-pill">Pourpre Royal</button>
-                    <button id="setStudioMoodRegalBtn" class="pp-mood-pill">Rayonnant</button>
+                    <button id="setStudioMoodDarkBtn" class="pp-mood-pill">
+                      Minimal Sombre
+                    </button>
+                    <button id="setStudioMoodWarmBtn" class="pp-mood-pill">
+                      Or Solennel
+                    </button>
+                    <button id="setStudioMoodCoolBtn" class="pp-mood-pill">
+                      Bleu Nuit
+                    </button>
+                    <button
+                      id="setStudioMoodCelebrationBtn"
+                      class="pp-mood-pill"
+                    >
+                      Célébration
+                    </button>
+                    <button id="setStudioMoodPurpleBtn" class="pp-mood-pill">
+                      Pourpre Royal
+                    </button>
+                    <button id="setStudioMoodRegalBtn" class="pp-mood-pill">
+                      Rayonnant
+                    </button>
                   </div>
                 </div>
 
@@ -668,16 +1160,26 @@
                 <div class="pp-transition-card">
                   <div class="pp-row-between">
                     <span class="pp-nav-label">VITESSE TRANSITION</span>
-                    <span class="pp-transition-val" id="ppTransitionVal">0.5s</span>
+                    <span class="pp-transition-val" id="ppTransitionVal"
+                      >0.5s</span
+                    >
                   </div>
-                  <input type="range" min="100" max="2000" value="500" class="pp-slider" aria-label="Vitesse de transition" oninput="document.getElementById('ppTransitionVal').textContent = (this.value / 1000).toFixed(1) + 's'" />
+                  <input
+                    type="range"
+                    min="100"
+                    max="2000"
+                    value="500"
+                    class="pp-slider"
+                    aria-label="Vitesse de transition"
+                    oninput="
+                      document.getElementById('ppTransitionVal').textContent =
+                        (this.value / 1000).toFixed(1) + 's'
+                    "
+                  />
                 </div>
-
               </div>
-
             </div>
           </div>
-
         </section>
 
         <!-- Overview Section (Direct Classique) -->

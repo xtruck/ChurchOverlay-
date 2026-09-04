@@ -161,9 +161,14 @@ export function renderStudioSlides() {
   if (!container) return;
 
   if (slideGridItems.length === 0) {
+    // CORRECTIF (Le Plateau — Changement 3, piège CSS Grid -> Flex) :
+    // grid-column: 1 / -1 ne fait plus rien depuis que .pp-slides-wrapper
+    // est passé en flex (pellicule horizontale, voir dashboard.css) —
+    // remplacé par width: 100%, l'équivalent flex-safe pour occuper toute
+    // la largeur de la bande.
     container.innerHTML = `
-      <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--pp-text-dim);">
-        <div style="font-size: 28px; margin-bottom: 8px;">📺</div>
+      <div style="width: 100%; text-align: center; padding: 40px; color: var(--pp-text-dim);">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" style="margin-bottom: 8px;"><rect x="2" y="3" width="20" height="14" rx="2" ry="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>
         <div style="font-size: 13px; font-weight: 600;">Aucune diapositive active</div>
         <div style="font-size: 11px;">Les versets détectés ou sélectionnés s'afficheront ici sous forme de diapositives ProPresenter.</div>
       </div>
@@ -504,10 +509,17 @@ let isAutoThemeActive = false;
 export function toggleAiAutoTheme() {
   isAutoThemeActive = !isAutoThemeActive;
   const btn = document.getElementById('ppAiAutoThemeBtn');
+  // CORRECTIF (Le Plateau — Changement 4, emoji -> SVG) : le bouton porte
+  // désormais une icône SVG fixe suivie d'un <span id="ppAiAutoThemeBtnLabel">
+  // — btn.textContent = "..." écraserait cette icône (remplace TOUS les
+  // enfants par un nœud texte). Ne cible plus que le label.
+  const label = document.getElementById('ppAiAutoThemeBtnLabel');
+  if (label) {
+    label.textContent = isAutoThemeActive
+      ? 'Auto-Thème IA (Actif)'
+      : "Activer l'Auto-Thème IA (Ambiance)";
+  }
   if (btn) {
-    btn.textContent = isAutoThemeActive
-      ? '✅ Auto-Thème IA (Actif)'
-      : "🤖 Activer l'Auto-Thème IA (Ambiance)";
     btn.style.borderColor = isAutoThemeActive ? 'var(--pp-green-ok)' : '';
   }
   showToast(`Auto-Thème IA : ${isAutoThemeActive ? 'ACTIVÉ' : 'DÉSACTIVÉ'}`, 'info');
