@@ -737,9 +737,57 @@ export function renderPreServiceCheckResult(message) {
       true,
       message.ipCameraCount ? `${message.ipCameraCount} caméra(s)` : 'Aucune'
     ) +
+    // AJOUT (Pre-Service Readiness Score) : agrège des signaux calculés
+    // côté serveur (voir preServiceCheck dans diagnostics-ws-handlers.js) —
+    // le tableau de bord se contente d'afficher, aucun recalcul ici pour
+    // éviter que les deux dérivent l'un de l'autre.
+    row(
+      'Feuille de route préparée',
+      message.rundownCueCount > 0,
+      message.rundownCueCount ? `${message.rundownCueCount} repère(s)` : 'Vide'
+    ) +
+    row(
+      'Mode de confiance',
+      !!message.trustMode,
+      message.trustMode
+        ? { auto: 'Automatique', 'semi-auto': 'Semi-automatique', manual: 'Manuel' }[
+            message.trustMode
+          ] || message.trustMode
+        : 'Non choisi'
+    ) +
+    row(
+      'Modules IA',
+      !message.aiDegradedCount,
+      message.aiDegradedCount ? `${message.aiDegradedCount} en mode limité` : 'Tous opérationnels'
+    ) +
+    row(
+      'Charge réseau WebSocket',
+      !message.wsBackpressureCount,
+      message.wsBackpressureCount
+        ? `${message.wsBackpressureCount} connexion(s) en retard`
+        : 'Normale'
+    ) +
     `<div class="preflight-note">
                     ⚠️ Le microphone n'est pas vérifié ici — voir "Statut Capture Micro" ci-dessus.
                 </div>`;
+
+  // AJOUT (Pre-Service Readiness Score) : bandeau récapitulatif au-dessus
+  // du détail ligne par ligne — un opérateur pressé avant un culte doit
+  // pouvoir juger en un coup d'œil sans lire les 10 lignes en dessous.
+  // `readyToGoLive` reste permissif côté serveur (voir son commentaire) :
+  // un badge "à vérifier" liste des points d'attention, pas des blocages.
+  if (typeof message.readinessScore === 'number') {
+    const badgeClass = message.readyToGoLive ? 'ok' : 'warn';
+    const badgeIcon = message.readyToGoLive ? '✅' : '⚠️';
+    const badgeText = message.readyToGoLive
+      ? 'Prêt pour le culte'
+      : `${(message.readinessChecks || []).filter((c) => !c.ok).length} point(s) à vérifier`;
+    resultsEl.innerHTML =
+      `<div class="preflight-row preflight-headline">
+                    <span class="preflight-row-label">${badgeIcon} ${badgeText}</span>
+                    <span class="preflight-row-status ${badgeClass}">${message.readinessScore}%</span>
+                </div>` + resultsEl.innerHTML;
+  }
   resultsEl.style.display = 'block';
 
   const groqOk = !message.groq || message.groq.ok;

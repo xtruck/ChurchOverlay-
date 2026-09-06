@@ -1085,6 +1085,10 @@ const CATEGORY_HANDLERS = new Map([
     bibleOfflineCache,
     ipCameraStore,
     sessionStore,
+    rundownStore,
+    sessionState,
+    aiLoadErrors,
+    wss,
   }),
   ...miscWsHandlers.createHandlers({
     log,

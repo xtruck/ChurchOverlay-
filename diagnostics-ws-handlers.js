@@ -26,6 +26,13 @@
  * @param {object} ctx.bibleOfflineCache
  * @param {object} ctx.ipCameraStore
  * @param {object} ctx.sessionStore
+ * @param {object} ctx.rundownStore
+ * @param {object} ctx.sessionState
+ * @param {string[]} ctx.aiLoadErrors - échecs de CHARGEMENT des modules IA au
+ *   démarrage (voir ai-modules-loader.js) — même liste déjà diffusée dans
+ *   chaque message 'init' (voir setAiDegradedStatus côté dashboard).
+ * @param {import('ws').Server} ctx.wss - pour agréger le backpressure WS en
+ *   cours (voir ws._backpressureSince, posé par broadcast() dans server.js).
  * @returns {Map<string, (ws: object, sanitized: object, requestId: string|null, sendError: (error: string) => void) => Promise<void>>}
  */
 function createHandlers(ctx) {
@@ -39,6 +46,10 @@ function createHandlers(ctx) {
     bibleOfflineCache,
     ipCameraStore,
     sessionStore,
+    rundownStore,
+    sessionState,
+    aiLoadErrors,
+    wss,
   } = ctx;
 
   const handlers = new Map();
@@ -59,6 +70,41 @@ function createHandlers(ctx) {
       // vérifier chaque panneau séparément, ce même bouton couvre
       // désormais tout — lecture seule, aucun appel réseau supplémentaire
       // (tout est déjà en mémoire/disque local).
+
+      // AJOUT (Pre-Service Readiness Score) : agrège des signaux déjà
+      // trackés ailleurs (rundown, mode de confiance, échecs de chargement
+      // IA, backpressure WS) en un score/checklist unique, calculé côté
+      // serveur pour que le tableau de bord n'ait pas à dupliquer cette
+      // logique. `readyToGoLive` reste permissif par construction : une
+      // feuille de route vide ou un mode IA dégradé sont des AVERTISSEMENTS
+      // (un culte 100% manuel, sans aucune clé IA, est un usage légitime),
+      // pas des blocages — seul un vrai problème de connexion serait un
+      // faux "prêt".
+      let wsBackpressureCount = 0;
+      if (wss && wss.clients) {
+        for (const client of wss.clients) {
+          if (client._backpressureSince) wsBackpressureCount++;
+        }
+      }
+      const rundownCueCount = rundownStore ? rundownStore.listCues().length : 0;
+      const trustMode = sessionState ? sessionState.getTrustMode() : null;
+      const aiDegradedList = Array.isArray(aiLoadErrors) ? aiLoadErrors : [];
+
+      const readinessChecks = [
+        {
+          key: 'transcription',
+          label: 'Transcription (Groq ou Deepgram)',
+          ok: !!(groqResult.ok || deepgramResult.ok),
+        },
+        { key: 'rundown', label: 'Feuille de route préparée', ok: rundownCueCount > 0 },
+        { key: 'trustMode', label: 'Mode de confiance choisi', ok: !!trustMode },
+        { key: 'aiModules', label: 'Modules IA', ok: aiDegradedList.length === 0 },
+        { key: 'wsBackpressure', label: 'Charge réseau WebSocket', ok: wsBackpressureCount === 0 },
+      ];
+      const readinessScore = Math.round(
+        (readinessChecks.filter((c) => c.ok).length / readinessChecks.length) * 100
+      );
+
       ws.send(
         JSON.stringify({
           action: 'preServiceCheckResult',
@@ -73,6 +119,14 @@ function createHandlers(ctx) {
           offlineBibleStatus: bibleOfflineCache.getStatus().status,
           ipCameraCount: ipCameraStore.listItems().length,
           qrCameraReady: wsHost !== '127.0.0.1' && wsHost !== 'localhost',
+          rundownCueCount,
+          trustMode,
+          aiDegradedCount: aiDegradedList.length,
+          aiLoadErrors: aiDegradedList,
+          wsBackpressureCount,
+          readinessChecks,
+          readinessScore,
+          readyToGoLive: readinessChecks.every((c) => c.ok),
           timestamp: Date.now(),
         })
       );

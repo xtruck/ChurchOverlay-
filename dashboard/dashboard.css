@@ -2370,16 +2370,10 @@ body {
      de l'œil la bordure de statut de cette même carte. */
   opacity: 0.22;
   background:
-    linear-gradient(
-        180deg,
-        transparent,
-        var(--text-dim) 20%,
-        var(--text-dim) 80%,
-        transparent
-      )
+    linear-gradient(180deg, transparent, var(--text-dim) 20%, var(--text-dim) 80%, transparent)
       center / 2px 100% no-repeat,
-    linear-gradient(90deg, transparent, var(--text-dim) 20%, var(--text-dim) 80%, transparent) center
-      34% / 100% 2px no-repeat;
+    linear-gradient(90deg, transparent, var(--text-dim) 20%, var(--text-dim) 80%, transparent)
+      center 34% / 100% 2px no-repeat;
 }
 
 @media (max-width: 1200px) {
@@ -2852,6 +2846,26 @@ body {
   font-size: var(--text-xs);
   color: var(--text-dim);
   margin-top: var(--space-2);
+}
+
+/* AJOUT (Pre-Service Readiness Score) : bandeau récapitulatif au-dessus du
+   détail ligne par ligne — doit se distinguer visuellement d'un simple
+   .preflight-row parmi d'autres, pas juste porter un nom de classe en plus. */
+.preflight-headline {
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.preflight-headline .preflight-row-label {
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.preflight-headline .preflight-row-status {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
 }
 
 /* AJOUT (redesign visuel, lot 3) : cartes source de l'assistant sermons
@@ -5498,8 +5512,12 @@ body {
 }
 .audio-vumeter-wrap {
   padding: 0.6rem 1rem;
-  background: var(--surface);
-  border-radius: var(--radius);
+  /* CORRECTIF (audit performance/bugs) : --surface/--radius n'ont jamais
+     existé dans ce fichier (repli silencieux sur `initial` — pas de fond,
+     pas d'arrondi) — tokens réels utilisés partout ailleurs pour ce même
+     traitement carte. */
+  background: var(--bg-card);
+  border-radius: var(--radius-sm);
   margin-top: 0.5rem;
 }
 .vumeter-head {
