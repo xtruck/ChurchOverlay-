@@ -20,17 +20,34 @@
     /* CORRECTIF (chantier Studio Clair, Track A2) : mêmes noms de
        variables, nouvelles valeurs — fond clair, carte blanche solide
        (plus de glass sombre translucide), accent terracotta. */
-    --bg-primary: #faf8f5;
-    --glass-bg: #ffffff;
-    --glass-border: #e8e3db;
-    --text-primary: #2b2620;
-    --text-secondary: #756d60;
-    --text-muted: #a49c8d;
-    --accent: #b8622f;
-    --accent-hover: #8f4a20;
-    --success: #2f8f6f;
-    --error: #ef4444;
-    --warning: #b8863a;
+    /* CORRECTIF (chantier "Mission Control") : même discipline une fois de
+       plus — mêmes NOMS de variables, seules les valeurs changent, alignées
+       sur le bloc :root de dashboard/dashboard.css. --accent est le SEUL
+       point à modifier pour rebrander cet écran (--accent-hover et le voile
+       de focus en dérivent via color-mix()) ; il doit rester aligné sur
+       --primary dans dashboard/dashboard.css. Pas de synchronisation en
+       direct possible ici : cet assistant s'exécute AVANT que le serveur ne
+       soit configuré, il n'a ni WebSocket ni accès réseau (CSP : connect-src
+       'self'). */
+    --bg-primary: #101219;
+    --glass-bg: #171922;
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --text-primary: #e7e8ee;
+    --text-secondary: #a5a9bc;
+    --text-muted: #6b6f80;
+    --accent: #f5a15a;
+    --accent-hover: color-mix(in srgb, var(--accent) 85%, black);
+    /* --accent est un orange CLAIR : du texte blanc posé dessus tombe à
+       ~2:1 de contraste. Encre sombre dédiée pour les surfaces peintes en
+       --accent plein (.btn-primary) — même correctif que dans
+       dashboard/dashboard.css (--on-primary). */
+    --on-accent: #14161f;
+    /* La couleur est RÉSERVÉE au statut (vert/ambre/rouge), jamais
+       décorative — voir .status.success/.error/.warning plus bas. */
+    --success: #34d399;
+    --error: #f87171;
+    --warning: #fbbf24;
+    --bg-input: #0d0f16;
   }
 
   * {
@@ -46,7 +63,10 @@
        bleu-nuit d'origine — ce fond de page n'était pas tokenisé, laissé
        tel quel il aurait produit une carte claire flottant sur un fond
        resté sombre. */
-    background: linear-gradient(135deg, #faf8f5 0%, #eee7dc 100%);
+    /* CORRECTIF (Mission Control) : fond PLAT et TOKENISÉ — plus de dégradé
+       (la maquette régie n'en a pas), et plus de hex en dur ici : c'est
+       exactement l'oubli qui avait produit le bug décrit juste au-dessus. */
+    background: var(--bg-primary);
     color: var(--text-primary);
     min-height: 100vh;
     display: flex;
@@ -64,7 +84,12 @@
        (--accent), opacité fortement réduite — un fond clair n'a besoin
        que d'une touche très discrète, pas d'un halo saturé comme sur
        fond sombre. */
-    background: radial-gradient(circle at 50% 50%, rgba(184, 98, 47, 0.08) 0%, transparent 70%);
+    /* CORRECTIF (Mission Control) : lueur décorative RETIRÉE — "pas de
+       lueur, pas de flou", et la couleur d'accent est réservée aux
+       éléments signifiants, jamais à un halo de fond. L'élément lui-même
+       est conservé (aucune modification du DOM dans ce chantier), il ne
+       peint simplement plus rien. */
+    background: none;
     pointer-events: none;
   }
 
@@ -77,9 +102,12 @@
        est donc retiré (il ne faisait plus rien). */
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
-    border-radius: 20px;
+    /* CORRECTIF (Mission Control) : rayons resserrés (régie) et ombre
+       portée NOIRE au lieu de l'encre chaude du thème clair, qui virait au
+       brun sur un fond sombre. */
+    border-radius: 8px;
     padding: 40px;
-    box-shadow: 0 20px 48px rgba(43, 38, 32, 0.1);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
     animation: slideIn 0.4s ease-out;
   }
 
@@ -114,10 +142,16 @@
     font-size: 26px;
     font-weight: 700;
     margin-bottom: 8px;
-    background: linear-gradient(135deg, var(--accent), var(--success));
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+    /* CORRECTIF (Mission Control) : le titre était un dégradé de texte
+       accent -> vert. Deux problèmes : c'est de la couleur purement
+       décorative (elle est désormais réservée au statut), et mélanger
+       l'accent au VERT DE STATUT dans un titre brouille exactement le code
+       couleur que le reste de l'écran essaie d'établir. Titre plein, à
+       l'encre de texte normale. Les trois propriétés background-clip /
+       -webkit-text-fill-color sont retirées et pas seulement neutralisées :
+       laisser -webkit-text-fill-color: transparent aurait rendu le titre
+       littéralement invisible une fois le dégradé enlevé. */
+    color: var(--text-primary);
   }
 
   .subtitle {
@@ -152,10 +186,10 @@
 
   select, input {
     width: 100%;
-    background: #f7f4ee;
+    background: var(--bg-input);
     border: 1px solid var(--glass-border);
     color: var(--text-primary);
-    border-radius: 10px;
+    border-radius: 6px;
     padding: 12px 14px;
     font-size: 13px;
     font-family: inherit;
@@ -165,13 +199,15 @@
   select:focus, input:focus {
     outline: none;
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(184, 98, 47, 0.15);
+    /* Dérivé de --accent via color-mix() plutôt qu'un rgba() figé, pour
+       suivre automatiquement tout changement de couleur d'accent. */
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
   }
 
   .btn {
     cursor: pointer;
     border: none;
-    border-radius: 10px;
+    border-radius: 6px;
     font-size: 13px;
     font-weight: 600;
     padding: 12px 18px;
@@ -180,28 +216,33 @@
   }
 
   .btn-secondary {
-    background: rgba(43, 38, 32, 0.04);
+    /* CORRECTIF (Mission Control) : voile clair sur fond sombre — un voile
+       d'encre sombre sur un panneau sombre était invisible. */
+    background: rgba(255, 255, 255, 0.04);
     color: var(--text-primary);
     border: 1px solid var(--glass-border);
   }
 
   .btn-secondary:hover {
-    background: rgba(43, 38, 32, 0.07);
+    background: rgba(255, 255, 255, 0.08);
     border-color: var(--accent);
   }
 
   .btn-primary {
     width: 100%;
-    background: linear-gradient(135deg, var(--accent), var(--accent-hover));
-    color: white;
+    /* CORRECTIF (Mission Control) : aplat de couleur (plus de dégradé) et
+       surtout ENCRE SOMBRE au lieu de blanc — --accent est maintenant un
+       orange clair, du blanc dessus tombait à ~2:1 de contraste, illisible.
+       Même correctif que --on-primary dans dashboard/dashboard.css. La
+       lueur portée colorée disparaît aussi ("pas de lueur"). */
+    background: var(--accent);
+    color: var(--on-accent);
     padding: 14px 20px;
     font-size: 14px;
-    box-shadow: 0 4px 12px rgba(184, 98, 47, 0.3);
   }
 
   .btn-primary:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(184, 98, 47, 0.4);
+    background: var(--accent-hover);
   }
 
   .btn-primary:disabled {
@@ -275,8 +316,12 @@
     display: inline-block;
     width: 14px;
     height: 14px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top-color: white;
+    /* CORRECTIF (Mission Control) : ce spinner n'apparaît QUE dans
+       .btn-primary (voir btnSave.innerHTML dans le <script>), dont le fond
+       est l'orange clair --accent : un spinner blanc y était à peine
+       visible. Même encre sombre que le libellé du bouton. */
+    border: 2px solid color-mix(in srgb, var(--on-accent) 30%, transparent);
+    border-top-color: var(--on-accent);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }

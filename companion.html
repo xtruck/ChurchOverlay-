@@ -26,13 +26,32 @@
    blanche, accent terracotta. Page volontairement simple : lecture
    seule, pensée pour un téléphone qui vient de scanner un QR code
    affiché en salle, pas une app à installer. */
+      /* CORRECTIF (chantier "Mission Control") : mêmes NOMS de variables,
+   nouvelles valeurs — alignées sur le bloc :root de
+   dashboard/dashboard.css. Page toujours volontairement simple.
+
+   NOTE PRODUIT : cette page est destinée à l'ASSEMBLÉE (téléphone
+   personnel après scan d'un QR code en salle), pas à l'opérateur. Le
+   passage au sombre est un choix explicite du demandeur, appliqué ici
+   sciemment. Deux points restent inchangés parce qu'ils servent la
+   lecture, pas l'esthétique : la serif du corps de verset (--text sur
+   fond sombre reste très lisible, et une serif reste le meilleur choix
+   pour lire de l'Écriture au calme), et le sans-serif system-ui déjà en
+   place sur les libellés/actions — ce partage serif-corps /
+   sans-chrome correspond d'ailleurs déjà à la logique Mission Control.
+
+   PAS de synchronisation en direct de la couleur d'accent possible ici :
+   cette page ne parle jamais WebSocket (simple polling HTTP sur
+   /api/verses et /api/captions) et sa CSP restreint connect-src à
+   'self'. --accent ci-dessous est donc le seul point à modifier, et doit
+   rester aligné sur --primary dans dashboard/dashboard.css. */
       :root {
-        --bg: #faf8f5;
-        --bg-card: #ffffff;
-        --text: #2b2620;
-        --text-muted: #756d60;
-        --accent: #b8622f;
-        --border: rgba(184, 98, 47, 0.18);
+        --bg: #101219;
+        --bg-card: #171922;
+        --text: #e7e8ee;
+        --text-muted: #a5a9bc;
+        --accent: #f5a15a;
+        --border: rgba(255, 255, 255, 0.08);
       }
       * {
         box-sizing: border-box;
@@ -40,7 +59,9 @@
       body {
         margin: 0;
         min-height: 100vh;
-        background: linear-gradient(160deg, #faf8f5 0%, #f4efe6 55%, #eee7dc 100%);
+        /* CORRECTIF (Mission Control) : fond PLAT — la maquette régie n'a pas
+     de dégradé. */
+        background: var(--bg);
         color: var(--text);
         font-family: 'Georgia', 'Cormorant Garamond', serif;
         padding: 20px 16px 60px;
@@ -72,7 +93,7 @@
       .verse-card {
         background: var(--bg-card);
         border: 1px solid var(--border);
-        border-radius: 12px;
+        border-radius: 6px;
         padding: 16px 18px;
       }
       .verse-ref {
@@ -109,7 +130,7 @@
       .verse-action-btn {
         background: none;
         border: 1px solid var(--border);
-        border-radius: 8px;
+        border-radius: 4px;
         color: var(--text-muted);
         font-size: 0.78rem;
         padding: 5px 10px;
@@ -119,7 +140,11 @@
       .verse-action-btn.active {
         color: var(--accent);
         border-color: var(--accent);
-        background: rgba(184, 98, 47, 0.12);
+        /* CORRECTIF (Mission Control) : dérivé de --accent via color-mix()
+     plutôt qu'un rgba() figé, pour que ce fond suive automatiquement toute
+     modification de la couleur d'accent — même principe que
+     dashboard/dashboard.css. */
+        background: color-mix(in srgb, var(--accent) 14%, transparent);
       }
       .verse-note {
         display: none;
@@ -131,9 +156,12 @@
       .verse-note textarea {
         width: 100%;
         min-height: 60px;
-        background: rgba(43, 38, 32, 0.04);
+        /* CORRECTIF (Mission Control) : encre sombre sur fond clair ->
+     voile clair sur fond sombre, sinon ce champ de saisie devenait
+     invisible (noir sur noir). */
+        background: rgba(255, 255, 255, 0.04);
         border: 1px solid var(--border);
-        border-radius: 8px;
+        border-radius: 4px;
         color: var(--text);
         font-family: system-ui, sans-serif;
         font-size: 0.88rem;
@@ -181,7 +209,7 @@
         margin: 0 auto 20px;
         background: var(--bg-card);
         border: 1px solid var(--border);
-        border-radius: 12px;
+        border-radius: 6px;
         padding: 14px 18px;
         font-family: system-ui, sans-serif;
       }

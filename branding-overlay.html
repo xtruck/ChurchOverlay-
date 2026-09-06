@@ -59,6 +59,35 @@
      verset — Newsreader remplace Merriweather ici, cohérent avec le
      nouveau thème par défaut de l'overlay (Track B du même chantier). */
       @import url('https://fonts.googleapis.com/css2?family=Newsreader:wght@600&display=swap');
+      /* CORRECTIF (chantier "Mission Control") : le bandeau titre passe de
+         l'ivoire Studio Clair à la palette régie sombre (alignée sur le bloc
+         :root de dashboard/dashboard.css).
+
+         PÉRIMÈTRE VOLONTAIREMENT RESTREINT : cette page est un CALQUE
+         composité par OBS PAR-DESSUS la source caméra — html/body restent
+         donc `background: transparent` (voir plus bas), il n'y a PAS de
+         panneau opaque plein écran ici, contrairement aux autres pages du
+         chantier. Seul le bandeau "lower third", qui a toujours eu un fond à
+         lui, est re-thémé. Un fond sombre + texte clair est par ailleurs le
+         choix habituel d'un lower third de diffusion : il reste lisible sur
+         une image caméra claire comme sombre, ce que l'ivoire précédent ne
+         faisait pas sur une scène très éclairée.
+
+         La police Newsreader n'est PAS touchée : elle est déjà chargée
+         ci-dessus, et aucune nouvelle police n'est introduite par ce
+         chantier. */
+      :root {
+        --mc-panel: rgba(20, 22, 31, 0.88);
+        --mc-border: rgba(255, 255, 255, 0.14);
+        --mc-text: #e7e8ee;
+        --mc-text-muted: #a5a9bc;
+        --mc-radius: 6px;
+        /* Écrasé EN DIRECT par le sélecteur de couleur du tableau de bord —
+           voir applyAccentColor() dans le <script> plus bas. Cette valeur
+           n'est que le repli avant la première réponse du serveur ; elle doit
+           rester alignée sur --primary dans dashboard/dashboard.css. */
+        --mc-accent: #f5a15a;
+      }
       * {
         margin: 0;
         padding: 0;
@@ -139,19 +168,20 @@
         transform: translateX(-50%) translateY(24px);
         max-width: 82vw;
         padding: 16px 28px 14px;
-        border-radius: 10px;
-        /* CORRECTIF (Studio Clair) : même dégradé ivoire que le fond
-       overlay par défaut (studio-clair-ivoire.json), translucide pour
-       rester un bandeau composité PAR-DESSUS la caméra dans OBS, pas un
-       fond opaque. Bordure sombre à faible opacité (pas --border-subtle
-       clair, qui se fondrait dans un fond de caméra lui-même clair) —
-       garde une délimitation visible quelle que soit la luminosité de
-       l'image caméra en dessous. */
-        background: linear-gradient(165deg, rgba(250, 248, 245, 0.92), rgba(244, 239, 230, 0.92));
-        -webkit-backdrop-filter: blur(6px);
-        backdrop-filter: blur(6px);
-        border: 1px solid rgba(43, 38, 32, 0.14);
-        color: #2b2620;
+        border-radius: var(--mc-radius);
+        /* CORRECTIF (Mission Control) : fond PLAT (le dégradé ivoire est
+       remplacé par une seule couleur sombre translucide) et flou
+       d'arrière-plan RETIRÉ — la maquette régie n'a ni dégradé ni flou.
+       L'opacité passe de 0.92 à 0.88 : légèrement plus transparente pour
+       rester un bandeau composité au-dessus de la caméra, mais assez dense
+       pour rester lisible sans le flou qui assurait auparavant la
+       séparation avec l'image en dessous. Bordure désormais CLAIRE à faible
+       opacité (le fond du bandeau est sombre, une bordure sombre s'y
+       fondrait) — même rôle qu'avant : garder le bandeau délimité quelle
+       que soit la luminosité de l'image caméra. */
+        background: var(--mc-panel);
+        border: 1px solid var(--mc-border);
+        color: var(--mc-text);
         text-align: center;
         opacity: 0;
         overflow: hidden;
@@ -166,7 +196,9 @@
       /* AJOUT (cohérence visuelle avec .verse-card::before dans overlay.html) :
      même fin trait en dégradé, désormais terracotta (accent Studio Clair)
      au lieu de l'ancien or, pour que le bandeau titre porte la même
-     signature visuelle que la carte de verset. */
+     signature visuelle que la carte de verset.
+     CORRECTIF (Mission Control) : passe par --mc-accent au lieu d'un hex
+     figé, donc suit le sélecteur de couleur du tableau de bord. */
       #branding-lowerthird::before {
         content: '';
         position: absolute;
@@ -174,7 +206,7 @@
         left: 8px;
         right: 8px;
         height: 2px;
-        background: linear-gradient(90deg, transparent, #b8622f, transparent);
+        background: linear-gradient(90deg, transparent, var(--mc-accent), transparent);
       }
       #branding-title {
         font-family: 'Newsreader', Georgia, serif;
@@ -186,7 +218,7 @@
         margin-top: 4px;
         font-size: clamp(13px, 1.3vw, 17px);
         font-weight: 500;
-        color: rgba(43, 38, 32, 0.72);
+        color: var(--mc-text-muted);
         line-height: 1.3;
       }
       #branding-subtitle:empty {
@@ -228,6 +260,31 @@
 
       let ws = null;
       let reconnectTimer = null;
+
+      // AJOUT (chantier "Mission Control" — couleur d'accent réellement
+      // modifiable, pas une seconde copie figée) : le sélecteur de couleur du
+      // tableau de bord (dashboardAccentColorInput -> 'setDashboardAccentColor')
+      // pilote désormais aussi le trait d'accent de ce bandeau.
+      //
+      // ATTENTION à ne pas confondre les DEUX domaines de "branding" qui
+      // arrivent sur ce même socket :
+      //   - `branding` / 'brandingUpdate'  = habillage caméra (logo, titre,
+      //     sous-titre, position) — c'est applyBranding() juste en dessous ;
+      //   - `dashboardBranding` / 'dashboardBrandingUpdate' = identité de
+      //     marque de l'outil (nom d'organisation, couleur d'accent, logo de
+      //     la barre latérale) — c'est CETTE fonction.
+      // Voir les en-têtes de branding-store.js vs dashboard-branding-store.js.
+      //
+      // Aucune plomberie serveur ajoutée : 'init' porte déjà
+      // `dashboardBranding` (server.js > getDashboardBrandingState()) et
+      // 'dashboardBrandingUpdate' est diffusé sans l'option operatorOnly
+      // (branding-ws-handlers.js) — ces messages arrivaient déjà ici, ils
+      // étaient simplement ignorés.
+      const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
+      function applyAccentColor(dashboardBranding) {
+        if (!dashboardBranding || !HEX_COLOR_RE.test(dashboardBranding.accentColor || '')) return;
+        document.documentElement.style.setProperty('--mc-accent', dashboardBranding.accentColor);
+      }
 
       function applyBranding(data) {
         if (!data) return;
@@ -306,6 +363,11 @@
 
           if (msg.action === 'init' || msg.action === 'brandingUpdate') {
             applyBranding(msg.branding || msg);
+          }
+          if (msg.action === 'init') {
+            applyAccentColor(msg.dashboardBranding);
+          } else if (msg.action === 'dashboardBrandingUpdate') {
+            applyAccentColor(msg.branding);
           }
         };
 

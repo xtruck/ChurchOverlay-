@@ -112,8 +112,10 @@ try {
   // CORRECTIF (Studio Clair — nouveau thème par défaut) : ce test vérifie
   // le repli sur DEFAULT_THEME_ID, pas une valeur figée sur 'nuit' — voir
   // le même correctif dans test-theme-loader.js.
+  // CORRECTIF (Mission Control — nouveau thème par défaut) : idem, le
+  // défaut attendu devient 'mission-control'.
   assert(
-    themeLoader.getActiveTheme().id === 'studio-clair-ivoire',
+    themeLoader.getActiveTheme().id === 'mission-control',
     'le thème actif retombe sur le thème par défaut si le thème choisi disparaît'
   );
 } finally {

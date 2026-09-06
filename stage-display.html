@@ -44,10 +44,27 @@
        --accent est aligné sur le terracotta Studio Clair, pour un minimum
        de cohérence de marque avec le reste de l'app sans toucher au fond
        sombre ni au contraste. */
-    --bg: #0a0a0f;
-    --text: #f5f5f7;
-    --text-dim: #8a8a94;
-    --accent: #b8622f;
+    /* CORRECTIF (chantier "Mission Control") : cet écran était DÉJÀ sombre
+       (voir juste au-dessus) — l'exception qu'il constituait disparaît,
+       c'est désormais le reste de l'app qui l'a rejoint. Mêmes NOMS de
+       variables, seules les valeurs changent, alignées sur le bloc :root de
+       dashboard/dashboard.css. Les couleurs d'état ci-dessous (--ok/--warn/
+       --err) étaient jusqu'ici écrites en dur plus bas dans ce fichier
+       (#22c55e/#d97706/#ef4444) : tokenisées ici pour que la règle
+       "la couleur est RÉSERVÉE au statut" soit lisible en un seul endroit. */
+    --bg: #101219;
+    --text: #e7e8ee;
+    --text-dim: #6b6f80;
+    /* --accent est écrasé EN DIRECT par le tableau de bord (voir le bloc
+       'init'/'dashboardBrandingUpdate' dans le <script> plus bas) — cette
+       valeur n'est que le repli avant la première réponse du serveur. Elle
+       doit rester alignée sur --primary dans dashboard/dashboard.css et sur
+       DEFAULT_ACCENT_COLOR dans dashboard/features/dashboard-branding.js. */
+    --accent: #f5a15a;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --warn-ink: #14161f;
+    --err: #f87171;
   }
   * { box-sizing: border-box; }
   html, body {
@@ -100,8 +117,8 @@
     position: fixed;
     left: 0; right: 0; bottom: 0;
     padding: 2.5vh 4vw;
-    background: #d97706;
-    color: #1a1200;
+    background: var(--warn);
+    color: var(--warn-ink);
     font-size: 4vh;
     font-weight: 700;
     text-align: center;
@@ -112,9 +129,9 @@
     top: 2vh; right: 3vw;
     width: 1.4vh; height: 1.4vh;
     border-radius: 50%;
-    background: #ef4444;
+    background: var(--err);
   }
-  #connIndicator.connected { background: #22c55e; }
+  #connIndicator.connected { background: var(--ok); }
 </style>
 </head>
 <body>
@@ -163,6 +180,26 @@ function clearReferenceText() {
   document.getElementById('text').style.display = 'none';
 }
 
+// AJOUT (chantier "Mission Control" — couleur d'accent réellement
+// modifiable, pas une seconde copie figée) : le sélecteur de couleur qui
+// existe déjà dans le tableau de bord (dashboardAccentColorInput ->
+// 'setDashboardAccentColor') est désormais suivi PAR CETTE PAGE aussi.
+//
+// Aucune nouvelle plomberie serveur n'a été nécessaire : le message 'init'
+// envoyé à CHAQUE connexion contient déjà `dashboardBranding` (voir
+// server.js > getDashboardBrandingState()), et 'dashboardBrandingUpdate' est
+// diffusé par broadcast() SANS l'option operatorOnly (voir
+// branding-ws-handlers.js) — donc un client 'viewer' comme celui-ci recevait
+// déjà ces deux messages, il les ignorait simplement. On se contente de les
+// lire. Une couleur invalide est ignorée plutôt qu'injectée telle quelle
+// dans le CSS (le serveur valide déjà via validation.js, ceinture et
+// bretelles : ce champ voyage sur le réseau local).
+const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
+function applyAccentColor(branding) {
+  if (!branding || !HEX_COLOR_RE.test(branding.accentColor || '')) return;
+  document.documentElement.style.setProperty('--accent', branding.accentColor);
+}
+
 function showStageMessage(text) {
   const el = document.getElementById('stageMessage');
   el.textContent = text;
@@ -204,6 +241,12 @@ function connectWs() {
     if (!msg || !msg.action) return;
 
     switch (msg.action) {
+      case 'init':
+        applyAccentColor(msg.dashboardBranding);
+        break;
+      case 'dashboardBrandingUpdate':
+        applyAccentColor(msg.branding);
+        break;
       case 'showVerse':
         showReferenceText(msg.reference, msg.text);
         break;

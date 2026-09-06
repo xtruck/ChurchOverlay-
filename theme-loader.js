@@ -8,7 +8,15 @@ const THEMES_DIR = path.join(__dirname, 'config', 'themes');
 // CORRECTIF (Studio Clair — nouveau thème par défaut à l'installation) :
 // 'nuit' reste un thème système parfaitement sélectionnable, juste plus le
 // réglage de sortie de boîte — voir config/themes/studio-clair-ivoire.json.
-const DEFAULT_THEME_ID = 'studio-clair-ivoire';
+// CORRECTIF (chantier "Mission Control", direction retenue) : le défaut
+// repasse en régie sombre, cohérent avec le tableau de bord opérateur —
+// MÊME principe qu'au-dessus : 'studio-clair-ivoire' et les six autres
+// thèmes système restent entièrement sélectionnables, seul le réglage de
+// sortie de boîte change. Cette constante sert AUSSI de source de repli
+// champ par champ dans themeToCss() ci-dessous : vérifié que les sept
+// thèmes existants définissent la totalité de colors/typography/effects,
+// aucun ne dépend donc d'un champ hérité du défaut (rien ne régresse).
+const DEFAULT_THEME_ID = 'mission-control';
 
 // CORRECTIF (audit round 5) : les thèmes livrés vivent dans app.asar, en
 // lecture seule une fois l'app packagée — créer/dupliquer/supprimer un

@@ -38,10 +38,25 @@
      écran à l'ivoire Studio Clair : les photos/vidéos restent centrées et
      contenues (object-fit: contain) exactement comme avant, seule la
      couleur derrière une image qui ne remplit pas tout l'écran change. */
+  /* CORRECTIF (chantier "Mission Control") : même raisonnement, nouvelle
+     palette — fond PLAT (le dégradé ivoire disparaît, la maquette régie n'a
+     pas de dégradé) aligné sur --bg-base de dashboard/dashboard.css. Ce fond
+     n'est visible qu'en bordure d'un média qui ne remplit pas tout l'écran
+     (object-fit: contain, inchangé) : un fond sombre y est la convention
+     habituelle du letterboxing, il détourne moins l'œil d'une photo qu'un
+     ivoire clair.
+     PAS de token d'accent défini ici, volontairement : cette page n'a AUCUN
+     élément coloré à l'accent (le seul texte est le message "aucun média",
+     volontairement discret). Ajouter un --mc-accent inutilisé n'aurait fait
+     qu'introduire une septième copie figée de la couleur à maintenir. */
+  :root {
+    --mc-bg: #101219;
+    --mc-text-dim: #6b6f80;
+  }
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0; width: 100%; height: 100%;
-    background: linear-gradient(165deg, #faf8f5 0%, #f4efe6 48%, #eee7dc 88%);
+    background: var(--mc-bg);
     overflow: hidden;
   }
   #stage {
@@ -53,7 +68,7 @@
   }
   #empty {
     display: none;
-    color: #756d60;
+    color: var(--mc-text-dim);
     font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
     font-size: 3vh;
     text-align: center;

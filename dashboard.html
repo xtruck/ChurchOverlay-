@@ -2626,10 +2626,21 @@ Aucune exécution agent.</pre>
               <label for="dashboardAccentColorInput" class="branding-accent-color-label"
                 >Couleur d'accent</label
               >
+              <!-- CORRECTIF (chantier "Mission Control") : TROISIÈME copie
+                   figée de la couleur d'accent par défaut, oubliée quand les
+                   deux autres (DEFAULT_ACCENT_COLOR dans
+                   dashboard/features/dashboard-branding.js et dans
+                   dashboard-branding-store.js) sont passées à l'orange
+                   Mission Control — exactement le même piège que celui déjà
+                   documenté dans ces deux fichiers, pour la troisième fois.
+                   En pratique applyDashboardBranding() réécrit .value dès le
+                   message 'init', donc l'effet se limitait à une pastille de
+                   la mauvaise couleur au premier rendu ; corrigé quand même,
+                   pour qu'il ne reste AUCUNE copie désalignée de --primary. -->
               <input
                 type="color"
                 id="dashboardAccentColorInput"
-                value="#b8622f"
+                value="#f5a15a"
                 onchange="saveDashboardAccentColor()"
                 class="branding-accent-color-input"
               />

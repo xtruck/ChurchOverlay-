@@ -1,7 +1,7 @@
 {
   "design": {
     "customThemesEnabled": true,
-    "activeTheme": "nuit",
+    "activeTheme": "mission-control",
     "autoLiturgicalTheme": true,
     "kineticTypography": false,
     "aiGeneratedBackgrounds": false,

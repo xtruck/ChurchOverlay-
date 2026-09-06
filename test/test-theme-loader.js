@@ -69,18 +69,23 @@ assert(css.background.type === 'none', 'themeToCss : backgroundImage propagé');
 // ACTUEL (studio-clair-ivoire : Newsreader, pas de croix), pas une valeur
 // figée sur 'nuit'. Le mécanisme testé (repli sur le défaut) est
 // inchangé, seul le défaut lui-même a changé.
+// CORRECTIF (Mission Control — nouveau thème par défaut) : même mise à
+// jour, une fois de plus — le défaut est désormais 'mission-control'
+// (police de verset 'IBM Plex Sans', toujours pas de croix). Seule la
+// valeur attendue bouge, le mécanisme testé (héritage champ par champ
+// depuis DEFAULT_THEME_ID) est strictement le même.
 const partial = { id: '_test_partial', name: 'Partiel', colors: { accent: '#FF0000' } };
 themeLoader.saveTheme(partial);
 const loadedPartial = themeLoader.loadTheme('_test_partial');
 const cssPartial = themeLoader.themeToCss(loadedPartial);
 assert(cssPartial.variables['--accent'] === '#FF0000', 'themeToCss : accent personnalisé conservé');
 assert(
-  cssPartial.variables['--verse-font'].includes('Newsreader'),
-  'themeToCss : typographie héritée du défaut (studio-clair-ivoire)'
+  cssPartial.variables['--verse-font'].includes('IBM Plex Sans'),
+  'themeToCss : typographie héritée du défaut (mission-control)'
 );
 assert(
   cssPartial.effects.showCross === false,
-  'themeToCss : effets hérités du défaut (studio-clair-ivoire)'
+  'themeToCss : effets hérités du défaut (mission-control)'
 );
 themeLoader.deleteTheme('_test_partial');
 

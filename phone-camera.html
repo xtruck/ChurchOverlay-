@@ -63,12 +63,32 @@
      la luminosité de l'image caméra en dessous, indépendamment du thème de
      l'app. Même raisonnement que stage-display.html (nécessité
      fonctionnelle, pas un choix esthétique). */
+  /* CORRECTIF (chantier "Mission Control") : la chrome de la page passe du
+     clair au sombre (valeurs alignées sur le bloc :root de
+     dashboard/dashboard.css). Le raisonnement du paragraphe ci-dessus tient
+     toujours, il devient simplement sans objet : #status-bar/#status-dot/
+     #switch-camera-btn étaient DÉJÀ un dégradé sombre + texte clair pour
+     rester lisibles par-dessus le flux caméra — ils sont donc désormais
+     cohérents avec le reste de la page au lieu d'en être l'exception. Seuls
+     leurs hex sont tokenisés ici, leur rendu ne change quasiment pas.
+     PAS de token d'accent volontairement : cette page n'a aucun élément
+     coloré à l'accent (ses seules couleurs sont l'état vert/rouge du point
+     de statut), en ajouter un aurait créé une copie figée de plus à
+     maintenir. Elle ne peut de toute façon pas suivre le sélecteur du
+     tableau de bord en direct : aucun WebSocket ici, et sa CSP restreint
+     connect-src à 'self'. */
+  :root {
+    --mc-bg: #101219;
+    --mc-text: #e7e8ee;
+    --mc-ok: #34d399;
+    --mc-err: #f87171;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
     width: 100%;
     height: 100%;
-    background: #faf8f5;
-    color: #2b2620;
+    background: var(--mc-bg);
+    color: var(--mc-text);
     font-family: 'IBM Plex Sans', -apple-system, sans-serif;
     overflow: hidden;
   }
@@ -88,7 +108,7 @@
     padding: 14px 18px;
     padding-top: max(14px, env(safe-area-inset-top));
     background: linear-gradient(180deg, rgba(0,0,0,0.75), transparent);
-    color: #f5f5f7;
+    color: var(--mc-text);
     display: flex;
     align-items: center;
     gap: 10px;
@@ -100,13 +120,13 @@
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: #ff5a5a;
+    background: var(--mc-err);
     flex-shrink: 0;
-    box-shadow: 0 0 8px #ff5a5a;
+    box-shadow: 0 0 8px var(--mc-err);
   }
   #status-dot.live {
-    background: #34d399;
-    box-shadow: 0 0 8px #34d399;
+    background: var(--mc-ok);
+    box-shadow: 0 0 8px var(--mc-ok);
     animation: pulse-dot 1.6s ease-in-out infinite;
   }
   @keyframes pulse-dot {
@@ -121,7 +141,7 @@
     border-radius: 50%;
     border: none;
     background: rgba(255,255,255,0.16);
-    color: #e8eaf0;
+    color: var(--mc-text);
     font-size: 18px;
     display: flex;
     align-items: center;
@@ -138,8 +158,8 @@
     font-size: 17px;
     line-height: 1.5;
     z-index: 3;
-    background: #faf8f5;
-    color: #2b2620;
+    background: var(--mc-bg);
+    color: var(--mc-text);
   }
   #message.hidden { display: none; }
   #message strong { display: block; margin-bottom: 8px; font-size: 20px; }

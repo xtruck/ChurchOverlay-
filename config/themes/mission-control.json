@@ -1,0 +1,46 @@
+{
+  "id": "mission-control",
+  "name": "Mission Control",
+  "author": "system",
+  "readonly": true,
+  "description": "Régie de diffusion : fond sombre PLAT (pas de dégradé), accent orange signal, aucune décoration (ni croix, ni rayons, ni halo, ni particules, ni grain), rayons resserrés, pas de flou d'arrière-plan. Référence en monospace système, façon lecture de console. Cohérent avec le tableau de bord opérateur — voir le bloc :root de dashboard/dashboard.css. NOTE : direction volontairement austère, pensée pour la lisibilité de régie ; les thèmes Studio Clair / Nuit restent entièrement sélectionnables si une salle préfère une ambiance plus chaleureuse.",
+  "colors": {
+    "background": {
+      "type": "solid",
+      "color": "#101219"
+    },
+    "accent": "#F5A15A",
+    "accentBright": "#F8B878",
+    "text": "#E7E8EE",
+    "reference": "#F5A15A"
+  },
+  "typography": {
+    "verseFontFamily": "'IBM Plex Sans', -apple-system, sans-serif",
+    "verseFontWeight": 500,
+    "verseFontSize": "clamp(2.2rem, 4vw, 4.8rem)",
+    "referenceFontFamily": "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+    "referenceLetterSpacing": "0.08em"
+  },
+  "effects": {
+    "showCross": false,
+    "showRays": false,
+    "showHalo": false,
+    "showParticles": false,
+    "showGrain": false,
+    "borderRadius": "6px",
+    "blurBackdrop": "0px",
+    "goldSeparator": false
+  },
+  "animations": {
+    "entryAnimation": "focus-in",
+    "entrySpeed": 1.0,
+    "exitAnimation": "fondu",
+    "kineticTypography": false
+  },
+  "backgroundImage": {
+    "type": "none",
+    "source": null,
+    "kenBurns": false,
+    "opacity": 0
+  }
+}
