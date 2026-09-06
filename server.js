@@ -2473,6 +2473,44 @@ function validateOrigin(req) {
   return ALLOWED_ORIGINS.has(origin);
 }
 
+// AJOUT (audit — jetons WS invalides jamais visibles pour l'opérateur) :
+// observé en usage réel — une source OBS/fenêtre d'affichage utilisant une
+// URL avec un jeton devenu périmé (ex. config.json régénéré depuis, ou URL
+// copiée avant une réinstallation) retente indéfiniment et se fait rejeter
+// à CHAQUE tentative, plusieurs fois par minute pendant tout un culte —
+// jusqu'ici visible SEULEMENT dans les journaux console du processus
+// principal, qu'un opérateur ne consulte jamais en direct. Ce compteur
+// détecte le motif ("plusieurs rejets rapprochés", pas un rejet isolé —
+// une tentative malveillante/erronée ponctuelle ne mérite pas d'alerte) et
+// diffuse UNE SEULE fois par fenêtre de recul, pour que l'opérateur sache
+// qu'une source doit être reconfigurée au lieu de deviner depuis un écran
+// qui reste juste "hors ligne" sans explication.
+const WS_AUTH_FAILURE_WINDOW_MS = 60000;
+const WS_AUTH_FAILURE_THRESHOLD = 3;
+const WS_AUTH_FAILURE_WARNING_COOLDOWN_MS = 5 * 60000;
+let recentWsAuthFailures = [];
+let lastWsAuthFailureWarningAt = 0;
+function recordWsAuthFailure(origin) {
+  const now = Date.now();
+  recentWsAuthFailures = recentWsAuthFailures.filter((t) => now - t < WS_AUTH_FAILURE_WINDOW_MS);
+  recentWsAuthFailures.push(now);
+  if (
+    recentWsAuthFailures.length >= WS_AUTH_FAILURE_THRESHOLD &&
+    now - lastWsAuthFailureWarningAt > WS_AUTH_FAILURE_WARNING_COOLDOWN_MS
+  ) {
+    lastWsAuthFailureWarningAt = now;
+    broadcast(
+      {
+        action: 'wsAuthFailureWarning',
+        count: recentWsAuthFailures.length,
+        origin: origin || 'inconnue',
+        timestamp: now,
+      },
+      { operatorOnly: true }
+    );
+  }
+}
+
 wss.on('connection', (ws, req) => {
   const origin = req && req.headers && req.headers.origin;
   if (origin) {
@@ -2502,6 +2540,7 @@ wss.on('connection', (ws, req) => {
     const validTokens = [WS_AUTH_TOKEN, WS_VIEWER_TOKEN].filter(Boolean);
     if (!presented || !validTokens.includes(presented)) {
       warn("Connexion WebSocket refusée — jeton d'authentification invalide ou manquant.");
+      recordWsAuthFailure(origin);
       connRateLimiter.removeConnection(ws);
       ws.close(1008, 'Non autorisé');
       return;

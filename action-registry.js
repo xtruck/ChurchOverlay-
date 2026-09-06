@@ -556,6 +556,9 @@ const SERVER_ACTIONS = {
   aiModuleError: {
     description: "Échec d'appel d'un module IA (corrector/semanticDetector/themeGenerator)",
   },
+  wsAuthFailureWarning: {
+    description: 'Plusieurs connexions WS rejetées (jeton invalide) — source à reconfigurer',
+  },
   obsConnectionStatus: {
     description: 'État de connexion OBS (connected/disconnected/reconnecting/error)',
   },

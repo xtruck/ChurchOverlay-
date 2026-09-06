@@ -371,6 +371,49 @@ function waitForMessage(ws, predicate, timeoutMs = 1000) {
   }
 
   console.log(
+    '\n=== Rejets de jeton répétés -> avertissement diffusé aux opérateurs (audit) ===\n'
+  );
+
+  // AJOUT (audit — vu en usage réel, une source OBS/affichage avec un jeton
+  // périmé se fait rejeter en boucle, silencieusement, pendant tout un
+  // culte) : au-delà d'un seuil de rejets rapprochés, server.js diffuse
+  // 'wsAuthFailureWarning' aux connexions opérateur — voir
+  // recordWsAuthFailure() dans server.js.
+  {
+    const { ws: opWs } = await connect({ token: OPERATOR_TOKEN, path: '/' });
+    await waitForMessage(opWs, (m) => m.action === 'init');
+
+    // Trois tentatives à jeton invalide, rapprochées — chacune fermée par
+    // le serveur (voir connect(), 150ms de fenêtre de rejet post-handshake).
+    for (let i = 0; i < 3; i++) {
+      const { closeCode } = await connect({ token: 'jeton-invalide-xyz', path: '/' });
+      check(`tentative ${i + 1}/3 à jeton invalide rejetée (code 1008)`, closeCode === 1008);
+    }
+
+    const warning = await waitForMessage(opWs, (m) => m.action === 'wsAuthFailureWarning', 2000);
+    check(
+      "l'opérateur reçoit bien 'wsAuthFailureWarning' après 3 rejets rapprochés",
+      !!warning && warning.count >= 3,
+      JSON.stringify(warning)
+    );
+
+    // Une 4e tentative juste après ne doit PAS re-diffuser (throttle 5 min,
+    // voir WS_AUTH_FAILURE_WARNING_COOLDOWN_MS) — sinon un opérateur serait
+    // noyé sous ce même avertissement à chaque nouvel essai de la source
+    // cassée pendant tout un culte.
+    await connect({ token: 'jeton-invalide-xyz', path: '/' });
+    let rewarned = true;
+    try {
+      await waitForMessage(opWs, (m) => m.action === 'wsAuthFailureWarning', 400);
+    } catch (_) {
+      rewarned = false;
+    }
+    check('une 4e tentative rapprochée NE re-diffuse PAS (throttle 5 min)', !rewarned);
+
+    opWs.close();
+  }
+
+  console.log(
     `\n=== Résultat authentification WebSocket : ${passed} passés, ${failed} échoués ===`
   );
   process.exit(failed > 0 ? 1 : 0);

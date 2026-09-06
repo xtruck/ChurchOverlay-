@@ -293,6 +293,24 @@ export function handleMessage(message) {
       // (case 'init'), voir recordAiModuleError() dans pipeline-health.js.
       recordAiModuleError(message.module, message.message);
       break;
+    // AJOUT (audit — jetons WS invalides jamais visibles pour l'opérateur) :
+    // observé en usage réel — une source OBS/fenêtre d'affichage avec une
+    // URL au jeton périmé se fait rejeter en boucle, plusieurs fois par
+    // minute pendant tout un culte, jusqu'ici visible SEULEMENT dans la
+    // console du processus principal (jamais lue en direct). server.js ne
+    // diffuse ce message qu'après plusieurs rejets rapprochés (voir
+    // recordWsAuthFailure), throttlé à une fois toutes les 5 minutes —
+    // jamais à chaque tentative individuelle.
+    case 'wsAuthFailureWarning':
+      addActivity(
+        `${message.count} connexions refusées (jeton invalide) depuis l'origine « ${message.origin} »`,
+        'warning'
+      );
+      showToast(
+        `⚠️ Une source (OBS/affichage) échoue son authentification en boucle — vérifiez que son URL est à jour (Réglages → copier l'URL)`,
+        'error'
+      );
+      break;
     // AJOUT (Partie 3.1 — reconnexion automatique OBS) : une coupure OBS en
     // plein culte ne doit jamais être silencieuse — visible dans le
     // panneau OBS (RÉGIE) et dans l'activité, avec un toast à chaque
