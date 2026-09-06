@@ -13,14 +13,23 @@
      rgba(255,255,255,...)/backdrop-filter : ces déclarations pensées pour
      un effet verre-sur-fond-sombre sont inversées ou retirées au cas par
      cas dans tout le fichier, pas seulement ici dans les tokens. */
-  --bg-base: #faf8f5;
-  --bg-surface: #fbfaf8;
-  --bg-card: #ffffff;
-  --bg-card-hover: color-mix(in srgb, var(--bg-card) 96%, var(--primary));
-  --bg-input: #f7f4ee;
+  /* CORRECTIF (chantier "Mission Control", direction retenue) : le thème par
+     défaut repasse en régie sombre — même principe que les deux chantiers
+     précédents (Studio Clair, Direction-A) et que le thème cabine-mono plus
+     bas : SEULES LES VALEURS de ces tokens changent, aucun nom de variable
+     n'est renommé ni supprimé, donc les dizaines de composants qui les
+     consomment déjà via var(...) se re-thèment sans être touchés un par un.
+     Palette issue de la maquette validée : fond #101219, panneaux plats
+     #171922, accent orange signal #f5a15a, couleur RÉSERVÉE au statut
+     (vert/ambre/rouge, voir --accent-* plus bas) et jamais décorative. */
+  --bg-base: #101219;
+  --bg-surface: #14161f;
+  --bg-card: #171922;
+  --bg-card-hover: color-mix(in srgb, var(--bg-card) 92%, var(--primary));
+  --bg-input: #0d0f16;
 
-  --border-subtle: #e8e3db;
-  --border-light: #d8d0c2;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-light: rgba(255, 255, 255, 0.16);
   --border-active: var(--primary);
 
   /* --- Couleur unique de l'app (demande : "one color", plus de
@@ -46,12 +55,26 @@
      signal (façon régie broadcast) plutôt que le violet-bleu d'origine —
      seule valeur à changer ici, tout le reste du fichier suit via
      color-mix() (voir commentaire au-dessus sur dashboard-branding.js). */
-  --primary: #b8622f;
+  /* AJOUT (Mission Control) : orange signal éclairci pour rester lisible SUR
+     fond sombre (le terracotta #b8622f précédent était calibré pour du texte
+     sur ivoire). --primary reste la seule valeur à écraser pour rebrander
+     (dashboard-branding.js), tout le reste suit via color-mix(). */
+  --primary: #f5a15a;
   --primary-hover: color-mix(in srgb, var(--primary) 85%, black);
-  --primary-glow: color-mix(in srgb, var(--primary) 18%, transparent);
+  --primary-glow: color-mix(in srgb, var(--primary) 14%, transparent);
+  /* AJOUT (Mission Control) : --primary est désormais un orange CLAIR, donc
+     un texte blanc posé dessus tombe à ~2:1 de contraste. Encre sombre
+     dédiée pour les quelques surfaces peintes en --primary plein (voir
+     .btn-primary/.lang-btn.active plus bas) — même correctif que celui
+     appliqué au thème cabine-mono, ici pour la raison inverse. */
+  --on-primary: #14161f;
 
   --accent-cyan: var(--primary);
-  --accent-emerald: #2f8f6f;
+  /* AJOUT (Mission Control) : la couleur est RÉSERVÉE au statut. Vert/ambre/
+     rouge francs et réellement distincts les uns des autres ET de --primary,
+     calibrés pour un fond sombre — un opérateur doit trancher entre "ok",
+     "attention" et "erreur" d'un coup d'œil, en vision périphérique. */
+  --accent-emerald: #34d399;
   /* CORRECTIF (redesign visuel) : cet alias pointait vers --primary depuis
              la consolidation "one color" ci-dessus, ce qui faisait qu'un
              badge "warning" se lisait visuellement comme une action
@@ -60,9 +83,9 @@
              utilisait déjà var(--accent-amber, #d9a441) avec un repli
              ambré : l'intention d'une couleur distincte existait déjà,
              juste jamais branchée. Restaurée ici. */
-  --accent-amber: #b8863a;
-  --accent-amber-bg: rgba(184, 134, 58, 0.14);
-  --accent-rose: #c0392b;
+  --accent-amber: #fbbf24;
+  --accent-amber-bg: rgba(251, 191, 36, 0.12);
+  --accent-rose: #f87171;
 
   --gold: var(--primary);
   --gold-soft: color-mix(in srgb, var(--primary) 20%, transparent);
@@ -73,23 +96,43 @@
   --sapphire: var(--primary);
   --sapphire-soft: color-mix(in srgb, var(--primary) 16%, transparent);
 
-  --text-main: #2b2620;
-  --text-muted: #756d60;
-  --text-dim: #a49c8d;
+  --text-main: #e7e8ee;
+  --text-muted: #a5a9bc;
+  --text-dim: #6b6f80;
 
-  --shadow-sm: 0 1px 2px rgba(43, 38, 32, 0.04);
-  --shadow-md: 0 10px 28px rgba(43, 38, 32, 0.05);
-  --shadow-glow: 0 0 26px var(--primary-glow);
-  --shadow-gold: 0 0 26px var(--gold-glow);
-  --shadow-lift: 0 20px 48px rgba(43, 38, 32, 0.1), 0 1px 0 rgba(255, 255, 255, 0.6) inset;
+  /* AJOUT (Mission Control) : --font-mono / --pp-font-mono étaient déjà
+     CONSOMMÉS (voir .listening-confidence/.mono-value-right/.vumeter-info/
+     .pp-clock-text/.pp-keycap plus bas) mais n'avaient jamais été DÉFINIS
+     hors du thème cabine-mono — ces lectures numériques héritaient donc
+     silencieusement la police du corps de texte. Définis ici : 'JetBrains
+     Mono' est déjà chargée par le <link> Google Fonts de dashboard.html,
+     aucune nouvelle police n'est introduite. */
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --pp-font-mono: var(--font-mono);
 
-  --radius-sm: 8px;
-  --radius-md: 14px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
+  /* Panneaux PLATS : pas de lueur, pas de flou. Les ombres restent portées
+     (noir, pas l'encre chaude du thème clair) uniquement pour les surfaces
+     réellement flottantes (modales, toasts, palette de commandes). */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.45);
+  /* Ombre nulle mais VALIDE : ces deux tokens sont interpolés au milieu de
+     listes box-shadow séparées par des virgules (.brand-icon,
+     .search-detector-bar:focus-within, @keyframes heroLiveGlow...) — un
+     `none` y rendrait la déclaration ENTIÈRE invalide et ferait donc sauter
+     les autres ombres de la liste avec (le thème cabine-mono, plus bas,
+     avait déjà ce défaut : corrigé de la même façon). */
+  --shadow-glow: 0 0 0 rgba(0, 0, 0, 0);
+  --shadow-gold: 0 0 0 rgba(0, 0, 0, 0);
+  --shadow-lift: 0 18px 40px rgba(0, 0, 0, 0.5);
+
+  /* Rayons resserrés (régie), même échelle que cabine-mono. */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
   --radius-full: 9999px;
 
-  --glass-blur: 18px;
+  --glass-blur: 0px;
   --ease-silk: cubic-bezier(0.19, 1, 0.22, 1);
 
   /* --- Redesign visuel (fondations) : tokens additifs, rien ci-dessus
@@ -105,14 +148,14 @@
   /* CORRECTIF (Studio Clair) : variantes plus foncées des nouvelles teintes
      de base (émeraude/rose/ambre), pas des anciennes — mêmes usages
      (survol/actif) qu'avant, juste recalculées pour rester cohérentes. */
-  --accent-emerald-600: #26735a;
-  --accent-rose-600: #a52f21;
-  --accent-amber-600: #96661f;
+  --accent-emerald-600: #10b981;
+  --accent-rose-600: #ef4444;
+  --accent-amber-600: #d99e0b;
 
   /* Profondeur : un niveau au-dessus de --bg-surface, pour les éléments
      qui doivent se détacher des cartes (popovers, dropdowns) — introuvable
      ailleurs dans ce fichier aujourd'hui. */
-  --bg-elevated: #fffdf9;
+  --bg-elevated: #1c1f2a;
 
   /* Échelle typographique — les tailles existantes restent en dur tant
      qu'un lot ne les migre pas explicitement (pas de réécriture en masse). */
@@ -144,12 +187,15 @@
   /* Niveaux d'élévation (repos/survol/modale) et variantes "glow" par
      accent, pour les micro-interactions des lots suivants (carte verset
      en direct, pastille de connexion). */
-  --shadow-e1: 0 2px 10px rgba(43, 38, 32, 0.05);
-  --shadow-e2: 0 10px 28px rgba(43, 38, 32, 0.06);
-  --shadow-e3: 0 24px 56px rgba(43, 38, 32, 0.08);
-  --shadow-glow-primary: 0 0 26px var(--primary-glow);
-  --shadow-glow-emerald: 0 0 22px rgba(47, 143, 111, 0.35);
-  --shadow-glow-rose: 0 0 22px rgba(192, 57, 43, 0.35);
+  --shadow-e1: 0 2px 10px rgba(0, 0, 0, 0.4);
+  --shadow-e2: 0 10px 28px rgba(0, 0, 0, 0.45);
+  --shadow-e3: 0 24px 56px rgba(0, 0, 0, 0.55);
+  /* Les lueurs d'accent purement DÉCORATIVES sont neutralisées (panneaux
+     plats) ; celles qui portent un STATUT (verset réellement en direct)
+     restent, c'est le seul cas où la lueur véhicule une information. */
+  --shadow-glow-primary: 0 0 0 rgba(0, 0, 0, 0);
+  --shadow-glow-emerald: 0 0 22px rgba(52, 211, 153, 0.3);
+  --shadow-glow-rose: 0 0 22px rgba(248, 113, 113, 0.3);
 
   --duration-fast: 120ms;
   --duration-base: 220ms;
@@ -193,8 +239,10 @@
   --radius-xl: 8px;
 
   --glass-blur: 0px;
-  --shadow-glow: none;
-  --shadow-gold: none;
+  /* Même correctif que dans les tokens par défaut : ombre nulle mais VALIDE
+     dans une liste séparée par des virgules. */
+  --shadow-glow: 0 0 0 rgba(0, 0, 0, 0);
+  --shadow-gold: 0 0 0 rgba(0, 0, 0, 0);
   --shadow-md: 0 12px 28px rgba(0, 0, 0, 0.45);
 
   /* --gold/--garnet/--sapphire pointent déjà tous vers var(--primary) (voir
@@ -504,9 +552,26 @@
    par défaut du navigateur (accent-color non hérité de --primary) — seul
    .media-poster-toggle avait déjà sa propre règle ambrée, plus spécifique,
    donc non affectée ici. */
+/* AJOUT (Mission Control) : input[type=range] manquait à cette liste — le
+   seul curseur du tableau de bord (seuil ASR, #confidenceThreshold) restait
+   donc peint en BLEU par défaut du navigateur, seule couleur hors palette
+   visible sur la page une fois le thème sombre en place. */
 input[type='checkbox'],
-input[type='radio'] {
+input[type='radio'],
+input[type='range'] {
   accent-color: var(--primary);
+}
+
+/* AJOUT (Mission Control) : les rappels de raccourcis clavier sont rendus en
+   <code>/<kbd> nus (voir la liste de raccourcis de #controls) — sans règle
+   dédiée ils héritaient --text-dim, calibré pour un fond de carte, alors
+   qu'ils se posent sur un fond plus clair : contraste mesuré à 2,7:1 pour du
+   texte de 10px. --text-muted les repasse au-dessus du seuil, et la chasse
+   fixe est déjà celle qu'attend ce type de contenu. */
+code,
+kbd {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
 }
 
 /* CORRECTIF (redesign visuel) : fusionné avec le second bloc
@@ -565,16 +630,15 @@ body {
   min-height: 100vh;
   overflow-x: hidden;
   position: relative;
-  /* CORRECTIF (Studio Clair) : ce background-image, opaque, peignait
-     PAR-DESSUS background-color: var(--bg-base) juste au-dessus — même
-     avec --bg-base redéfini en ivoire, la page restait visuellement
-     sombre tant que ce dégradé figé en dur n'était pas lui aussi
-     recalé. Lueur d'accent orange -> terracotta, dégradé bleu-nuit ->
-     ivoire (mêmes trois arrêts, même esprit "légère respiration" de
-     teinte plutôt qu'un aplat). */
-  background-image:
-    radial-gradient(circle at 12% 8%, rgba(184, 98, 47, 0.06) 0%, transparent 42%),
-    linear-gradient(180deg, #faf8f5 0%, #f4efe6 55%, #faf8f5 100%);
+  /* CORRECTIF (Mission Control) : ce background-image, opaque, peignait
+     PAR-DESSUS background-color: var(--bg-base) juste au-dessus — un
+     dégradé figé en dur qui devait donc être recalé à chaque changement
+     de thème, et qui écrasait au passage le fond de cabine-mono (bug
+     latent : ce thème recevait quand même le dégradé ivoire). Supprimé
+     plutôt que re-teinté : la maquette demande un aplat, et
+     var(--bg-base) suffit — chaque thème pilote désormais son fond par
+     ses seuls tokens. */
+  background-image: none;
 }
 
 .dashboard {
@@ -597,7 +661,7 @@ body {
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(105%);
   backdrop-filter: blur(var(--glass-blur)) saturate(105%);
   border-right: 1px solid var(--border-subtle);
-  box-shadow: 1px 0 0 rgba(43, 38, 32, 0.04) inset;
+  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.064) inset;
   padding: 1.75rem 1.25rem;
   display: flex;
   flex-direction: column;
@@ -712,7 +776,7 @@ body {
 }
 
 .nav-item:hover {
-  background: rgba(43, 38, 32, 0.05);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--text-main);
 }
 
@@ -721,9 +785,9 @@ body {
      de l'ancien orange figé en dur, invisible à la redéfinition de
      --primary) ; color passe de #ffffff (illisible sur un fond devenu
      clair) à --text-main. */
-  background: linear-gradient(90deg, rgba(184, 98, 47, 0.16) 0%, rgba(184, 98, 47, 0.04) 100%);
+  background: linear-gradient(90deg, rgba(245, 161, 90, 0.16) 0%, rgba(245, 161, 90, 0.04) 100%);
   color: var(--text-main);
-  border-color: rgba(184, 98, 47, 0.3);
+  border-color: rgba(245, 161, 90, 0.3);
   font-weight: 600;
 }
 
@@ -765,8 +829,8 @@ body {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 0.75rem;
-  background: rgba(47, 143, 111, 0.1);
-  border: 1px solid rgba(47, 143, 111, 0.22);
+  background: rgba(52, 211, 153, 0.1);
+  border: 1px solid rgba(52, 211, 153, 0.22);
   border-radius: var(--radius-sm);
   color: var(--accent-emerald);
   font-weight: 600;
@@ -784,8 +848,8 @@ body {
            doit basculer pour que la perte de connexion soit impossible à
            manquer. */
 .live-status-pill.offline {
-  background: rgba(192, 57, 43, 0.14);
-  border-color: rgba(192, 57, 43, 0.4);
+  background: rgba(248, 113, 113, 0.14);
+  border-color: rgba(248, 113, 113, 0.4);
   color: var(--accent-rose);
   animation: offlineAttention 1.6s ease-in-out infinite;
 }
@@ -793,10 +857,10 @@ body {
 @keyframes offlineAttention {
   0%,
   100% {
-    box-shadow: 0 0 0 rgba(192, 57, 43, 0);
+    box-shadow: 0 0 0 rgba(248, 113, 113, 0);
   }
   50% {
-    box-shadow: 0 0 14px rgba(192, 57, 43, 0.35);
+    box-shadow: 0 0 14px rgba(248, 113, 113, 0.35);
   }
 }
 
@@ -945,7 +1009,7 @@ body {
 }
 
 .chip-btn {
-  background: rgba(43, 38, 32, 0.04);
+  background: rgba(255, 255, 255, 0.064);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border: 1px solid var(--border-subtle);
@@ -964,7 +1028,7 @@ body {
 
 .chip-btn:hover {
   background: var(--gold-soft);
-  border-color: rgba(184, 98, 47, 0.45);
+  border-color: rgba(245, 161, 90, 0.45);
   color: var(--text-main);
   transform: translateY(-1px);
 }
@@ -980,7 +1044,7 @@ body {
 }
 
 .mood-btn {
-  background: rgba(43, 38, 32, 0.04);
+  background: rgba(255, 255, 255, 0.064);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border: 1px solid var(--border-subtle);
@@ -996,7 +1060,7 @@ body {
 
 .mood-btn:hover {
   background: var(--gold-soft);
-  border-color: rgba(184, 98, 47, 0.45);
+  border-color: rgba(245, 161, 90, 0.45);
   color: var(--text-main);
   transform: translateY(-1px);
 }
@@ -1029,7 +1093,7 @@ body {
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-full);
   border: 1px solid var(--border-subtle);
-  background: rgba(43, 38, 32, 0.03);
+  background: rgba(255, 255, 255, 0.048);
   color: var(--text-muted);
   font-family: inherit;
   font-size: var(--text-sm);
@@ -1069,36 +1133,57 @@ body {
            famille visuelle que .live-status-pill (fond verre + bordure
            subtile) mais en groupe horizontal plutôt qu'isolée dans la
            barre latérale — voir status-strip.js. */
+/* CORRECTIF (Mission Control) : mêmes éléments, même JS (status-strip.js
+   n'est pas touché — ids/classes inchangés), mais la rangée de pastilles
+   arrondies devient le RAIL DE LEDS de la maquette : cellules plates posées
+   côte à côte, séparées par un simple filet d'1px (obtenu par le fond du
+   rail qui transparaît dans le gap), étiquette capitale + valeur en mono
+   alignée à droite. Se lit d'un balayage horizontal plutôt qu'en trois
+   objets isolés. */
 .status-strip {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: 1px;
   margin-bottom: var(--space-5);
+  background: var(--border-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
 }
 
 .status-strip-item {
+  flex: 1 1 180px;
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 0.4rem 0.75rem;
-  border-radius: var(--radius-full);
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
+  padding: 0.45rem 0.75rem;
+  border-radius: 0;
+  background: var(--bg-surface);
+  border: none;
   font-size: var(--text-xs);
 }
 
 .status-strip-label {
-  color: var(--text-muted);
-  font-weight: 600;
+  color: var(--text-dim);
+  font-weight: 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
+/* Valeur numérique/technique -> mono, alignée à droite de sa cellule : la
+   colonne de valeurs se lit alors verticalement, sans chercher où chaque
+   texte commence. */
 .status-strip-detail {
-  color: var(--text-dim);
+  color: var(--text-main);
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
 }
 
 .status-strip-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: var(--radius-full);
   flex-shrink: 0;
   transition: background var(--duration-fast) ease;
@@ -1112,17 +1197,20 @@ body {
 .status-strip-dot--off {
   background: var(--text-dim);
 }
+/* Halo atténué (Mission Control) : une LED, pas une lampe — assez pour
+   accrocher l'œil en vision périphérique, pas assez pour baver sur le
+   libellé voisin. */
 .status-strip-dot--ok {
   background: var(--accent-emerald);
-  box-shadow: 0 0 6px var(--accent-emerald);
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.6);
 }
 .status-strip-dot--warn {
   background: var(--accent-amber);
-  box-shadow: 0 0 6px var(--accent-amber);
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.6);
 }
 .status-strip-dot--error {
   background: var(--accent-rose);
-  box-shadow: 0 0 6px var(--accent-rose);
+  box-shadow: 0 0 6px rgba(248, 113, 113, 0.6);
 }
 
 /* AJOUT (Confidence Rail — idée créative, brief produit, voir
@@ -1149,18 +1237,18 @@ body {
 }
 .confidence-rail.confidence-rail-ok {
   color: var(--accent-emerald);
-  background: rgba(47, 143, 111, 0.1);
-  border-color: rgba(47, 143, 111, 0.25);
+  background: rgba(52, 211, 153, 0.1);
+  border-color: rgba(52, 211, 153, 0.25);
 }
 .confidence-rail.confidence-rail-warn {
   color: var(--accent-amber);
   background: var(--accent-amber-bg);
-  border-color: rgba(184, 134, 58, 0.3);
+  border-color: rgba(251, 191, 36, 0.3);
 }
 .confidence-rail.confidence-rail-error {
   color: var(--accent-rose);
-  background: rgba(192, 57, 43, 0.1);
-  border-color: rgba(192, 57, 43, 0.3);
+  background: rgba(248, 113, 113, 0.1);
+  border-color: rgba(248, 113, 113, 0.3);
 }
 
 /* AJOUT (innovation frontend) : file d'attente de versets. */
@@ -1216,7 +1304,7 @@ body {
   border-radius: var(--radius-md);
   color: var(--text-dim);
   font-size: var(--text-sm);
-  background: rgba(43, 38, 32, 0.02);
+  background: rgba(255, 255, 255, 0.032);
   transition:
     border-color var(--duration-fast) ease,
     background var(--duration-fast) ease,
@@ -1290,7 +1378,7 @@ body {
   color: var(--text-dim);
 }
 .cue-readiness-badge.cue-readiness-ready {
-  background: rgba(47, 143, 111, 0.15);
+  background: rgba(52, 211, 153, 0.15);
   color: var(--accent-emerald);
 }
 .cue-readiness-badge.cue-readiness-attention {
@@ -1298,7 +1386,7 @@ body {
   color: var(--accent-amber);
 }
 .cue-readiness-badge.cue-readiness-blocked {
-  background: rgba(192, 57, 43, 0.15);
+  background: rgba(248, 113, 113, 0.15);
   color: var(--accent-rose);
 }
 
@@ -1325,12 +1413,12 @@ body {
   padding: 0;
 }
 .cue-status-chip.cue-status-live {
-  background: rgba(192, 57, 43, 0.15);
+  background: rgba(248, 113, 113, 0.15);
   color: var(--accent-rose);
   animation: cueStatusLivePulse 2s ease-in-out infinite;
 }
 .cue-status-chip.cue-status-armed {
-  background: rgba(184, 98, 47, 0.15);
+  background: rgba(245, 161, 90, 0.15);
   color: var(--accent-cyan);
 }
 .cue-status-chip.cue-status-played {
@@ -1359,7 +1447,7 @@ body {
 }
 
 .queue-icon-btn {
-  background: rgba(43, 38, 32, 0.04);
+  background: rgba(255, 255, 255, 0.064);
   border: 1px solid var(--border-subtle);
   color: var(--text-muted);
   width: 26px;
@@ -1390,13 +1478,13 @@ body {
            l'app (émeraude = action positive/succès, rose = destructif —
            voir .status-badge.success/.btn-danger). */
 .queue-icon-btn.queue-send:hover:not(:disabled) {
-  background: rgba(47, 143, 111, 0.16);
+  background: rgba(52, 211, 153, 0.16);
   border-color: var(--accent-emerald);
   color: var(--accent-emerald);
 }
 
 .queue-icon-btn.queue-remove:hover:not(:disabled) {
-  background: rgba(192, 57, 43, 0.16);
+  background: rgba(248, 113, 113, 0.16);
   border-color: var(--accent-rose);
   color: var(--accent-rose);
 }
@@ -1478,7 +1566,7 @@ body {
 }
 .rundown-schedule-status.rundown-schedule-ontime {
   color: var(--accent-emerald);
-  background: rgba(47, 143, 111, 0.12);
+  background: rgba(52, 211, 153, 0.12);
 }
 .rundown-schedule-status.rundown-schedule-late {
   color: var(--accent-amber);
@@ -1486,7 +1574,7 @@ body {
 }
 .rundown-schedule-status.rundown-schedule-early {
   color: var(--primary);
-  background: rgba(184, 98, 47, 0.12);
+  background: rgba(245, 161, 90, 0.12);
 }
 
 /* AJOUT (Service Heartbeat — idée créative, brief produit, voir
@@ -1516,17 +1604,17 @@ body {
 }
 .rundown-heartbeat-dot.rundown-heartbeat-ontime {
   background: var(--accent-emerald);
-  box-shadow: 0 0 6px rgba(47, 143, 111, 0.6);
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.6);
   animation: rundownHeartbeatPulse 1.6s ease-in-out infinite;
 }
 .rundown-heartbeat-dot.rundown-heartbeat-behind {
   background: var(--accent-amber);
-  box-shadow: 0 0 6px rgba(184, 134, 58, 0.6);
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.6);
   animation: rundownHeartbeatPulse 0.9s ease-in-out infinite;
 }
 .rundown-heartbeat-dot.rundown-heartbeat-ahead {
   background: var(--primary);
-  box-shadow: 0 0 6px rgba(184, 98, 47, 0.6);
+  box-shadow: 0 0 6px rgba(245, 161, 90, 0.6);
   animation: rundownHeartbeatPulse 1.6s ease-in-out infinite;
 }
 @keyframes rundownHeartbeatPulse {
@@ -1552,6 +1640,14 @@ body {
   color: var(--text-main);
   text-align: center;
 }
+/* Durées prévue/réelle d'un repère de feuille de route : mono des deux
+   côtés, sinon l'écart entre les deux chiffres ne se lit pas d'un coup
+   d'œil (c'est pourtant le seul intérêt de les afficher côte à côte). */
+.queue-item-duration-input,
+.queue-item-actual-duration {
+  font-family: var(--font-mono);
+}
+
 .queue-item-actual-duration {
   font-size: var(--text-xs);
   color: var(--text-dim);
@@ -2153,6 +2249,11 @@ body {
    sans objet. Le halo inset blanc que ce box-shadow portait auparavant sur
    la même arête (même rôle que ce ::before) est retiré plutôt que teinté :
    les deux ensemble auraient fait doublon visuellement. */
+/* CORRECTIF (Mission Control) : ce filet passait en orange d'accent sur
+   CHAQUE carte du tableau de bord — de la couleur d'accent purement
+   décorative, répétée des dizaines de fois, exactement ce que cette
+   direction réserve au statut. Repassé en filet clair neutre : il garde son
+   rôle (marquer l'arête haute de la carte) sans consommer l'accent. */
 .card::before {
   content: '';
   position: absolute;
@@ -2160,7 +2261,7 @@ body {
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(184, 98, 47, 0.18), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.09), transparent);
 }
 
 /* RETIRÉ (sur demande) : l'effet de reflet qui suivait le curseur au
@@ -2194,7 +2295,7 @@ body {
   width: 36px;
   height: 36px;
   border-radius: var(--radius-md);
-  background: rgba(43, 38, 32, 0.04);
+  background: rgba(255, 255, 255, 0.064);
   border: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
@@ -2202,12 +2303,16 @@ body {
   color: var(--primary);
 }
 
+/* AJOUT (Mission Control) : les grands chiffres des tuiles de métriques
+   passent en mono (repère "lecture numérique" déjà posé par le thème
+   cabine-mono sur .status-badge/.status-strip-*, étendu ici au thème par
+   défaut). Chasse fixe = un compteur qui varie ne fait plus danser la
+   mise en page à chaque rafraîchissement. */
 .card-value {
-  font-size: 2.2rem;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  /* CORRECTIF (Studio Clair) : #ffffff figé en dur était illisible une
-     fois --bg-card devenu blanc solide (texte blanc sur carte blanche). */
+  font-family: var(--font-mono);
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--text-main);
   line-height: 1.1;
 }
@@ -2219,21 +2324,17 @@ body {
 }
 
 /* Hero Verse Display Card — la "rosace" du tableau de bord */
+/* CORRECTIF (Mission Control) : panneau PLAT. Le dégradé à quatre arrêts
+   (saphir/or/grenat, tous alias de --primary depuis la consolidation "one
+   color") ne produisait plus qu'un lavis orange diagonal — de la couleur
+   purement décorative, exactement ce que cette direction réserve au statut.
+   Aplat --bg-surface + filet d'accent : la seule couleur que porte encore
+   cette carte est celle de son état (bordure verte quand .is-live). */
 .hero-verse-card {
   grid-column: span 2;
-  background: linear-gradient(
-    135deg,
-    var(--sapphire-soft) 0%,
-    rgba(255, 255, 255, 0.045) 45%,
-    var(--gold-soft) 75%,
-    var(--garnet-soft) 100%
-  );
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(170%);
-  backdrop-filter: blur(var(--glass-blur)) saturate(170%);
-  border: 1px solid rgba(184, 98, 47, 0.28);
-  box-shadow:
-    var(--shadow-glow),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  box-shadow: none;
   padding: 2rem;
   position: relative;
   display: flex;
@@ -2249,11 +2350,8 @@ body {
            aussi — voir le commentaire équivalent sur .card. */
 
 .hero-verse-card:hover {
-  border-color: rgba(184, 98, 47, 0.4);
-  box-shadow:
-    var(--shadow-glow),
-    var(--shadow-gold),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  border-color: var(--border-light);
+  box-shadow: none;
 }
 
 /* Croix de lumière en filigrane, coin supérieur droit — le motif
@@ -2266,13 +2364,22 @@ body {
   right: 1.7rem;
   width: 30px;
   height: 30px;
-  opacity: 0.55;
+  /* CORRECTIF (Mission Control) : la croix reste (c'est la marque de la
+     carte, pas un signal), mais sans lueur — elle passe en filigrane
+     neutre plutôt qu'en orange lumineux, pour ne pas concurrencer du coin
+     de l'œil la bordure de statut de cette même carte. */
+  opacity: 0.22;
   background:
-    linear-gradient(180deg, transparent, var(--gold) 20%, var(--gold) 80%, transparent) center / 2px
-      100% no-repeat,
-    linear-gradient(90deg, transparent, var(--gold) 20%, var(--gold) 80%, transparent) center 34% /
-      100% 2px no-repeat;
-  filter: drop-shadow(0 0 8px var(--gold-glow));
+    linear-gradient(
+        180deg,
+        transparent,
+        var(--text-dim) 20%,
+        var(--text-dim) 80%,
+        transparent
+      )
+      center / 2px 100% no-repeat,
+    linear-gradient(90deg, transparent, var(--text-dim) 20%, var(--text-dim) 80%, transparent) center
+      34% / 100% 2px no-repeat;
 }
 
 @media (max-width: 1200px) {
@@ -2317,7 +2424,7 @@ body {
   50% {
     box-shadow:
       var(--shadow-glow),
-      0 0 34px rgba(47, 143, 111, 0.55),
+      0 0 34px rgba(52, 211, 153, 0.55),
       inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 }
@@ -2339,8 +2446,8 @@ body {
 }
 
 .live-badge {
-  background: rgba(47, 143, 111, 0.14);
-  border: 1px solid rgba(47, 143, 111, 0.3);
+  background: rgba(52, 211, 153, 0.14);
+  border: 1px solid rgba(52, 211, 153, 0.3);
   color: var(--accent-emerald);
   padding: 0.3rem 0.75rem;
   border-radius: var(--radius-full);
@@ -2353,11 +2460,16 @@ body {
   gap: 0.4rem;
 }
 
+/* AJOUT (Mission Control) : la référence du verset en direct est LA lecture
+   technique de l'écran ("Jean 3:16" — livre/chapitre/verset), pas de la
+   typographie de lecture : elle passe en mono comme dans la maquette. Le
+   TEXTE du verset juste en dessous (.verse-body-large) garde le serif
+   Newsreader — c'est lui qui se lit, pas se scanne. */
 .verse-ref-large {
-  font-family: 'Newsreader', 'IBM Plex Sans', serif;
-  font-size: 1.9rem;
+  font-family: var(--font-mono);
+  font-size: 1.6rem;
   font-weight: 700;
-  color: var(--gold);
+  color: var(--primary);
   letter-spacing: 0;
   display: flex;
   align-items: center;
@@ -2432,19 +2544,24 @@ body {
   outline-offset: 2px;
 }
 
+/* CORRECTIF (Mission Control) : --primary est passé d'un terracotta sombre à
+   un orange signal clair (voir tokens en tête de fichier) — le blanc figé en
+   dur qui était ici tombait à ~2:1 de contraste. Encre sombre --on-primary,
+   comme la maquette (bouton orange plein, libellé sombre). Même correctif que
+   celui déjà fait pour cabine-mono, pour la raison symétrique. */
 .btn-primary {
   background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
-  color: #ffffff;
-  box-shadow: 0 4px 14px rgba(184, 98, 47, 0.35);
+  color: var(--on-primary);
+  box-shadow: 0 4px 14px rgba(245, 161, 90, 0.35);
 }
 
 .btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(184, 98, 47, 0.5);
+  box-shadow: 0 6px 18px rgba(245, 161, 90, 0.5);
 }
 
 .btn-secondary {
-  background: rgba(43, 38, 32, 0.04);
+  background: rgba(255, 255, 255, 0.064);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border-color: var(--border-subtle);
@@ -2452,7 +2569,7 @@ body {
 }
 
 .btn-secondary:hover {
-  background: rgba(43, 38, 32, 0.07);
+  background: rgba(255, 255, 255, 0.112);
   border-color: var(--border-light);
   transform: translateY(-1px);
 }
@@ -2468,13 +2585,13 @@ body {
 }
 
 .btn-danger {
-  background: rgba(192, 57, 43, 0.15);
-  border-color: rgba(192, 57, 43, 0.32);
+  background: rgba(248, 113, 113, 0.15);
+  border-color: rgba(248, 113, 113, 0.32);
   color: var(--accent-rose);
 }
 
 .btn-danger:hover {
-  background: rgba(192, 57, 43, 0.25);
+  background: rgba(248, 113, 113, 0.25);
   transform: translateY(-1px);
 }
 
@@ -2488,19 +2605,19 @@ body {
 .speech-trigger-btn.active {
   background: linear-gradient(135deg, #f4607a 0%, #dd3358 100%);
   color: #fff;
-  box-shadow: 0 0 20px rgba(192, 57, 43, 0.45);
+  box-shadow: 0 0 20px rgba(248, 113, 113, 0.45);
   animation: mic-pulse 1.8s infinite;
 }
 
 @keyframes mic-pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(192, 57, 43, 0.6);
+    box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.6);
   }
   70% {
-    box-shadow: 0 0 0 14px rgba(192, 57, 43, 0);
+    box-shadow: 0 0 0 14px rgba(248, 113, 113, 0);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(192, 57, 43, 0);
+    box-shadow: 0 0 0 0 rgba(248, 113, 113, 0);
   }
 }
 
@@ -2516,7 +2633,7 @@ body {
 }
 
 .transcript-item {
-  background: rgba(43, 38, 32, 0.03);
+  background: rgba(255, 255, 255, 0.048);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border: 1px solid var(--border-subtle);
@@ -2529,7 +2646,7 @@ body {
 }
 
 .transcript-item:hover {
-  background: rgba(43, 38, 32, 0.05);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .transcript-time {
@@ -2547,7 +2664,7 @@ body {
   gap: 0.85rem;
   padding: 0.75rem;
   border-radius: var(--radius-md);
-  background: rgba(43, 38, 32, 0.025);
+  background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border-subtle);
 }
 
@@ -2562,15 +2679,15 @@ body {
 }
 
 .activity-icon.success {
-  background: rgba(47, 143, 111, 0.15);
+  background: rgba(52, 211, 153, 0.15);
   color: var(--accent-emerald);
 }
 .activity-icon.error {
-  background: rgba(192, 57, 43, 0.15);
+  background: rgba(248, 113, 113, 0.15);
   color: var(--accent-rose);
 }
 .activity-icon.info {
-  background: rgba(184, 98, 47, 0.15);
+  background: rgba(245, 161, 90, 0.15);
   color: var(--primary);
 }
 .activity-icon.warning {
@@ -2586,7 +2703,10 @@ body {
   font-weight: 600;
   color: var(--text-main);
 }
+/* Horodatage d'une entrée du flux d'activité — équivalent du .mc-cue-time
+   de la maquette : mono, pour que la colonne d'heures s'aligne. */
 .activity-time {
+  font-family: var(--font-mono);
   font-size: 0.72rem;
   color: var(--text-dim);
   margin-top: 0.15rem;
@@ -2628,7 +2748,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: rgba(43, 38, 32, 0.025);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .overlay-preview-card iframe {
@@ -2651,7 +2771,7 @@ body {
   padding: 0.5rem 1.1rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
-  background: rgba(43, 38, 32, 0.04);
+  background: rgba(255, 255, 255, 0.064);
   color: var(--text-muted);
   font-weight: 600;
   font-size: 0.85rem;
@@ -2663,8 +2783,10 @@ body {
 .lang-btn.active {
   background: var(--primary);
   border-color: var(--primary);
-  color: #ffffff;
-  box-shadow: 0 2px 12px rgba(184, 98, 47, 0.35);
+  /* CORRECTIF (Mission Control) : voir --on-primary — blanc sur orange clair
+     illisible. */
+  color: var(--on-primary);
+  box-shadow: none;
 }
 
 /* Stat rows */
@@ -2684,10 +2806,13 @@ body {
   color: var(--text-muted);
   font-size: 0.875rem;
 }
+/* Valeur d'une ligne de statistique (colonne de droite d'une .stat-row) :
+   même repère mono que .card-value / .status-strip-detail. */
 .stat-value {
-  font-weight: 700;
+  font-family: var(--font-mono);
+  font-weight: 600;
   color: var(--text-main);
-  font-size: 0.95rem;
+  font-size: 0.875rem;
 }
 
 /* AJOUT (redesign visuel, lot 3) : la checklist "Tester avant le culte"
@@ -2837,7 +2962,11 @@ body {
 .offline-manual-banner .btn-danger {
   background: #fff;
   border-color: #fff;
-  color: var(--accent-rose);
+  /* CORRECTIF (Mission Control) : --accent-rose est passé à un rouge clair
+     (lisible sur fond sombre) — sur ce bouton BLANC il faut la variante
+     foncée, sinon le libellé du seul bouton d'action de la bannière de
+     coupure tombe sous le seuil de lisibilité. */
+  color: var(--accent-rose-600);
   font-weight: 700;
 }
 
@@ -2855,17 +2984,22 @@ body {
   }
 }
 
+/* Mono + coins carrés (Mission Control) : ces badges portent souvent une
+   valeur chiffrée (confiance ASR en %, voir confidence-mode.js) et sont lus
+   comme un afficheur d'état, pas comme une étiquette décorative. */
 .status-badge {
   display: inline-flex;
   align-items: center;
-  padding: 0.25rem 0.65rem;
-  border-radius: var(--radius-full);
-  font-size: 0.75rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
   font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .status-badge.success {
-  background: rgba(47, 143, 111, 0.15);
+  background: rgba(52, 211, 153, 0.15);
   color: var(--accent-emerald);
 }
 .status-badge.warning {
@@ -2878,7 +3012,7 @@ body {
            .activity-icon.info (--primary), qui porte déjà ce sens
            "informatif neutre" ailleurs dans l'app. */
 .status-badge.ai {
-  background: rgba(184, 98, 47, 0.15);
+  background: rgba(245, 161, 90, 0.15);
   color: var(--primary);
 }
 
@@ -2897,7 +3031,7 @@ body {
   font-size: 0.78rem;
 }
 .status-badge.error {
-  background: rgba(192, 57, 43, 0.15);
+  background: rgba(248, 113, 113, 0.15);
   color: var(--accent-rose);
 }
 
@@ -2915,11 +3049,12 @@ body {
 
 .toast {
   pointer-events: auto;
-  /* CORRECTIF (Studio Clair) : fond bleu-nuit figé en dur sous un texte
-     déjà var(--text-main) (donc sombre) — invisible une fois le texte
-     passé au sombre pour le thème clair. Carte claire quasi-opaque,
-     cohérente avec --bg-card. */
-  background: rgba(255, 255, 255, 0.92);
+  /* CORRECTIF (Mission Control) : fond blanc quasi-opaque figé en dur sous un
+     texte var(--text-main) — devenu blanc sur blanc dès que le texte est
+     repassé en clair. Branché sur --bg-elevated (le token prévu pour les
+     surfaces qui flottent au-dessus des cartes) : plus aucun aplat de fond
+     figé en dur ici, le toast suit le thème actif quel qu'il soit. */
+  background: var(--bg-elevated);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   border: 1px solid var(--border-light);
@@ -2936,13 +3071,13 @@ body {
 }
 
 .toast.success {
-  border-color: rgba(47, 143, 111, 0.4);
+  border-color: rgba(52, 211, 153, 0.4);
 }
 .toast.error {
-  border-color: rgba(192, 57, 43, 0.4);
+  border-color: rgba(248, 113, 113, 0.4);
 }
 .toast.warning {
-  border-color: rgba(184, 134, 58, 0.4);
+  border-color: rgba(251, 191, 36, 0.4);
 }
 
 @keyframes slideInRight {
@@ -2967,7 +3102,7 @@ body {
      boutons clairs (.btn-secondary) désormais quasi blancs eux-mêmes ;
      une encre sombre translucide reste visible aussi bien sur les boutons
      clairs que sur le terracotta saturé de .btn-primary. */
-  background: rgba(43, 38, 32, 0.15);
+  background: rgba(255, 255, 255, 0.2);
   transform: scale(0);
   opacity: 0.6;
   pointer-events: none;
@@ -3051,21 +3186,21 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(43, 38, 32, 0.14);
+  background: rgba(255, 255, 255, 0.2);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(184, 98, 47, 0.4);
+  background: rgba(245, 161, 90, 0.4);
 }
 /* --- Panneau Clés API & Microphone (section Paramètres) ------------ */
 .setup-banner {
   display: flex;
   align-items: center;
   gap: 0.85rem;
-  background: rgba(184, 98, 47, 0.1);
+  background: rgba(245, 161, 90, 0.1);
   -webkit-backdrop-filter: blur(var(--glass-blur));
   backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid rgba(184, 98, 47, 0.35);
+  border: 1px solid rgba(245, 161, 90, 0.35);
   border-radius: var(--radius-md);
   padding: 0.9rem 1.1rem;
   margin-bottom: 1rem;
@@ -3165,8 +3300,8 @@ body {
 }
 
 #apiSettingsCard.needs-setup {
-  border-color: rgba(184, 98, 47, 0.4);
-  box-shadow: 0 0 0 1px rgba(184, 98, 47, 0.18);
+  border-color: rgba(245, 161, 90, 0.4);
+  box-shadow: 0 0 0 1px rgba(245, 161, 90, 0.18);
 }
 
 /* Bannière d'alerte pipeline (voir dashboard.js) */
@@ -3242,7 +3377,7 @@ body {
   background: var(--bg-card, #ffffff);
   border: 1px solid var(--border-subtle, #e8e3db);
   border-radius: 12px;
-  box-shadow: 0 16px 48px rgba(43, 38, 32, 0.18);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.54);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -3283,15 +3418,18 @@ body {
 }
 .command-palette-item:hover,
 .command-palette-item.active {
-  background: rgba(43, 38, 32, 0.05);
+  background: rgba(255, 255, 255, 0.08);
 }
 .command-palette-item kbd {
   font-size: 0.65rem;
   padding: 0.15rem 0.4rem;
-  background: rgba(43, 38, 32, 0.06);
+  background: rgba(255, 255, 255, 0.096);
   border-radius: 4px;
   font-family: var(--font-mono, monospace);
-  color: var(--text-dim, #a49c8d);
+  /* CORRECTIF (Mission Control, audit de contraste) : même cas que
+     .pp-keycap — --text-dim sur le fond éclairci de la touche tombait à
+     2,7:1 pour du texte de 10px. */
+  color: var(--text-muted);
 }
 
 /* CORRECTIF (Studio Clair) : #1e293b (bleu-nuit)/#e2e8f0/#cbd5e1 figés en
@@ -3409,12 +3547,14 @@ body {
 .confirm-dialog-ok {
   background: var(--accent-cyan);
   border-color: var(--accent-cyan);
-  color: #0b0c10;
+  color: var(--on-primary);
 }
 .confirm-dialog-ok.danger {
   background: var(--accent-rose);
   border-color: var(--accent-rose);
-  color: #fff;
+  /* CORRECTIF (Mission Control) : --accent-rose est un rouge CLAIR calibré
+     pour du texte sur fond sombre ; en aplat il lui faut une encre sombre. */
+  color: var(--on-primary);
 }
 
 /* Assistant de démarrage */
@@ -3447,9 +3587,9 @@ body {
 }
 .wizard-step {
   padding: 0.75rem;
-  background: rgba(43, 38, 32, 0.025);
+  background: rgba(255, 255, 255, 0.04);
   border-radius: 8px;
-  border: 1px solid rgba(43, 38, 32, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.096);
 }
 .wizard-step-header {
   display: flex;
@@ -3499,31 +3639,31 @@ body {
      "Motifs de composants" précis (verset/rundown/copilote/médiathèque/
      sidebar), pas Studio Pro. Même principe déjà appliqué pour le thème
      cabine-mono plus haut dans ce fichier. */
-  --pp-bg-root: #faf8f5;
-  --pp-bg-surface: #fbfaf8;
-  --pp-bg-card: #ffffff;
-  --pp-bg-card-hover: #f4efe6;
-  --pp-bg-card-active: #eee7dc;
-  --pp-bg-elevated: #fffdf9;
-  --pp-bg-input: #f7f4ee;
+  --pp-bg-root: #101219;
+  --pp-bg-surface: #14161f;
+  --pp-bg-card: #171922;
+  --pp-bg-card-hover: #1c1f2a;
+  --pp-bg-card-active: #212533;
+  --pp-bg-elevated: #242835;
+  --pp-bg-input: #0d0f16;
 
-  --pp-border-subtle: #e8e3db;
-  --pp-border-medium: #d8d0c2;
+  --pp-border-subtle: rgba(255, 255, 255, 0.08);
+  --pp-border-medium: rgba(255, 255, 255, 0.16);
   /* AJOUT (redesign — accent unique orange, puis terracotta) : noms
      --pp-border-active/--pp-blue-accent conservés tels quels (juste la
      valeur change) pour ne pas devoir retrouver tous leurs usages. */
-  --pp-border-active: #b8622f;
-  --pp-border-live: #c0392b;
+  --pp-border-active: #f5a15a;
+  --pp-border-live: #f87171;
 
-  --pp-text-main: #2b2620;
-  --pp-text-muted: #756d60;
-  --pp-text-dim: #a49c8d;
+  --pp-text-main: #e7e8ee;
+  --pp-text-muted: #a5a9bc;
+  --pp-text-dim: #6b6f80;
 
   /* Restrained Professional Palette */
-  --pp-blue-accent: #b8622f;
-  --pp-live-red: #c0392b;
-  --pp-green-ok: #2f8f6f;
-  --pp-gold-subtle: #b8863a;
+  --pp-blue-accent: #f5a15a;
+  --pp-live-red: #f87171;
+  --pp-green-ok: #34d399;
+  --pp-gold-subtle: #fbbf24;
 
   --pp-radius-sm: 4px;
   --pp-radius-md: 6px;
@@ -3630,7 +3770,10 @@ body {
   background: rgba(255, 255, 255, 0.08);
   padding: 1px 4px;
   border-radius: 3px;
-  color: var(--pp-text-dim);
+  /* CORRECTIF (Mission Control, audit de contraste) : --pp-text-dim est
+     calibré pour le fond d'une carte ; sur le fond ÉCLAIRCI de la touche
+     elle-même il retombait à 2,7:1 pour du texte de 9px. */
+  color: var(--pp-text-muted);
 }
 
 /* Audio VU Meter & Micro Strip */
