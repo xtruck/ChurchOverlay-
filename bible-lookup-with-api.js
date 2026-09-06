@@ -837,9 +837,7 @@ function significantWordSet(text) {
 // Similarité = proportion des mots du texte le plus court retrouvée dans
 // l'autre — plus tolérante qu'un Jaccard classique face à une citation
 // partielle ou à une transcription vocale imparfaite (mots ratés/déformés).
-function wordOverlapSimilarity(a, b) {
-  const setA = significantWordSet(a);
-  const setB = significantWordSet(b);
+function wordOverlapSimilaritySets(setA, setB) {
   if (setA.size === 0 || setB.size === 0) return 0;
   const [smaller, larger] = setA.size <= setB.size ? [setA, setB] : [setB, setA];
   let overlap = 0;
@@ -850,28 +848,36 @@ function wordOverlapSimilarity(a, b) {
 const QUOTE_MATCH_THRESHOLD = 0.55;
 const QUOTE_MATCH_MIN_WORDS = 5; // segments trop courts = trop de faux positifs
 
-/**
- * Cherche, parmi les versets déjà en cache (mémoire + disque), celui dont le
- * texte ressemble le plus au segment transcrit fourni — SANS référence
- * explicite prononcée.
- * @param {string} spokenText - segment de transcription à comparer
- * @returns {{ reference: string, text: string, provider: string, lang: string, score: number }|null}
- */
+// CORRECTIF (audit performance) : appelée pour CHAQUE fragment transcrit sans
+// référence explicite (le cas le plus courant d'une prédication ordinaire),
+// à l'intérieur du transcriptQueue sérialisé — donc sur le chemin critique de
+// latence. Recalculer significantWordSet(entry.text) pour CHAQUE entrée du
+// cache à CHAQUE appel était pur travail perdu : le texte d'une entrée de
+// cache ne change jamais après son ajout. Mémoïsé paresseusement sur
+// l'entrée elle-même (`__wordSet`, calculé une seule fois par entrée, jamais
+// recalculé ensuite) — le texte prononcé, lui, change à chaque appel donc
+// n'a de sens à calculer qu'une fois PAR APPEL (pas par entrée comme avant).
 function findByQuotedText(spokenText) {
-  if (significantWordSet(spokenText).size < QUOTE_MATCH_MIN_WORDS) return null;
+  const spokenWordSet = significantWordSet(spokenText);
+  if (spokenWordSet.size < QUOTE_MATCH_MIN_WORDS) return null;
 
   let best = null;
   let bestScore = 0;
   for (const entry of cache.values()) {
     if (!entry || !entry.text) continue;
-    const score = wordOverlapSimilarity(spokenText, entry.text);
+    if (!entry.__wordSet) entry.__wordSet = significantWordSet(entry.text);
+    const score = wordOverlapSimilaritySets(spokenWordSet, entry.__wordSet);
     if (score > bestScore) {
       bestScore = score;
       best = entry;
     }
   }
   if (!best || bestScore < QUOTE_MATCH_THRESHOLD) return null;
-  return { ...best, score: bestScore };
+  // CORRECTIF (fuite d'implémentation) : ne jamais renvoyer __wordSet, champ
+  // interne de mémoïsation, dans le résultat public.
+  const publicEntry = { ...best, score: bestScore };
+  delete publicEntry.__wordSet;
+  return publicEntry;
 }
 
 const BOOK_NORMALIZATION_MAP = {

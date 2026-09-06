@@ -207,24 +207,25 @@ const CORRECTIONS = {
 // -----------------------------------------------------------------------
 // FAST mode: Dictionary-based replacement
 // -----------------------------------------------------------------------
+// CORRECTIF (audit performance) : `correctFast` tourne pour CHAQUE fragment
+// transcrit, à l'intérieur du transcriptQueue sérialisé (voir server.js) —
+// donc sur le chemin critique de latence de tout le pipeline, y compris les
+// centaines de fragments d'un culte qui ne contiennent aucune des ~180
+// phrases du dictionnaire. Reconstruire `Object.keys(CORRECTIONS).sort(...)`
+// ET recompiler un `new RegExp(...)` par phrase à CHAQUE appel était donc du
+// travail pur perdu (le dictionnaire est statique, jamais modifié à
+// l'exécution) — précalculé une seule fois au chargement du module.
+const FAST_CORRECTION_ENTRIES = Object.keys(CORRECTIONS)
+  .sort((a, b) => b.length - a.length)
+  .map((phrase) => ({
+    correction: CORRECTIONS[phrase],
+    regex: new RegExp(`\\b${phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi'),
+  }));
+
 function correctFast(text) {
   let result = text;
-  const phrases = Object.keys(CORRECTIONS).sort((a, b) => b.length - a.length);
-  for (const phrase of phrases) {
-    // CORRECTIF (audit global) : \b à l'intérieur d'un template literal
-    // (backticks) est interprété comme le caractère de contrôle backspace
-    // (0x08), pas comme l'échappement regex \b (limite de mot). Le regex
-    // construit ici ne contenait donc JAMAIS de frontière de mot réelle —
-    // juste deux caractères backspace littéraux qu'aucune transcription ne
-    // contient jamais. Résultat : ce `replace()` ne correspondait STRICTEMENT
-    // JAMAIS à rien, et le mode FAST (correction par dictionnaire) de tout
-    // ce module ne corrigeait absolument aucun mot, silencieusement, depuis
-    // le début. Vérifié : `correctFast('jesus a parle a jean')` retournait le
-    // texte totalement inchangé avant ce correctif. Il faut échapper le
-    // backslash lui-même (`\\b`) pour obtenir un vrai \b dans le regex final.
-    const regex = new RegExp(`\\b${phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+  for (const { regex, correction } of FAST_CORRECTION_ENTRIES) {
     result = result.replace(regex, (match) => {
-      const correction = CORRECTIONS[phrase.toLowerCase()];
       if (match === match.toUpperCase()) return correction.toUpperCase();
       if (match[0] === match[0].toUpperCase()) return correction;
       return correction.toLowerCase();

@@ -34,9 +34,21 @@ const BUILTIN_FILE = path.join(__dirname, 'config', 'features.json');
 
 let userFile = null;
 
+// CORRECTIF (audit performance) : readFeatures() est appelée depuis TOUT le
+// pipeline d'affichage (getVerseDurationMs() seul l'appelle depuis 7+ sites
+// différents, à chaque verset affiché) et refaisait jusqu'ici DEUX
+// fs.readFileSync()+JSON.parse() synchrones à CHAQUE appel — un I/O disque
+// redondant sur le chemin critique de latence, alors que le contenu ne
+// change qu'aux appels de writeFeatures() (ou setUserDataDir(), qui change
+// QUEL fichier utilisateur est lu). Invalidée sur ces deux seuls événements
+// — tous les points d'écriture passent par writeFeatures() (vérifié : aucun
+// fs.writeFileSync direct sur ces fichiers ailleurs dans le code).
+let cachedFeatures = null;
+
 /** @param {string} dir - dossier inscriptible (app.getPath('userData')) */
 function setUserDataDir(dir) {
   userFile = dir ? path.join(dir, 'features.json') : null;
+  cachedFeatures = null;
 }
 
 function getWritableFile() {
@@ -67,12 +79,32 @@ function deepMerge(base, override) {
   return out;
 }
 
-/** Config effective = valeurs livrées + surcharges utilisateur. */
+/**
+ * Config effective = valeurs livrées + surcharges utilisateur.
+ *
+ * CORRECTIF (mutation directe déjà présente dans le code) : theme-loader.js
+ * #setActiveTheme() fait `const features = readFeatures(); features.design
+ * = ...; writeFeatures(features)` — une mutation en place de l'objet
+ * renvoyé, sûre tant que chaque appel produisait un objet fraîchement
+ * désérialisé (jamais partagé). Avec le cache ci-dessus, renvoyer
+ * directement l'objet mis en cache exposerait CETTE mutation (et toute
+ * autre du même genre, présente ou future) au cache lui-même, corrompant
+ * silencieusement ce que tous les appelants suivants liraient jusqu'à la
+ * prochaine écriture. structuredClone() sur chaque appel élimine ce risque
+ * tout en gardant le seul gain recherché : éviter la lecture disque +
+ * JSON.parse répétée, largement plus coûteuse qu'un clone en mémoire d'un
+ * petit objet de config.
+ */
 function readFeatures() {
+  if (cachedFeatures) return structuredClone(cachedFeatures);
   const builtin = readJsonFile(BUILTIN_FILE) || {};
-  if (!userFile) return builtin;
-  const override = readJsonFile(userFile);
-  return override ? deepMerge(builtin, override) : builtin;
+  let result = builtin;
+  if (userFile) {
+    const override = readJsonFile(userFile);
+    if (override) result = deepMerge(builtin, override);
+  }
+  cachedFeatures = result;
+  return structuredClone(result);
 }
 
 /**
@@ -84,6 +116,7 @@ function readFeatures() {
  */
 function writeFeatures(features) {
   writeJsonAtomic(getWritableFile(), features);
+  cachedFeatures = null;
 }
 
 module.exports = { setUserDataDir, readFeatures, writeFeatures, getWritableFile };
