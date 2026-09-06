@@ -80,7 +80,7 @@
              badge "warning" se lisait visuellement comme une action
              primaire — un vrai flou pour un opérateur qui doit trancher
              vite en direct. .media-gallery-card.is-default (plus bas)
-             utilisait déjà var(--accent-amber, #d9a441) avec un repli
+             utilisait déjà var(--accent-amber) avec un repli
              ambré : l'intention d'une couleur distincte existait déjà,
              juste jamais branchée. Restaurée ici. */
   --accent-amber: #fbbf24;
@@ -1872,13 +1872,13 @@ body {
   padding: 0.4rem 0.65rem;
   border-radius: var(--radius-sm);
   background: var(--accent-amber-bg);
-  border: 1px solid var(--accent-amber, #d9a441);
-  color: var(--accent-amber, #d9a441);
+  border: 1px solid var(--accent-amber);
+  color: var(--accent-amber);
   cursor: pointer;
 }
 
 .media-poster-toggle input[type='checkbox'] {
-  accent-color: var(--accent-amber, #d9a441);
+  accent-color: var(--accent-amber);
 }
 
 /* AJOUT (redesign visuel, lot 4) : vignette caméra IP (ip-cameras.js) —
@@ -1923,7 +1923,7 @@ body {
 }
 
 .media-gallery-card.is-default {
-  border-color: var(--accent-amber, #d9a441);
+  border-color: var(--accent-amber);
 }
 
 /* AJOUT (Partie 2.3 — Mur Média, états par tuile) : "à l'écran" (priorité
@@ -1932,9 +1932,14 @@ body {
    rendre le nom illisible à 3 mètres), "fichier manquant" (barré, jamais
    cliquable, voir triggerMediaWallItem). */
 .media-gallery-card.is-on-screen {
-  border-color: var(--accent-green, #22c55e);
+  /* CORRECTIF (audit — variables inexistantes) : --accent-green/--accent-red
+     n'existaient nulle part dans ce fichier (ni :root ni aucun thème) — ces
+     règles utilisaient donc TOUJOURS le repli figé, jamais la couleur de
+     thème réelle. --accent-emerald/--accent-rose sont les tokens réels déjà
+     utilisés partout ailleurs pour ce même sens (succès/erreur). */
+  border-color: var(--accent-emerald);
   border-width: 2px;
-  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25);
+  box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.25);
 }
 
 .media-gallery-card.is-used:not(.is-on-screen) {
@@ -1944,7 +1949,7 @@ body {
 .media-gallery-card.is-missing {
   cursor: not-allowed;
   opacity: 0.5;
-  border-color: var(--accent-red, #ef4444);
+  border-color: var(--accent-rose);
 }
 
 .media-gallery-thumb-missing {
@@ -3388,8 +3393,13 @@ body {
 .command-palette {
   width: 520px;
   max-height: 440px;
-  background: var(--bg-card, #ffffff);
-  border: 1px solid var(--border-subtle, #e8e3db);
+  /* CORRECTIF (audit — replis figés sur l'ancienne palette claire) :
+     --bg-card/--border-subtle/--text-main/--text-dim sont TOUJOURS définis
+     dans :root, ces replis ne se déclenchaient donc jamais en pratique —
+     mais restaient une trappe latente (et trompeuse à la lecture) si ce
+     bloc était un jour rendu hors cascade du document principal. */
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
   border-radius: 12px;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.54);
   display: flex;
@@ -3400,13 +3410,13 @@ body {
   padding: 0.75rem 1rem;
   background: transparent;
   border: none;
-  border-bottom: 1px solid var(--border-subtle, #e8e3db);
-  color: var(--text-main, #2b2620);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-main);
   font-size: 0.95rem;
   outline: none;
 }
 .command-palette-input::placeholder {
-  color: var(--text-dim, #a49c8d);
+  color: var(--text-dim);
 }
 .command-palette-list {
   overflow-y: auto;
@@ -3419,7 +3429,7 @@ body {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-dim, #a49c8d);
+  color: var(--text-dim);
 }
 .command-palette-item {
   display: flex;
@@ -3428,7 +3438,7 @@ body {
   padding: 0.5rem 1rem;
   cursor: pointer;
   font-size: 0.85rem;
-  color: var(--text-main, #2b2620);
+  color: var(--text-main);
 }
 .command-palette-item:hover,
 .command-palette-item.active {
@@ -3517,8 +3527,8 @@ body {
   justify-content: center;
 }
 .confirm-dialog {
-  background: var(--bg-card, #ffffff);
-  border: 1px solid var(--border-subtle, #e8e3db);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
   border-radius: 12px;
   padding: 1.25rem;
   max-width: 420px;
@@ -3536,8 +3546,8 @@ body {
   box-sizing: border-box;
   padding: 0.5rem 0.65rem;
   margin-bottom: 1rem;
-  background: var(--bg-input, #f7f4ee);
-  border: 1px solid var(--border-subtle, #e8e3db);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
   color: var(--text-main);
   font-size: 0.85rem;
@@ -3554,7 +3564,7 @@ body {
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
-  border: 1px solid var(--border-subtle, #e8e3db);
+  border: 1px solid var(--border-subtle);
   background: transparent;
   color: var(--text-main);
 }
@@ -3589,8 +3599,8 @@ body {
   pointer-events: auto;
 }
 .startup-wizard {
-  background: var(--bg-card, #ffffff);
-  border: 1px solid var(--border-subtle, #e8e3db);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
   border-radius: 12px;
   padding: 1.5rem;
   max-width: 520px;
@@ -4690,7 +4700,7 @@ body {
   text-align: center;
 }
 .companion-link-color {
-  color: var(--primary, #b8622f);
+  color: var(--primary);
 }
 .stat-btn-sm {
   padding: 2px 8px;
@@ -5264,7 +5274,7 @@ body {
 
 /* --- Carte poster principal --- */
 .icon-amber-star {
-  color: var(--accent-amber, #d9a441);
+  color: var(--accent-amber);
 }
 .default-poster-label {
   font-size: 0.85rem;
@@ -5338,7 +5348,7 @@ body {
 .notice-banner--pending {
   background: rgba(245, 158, 11, 0.15);
   border: 1px solid rgba(245, 158, 11, 0.4);
-  color: var(--accent-amber, #f59e0b);
+  color: var(--accent-amber);
   align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
