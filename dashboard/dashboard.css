@@ -5257,6 +5257,42 @@ body {
   display: block;
 }
 
+/* AJOUT (redesign — priorité visuelle "Mission Control") : #overview
+   empilait jusqu'ici .overview-panels-grid (7 cartes de gestion — file,
+   feuille de route, médiathèque, chants...) PUIS .metrics-grid (tuiles de
+   stats) PUIS .main-display-row (verset héros + flux d'activité, déjà
+   construit exactement dans l'esprit "héros + rail latéral étroit" du
+   mockup Mission Control, voir grid-template-columns: 2fr 1fr plus bas) —
+   un opérateur devait donc faire défiler PASSÉ tous les panneaux de
+   gestion avant de voir ce qui est réellement diffusé maintenant. CSS pur,
+   AUCUN élément déplacé dans le DOM (order ne change que l'ordre visuel,
+   jamais l'ordre DOM que lisent getElementById/querySelector/les
+   locators Playwright) : le héros et les tuiles remontent visuellement
+   juste après la barre d'outils compacte (écoute/mode confiance/
+   recherche), les panneaux de gestion plus volumineux redescendent après.
+
+   !important nécessaire : dashboard/state.js#switchSection (partagé par
+   TOUS les onglets) pose `section.style.display = 'block'` en style
+   INLINE à chaque activation d'onglet — un style inline gagne toujours
+   sur une règle de feuille de style, quelle que soit sa spécificité, donc
+   sans !important cette règle ne s'appliquerait jamais. Ciblé sur
+   #overview UNIQUEMENT : les autres onglets ne sont pas touchés,
+   switchSection() reste inchangé et continue de fonctionner pour eux
+   exactement comme avant. */
+#overview {
+  display: flex !important;
+  flex-direction: column;
+}
+#overview > .main-display-row {
+  order: 1;
+}
+#overview > .metrics-grid {
+  order: 2;
+}
+#overview > .overview-panels-grid {
+  order: 3;
+}
+
 /* --- Grille des panneaux (ambiance / file / feuille de route / médias) --- */
 .overview-panels-grid {
   display: grid;
