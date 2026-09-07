@@ -38,14 +38,29 @@ Extrais LE THÈME PRINCIPAL en 2-4 mots maximum + 3 mots-clés.
 Transcription: "${sanitizeForPrompt(transcriptBuffer.slice(-2000))}"
 Réponds uniquement en JSON valide: {"theme":"...","keywords":["...","...","..."]}`;
 
-  try {
-    const res = await chatCompletion(prompt, { json_mode: true, temperature: 0.2 });
-    const parsed = extractJsonObject(extractResponseText(res));
-    if (!parsed) return null;
-    return { theme: parsed.theme, keywords: parsed.keywords || [] };
-  } catch (e) {
-    console.warn('[ai-enricher] Détection thème échouée:', e.message);
-    return null;
+  // CORRECTIF (bug observé en usage réel — log de production) : Groq répond
+  // parfois 400 json_validate_failed avec failed_generation VIDE (pas du
+  // JSON malformé à réparer, juste une génération ratée ce coup-ci — le
+  // modèle n'a rien produit de conforme) sur un extrait donné, alors que le
+  // même prompt réussit normalement à la tentative suivante. Un seul essai
+  // supplémentaire suffit à absorber cet aléa ponctuel sans transformer une
+  // vraie panne (clé API absente, rate limit, timeout réseau) en boucle de
+  // réessais — on ne retente QUE sur ce code d'erreur précis, une seule
+  // fois, jamais sur les autres.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await chatCompletion(prompt, { json_mode: true, temperature: 0.2 });
+      const parsed = extractJsonObject(extractResponseText(res));
+      if (!parsed) return null;
+      return { theme: parsed.theme, keywords: parsed.keywords || [] };
+    } catch (e) {
+      const isRetryableJsonFailure = /json_validate_failed/.test(e.message || '');
+      if (attempt === 0 && isRetryableJsonFailure) {
+        continue;
+      }
+      console.warn('[ai-enricher] Détection thème échouée:', e.message);
+      return null;
+    }
   }
 }
 
