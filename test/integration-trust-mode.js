@@ -18,6 +18,17 @@
  *   3. dismissPendingVerse : le verset en attente est abandonné, jamais affiché.
  *   4. changer de mode pendant qu'un verset est en attente le rejette proprement
  *      (pendingVerseDismissed), au lieu de le laisser orphelin.
+ *
+ *  AJOUT (Axe 2 — Trust Mode prédictif à 3 niveaux, durcissement) :
+ *   5. mode 'auto' + correspondance FLOUE (confidence='medium', nom de livre
+ *      deviné) : NE s'affiche PLUS immédiatement malgré le mode 'auto' —
+ *      attente de confirmation, comme si le mode était 'semi-auto' pour
+ *      CETTE détection précise seulement (le mode global reste 'auto').
+ *   6. mode 'auto' + correspondance par citation (findByQuotedText) : reste
+ *      TOUJOURS exemptée du palier prédictif, même à faible score (0.6) —
+ *      son échelle de recouvrement de mots n'est pas comparable à la
+ *      confiance categorielle regex/sémantique ; comportement HISTORIQUE
+ *      (affichage direct en mode 'auto') strictement préservé.
  * ============================================================================
  */
 'use strict';
@@ -34,7 +45,13 @@ function injectFakeModule(relativePath, exportsObj) {
   return abs;
 }
 
-injectFakeModule('bible-lookup-with-api.js', {
+// AJOUT (Axe 2 — Trust Mode prédictif) : conservé dans une variable nommée
+// (plutôt qu'un littéral anonyme) pour que le scénario de rejet à faible
+// confiance, plus bas, puisse remplacer findByQuotedText() TEMPORAIREMENT
+// pour un seul segment — c'est le MÊME objet que server.js détient déjà
+// (injectFakeModule remplace le module entier avant le require('../server.js')
+// ci-dessous), donc muter une de ses méthodes ici se répercute immédiatement.
+const fakeBibleLookup = {
   async getChapterVerses() {
     throw new Error('non utilisé dans ce test');
   },
@@ -74,7 +91,8 @@ injectFakeModule('bible-lookup-with-api.js', {
   getProviders() {
     return ['fake-provider'];
   },
-});
+};
+injectFakeModule('bible-lookup-with-api.js', fakeBibleLookup);
 
 const transcriptQueue = [];
 injectFakeModule('groq-wrapper.js', {
@@ -248,6 +266,76 @@ async function simulateSegment(text) {
   check(
     'basculer vers auto avec un verset en attente le rejette (pendingVerseDismissed), ne le laisse pas orphelin',
     received.some((m) => m.action === 'pendingVerseDismissed' && m.reference === 'Jean 3:16'),
+    JSON.stringify(received)
+  );
+
+  // --- 5. Mode 'auto' + correspondance FLOUE : attente malgré 'auto' -----
+  console.log(
+    "\n=== Mode 'auto' + correspondance floue (confidence='medium') : attente, pas d'affichage direct ===\n"
+  );
+  send({ action: 'setTrustMode', mode: 'auto' });
+  await sleep(100);
+  received = [];
+  // "2 jeans" (typo ASR plausible) -> corrigé en "2 jean" par distance de
+  // Levenshtein (voir detector.js) : confidence='medium' car le NOM DU LIVRE
+  // lui-même reste une supposition, quel que soit le numéro de verset.
+  await simulateSegment('2 jeans chapitre 1 verset 5');
+  await sleep(400);
+  check(
+    'auto + flou : PAS de showVerse immédiat (confiance insuffisante pour CETTE détection)',
+    !received.some((m) => m.action === 'showVerse'),
+    JSON.stringify(received)
+  );
+  const fuzzyPending = received.find((m) => m.action === 'pendingVerseConfirmation');
+  check(
+    'auto + flou : pendingVerseConfirmation diffusé avec la confiance numérique attendue (75%)',
+    !!fuzzyPending && fuzzyPending.trustMode === 'auto' && fuzzyPending.confidence === 0.75,
+    JSON.stringify(fuzzyPending)
+  );
+
+  // Confirme quand même pour vérifier que le mode 'auto' reste pleinement
+  // fonctionnel une fois la confirmation opérateur donnée (pas un dead-end).
+  received = [];
+  send({ action: 'confirmPendingVerse' });
+  await sleep(300);
+  check(
+    'auto + flou : confirmPendingVerse déclenche bien le showVerse ensuite',
+    received.some((m) => m.action === 'showVerse'),
+    JSON.stringify(received)
+  );
+
+  // --- 6. Mode 'auto' + citation : TOUJOURS exemptée du palier prédictif -
+  // Le score de recouvrement de mots (findByQuotedText) n'est pas calibré
+  // sur la même échelle que la confiance categorielle regex/sémantique
+  // (voir server.js, branche `reference.detectedBy === 'quote'`) : même un
+  // score bas (0.6, sous le nouveau seuil de rejet 70%) doit continuer à
+  // s'afficher directement en mode 'auto', comme AVANT ce chantier.
+  console.log(
+    "\n=== Mode 'auto' + citation à faible score de recouvrement (0.6) : exemptée, affichage direct quand même ===\n"
+  );
+  const originalFindByQuotedText = fakeBibleLookup.findByQuotedText;
+  fakeBibleLookup.findByQuotedText = () => ({
+    reference: 'Jean 3:16',
+    score: 0.6, // >= 0.55 (pré-filtre existant), sous le seuil 70% du palier prédictif -> sans incidence pour une citation
+    text: 'Car Dieu a tant aimé le monde...',
+  });
+  received = [];
+  try {
+    // Phrase sans motif "livre chapitre X verset Y" détectable par regex, ni
+    // "chapitre seul" -> tombe jusqu'au repli citation (findByQuotedText).
+    await simulateSegment("Dieu a tant aime le monde qu'il a donne son fils unique");
+    await sleep(400);
+  } finally {
+    fakeBibleLookup.findByQuotedText = originalFindByQuotedText;
+  }
+  check(
+    "auto + citation à faible score : showVerse quand même diffusé (citation exemptée du palier prédictif)",
+    received.some((m) => m.action === 'showVerse' && m.reference === 'Jean 3:16'),
+    JSON.stringify(received)
+  );
+  check(
+    'auto + citation à faible score : aucun pendingVerseConfirmation (pas de mise en attente pour une citation)',
+    !received.some((m) => m.action === 'pendingVerseConfirmation'),
     JSON.stringify(received)
   );
 

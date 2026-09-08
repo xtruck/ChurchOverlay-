@@ -353,6 +353,39 @@ function setTrustMode(mode) {
   return true;
 }
 
+// AJOUT (Axe 2 — Trust Mode prédictif à 3 niveaux) : classification PURE
+// (aucun I/O) d'un score de confiance numérique (0-1) en l'un des 3 paliers
+// cibles. Ne remplace PAS trustMode ci-dessus — s'applique UNIQUEMENT à
+// l'intérieur du mode 'auto' (voir server.js#processTranscript) : 'auto'
+// signifiait jusqu'ici "toujours afficher sans condition", ce qui laissait
+// passer sans confirmation des détections déjà annotées comme incertaines
+// par le détecteur lui-même (ex. correspondance floue de nom de livre,
+// confidence='medium' dans detector.js, jamais consultée par la décision
+// de mode confiance jusqu'à ce chantier). 'semi-auto'/'manual' restent
+// INCHANGÉS : ce sont des choix opérateur ABSOLUS ("toujours confirmer",
+// utile à un bénévole en apprentissage — voir integration-trust-mode.js) —
+// aucune confiance, même de 99%, ne doit jamais les court-circuiter.
+//
+// server.js reste seul responsable de calculer le score à partir du chemin
+// de détection réel (regex/sémantique/citation, formes hétérogènes —
+// chaîne 'high'/'medium' ou nombre 0-1 déjà réel) et d'agir sur le résultat
+// (afficher/mettre en attente/rejeter+journaliser) ; ce module n'applique
+// que la règle de seuil, testable isolément (voir son propre en-tête :
+// aucun I/O, aucune dépendance).
+const CONFIDENCE_AUTO_THRESHOLD = 0.9; // > 90% -> affichage direct
+const CONFIDENCE_SUPERVISED_THRESHOLD = 0.7; // 70-89% -> attente opérateur ; < 70% -> rejeté
+
+/**
+ * @param {number} score - confiance de détection normalisée, 0-1
+ * @returns {'auto'|'supervised'|'rejected'}
+ */
+function classifyDetectionConfidence(score) {
+  if (typeof score !== 'number' || Number.isNaN(score)) return 'rejected';
+  if (score > CONFIDENCE_AUTO_THRESHOLD) return 'auto';
+  if (score >= CONFIDENCE_SUPERVISED_THRESHOLD) return 'supervised';
+  return 'rejected';
+}
+
 // --- Historique des versets affichés ---
 function getVerseHistory() {
   return verseHistory;
@@ -596,6 +629,9 @@ module.exports = {
   TRUST_MODES,
   getTrustMode,
   setTrustMode,
+  classifyDetectionConfidence,
+  CONFIDENCE_AUTO_THRESHOLD,
+  CONFIDENCE_SUPERVISED_THRESHOLD,
   getVerseHistory,
   pushHistory,
   updateTranscriptContext,

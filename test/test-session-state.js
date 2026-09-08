@@ -265,6 +265,47 @@ console.log('[TEST] Test 12: getTrustMode/setTrustMode...');
 }
 console.log('[TEST] ✓ Mode confiance : défaut auto, transitions valides, rejet propre\n');
 
+// --- Trust Mode prédictif à 3 niveaux (Axe 2) ---
+console.log('[TEST] Test 13: classifyDetectionConfidence — 3 paliers + valeurs limites...');
+{
+  assert.strictEqual(sessionState.CONFIDENCE_AUTO_THRESHOLD, 0.9, 'seuil "auto" documenté à 90%');
+  assert.strictEqual(
+    sessionState.CONFIDENCE_SUPERVISED_THRESHOLD,
+    0.7,
+    'seuil "supervisé" documenté à 70%'
+  );
+
+  // > 90% -> auto
+  assert.strictEqual(sessionState.classifyDetectionConfidence(0.97), 'auto');
+  assert.strictEqual(sessionState.classifyDetectionConfidence(1), 'auto');
+  // Valeur limite : exactement 90% n'est PAS "> 90%" -> supervisé, pas auto.
+  assert.strictEqual(
+    sessionState.classifyDetectionConfidence(0.9),
+    'supervised',
+    '90% pile ne doit PAS être auto (strictement > 90% requis)'
+  );
+
+  // 70-89% -> supervisé (bande inclusive des deux côtés)
+  assert.strictEqual(sessionState.classifyDetectionConfidence(0.89), 'supervised');
+  assert.strictEqual(sessionState.classifyDetectionConfidence(0.75), 'supervised');
+  assert.strictEqual(
+    sessionState.classifyDetectionConfidence(0.7),
+    'supervised',
+    '70% pile doit être supervisé (borne inclusive)'
+  );
+
+  // < 70% -> rejeté
+  assert.strictEqual(sessionState.classifyDetectionConfidence(0.69), 'rejected');
+  assert.strictEqual(sessionState.classifyDetectionConfidence(0), 'rejected');
+
+  // Entrées invalides -> rejeté par défaut, jamais un plantage ni un "auto" par erreur.
+  assert.strictEqual(sessionState.classifyDetectionConfidence(undefined), 'rejected');
+  assert.strictEqual(sessionState.classifyDetectionConfidence(null), 'rejected');
+  assert.strictEqual(sessionState.classifyDetectionConfidence(NaN), 'rejected');
+  assert.strictEqual(sessionState.classifyDetectionConfidence('0.95'), 'rejected');
+}
+console.log('[TEST] ✓ classifyDetectionConfidence : 3 paliers et valeurs limites corrects\n');
+
 console.log(
   '=== Résultat session-state (transcriptionLanguage/displayLanguage + fusion) : tous les tests sont passés ==='
 );

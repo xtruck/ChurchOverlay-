@@ -1422,6 +1422,30 @@ async function displayChapterFallback(book, chapter, tracker, opts) {
   }
 }
 
+// AJOUT (Axe 2 — Trust Mode prédictif à 3 niveaux) : normalise le signal de
+// confiance hétérogène des différents chemins de détection en un seul score
+// 0-1, pour que sessionState.classifyDetectionConfidence() applique une
+// règle UNIQUE quel que soit le chemin qui a produit `reference` :
+//   - détection sémantique (LLM) et correspondance par citation : déjà un
+//     nombre réel 0-1 (voir semantic-detector.js/bible-lookup-with-api.js#
+//     findByQuotedText) — utilisé tel quel.
+//   - détection exacte/floue par regex (detector.js/detector-en.js) : chaîne
+//     catégorielle 'high'/'medium' seulement — 'high' correspond à une
+//     correspondance exacte (nom de livre certain), mappée haut ;
+//     'medium' signale explicitement un nom de livre DEVINÉ par correction
+//     floue (voir le commentaire de detector.js à cet endroit) — mappée
+//     dans la bande "supervisé", jamais "auto".
+function resolveDetectionConfidenceScore(reference) {
+  if (typeof reference.confidence === 'number') return reference.confidence;
+  if (reference.confidence === 'high') return 0.97;
+  if (reference.confidence === 'medium') return 0.75;
+  // Repli défensif : aucun chemin connu atteignant ce point n'arrive ici
+  // sans confiance déjà fixée ci-dessus — traité comme pleinement fiable
+  // plutôt que de bloquer un futur chemin de détection qui oublierait de
+  // fournir une confiance.
+  return 0.97;
+}
+
 /**
  * @param {string} text
  * @param {import('./latency-tracker').Tracker} [tracker] - AJOUT (§14) :
@@ -1823,7 +1847,17 @@ async function processTranscript(text, tracker, opts = {}) {
       if (quoted && quoted.score >= 0.55) {
         log(`Quote match: ${quoted.reference} (score: ${quoted.score.toFixed(2)})`);
         quotedMatch = quoted;
-        reference = { book: '', chapter: 0, verseStart: 0, detectedBy: 'quote' };
+        // CORRECTIF (Axe 2 — Trust Mode prédictif) : quoted.score n'était
+        // jamais reporté sur `reference` — la décision de mode confiance
+        // plus bas n'avait donc AUCUN moyen de connaître la confiance réelle
+        // d'une citation (0.55-1.0), malgré ce seuil de pré-filtre déjà réel.
+        reference = {
+          book: '',
+          chapter: 0,
+          verseStart: 0,
+          detectedBy: 'quote',
+          confidence: quoted.score,
+        };
       }
     } catch (_e) {}
   }
@@ -2178,19 +2212,71 @@ async function processTranscript(text, tracker, opts = {}) {
     cancelChapterFallback(reference.book, reference.chapter);
   }
 
-  if (sessionState.getTrustMode() === 'auto') {
-    await finalizeDisplay();
-  } else {
+  const trustModeForDisplay = sessionState.getTrustMode();
+  if (trustModeForDisplay !== 'auto') {
+    // 'semi-auto'/'manual' : comportement HISTORIQUE inchangé — ce sont des
+    // choix opérateur ABSOLUS ("toujours confirmer", utile à un bénévole en
+    // apprentissage progressif, voir RÈGLE MISSION dans
+    // integration-trust-mode.js). Aucune confiance, même de 99%, ne doit
+    // jamais les court-circuiter — le palier prédictif ci-dessous ne
+    // s'applique donc volontairement qu'au mode 'auto'.
     setPendingVerse(verse.reference, finalizeDisplay);
     broadcast({
       action: 'pendingVerseConfirmation',
       reference: verse.reference,
       textPreview: verse.text.substring(0, 200),
-      trustMode: sessionState.getTrustMode(),
+      trustMode: trustModeForDisplay,
     });
-    log(
-      `Verset en attente de confirmation (mode ${sessionState.getTrustMode()}): ${verse.reference}`
-    );
+    log(`Verset en attente de confirmation (mode ${trustModeForDisplay}): ${verse.reference}`);
+  } else if (reference.detectedBy === 'quote') {
+    // AJOUT (Axe 2 — Trust Mode prédictif) : la citation (verset lu à voix
+    // haute SANS en dire la référence, reconnu par recouvrement de mots —
+    // voir bible-lookup-with-api.js#findByQuotedText) est délibérément
+    // EXEMPTÉE du palier prédictif ci-dessous. Son score de recouvrement
+    // n'est PAS calibré sur la même échelle que la confiance categorielle
+    // regex/sémantique : son plafond naturel reste largement sous 90% même
+    // pour une citation parfaite (0.79-0.82 observés pour un verset entier
+    // récité mot pour mot, voir integration-quote-match.js) — lui appliquer
+    // le même seuil aurait mis EN ATTENTE toute citation, y compris les
+    // meilleures, ce que ni ce chantier ni le cahier des charges (qui ne
+    // cite que detector.js/semantic-detector.js) n'ont jamais eu l'intention
+    // de changer. Comportement HISTORIQUE préservé à l'identique.
+    await finalizeDisplay();
+  } else {
+    // AJOUT (Axe 2 — Trust Mode prédictif à 3 niveaux) : le mode 'auto' ne
+    // signifie plus "toujours afficher sans condition" — la confiance RÉELLE
+    // de CETTE détection précise décide désormais si elle reste assez
+    // fiable pour un affichage sans confirmation. Durcit un vrai trou :
+    // une correspondance floue (confidence='medium', voir detector.js) ou
+    // une détection sémantique à faible score s'affichait jusqu'ici
+    // aveuglément en mode auto, malgré le doute déjà annoté par le
+    // détecteur lui-même.
+    const confidenceScore = resolveDetectionConfidenceScore(reference);
+    const confidenceTier = sessionState.classifyDetectionConfidence(confidenceScore);
+    if (confidenceTier === 'rejected') {
+      log(
+        `Verset à faible confiance ignoré : ${verse.reference} (${Math.round(confidenceScore * 100)}%)`
+      );
+      return;
+    }
+    if (confidenceTier === 'auto') {
+      await finalizeDisplay();
+    } else {
+      // 'supervised' malgré le mode global 'auto' : confiance insuffisante
+      // pour CETTE détection précise seulement (le mode reste 'auto' pour
+      // les suivantes — rien n'est changé globalement).
+      setPendingVerse(verse.reference, finalizeDisplay);
+      broadcast({
+        action: 'pendingVerseConfirmation',
+        reference: verse.reference,
+        textPreview: verse.text.substring(0, 200),
+        trustMode: trustModeForDisplay,
+        confidence: confidenceScore,
+      });
+      log(
+        `Verset en attente de confirmation (confiance ${Math.round(confidenceScore * 100)}%): ${verse.reference}`
+      );
+    }
   }
 }
 
