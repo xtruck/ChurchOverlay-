@@ -12,6 +12,7 @@
 import { ws, getHttpOrigin } from '../state.js';
 import { showToast, escapeHtmlDashboard, isTypingContext } from '../utils.js';
 import { updatePosterCardMediaItems } from './poster-principal-card.js';
+import { registerAction } from '../action-delegator.js';
 
 /* ======================================================================
    Médiathèque (déclenchement vocal ou manuel de photos/vidéos, voir
@@ -248,7 +249,7 @@ export function renderMediaLibrary(items) {
                             <select id="mediaStyle-${item.id}" title="Style d'apparition à l'écran">
                                 ${styleOptions}
                             </select>
-                            <button class="queue-icon-btn" onclick="saveMediaItemDetails('${item.id}')" title="Enregistrer la durée/le style">💾</button>
+                            <button class="queue-icon-btn" data-action="save-details" data-target="media" data-id="${item.id}" title="Enregistrer la durée/le style">💾</button>
                         </div>
                         <!-- AJOUT (Partie 2.3 — groupes) : un média n'appartient qu'à
                              AU PLUS UN groupe à la fois (voir setItemGroup côté
@@ -270,10 +271,10 @@ export function renderMediaLibrary(items) {
                         </select>
                     </div>
                     <div class="media-gallery-actions">
-                        <button class="btn btn-primary" onclick="triggerMediaLibraryItem('${item.id}')" title="Afficher maintenant sur l'overlay">▶ Afficher</button>
-                        <button class="queue-icon-btn" onclick="toggleDefaultMediaItem('${item.id}', ${item.isDefault ? 'true' : 'false'})" title="${item.isDefault ? 'Retirer le statut de poster principal' : 'Définir comme poster principal (affiché quand rien d’autre n’est à l’écran)'}">${item.isDefault ? '⭐' : '☆'}</button>
-                        <button class="queue-icon-btn" onclick="addToRundown('media', '${item.id}', '${escapeHtmlDashboard(item.label).replace(/'/g, "\\'")}')" title="Ajouter à la feuille de route">➕</button>
-                        <button class="queue-icon-btn queue-remove" onclick="deleteMediaLibraryItem('${item.id}')" title="Supprimer">✕</button>
+                        <button class="btn btn-primary" data-action="trigger" data-target="media" data-id="${item.id}" title="Afficher maintenant sur l'overlay">▶ Afficher</button>
+                        <button class="queue-icon-btn" data-action="toggle-default" data-target="media" data-id="${item.id}" data-is-default="${item.isDefault ? 'true' : 'false'}" title="${item.isDefault ? 'Retirer le statut de poster principal' : 'Définir comme poster principal (affiché quand rien d’autre n’est à l’écran)'}">${item.isDefault ? '⭐' : '☆'}</button>
+                        <button class="queue-icon-btn" data-action="add-to-rundown" data-target="media" data-id="${item.id}" data-label="${escapeHtmlDashboard(item.label)}" title="Ajouter à la feuille de route">➕</button>
+                        <button class="queue-icon-btn queue-remove" data-action="delete" data-target="media" data-id="${item.id}" title="Supprimer">✕</button>
                     </div>
                 </div>
             `;
@@ -342,15 +343,37 @@ export function updateMediaPosterFormState() {
 
 window.addMediaLibraryItem = addMediaLibraryItem;
 window.handleMediaFileDrop = handleMediaFileDrop;
-window.triggerMediaLibraryItem = triggerMediaLibraryItem;
-window.deleteMediaLibraryItem = deleteMediaLibraryItem;
-window.hideMediaNow = hideMediaNow;
 // AJOUT (studio de scènes, lot 5/6) : window.clearDefaultPosterFromCard est
 // désormais défini par poster-principal-card.js (voir son import ci-dessus) —
 // retiré d'ici pour ne pas l'écraser selon l'ordre de chargement des modules.
-window.saveMediaItemDetails = saveMediaItemDetails;
-window.toggleDefaultMediaItem = toggleDefaultMediaItem;
+window.hideMediaNow = hideMediaNow;
 window.updateMediaPosterFormState = updateMediaPosterFormState;
+// CORRECTIF (délégation d'événements — voir action-delegator.js) :
+// triggerMediaLibraryItem/deleteMediaLibraryItem/saveMediaItemDetails/
+// toggleDefaultMediaItem/triggerMediaWallItem/deleteMediaGroup n'ont plus
+// besoin de window — voir registerAction ci-dessous, elles n'étaient
+// jamais appelées que par un onclick désormais retiré du balisage. La
+// seule exception externe (event-bindings.js appelait
+// window.triggerMediaLibraryItem pour ses 4 pseudo-boutons "médiathèque"
+// du studio ProPresenter) a été corrigée à sa vraie source : import direct
+// dans event-bindings.js (voir son en-tête), pas une exposition ici — ces
+// 7 fonctions restent donc entièrement privées à ce module.
+registerAction('media', 'delete', (el, data) => deleteMediaLibraryItem(data.id));
+registerAction('media', 'trigger', (el, data) => triggerMediaLibraryItem(data.id));
+registerAction('media', 'toggle-default', (el, data) =>
+  toggleDefaultMediaItem(data.id, data.isDefault === 'true')
+);
+registerAction('media', 'save-details', (el, data) => saveMediaItemDetails(data.id));
+registerAction('media', 'card-click', (el, data) => triggerMediaWallItem(data.id));
+registerAction('media-group', 'delete', (el, data) => deleteMediaGroup(data.id));
+// AJOUT : addToRundown() est propriété de rundown.js, pas de ce module —
+// appelée via window (rundown.js la republie encore ainsi ; corriger CETTE
+// source dépasse le périmètre de ce chantier, scopé à media-library.js).
+// Garde défensive : rundown.js peut ne pas encore être chargé selon
+// l'ordre des imports de main.js.
+registerAction('media', 'add-to-rundown', (el, data) => {
+  if (window.addToRundown) window.addToRundown('media', data.id, data.label);
+});
 
 // AJOUT (Partie 2.3 — Mur Média, états par tuile) : "à l'écran" et "déjà
 // utilisé" changent à CHAQUE déclenchement — un média peut être montré des
@@ -437,7 +460,7 @@ export function renderMediaWall(items) {
         mediaUsedIds.has(item.id) ? ' is-used' : '',
       ].join('');
       return `
-        <div class="media-gallery-card${stateClasses}" data-media-id="${item.id}" style="cursor:pointer" onclick="triggerMediaWallItem('${escapeHtmlDashboard(item.filename)}')">
+        <div class="media-gallery-card${stateClasses}" data-media-id="${item.id}" style="cursor:pointer" data-action="card-click" data-target="media" data-id="${item.id}">
           <div class="media-gallery-thumb">
             ${thumbMarkup}
             <span class="media-gallery-hotkey"></span>
@@ -475,14 +498,14 @@ function renumberVisibleTiles() {
   }
 }
 
-window.triggerMediaWallItem = function (filename) {
-  const item = mediaLibraryItems.find((i) => i.filename === filename);
+function triggerMediaWallItem(id) {
+  const item = mediaLibraryItems.find((i) => i.id === id);
   if (item && item.fileMissing) {
     showToast(`❌ "${item.label}" : fichier introuvable sur le disque, non déclenché.`, 'error');
     return;
   }
   if (item) triggerMediaLibraryItem(item.id);
-};
+}
 
 // AJOUT (Partie 2.3 — bouton "essayer") : envoie le texte tapé au VRAI
 // moteur de détection côté serveur (action WS testTriggerPhrase) — voir
@@ -587,7 +610,7 @@ export function renderMediaGroupsPanel(groups) {
             <strong>${escapeHtmlDashboard(g.name)}</strong>
             <span style="color:var(--text-dim);font-size:0.78rem"> — ${g.memberIds.length} média(s) — "${escapeHtmlDashboard((g.triggerPhrases || []).join('", "'))}"</span>
           </div>
-          <button class="queue-icon-btn queue-remove" onclick="deleteMediaGroup('${g.id}')" title="Supprimer le groupe (les médias restent, juste détachés)">✕</button>
+          <button class="queue-icon-btn queue-remove" data-action="delete" data-target="media-group" data-id="${g.id}" title="Supprimer le groupe (les médias restent, juste détachés)">✕</button>
         </div>`
     )
     .join('');
@@ -633,5 +656,5 @@ export function setMediaItemGroup(itemId, groupId) {
 }
 
 window.addMediaGroup = addMediaGroup;
-window.deleteMediaGroup = deleteMediaGroup;
+// deleteMediaGroup n'a plus besoin de window — voir registerAction('media-group', 'delete', ...) plus haut.
 window.setMediaItemGroup = setMediaItemGroup;

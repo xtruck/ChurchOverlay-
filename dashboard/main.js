@@ -40,6 +40,13 @@
 
 import './state.js';
 import './utils.js';
+// AJOUT (délégation d'événements pour le contenu rendu dynamiquement — voir
+// action-delegator.js) : infrastructure partagée, sans dépendance vers les
+// features. Importé explicitement ici (plutôt que de compter uniquement sur
+// l'import transitif via media-library.js et consorts) pour que tout futur
+// module puisse enregistrer une action sans se soucier de qui d'autre a
+// déjà chargé le délégateur.
+import './action-delegator.js';
 import './features/api-settings.js';
 import './features/camera-panel.js';
 import './features/ui-effects.js';

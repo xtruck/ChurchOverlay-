@@ -37,6 +37,16 @@
  * mieux inutile, au pire une source de décalage avec le reste.
  */
 import { showToast } from './utils.js';
+// AJOUT (délégation d'événements — chantier action-delegator.js) :
+// triggerMediaLibraryItem n'est plus republiée sur `window` (elle est
+// désormais privée à media-library.js, câblée au délégateur pour ses 7
+// actions de galerie) — import direct, comme showToast ci-dessus. Sûr ici
+// contrairement à la règle générale documentée plus haut : media-library.js
+// est déjà chargée (via ws-dispatch.js, importé transitivement par state.js,
+// le tout premier import de main.js) bien avant que ce fichier ne
+// s'évalue (importé EN DERNIER) — cette arête ne peut donc pas déplacer
+// son ordre d'évaluation, qui a déjà eu lieu.
+import { triggerMediaLibraryItem } from './features/media-library.js';
 
 /**
  * Table déclarative id d'élément -> écouteur de clic, dans l'ordre du
@@ -93,22 +103,15 @@ const CLICK_BINDINGS = {
   // --- Studio : médiathèque (pseudo-boutons, voir CUE_BINDINGS) ---
   // CORRECTIF (audit fonctionnel) : appelaient window.triggerMediaById(),
   // qui n'a jamais existé — la vraie fonction est triggerMediaLibraryItem(id)
-  // dans dashboard/features/media-library.js (déjà republiée sur window).
+  // dans dashboard/features/media-library.js, importée directement en
+  // tête de fichier (plus republiée sur window, voir ce commentaire).
   // Les quatre ids bg-gold/bg-blue/bg-purple/bg-green doivent exister dans
   // la médiathèque pour que ces boutons déclenchent réellement quelque
   // chose — voir le média par défaut correspondant, séparément.
-  ppMediaCueBgGold: () => {
-    if (window.triggerMediaLibraryItem) window.triggerMediaLibraryItem('bg-gold');
-  },
-  ppMediaCueBgBlue: () => {
-    if (window.triggerMediaLibraryItem) window.triggerMediaLibraryItem('bg-blue');
-  },
-  ppMediaCueBgPurple: () => {
-    if (window.triggerMediaLibraryItem) window.triggerMediaLibraryItem('bg-purple');
-  },
-  ppMediaCueBgGreen: () => {
-    if (window.triggerMediaLibraryItem) window.triggerMediaLibraryItem('bg-green');
-  },
+  ppMediaCueBgGold: () => triggerMediaLibraryItem('bg-gold'),
+  ppMediaCueBgBlue: () => triggerMediaLibraryItem('bg-blue'),
+  ppMediaCueBgPurple: () => triggerMediaLibraryItem('bg-purple'),
+  ppMediaCueBgGreen: () => triggerMediaLibraryItem('bg-green'),
 
   // CORRECTIF (relevé pendant ce chantier) : ces deux repères appelaient
   // `showToast(...)` en inline alors que showToast est un export ES de

@@ -97,11 +97,24 @@ function stopSermonModeAutoDetect() {
 // virgules) remplace l'ancien item.dataset.section (singulier, une seule
 // section à la fois).
 function showSectionsFor(item) {
-  document.querySelectorAll('.section').forEach((s) => (s.style.display = 'none'));
+  // CORRECTIF (visibilité par classe CSS, voir dashboard.html
+  // `.is-hidden { display: none !important }`, ex. .media-wall-section) :
+  // un simple `style.display` ne suffit plus à RÉVÉLER une section qui
+  // porte encore la classe `is-hidden` dans son balisage — la règle CSS
+  // avec !important gagne toujours sur un style inline. Bascule les deux
+  // en même temps, générique à toute section, que la classe soit présente
+  // ou non (retirer/poser une classe absente est un no-op sans risque).
+  document.querySelectorAll('.section').forEach((s) => {
+    s.style.display = 'none';
+    s.classList.add('is-hidden');
+  });
   const targetIds = (item.dataset.sections || '').split(',').filter(Boolean);
   targetIds.forEach((id) => {
     const targetSec = document.getElementById(id);
-    if (targetSec) targetSec.style.display = 'block';
+    if (targetSec) {
+      targetSec.style.display = 'block';
+      targetSec.classList.remove('is-hidden');
+    }
   });
 }
 
