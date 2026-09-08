@@ -1044,6 +1044,37 @@ const SCHEMAS = {
     optional: [],
     validators: { action: (value) => value === 'ping' },
   },
+
+  // AJOUT (Axe 3 — sécurisation des commandes vocales, Option A) : voir
+  // voice-command-ws-handlers.js.
+  setVoiceCommandWakeWord: {
+    required: ['action', 'enabled'],
+    optional: ['words'],
+    validators: {
+      action: (value) => value === 'setVoiceCommandWakeWord',
+      enabled: (value) => typeof value === 'boolean',
+      words: (value) =>
+        Array.isArray(value) &&
+        value.length <= 10 &&
+        value.every((w) => typeof w === 'string' && w.length > 0 && w.length <= 50),
+    },
+  },
+  setVoiceCommandSupervision: {
+    required: ['action', 'enabled'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'setVoiceCommandSupervision',
+      enabled: (value) => typeof value === 'boolean',
+    },
+  },
+  approveVoiceAction: {
+    required: ['action', 'id'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'approveVoiceAction',
+      id: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
+    },
+  },
 };
 
 /**

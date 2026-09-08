@@ -29,6 +29,7 @@ const COMMANDS = [
         verseStart: parseInt(match[3]),
       },
     }),
+    keywords: ['montre', 'affiche', 'display', 'show'],
   },
   {
     id: 'hideOverlay',
@@ -48,6 +49,7 @@ const COMMANDS = [
       /(?:efface|clear|clean).*(?:ecran|screen)/i,
     ],
     extract: () => ({ action: 'hideVerse' }),
+    keywords: ['cache', 'masque', 'hide', 'retire', 'enleve', 'efface', 'clear', 'clean'],
   },
 
   // --- RECALL LAST VERSE ---
@@ -71,6 +73,18 @@ const COMMANDS = [
       /show\s+(?:it|the\s+verse)\s+again/i,
     ],
     extract: () => ({ action: 'recallLastVerse' }),
+    keywords: [
+      'ramene',
+      'reviens',
+      'remets',
+      'reaffiche',
+      'remontre',
+      'montre',
+      'affiche',
+      'back',
+      'again',
+      'show',
+    ],
   },
 
   // --- REPEAT (dernière diffusion, verset OU chant OU média — voir
@@ -91,6 +105,7 @@ const COMMANDS = [
       /^\s*repeat\s*(?:that|this|it)?\s*[.!]?\s*$/i,
     ],
     extract: () => ({ action: 'repeat' }),
+    keywords: ['repete', 'repeat'],
   },
 
   // --- READING MODE ---
@@ -115,6 +130,7 @@ const COMMANDS = [
       /next\s+chapter/i,
     ],
     extract: () => ({ action: 'nextChapter' }),
+    keywords: ['chapitre', 'chapter', 'suivant', 'next', 'passe', 'avance'],
   },
   // AJOUT (support bilingue FR/EN, cahier des charges section 2/3) :
   // n'existait dans aucune langue jusqu'ici. Même discipline anti-faux-
@@ -128,6 +144,16 @@ const COMMANDS = [
       /previous\s+chapter/i,
     ],
     extract: () => ({ action: 'previousChapter' }),
+    keywords: [
+      'chapitre',
+      'chapter',
+      'precedent',
+      'precedant',
+      'avant',
+      'retourne',
+      'reviens',
+      'previous',
+    ],
   },
   {
     id: 'nextVerse',
@@ -137,6 +163,7 @@ const COMMANDS = [
       /next\s+verse/i,
     ],
     extract: () => ({ action: 'nextVerse' }),
+    keywords: ['verset', 'verse', 'passage', 'suivant', 'next', 'passe', 'avance'],
   },
   {
     id: 'previousVerse',
@@ -146,6 +173,17 @@ const COMMANDS = [
       /previous\s+verse/i,
     ],
     extract: () => ({ action: 'previousVerse' }),
+    keywords: [
+      'verset',
+      'verse',
+      'passage',
+      'precedent',
+      'precedant',
+      'avant',
+      'retourne',
+      'reviens',
+      'previous',
+    ],
   },
 
   // --- THEME ---
@@ -164,6 +202,7 @@ const COMMANDS = [
       /(?:switch|change)\s+to\s+(?:the\s+)?(?:dark|black)\s+(?:theme|style)/i,
     ],
     extract: () => ({ action: 'setTheme', theme: 'dark' }),
+    keywords: ['sombre', 'dark', 'noir', 'black', 'theme', 'style', 'passe', 'switch', 'change'],
   },
   {
     id: 'themeLight',
@@ -173,6 +212,7 @@ const COMMANDS = [
       /(?:switch|change)\s+to\s+(?:the\s+)?(?:light|white)\s+(?:theme|style)/i,
     ],
     extract: () => ({ action: 'setTheme', theme: 'light' }),
+    keywords: ['clair', 'light', 'blanc', 'white', 'theme', 'style', 'passe', 'switch', 'change'],
   },
   {
     id: 'themeGold',
@@ -182,6 +222,7 @@ const COMMANDS = [
       /(?:switch|change)\s+to\s+(?:the\s+)?(?:gold|golden)\s+(?:theme|style)/i,
     ],
     extract: () => ({ action: 'setTheme', theme: 'gold' }),
+    keywords: ['or', 'gold', 'dore', 'golden', 'theme', 'style', 'passe', 'switch', 'change'],
   },
 
   // --- LANGUAGE ---
@@ -192,6 +233,17 @@ const COMMANDS = [
       /(?:passe|switch|change)\s+(?:en|au|vers|to)\s+(?:francais|fr|french)/i,
     ],
     extract: () => ({ action: 'setLanguage', language: 'fr' }),
+    keywords: [
+      'francais',
+      'french',
+      'fr',
+      'langue',
+      'language',
+      'affiche',
+      'passe',
+      'switch',
+      'change',
+    ],
   },
   {
     id: 'langEnglish',
@@ -200,6 +252,17 @@ const COMMANDS = [
       /(?:passe|switch|change)\s+(?:en|au|vers|to)\s+(?:anglais|en|english)/i,
     ],
     extract: () => ({ action: 'setLanguage', language: 'en' }),
+    keywords: [
+      'anglais',
+      'english',
+      'en',
+      'langue',
+      'language',
+      'affiche',
+      'passe',
+      'switch',
+      'change',
+    ],
   },
   {
     id: 'langBoth',
@@ -208,6 +271,18 @@ const COMMANDS = [
       /(?:passe|switch|change)\s+(?:en|au|vers|to)\s+(?:mode\s+)?(?:bilingue|bilingual)/i,
     ],
     extract: () => ({ action: 'setLanguage', language: 'both' }),
+    keywords: [
+      'bilingue',
+      'bilingual',
+      'both',
+      'deux',
+      'langue',
+      'language',
+      'affiche',
+      'passe',
+      'switch',
+      'change',
+    ],
   },
 
   // --- ASR LANGUAGE (langue de TRANSCRIPTION — ce que le moteur doit
@@ -224,6 +299,7 @@ const COMMANDS = [
       /recognize\s+french/i,
     ],
     extract: () => ({ action: 'setTranscriptionLanguage', language: 'fr' }),
+    keywords: ['ecoute', 'reconnais', 'listen', 'recognize', 'francais', 'french'],
   },
   {
     id: 'listenInEnglish',
@@ -233,6 +309,7 @@ const COMMANDS = [
       /recognize\s+english/i,
     ],
     extract: () => ({ action: 'setTranscriptionLanguage', language: 'en' }),
+    keywords: ['ecoute', 'reconnais', 'listen', 'recognize', 'anglais', 'english'],
   },
   // AJOUT (Chantier 5 — bilingue) : nova-3 supporte `language=multi`
   // (code-switching en cours de flux, une seule connexion — voir
@@ -254,6 +331,7 @@ const COMMANDS = [
       /recognize\s+bilingual/i,
     ],
     extract: () => ({ action: 'setTranscriptionLanguage', language: 'multi' }),
+    keywords: ['ecoute', 'reconnais', 'listen', 'recognize', 'bilingue', 'bilingual'],
   },
 
   // --- TRANSLATION ---
@@ -271,6 +349,16 @@ const COMMANDS = [
     // ci-dessous. Voir test/test-voice-commands.js pour le test de parité
     // exhaustif qui a mis ce trou en évidence.
     extract: () => ({ action: 'setTranslation', language: 'fr', code: 'lsg' }),
+    keywords: [
+      'segond',
+      'traduction',
+      'version',
+      'bible',
+      'translation',
+      'passe',
+      'switch',
+      'change',
+    ],
   },
   {
     id: 'translationDarby',
@@ -279,6 +367,16 @@ const COMMANDS = [
       /(?:passe|switch|change)\s+(?:en|à|vers|sur|to|over\s+to)\s+(?:la\s+|the\s+)?darby/i,
     ],
     extract: () => ({ action: 'setTranslation', language: 'fr', code: 'darby' }),
+    keywords: [
+      'darby',
+      'traduction',
+      'version',
+      'bible',
+      'translation',
+      'passe',
+      'switch',
+      'change',
+    ],
   },
 
   // AJOUT (audit — changement de traduction à la voix, ANGLAIS) : les trois
@@ -303,6 +401,18 @@ const COMMANDS = [
       /(?:switch|change|move)\s+(?:to|over\s+to)\s+(?:the\s+)?(?:king\s+james(?:\s+version)?|kjv)/i,
     ],
     extract: () => ({ action: 'setTranslation', language: 'en', code: 'kjv' }),
+    keywords: [
+      'kjv',
+      'king',
+      'james',
+      'traduction',
+      'version',
+      'bible',
+      'translation',
+      'switch',
+      'change',
+      'move',
+    ],
   },
   {
     id: 'translationWEB',
@@ -311,6 +421,18 @@ const COMMANDS = [
       /(?:switch|change|move)\s+(?:to|over\s+to)\s+(?:the\s+)?(?:world\s+english\s+bible|web\s+translation|web\s+bible)/i,
     ],
     extract: () => ({ action: 'setTranslation', language: 'en', code: 'web' }),
+    keywords: [
+      'web',
+      'world',
+      'english',
+      'traduction',
+      'version',
+      'bible',
+      'translation',
+      'switch',
+      'change',
+      'move',
+    ],
   },
   {
     id: 'translationASV',
@@ -319,6 +441,18 @@ const COMMANDS = [
       /(?:switch|change|move)\s+(?:to|over\s+to)\s+(?:the\s+)?(?:american\s+standard(?:\s+version)?|asv)/i,
     ],
     extract: () => ({ action: 'setTranslation', language: 'en', code: 'asv' }),
+    keywords: [
+      'asv',
+      'american',
+      'standard',
+      'traduction',
+      'version',
+      'bible',
+      'translation',
+      'switch',
+      'change',
+      'move',
+    ],
   },
 
   // --- TIMER ---
@@ -339,6 +473,7 @@ const COMMANDS = [
       const unit = match[0].match(/(?:minute|min)/i) ? 60000 : 5000; // default 5s if no unit
       return { action: 'extendTime', extraMs: amount * unit };
     },
+    keywords: ['etends', 'prolonge', 'extend', 'add', 'ajoute', 'temps', 'time', 'duree', 'timer'],
   },
   // AJOUT (audit bilingue FR/EN) : "pause"/"continue"/"resume" sont déjà
   // des mots anglais valides dans les motifs ci-dessous (coïncidence utile,
@@ -354,11 +489,22 @@ const COMMANDS = [
       /(?:pause|mets\s+en\s+pause|arrete\s+temporairement).*(?:temps|timer|chrono|decompte)/i,
     ],
     extract: () => ({ action: 'pauseTimer' }),
+    keywords: ['pause', 'mets', 'arrete', 'temporairement', 'temps', 'timer', 'chrono', 'decompte'],
   },
   {
     id: 'resumeTimer',
     patterns: [/(?:reprends|continue|resume|redemarre).*(?:temps|timer|chrono|decompte)/i],
     extract: () => ({ action: 'resumeTimer' }),
+    keywords: [
+      'reprends',
+      'resume',
+      'continue',
+      'redemarre',
+      'temps',
+      'timer',
+      'chrono',
+      'decompte',
+    ],
   },
 
   // --- EMERGENCY ---
@@ -374,14 +520,170 @@ const COMMANDS = [
       /tout\s+effacer/i,
     ],
     extract: () => ({ action: 'emergencyClear' }),
+    keywords: ['urgence', 'emergency', 'effacement', 'effacer', 'arret', 'clear', 'all', 'tout'],
   },
 ];
+
+// AJOUT (Axe 3 — sécurisation des commandes vocales, Option A) : réutilise
+// TEL QUEL (aucune réimplémentation) le moteur de distance d'édition déjà
+// écrit pour les noms de livres bibliques (levenshtein.js) — voir aussi
+// voice-trigger-matcher.js, qui l'utilise déjà pour détecter les collisions
+// phonétiques ENTRE phrases déclencheuses (média/chants). Ici, il sert un
+// usage voisin mais distinct : mesurer la proximité phonétique d'UN
+// FRAGMENT transcrit envers UN mot-clé de référence connu, à la volée sur
+// chaque commande détectée.
+const { levenshteinDistance } = require('./levenshtein');
+
+/**
+ * Normalise texte/mot-clé pour la comparaison — mêmes règles que le
+ * normalize() interne de detectCommand() plus bas (minuscules, accents NFD
+ * retirés), factorisé ici pour être réutilisé par le score de confiance ET
+ * la phrase d'activation.
+ * @param {string} value
+ * @returns {string}
+ */
+function normalizeCommandText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Mn}/gu, '')
+    .trim();
+}
+
+/**
+ * Score de similarité [0, 1] entre deux chaînes déjà normalisées, dérivé de
+ * la distance de Levenshtein — 1 = identiques, 0 = aucune lettre commune
+ * (proportionnellement à la longueur). Deux chaînes vides sont considérées
+ * identiques (1), pas une erreur de division par zéro.
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+function similarityScore(a, b) {
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return 1;
+  return 1 - levenshteinDistance(a, b) / maxLen;
+}
+
+// Seuil de confiance strict demandé par le cahier des charges (Axe 3,
+// Option A) : en-dessous de 80%, une commande est jugée trop ambiguë pour
+// être exécutée — mieux vaut un vrai déclenchement raté (le prédicateur
+// répète/reformule) qu'un faux positif en pleine prédication.
+const COMMAND_CONFIDENCE_THRESHOLD = 0.8;
+const WAKE_WORD_CONFIDENCE_THRESHOLD = 0.8;
+// Nombre de mots du début de l'énoncé essayés comme candidats à la phrase
+// d'activation — au-delà, la commande utile qui suit serait de toute façon
+// hors de portée d'une phrase d'activation de 1-2 mots ("overlay",
+// "church overlay").
+const WAKE_WORD_MAX_WINDOW = 3;
+
+/**
+ * Confiance [0, 1] qu'un texte transcrit corresponde réellement à une
+ * commande, en comparant chaque mot du fragment capturé (`matchedText`, le
+ * `match[0]` d'un motif regex déjà satisfait) au meilleur mot-clé connu de
+ * cette commande (`cmd.keywords`, voir COMMANDS ci-dessus — dérivés
+ * directement du vocabulaire déjà présent dans les motifs de la commande).
+ *
+ * CHOIX D'ARCHITECTURE : les motifs regex existants restent la première
+ * ligne de défense (alternance EXACTE de mots-clés connus, déjà très
+ * stricte — voir tout l'historique de correctifs anti-faux-positif dans ce
+ * fichier). Un mot du texte capturé qui correspond LITTÉRALEMENT à un
+ * mot-clé (le cas normal : le regex n'a pu matcher QUE parce qu'un mot-clé
+ * littéral était présent) obtient donc mécaniquement une confiance de 1.0 —
+ * ce filet de sécurité ne rejette jamais une commande aujourd'hui valide.
+ * Il devient actif dès qu'un chemin de détection plus permissif (tolérance
+ * orthographique sur un mot-clé, correction IA en amont qui a pu déformer
+ * le texte, etc.) produit un match dont aucun mot ne ressemble vraiment à
+ * l'intention attendue — exactement le filet demandé par le cahier des
+ * charges ("distance de Levenshtein... si trop élevée, rejette").
+ * @param {string} matchedText
+ * @param {string[]} keywords
+ * @returns {number}
+ */
+function computeCommandConfidence(matchedText, keywords) {
+  if (!Array.isArray(keywords) || keywords.length === 0) return 1; // pas de mots-clés déclarés : rien à évaluer, jamais un motif de rejet
+  // CORRECTIF (trouvé en testant ce chantier — "Ramène-moi sur le verset")
+  // : découper seulement sur les espaces laissait "ramene-moi" comme UN
+  // seul token — comparé à "ramene" (mot-clé), la distance incluait tout
+  // le "-moi" en trop, faisant chuter la confiance sous le seuil pour une
+  // commande pourtant parfaitement valide (le connecteur `[- ]?` du motif
+  // regex traite déjà explicitement le tiret comme un séparateur). Découpe
+  // maintenant aussi sur le tiret, cohérent avec le motif lui-même.
+  const words = normalizeCommandText(matchedText)
+    .split(/[\s-]+/)
+    .filter((w) => w.length > 0);
+  if (words.length === 0) return 0;
+
+  let best = 0;
+  for (const word of words) {
+    for (const keyword of keywords) {
+      const score = similarityScore(word, normalizeCommandText(keyword));
+      if (score > best) best = score;
+    }
+  }
+  return best;
+}
+
+/**
+ * Vérifie si le DÉBUT du texte transcrit (déjà normalisé) correspond à
+ * l'une des phrases d'activation acceptées, avec tolérance phonétique
+ * (Levenshtein) — l'ASR transcrit rarement "ChurchOverlay" prononcé à voix
+ * haute lettre pour lettre ; "Church Overlay" (deux mots), "Church over
+ * lay", ou une légère déformation doivent toujours activer, tant que le
+ * résultat reste raisonnablement proche.
+ *
+ * Compare le mot-clé (espaces retirés, ex. "churchoverlay") à des fenêtres
+ * de 1 à WAKE_WORD_MAX_WINDOW mots en tête d'énoncé, elles aussi
+ * concaténées SANS espace avant comparaison — une activation prononcée en
+ * un seul mot ("overlay") ou éclatée en plusieurs par l'ASR ("church over
+ * lay") doivent toutes deux pouvoir matcher la même référence compacte.
+ * @param {string} normalizedText - déjà passé par normalizeCommandText()
+ * @param {string[]} wakeWords
+ * @returns {{matched: boolean, confidence: number, consumedWords: number}}
+ */
+function matchesWakeWord(normalizedText, wakeWords) {
+  const words = normalizedText.split(/\s+/).filter((w) => w.length > 0);
+  let best = { matched: false, confidence: 0, consumedWords: 0 };
+  if (words.length === 0 || !Array.isArray(wakeWords)) return best;
+
+  for (const raw of wakeWords) {
+    const wakeWordCompact = normalizeCommandText(raw).replace(/\s+/g, '');
+    if (!wakeWordCompact) continue;
+    const maxWindow = Math.min(WAKE_WORD_MAX_WINDOW, words.length);
+    for (let windowSize = 1; windowSize <= maxWindow; windowSize++) {
+      const candidate = words.slice(0, windowSize).join('');
+      const score = similarityScore(candidate, wakeWordCompact);
+      if (score > best.confidence) {
+        best = {
+          matched: score >= WAKE_WORD_CONFIDENCE_THRESHOLD,
+          confidence: score,
+          consumedWords: windowSize,
+        };
+      }
+    }
+  }
+  return best;
+}
 
 /**
  * Detect voice commands in transcript text.
  * Returns command object or null.
+ * @param {string} text
+ * @param {Object} [options]
+ * @param {boolean} [options.wakeWordEnabled] - AJOUT (Axe 3) : si true,
+ *   toute commande dont le texte ne commence pas par une phrase
+ *   d'activation connue (options.wakeWords) est ignorée. `false` par
+ *   défaut — comportement HISTORIQUE inchangé pour tout appelant existant
+ *   qui ne passe pas ce second argument (voir server.js, seul appelant
+ *   avant ce chantier).
+ * @param {string[]} [options.wakeWords] - phrases d'activation acceptées ;
+ *   ignoré si wakeWordEnabled est false. Voir
+ *   session-state.js#DEFAULT_VOICE_COMMAND_WAKE_WORDS pour le défaut réel
+ *   utilisé par server.js.
+ * @returns {{action: string, confidence: number, [key: string]: *}|null}
  */
-function detectCommand(text) {
+function detectCommand(text, options = {}) {
+  const { wakeWordEnabled = false, wakeWords = [] } = options;
   // CORRECTIF (audit round 6) : le regex `/\u0300-\u036f/g` (sans crochets)
   // ne supprimait en réalité AUCUN accent — un tiret hors classe de
   // caractères est un caractère littéral, donc cette expression cherchait
@@ -389,19 +691,50 @@ function detectCommand(text) {
   // marques diacritiques combinantes. Résultat : "Ramène" décomposé en NFD
   // restait "rame" + accent combinant + "ne" au lieu de "ramene", faisant
   // échouer silencieusement tout motif écrit sans accent (et inversement).
-  const normalized = text
+  let normalized = text
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
 
+  // AJOUT (Axe 3 \u2014 phrase d'activation) : porte franchie AVANT toute
+  // tentative de d\u00e9tection de commande \u2014 un texte qui ne commence pas par
+  // la phrase d'activation (avec tol\u00e9rance phon\u00e9tique, voir
+  // matchesWakeWord()) n'est m\u00eame pas test\u00e9 contre COMMANDS, exactement
+  // comme s'il ne contenait aucune commande.
+  if (wakeWordEnabled) {
+    const wake = matchesWakeWord(normalized, wakeWords);
+    if (!wake.matched) return null;
+    // Retire la phrase d'activation consomm\u00e9e AVANT de tester les motifs :
+    // certains (ex. 'repeat') sont ANCR\u00c9S en d\u00e9but d'\u00e9nonc\u00e9 (`^...$`) \u2014 la
+    // laisser dans le texte les emp\u00eacherait de matcher m\u00eame une fois
+    // l'activation reconnue.
+    const words = normalized.split(/\s+/).filter((w) => w.length > 0);
+    normalized = words.slice(wake.consumedWords).join(' ');
+  }
+
   for (const cmd of COMMANDS) {
     for (const pattern of cmd.patterns) {
       const match = normalized.match(pattern);
-      if (match) {
-        const result = cmd.extract(match);
-        console.log(`[voice-command] Detected "${cmd.id}" from: "${text.substring(0, 60)}..."`);
-        return result;
+      if (!match) continue;
+
+      // AJOUT (Axe 3 \u2014 s\u00e9curisation phon\u00e9tique) : voir computeCommandConfidence()
+      // ci-dessus. Une commande sous le seuil est trait\u00e9e comme un motif
+      // NON satisfait \u2014 on continue d'essayer les autres motifs/commandes
+      // plut\u00f4t que d'abandonner detectCommand() enti\u00e8rement pour ce texte.
+      const confidence = computeCommandConfidence(match[0], cmd.keywords);
+      if (confidence < COMMAND_CONFIDENCE_THRESHOLD) {
+        console.log(
+          `[voice-command] Commande vocale ambigu\u00eb ignor\u00e9e (confiance ${Math.round(confidence * 100)}%, ` +
+            `seuil ${Math.round(COMMAND_CONFIDENCE_THRESHOLD * 100)}%) : "${cmd.id}" depuis "${text.substring(0, 60)}..."`
+        );
+        continue;
       }
+
+      const result = cmd.extract(match);
+      console.log(
+        `[voice-command] Detected "${cmd.id}" (confiance ${Math.round(confidence * 100)}%) from: "${text.substring(0, 60)}..."`
+      );
+      return { ...result, confidence };
     }
   }
   return null;
@@ -417,4 +750,15 @@ function getAvailableCommands() {
   }));
 }
 
-module.exports = { detectCommand, getAvailableCommands, COMMANDS };
+module.exports = {
+  detectCommand,
+  getAvailableCommands,
+  COMMANDS,
+  // AJOUT (Axe 3 — sécurisation des commandes vocales) : exposées pour
+  // tests unitaires directs et réutilisation éventuelle ailleurs.
+  matchesWakeWord,
+  computeCommandConfidence,
+  normalizeCommandText,
+  COMMAND_CONFIDENCE_THRESHOLD,
+  WAKE_WORD_CONFIDENCE_THRESHOLD,
+};

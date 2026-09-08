@@ -26,7 +26,15 @@
  */
 'use strict';
 const assert = require('assert');
-const { detectCommand, COMMANDS } = require('../voice-commands');
+const {
+  detectCommand,
+  COMMANDS,
+  // AJOUT (Axe 3 — sécurisation des commandes vocales, Option A).
+  matchesWakeWord,
+  computeCommandConfidence,
+  COMMAND_CONFIDENCE_THRESHOLD,
+  WAKE_WORD_CONFIDENCE_THRESHOLD,
+} = require('../voice-commands');
 
 console.log('=== Test Voice Commands ===\n');
 
@@ -467,6 +475,114 @@ for (const cmd of COMMANDS) {
     expected.fr.toLowerCase() !== expected.en.toLowerCase()
   );
 }
+
+// ============================================================================
+// AJOUT (Axe 3 — sécurisation des commandes vocales, Option A)
+// ============================================================================
+// Couvre : phrase d'activation (wake word, avec tolérance phonétique) et
+// score de confiance Levenshtein — les deux nouveaux garde-fous ajoutés
+// dans detectCommand()/voice-commands.js. La file d'attente d'approbation
+// opérateur ("Supervised Autonomy") est un comportement de server.js (pas
+// de ce module) — voir test/test-voice-command-security.js pour sa
+// couverture bout-en-bout (serveur réel, client WS réel).
+
+console.log('\n--- Phrase d’activation (wake word) ---\n');
+
+check(
+  'wake word désactivé (comportement par défaut) : aucune phrase requise',
+  detectCommand('cache overlay') !== null
+);
+check(
+  'wake word activé, absent du texte : commande ignorée',
+  detectCommand('cache overlay', { wakeWordEnabled: true, wakeWords: ['overlay'] }) === null
+);
+check(
+  'wake word activé, présent (exact) : commande détectée',
+  (() => {
+    const r = detectCommand('overlay cache le verset', {
+      wakeWordEnabled: true,
+      wakeWords: ['overlay'],
+    });
+    return r && r.action === 'hideVerse';
+  })()
+);
+check(
+  'wake word "ChurchOverlay" transcrit en deux mots ("church overlay") : reconnu quand même',
+  (() => {
+    const r = detectCommand('church overlay cache le verset', {
+      wakeWordEnabled: true,
+      wakeWords: ['churchoverlay', 'overlay'],
+    });
+    return r && r.action === 'hideVerse';
+  })()
+);
+check(
+  'wake word légèrement déformé par l’ASR ("cherche overlay" pour "church overlay") : ' +
+    'tolérance phonétique suffisante',
+  (() => {
+    const r = detectCommand('cherche overlay cache le verset', {
+      wakeWordEnabled: true,
+      wakeWords: ['churchoverlay'],
+    });
+    return r && r.action === 'hideVerse';
+  })()
+);
+check(
+  'texte sans AUCUN rapport avec le wake word : rejeté (pas juste une tolérance illimitée)',
+  detectCommand('bonjour a tous en ce beau matin cache le verset', {
+    wakeWordEnabled: true,
+    wakeWords: ['overlay'],
+  }) === null
+);
+check(
+  'wake word consommé retiré du texte avant matching : "repeat" (ancré début/fin) ' +
+    'fonctionne toujours une fois l’activation reconnue',
+  (() => {
+    const r = detectCommand('overlay repete', { wakeWordEnabled: true, wakeWords: ['overlay'] });
+    return r && r.action === 'repeat';
+  })()
+);
+check(
+  'matchesWakeWord() direct : phrase identique -> confiance 100%',
+  matchesWakeWord('overlay cache le verset', ['overlay']).confidence === 1
+);
+check(
+  'matchesWakeWord() direct : aucune phrase d’activation configurée -> jamais matché',
+  matchesWakeWord('overlay cache le verset', []).matched === false
+);
+
+console.log('\n--- Score de confiance phonétique (Levenshtein) ---\n');
+
+check(
+  'computeCommandConfidence() : mot-clé exact -> confiance 100%',
+  computeCommandConfidence('cache le verset', ['cache', 'masque']) === 1
+);
+check(
+  'computeCommandConfidence() : aucun rapport avec les mots-clés -> confiance basse',
+  computeCommandConfidence('xylophone marmelade', ['cache', 'masque', 'hide']) <
+    COMMAND_CONFIDENCE_THRESHOLD
+);
+check(
+  'computeCommandConfidence() : pas de mots-clés déclarés -> 100% par défaut (jamais un motif de rejet)',
+  computeCommandConfidence('n’importe quoi', []) === 1
+);
+check(
+  'seuils exposés cohérents avec le cahier des charges (80%)',
+  COMMAND_CONFIDENCE_THRESHOLD === 0.8 && WAKE_WORD_CONFIDENCE_THRESHOLD === 0.8
+);
+check(
+  'commande phonétiquement trop éloignée : detectCommand() la traite comme non détectée ' +
+    '(essaie les motifs/commandes suivants, ne plante jamais)',
+  (() => {
+    // Régression ciblée (trouvée en construisant ce chantier) : "montre" est
+    // un mot-clé légitime de recallLastVerse ET de showVerse — un texte qui
+    // matche le motif recallLastVerse mais dont aucun mot-clé n'est proche
+    // par Levenshtein doit être écarté sans lever d'exception ni retourner
+    // un résultat incohérent.
+    const r = detectCommand('bonjour a tous comment allez vous aujourd hui');
+    return r === null;
+  })()
+);
 
 console.log(`\n=== Résultat voice-commands : ${passed} passés, ${failed} échoués ===`);
 process.exit(failed > 0 ? 1 : 0);

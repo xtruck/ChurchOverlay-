@@ -143,6 +143,36 @@ let brandingVisible = false;
 // dans server.js, seul signal de fin de service déjà présent dans l'app).
 let fullServiceTranscript = '';
 
+// AJOUT (Axe 3 — sécurisation des commandes vocales, Option A) : phrase
+// d'activation (wake word) — désactivée par défaut (RIEN ne change tant que
+// l'opérateur ne l'active pas explicitement, même discipline que trustMode/
+// highContrastMode ci-dessus). Volontairement NON persistée : un réglage de
+// sécurité vocale laissé actif d'un culte à l'autre (ou, pire, oublié
+// DÉSACTIVÉ) serait plus surprenant qu'utile — l'opérateur re-choisit à
+// chaque démarrage, comme trustMode.
+let voiceCommandWakeWordEnabled = false;
+// Les deux formes citées dans le cahier des charges ("ChurchOverlay" ou
+// "Overlay") sont acceptées simultanément par défaut — n'importe laquelle
+// active la commande qui suit. Voir voice-commands.js#matchesWakeWord pour
+// la tolérance phonétique (Levenshtein) appliquée à ces phrases.
+const DEFAULT_VOICE_COMMAND_WAKE_WORDS = ['churchoverlay', 'overlay'];
+let voiceCommandWakeWords = [...DEFAULT_VOICE_COMMAND_WAKE_WORDS];
+
+// AJOUT (Axe 3 — "Supervised Autonomy" / validation opérateur) : quand
+// actif, une commande vocale détectée n'est plus exécutée immédiatement —
+// voir pendingVoiceAction ci-dessous et server.js#queuePendingVoiceAction.
+// Désactivé par défaut, non persisté, même raisonnement que
+// voiceCommandWakeWordEnabled ci-dessus.
+let voiceCommandSupervisionEnabled = false;
+// AJOUT : action vocale proposée en attente de validation opérateur — au
+// plus UNE à la fois (une nouvelle commande détectée pendant qu'une autre
+// attend déjà REMPLACE la précédente, jamais empilée : voir
+// server.js#queuePendingVoiceAction). { id, command, originalText,
+// createdAt } | null. L'expiration (5s, voir le cahier des charges) est
+// gérée par un minuteur dans server.js — ce module reste pur état, sans
+// I/O ni effet de bord (voir en-tête de fichier), donc aucun setTimeout ici.
+let pendingVoiceAction = null;
+
 const verseHistory = [];
 const recentTranscripts = [];
 // Buffer de fragments transcits récents (chantier ASR, Étape 4) : chaque
@@ -488,6 +518,46 @@ function setBrandingVisible(visible) {
   brandingVisible = !!visible;
 }
 
+// --- Commandes vocales : phrase d'activation (wake word) ---
+function getVoiceCommandWakeWordEnabled() {
+  return voiceCommandWakeWordEnabled;
+}
+function setVoiceCommandWakeWordEnabled(enabled) {
+  voiceCommandWakeWordEnabled = !!enabled;
+}
+function getVoiceCommandWakeWords() {
+  return voiceCommandWakeWords;
+}
+/**
+ * @param {string[]} words - liste de phrases d'activation acceptées. Une
+ *   liste vide ou invalide retombe sur DEFAULT_VOICE_COMMAND_WAKE_WORDS
+ *   plutôt que de désactiver silencieusement toute activation possible.
+ */
+function setVoiceCommandWakeWords(words) {
+  const cleaned = Array.isArray(words)
+    ? words.map((w) => (typeof w === 'string' ? w.trim() : '')).filter(Boolean)
+    : [];
+  voiceCommandWakeWords = cleaned.length > 0 ? cleaned : [...DEFAULT_VOICE_COMMAND_WAKE_WORDS];
+}
+
+// --- Commandes vocales : "Supervised Autonomy" / validation opérateur ---
+function getVoiceCommandSupervisionEnabled() {
+  return voiceCommandSupervisionEnabled;
+}
+function setVoiceCommandSupervisionEnabled(enabled) {
+  voiceCommandSupervisionEnabled = !!enabled;
+}
+function getPendingVoiceAction() {
+  return pendingVoiceAction;
+}
+/** @param {{id: string, command: Object, originalText: string, createdAt: number}|null} action */
+function setPendingVoiceAction(action) {
+  pendingVoiceAction = action || null;
+}
+function clearPendingVoiceAction() {
+  pendingVoiceAction = null;
+}
+
 // --- Transcription complète du culte en cours (mémoire des cultes — voir
 // sermon-archive.js) ---
 function appendFullServiceTranscript(text) {
@@ -555,4 +625,14 @@ module.exports = {
   appendFullServiceTranscript,
   getFullServiceTranscript,
   resetFullServiceTranscript,
+  DEFAULT_VOICE_COMMAND_WAKE_WORDS,
+  getVoiceCommandWakeWordEnabled,
+  setVoiceCommandWakeWordEnabled,
+  getVoiceCommandWakeWords,
+  setVoiceCommandWakeWords,
+  getVoiceCommandSupervisionEnabled,
+  setVoiceCommandSupervisionEnabled,
+  getPendingVoiceAction,
+  setPendingVoiceAction,
+  clearPendingVoiceAction,
 };

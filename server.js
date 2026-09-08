@@ -19,6 +19,11 @@ const { parentPort, workerData } = require('worker_threads');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+// AJOUT (Axe 3 — sécurisation des commandes vocales, "Supervised Autonomy")
+// : crypto.randomUUID() identifie chaque action vocale en attente
+// d'approbation opérateur — même mécanisme déjà utilisé par rundown-store.js/
+// scene-store.js/media-library.js pour identifier leurs propres entrées.
+const crypto = require('crypto');
 
 // ---------------------------------------------------------------------------
 // Environment & paths
@@ -938,6 +943,7 @@ const pluginsExportsWsHandlers = require('./plugins-exports-ws-handlers');
 const diagnosticsWsHandlers = require('./diagnostics-ws-handlers');
 const miscWsHandlers = require('./misc-ws-handlers');
 const agentWsHandlers = require('./agent-ws-handlers');
+const voiceCommandWsHandlers = require('./voice-command-ws-handlers');
 const CATEGORY_HANDLERS = new Map([
   ...mediaWsHandlers.createHandlers({
     mediaLibrary,
@@ -1125,6 +1131,18 @@ const CATEGORY_HANDLERS = new Map([
   }),
   ...agentWsHandlers.createHandlers({
     getChurchAgent: () => churchAgent,
+  }),
+  // AJOUT (Axe 3 — sécurisation des commandes vocales, Option A) :
+  // handleVoiceCommand/cancelPendingVoiceActionTimer sont des function
+  // declarations (hoisted, définies plus bas dans ce fichier) — sûres à
+  // référencer ici, elles ne seront appelées qu'au runtime, bien après
+  // (même raisonnement que broadcast plus haut dans ce fichier).
+  ...voiceCommandWsHandlers.createHandlers({
+    sessionState,
+    handleVoiceCommand,
+    cancelPendingVoiceActionTimer,
+    broadcast,
+    log,
   }),
 ]);
 
@@ -1423,10 +1441,31 @@ async function processTranscript(text, tracker, opts = {}) {
 
   if (detectCommand) {
     try {
-      const command = detectCommand(text);
+      // AJOUT (Axe 3 — sécurisation des commandes vocales, Option A) :
+      // phrase d'activation optionnelle (voir voice-commands.js#matchesWakeWord)
+      // — `false`/liste vide par défaut tant que l'opérateur ne l'active pas
+      // explicitement (voir session-state.js), comportement historique
+      // intégralement préservé pour qui ne l'active jamais.
+      const command = detectCommand(text, {
+        wakeWordEnabled: sessionState.getVoiceCommandWakeWordEnabled(),
+        wakeWords: sessionState.getVoiceCommandWakeWords(),
+      });
       if (command) {
-        log('Voice command detected: ' + command.action);
-        await handleVoiceCommand(command, text);
+        log(
+          `Voice command detected: ${command.action} (confiance ${Math.round((command.confidence ?? 1) * 100)}%)`
+        );
+        // AJOUT (Axe 3 — "Supervised Autonomy" / validation opérateur) :
+        // en mode supervisé, la commande n'est PAS exécutée directement —
+        // elle est proposée à l'opérateur (voir queuePendingVoiceAction()),
+        // qui doit la valider explicitement (ou la laisser expirer, voir
+        // PENDING_VOICE_ACTION_TIMEOUT_MS) avant toute action réelle sur
+        // l'overlay. Comportement historique (exécution immédiate)
+        // intégralement préservé tant que ce mode n'est pas activé.
+        if (sessionState.getVoiceCommandSupervisionEnabled()) {
+          queuePendingVoiceAction(command, text);
+        } else {
+          await handleVoiceCommand(command, text);
+        }
         return;
       }
     } catch (e) {
@@ -2152,6 +2191,80 @@ async function processTranscript(text, tracker, opts = {}) {
     log(
       `Verset en attente de confirmation (mode ${sessionState.getTrustMode()}): ${verse.reference}`
     );
+  }
+}
+
+// ===========================================================================
+// AJOUT (Axe 3 — "Supervised Autonomy" / validation opérateur des
+// commandes vocales) : file d'attente d'UNE SEULE action vocale proposée à
+// la fois — une nouvelle détection pendant qu'une autre attend déjà
+// REMPLACE la précédente (jamais empilée, voir sessionState.setPendingVoiceAction) —
+// diffusée au dashboard opérateur, exécutée seulement sur validation
+// explicite (handler WS 'approveVoiceAction', voir voice-command-ws-handlers.js)
+// ou silencieusement abandonnée après PENDING_VOICE_ACTION_TIMEOUT_MS.
+// ===========================================================================
+const PENDING_VOICE_ACTION_TIMEOUT_MS = 5000;
+let pendingVoiceActionTimer = null;
+
+/**
+ * @param {Object} command - voir voice-commands.js#detectCommand
+ * @param {string} originalText - texte transcrit d'origine, pour affichage
+ *   côté dashboard (voir handleVoiceCommand, qui reçoit ce même texte à
+ *   l'approbation, exactement comme s'il avait été exécuté directement).
+ */
+function queuePendingVoiceAction(command, originalText) {
+  if (pendingVoiceActionTimer) {
+    clearTimeout(pendingVoiceActionTimer);
+    pendingVoiceActionTimer = null;
+  }
+  const pending = {
+    id: crypto.randomUUID(),
+    command,
+    originalText,
+    createdAt: Date.now(),
+  };
+  sessionState.setPendingVoiceAction(pending);
+  broadcast(
+    {
+      action: 'pendingVoiceAction',
+      id: pending.id,
+      command: pending.command,
+      originalText: pending.originalText,
+      expiresInMs: PENDING_VOICE_ACTION_TIMEOUT_MS,
+    },
+    { operatorOnly: true }
+  );
+  log(
+    `Commande vocale en attente d'approbation opérateur : ${command.action} ` +
+      `(id ${pending.id}, expire dans ${PENDING_VOICE_ACTION_TIMEOUT_MS / 1000}s)`
+  );
+
+  pendingVoiceActionTimer = setTimeout(() => {
+    pendingVoiceActionTimer = null;
+    // Garde d'identité (même discipline que les gardes de session obsolète
+    // ailleurs dans ce fichier, ex. deepgramSession) : n'expire QUE si
+    // c'est TOUJOURS cette même action en attente — une approbation entre-
+    // temps (voir voice-command-ws-handlers.js#approveVoiceAction) a déjà
+    // vidé sessionState.getPendingVoiceAction(), rien à faire ici.
+    const current = sessionState.getPendingVoiceAction();
+    if (!current || current.id !== pending.id) return;
+    sessionState.clearPendingVoiceAction();
+    broadcast({ action: 'pendingVoiceActionExpired', id: pending.id }, { operatorOnly: true });
+    log(`Commande vocale expirée sans validation opérateur : ${command.action} (id ${pending.id})`);
+  }, PENDING_VOICE_ACTION_TIMEOUT_MS);
+}
+
+/**
+ * Annule le minuteur d'expiration en vol — appelée par
+ * voice-command-ws-handlers.js#approveVoiceAction après une validation
+ * opérateur réussie, pour qu'une action déjà exécutée ne soit jamais
+ * ensuite signalée comme "expirée" au dashboard (voir ctx.cancelPendingVoiceActionTimer
+ * dans le câblage CATEGORY_HANDLERS plus bas).
+ */
+function cancelPendingVoiceActionTimer() {
+  if (pendingVoiceActionTimer) {
+    clearTimeout(pendingVoiceActionTimer);
+    pendingVoiceActionTimer = null;
   }
 }
 

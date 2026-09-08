@@ -459,6 +459,26 @@ const CLIENT_ACTIONS = {
     description: 'Signalement : mode formation activé/désactivé (opérateur)',
   },
   ping: { category: 'infra', description: 'Heartbeat' },
+
+  // AJOUT (Axe 3 — sécurisation des commandes vocales, Option A) : voir
+  // voice-command-ws-handlers.js.
+  setVoiceCommandWakeWord: {
+    operatorOnly: true,
+    category: 'voice',
+    description:
+      "Active/désactive la phrase d'activation (wake word) requise pour les commandes vocales",
+  },
+  setVoiceCommandSupervision: {
+    operatorOnly: true,
+    category: 'voice',
+    description:
+      'Active/désactive la validation opérateur des commandes vocales ("Supervised Autonomy")',
+  },
+  approveVoiceAction: {
+    operatorOnly: true,
+    category: 'voice',
+    description: 'Valide et exécute la commande vocale actuellement en attente',
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -564,6 +584,22 @@ const SERVER_ACTIONS = {
   },
   confidenceThresholdChanged: { description: 'Seuil de confiance mis à jour' },
   error: { description: "Message d'erreur" },
+
+  // AJOUT (Axe 3 — sécurisation des commandes vocales, Option A).
+  pendingVoiceAction: {
+    description:
+      "Commande vocale proposée, en attente de validation opérateur (mode 'Supervised Autonomy')",
+  },
+  pendingVoiceActionApproved: { description: 'Commande vocale en attente validée par l’opérateur' },
+  pendingVoiceActionExpired: {
+    description: 'Commande vocale en attente abandonnée silencieusement (délai de 5s écoulé)',
+  },
+  voiceCommandWakeWordChanged: {
+    description: "Confirmation : réglage de la phrase d'activation (wake word) mis à jour",
+  },
+  voiceCommandSupervisionChanged: {
+    description: "Confirmation : réglage 'Supervised Autonomy' des commandes vocales mis à jour",
+  },
 };
 
 // ---------------------------------------------------------------------------
