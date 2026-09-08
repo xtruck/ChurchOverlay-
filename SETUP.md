@@ -168,8 +168,8 @@ npm start > server.log 2>&1
 
 - `README.md` - Environment variables reference
 - `ARCHITECTURE.md` - Technical overview
-- `docs/archive/API.md` - WebSocket protocol
-- `docs/archive/SECURITY_IMPROVEMENTS.md` - Security features
+- `SECURITY.md` - Security considerations
+- `action-registry.js` - Authoritative WebSocket action list
 
 **Still stuck?** Open an issue on GitHub with:
 

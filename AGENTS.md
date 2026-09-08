@@ -385,7 +385,6 @@ npm run type-check
 - **QUICKSTART-WINDOWS.md**: Windows-specific quick start
 - **ARCHITECTURE.md**: Technical architecture (partially outdated)
 - **SECURITY.md**: Security considerations
-- **API.md**: WebSocket protocol (in docs/archive/)
 
 ### Mission & Development
 

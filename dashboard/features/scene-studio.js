@@ -111,8 +111,13 @@ export function onComposerBgTypeChange() {
   const mediaSelect = document.getElementById('composerBgMediaSelect');
   const colorInput = document.getElementById('composerBgColorInput');
   composerBackground.type = typeSelect ? typeSelect.value : 'none';
-  if (mediaSelect) mediaSelect.style.display = composerBackground.type === 'media' ? '' : 'none';
-  if (colorInput) colorInput.style.display = composerBackground.type === 'color' ? '' : 'none';
+  // CORRECTIF (visibilité par classe CSS, voir dashboard.html
+  // `.is-hidden { display: none !important }`) : un simple `style.display`
+  // ne suffit plus à RÉVÉLER ces deux champs — la règle CSS avec
+  // !important gagne toujours sur un style inline tant que la classe
+  // `is-hidden` reste posée sur l'élément.
+  if (mediaSelect) mediaSelect.classList.toggle('is-hidden', composerBackground.type !== 'media');
+  if (colorInput) colorInput.classList.toggle('is-hidden', composerBackground.type !== 'color');
   updateComposerPreview();
 }
 
@@ -280,13 +285,16 @@ export function openSceneComposer(id) {
   renderComposerElementsList();
   updateComposerPreview();
 
-  card.style.display = '';
+  // CORRECTIF (visibilité par classe CSS, même raison que
+  // onComposerBgTypeChange ci-dessus) : `.scene-composer-card.is-hidden`
+  // porte `!important` — seul le retrait de la classe révèle la carte.
+  card.classList.remove('is-hidden');
   card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 export function closeSceneComposer() {
   const card = document.getElementById('sceneComposerCard');
-  if (card) card.style.display = 'none';
+  if (card) card.classList.add('is-hidden');
   composerEditingId = null;
   composerBackground = { type: 'none', mediaId: null, color: '#0b0f1a' };
   composerElements = [];

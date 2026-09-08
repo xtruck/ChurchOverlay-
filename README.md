@@ -197,8 +197,6 @@ Two separate ways an AI assistant can drive ChurchOverlay, both opt-in:
 ## Next Steps
 
 - Read `SETUP.md` for full installation guide
-- Read `docs/archive/API.md` for the WebSocket protocol (archived — predates
-  several action additions, see `action-registry.js` for the current,
-  authoritative list)
+- Read `action-registry.js` for the current, authoritative WebSocket action list
 - Read `ARCHITECTURE.md` for technical details — largely outdated (it
   predates the removal of local Whisper), see its own banner at the top
