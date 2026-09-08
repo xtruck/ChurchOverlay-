@@ -191,7 +191,7 @@ function waitForOpen(ws) {
     // quelques secondes -> "en avance" déterministe, sans attendre 60s+.
     // ============================================================
     const rowA = page.locator('#rundownList .queue-item', {
-      has: page.locator(`[onclick*="'${cueA.id}'"]`),
+      has: page.locator(`[data-id="${cueA.id}"]`),
     });
     await rowA.locator('.queue-item-duration-input').fill('60');
     await rowA.locator('.queue-item-duration-input').dispatchEvent('change');

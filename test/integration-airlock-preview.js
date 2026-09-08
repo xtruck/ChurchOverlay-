@@ -194,7 +194,7 @@ function makeSourceFile(dir, filename, bytes) {
     );
 
     // --- Armer le média : aperçu peuplé, RIEN diffusé (overlay inchangé) ---
-    await page.click(`#rundownList [onclick="armRundownCue('${cueMedia.id}')"]`);
+    await page.click(`#rundownList [data-action="arm"][data-id="${cueMedia.id}"]`);
     await page.waitForFunction(() => !document.getElementById('airlockGoLiveBtn').disabled, {
       timeout: 3000,
     });
@@ -225,7 +225,7 @@ function makeSourceFile(dir, filename, bytes) {
     );
 
     // --- Armer la scène : rendu réel via renderSceneDom ---
-    await page.click(`#rundownList [onclick="armRundownCue('${cueScene.id}')"]`);
+    await page.click(`#rundownList [data-action="arm"][data-id="${cueScene.id}"]`);
     await page.waitForFunction(() => !document.getElementById('airlockGoLiveBtn').disabled, {
       timeout: 3000,
     });
@@ -250,7 +250,7 @@ function makeSourceFile(dir, filename, bytes) {
     );
 
     // --- Armer le verset : aperçu référence-seule (pas de texte, honnête) ---
-    await page.click(`#rundownList [onclick="armRundownCue('${cueVerse.id}')"]`);
+    await page.click(`#rundownList [data-action="arm"][data-id="${cueVerse.id}"]`);
     await page.waitForFunction(() => !document.getElementById('airlockGoLiveBtn').disabled, {
       timeout: 3000,
     });

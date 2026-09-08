@@ -22,7 +22,12 @@ import { checkCueReadiness, READINESS_LABELS } from './next-cue-confidence.js';
 // repère est armé — import circulaire avec airlock-preview.js (qui importe
 // déjà getRundownCues/triggerRundownCue d'ici), sans risque, voir le
 // commentaire d'en-tête de getArmedCueId() dans airlock-preview.js.
-import { getArmedCueId } from './airlock-preview.js';
+// armRundownCue rejoint cet import pour la même raison (délégation
+// d'événements — chantier action-delegator.js) : le bouton "Armer" de la
+// feuille de route appelle une fonction qui vit dans airlock-preview.js, pas
+// ici — même arête d'import déjà en place, sûre, pas une nouvelle relation.
+import { getArmedCueId, armRundownCue } from './airlock-preview.js';
+import { registerAction } from '../action-delegator.js';
 
 let rundownCues = [];
 let rundownActiveIndex = -1;
@@ -34,8 +39,8 @@ let cueTimeline = {};
 
 // AJOUT (Airlock Preview — voir airlock-preview.js) : même raisonnement que
 // getMediaLibraryItems()/getSceneStudioItems() — armRundownCue() a besoin du
-// repère COMPLET (mediaId/sceneId/reference selon le type, jamais transmis à
-// onclick="armRundownCue('id')" lui-même) pour construire son aperçu.
+// repère COMPLET (mediaId/sceneId/reference selon le type, jamais transmis
+// au data-action="arm" du bouton lui-même) pour construire son aperçu.
 export function getRundownCues() {
   return rundownCues;
 }
@@ -382,11 +387,11 @@ export function renderRundown(message) {
                     />
                     ${actualBadge}
                     <div class="queue-item-actions">
-                        <button class="queue-icon-btn" onclick="moveRundownCue('${cue.id}', -1)" title="Monter" ${i === 0 ? 'disabled' : ''}>↑</button>
-                        <button class="queue-icon-btn" onclick="moveRundownCue('${cue.id}', 1)" title="Descendre" ${i === rundownCues.length - 1 ? 'disabled' : ''}>↓</button>
-                        <button class="queue-icon-btn" onclick="armRundownCue('${cue.id}')" title="Armer dans le sas de diffusion (aperçu avant direct)">⏏</button>
-                        <button class="queue-icon-btn queue-send" onclick="triggerRundownCue('${cue.id}')" title="Déclencher maintenant, sans passer par le sas">▶</button>
-                        <button class="queue-icon-btn queue-remove" onclick="removeRundownCue('${cue.id}')" title="Retirer">✕</button>
+                        <button class="queue-icon-btn" data-action="move-up" data-target="rundown" data-id="${cue.id}" title="Monter" ${i === 0 ? 'disabled' : ''}>↑</button>
+                        <button class="queue-icon-btn" data-action="move-down" data-target="rundown" data-id="${cue.id}" title="Descendre" ${i === rundownCues.length - 1 ? 'disabled' : ''}>↓</button>
+                        <button class="queue-icon-btn" data-action="arm" data-target="rundown" data-id="${cue.id}" title="Armer dans le sas de diffusion (aperçu avant direct)">⏏</button>
+                        <button class="queue-icon-btn queue-send" data-action="trigger" data-target="rundown" data-id="${cue.id}" title="Déclencher maintenant, sans passer par le sas">▶</button>
+                        <button class="queue-icon-btn queue-remove" data-action="delete" data-target="rundown" data-id="${cue.id}" title="Retirer">✕</button>
                     </div>
                 </div>
             `;
@@ -427,8 +432,15 @@ window.addVerseToRundown = addVerseToRundown;
 window.addVerseToRundownFromStudio = addVerseToRundownFromStudio;
 window.addToRundown = addToRundown;
 window.setCueDuration = setCueDuration;
-window.removeRundownCue = removeRundownCue;
-window.moveRundownCue = moveRundownCue;
-window.triggerRundownCue = triggerRundownCue;
 window.nextRundownCue = nextRundownCue;
 window.clearRundown = clearRundown;
+
+// moveRundownCue, triggerRundownCue, removeRundownCue et armRundownCue
+// (ce dernier importé d'airlock-preview.js) n'ont plus besoin de window —
+// voir registerAction ci-dessous, elles n'étaient exposées que pour les
+// onclick inline désormais remplacés par la délégation data-action.
+registerAction('rundown', 'move-up', (el, data) => moveRundownCue(data.id, -1));
+registerAction('rundown', 'move-down', (el, data) => moveRundownCue(data.id, 1));
+registerAction('rundown', 'arm', (el, data) => armRundownCue(data.id));
+registerAction('rundown', 'trigger', (el, data) => triggerRundownCue(data.id));
+registerAction('rundown', 'delete', (el, data) => removeRundownCue(data.id));

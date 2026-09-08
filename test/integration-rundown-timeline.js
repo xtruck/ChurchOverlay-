@@ -174,12 +174,12 @@ function waitForOpen(ws) {
     // repère puis d'y chercher l'input, cohérent avec la structure réelle du
     // template (voir renderRundown() dans rundown.js).
     const rowA = page.locator('#rundownList .queue-item', {
-      has: page.locator(`[onclick*="'${cueA.id}'"]`),
+      has: page.locator(`[data-id="${cueA.id}"]`),
     });
     await rowA.locator('.queue-item-duration-input').fill('5');
     await rowA.locator('.queue-item-duration-input').dispatchEvent('change');
     await page.waitForFunction(
-      (id) => document.querySelector(`[onclick*="'${id}'"]`) !== null,
+      (id) => document.querySelector(`[data-id="${id}"]`) !== null,
       cueA.id,
       { timeout: 3000 }
     );

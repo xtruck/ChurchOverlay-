@@ -170,9 +170,9 @@ function waitForOpen(ws) {
     // Clic "Armer" (VRAIE UI) sur le repère A -> chip "⏏ Armé"
     // ============================================================
     const rowA = page.locator('#rundownList .queue-item', {
-      has: page.locator(`[onclick*="'${cueA.id}'"]`),
+      has: page.locator(`[data-id="${cueA.id}"]`),
     });
-    await rowA.locator('[onclick^="armRundownCue"]').click();
+    await rowA.locator('[data-action="arm"]').click();
     await page.waitForFunction(
       (id) => (document.getElementById(`cueStatus-${id}`)?.textContent || '').includes('Armé'),
       cueA.id,
