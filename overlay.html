@@ -987,8 +987,20 @@
            iframe (le panneau PROGRAMME du Studio ProPresenter, voir
            #overlayFrame dans dashboard.html) sans même corriger quoi que ce
            soit. L'attribut HTML est la seule option qui fonctionne
-           réellement sous cette CSP — restauré, script inline retiré. -->
-      <video id="media-layer-video" hidden playsinline></video>
+           réellement sous cette CSP — restauré, script inline retiré.
+
+           AJOUT (Axe 2 — lecture vidéo robuste sous Electron/Chromium) :
+           muted (condition sine qua non de l'autoplay programmatique sans
+           interaction utilisateur — la politique d'autoplay de Chromium
+           refuse silencieusement .play() sur une vidéo sonore) et autoplay
+           (filet de sécurité si l'appel explicite .play(), voir
+           showMediaItem() dans overlay.js, était un jour manqué) rejoignent
+           playsinline ci-dessus, posés en dur pour la même raison : ce
+           sont des ATTRIBUTS HTML standards (contrairement à playsinline,
+           aucun souci de compatibilité Firefox pour ceux-là), donc aucune
+           dépendance à un script — reposés quand même aussi en JS dans
+           showMediaItem() à chaque changement de source, par robustesse. -->
+      <video id="media-layer-video" hidden playsinline muted autoplay></video>
     </div>
 
     <!-- Studio de scènes : texte + logo/image composés (voir action 'showScene') -->

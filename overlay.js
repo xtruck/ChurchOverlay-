@@ -652,6 +652,13 @@ let mediaHideTimeout = null;
 // commentaire dans showMediaItem() plus bas — distingue le gestionnaire
 // d'erreur le plus récent d'un gestionnaire supplanté par un chargement
 // plus récent (le repli lui-même déclenche un nouveau showMediaItem()).
+// AJOUT (Axe 2 — transitions sans flash noir) : ce même jeton sert
+// maintenant aussi de garde pour l'attente de préchargement (voir
+// preloadMedia() plus bas) ET pour showScene() — un média et une scène se
+// partagent le même tier plein écran (mutuellement exclusifs), donc un
+// préchargement encore en vol d'un type doit être supplanté par un
+// déclenchement de l'AUTRE type, pas seulement par un chargement du même
+// type.
 let mediaLoadGeneration = 0;
 
 // AJOUT (Operator activity log — brief produit, priorité #10) : jusqu'ici un
@@ -670,11 +677,115 @@ function reportMediaLoadFailure(label) {
   }
 }
 
-function showMediaItem(msg) {
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// AJOUT (Axe 2 — transitions sans flash noir, "double buffering") : plutôt
+// que d'assigner directement l'URL sur l'élément <img>/<video> RÉELLEMENT
+// visible (ce qui vide son contenu pendant le chargement réseau, révélant
+// le fond noir du calque en dessous — le "flash noir" signalé), on
+// précharge d'abord la ressource dans un élément INVISIBLE et jetable. Une
+// fois prête (ou après le filet de sécurité ci-dessous), l'affectation
+// réelle qui suit (voir showMediaItem()) profite du cache HTTP du
+// navigateur pour cette même URL — résolution quasi instantanée, sans
+// jamais laisser un trou visible entre l'ancien et le nouveau contenu.
+// Ne rejette JAMAIS (resolve dans tous les cas, y compris un échec réel) :
+// l'échec proprement dit reste géré une seule fois, par le véritable
+// gestionnaire onerror posé sur l'élément RÉEL dans showMediaItem() — ce
+// préchargement n'est qu'une optimisation de timing, jamais une seconde
+// source de vérité sur le succès/échec.
+const MEDIA_PRELOAD_TIMEOUT_MS = 2000;
+function preloadMedia(url, isVideo) {
+  return new Promise((resolve) => {
+    if (!url) {
+      resolve();
+      return;
+    }
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    // Filet de sécurité : un fichier lent (réseau chargé, gros fichier) ne
+    // doit jamais retarder indéfiniment l'affichage.
+    const safety = setTimeout(finish, MEDIA_PRELOAD_TIMEOUT_MS);
+    if (isVideo) {
+      const probe = document.createElement('video');
+      probe.muted = true;
+      probe.preload = 'auto';
+      // 'loadeddata' (première image décodée) suffit — pas besoin d'attendre
+      // 'canplaythrough' (fichier entier bufferisable), plus lent et inutile
+      // ici : l'objectif est juste d'amorcer le cache HTTP, pas de finir le
+      // téléchargement avant l'affichage.
+      probe.onloadeddata = () => {
+        clearTimeout(safety);
+        finish();
+      };
+      probe.onerror = () => {
+        clearTimeout(safety);
+        finish();
+      };
+      probe.src = url;
+    } else {
+      const probe = new Image();
+      probe.onload = () => {
+        clearTimeout(safety);
+        finish();
+      };
+      probe.onerror = () => {
+        clearTimeout(safety);
+        finish();
+      };
+      probe.src = url;
+    }
+  });
+}
+// AJOUT : bref fondu propre à l'élément (CSS opacity déjà déclarée, voir
+// #media-layer img/video plus haut) pour le cas où le calque était DÉJÀ
+// visible avec un AUTRE média du même type (changement média -> média en
+// rafale, ex. avance rapide dans une file) — ce cas ne déclenche jamais la
+// transition d'apparition du CALQUE lui-même (déjà `.visible`), donc sans
+// ce fondu ciblé, même un média préchargé remplacerait l'ancien de façon
+// instantanée et abrupte.
+const MEDIA_SWAP_FADE_MS = 160;
+
+async function showMediaItem(msg) {
   const layer = document.getElementById('media-layer');
   const img = document.getElementById('media-layer-img');
   const video = document.getElementById('media-layer-video');
   if (!layer || !img || !video) return;
+
+  const myMediaLoadGeneration = ++mediaLoadGeneration;
+  // CORRECTIF (voir maybeShowDefaultContent() plus haut) : ce média
+  // n'est "le poster principal" que si c'est bien maybeShowDefaultContent()
+  // elle-même qui a déclenché cet appel (detectedBy: 'default') —
+  // sinon (déclenchement vocal/manuel), c'est un contenu explicite. Posé
+  // TÔT, avant l'attente de préchargement ci-dessous (pas différé) : un
+  // autre appel arrivant pendant cette attente (ex. un nouveau poster
+  // désigné entre-temps) doit voir cet état à jour immédiatement, exactement
+  // comme avant ce chantier.
+  screenOccupiedByExplicitContent = msg.detectedBy !== 'default';
+
+  const isVideo = msg.mediaType === 'video';
+  const activeEl = isVideo ? video : img;
+  // Le calque était déjà visible avec un média du MÊME type (pas un
+  // changement de calque, voir la transition CSS du calque plus bas) :
+  // seul ce cas a besoin du fondu ciblé sur l'élément lui-même.
+  const swappingWithinVisibleLayer = layer.classList.contains('visible') && !activeEl.hidden;
+
+  await preloadMedia(msg.mediaUrl, isVideo);
+  // Supplanté par un appel plus récent (nouveau média/scène/verset déclenché
+  // pendant l'attente ci-dessus) : ne touche plus au DOM, exactement comme
+  // les gestionnaires onerror plus bas.
+  if (myMediaLoadGeneration !== mediaLoadGeneration) return;
+
+  if (swappingWithinVisibleLayer) {
+    activeEl.style.opacity = '0';
+    await sleep(MEDIA_SWAP_FADE_MS);
+    if (myMediaLoadGeneration !== mediaLoadGeneration) return;
+  }
 
   // Version "silencieuse" (voir hideVerseQuiet ci-dessus) : ce média est sur
   // le point de prendre l'écran, pas besoin/pas souhaitable de vérifier le
@@ -684,11 +795,6 @@ function showMediaItem(msg) {
   // une scène partagent le même tier de z-index (150), mutuellement
   // exclusifs comme verset/média l'étaient déjà.
   hideSceneLayer();
-  // CORRECTIF (voir maybeShowDefaultContent() plus haut) : ce média
-  // n'est "le poster principal" que si c'est bien maybeShowDefaultContent()
-  // elle-même qui a déclenché cet appel (detectedBy: 'default') —
-  // sinon (déclenchement vocal/manuel), c'est un contenu explicite.
-  screenOccupiedByExplicitContent = msg.detectedBy !== 'default';
   clearTimeout(mediaHideTimeout);
   mediaHideTimeout = null;
 
@@ -714,8 +820,10 @@ function showMediaItem(msg) {
   // à tort sur le poster qui, lui, avait pourtant réussi à charger. Un
   // jeton de génération (incrémenté à chaque showMediaItem()) permet à
   // chaque gestionnaire de reconnaître qu'il a été supplanté et de ne
-  // jamais agir pour un chargement qui n'est plus le plus récent.
-  const myMediaLoadGeneration = ++mediaLoadGeneration;
+  // jamais agir pour un chargement qui n'est plus le plus récent — capturé
+  // tout en haut de cette fonction (voir myMediaLoadGeneration plus haut),
+  // pas ici : il doit déjà être actif PENDANT l'attente de préchargement
+  // qui précède, pas seulement à partir d'ici.
   img.onerror = () => {
     if (myMediaLoadGeneration !== mediaLoadGeneration) return;
     if (img.hidden || !img.src) return;
@@ -736,21 +844,48 @@ function showMediaItem(msg) {
     hideMediaItem();
   };
 
-  if (msg.mediaType === 'video') {
+  if (isVideo) {
     img.hidden = true;
     img.removeAttribute('src');
     img.classList.remove('ken-burns');
     video.hidden = false;
+    video.style.opacity = '';
+    // CORRECTIF (Axe 2 — lecture vidéo robuste sous Electron/Chromium) :
+    // muted/autoplay/playsinline sont posés en dur en attributs HTML dans
+    // overlay.html (voir son commentaire — playsinline y est un attribut
+    // HTML DÉLIBÉRÉMENT, pas une propriété JS, suite à un incident réel :
+    // une version JS-only avait besoin d'un <script> inline, bloqué par la
+    // CSP stricte de cette page). muted/autoplay sont reposés ici aussi en
+    // JS à chaque changement de source, par robustesse même si l'attribut
+    // HTML était un jour retiré/écrasé — playsInline n'est PAS reposé ici :
+    // aucun bénéfice (déjà couvert par l'attribut HTML) pour un risque de
+    // rouvrir le même incident si ce fichier est un jour rechargé autrement.
+    video.muted = true;
+    video.autoplay = true;
     video.src = msg.mediaUrl;
     video.currentTime = 0;
-    video.play().catch(() => {
-      /* lecture auto refusée (rare, sans interaction utilisateur) : la vidéo reste affichée, silencieuse */
+    video.play().catch((err) => {
+      // AJOUT (Axe 2 — secours lecture vidéo) : jusqu'ici une lecture auto
+      // refusée par le navigateur laissait la vidéo affichée à l'écran,
+      // silencieuse ET figée (premier cadre noir ou gelé) — sans repli ni
+      // signalement, contrairement à un fichier introuvable/corrompu
+      // (.onerror ci-dessus). Même traitement désormais : bascule sur le
+      // repli (poster/fond sombre) et signalement au serveur, avec la même
+      // garde de génération (une lecture refusée peut arriver bien après
+      // que ce chargement ait été supplanté par un plus récent).
+      if (myMediaLoadGeneration !== mediaLoadGeneration) return;
+      if (video.hidden || !video.src) return;
+      console.warn('[overlay] Lecture vidéo refusée, repli automatique :', video.src, err);
+      reportMediaLoadFailure(msg.label);
+      if (msg.detectedBy === 'default' && msg.id) brokenDefaultMediaId = msg.id;
+      hideMediaItem();
     });
   } else {
     video.hidden = true;
     video.pause();
     video.removeAttribute('src');
     img.hidden = false;
+    img.style.opacity = '';
     img.src = msg.mediaUrl;
     // AJOUT (Ken Burns — images fixes uniquement, une vidéo bouge déjà) :
     // classe retirée puis reposée pour relancer l'animation à chaque
@@ -798,6 +933,15 @@ function hideMediaLayer() {
   const video = document.getElementById('media-layer-video');
   if (!layer) return;
 
+  // AJOUT (Axe 2 — transitions sans flash noir) : supplante tout
+  // préchargement showMediaItem() encore en vol (voir preloadMedia() et le
+  // jeton de génération plus haut) — appelée par showVerse()/showScene()/
+  // hideMediaItem(), c'est le point de passage commun chaque fois que le
+  // média est repris/masqué par autre chose. Sans ce jeton bougé ICI aussi,
+  // un média déclenché puis immédiatement masqué (ou interrompu par un
+  // verset/une scène) pendant que sa ressource était encore en train de
+  // précharger réapparaîtrait quand même une fois ce préchargement résolu.
+  mediaLoadGeneration++;
   clearTimeout(mediaHideTimeout);
   mediaHideTimeout = null;
   layer.classList.remove('visible');
