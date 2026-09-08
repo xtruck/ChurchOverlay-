@@ -10,6 +10,7 @@
  */
 import { ws } from '../state.js';
 import { showToast, escapeHtmlDashboard } from '../utils.js';
+import { registerAction } from '../action-delegator.js';
 
 /* ======================================================================
    Bibliothèque de chants (déclenchement vocal ou manuel, section par
@@ -103,11 +104,11 @@ export function renderSongLibrary(songs) {
                         <div class="media-item-phrases">${phrasesBadges || '<span class="media-item-phrase-badge">Déclenchement manuel uniquement</span>'}</div>
                     </div>
                     <div class="queue-item-actions">
-                        <button class="queue-icon-btn" onclick="stepSongSection('${song.id}', -1)" title="Section précédente">◀</button>
+                        <button class="queue-icon-btn" data-action="step-prev" data-target="song" data-id="${song.id}" title="Section précédente">◀</button>
                         <span class="song-section-progress">${current}/${song.sectionCount}</span>
-                        <button class="queue-icon-btn" onclick="stepSongSection('${song.id}', 1)" title="Section suivante">▶</button>
-                        <button class="queue-icon-btn queue-send" onclick="showSongSectionNow('${song.id}')" title="Afficher maintenant">▶▶</button>
-                        <button class="queue-icon-btn queue-remove" onclick="deleteSongFromLibrary('${song.id}')" title="Supprimer">✕</button>
+                        <button class="queue-icon-btn" data-action="step-next" data-target="song" data-id="${song.id}" title="Section suivante">▶</button>
+                        <button class="queue-icon-btn queue-send" data-action="trigger" data-target="song" data-id="${song.id}" title="Afficher maintenant">▶▶</button>
+                        <button class="queue-icon-btn queue-remove" data-action="delete" data-target="song" data-id="${song.id}" title="Supprimer">✕</button>
                     </div>
                 </div>
             `;
@@ -116,6 +117,12 @@ export function renderSongLibrary(songs) {
 }
 
 window.addSongToLibrary = addSongToLibrary;
-window.deleteSongFromLibrary = deleteSongFromLibrary;
-window.showSongSectionNow = showSongSectionNow;
-window.stepSongSection = stepSongSection;
+
+// deleteSongFromLibrary, showSongSectionNow et stepSongSection n'ont plus
+// besoin de window — voir registerAction ci-dessous, elles n'étaient
+// exposées que pour les onclick inline désormais remplacés par la
+// délégation data-action.
+registerAction('song', 'step-prev', (el, data) => stepSongSection(data.id, -1));
+registerAction('song', 'step-next', (el, data) => stepSongSection(data.id, 1));
+registerAction('song', 'trigger', (el, data) => showSongSectionNow(data.id));
+registerAction('song', 'delete', (el, data) => deleteSongFromLibrary(data.id));
