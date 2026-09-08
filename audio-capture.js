@@ -88,7 +88,7 @@ const STATE = {
   callbacks: {
     onAudioSegment: null,
     onError: null,
-    // AJOUT (Deepgram streaming) — voir startDeepgramStreamingSession.
+    // AJOUT (Deepgram streaming) — voir openDeepgramSession.
     onPartialTranscript: null, // (text, meta, tracker)
     onFinalTranscript: null, // (text, meta, tracker)
     onAsrFallback: null, // ({ reason }) — la session streaming a échoué, repli sur le pipeline segment/Groq en cours de session
@@ -131,6 +131,21 @@ const STATE = {
   asrProvider: 'auto',
   deepgramSession: null,
   deepgramStreamingActive: false, // true seulement après ouverture RÉUSSIE de la connexion — jamais supposé avant confirmation
+
+  // AJOUT (Axe 3 — résilience streaming face aux micro-coupures réseau) :
+  // voir handleDeepgramDisconnect/scheduleDeepgramReconnect plus bas.
+  // deepgramReconnecting distingue "coupure définitive, repli WAV classique
+  // déjà en cours" (deepgramReconnecting=false, comme avant ce chantier) de
+  // "coupure en cours, une reconnexion automatique est tentée" — pendant
+  // cette seconde fenêtre, handleAudioData() détourne le PCM entrant vers
+  // deepgramReconnectBuffer (pas vers audioBuffer) : si la reconnexion
+  // aboutit, ce tampon est envoyé en rafale à la nouvelle session pour
+  // rattraper le flux temps réel ; si elle échoue définitivement, il est
+  // versé dans audioBuffer pour que le repli WAV classique parte avec cet
+  // audio déjà en main, jamais perdu.
+  deepgramReconnecting: false,
+  deepgramReconnectBuffer: [], // file de Buffer PCM, plus ancien en premier — voir pushToReconnectBuffer()
+  deepgramReconnectBufferBytes: 0, // total courant, tenu à jour en O(1) plutôt que recalculé à chaque poussée
 
   // AJOUT (latence, §14) : un tracker par énoncé, créé au tout premier
   // indice de voix (VAD, avant même la confirmation cumulative
@@ -267,10 +282,16 @@ function startBrowserCapture(options = {}) {
 
   // AJOUT (Deepgram streaming) : état remis à zéro à chaque nouvelle
   // capture — une session WebSocket d'une capture précédente n'a aucun
-  // sens ici (voir startDeepgramStreamingSession).
+  // sens ici (voir openDeepgramSession).
   STATE.asrProvider = asrEngine.resolveProvider();
   STATE.deepgramSession = null;
   STATE.deepgramStreamingActive = false;
+  // AJOUT (Axe 3 — résilience streaming) : un tampon de rattrapage d'une
+  // capture précédente n'a aucun sens ici, même raisonnement que le reste
+  // de ce bloc.
+  STATE.deepgramReconnecting = false;
+  STATE.deepgramReconnectBuffer = [];
+  STATE.deepgramReconnectBufferBytes = 0;
   STATE.utteranceTracker = null;
   // AJOUT (A.1 — gain micro) : réinitialise et lance l'émission continue des
   // diagnostics de niveau audio pour le vumètre du dashboard.
@@ -289,7 +310,7 @@ function startBrowserCapture(options = {}) {
   STATE.lastStreamingPartialMeta = null;
   STATE.lastLocallyFinalizedText = '';
   if (STATE.asrProvider === 'deepgram') {
-    startDeepgramStreamingSession(config);
+    openDeepgramSession(config);
   }
 
   console.log(
@@ -420,6 +441,166 @@ function stopDiagnosticsEmission() {
   }
 }
 
+// AJOUT (Axe 3 — résilience streaming face aux micro-coupures réseau) :
+// voir handleDeepgramDisconnect/scheduleDeepgramReconnect/openDeepgramSession
+// plus bas pour l'orchestration complète. Nombre de tentatives ET délais
+// courts (pas de backoff en secondes) : le produit cible spécifiquement les
+// COUPURES BRÈVES ("micro-coupures") — une vraie panne prolongée doit encore
+// aboutir au repli WAV/Groq déjà existant et éprouvé, pas s'acharner pendant
+// de longues minutes pendant que le culte continue sans transcription.
+const DEEPGRAM_RECONNECT_MAX_ATTEMPTS = 3;
+const DEEPGRAM_RECONNECT_BACKOFF_MS = [200, 500, 1000];
+// Filet de sécurité par tentative de reconnexion (voir openDeepgramSession) :
+// une connexion qui ne s'ouvre NI n'échoue jamais (coupure réseau silencieuse,
+// pas un ECONNREFUSED immédiat) ne doit pas bloquer indéfiniment la
+// progression vers la tentative suivante / le repli définitif.
+const DEEPGRAM_RECONNECT_ATTEMPT_TIMEOUT_MS = 2000;
+// Plafond du tampon de rattrapage — voir pushToReconnectBuffer(). 30s, comme
+// demandé, calculé dynamiquement depuis la config active (sampleRate/
+// bitDepth/channels) plutôt que codé en dur en octets, pour rester correct
+// si cette config change un jour.
+const DEEPGRAM_RECONNECT_BUFFER_MAX_SECONDS = 30;
+
+/**
+ * Octets max du tampon de rattrapage pour la config PCM active.
+ * @param {Object} config
+ * @returns {number}
+ */
+function deepgramReconnectBufferMaxBytes(config) {
+  const bytesPerSample = config.bitDepth / 8;
+  return (
+    DEEPGRAM_RECONNECT_BUFFER_MAX_SECONDS * config.sampleRate * config.channels * bytesPerSample
+  );
+}
+
+/**
+ * Empile un chunk PCM dans le tampon de rattrapage pendant une reconnexion
+ * en cours (voir STATE.deepgramReconnecting). Tampon CIRCULAIRE borné : au-
+ * delà de DEEPGRAM_RECONNECT_BUFFER_MAX_SECONDS, les chunks les PLUS ANCIENS
+ * sont supprimés en premier (jamais les plus récents) — perdre quelques
+ * centaines de ms de tout début de coupure est un compromis acceptable,
+ * perdre ce qui vient d'être dit à l'instant ne le serait pas. Borne la
+ * RAM utilisée, jamais de croissance illimitée pendant une panne prolongée.
+ * @param {Buffer} data
+ * @param {Object} config
+ */
+function pushToReconnectBuffer(data, config) {
+  STATE.deepgramReconnectBuffer.push(data);
+  STATE.deepgramReconnectBufferBytes += data.length;
+  const maxBytes = deepgramReconnectBufferMaxBytes(config);
+  while (
+    STATE.deepgramReconnectBufferBytes > maxBytes &&
+    STATE.deepgramReconnectBuffer.length > 0
+  ) {
+    const dropped = STATE.deepgramReconnectBuffer.shift();
+    STATE.deepgramReconnectBufferBytes -= dropped.length;
+  }
+}
+
+/**
+ * Reconnexion abandonnée définitivement (tentatives épuisées) : verse le
+ * tampon de rattrapage dans STATE.audioBuffer, l'accumulateur du pipeline
+ * segment/WAV classique — ce même audio doit encore être transcrit, juste
+ * par l'autre chemin (Groq/batch) puisque le streaming n'est plus viable
+ * pour le reste de la session (comportement historique inchangé à partir
+ * d'ici, voir handleDeepgramDisconnect).
+ */
+function drainReconnectBufferIntoAudioBuffer() {
+  if (STATE.deepgramReconnectBuffer.length === 0) return;
+  STATE.audioBuffer.push(...STATE.deepgramReconnectBuffer);
+  STATE.deepgramReconnectBuffer = [];
+  STATE.deepgramReconnectBufferBytes = 0;
+}
+
+/**
+ * Reconnexion RÉUSSIE : envoie tout le tampon accumulé à la nouvelle session
+ * en rafale rapide (boucle synchrone, aucune pause entre les chunks) pour
+ * rattraper le flux temps réel au plus vite, puis reprend l'envoi chunk par
+ * chunk normal (voir handleAudioData, qui recommencera à cibler
+ * STATE.deepgramSession dès que STATE.deepgramStreamingActive redevient
+ * true juste après cet appel).
+ * @param {{sendAudio: (buf: Buffer) => void}} session
+ */
+function burstReconnectBufferToSession(session) {
+  if (STATE.deepgramReconnectBuffer.length === 0) return;
+  console.log(
+    `[audio-capture] ASR : reconnexion streaming réussie — rattrapage en rafale de ` +
+      `${STATE.deepgramReconnectBuffer.length} bloc(s) PCM accumulés (${STATE.deepgramReconnectBufferBytes} octets).`
+  );
+  for (const chunk of STATE.deepgramReconnectBuffer) {
+    session.sendAudio(chunk);
+  }
+  STATE.deepgramReconnectBuffer = [];
+  STATE.deepgramReconnectBufferBytes = 0;
+}
+
+/**
+ * Point d'entrée UNIQUE pour toute coupure streaming (onError ET onClose,
+ * voir openDeepgramSession) — jusqu'ici chacun dupliquait sa propre logique
+ * de repli, avec un risque latent de double appel à onAsrFallback si les
+ * deux évènements arrivaient l'un après l'autre pour la même coupure (WS
+ * émet typiquement 'error' PUIS 'close') ; le garde ci-dessous
+ * (STATE.deepgramReconnecting) élimine ce risque au passage. Signale
+ * TOUJOURS onAsrFallback immédiatement (bannière opérateur, comportement
+ * historique inchangé) même si une reconnexion automatique va être tentée
+ * juste après : l'opérateur doit savoir qu'un incident réseau a eu lieu,
+ * une reprise silencieuse est un bonus, jamais une raison de le laisser
+ * dans l'ignorance qu'elle a eu lieu.
+ * @param {Object} config - config active de cette capture
+ * @param {string} reason
+ */
+function handleDeepgramDisconnect(config, reason) {
+  if (!STATE.isRecording || STATE.browserCaptureConfig !== config) return; // capture arrêtée/relancée entre-temps
+  if (STATE.deepgramReconnecting) return; // coupure déjà prise en charge (ex. 'error' suivi de 'close')
+
+  console.warn(
+    `[audio-capture] ASR : coupure streaming Deepgram (${reason}) — jusqu'à ` +
+      `${DEEPGRAM_RECONNECT_MAX_ATTEMPTS} tentative(s) de reconnexion automatique, audio PCM ` +
+      `mis en tampon local pendant ce temps (${DEEPGRAM_RECONNECT_BUFFER_MAX_SECONDS}s max).`
+  );
+  STATE.deepgramStreamingActive = false;
+  STATE.deepgramReconnecting = true;
+  if (STATE.callbacks.onAsrFallback) {
+    STATE.callbacks.onAsrFallback({ reason });
+  }
+  scheduleDeepgramReconnect(config, 1);
+}
+
+/**
+ * Planifie la tentative de reconnexion n°attemptNumber après un court délai
+ * (DEEPGRAM_RECONNECT_BACKOFF_MS). Au-delà de DEEPGRAM_RECONNECT_MAX_ATTEMPTS,
+ * abandonne définitivement : bascule STATE.deepgramReconnecting à false et
+ * verse le tampon accumulé dans le pipeline WAV classique — à partir de là,
+ * comportement identique à l'ancien repli immédiat (audio non perdu, juste
+ * transcrit par Groq/batch au lieu du streaming pour le reste de la session).
+ * @param {Object} config
+ * @param {number} attemptNumber - 1-based
+ */
+function scheduleDeepgramReconnect(config, attemptNumber) {
+  if (!STATE.isRecording || STATE.browserCaptureConfig !== config) return;
+  if (attemptNumber > DEEPGRAM_RECONNECT_MAX_ATTEMPTS) {
+    console.warn(
+      `[audio-capture] ASR : reconnexion streaming Deepgram abandonnée après ` +
+        `${DEEPGRAM_RECONNECT_MAX_ATTEMPTS} tentative(s) — repli définitif sur le pipeline ` +
+        'segment/Groq pour le reste de la session (audio accumulé conservé, voir tampon).'
+    );
+    STATE.deepgramReconnecting = false;
+    drainReconnectBufferIntoAudioBuffer();
+    return;
+  }
+  const delay =
+    DEEPGRAM_RECONNECT_BACKOFF_MS[attemptNumber - 1] ||
+    DEEPGRAM_RECONNECT_BACKOFF_MS[DEEPGRAM_RECONNECT_BACKOFF_MS.length - 1];
+  setTimeout(() => {
+    if (!STATE.isRecording || STATE.browserCaptureConfig !== config) return; // capture arrêtée/relancée pendant l'attente
+    console.log(
+      `[audio-capture] ASR : tentative de reconnexion streaming Deepgram ` +
+        `${attemptNumber}/${DEEPGRAM_RECONNECT_MAX_ATTEMPTS}...`
+    );
+    openDeepgramSession(config, attemptNumber);
+  }, delay);
+}
+
 /**
  * Ouvre la session streaming Deepgram pour la capture en cours (asynchrone,
  * ne bloque jamais startBrowserCapture — même logique que initVadProvider).
@@ -427,9 +608,17 @@ function stopDiagnosticsEmission() {
  * reste false et handleAudioData continue d'utiliser le pipeline segment/WAV
  * classique — AUCUN audio n'est donc perdu pendant la négociation WebSocket
  * ni si DEEPGRAM_API_KEY est absent (repli propre, voir onError plus bas).
+ *
+ * AJOUT (Axe 3 — résilience streaming) : sert désormais AUSSI aux tentatives
+ * de reconnexion (reconnectAttempt défini, 1-based) déclenchées par
+ * scheduleDeepgramReconnect() — même logique de connexion/mêmes gestionnaires
+ * de bout en bout que la connexion initiale (rien à dupliquer/faire diverger),
+ * seule la réussite (onOpen) se comporte différemment : rattrape le tampon
+ * PCM accumulé pendant la coupure avant de reprendre l'envoi en direct.
  * @param {Object} config - config active de cette capture
+ * @param {number} [reconnectAttempt] - 1-based, absent pour la connexion initiale
  */
-function startDeepgramStreamingSession(config) {
+function openDeepgramSession(config, reconnectAttempt) {
   if (!deepgramStreaming.isConfigured()) {
     console.warn(
       '[audio-capture] ASR : DEEPGRAM_API_KEY absent — ASR_PROVIDER=deepgram demandé mais ' +
@@ -446,11 +635,58 @@ function startDeepgramStreamingSession(config) {
   // ("écoute en français"/"listen in English", voir voice-commands.js)
   // pendant qu'une session streaming est déjà ouverte ne prend donc effet
   // qu'à la PROCHAINE ouverture de session (prochain redémarrage de
-  // capture), jamais rétroactivement sur la connexion en cours.
+  // capture), jamais rétroactivement sur la connexion en cours. Une
+  // reconnexion (reconnectAttempt défini) relit cette même valeur : un
+  // changement de langue pendant une coupure prend donc effet dès la
+  // reconnexion, pas seulement au prochain redémarrage complet — cohérent
+  // avec le fait qu'il s'agit bien d'une NOUVELLE connexion WebSocket.
   const rawLang = sessionState.getTranscriptionLanguage();
   // A.5 — 'multi' n'est pas un code de langue valide pour Deepgram ; converti en
   // null pour activer la détection automatique (utile en mode bilingue).
   const transcriptionLanguage = rawLang === 'multi' ? null : rawLang;
+
+  // AJOUT (Axe 3 — résilience streaming) : deux gardes LOCALES à CETTE
+  // tentative de connexion (fermées sur cet appel précis d'openDeepgramSession,
+  // jamais partagées entre tentatives).
+  //   - hasOpened : cette session a-t-elle DÉJÀ ouvert avec succès ? Sépare
+  //     "échec de la PHASE DE CONNEXION" (géré ci-dessous par attemptSettled/
+  //     le compteur de tentatives) de "une session qui ÉTAIT active vient de
+  //     se rompre PLUS TARD" (qui doit reprendre tout le cycle de reconnexion
+  //     depuis le début via handleDeepgramDisconnect, pas avancer un
+  //     compteur de tentatives de connexion déjà soldé par le succès initial).
+  //   - attemptSettled : tant que hasOpened est encore false, une tentative
+  //     de reconnexion ne doit avancer le compteur qu'UNE SEULE fois, qu'elle
+  //     échoue via onError, onClose (les deux arrivent typiquement l'un après
+  //     l'autre pour le même incident) ou le filet de sécurité ci-dessous
+  //     (connexion qui ne s'ouvre ni n'échoue jamais). Sans lui, deux
+  //     progressions pour le même échec ouvriraient deux tentatives
+  //     suivantes en parallèle (course inoffensive mais inutile).
+  let hasOpened = false;
+  let attemptSettled = false;
+  // AJOUT : filet de sécurité pour une tentative de RECONNEXION qui reste
+  // bloquée sans jamais ouvrir NI échouer (TCP qui ne répond ni n'échoue,
+  // scénario réel de coupure réseau — pas juste un ECONNREFUSED immédiat).
+  // Seules les RECONNEXIONS en ont besoin : la connexion INITIALE, elle,
+  // n'a jamais eu ce filet (voir en-tête de fonction) — si elle reste
+  // bloquée indéfiniment, le pipeline WAV classique continue de fonctionner
+  // sans interruption pendant ce temps (aucune régression), alors qu'une
+  // tentative de RECONNEXION bloquée doit au contraire pouvoir céder la
+  // place à la tentative suivante pour que le compteur progresse jusqu'au
+  // repli définitif.
+  let connectTimeoutTimer = null;
+  if (reconnectAttempt) {
+    connectTimeoutTimer = setTimeout(() => {
+      if (attemptSettled) return;
+      attemptSettled = true;
+      console.warn(
+        `[audio-capture] ASR : tentative de reconnexion ${reconnectAttempt}/` +
+          `${DEEPGRAM_RECONNECT_MAX_ATTEMPTS} sans réponse après ` +
+          `${DEEPGRAM_RECONNECT_ATTEMPT_TIMEOUT_MS}ms — abandon de cette tentative.`
+      );
+      session.abort();
+      scheduleDeepgramReconnect(config, reconnectAttempt + 1);
+    }, DEEPGRAM_RECONNECT_ATTEMPT_TIMEOUT_MS);
+  }
 
   let session;
   try {
@@ -458,6 +694,18 @@ function startDeepgramStreamingSession(config) {
       {
         onOpen: () => {
           if (!STATE.isRecording || STATE.browserCaptureConfig !== config) return; // session obsolète (capture relancée entre-temps)
+          if (attemptSettled) return; // le filet de sécurité a déjà tranché (tentative suivante en cours) — trop tard
+          attemptSettled = true;
+          hasOpened = true;
+          if (connectTimeoutTimer) clearTimeout(connectTimeoutTimer);
+          if (reconnectAttempt) {
+            console.log(
+              `[audio-capture] ASR : reconnexion streaming Deepgram réussie (tentative ` +
+                `${reconnectAttempt}/${DEEPGRAM_RECONNECT_MAX_ATTEMPTS}).`
+            );
+            burstReconnectBufferToSession(session);
+            STATE.deepgramReconnecting = false;
+          }
           STATE.deepgramStreamingActive = true;
           console.log('[audio-capture] ASR : session streaming Deepgram ouverte.');
           console.log(
@@ -546,13 +794,26 @@ function startDeepgramStreamingSession(config) {
           // exactement le même risque que onFinal gérait déjà (voir son
           // garde `STATE.deepgramSession !== session`), qui manquait ici.
           if (STATE.deepgramSession !== session && STATE.deepgramSession !== null) return;
-          console.warn(
-            `[audio-capture] ASR : erreur streaming Deepgram (${err.message}) — repli sur le ` +
-              'pipeline segment/Groq pour le reste de la session.'
-          );
-          STATE.deepgramStreamingActive = false;
-          if (STATE.callbacks.onAsrFallback) {
-            STATE.callbacks.onAsrFallback({ reason: err.message });
+          if (hasOpened) {
+            // Une session qui ÉTAIT active vient de se rompre — plus un échec
+            // de la PHASE DE CONNEXION : redémarre tout le cycle de repli/
+            // reconnexion depuis le début (voir handleDeepgramDisconnect),
+            // pas un simple pas de plus dans le compteur de tentatives de
+            // CETTE connexion (déjà soldé par son succès initial ci-dessus).
+            handleDeepgramDisconnect(config, err.message);
+            return;
+          }
+          if (attemptSettled) return; // déjà tranché (filet de sécurité, ou 'close' arrivé en premier)
+          attemptSettled = true;
+          if (connectTimeoutTimer) clearTimeout(connectTimeoutTimer);
+          if (reconnectAttempt) {
+            console.warn(
+              `[audio-capture] ASR : tentative de reconnexion ${reconnectAttempt}/` +
+                `${DEEPGRAM_RECONNECT_MAX_ATTEMPTS} échouée (${err.message}).`
+            );
+            scheduleDeepgramReconnect(config, reconnectAttempt + 1);
+          } else {
+            handleDeepgramDisconnect(config, err.message);
           }
         },
         onClose: () => {
@@ -564,14 +825,21 @@ function startDeepgramStreamingSession(config) {
           // même raison) : une fermeture tardive d'une session remplacée ne
           // doit jamais affecter la session active courante.
           if (STATE.deepgramSession !== session && STATE.deepgramSession !== null) return;
-          if (STATE.deepgramStreamingActive) {
-            console.warn(
-              '[audio-capture] ASR : session streaming Deepgram fermée de façon inattendue — repli.'
-            );
+          if (hasOpened) {
+            handleDeepgramDisconnect(config, 'Connexion streaming fermée inopinément.');
+            return;
           }
-          STATE.deepgramStreamingActive = false;
-          if (STATE.callbacks.onAsrFallback) {
-            STATE.callbacks.onAsrFallback({ reason: 'Connexion streaming fermée inopinément.' });
+          if (attemptSettled) return; // déjà tranché (filet de sécurité, ou 'error' arrivé en premier)
+          attemptSettled = true;
+          if (connectTimeoutTimer) clearTimeout(connectTimeoutTimer);
+          if (reconnectAttempt) {
+            console.warn(
+              `[audio-capture] ASR : tentative de reconnexion ${reconnectAttempt}/` +
+                `${DEEPGRAM_RECONNECT_MAX_ATTEMPTS} fermée avant ouverture.`
+            );
+            scheduleDeepgramReconnect(config, reconnectAttempt + 1);
+          } else {
+            handleDeepgramDisconnect(config, 'Connexion streaming fermée inopinément.');
           }
         },
       },
@@ -582,6 +850,13 @@ function startDeepgramStreamingSession(config) {
     console.warn(
       `[audio-capture] ASR : impossible d'ouvrir la session Deepgram (${err.message}) — repli.`
     );
+    // AJOUT (Axe 3) : une tentative de RECONNEXION qui échoue dès la
+    // construction (cas rare — ex. configuration devenue invalide entre
+    // deux tentatives) compte comme un essai raté ordinaire, pas une raison
+    // d'abandonner immédiatement le reste des tentatives prévues.
+    if (reconnectAttempt) {
+      scheduleDeepgramReconnect(config, reconnectAttempt + 1);
+    }
     return;
   }
 
@@ -983,7 +1258,7 @@ function flushSegment(config, { early = false } = {}) {
  * "l'orateur s'est tu" dont on dispose : cette fonction l'utilise pour
  * décider QUAND finaliser, tout en gardant Deepgram comme unique source du
  * TEXTE transcrit (le dernier partial reçu, voir STATE.lastStreamingPartialText
- * mis à jour dans onPartial de startDeepgramStreamingSession).
+ * mis à jour dans onPartial de openDeepgramSession).
  *
  * Le flux WebSocket Deepgram N'EST JAMAIS fermé ni relancé ici — seule la
  * decision LOCALE de "cet énoncé est terminé" change ; si Deepgram finit
@@ -1067,6 +1342,14 @@ function handleAudioData(data, config) {
   // streaming est sain.
   if (STATE.deepgramStreamingActive && STATE.deepgramSession) {
     STATE.deepgramSession.sendAudio(data);
+  } else if (STATE.deepgramReconnecting) {
+    // AJOUT (Axe 3 — résilience streaming) : coupure en cours, une
+    // reconnexion automatique est tentée (voir handleDeepgramDisconnect) —
+    // ce PCM part dans le tampon de rattrapage borné, PAS dans
+    // STATE.audioBuffer (qui resterait sinon prêt à re-transcrire le MÊME
+    // audio une seconde fois via le pipeline WAV si la reconnexion aboutit
+    // et que ce tampon est envoyé en rafale à la place).
+    pushToReconnectBuffer(data, config);
   } else {
     STATE.audioBuffer.push(data);
   }
@@ -1270,7 +1553,7 @@ function stopRecording() {
   // AJOUT (Deepgram streaming) : ferme proprement la session (CloseStream +
   // close WebSocket, voir deepgram-streaming.js) plutôt que de la laisser
   // pendre — isRecording est déjà false ici, donc les handlers onError/
-  // onClose ci-dessus (startDeepgramStreamingSession) l'ont déjà repéré et
+  // onClose ci-dessus (openDeepgramSession) l'ont déjà repéré et
   // n'essaieront pas de déclencher un repli pour une session qu'on arrête
   // nous-mêmes volontairement.
   if (STATE.deepgramSession) {
@@ -1278,6 +1561,15 @@ function stopRecording() {
   }
   STATE.deepgramSession = null;
   STATE.deepgramStreamingActive = false;
+  // AJOUT (Axe 3 — résilience streaming) : un arrêt volontaire abandonne
+  // toute reconnexion en cours — les gardes STATE.isRecording dans
+  // scheduleDeepgramReconnect()/handleDeepgramDisconnect() empêchent déjà
+  // toute tentative en vol d'agir après ce point, mais le tampon lui-même
+  // doit être vidé ici : cet audio appartient à une capture qui n'existe
+  // plus, jamais à traîner vers la prochaine.
+  STATE.deepgramReconnecting = false;
+  STATE.deepgramReconnectBuffer = [];
+  STATE.deepgramReconnectBufferBytes = 0;
   STATE.utteranceTracker = null;
   STATE.lastLocallyFinalizedText = '';
   // AJOUT (A.1 — gain micro) : arrête l'émission continue des diagnostics
@@ -1385,6 +1677,11 @@ module.exports = {
   // AJOUT (Deepgram streaming) — diagnostic/tests.
   getAsrProvider: () => STATE.asrProvider,
   isDeepgramStreamingActive: () => STATE.deepgramStreamingActive,
+  // AJOUT (Axe 3 — résilience streaming) — diagnostic/tests : une
+  // reconnexion automatique est-elle en cours, et combien d'octets PCM le
+  // tampon de rattrapage contient-il actuellement.
+  isDeepgramReconnecting: () => STATE.deepgramReconnecting,
+  getDeepgramReconnectBufferedBytes: () => STATE.deepgramReconnectBufferBytes,
   // AJOUT (A.1 — gain micro, diagnostics temps réel) : expose l'état du
   // suivi de niveau audio pour le vumètre et le calibrage.
   getAudioDiagnostics: () => ({ ...STATE.audioDiagnostics }),
