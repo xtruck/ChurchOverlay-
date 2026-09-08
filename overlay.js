@@ -300,20 +300,47 @@ function renderVerseTextContent(el, text) {
 // précédentes.
 const MIN_VERSE_FONT_PX = 18;
 const VIEWPORT_MARGIN_PX = 120; // marge haut+bas pour rester lisible, pas collé aux bords
+// CORRECTIF (Axe 3 — affichage bilingue simultané + plages complexes) :
+// #verse-text-bilingual (voir showVerse()) a sa PROPRE taille CSS
+// (clamp(20px, 2.1vw, 30px), voir overlay.html), jamais touchée par cette
+// fonction jusqu'ici — seul #verse-text (le français) était réduit. Pour
+// une PLAGE de versets ("Jean 3:16 à 18") affichée en mode bilingue, le
+// texte anglais concaténé est tout aussi long que le français, et .verse-card
+// a `overflow: hidden` (voir overlay.html) : sans réduire aussi le bloc
+// bilingue, la carte pouvait continuer à déborder (silencieusement rognée,
+// jamais visible ni signalée) même une fois le français réduit à son
+// plancher — la fenêtre `while` s'arrêtait alors qu'il restait pourtant de
+// la marge à gagner sur le second bloc. Les deux blocs sont maintenant
+// réduits ENSEMBLE, chacun avec son propre plancher.
 function fitVerseCardToViewport() {
   const card = document.getElementById('verse-card');
   const verseTextEl = document.getElementById('verse-text');
+  const bilingualEl = document.getElementById('verse-text-bilingual');
   if (!card || !verseTextEl) return;
 
   verseTextEl.style.fontSize = '';
+  if (bilingualEl) bilingualEl.style.fontSize = '';
   const maxCardHeight = window.innerHeight - VIEWPORT_MARGIN_PX;
   if (maxCardHeight <= 0) return;
 
   let currentSize = parseFloat(getComputedStyle(verseTextEl).fontSize);
+  let bilingualSize = bilingualEl ? parseFloat(getComputedStyle(bilingualEl).fontSize) : null;
   let guard = 0;
-  while (card.scrollHeight > maxCardHeight && currentSize > MIN_VERSE_FONT_PX && guard < 30) {
-    currentSize -= 2;
-    verseTextEl.style.fontSize = `${currentSize}px`;
+  while (card.scrollHeight > maxCardHeight && guard < 30) {
+    let shrankSomething = false;
+    if (currentSize > MIN_VERSE_FONT_PX) {
+      currentSize -= 2;
+      verseTextEl.style.fontSize = `${currentSize}px`;
+      shrankSomething = true;
+    }
+    if (bilingualEl && bilingualSize !== null && bilingualSize > MIN_VERSE_FONT_PX) {
+      bilingualSize -= 2;
+      bilingualEl.style.fontSize = `${bilingualSize}px`;
+      shrankSomething = true;
+    }
+    // Les deux blocs (ou le seul présent) ont atteint leur plancher — rien
+    // de plus à réduire, inutile de continuer à tourner jusqu'à `guard`.
+    if (!shrankSomething) break;
     guard++;
   }
 }

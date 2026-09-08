@@ -132,5 +132,113 @@ check(
   })()
 );
 
+// ==========================================================================
+// AJOUT (Axe 3 — plages de versets complexes en langage naturel, ex.
+// "Jean 3:16 à 18" / "John 3:16 to 18") : le parsing de plage (verseStart/
+// verseEnd) existait DÉJÀ dans detector.js/detector-en.js (le groupe de
+// séparateur `(?:-|a|à|au)` en FR, `(?:-|to|through)` en EN), réutilisé TEL
+// QUEL ici via testAlias() — voir l'en-tête du fichier. Cette section
+// verrouille ce comportement au niveau du PASSAGE BILINGUE combiné
+// (detectBilingualExact), qui n'avait jusqu'ici aucune couverture de test
+// sur les plages, dans aucune des deux langues.
+// ==========================================================================
+console.log('\n--- Plages de versets complexes (Axe 3) ---');
+
+check(
+  'plage FR: "jean 3:16 à 18" → verseStart=16, verseEnd=18',
+  (() => {
+    const r = detectBilingualExact('jean 3:16 à 18');
+    return r && r.verseStart === 16 && r.verseEnd === 18 && r.lang === 'fr';
+  })()
+);
+check(
+  'plage FR: "à" et "-" équivalents ("jean 3:16-18")',
+  (() => {
+    const r = detectBilingualExact('jean 3:16-18');
+    return r && r.verseStart === 16 && r.verseEnd === 18;
+  })()
+);
+check(
+  'plage FR: forme longue "jean chapitre 3 verset 16 à 18"',
+  (() => {
+    const r = detectBilingualExact('jean chapitre 3 verset 16 à 18');
+    return r && r.chapter === 3 && r.verseStart === 16 && r.verseEnd === 18 && r.lang === 'fr';
+  })()
+);
+check(
+  'plage FR: séparateur "au" ("jean 3:16 au 18")',
+  (() => {
+    const r = detectBilingualExact('jean 3:16 au 18');
+    return r && r.verseStart === 16 && r.verseEnd === 18;
+  })()
+);
+
+check(
+  'plage EN: "john 3:16 to 18" → verseStart=16, verseEnd=18',
+  (() => {
+    const r = detectBilingualExact('john 3:16 to 18');
+    return r && r.verseStart === 16 && r.verseEnd === 18 && r.lang === 'en';
+  })()
+);
+check(
+  'plage EN: "-" équivalent ("john 3:16-18")',
+  (() => {
+    const r = detectBilingualExact('john 3:16-18');
+    return r && r.verseStart === 16 && r.verseEnd === 18;
+  })()
+);
+check(
+  'plage EN: forme longue "john chapter 3 verse 16 to 18"',
+  (() => {
+    const r = detectBilingualExact('john chapter 3 verse 16 to 18');
+    return r && r.chapter === 3 && r.verseStart === 16 && r.verseEnd === 18 && r.lang === 'en';
+  })()
+);
+check(
+  'plage EN: séparateur "through" ("john 3:16 through 18")',
+  (() => {
+    const r = detectBilingualExact('john 3:16 through 18');
+    return r && r.verseStart === 16 && r.verseEnd === 18;
+  })()
+);
+
+// --- Synchronisation FR/EN : la MÊME plage logique, dans les deux langues,
+// doit produire des verseStart/verseEnd IDENTIQUES (seuls book/lang/raw
+// diffèrent) — c'est cette égalité qui permet à server.js de récupérer
+// EXACTEMENT la même plage dans les deux traductions pour l'affichage
+// bilingue simultané (voir bible-lookup-with-api.js#getVerseMultilang, qui
+// transmet reference.verseStart/verseEnd tel quel aux deux langues).
+check(
+  'synchronisation FR/EN : même plage logique → mêmes verseStart/verseEnd',
+  (() => {
+    const fr = detectBilingualExact('jean 3:16 à 18');
+    const en = detectBilingualExact('john 3:16 to 18');
+    return (
+      fr &&
+      en &&
+      fr.book === en.book && // les deux résolvent vers le même livre interne ("jean")
+      fr.chapter === en.chapter &&
+      fr.verseStart === en.verseStart &&
+      fr.verseEnd === en.verseEnd
+    );
+  })()
+);
+
+// --- Un seul verset (pas de plage) : verseEnd retombe sur verseStart —
+// comportement de base sur lequel repose la synchronisation ci-dessus.
+check(
+  'verset unique (sans plage) : verseEnd === verseStart',
+  (() => {
+    const r = detectBilingualExact('jean 3:16');
+    return r && r.verseStart === 16 && r.verseEnd === 16;
+  })()
+);
+
+// --- Plage invalide (fin avant début) : rejetée, pas de résultat aberrant.
+check(
+  'plage invalide (fin < début) : rejetée (null)',
+  detectBilingualExact('jean 3:18 à 16') === null
+);
+
 console.log(`\n=== Résultat bilingual-matcher : ${passed}/${passed + failed} ===`);
 if (failed > 0) process.exit(1);
