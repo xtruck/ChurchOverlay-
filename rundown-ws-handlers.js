@@ -47,6 +47,11 @@ function createHandlers(ctx) {
     recordCueStart,
     clearCueTimeline,
     executeCue,
+    // AJOUT (Axe 3, phase 2 — hydratation dynamique du correcteur de
+    // transcription, voir transcription-corrector.js) : optionnelle
+    // (`?.`) — les tests unitaires de ce module n'ont pas à fournir un
+    // correcteur factice pour rester verts.
+    refreshDynamicCorrections,
   } = ctx;
 
   const handlers = new Map();
@@ -83,6 +88,7 @@ function createHandlers(ctx) {
       });
       setCurrentRundownIndex(-1);
       log(`Feuille de route : repère "${cue.label}" ajouté (${cue.type})`);
+      refreshDynamicCorrections?.();
       broadcast({
         action: 'rundownUpdated',
         cues: rundownStore.listCues(),
@@ -126,6 +132,7 @@ function createHandlers(ctx) {
     const removed = rundownStore.removeCue(sanitized.id);
     if (removed) {
       setCurrentRundownIndex(-1);
+      refreshDynamicCorrections?.();
       broadcast({
         action: 'rundownUpdated',
         cues: rundownStore.listCues(),
@@ -155,6 +162,7 @@ function createHandlers(ctx) {
     // add/remove/reorder ci-dessus qui le préservent délibérément (voir le
     // commentaire de cueTimeline dans server.js).
     clearCueTimeline();
+    refreshDynamicCorrections?.();
     log('Feuille de route : vidée');
     broadcast({ action: 'rundownUpdated', cues: [], activeIndex: -1, cueTimeline: {} });
   });

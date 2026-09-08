@@ -4,7 +4,16 @@
  * Couvre : corrections FR courantes, casse, stats, mode fast-only, groq manquant.
  */
 const assert = require('assert');
-const { TranscriptionCorrector, CORRECTIONS, correctFast } = require('../transcription-corrector');
+const {
+  TranscriptionCorrector,
+  CORRECTIONS,
+  correctFast,
+  // AJOUT (Axe 3, phase 2 — hydratation dynamique).
+  hydrateDynamicDictionary,
+  clearDynamicDictionary,
+  getDynamicDictionarySize,
+  correctDynamicFuzzy,
+} = require('../transcription-corrector');
 
 let passed = 0;
 let failed = 0;
@@ -152,6 +161,100 @@ async function runAsyncTests() {
   );
   check('erreur LLM: onError notifié', c7ErrorMessage === 'rate limited');
   check('erreur LLM: getStats().errors incrémenté', c7.getStats().errors === 1);
+
+  // ==========================================================================
+  // AJOUT (Axe 3, phase 2 — hydratation dynamique du correcteur) : simule un
+  // conducteur (rundown-store.js#listCues) avec un nom propre difficile
+  // ("Jean-Pierre") et un chant (song-library.js#getSong, forme COMPLÈTE
+  // avec sections) portant un mot-clé/une phrase déclencheuse rares, puis
+  // vérifie qu'une transcription bruitée est redressée — exactement le
+  // scénario demandé.
+  // ==========================================================================
+  console.log('\n--- Hydratation dynamique (Axe 3, phase 2) ---');
+
+  const fakeCues = [
+    { id: 'c1', type: 'media', label: 'Intro par Jean-Pierre Dupont', addedAt: '2026-01-01' },
+    {
+      id: 'c2',
+      type: 'verse',
+      label: 'Jean 3:16',
+      reference: 'Jean 3:16',
+      addedAt: '2026-01-01',
+    },
+  ];
+  const fakeSongs = [
+    {
+      id: 's1',
+      title: 'Grâce Infinie',
+      artist: '',
+      sections: [
+        {
+          type: 'verse',
+          label: 'Couplet 1',
+          text: 'Ta grâce infinie coule sur nous, ô Rédempteur magnifique',
+        },
+      ],
+      triggerPhrases: ['grace infinie'],
+    },
+  ];
+
+  const hydrateResult = hydrateDynamicDictionary(fakeCues, fakeSongs);
+  check('hydratation : retourne un compte de termes non nul', hydrateResult.termCount > 0);
+  check(
+    'hydratation : getDynamicDictionarySize() reflète le résultat',
+    getDynamicDictionarySize() === hydrateResult.termCount
+  );
+
+  check(
+    'nom propre du conducteur : "Jean Piere" (trait d\'union disparu) → "Jean-Pierre"',
+    correctDynamicFuzzy('bonjour a tous, Jean Piere va nous parler') ===
+      'bonjour a tous, Jean-Pierre va nous parler'
+  );
+  check(
+    'nom propre du conducteur : "Jan-Pierre" (voyelle déformée) → "Jean-Pierre"',
+    correctDynamicFuzzy('merci Jan-Pierre pour ce message') === 'merci Jean-Pierre pour ce message'
+  );
+  check(
+    'nom propre du conducteur : casse préservée (majuscule initiale)',
+    /Jean-Pierre/.test(correctDynamicFuzzy('Jean Piere est present'))
+  );
+  check(
+    'mot-clé de chant : phrase déclencheuse "grace infini" (accent manquant) → "grâce infinie"',
+    correctDynamicFuzzy('chantons ensemble grace infini pour tous') ===
+      'chantons ensemble grâce infinie pour tous'
+  );
+  check(
+    'mot rare des paroles : "redempteur" (accents manquants, correspondance ' +
+      'EXACTE une fois normalisé — pas juste floue) → "rédempteur" (casse ' +
+      "d'origine du transcript préservée, comme correctFast le fait déjà)",
+    correctDynamicFuzzy('merci pour le redempteur magnifique') ===
+      'merci pour le rédempteur magnifique'
+  );
+  check(
+    'texte neutre sans rapport : inchangé (pas de faux positif)',
+    correctDynamicFuzzy('il fait beau ce matin pour le culte') ===
+      'il fait beau ce matin pour le culte'
+  );
+
+  // --- Intégration bout-en-bout via TranscriptionCorrector.correct() ---
+  const c8 = new TranscriptionCorrector(null);
+  const r8 = await c8.correct('bonjour, Jean Piere va nous parler ce matin');
+  check(
+    'correct() bout-en-bout : nom propre dynamique redressé',
+    r8 === 'bonjour, Jean-Pierre va nous parler ce matin'
+  );
+  check(
+    'correct() bout-en-bout : dynamicCorrections incrémenté',
+    c8.getStats().dynamicCorrections === 1
+  );
+
+  // --- clearDynamicDictionary() : plus aucune correction dynamique après ---
+  clearDynamicDictionary();
+  check('clearDynamicDictionary() : taille ramenée à 0', getDynamicDictionarySize() === 0);
+  check(
+    'clearDynamicDictionary() : correctDynamicFuzzy() redevient un no-op',
+    correctDynamicFuzzy('Jean Piere va nous parler') === 'Jean Piere va nous parler'
+  );
 }
 
 runAsyncTests().then(() => {

@@ -24,7 +24,17 @@
  * @returns {Map<string, (ws: object, sanitized: object, requestId: string|null, sendError: (error: string) => void) => Promise<void>>}
  */
 function createHandlers(ctx) {
-  const { songLibrary, broadcast, log, broadcastSongSection } = ctx;
+  const {
+    songLibrary,
+    broadcast,
+    log,
+    broadcastSongSection,
+    // AJOUT (Axe 3, phase 2 — hydratation dynamique du correcteur de
+    // transcription, voir transcription-corrector.js) : optionnelle (`?.`)
+    // — les tests unitaires de ce module n'ont pas à fournir un correcteur
+    // factice pour rester verts.
+    refreshDynamicCorrections,
+  } = ctx;
 
   const handlers = new Map();
 
@@ -47,6 +57,7 @@ function createHandlers(ctx) {
         triggerPhrases: sanitized.triggerPhrases,
       });
       log(`Bibliothèque de chants : "${song.title}" ajouté (${song.sections.length} section(s))`);
+      refreshDynamicCorrections?.();
       broadcast(
         { action: 'songLibraryUpdated', songs: songLibrary.listSongs() },
         { operatorOnly: true }
@@ -59,6 +70,7 @@ function createHandlers(ctx) {
   handlers.set('deleteSong', async (ws, sanitized) => {
     const removed = songLibrary.deleteSong(sanitized.id);
     if (removed) {
+      refreshDynamicCorrections?.();
       broadcast(
         { action: 'songLibraryUpdated', songs: songLibrary.listSongs() },
         { operatorOnly: true }

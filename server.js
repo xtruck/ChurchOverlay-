@@ -298,6 +298,33 @@ wireAiModuleErrorBroadcast(corrector, 'corrector');
 wireAiModuleErrorBroadcast(semanticDetector, 'semanticDetector');
 wireAiModuleErrorBroadcast(themeGenerator, 'themeGenerator');
 
+// AJOUT (Axe 3, phase 2 — hydratation dynamique du correcteur de
+// transcription) : rassemble le conducteur ET le recueil de chants actuels
+// et les pousse dans transcription-corrector.js (voir son en-tête pour
+// l'algorithme d'extraction — noms propres des repères, mots-clés des
+// paroles). Appelée une première fois plus bas, dès que rundownStore/
+// songLibrary ont un userDataDir (voir leur setUserDataDir()), puis à
+// chaque fois que le conducteur ou le recueil de chants change (voir
+// ctx.refreshDynamicCorrections dans rundownWsHandlers/songWsHandlers plus
+// bas). `rundownStore`/`songLibrary` sont des function declarations require()
+// au tout début du fichier — sûres à référencer ici, cette fonction n'est
+// appelée qu'au runtime, bien après leur setUserDataDir() (même
+// raisonnement que `broadcast` ci-dessus). Jamais fatale : un échec ici ne
+// doit jamais interrompre le reste du serveur.
+function refreshDynamicCorrections() {
+  if (!corrector || typeof corrector.hydrateDynamicDictionary !== 'function') return;
+  try {
+    const cues = rundownStore.listCues();
+    const songs = songLibrary
+      .listSongs()
+      .map((s) => songLibrary.getSong(s.id))
+      .filter(Boolean);
+    corrector.hydrateDynamicDictionary(cues, songs);
+  } catch (err) {
+    warn("Échec de l'hydratation dynamique du correcteur : " + err.message);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // HTTP & WebSocket server
 // ---------------------------------------------------------------------------
@@ -935,6 +962,10 @@ const CATEGORY_HANDLERS = new Map([
     broadcast,
     log,
     broadcastSongSection,
+    // AJOUT (Axe 3, phase 2) : voir refreshDynamicCorrections() plus haut —
+    // un chant ajouté/supprimé doit être pris en compte par le correcteur
+    // sans attendre une modification du conducteur ou un redémarrage.
+    refreshDynamicCorrections,
   }),
   ...rundownWsHandlers.createHandlers({
     rundownStore,
@@ -952,6 +983,13 @@ const CATEGORY_HANDLERS = new Map([
       cueTimeline = new Map();
     },
     executeCue,
+    // AJOUT (Axe 3, phase 2 — hydratation dynamique) : voir
+    // refreshDynamicCorrections() plus haut. Appelée par les handlers qui
+    // changent le CONTENU du conducteur (add/remove/clear), pas par
+    // setRundownCueDuration (une durée n'affecte aucun terme du
+    // dictionnaire) ni triggerRundownCue/nextRundownCue/getRundown (aucune
+    // mutation).
+    refreshDynamicCorrections,
   }),
   ...cameraWsHandlers.createHandlers({
     ipCameraStore,
@@ -3193,6 +3231,14 @@ try {
 } catch (err) {
   warn('Failed to set song library dir: ' + err.message);
 }
+
+// AJOUT (Axe 3, phase 2 — hydratation dynamique) : première hydratation au
+// démarrage — rundownStore ET songLibrary ont maintenant tous deux un
+// userDataDir valide (voir les deux blocs juste au-dessus), donc un
+// conducteur/recueil de chants déjà préparé avant ce démarrage (persisté
+// d'un service précédent) est immédiatement pris en compte, pas seulement
+// après la première modification en direct.
+refreshDynamicCorrections();
 
 // ===========================================================================
 // Session store (persistance SQLite — voir session-store.js)
