@@ -55,7 +55,7 @@
     "@types/node": "^26.4.0",
     "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.68.0",
-    "@typescript-eslint/parser": "^8.66.0",
+    "@typescript-eslint/parser": "^8.69.0",
     "electron": "43.5.0",
     "electron-builder": "^26.15.7",
     "eslint": "^10.9.1",
