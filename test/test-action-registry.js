@@ -44,11 +44,22 @@ const ROOT = path.join(__dirname, '..');
 // donc le texte de tous les modules `*-ws-handlers.js` du dépôt en plus de
 // server.js, automatiquement (glob, pas une liste à maintenir à la main —
 // chaque future extraction de catégorie n'a donc rien à changer ici).
-const wsHandlerFiles = fs.readdirSync(ROOT).filter((f) => f.endsWith('-ws-handlers.js'));
+// CORRECTIF (Phase 3 — modularisation du bootstrap) : même raisonnement pour
+// `*-bootstrap.js` (http-bootstrap.js/worker-bootstrap.js) — l'extraction du
+// canal IPC worker (voir worker-bootstrap.js) a déplacé la SEULE occurrence
+// littérale de `msg.action` de server.js (dans handleHotkeyAction(msg.action),
+// le canal IPC parentPort<->main.js, sans rapport avec les actions client
+// WS vérifiées ici) et la diffusion `broadcast({action:'obsConnectionStatus',
+// ...})` — cassant le repli heuristique ci-dessous pour toutes les actions
+// ne correspondant à aucun des deux premiers motifs, ainsi que la
+// vérification SERVER_ACTIONS un peu plus bas.
+const extractedModuleFiles = fs
+  .readdirSync(ROOT)
+  .filter((f) => f.endsWith('-ws-handlers.js') || f.endsWith('-bootstrap.js'));
 const serverSrc =
   fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8') +
   '\n' +
-  wsHandlerFiles.map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
+  extractedModuleFiles.map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
 const overlaySrc = fs.readFileSync(path.join(ROOT, 'overlay.js'), 'utf8');
 
 // ---------------------------------------------------------------------------

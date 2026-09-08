@@ -301,9 +301,6 @@ wireAiModuleErrorBroadcast(themeGenerator, 'themeGenerator');
 // ---------------------------------------------------------------------------
 // HTTP & WebSocket server
 // ---------------------------------------------------------------------------
-const express = require('express');
-const compression = require('compression');
-const http = require('http');
 const WebSocket = require('ws');
 const { createRateLimiter } = require('./rate-limiter');
 
@@ -414,27 +411,15 @@ const connRateLimiter = createRateLimiter({
   maxMessagesPerMinute: MAX_MESSAGES_PER_MINUTE,
 });
 
-const app = express();
-// AJOUT (audit perf) : dashboard.html/dashboard.js (~230 Ko à eux deux)
-// étaient servis non compressés. Coût quasi nul en localhost (127.0.0.1 par
-// défaut), mais réel dès qu'un second poste rejoint via WS_HOST distant
-// (voir config-validator.js) — gzip/brotli sur toutes les réponses HTTP.
-app.use(compression());
-app.use(express.static(APP_ROOT));
-// AJOUT (médiathèque) : overlay.html et dashboard.html sont chargés en
-// file:// (voir main.js) — cette route leur donne une URL http:// stable
-// pour les fichiers copiés dans <userData>/media/ par media-library.js,
-// sur le même principe pont que /api/verses pour les données JSON.
-app.use('/media', express.static(path.join(USER_DATA_DIR, 'media')));
-// AJOUT (habillage caméra — logo) : même pont que /media ci-dessus, pour le
-// logo copié dans <userData>/branding/ par branding-store.js.
-app.use('/branding', express.static(path.join(USER_DATA_DIR, 'branding')));
-// AJOUT (identité de marque du tableau de bord — revente en produit
-// "clé en main") : même pont, pour le logo copié dans
-// <userData>/dashboard-branding/ par dashboard-branding-store.js. Route
-// distincte de /branding ci-dessus — deux domaines sans recouvrement, voir
-// l'en-tête de dashboard-branding-store.js.
-app.use('/dashboard-branding', express.static(path.join(USER_DATA_DIR, 'dashboard-branding')));
+// AJOUT (Phase 3 — modularisation du bootstrap) : création de l'app
+// Express + du serveur HTTP brut extraite vers http-bootstrap.js — voir son
+// en-tête pour ce qui reste volontairement ici (wss, gestion d'erreur
+// d'écoute liée à parentPort).
+const httpBootstrap = require('./http-bootstrap');
+const { app, httpServer } = httpBootstrap.createHttpServer({
+  appRoot: APP_ROOT,
+  userDataDir: USER_DATA_DIR,
+});
 
 // SECURITY: origin validation middleware for non-localhost binds
 const ALLOWED_ORIGINS = new Set([
@@ -463,7 +448,6 @@ phoneCameraRoutes.registerRoutes({
   SERVER_PORT,
 });
 
-const httpServer = http.createServer(app);
 // SECURITY: auth tokens travel via the Sec-WebSocket-Protocol handshake
 // header instead of the ?token= query string. Query strings routinely end
 // up in reverse-proxy / CDN access logs, browser process lists, and referer
@@ -488,27 +472,30 @@ const wss = new WebSocket.Server({
   },
 });
 
-httpServer.listen(SERVER_PORT, WS_HOST, () => {
-  console.log(`[server] Serveur HTTP & WebSocket démarré sur http://${WS_HOST}:${SERVER_PORT}`);
-});
-
-httpServer.on('error', (err) => {
-  const reason =
-    err && err.code === 'EADDRINUSE'
-      ? `Le port ${SERVER_PORT} est déjà utilisé par une autre application.`
-      : `Erreur du serveur HTTP/WebSocket: ${err && err.message}`;
-  console.error('[server] ' + reason);
-  if (parentPort) {
-    parentPort.postMessage({
-      type: 'alert',
-      code: 'server-listen-error',
-      severity: 'error',
-      message: reason,
-      timestamp: Date.now(),
-    });
-  }
-  process.exitCode = 1;
-  process.exit(1);
+httpBootstrap.startListening(httpServer, {
+  port: SERVER_PORT,
+  host: WS_HOST,
+  onReady: () => {
+    console.log(`[server] Serveur HTTP & WebSocket démarré sur http://${WS_HOST}:${SERVER_PORT}`);
+  },
+  onError: (err) => {
+    const reason =
+      err && err.code === 'EADDRINUSE'
+        ? `Le port ${SERVER_PORT} est déjà utilisé par une autre application.`
+        : `Erreur du serveur HTTP/WebSocket: ${err && err.message}`;
+    console.error('[server] ' + reason);
+    if (parentPort) {
+      parentPort.postMessage({
+        type: 'alert',
+        code: 'server-listen-error',
+        severity: 'error',
+        message: reason,
+        timestamp: Date.now(),
+      });
+    }
+    process.exitCode = 1;
+    process.exit(1);
+  },
 });
 
 // ---------------------------------------------------------------------------
@@ -1226,18 +1213,22 @@ function enqueueTranscript(text, tracker, opts) {
  * ============================================================================
  * CHANTIER 3 (précision) — Fallback d'affichage du CHAPITRE pour référence
  * partielle (« Jean 14 » sans verset). Règle mission : « jamais une mauvaise
- * référence ; une référence partielle → afficher le verset exact OU le
- * CHAPITRE, jamais un verset faux ». Quand l'ASR ne livre que livre+chapitre
- * (le numéro de verset a été tronqué/perdu — observé sur corpus G1/G2/F2/D7/
- * K5/N2/B1, « Jean 14 » au lieu de « Jean 14.6 »), l'ancien comportement
- * diffusait une candidateVerse et attendait un complément qui n'arrive
- * SOUVENT JAMAIS : rien ne s'affichait jamais. On planifie désormais un
- * timer : si aucun verset exact de ce livre:chapitre n'est affiché dans le
- * délai, on affiche le CHAPITRE ENTIER (getVerseMultilang sans verseStart
- * renvoie tout le chapitre) — correct par construction, jamais un verset
- * faux. Le timer est réarmé à chaque fragment chapitre-seul du même
- * livre:chapitre (le dernier fragment gagne), et ANNULÉ dès qu'un verset
- * exact du livre:chapitre est affiché par le chemin normal.
+ * référence ; une référence partielle → afficher un point de départ correct
+ * du bon chapitre, jamais un verset faux ». Quand l'ASR ne livre que
+ * livre+chapitre (le numéro de verset a été tronqué/perdu — observé sur
+ * corpus G1/G2/F2/D7/K5/N2/B1, « Jean 14 » au lieu de « Jean 14.6 »),
+ * l'ancien comportement diffusait une candidateVerse et attendait un
+ * complément qui n'arrive SOUVENT JAMAIS : rien ne s'affichait jamais. On
+ * planifie désormais un timer : si aucun verset exact de ce livre:chapitre
+ * n'est affiché dans le délai, on affiche le VERSET 1 de ce chapitre
+ * (CORRECTIF — demande explicite : afficher le chapitre entier était
+ * correct par construction mais illisible en direct projeté à l'assemblée ;
+ * le verset 1 reste un point de départ correct du bon chapitre, jamais une
+ * référence fausse, voir displayChapterFallback ci-dessous). Le timer est
+ * réarmé à chaque fragment chapitre-seul du même livre:chapitre (le dernier
+ * fragment gagne), et ANNULÉ dès qu'un verset exact du livre:chapitre est
+ * affiché par le chemin normal — qui remplace alors le verset 1 affiché par
+ * la référence réellement entendue, sans action de l'opérateur.
  * ============================================================================
  */
 // AJOUT (Chantier A.5 — mission autonome, arbitrage couverture/latence
@@ -1309,8 +1300,23 @@ async function displayChapterFallback(book, chapter, tracker, opts) {
   sessionState.recordShownReference(refKey, now, dedupCtx);
   let verse;
   try {
+    // CORRECTIF (demande explicite — chapitre entier illisible en direct) :
+    // affichait auparavant TOUT le chapitre (getVerseMultilang sans
+    // verseStart, voir helloaoParseVerse) — correct par construction
+    // ("jamais un verset faux", voir le commentaire du Chantier 3
+    // ci-dessus) mais un pavé de texte illisible projeté à l'assemblée.
+    // Repli sur le verset 1 : un point de départ lisible, cohérent avec la
+    // référence "livre chapitre" réellement entendue (le verset 1 fait
+    // partie du bon chapitre — jamais une référence fausse), et remplacé
+    // AUTOMATIQUEMENT dès qu'un verset exact est détecté (le timer de ce
+    // repli est déjà annulé par cancelChapterFallback() dans ce cas, et le
+    // chemin d'affichage normal diffuse alors la bonne référence — voir
+    // processTranscript). La saisie manuelle d'un chapitre seul via
+    // "Afficher un Verset" (opérateur qui tape "Jean 3" exprès pour une
+    // lecture complète) N'EST PAS concernée : chemin distinct, voir le
+    // commentaire « règle absolue » plus bas dans processTranscript.
     verse = await bibleLookup.getVerseMultilang(
-      { book, chapter },
+      { book, chapter, verseStart: 1, verseEnd: 1 },
       sessionState.getDisplayLanguage()
     );
   } catch (err) {
@@ -3070,82 +3076,25 @@ function startPipeline() {
 // ===========================================================================
 // Worker IPC
 // ===========================================================================
-if (parentPort) {
-  parentPort.on('message', (msg) => {
-    if (!msg || typeof msg !== 'object') return;
-
-    if (msg.type === 'shutdown') {
-      log('Shutdown requested by main process');
-      audioCapture.stopRecording();
-      stopAmbientMoodLoop();
-      wss.clients.forEach((ws) => ws.close());
-      wss.close();
-      connRateLimiter.stopCleanup();
-      sessionStore.close();
-      closeChurchAgent();
-      if (parentPort) parentPort.postMessage({ type: 'status', status: 'stopped' });
-      const finish = () => process.exit(0);
-      if (plugins) {
-        plugins
-          .shutdown()
-          .catch(() => {})
-          .finally(finish);
-        setTimeout(finish, 2000).unref?.();
-      } else {
-        finish();
-      }
-      return;
-    }
-
-    if (msg.type === 'theme-changed') {
-      broadcast({ action: 'applyTheme', ...msg.css });
-      return;
-    }
-
-    if (msg.type === 'obs-gate-changed') {
-      sessionState.setObsGate(msg.open, msg.reason || '');
-      log(`OBS gate: ${msg.open ? 'OPEN' : 'CLOSED'} (${sessionState.getObsGate().reason})`);
-      return;
-    }
-
-    // AJOUT (Partie 3.1 — reconnexion automatique) : une coupure OBS en
-    // plein culte ne doit jamais être silencieuse — diffusée telle quelle
-    // au dashboard (voir action-registry.js, dashboard/ws-dispatch.js).
-    if (msg.type === 'obs-connection-status') {
-      log(`OBS connexion : ${msg.status} (${msg.reason || ''})`);
-      broadcast({ action: 'obsConnectionStatus', status: msg.status, reason: msg.reason || '' });
-      return;
-    }
-
-    if (msg.type === 'audio-pcm-chunk') {
-      audioCapture.feedPcmChunk(Buffer.from(msg.buffer));
-      return;
-    }
-
-    if (msg.type === 'hotkey-action') {
-      handleHotkeyAction(msg.action);
-      return;
-    }
-  });
-
-  parentPort.postMessage({ type: 'status', status: 'running' });
-
-  // AJOUT (mémoire — polish) : perf-monitor.js (main.js) n'échantillonnait
-  // que le process principal Electron — le pipeline audio/ASR/Bible réel
-  // tourne ici, dans ce worker, resté invisible côté dashboard sur un
-  // culte de plusieurs heures. Même cadence que main.js (PERF_PUSH_MS =
-  // 2000ms) pour rester cohérent avec l'échantillon déjà affiché.
-  const workerMemTimer = setInterval(() => {
-    const mem = process.memoryUsage();
-    parentPort.postMessage({
-      type: 'worker-mem',
-      rssMB: Math.round((mem.rss / 1024 / 1024) * 10) / 10,
-      heapUsedMB: Math.round((mem.heapUsed / 1024 / 1024) * 10) / 10,
-      externalMB: Math.round((mem.external / 1024 / 1024) * 10) / 10,
-    });
-  }, 2000);
-  workerMemTimer.unref();
-}
+// AJOUT (Phase 3 — modularisation du bootstrap) : extrait vers
+// worker-bootstrap.js — voir son en-tête. Sans effet si parentPort est
+// absent (dev/test hors worker_thread), comportement identique à l'ancien
+// `if (parentPort) { ... }` inline.
+const workerBootstrap = require('./worker-bootstrap');
+workerBootstrap.wireWorkerIpc({
+  parentPort,
+  audioCapture,
+  stopAmbientMoodLoop,
+  wss,
+  connRateLimiter,
+  sessionStore,
+  closeChurchAgent,
+  plugins,
+  broadcast,
+  sessionState,
+  handleHotkeyAction,
+  log,
+});
 
 // ===========================================================================
 // Bible lookup cache directory

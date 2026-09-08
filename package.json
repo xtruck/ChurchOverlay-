@@ -145,6 +145,8 @@
       "server.js",
       "phone-camera-routes.js",
       "http-routes.js",
+      "http-bootstrap.js",
+      "worker-bootstrap.js",
       "media-ws-handlers.js",
       "scene-ws-handlers.js",
       "song-ws-handlers.js",
