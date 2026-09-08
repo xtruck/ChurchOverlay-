@@ -47,6 +47,11 @@ import { showToast } from './utils.js';
 // s'évalue (importé EN DERNIER) — cette arête ne peut donc pas déplacer
 // son ordre d'évaluation, qui a déjà eu lieu.
 import { triggerMediaLibraryItem } from './features/media-library.js';
+// Même raisonnement pour openSceneComposer : plus republiée sur `window`
+// (privée à scene-studio.js, câblée au délégateur pour la galerie de
+// scènes) — import direct. scene-studio.js est déjà chargée via
+// ws-dispatch.js avant que ce fichier ne s'évalue (importé EN DERNIER).
+import { openSceneComposer } from './features/scene-studio.js';
 
 /**
  * Table déclarative id d'élément -> écouteur de clic, dans l'ordre du
@@ -319,7 +324,7 @@ const CLICK_BINDINGS = {
   testTriggerPhraseBtn: () => window.testTriggerPhrase(),
 
   // --- Studio de scènes ---
-  openSceneComposerBtn: () => window.openSceneComposer(null),
+  openSceneComposerBtn: () => openSceneComposer(null),
   importPptxSlidesBtn: () => window.importPptxSlides(),
   hideSceneNowBtn: () => window.hideSceneNow(),
   closeSceneComposerBtn: () => window.closeSceneComposer(),

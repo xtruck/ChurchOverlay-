@@ -22,6 +22,7 @@ import { ws, getHttpOrigin } from '../state.js';
 import { showToast, escapeHtmlDashboard } from '../utils.js';
 import { updatePosterCardSceneItems } from './poster-principal-card.js';
 import { getMediaLibraryItems } from './media-library.js';
+import { registerAction } from '../action-delegator.js';
 
 let sceneStudioItems = [];
 
@@ -208,7 +209,7 @@ function renderComposerElementsList() {
             </select>
             <select onchange="updateComposerElementField('${el.id}','position',this.value)">${posOptions}</select>
             <input type="number" min="1" max="100" value="${el.widthPct}" title="Largeur (% du cadre)" oninput="updateComposerElementField('${el.id}','widthPct',Number(this.value))" style="width: 70px">
-            <button class="queue-icon-btn queue-remove" onclick="removeComposerElement('${el.id}')" title="Supprimer cet élément">✕</button>
+            <button class="queue-icon-btn queue-remove" data-action="remove" data-target="scene-composer-element" data-id="${el.id}" title="Supprimer cet élément">✕</button>
           </div>`;
       }
 
@@ -231,7 +232,7 @@ function renderComposerElementsList() {
             <option value="center" ${el.align === 'center' ? 'selected' : ''}>Centre</option>
             <option value="right" ${el.align === 'right' ? 'selected' : ''}>Droite</option>
           </select>
-          <button class="queue-icon-btn queue-remove" onclick="removeComposerElement('${el.id}')" title="Supprimer cet élément">✕</button>
+          <button class="queue-icon-btn queue-remove" data-action="remove" data-target="scene-composer-element" data-id="${el.id}" title="Supprimer cet élément">✕</button>
         </div>`;
     })
     .join('');
@@ -440,11 +441,11 @@ export function renderSceneStudioGallery(scenes) {
                         <div class="media-item-phrases">${phrasesBadges || '<span class="media-item-phrase-badge">Déclenchement manuel uniquement</span>'}</div>
                     </div>
                     <div class="media-gallery-actions">
-                        <button class="btn btn-primary" onclick="triggerSceneStudioItem('${scene.id}')" title="Afficher maintenant sur l'overlay">▶ Afficher</button>
-                        <button class="queue-icon-btn" onclick="openSceneComposer('${scene.id}')" title="Modifier cette scène">✏</button>
-                        <button class="queue-icon-btn" onclick="toggleDefaultScene('${scene.id}', ${scene.isDefault ? 'true' : 'false'})" title="${scene.isDefault ? 'Retirer le statut de poster principal' : 'Définir comme poster principal (affiché quand rien d’autre n’est à l’écran)'}">${scene.isDefault ? '⭐' : '☆'}</button>
-                        <button class="queue-icon-btn" onclick="addToRundown('scene', '${scene.id}', '${escapeHtmlDashboard(scene.name).replace(/'/g, "\\'")}')" title="Ajouter à la feuille de route">➕</button>
-                        <button class="queue-icon-btn queue-remove" onclick="deleteSceneStudioItem('${scene.id}')" title="Supprimer">✕</button>
+                        <button class="btn btn-primary" data-action="trigger" data-target="scene" data-id="${scene.id}" title="Afficher maintenant sur l'overlay">▶ Afficher</button>
+                        <button class="queue-icon-btn" data-action="edit" data-target="scene" data-id="${scene.id}" title="Modifier cette scène">✏</button>
+                        <button class="queue-icon-btn" data-action="toggle-default" data-target="scene" data-id="${scene.id}" data-is-default="${scene.isDefault ? 'true' : 'false'}" title="${scene.isDefault ? 'Retirer le statut de poster principal' : 'Définir comme poster principal (affiché quand rien d’autre n’est à l’écran)'}">${scene.isDefault ? '⭐' : '☆'}</button>
+                        <button class="queue-icon-btn" data-action="add-to-rundown" data-target="scene" data-id="${scene.id}" data-label="${escapeHtmlDashboard(scene.name)}" title="Ajouter à la feuille de route">➕</button>
+                        <button class="queue-icon-btn queue-remove" data-action="delete" data-target="scene" data-id="${scene.id}" title="Supprimer">✕</button>
                     </div>
                 </div>
             `;
@@ -471,21 +472,31 @@ export function renderSceneStudioGallery(scenes) {
   }
 }
 
-window.triggerSceneStudioItem = triggerSceneStudioItem;
-window.deleteSceneStudioItem = deleteSceneStudioItem;
 window.hideSceneNow = hideSceneNow;
 window.importPptxSlides = importPptxSlides;
-window.toggleDefaultScene = toggleDefaultScene;
 // AJOUT (studio de scènes, lot 6/6 — composeur) : onclick/onchange/oninput
 // inline dans le HTML généré ci-dessus (dashboard.html et les rangées
 // d'éléments construites par renderComposerElementsList()) — même
 // discipline que les exports ci-dessus, qui suivent déjà ce pattern.
-window.openSceneComposer = openSceneComposer;
 window.closeSceneComposer = closeSceneComposer;
 window.saveComposerScene = saveComposerScene;
 window.addComposerElement = addComposerElement;
-window.removeComposerElement = removeComposerElement;
 window.updateComposerElementField = updateComposerElementField;
 window.onComposerBgTypeChange = onComposerBgTypeChange;
 window.onComposerBgMediaChange = onComposerBgMediaChange;
 window.onComposerBgColorChange = onComposerBgColorChange;
+
+// triggerSceneStudioItem, deleteSceneStudioItem, toggleDefaultScene,
+// openSceneComposer et removeComposerElement n'ont plus besoin de window —
+// voir registerAction ci-dessous, elles n'étaient exposées que pour les
+// onclick inline désormais remplacés par la délégation data-action.
+registerAction('scene', 'trigger', (el, data) => triggerSceneStudioItem(data.id));
+registerAction('scene', 'edit', (el, data) => openSceneComposer(data.id));
+registerAction('scene', 'toggle-default', (el, data) =>
+  toggleDefaultScene(data.id, data.isDefault === 'true')
+);
+registerAction('scene', 'add-to-rundown', (el, data) => {
+  if (window.addToRundown) window.addToRundown('scene', data.id, data.label);
+});
+registerAction('scene', 'delete', (el, data) => deleteSceneStudioItem(data.id));
+registerAction('scene-composer-element', 'remove', (el, data) => removeComposerElement(data.id));
