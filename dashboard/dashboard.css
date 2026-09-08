@@ -5271,15 +5271,26 @@ body {
    juste après la barre d'outils compacte (écoute/mode confiance/
    recherche), les panneaux de gestion plus volumineux redescendent après.
 
-   !important nécessaire : dashboard/state.js#switchSection (partagé par
+   !important nécessaire : dashboard/state.js#showSectionsFor (partagé par
    TOUS les onglets) pose `section.style.display = 'block'` en style
    INLINE à chaque activation d'onglet — un style inline gagne toujours
    sur une règle de feuille de style, quelle que soit sa spécificité, donc
    sans !important cette règle ne s'appliquerait jamais. Ciblé sur
    #overview UNIQUEMENT : les autres onglets ne sont pas touchés,
-   switchSection() reste inchangé et continue de fonctionner pour eux
-   exactement comme avant. */
-#overview {
+   showSectionsFor() reste inchangé et continue de fonctionner pour eux
+   exactement comme avant.
+
+   CORRECTIF (conflit de visibilité — #overview restait visible après un
+   changement d'onglet) : `:not(.is-hidden)` ajouté ci-dessous. Sans lui, ce
+   `!important` gagnait aussi contre le `style.display = 'none'` inline que
+   showSectionsFor() pose sur la section désactivée (un `!important` gagne
+   TOUJOURS contre un style inline, indépendamment de l'ordre d'écriture) —
+   #overview ne pouvait donc jamais être masquée. `.is-hidden` étant posée
+   par exactement le même appel qui pose `style.display = 'none'`, les deux
+   restent synchrones : ce sélecteur ne s'applique plus dès que la section
+   est désactivée, laissant l'inline `display: none` (ou la classe
+   `.section.is-hidden`) reprendre la main. */
+#overview:not(.is-hidden) {
   display: flex !important;
   flex-direction: column;
 }
