@@ -1059,6 +1059,7 @@ const CATEGORY_HANDLERS = new Map([
     sessionState,
     sermonArchive,
     sermonQa,
+    sessionStartedAt: SESSION_STARTED_AT,
     sanitizeForPrompt,
     log,
     warn,

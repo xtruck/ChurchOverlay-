@@ -35,6 +35,8 @@
  * @param {object} ctx.sessionState
  * @param {object} ctx.sermonArchive
  * @param {object} ctx.sermonQa
+ * @param {number} ctx.sessionStartedAt - SESSION_STARTED_AT (voir sermonQaQuery/sermonQaSummary,
+ *   qui l'utilisent pour inclure la transcription du culte en cours — sermon-qa.js)
  * @param {(text: string) => string} ctx.sanitizeForPrompt
  * @param {(msg: string) => void} ctx.log
  * @param {(msg: string) => void} ctx.warn
@@ -52,6 +54,7 @@ function createHandlers(ctx) {
     sessionState,
     sermonArchive,
     sermonQa,
+    sessionStartedAt,
     sanitizeForPrompt,
     log,
     warn,
@@ -184,11 +187,16 @@ function createHandlers(ctx) {
   });
 
   // --- Assistant Q&R sur les prédications (cahier des charges — Point 5,
-  // voir sermon-qa.js pour le garde-fou "jamais de réponse sans source") ---
-  handlers.set('askSermonQuestion', async (ws, sanitized) => {
+  // voir sermon-qa.js pour le garde-fou "jamais de réponse sans source").
+  // AJOUT (durcissement Sermon Q&A) : recherche désormais AUSSI la
+  // transcription du culte en cours (sessionStartedAt -> transcript_segments,
+  // voir sermon-qa.js#buildLiveEntry), pas seulement les prédications
+  // archivées. askSermonQuestion et sermonQaQuery partagent EXACTEMENT ce
+  // même handler (voir action-registry.js pour pourquoi les deux existent). --
+  const sermonQaQueryHandler = async (ws, sanitized) => {
     try {
       const safeQuestion = sanitizeForPrompt(sanitized.question || '');
-      const result = await sermonQa.askQuestion(safeQuestion);
+      const result = await sermonQa.askQuestion(safeQuestion, { sessionStartedAt });
       ws.send(
         JSON.stringify({
           action: 'sermonQuestionAnswered',
@@ -198,6 +206,23 @@ function createHandlers(ctx) {
       );
     } catch (err) {
       ws.send(JSON.stringify({ action: 'error', error: 'Assistant sermons : ' + err.message }));
+    }
+  };
+  handlers.set('askSermonQuestion', sermonQaQueryHandler);
+  handlers.set('sermonQaQuery', sermonQaQueryHandler);
+
+  // --- Résumé du culte en cours, à partir de transcript_segments (AJOUT —
+  // durcissement Sermon Q&A) : DISTINCT de getLiveSummary ci-dessus (fenêtre
+  // glissante de 10 fragments en mémoire) — voir sermon-qa.js#summarizeCurrentService
+  // pour la différence exacte et le fenêtrage dynamique. ---
+  handlers.set('sermonQaSummary', async (ws) => {
+    try {
+      const result = await sermonQa.summarizeCurrentService({ sessionStartedAt });
+      ws.send(JSON.stringify({ action: 'sermonQaSummaryResult', ...result }));
+    } catch (err) {
+      ws.send(
+        JSON.stringify({ action: 'error', error: 'Résumé du culte en cours : ' + err.message })
+      );
     }
   });
 

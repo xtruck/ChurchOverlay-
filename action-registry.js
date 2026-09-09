@@ -206,6 +206,23 @@ const CLIENT_ACTIONS = {
     category: 'ai',
     description: 'Question Q&A sur les sermons',
   },
+  // AJOUT (durcissement Sermon Q&A) : nom canonique désormais recommandé
+  // pour la même capacité qu'askSermonQuestion ci-dessus (question + culte
+  // en cours + résilience Ollama/Groq, voir sermon-qa.js) — askSermonQuestion
+  // reste enregistrée et fonctionnelle (compatibilité descendante avec le
+  // dashboard existant, dashboard/features/preservice-ai.js), les deux
+  // actions partagent EXACTEMENT le même handler (voir
+  // ai-assistant-ws-handlers.js).
+  sermonQaQuery: {
+    operatorOnly: true,
+    category: 'ai',
+    description: 'Question Q&A sur les sermons (archivés + culte en cours)',
+  },
+  sermonQaSummary: {
+    operatorOnly: true,
+    category: 'ai',
+    description: 'Résumé du culte en cours (transcript_segments, fenêtré dynamiquement)',
+  },
   preServiceCheck: { operatorOnly: true, category: 'ai', description: 'Vérification pré-culte' },
 
   // Médiathèque

@@ -189,6 +189,7 @@
       "levenshtein.js",
       "reading-mode.js",
       "groq-wrapper.js",
+      "ollama-wrapper.js",
       "deepgram-wrapper.js",
       "deepgram-streaming.js",
       "asr-engine.js",

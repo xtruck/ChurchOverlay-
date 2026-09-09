@@ -943,6 +943,22 @@ const SCHEMAS = {
         typeof value === 'string' && value.trim().length > 0 && value.length <= 2000,
     },
   },
+  // AJOUT (durcissement Sermon Q&A) : nom canonique — même schéma
+  // qu'askSermonQuestion ci-dessus (voir action-registry.js).
+  sermonQaQuery: {
+    required: ['action', 'question'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'sermonQaQuery',
+      question: (value) =>
+        typeof value === 'string' && value.trim().length > 0 && value.length <= 2000,
+    },
+  },
+  sermonQaSummary: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'sermonQaSummary' },
+  },
   preServiceCheck: {
     required: ['action'],
     optional: [],
