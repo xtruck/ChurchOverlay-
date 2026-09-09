@@ -26,6 +26,8 @@
  * @param {object} ctx.detector
  * @param {object} ctx.readingMode
  * @param {object|null} ctx.themeGenerator - peut être null (module IA optionnel absent)
+ * @param {object} ctx.themeLoader - thème de secours garanti ("Mission Control",
+ *   voir theme-loader.js) utilisé par generateTheme quand la génération IA échoue
  * @param {object|null} ctx.aiEnricher - peut être null (module IA optionnel absent)
  * @param {(text: string) => string} ctx.sanitizeForPrompt
  * @param {(obj: object) => void} ctx.broadcast
@@ -44,6 +46,7 @@ function createHandlers(ctx) {
     detector,
     readingMode,
     themeGenerator,
+    themeLoader,
     aiEnricher,
     sanitizeForPrompt,
     broadcast,
@@ -170,6 +173,65 @@ function createHandlers(ctx) {
     const theme = themeGenerator.getTheme(mood);
     broadcast({ action: 'applyTheme', ...themeGenerator.themeToCss(theme) });
     ws.send(JSON.stringify({ action: 'themeApplied', mood, themeName: theme.name }));
+  });
+
+  // --- Prompt-to-Theme (AJOUT — chantier "Prompt-to-Theme") : habillage sur
+  // mesure à partir d'une description libre de l'opérateur. FALLBACK GARANTI
+  // (cahier des charges, Point 2) : que la génération réussisse ou échoue
+  // (IA désactivée, timeout 5s, JSON invalide/structure invalide — voir
+  // ai-theme-generator.js#generateThemeFromPrompt/isValidGeneratedTheme), un
+  // thème COMPLET et VALIDE est TOUJOURS diffusé — soit le thème généré,
+  // soit "Mission Control" (theme-loader.js#DEFAULT_THEME_ID), jamais un
+  // rendu à moitié appliqué ou une absence de réponse. N'affecte jamais le
+  // flux principal showVerse (action séparée, déclenchée explicitement par
+  // l'opérateur — pas dans le chemin chaud verset détecté -> affichage, qui
+  // a son propre déclenchement fire-and-forget, voir processTranscript dans
+  // server.js).
+  handlers.set('generateTheme', async (ws, sanitized) => {
+    const description = sanitizeForPrompt(sanitized.description || '');
+    let generated = null;
+    try {
+      if (themeGenerator) {
+        generated = await themeGenerator.generateFromPrompt(description);
+      }
+    } catch (err) {
+      log('generateTheme: erreur inattendue — ' + err.message);
+    }
+
+    if (generated) {
+      broadcast({ action: 'applyTheme', ...themeGenerator.themeToCss(generated) });
+      ws.send(
+        JSON.stringify({
+          action: 'themeGenerated',
+          ok: true,
+          usedFallback: false,
+          themeName: generated.name,
+        })
+      );
+      log(`Prompt-to-Theme : "${generated.name}" généré depuis "${description.slice(0, 60)}"`);
+      return;
+    }
+
+    // Thème de secours garanti — voir le commentaire du handler ci-dessus.
+    let fallbackThemeName = 'Mission Control';
+    try {
+      const missionControl = themeLoader.loadTheme('mission-control');
+      fallbackThemeName = missionControl.name || fallbackThemeName;
+      broadcast({ action: 'applyTheme', ...themeLoader.themeToCss(missionControl) });
+    } catch (err) {
+      log('generateTheme: repli Mission Control introuvable — ' + err.message);
+    }
+    ws.send(
+      JSON.stringify({
+        action: 'themeGenerated',
+        ok: true,
+        usedFallback: true,
+        themeName: fallbackThemeName,
+      })
+    );
+    log(
+      `Prompt-to-Theme : génération échouée pour "${description.slice(0, 60)}" — repli Mission Control`
+    );
   });
 
   // --- AI Live Translation (with prompt sanitization) ---

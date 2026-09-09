@@ -1366,6 +1366,30 @@
                   Diagonales
                 </button>
               </div>
+              <!-- AJOUT (chantier "Prompt-to-Theme") : habillage sur mesure
+                           généré par IA depuis une description libre — voir
+                           ai-theme-generator.js#generateThemeFromPrompt côté
+                           serveur. Repli garanti sur "Mission Control" en cas
+                           d'échec/timeout, jamais un rendu à moitié appliqué. -->
+              <div class="mood-picker-row mt-tight">
+                <input
+                  type="text"
+                  id="themePromptInput"
+                  class="input-flex-220"
+                  placeholder="Ex. Culte de Pâques lumineux, Soirée de louange sombre &amp; moderne..."
+                  maxlength="500"
+                  onkeydown="if (event.key === 'Enter') generateThemeFromPromptUI();"
+                  aria-label="Description du thème à générer"
+                />
+                <button
+                  class="btn btn-secondary chip-sm"
+                  id="generateThemeBtn"
+                  onclick="generateThemeFromPromptUI()"
+                >
+                  ✨ Générer
+                </button>
+              </div>
+              <div id="themeGenerationStatus" class="field-hint mt-tight"></div>
             </div>
 
             <div class="card">

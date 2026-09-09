@@ -15,7 +15,73 @@
 
 'use strict';
 
-const { extractResponseText } = require('./llm-utils');
+const { extractResponseText, extractJsonObject } = require('./llm-utils');
+
+// AJOUT (chantier "Prompt-to-Theme") : au-delà de ce délai, la génération
+// est considérée en échec et le thème par défaut ("Mission Control", voir
+// le handler generateTheme dans reading-translation-ws-handlers.js) est
+// appliqué à la place — jamais d'attente indéfinie pour l'opérateur.
+const PROMPT_TO_THEME_TIMEOUT_MS = 5000;
+
+// Mêmes valeurs que le champ "animationStyle" déjà documenté dans le prompt
+// de generateAITheme() ci-dessous — utilisées ICI pour REJETER une réponse
+// LLM qui inventerait une valeur hors de cette liste (garde-fou structurel,
+// pas seulement une consigne de prompt que le modèle pourrait ignorer).
+const VALID_ANIMATION_STYLES = new Set([
+  'fade-in-up',
+  'gentle-fade',
+  'solemn-fade',
+  'heart-fade',
+  'rise-up',
+  'bloom',
+  'spirit-wind',
+]);
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
+const RGBA_COLOR_RE = /^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*(0|1|0?\.\d+)\s*)?\)$/;
+const GRADIENT_RE = /^(linear|radial)-gradient\(/i;
+// Même discipline de bornage que validation.js#SCHEMAS.applyTheme (déjà en
+// place pour la variante "css brut" de cette action) — un champ généré par
+// le LLM ne doit pas non plus pouvoir dépasser une longueur raisonnable.
+const MAX_THEME_FIELD_LENGTH = 300;
+
+/**
+ * AJOUT (chantier "Prompt-to-Theme", durcissement — validation structurelle
+ * IMPÉRATIVE, pas une confiance aveugle dans le JSON renvoyé par le LLM).
+ * Vérifie que CHAQUE champ attendu est présent, du bon type, et d'un format
+ * plausible pour son usage CSS réel (couleur hex, rgba(), dégradé...). Toute
+ * réponse qui échoue UN SEUL de ces contrôles est rejetée dans son
+ * ENSEMBLE — un thème "à moitié halluciné" (ex. accentColor="joli mauve")
+ * n'est jamais appliqué partiellement, l'appelant retombe alors sur le
+ * thème de secours garanti (voir generateThemeFromPrompt()/generateTheme
+ * WS handler).
+ * @param {*} theme
+ * @returns {boolean}
+ */
+function isValidGeneratedTheme(theme) {
+  if (!theme || typeof theme !== 'object' || Array.isArray(theme)) return false;
+
+  const stringFields = {
+    name: (v) => v.trim().length > 0,
+    backgroundGradient: (v) => GRADIENT_RE.test(v.trim()),
+    textColor: (v) => HEX_COLOR_RE.test(v.trim()),
+    accentColor: (v) => HEX_COLOR_RE.test(v.trim()),
+    fontFamily: (v) => v.trim().length > 0,
+    animationStyle: (v) => VALID_ANIMATION_STYLES.has(v.trim()),
+    particleColor: (v) => HEX_COLOR_RE.test(v.trim()),
+    glowColor: (v) => RGBA_COLOR_RE.test(v.trim()),
+    borderColor: (v) => RGBA_COLOR_RE.test(v.trim()),
+    shadowColor: (v) => RGBA_COLOR_RE.test(v.trim()),
+  };
+
+  for (const [field, isValidValue] of Object.entries(stringFields)) {
+    const value = theme[field];
+    if (typeof value !== 'string' || value.length === 0 || value.length > MAX_THEME_FIELD_LENGTH) {
+      return false;
+    }
+    if (!isValidValue(value)) return false;
+  }
+  return true;
+}
 
 // -----------------------------------------------------------------------
 // Predefined mood-based themes (rule-based, works offline)
@@ -533,6 +599,89 @@ Rules:
 }
 
 // -----------------------------------------------------------------------
+// AJOUT (chantier "Prompt-to-Theme") : génération sur mesure à partir d'une
+// DESCRIPTION LIBRE saisie par l'opérateur ("Culte de Pâques lumineux",
+// "Soirée de louange sombre & moderne"...) — DISTINCT de generateAITheme()
+// ci-dessus, qui réagit au CONTENU d'un verset/sermon détecté automatique-
+// ment. Ici, c'est l'opérateur qui décrit l'ambiance voulue explicitement.
+// -----------------------------------------------------------------------
+
+/**
+ * @param {string} description - description libre de l'opérateur
+ * @param {object} groqWrapper - voir generateAITheme() ci-dessus
+ * @param {(message: string) => void} [onError]
+ * @returns {Promise<object|null>} thème validé (source:'ai'), ou null si
+ *   indisponible/timeout/JSON invalide/structure invalide — JAMAIS une
+ *   exception : l'appelant applique alors son thème de secours garanti.
+ */
+async function generateThemeFromPrompt(description, groqWrapper, onError) {
+  if (!groqWrapper) return null;
+  const trimmed = (description || '').trim();
+  if (!trimmed) return null;
+
+  try {
+    const prompt = `Génère un habillage visuel (thème CSS) pour un overlay de versets bibliques projeté à l'église, à partir de cette description libre donnée par un opérateur : "${trimmed}"
+
+Réponds UNIQUEMENT avec un objet JSON valide, structuré EXACTEMENT ainsi (aucun champ manquant, aucun texte autour) :
+{
+  "name": "Nom du thème en français",
+  "backgroundGradient": "dégradé CSS complet, ex. linear-gradient(135deg, #111 0%, #222 100%)",
+  "textColor": "#hex",
+  "accentColor": "#hex",
+  "fontFamily": "pile de polices CSS, ex. \\"Playfair Display\\", Georgia, serif",
+  "animationStyle": "fade-in-up|gentle-fade|solemn-fade|heart-fade|rise-up|bloom|spirit-wind",
+  "particleColor": "#hex",
+  "glowColor": "rgba(r, g, b, a)",
+  "borderColor": "rgba(r, g, b, a)",
+  "shadowColor": "rgba(r, g, b, a)"
+}
+
+Règles :
+- Contraste texte/fond conforme WCAG AA (le texte doit rester lisible à distance, projeté)
+- Le dégradé de fond doit rester sobre et élégant, cohérent avec la description
+- L'opacité (a) des couleurs rgba() doit rester entre 0.1 et 0.6
+- Police sérif pour un ton traditionnel/solennel, sans-serif pour un ton moderne`;
+
+    const response = await groqWrapper.chatCompletion(prompt, {
+      model: 'openai/gpt-oss-20b',
+      temperature: 0.4,
+      max_tokens: 350,
+      timeoutMs: PROMPT_TO_THEME_TIMEOUT_MS,
+    });
+
+    const text = extractResponseText(response);
+    // DURCISSEMENT : extractJsonObject() (llm-utils.js) remplace le simple
+    // `text.match(/\{[\s\S]*\}/)` de generateAITheme() ci-dessus — gère
+    // aussi les blocs ```json``` et choisit le premier JSON syntaxiquement
+    // valide plutôt qu'un match regex naïf qui peut capturer un JSON
+    // invalide si le modèle ajoute du texte avant/après (voir llm-utils.js).
+    const theme = extractJsonObject(text);
+
+    // GARDE-FOU STRUCTUREL (voir isValidGeneratedTheme ci-dessus) : un JSON
+    // syntaxiquement valide mais dont les valeurs sont hallucinées/hors
+    // format (couleur non-hex, animationStyle inventé...) est REJETÉ dans
+    // son ensemble, jamais appliqué partiellement.
+    if (!isValidGeneratedTheme(theme)) {
+      return null;
+    }
+
+    theme.name = theme.name.trim().slice(0, MAX_THEME_FIELD_LENGTH);
+    theme.source = 'ai';
+    return theme;
+  } catch (err) {
+    console.warn('[theme-generator] Prompt-to-theme generation failed:', err.message);
+    if (typeof onError === 'function') {
+      try {
+        onError(err.message);
+      } catch (_) {
+        /* observateur best-effort, ne doit jamais faire échouer la génération */
+      }
+    }
+    return null;
+  }
+}
+
+// -----------------------------------------------------------------------
 // Main Theme Generator Class
 // -----------------------------------------------------------------------
 class AIThemeGenerator {
@@ -576,6 +725,26 @@ class AIThemeGenerator {
     const theme = MOOD_THEMES[mood] || MOOD_THEMES.default;
     theme.source = 'rule';
     return theme;
+  }
+
+  /**
+   * AJOUT (chantier "Prompt-to-Theme") : génère un thème sur mesure à partir
+   * d'une description libre de l'opérateur (voir generateThemeFromPrompt()
+   * ci-dessus pour le détail — validation structurelle, timeout 5s).
+   * @param {string} description
+   * @returns {Promise<object|null>} thème validé, ou null (jamais
+   *   d'exception) si l'IA est désactivée/indisponible/timeout/JSON invalide
+   *   — l'appelant (voir generateTheme dans
+   *   reading-translation-ws-handlers.js) applique alors le thème de secours
+   *   garanti ("Mission Control").
+   */
+  async generateFromPrompt(description) {
+    if (!this.aiEnabled) return null;
+    return generateThemeFromPrompt(description, this.groq, (message) => {
+      this.errorCount++;
+      this.lastError = { message, at: Date.now() };
+      if (typeof this.onError === 'function') this.onError(message);
+    });
   }
 
   /**
@@ -638,4 +807,12 @@ class AIThemeGenerator {
   }
 }
 
-module.exports = { AIThemeGenerator, MOOD_THEMES, detectMood };
+module.exports = {
+  AIThemeGenerator,
+  MOOD_THEMES,
+  detectMood,
+  // Exposées pour tests unitaires (test-ai-theme-generator.js).
+  generateThemeFromPrompt,
+  isValidGeneratedTheme,
+  PROMPT_TO_THEME_TIMEOUT_MS,
+};

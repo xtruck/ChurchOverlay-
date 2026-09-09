@@ -23,7 +23,11 @@ import {
   formatReferenceLabel,
   updateDashboard,
 } from './features/verse-session-display.js';
-import { renderMoodPicker, setActiveMoodButton } from './features/mood-theme.js';
+import {
+  renderMoodPicker,
+  setActiveMoodButton,
+  renderThemeGenerated,
+} from './features/mood-theme.js';
 import { renderSongLibrary } from './features/song-library.js';
 import { renderOfflineBibleStatus } from './features/offline-bible.js';
 import {
@@ -457,6 +461,20 @@ export function handleMessage(message) {
       setActiveMoodButton(message.mood);
       addActivity(`Ambiance changée : ${message.themeName || message.mood}`, 'info');
       showToast(`Ambiance : ${message.themeName || message.mood}`, 'success');
+      break;
+    // AJOUT (chantier "Prompt-to-Theme") : réponse à l'action 'generateTheme'
+    // — le thème (généré ou de secours) a déjà été diffusé séparément via
+    // 'applyTheme' (cas ci-dessus dans ce même switch), ce message ne sert
+    // qu'à donner un retour explicite à l'opérateur sur CE QUI a été
+    // appliqué.
+    case 'themeGenerated':
+      renderThemeGenerated(message);
+      addActivity(
+        message.usedFallback
+          ? `Thème IA indisponible — repli : ${message.themeName}`
+          : `Thème généré : ${message.themeName}`,
+        message.usedFallback ? 'warning' : 'info'
+      );
       break;
     // AJOUT (transparence détection IA) : diffusé par server.js juste avant
     // le 'showVerse' correspondant quand c'est le détecteur sémantique

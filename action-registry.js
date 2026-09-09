@@ -109,6 +109,14 @@ const CLIENT_ACTIONS = {
   // Thème & affichage
   applyTheme: { operatorOnly: true, category: 'theme', description: 'Appliquer un thème CSS' },
   setMoodTheme: { operatorOnly: true, category: 'theme', description: "Thème d'ambiance IA" },
+  // AJOUT (chantier "Prompt-to-Theme") : habillage sur mesure généré depuis
+  // une description libre — voir ai-theme-generator.js#generateThemeFromPrompt
+  // et le handler dans reading-translation-ws-handlers.js.
+  generateTheme: {
+    operatorOnly: true,
+    category: 'theme',
+    description: 'Générer un thème sur mesure (Prompt-to-Theme)',
+  },
   setHighContrast: {
     operatorOnly: true,
     category: 'accessibility',

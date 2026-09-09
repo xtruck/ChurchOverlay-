@@ -1030,6 +1030,7 @@ const CATEGORY_HANDLERS = new Map([
     detector,
     readingMode,
     themeGenerator,
+    themeLoader,
     aiEnricher,
     sanitizeForPrompt,
     broadcast,

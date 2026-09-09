@@ -640,6 +640,20 @@ const SCHEMAS = {
       mood: (value) => typeof value === 'string' && value.length > 0 && value.length <= 50,
     },
   },
+  // AJOUT (chantier "Prompt-to-Theme") : description libre envoyée au LLM —
+  // même borne de longueur que askSermonQuestion/getCrossReferences pour un
+  // texte interpolé dans un prompt (sanitizeForPrompt() en aval, voir
+  // reading-translation-ws-handlers.js#generateTheme, la borne ici n'est
+  // qu'une première limite de taille, pas la défense contre l'injection).
+  generateTheme: {
+    required: ['action', 'description'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'generateTheme',
+      description: (value) =>
+        typeof value === 'string' && value.trim().length > 0 && value.length <= 500,
+    },
+  },
   translateText: {
     required: ['action', 'text'],
     optional: ['targetLang', 'autoBroadcast', 'reference'],
