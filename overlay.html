@@ -125,6 +125,13 @@
      .verse-card/.verse-text/.verse-reference ci-dessous, pour un rendu
      identique tant qu'aucun thème n'a encore poussé ses propres valeurs. */
         --overlay-verse-size: clamp(28px, 3.2vw, 46px);
+        /* CORRECTIF (chantier optimisation — affichage bilingue FR/EN équilibré) :
+     la ligne anglaise (King James) était calée sur une taille absolue sans
+     rapport avec le verset français, ce qui la rendait minuscule à côté du
+     texte principal sur grand écran. On la dérive maintenant de la taille
+     du verset FR (0.88×) : proche sans dominer, et suit tout changement de
+     thème qui modifie --overlay-verse-size. */
+        --overlay-verse-bilingual-size: calc(var(--overlay-verse-size) * 0.88);
         --overlay-verse-weight: 500;
         --overlay-radius: 18px;
         --overlay-blur: 14px;
@@ -166,9 +173,26 @@
         box-sizing: border-box;
       }
 
-      body {
+      /* CORRECTIF (chantier optimisation overlay — rendu plein écran OBS Browser
+   Source) : OBS rend la page dans une fenêtre off-screen dont la taille est
+   celle de la source. On verrouille html + body sur 100vw/100vh en
+   position: fixed pour qu'aucune marge implicite, barre de défilement ou
+   dépassement d'un enfant décoratif ne décale le cadrage. overflow: hidden
+   sur les deux : le conteneur du verset est volontairement ancré en bas
+   (voir #overlay-container) et ne doit jamais introduire de scroll. */
+      html {
         width: 100vw;
         height: 100vh;
+        overflow: hidden;
+      }
+
+      body {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        max-width: 100vw;
+        max-height: 100vh;
         overflow: hidden;
         background: transparent;
         font-family: var(--overlay-font);
@@ -267,6 +291,12 @@
         padding: clamp(24px, 3vw, 40px) clamp(28px, 4vw, 52px);
         border-radius: var(--overlay-radius);
         border: 1px solid var(--overlay-border);
+        /* Layout Flexbox réactif : référence / verset FR / verset EN empilés
+     avec un espacement fluide, sans marges fixes qui débordaient la carte
+     sur les longues plages FR+EN (voir CORRECTIF clip bilingue). */
+        display: flex;
+        flex-direction: column;
+        gap: clamp(10px, 1.4vw, 18px);
         box-shadow:
           0 0 46px var(--overlay-glow),
           0 14px 54px var(--overlay-shadow),
@@ -303,7 +333,7 @@
         color: var(--overlay-reference-color);
         text-transform: uppercase;
         letter-spacing: 2.5px;
-        margin-bottom: clamp(10px, 1.4vw, 18px);
+        /* Espacement géré par le `gap` flex de .verse-card (voir plus haut). */
         display: flex;
         align-items: center;
         gap: 12px;
@@ -321,9 +351,10 @@
 
       .verse-text-bilingual {
         font-family: var(--overlay-font);
-        font-size: clamp(20px, 2.1vw, 30px);
+        /* Calée sur 0.88× le verset FR (voir --overlay-verse-bilingual-size) :
+     équilibrée avec le texte français au lieu d'une taille minime figée. */
+        font-size: var(--overlay-verse-bilingual-size);
         line-height: 1.4;
-        margin-top: clamp(12px, 1.6vw, 20px);
         padding-top: clamp(12px, 1.6vw, 20px);
         border-top: 1px solid var(--overlay-border);
         /* CORRECTIF (audit — texte anglais bleuté, pas blanc comme le français) :
@@ -603,7 +634,8 @@
           font-size: 18px;
         }
         .verse-text-bilingual {
-          font-size: 15px;
+          /* Garde le ratio ~0.88 du verset FR sur petit écran aussi. */
+          font-size: 16px;
         }
         .verse-card {
           padding: 20px 24px;
