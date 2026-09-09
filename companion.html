@@ -52,6 +52,11 @@
         --text-muted: #a5a9bc;
         --accent: #f5a15a;
         --border: rgba(255, 255, 255, 0.08);
+        /* AJOUT (chantier "Diffusion des sous-titres en direct par QR code") :
+     taille de police ajustable — multiplicateur appliqué au verset ET aux
+     sous-titres (voir .verse-text/.caption-text plus bas), persisté en
+     localStorage (voir le script). 1 = taille d'origine. */
+        --font-scale: 1;
       }
       * {
         box-sizing: border-box;
@@ -106,7 +111,7 @@
         margin-bottom: 8px;
       }
       .verse-text {
-        font-size: 1.15rem;
+        font-size: calc(1.15rem * var(--font-scale));
         line-height: 1.5;
       }
       .verse-time {
@@ -225,7 +230,7 @@
         margin-bottom: 6px;
       }
       #captionBar .caption-text {
-        font-size: 1rem;
+        font-size: calc(1rem * var(--font-scale));
         line-height: 1.4;
         color: var(--text);
       }
@@ -233,10 +238,46 @@
         margin-top: 8px;
         padding-top: 8px;
         border-top: 1px solid var(--border);
-        font-size: 1rem;
+        font-size: calc(1rem * var(--font-scale));
         line-height: 1.4;
         color: var(--text-muted);
         font-style: italic;
+      }
+      /* AJOUT (chantier "Diffusion des sous-titres en direct par QR code") :
+   contrôles taille de police + langue affichée — barre d'outils discrète,
+   sans-serif comme le reste du "chrome" de la page (voir la note produit
+   plus haut sur le partage serif-corps / sans-chrome). */
+      #controlsBar {
+        max-width: 560px;
+        margin: 0 auto 16px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        font-family: system-ui, sans-serif;
+      }
+      .control-group {
+        display: flex;
+        gap: 4px;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 3px;
+      }
+      .control-btn {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        font-family: inherit;
+        padding: 5px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .control-btn.active {
+        color: var(--bg);
+        background: var(--accent);
       }
     </style>
   </head>
@@ -245,6 +286,19 @@
       <h1>Versets de ce culte</h1>
       <p>Se met à jour automatiquement — rien à faire</p>
     </header>
+
+    <div id="controlsBar">
+      <div class="control-group" role="group" aria-label="Taille du texte">
+        <button type="button" class="control-btn" id="fontSmallerBtn" aria-label="Texte plus petit">A−</button>
+        <button type="button" class="control-btn" id="fontResetBtn" aria-label="Taille normale">A</button>
+        <button type="button" class="control-btn" id="fontBiggerBtn" aria-label="Texte plus grand">A+</button>
+      </div>
+      <div class="control-group" id="captionLangSelector" role="group" aria-label="Langue des sous-titres" style="display: none">
+        <button type="button" class="control-btn active" id="langOriginalBtn" data-lang-mode="original">Originale</button>
+        <button type="button" class="control-btn" id="langTranslationBtn" data-lang-mode="translation">Traduction</button>
+        <button type="button" class="control-btn" id="langBilingualBtn" data-lang-mode="bilingual">Bilingue</button>
+      </div>
+    </div>
 
     <div id="captionBar">
       <div class="caption-label">Sous-titres en direct</div>
@@ -410,32 +464,133 @@
         }
       }
 
+      /* AJOUT (chantier "Diffusion des sous-titres en direct par QR code") :
+   taille de police ajustable, persistée par appareil (localStorage) —
+   s'applique au verset ET aux sous-titres via --font-scale (voir CSS). */
+      const FONT_SCALE_KEY = 'churchoverlay_font_scale';
+      const FONT_SCALE_MIN = 0.8;
+      const FONT_SCALE_MAX = 1.7;
+      const FONT_SCALE_STEP = 0.15;
+
+      function applyFontScale(scale) {
+        const clamped = Math.min(FONT_SCALE_MAX, Math.max(FONT_SCALE_MIN, scale));
+        document.documentElement.style.setProperty('--font-scale', String(clamped));
+        try {
+          localStorage.setItem(FONT_SCALE_KEY, String(clamped));
+        } catch (e) {
+          /* stockage indisponible (navigation privée) : le réglage ne survivra pas au rechargement, sans conséquence sur la lecture actuelle */
+        }
+      }
+
+      (function initFontScale() {
+        let saved = 1;
+        try {
+          saved = parseFloat(localStorage.getItem(FONT_SCALE_KEY)) || 1;
+        } catch (e) {
+          saved = 1;
+        }
+        applyFontScale(saved);
+      })();
+
+      document.getElementById('fontSmallerBtn').addEventListener('click', () => {
+        applyFontScale(parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--font-scale')) - FONT_SCALE_STEP);
+      });
+      document.getElementById('fontBiggerBtn').addEventListener('click', () => {
+        applyFontScale(parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--font-scale')) + FONT_SCALE_STEP);
+      });
+      document.getElementById('fontResetBtn').addEventListener('click', () => applyFontScale(1));
+
+      /* AJOUT (chantier "Diffusion des sous-titres en direct par QR code") :
+   sélecteur de langue pour les sous-titres — "Langue originale" (le
+   transcript brut) / "Traduction" (dans la langue UNIQUE configurée côté
+   opérateur, voir sessionState.getCaptionTargetLang()) / "Bilingue" (les
+   deux). PAS de choix "FR" et "EN" séparés et simultanés : caption-
+   translator.js ne traduit QUE vers UNE langue cible à la fois, par
+   segment (voir son garde-fou de throttle/quota partagé en en-tête) —
+   traduire vers plusieurs langues à chaque segment multiplierait les
+   appels LLM par autant de langues proposées, contraire à ce garde-fou.
+   Persisté par appareil (localStorage), comme la taille de police. */
+      const CAPTION_LANG_MODE_KEY = 'churchoverlay_caption_lang_mode';
+      let captionLangMode = 'original';
+      try {
+        captionLangMode = localStorage.getItem(CAPTION_LANG_MODE_KEY) || 'original';
+      } catch (e) {
+        captionLangMode = 'original';
+      }
+
+      function setCaptionLangMode(mode) {
+        captionLangMode = mode;
+        try {
+          localStorage.setItem(CAPTION_LANG_MODE_KEY, mode);
+        } catch (e) {
+          /* pas grave — le choix ne survivra pas au rechargement */
+        }
+        document.querySelectorAll('#captionLangSelector .control-btn').forEach((btn) => {
+          btn.classList.toggle('active', btn.dataset.langMode === mode);
+        });
+        renderCaptionBar(lastCaptionData);
+      }
+
+      document.querySelectorAll('#captionLangSelector .control-btn').forEach((btn) => {
+        btn.addEventListener('click', () => setCaptionLangMode(btn.dataset.langMode));
+      });
+
       /* AJOUT (chantier 4.4 — sous-titres en direct) : sondage séparé de
    /api/verses ci-dessus (fréquence différente possible plus tard,
    préoccupations distinctes) — même tolérance aux pannes (silencieuse,
-   la page reste utilisable même si cet appel échoue). */
+   la page reste utilisable même si cet appel échoue). Intervalle plus
+   court que POLL_MS (voir CAPTION_POLL_MS ci-dessous) : un sous-titre
+   qui traîne 4s de retard se remarque bien plus qu'un nouveau verset
+   projeté par ailleurs déjà en salle. */
+      const CAPTION_POLL_MS = 1500;
       let lastCaptionTimestamp = null;
+      let lastCaptionData = null;
+
+      function renderCaptionBar(data) {
+        const bar = document.getElementById('captionBar');
+        const langSelector = document.getElementById('captionLangSelector');
+        if (!data || !data.enabled || !data.text) {
+          bar.classList.remove('visible');
+          langSelector.style.display = 'none';
+          return;
+        }
+        bar.classList.add('visible');
+        // Le sélecteur de langue n'a de sens que si une traduction existe
+        // réellement pour ce culte — pas affiché sinon (rien à choisir).
+        langSelector.style.display = data.translationEnabled ? 'flex' : 'none';
+
+        const textEl = document.getElementById('captionText');
+        const translationEl = document.getElementById('captionTranslation');
+        const hasTranslation = data.translationEnabled && !!data.translation;
+        const mode = hasTranslation ? captionLangMode : 'original';
+
+        if (mode === 'translation') {
+          textEl.textContent = data.translation;
+          translationEl.style.display = 'none';
+        } else if (mode === 'bilingual') {
+          textEl.textContent = data.text;
+          translationEl.textContent = data.translation;
+          translationEl.style.display = 'block';
+        } else {
+          textEl.textContent = data.text;
+          translationEl.style.display = 'none';
+        }
+      }
+
       async function pollCaptions() {
         try {
           const res = await fetch('/api/captions', { cache: 'no-store' });
           if (!res.ok) throw new Error('HTTP ' + res.status);
           const data = await res.json();
-          const bar = document.getElementById('captionBar');
           if (!data.enabled || !data.text) {
-            bar.classList.remove('visible');
+            lastCaptionData = data;
+            renderCaptionBar(data);
             return;
           }
-          bar.classList.add('visible');
           if (data.timestamp !== lastCaptionTimestamp) {
             lastCaptionTimestamp = data.timestamp;
-            document.getElementById('captionText').textContent = data.text;
-            const translationEl = document.getElementById('captionTranslation');
-            if (data.translationEnabled && data.translation) {
-              translationEl.textContent = data.translation;
-              translationEl.style.display = 'block';
-            } else {
-              translationEl.style.display = 'none';
-            }
+            lastCaptionData = data;
+            renderCaptionBar(data);
           }
         } catch (err) {
           /* silencieux — le statut de connexion est déjà géré par poll() ci-dessus */
@@ -465,7 +620,7 @@
       poll();
       setInterval(poll, POLL_MS);
       pollCaptions();
-      setInterval(pollCaptions, POLL_MS);
+      setInterval(pollCaptions, CAPTION_POLL_MS);
     </script>
   </body>
 </html>

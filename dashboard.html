@@ -3466,8 +3466,25 @@ Aucune exécution agent.</pre>
                 >
                   Copier
                 </button>
+                <!-- AJOUT (chantier "Diffusion des sous-titres en direct par QR
+                             code") : QR image générée par le serveur (network-utils.js +
+                             lib `qrcode`) plutôt que "copiez le lien dans un générateur
+                             externe" — voir live-subtitles-ws-handlers.js#getCompanionQr. -->
+                <button
+                  id="generateCompanionQrBtn"
+                  class="btn btn-secondary stat-btn-sm badge-ml8"
+                  onclick="generateCompanionQr()"
+                >
+                  📱 Générer le QR
+                </button>
               </span>
             </div>
+            <div id="companionQrStatus" class="field-hint mt-tight"></div>
+            <img
+              id="companionQrImage"
+              alt="QR code d'accès à la page compagnon"
+              style="display: none; max-width: 200px; margin-top: 8px"
+            />
             <!-- AJOUT (intégration MCP — jeton opérateur introuvable pour le
                          process MCP séparé, source du spam "jeton invalide" dans les
                          journaux WS) : mcp/church-ws-client.js a besoin de WS_AUTH_TOKEN

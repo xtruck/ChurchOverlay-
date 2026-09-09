@@ -345,26 +345,12 @@ const SERVER_PORT = portValidation.valid ? portValidation.parsedValue : 8765;
 const hostValidation = configValidator.validateEnvVar('WS_HOST', process.env.WS_HOST);
 let WS_HOST = hostValidation.valid ? hostValidation.parsedValue : '127.0.0.1';
 
-// CORRECTIF (audit — bug réel trouvé par `npm run lint`, no-undef) :
-// generateCameraPairing (voir plus bas) appelait getLanIpAddress() sans
-// qu'elle soit jamais définie dans ce fichier — ReferenceError garanti dès
-// qu'un opérateur génère un QR de jumelage caméra téléphone avec WS_HOST
-// correctement configuré pour le réseau (exactement le cas d'usage de
-// cette fonctionnalité). main.js a sa PROPRE copie de cette même fonction
-// (voir son commentaire "même logique que getLanIpAddress() dans
-// server.js, dupliquée plutôt que partagée" — qui supposait donc déjà
-// l'existence de celle-ci) ; reproduite ici à l'identique.
-function getLanIpAddress() {
-  const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name] || []) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
-      }
-    }
-  }
-  return null;
-}
+// DURCISSEMENT (chantier "Diffusion des sous-titres en direct par QR code") :
+// getLanIpAddress() vivait ici en copie exacte de celle de main.js (voir son
+// commentaire "dupliquée plutôt que partagée") — un bug corrigé dans l'une
+// ne l'était pas forcément dans l'autre. Extraite dans network-utils.js,
+// requise ici ET dans main.js désormais.
+const { getLanIpAddress, buildLanUrl } = require('./network-utils');
 
 // SECURITY: enforce minimum token length of 16 characters.
 // Two independent tokens: WS_AUTH_TOKEN (operator, full control) and
@@ -931,6 +917,7 @@ const sceneWsHandlers = require('./scene-ws-handlers');
 const songWsHandlers = require('./song-ws-handlers');
 const rundownWsHandlers = require('./rundown-ws-handlers');
 const cameraWsHandlers = require('./camera-ws-handlers');
+const liveSubtitlesWsHandlers = require('./live-subtitles-ws-handlers');
 const brandingWsHandlers = require('./branding-ws-handlers');
 const accessibilityWsHandlers = require('./accessibility-ws-handlers');
 const readingTranslationWsHandlers = require('./reading-translation-ws-handlers');
@@ -1005,6 +992,12 @@ const CATEGORY_HANDLERS = new Map([
     wsHost: WS_HOST,
     getLanIpAddress,
     phoneCameraPairing,
+    serverPort: SERVER_PORT,
+    QRCode,
+  }),
+  ...liveSubtitlesWsHandlers.createHandlers({
+    wsHost: WS_HOST,
+    buildLanUrl,
     serverPort: SERVER_PORT,
     QRCode,
   }),

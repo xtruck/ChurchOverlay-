@@ -4,7 +4,7 @@
  * Extrait de dashboard/legacy-core.js (chantier de modularisation).
  */
 import { showToast } from '../utils.js';
-import { getWsToken } from '../state.js';
+import { getWsToken, ws } from '../state.js';
 
 (function initCompanionLink() {
   const link = document.getElementById('companionLink');
@@ -50,3 +50,30 @@ export function copyMcpToken() {
 }
 
 window.copyMcpToken = copyMcpToken;
+
+// AJOUT (chantier "Diffusion des sous-titres en direct par QR code") : QR
+// image générée côté serveur (voir live-subtitles-ws-handlers.js) plutôt que
+// "copiez le lien dans un générateur externe" ci-dessus — plus rapide à
+// afficher en salle pendant le culte.
+export function generateCompanionQr() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur — impossible de générer le QR code.', 'error');
+    return;
+  }
+  const statusEl = document.getElementById('companionQrStatus');
+  if (statusEl) statusEl.textContent = '⏳ Génération du QR code...';
+  ws.send(JSON.stringify({ action: 'getCompanionQr' }));
+}
+
+export function renderCompanionQr(message) {
+  const statusEl = document.getElementById('companionQrStatus');
+  const img = document.getElementById('companionQrImage');
+  if (!img) return;
+  img.src = message.qrDataUrl;
+  img.style.display = 'block';
+  if (statusEl) {
+    statusEl.textContent = `QR généré — ${message.url}`;
+  }
+}
+
+window.generateCompanionQr = generateCompanionQr;

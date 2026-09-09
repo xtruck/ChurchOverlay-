@@ -343,6 +343,18 @@ const CLIENT_ACTIONS = {
     description: 'Générer un code QR de jumelage',
   },
 
+  // AJOUT (chantier "Diffusion des sous-titres en direct par QR code") :
+  // voir live-subtitles-ws-handlers.js. operatorOnly — l'URL/QR de la page
+  // compagnon eux-mêmes ne sont pas sensibles (la page cible est publique et
+  // sans jeton, voir son commentaire d'en-tête), mais GÉNÉRER le QR reste un
+  // geste opérateur (affiché à l'écran pour l'assemblée), pas une action
+  // qu'un client viewer/mobile devrait pouvoir déclencher lui-même.
+  getCompanionQr: {
+    operatorOnly: true,
+    category: 'network',
+    description: 'Générer le QR code de la page compagnon (sous-titres/versets)',
+  },
+
   // Habillage caméra
   getBranding: {
     operatorOnly: true,

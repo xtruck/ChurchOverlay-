@@ -24,7 +24,6 @@ const {
 const path = require('path');
 const fs = require('fs');
 const fsp = require('fs').promises;
-const os = require('os');
 const { Worker } = require('worker_threads');
 const crypto = require('crypto');
 const perfMonitor = require('./perf-monitor');
@@ -1449,21 +1448,12 @@ ipcMain.handle('open-setup', async () => {
   return true;
 });
 
-// AJOUT (carte réseau) : adresse IPv4 locale suggérée pour le champ WS_HOST
-// — même logique que getLanIpAddress() dans server.js (dupliquée plutôt que
-// partagée : main.js et le worker server.js ne partagent pas de module
-// utilitaire aujourd'hui).
-function getLanIpAddress() {
-  const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name] || []) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
-      }
-    }
-  }
-  return null;
-}
+// DURCISSEMENT (chantier "Diffusion des sous-titres en direct par QR code") :
+// adresse IPv4 locale suggérée pour le champ WS_HOST — vivait ici en copie
+// exacte de celle de server.js (voir son commentaire "dupliquée plutôt que
+// partagée"), extraite dans network-utils.js pour que main.js et le worker
+// server.js partagent désormais la MÊME implémentation.
+const { getLanIpAddress } = require('./network-utils');
 
 ipcMain.handle('get-settings', async () => {
   const cfg = loadConfig() || {};

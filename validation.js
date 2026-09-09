@@ -487,6 +487,13 @@ const SCHEMAS = {
       quality: (value) => ['low', 'medium', 'high'].includes(value),
     },
   },
+  // AJOUT (chantier "Diffusion des sous-titres en direct par QR code") :
+  // aucun paramètre — voir live-subtitles-ws-handlers.js.
+  getCompanionQr: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'getCompanionQr' },
+  },
   // AJOUT (audit backend — Phase 1F, 4e lot) : habillage caméra
   // (branding-store.js — sourcePath même sélecteur natif que la
   // médiathèque ; position/size ont déjà un repli silencieux vers une

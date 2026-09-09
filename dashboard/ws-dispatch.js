@@ -28,6 +28,7 @@ import {
   setActiveMoodButton,
   renderThemeGenerated,
 } from './features/mood-theme.js';
+import { renderCompanionQr } from './features/companion-link.js';
 import { renderSongLibrary } from './features/song-library.js';
 import { renderOfflineBibleStatus } from './features/offline-bible.js';
 import {
@@ -475,6 +476,11 @@ export function handleMessage(message) {
           : `Thème généré : ${message.themeName}`,
         message.usedFallback ? 'warning' : 'info'
       );
+      break;
+    // AJOUT (chantier "Diffusion des sous-titres en direct par QR code") :
+    // réponse à 'getCompanionQr' — voir live-subtitles-ws-handlers.js.
+    case 'companionQrGenerated':
+      renderCompanionQr(message);
       break;
     // AJOUT (transparence détection IA) : diffusé par server.js juste avant
     // le 'showVerse' correspondant quand c'est le détecteur sémantique
