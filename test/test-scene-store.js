@@ -369,5 +369,58 @@ assert.deepStrictEqual(
 );
 console.log('[TEST] ✓ triggerPhrases préservées par un patch ne les mentionnant pas\n');
 
+console.log(
+  '[TEST] Test 23: addScene() — focusMode absent -> false par défaut (Mode Focus, chantier composeur)...'
+);
+const noFocusScene = sceneStore.addScene({ name: 'Sans mode focus' });
+assert.strictEqual(
+  noFocusScene.focusMode,
+  false,
+  'focusMode doit valoir false par défaut quand non fourni à la création'
+);
+console.log('[TEST] ✓ focusMode par défaut correct (false)\n');
+
+console.log('[TEST] Test 24: addScene() — focusMode:true est bien persisté...');
+const focusScene = sceneStore.addScene({ name: 'Avec mode focus', focusMode: true });
+assert.strictEqual(focusScene.focusMode, true, 'focusMode: true doit être conservé à la création');
+const reloadedFocusScene = sceneStore.getItem(focusScene.id);
+assert.strictEqual(
+  reloadedFocusScene.focusMode,
+  true,
+  'focusMode doit survivre à une relecture depuis le disque (persistance atomique)'
+);
+console.log('[TEST] ✓ focusMode: true créé et relu correctement\n');
+
+console.log('[TEST] Test 25: addScene() — une valeur non-booléenne pour focusMode est normalisée...');
+const coercedFocusScene = sceneStore.addScene({ name: 'Coercion focusMode', focusMode: 'oui' });
+assert.strictEqual(
+  coercedFocusScene.focusMode,
+  true,
+  'toute valeur "truthy" doit être normalisée en booléen strict (!!data.focusMode)'
+);
+console.log('[TEST] ✓ Coercion booléenne correcte\n');
+
+console.log('[TEST] Test 26: updateScene() — active/désactive focusMode sur une scène existante...');
+const toggledOn = sceneStore.updateScene(noFocusScene.id, { focusMode: true });
+assert.strictEqual(toggledOn.focusMode, true, 'updateScene({focusMode:true}) doit activer le Mode Focus');
+const toggledOff = sceneStore.updateScene(noFocusScene.id, { focusMode: false });
+assert.strictEqual(
+  toggledOff.focusMode,
+  false,
+  'updateScene({focusMode:false}) doit désactiver le Mode Focus'
+);
+console.log('[TEST] ✓ Activation/désactivation par patch correcte\n');
+
+console.log(
+  '[TEST] Test 27: updateScene() sans focusMode dans le patch ne le touche pas (même discipline que triggerPhrases)...'
+);
+const untouchedFocus = sceneStore.updateScene(focusScene.id, { name: 'Renommée, focus intact' });
+assert.strictEqual(
+  untouchedFocus.focusMode,
+  true,
+  'un patch qui ne mentionne pas focusMode doit le laisser intact'
+);
+console.log('[TEST] ✓ focusMode préservé par un patch ne le mentionnant pas\n');
+
 fs.rmSync(userDataDir, { recursive: true, force: true });
 console.log('=== Tous les tests scene-store sont passés ===');

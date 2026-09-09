@@ -232,6 +232,7 @@
       "highlight-export.js",
       "clip-exporter.js",
       "srt-export.js",
+      "media-thumbnails.js",
       "song-library.js",
       "ai-agent.js",
       "ai-agent/index.js",

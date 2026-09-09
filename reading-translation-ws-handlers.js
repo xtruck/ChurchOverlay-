@@ -148,6 +148,24 @@ function createHandlers(ctx) {
     advanceReadingModeVerse(-1);
   });
 
+  // AJOUT (chantier overlay/commandes vocales — saut direct de verset) :
+  // équivalent WS direct (bouton/saisie opérateur) de la commande vocale
+  // 'jumpToVerse' (voir handleVoiceCommand dans server.js). readingMode
+  // .jumpToVerse() diffuse déjà showVerse/historyUpdated via onVerseAdvance
+  // — rien d'autre à faire ici qu'un message d'erreur clair si le numéro
+  // n'existe pas dans le chapitre en cours (mode lecture inactif compris).
+  handlers.set('jumpToVerse', async (ws, sanitized) => {
+    const verse = readingMode.jumpToVerse(sanitized.verseNumber);
+    if (!verse) {
+      ws.send(
+        JSON.stringify({
+          action: 'error',
+          error: `Verset ${sanitized.verseNumber} introuvable (mode lecture inactif, ou hors du chapitre en cours).`,
+        })
+      );
+    }
+  });
+
   // AJOUT (audit fonctionnel — ppPrevChapterBtn/ppNextChapterBtn du studio
   // n'appelaient aucune fonction existante) : équivalent chapitre des deux
   // handlers ci-dessus, même principe (réutilise advanceReadingModeChapter(),

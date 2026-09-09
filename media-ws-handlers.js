@@ -1,5 +1,8 @@
 'use strict';
 
+const path = require('path');
+const { generateThumbnail } = require('./media-thumbnails');
+
 /**
  * media-ws-handlers.js — Handlers WS de la médiathèque (Phase 2 —
  * modularisation du dispatch WS de server.js, même chantier que
@@ -44,6 +47,34 @@ function createHandlers(ctx) {
   } = ctx;
 
   const handlers = new Map();
+
+  // AJOUT (chantier overlay/composeur multimédia — vignettes) : jamais
+  // attendue avant de répondre à l'opérateur (voir addMediaItem plus bas) —
+  // même discipline "jamais ralentir le chemin critique" que caption-
+  // translator.js/ai-theme-generator.js. best-effort strict : un échec
+  // ffmpeg (codec exotique, fichier corrompu...) laisse juste
+  // thumbnailFilename à null, jamais un média entier perdu pour autant —
+  // l'élément reste utilisable (image/vidéo pleine taille), juste sans
+  // vignette dans la galerie.
+  function generateThumbnailInBackground(item) {
+    const mediaDir = mediaLibrary.getMediaDir();
+    if (!mediaDir) return;
+    const sourcePath = path.join(mediaDir, item.filename);
+    const thumbnailFilename = `${item.id}-thumb.jpg`;
+    const destPath = path.join(mediaDir, thumbnailFilename);
+    generateThumbnail(sourcePath, destPath, item.mediaType)
+      .then(() => {
+        if (mediaLibrary.setItemThumbnail(item.id, thumbnailFilename)) {
+          broadcast(
+            { action: 'mediaLibraryUpdated', items: mediaLibrary.listItems() },
+            { operatorOnly: true }
+          );
+        }
+      })
+      .catch((err) => {
+        log(`Médiathèque : vignette échouée pour "${item.label}" — ${err.message}`);
+      });
+  }
 
   // --- Médiathèque (déclenchement vocal de photos/vidéos) ---------------
   // Réponse directe au demandeur (ws.send) pour la lecture/mutation de la
@@ -150,6 +181,7 @@ function createHandlers(ctx) {
         transitionStyle: sanitized.transitionStyle,
       });
       log(`Médiathèque : "${item.label}" ajouté (${item.mediaType})`);
+      generateThumbnailInBackground(item);
       if (collisions.length > 0) {
         log(
           `Médiathèque : ${collisions.length} collision(s) phonétique(s) détectée(s) pour "${item.label}"`

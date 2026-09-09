@@ -4131,6 +4131,21 @@ Aucune exécution agent.</pre>
                     class="scene-composer-bg-color-input is-hidden"
                   />
                 </div>
+                <!-- AJOUT (chantier overlay/composeur multi-scènes — Mode Focus,
+                             style ProPresenter/OBS) : assombrit/floute le fond de CETTE
+                             scène à l'affichage (voir scene-render.js), pour mettre en
+                             valeur le texte du verset/chant lors des prédications — voir
+                             scene-store.js#focusMode. -->
+                <div class="scene-composer-field-row">
+                  <label for="composerFocusModeToggle">
+                    <input
+                      type="checkbox"
+                      id="composerFocusModeToggle"
+                      onchange="toggleComposerFocusMode(this.checked)"
+                    />
+                    🎯 Mode Focus (assombrit/floute le fond pour mettre le texte en valeur)
+                  </label>
+                </div>
                 <div class="scene-composer-elements-header">
                   <span class="field-hint field-hint-zero-margin">Éléments</span>
                   <div class="btn-row-tight">

@@ -13,6 +13,12 @@
 
 'use strict';
 
+// AJOUT (chantier overlay/commandes vocales — saut direct de verset) : même
+// moteur de conversion "nombre en toutes lettres -> chiffres" que
+// detector.js/detector-en.js pour les références bibliques (voir
+// number-words.js) — réutilisé tel quel, pas réimplémenté.
+const { numberWordsToDigits } = require('./number-words');
+
 const COMMANDS = [
   // --- SHOW / HIDE ---
   {
@@ -184,6 +190,36 @@ const COMMANDS = [
       'reviens',
       'previous',
     ],
+  },
+  // AJOUT (chantier overlay/commandes vocales — saut direct de verset) :
+  // "va au verset X"/"saute au verset X"/"passe au verset X" (+ parité EN,
+  // même discipline que le reste de ce fichier). DISTINCT de nextVerse/
+  // previousVerse ci-dessus (avance relative de ±1) : ici, X est un numéro
+  // ABSOLU dans le chapitre en cours. Garde-fou : lookahead négatif sur
+  // "suivant"/"precedent"/"next"/"previous" juste après "verset"/"verse"
+  // pour ne JAMAIS intercepter "passe au verset suivant" (qui doit rester
+  // nextVerse ci-dessus) même si l'ordre des motifs dans COMMANDS changeait
+  // un jour — pas seulement parce que ce motif est déclaré après.
+  // Chiffres ET nombres en toutes lettres acceptés (numberWordsToDigits,
+  // voir number-words.js — même moteur que detector.js/detector-en.js pour
+  // les références bibliques) ; le texte capturé peut contenir des mots
+  // superflus après le nombre (fin de phrase sans ponctuation) — sans
+  // conséquence, parseInt() ne lit que les chiffres de tête.
+  {
+    id: 'jumpToVerse',
+    patterns: [
+      /(?:va|saute|passe)\s+au\s+verset\s+(?!suivant|precedent|precedant\b)((?:[\w'-]+\s*){1,5})/i,
+      /(?:go|jump|skip)\s+to\s+verse\s+(?!next|previous\b)((?:[\w'-]+\s*){1,5})/i,
+    ],
+    extract: (match) => {
+      const raw = match[1].trim();
+      const withDigits = /^\d+$/.test(raw)
+        ? raw
+        : numberWordsToDigits(numberWordsToDigits(raw, 'fr'), 'en');
+      const verseNumber = parseInt(withDigits, 10);
+      return { action: 'jumpToVerse', verseNumber };
+    },
+    keywords: ['va', 'saute', 'passe', 'verset', 'go', 'jump', 'skip', 'verse'],
   },
 
   // --- THEME ---

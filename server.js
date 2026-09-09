@@ -2444,6 +2444,32 @@ async function handleVoiceCommand(command, _originalText) {
       advanceReadingModeVerse(-1);
       break;
     }
+    // AJOUT (chantier overlay/commandes vocales — saut direct de verset) :
+    // "va au verset X"/"go to verse X" (voir voice-commands.js#jumpToVerse).
+    // readingMode.jumpToVerse() diffuse déjà showVerse/historyUpdated via
+    // onVerseAdvance (voir sa construction plus haut) — rien d'autre à
+    // diffuser ici que le signal "déclenché par la voix" pour le tableau de
+    // bord, même discipline que nextVerse/previousVerse ci-dessus.
+    case 'jumpToVerse': {
+      if (!Number.isFinite(command.verseNumber)) {
+        warn('Voice command jumpToVerse: numéro de verset introuvable dans la phrase.');
+        break;
+      }
+      broadcast({
+        action: 'jumpToVerse',
+        verseNumber: command.verseNumber,
+        triggeredByVoice: true,
+      });
+      const verse = readingMode.jumpToVerse(command.verseNumber);
+      if (!verse) {
+        warn(
+          `Voice command jumpToVerse: verset ${command.verseNumber} introuvable (mode lecture inactif ou hors du chapitre en cours).`
+        );
+      } else {
+        log('Voice command: jump to verse ' + command.verseNumber);
+      }
+      break;
+    }
     case 'nextChapter': {
       broadcast({ action: 'nextChapter', triggeredByVoice: true });
       await advanceReadingModeChapter(1);

@@ -112,21 +112,37 @@ const { chromium } = require(path.join(__dirname, '..', 'node_modules', 'playwri
     );
 
     console.log('\n=== Test 3 : fond couleur (pas d’image de fond) ===\n');
+    // CORRECTIF (Mode Focus, chantier overlay/composeur multi-scènes) : un
+    // fond couleur vit désormais dans un calque DÉDIÉ (même classe
+    // .scene-background-img que le cas média, positionnée en plein cadre —
+    // mais une <div>, pas une <img>), pas directement sur `container.style
+    // .background` comme avant — nécessaire pour que le filtre flou/sombre
+    // du Mode Focus puisse cibler UNIQUEMENT le fond, jamais les calques
+    // texte/image posés par-dessus (mêmes enfants du même conteneur sinon).
     result = await page.evaluate(() => {
       const c = document.getElementById('c');
       window.renderSceneDom(
         { background: { type: 'color', color: 'rgb(10, 20, 30)' }, elements: [] },
         c
       );
+      const bgLayer = c.querySelector('.scene-background-img');
       return {
-        hasBgImg: !!c.querySelector('.scene-background-img'),
-        background: c.style.background,
+        hasBgImgTag: !!c.querySelector('img.scene-background-img'),
+        bgLayerBackground: bgLayer ? bgLayer.style.background : null,
+        containerBackground: c.style.background,
       };
     });
-    check('aucune image de fond avec un fond couleur', result.hasBgImg === false);
     check(
-      'la couleur de fond est appliquée au conteneur',
-      result.background.includes('10, 20, 30')
+      'le calque de fond couleur est une <div> dédiée, pas une <img> (pas de src vide/cassé)',
+      result.hasBgImgTag === false
+    );
+    check(
+      'la couleur de fond est appliquée à ce calque dédié (isolable par le Mode Focus)',
+      !!result.bgLayerBackground && result.bgLayerBackground.includes('10, 20, 30')
+    );
+    check(
+      'le conteneur lui-même ne porte plus la couleur directement (nouvelle architecture en calque)',
+      result.containerBackground === ''
     );
 
     console.log('\n=== Test 4 : fond "none" — ni image ni couleur ===\n');
@@ -203,6 +219,78 @@ const { chromium } = require(path.join(__dirname, '..', 'node_modules', 'playwri
       result.left === '50%' && result.top === '50%'
     );
     check('rotation par défaut 0deg dans la transform', result.transform.includes('rotate(0deg)'));
+
+    console.log(
+      '\n=== Test 8 : Mode Focus — floute/assombrit le fond, JAMAIS les calques posés par-dessus ===\n'
+    );
+    result = await page.evaluate(() => {
+      const c = document.getElementById('c');
+      window.renderSceneDom(
+        {
+          background: { type: 'color', color: 'rgb(10, 20, 30)' },
+          elements: [{ type: 'text', text: 'Verset en valeur' }],
+          focusMode: true,
+        },
+        c
+      );
+      const bgLayer = c.querySelector('.scene-background-img');
+      const text = c.querySelector('.scene-text');
+      return {
+        bgFilter: bgLayer ? bgLayer.style.filter : null,
+        textFilter: text ? text.style.filter : null,
+      };
+    });
+    check(
+      'Mode Focus actif : le calque de fond porte bien un filtre flou/sombre',
+      !!result.bgFilter && result.bgFilter.includes('blur') && result.bgFilter.includes('brightness')
+    );
+    check(
+      "Mode Focus actif : le calque TEXTE ne porte AUCUN filtre (jamais flouté, c'est lui qu'on met en valeur)",
+      !result.textFilter
+    );
+
+    console.log('\n=== Test 9 : Mode Focus désactivé (par défaut) — aucun filtre sur le fond ===\n');
+    result = await page.evaluate(() => {
+      const c = document.getElementById('c');
+      window.renderSceneDom(
+        { background: { type: 'color', color: 'rgb(10, 20, 30)' }, elements: [] },
+        c
+      );
+      const bgLayer = c.querySelector('.scene-background-img');
+      return { bgFilter: bgLayer ? bgLayer.style.filter : null };
+    });
+    check(
+      'Mode Focus absent/false (comportement historique) : aucun filtre appliqué au fond',
+      !result.bgFilter
+    );
+
+    console.log(
+      '\n=== Test 10 : Mode Focus avec un fond IMAGE — même filtre, même isolation du texte ===\n'
+    );
+    result = await page.evaluate(() => {
+      const c = document.getElementById('c');
+      window.renderSceneDom(
+        {
+          background: { type: 'media', mediaUrl: '/media/fond.png' },
+          elements: [{ type: 'text', text: 'Titre du chant' }],
+          focusMode: true,
+        },
+        c
+      );
+      const bgImg = c.querySelector('img.scene-background-img');
+      const text = c.querySelector('.scene-text');
+      return {
+        bgIsImg: !!bgImg,
+        bgFilter: bgImg ? bgImg.style.filter : null,
+        textFilter: text ? text.style.filter : null,
+      };
+    });
+    check('fond média : reste bien une <img> (pas remplacée par le Mode Focus)', result.bgIsImg);
+    check(
+      'fond média + Mode Focus : le filtre flou/sombre est appliqué à l’image de fond',
+      !!result.bgFilter && result.bgFilter.includes('blur')
+    );
+    check('fond média + Mode Focus : le texte reste nettement lisible (aucun filtre)', !result.textFilter);
 
     console.log(`\nErreurs console cumulées sur tout le test : ${consoleErrors.length}`);
     check(

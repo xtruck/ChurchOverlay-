@@ -20,9 +20,14 @@
  *      le même helper que le chemin vocal 'nextChapter'/'previousChapter'.
  *   5. stopReading -> readingStopped
  *   6. RBAC : un client 'viewer' ne peut pas envoyer nextReadingVerse/
- *      previousReadingVerse/nextReadingChapter/previousReadingChapter
- *      (doivent être dans OPERATOR_ACTIONS, comme startReading/
+ *      previousReadingVerse/nextReadingChapter/previousReadingChapter/
+ *      jumpToVerse (doivent être dans OPERATOR_ACTIONS, comme startReading/
  *      stopReading) — même famille de test que test/test-ws-auth.js.
+ *   7. AJOUT (chantier overlay/commandes vocales — saut direct de verset) :
+ *      jumpToVerse — action WS directe (saut ABSOLU, pas ±1, vers un
+ *      numéro hors de portée -> erreur claire) ET chemin VOCAL complet
+ *      ("va au verset un" transcrit -> voice-commands.js#detectCommand ->
+ *      handleVoiceCommand() -> readingMode.jumpToVerse()).
  *
  *  Même approche que test/test-ws-auth.js : server.js tourne réellement ;
  *  seuls le réseau (API bibliques) et le micro sont mockés. detector.js/
@@ -232,6 +237,43 @@ function waitForMessage(ws, predicate, timeoutMs = 5000) {
     JSON.stringify(back)
   );
 
+  console.log(
+    '\n=== Mode lecture — saut direct de verset (chantier overlay/commandes vocales) ===\n'
+  );
+
+  // Position actuelle : Jean 3:1 (voir back ci-dessus). Saut DIRECT à 3:3 —
+  // pas ±1 comme nextReadingVerse, la preuve que c'est un vrai saut absolu.
+  ws.send(JSON.stringify({ action: 'jumpToVerse', verseNumber: 3 }));
+  const jumped = await waitForMessage(ws, (m) => m.action === 'showVerse');
+  check(
+    'jumpToVerse (action WS directe) saute bien au numéro demandé (Jean 3:3), pas ±1',
+    jumped.reference === 'Jean 3:3',
+    JSON.stringify(jumped)
+  );
+
+  // Numéro hors du chapitre en cours (FAKE_JEAN_3 n'a que 3 versets) —
+  // doit échouer proprement, jamais un showVerse fantôme.
+  ws.send(JSON.stringify({ action: 'jumpToVerse', verseNumber: 99 }));
+  const jumpErr = await waitForMessage(ws, (m) => m.action === 'error');
+  check(
+    'jumpToVerse avec un numéro hors chapitre renvoie une erreur claire (pas de showVerse)',
+    /introuvable/i.test(jumpErr.error || ''),
+    JSON.stringify(jumpErr)
+  );
+
+  // AJOUT — chemin VOCAL (pas l'action WS directe ci-dessus) : "va au
+  // verset un" transcrit doit traverser voice-commands.js#detectCommand ->
+  // handleVoiceCommand() -> readingMode.jumpToVerse(), exactement comme un
+  // pasteur qui le dirait à voix haute pendant le culte. Saut vers 3:1
+  // depuis 3:3 (position actuelle) — encore un saut absolu, pas relatif.
+  ws.send(JSON.stringify({ action: 'transcript', text: 'va au verset un' }));
+  const voiceJump = await waitForMessage(ws, (m) => m.action === 'showVerse');
+  check(
+    'commande vocale "va au verset un" saute bien au verset 1 (Jean 3:1) depuis 3:3',
+    voiceJump.reference === 'Jean 3:1' && voiceJump.readingMode === true,
+    JSON.stringify(voiceJump)
+  );
+
   console.log('\n=== Mode lecture — navigation par chapitre (bouton manuel) ===\n');
 
   ws.send(JSON.stringify({ action: 'nextReadingChapter' }));
@@ -293,6 +335,14 @@ function waitForMessage(ws, predicate, timeoutMs = 5000) {
     "previousReadingChapter envoyé par un 'viewer' est refusé",
     /opérateur|operator/i.test(err4.error || ''),
     JSON.stringify(err4)
+  );
+
+  viewerWs.send(JSON.stringify({ action: 'jumpToVerse', verseNumber: 2 }));
+  const err5 = await waitForMessage(viewerWs, (m) => m.action === 'error');
+  check(
+    "jumpToVerse envoyé par un 'viewer' est refusé (même famille RBAC que nextReadingVerse)",
+    /opérateur|operator/i.test(err5.error || ''),
+    JSON.stringify(err5)
   );
 
   ws.close();

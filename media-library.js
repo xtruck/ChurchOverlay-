@@ -58,6 +58,17 @@ function setUserDataDir(dir) {
   groupsPath = path.join(dir, 'media-groups.json');
 }
 
+/**
+ * AJOUT (chantier overlay/composeur multimédia — vignettes) : chemin absolu
+ * du dossier média, pour que media-ws-handlers.js puisse résoudre la
+ * source/destination d'une génération de vignette (media-thumbnails.js)
+ * sans dupliquer la construction de ce chemin.
+ * @returns {string|null}
+ */
+function getMediaDir() {
+  return mediaDir;
+}
+
 function readIndex() {
   if (!indexPath || !fs.existsSync(indexPath)) return [];
   try {
@@ -329,6 +340,12 @@ function addItem(data) {
     // cet élément appartient, ou null. Rattaché après coup via setItemGroup(),
     // jamais à la création (le groupe doit déjà exister).
     group: null,
+    // AJOUT (chantier overlay/composeur multimédia — vignettes) : null tant
+    // que la génération en arrière-plan (voir media-thumbnails.js, déclenchée
+    // par media-ws-handlers.js#addMediaItem, jamais ici — ce module reste
+    // synchrone/pur) n'a pas terminé ; renseigné ensuite via
+    // setItemThumbnail() ci-dessous.
+    thumbnailFilename: null,
   };
 
   const items = readIndex();
@@ -477,6 +494,10 @@ function seedDefaultBackgrounds() {
         transitionStyle: DEFAULT_TRANSITION_STYLE,
         isDefault: false,
         group: null,
+        // Aplat de couleur généré à la volée : pas de vignette distincte à
+        // produire (le fichier lui-même est déjà minuscule et déjà une
+        // image plate), voir generateSolidColorPng() ci-dessus.
+        thumbnailFilename: null,
       });
       changed = true;
     } catch (e) {
@@ -542,6 +563,26 @@ function updateItem(id, patch) {
   items[idx] = item;
   writeIndex(items);
   return item;
+}
+
+/**
+ * AJOUT (chantier overlay/composeur multimédia — vignettes) : enregistre le
+ * nom de fichier de la vignette générée en arrière-plan (voir
+ * media-thumbnails.js, déclenché par media-ws-handlers.js#addMediaItem —
+ * jamais ici, ce module reste synchrone/pur, aucun ffmpeg/spawn). Sans
+ * effet si l'élément a été supprimé entre-temps (générateur asynchrone :
+ * l'opérateur a pu changer d'avis avant que la vignette ne soit prête).
+ * @param {string} id
+ * @param {string} thumbnailFilename
+ * @returns {boolean} true si l'élément existait encore
+ */
+function setItemThumbnail(id, thumbnailFilename) {
+  const items = readIndex();
+  const item = items.find((i) => i.id === id);
+  if (!item) return false;
+  item.thumbnailFilename = thumbnailFilename;
+  writeIndex(items);
+  return true;
 }
 
 /**
@@ -632,10 +673,12 @@ function checkTriggerCollisions(candidatePhrases, excludeId) {
 
 module.exports = {
   setUserDataDir,
+  getMediaDir,
   listItems,
   getItem,
   addItem,
   updateItem,
+  setItemThumbnail,
   deleteItem,
   getDefaultItem,
   setDefaultItem,

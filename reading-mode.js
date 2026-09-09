@@ -76,6 +76,30 @@ class ReadingMode {
   }
 
   /**
+   * AJOUT (chantier overlay/commandes vocales — saut direct de verset) :
+   * saut immédiat à un NUMÉRO de verset connu avec certitude (regex de
+   * commande déjà satisfaite côté appelant, voir voice-commands.js#jumpToVerse
+   * et le handler WS 'jumpToVerse') — DISTINCT du repli `verseOnlyMatch` de
+   * processFragment() ci-dessous (qui, lui, doit encore INTERPRÉTER un
+   * fragment transcrit ambigu). Factorisé ici pour que les deux chemins
+   * (commande explicite ET détection naturelle en pleine lecture) partagent
+   * la même logique, jamais divergente.
+   * @param {number} verseNumber
+   * @returns {{num:number, text:string}|null} le verset trouvé (et déjà
+   *   avancé — onVerseAdvance() appelé), ou null si le mode lecture est
+   *   inactif ou que ce numéro n'existe pas dans le chapitre en cours.
+   */
+  jumpToVerse(verseNumber) {
+    if (!this.active || this.verses.length === 0) return null;
+    const idx = this.verses.findIndex((v) => v.num === verseNumber);
+    if (idx === -1) return null;
+    this.currentIndex = idx;
+    const verse = this.verses[idx];
+    this.onVerseAdvance(verse);
+    return verse;
+  }
+
+  /**
    * Appelé à chaque nouveau fragment transcrit pendant que reading mode est actif.
    * Retourne le verset détecté (avance auto) ou null si rien ne correspond assez.
    */
@@ -94,14 +118,8 @@ class ReadingMode {
     // avant de reprendre la lecture, sans répéter livre+chapitre.
     const verseOnlyMatch = text.match(/^(?:verset\s+|v(?:erse)?\.?\s*)?(\d{1,3})$/i);
     if (verseOnlyMatch) {
-      const num = parseInt(verseOnlyMatch[1], 10);
-      const idx = this.verses.findIndex((v) => v.num === num);
-      if (idx !== -1) {
-        this.currentIndex = idx;
-        const verse = this.verses[idx];
-        this.onVerseAdvance(verse);
-        return verse;
-      }
+      const verse = this.jumpToVerse(parseInt(verseOnlyMatch[1], 10));
+      if (verse) return verse;
     }
 
     // Comparaison au verset courant ET aux 2 suivants (tolère un saut de ligne manqué)

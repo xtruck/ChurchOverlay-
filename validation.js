@@ -240,7 +240,7 @@ const SCHEMAS = {
   // string/array là où un objet/array est attendu) avant d'y arriver.
   addScene: {
     required: ['action', 'name'],
-    optional: ['background', 'elements', 'triggerPhrases'],
+    optional: ['background', 'elements', 'triggerPhrases', 'focusMode'],
     validators: {
       action: (value) => value === 'addScene',
       name: (value) => typeof value === 'string' && value.trim().length > 0 && value.length <= 200,
@@ -250,11 +250,14 @@ const SCHEMAS = {
         Array.isArray(value) &&
         value.length <= 50 &&
         value.every((p) => typeof p === 'string' && p.length <= 300),
+      // AJOUT (chantier overlay/composeur multi-scènes — Mode Focus) : voir
+      // scene-store.js#addScene/scene-render.js#renderSceneDom.
+      focusMode: (value) => typeof value === 'boolean',
     },
   },
   updateScene: {
     required: ['action', 'id'],
-    optional: ['name', 'background', 'elements', 'triggerPhrases'],
+    optional: ['name', 'background', 'elements', 'triggerPhrases', 'focusMode'],
     validators: {
       action: (value) => value === 'updateScene',
       id: (value) => typeof value === 'string' && value.length > 0 && value.length <= 100,
@@ -265,6 +268,7 @@ const SCHEMAS = {
         Array.isArray(value) &&
         value.length <= 50 &&
         value.every((p) => typeof p === 'string' && p.length <= 300),
+      focusMode: (value) => typeof value === 'boolean',
     },
   },
   deleteScene: {
@@ -624,6 +628,20 @@ const SCHEMAS = {
     required: ['action'],
     optional: [],
     validators: { action: (value) => value === 'previousReadingVerse' },
+  },
+  // AJOUT (chantier overlay/commandes vocales — saut direct de verset) :
+  // borné à un chapitre biblique plausible (Psaume 119 = 176 versets, le
+  // plus long) — une valeur hors bornes échoue proprement côté
+  // readingMode.jumpToVerse() (verset introuvable) de toute façon, mais
+  // autant le rejeter clairement ici, même discipline que le reste de
+  // validation.js.
+  jumpToVerse: {
+    required: ['action', 'verseNumber'],
+    optional: [],
+    validators: {
+      action: (value) => value === 'jumpToVerse',
+      verseNumber: (value) => Number.isInteger(value) && value > 0 && value <= 176,
+    },
   },
   nextReadingChapter: {
     required: ['action'],

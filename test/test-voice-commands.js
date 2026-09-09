@@ -332,6 +332,12 @@ const EXPECTED = {
   },
   nextVerse: { fr: 'verset suivant', en: 'next verse', action: 'nextVerse' },
   previousVerse: { fr: 'verset précédent', en: 'previous verse', action: 'previousVerse' },
+  jumpToVerse: {
+    fr: 'va au verset 16',
+    en: 'go to verse 16',
+    action: 'jumpToVerse',
+    verseNumber: 16,
+  },
   themeDark: {
     fr: 'thème sombre',
     en: 'switch to dark theme',

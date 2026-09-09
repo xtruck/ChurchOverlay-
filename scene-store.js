@@ -248,6 +248,14 @@ function addScene(data) {
     background: sanitizeBackground(data.background),
     elements: sanitizeElements(data.elements),
     triggerPhrases,
+    // AJOUT (chantier overlay/composeur multi-scènes — Mode Focus, style
+    // ProPresenter/OBS) : assombrit/floute le calque de fond de CETTE scène
+    // à l'affichage (voir scene-render.js#renderSceneDom) pour mettre en
+    // valeur les calques texte/image posés par-dessus — pensé pour une
+    // prédication où le fond ne doit plus attirer l'œil. Attribut de la
+    // SCÈNE (pas un réglage global) : chaque scène composée choisit
+    // indépendamment si son fond doit s'estomper ou rester net.
+    focusMode: !!data.focusMode,
     // AJOUT (demande explicite — "poster principal") : voir setDefaultScene()
     // plus bas. Un seul élément à la fois peut être vrai — TOUJOURS FAUX ici
     // à la création ; passer par setDefaultScene() explicitement.
@@ -290,6 +298,9 @@ function updateScene(id, patch) {
     }
     if (patch.triggerPhrases !== undefined) {
       item.triggerPhrases = sanitizeTriggerPhrases(patch.triggerPhrases);
+    }
+    if (patch.focusMode !== undefined) {
+      item.focusMode = !!patch.focusMode;
     }
   }
   item.updatedAt = new Date().toISOString();

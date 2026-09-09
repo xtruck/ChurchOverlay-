@@ -48,6 +48,11 @@ export function getSceneStudioItems() {
 let composerEditingId = null;
 let composerBackground = { type: 'none', mediaId: null, color: '#0b0f1a' };
 let composerElements = [];
+// AJOUT (chantier overlay/composeur multi-scènes — Mode Focus, style
+// ProPresenter/OBS) : voir scene-store.js#focusMode/scene-render.js pour le
+// rendu réel (assombrit/floute le calque de fond, jamais les calques texte/
+// image posés par-dessus).
+let composerFocusMode = false;
 
 const POSITION_OPTIONS = [
   ['top-left', '↖ Haut gauche'],
@@ -86,7 +91,17 @@ function buildComposerPreviewScene() {
     elements: composerElements.map((el) =>
       el.type === 'image' ? { ...el, mediaUrl: resolveComposerMediaUrl(el.mediaId) } : el
     ),
+    focusMode: composerFocusMode,
   };
+}
+
+// AJOUT (chantier overlay/composeur multi-scènes — Mode Focus) : bouton/
+// toggle du formulaire de composition — voir dashboard.html
+// (#composerFocusModeToggle) et saveComposerScene()/openSceneComposer() plus
+// bas pour la lecture/écriture de composerFocusMode.
+export function toggleComposerFocusMode(enabled) {
+  composerFocusMode = !!enabled;
+  updateComposerPreview();
 }
 
 function updateComposerPreview() {
@@ -274,12 +289,15 @@ export function openSceneComposer(id) {
       }
     : { type: 'none', mediaId: null, color: '#0b0f1a' };
   composerElements = existing ? existing.elements.map((el) => ({ ...el })) : [];
+  composerFocusMode = existing ? !!existing.focusMode : false;
 
   if (title) title.textContent = existing ? `Modifier « ${existing.name} »` : 'Nouvelle scène';
   if (nameInput) nameInput.value = existing ? existing.name : '';
   if (phrasesInput) phrasesInput.value = existing ? (existing.triggerPhrases || []).join(', ') : '';
   if (bgTypeSelect) bgTypeSelect.value = composerBackground.type;
   if (colorInput) colorInput.value = composerBackground.color || '#0b0f1a';
+  const focusModeToggle = document.getElementById('composerFocusModeToggle');
+  if (focusModeToggle) focusModeToggle.checked = composerFocusMode;
 
   renderComposerBgMediaOptions();
   onComposerBgTypeChange(); // synchronise la visibilité média/couleur avec le type qui vient d'être posé
@@ -299,6 +317,7 @@ export function closeSceneComposer() {
   composerEditingId = null;
   composerBackground = { type: 'none', mediaId: null, color: '#0b0f1a' };
   composerElements = [];
+  composerFocusMode = false;
 }
 
 export function saveComposerScene() {
@@ -325,6 +344,7 @@ export function saveComposerScene() {
     background: composerBackground,
     elements: composerElements,
     triggerPhrases,
+    focusMode: composerFocusMode,
   };
   if (composerEditingId) payload.id = composerEditingId;
   ws.send(JSON.stringify(payload));
@@ -424,6 +444,12 @@ export function renderSceneStudioGallery(scenes) {
   list.innerHTML = sceneStudioItems
     .map((scene) => {
       const badge = scene.isDefault ? '<span class="media-gallery-badge">⭐ Poster</span>' : '';
+      // AJOUT (chantier overlay/composeur multi-scènes — Mode Focus) : rend
+      // visible, d'un coup d'œil dans la galerie, si le fond de cette scène
+      // s'estompera à l'affichage (voir scene-render.js#renderSceneDom).
+      const focusModeBadge = scene.focusMode
+        ? '<span class="media-gallery-badge">🎯 Focus</span>'
+        : '';
       // AJOUT (déclenchement vocal des scènes) : même badge que la
       // Médiathèque (.media-item-phrase-badge) — rend visible, d'un coup
       // d'œil dans la galerie, si une scène est atteignable à la voix ou
@@ -434,7 +460,7 @@ export function renderSceneStudioGallery(scenes) {
       return `
                 <div class="media-gallery-card${scene.isDefault ? ' is-default' : ''}">
                     <div class="media-gallery-thumb scene-preview-thumb" id="scenePreview-${scene.id}">
-                        ${badge}
+                        ${badge}${focusModeBadge}
                     </div>
                     <div class="media-gallery-body">
                         <div class="media-gallery-label" title="${escapeHtmlDashboard(scene.name)}">${escapeHtmlDashboard(scene.name)}</div>
@@ -485,6 +511,7 @@ window.updateComposerElementField = updateComposerElementField;
 window.onComposerBgTypeChange = onComposerBgTypeChange;
 window.onComposerBgMediaChange = onComposerBgMediaChange;
 window.onComposerBgColorChange = onComposerBgColorChange;
+window.toggleComposerFocusMode = toggleComposerFocusMode;
 
 // triggerSceneStudioItem, deleteSceneStudioItem, toggleDefaultScene,
 // openSceneComposer et removeComposerElement n'ont plus besoin de window —

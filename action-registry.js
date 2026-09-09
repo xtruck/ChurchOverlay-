@@ -47,6 +47,15 @@ const CLIENT_ACTIONS = {
     category: 'reading',
     description: 'Verset précédent en mode lecture',
   },
+  // AJOUT (chantier overlay/commandes vocales — saut direct de verset) :
+  // équivalent WS direct de la commande vocale 'jumpToVerse' (voir
+  // voice-commands.js), même trust tier que nextReadingVerse/
+  // previousReadingVerse ci-dessus.
+  jumpToVerse: {
+    operatorOnly: true,
+    category: 'reading',
+    description: 'Saut direct à un numéro de verset en mode lecture',
+  },
   // AJOUT (audit fonctionnel — ppPrevChapterBtn/ppNextChapterBtn du studio
   // n'appelaient aucune fonction existante) : équivalent chapitre de
   // nextReadingVerse/previousReadingVerse ci-dessus, même trust tier.

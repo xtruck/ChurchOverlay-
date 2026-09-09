@@ -59,15 +59,39 @@ function renderSceneDom(scene, container) {
   container.style.background = '';
   if (!scene) return;
 
+  // AJOUT (chantier overlay/composeur multi-scènes — Mode Focus, style
+  // ProPresenter/OBS) : assombrit + floute UNIQUEMENT le calque
+  // d'arrière-plan (média ou couleur), jamais les calques texte/image
+  // posés par-dessus (voir la boucle `scene.elements` plus bas, hors de ce
+  // filtre) — c'est tout le principe du Mode Focus : mettre en valeur le
+  // texte du verset/chant en estompant ce qu'il y a derrière, sans jamais
+  // le rendre lui-même flou. filter (pas d'opacité) : opacity assombrirait
+  // en LAISSANT VOIR le fond (transparence), alors que brightness() réduit
+  // vraiment sa luminance — plus proche de l'effet recherché en régie.
+  const FOCUS_MODE_FILTER = 'brightness(0.35) blur(6px)';
   const background = scene.background || {};
   if (background.type === 'media' && background.mediaUrl) {
     const bgImg = document.createElement('img');
     bgImg.className = 'scene-background-img';
     bgImg.src = background.mediaUrl;
     bgImg.alt = '';
+    if (scene.focusMode) bgImg.style.filter = FOCUS_MODE_FILTER;
     container.appendChild(bgImg);
   } else if (background.type === 'color' && background.color) {
-    container.style.background = background.color;
+    // CORRECTIF (trouvé en écrivant ce chantier) : poser le filtre
+    // directement sur `container` flouterait/assombrirait TOUT ce qu'il
+    // contient, y compris les calques texte/image ajoutés juste après
+    // (mêmes enfants du même conteneur) — exactement l'inverse du Mode
+    // Focus. Un calque de fond dédié (même classe `.scene-background-img`
+    // que le cas média ci-dessus, qui la positionne déjà en plein cadre
+    // via `#scene-layer .scene-background-img`/`.scene-preview-canvas
+    // .scene-background-img` — voir overlay.html/dashboard.css) isole le
+    // filtre au fond seul, comme pour le cas média.
+    const bgDiv = document.createElement('div');
+    bgDiv.className = 'scene-background-img';
+    bgDiv.style.background = background.color;
+    if (scene.focusMode) bgDiv.style.filter = FOCUS_MODE_FILTER;
+    container.appendChild(bgDiv);
   }
 
   for (const el of scene.elements || []) {
