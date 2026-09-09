@@ -277,12 +277,20 @@ export function startClipExport() {
   }
   const durationInput = document.getElementById('clipDurationInput');
   const clipDurationSec = durationInput ? Number(durationInput.value) || undefined : undefined;
+  // AJOUT (durcissement Social Clip Machine) : format 9:16 + incrustation
+  // sous-titres — voir clip-exporter.js/srt-export.js côté serveur.
+  const aspectRatioSelect = document.getElementById('clipAspectRatioSelect');
+  const aspectRatio = aspectRatioSelect && aspectRatioSelect.value === '9:16' ? '9:16' : '16:9';
+  const burnSubtitlesCheckbox = document.getElementById('clipBurnSubtitlesCheckbox');
+  const burnSubtitles = !!(burnSubtitlesCheckbox && burnSubtitlesCheckbox.checked);
   ws.send(
     JSON.stringify({
       action: 'exportClips',
       sourcePath: clipSourcePath,
       outputDir: clipOutputDir,
       clipDurationSec,
+      aspectRatio,
+      burnSubtitles,
     })
   );
 }

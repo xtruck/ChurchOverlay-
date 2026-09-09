@@ -36,6 +36,13 @@ function getDurationSec(filePath) {
   return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
 }
 
+function getResolution(filePath) {
+  const res = spawnSync(ffmpegPath, ['-i', filePath], { encoding: 'utf8' });
+  const match = /Video:.*?(\d{2,5})x(\d{2,5})/.exec(res.stderr || '');
+  if (!match) return null;
+  return { width: Number(match[1]), height: Number(match[2]) };
+}
+
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'churchoverlay-clip-exporter-test-'));
 const sourcePath = path.join(tmpDir, 'source.mp4');
 const outputDir = path.join(tmpDir, 'clips');
@@ -79,6 +86,62 @@ const gen = spawnSync(
     'sanitizeFilenamePart: valeur vide -> "extrait"',
     clipExporter.sanitizeFilenamePart('') === 'extrait'
   );
+
+  // --- buildVideoFilters()/buildFfmpegArgs()/escapeSubtitlesPath() : purs,
+  // testables sans lancer ffmpeg (durcissement Social Clip Machine) -------
+  check(
+    'buildVideoFilters: 16:9 sans sous-titres -> aucun filtre',
+    clipExporter.buildVideoFilters({ aspectRatio: '16:9' }).length === 0
+  );
+  check(
+    'buildVideoFilters: 9:16 -> un filtre crop centré, pair, protégé par min()',
+    clipExporter.buildVideoFilters({ aspectRatio: '9:16' }).length === 1 &&
+      /^crop=w='trunc\(min\(iw\\,ih\*9\/16\)\/2\)\*2'/.test(
+        clipExporter.buildVideoFilters({ aspectRatio: '9:16' })[0]
+      )
+  );
+  check(
+    'escapeSubtitlesPath: backslashes -> slashes, ":" du lecteur échappé par DEUX backslashes',
+    clipExporter.escapeSubtitlesPath('C:\\Users\\test\\clip.srt') === 'C\\\\:/Users/test/clip.srt'
+  );
+  {
+    const filters = clipExporter.buildVideoFilters({ subtitlesPath: 'C:\\tmp\\x.srt' });
+    check(
+      'buildVideoFilters: sous-titres -> filtre subtitles avec chemin échappé + force_style',
+      filters.length === 1 &&
+        filters[0].startsWith('subtitles=filename=C\\\\:/tmp/x.srt:force_style=\'') &&
+        filters[0].includes('FontName=')
+    );
+  }
+  {
+    const filters = clipExporter.buildVideoFilters({ aspectRatio: '9:16', subtitlesPath: 'x.srt' });
+    check(
+      'buildVideoFilters: crop + sous-titres combinés -> 2 filtres, crop en premier',
+      filters.length === 2 && filters[0].startsWith('crop=') && filters[1].startsWith('subtitles=')
+    );
+  }
+  check(
+    'buildFfmpegArgs: 16:9 sans sous-titres -> pas de -vf',
+    !clipExporter
+      .buildFfmpegArgs({ sourcePath: 'in.mp4', outputPath: 'out.mp4', startSec: 0, durationSec: 20 })
+      .includes('-vf')
+  );
+  {
+    const args = clipExporter.buildFfmpegArgs({
+      sourcePath: 'in.mp4',
+      outputPath: 'out.mp4',
+      startSec: 5,
+      durationSec: 20,
+      aspectRatio: '9:16',
+    });
+    const vfIndex = args.indexOf('-vf');
+    check(
+      'buildFfmpegArgs: 9:16 -> -vf présent avec le filtre crop en valeur',
+      vfIndex !== -1 && args[vfIndex + 1].startsWith('crop=')
+    );
+    check('buildFfmpegArgs: -ss/-i/-t reflètent les paramètres', args.includes('-ss') && args[args.indexOf('-ss') + 1] === '5' && args[args.indexOf('-i') + 1] === 'in.mp4' && args[args.indexOf('-t') + 1] === '20');
+    check('buildFfmpegArgs: le fichier de sortie reste le dernier argument', args[args.length - 1] === 'out.mp4');
+  }
 
   // --- exportClips() : aucun temps fort -> aucun extrait, pas d'erreur ---
   {
@@ -148,6 +211,57 @@ const gen = spawnSync(
     check(
       `clipDurationSec sous le minimum est remonté à ${clipExporter.MIN_CLIP_DURATION_SEC}s (obtenu: ${dur}s)`,
       dur !== null && Math.abs(dur - clipExporter.MIN_CLIP_DURATION_SEC) < 0.5
+    );
+  }
+
+  // --- Recadrage 9:16 : vérifié avec un VRAI ffmpeg + résolution réelle
+  // sondée en sortie (pas supposée) — source 320x240 (4:3, ratio 1.33) -----
+  {
+    const r = await clipExporter.exportClips(sourcePath, outputDir, [entries[0]], start, {
+      clipDurationSec: 15,
+      aspectRatio: '9:16',
+    });
+    check('exportClips aspectRatio=9:16 : ok=true (aucune erreur ffmpeg)', r.ok === true);
+    const res = getResolution(path.join(outputDir, r.clips[0].file));
+    // largeur attendue : trunc(min(320, 240*9/16=135)/2)*2 = 134 ; hauteur inchangée (240)
+    check(
+      `aspectRatio=9:16 : hauteur pleine conservée (obtenu: ${JSON.stringify(res)})`,
+      res !== null && res.height === 240
+    );
+    check(
+      `aspectRatio=9:16 : largeur recadrée à 9:16 de la hauteur, arrondie paire (obtenu: ${JSON.stringify(res)})`,
+      res !== null && res.width === 134
+    );
+  }
+
+  // --- Incrustation de sous-titres (SRT burn-in) : segments STT factices,
+  // fenêtrés + rebasés sur le début du clip par srt-export.js, brûlés par un
+  // VRAI ffmpeg (libass) — on vérifie que ça ne casse ni la réussite de
+  // l'export ni la durée exacte de l'extrait. -----------------------------
+  {
+    const transcriptSegments = [
+      { text: 'Car Dieu a tant aimé le monde', started_at: start + 2000, ended_at: start + 3500 },
+      { text: "qu'il a donné son fils unique", started_at: start + 4000, ended_at: start + 5500 },
+      // Hors fenêtre du clip ci-dessous (démarre à +2s, dure 15s -> fenêtre [2s,17s]) :
+      { text: 'Bien après ce clip', started_at: start + 25000, ended_at: start + 26000 },
+    ];
+    const tmpBefore = fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith('churchoverlay-clip-srt-'));
+
+    const r = await clipExporter.exportClips(sourcePath, outputDir, [entries[0]], start, {
+      clipDurationSec: 15,
+      transcriptSegments,
+    });
+    check('exportClips avec sous-titres : ok=true (libass accepte le burn-in)', r.ok === true);
+    const dur = getDurationSec(path.join(outputDir, r.clips[0].file));
+    check(
+      `exportClips avec sous-titres : durée toujours exacte malgré le filtre supplémentaire (obtenu: ${dur}s)`,
+      dur !== null && Math.abs(dur - 15) < 0.5
+    );
+
+    const tmpAfter = fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith('churchoverlay-clip-srt-'));
+    check(
+      'exportClips avec sous-titres : le .srt temporaire est bien supprimé après usage (pas de fuite dans %TEMP%)',
+      tmpAfter.length === tmpBefore.length
     );
   }
 

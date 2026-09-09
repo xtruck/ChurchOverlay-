@@ -3084,6 +3084,17 @@ function startPipeline() {
               ? ` (confiance ${result.confidence.toFixed(2)})`
               : '';
           log(`Transcription [${result.source}]${confidenceNote}: ${result.text.substring(0, 80)}`);
+          // AJOUT (durcissement Social Clip Machine — srt-export.js) :
+          // marks[0] est l'onset VAD (voir markVadOnset dans audio-capture.js),
+          // le seul horodatage réellement précis disponible pour le DÉBUT du
+          // segment ; Date.now() ici sert de fin (arrivée de la transcription,
+          // légèrement après la fin réelle de la parole — voir le commentaire
+          // d'en-tête de srt-export.js pour cette approximation assumée).
+          sessionStore.recordTranscriptSegment({
+            text: result.text,
+            startedAt: tracker ? tracker.summary().marks[0].at : Date.now(),
+            endedAt: Date.now(),
+          });
           broadcast({
             action: 'transcript',
             text: result.text,
@@ -3222,6 +3233,14 @@ function startPipeline() {
       log(
         `Transcription [deepgram-streaming]${typeof meta?.confidence === 'number' ? ` (confiance ${meta.confidence.toFixed(2)})` : ''}: ${text.substring(0, 80)}`
       );
+      // AJOUT (durcissement Social Clip Machine — srt-export.js) : même
+      // capture que le chemin batch ci-dessus, voir ce commentaire pour le
+      // détail de la précision de startedAt/endedAt.
+      sessionStore.recordTranscriptSegment({
+        text,
+        startedAt: tracker ? tracker.summary().marks[0].at : Date.now(),
+        endedAt: Date.now(),
+      });
       broadcast({
         action: 'transcript',
         text,

@@ -124,6 +124,48 @@ function makeTmpDir() {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 }
 
+// --- Test 3c : recordTranscriptSegment() puis relecture via
+// getTranscriptSegmentsSince() — AJOUT (durcissement Social Clip Machine,
+// srt-export.js). Ordre CROISSANT attendu (contrairement à
+// getVerseHistorySince/getPipelineErrorsSince ci-dessus) : voir le
+// commentaire de getTranscriptSegmentsSince dans session-store.js. ---
+{
+  const tmpDir = makeTmpDir();
+  sessionStore.init(tmpDir);
+
+  const now = Date.now();
+  sessionStore.recordTranscriptSegment({
+    text: 'Bienvenue à ce culte',
+    startedAt: now,
+    endedAt: now + 1200,
+  });
+  sessionStore.recordTranscriptSegment({
+    text: 'Ouvrons nos bibles',
+    startedAt: now + 5000,
+    endedAt: now + 6000,
+  });
+
+  const segments = sessionStore.getTranscriptSegmentsSince(0);
+  assert(segments.length === 2, 'getTranscriptSegmentsSince(0) retrouve les 2 segments enregistrés');
+  assert(
+    segments[0].text === 'Bienvenue à ce culte' && segments[1].text === 'Ouvrons nos bibles',
+    'getTranscriptSegmentsSince retourne un ordre CHRONOLOGIQUE croissant (ORDER BY started_at ASC)'
+  );
+  assert(
+    segments[0].started_at === now && segments[0].ended_at === now + 1200,
+    'started_at/ended_at sont bien persistés tels quels'
+  );
+
+  const filtered = sessionStore.getTranscriptSegmentsSince(now + 2000);
+  assert(
+    filtered.length === 1 && filtered[0].text === 'Ouvrons nos bibles',
+    'getTranscriptSegmentsSince(sinceMs) filtre correctement par date'
+  );
+
+  sessionStore.close();
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+}
+
 // --- Test 4 : robustesse — écrire sans init() préalable ne doit jamais planter ---
 {
   // Aucun sessionStore.init() ici : simule le cas où l'initialisation a
@@ -133,6 +175,7 @@ function makeTmpDir() {
     sessionStore.recordVerseShown({ reference: 'Test', text: 'x' });
     sessionStore.recordPipelineError('transcription', 'x');
     sessionStore.recordCheckin();
+    sessionStore.recordTranscriptSegment({ text: 'x', startedAt: Date.now(), endedAt: Date.now() });
     assert(sessionStore.getVerseHistorySince(0).length === 0, 'lecture sans DB active retourne []');
     assert(
       sessionStore.getPipelineErrorsSince(0).length === 0,
@@ -142,12 +185,16 @@ function makeTmpDir() {
       sessionStore.getCheckinCountSince(0) === 0,
       'lecture des présences sans DB active retourne 0'
     );
+    assert(
+      sessionStore.getTranscriptSegmentsSince(0).length === 0,
+      'lecture des segments de transcription sans DB active retourne []'
+    );
   } catch (_err) {
     threw = true;
   }
   assert(
     !threw,
-    "recordVerseShown/recordPipelineError/recordCheckin n'interrompent jamais l'appelant, même sans DB active"
+    "recordVerseShown/recordPipelineError/recordCheckin/recordTranscriptSegment n'interrompent jamais l'appelant, même sans DB active"
   );
 }
 

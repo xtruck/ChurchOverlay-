@@ -100,6 +100,14 @@ function createHandlers(ctx) {
     broadcast({ action: 'clipExportStarted' });
     try {
       const entries = sessionStore.getVerseHistorySince(sessionStartedAt);
+      // AJOUT (durcissement Social Clip Machine) : les segments STT ne sont
+      // récupérés QUE si l'incrustation est demandée — inutile de lire toute
+      // la table transcript_segments (potentiellement des centaines de
+      // lignes sur un long culte) pour un export sans sous-titres.
+      const burnSubtitles = sanitized.burnSubtitles === true;
+      const transcriptSegments = burnSubtitles
+        ? sessionStore.getTranscriptSegmentsSince(sessionStartedAt)
+        : [];
       const result = await clipExporter.exportClips(
         sourcePath,
         outputDir,
@@ -107,6 +115,8 @@ function createHandlers(ctx) {
         sessionStartedAt,
         {
           clipDurationSec: Number(sanitized.clipDurationSec) || undefined,
+          aspectRatio: sanitized.aspectRatio,
+          transcriptSegments,
           onProgress: (done, total) => broadcast({ action: 'clipExportProgress', done, total }),
         }
       );

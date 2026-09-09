@@ -2439,6 +2439,19 @@ Aucune exécution agent.</pre>
                 s autour de chaque temps fort, depuis un enregistrement vidéo déjà terminé sur
                 disque.
               </div>
+              <!-- AJOUT (durcissement Social Clip Machine) : format de sortie et
+                           incrustation des sous-titres — voir clip-exporter.js/srt-export.js. -->
+              <div class="wrap-btn-row mb-tight">
+                <label for="clipAspectRatioSelect" class="field-hint">Format :</label>
+                <select id="clipAspectRatioSelect" aria-label="Format de l'extrait vidéo">
+                  <option value="16:9">16:9 (paysage)</option>
+                  <option value="9:16">9:16 (vertical — Reels/TikTok/Shorts)</option>
+                </select>
+                <label class="field-hint">
+                  <input type="checkbox" id="clipBurnSubtitlesCheckbox" />
+                  Incruster les sous-titres (.srt, à partir de la transcription du culte)
+                </label>
+              </div>
               <div class="wrap-btn-row mb-tight">
                 <button id="pickClipSourceVideoBtn" class="btn btn-secondary">
                   📂 Choisir la vidéo source

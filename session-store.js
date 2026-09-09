@@ -30,6 +30,7 @@ let db = null;
 let insertVerseStmt = null;
 let insertErrorStmt = null;
 let insertCheckinStmt = null;
+let insertTranscriptSegmentStmt = null;
 
 /**
  * Initialise la base SQLite dans <userDataDir>/data/session-history.db.
@@ -84,6 +85,21 @@ function init(userDataDir, opts = {}) {
         checked_in_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_checkins_checked_in_at ON checkins(checked_in_at);
+
+      -- AJOUT (durcissement Social Clip Machine — srt-export.js) : chaque
+      -- segment de transcription STT finalisé, avec ses deux bornes de
+      -- temps (voir le commentaire d'en-tête de srt-export.js pour la
+      -- précision réelle de ces deux valeurs). Seule donnée qui manquait
+      -- pour incruster des sous-titres synchronisés dans les extraits vidéo
+      -- de clip-exporter.js — le reste (versets/chants/médias) est déjà
+      -- couvert par verse_history ci-dessus.
+      CREATE TABLE IF NOT EXISTS transcript_segments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        text TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        ended_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_transcript_segments_started_at ON transcript_segments(started_at);
     `);
 
     insertVerseStmt = db.prepare(`
@@ -96,6 +112,10 @@ function init(userDataDir, opts = {}) {
     `);
     insertCheckinStmt = db.prepare(`
       INSERT INTO checkins (checked_in_at) VALUES (@checkedInAt)
+    `);
+    insertTranscriptSegmentStmt = db.prepare(`
+      INSERT INTO transcript_segments (text, started_at, ended_at)
+      VALUES (@text, @startedAt, @endedAt)
     `);
   } catch (err) {
     db = null;
@@ -136,6 +156,23 @@ function recordPipelineError(type, message) {
       type: String(type || 'unknown'),
       message: String(message || '').slice(0, 1000),
       occurredAt: Date.now(),
+    });
+  } catch (_err) {
+    // Best-effort.
+  }
+}
+
+/**
+ * Enregistre un segment de transcription STT finalisé (voir srt-export.js
+ * pour la précision réelle de startedAt/endedAt). Best-effort.
+ */
+function recordTranscriptSegment({ text, startedAt, endedAt }) {
+  if (!insertTranscriptSegmentStmt) return;
+  try {
+    insertTranscriptSegmentStmt.run({
+      text: String(text || '').slice(0, 500),
+      startedAt: startedAt || Date.now(),
+      endedAt: endedAt || Date.now(),
     });
   } catch (_err) {
     // Best-effort.
@@ -187,6 +224,25 @@ function getVerseHistorySince(sinceMs = 0) {
 }
 
 /**
+ * @param {number} [sinceMs]
+ * @returns {Array<object>} segments de transcription, ordre CHRONOLOGIQUE
+ *   croissant (contrairement à getVerseHistorySince/getPipelineErrorsSince
+ *   ci-dessus — celles-ci servent un affichage "plus récent en premier",
+ *   alors que srt-export.js#buildSrt a besoin d'un ordre croissant pour
+ *   construire des sous-titres séquentiels).
+ */
+function getTranscriptSegmentsSince(sinceMs = 0) {
+  if (!db) return [];
+  try {
+    return db
+      .prepare('SELECT * FROM transcript_segments WHERE started_at >= ? ORDER BY started_at ASC')
+      .all(sinceMs);
+  } catch (_err) {
+    return [];
+  }
+}
+
+/**
  * @returns {Array<object>} erreurs de pipeline les plus récentes en premier.
  */
 function getPipelineErrorsSince(sinceMs = 0) {
@@ -214,6 +270,7 @@ function close() {
     insertVerseStmt = null;
     insertErrorStmt = null;
     insertCheckinStmt = null;
+    insertTranscriptSegmentStmt = null;
   }
 }
 
@@ -230,9 +287,11 @@ module.exports = {
   recordVerseShown,
   recordPipelineError,
   recordCheckin,
+  recordTranscriptSegment,
   getVerseHistorySince,
   getPipelineErrorsSince,
   getCheckinCountSince,
+  getTranscriptSegmentsSince,
   close,
   isEnabled,
 };

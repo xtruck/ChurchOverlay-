@@ -720,15 +720,20 @@ const SCHEMAS = {
   // sourcePath/outputDir viennent du sélecteur natif Electron (même garde
   // que pour la médiathèque/import-export de service) ; clipDurationSec est
   // déjà borné par clip-exporter.js (Math.min/Math.max) quelle que soit la
-  // valeur reçue — juste une vérification de type ici.
+  // valeur reçue — juste une vérification de type ici. aspectRatio/
+  // burnSubtitles (AJOUT — durcissement Social Clip Machine) : une valeur
+  // invalide retombe sur le comportement par défaut côté clip-exporter.js
+  // (16:9, pas de sous-titres) plutôt que d'échouer tout l'export.
   exportClips: {
     required: ['action', 'sourcePath', 'outputDir'],
-    optional: ['clipDurationSec'],
+    optional: ['clipDurationSec', 'aspectRatio', 'burnSubtitles'],
     validators: {
       action: (value) => value === 'exportClips',
       sourcePath: (value) => typeof value === 'string' && value.length > 0 && value.length <= 1000,
       outputDir: (value) => typeof value === 'string' && value.length > 0 && value.length <= 1000,
       clipDurationSec: (value) => typeof value === 'number' && value > 0,
+      aspectRatio: (value) => value === '16:9' || value === '9:16',
+      burnSubtitles: (value) => typeof value === 'boolean',
     },
   },
   searchBible: {
