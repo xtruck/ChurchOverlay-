@@ -32,10 +32,85 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700;800&family=Newsreader:ital,wght@0,500;0,600;1,500&family=Newsreader:wght@700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700;800&family=Cormorant+Garamond:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="dashboard/dashboard.css" />
+    <style>
+      .brand-logo-img {
+        display: none;
+      }
+
+      .brand-logo-img.is-visible {
+        display: block;
+      }
+
+      .live-status-pill.is-hidden {
+        display: none;
+      }
+
+      .pp-live-section {
+        display: block;
+      }
+
+      .pp-ai-suggestions-row {
+        display: none;
+      }
+
+      .hidden-by-default {
+        display: none;
+      }
+
+      .media-library-unavailable {
+        display: none;
+      }
+
+      .notice-banner.hidden-by-default {
+        display: none;
+      }
+
+      .notice-banner--candidate.hidden-by-default,
+      .notice-banner--pending.hidden-by-default {
+        display: none;
+      }
+
+      .section.is-hidden {
+        display: none;
+      }
+
+      .verse-body-bilingual.is-hidden {
+        display: none;
+      }
+
+      .post-service-recap-card--hidden {
+        display: none;
+      }
+
+      .agent-approve-btn {
+        display: none;
+      }
+
+      .vumeter-peak {
+        display: none;
+      }
+
+      .branding-logo-media {
+        display: none;
+      }
+
+      .branding-logo-media.is-visible {
+        display: block;
+      }
+
+      .preview-pane.is-hidden,
+      .media-wall-section.is-hidden,
+      .scene-composer-card.is-hidden,
+      .scene-composer-bg-media-select.is-hidden,
+      .scene-composer-bg-color-input.is-hidden,
+      .preview-program-caption.is-hidden {
+        display: none !important;
+      }
+    </style>
   </head>
   <body>
     <div class="grain" aria-hidden="true"></div>
@@ -64,7 +139,7 @@
                 <path d="M12 2v20M6 8h12" />
               </svg>
             </div>
-            <img class="brand-logo-img" id="brandLogoImg" alt="Logo de l'organisation" style="display: none" />
+            <img class="brand-logo-img" id="brandLogoImg" alt="Logo de l'organisation" />
             <div>
               <div class="brand-title" id="brandTitle">ChurchOverlay</div>
               <div class="brand-tag">Opérateur Pro</div>
@@ -149,9 +224,8 @@
                      preload.js). Masqué par défaut : n'existe qu'en app Electron,
                      pas en mode "serveur seul" navigateur (voir initPerfPill). -->
           <div
-            class="live-status-pill"
+            class="live-status-pill is-hidden"
             id="perfPill"
-            style="display: none"
             title="Utilisation CPU / mémoire du processus principal ChurchOverlay"
           >
             <div class="status-dot" id="perfDot"></div>
@@ -1048,7 +1122,6 @@
                 <div
                   id="ppAiSuggestionsRow"
                   class="pp-ai-suggestions-row"
-                  style="display: none"
                 >
                   <span class="pp-ai-suggestions-label"
                     ><svg
@@ -1183,7 +1256,7 @@
         </section>
 
         <!-- Overview Section (Direct Classique) -->
-        <section id="overview" class="section" style="display: none">
+        <section id="overview" class="section hidden-by-default">
 
           <!-- Listening Bar — état audio en un coup d'œil -->
           <div id="listeningBar" class="card listening-bar">
@@ -1298,7 +1371,7 @@
                 👁 Afficher l'aperçu
               </button>
             </div>
-            <div id="livePreviewWrap" style="display: none">
+            <div id="livePreviewWrap" class="hidden-by-default">
               <iframe class="live-preview-frame" id="livePreviewFrame" title="Aperçu de l'overlay"></iframe>
             </div>
           </div>
@@ -1565,7 +1638,7 @@
                   ⏹ Masquer
                 </button>
               </div>
-              <div class="queue-add-row" id="mediaLibraryUnavailable" style="display: none">
+              <div class="queue-add-row media-library-unavailable" id="mediaLibraryUnavailable">
                 <span class="hint-text-sm">Ajout de média disponible uniquement dans l'application ChurchOverlay (pas dans
                   un navigateur).</span
                 >
@@ -1800,7 +1873,7 @@
           </div>
 
           <!-- Fuzzy match notice element -->
-          <div class="notice-banner notice-banner--fuzzy" id="fuzzyMatchNotice" style="display: none"></div>
+          <div class="notice-banner notice-banner--fuzzy hidden-by-default" id="fuzzyMatchNotice"></div>
 
           <!-- AJOUT (Étape 5 — candidateVerse spéculative) : bandeau distinct
                du bandeau fuzzy (Correction automatique) ci-dessus. Signale à
@@ -1809,7 +1882,13 @@
                tout affichage (jamais de référence ambiguë affichée
                aveuglément — principe mission). Effacé quand le vrai showVerse
                arrive, remplacé par la candidate suivante, ou sur timeout. -->
-          <div class="notice-banner notice-banner--candidate" id="candidateNotice" style="display: none"></div>
+          <div
+            class="notice-banner notice-banner--candidate hidden-by-default"
+            id="candidateNotice"
+            aria-live="polite"
+            aria-atomic="true"
+            hidden
+          ></div>
 
           <!-- AJOUT (Partie 2 — mode confiance) : distinct du bandeau
                candidateVerse ci-dessus (informatif, s'efface tout seul) —
@@ -1819,7 +1898,13 @@
                automatique : un verset non confirmé doit rester visible
                jusqu'à ce que l'opérateur agisse, ou soit remplacé par une
                détection plus récente. -->
-          <div class="notice-banner notice-banner--pending" id="pendingVerseBanner" style="display: none">
+          <div
+            class="notice-banner notice-banner--pending hidden-by-default"
+            id="pendingVerseBanner"
+            aria-live="assertive"
+            aria-atomic="true"
+            hidden
+          >
             <span class="pending-verse-text" id="pendingVerseText"></span>
             <button id="confirmPendingVerseBtn" type="button" class="btn btn-primary btn-xs">
               ✅ Confirmer (Espace)
@@ -1840,7 +1925,11 @@
                     Diffusion Overlay En Direct
                   </div>
                   <div class="btn-group">
-                    <button id="heroShowManualVerseBtn" class="btn btn-secondary btn-sm">
+                    <button
+                      id="heroShowManualVerseBtn"
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                    >
                       Saisir Réf
                     </button>
                     <!-- AJOUT (Smart Bible Overlay Builder — brief produit, priorité #8,
@@ -1852,12 +1941,13 @@
                                      que ce format-là. -->
                     <button
                       id="heroShareImageBtn"
+                      type="button"
                       class="btn btn-secondary btn-sm"
                       title="Générer une image carrée du verset actuel, pour les réseaux sociaux"
                     >
                       🖼️ Partager
                     </button>
-                    <button id="heroHideVerseBtn" class="btn btn-danger btn-sm">
+                    <button id="heroHideVerseBtn" type="button" class="btn btn-danger btn-sm">
                       Masquer
                     </button>
                   </div>
@@ -1875,9 +1965,8 @@
                                  le verset lui-même ne montrait que le FR même en mode
                                  'both'. displayVerse() y insère message.text_en. -->
                 <div
-                  class="verse-body-bilingual"
+                  class="verse-body-bilingual is-hidden"
                   id="verseTextBilingual"
-                  style="display: none"
                 ></div>
               </div>
 
@@ -1921,7 +2010,7 @@
         </section>
 
         <!-- Controls Section — Espace Direct (contrôles de diffusion en temps réel) -->
-        <section id="controls" class="section" style="display: none">
+        <section id="controls" class="section is-hidden">
           <div class="card mb-6" data-group="diffusion">
             <div class="card-header">
               <span class="card-title">Panneau de Contrôle Opérateur</span>
@@ -1991,10 +2080,10 @@
           <div class="card mb-6" data-group="diffusion">
             <div class="card-header">
               <span class="card-title">Mode lecture (verset par verset)</span>
-              <span id="readingModeBadge" class="status-badge success" style="display: none"
+              <span id="readingModeBadge" class="status-badge success hidden-by-default"
                 >Actif</span
               >
-              <span class="reading-mode-position" id="readingModePosition" style="display: none"></span>
+              <span class="reading-mode-position hidden-by-default" id="readingModePosition"></span>
             </div>
             <div class="inline-form-row mb-3">
               <input class="input-flex-220" type="text" id="readingModeInput" placeholder="Référence de départ (ex. Jean 3:1)" onkeydown="if (event.key === 'Enter') startReadingMode();" aria-label="Référence de départ du mode lecture" />
@@ -2002,14 +2091,13 @@
                 ▶️ Démarrer
               </button>
               <button
-                class="btn btn-danger"
+                class="btn btn-danger hidden-by-default"
                 id="readingModeStopBtn"
-                style="display: none"
               >
                 ⏹️ Arrêter
               </button>
             </div>
-            <div class="reading-advance-row" id="readingModeAdvanceRow" style="display: none">
+            <div class="reading-advance-row hidden-by-default" id="readingModeAdvanceRow">
               <button id="previousReadingVerseBtn" class="btn btn-secondary">
                 ◀ Précédent
               </button>
@@ -2088,7 +2176,7 @@
         </section>
 
         <!-- Transcript Section -->
-        <section id="transcript" class="section" style="display: none">
+        <section id="transcript" class="section is-hidden">
           <div class="card">
             <div class="card-header">
               <span class="card-title">Transcription Vocale en Temps Réel</span>
@@ -2135,7 +2223,7 @@
                 <!-- Barre de niveau animée -->
                 <div class="vumeter-bar" id="vumeterBar"></div>
                 <!-- Marqueur de pic -->
-                <div class="vumeter-peak" id="vumeterPeak" style="display: none"></div>
+                <div class="vumeter-peak" id="vumeterPeak"></div>
               </div>
               <div class="vumeter-info" id="vumeterInfo"></div>
             </div>
@@ -2153,7 +2241,7 @@
         </section>
 
         <!-- Analysis Section -->
-        <section id="analysis" class="section" style="display: none">
+        <section id="analysis" class="section is-hidden">
           <div class="analysis-stats-grid">
             <div class="card" data-group="analyse">
               <div class="card-header">
@@ -2207,7 +2295,7 @@
           <div class="card mt-6" data-group="analyse">
             <div class="card-header">
               <span class="card-title">Références Croisées</span>
-              <span id="crossRefStatus" class="status-badge" style="display: none"></span>
+              <span id="crossRefStatus" class="status-badge hidden-by-default"></span>
             </div>
             <div id="crossRefResults">
               <div class="stat-row">
@@ -2243,7 +2331,7 @@
               <!-- AJOUT : badge de mode de culte auto-détecté (rafraîchi en tâche de
                              fond, sans action de l'opérateur). Reste discret tant qu'aucune
                              détection n'a encore eu lieu. -->
-              <span id="sermonModeBadge" class="status-badge" style="display: none"></span>
+              <span id="sermonModeBadge" class="status-badge hidden-by-default"></span>
             </div>
             <div class="wrap-btn-row mb-4">
               <button id="requestSermonThemeBtn" class="btn btn-secondary">
@@ -2317,7 +2405,7 @@
           </div>
 
           <!-- Récap post-culte — affiché quand le culte est terminé -->
-          <div class="card mt-6" data-group="analyse" style="display: none" id="postServiceRecapCard">
+          <div class="card mt-6 post-service-recap-card--hidden" data-group="analyse" id="postServiceRecapCard">
             <div class="card-header">
               <span class="card-title">Récap Post-Culte</span>
               <div class="btn-group-sm">
@@ -2347,9 +2435,9 @@
               <input class="input-flex-240" type="text" id="agentInput" placeholder="Ex. Trouve Jean 3:16 et prépare son affichage" onkeydown="if (event.key === 'Enter') runAgent();" aria-label="Instruction pour l'agent opérateur" />
               <button id="runAgentBtn" class="btn btn-secondary">Lancer</button>
               <button
-                class="btn btn-primary"
+                type="button"
+                class="btn btn-primary agent-approve-btn"
                 id="agentApproveBtn"
-                style="display: none"
               >
                 Confirmer l'action
               </button>
@@ -2445,7 +2533,7 @@ Aucune exécution agent.</pre>
                 "chapitres YouTube" (à coller dans la description de la vidéo) — un export CSV est
                 aussi copié.
               </div>
-              <textarea class="highlights-export-output" id="highlightsExportOutput" readonly rows="6" style="display: none" aria-label="Temps forts exportés (chapitres YouTube)"></textarea>
+              <textarea class="highlights-export-output hidden-by-default" id="highlightsExportOutput" readonly rows="6" aria-label="Temps forts exportés (chapitres YouTube)"></textarea>
             </div>
 
             <!-- AJOUT (chantier 4.6 — extraits vidéo autour des temps forts) :
@@ -2494,7 +2582,7 @@ Aucune exécution agent.</pre>
         </section>
 
         <!-- Settings Section -->
-        <section id="settings" class="section" style="display: none">
+        <section id="settings" class="section is-hidden">
           <!-- AJOUT (sous-navigation par catégorie — filtre visuel des cartes
                      de l'onglet Régie) : dashboard/features/settings-subnav.js
                      et les attributs data-group="..." sur chaque carte
@@ -2569,7 +2657,7 @@ Aucune exécution agent.</pre>
               Intégrations
             </button>
           </div>
-          <div id="setupBanner" class="setup-banner" style="display: none">
+          <div id="setupBanner" class="setup-banner hidden-by-default">
             <span class="setup-banner-icon">⚠️</span>
             <div>
               <strong>Configuration requise pour démarrer</strong>
@@ -2611,7 +2699,7 @@ Aucune exécution agent.</pre>
             <button type="button" class="btn btn-primary btn-full-width" id="preServiceCheckBtn">
               ✅ Tester avant le culte
             </button>
-            <div id="preServiceCheckResults" class="preservice-check-results" style="display: none"></div>
+            <div id="preServiceCheckResults" class="preservice-check-results hidden-by-default"></div>
           </div>
 
           <!-- AJOUT (identité de marque du tableau de bord — revente en produit
@@ -2731,8 +2819,8 @@ Aucune exécution agent.</pre>
 
           <div class="card settings-card-spaced" id="apiSettingsCard" data-group="systeme">
             <div class="card-header">
-              <span class="card-title">Clés API & Microphone</span>
-              <div id="setupRequiredBadge" class="status-badge warning" style="display: none">
+              <span class="card-title">Clés API &amp; Microphone</span>
+              <div id="setupRequiredBadge" class="status-badge warning hidden-by-default">
                 Configuration requise
               </div>
             </div>
@@ -2740,7 +2828,7 @@ Aucune exécution agent.</pre>
             <!-- Affiché uniquement si la page est ouverte hors de l'app Electron
                          (ex: mode "serveur seul" dans un navigateur) : window.churchOverlay
                          n'existe alors pas, le pont IPC n'étant fourni que par preload.js. -->
-            <div id="apiSettingsUnavailable" class="settings-unavailable-note" style="display: none">
+            <div id="apiSettingsUnavailable" class="settings-unavailable-note hidden-by-default">
               La configuration des clés API n'est possible que depuis l'application de bureau
               ChurchOverlay (elle passe par le pont sécurisé Electron). En mode « serveur seul »
               dans un navigateur, définissez <code>GROQ_API_KEY</code> /
@@ -2748,7 +2836,7 @@ Aucune exécution agent.</pre>
               <code>.env.local</code> à la racine de l'application.
             </div>
 
-            <form id="apiSettingsForm" style="display: none">
+            <form id="apiSettingsForm" class="hidden-by-default">
               <div class="form-group">
                 <label for="settingsMicSelect">🎤 Microphone</label>
                 <div class="input-row">
@@ -2966,8 +3054,7 @@ Aucune exécution agent.</pre>
 
             <div
               id="displayWindowUnavailable"
-              class="settings-unavailable-note field-hint-flush"
-              style="display: none"
+              class="settings-unavailable-note field-hint-flush hidden-by-default"
             >
               La fenêtre d'affichage direct n'est disponible que depuis l'application de bureau
               ChurchOverlay. En mode « serveur seul » dans un navigateur, ouvrez plutôt
@@ -2980,7 +3067,7 @@ Aucune exécution agent.</pre>
                          une ligne par destination, chacune avec son propre statut vivant
                          (voir getDisplayWindowStatus()/onDisplayWindowStatusChanged() dans
                          main.js/preload.js) et ses propres actions indépendantes. -->
-            <div id="displayWindowControls" style="display: none">
+            <div id="displayWindowControls" class="hidden-by-default">
               <div class="field-hint display-window-hint">
                 Chaque destination a sa propre fenêtre plein écran, ouvrable simultanément sur un
                 écran différent (voir recommandations "Stage Display" / "présentation secondaire
@@ -3159,24 +3246,17 @@ Aucune exécution agent.</pre>
 
             <div
               id="cameraErrorHint"
-              class="settings-unavailable-note field-hint-flush"
-              style="display: none"
+              class="settings-unavailable-note field-hint-flush hidden"
             ></div>
 
             <div class="camera-preview-frame">
               <video
                 id="cameraPreview"
                 autoplay
-                playsinline
                 muted
-                class="camera-preview-video"
-                style="display: none"
+                class="camera-preview-video hidden"
               ></video>
-              <div
-                id="cameraPreviewPlaceholder"
-                class="camera-preview-placeholder"
-                style="display: flex"
-              >
+              <div id="cameraPreviewPlaceholder" class="camera-preview-placeholder">
                 Aucun aperçu — démarrez la caméra
               </div>
             </div>
@@ -3195,10 +3275,9 @@ Aucune exécution agent.</pre>
                      persistés automatiquement (ensureWsToken() dans main.js), cette carte
                      n'en affiche que le statut. -->
           <div
-            class="card"
+            class="card settings-card-spaced"
             id="networkSettingsCard"
             data-group="cameras"
-            class="settings-card-spaced"
           >
             <div class="card-header">
               <span class="card-title">Réseau (caméra téléphone par QR)</span>
@@ -3301,7 +3380,7 @@ Aucune exécution agent.</pre>
                   📷 Générer un QR code (téléphone, sans app)
                 </button>
               </div>
-              <div id="cameraPairingBox" class="camera-pairing-box" style="display: none">
+              <div id="cameraPairingBox" class="camera-pairing-box hidden-by-default">
                 <img
                   id="cameraPairingQr"
                   class="camera-pairing-qr-img"
@@ -3377,20 +3456,13 @@ Aucune exécution agent.</pre>
             </div>
             <div class="branding-logo-row">
               <div class="branding-logo-thumb">
-                <img
-                  id="brandingLogoImg"
-                  class="branding-logo-media"
-                  style="display: none"
-                  alt=""
-                />
+                <img id="brandingLogoImg" class="branding-logo-media" alt="" />
                 <video
                   id="brandingLogoVideo"
                   muted
                   loop
                   autoplay
-                  playsinline
                   class="branding-logo-media"
-                  style="display: none"
                 ></video>
                 <span id="brandingLogoPlaceholder" class="branding-logo-placeholder"
                   >Aucun logo</span
@@ -3764,7 +3836,7 @@ Aucune exécution agent.</pre>
         </section>
 
         <!-- Overlay Preview Section -->
-        <section id="overlay" class="section" style="display: none">
+        <section id="overlay" class="section is-hidden">
           <div class="overlay-preview-card" data-group="diffusion">
             <div class="overlay-preview-header">
               <div class="overlay-preview-mode-label">
@@ -3894,12 +3966,12 @@ Aucune exécution agent.</pre>
 
             <!-- Aperçu/Programme dual view -->
             <div id="previewProgramContainer" class="preview-program-container">
-              <div id="previewPane" class="preview-pane" style="display: none">
+              <div id="previewPane" class="preview-pane is-hidden">
                 <div class="preview-program-caption">APERÇU</div>
                 <iframe id="previewFrame" src="overlay.html" class="preview-frame-iframe"></iframe>
               </div>
               <div id="programPane" class="preview-pane">
-                <div id="programLabel" class="preview-program-caption" style="display: none">
+                <div id="programLabel" class="preview-program-caption is-hidden">
                   PROGRAMME
                 </div>
                 <iframe id="overlayFrame" src="overlay.html"></iframe>
@@ -3909,7 +3981,7 @@ Aucune exécution agent.</pre>
         </section>
 
         <!-- Mur Média — grille visuelle pour déclenchement rapide pendant le culte -->
-        <section id="media-wall" class="section" style="display: none">
+        <section id="media-wall" class="section media-wall-section is-hidden">
           <div class="card" data-group="media">
             <div class="card-header">
               <span class="card-title">Mur Média</span>
@@ -3966,7 +4038,7 @@ Aucune exécution agent.</pre>
              renderSceneDom() — voir scene-render.js). Même structure que la
              carte Médiathèque (section "controls") :
              classes queue-panel-header/media-gallery-grid déjà stylées. -->
-        <section id="studio" class="section" style="display: none">
+        <section id="studio" class="section is-hidden">
           <div class="card" data-group="studio">
             <div class="queue-panel-header">
               <span class="card-title"
@@ -4001,7 +4073,7 @@ Aucune exécution agent.</pre>
                (position 3x3, police parmi 4 déjà chargées, poids/couleur/
                alignement) plutôt que glisser-déposer libre — voir scene-store.js
                pour le raisonnement. -->
-          <div class="card" id="sceneComposerCard" style="display: none">
+          <div class="card scene-composer-card is-hidden" id="sceneComposerCard">
             <div class="queue-panel-header">
               <span class="card-title" id="sceneComposerTitle">Nouvelle scène</span>
               <button id="closeSceneComposerBtn" class="btn btn-secondary chip-sm">
@@ -4048,7 +4120,7 @@ Aucune exécution agent.</pre>
                     id="composerBgMediaSelect"
                     onchange="onComposerBgMediaChange()"
                     aria-label="Image de fond (médiathèque)"
-                    style="display: none"
+                    class="scene-composer-bg-media-select is-hidden"
                   ></select>
                   <input
                     type="color"
@@ -4056,7 +4128,7 @@ Aucune exécution agent.</pre>
                     value="#0b0f1a"
                     onchange="onComposerBgColorChange()"
                     aria-label="Couleur de fond"
-                    style="display: none"
+                    class="scene-composer-bg-color-input is-hidden"
                   />
                 </div>
                 <div class="scene-composer-elements-header">
@@ -4177,6 +4249,15 @@ Aucune exécution agent.</pre>
          defer explicite), donc l'ordre relatif est garanti quoi qu'il arrive
          — mais garder camera-capture.js classique et immédiat reste le choix
          le plus simple à raisonner. -->
+    <style>
+      .hidden {
+        display: none !important;
+      }
+
+      .camera-preview-placeholder {
+        display: flex;
+      }
+    </style>
     <script src="camera-capture.js"></script>
     <!-- AJOUT (studio de scènes, lot 5/6) : même raisonnement que
          camera-capture.js ci-dessus — script classique chargé avant le

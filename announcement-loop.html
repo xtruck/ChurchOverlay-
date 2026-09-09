@@ -80,7 +80,7 @@
 
 <div id="stage">
   <img id="stageImg" alt="" hidden>
-  <video id="stageVideo" hidden playsinline muted></video>
+  <video id="stageVideo" hidden muted></video>
 </div>
 <div id="empty">Aucun média inclus dans le diaporama.<br>Cochez "Diaporama" sur un élément de la médiathèque.</div>
 
@@ -112,6 +112,7 @@ let loopTimer = null;
 function showLoopItem() {
   const img = document.getElementById('stageImg');
   const video = document.getElementById('stageVideo');
+  video.playsInline = true;
   clearTimeout(loopTimer);
 
   if (loopItems.length === 0) {

@@ -279,6 +279,12 @@
         color: var(--bg);
         background: var(--accent);
       }
+      #captionBar .caption-translation.hidden {
+        display: none;
+      }
+      #empty.empty-state {
+        display: none;
+      }
     </style>
   </head>
   <body>
@@ -303,10 +309,10 @@
     <div id="captionBar">
       <div class="caption-label">Sous-titres en direct</div>
       <div class="caption-text" id="captionText"></div>
-      <div class="caption-translation" id="captionTranslation" style="display: none"></div>
+      <div class="caption-translation hidden" id="captionTranslation"></div>
     </div>
     <div id="list"></div>
-    <div id="empty" style="display: none">
+    <div id="empty" class="empty-state">
       Aucun verset affiché pour le moment. Cette page se mettra à jour dès qu'un verset apparaîtra à
       l'écran.
     </div>
