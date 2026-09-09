@@ -1351,23 +1351,27 @@ async function displayChapterFallback(book, chapter, tracker, opts) {
   sessionState.recordShownReference(refKey, now, dedupCtx);
   let verse;
   try {
-    // CORRECTIF (demande explicite — chapitre entier illisible en direct) :
-    // affichait auparavant TOUT le chapitre (getVerseMultilang sans
-    // verseStart, voir helloaoParseVerse) — correct par construction
-    // ("jamais un verset faux", voir le commentaire du Chantier 3
-    // ci-dessus) mais un pavé de texte illisible projeté à l'assemblée.
-    // Repli sur le verset 1 : un point de départ lisible, cohérent avec la
-    // référence "livre chapitre" réellement entendue (le verset 1 fait
-    // partie du bon chapitre — jamais une référence fausse), et remplacé
-    // AUTOMATIQUEMENT dès qu'un verset exact est détecté (le timer de ce
-    // repli est déjà annulé par cancelChapterFallback() dans ce cas, et le
-    // chemin d'affichage normal diffuse alors la bonne référence — voir
-    // processTranscript). La saisie manuelle d'un chapitre seul via
-    // "Afficher un Verset" (opérateur qui tape "Jean 3" exprès pour une
-    // lecture complète) N'EST PAS concernée : chemin distinct, voir le
-    // commentaire « règle absolue » plus bas dans processTranscript.
+    // CORRECTIF (bug réel signalé en conditions réelles — "Esther 1:1"
+    // affiché seul, alors qu'aucun numéro de verset n'avait jamais été
+    // entendu) : une modification antérieure ("chapitre entier illisible en
+    // direct") avait fait retomber ce repli sur le VERSET 1 spécifiquement
+    // — cassant du même coup RÈGLE MISSION (Chantier A.3, voir
+    // integration-chapter-only-verse1.js, laissé rouge depuis) : « quand le
+    // numéro de verset n'est pas identifié avec certitude, ne jamais
+    // retomber sur le verset 1 ». Le problème n'était pas que la lisibilité
+    // du chapitre entier, mais que verset 1 précis implique à tort que le
+    // pipeline a bien entendu "verset 1" — alors qu'aucun numéro n'a jamais
+    // été capté. Repli sur le CHAPITRE ENTIER (verseStart omis) rétabli :
+    // jamais une référence fausse, remplacé AUTOMATIQUEMENT dès qu'un
+    // verset exact est détecté (le timer de ce repli est déjà annulé par
+    // cancelChapterFallback() dans ce cas, et le chemin d'affichage normal
+    // diffuse alors la bonne référence — voir processTranscript). La
+    // saisie manuelle d'un chapitre seul via "Afficher un Verset" (opérateur
+    // qui tape "Jean 3" exprès pour une lecture complète) N'EST PAS
+    // concernée : chemin distinct, voir le commentaire « règle absolue »
+    // plus bas dans processTranscript.
     verse = await bibleLookup.getVerseMultilang(
-      { book, chapter, verseStart: 1, verseEnd: 1 },
+      { book, chapter },
       sessionState.getDisplayLanguage()
     );
   } catch (err) {

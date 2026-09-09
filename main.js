@@ -514,11 +514,26 @@ function createDisplayWindow(displayId, mode = 'overlay') {
     },
   });
   win.setMenuBarVisibility(false);
-  // Même jeton WS que mainWindow (voir createMainWindow) — chaque page en
-  // file:// lit ce token via getWsUrl()/window.location.search, exactement
-  // comme dashboard.html/overlay.html.
+  // CORRECTIF (bug réel trouvé en conditions réelles — "Connexion WebSocket
+  // refusée" en boucle toutes les ~3s dans les journaux, pour overlay/stage-
+  // display/announcement-loop) : cette fonction passait WS_AUTH_TOKEN (le
+  // jeton OPÉRATEUR) — copié par erreur du même bloc dans createMainWindow()
+  // (dashboard.html, qui a légitimement besoin du rôle operator). Ces trois
+  // fenêtres sont des écrans d'AFFICHAGE en lecture seule (rôle 'viewer'),
+  // exactement comme getOverlayUrl()/getBrandingOverlayUrl()/
+  // getNetworkPageUrl() ci-dessous — qui utilisent déjà, eux, WS_VIEWER_TOKEN.
+  // Conséquence concrète du bug : si WS_AUTH_TOKEN n'est pas configuré mais
+  // WS_VIEWER_TOKEN l'est (une configuration courante — protéger l'opérateur
+  // sans forcément protéger l'affichage), `query` devenait `{}` (aucun jeton
+  // du tout) : le serveur exige pourtant un jeton dès qu'UN SEUL des deux est
+  // configuré (voir wss.on('connection') dans server.js) — la fenêtre était
+  // donc rejetée (1008) et retentait indéfiniment, JAMAIS connectée. Et si
+  // WS_AUTH_TOKEN ÉTAIT configuré, ces fenêtres se connectaient avec les
+  // pleins droits OPÉRATEUR — violation de la séparation des privilèges
+  // documentée (voir CLAUDE.md, contrainte immuable #2 : "l'overlay ne doit
+  // jamais recevoir le jeton opérateur").
   win.loadFile(path.join(__dirname, modeConfig.file), {
-    query: process.env.WS_AUTH_TOKEN ? { token: process.env.WS_AUTH_TOKEN } : {},
+    query: process.env.WS_VIEWER_TOKEN ? { token: process.env.WS_VIEWER_TOKEN } : {},
   });
   win.on('closed', () => {
     displayWindows[mode] = null;
