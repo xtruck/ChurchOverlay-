@@ -42,6 +42,14 @@ const deepgram = require('./deepgram-wrapper');
 // dépendance réseau/IO ni vers le reste de l'app (voir son en-tête) —
 // aucun risque de dépendance circulaire à le requérir ici.
 const sessionState = require('./session-state');
+// AJOUT (chantier transcription — cross-check parallèle de basse confiance) :
+// featuresStore pour le seuil réglable (voir getCrossCheckConfidenceThreshold),
+// scoreCanonicalMatch pour arbitrer entre Groq et Deepgram sur le
+// vocabulaire biblique/dynamique déjà connu (voir transcription-corrector.js).
+// Ni l'un ni l'autre n'introduit de dépendance circulaire : features-store.js
+// et transcription-corrector.js ne requièrent jamais asr-engine.js.
+const featuresStore = require('./features-store');
+const { scoreCanonicalMatch } = require('./transcription-corrector');
 
 const VALID_PROVIDERS = ['auto', 'groq', 'deepgram', 'streaming', 'qwen-local'];
 
@@ -50,6 +58,126 @@ function resolveProvider() {
   const raw = (process.env.ASR_PROVIDER || 'auto').toLowerCase();
   if (raw === 'streaming') return 'deepgram';
   return VALID_PROVIDERS.includes(raw) ? raw : 'auto';
+}
+
+// ---------------------------------------------------------------------------
+// AJOUT (chantier transcription — cross-check parallèle de basse confiance) :
+// aujourd'hui, dès que Groq répond dans les temps (voir
+// groq-wrapper.js#transcribeWithFallback), Deepgram est ABORTÉ et sa
+// réponse jamais consultée — MÊME si la confiance Groq est très basse. Un
+// segment "gagné" de justesse par Groq avec une confiance médiocre n'était
+// donc jamais comparé à une seconde source, contrairement à un ÉCHEC Groq
+// (qui, lui, bascule déjà sur Deepgram). Ce correctif cible précisément ce
+// trou : un second appel Deepgram, déclenché seulement sous le seuil
+// configuré, jamais pour un résultat déjà confiant (coût réseau/latence
+// ajouté seulement quand la qualité est déjà en doute).
+// ---------------------------------------------------------------------------
+
+const DEFAULT_CROSS_CHECK_CONFIDENCE_THRESHOLD = 0.8;
+
+/**
+ * Seuil de déclenchement du cross-check — réglable en direct via
+ * config/features.json (audio.crossCheckConfidenceThreshold, rechargé à
+ * chaque segment, même discipline que
+ * server.js#getTranscriptionConfidenceThreshold), 0.8 (80%) par défaut. Une
+ * valeur hors (0, 1] retombe sur le défaut plutôt que de désactiver
+ * silencieusement le cross-check ou de le déclencher sur tout segment.
+ * @returns {number}
+ */
+function getCrossCheckConfidenceThreshold() {
+  const features = featuresStore.readFeatures();
+  const fromFeatures = (features.audio || {}).crossCheckConfidenceThreshold;
+  if (typeof fromFeatures === 'number' && fromFeatures > 0 && fromFeatures <= 1) {
+    return fromFeatures;
+  }
+  return DEFAULT_CROSS_CHECK_CONFIDENCE_THRESHOLD;
+}
+
+/**
+ * Relance Deepgram sur LE MÊME segment déjà transcrit par Groq avec une
+ * confiance sous le seuil, et arbitre entre les deux résultats.
+ *
+ * ARBITRAGE (voir cahier des charges — "meilleure correspondance
+ * canonique") : PAS seulement la confiance acoustique brute — un moteur
+ * peut être très confiant sur un mot qu'il a pourtant mal reconnu.
+ * scoreCanonicalMatch() (transcription-corrector.js) compte les
+ * correspondances de CHAQUE texte avec le vocabulaire biblique/dynamique
+ * déjà connu (noms de livres, intervenants réguliers, vocabulaire des
+ * chants de ce culte) : le texte le plus "reconnaissable" gagne. Égalité de
+ * score canonique -> départage par la confiance acoustique brute. Double
+ * égalité -> Groq conservé (déjà le résultat en main, aucune raison de
+ * préférer Deepgram à raison égale).
+ *
+ * BULLETPROOF (même discipline que correctSmart() dans
+ * transcription-corrector.js) : un échec Deepgram ici (timeout, clé
+ * absente, erreur réseau) ne fait JAMAIS perdre le résultat Groq déjà en
+ * main — au pire, on garde une transcription de confiance moyenne plutôt
+ * que d'en perdre une bonne.
+ * @param {string} segmentFile
+ * @param {{text: string, isFinal: boolean, confidence?: number, timestamp: number, engine: string}} primaryResult - résultat Groq déjà obtenu
+ * @param {string} [language]
+ * @returns {Promise<{text: string, isFinal: boolean, confidence?: number, timestamp: number, engine: string, crossChecked?: boolean}>}
+ */
+async function crossCheckWithDeepgram(segmentFile, primaryResult, language) {
+  try {
+    const dgResult = await deepgram.transcribeFile(
+      segmentFile,
+      new AbortController().signal,
+      language
+    );
+    const primaryScore = scoreCanonicalMatch(primaryResult.text);
+    const dgScore = scoreCanonicalMatch(dgResult.text);
+    const dgWins =
+      dgScore > primaryScore ||
+      (dgScore === primaryScore && (dgResult.confidence || 0) > (primaryResult.confidence || 0));
+
+    if (dgWins) {
+      console.log(
+        `[ASR] Cross-check basse confiance : Deepgram retenu (correspondances canoniques ${dgScore} vs ${primaryScore}, confiance ${(primaryResult.confidence || 0).toFixed(2)} -> ${(dgResult.confidence || 0).toFixed(2)})`
+      );
+      return {
+        text: dgResult.text,
+        isFinal: true,
+        confidence: dgResult.confidence,
+        timestamp: primaryResult.timestamp,
+        engine: 'deepgram',
+        crossChecked: true,
+      };
+    }
+    console.log(
+      `[ASR] Cross-check basse confiance : ${primaryResult.engine} conservé (correspondances canoniques ${primaryScore} vs ${dgScore})`
+    );
+    return { ...primaryResult, crossChecked: true };
+  } catch (err) {
+    console.warn(
+      '[ASR] Cross-check Deepgram indisponible, transcription initiale conservée : ' + err.message
+    );
+    return primaryResult;
+  }
+}
+
+/**
+ * Applique le cross-check ci-dessus si, et seulement si, TOUTES ces
+ * conditions sont réunies : le résultat vient de Groq (jamais Deepgram
+ * contre lui-même), une confiance NUMÉRIQUE est présente (jamais déclenché
+ * sur `undefined` — un fournisseur qui ne renvoie aucune confiance ne doit
+ * pas être traité comme "basse confiance"), elle est sous le seuil, et
+ * Deepgram est configuré (sinon rien à comparer).
+ * @param {{text: string, isFinal: boolean, confidence?: number, timestamp: number, engine: string}} result
+ * @param {string} segmentFile
+ * @param {string} [language]
+ * @returns {Promise<object>}
+ */
+async function maybeCrossCheck(result, segmentFile, language) {
+  if (
+    result.engine === 'groq' &&
+    typeof result.confidence === 'number' &&
+    result.confidence < getCrossCheckConfidenceThreshold() &&
+    deepgram.isConfigured()
+  ) {
+    return crossCheckWithDeepgram(segmentFile, result, language);
+  }
+  return result;
 }
 
 /**
@@ -100,13 +228,17 @@ async function transcribeSegment(segmentFile, contextHint, signal) {
 
   if (provider === 'groq') {
     const result = await groq.transcribeFile(segmentFile, signal, contextHint, language);
-    return {
-      text: result.text,
-      isFinal: true,
-      confidence: result.confidence,
-      timestamp,
-      engine: 'groq',
-    };
+    return maybeCrossCheck(
+      {
+        text: result.text,
+        isFinal: true,
+        confidence: result.confidence,
+        timestamp,
+        engine: 'groq',
+      },
+      segmentFile,
+      language
+    );
   }
 
   if (provider === 'deepgram') {
@@ -125,15 +257,22 @@ async function transcribeSegment(segmentFile, contextHint, signal) {
 
   // 'auto' — comportement historique de groq-wrapper.transcribeWithFallback(),
   // volontairement INCHANGÉ pour tout le reste (voir en-tête du fichier) ;
-  // seul le paramètre de langue est nouveau ici (lot 4).
+  // seul le paramètre de langue est nouveau ici (lot 4). AJOUT (cross-check) :
+  // transcribeWithFallback() bascule déjà sur Deepgram en cas d'ÉCHEC Groq —
+  // maybeCrossCheck() couvre le trou restant, un Groq qui RÉPOND mais avec
+  // une confiance basse (voir son en-tête).
   const result = await groq.transcribeWithFallback(segmentFile, undefined, contextHint, language);
-  return {
-    text: result.text,
-    isFinal: true,
-    confidence: result.confidence,
-    timestamp,
-    engine: result.source,
-  };
+  return maybeCrossCheck(
+    {
+      text: result.text,
+      isFinal: true,
+      confidence: result.confidence,
+      timestamp,
+      engine: result.source,
+    },
+    segmentFile,
+    language
+  );
 }
 
 /**
@@ -172,4 +311,8 @@ module.exports = {
   getStatus,
   resolveProvider,
   VALID_PROVIDERS,
+  // AJOUT (chantier transcription — cross-check parallèle de basse confiance),
+  // exposés pour test/test-asr-engine.js.
+  getCrossCheckConfidenceThreshold,
+  maybeCrossCheck,
 };

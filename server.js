@@ -324,7 +324,15 @@ function refreshDynamicCorrections() {
       .listSongs()
       .map((s) => songLibrary.getSong(s.id))
       .filter(Boolean);
-    corrector.hydrateDynamicDictionary(cues, songs);
+    // AJOUT (chantier transcription — hydratation des noms propres de
+    // l'église) : troisième source, DISTINCTE des repères du conducteur
+    // ci-dessus — un pasteur/intervenant régulier déclaré une fois dans les
+    // réglages (config/features.json#church.regularSpeakers) est corrigé
+    // TOUS les cultes, pas seulement ceux où son nom apparaît par hasard
+    // dans un libellé de repère. Tableau vide par défaut, aucun effet tant
+    // qu'aucun nom n'est déclaré.
+    const regularSpeakers = (featuresStore.readFeatures().church || {}).regularSpeakers;
+    corrector.hydrateDynamicDictionary(cues, songs, regularSpeakers);
   } catch (err) {
     warn("Échec de l'hydratation dynamique du correcteur : " + err.message);
   }
@@ -1394,6 +1402,13 @@ async function displayChapterFallback(book, chapter, tracker, opts) {
       provider: verse.provider,
       durationMs,
       detectedBy: 'chapter-fallback',
+      // AJOUT (chantier durcissement v1.0 — Decision Logs) : ce chemin n'a
+      // pas de score numérique (repli heuristique, pas une détection notée
+      // par resolveDetectionConfidenceScore) — `reason` porte quand même la
+      // justification logique, pour que le tableau de bord explique CE
+      // repli précis sans avoir à deviner ce que "chapter-fallback" signifie.
+      reason:
+        'Repli chapitre après expiration du délai (verset exact non capté par la transcription).',
     });
     pushHistory({
       reference: verse.reference,
@@ -2095,7 +2110,17 @@ async function processTranscript(text, tracker, opts = {}) {
   // vérifié avant ce changement — seul le message applyTheme séparé
   // compte réellement) : rien ne dépend de l'attendre ici.
   const theme = null;
-  if (themeGenerator) {
+  // CORRECTIF (allègement — désactivation par défaut de l'ambiance IA
+  // automatique) : cet appel LLM (Groq) se déclenchait à CHAQUE verset
+  // affiché, en plus de l'appel de transcription — un coût/quota API
+  // silencieux, jamais visible dans les réglages. Passé derrière
+  // features.design.autoThemePerVerse (défaut false, voir
+  // config/features.json) : le sélecteur d'ambiances manuel
+  // (setMoodTheme, dashboard/features/mood-theme.js) et le repli visuel
+  // par défaut restent entièrement fonctionnels, seule cette génération
+  // AUTOMATIQUE par verset est coupée. Réactivable en repassant le réglage
+  // à true, sans toucher au code.
+  if (themeGenerator && (featuresStore.readFeatures().design || {}).autoThemePerVerse) {
     const recentContext = getRecentContext();
     themeGenerator
       .generate(verse.text, recentContext, 'auto')
@@ -2144,6 +2169,14 @@ async function processTranscript(text, tracker, opts = {}) {
       detectedBy: reference.detectedBy || 'regex',
       matchedByQuote: reference.detectedBy === 'quote',
       theme: theme ? { name: theme.name, mood: theme.mood } : null,
+      // AJOUT (chantier durcissement v1.0 — Decision Logs) : ce score existe
+      // déjà (voir confidenceScore juste au-dessus, calculé pour trier
+      // auto/supervisé/rejeté) mais n'était jusqu'ici jamais transmis avec
+      // le verset affiché — le tableau de bord n'avait donc aucun moyen de
+      // justifier a posteriori une détection automatique. Absent pour un
+      // affichage manuel (verse.detectedBy alors 'manual', voir showVerse
+      // WS/core-verse-ws-handlers.js, qui ne passe jamais par ce chemin).
+      confidence: confidenceScore,
     });
 
     // AJOUT (latence, §14) : verset diffusé à l'overlay/OBS — dernière étape
@@ -2211,6 +2244,19 @@ async function processTranscript(text, tracker, opts = {}) {
     cancelChapterFallback(reference.book, reference.chapter);
   }
 
+  // CORRECTIF (chantier durcissement v1.0 — Decision Logs) : remonté ici
+  // (avant le branchement par mode de confiance ci-dessous) pour que
+  // finalizeDisplay() — appelée depuis LES QUATRE chemins possibles
+  // (confirmation opérateur différée, citation exemptée, palier prédictif
+  // "auto", et l'ancien calcul local ci-dessous devenu redondant) — puisse
+  // toujours le transmettre au verset diffusé, pas seulement depuis le
+  // palier prédictif où il était calculé jusqu'ici. resolveDetectionConfidenceScore()
+  // est un calcul pur sans effet de bord (lit reference.confidence ou
+  // retombe sur un défaut) : le calculer inconditionnellement ne change
+  // aucun comportement existant, seul le tri par confidenceTier plus bas
+  // (inchangé) décide encore de la suite.
+  const confidenceScore = resolveDetectionConfidenceScore(reference);
+
   const trustModeForDisplay = sessionState.getTrustMode();
   if (trustModeForDisplay !== 'auto') {
     // 'semi-auto'/'manual' : comportement HISTORIQUE inchangé — ce sont des
@@ -2250,7 +2296,6 @@ async function processTranscript(text, tracker, opts = {}) {
     // une détection sémantique à faible score s'affichait jusqu'ici
     // aveuglément en mode auto, malgré le doute déjà annoté par le
     // détecteur lui-même.
-    const confidenceScore = resolveDetectionConfidenceScore(reference);
     const confidenceTier = sessionState.classifyDetectionConfidence(confidenceScore);
     if (confidenceTier === 'rejected') {
       log(

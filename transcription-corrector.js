@@ -460,19 +460,51 @@ function extractFromSongs(songs, registry) {
 }
 
 /**
+ * Enregistre les noms des pasteurs/intervenants réguliers déclarés en
+ * configuration (config/features.json#church.regularSpeakers, voir
+ * server.js#refreshDynamicCorrections) — DISTINCT de extractFromCues()
+ * ci-dessus : celui-ci ne capte un nom que s'il apparaît, capitalisé, dans
+ * le libellé d'un repère du conducteur DU CULTE EN COURS. Un intervenant
+ * régulier (le pasteur titulaire, par exemple) doit être corrigé même le
+ * dimanche où aucun repère ne mentionne son nom. Seuil de longueur minimal
+ * à 1 (comme les titres de chant/phrases déclencheuses, voir
+ * extractFromSongs) : ce sont des chaînes CURATÉES par l'opérateur dans les
+ * réglages, pas un texte libre à filtrer.
+ * @param {Array<string>} speakerNames
+ * @param {Map<string,string>} registry
+ */
+function extractFromSpeakerNames(speakerNames, registry) {
+  for (const name of Array.isArray(speakerNames) ? speakerNames : []) {
+    if (typeof name !== 'string') continue;
+    addDynamicTerm(name, registry, 1);
+    // Même robustesse que extractFromCues() : un ASR qui ne déforme qu'UNE
+    // partie d'un nom composé ("Jean-Pierre Dupont" -> "Jean Pierre
+    // Dupont" correct mais "Dupont" seul mal transcrit) doit quand même
+    // être rattrapé mot par mot.
+    const words = name.trim().split(/\s+/);
+    if (words.length > 1) {
+      for (const word of words) addDynamicTerm(word, registry, 1);
+    }
+  }
+}
+
+/**
  * Reconstruit ENTIÈREMENT le dictionnaire dynamique à partir de l'état
- * ACTUEL du conducteur et du recueil de chants — jamais un ajout cumulatif
- * (un repère supprimé ne doit pas laisser son nom propre traîner
+ * ACTUEL du conducteur, du recueil de chants et des intervenants réguliers
+ * déclarés en configuration — jamais un ajout cumulatif (un repère supprimé
+ * ou un intervenant retiré des réglages ne doit pas laisser son nom traîner
  * indéfiniment). Voir server.js#refreshDynamicCorrections pour l'appelant
- * (initialisation + chaque mutation du conducteur/recueil de chants).
+ * (initialisation + chaque mutation du conducteur/recueil de chants/réglages).
  * @param {Array<Object>} [cues] - rundownStore.listCues()
  * @param {Array<Object>} [songs] - chants COMPLETS (avec sections), pas listSongs() seul (métadonnées uniquement)
+ * @param {Array<string>} [speakerNames] - config/features.json#church.regularSpeakers
  * @returns {{termCount: number}}
  */
-function hydrateDynamicDictionary(cues, songs) {
+function hydrateDynamicDictionary(cues, songs, speakerNames) {
   const registry = new Map();
   extractFromCues(cues, registry);
   extractFromSongs(songs, registry);
+  extractFromSpeakerNames(speakerNames, registry);
 
   const entries = [...registry.entries()];
   dynamicAliasEntries = entries
@@ -635,6 +667,38 @@ function correctDynamicFuzzy(text) {
   }
 
   return changed ? words.join(' ') : text;
+}
+
+/**
+ * AJOUT (chantier transcription — cross-check parallèle de basse confiance,
+ * voir asr-engine.js) : score une transcription selon son nombre de
+ * correspondances avec le vocabulaire canonique connu — le dictionnaire
+ * biblique statique (CORRECTIONS, noms/lieux/termes théologiques) ET le
+ * dictionnaire dynamique hydraté (intervenants réguliers, vocabulaire des
+ * chants de CE culte, voir hydrateDynamicDictionary()). Sert d'arbitre
+ * quand deux moteurs ASR (Groq/Deepgram) renvoient des textes différents
+ * pour le même segment et que la confiance brute seule ne suffit pas à
+ * trancher : la transcription qui "ressemble" le plus au vocabulaire
+ * réellement attendu dans CE culte l'emporte, pas seulement celle avec le
+ * score de confiance acoustique le plus élevé (un moteur peut être très
+ * confiant sur un mot mal reconnu).
+ * @param {string} text
+ * @returns {number} nombre de correspondances canoniques trouvées (0 = aucune)
+ */
+function scoreCanonicalMatch(text) {
+  if (!text) return 0;
+  const normalized = text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  let score = 0;
+  for (const phrase of Object.keys(CORRECTIONS)) {
+    if (normalized.includes(phrase)) score++;
+  }
+  if (dynamicAliasEntries.length > 0) {
+    const dynNormalized = normalizeDynamicTerm(text);
+    for (const { name } of dynamicAliasEntries) {
+      if (dynNormalized.includes(name)) score++;
+    }
+  }
+  return score;
 }
 
 // -----------------------------------------------------------------------
@@ -813,8 +877,8 @@ class TranscriptionCorrector {
   // plus des exports de module (voir plus bas) pour que server.js puisse
   // appeler `corrector.hydrateDynamicDictionary(...)` sur le handle qu'il a
   // déjà (voir ai-modules-loader.js), sans require() supplémentaire.
-  hydrateDynamicDictionary(cues, songs) {
-    return hydrateDynamicDictionary(cues, songs);
+  hydrateDynamicDictionary(cues, songs, speakerNames) {
+    return hydrateDynamicDictionary(cues, songs, speakerNames);
   }
 
   getDynamicDictionarySize() {
@@ -831,4 +895,6 @@ module.exports = {
   clearDynamicDictionary,
   getDynamicDictionarySize,
   correctDynamicFuzzy,
+  // AJOUT (chantier transcription — cross-check parallèle de basse confiance).
+  scoreCanonicalMatch,
 };

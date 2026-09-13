@@ -13,6 +13,8 @@ const {
   clearDynamicDictionary,
   getDynamicDictionarySize,
   correctDynamicFuzzy,
+  // AJOUT (chantier transcription — cross-check parallèle de basse confiance).
+  scoreCanonicalMatch,
 } = require('../transcription-corrector');
 
 let passed = 0;
@@ -255,6 +257,95 @@ async function runAsyncTests() {
     'clearDynamicDictionary() : correctDynamicFuzzy() redevient un no-op',
     correctDynamicFuzzy('Jean Piere va nous parler') === 'Jean Piere va nous parler'
   );
+
+  // ==========================================================================
+  // AJOUT (chantier transcription — hydratation des noms propres de
+  // l'église) : un intervenant régulier déclaré en configuration
+  // (config/features.json#church.regularSpeakers) doit être corrigé même
+  // AUCUN repère du conducteur ne mentionne son nom cette semaine-là —
+  // contrairement au scénario ci-dessus (nom trouvé dans un libellé de
+  // repère), ce test hydrate SANS aucun repère qui la mentionne.
+  // ==========================================================================
+  console.log("\n--- Hydratation des noms propres de l'église (config) ---");
+
+  const speakerOnlyCues = [
+    { id: 'c1', type: 'verse', reference: 'Jean 3:16', label: 'Jean 3:16', addedAt: '2026-01-01' },
+  ];
+  const hydrateSpeakerResult = hydrateDynamicDictionary(
+    speakerOnlyCues,
+    [],
+    ['Pasteur Amélie Fontaine']
+  );
+  check(
+    'hydratation config : le pasteur déclaré est bien compté (aucun repère ne le mentionne)',
+    hydrateSpeakerResult.termCount > 0
+  );
+  check(
+    'nom propre de config : "Amelie Fontaine" (accent manquant) → "Amélie Fontaine"',
+    correctDynamicFuzzy('merci Amelie Fontaine pour ce temoignage') ===
+      'merci Amélie Fontaine pour ce temoignage'
+  );
+  check(
+    'nom propre de config : "Fontene" (mot isolé déformé) → "Fontaine"',
+    correctDynamicFuzzy('la parole est a Fontene ce matin') === 'la parole est a Fontaine ce matin'
+  );
+
+  clearDynamicDictionary();
+  const noCapitalizedCues = [
+    {
+      id: 'c2',
+      type: 'verse',
+      reference: 'Jean 3:16',
+      label: 'verset du jour',
+      addedAt: '2026-01-01',
+    },
+  ];
+  check(
+    'hydratation config : un tableau speakerNames absent/vide reste un no-op sûr',
+    hydrateDynamicDictionary(noCapitalizedCues, []).termCount === 0
+  );
+  clearDynamicDictionary();
+
+  // ==========================================================================
+  // AJOUT (chantier transcription — cross-check parallèle de basse
+  // confiance) : scoreCanonicalMatch() arbitre entre deux transcriptions
+  // concurrentes du même segment (voir asr-engine.js#crossCheckWithDeepgram)
+  // en comptant leurs correspondances avec le vocabulaire biblique/dynamique
+  // déjà connu — testé ici isolément (fonction pure, aucune dépendance
+  // réseau/DOM).
+  // ==========================================================================
+  console.log('\n--- scoreCanonicalMatch() (cross-check basse confiance) ---');
+
+  check(
+    'scoreCanonicalMatch : texte sans terme biblique connu → 0',
+    scoreCanonicalMatch('il fait beau ce matin pour la reunion') === 0
+  );
+  check(
+    'scoreCanonicalMatch : un seul terme biblique connu → 1',
+    scoreCanonicalMatch('nous lisons un passage de la genese') === 1
+  );
+  check(
+    'scoreCanonicalMatch : plusieurs termes bibliques connus → score cumulé',
+    scoreCanonicalMatch('jesus a parle a ses disciples a jerusalem') >= 2
+  );
+  check(
+    'scoreCanonicalMatch : insensible à la casse/aux accents (comme correctFast)',
+    scoreCanonicalMatch('JÉSUS était à Jérusalem') ===
+      scoreCanonicalMatch('jesus etait a jerusalem')
+  );
+  check('scoreCanonicalMatch : texte vide → 0', scoreCanonicalMatch('') === 0);
+
+  // Le dictionnaire DYNAMIQUE compte aussi — un nom d'intervenant hydraté
+  // doit faire gagner des points de correspondance canonique, exactement
+  // comme un terme biblique statique (les deux dictionnaires arbitrent
+  // ensemble entre Groq et Deepgram dans crossCheckWithDeepgram()).
+  hydrateDynamicDictionary([], [], ['Amélie Fontaine']);
+  check(
+    'scoreCanonicalMatch : un nom dynamique hydraté compte aussi dans le score',
+    scoreCanonicalMatch('merci amelie fontaine pour ce temoignage') >
+      scoreCanonicalMatch('merci a tous pour ce temoignage')
+  );
+  clearDynamicDictionary();
 }
 
 runAsyncTests().then(() => {

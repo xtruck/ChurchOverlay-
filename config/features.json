@@ -1,8 +1,12 @@
 {
+  "church": {
+    "regularSpeakers": []
+  },
   "design": {
     "customThemesEnabled": true,
     "activeTheme": "mission-control",
-    "autoLiturgicalTheme": true,
+    "autoLiturgicalTheme": false,
+    "autoThemePerVerse": false,
     "kineticTypography": false,
     "aiGeneratedBackgrounds": false,
     "ambientModes": {
@@ -15,7 +19,8 @@
     "chapterFallbackDelayMs": 3000
   },
   "audio": {
-    "transcriptionConfidenceThreshold": 0.15
+    "transcriptionConfidenceThreshold": 0.15,
+    "crossCheckConfidenceThreshold": 0.8
   },
   "ai": {
     "themeDetection": { "enabled": true, "intervalSec": 60 },
