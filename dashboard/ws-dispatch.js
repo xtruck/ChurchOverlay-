@@ -57,7 +57,11 @@ import {
   renderTriggerPhraseTestResult,
   renderMediaGroupsPanel,
 } from './features/media-library.js';
-import { renderSceneStudioGallery, handlePptxImportResult } from './features/scene-studio.js';
+import {
+  renderSceneStudioGallery,
+  handlePptxImportResult,
+  getSceneStudioItems,
+} from './features/scene-studio.js';
 import { handleServiceExportResult, handleServiceImportResult } from './features/service-export.js';
 import { renderRundown, applyRundownActiveCue } from './features/rundown.js';
 import { renderNetworkStatus } from './features/network-settings.js';
@@ -306,6 +310,14 @@ export function handleMessage(message) {
     // throttlé par module (30s) pour ne pas noyer l'opérateur si un même
     // module échoue à chaque segment ; l'activité, elle, reste non
     // throttlée (déjà un flux tolérant au volume).
+    // AJOUT (chantier ultime — sondage A2UI interactif sur /companion) :
+    // réaction anonyme d'un fidèle à un bouton de la fiche compagnon (voir
+    // http-routes.js POST /api/companion-card/action). `reaction` reste un
+    // identifiant opaque (voir sermon-qa.js#buildPollCard) — affiché tel
+    // quel, jamais interprété.
+    case 'companionCardReaction':
+      addActivity(`Réaction sondage compagnon : « ${message.reaction} »`, 'info');
+      break;
     case 'aiModuleError':
       addActivity(`Module IA en échec (${message.module}) : ${message.message}`, 'warning');
       if (shouldToastAiModuleError(message.module)) {
@@ -750,9 +762,16 @@ export function handleMessage(message) {
       // résolus (resolveSceneMediaUrls() côté serveur) — passé tel quel à
       // renderSceneDom() par airlock-preview.js.
       setCurrentLive({ type: 'scene', label: message.name, scene: message });
+      // AJOUT (chantier ultime — Tally Program en temps réel) : la galerie du
+      // studio de scènes lit getCurrentLive() (setCurrentLive() ci-dessus)
+      // pour peindre la bordure rouge — sans ce ré-affichage explicite, elle
+      // ne se mettrait à jour qu'au prochain sceneLibraryUpdated (CRUD), pas
+      // à CHAQUE bascule Program réelle (CUT, "▶ Afficher", commande vocale).
+      renderSceneStudioGallery(getSceneStudioItems());
       break;
     case 'hideScene':
       clearCurrentLive();
+      renderSceneStudioGallery(getSceneStudioItems());
       break;
     // AJOUT (bibliothèque de chants) : même raisonnement que mediaLibraryUpdated.
     case 'songLibraryUpdated':

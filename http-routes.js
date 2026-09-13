@@ -25,6 +25,7 @@
  */
 
 const path = require('path');
+const express = require('express');
 
 /**
  * @param {object} ctx
@@ -42,6 +43,8 @@ const path = require('path');
  * @param {object} ctx.sessionStore
  * @param {() => number} ctx.getConsecutiveTranscriptionFailures
  * @param {() => {text: string|null, translation: string|null, timestamp: number|null}} ctx.getLastLiveCaption
+ * @param {(obj: object) => void} ctx.broadcast
+ * @param {(msg: string) => void} ctx.log
  */
 function registerRoutes(ctx) {
   const {
@@ -59,6 +62,8 @@ function registerRoutes(ctx) {
     sessionStore,
     getConsecutiveTranscriptionFailures,
     getLastLiveCaption,
+    broadcast,
+    log,
   } = ctx;
 
   app.get('/', (req, res) => res.sendFile(path.join(appRoot, 'dashboard.html')));
@@ -148,6 +153,38 @@ function registerRoutes(ctx) {
   app.get('/companion', (req, res) => res.sendFile(path.join(appRoot, 'companion.html')));
   app.get('/api/verses', (req, res) => {
     res.json({ verses: sessionState.getVerseHistory() });
+  });
+  // AJOUT (chantier ultime — Generative UI A2UI sur /companion) : même
+  // discipline que /api/verses/api/captions ci-dessus (lecture seule,
+  // aucun jeton — l'opérateur a explicitement choisi de publier cette fiche
+  // sur la page publique, voir ai-assistant-ws-handlers.js#pushCompanionCard).
+  // `card` est déjà une racine A2UI validée (parseA2UI) au moment où elle a
+  // été stockée — jamais revalidée ici, cette route ne fait que la relire.
+  app.get('/api/companion-card', (req, res) => {
+    res.json({ card: sessionState.getCompanionCard() });
+  });
+  // AJOUT (chantier ultime — sondage A2UI interactif) : réaction anonyme à
+  // un Button de la fiche compagnon (voir sermon-qa.js#buildPollCard —
+  // `action` y est un identifiant OPAQUE, jamais exécuté). Même sensibilité/
+  // discipline que POST /api/checkin ci-dessus : anonyme, aucun jeton,
+  // best-effort. `action` n'est JAMAIS interprété comme du HTML/code — texte
+  // brut journalisé et diffusé à l'opérateur (aiModuleError-style, via
+  // broadcast), qui décide lui-même quoi en faire (le catalogue A2UI fermé
+  // garantit déjà côté serveur qu'aucune balise n'a pu s'y glisser au moment
+  // où la fiche a été publiée, voir a2ui-parser.js#parseA2UI).
+  app.post('/api/companion-card/action', express.json({ limit: '1kb' }), (req, res) => {
+    const action =
+      req.body && typeof req.body.action === 'string' ? req.body.action.slice(0, 100) : null;
+    if (!action) {
+      res.status(400).json({ error: 'action manquante ou invalide' });
+      return;
+    }
+    log(`Réaction sondage compagnon : "${action}"`);
+    broadcast(
+      { action: 'companionCardReaction', reaction: action, at: Date.now() },
+      { operatorOnly: true }
+    );
+    res.json({ ok: true });
   });
   // AJOUT (chantier 4.4 — sous-titres en direct, sur companion.html) : même
   // discipline que /api/verses juste au-dessus (lecture seule, pas de jeton —

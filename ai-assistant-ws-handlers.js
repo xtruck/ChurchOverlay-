@@ -186,6 +186,42 @@ function createHandlers(ctx) {
     );
   });
 
+  // AJOUT (chantier ultime — Generative UI A2UI sur /companion) : construit
+  // la fiche via sermon-qa.js#buildSummaryCard/buildQuestionAnswerCard/
+  // buildPollCard (déjà validées contre le catalogue A2UI, voir leur
+  // en-tête) puis la STOCKE (sessionState.setCompanionCard) pour
+  // /api/companion-card (http-routes.js) — companion.html n'a aucun canal
+  // WebSocket, cette route de sondage HTTP est le seul chemin qui l'atteint.
+  // Ni régénération LLM ni second appel réseau ici : le dashboard opérateur
+  // transmet le résultat qu'il a DÉJÀ reçu (getLiveSummary/askSermonQuestion),
+  // cette action ne fait que le mettre en forme A2UI et le publier.
+  handlers.set('pushCompanionCard', async (ws, sanitized, requestId, sendError) => {
+    let card = null;
+    if (sanitized.cardType === 'summary') {
+      card = sermonQa.buildSummaryCard({ summarized: true, summary: sanitized.summary });
+    } else if (sanitized.cardType === 'answer') {
+      card = sermonQa.buildQuestionAnswerCard(sanitized.question, {
+        answered: true,
+        answer: sanitized.answer,
+        sources: sanitized.sources,
+      });
+    } else if (sanitized.cardType === 'poll') {
+      card = sermonQa.buildPollCard(sanitized.question, sanitized.options);
+    }
+    if (!card) {
+      sendError('Fiche compagnon invalide ou incomplète — rien à publier.');
+      return;
+    }
+    sessionState.setCompanionCard(card);
+    log(`Fiche compagnon publiée (${sanitized.cardType}) sur /companion`);
+    ws.send(JSON.stringify({ action: 'companionCardPushed', cardType: sanitized.cardType }));
+  });
+
+  handlers.set('clearCompanionCard', async (ws) => {
+    sessionState.clearCompanionCard();
+    ws.send(JSON.stringify({ action: 'companionCardCleared' }));
+  });
+
   // --- Assistant Q&R sur les prédications (cahier des charges — Point 5,
   // voir sermon-qa.js pour le garde-fou "jamais de réponse sans source").
   // AJOUT (durcissement Sermon Q&A) : recherche désormais AUSSI la

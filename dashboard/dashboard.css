@@ -1952,6 +1952,106 @@ body {
   border-color: var(--accent-rose);
 }
 
+/* ===========================================================================
+   Chantier ultime — switcher multiview dual-bus Program/Preview (Studio de
+   scènes uniquement, voir scene-studio.js). Convention Tally broadcast
+   délibérément ROUGE = Program/en direct (pas vert, contrairement à
+   .is-on-screen du Mur Média ci-dessus — cahier des charges explicite,
+   même logique que la lumière tally d'une régie vidéo réelle) ; vert/cyan =
+   Preview (aperçu privé, pas encore diffusé).
+   =========================================================================== */
+.media-gallery-card.tally-program {
+  border-color: var(--accent-rose);
+  border-width: 2px;
+  box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.3);
+  animation: tallyProgramPulse 1.6s ease-in-out infinite;
+}
+@keyframes tallyProgramPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.5);
+  }
+}
+.media-gallery-card.tally-preview {
+  border-color: var(--accent-cyan);
+  border-width: 2px;
+  box-shadow: 0 0 0 2px rgba(124, 140, 245, 0.3);
+}
+
+.tally-badge {
+  display: inline-block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-full);
+  color: #fff;
+}
+.tally-badge--program {
+  background: var(--accent-rose);
+}
+.tally-badge--preview {
+  background: var(--accent-cyan);
+}
+
+/* Barre de bus Program/Preview + bouton CUT/TAKE — au-dessus de la galerie
+   (voir dashboard.html#multiviewBusBar). */
+.multiview-bus-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+}
+.multiview-bus-slot {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.multiview-bus-slot--program {
+  text-align: right;
+}
+.multiview-bus-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+.multiview-bus-value {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.multiview-bus-slot--preview .multiview-bus-label {
+  color: var(--accent-cyan);
+}
+.multiview-bus-slot--program .multiview-bus-label {
+  color: var(--accent-rose);
+}
+.multiview-cut-btn {
+  flex-shrink: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+.multiview-cut-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .media-gallery-thumb-missing {
   display: flex;
   align-items: center;

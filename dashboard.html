@@ -4051,6 +4051,36 @@
               <strong>Importer PowerPoint</strong> crée une scène texte par diapositive (le texte
               seul — pas les images ni la mise en forme d'origine), dans l'ordre réel du diaporama.
             </div>
+
+            <!-- AJOUT (chantier ultime — switcher multiview dual-bus Program/
+                         Preview) : "👁 Preview" sur une carte (voir renderSceneStudioGallery
+                         dans scene-studio.js) arme cette scène ici SANS la diffuser —
+                         CUT/TAKE (bouton ci-dessous, ou barre d'espace hors saisie/hors
+                         bannière de confirmation de verset) l'envoie ensuite sur le
+                         Program via le MÊME chemin que "▶ Afficher"
+                         (triggerSceneStudioItem -> action WS 'triggerScene', déjà
+                         testée) — CUT n'est qu'un raccourci vers ce chemin existant,
+                         jamais un second protocole de diffusion. -->
+            <div class="multiview-bus-bar" id="multiviewBusBar">
+              <div class="multiview-bus-slot multiview-bus-slot--preview">
+                <span class="multiview-bus-label">🟢 PREVIEW</span>
+                <span class="multiview-bus-value" id="multiviewPreviewLabel">Aucune sélection</span>
+              </div>
+              <button
+                type="button"
+                id="sceneCutBtn"
+                class="btn btn-danger multiview-cut-btn"
+                title="CUT / TAKE — bascule la scène en Preview vers le Program (barre d'espace)"
+                disabled
+              >
+                ⏻ CUT
+              </button>
+              <div class="multiview-bus-slot multiview-bus-slot--program">
+                <span class="multiview-bus-label">🔴 PROGRAM</span>
+                <span class="multiview-bus-value" id="multiviewProgramLabel">Rien en direct</span>
+              </div>
+            </div>
+
             <div class="media-gallery-grid" id="sceneStudioList"></div>
           </div>
 

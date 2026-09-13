@@ -220,6 +220,19 @@ const CLIENT_ACTIONS = {
     description: 'Récapitulatif post-culte IA',
   },
   getCrossReferences: { operatorOnly: true, category: 'ai', description: 'Références croisées' },
+  // AJOUT (chantier ultime — Generative UI A2UI sur /companion) : pousse une
+  // fiche A2UI (résumé/réponse/sondage) vers /api/companion-card, lue en
+  // sondage HTTP par companion.html (page publique sans WebSocket).
+  pushCompanionCard: {
+    operatorOnly: true,
+    category: 'ai',
+    description: 'Envoyer une fiche A2UI (résumé/réponse/sondage) sur /companion',
+  },
+  clearCompanionCard: {
+    operatorOnly: true,
+    category: 'ai',
+    description: 'Retirer la fiche A2UI affichée sur /companion',
+  },
   getAiStats: { category: 'ai', description: 'Statistiques des modules IA' },
   getArchiveMatches: {
     operatorOnly: true,

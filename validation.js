@@ -977,6 +977,29 @@ const SCHEMAS = {
     optional: [],
     validators: { action: (value) => value === 'getAiStats' },
   },
+  // AJOUT (chantier ultime — Generative UI A2UI sur /companion) : vérif
+  // SUPERFICIELLE ici (type/longueur), même discipline que addScene#elements
+  // ci-dessus — la construction/validation A2UI réelle (catalogue fermé,
+  // rejet des injections) vit dans a2ui-parser.js#parseA2UI(), appelé par
+  // ai-assistant-ws-handlers.js#pushCompanionCard APRÈS ce passage.
+  pushCompanionCard: {
+    required: ['action', 'cardType'],
+    optional: ['summary', 'question', 'answer', 'sources', 'options'],
+    validators: {
+      action: (value) => value === 'pushCompanionCard',
+      cardType: (value) => ['summary', 'answer', 'poll'].includes(value),
+      summary: (value) => typeof value === 'string' && value.length <= 4000,
+      question: (value) => typeof value === 'string' && value.length <= 500,
+      answer: (value) => typeof value === 'string' && value.length <= 4000,
+      sources: (value) => Array.isArray(value) && value.length <= 10,
+      options: (value) => Array.isArray(value) && value.length <= 10,
+    },
+  },
+  clearCompanionCard: {
+    required: ['action'],
+    optional: [],
+    validators: { action: (value) => value === 'clearCompanionCard' },
+  },
   getArchiveMatches: {
     required: ['action'],
     optional: ['query'],

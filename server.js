@@ -553,6 +553,12 @@ httpRoutes.registerRoutes({
   sessionStore,
   getConsecutiveTranscriptionFailures: () => consecutiveTranscriptionFailures,
   getLastLiveCaption: () => lastLiveCaption,
+  // AJOUT (chantier ultime — sondage A2UI interactif sur /companion) :
+  // POST /api/companion-card/action a besoin de prévenir l'opérateur (voir
+  // http-routes.js) — mêmes fonctions déjà utilisées partout ailleurs dans
+  // server.js, jamais une 2e implémentation de diffusion/journalisation.
+  broadcast,
+  log,
 });
 
 // Ambient mood — voir startAmbientMoodLoop() plus bas.

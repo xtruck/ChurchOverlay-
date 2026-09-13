@@ -331,6 +331,9 @@ const CLICK_BINDINGS = {
   addComposerElementTextBtn: () => window.addComposerElement('text'),
   addComposerElementImageBtn: () => window.addComposerElement('image'),
   saveComposerSceneBtn: () => window.saveComposerScene(),
+
+  // --- Switcher multiview dual-bus (chantier ultime) ---
+  sceneCutBtn: () => window.cutToProgram(),
 };
 
 /**

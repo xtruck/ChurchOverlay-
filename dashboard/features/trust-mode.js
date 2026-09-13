@@ -65,7 +65,16 @@ document.addEventListener('keydown', (e) => {
   if (e.code !== 'Space' && e.key !== ' ') return;
   if (isTypingContext()) return;
   const banner = document.getElementById('pendingVerseBanner');
-  if (!banner || banner.style.display === 'none') return;
+  // CORRECTIF (trouvé en écrivant test-multiview-switcher.js — chantier
+  // ultime) : la bannière démarre masquée via l'attribut HTML `hidden` (voir
+  // dashboard.html), pas `style.display` — qui reste une chaîne VIDE (donc
+  // JAMAIS égale à 'none') tant que showPendingVerseBanner()/
+  // hidePendingVerseBanner() ci-dessus ne l'ont pas encore touchée au moins
+  // une fois. Sur un tableau de bord fraîchement chargé, ce test traitait
+  // donc à tort la bannière comme visible : Espace confirmait un verset en
+  // attente… qui n'existait pas. offsetParent (null quand display:none
+  // s'applique, quelle qu'en soit la cause) reste correct dans tous les cas.
+  if (!banner || banner.offsetParent === null) return;
   e.preventDefault();
   confirmPendingVerse();
 });

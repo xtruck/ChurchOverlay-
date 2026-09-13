@@ -24,6 +24,14 @@ const ollamaWrapper = require('./ollama-wrapper');
 const sermonArchive = require('./sermon-archive');
 const sessionStore = require('./session-store');
 const { sanitizeForPrompt } = require('./prompt-sanitizer');
+// AJOUT (chantier ultime — Generative UI A2UI sur /companion) : transforme
+// les sorties de ce module (résumé, réponse Q&R, sondage) en JSON
+// déclaratif validé contre le catalogue fermé de a2ui-parser.js AVANT de
+// quitter ce fichier — jamais un client (companion.html) ne reçoit un
+// gabarit construit ici sans être repassé par parseA2UI(), même défense en
+// profondeur que sanitizeForPrompt() ci-dessus pour l'autre sens du flux
+// (parole captée -> prompt).
+const { parseA2UI } = require('./a2ui-parser');
 
 const CHUNK_TARGET_CHARS = 600;
 const TOP_K = 5;
@@ -435,9 +443,105 @@ async function summarizeCurrentService(options = {}) {
   return { ok: true, summarized: true, summary: result.text, provider: result.provider };
 }
 
+// ============================================================================
+// AJOUT (chantier ultime — Generative UI A2UI sur /companion) : transforme
+// les sorties de ce module en fiches JSON déclaratives, validées contre le
+// catalogue fermé (Card/TextLabel/Button/ProgressGauge) avant de quitter ce
+// fichier. Voir ai-assistant-ws-handlers.js#pushCompanionCard pour l'action
+// WS opérateur qui appelle ces builders puis stocke le résultat
+// (session-state.js#setCompanionCard) pour /api/companion-card
+// (http-routes.js), seule route que companion.html interroge — cette page
+// publique ne parle jamais WebSocket (voir son en-tête).
+// ============================================================================
+
+const MAX_POLL_OPTIONS = 4; // catalogue A2UI (Button) — un sondage reste lisible sur un écran de téléphone
+const MAX_SOURCES_ON_CARD = 3; // fiche compagnon COURTE, pas un export complet des sources
+
+/**
+ * Fiche A2UI "Résumé du culte" — voir summarizeCurrentService() ci-dessus.
+ * @param {{ok: boolean, summarized: boolean, summary?: string, message?: string}} summaryResult
+ * @returns {object|null} racine A2UI déjà validée, ou null si rien
+ *   d'affichable (pas encore de transcription, ou résultat invalide)
+ */
+function buildSummaryCard(summaryResult) {
+  if (!summaryResult || !summaryResult.summarized || !summaryResult.summary) return null;
+  const card = {
+    type: 'Card',
+    props: { title: '📖 Résumé du culte' },
+    children: [{ type: 'TextLabel', props: { text: summaryResult.summary, variant: 'body' } }],
+  };
+  const parsed = parseA2UI(card);
+  return parsed.valid ? parsed.root : null;
+}
+
+/**
+ * Fiche A2UI "Question & Réponse" — voir askQuestion() ci-dessus. Les
+ * sources déjà citées (jamais du contenu inventé, voir le garde-fou en
+ * en-tête de fichier) sont reprises en TextLabel discrets sous la réponse.
+ * @param {string} question
+ * @param {{ok: boolean, answered: boolean, answer?: string, message?: string, sources?: Array}} answerResult
+ * @returns {object|null}
+ */
+function buildQuestionAnswerCard(question, answerResult) {
+  if (!answerResult) return null;
+  const answerText = answerResult.answered ? answerResult.answer : answerResult.message;
+  if (!answerText) return null;
+  const children = [
+    {
+      type: 'TextLabel',
+      props: { text: String(question || '').slice(0, 300), variant: 'heading' },
+    },
+    { type: 'TextLabel', props: { text: answerText, variant: 'body' } },
+  ];
+  for (const source of (answerResult.sources || []).slice(0, MAX_SOURCES_ON_CARD)) {
+    if (!source || !source.label) continue;
+    children.push({
+      type: 'TextLabel',
+      props: {
+        text: `— ${source.label}${source.date ? ' (' + source.date + ')' : ''}`,
+        variant: 'muted',
+      },
+    });
+  }
+  const card = { type: 'Card', props: { title: '💬 Question au pasteur' }, children };
+  const parsed = parseA2UI(card);
+  return parsed.valid ? parsed.root : null;
+}
+
+/**
+ * Fiche A2UI "Sondage" — un TextInput libre est délibérément absent : une
+ * réaction en direct (voir pushCompanionCard) se limite à des BOUTONS à
+ * choix fermé, jamais du texte libre venant d'un public anonyme sans
+ * modération (même esprit que /api/checkin, déjà anonyme et sans texte
+ * libre — voir session-store.js#recordCheckin).
+ * @param {string} question
+ * @param {Array<{label: string, action: string}>} options
+ * @returns {object|null}
+ */
+function buildPollCard(question, options) {
+  const safeOptions = (Array.isArray(options) ? options : [])
+    .filter((o) => o && typeof o.label === 'string' && typeof o.action === 'string')
+    .slice(0, MAX_POLL_OPTIONS);
+  if (safeOptions.length === 0) return null;
+  const card = {
+    type: 'Card',
+    props: { title: '🗳️ Sondage', subtitle: String(question || '').slice(0, 200) },
+    children: safeOptions.map((o) => ({
+      type: 'Button',
+      props: { label: o.label.slice(0, 60), action: o.action.slice(0, 80) },
+    })),
+  };
+  const parsed = parseA2UI(card);
+  return parsed.valid ? parsed.root : null;
+}
+
 module.exports = {
   askQuestion,
   summarizeCurrentService,
+  // AJOUT (chantier ultime — Generative UI A2UI sur /companion).
+  buildSummaryCard,
+  buildQuestionAnswerCard,
+  buildPollCard,
   // Exposées pour tests unitaires (test-sermon-qa.js).
   chunkText,
   wordOverlapScore,

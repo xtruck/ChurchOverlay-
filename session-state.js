@@ -128,6 +128,14 @@ let trustMode = 'auto';
 let overlayFocusModeActive = false;
 let highContrastMode = false;
 let captionsEnabled = false;
+// AJOUT (chantier ultime — A2UI sur /companion) : dernière fiche A2UI
+// (Card/TextLabel/Button/ProgressGauge, voir a2ui-parser.js) poussée par
+// l'opérateur vers la page compagnon — même discipline que
+// lastLiveCaption/getVerseHistory ci-dessous : companion.html n'a AUCUN
+// canal WebSocket (page publique, sans jeton — voir http-routes.js), donc
+// interrogée par simple sondage HTTP (GET /api/companion-card). `null` =
+// aucune fiche active, l'état par défaut.
+let companionCard = null;
 // AJOUT (sous-titres traduits en direct — voir caption-translator.js) :
 // distinct de captionsEnabled (sous-titres bruts, même langue) et de
 // langMode 'both' (traduction de VERSETS uniquement). Désactivé par défaut
@@ -530,6 +538,20 @@ function getCaptionsEnabled() {
 function setCaptionsEnabled(enabled) {
   captionsEnabled = !!enabled;
 }
+// AJOUT (chantier ultime — A2UI sur /companion) : voir companionCard
+// ci-dessus. `card` DOIT déjà être une racine A2UI validée (voir
+// ai-assistant-ws-handlers.js#pushCompanionCard, qui appelle
+// parseA2UI() avant d'arriver ici) — ce module ne revalide pas, il stocke
+// tel quel, comme tous les autres états de session.
+function getCompanionCard() {
+  return companionCard;
+}
+function setCompanionCard(card) {
+  companionCard = card || null;
+}
+function clearCompanionCard() {
+  companionCard = null;
+}
 function getTranslatedCaptionsEnabled() {
   return translatedCaptionsEnabled;
 }
@@ -670,6 +692,10 @@ module.exports = {
   toggleOverlayFocusActive,
   getCaptionsEnabled,
   setCaptionsEnabled,
+  // AJOUT (chantier ultime — A2UI sur /companion).
+  getCompanionCard,
+  setCompanionCard,
+  clearCompanionCard,
   getTranslatedCaptionsEnabled,
   setTranslatedCaptionsEnabled,
   getCaptionTargetLang,

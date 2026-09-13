@@ -19,12 +19,33 @@
  * diffusé, par construction.
  */
 import { ws, getHttpOrigin } from '../state.js';
-import { showToast, escapeHtmlDashboard } from '../utils.js';
+import { showToast, escapeHtmlDashboard, isTypingContext } from '../utils.js';
 import { updatePosterCardSceneItems } from './poster-principal-card.js';
 import { getMediaLibraryItems } from './media-library.js';
 import { registerAction } from '../action-delegator.js';
+// AJOUT (chantier ultime — switcher multiview dual-bus Program/Preview) :
+// getCurrentLive() donne le Tally rouge (scène RÉELLEMENT diffusée, voir son
+// en-tête — alimenté par showScene). Import circulaire avec
+// airlock-preview.js (qui importe déjà getSceneStudioItems() d'ici) — sans
+// risque, même précédent déjà en production que rundown.js/airlock-preview.js
+// (voir le commentaire de getArmedCueId() dans airlock-preview.js) : ni l'un
+// ni l'autre module n'appelle ces fonctions à l'évaluation du module, toujours
+// depuis un rendu déclenché plus tard (WS/clic/clavier).
+import { getCurrentLive } from './airlock-preview.js';
 
 let sceneStudioItems = [];
+
+// AJOUT (chantier ultime — switcher multiview dual-bus Program/Preview) :
+// canal Preview — PUREMENT local à ce tableau de bord (comme armedItem dans
+// airlock-preview.js), jamais diffusé tant que CUT/TAKE n'est pas pressé.
+// Le canal Program, lui, N'A PAS de second état ici : c'est getCurrentLive()
+// (déjà alimenté par le VRAI message showScene du serveur) qui fait
+// autorité — un seul Program possible dans toute l'app, jamais dupliqué.
+let previewSceneId = null;
+
+export function getPreviewSceneId() {
+  return previewSceneId;
+}
 
 // AJOUT (Next Cue Confidence — vérification de préparation avant diffusion,
 // voir next-cue-confidence.js) : même raisonnement que getMediaLibraryItems()
@@ -360,6 +381,61 @@ export function triggerSceneStudioItem(id) {
   ws.send(JSON.stringify({ action: 'triggerScene', id }));
 }
 
+// --- Switcher multiview dual-bus Program/Preview (chantier ultime) --------
+
+/**
+ * Arme une scène dans le canal Preview (👁 aperçu privé) — AUCUN message WS,
+ * rien n'est diffusé tant que cutToProgram() n'est pas déclenché.
+ * @param {string} id
+ */
+export function setPreviewScene(id) {
+  const scene = sceneStudioItems.find((s) => s.id === id);
+  previewSceneId = scene ? id : null;
+  renderSceneStudioGallery(sceneStudioItems);
+  showToast(scene ? `Preview : « ${scene.name} »` : 'Preview vidée.', 'info');
+}
+
+export function clearPreviewScene() {
+  previewSceneId = null;
+  renderSceneStudioGallery(sceneStudioItems);
+}
+
+/**
+ * CUT / TAKE — envoie la scène actuellement en Preview vers le Program.
+ * Réutilise EXACTEMENT triggerSceneStudioItem() (donc l'action WS
+ * 'triggerScene' déjà testée) : CUT n'est qu'un raccourci, jamais un second
+ * protocole de diffusion. La Preview n'est PAS vidée après coup — un
+ * opérateur qui rappuie sur CUT (ex. après un "⏹ Masquer" accidentel) doit
+ * pouvoir rediffuser la même scène, comme "▶ Afficher" reste cliquable
+ * plusieurs fois de suite.
+ */
+export function cutToProgram() {
+  if (!previewSceneId) {
+    showToast('Aucune scène en Preview — armez-en une (👁) avant de CUT.', 'warning');
+    return;
+  }
+  triggerSceneStudioItem(previewSceneId);
+}
+
+function updateMultiviewBusBar() {
+  const previewLabel = document.getElementById('multiviewPreviewLabel');
+  const programLabel = document.getElementById('multiviewProgramLabel');
+  const cutBtn = document.getElementById('sceneCutBtn');
+  if (!previewLabel && !programLabel && !cutBtn) return;
+
+  const previewScene = sceneStudioItems.find((s) => s.id === previewSceneId);
+  if (previewLabel) {
+    previewLabel.textContent = previewScene ? previewScene.name : 'Aucune sélection';
+  }
+  if (cutBtn) cutBtn.disabled = !previewScene;
+
+  const live = getCurrentLive();
+  if (programLabel) {
+    programLabel.textContent =
+      live && live.type === 'scene' && live.label ? live.label : 'Rien en direct';
+  }
+}
+
 export function deleteSceneStudioItem(id) {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     showToast('Non connecté au serveur.', 'error');
@@ -441,6 +517,9 @@ export function renderSceneStudioGallery(scenes) {
     return;
   }
 
+  const live = getCurrentLive();
+  const liveSceneId = live && live.type === 'scene' && live.scene ? live.scene.id : null;
+
   list.innerHTML = sceneStudioItems
     .map((scene) => {
       const badge = scene.isDefault ? '<span class="media-gallery-badge">⭐ Poster</span>' : '';
@@ -457,17 +536,30 @@ export function renderSceneStudioGallery(scenes) {
       const phrasesBadges = (scene.triggerPhrases || [])
         .map((p) => `<span class="media-item-phrase-badge">🎙 ${escapeHtmlDashboard(p)}</span>`)
         .join('');
+      // AJOUT (chantier ultime — Tally lumineux) : rouge prioritaire sur vert
+      // — une scène ne peut jamais être "en Preview" ET "en Program" à
+      // l'affichage (si elle est diffusée, la Preview n'a plus d'utilité
+      // visuelle, même si previewSceneId la référence encore techniquement).
+      const isLive = scene.id === liveSceneId;
+      const isPreview = !isLive && scene.id === previewSceneId;
+      const tallyClass = isLive ? ' tally-program' : isPreview ? ' tally-preview' : '';
+      const tallyBadge = isLive
+        ? '<span class="tally-badge tally-badge--program">🔴 PROGRAM</span>'
+        : isPreview
+          ? '<span class="tally-badge tally-badge--preview">🟢 PREVIEW</span>'
+          : '';
       return `
-                <div class="media-gallery-card${scene.isDefault ? ' is-default' : ''}">
+                <div class="media-gallery-card${scene.isDefault ? ' is-default' : ''}${tallyClass}">
                     <div class="media-gallery-thumb scene-preview-thumb" id="scenePreview-${scene.id}">
-                        ${badge}${focusModeBadge}
+                        ${tallyBadge}${badge}${focusModeBadge}
                     </div>
                     <div class="media-gallery-body">
                         <div class="media-gallery-label" title="${escapeHtmlDashboard(scene.name)}">${escapeHtmlDashboard(scene.name)}</div>
                         <div class="media-item-phrases">${phrasesBadges || '<span class="media-item-phrase-badge">Déclenchement manuel uniquement</span>'}</div>
                     </div>
                     <div class="media-gallery-actions">
-                        <button class="btn btn-primary" data-action="trigger" data-target="scene" data-id="${scene.id}" title="Afficher maintenant sur l'overlay">▶ Afficher</button>
+                        <button class="btn btn-primary" data-action="trigger" data-target="scene" data-id="${scene.id}" title="Afficher immédiatement sur l'overlay (contourne la Preview)">▶ Afficher</button>
+                        <button class="queue-icon-btn" data-action="preview" data-target="scene" data-id="${scene.id}" title="Envoyer en Preview (aperçu privé — CUT/TAKE ou Espace pour diffuser)">👁 Preview</button>
                         <button class="queue-icon-btn" data-action="edit" data-target="scene" data-id="${scene.id}" title="Modifier cette scène">✏</button>
                         <button class="queue-icon-btn" data-action="toggle-default" data-target="scene" data-id="${scene.id}" data-is-default="${scene.isDefault ? 'true' : 'false'}" title="${scene.isDefault ? 'Retirer le statut de poster principal' : 'Définir comme poster principal (affiché quand rien d’autre n’est à l’écran)'}">${scene.isDefault ? '⭐' : '☆'}</button>
                         <button class="queue-icon-btn" data-action="add-to-rundown" data-target="scene" data-id="${scene.id}" data-label="${escapeHtmlDashboard(scene.name)}" title="Ajouter à la feuille de route">➕</button>
@@ -477,6 +569,7 @@ export function renderSceneStudioGallery(scenes) {
             `;
     })
     .join('');
+  updateMultiviewBusBar();
 
   // AJOUT (aperçu réel, pas une vignette statique) : renderSceneDom() (voir
   // scene-render.js) manipule un ÉLÉMENT DOM réel — impossible de le faire
@@ -489,7 +582,22 @@ export function renderSceneStudioGallery(scenes) {
     // renderSceneDom() vide le conteneur avant de dessiner (voir son en-tête)
     // — le badge ⭐ inséré ci-dessus serait donc écrasé. Dessiné dans un
     // enfant dédié plutôt que dans le conteneur passé à renderSceneDom() lui-même.
-    const badgeMarkup = scene.isDefault ? '<span class="media-gallery-badge">⭐ Poster</span>' : '';
+    // CORRECTIF (trouvé en ajoutant le badge Tally) : cette reconstruction ne
+    // reprenait que le badge ⭐ Poster — le badge 🎯 Focus (déjà présent dans
+    // la première passe ci-dessus) disparaissait donc silencieusement dès
+    // cette seconde passe, à CHAQUE rendu de la galerie, y compris le tout
+    // premier. Les 3 badges sont désormais recalculés ici de façon identique
+    // à la première passe, plutôt que la moitié seulement.
+    const isLive = scene.id === liveSceneId;
+    const isPreview = !isLive && scene.id === previewSceneId;
+    const badgeMarkup =
+      (isLive
+        ? '<span class="tally-badge tally-badge--program">🔴 PROGRAM</span>'
+        : isPreview
+          ? '<span class="tally-badge tally-badge--preview">🟢 PREVIEW</span>'
+          : '') +
+      (scene.isDefault ? '<span class="media-gallery-badge">⭐ Poster</span>' : '') +
+      (scene.focusMode ? '<span class="media-gallery-badge">🎯 Focus</span>' : '');
     const canvas = document.createElement('div');
     canvas.className = 'scene-preview-canvas';
     previewEl.innerHTML = badgeMarkup;
@@ -512,12 +620,49 @@ window.onComposerBgTypeChange = onComposerBgTypeChange;
 window.onComposerBgMediaChange = onComposerBgMediaChange;
 window.onComposerBgColorChange = onComposerBgColorChange;
 window.toggleComposerFocusMode = toggleComposerFocusMode;
+// AJOUT (chantier ultime — switcher multiview dual-bus Program/Preview) :
+// data-action="preview" passe par registerAction() ci-dessus (jamais un
+// onclick inline), mais cutToProgram() est aussi câblé au bouton #sceneCutBtn
+// via event-bindings.js#CLICK_BINDINGS (window.cutToProgram()), même
+// discipline que window.goLiveFromAirlock() dans airlock-preview.js.
+window.cutToProgram = cutToProgram;
+
+// AJOUT (chantier ultime — raccourci CUT/TAKE à la barre d'espace) : même
+// garde "hors saisie" que tous les autres raccourcis clavier globaux de ce
+// tableau de bord (voir isTypingContext(), utils.js). Cède PRIORITAIREMENT
+// la frappe à la confirmation de verset en attente (trust-mode.js) si sa
+// bannière est visible — un verset en attente de confirmation opérateur est
+// un état plus urgent qu'un CUT de scène, les deux ne doivent jamais se
+// disputer la même frappe. N'agit que si une Preview est réellement armée
+// (sinon Espace ne fait rien ici, comme cutToProgram() lui-même le
+// redirait par toast — pas la peine de spammer un toast à chaque Espace
+// innocent tapé ailleurs dans l'app).
+document.addEventListener('keydown', (e) => {
+  if (e.code !== 'Space' && e.key !== ' ') return;
+  if (isTypingContext()) return;
+  // CORRECTIF (trouvé en écrivant test-multiview-switcher.js) : la bannière
+  // démarre masquée via l'attribut HTML `hidden` (voir dashboard.html), pas
+  // `style.display`, qui reste une chaîne VIDE tant qu'elle n'a encore
+  // jamais été montrée/masquée par showPendingVerseBanner()/
+  // hidePendingVerseBanner() (trust-mode.js) — comparer `=== 'none'`
+  // traiterait donc à tort une page fraîchement chargée comme "bannière
+  // visible". offsetParent (null quand display:none s'applique, quelle
+  // qu'en soit la cause : attribut hidden, classe CSS, ou style inline)
+  // reste correct dans tous les cas.
+  const pendingVerseBanner = document.getElementById('pendingVerseBanner');
+  if (pendingVerseBanner && pendingVerseBanner.offsetParent !== null) return;
+  if (!previewSceneId) return;
+  e.preventDefault();
+  cutToProgram();
+});
 
 // triggerSceneStudioItem, deleteSceneStudioItem, toggleDefaultScene,
 // openSceneComposer et removeComposerElement n'ont plus besoin de window —
 // voir registerAction ci-dessous, elles n'étaient exposées que pour les
 // onclick inline désormais remplacés par la délégation data-action.
 registerAction('scene', 'trigger', (el, data) => triggerSceneStudioItem(data.id));
+// AJOUT (chantier ultime — switcher multiview dual-bus Program/Preview).
+registerAction('scene', 'preview', (el, data) => setPreviewScene(data.id));
 registerAction('scene', 'edit', (el, data) => openSceneComposer(data.id));
 registerAction('scene', 'toggle-default', (el, data) =>
   toggleDefaultScene(data.id, data.isDefault === 'true')
