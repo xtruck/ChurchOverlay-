@@ -5,6 +5,7 @@
  */
 import { showToast } from '../utils.js';
 import { getWsToken, ws } from '../state.js';
+import { registerAction } from '../action-delegator.js';
 
 (function initCompanionLink() {
   const link = document.getElementById('companionLink');
@@ -76,4 +77,7 @@ export function renderCompanionQr(message) {
   }
 }
 
-window.generateCompanionQr = generateCompanionQr;
+// AJOUT (chantier nettoyage dashboard — purge des onclick inline) :
+// #generateCompanionQrBtn passe désormais par data-action/data-target —
+// window.generateCompanionQr n'a plus aucun appelant restant, retiré.
+registerAction('companion-qr', 'generate', () => generateCompanionQr());

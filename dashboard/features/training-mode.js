@@ -3,6 +3,8 @@
  * Active des guides contextuels et tooltips d'aide pour les nouveaux opérateurs.
  * Toggle accessible via Ctrl+Shift+T ou le bouton dans les réglages.
  */
+import { registerAction } from '../action-delegator.js';
+
 (function () {
   let active = false;
 
@@ -58,9 +60,9 @@
         <span class="training-guide-text"></span>
       </div>
       <div class="training-guide-actions">
-        <button class="btn btn-secondary" onclick="window._trainingPrev()" style="font-size:0.7rem;padding:0.25rem 0.5rem;">◀ Préc</button>
-        <button class="btn btn-primary" onclick="window._trainingNext()" style="font-size:0.7rem;padding:0.25rem 0.5rem;">Suiv ▶</button>
-        <button class="btn btn-secondary" onclick="window._trainingClose()" style="font-size:0.7rem;padding:0.25rem 0.5rem;">✕ Fermer</button>
+        <button class="btn btn-secondary training-guide-btn" data-action="prev" data-target="training-guide">◀ Préc</button>
+        <button class="btn btn-primary training-guide-btn" data-action="next" data-target="training-guide">Suiv ▶</button>
+        <button class="btn btn-secondary training-guide-btn" data-action="close" data-target="training-guide">✕ Fermer</button>
       </div>
     `;
     document.body.appendChild(guideBar);
@@ -120,21 +122,27 @@
     }
   }
 
-  window._trainingNext = function () {
+  function trainingNext() {
     if (guideIndex < GUIDE_STEPS.length - 1) {
       guideIndex++;
       showGuideStep();
     } else {
       deactivate();
     }
-  };
-  window._trainingPrev = function () {
+  }
+  function trainingPrev() {
     if (guideIndex > 0) {
       guideIndex--;
       showGuideStep();
     }
-  };
-  window._trainingClose = deactivate;
+  }
+  // AJOUT (chantier nettoyage dashboard — purge des onclick inline) : les 3
+  // boutons de la barre de guidage passent désormais par data-action/
+  // data-target — jamais exposées sur window (elles ne l'étaient que pour
+  // les onclick inline ci-dessus, retirés).
+  registerAction('training-guide', 'next', trainingNext);
+  registerAction('training-guide', 'prev', trainingPrev);
+  registerAction('training-guide', 'close', deactivate);
 
   window.toggleTrainingMode = function () {
     if (active) deactivate();

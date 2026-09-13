@@ -10,6 +10,7 @@
  * ne fait qu'exposer ce qui était déjà là.
  */
 import { showToast, escapeHtmlDashboard } from '../utils.js';
+import { registerAction } from '../action-delegator.js';
 
 export async function loadObsConfig() {
   if (!window.churchOverlay || !window.churchOverlay.getObsConfig) return;
@@ -80,7 +81,7 @@ export async function refreshObsScenes() {
       listEl.innerHTML = (result.data.scenes || [])
         .map(
           (name) =>
-            `<button type="button" class="mood-btn" onclick="switchObsScene('${escapeHtmlDashboard(name).replace(/'/g, "\\'")}')">${escapeHtmlDashboard(name)}</button>`
+            `<button type="button" class="mood-btn" data-action="switch" data-target="obs-scene" data-name="${escapeHtmlDashboard(name)}">${escapeHtmlDashboard(name)}</button>`
         )
         .join('');
     }
@@ -145,6 +146,10 @@ if (window.churchOverlay && window.churchOverlay.getObsConfig) {
 window.saveObsConfig = saveObsConfig;
 window.connectObs = connectObs;
 window.refreshObsScenes = refreshObsScenes;
-window.switchObsScene = switchObsScene;
+// AJOUT (chantier nettoyage dashboard — purge des onclick inline) : les
+// boutons de scène OBS générés par refreshObsScenes() ci-dessus passent
+// désormais par data-action/data-target — window.switchObsScene n'a plus
+// d'appelant restant.
+registerAction('obs-scene', 'switch', (el, data) => switchObsScene(data.name));
 window.toggleObsRecording = toggleObsRecording;
 window.toggleObsStreaming = toggleObsStreaming;

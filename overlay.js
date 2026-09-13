@@ -73,6 +73,24 @@ let currentAnimation = 'fadeInUp';
 // et showMediaItem()) — { type, source, kenBurns, opacity }.
 let currentThemeBackground = {};
 let reconnectTimer = null;
+// CORRECTIF (audit — repli en tempête de reconnexion) : un client sans
+// jeton valide (ex. overlay.html ouvert directement en file:// sans passer
+// par l'URL générée par l'app, voir getWsToken() plus haut) échoue TOUJOURS
+// pour la MÊME raison : le serveur ferme (1008), onclose relance,
+// indéfiniment, au même délai fixe de 3s. Observé en usage réel : des
+// dizaines de rejets "jeton invalide ou manquant" par minute côté serveur,
+// sans jamais s'arrêter ni ralentir. Recul exponentiel (3s -> 6s -> 12s...
+// plafonné à 30s), réinitialisé dès qu'une connexion réussit réellement
+// (voir ws.onopen ci-dessous) — un lien qui coupe puis revient se
+// reconnecte toujours vite, seul un échec qui SE RÉPÈTE ralentit.
+let reconnectDelayMs = 3000;
+const MAX_RECONNECT_DELAY_MS = 30000;
+// AJOUT (audit — voir ws.onclose plus bas) : un seul avertissement console
+// pour tout le cas "aucun jeton du tout", pas un par tentative de
+// reconnexion — réarmé si une vraie connexion réussit un jour (voir
+// ws.onopen), pour ne jamais masquer un futur cas légitime après un
+// rechargement avec la bonne URL.
+let missingTokenWarned = false;
 
 function connectWs() {
   if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
@@ -92,6 +110,8 @@ function connectWs() {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
+    reconnectDelayMs = 3000;
+    missingTokenWarned = false;
   };
 
   ws.onmessage = (event) => {
@@ -239,8 +259,26 @@ function connectWs() {
     }
   };
 
-  ws.onclose = () => {
+  ws.onclose = (event) => {
     console.log('[overlay] WebSocket déconnecté');
+    // CORRECTIF (audit — boucle de reconnexion en tempête observée en
+    // direct) : code 1008 + motif "Jeton manquant" (voir server.js) signale
+    // un cas STRUCTURELLEMENT sans issue tant que cette page n'est pas
+    // rouverte via l'URL générée par l'app (getWsToken() relit l'URL à
+    // CHAQUE tentative — retenter sans recharger ne peut jamais faire
+    // apparaître un jeton). Un seul avertissement clair (pas un par
+    // tentative, voir le flag ci-dessous) au lieu de laisser la boucle
+    // silencieuse spammer les logs serveur indéfiniment au même rythme.
+    if (event && event.code === 1008 && event.reason === 'Jeton manquant' && !getWsToken()) {
+      if (!missingTokenWarned) {
+        missingTokenWarned = true;
+        console.warn(
+          "[overlay] Non authentifié — cette page a été ouverte sans jeton d'accès. " +
+            "Utilisez l'URL de l'overlay générée par l'application (bouton dédié dans le tableau de bord), " +
+            'pas ce fichier ouvert directement. Nouvelle tentative espacée en arrière-plan.'
+        );
+      }
+    }
     scheduleOverlayReconnect();
   };
 
@@ -254,7 +292,8 @@ function scheduleOverlayReconnect() {
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
       connectWs();
-    }, 3000);
+    }, reconnectDelayMs);
+    reconnectDelayMs = Math.min(reconnectDelayMs * 2, MAX_RECONNECT_DELAY_MS);
   }
 }
 

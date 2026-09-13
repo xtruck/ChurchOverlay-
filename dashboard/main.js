@@ -59,6 +59,7 @@ import './features/perf-pill.js';
 import './features/settings-subnav.js';
 import './features/confidence-mode.js';
 import './features/command-palette.js';
+import './features/dashboard-cleanup.js';
 import './features/training-mode.js';
 import './features/startup-wizard.js';
 import './features/companion-link.js';

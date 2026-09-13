@@ -121,14 +121,26 @@ export async function startRealAudioCapture() {
     const settings = window.churchOverlay ? await window.churchOverlay.getSettings() : null;
     const deviceId = settings && settings.audioDevice;
 
-    // echoCancellation/noiseSuppression/autoGainControl désactivés :
-    // ces traitements Chromium visent la visioconférence, pas la
-    // fidélité maximale attendue par un moteur de transcription —
-    // signal le plus brut possible vers Whisper/Groq/Deepgram.
+    // CORRECTIF (audit — faux positifs "Esther 1" observés en direct,
+    // renverse une décision antérieure) : ces 3 traitements Chromium
+    // avaient été explicitement désactivés (voir historique) au motif
+    // qu'ils visent la visioconférence et peuvent introduire artefacts/
+    // compression nuisibles à la fidélité maximale attendue par un moteur
+    // de transcription. Ce raisonnement reste vrai en théorie, mais le
+    // problème RÉELLEMENT observé en usage live est l'inverse : bruit
+    // ambiant/sono/musique de fond suffisamment fort pour franchir le VAD
+    // (voir aussi silero-vad.js/audio-capture.js#sileroSpeechThreshold,
+    // relevé au même audit) et nourrir le pipeline ASR de signal non-vocal
+    // — noiseSuppression cible exactement cette classe de bruit constant/
+    // large-bande, echoCancellation réduit la réverbération/le retour de
+    // sono captés par un micro de chaire, et autoGainControl évite qu'une
+    // voix lointaine/faible tombe sous le seuil VAD. Réactivés ; à
+    // surveiller (voir rapport d'audit) en cas de dégradation de fidélité
+    // constatée sur un micro de très bonne qualité déjà proche du signal.
     const audioConstraints = {
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
     };
     if (deviceId) audioConstraints.deviceId = { exact: deviceId };
 

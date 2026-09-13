@@ -897,12 +897,19 @@ const SCHEMAS = {
   // generateCameraPairing.
   transcript: {
     required: ['action', 'text'],
-    optional: ['source', 'timestamp'],
+    // AJOUT (audit — voir server.js#CHAPTER_FALLBACK_MIN_CONFIDENCE) :
+    // `confidence` optionnelle, pour que l'injection manuelle (test/
+    // débogage, voir misc-ws-handlers.js) puisse exercer le même garde-fou
+    // de confiance que le pipeline audio réel — sans elle, ce chemin
+    // n'avait aucun moyen de simuler une transcription de mauvaise
+    // qualité pour vérifier ce garde-fou.
+    optional: ['source', 'timestamp', 'confidence'],
     validators: {
       action: (value) => value === 'transcript',
       text: (value) => typeof value === 'string' && value.length <= 5000,
       source: (value) => typeof value === 'string' && value.length <= 50,
       timestamp: (value) => typeof value === 'number' && value > 0,
+      confidence: (value) => typeof value === 'number' && value >= 0 && value <= 1,
     },
   },
   setConfidenceThreshold: {

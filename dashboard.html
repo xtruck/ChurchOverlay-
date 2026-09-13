@@ -110,6 +110,22 @@
       .preview-program-caption.is-hidden {
         display: none !important;
       }
+
+      .dashboard-column-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+      }
+
+      .companion-qr-image {
+        display: none;
+        max-width: 200px;
+        margin-top: 8px;
+      }
+
+      .command-palette-backdrop {
+        display: none;
+      }
     </style>
   </head>
   <body>
@@ -247,6 +263,40 @@
           </div>
 
           <div class="header-actions">
+            <!-- AJOUT (chantier nettoyage dashboard — divulgation progressive) :
+                         Mode Direct masque les panneaux secondaires (caméras IP,
+                         intégrations, réglages système, import/composeur de
+                         scène) partout où ils apparaissent, via
+                         body.mode-direct (voir dashboard.css et
+                         dashboard-cleanup.js). Persisté en localStorage —
+                         préférence PAR POSTE, jamais synchronisée entre
+                         opérateurs (chaque régie choisit sa propre densité
+                         d'affichage). Un raccourci reste toujours accessible
+                         quel que soit le mode : la palette Ctrl/Cmd+K
+                         ci-dessous n'est jamais masquée, elle. -->
+            <div class="direct-mode-selector" role="group" aria-label="Densité d'affichage">
+              <button
+                type="button"
+                class="direct-mode-btn"
+                data-action="set-dashboard-mode"
+                data-target="dashboard-cleanup"
+                data-mode="direct"
+                title="Mode Direct (Régie) — masque les panneaux non essentiels en direct"
+              >
+                🎬 Direct
+              </button>
+              <button
+                type="button"
+                class="direct-mode-btn active"
+                data-action="set-dashboard-mode"
+                data-target="dashboard-cleanup"
+                data-mode="config"
+                title="Mode Configuration — tout le tableau de bord"
+              >
+                ⚙️ Configuration
+              </button>
+            </div>
+
             <!-- AJOUT (palette de commandes) : point d'entrée visible à la
                          souris — le raccourci clavier seul (Ctrl/Cmd+K) n'est
                          découvrable que si on le connaît déjà. -->
@@ -287,8 +337,9 @@
               <button
                 type="button"
                 class="trust-mode-btn autonomy-btn"
+                data-action="set"
+                data-target="trust-mode"
                 data-trust-mode="manual"
-                onclick="setTrustMode('manual')"
                 title="Mode Aperçu — 0% automatique, tout affichage passe par une action manuelle (recherche, palette, feuille de route)"
               >
                 👁️ Aperçu
@@ -296,8 +347,9 @@
               <button
                 type="button"
                 class="trust-mode-btn autonomy-btn"
+                data-action="set"
+                data-target="trust-mode"
                 data-trust-mode="semi-auto"
-                onclick="setTrustMode('semi-auto')"
                 title="Mode Supervisé — chaque détection reste en attente jusqu'à confirmation opérateur (barre d'espace)"
               >
                 🛡️ Supervisé
@@ -305,8 +357,9 @@
               <button
                 type="button"
                 class="trust-mode-btn autonomy-btn active"
+                data-action="set"
+                data-target="trust-mode"
                 data-trust-mode="auto"
-                onclick="setTrustMode('auto')"
                 title="Mode Autonome — affichage direct au-dessus de 90% de confiance, validation entre 70-89%, rejeté en dessous ; chaque décision automatique est journalisée (raison + score) dans le flux d'activité"
               >
                 🤖 Autonome
@@ -1339,7 +1392,8 @@
                 <button
                   class="btn btn-secondary chip-sm"
                   id="generateThemeBtn"
-                  onclick="generateThemeFromPromptUI()"
+                  data-action="generate"
+                  data-target="theme-prompt"
                 >
                   ✨ Générer
                 </button>
@@ -1914,7 +1968,7 @@
                          le flux d'activité, plutôt qu'une seule grande carte —
                          l'état de santé du micro/pipeline reste visible même
                          quand le flux d'activité défile. -->
-            <div style="display: flex; flex-direction: column; gap: 1.5rem">
+            <div class="dashboard-column-stack">
               <!-- Micro & confiance IA — jauge + mini-historique -->
               <div class="card mini-status-tile">
                 <div class="card-header">
@@ -3287,8 +3341,18 @@
                      WS_VIEWER_TOKEN ne se configurent pas ici : ils sont déjà générés et
                      persistés automatiquement (ensureWsToken() dans main.js), cette carte
                      n'en affiche que le statut. -->
-          <div class="card settings-card-spaced" id="networkSettingsCard" data-group="cameras">
-            <div class="card-header">
+          <!-- AJOUT (chantier nettoyage dashboard — panneaux repliables) :
+                       accordéon natif <details>-like via CSS/accordion.js — voir
+                       dashboard-cleanup.js pour le comportement et dashboard.css
+                       pour .accordion-card/.collapsed. Fermé par défaut : une
+                       carte "Réseau" n'est consultée qu'à la mise en place, pas
+                       pendant le culte lui-même. -->
+          <div
+            class="card settings-card-spaced accordion-card collapsed"
+            id="networkSettingsCard"
+            data-group="cameras"
+          >
+            <div class="card-header accordion-header">
               <span class="card-title">Réseau (caméra téléphone par QR)</span>
               <div class="card-header-icon-badge-row">
                 <div class="card-icon-wrap">
@@ -3551,7 +3615,8 @@
                 <button
                   id="generateCompanionQrBtn"
                   class="btn btn-secondary stat-btn-sm badge-ml8"
-                  onclick="generateCompanionQr()"
+                  data-action="generate"
+                  data-target="companion-qr"
                 >
                   📱 Générer le QR
                 </button>
@@ -3560,8 +3625,8 @@
             <div id="companionQrStatus" class="field-hint mt-tight"></div>
             <img
               id="companionQrImage"
+              class="companion-qr-image"
               alt="QR code d'accès à la page compagnon"
-              style="display: none; max-width: 200px; margin-top: 8px"
             />
             <!-- AJOUT (intégration MCP — jeton opérateur introuvable pour le
                          process MCP séparé, source du spam "jeton invalide" dans les
@@ -4034,10 +4099,14 @@
                 >Studio de scènes (<span id="sceneStudioCount">0</span>)</span
               >
               <div class="btn-row-tight">
-                <button id="openSceneComposerBtn" class="btn btn-primary chip-sm">
+                <button
+                  id="openSceneComposerBtn"
+                  class="btn btn-primary chip-sm mode-direct-hide"
+                  title="Composition de scène — masqué en Mode Direct (via la palette Ctrl/Cmd+K si besoin en plein culte)"
+                >
                   + Nouvelle scène
                 </button>
-                <button id="importPptxSlidesBtn" class="btn btn-secondary chip-sm">
+                <button id="importPptxSlidesBtn" class="btn btn-secondary chip-sm mode-direct-hide">
                   📥 Importer PowerPoint
                 </button>
                 <button id="hideSceneNowBtn" class="btn btn-secondary chip-sm">⏹ Masquer</button>
@@ -4270,33 +4339,17 @@
       </ul>
     </nav>
 
-    <!-- AJOUT (palette de commandes, Ctrl/Cmd+K) : masquée par défaut, gérée
-         entièrement par dashboard/features/command-palette.js. Un seul
-         exemplaire dans le DOM, réutilisé à chaque ouverture (pas de
-         création/destruction répétée d'éléments). -->
-    <div
-      id="commandPaletteBackdrop"
-      class="command-palette-backdrop"
-      style="display: none"
-      role="presentation"
-    >
-      <div
-        class="command-palette"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Palette de commandes"
-      >
-        <input
-          type="text"
-          id="commandPaletteInput"
-          class="command-palette-input"
-          placeholder="Rechercher une action... (Échap pour fermer)"
-          autocomplete="off"
-          spellcheck="false"
-        />
-        <div id="commandPaletteResults" class="command-palette-results"></div>
-      </div>
-    </div>
+    <!-- SUPPRIMÉ (chantier nettoyage dashboard, audit) : ce bloc
+         #commandPaletteBackdrop/#commandPaletteInput/#commandPaletteResults
+         était mort — sa légende affirmait être "gérée entièrement par
+         dashboard/features/command-palette.js", mais ce module crée en
+         réalité SA PROPRE superposition dynamique (overlay.id =
+         'commandPalette', voir createOverlay()) et n'a jamais référencé ces
+         3 identifiants. Aucun script du dépôt ne les cite non plus (grep
+         confirmé) : markup et CSS dédiée (voir dashboard.css) retirés
+         ensemble. La VRAIE palette Ctrl/Cmd+K reste #commandPalette,
+         déclenchée par le bouton .command-palette-trigger ci-dessus,
+         inchangée. -->
 
     <!-- AJOUT (capture webcam — aperçu opérateur) : module isolé, chargé
          avant le tableau de bord pour que window.CameraCapture soit prêt.

@@ -5,6 +5,7 @@
  */
 import { ws } from '../state.js';
 import { showToast } from '../utils.js';
+import { registerAction } from '../action-delegator.js';
 
 /* ======================================================================
            Sélecteur d'ambiances (moods)
@@ -19,7 +20,7 @@ export function renderMoodPicker(moods) {
   container.innerHTML = moods
     .map(
       (m) => `
-                <button class="mood-btn" id="mood-btn-${m.id}" onclick="setMoodTheme('${m.id}')" title="${m.name}">
+                <button class="mood-btn" id="mood-btn-${m.id}" data-action="set" data-target="mood" data-id="${m.id}" title="${m.name}">
                     ${m.name}
                 </button>
             `
@@ -92,9 +93,23 @@ export function renderThemeGenerated(result) {
   }
 }
 
-window.setMoodTheme = setMoodTheme;
+// AJOUT (chantier nettoyage dashboard — purge des onclick inline) : les
+// boutons d'ambiance générés par renderMoodPicker() ci-dessus passent
+// désormais par data-action/data-target — window.setMoodTheme n'a donc
+// plus aucun appelant restant, retiré (contrairement à
+// window.setBackgroundPattern juste en dessous, toujours appelé par les
+// boutons #pattern-btn-* via event-bindings.js#CLICK_BINDINGS — conservé).
+registerAction('mood', 'set', (el, data) => setMoodTheme(data.id));
+
 window.setBackgroundPattern = setBackgroundPattern;
+// CONSERVÉ (chantier nettoyage dashboard) : window.generateThemeFromPromptUI
+// reste nécessaire — dashboard.html#themePromptInput l'appelle encore via
+// onkeydown="...generateThemeFromPromptUI()" (touche Entrée), un attribut
+// DISTINCT de onclick, hors du périmètre de cette purge (voir le rapport de
+// session). Le bouton "✨ Générer" lui-même, en revanche, passe désormais
+// par data-action/data-target (voir juste en dessous).
 window.generateThemeFromPromptUI = generateThemeFromPromptUI;
+registerAction('theme-prompt', 'generate', () => generateThemeFromPromptUI());
 
 window.toggleAmbientMode = function (enabled) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;

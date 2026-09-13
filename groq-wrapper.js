@@ -311,6 +311,35 @@ const CIRCUIT_FAILURE_THRESHOLD = 5;
 const CIRCUIT_COOLDOWN_MS = 30000;
 let circuitOpenedAt = null;
 
+// AJOUT (audit — surcharge Groq observée en direct) : constaté en usage
+// réel — semantic-detector.js et ai-enricher.js partagent la MÊME clé/
+// quota Groq que la transcription (transcribeFile/transcribeWithFallback
+// ci-dessus), via ce même chatCompletion() ("SEUL point de passage de tout
+// appel LLM", voir l'en-tête de ce fichier). Leur propre limiteur LOCAL
+// (semantic-detector.js#MAX_CALLS_PER_MINUTE=24) ignore totalement ce que
+// la transcription consomme déjà du quota RÉEL du compte — résultat observé :
+// un 429 Groq quasi permanent sur /v1/chat/completions, réessayé à CHAQUE
+// transcript (toutes les 2-3s), sans jamais laisser respirer le quota.
+// Repli DÉLIBÉRÉMENT séparé du circuit breaker ci-dessus (qui ne concerne
+// QUE la transcription/audio, un modèle et un endpoint différents) : un
+// cooldown COURT (15s, pas les 30s du circuit — un simple "laisse la
+// fenêtre RPM se vider", pas une vraie panne) déclenché dès le PREMIER 429
+// rencontré sur le chat, pas après plusieurs échecs consécutifs comme le
+// circuit (ce chemin est un enrichissement de fond, jamais critique —
+// autant réagir immédiatement). N'affecte JAMAIS Gemini (branche essayée
+// en premier ci-dessous, quota totalement séparé) ni la transcription
+// elle-même (fichier/endpoint distinct) : "la transcription ASR reste
+// toujours prioritaire" n'a donc même pas besoin d'un arbitrage explicite
+// — ce cooldown ne peut structurellement jamais la retarder.
+const CHAT_RATE_LIMIT_COOLDOWN_MS = 15000;
+let lastChatRateLimitAt = null;
+
+function isChatRateLimited() {
+  return (
+    lastChatRateLimitAt !== null && Date.now() - lastChatRateLimitAt < CHAT_RATE_LIMIT_COOLDOWN_MS
+  );
+}
+
 function isCircuitOpen() {
   if (consecutiveGroqFailures < CIRCUIT_FAILURE_THRESHOLD || circuitOpenedAt === null) {
     return false;
@@ -502,6 +531,16 @@ async function chatCompletion(prompt, options = {}) {
     throw new Error("Ni GEMINI_API_KEY ni GROQ_API_KEY ne sont définis dans l'environnement.");
   }
 
+  // CORRECTIF (audit — voir CHAT_RATE_LIMIT_COOLDOWN_MS plus haut) : un
+  // appel qu'on SAIT déjà voué au 429 (un premier 429 vient d'être observé
+  // il y a moins de CHAT_RATE_LIMIT_COOLDOWN_MS) ne part même plus sur le
+  // réseau — échec immédiat, message identique à celui d'un vrai 429 (les
+  // appelants existants — semantic-detector.js, ai-enricher.js — le
+  // traitent déjà correctement sans changement de leur côté).
+  if (isChatRateLimited()) {
+    throw new Error('Rate limit Groq atteint — réessayez dans quelques secondes.');
+  }
+
   const body = {
     model,
     messages: [
@@ -539,6 +578,9 @@ async function chatCompletion(prompt, options = {}) {
     if (!response.ok) {
       const errText = await response.text().catch(() => '');
       if (response.status === 429) {
+        // AJOUT (audit — voir CHAT_RATE_LIMIT_COOLDOWN_MS) : arme le
+        // cooldown dès CE premier 429, pas seulement après plusieurs échecs.
+        lastChatRateLimitAt = Date.now();
         throw new Error('Rate limit Groq atteint — réessayez dans quelques secondes.');
       }
       throw new Error(`Groq Chat API a répondu ${response.status}: ${errText}`);
@@ -586,6 +628,10 @@ module.exports = {
   checkKey,
   // AJOUT (Chantier 2 — santé) : voir buildHealthReport() dans server.js.
   getGroqHealthState,
+  // AJOUT (audit — voir CHAT_RATE_LIMIT_COOLDOWN_MS) : consultée par
+  // semantic-detector.js/ai-enricher.js pour sauter un appel voué à
+  // l'échec plutôt que de tenter et se le faire dire par un 429.
+  isChatRateLimited,
   // Exposée pour tests unitaires (test-groq-prompt-truncation.js).
   truncateToUtf8ByteLimit,
   GROQ_PROMPT_MAX_BYTES,

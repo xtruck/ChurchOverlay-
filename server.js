@@ -257,6 +257,34 @@ function getVerseDurationMs() {
 // (utilisée seulement si features.json ne définit rien). Valeur 0 ou négative
 // désactive le rejet.
 const DEFAULT_TRANSCRIPTION_CONFIDENCE_THRESHOLD = 0.15;
+// CORRECTIF (audit + chantier finalisation v1.0 — repli chapitre déclenché
+// sur du bruit quasi-pur) : observé en usage réel (session live, Groq en
+// 429 permanent -> repli Deepgram quasi systématique) — des fragments à
+// confiance 0.18-0.41 (largement au-dessus du seuil de rejet 0.15
+// ci-dessus, mais du charabia sans rapport avec le culte : « Quelle
+// conjugaison ça a? », etc.) se faisaient reconnaître comme une référence
+// "chapitre seul" (ex. « esther 1 » par pur hasard de correspondance) et
+// ARMAIENT scheduleChapterFallback -> le chapitre s'affichait ensuite
+// automatiquement à l'écran (mode confiance 'auto') sans qu'aucune vraie
+// parole sur ce livre n'ait jamais été prononcée. Le seuil de 0.15
+// ci-dessus reste volontairement permissif (il ne doit filtrer que le bruit
+// pur, pas une voix réelle mais imparfaite) — mais TOUT le chemin de
+// détection/fusion/affichage d'un verset qui suit est le plus visible/
+// conséquent de toute la chaîne à confiance incertaine : il mérite une
+// barre plus haute que "pas du bruit pur". 0.60 (relevé de 0.5, cahier des
+// charges v1.0 — "aucune exception") : seuil UNIQUE (voir
+// verseDetectionAllowed, calculé une fois en tête de processTranscript),
+// gardant TOUT chemin de déclenchement sans exception — fast-path "citation
+// explicite", détection normale, fusion de fragments, détection sémantique
+// (LLM), citation, et armement du timer d'auto-affichage du repli chapitre.
+// Une version antérieure de ce correctif exemptait le fast-path (un texte
+// matchant "Livre Chapitre:Verset" mot pour mot semble structurellement
+// moins exposé au faux positif qu'une correspondance floue) — retiré : le
+// cahier des charges v1.0 ne laisse explicitement aucune exception.
+// `null`/confiance inconnue (chemins historiques qui ne transmettent pas
+// encore la confiance) continue de faire confiance comme avant ces
+// correctifs — voir opts.confidence plus bas.
+const MIN_VERSE_CONFIDENCE = 0.6;
 function getTranscriptionConfidenceThreshold() {
   const features = featuresStore.readFeatures();
   const fromFeatures = (features.audio || {}).transcriptionConfidenceThreshold;
@@ -1478,6 +1506,18 @@ function resolveDetectionConfidenceScore(reference) {
  */
 async function processTranscript(text, tracker, opts = {}) {
   log('Processing transcript: ' + text.substring(0, 100));
+  // AJOUT (audit — voir MIN_VERSE_CONFIDENCE) : `null` quand
+  // l'appelant ne transmet pas encore la confiance ASR (comportement
+  // historique préservé, voir chaque site d'appel d'enqueueTranscript).
+  const transcriptConfidence = typeof opts.confidence === 'number' ? opts.confidence : null;
+  // AJOUT (chantier finalisation v1.0 — voir MIN_VERSE_CONFIDENCE en tête de
+  // fichier) : seuil UNIQUE gardant tout déclenchement de verset (fast-path
+  // exact, détection normale, fusion de fragments, sémantique, citation,
+  // repli chapitre) — calculé une seule fois ici, réutilisé partout plus
+  // bas. `null`/confiance inconnue = comportement historique (jamais
+  // bloquant), voir le commentaire sur transcriptConfidence ci-dessus.
+  const verseDetectionAllowed =
+    transcriptConfidence === null || transcriptConfidence >= MIN_VERSE_CONFIDENCE;
 
   if (plugins) {
     plugins.emit('onTranscript', text).catch(() => {});
@@ -1637,24 +1677,35 @@ async function processTranscript(text, tracker, opts = {}) {
   // B.2 : les deux détecteurs (FR + EN) sont désormais consultés en
   // parallèle sur le texte brut, et c'est la MEILLEURE correspondance
   // qui gagne (même logique que le repli flou dans detectBilingual).
-  try {
-    const fastFr = detector.detectExact(text);
-    const fastEn = detector.detectExactEn ? detector.detectExactEn(text) : null;
-    let fastMatch = null;
-    if (fastFr && fastEn) {
-      // Les deux ont matché : confidence d'abord, puis pas de verset < avec verset
-      if (fastFr.confidence === 'high' && fastEn.confidence !== 'high') fastMatch = fastFr;
-      else if (fastEn.confidence === 'high' && fastFr.confidence !== 'high') fastMatch = fastEn;
-      else fastMatch = fastFr; // égalité → FR par défaut (langue historique)
-    } else {
-      fastMatch = fastFr || fastEn;
+  // CORRECTIF (chantier finalisation v1.0 — cahier des charges, "seuil
+  // UNIQUE avant tout déclenchement de verset") : ce court-circuit restait
+  // initialement HORS du garde-fou de confiance (un texte matchant "Livre
+  // Chapitre:Verset" mot pour mot n'a structurellement pas le même risque
+  // de faux positif qu'une correspondance floue) — mais la consigne v1.0 ne
+  // laisse explicitement aucune exception : "avant d'autoriser... le
+  // déclenchement d'un verset", sans distinguo de chemin. Un texte ASR à
+  // confiance connue et insuffisante ne déclenche donc plus RIEN, pas même
+  // ce chemin rapide.
+  if (verseDetectionAllowed) {
+    try {
+      const fastFr = detector.detectExact(text);
+      const fastEn = detector.detectExactEn ? detector.detectExactEn(text) : null;
+      let fastMatch = null;
+      if (fastFr && fastEn) {
+        // Les deux ont matché : confidence d'abord, puis pas de verset < avec verset
+        if (fastFr.confidence === 'high' && fastEn.confidence !== 'high') fastMatch = fastFr;
+        else if (fastEn.confidence === 'high' && fastFr.confidence !== 'high') fastMatch = fastEn;
+        else fastMatch = fastFr; // égalité → FR par défaut (langue historique)
+      } else {
+        fastMatch = fastFr || fastEn;
+      }
+      if (fastMatch && fastMatch.confidence === 'high') {
+        reference = fastMatch;
+        log('Appel direct (référence explicite, avant correction IA) : ' + fastMatch.raw);
+      }
+    } catch (e) {
+      warn('Fast-path detection error: ' + e.message);
     }
-    if (fastMatch && fastMatch.confidence === 'high') {
-      reference = fastMatch;
-      log('Appel direct (référence explicite, avant correction IA) : ' + fastMatch.raw);
-    }
-  } catch (e) {
-    warn('Fast-path detection error: ' + e.message);
   }
 
   if (!reference && corrector) {
@@ -1672,6 +1723,16 @@ async function processTranscript(text, tracker, opts = {}) {
   }
 
   updateTranscriptContext(correctedText);
+  // (verseDetectionAllowed calculé en tête de fonction, voir MIN_VERSE_
+  // CONFIDENCE — s'applique désormais à TOUT chemin de déclenchement, fast-
+  // path exact inclus.) `reference` peut déjà être défini ici si le
+  // fast-path a matché : dans ce cas rien de ce qui suit ne s'exécute de
+  // toute façon (chaque bloc est déjà protégé par `if (!reference)`).
+  if (!reference && !verseDetectionAllowed) {
+    log(
+      `Détection de verset ignorée (confiance ${transcriptConfidence.toFixed(2)} < ${MIN_VERSE_CONFIDENCE}, probable bruit) : "${text.substring(0, 60)}"`
+    );
+  }
   // AJOUT (chantier ASR, Étape 4 — reconstruction de références fragmentées) :
   // chaque fragment transcrit (final VAD local, final Deepgram, partial stable
   // relancé) est horodaté dans un buffer glissant (session-state.js) pour
@@ -1685,20 +1746,25 @@ async function processTranscript(text, tracker, opts = {}) {
   // précédent (« 13 verset 4. », fin de l'énoncé C1) resterait dans le buffer
   // et se fusionnerait avec le début de l'énoncé suivant (« 2e Timothée
   // chapitre ») → « 2e Timothée chapitre 13 verset 4. » → 2timothee 13:4 FAUX.
-  try {
-    if (detector.containsBookName(correctedText)) {
-      sessionState.resetTranscriptFragments();
-    }
-  } catch (e) {
-    warn('Fragment reset error: ' + e.message);
-  }
-  sessionState.pushTranscriptFragment(correctedText);
-
-  if (!reference) {
+  if (verseDetectionAllowed) {
     try {
-      reference = detector.detectBilingual(correctedText, sessionState.getTranscriptionLanguage());
+      if (detector.containsBookName(correctedText)) {
+        sessionState.resetTranscriptFragments();
+      }
     } catch (e) {
-      warn('Detector error: ' + e.message);
+      warn('Fragment reset error: ' + e.message);
+    }
+    sessionState.pushTranscriptFragment(correctedText);
+
+    if (!reference) {
+      try {
+        reference = detector.detectBilingual(
+          correctedText,
+          sessionState.getTranscriptionLanguage()
+        );
+      } catch (e) {
+        warn('Detector error: ' + e.message);
+      }
     }
   }
 
@@ -1713,7 +1779,7 @@ async function processTranscript(text, tracker, opts = {}) {
   // le résultat QUE s'il porte une référence complète (verseStart défini) :
   // une référence "chapitre seul" reconstruite n'est pas plus fiable qu'une
   // vraie et reste soumise à la garde anti-partial-tronqué ci-dessous.
-  if (!reference) {
+  if (!reference && verseDetectionAllowed) {
     try {
       const fusedText = sessionState.getFusedRecentText();
       if (fusedText && fusedText !== correctedText) {
@@ -1839,7 +1905,14 @@ async function processTranscript(text, tracker, opts = {}) {
   // rapides (regex) restants.
   const SEMANTIC_QUEUE_DEPTH_LIMIT = 3;
   const semanticQueueBackedUp = getTranscriptQueueDepth() > SEMANTIC_QUEUE_DEPTH_LIMIT;
-  if (!reference && semanticDetector && !semanticQueueBackedUp) {
+  // AJOUT (chantier finalisation v1.0 — voir MIN_VERSE_CONFIDENCE) : la
+  // détection sémantique (appel LLM) est le chemin le PLUS exposé à
+  // halluciner une référence plausible-mais-fausse à partir d'un texte
+  // dégradé — et le seul de tous les repères ci-dessous à consommer un
+  // vrai appel réseau Groq (voir aussi CHAT_RATE_LIMIT_COOLDOWN_MS,
+  // groq-wrapper.js) : l'ignorer purement et simplement sur une confiance
+  // basse épargne le quota ET élimine cette classe de faux positif.
+  if (!reference && semanticDetector && !semanticQueueBackedUp && verseDetectionAllowed) {
     try {
       const semanticResult = await semanticDetector.detect(correctedText, { timeoutMs: 4000 });
       if (semanticResult) {
@@ -1861,7 +1934,7 @@ async function processTranscript(text, tracker, opts = {}) {
   }
 
   let quotedMatch = null;
-  if (!reference) {
+  if (!reference && verseDetectionAllowed) {
     try {
       const quoted = bibleLookup.findByQuotedText(correctedText);
       if (quoted && quoted.score >= 0.55) {
@@ -1885,7 +1958,9 @@ async function processTranscript(text, tracker, opts = {}) {
   if (!reference) {
     if (readingMode.active) {
       try {
-        const result = readingMode.processFragment(correctedText);
+        // AJOUT (audit — voir reading-mode.js#minConfidence) : transmet la
+        // même confiance que le garde-fou de repli chapitre ci-dessus.
+        const result = readingMode.processFragment(correctedText, transcriptConfidence);
         if (result && result.command === 'nextChapter') {
           const nextChapter = (readingMode.chapter || 0) + 1;
           const book = readingMode.book;
@@ -2003,6 +2078,22 @@ async function processTranscript(text, tracker, opts = {}) {
     // processTranscript). candidateVerse reste diffusé pour le tableau de
     // bord (signal spéculatif), mais l'affichage réel n'est plus tributaire
     // d'un complément qui peut ne jamais venir.
+    //
+    // CORRECTIF (audit — voir MIN_VERSE_CONFIDENCE en tête de
+    // fichier) : ce timer est la seule étape de tout ce chemin qui peut
+    // finir par AFFICHER quelque chose sans confirmation d'opérateur (mode
+    // confiance 'auto') — armé ici sans condition, il se déclenchait aussi
+    // sur un fragment de pur charabia à confiance à peine au-dessus du seuil
+    // de rejet. On ne l'arme que si la confiance est inconnue (chemins
+    // historiques, comportement préservé) ou suffisante ; sinon on
+    // s'arrête ici — candidateVerse et l'échauffement du cache ci-dessus
+    // ont déjà eu lieu, seul l'AFFICHAGE potentiel est retenu.
+    if (transcriptConfidence !== null && transcriptConfidence < MIN_VERSE_CONFIDENCE) {
+      log(
+        `Repli chapitre NON armé (confiance ${transcriptConfidence.toFixed(2)} < ${MIN_VERSE_CONFIDENCE}, probable bruit) : ${reference.book} ${reference.chapter}`
+      );
+      return;
+    }
     scheduleChapterFallback(reference.book, reference.chapter, tracker, {
       chapterFallbackText: correctedText,
     });
@@ -2871,7 +2962,16 @@ wss.on('connection', (ws, req) => {
       warn("Connexion WebSocket refusée — jeton d'authentification invalide ou manquant.");
       recordWsAuthFailure(origin);
       connRateLimiter.removeConnection(ws);
-      ws.close(1008, 'Non autorisé');
+      // CORRECTIF (audit — boucle de reconnexion en tempête observée en
+      // direct, voir overlay.js#connectWs) : un client SANS jeton du tout
+      // (ex. overlay.html ouvert en file:// sans passer par l'URL générée
+      // par l'app) échoue toujours pour la MÊME raison à chaque tentative —
+      // un motif de fermeture distinct (au lieu du générique "Non
+      // autorisé") permet au client de reconnaître ce cas précis et
+      // d'arrêter de retenter en boucle plutôt que de continuer
+      // indéfiniment au même rythme.
+      const reason = presented ? 'Jeton invalide' : 'Jeton manquant';
+      ws.close(1008, reason);
       return;
     }
   }
@@ -3207,7 +3307,14 @@ function startPipeline() {
               })
               .catch(() => {});
           }
-          await enqueueTranscript(result.text, tracker);
+          // CORRECTIF (audit — voir MIN_VERSE_CONFIDENCE) : cette
+          // confiance était calculée juste au-dessus (confidenceNote,
+          // broadcast 'transcript') mais jamais transmise à processTranscript
+          // — le chemin batch/segment (le PLUS emprunté en usage réel) ne
+          // pouvait donc jamais bénéficier de ce garde-fou.
+          await enqueueTranscript(result.text, tracker, {
+            confidence: typeof result.confidence === 'number' ? result.confidence : null,
+          });
           logLatencySummary(tracker);
         }
       } catch (err) {
@@ -3351,6 +3458,9 @@ function startPipeline() {
       }
       await enqueueTranscript(text, tracker, {
         source: meta?.finalizedBy === 'local-vad-silence' ? 'local-vad-silence' : 'deepgram-final',
+        // CORRECTIF (audit — voir MIN_VERSE_CONFIDENCE) : même
+        // raisonnement que le chemin batch ci-dessus.
+        confidence: typeof meta?.confidence === 'number' ? meta.confidence : null,
       });
       logLatencySummary(tracker);
     },

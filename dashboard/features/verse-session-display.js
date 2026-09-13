@@ -118,7 +118,7 @@ export function addTranscript(message) {
     // 1. Highlight potential Bible citations (Gold Amber tags)
     let highlighted = escapeHtmlDashboard(text).replace(
       /\b(Genèse|Exode|Lévitique|Nombres|Deutéronome|Josué|Juges|Ruth|Samuel|Rois|Chroniques|Esdras|Néhémie|Esther|Job|Psaume[s]?|Proverbe[s]?|Ecclésiaste|Cantique|Ésaïe|Jérémie|Lamentations|Ézéchiel|Daniel|Osée|Joël|Amos|Abdias|Jonas|Michée|Nahum|Habacuc|Sophonie|Aggée|Zacharie|Malachie|Matthieu|Marc|Luc|Jean|Actes|Romains|Corinthiens|Galates|Éphésiens|Philippiens|Colossiens|Thessaloniciens|Timothée|Tite|Philémon|Hébreux|Jacques|Pierre|Jude|Apocalypse)\s+\d+(:\d+)?/gi,
-      '<span class="pp-scripture-tag" onclick="if(window.quickLookupVerse) window.quickLookupVerse(\'$&\');">📖 $&</span>'
+      '<span class="pp-scripture-tag" data-action="lookup" data-target="quick-verse" data-ref="$&">📖 $&</span>'
     );
 
     // 2. Highlight Divine Names (Blue Cyan)

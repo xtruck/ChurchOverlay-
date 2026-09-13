@@ -372,6 +372,10 @@
         color: var(--text-muted);
         white-space: nowrap;
       }
+
+      #captionLangSelector.is-hidden {
+        display: none;
+      }
     </style>
   </head>
   <body>
@@ -397,7 +401,7 @@
         id="captionLangSelector"
         role="group"
         aria-label="Langue des sous-titres"
-        style="display: none"
+        class="is-hidden"
       >
         <button
           type="button"

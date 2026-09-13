@@ -16,6 +16,20 @@ class ReadingMode {
     // fin, en NUMÉRO de verset (pas index). `null` = pas de plage annoncée,
     // avance sans limite comme avant.
     this.endVerseNumber = null;
+    // AJOUT (audit — garde-fou de confiance, demandé explicitement pour ce
+    // fichier après un faux positif "Esther 1" observé en direct) : ce
+    // fichier n'affichait déjà jamais un chapitre INVENTÉ (il ne fait
+    // qu'AVANCER dans un chapitre choisi manuellement par l'opérateur via
+    // start(), en comparant le fragment au VRAI texte du verset — voir
+    // _wordOverlapScore) — le bug observé venait en réalité du repli
+    // AUTONOME de server.js (scheduleChapterFallback/displayChapterFallback,
+    // voir CHAPTER_FALLBACK_MIN_CONFIDENCE dans server.js, corrigé au même
+    // audit), un chemin totalement distinct que ce fichier ne déclenche
+    // jamais. Seuil ajouté quand même en défense en profondeur : un fragment
+    // de bruit à confiance basse peut, par pur hasard, chevaucher assez de
+    // mots courts avec un verset voisin pour faire avancer la lecture à
+    // tort (ou déclencher "chapitre suivant" sur un bruit qui y ressemble).
+    this.minConfidence = 0.6;
   }
 
   async start(book, chapter, startVerseNumber, endVerseNumber) {
@@ -102,9 +116,19 @@ class ReadingMode {
   /**
    * Appelé à chaque nouveau fragment transcrit pendant que reading mode est actif.
    * Retourne le verset détecté (avance auto) ou null si rien ne correspond assez.
+   * @param {string} transcriptFragment
+   * @param {number|null} [confidence] - confiance ASR du fragment (0-1),
+   *   quand connue (voir server.js#processTranscript). `null`/omise = confiance
+   *   inconnue, comportement historique préservé (aucun rejet) — ne bloque
+   *   donc jamais un appelant qui ne la transmet pas encore.
    */
-  processFragment(transcriptFragment) {
+  processFragment(transcriptFragment, confidence = null) {
     if (!this.active || this.verses.length === 0) return null;
+    // CORRECTIF (audit — voir this.minConfidence au constructeur) : un
+    // fragment de confiance connue et insuffisante n'avance jamais la
+    // lecture ni ne déclenche "chapitre suivant" — traité comme s'il
+    // n'avait rien dit d'exploitable.
+    if (typeof confidence === 'number' && confidence < this.minConfidence) return null;
 
     const text = transcriptFragment.trim().toLowerCase();
 

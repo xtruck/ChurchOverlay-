@@ -10,6 +10,7 @@
 import { state, ws } from '../state.js';
 import { showToast, escapeHtmlDashboard } from '../utils.js';
 import { updateNetworkStatusStrip } from './status-strip.js';
+import { registerAction } from '../action-delegator.js';
 
 /* ======================================================================
    Caméras de téléphone (flux MJPEG réseau, voir ip-camera-store.js).
@@ -55,8 +56,8 @@ export function renderIpCameras(items) {
                         <span id="ipcam-status-${item.id}" class="status-badge warning">Connexion…</span>
                     </div>
                     <div class="queue-item-actions">
-                        <button class="queue-icon-btn" onclick="copyIpCameraUrl('${item.id}')" title="Copier le lien pour OBS">📋</button>
-                        <button class="queue-icon-btn queue-remove" onclick="deleteIpCameraItem('${item.id}')" title="Supprimer">✕</button>
+                        <button class="queue-icon-btn" data-action="copy" data-target="ip-camera" data-id="${item.id}" title="Copier le lien pour OBS">📋</button>
+                        <button class="queue-icon-btn queue-remove" data-action="delete" data-target="ip-camera" data-id="${item.id}" title="Supprimer">✕</button>
                     </div>
                 </div>
             `
@@ -183,6 +184,10 @@ export function showCameraPairingQr(message) {
 }
 
 window.addIpCamera = addIpCamera;
-window.deleteIpCameraItem = deleteIpCameraItem;
-window.copyIpCameraUrl = copyIpCameraUrl;
+// AJOUT (chantier nettoyage dashboard — purge des onclick inline) : les
+// deux boutons d'action par caméra (copier/supprimer) passent désormais
+// par data-action/data-target — plus d'appelant restant pour les exposer
+// bruts sur window.
+registerAction('ip-camera', 'copy', (el, data) => copyIpCameraUrl(data.id));
+registerAction('ip-camera', 'delete', (el, data) => deleteIpCameraItem(data.id));
 window.generateCameraPairing = generateCameraPairing;

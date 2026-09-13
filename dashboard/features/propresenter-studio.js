@@ -12,6 +12,7 @@
 import { state, ws } from '../state.js';
 import { showToast } from '../utils.js';
 import { nextRundownCue } from './rundown.js';
+import { registerAction } from '../action-delegator.js';
 
 const serviceStartTime = Date.now();
 const slideGridItems = [];
@@ -180,7 +181,7 @@ export function renderStudioSlides() {
     .map((slide, idx) => {
       const isActive = (slide.id || slide.reference) === activeSlideId;
       return `
-        <div class="pp-presentation-slide ${isActive ? 'active is-live' : ''}" onclick="window.fireStudioSlide(${idx})">
+        <div class="pp-presentation-slide ${isActive ? 'active is-live' : ''}" data-action="fire" data-target="studio-slide" data-index="${idx}">
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <span class="pp-slide-header-ref">📖 ${escapeHtml(slide.reference)}</span>
             ${isActive ? '<span style="font-size: 9px; font-weight: 800; color: #ff1744; background: rgba(255,23,68,0.2); padding: 1px 4px; border-radius: 2px;">LIVE</span>' : ''}
@@ -196,7 +197,7 @@ export function renderStudioSlides() {
     .join('');
 }
 
-window.fireStudioSlide = function (idx) {
+function fireStudioSlide(idx) {
   const slide = slideGridItems[idx];
   if (!slide) return;
   if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -217,7 +218,12 @@ window.fireStudioSlide = function (idx) {
   updateStageDisplay(slide);
   renderStudioSlides();
   showToast(`Diapositive envoyée : ${slide.reference}`, 'success');
-};
+}
+// AJOUT (chantier nettoyage dashboard — purge des onclick inline) : les
+// diapositives générées par renderStudioSlides() (voir data-action="fire"
+// data-target="studio-slide" plus haut) passent désormais par le
+// délégateur — jamais exposée sur window, aucun autre appelant.
+registerAction('studio-slide', 'fire', (el, data) => fireStudioSlide(Number(data.index)));
 
 // ---------------------------------------------------------------------------
 // 5. PROGRAM (PGM) & STAGE DISPLAY MIRRORING
@@ -340,7 +346,7 @@ export function updateAiCrossReferences(reference) {
   chipsContainer.innerHTML = suggestions
     .map(
       (ref) =>
-        `<button class="pp-chip-btn" onclick="window.quickLookupVerse('${ref}')" style="background: rgba(59, 130, 246, 0.15); color: #93c5fd; border-color: rgba(59, 130, 246, 0.35);">📖 ${ref}</button>`
+        `<button class="pp-chip-btn pp-verse-suggestion-chip" data-action="lookup" data-target="quick-verse" data-ref="${escapeHtml(ref)}">📖 ${escapeHtml(ref)}</button>`
     )
     .join('');
 
@@ -472,7 +478,7 @@ export function executeAiSemanticSearch() {
             <span style="font-size: 9px; font-weight: 600; color: #10b981; background: rgba(16,185,129,0.12); padding: 1px 4px; border-radius: 2px;">${item.score}% IA MATCH</span>
           </div>
           <div style="font-size: 10.5px; color: var(--pp-text-muted); line-height: 1.35;">${escapeHtml(item.text)}</div>
-          <button class="btn btn-primary" onclick="window.quickLookupVerse('${item.ref}')" style="margin-top: 4px; height: 24px; font-size: 10px; padding: 0 8px; width: 100%;">
+          <button class="btn btn-primary pp-quick-project-btn" data-action="lookup" data-target="quick-verse" data-ref="${escapeHtml(item.ref)}">
             🚀 Projeter Immédiatement
           </button>
         </div>
@@ -539,7 +545,12 @@ window.ppClearMedia = ppClearMedia;
 window.ppClearProps = ppClearProps;
 window.fireQuickScripture = fireQuickScripture;
 window.setStudioMood = setStudioMood;
-window.quickLookupVerse = quickLookupVerse;
+// AJOUT (chantier nettoyage dashboard — purge des onclick inline) : les 3
+// points d'appel restants (puces de suggestion, bouton "Projeter
+// immédiatement", citations détectées en direct dans verse-session-display.js)
+// passent désormais tous par data-action/data-target — plus d'appelant
+// restant pour exposer cette fonction brute sur window.
+registerAction('quick-verse', 'lookup', (el, data) => quickLookupVerse(data.ref));
 window.quickSemanticQuery = quickSemanticQuery;
 window.executeAiSemanticSearch = executeAiSemanticSearch;
 window.generateKeyPointFromSpeech = generateKeyPointFromSpeech;

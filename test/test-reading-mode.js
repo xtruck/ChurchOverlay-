@@ -232,6 +232,58 @@ function makeReadingMode(overrides = {}) {
     );
   });
 
+  // AJOUT (audit — faux positif "Esther 1" observé en direct, voir
+  // reading-mode.js#minConfidence et server.js#CHAPTER_FALLBACK_MIN_
+  // CONFIDENCE) : un segment ASR à confiance basse (<0.35 dans cette
+  // suite, sous le seuil minConfidence=0.6) ne doit jamais faire avancer
+  // la lecture ni déclencher "chapitre suivant" — même si son texte,
+  // par pur hasard, chevaucherait assez de mots avec le verset suivant
+  // ou correspondrait à la commande.
+  await checkAsync(
+    'un fragment à confiance basse (0.2) ne fait PAS avancer même s’il correspond au texte',
+    async () => {
+      const { rm, calls } = makeReadingMode();
+      await rm.start('jean', 3, 1);
+      const result = rm.processFragment('cet homme vint de nuit trouver jesus', 0.2);
+      assert.strictEqual(result, null, 'devrait être rejeté (confiance sous le seuil)');
+      assert.strictEqual(rm.currentIndex, 0, 'ne doit pas avoir avancé');
+      assert.strictEqual(calls.onVerseAdvance.length, 0, 'onVerseAdvance ne doit pas être appelé');
+    }
+  );
+
+  await checkAsync(
+    '"chapitre suivant" à confiance basse (0.34) ne renvoie PAS {command: "nextChapter"}',
+    async () => {
+      const { rm } = makeReadingMode();
+      await rm.start('jean', 3, 1);
+      const result = rm.processFragment('chapitre suivant', 0.34);
+      assert.strictEqual(result, null, 'la commande ne doit pas être reconnue sous le seuil');
+    }
+  );
+
+  await checkAsync(
+    'un fragment à confiance suffisante (0.6, égale au seuil) avance normalement',
+    async () => {
+      const { rm, calls } = makeReadingMode();
+      await rm.start('jean', 3, 1);
+      const result = rm.processFragment('cet homme vint de nuit trouver jesus', 0.6);
+      assert.ok(result, 'devrait avancer (confiance au seuil, pas en-dessous)');
+      assert.strictEqual(result.num, 2);
+      assert.strictEqual(calls.onVerseAdvance.length, 1);
+    }
+  );
+
+  await checkAsync(
+    'confiance OMISE (comportement historique) : avance normalement, aucune régression',
+    async () => {
+      const { rm, calls } = makeReadingMode();
+      await rm.start('jean', 3, 1);
+      const result = rm.processFragment('cet homme vint de nuit trouver jesus');
+      assert.ok(result, 'sans confiance transmise, le garde-fou ne doit jamais bloquer');
+      assert.strictEqual(calls.onVerseAdvance.length, 1);
+    }
+  );
+
   console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
   if (failed > 0) process.exit(1);
 })();

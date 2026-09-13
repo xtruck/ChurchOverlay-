@@ -19,6 +19,7 @@
  */
 import { ws } from '../state.js';
 import { showToast, isTypingContext } from '../utils.js';
+import { registerAction } from '../action-delegator.js';
 
 export function setTrustMode(mode) {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -78,6 +79,15 @@ document.addEventListener('keydown', (e) => {
   e.preventDefault();
   confirmPendingVerse();
 });
+
+// AJOUT (chantier nettoyage dashboard — purge des onclick inline) : le
+// sélecteur "Mode d'Autonomie" du header (dashboard.html) passe désormais
+// par data-action/data-target plutôt qu'un onclick="setTrustMode(...)" en
+// dur — même fonction, juste un point d'entrée en plus (les 3 boutons
+// détaillés de la carte "Mode confiance" continuent d'appeler
+// window.setTrustMode() via event-bindings.js#CLICK_BINDINGS, conservé
+// ci-dessous pour cette raison).
+registerAction('trust-mode', 'set', (el, data) => setTrustMode(data.trustMode));
 
 window.setTrustMode = setTrustMode;
 window.confirmPendingVerse = confirmPendingVerse;

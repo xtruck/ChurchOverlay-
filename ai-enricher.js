@@ -6,9 +6,30 @@
  * Utilise Google GenAI (gemini-3.6-flash) ou Groq via groq-wrapper.js.
  */
 
-const { chatCompletion } = require('./groq-wrapper');
+const { chatCompletion, isChatRateLimited } = require('./groq-wrapper');
 const { sanitizeForPrompt } = require('./prompt-sanitizer');
 const { extractResponseText, extractJsonObject } = require('./llm-utils');
+
+// AJOUT (audit — surcharge Groq observée en direct, voir groq-wrapper.js
+// #CHAT_RATE_LIMIT_COOLDOWN_MS) : chatCompletion() échoue déjà rapidement
+// (sans appel réseau) pendant le cooldown — chaque fonction ci-dessous gère
+// donc déjà cet échec correctement via son try/catch existant, SANS
+// changement de comportement requis. Ce garde-fou explicite (au lieu de
+// laisser tomber dans le catch) sert uniquement à distinguer, dans les
+// logs, un enrichissement DÉLIBÉRÉMENT sauté (le budget Groq est réservé à
+// la transcription en ce moment) d'un VRAI échec applicatif (JSON
+// malformé, timeout, etc.) — utile pour un opérateur qui lirait les logs
+// en plein culte et se demanderait pourquoi le thème/résumé ne se met
+// plus à jour.
+function skipIfChatRateLimited(featureLabel) {
+  if (isChatRateLimited()) {
+    console.log(
+      `[ai-enricher] ${featureLabel} temporairement suspendu (quota Groq réservé à la transcription — reprise automatique dans quelques secondes).`
+    );
+    return true;
+  }
+  return false;
+}
 
 let features = {
   ai: {
@@ -32,6 +53,7 @@ try {
 async function detectSermonTheme(transcriptBuffer) {
   if (features.ai?.themeDetection?.enabled === false) return null;
   if (!transcriptBuffer || transcriptBuffer.length < 50) return null;
+  if (skipIfChatRateLimited('Détection du thème')) return null;
 
   const prompt = `Tu analyses des extraits de sermon en français.
 Extrais LE THÈME PRINCIPAL en 2-4 mots maximum + 3 mots-clés.
@@ -70,6 +92,7 @@ Réponds uniquement en JSON valide: {"theme":"...","keywords":["...","...","..."
 async function translateSegment(text, targetLang = 'en') {
   if (features.ai?.liveTranslation?.enabled === false) return null;
   if (!text || !text.trim()) return null;
+  if (skipIfChatRateLimited('Traduction live')) return null;
 
   const prompt = `You are a live sermon translator. Translate the following French text into ${targetLang}. Preserve the spiritual tone. Reply with the translation ONLY, no explanations or quotes:
 "${sanitizeForPrompt(text)}"`;
@@ -89,6 +112,7 @@ async function translateSegment(text, targetLang = 'en') {
 async function generateLiveSummary(fullTranscript) {
   if (features.ai?.sermonSummary?.enabled === false) return null;
   if (!fullTranscript || fullTranscript.length < 100) return null;
+  if (skipIfChatRateLimited('Résumé live')) return null;
 
   const prompt = `Tu résumes un sermon en cours de prédication.
 Produis un résumé concis de MAX 25 mots en français.
@@ -109,6 +133,7 @@ Transcription récente: "${sanitizeForPrompt(fullTranscript.slice(-4000))}"`;
 // ---------------------------------------------------------------------
 async function generatePostServiceRecap(fullTranscript, versesShown = []) {
   if (features.ai?.postServiceRecap?.enabled === false) return null;
+  if (skipIfChatRateLimited('Récapitulatif post-service')) return null;
 
   const verseList = Array.isArray(versesShown)
     ? versesShown.map((v) => (typeof v === 'string' ? v : v.reference || v.raw || '')).join(', ')
@@ -146,6 +171,7 @@ Réponds uniquement en JSON avec cette structure exacte:
 // ---------------------------------------------------------------------
 async function findCrossReferences(verseRef, verseText) {
   if (features.ai?.crossReferences?.enabled === false) return [];
+  if (skipIfChatRateLimited('Versets connexes')) return [];
 
   const prompt = `Tu es un exégète biblique. Pour le verset "${sanitizeForPrompt(verseRef)}: ${sanitizeForPrompt(verseText || '')}", identifie 2 à 3 versets bibliques liés (thèmes similaires ou parallèles).
 Réponds uniquement en JSON: [{"ref": "Livre Chapitre:Verset", "reason": "Brève explication en français"}]`;

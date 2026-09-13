@@ -319,8 +319,10 @@
     /* CORRECTIF (Mission Control) : ce spinner n'apparaît QUE dans
        .btn-primary (voir btnSave.innerHTML dans le <script>), dont le fond
        est l'orange clair --accent : un spinner blanc y était à peine
-       visible. Même encre sombre que le libellé du bouton. */
-    border: 2px solid color-mix(in srgb, var(--on-accent) 30%, transparent);
+       visible. Même encre sombre que le libellé du bouton.
+       Fallback compatible Chrome < 111 : utiliser rgba() au lieu de
+       color-mix(), qui n'est pas supporté par les anciennes versions. */
+    border: 2px solid rgba(20, 22, 31, 0.3);
     border-top-color: var(--on-accent);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;

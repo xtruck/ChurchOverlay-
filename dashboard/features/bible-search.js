@@ -19,6 +19,7 @@
  */
 import { ws } from '../state.js';
 import { showToast, escapeHtmlDashboard, requireWsOrWarn } from '../utils.js';
+import { registerAction } from '../action-delegator.js';
 
 export function renderBibleTopics(topics) {
   const container = document.getElementById('bibleTopicChips');
@@ -26,7 +27,7 @@ export function renderBibleTopics(topics) {
   container.innerHTML = (topics || [])
     .map(
       (topic) =>
-        `<button class="mood-btn" onclick="searchBibleByTopic('${topic}')">${escapeHtmlDashboard(topic)}</button>`
+        `<button class="mood-btn" data-action="search" data-target="bible-topic" data-topic="${escapeHtmlDashboard(topic)}">${escapeHtmlDashboard(topic)}</button>`
     )
     .join('');
 }
@@ -69,7 +70,7 @@ export function renderBibleSearchResults(message) {
       (r) => `<div class="queue-item">
                 <span class="queue-item-ref">${escapeHtmlDashboard(r.reference)}</span>
                 <div class="queue-item-actions">
-                    <button class="queue-icon-btn queue-send" onclick="showFoundVerse('${r.reference}')" title="Afficher ce verset">▶</button>
+                    <button class="queue-icon-btn queue-send" data-action="show" data-target="found-verse" data-reference="${escapeHtmlDashboard(r.reference)}" title="Afficher ce verset">▶</button>
                 </div>
             </div>`
     )
@@ -83,5 +84,13 @@ export function renderBibleSearchError(message) {
   }
 }
 
+// CONSERVÉ : le bouton statique "Rechercher" (#searchBibleByTopicBtn, voir
+// event-bindings.js#CLICK_BINDINGS) l'appelle encore sans argument (lit
+// #bibleSearchInput lui-même) — un appel DISTINCT des puces de thème
+// ci-dessus, qui passent désormais par data-action/data-target.
 window.searchBibleByTopic = searchBibleByTopic;
-window.showFoundVerse = showFoundVerse;
+// AJOUT (chantier nettoyage dashboard — purge des onclick inline) :
+// showFoundVerse() n'a plus d'appelant hors de ce module (voir
+// data-action="show" data-target="found-verse" ci-dessus) — retiré.
+registerAction('bible-topic', 'search', (el, data) => searchBibleByTopic(data.topic));
+registerAction('found-verse', 'show', (el, data) => showFoundVerse(data.reference));

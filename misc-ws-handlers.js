@@ -43,7 +43,13 @@ function createHandlers(ctx) {
         timestamp: Date.now(),
         source: sanitized.source || 'browser',
       });
-      await enqueueTranscript(text);
+      // AJOUT (audit — voir server.js#CHAPTER_FALLBACK_MIN_CONFIDENCE) :
+      // transmet la confiance quand elle est fournie (test/débogage ou un
+      // futur appelant qui la connaîtrait) ; comportement historique
+      // (confiance inconnue -> le garde-fou fait confiance) intégralement
+      // préservé quand elle est absente.
+      const confidence = typeof sanitized.confidence === 'number' ? sanitized.confidence : null;
+      await enqueueTranscript(text, undefined, confidence !== null ? { confidence } : undefined);
     }
   });
 

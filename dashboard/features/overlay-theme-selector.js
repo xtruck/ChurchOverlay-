@@ -14,6 +14,7 @@
  * sans redémarrer le pipeline.
  */
 import { escapeHtmlDashboard, showToast } from '../utils.js';
+import { registerAction } from '../action-delegator.js';
 
 export async function loadOverlayThemeSelector() {
   const listEl = document.getElementById('overlayThemeList');
@@ -40,7 +41,7 @@ export async function loadOverlayThemeSelector() {
       .map((t) => {
         const isActive = t.id === activeId;
         const safeId = escapeHtmlDashboard(t.id);
-        return `<button type="button" class="mood-btn${isActive ? ' active' : ''}" data-theme-id="${safeId}" onclick="selectOverlayTheme('${safeId.replace(/'/g, "\\'")}')">${isActive ? '✓ ' : ''}${escapeHtmlDashboard(t.name)}</button>`;
+        return `<button type="button" class="mood-btn${isActive ? ' active' : ''}" data-action="select" data-target="overlay-theme" data-theme-id="${safeId}">${isActive ? '✓ ' : ''}${escapeHtmlDashboard(t.name)}</button>`;
       })
       .join('');
   } catch (err) {
@@ -65,4 +66,8 @@ export async function selectOverlayTheme(themeId) {
 
 loadOverlayThemeSelector();
 
-window.selectOverlayTheme = selectOverlayTheme;
+// AJOUT (chantier nettoyage dashboard — purge des onclick inline) : les
+// boutons de thème générés par loadOverlayThemeSelector() ci-dessus passent
+// désormais par data-action/data-target — plus d'appelant restant pour
+// exposer cette fonction brute sur window.
+registerAction('overlay-theme', 'select', (el, data) => selectOverlayTheme(data.themeId));

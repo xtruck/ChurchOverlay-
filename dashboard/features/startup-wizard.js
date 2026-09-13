@@ -3,6 +3,8 @@
  * S'affiche automatiquement au premier lancement ou sur demande (Ctrl+Shift+S).
  * Vérifie les clés API, le micro, et guide l'opérateur dans la config initiale.
  */
+import { registerAction } from '../action-delegator.js';
+
 (function () {
   let overlay = null;
 
@@ -14,7 +16,7 @@
       <div class="startup-wizard">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
           <h2 style="margin:0;font-size:1.1rem;color:var(--text-main);">Assistant de Démarrage</h2>
-          <button class="btn btn-secondary" onclick="closeStartupWizard()" style="padding:0.25rem 0.5rem;font-size:0.75rem;">✕ Fermer</button>
+          <button class="btn btn-secondary startup-wizard-close-btn" data-action="close" data-target="startup-wizard">✕ Fermer</button>
         </div>
         <div id="wizardSteps" style="display:flex;flex-direction:column;gap:1rem;">
           <div class="wizard-step">
@@ -78,7 +80,7 @@
           </div>
         </div>
         <div style="margin-top:1.25rem;display:flex;gap:0.5rem;justify-content:flex-end;">
-          <button class="btn btn-primary" onclick="closeStartupWizard()">Compris !</button>
+          <button class="btn btn-primary" data-action="close" data-target="startup-wizard">Compris !</button>
         </div>
       </div>
     `;
@@ -199,11 +201,14 @@
     if (overlay) overlay.classList.remove('open');
   }
 
-  window.closeStartupWizard = close;
+  // AJOUT (chantier nettoyage dashboard — purge des onclick inline) : les 2
+  // boutons "Fermer"/"Compris !" passent désormais par data-action/
+  // data-target — window.closeStartupWizard n'a plus d'appelant restant.
+  registerAction('startup-wizard', 'close', close);
   // Appelé depuis dashboard/ws-dispatch.js à chaque 'audioDiagnostics' —
   // ce fichier expose ses points d'entrée via `window.*` plutôt que des
-  // exports ES (même convention que closeStartupWizard/openStartupWizard
-  // ci-dessus, pour rester joignable depuis les attributs onclick inline).
+  // exports ES (même convention qu'openStartupWizard ci-dessous, pour
+  // rester joignable depuis d'autres modules sans import direct).
   window.updateWizardMicCalibration = updateWizardMicCalibration;
 
   document.addEventListener('keydown', (e) => {

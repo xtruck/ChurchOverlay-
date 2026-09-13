@@ -56,7 +56,20 @@ const CONFIG = {
     process.env.VAD_PROVIDER === 'rms' || process.env.VAD_PROVIDER === 'silero'
       ? process.env.VAD_PROVIDER
       : 'auto',
-  sileroSpeechThreshold: 0.5,
+  // CORRECTIF (audit — faux positifs "Esther 1" observés en direct) :
+  // 0.5 (valeur par défaut historique du modèle) laissait passer trop de
+  // musique/bruit ambiant/sono comme "voix" — ces fenêtres bruitées
+  // nourrissaient ensuite le pipeline ASR avec du signal non-vocal,
+  // produisant des transcriptions de bas niveau de confiance qui
+  // déclenchaient à tort le repli chapitre (voir server.js#CHAPTER_FALLBACK
+  // _MIN_CONFIDENCE et reading-mode.js#minConfidence, corrigés au même
+  // audit — ce seuil-ci agit PLUS TÔT dans la chaîne, avant même que le
+  // signal n'atteigne Groq/Deepgram). 0.70 : barre plus stricte,
+  // délibérément au prix de couper l'attaque la plus douce d'une parole
+  // très faible/lointaine — arbitrage jugé préférable à la fréquence des
+  // faux positifs observée. Réglable en direct (SILERO_SPEECH_THRESHOLD),
+  // même convention que les autres seuils de ce fichier.
+  sileroSpeechThreshold: Number(process.env.SILERO_SPEECH_THRESHOLD) || 0.7,
 
   // Détection de fin de phrase anticipée
   trailingSilenceMs: Number(process.env.TRAILING_SILENCE_MS) || 380, // silence continu après de la voix => coupure rapide

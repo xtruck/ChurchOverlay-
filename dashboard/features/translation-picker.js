@@ -15,6 +15,7 @@
  */
 import { ws } from '../state.js';
 import { escapeHtmlDashboard, requireWsOrWarn } from '../utils.js';
+import { registerAction } from '../action-delegator.js';
 
 const LANG_LABELS = { fr: 'Français', en: 'Anglais' };
 
@@ -31,7 +32,7 @@ export function renderTranslationPicker(translations) {
       const buttons = (options || [])
         .map(
           (t) =>
-            `<button class="mood-btn${t.active ? ' active' : ''}" data-translation-lang="${lang}" data-translation-code="${t.code}" data-translation-license="${escapeHtmlDashboard(t.license || '')}" onclick="setBibleTranslation('${lang}', '${t.code}')">${escapeHtmlDashboard(t.label)}</button>`
+            `<button class="mood-btn${t.active ? ' active' : ''}" data-action="set" data-target="bible-translation" data-translation-lang="${lang}" data-translation-code="${t.code}" data-translation-license="${escapeHtmlDashboard(t.license || '')}">${escapeHtmlDashboard(t.label)}</button>`
         )
         .join('');
       const active = (options || []).find((t) => t.active);
@@ -111,5 +112,11 @@ export function updateActiveTranslationButton(language, code) {
   if (note && activeLicense) note.textContent = `(${activeLicense})`;
 }
 
-window.setBibleTranslation = setBibleTranslation;
+// AJOUT (chantier nettoyage dashboard — purge des onclick inline) : les
+// boutons de version biblique générés par renderTranslationPicker()
+// ci-dessus passent désormais par data-action/data-target — plus
+// d'appelant restant pour exposer cette fonction brute sur window.
+registerAction('bible-translation', 'set', (el, data) =>
+  setBibleTranslation(data.translationLang, data.translationCode)
+);
 window.onSecondaryTranslationChange = onSecondaryTranslationChange;

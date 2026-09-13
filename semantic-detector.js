@@ -341,7 +341,15 @@ class SemanticDetector {
     // détection sémantique était temporairement désactivée par son propre
     // budget local. Même canal onError que les échecs LLM ci-dessous, avec
     // une raison distincte pour ne pas les confondre côté dashboard.
-    if (!canMakeCall()) {
+    //
+    // AJOUT (audit — surcharge Groq observée en direct, voir groq-wrapper.js
+    // #CHAT_RATE_LIMIT_COOLDOWN_MS) : ce budget LOCAL (MAX_CALLS_PER_MINUTE)
+    // ignorait totalement le fait que la transcription (un usage PRIORITAIRE,
+    // même clé/compte Groq) puisse déjà avoir épuisé le quota réel — un 429
+    // groq-wrapper.js tout récent est un signal bien plus fiable que ce
+    // compteur local. `?.` : les tests injectent parfois un faux
+    // groqWrapper sans cette méthode (comportement historique préservé).
+    if (!canMakeCall() || this.groq?.isChatRateLimited?.()) {
       console.log('[semantic] Rate limited, skipping');
       if (typeof this.onError === 'function') {
         try {
