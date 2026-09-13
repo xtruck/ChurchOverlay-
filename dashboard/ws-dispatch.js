@@ -94,6 +94,7 @@ import {
   hidePendingVerseBanner,
 } from './features/trust-mode.js';
 import { setCurrentLive, clearCurrentLive } from './features/airlock-preview.js';
+import { recordConfidenceSample } from './features/confidence-pip.js';
 
 export function handleMessage(message) {
   switch (message.action) {
@@ -240,6 +241,17 @@ export function handleMessage(message) {
       break;
     case 'transcript':
       addTranscript(message);
+      recordConfidenceSample(message.confidence);
+      break;
+    // AJOUT (chantier innovation v1.0 — Pilier 1, sparkline de confiance) :
+    // server.js diffuse déjà ce message à chaque segment PARTIEL (pas
+    // seulement le texte final ci-dessus) — jamais consommé côté tableau de
+    // bord avant ce chantier. Alimente uniquement la jauge/le sparkline (pas
+    // addTranscript() : un partiel n'est pas encore un segment définitif,
+    // afficher son texte dans le flux créerait des doublons avec le
+    // 'transcript' final qui suit).
+    case 'transcriptPartial':
+      recordConfidenceSample(message.confidence);
       break;
     case 'transcriptRejected':
       // AJOUT (fix — versets affichés sans être prononcés) : jusqu'ici un
@@ -921,6 +933,7 @@ function renderCrossReferences(msg) {
       status.textContent = '0';
       status.style.display = '';
     }
+    renderCrossReferenceChips([]);
     return;
   }
   el.innerHTML = msg.results
@@ -938,7 +951,39 @@ function renderCrossReferences(msg) {
     status.textContent = msg.results.length;
     status.style.display = '';
   }
+  renderCrossReferenceChips(msg.results);
 }
+
+// AJOUT (chantier innovation v1.0 — Pilier 2, bande d'insights "Versets
+// connexes") : même donnée que renderCrossReferences() ci-dessus, en puces
+// cliquables sous le verset en cours (#crossRefChips, voir dashboard.html) —
+// un tap affiche directement le passage associé, sans changer d'onglet.
+// Jamais bloquant : reference introuvable/serveur indisponible -> showVerse
+// échoue comme n'importe quelle recherche manuelle, rien de spécifique ici.
+function renderCrossReferenceChips(results) {
+  const container = document.getElementById('crossRefChips');
+  if (!container) return;
+  container.innerHTML = (results || [])
+    .slice(0, 6)
+    .map((r) => {
+      const ref = escapeHtmlDashboard(r.ref || '');
+      const safeAttr = (r.ref || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      return `<button type="button" class="alt-ref-chip" onclick="showCrossReferenceVerse('${safeAttr}')" title="${escapeHtmlDashboard(r.reason || '')}">${ref}</button>`;
+    })
+    .join('');
+}
+
+// Séparé de renderCrossReferenceChips() ci-dessus pour rester appelable
+// directement depuis l'attribut onclick des puces (voir showVerse manuel
+// dans verse-session-display.js pour le même schéma d'action WS).
+function showCrossReferenceVerse(reference) {
+  if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur — impossible d’afficher ce verset.', 'error');
+    return;
+  }
+  state.ws.send(JSON.stringify({ action: 'showVerse', reference }));
+}
+window.showCrossReferenceVerse = showCrossReferenceVerse;
 
 // Live summary — rolling summary dans la carte dédiée PRÉPARATION
 function renderLiveSummary(msg) {

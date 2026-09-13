@@ -558,6 +558,20 @@ const COMMANDS = [
     extract: () => ({ action: 'emergencyClear' }),
     keywords: ['urgence', 'emergency', 'effacement', 'effacer', 'arret', 'clear', 'all', 'tout'],
   },
+
+  // --- MODE FOCUS (chantier innovation v1.0, Pilier 4) ---
+  // CORRECTIF (même discipline que emergencyClear ci-dessus) : "focus" seul
+  // est un mot bien trop courant dans une prédication ("focus sur Dieu",
+  // "gardons le focus sur l'essentiel") pour servir de déclencheur — motif
+  // exigé : la phrase COMPLÈTE "mode focus"/"focus mode", jamais le mot
+  // isolé. Bascule (pas de vrai/faux) : voir setOverlayFocusMode dans
+  // accessibility-ws-handlers.js.
+  {
+    id: 'toggleOverlayFocusMode',
+    patterns: [/mode\s+focus/i, /focus\s+mode/i, /active(?:r)?\s+le\s+mode\s+focus/i],
+    extract: () => ({ action: 'setOverlayFocusMode' }),
+    keywords: ['mode', 'focus'],
+  },
 ];
 
 // AJOUT (Axe 3 — sécurisation des commandes vocales, Option A) : réutilise

@@ -79,6 +79,28 @@ function createHandlers(ctx) {
     log('Affichage : écran noir ' + (sanitized.enabled ? 'activé' : 'désactivé'));
   });
 
+  // AJOUT (chantier innovation v1.0 — Pilier 4, Mode Focus vocal) :
+  // assombrit/floute le calque vidéo d'arrière-plan de l'overlay EN DIRECT
+  // (scene-render.js applique déjà ce même filtre PAR SCÈNE via
+  // scene-store.js#focusMode — voir son en-tête ; celui-ci s'applique
+  // globalement, quel que soit ce qui est actuellement affiché, et peut
+  // être déclenché à la voix). `enabled` OPTIONNEL, contrairement à
+  // setBlackScreen ci-dessus : une commande vocale ("mode focus") ne peut
+  // pas préciser vrai/faux, elle bascule l'état ACTUEL (voir
+  // session-state.js#toggleOverlayFocusActive) ; un bouton dashboard qui
+  // connaît déjà l'état voulu peut, lui, passer `enabled` explicitement.
+  handlers.set('setOverlayFocusMode', async (ws, sanitized) => {
+    let enabled;
+    if (typeof sanitized.enabled === 'boolean') {
+      sessionState.setOverlayFocusActive(sanitized.enabled);
+      enabled = sanitized.enabled;
+    } else {
+      enabled = sessionState.toggleOverlayFocusActive();
+    }
+    broadcast({ action: 'overlayFocusMode', enabled });
+    log('Affichage : mode focus overlay ' + (enabled ? 'activé' : 'désactivé'));
+  });
+
   // --- Service countdown ---
   handlers.set('startCountdown', async (ws, sanitized) => {
     const endTimeMs = Number(sanitized.endTimeMs);

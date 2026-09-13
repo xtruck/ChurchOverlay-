@@ -748,6 +748,18 @@ const SCHEMAS = {
       enabled: (value) => typeof value === 'boolean',
     },
   },
+  // AJOUT (chantier innovation v1.0 — Pilier 4, Mode Focus vocal) : `enabled`
+  // OPTIONNEL (contrairement à setBlackScreen ci-dessus) — une commande
+  // vocale bascule l'état actuel sans pouvoir préciser vrai/faux, voir
+  // accessibility-ws-handlers.js#setOverlayFocusMode.
+  setOverlayFocusMode: {
+    required: ['action'],
+    optional: ['enabled'],
+    validators: {
+      action: (value) => value === 'setOverlayFocusMode',
+      enabled: (value) => typeof value === 'boolean',
+    },
+  },
   // AJOUT (audit backend — Phase 1F, 6e lot) : temps forts/extraits vidéo,
   // recherche biblique sémantique, plugins, phrase déclencheuse (essai) et
   // groupes de médiathèque.

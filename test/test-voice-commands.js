@@ -434,6 +434,12 @@ const EXPECTED = {
     en: 'emergency clear',
     action: 'emergencyClear',
   },
+  // AJOUT (chantier innovation v1.0 — Pilier 4, Mode Focus vocal).
+  toggleOverlayFocusMode: {
+    fr: 'mode focus',
+    en: 'focus mode',
+    action: 'setOverlayFocusMode',
+  },
 };
 
 for (const cmd of COMMANDS) {

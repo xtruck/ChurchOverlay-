@@ -118,6 +118,14 @@ let obsGateReason = '';
 // niveau à chaque démarrage plutôt qu'hériter silencieusement du dernier
 // réglage d'un autre opérateur.
 let trustMode = 'auto';
+// AJOUT (chantier innovation v1.0 — Pilier 4, Mode Focus vocal) : état
+// process-wide (pas par client) pour la même raison que trustMode
+// ci-dessus — une commande vocale ("mode focus") doit pouvoir INVERSER
+// l'état actuel sans connaître de valeur envoyée par un dashboard
+// particulier, contrairement à setBlackScreen (bouton dashboard seul,
+// aucun chemin vocal, l'état vit localement dans ce tableau de bord —
+// voir verse-session-display.js#blackScreenActive).
+let overlayFocusModeActive = false;
 let highContrastMode = false;
 let captionsEnabled = false;
 // AJOUT (sous-titres traduits en direct — voir caption-translator.js) :
@@ -504,6 +512,18 @@ function getHighContrast() {
 function setHighContrast(enabled) {
   highContrastMode = !!enabled;
 }
+// AJOUT (chantier innovation v1.0 — Pilier 4, Mode Focus vocal) : voir
+// overlayFocusModeActive ci-dessus.
+function getOverlayFocusActive() {
+  return overlayFocusModeActive;
+}
+function setOverlayFocusActive(enabled) {
+  overlayFocusModeActive = !!enabled;
+}
+function toggleOverlayFocusActive() {
+  overlayFocusModeActive = !overlayFocusModeActive;
+  return overlayFocusModeActive;
+}
 function getCaptionsEnabled() {
   return captionsEnabled;
 }
@@ -644,6 +664,10 @@ module.exports = {
   getRecentFragments,
   getHighContrast,
   setHighContrast,
+  // AJOUT (chantier innovation v1.0 — Pilier 4, Mode Focus vocal).
+  getOverlayFocusActive,
+  setOverlayFocusActive,
+  toggleOverlayFocusActive,
   getCaptionsEnabled,
   setCaptionsEnabled,
   getTranslatedCaptionsEnabled,

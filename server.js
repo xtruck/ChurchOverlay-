@@ -2597,6 +2597,16 @@ async function handleVoiceCommand(command, _originalText) {
       log('Voice command: EMERGENCY CLEAR');
       break;
     }
+    // AJOUT (chantier innovation v1.0 — Pilier 4, Mode Focus vocal) : même
+    // bascule que l'action WS directe (accessibility-ws-handlers.js), pour
+    // que "mode focus" prononcé ait exactement le même effet qu'un clic
+    // dashboard futur sur le même réglage.
+    case 'setOverlayFocusMode': {
+      const enabled = sessionState.toggleOverlayFocusActive();
+      broadcast({ action: 'overlayFocusMode', enabled, triggeredByVoice: true });
+      log('Voice command: mode focus overlay ' + (enabled ? 'activé' : 'désactivé'));
+      break;
+    }
     default:
       warn('Unknown voice command action: ' + command.action);
   }
@@ -2877,6 +2887,10 @@ wss.on('connection', (ws, req) => {
       captionTargetLang: sessionState.getCaptionTargetLang(),
       testPattern: sessionState.getTestPattern(),
       backgroundPattern: sessionState.getBackgroundPattern(),
+      // AJOUT (chantier innovation v1.0 — Pilier 4, Mode Focus vocal) : un
+      // overlay qui se (re)connecte pendant que le mode est déjà actif doit
+      // l'appliquer immédiatement, comme highContrast/captions ci-dessus.
+      overlayFocusActive: sessionState.getOverlayFocusActive(),
       defaultMedia: mediaLibrary.getDefaultItem(),
       // AJOUT (studio de scènes, lot 4/6) : même raisonnement que defaultMedia
       // ci-dessus — à l'ouverture/rechargement de l'overlay, la scène

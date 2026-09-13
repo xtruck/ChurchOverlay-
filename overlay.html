@@ -714,6 +714,28 @@
       }
 
       /* ==========================================================================
+   AJOUT (chantier innovation v1.0 — Pilier 4, Mode Focus vocal) : bascule
+   globale déclenchée par la commande vocale "mode focus" (voir
+   accessibility-ws-handlers.js#setOverlayFocusMode, overlay.js) —
+   assombrit/floute le calque vidéo d'arrière-plan EN DIRECT, quel que soit
+   ce qui y est affiché (média ou scène composée), pour mettre en valeur le
+   texte du verset/chant. MÊME valeur de filtre que
+   scene-render.js#FOCUS_MODE_FILTER (dupliquée volontairement : les deux
+   fichiers sont des <script>/<style> classiques sans module partagé entre
+   overlay.html et le rendu de scène, même discipline que les autres
+   constantes dupliquées documentées ailleurs dans ce dépôt, ex.
+   network-utils.js) — un changement de l'une doit être répercuté sur
+   l'autre. Jamais sur .verse-card/.verse-text : ce mode ne doit dégrader
+   QUE l'arrière-plan, jamais le texte qu'il est censé mettre en valeur.
+   ========================================================================== */
+      body.overlay-focus-active #media-layer img,
+      body.overlay-focus-active #media-layer video,
+      body.overlay-focus-active .scene-background-img {
+        filter: brightness(0.35) blur(6px);
+        transition: filter 0.4s ease;
+      }
+
+      /* ==========================================================================
    Sous-titres en direct (audit — accessibilité, gratuit/léger). Le texte
    transcrit circule déjà sur chaque segment (broadcast 'transcript' côté
    serveur) — cette bande ne fait qu'afficher ce qui existait déjà, aucun

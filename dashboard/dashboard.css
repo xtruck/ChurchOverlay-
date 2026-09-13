@@ -5812,3 +5812,326 @@ body {
 .transcription-health-message {
   font-size: 0.85rem;
 }
+
+/* ===========================================================================
+   Tally-style état "en direct" — inspiré des switchers vidéo (vMix/Companion) :
+   bordure rouge glanceable sur la carte du verset UNIQUEMENT quand un verset
+   est réellement diffusé côté overlay, pour distinguer "serveur connecté" de
+   "quelque chose est réellement à l'écran" sans avoir à lire le texte.
+   =========================================================================== */
+.hero-verse-card.tally-live {
+  border-color: var(--accent-rose);
+  box-shadow:
+    0 0 0 1px var(--accent-rose),
+    0 0 22px rgba(244, 96, 122, 0.35),
+    var(--shadow-lift);
+  transition:
+    box-shadow 0.4s var(--ease-silk),
+    border-color 0.4s var(--ease-silk);
+}
+
+/* ===========================================================================
+   Jauge de confiance de transcription (remplace l'ancien badge en pourcentage
+   isolé) + mini-historique en sparkline — inspiré des peak programme meters
+   (metering audio broadcast) : une barre se lit en un coup d'œil, un nombre
+   isolé demande de le lire vraiment.
+   =========================================================================== */
+.mini-status-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.confidence-meter-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.confidence-meter-track {
+  flex: 1;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.confidence-meter-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: var(--radius-full);
+  transition:
+    width 0.35s var(--ease-silk),
+    background-color 0.35s var(--ease-silk);
+  background: var(--text-dim);
+}
+.confidence-meter-fill.band-good {
+  background: var(--accent-emerald);
+}
+.confidence-meter-fill.band-warn {
+  background: #e0a94c;
+}
+.confidence-meter-fill.band-bad {
+  background: var(--accent-rose);
+}
+
+.confidence-meter-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  min-width: 2.6em;
+  text-align: right;
+}
+.confidence-meter-label.band-good {
+  color: var(--accent-emerald);
+}
+.confidence-meter-label.band-warn {
+  color: #e0a94c;
+}
+.confidence-meter-label.band-bad {
+  color: var(--accent-rose);
+}
+
+.confidence-sparkline {
+  width: 100%;
+  height: 40px;
+  display: block;
+}
+.confidence-sparkline .sparkline-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.confidence-sparkline .sparkline-line.band-good {
+  stroke: var(--accent-emerald);
+}
+.confidence-sparkline .sparkline-line.band-warn {
+  stroke: #e0a94c;
+}
+.confidence-sparkline .sparkline-line.band-bad {
+  stroke: var(--accent-rose);
+}
+.confidence-sparkline .sparkline-line.band-unknown {
+  stroke: var(--text-dim);
+}
+
+.mini-pipeline-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+/* ===========================================================================
+   Bandeau d'insight — surface un motif déjà présent dans les données (série
+   de segments rejetés pour faible confiance) au lieu de laisser l'opérateur
+   le repérer lui-même en scrollant le flux d'activité.
+   =========================================================================== */
+.insight-strip {
+  display: none;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.7rem 0.9rem;
+  margin-bottom: 0.9rem;
+  border-radius: var(--radius-sm);
+  background: rgba(224, 169, 76, 0.12);
+  border: 1px solid rgba(224, 169, 76, 0.3);
+  color: #e0a94c;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+/* ===========================================================================
+   Chips de références alternatives — rend actionnable une détection
+   incertaine (candidat flou / suggestion IA sémantique) au lieu d'un simple
+   avertissement passif : un tap suffit pour corriger.
+   =========================================================================== */
+.alt-ref-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.alt-ref-chip {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-full);
+  background: rgba(124, 140, 245, 0.14);
+  border: 1px solid rgba(124, 140, 245, 0.35);
+  color: var(--text-main);
+  cursor: pointer;
+  transition:
+    background-color 0.2s var(--ease-silk),
+    border-color 0.2s var(--ease-silk);
+}
+.alt-ref-chip:hover {
+  background: rgba(124, 140, 245, 0.28);
+  border-color: var(--primary);
+}
+.alt-ref-chip.dismiss {
+  color: var(--text-dim);
+  background: transparent;
+}
+
+/* ===========================================================================
+   Palette de commandes (Ctrl/Cmd+K) — façon Linear/VS Code : recherche
+   floue sur les actions les plus utilisées, pour éviter de naviguer entre
+   les nombreuses cartes de Réglages en pleine préparation ou en direct.
+   =========================================================================== */
+.command-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(6, 8, 16, 0.65);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+}
+
+.command-palette {
+  width: min(560px, 92vw);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lift);
+  overflow: hidden;
+}
+
+.command-palette-input {
+  width: 100%;
+  padding: 1rem 1.25rem;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 1rem;
+  outline: none;
+}
+.command-palette-input::placeholder {
+  color: var(--text-dim);
+}
+
+.command-palette-results {
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+
+.command-palette-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-main);
+  font-size: 0.9rem;
+}
+.command-palette-item.active {
+  background: rgba(124, 140, 245, 0.18);
+}
+.command-palette-item .hint {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.command-palette-empty {
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.command-palette-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+}
+.command-palette-trigger:hover {
+  border-color: var(--border-light);
+  color: var(--text-main);
+}
+.command-palette-trigger kbd {
+  font-family: inherit;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 0.05rem 0.35rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-verse-card.tally-live,
+  .confidence-meter-fill {
+    transition: none;
+  }
+}
+
+/* ===========================================================================
+   Chantier innovation v1.0 — Pilier 3 : sélecteur "Mode d'Autonomie" du
+   header (voir dashboard.html#header-actions). Contrôle segmenté compact —
+   même famille visuelle que .command-palette-trigger juste au-dessus, mais
+   3 positions groupées plutôt qu'un bouton isolé.
+   =========================================================================== */
+.autonomy-mode-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+}
+
+.autonomy-btn {
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--radius-md) - 2px);
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.autonomy-btn:hover {
+  color: var(--text-main);
+}
+.autonomy-btn.active {
+  background: var(--bg-card);
+  color: var(--text-main);
+  box-shadow: 0 0 0 1px var(--border-light);
+}
+/* Le mode le plus autonome porte la même teinte d'accent que le badge
+   "auto" utilisé ailleurs sur le tableau de bord (cohérence visuelle avec
+   le reste de la palette de statut), les deux autres restent neutres. */
+.autonomy-btn.active[data-trust-mode='auto'] {
+  color: var(--accent-emerald);
+  box-shadow: 0 0 0 1px var(--accent-emerald);
+}

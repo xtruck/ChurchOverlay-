@@ -111,6 +111,8 @@ function connectWs() {
         setTranslatedCaptionsEnabled(!!msg.translatedCaptions);
         setTestPattern(!!msg.testPattern);
         setBackgroundPattern(msg.backgroundPattern || 'none');
+        // AJOUT (chantier innovation v1.0 — Pilier 4, Mode Focus vocal).
+        document.body.classList.toggle('overlay-focus-active', !!msg.overlayFocusActive);
         // AJOUT (poster principal) : à l'ouverture/rechargement de l'overlay,
         // affiche immédiatement le poster principal s'il y en a un et que
         // rien d'autre n'est encore à l'écran (setCurrentDefaultMedia()
@@ -198,6 +200,14 @@ function connectWs() {
         break;
       case 'blackScreenMode':
         document.getElementById('black-screen').style.display = msg.enabled ? 'block' : 'none';
+        break;
+      // AJOUT (chantier innovation v1.0 — Pilier 4, Mode Focus vocal) : même
+      // pattern que setHighContrast()/setCaptionsEnabled() ci-dessus — une
+      // classe sur <body>, jamais un style inline posé directement sur les
+      // calques (voir overlay.html pour le filtre CSS appliqué à
+      // #media-layer/.scene-background-img via cette classe).
+      case 'overlayFocusMode':
+        document.body.classList.toggle('overlay-focus-active', !!msg.enabled);
         break;
       case 'countdownMode':
         startCountdown(msg.endTimeMs, msg.label);

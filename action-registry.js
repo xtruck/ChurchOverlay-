@@ -148,6 +148,14 @@ const CLIENT_ACTIONS = {
     category: 'emergency',
     description: "Écran noir d'urgence",
   },
+  // AJOUT (chantier innovation v1.0 — Pilier 4, Mode Focus vocal) : assombrit/
+  // floute le calque vidéo d'arrière-plan de l'overlay EN DIRECT (voir
+  // accessibility-ws-handlers.js et scene-render.js#FOCUS_MODE_FILTER).
+  setOverlayFocusMode: {
+    operatorOnly: true,
+    category: 'display',
+    description: "Mode Focus overlay (assombrit/floute l'arrière-plan)",
+  },
   startCountdown: {
     operatorOnly: true,
     category: 'timer',
