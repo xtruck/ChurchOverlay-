@@ -196,13 +196,16 @@ import { setStatusStripItem } from './status-strip.js';
     if (!(await confirmDialog(`Retirer la clé API ${label} enregistrée ?`, { danger: true })))
       return;
     try {
-      await window.churchOverlay.clearApiKey(provider);
+      const result = await window.churchOverlay.clearApiKey(provider);
+      if (!result || !result.success) {
+        throw new Error(result?.error || `Erreur lors du retrait de la clé ${label}`);
+      }
       inputEl.value = '';
       setBadge(badgeEl, false);
       showToast(`Clé ${label} retirée`, 'info');
       if (provider === 'groq') await refreshSettingsUi();
-    } catch (_e) {
-      showToast(`Erreur lors du retrait de la clé ${label}`, 'error');
+    } catch (e) {
+      showToast(e && e.message ? e.message : `Erreur lors du retrait de la clé ${label}`, 'error');
     }
   }
 
@@ -241,12 +244,15 @@ import { setStatusStripItem } from './status-strip.js';
       // Champs laissés vides = conserver la clé déjà enregistrée
       // (voir saveConfigAsync côté main.js) ; utiliser « Retirer
       // la clé » pour un retrait volontaire.
-      await window.churchOverlay.saveSetup(
+      const result = await window.churchOverlay.saveSetup(
         mic,
         els.groqInput.value.trim(),
         els.deepgramInput.value.trim(),
         els.geminiInput.value.trim()
       );
+      if (!result || !result.success) {
+        throw new Error(result?.error || 'Échec inconnu.');
+      }
       els.groqInput.value = '';
       els.deepgramInput.value = '';
       els.geminiInput.value = '';
@@ -268,7 +274,10 @@ import { setStatusStripItem } from './status-strip.js';
     const wanted = els.streamingToggle.checked ? 'deepgram' : 'auto';
     els.streamingToggle.disabled = true;
     try {
-      await window.churchOverlay.setAsrProvider(wanted);
+      const result = await window.churchOverlay.setAsrProvider(wanted);
+      if (!result || !result.success) {
+        throw new Error(result?.error || 'Échec inconnu.');
+      }
       showToast(
         wanted === 'deepgram'
           ? 'Mode streaming activé — pipeline redémarré.'

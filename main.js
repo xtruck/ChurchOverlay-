@@ -23,7 +23,16 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const fsp = require('fs').promises;
+// CORRECTIF (chantier durcissement v1.0 — flat file / écriture atomique
+// systématique) : voir persistence/atomic-json-store.js. writeRawConfig()
+// plus bas fait déjà son propre tmp+rename ; ensureWsToken() écrivait
+// encore en direct (fs.writeFileSync), seul site de config.json hors de ce
+// pattern — migré pour la même garantie fsync-avant-rename que les autres
+// stores.
+const { writeJsonAtomic } = require('./persistence/atomic-json-store');
+// AJOUT (chantier durcissement v1.0 — IPC type-safe) : voir ipc-result.js.
+// Modèle Result unique pour tout handler ipcMain.handle() qui peut échouer.
+const { okResult, errResult } = require('./ipc-result');
 const { Worker } = require('worker_threads');
 const crypto = require('crypto');
 const perfMonitor = require('./perf-monitor');
@@ -217,8 +226,7 @@ function ensureWsToken(envVar, encryptedField, plaintextField) {
       toWrite[plaintextField] = token;
     }
     try {
-      fs.mkdirSync(path.dirname(CONFIG_PATH()), { recursive: true });
-      fs.writeFileSync(CONFIG_PATH(), JSON.stringify(toWrite, null, 2), 'utf8');
+      writeJsonAtomic(CONFIG_PATH(), toWrite);
     } catch (e) {
       console.error(
         `[main] Impossible de persister ${envVar} généré (nouveau jeton à chaque démarrage):`,
@@ -289,11 +297,14 @@ function readRawConfig() {
   return {};
 }
 
+// CORRECTIF (chantier durcissement v1.0) : suffixe .tmp fixe remplacé par
+// writeJsonAtomic (PID + compteur, fsync avant rename) — deux appels
+// rapprochés (ex. deux champs de réglages sauvegardés coup sur coup depuis
+// le tableau de bord) ne peuvent plus se marcher dessus sur le même
+// fichier temporaire. Reste une fonction async (appelants inchangés) même
+// si l'écriture elle-même est désormais synchrone en interne.
 async function writeRawConfig(raw) {
-  await fsp.mkdir(path.dirname(CONFIG_PATH()), { recursive: true });
-  const tmp = CONFIG_PATH() + '.tmp';
-  await fsp.writeFile(tmp, JSON.stringify(raw, null, 2), 'utf8');
-  await fsp.rename(tmp, CONFIG_PATH());
+  writeJsonAtomic(CONFIG_PATH(), raw);
 }
 
 async function saveConfigAsync(config) {
@@ -1075,17 +1086,22 @@ ipcMain.on('audio-pcm-chunk', (_evt, arrayBuffer) => {
 });
 
 ipcMain.handle('save-setup', async (_evt, { audioDevice, groqApiKey, deepgramApiKey }) => {
-  await saveConfigAsync({ audioDevice, groqApiKey, deepgramApiKey });
-  // Démarre ou redémarre le pipeline avec la config à jour — que ce soit le
-  // tout premier enregistrement (aucun worker actif) ou une mise à jour des
-  // clés depuis le tableau de bord en cours de session (ex: rotation d'une
-  // clé). Auparavant seul l'écran de setup initial déclenchait startServer().
-  if (worker) {
-    restartServer();
-  } else if (!isFirstRunNeeded()) {
-    startServer();
+  try {
+    await saveConfigAsync({ audioDevice, groqApiKey, deepgramApiKey });
+    // Démarre ou redémarre le pipeline avec la config à jour — que ce soit
+    // le tout premier enregistrement (aucun worker actif) ou une mise à
+    // jour des clés depuis le tableau de bord en cours de session (ex:
+    // rotation d'une clé). Auparavant seul l'écran de setup initial
+    // déclenchait startServer().
+    if (worker) {
+      restartServer();
+    } else if (!isFirstRunNeeded()) {
+      startServer();
+    }
+    return okResult();
+  } catch (e) {
+    return errResult(e);
   }
-  return true;
 });
 
 // AJOUT (carte réseau — "Réseau / caméra téléphone (QR)") : jusqu'ici
@@ -1098,19 +1114,23 @@ ipcMain.handle('save-setup', async (_evt, { audioDevice, groqApiKey, deepgramApi
 ipcMain.handle('save-network-settings', async (_evt, { wsHost }) => {
   const trimmed = typeof wsHost === 'string' ? wsHost.trim() : '';
   if (!trimmed) {
-    throw new Error('Adresse réseau vide.');
+    return errResult('Adresse réseau vide.');
   }
-  const raw = readRawConfig();
-  raw.wsHost = trimmed;
-  await writeRawConfig(raw);
-  // Même garde que save-setup ci-dessus : ne démarre pas le pipeline tout
-  // seul si le micro/la clé Groq ne sont pas encore configurés.
-  if (worker) {
-    restartServer();
-  } else if (!isFirstRunNeeded()) {
-    startServer();
+  try {
+    const raw = readRawConfig();
+    raw.wsHost = trimmed;
+    await writeRawConfig(raw);
+    // Même garde que save-setup ci-dessus : ne démarre pas le pipeline tout
+    // seul si le micro/la clé Groq ne sont pas encore configurés.
+    if (worker) {
+      restartServer();
+    } else if (!isFirstRunNeeded()) {
+      startServer();
+    }
+    return okResult();
+  } catch (e) {
+    return errResult(e);
   }
-  return true;
 });
 
 // AJOUT (bascule streaming Deepgram visible dans le tableau de bord) : même
@@ -1121,45 +1141,53 @@ ipcMain.handle('save-network-settings', async (_evt, { wsHost }) => {
 // message moins clair pour l'opérateur que ce refus immédiat).
 ipcMain.handle('set-asr-provider', async (_evt, { provider }) => {
   const wanted = provider === 'deepgram' ? 'deepgram' : 'auto';
-  const raw = readRawConfig();
-  if (wanted === 'deepgram' && !decryptKey(raw.deepgramApiKeyEncrypted, 'Deepgram')) {
-    throw new Error(
-      'Aucune clé API Deepgram enregistrée — enregistrez-en une avant d’activer ce mode.'
-    );
+  try {
+    const raw = readRawConfig();
+    if (wanted === 'deepgram' && !decryptKey(raw.deepgramApiKeyEncrypted, 'Deepgram')) {
+      return errResult(
+        'Aucune clé API Deepgram enregistrée — enregistrez-en une avant d’activer ce mode.'
+      );
+    }
+    raw.asrProvider = wanted;
+    await writeRawConfig(raw);
+    if (worker) {
+      restartServer();
+    } else if (!isFirstRunNeeded()) {
+      startServer();
+    }
+    return okResult();
+  } catch (e) {
+    return errResult(e);
   }
-  raw.asrProvider = wanted;
-  await writeRawConfig(raw);
-  if (worker) {
-    restartServer();
-  } else if (!isFirstRunNeeded()) {
-    startServer();
-  }
-  return true;
 });
 
 // Retrait explicite d'une clé API (bouton « Retirer la clé » du tableau de
 // bord) — distinct d'un champ simplement laissé vide lors d'un
 // enregistrement, qui doit préserver la clé existante (voir saveConfigAsync).
 ipcMain.handle('clear-api-key', async (_evt, { provider }) => {
-  const raw = readRawConfig();
-  if (provider === 'groq') {
-    delete raw.groqApiKey;
-    delete raw.groqApiKeyEncrypted;
-  } else if (provider === 'deepgram') {
-    delete raw.deepgramApiKey;
-    delete raw.deepgramApiKeyEncrypted;
-  } else {
-    throw new Error('Fournisseur de clé API inconnu : ' + provider);
+  try {
+    const raw = readRawConfig();
+    if (provider === 'groq') {
+      delete raw.groqApiKey;
+      delete raw.groqApiKeyEncrypted;
+    } else if (provider === 'deepgram') {
+      delete raw.deepgramApiKey;
+      delete raw.deepgramApiKeyEncrypted;
+    } else {
+      return errResult('Fournisseur de clé API inconnu : ' + provider);
+    }
+    await writeRawConfig(raw);
+    if (provider === 'groq' && worker) {
+      // Sans clé Groq le pipeline ne peut plus transcrire : on l'arrête
+      // plutôt que de le laisser tourner en boucle d'erreurs.
+      stopServerGracefully();
+      serverStatus = 'stopped';
+      refreshTrayMenu();
+    }
+    return okResult();
+  } catch (e) {
+    return errResult(e);
   }
-  await writeRawConfig(raw);
-  if (provider === 'groq' && worker) {
-    // Sans clé Groq le pipeline ne peut plus transcrire : on l'arrête plutôt
-    // que de le laisser tourner en boucle d'erreurs.
-    stopServerGracefully();
-    serverStatus = 'stopped';
-    refreshTrayMenu();
-  }
-  return true;
 });
 
 ipcMain.handle('get-status', async () => ({
@@ -1176,17 +1204,17 @@ ipcMain.handle('request-restart', async () => restartServer());
 
 ipcMain.handle('list-themes', async () => {
   try {
-    return { ok: true, themes: themeLoader.listThemes() };
+    return okResult({ themes: themeLoader.listThemes() });
   } catch (e) {
-    return { ok: false, error: e.message, themes: [] };
+    return errResult(e);
   }
 });
 
 ipcMain.handle('get-active-theme', async () => {
   try {
-    return { ok: true, theme: themeLoader.getActiveTheme() };
+    return okResult({ theme: themeLoader.getActiveTheme() });
   } catch (e) {
-    return { ok: false, error: e.message, theme: null };
+    return errResult(e);
   }
 });
 
@@ -1198,9 +1226,9 @@ ipcMain.handle('set-active-theme', async (_evt, { themeId }) => {
         worker.postMessage({ type: 'theme-changed', css: themeLoader.themeToCss(theme) });
       } catch (_) {}
     }
-    return { ok: true, theme };
+    return okResult({ theme });
   } catch (e) {
-    return { ok: false, error: e.message };
+    return errResult(e);
   }
 });
 
@@ -1211,14 +1239,13 @@ function getObsController() {
 ipcMain.handle('obs-get-config', async () => {
   try {
     const cfg = (featuresStore.readFeatures().broadcast || {}).multiScene || {};
-    return {
-      ok: true,
+    return okResult({
       enabled: !!cfg.enabled,
       obsWebsocketUrl: cfg.obsWebsocketUrl || 'ws://localhost:4455',
       hasPassword: !!(cfg.passwordEncrypted || cfg.password),
-    };
+    });
   } catch (e) {
-    return { ok: false, error: e.message };
+    return errResult(e);
   }
 });
 
@@ -1247,9 +1274,9 @@ ipcMain.handle('obs-set-config', async (_evt, { enabled, obsWebsocketUrl, passwo
       }
     }
     featuresStore.writeFeatures(features);
-    return { ok: true };
+    return okResult();
   } catch (e) {
-    return { ok: false, error: e.message };
+    return errResult(e);
   }
 });
 
@@ -1278,37 +1305,44 @@ ipcMain.handle('obs-connect', async () => {
       }
     );
     return client
-      ? { ok: true, connected: true }
-      : { ok: false, connected: false, error: "Connexion impossible — vérifiez qu'OBS tourne." };
+      ? okResult({ connected: true })
+      : errResult("Connexion impossible — vérifiez qu'OBS tourne.");
   } catch (e) {
-    return { ok: false, connected: false, error: e.message };
+    return errResult(e);
   }
 });
 
 ipcMain.handle('obs-list-scenes', async () => {
   try {
     const obs = getObsController();
-    return { ok: true, scenes: await obs.listScenes() };
+    return okResult({ scenes: await obs.listScenes() });
   } catch (e) {
-    return { ok: false, error: e.message, scenes: [] };
+    return errResult(e);
   }
 });
 
+// CORRECTIF (chantier durcissement v1.0) : obs-controller.js renvoie sa
+// propre forme interne { ok, reason? } (voir switchScene/toggleRecording/
+// toggleStreaming) — inchangée, ce module est aussi consulté ailleurs.
+// C'est ICI, à la frontière IPC, que cette forme est traduite vers le
+// modèle Result unique exposé au renderer (voir ipc-result.js).
 ipcMain.handle('obs-switch-scene', async (_evt, { sceneName }) => {
   try {
     const obs = getObsController();
-    return await obs.switchScene(sceneName);
+    const r = await obs.switchScene(sceneName);
+    return r.ok ? okResult() : errResult(r.reason || 'Échec du changement de scène.');
   } catch (e) {
-    return { ok: false, reason: e.message };
+    return errResult(e);
   }
 });
 
 ipcMain.handle('obs-toggle-recording', async () => {
   try {
     const obs = getObsController();
-    return await obs.toggleRecording();
+    const r = await obs.toggleRecording();
+    return r.ok ? okResult({ recording: r.recording }) : errResult(r.reason || 'Échec.');
   } catch (e) {
-    return { ok: false, reason: e.message };
+    return errResult(e);
   }
 });
 
@@ -1317,9 +1351,10 @@ ipcMain.handle('obs-toggle-recording', async () => {
 ipcMain.handle('obs-toggle-streaming', async () => {
   try {
     const obs = getObsController();
-    return await obs.toggleStreaming();
+    const r = await obs.toggleStreaming();
+    return r.ok ? okResult({ streaming: r.streaming }) : errResult(r.reason || 'Échec.');
   } catch (e) {
-    return { ok: false, reason: e.message };
+    return errResult(e);
   }
 });
 
@@ -1333,16 +1368,15 @@ function getProPresenterController() {
 ipcMain.handle('propresenter-get-config', async () => {
   try {
     const cfg = (featuresStore.readFeatures().broadcast || {}).propresenter || {};
-    return {
-      ok: true,
+    return okResult({
       enabled: !!cfg.enabled,
       host: cfg.host || 'localhost',
       port: cfg.port || 50001,
       hasPassword: !!(cfg.passwordEncrypted || cfg.password),
       autoSendVerses: !!cfg.autoSendVerses,
-    };
+    });
   } catch (e) {
-    return { ok: false, error: e.message };
+    return errResult(e);
   }
 });
 
@@ -1373,28 +1407,33 @@ ipcMain.handle(
         }
       }
       featuresStore.writeFeatures(features);
-      return { ok: true };
+      return okResult();
     } catch (e) {
-      return { ok: false, error: e.message };
+      return errResult(e);
     }
   }
 );
 
+// CORRECTIF (chantier durcissement v1.0) : propresenter-controller.js garde
+// sa propre forme interne { ok, error? } — même raisonnement que
+// obs-switch-scene ci-dessus, traduite ici vers le modèle Result unique.
 ipcMain.handle('propresenter-connect', async () => {
   try {
     const pp = getProPresenterController();
-    return await pp.connect();
+    const r = await pp.connect();
+    return r.ok ? okResult() : errResult(r.error || 'Connexion ProPresenter échouée.');
   } catch (e) {
-    return { ok: false, error: e.message };
+    return errResult(e);
   }
 });
 
 ipcMain.handle('propresenter-send-message', async (_evt, { text }) => {
   try {
     const pp = getProPresenterController();
-    return pp.sendStageMessage(text);
+    const r = pp.sendStageMessage(text);
+    return r.ok ? okResult() : errResult(r.error || 'Envoi ProPresenter échoué.');
   } catch (e) {
-    return { ok: false, error: e.message };
+    return errResult(e);
   }
 });
 
@@ -1409,14 +1448,13 @@ function getPlanningCenterWrapper() {
 ipcMain.handle('pco-get-config', async () => {
   try {
     const cfg = (featuresStore.readFeatures().broadcast || {}).planningCenter || {};
-    return {
-      ok: true,
+    return okResult({
       enabled: !!cfg.enabled,
       appId: cfg.appId || '',
       hasSecret: !!(cfg.secretEncrypted || cfg.secret),
-    };
+    });
   } catch (e) {
-    return { ok: false, error: e.message };
+    return errResult(e);
   }
 });
 
@@ -1443,18 +1481,24 @@ ipcMain.handle('pco-set-config', async (_evt, { enabled, appId, secret }) => {
       }
     }
     featuresStore.writeFeatures(features);
-    return { ok: true };
+    return okResult();
   } catch (e) {
-    return { ok: false, error: e.message };
+    return errResult(e);
   }
 });
 
+// CORRECTIF (chantier durcissement v1.0) : planning-center-wrapper.js garde
+// sa propre forme interne { ok, error?, ...champs } — même raisonnement que
+// obs-switch-scene ci-dessus, traduite ici vers le modèle Result unique.
 ipcMain.handle('pco-fetch-plan-items', async () => {
   try {
     const pco = getPlanningCenterWrapper();
-    return await pco.getUpcomingPlanItems();
+    const r = await pco.getUpcomingPlanItems();
+    return r.ok
+      ? okResult({ planTitle: r.planTitle, planDate: r.planDate, items: r.items })
+      : errResult(r.error || 'Planning Center indisponible.');
   } catch (e) {
-    return { ok: false, error: e.message };
+    return errResult(e);
   }
 });
 

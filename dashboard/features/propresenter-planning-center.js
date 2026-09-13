@@ -13,15 +13,15 @@ export async function loadProPresenterConfig() {
   if (!window.churchOverlay || !window.churchOverlay.getProPresenterConfig) return;
   try {
     const cfg = await window.churchOverlay.getProPresenterConfig();
-    if (!cfg || !cfg.ok) return;
+    if (!cfg || !cfg.success) return;
     const enabledInput = document.getElementById('ppEnabledInput');
     const hostInput = document.getElementById('ppHostInput');
     const portInput = document.getElementById('ppPortInput');
     const autoSendInput = document.getElementById('ppAutoSendInput');
-    if (enabledInput) enabledInput.checked = !!cfg.enabled;
-    if (hostInput) hostInput.value = cfg.host || 'localhost';
-    if (portInput) portInput.value = cfg.port || 50001;
-    if (autoSendInput) autoSendInput.checked = !!cfg.autoSendVerses;
+    if (enabledInput) enabledInput.checked = !!cfg.data.enabled;
+    if (hostInput) hostInput.value = cfg.data.host || 'localhost';
+    if (portInput) portInput.value = cfg.data.port || 50001;
+    if (autoSendInput) autoSendInput.checked = !!cfg.data.autoSendVerses;
   } catch (_err) {
     /* silencieux : panneau optionnel, pas d'erreur bloquante au chargement */
   }
@@ -35,13 +35,16 @@ export async function saveProPresenterConfig() {
   const autoSendVerses = !!document.getElementById('ppAutoSendInput')?.checked;
   const password = document.getElementById('ppPasswordInput')?.value || '';
   try {
-    await window.churchOverlay.setProPresenterConfig({
+    const result = await window.churchOverlay.setProPresenterConfig({
       enabled,
       host,
       port,
       autoSendVerses,
       password,
     });
+    if (!result || !result.success) {
+      throw new Error(result?.error || 'Échec inconnu.');
+    }
     const pwInput = document.getElementById('ppPasswordInput');
     if (pwInput) pwInput.value = '';
     showToast('Configuration ProPresenter enregistrée.', 'success');
@@ -58,7 +61,7 @@ export async function connectProPresenter() {
     const result = await window.churchOverlay.proPresenterConnect();
     if (statusEl) {
       statusEl.textContent =
-        result && result.ok ? '✅ Connecté' : '❌ ' + (result?.error || 'Échec');
+        result && result.success ? '✅ Connecté' : '❌ ' + (result?.error || 'Échec');
     }
   } catch (err) {
     if (statusEl) statusEl.textContent = '❌ ' + (err && err.message ? err.message : err);
@@ -72,7 +75,7 @@ export async function sendProPresenterTestMessage() {
   if (!text) return;
   try {
     const result = await window.churchOverlay.proPresenterSendMessage(text);
-    if (result && result.ok) {
+    if (result && result.success) {
       showToast('Message envoyé à ProPresenter.', 'success');
       if (input) input.value = '';
     } else {
@@ -97,11 +100,11 @@ export async function loadPlanningCenterConfig() {
   if (!window.churchOverlay || !window.churchOverlay.getPlanningCenterConfig) return;
   try {
     const cfg = await window.churchOverlay.getPlanningCenterConfig();
-    if (!cfg || !cfg.ok) return;
+    if (!cfg || !cfg.success) return;
     const enabledInput = document.getElementById('pcoEnabledInput');
     const appIdInput = document.getElementById('pcoAppIdInput');
-    if (enabledInput) enabledInput.checked = !!cfg.enabled;
-    if (appIdInput) appIdInput.value = cfg.appId || '';
+    if (enabledInput) enabledInput.checked = !!cfg.data.enabled;
+    if (appIdInput) appIdInput.value = cfg.data.appId || '';
   } catch (_err) {
     /* silencieux : panneau optionnel */
   }
@@ -113,7 +116,10 @@ export async function savePlanningCenterConfig() {
   const appId = document.getElementById('pcoAppIdInput')?.value.trim() || '';
   const secret = document.getElementById('pcoSecretInput')?.value || '';
   try {
-    await window.churchOverlay.setPlanningCenterConfig({ enabled, appId, secret });
+    const result = await window.churchOverlay.setPlanningCenterConfig({ enabled, appId, secret });
+    if (!result || !result.success) {
+      throw new Error(result?.error || 'Échec inconnu.');
+    }
     const secretInput = document.getElementById('pcoSecretInput');
     if (secretInput) secretInput.value = '';
     showToast('Configuration Planning Center enregistrée.', 'success');
@@ -130,22 +136,22 @@ export async function fetchPlanningCenterPlan() {
   if (itemsEl) itemsEl.innerHTML = '';
   try {
     const result = await window.churchOverlay.fetchPlanningCenterPlan();
-    if (!result || !result.ok) {
+    if (!result || !result.success) {
       if (statusEl) statusEl.textContent = '❌ ' + (result?.error || 'Échec du chargement');
       return;
     }
-    const dateLabel = result.planDate
-      ? new Date(result.planDate).toLocaleDateString('fr-FR', {
+    const dateLabel = result.data.planDate
+      ? new Date(result.data.planDate).toLocaleDateString('fr-FR', {
           day: 'numeric',
           month: 'long',
           year: 'numeric',
         })
       : '';
     if (statusEl) {
-      statusEl.textContent = `${escapeHtmlDashboard(result.planTitle)}${dateLabel ? ' — ' + dateLabel : ''}`;
+      statusEl.textContent = `${escapeHtmlDashboard(result.data.planTitle)}${dateLabel ? ' — ' + dateLabel : ''}`;
     }
     if (itemsEl) {
-      itemsEl.innerHTML = (result.items || [])
+      itemsEl.innerHTML = (result.data.items || [])
         .map(
           (item) =>
             `<div class="integration-item">${escapeHtmlDashboard(item.title)} <span class="integration-item-meta">(${escapeHtmlDashboard(item.itemType)})</span></div>`

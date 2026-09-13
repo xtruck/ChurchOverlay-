@@ -62,7 +62,10 @@ export function saveNetworkSettings() {
   }
   window.churchOverlay
     .saveNetworkSettings(value)
-    .then(() => {
+    .then((result) => {
+      if (!result || !result.success) {
+        throw new Error(result?.error || 'Échec inconnu.');
+      }
       showToast('Adresse réseau enregistrée — redémarrage du serveur…', 'success');
       // Le worker redémarre côté main.js (voir save-network-settings) ; la
       // reconnexion WS déclenchera un nouveau 'getNetworkStatus' via

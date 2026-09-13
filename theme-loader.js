@@ -3,6 +3,14 @@ const fs = require('fs');
 const path = require('path');
 
 const featuresStore = require('./features-store');
+// CORRECTIF (chantier durcissement v1.0 — principe "flat file", écriture
+// atomique systématique) : saveTheme() écrivait directement via
+// fs.writeFileSync(), seul store JSON du projet encore hors du pattern
+// tmp+fsync+rename partagé (voir persistence/atomic-json-store.js et son
+// en-tête, qui liste déjà tous les autres stores migrés). Un crash pendant
+// l'écriture d'un thème personnalisé pouvait laisser un .json tronqué,
+// relu comme invalide au prochain chargement.
+const { writeJsonAtomic } = require('./persistence/atomic-json-store');
 
 const THEMES_DIR = path.join(__dirname, 'config', 'themes');
 // CORRECTIF (Studio Clair — nouveau thème par défaut à l'installation) :
@@ -103,7 +111,7 @@ function saveTheme(theme) {
     );
   }
   const file = path.join(writableThemesDir(), `${theme.id}.json`);
-  fs.writeFileSync(file, JSON.stringify(theme, null, 2), 'utf8');
+  writeJsonAtomic(file, theme);
 }
 
 function deleteTheme(themeId) {

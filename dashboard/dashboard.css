@@ -2702,6 +2702,16 @@ body {
   font-weight: 600;
   color: var(--text-main);
 }
+/* AJOUT (chantier durcissement v1.0 — Decision Logs) : sous-ligne
+   justifiant une décision auto-déclenchée (raison + score de confiance) —
+   voir dashboard/utils.js#addActivity(). Discrète (comme .activity-time)
+   pour ne pas dominer le titre, mais toujours visible sans interaction. */
+.activity-decision {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  font-style: italic;
+  margin-top: 0.1rem;
+}
 /* Horodatage d'une entrée du flux d'activité — équivalent du .mc-cue-time
    de la maquette : mono, pour que la colonne d'heures s'aligne. */
 .activity-time {

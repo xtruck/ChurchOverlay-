@@ -582,12 +582,15 @@
       elements.saveStatus.textContent = '';
 
       try {
-        await window.churchOverlay.saveSetup(
+        const result = await window.churchOverlay.saveSetup(
           elements.micSelect.value,
           elements.groqInput.value.trim(),
           elements.deepgramInput.value.trim(),
           elements.geminiInput.value.trim()
         );
+        if (!result || !result.success) {
+          throw new Error(result && result.error ? result.error : 'Échec inconnu.');
+        }
         // CORRECTIF (audit) : la fenêtre se ferme désormais elle-même dès
         // que saveSetup() est résolu, au lieu de dépendre d'un canal IPC
         // ('ffmpeg-setup-progress') qui n'existe plus — sans ce correctif,

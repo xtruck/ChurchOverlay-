@@ -28,13 +28,15 @@ export async function loadOverlayThemeSelector() {
       window.churchOverlay.listThemes(),
       window.churchOverlay.getActiveTheme(),
     ]);
-    if (!listResult || !listResult.ok || !listResult.themes) {
+    if (!listResult || !listResult.success || !listResult.data?.themes) {
       listEl.innerHTML = `<span class="stat-label">❌ ${escapeHtmlDashboard(listResult?.error || 'Impossible de charger les thèmes.')}</span>`;
       return;
     }
     const activeId =
-      activeResult && activeResult.ok && activeResult.theme ? activeResult.theme.id : null;
-    listEl.innerHTML = listResult.themes
+      activeResult && activeResult.success && activeResult.data?.theme
+        ? activeResult.data.theme.id
+        : null;
+    listEl.innerHTML = listResult.data.themes
       .map((t) => {
         const isActive = t.id === activeId;
         const safeId = escapeHtmlDashboard(t.id);
@@ -50,8 +52,8 @@ export async function selectOverlayTheme(themeId) {
   if (!window.churchOverlay || !window.churchOverlay.setActiveTheme) return;
   try {
     const result = await window.churchOverlay.setActiveTheme(themeId);
-    if (result && result.ok) {
-      showToast(`Thème overlay : ${result.theme?.name || themeId}`, 'success');
+    if (result && result.success) {
+      showToast(`Thème overlay : ${result.data?.theme?.name || themeId}`, 'success');
       loadOverlayThemeSelector();
     } else {
       showToast('Échec du changement de thème : ' + (result?.error || 'erreur inconnue'), 'error');

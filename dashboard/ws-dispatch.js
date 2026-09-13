@@ -12,7 +12,12 @@
  * n'est utilisé ici qu'à l'intérieur des branches du switch, jamais évalué
  * au chargement du module.
  */
-import { showToast, addActivity, escapeHtmlDashboard } from './utils.js';
+import {
+  showToast,
+  addActivity,
+  describeAutonomousDecision,
+  escapeHtmlDashboard,
+} from './utils.js';
 import { state } from './state.js';
 import {
   displayVerse,
@@ -205,7 +210,11 @@ export function handleMessage(message) {
       setCurrentLive({ type: 'verse', reference: message.reference, text: message.text });
       state.totalVerses++;
       updateDashboard();
-      addActivity(`Verset affiché : ${message.reference}`, 'success');
+      addActivity(
+        `Verset affiché : ${message.reference}`,
+        'success',
+        describeAutonomousDecision(message)
+      );
       showToast(`Verset : ${message.reference}`, 'success');
       // AJOUT : traduction live automatique si le toggle est activé —
       // chaque nouveau verset déclenche translateText sans action manuelle.
@@ -720,7 +729,7 @@ export function handleMessage(message) {
     // AJOUT (studio de scènes) : même raisonnement que showMedia/hideMedia
     // ci-dessus.
     case 'showScene':
-      addActivity(`Scène affichée : ${message.name}`, 'info');
+      addActivity(`Scène affichée : ${message.name}`, 'info', describeAutonomousDecision(message));
       // AJOUT (Partie 2.3 — état "à l'écran" du mur média) : l'overlay
       // n'affiche qu'une seule chose à la fois — une scène qui s'affiche
       // remplace forcément un média qui l'était.

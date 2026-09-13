@@ -56,13 +56,77 @@ export function showToast(message, type = 'info', duration = 3000) {
   }, duration);
 }
 
-export function addActivity(title, type = 'info') {
+// AJOUT (chantier durcissement v1.0 — "Decision Logs & monitoring
+// d'autonomie") : le journal d'activité n'affichait qu'un simple libellé —
+// pour un verset/une scène auto-DÉCLENCHÉ(E) (pas une action manuelle de
+// l'opérateur), impossible de savoir a posteriori POURQUOI le pipeline a
+// décidé d'afficher ça (quelle méthode de détection ?) ni AVEC QUELLE
+// CONFIANCE, alors que server.js calcule déjà ce score pour sa propre
+// décision (voir resolveDetectionConfidenceScore) — il était juste jeté
+// après avoir servi une fois au tri auto/supervisé/rejeté, jamais transmis
+// au tableau de bord. `decision` (optionnel, 3e paramètre, RIEN ne change
+// pour les ~60 appels existants qui ne le passent pas) porte cette
+// justification : { reason, confidence }.
+//   - reason : phrase courte expliquant la méthode/le déclencheur
+//     (ex. "détection vocale automatique (regex)", "repli chapitre après
+//     délai — verset exact non capté").
+//   - confidence : score [0, 1] si le pipeline en a calculé un pour CETTE
+//     décision précise (absent pour une action manuelle ou un repli
+//     heuristique sans score — jamais une valeur inventée côté dashboard).
+// AJOUT (chantier durcissement v1.0 — Decision Logs) : libellés FR pour
+// chaque valeur de `detectedBy` diffusée par server.js (voir showVerse/
+// showScene) — un seul endroit à mettre à jour si une nouvelle méthode de
+// détection apparaît, plutôt que de dupliquer la traduction à chaque appel.
+// Seules les méthodes VRAIMENT autonomes (le pipeline décide seul depuis
+// l'audio en direct, sans action opérateur) sont listées ici : un verset
+// 'manual'/déclenché par une commande vocale explicite est une décision de
+// l'opérateur, pas du pipeline — inutile de le justifier comme tel.
+const AUTONOMOUS_DETECTION_LABELS = {
+  regex: 'détection automatique (référence reconnue dans la transcription)',
+  quote: 'détection automatique (citation exacte reconnue)',
+  semantic: 'détection automatique (recherche sémantique)',
+  'chapter-fallback': 'repli chapitre automatique',
+  'voice-cue': 'phrase déclencheuse reconnue automatiquement',
+  'voice-cue-group': 'phrase déclencheuse reconnue automatiquement (groupe)',
+};
+
+/**
+ * Construit la métadonnée `decision` (voir addActivity()) pour un message
+ * showVerse/showScene — seulement si celui-ci a réellement été
+ * AUTO-déclenché par le pipeline (pas une action manuelle ou une commande
+ * vocale explicite de l'opérateur, qui sont déjà leur propre justification).
+ * @param {object} message - payload WS showVerse/showScene
+ * @returns {{reason?: string, confidence?: number}|null}
+ */
+export function describeAutonomousDecision(message) {
+  if (!message || message.triggeredManually || message.triggeredByVoice) return null;
+  const label = AUTONOMOUS_DETECTION_LABELS[message.detectedBy];
+  if (!label && typeof message.confidence !== 'number' && !message.reason) return null;
+  const decision = { reason: message.reason || label };
+  if (typeof message.confidence === 'number') decision.confidence = message.confidence;
+  return decision;
+}
+
+export function addActivity(title, type = 'info', decision = null) {
   const feed = document.getElementById('activityFeed');
   if (!feed) return;
 
   const item = document.createElement('div');
   item.className = 'activity-item';
   const time = new Date().toLocaleTimeString();
+
+  let decisionHtml = '';
+  if (decision && (decision.reason || typeof decision.confidence === 'number')) {
+    const parts = [];
+    if (typeof decision.confidence === 'number') {
+      parts.push(`confiance ${Math.round(decision.confidence * 100)}%`);
+    }
+    if (decision.reason) parts.push(decision.reason);
+    // CORRECTIF (audit production — XSS) : mêmes champs dynamiques que
+    // `title` ci-dessous (reason peut refléter un detectedBy/texte serveur),
+    // échappés avant insertion.
+    decisionHtml = `<div class="activity-decision">🧠 ${escapeHtmlDashboard(parts.join(' — '))}</div>`;
+  }
 
   // CORRECTIF (audit production — XSS) : title inclut souvent des champs
   // dynamiques (message.error, message.reference, un fuzzyOriginal qui
@@ -72,6 +136,7 @@ export function addActivity(title, type = 'info') {
                 <div class="activity-icon ${type}">•</div>
                 <div class="activity-content">
                     <div class="activity-title">${escapeHtmlDashboard(title)}</div>
+                    ${decisionHtml}
                     <div class="activity-time">${time}</div>
                 </div>
             `;
