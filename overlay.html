@@ -252,35 +252,42 @@
         position: fixed;
         bottom: 60px;
         left: 50%;
-        transform: translateX(-50%);
+        /* CORRECTIF (passe perf, Phase 4 — animations compositor-only) :
+   le décalage sous-titres vivait dans `bottom` (voir plus bas), une
+   propriété qui déclenche un recalcul de layout à chaque frame de sa
+   transition — coûteux pour une animation qui tourne en continu pendant
+   tout un culte dans OBS. Replié dans --caption-offset, additionné au
+   translateY existant : seul transform/opacity changent désormais,
+   tous deux compositor-only (GPU), aucun recalcul de layout. */
+        --caption-offset: 0px;
+        transform: translateX(-50%) translateY(var(--caption-offset));
         width: 90%;
         max-width: 900px;
         z-index: 10;
         opacity: 0;
         transition:
           opacity 0.6s ease,
-          transform 0.6s ease,
-          bottom 0.4s ease;
+          transform 0.6s ease;
         pointer-events: none;
       }
 
       /* CORRECTIF (audit — sous-titres) : la bande #caption-strip (fixed, bottom:0,
    voir plus bas) peut s'étendre sur 2 lignes pour une phrase longue — sans
    ce décalage, elle chevauche le bas de la carte verset (fixed, bottom:60px
-   ci-dessus) quand les deux sont visibles en même temps. 130px dégage même
-   le cas 2 lignes avec de la marge. */
+   ci-dessus) quand les deux sont visibles en même temps. -70px (130-60px)
+   dégage même le cas 2 lignes avec de la marge. */
       body.captions-active #overlay-container {
-        bottom: 130px;
+        --caption-offset: -70px;
       }
 
       #overlay-container.visible {
         opacity: 1;
-        transform: translateX(-50%) translateY(0);
+        transform: translateX(-50%) translateY(var(--caption-offset));
       }
 
       #overlay-container.hidden {
         opacity: 0;
-        transform: translateX(-50%) translateY(30px);
+        transform: translateX(-50%) translateY(calc(var(--caption-offset) + 30px));
       }
 
       /* Carte du verset */

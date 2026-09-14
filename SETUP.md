@@ -91,6 +91,12 @@ starts on `ws://127.0.0.1:8765` (or the `PORT` you configured).
    - Width: 1920
    - Height: 1080
 6. **Position** it on your scene (usually full screen)
+7. **Enable GPU rendering for Browser Sources**: in OBS, go to
+   `Settings > Advanced` and check "Browser Source Hardware Acceleration"
+   (requires restarting OBS to take effect). The overlay runs a continuous
+   background animation and CSS blur/glow effects for an entire service —
+   with this off, OBS falls back to software rendering for every Browser
+   Source, which costs noticeably more CPU over a multi-hour stream.
 
 ## Step 6: Test the Full Pipeline
 
