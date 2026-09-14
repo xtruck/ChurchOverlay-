@@ -132,6 +132,7 @@
       "dashboard/features/dashboard-branding.js",
       "dashboard/features/agent.js",
       "dashboard/dashboard.css",
+      "dashboard/fonts/**/*",
       "audio-capture-worklet.js",
       "camera-capture.js",
       "scene-render.js",
