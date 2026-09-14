@@ -32,6 +32,10 @@
 
 const fs = require('fs');
 const deepgram = require('./deepgram-wrapper');
+// AJOUT (passe perf, Phase 2 — voir provider-race-stats.js) : compteurs
+// glissants sur l'issue de la course Groq/Deepgram, pour juger avec de vrais
+// chiffres si l'appel Deepgram systématique en parallèle vaut son coût.
+const providerRaceStats = require('./provider-race-stats');
 const { buildWhisperPrompt } = require('./bible-keyterms');
 const { GoogleGenAI } = require('@google/genai');
 
@@ -347,6 +351,19 @@ function isCircuitOpen() {
   return Date.now() - circuitOpenedAt < CIRCUIT_COOLDOWN_MS;
 }
 
+// AJOUT (passe perf, Phase 2) : journalise le résumé [PROVIDER-RACE] toutes
+// les RACE_STATS_LOG_EVERY_N courses — même logique de fréquence que
+// latencyStats côté server.js (voir logLatencySummary), pour ne pas noyer
+// les logs [groq-wrapper] déjà présents à chaque timeout/échec individuel.
+const RACE_STATS_LOG_EVERY_N = 20;
+let raceOutcomeCount = 0;
+function logRaceStatsPeriodically() {
+  raceOutcomeCount++;
+  if (raceOutcomeCount % RACE_STATS_LOG_EVERY_N === 0) {
+    console.warn('\n' + providerRaceStats.formatStats());
+  }
+}
+
 /**
  * @returns {{ consecutiveFailures: number, lastError: string|null, circuitOpen: boolean, circuitOpenedAt: number|null }}
  */
@@ -379,6 +396,12 @@ async function transcribeWithFallback(
       '[groq-wrapper] Circuit Groq ouvert (%d échecs consécutifs) — repli Deepgram direct, Groq sauté.',
       consecutiveGroqFailures
     );
+    // AJOUT (Phase 2) : compté ici, avant même le try/catch — le circuit
+    // ouvert écarte Groq de la course dans les deux cas (succès ou échec
+    // Deepgram ci-dessous), donc ce n'est jamais un "bothFailed" (Groq n'a
+    // pas été tenté).
+    providerRaceStats.recordCircuitSkip();
+    logRaceStatsPeriodically();
     try {
       const result = await deepgram.transcribeFile(
         audioFilePath,
@@ -423,6 +446,8 @@ async function transcribeWithFallback(
 
   if (groqRace && !groqRace.timedOut && !groqRace.error) {
     if (deepgramEnabled) deepgramAbort.abort();
+    providerRaceStats.recordGroqWin();
+    logRaceStatsPeriodically();
     return { text: groqRace.text, confidence: groqRace.confidence, source: 'groq' };
   }
   let groqError = null;
@@ -443,8 +468,12 @@ async function transcribeWithFallback(
     const deepgramRace = await Promise.race([deepgramPromise, deepgramTimeoutPromise]);
 
     if (deepgramRace && !deepgramRace.timedOut && !deepgramRace.error) {
+      providerRaceStats.recordDeepgramFallbackWin();
+      logRaceStatsPeriodically();
       return { text: deepgramRace.text, confidence: deepgramRace.confidence, source: 'deepgram' };
     }
+    providerRaceStats.recordBothFailed();
+    logRaceStatsPeriodically();
     if (deepgramRace && deepgramRace.timedOut) {
       console.warn('[groq-wrapper] Timeout Deepgram également — segment perdu.');
       throw groqError || new Error('Timeout Deepgram');
@@ -456,6 +485,8 @@ async function transcribeWithFallback(
     throw deepgramRace.error;
   }
 
+  providerRaceStats.recordBothFailed();
+  logRaceStatsPeriodically();
   throw groqError || new Error('Échec de la transcription (Groq)');
 }
 
@@ -637,4 +668,9 @@ module.exports = {
   GROQ_PROMPT_MAX_BYTES,
   // Exposée pour tests unitaires (test-groq-speech-info.js).
   computeGroqSpeechInfo,
+  // AJOUT (passe perf, Phase 2) : voir provider-race-stats.js — exposé ici
+  // pour que server.js/buildHealthReport() puisse le journaliser sans
+  // dépendre directement du module interne.
+  getProviderRaceStats: providerRaceStats.getStats,
+  formatProviderRaceStats: providerRaceStats.formatStats,
 };
