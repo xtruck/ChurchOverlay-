@@ -21,8 +21,16 @@ test.describe('Mode confiance', () => {
     // #overview, qui fait partie de l'espace "Direct Classique".
     await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
 
-    const autoBtn = page.locator('.trust-mode-btn[data-trust-mode="auto"]');
-    const semiAutoBtn = page.locator('.trust-mode-btn[data-trust-mode="semi-auto"]');
+    // Scopé à #trustModeSelector (la carte détaillée) : depuis le chantier
+    // innovation v1.0, un second groupe de boutons (.autonomy-mode-selector,
+    // header) partage la même classe .trust-mode-btn + data-trust-mode pour
+    // rester synchronisé (voir dashboard.html, commentaire "Pilier 3") — un
+    // sélecteur non scopé remonte désormais 2 éléments (violation strict-mode
+    // Playwright).
+    const autoBtn = page.locator('#trustModeSelector .trust-mode-btn[data-trust-mode="auto"]');
+    const semiAutoBtn = page.locator(
+      '#trustModeSelector .trust-mode-btn[data-trust-mode="semi-auto"]'
+    );
     await expect(autoBtn).toHaveClass(/active/);
     await expect(semiAutoBtn).not.toHaveClass(/active/);
 
