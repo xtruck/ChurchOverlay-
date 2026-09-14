@@ -85,6 +85,11 @@ const pptxImporter = require('./pptx-importer');
 // concurrence 1 par défaut, largement suffisant (import PPTX = action rare,
 // jamais deux à la fois en pratique).
 const { createTaskQueue } = require('./task-queue');
+// AJOUT (passe perf, Phase 1 — instrumentation avant optimisation) : voir
+// latency-stats.js. Agrège les marques latency-tracker.js énoncé après
+// énoncé (ring buffer borné) pour exposer des p50/p95, plutôt que le seul
+// total par-énoncé déjà journalisé par logLatencySummary().
+const latencyStats = require('./latency-stats');
 // AJOUT (Partie 7.1.2 — service portable, export uniquement, voir
 // service-export.js pour le pourquoi de cette portée).
 const serviceExport = require('./service-export');
@@ -1255,9 +1260,22 @@ function stopAmbientMoodLoop() {
 // AJOUT (latence, §14) : journalise le résumé [PERF] d'un énoncé une fois
 // son traitement terminé — no-op silencieux si aucun tracker n'a suivi cet
 // énoncé (ex. verset saisi manuellement, sans VAD/ASR en amont).
+//
+// AJOUT (passe perf, Phase 1) : alimente aussi latencyStats (p50/p95
+// glissants) à partir des mêmes marques, et journalise ce résumé agrégé
+// toutes les STATS_LOG_EVERY_N énoncés — assez rare pour ne pas noyer les
+// logs [PERF] par-énoncé déjà présents, assez fréquent pour rester utile en
+// culte réel (~1 verset/minute en usage typique).
+const STATS_LOG_EVERY_N = 10;
+let latencySummaryCount = 0;
 function logLatencySummary(tracker) {
   if (!tracker) return;
   log('\n' + tracker.format());
+  latencyStats.recordFromMarks(tracker.summary().marks);
+  latencySummaryCount++;
+  if (latencySummaryCount % STATS_LOG_EVERY_N === 0) {
+    log('\n' + latencyStats.formatStats());
+  }
 }
 
 // ===========================================================================
