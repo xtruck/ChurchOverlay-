@@ -215,7 +215,10 @@ function themeToCss(theme) {
       '--reference-color':
         c.reference || c.accentBright || fc.reference || fc.accentBright || '#F4E3A6',
       '--verse-font': typo.verseFontFamily || ftypo.verseFontFamily || 'Merriweather',
-      '--verse-size': typo.verseFontSize || ftypo.verseFontSize || 'clamp(2.4rem, 4.6vw, 5.2rem)',
+      // AJOUT (redesign taille — retour opérateur direct, "trop petit vu de
+      // loin") : clamp() élargi (ancien max 5.2rem/~83px) — voir le même
+      // changement dans chaque config/themes/*.json pour la cohérence.
+      '--verse-size': typo.verseFontSize || ftypo.verseFontSize || 'clamp(3.2rem, 8vw, 9rem)',
       '--verse-weight': typo.verseFontWeight || ftypo.verseFontWeight || 700,
       '--ref-font': typo.referenceFontFamily || ftypo.referenceFontFamily || 'Manrope',
       '--ref-spacing': typo.referenceLetterSpacing || ftypo.referenceLetterSpacing || '0.14em',

@@ -248,9 +248,16 @@
       }
 
       /* Container principal */
+      /* CORRECTIF (passe redesign — taille d'affichage, retour opérateur
+   direct) : repensé d'une bande "lower-third" (bottom:60px, max-width:900px
+   — une petite boîte au bas de l'écran) vers un traitement PLEIN CADRE
+   centré verticalement : l'audience inclut des personnes loin de l'écran,
+   la référence de conception d'un lower-third (bande discrète en bas)
+   n'était pas le bon gabarit pour ce cas d'usage. `top:50%` + translateY
+   remplace `bottom:60px` comme point d'ancrage. */
       #overlay-container {
         position: fixed;
-        bottom: 60px;
+        top: 50%;
         left: 50%;
         /* CORRECTIF (passe perf, Phase 4 — animations compositor-only) :
    le décalage sous-titres vivait dans `bottom` (voir plus bas), une
@@ -258,11 +265,18 @@
    transition — coûteux pour une animation qui tourne en continu pendant
    tout un culte dans OBS. Replié dans --caption-offset, additionné au
    translateY existant : seul transform/opacity changent désormais,
-   tous deux compositor-only (GPU), aucun recalcul de layout. */
+   tous deux compositor-only (GPU), aucun recalcul de layout. Le -50%
+   de recentrage vertical (remplaçant l'ancrage bottom:60px) vit dans ce
+   même translateY, pour la même raison. */
         --caption-offset: 0px;
-        transform: translateX(-50%) translateY(var(--caption-offset));
-        width: 90%;
-        max-width: 900px;
+        transform: translateX(-50%) translateY(calc(-50% + var(--caption-offset)));
+        /* AJOUT (redesign taille) : 900px de large sur un canevas 1920px
+   (OBS 1080p typique) ne laissait le verset occuper qu'une fraction de
+   l'écran. 1700px (proche de la largeur de sécurité 1920px moins des
+   marges raisonnables) laisse le texte, agrandi ci-dessous dans
+   .verse-text, se déployer sur toute la largeur utile du cadre. */
+        width: 92%;
+        max-width: 1700px;
         z-index: 10;
         opacity: 0;
         transition:
@@ -271,23 +285,23 @@
         pointer-events: none;
       }
 
-      /* CORRECTIF (audit — sous-titres) : la bande #caption-strip (fixed, bottom:0,
-   voir plus bas) peut s'étendre sur 2 lignes pour une phrase longue — sans
-   ce décalage, elle chevauche le bas de la carte verset (fixed, bottom:60px
-   ci-dessus) quand les deux sont visibles en même temps. -70px (130-60px)
-   dégage même le cas 2 lignes avec de la marge. */
+      /* CORRECTIF (audit — sous-titres) : décalage vers le haut quand la bande
+   #caption-strip (fixed, bottom:0, voir plus bas) est active, pour ne
+   jamais chevaucher la carte verset désormais centrée. Reste utile même
+   recentré : une carte occupant une grande part de la hauteur peut encore
+   s'approcher du bas selon la longueur du verset. */
       body.captions-active #overlay-container {
         --caption-offset: -70px;
       }
 
       #overlay-container.visible {
         opacity: 1;
-        transform: translateX(-50%) translateY(var(--caption-offset));
+        transform: translateX(-50%) translateY(calc(-50% + var(--caption-offset)));
       }
 
       #overlay-container.hidden {
         opacity: 0;
-        transform: translateX(-50%) translateY(calc(var(--caption-offset) + 30px));
+        transform: translateX(-50%) translateY(calc(-50% + var(--caption-offset) + 30px));
       }
 
       /* Carte du verset */
@@ -295,7 +309,11 @@
         background: var(--overlay-bg);
         color: var(--overlay-text);
         font-family: var(--overlay-font);
-        padding: clamp(24px, 3vw, 40px) clamp(28px, 4vw, 52px);
+        /* AJOUT (redesign taille) : padding agrandi en proportion du texte
+   (voir .verse-text ci-dessous) — une carte pleine largeur avec le
+   padding d'origine (pensé pour une petite bande lower-third) aurait
+   laissé un texte énorme coller aux bords. */
+        padding: clamp(32px, 4.5vw, 64px) clamp(40px, 6vw, 84px);
         border-radius: var(--overlay-radius);
         border: 1px solid var(--overlay-border);
         /* Layout Flexbox réactif : référence / verset FR / verset EN empilés
@@ -335,7 +353,10 @@
    nette même projetée en grand. */
       .verse-reference {
         font-family: var(--overlay-font-ui);
-        font-size: clamp(14px, 1.3vw, 19px);
+        /* AJOUT (redesign taille) : proportionnée au verset agrandi
+   ci-dessous — restait minuscule à côté d'un texte 3-4× plus grand
+   sinon. */
+        font-size: clamp(18px, 1.8vw, 28px);
         font-weight: 700;
         color: var(--overlay-reference-color);
         text-transform: uppercase;

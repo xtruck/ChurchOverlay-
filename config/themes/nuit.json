@@ -22,7 +22,7 @@
   "typography": {
     "verseFontFamily": "Merriweather",
     "verseFontWeight": 700,
-    "verseFontSize": "clamp(2.4rem, 4.6vw, 5.2rem)",
+    "verseFontSize": "clamp(3.2rem, 8vw, 9rem)",
     "referenceFontFamily": "Manrope",
     "referenceLetterSpacing": "0.14em"
   },

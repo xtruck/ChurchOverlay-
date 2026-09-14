@@ -22,7 +22,7 @@
   "typography": {
     "verseFontFamily": "'Newsreader', Georgia, serif",
     "verseFontWeight": 400,
-    "verseFontSize": "clamp(2rem, 3.8vw, 4.4rem)",
+    "verseFontSize": "clamp(2.8rem, 6.8vw, 7.8rem)",
     "referenceFontFamily": "'IBM Plex Sans', sans-serif",
     "referenceLetterSpacing": "0.12em"
   },

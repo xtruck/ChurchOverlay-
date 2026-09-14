@@ -22,7 +22,7 @@
   "typography": {
     "verseFontFamily": "Georgia, 'Times New Roman', serif",
     "verseFontWeight": 400,
-    "verseFontSize": "clamp(2.2rem, 4.2vw, 4.8rem)",
+    "verseFontSize": "clamp(3rem, 7.5vw, 8.5rem)",
     "referenceFontFamily": "Manrope",
     "referenceLetterSpacing": "0.10em"
   },

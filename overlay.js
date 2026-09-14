@@ -375,7 +375,18 @@ function fitVerseCardToViewport() {
   let currentSize = parseFloat(getComputedStyle(verseTextEl).fontSize);
   let bilingualSize = bilingualEl ? parseFloat(getComputedStyle(bilingualEl).fontSize) : null;
   let guard = 0;
-  while (card.scrollHeight > maxCardHeight && guard < 30) {
+  // CORRECTIF (redesign taille — retour opérateur direct) : le plafond de
+  // 30 itérations (2px chacune = 60px de réduction max) était calibré pour
+  // l'ancienne taille de verset max (~5.2rem/83px) — suffisant pour
+  // atteindre à peu près MIN_VERSE_FONT_PX (18px). Les nouvelles tailles de
+  // thème (jusqu'à ~9rem/144px, voir config/themes/*.json) ont besoin de
+  // beaucoup plus de marge pour espérer atteindre ce plancher sur un long
+  // verset : sans ce correctif, la boucle s'arrêtait à ~84px (144-60),
+  // laissant la carte déborder du cadre — capture d'écran 1920×1080 à
+  // l'appui. Calculé dynamiquement à partir de la taille de départ réelle
+  // plutôt qu'une constante à réajuster à chaque nouveau réglage de thème.
+  const maxGuardIterations = Math.ceil((currentSize - MIN_VERSE_FONT_PX) / 2) + 5;
+  while (card.scrollHeight > maxCardHeight && guard < maxGuardIterations) {
     let shrankSomething = false;
     if (currentSize > MIN_VERSE_FONT_PX) {
       currentSize -= 2;
