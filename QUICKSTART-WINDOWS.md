@@ -46,7 +46,12 @@ This will:
    - Select "Browser"
    - Click "Create New"
    - Name: "Bible Overlay"
-   - URL: `file:///C:/path/to/xtruck/overlay.html`
+   - URL: copy it from the dashboard (**Régie → "📋 Copier le lien pour
+     OBS"**) and paste it here — don't type a path by hand. That link
+     includes the read-only viewer token the server requires once
+     authentication is enabled; a hand-typed `file:///.../overlay.html`
+     path has no token and the overlay will fail to connect (repeated
+     "jeton d'authentification invalide ou manquant" in the logs).
    - Width: 1920
    - Height: 1080
    - Click OK

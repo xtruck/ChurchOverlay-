@@ -82,11 +82,17 @@ starts on `ws://127.0.0.1:8765` (or the `PORT` you configured).
    - Click `+` under Sources
    - Select "Browser"
    - Name it "Bible Overlay"
-4. **Set the URL** (the dashboard shows you the exact path to use):
-   ```
-   file:///C:/xtruck/overlay.html
-   ```
-   (Replace `C:/xtruck` with your actual install path)
+4. **Set the URL** — copy it from the dashboard, don't type it by hand:
+   open the dashboard, go to **Régie**, and click **"📋 Copier le lien
+   pour OBS"**, then paste that into the Browser Source URL field.
+   That link already includes the read-only viewer token the server
+   requires once authentication is enabled — a hand-typed path like
+   `file:///C:/xtruck/overlay.html` has no token attached, so the
+   overlay's WebSocket connection gets rejected and retries forever
+   (you'd see "jeton d'authentification invalide ou manquant" repeating
+   in the logs, and a warning toast in the dashboard). If you copy the
+   link and it ever stops matching — e.g. after regenerating tokens —
+   copy it again and update the Browser Source.
 5. **Set Size**:
    - Width: 1920
    - Height: 1080

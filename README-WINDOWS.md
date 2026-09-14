@@ -54,8 +54,13 @@ without a microphone — see "Advanced Troubleshooting" below.)
    - Select "Browser"
    - Click "Create New"
    - **Name:** Bible Overlay
-   - **URL:** `file:///C:/path/to/xtruck/overlay.html`
-     - Replace `path/to/xtruck` with your actual folder path
+   - **URL:** copy it from the dashboard (**Régie → "📋 Copier le lien
+     pour OBS"**) and paste it here — don't type a path by hand. That
+     link includes the read-only viewer token the server requires once
+     authentication is enabled; a hand-typed `file:///.../overlay.html`
+     path has no token, so the overlay's connection gets rejected and
+     retries forever (you'd see "jeton d'authentification invalide ou
+     manquant" repeating in the logs).
    - **Width:** 1920
    - **Height:** 1080
    - **Uncheck:** "Control audio via OBS" (unless you need it)
@@ -88,23 +93,9 @@ Before your first service, test the system:
 
 ## 📁 File Locations
 
-When configuring OBS overlay.html path, use:
-
-```
-file:///C:/Users/YourUsername/Documents/xtruck/overlay.html
-```
-
-Replace:
-
-- `YourUsername` with your Windows username
-- `xtruck` with your actual folder name
-
-To find your path:
-
-1. Open File Explorer
-2. Navigate to your xtruck folder
-3. Look at the address bar
-4. Copy that path
+Don't hand-build the overlay.html path for OBS — see "🔌 OBS
+Configuration" above: copy the ready-made link (with the required
+viewer token already included) from the dashboard's Régie tab instead.
 
 ---
 
