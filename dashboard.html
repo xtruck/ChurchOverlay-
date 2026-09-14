@@ -156,11 +156,26 @@
             </div>
           </div>
 
-          <!-- Trois espaces : DIRECT (service en cours), PRÉPARATION (avant/après culte),
-                       RÉGIE (config technique). data-sections (pluriel) liste les <section>
-                       à afficher ensemble ; voir le gestionnaire de clic dans state.js. -->
+          <!-- CORRECTIF (commentaire à jour — l'ancien "Trois espaces" ne
+               reflétait déjà plus le balisage réel) : QUATRE espaces —
+               STUDIO PRO (console de diffusion), DIRECT CLASSIQUE (service
+               en cours, vue historique), PRÉPARATION (avant/après culte),
+               RÉGIE (config technique). data-sections (pluriel) liste les
+               <section> à afficher ensemble ; voir le gestionnaire de clic
+               dans state.js.
+               AJOUT (redesign IA — étape 1, relocalisation) : "studio" est
+               listé ICI (Studio Pro) EN PLUS de son rattachement à
+               Préparation plus bas, uniquement parce que le composeur de
+               scène (#sceneComposerCard, masqué par défaut) vit encore
+               physiquement dans <section id="studio"> — sans ce
+               rattachement, la section reste display:none quand Studio Pro
+               est actif, et "+ Nouvelle scène" (déplacé ici avec le reste de
+               la galerie) ne pourrait jamais rendre le composeur visible.
+               La galerie elle-même (déclenchement live) a bien été déplacée
+               physiquement dans #propresenter-live — voir son commentaire
+               là-bas. -->
           <ul class="nav-list">
-            <li class="nav-item active" data-sections="propresenter-live">
+            <li class="nav-item active" data-sections="propresenter-live,media-wall,studio">
               <svg
                 width="18"
                 height="18"
@@ -189,7 +204,7 @@
               </svg>
               Direct Classique
             </li>
-            <li class="nav-item" data-sections="analysis,studio,media-wall">
+            <li class="nav-item" data-sections="analysis,studio">
               <svg
                 width="18"
                 height="18"
@@ -1219,6 +1234,202 @@
               </div>
             </div>
           </div>
+
+          <!-- CORRECTIF (redesign IA — étape 1, relocalisation) : galerie du
+               Studio de scènes déplacée ici depuis #studio (Préparation) —
+               "▶ Afficher"/CUT/Masquer sont des actions live (diriger le
+               direct), pas de la préparation ; seul le composeur
+               (+ Nouvelle scène / Importer PowerPoint, déjà masqués en Mode
+               Direct via mode-direct-hide) reste dans #studio. Simple <div>,
+               pas un .section — se montre/masque automatiquement avec
+               #propresenter-live, sans toucher aux data-sections. -->
+          <div class="card" data-group="studio">
+            <div class="queue-panel-header">
+              <span class="card-title"
+                >Studio de scènes (<span id="sceneStudioCount">0</span>)</span
+              >
+              <div class="btn-row-tight">
+                <button
+                  id="openSceneComposerBtn"
+                  class="btn btn-primary chip-sm mode-direct-hide"
+                  title="Composition de scène — masqué en Mode Direct (via la palette Ctrl/Cmd+K si besoin en plein culte)"
+                >
+                  + Nouvelle scène
+                </button>
+                <button id="importPptxSlidesBtn" class="btn btn-secondary chip-sm mode-direct-hide">
+                  📥 Importer PowerPoint
+                </button>
+                <button id="hideSceneNowBtn" class="btn btn-secondary chip-sm">⏹ Masquer</button>
+              </div>
+            </div>
+            <div class="field-hint mb-3">
+              Composez un fond + du texte + un logo, puis déclenchez la scène sur l'overlay ou
+              épinglez-la comme poster principal (⭐) — elle reviendra automatiquement après chaque
+              verset, exactement comme un média épinglé dans la Médiathèque.
+              <br />
+              <strong>Importer PowerPoint</strong> crée une scène texte par diapositive (le texte
+              seul — pas les images ni la mise en forme d'origine), dans l'ordre réel du diaporama.
+            </div>
+
+            <!-- AJOUT (chantier ultime — switcher multiview dual-bus Program/
+                         Preview) : "👁 Preview" sur une carte (voir renderSceneStudioGallery
+                         dans scene-studio.js) arme cette scène ici SANS la diffuser —
+                         CUT/TAKE (bouton ci-dessous, ou barre d'espace hors saisie/hors
+                         bannière de confirmation de verset) l'envoie ensuite sur le
+                         Program via le MÊME chemin que "▶ Afficher"
+                         (triggerSceneStudioItem -> action WS 'triggerScene', déjà
+                         testée) — CUT n'est qu'un raccourci vers ce chemin existant,
+                         jamais un second protocole de diffusion. -->
+            <div class="multiview-bus-bar" id="multiviewBusBar">
+              <div class="multiview-bus-slot multiview-bus-slot--preview">
+                <span class="multiview-bus-label">🟢 PREVIEW</span>
+                <span class="multiview-bus-value" id="multiviewPreviewLabel">Aucune sélection</span>
+              </div>
+              <button
+                type="button"
+                id="sceneCutBtn"
+                class="btn btn-danger multiview-cut-btn"
+                title="CUT / TAKE — bascule la scène en Preview vers le Program (barre d'espace)"
+                disabled
+              >
+                ⏻ CUT
+              </button>
+              <div class="multiview-bus-slot multiview-bus-slot--program">
+                <span class="multiview-bus-label">🔴 PROGRAM</span>
+                <span class="multiview-bus-value" id="multiviewProgramLabel">Rien en direct</span>
+              </div>
+            </div>
+
+            <div class="media-gallery-grid" id="sceneStudioList"></div>
+          </div>
+
+          <!-- CORRECTIF (redesign IA — étape 1, relocalisation) : panneau OBS
+               déplacé ici depuis la carte "Intégrations" (Régie) — changer de
+               scène OBS (obsScenesList) et démarrer/arrêter enregistrement/
+               direct sont des actions de direction en direct ; la
+               configuration (URL/mot de passe/activation) reste ici avec,
+               plutôt que de la séparer dans un second aller-retour vers les
+               Paramètres — voir obs-scenes.js, non modifié, il continue de
+               retrouver ces mêmes id peu importe leur position dans le DOM.
+               Simple <div>, pas un .section — se montre/masque avec
+               #propresenter-live sans toucher aux data-sections. -->
+          <div class="card" data-group="obs-live">
+            <div class="card-header">
+              <span class="card-title">OBS Studio (scènes multiples)</span>
+            </div>
+            <div class="field-hint mb-2">
+              Outils → obs-websocket → Activer serveur WebSocket (déjà intégré depuis OBS 28+).
+            </div>
+            <div class="form-group">
+              <label class="settings-toggle-label-compact">
+                <input type="checkbox" id="obsEnabledInput" /> Activer la connexion OBS
+              </label>
+            </div>
+            <div class="form-group">
+              <label for="obsUrlInput">URL du serveur obs-websocket</label>
+              <input
+                type="text"
+                id="obsUrlInput"
+                placeholder="ws://localhost:4455"
+                autocomplete="off"
+              />
+            </div>
+            <div class="form-group">
+              <label for="obsPasswordInput">Mot de passe</label>
+              <div class="input-row">
+                <input
+                  type="password"
+                  id="obsPasswordInput"
+                  placeholder="Laisser vide pour conserver le mot de passe actuel"
+                  autocomplete="off"
+                />
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-toggle-pass"
+                  data-target="obsPasswordInput"
+                >
+                  Afficher
+                </button>
+              </div>
+            </div>
+            <div class="btn-row-wrap mb-3">
+              <button id="saveObsConfigBtn" type="button" class="btn btn-secondary">
+                Enregistrer
+              </button>
+              <button id="connectObsBtn" type="button" class="btn btn-secondary">
+                🔌 Se connecter
+              </button>
+              <button id="refreshObsScenesBtn" type="button" class="btn btn-secondary">
+                🔄 Rafraîchir les scènes
+              </button>
+              <button id="toggleObsRecordingBtn" type="button" class="btn btn-secondary">
+                ⏺ Démarrer/arrêter l'enregistrement
+              </button>
+              <button id="toggleObsStreamingBtn" type="button" class="btn btn-secondary">
+                🔴 Démarrer/arrêter le direct
+              </button>
+            </div>
+            <div class="field-hint mb-3" id="obsStatus"></div>
+            <div id="obsScenesList" class="obs-scenes-list"></div>
+          </div>
+
+          <!-- CORRECTIF (redesign IA — étape 1, relocalisation) : Mur Média
+               déplacé ici depuis #media-wall (Préparation) — grille de
+               déclenchement live (photos/vidéos pendant le culte, voir
+               training-mode.js), pas un outil de préparation. Reste son
+               PROPRE .section (is-hidden porté ici) : ajouté au
+               data-sections de "Studio Pro" et retiré de "Préparation" (voir
+               les <li class="nav-item">, sidebar + barre d'onglets basse). -->
+          <section id="media-wall" class="section media-wall-section is-hidden">
+            <div class="card" data-group="media">
+              <div class="card-header">
+                <span class="card-title">Mur Média</span>
+                <span id="mediaWallCount" class="status-badge">0</span>
+              </div>
+              <!-- AJOUT (Partie 2.3 — bouton "essayer") : rejoue le VRAI moteur
+                   de détection (mediaLibrary/songLibrary/sceneStore.matchTriggerPhrase,
+                   le même code que la voix en plein culte — voir server.js,
+                   action WS testTriggerPhrase) sur un texte tapé, pour vérifier
+                   une phrase déclencheuse AVANT le culte plutôt qu'en plein direct. -->
+              <div class="field-hint mb-2">
+                🎤 Essayer une phrase déclencheuse : tapez ce que vous diriez à voix haute, le
+                résultat est celui que donnerait la reconnaissance vocale réelle.
+              </div>
+              <div class="trigger-phrase-test-row">
+                <input
+                  type="text"
+                  id="triggerPhraseTestInput"
+                  placeholder="ex. montrez la photo du groupe jeunesse"
+                  aria-label="Phrase déclencheuse à essayer"
+                  class="trigger-phrase-test-input"
+                  onkeydown="if (event.key === 'Enter') testTriggerPhrase();"
+                />
+                <button id="testTriggerPhraseBtn" type="button" class="btn btn-secondary">
+                  Essayer
+                </button>
+              </div>
+              <div id="triggerPhraseTestResult" class="field-hint trigger-phrase-test-result"></div>
+              <!-- AJOUT (Partie 2.3 — recherche instantanée + parité clavier) :
+                   filtre la grille en direct (nom OU phrase déclencheuse), et
+                   les touches 1-9 déclenchent les 9 premières tuiles VISIBLES
+                   (après filtre) sans quitter le clavier — voir
+                   dashboard/features/media-library.js, filterMediaWall()/le
+                   gestionnaire keydown global. -->
+              <input
+                type="text"
+                id="mediaWallSearchInput"
+                placeholder="🔍 Filtrer (nom ou phrase déclencheuse)… — touches 1-9 pour déclencher"
+                aria-label="Filtrer le mur média"
+                class="media-wall-search-input"
+                oninput="filterMediaWall(this.value)"
+              />
+              <div id="mediaWallGrid" class="media-gallery-grid media-wall-grid">
+                <div class="empty-state-note media-wall-empty-note">
+                  Aucun média chargé. Ajoutez des photos/vidéos dans la médiathèque d'abord.
+                </div>
+              </div>
+            </div>
+          </section>
         </section>
 
         <!-- Overview Section (Direct Classique) -->
@@ -3698,74 +3909,12 @@
               <span class="card-title">Intégrations</span>
             </div>
 
-            <!-- AJOUT : le module OBS (obs-controller.js) et son pont IPC
-                 (main.js > obs-get-config/obs-set-config/obs-connect/
-                 obs-list-scenes/obs-switch-scene, exposés via preload.js)
-                 existaient déjà et étaient testés (test-obs-gating.js), mais
-                 sans aucune interface : impossible de changer de scène OBS
-                 depuis le tableau de bord, ni même de saisir l'URL/mot de
-                 passe obs-websocket. Même principe que ProPresenter/Planning
-                 Center ci-dessous : entièrement optionnel, "enabled" reste à
-                 false tant que l'opérateur ne l'active pas explicitement ici. -->
-            <div class="settings-subsection-heading">OBS Studio (scènes multiples)</div>
-            <div class="field-hint mb-2">
-              Outils → obs-websocket → Activer serveur WebSocket (déjà intégré depuis OBS 28+).
-            </div>
-            <div class="form-group">
-              <label class="settings-toggle-label-compact">
-                <input type="checkbox" id="obsEnabledInput" /> Activer la connexion OBS
-              </label>
-            </div>
-            <div class="form-group">
-              <label for="obsUrlInput">URL du serveur obs-websocket</label>
-              <input
-                type="text"
-                id="obsUrlInput"
-                placeholder="ws://localhost:4455"
-                autocomplete="off"
-              />
-            </div>
-            <div class="form-group">
-              <label for="obsPasswordInput">Mot de passe</label>
-              <div class="input-row">
-                <input
-                  type="password"
-                  id="obsPasswordInput"
-                  placeholder="Laisser vide pour conserver le mot de passe actuel"
-                  autocomplete="off"
-                />
-                <button
-                  type="button"
-                  class="btn btn-secondary btn-toggle-pass"
-                  data-target="obsPasswordInput"
-                >
-                  Afficher
-                </button>
-              </div>
-            </div>
-            <div class="btn-row-wrap mb-3">
-              <button id="saveObsConfigBtn" type="button" class="btn btn-secondary">
-                Enregistrer
-              </button>
-              <button id="connectObsBtn" type="button" class="btn btn-secondary">
-                🔌 Se connecter
-              </button>
-              <button id="refreshObsScenesBtn" type="button" class="btn btn-secondary">
-                🔄 Rafraîchir les scènes
-              </button>
-              <button id="toggleObsRecordingBtn" type="button" class="btn btn-secondary">
-                ⏺ Démarrer/arrêter l'enregistrement
-              </button>
-              <button id="toggleObsStreamingBtn" type="button" class="btn btn-secondary">
-                🔴 Démarrer/arrêter le direct
-              </button>
-            </div>
-            <div class="field-hint mb-3" id="obsStatus"></div>
-            <div id="obsScenesList" class="obs-scenes-list"></div>
-
-            <div class="settings-subsection-heading settings-subsection-heading--divider">
-              ProPresenter (écran scène)
-            </div>
+            <!-- CORRECTIF (redesign IA — étape 1, relocalisation) : le panneau
+                 OBS (connexion + liste de scènes cliquables) a été déplacé
+                 dans #propresenter-live (Studio Pro) — changer de scène OBS
+                 est une action de direction en direct, pas de la
+                 configuration. Voir ce commentaire là-bas pour le détail. -->
+            <div class="settings-subsection-heading">ProPresenter (écran scène)</div>
             <div class="form-group">
               <label class="settings-toggle-label-compact">
                 <input type="checkbox" id="ppEnabledInput" /> Activer la connexion ProPresenter
@@ -4028,57 +4177,9 @@
           </div>
         </section>
 
-        <!-- Mur Média — grille visuelle pour déclenchement rapide pendant le culte -->
-        <section id="media-wall" class="section media-wall-section is-hidden">
-          <div class="card" data-group="media">
-            <div class="card-header">
-              <span class="card-title">Mur Média</span>
-              <span id="mediaWallCount" class="status-badge">0</span>
-            </div>
-            <!-- AJOUT (Partie 2.3 — bouton "essayer") : rejoue le VRAI moteur
-                 de détection (mediaLibrary/songLibrary/sceneStore.matchTriggerPhrase,
-                 le même code que la voix en plein culte — voir server.js,
-                 action WS testTriggerPhrase) sur un texte tapé, pour vérifier
-                 une phrase déclencheuse AVANT le culte plutôt qu'en plein direct. -->
-            <div class="field-hint mb-2">
-              🎤 Essayer une phrase déclencheuse : tapez ce que vous diriez à voix haute, le
-              résultat est celui que donnerait la reconnaissance vocale réelle.
-            </div>
-            <div class="trigger-phrase-test-row">
-              <input
-                type="text"
-                id="triggerPhraseTestInput"
-                placeholder="ex. montrez la photo du groupe jeunesse"
-                aria-label="Phrase déclencheuse à essayer"
-                class="trigger-phrase-test-input"
-                onkeydown="if (event.key === 'Enter') testTriggerPhrase();"
-              />
-              <button id="testTriggerPhraseBtn" type="button" class="btn btn-secondary">
-                Essayer
-              </button>
-            </div>
-            <div id="triggerPhraseTestResult" class="field-hint trigger-phrase-test-result"></div>
-            <!-- AJOUT (Partie 2.3 — recherche instantanée + parité clavier) :
-                 filtre la grille en direct (nom OU phrase déclencheuse), et
-                 les touches 1-9 déclenchent les 9 premières tuiles VISIBLES
-                 (après filtre) sans quitter le clavier — voir
-                 dashboard/features/media-library.js, filterMediaWall()/le
-                 gestionnaire keydown global. -->
-            <input
-              type="text"
-              id="mediaWallSearchInput"
-              placeholder="🔍 Filtrer (nom ou phrase déclencheuse)… — touches 1-9 pour déclencher"
-              aria-label="Filtrer le mur média"
-              class="media-wall-search-input"
-              oninput="filterMediaWall(this.value)"
-            />
-            <div id="mediaWallGrid" class="media-gallery-grid media-wall-grid">
-              <div class="empty-state-note media-wall-empty-note">
-                Aucun média chargé. Ajoutez des photos/vidéos dans la médiathèque d'abord.
-              </div>
-            </div>
-          </div>
-        </section>
+        <!-- CORRECTIF (redesign IA — étape 1, relocalisation) : Mur Média
+             déplacé dans #propresenter-live (Studio Pro) — voir ce
+             commentaire là-bas pour le raisonnement. -->
 
         <!-- AJOUT (studio de scènes, lot 5/6, formulaire de composition lot 6/6) :
              galerie (lister/déclencher/supprimer/épingler/modifier des scènes)
@@ -4087,65 +4188,11 @@
              carte Médiathèque (section "controls") :
              classes queue-panel-header/media-gallery-grid déjà stylées. -->
         <section id="studio" class="section is-hidden">
-          <div class="card" data-group="studio">
-            <div class="queue-panel-header">
-              <span class="card-title"
-                >Studio de scènes (<span id="sceneStudioCount">0</span>)</span
-              >
-              <div class="btn-row-tight">
-                <button
-                  id="openSceneComposerBtn"
-                  class="btn btn-primary chip-sm mode-direct-hide"
-                  title="Composition de scène — masqué en Mode Direct (via la palette Ctrl/Cmd+K si besoin en plein culte)"
-                >
-                  + Nouvelle scène
-                </button>
-                <button id="importPptxSlidesBtn" class="btn btn-secondary chip-sm mode-direct-hide">
-                  📥 Importer PowerPoint
-                </button>
-                <button id="hideSceneNowBtn" class="btn btn-secondary chip-sm">⏹ Masquer</button>
-              </div>
-            </div>
-            <div class="field-hint mb-3">
-              Composez un fond + du texte + un logo, puis déclenchez la scène sur l'overlay ou
-              épinglez-la comme poster principal (⭐) — elle reviendra automatiquement après chaque
-              verset, exactement comme un média épinglé dans la Médiathèque.
-              <br />
-              <strong>Importer PowerPoint</strong> crée une scène texte par diapositive (le texte
-              seul — pas les images ni la mise en forme d'origine), dans l'ordre réel du diaporama.
-            </div>
-
-            <!-- AJOUT (chantier ultime — switcher multiview dual-bus Program/
-                         Preview) : "👁 Preview" sur une carte (voir renderSceneStudioGallery
-                         dans scene-studio.js) arme cette scène ici SANS la diffuser —
-                         CUT/TAKE (bouton ci-dessous, ou barre d'espace hors saisie/hors
-                         bannière de confirmation de verset) l'envoie ensuite sur le
-                         Program via le MÊME chemin que "▶ Afficher"
-                         (triggerSceneStudioItem -> action WS 'triggerScene', déjà
-                         testée) — CUT n'est qu'un raccourci vers ce chemin existant,
-                         jamais un second protocole de diffusion. -->
-            <div class="multiview-bus-bar" id="multiviewBusBar">
-              <div class="multiview-bus-slot multiview-bus-slot--preview">
-                <span class="multiview-bus-label">🟢 PREVIEW</span>
-                <span class="multiview-bus-value" id="multiviewPreviewLabel">Aucune sélection</span>
-              </div>
-              <button
-                type="button"
-                id="sceneCutBtn"
-                class="btn btn-danger multiview-cut-btn"
-                title="CUT / TAKE — bascule la scène en Preview vers le Program (barre d'espace)"
-                disabled
-              >
-                ⏻ CUT
-              </button>
-              <div class="multiview-bus-slot multiview-bus-slot--program">
-                <span class="multiview-bus-label">🔴 PROGRAM</span>
-                <span class="multiview-bus-value" id="multiviewProgramLabel">Rien en direct</span>
-              </div>
-            </div>
-
-            <div class="media-gallery-grid" id="sceneStudioList"></div>
-          </div>
+          <!-- CORRECTIF (redesign IA — étape 1, relocalisation) : la galerie
+               (déclenchement live "▶ Afficher"/CUT/Masquer) a été déplacée
+               dans #propresenter-live (Studio Pro) — voir ce commentaire
+               là-bas pour le raisonnement. Seul le composeur (préparation
+               pure) reste ici. -->
 
           <!-- AJOUT (studio de scènes, lot 6/6) : composeur, masqué par défaut,
                révélé par "+ Nouvelle scène" ou "✏ Modifier" sur une carte de la
@@ -4270,7 +4317,7 @@
          visible uniquement sous 1024px. -->
     <nav class="bottom-tab-bar" aria-label="Navigation principale">
       <ul class="nav-list">
-        <li class="nav-item active" data-sections="propresenter-live">
+        <li class="nav-item active" data-sections="propresenter-live,media-wall,studio">
           <svg
             width="20"
             height="20"
@@ -4299,7 +4346,7 @@
           </svg>
           <span>Direct</span>
         </li>
-        <li class="nav-item" data-sections="analysis,studio,media-wall">
+        <li class="nav-item" data-sections="analysis,studio">
           <svg
             width="20"
             height="20"

@@ -32,7 +32,7 @@ test.describe('Mur Média — recherche instantanée et touches 1-9', () => {
     page,
   }) => {
     await page.goto('/');
-    await page.locator('.sidebar .nav-item[data-sections="analysis,studio,media-wall"]').click();
+    await page.locator('.sidebar .nav-item[data-sections="propresenter-live,media-wall,studio"]').click();
 
     await page.evaluate(async (items) => {
       const { handleMessage } = await import('/dashboard/ws-dispatch.js');
@@ -67,7 +67,7 @@ test.describe('Mur Média — recherche instantanée et touches 1-9', () => {
     page,
   }) => {
     await page.goto('/');
-    await page.locator('.sidebar .nav-item[data-sections="analysis,studio,media-wall"]').click();
+    await page.locator('.sidebar .nav-item[data-sections="propresenter-live,media-wall,studio"]').click();
 
     await page.evaluate(async (items) => {
       const { handleMessage } = await import('/dashboard/ws-dispatch.js');

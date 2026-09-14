@@ -41,7 +41,7 @@ test.describe('Mur Média — charge réelle (Partie 2.3, 200 médias)', () => {
     page,
   }) => {
     await page.goto('/');
-    await page.locator('.sidebar .nav-item[data-sections="analysis,studio,media-wall"]').click();
+    await page.locator('.sidebar .nav-item[data-sections="propresenter-live,media-wall,studio"]').click();
 
     const items = buildSyntheticLibrary(200);
 
@@ -67,7 +67,7 @@ test.describe('Mur Média — charge réelle (Partie 2.3, 200 médias)', () => {
     page,
   }) => {
     await page.goto('/');
-    await page.locator('.sidebar .nav-item[data-sections="analysis,studio,media-wall"]').click();
+    await page.locator('.sidebar .nav-item[data-sections="propresenter-live,media-wall,studio"]').click();
 
     const items = buildSyntheticLibrary(200);
     await page.evaluate(async (items) => {

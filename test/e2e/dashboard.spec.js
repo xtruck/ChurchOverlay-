@@ -17,11 +17,13 @@ test.describe('Tableau de bord — fumée', () => {
     await expect(page.locator('.sidebar')).toBeVisible();
     // CORRECTIF (audit e2e — stale depuis PR #259, refonte "Studio Pro") :
     // le dashboard a désormais 4 espaces (voir dashboard.html sidebar),
-    // pas les 3 précédents — "Studio Pro" (data-sections="propresenter-live")
-    // a été ajouté et est maintenant l'espace actif par défaut au
-    // chargement, avant "Direct Classique" (overview/transcript/controls,
-    // ex-"Direct"). #verseDisplay/#overview/#controls vivent dans l'espace
-    // "Direct Classique" et ne sont donc plus visibles au chargement.
+    // pas les 3 précédents — "Studio Pro" (data-sections=
+    // "propresenter-live,media-wall,studio" depuis le redesign IA étape 1 —
+    // voir dashboard.html pour le détail de ce qui y a été relocalisé) a
+    // été ajouté et est maintenant l'espace actif par défaut au chargement,
+    // avant "Direct Classique" (overview/transcript/controls, ex-"Direct").
+    // #verseDisplay/#overview/#controls vivent dans l'espace "Direct
+    // Classique" et ne sont donc plus visibles au chargement.
     await expect(page.locator('.sidebar .nav-item.active')).toContainText('Studio Pro');
     await expect(page.locator('#propresenter-live')).toBeVisible();
     await expect(page.locator('#overview')).toBeHidden();
@@ -37,9 +39,11 @@ test.describe('Tableau de bord — fumée', () => {
     await expect(page.locator('#analysis')).toBeHidden();
     await expect(page.locator('#settings')).toBeHidden();
 
-    // Clic sur "Préparation" -> ses sections (analysis/studio/media-wall)
-    // apparaissent, celles de "Direct Classique" disparaissent.
-    await page.locator('.sidebar .nav-item[data-sections="analysis,studio,media-wall"]').click();
+    // Clic sur "Préparation" -> ses sections (analysis/studio) apparaissent,
+    // celles de "Direct Classique" disparaissent. (media-wall n'en fait
+    // plus partie depuis le redesign IA étape 1 — relocalisé dans Studio
+    // Pro, voir dashboard.html.)
+    await page.locator('.sidebar .nav-item[data-sections="analysis,studio"]').click();
     await expect(page.locator('#analysis')).toBeVisible();
     await expect(page.locator('#overview')).toBeHidden();
     await expect(page.locator('#controls')).toBeHidden();

@@ -13,7 +13,7 @@ test.describe('Recherche de versets par thème', () => {
     await page.goto('/');
 
     // Bascule vers "Réglages" -> #analysis (où vit la carte de recherche).
-    await page.locator('.sidebar .nav-item[data-sections="analysis,studio,media-wall"]').click();
+    await page.locator('.sidebar .nav-item[data-sections="analysis,studio"]').click();
 
     const topicChips = page.locator('#bibleTopicChips .mood-btn');
     await expect(topicChips.first()).toBeVisible({ timeout: 5000 });
