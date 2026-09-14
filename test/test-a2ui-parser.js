@@ -77,7 +77,10 @@ check(
   'les 4 enfants de la carte de sondage sont conservés'
 );
 
-check(parseA2UI(JSON.stringify(pollCard)).valid, 'accepte aussi une chaîne JSON (pas seulement un objet)');
+check(
+  parseA2UI(JSON.stringify(pollCard)).valid,
+  'accepte aussi une chaîne JSON (pas seulement un objet)'
+);
 
 console.log('\n=== Rejet strict — types hors catalogue ===');
 
@@ -88,7 +91,10 @@ check(!parseA2UI({ type: 'div', props: {} }).valid, 'balise HTML brute en guise 
 check(!parseA2UI({}).valid, 'objet sans "type" rejeté');
 check(!parseA2UI(null).valid, 'null rejeté');
 check(!parseA2UI('pas du JSON {').valid, 'JSON invalide rejeté proprement (pas d’exception)');
-check(!parseA2UI([{ type: 'TextLabel', props: { text: 'x' } }]).valid, 'un tableau en racine est rejeté (un seul nœud racine attendu)');
+check(
+  !parseA2UI([{ type: 'TextLabel', props: { text: 'x' } }]).valid,
+  'un tableau en racine est rejeté (un seul nœud racine attendu)'
+);
 
 console.log('\n=== Rejet strict — injection HTML/JS dans une prop ===');
 
@@ -132,8 +138,11 @@ check(
   'ProgressGauge.value non fini (Infinity) rejeté'
 );
 check(
-  !parseA2UI({ type: 'TextLabel', props: { text: 'x' }, children: [{ type: 'TextLabel', props: { text: 'y' } }] })
-    .valid,
+  !parseA2UI({
+    type: 'TextLabel',
+    props: { text: 'x' },
+    children: [{ type: 'TextLabel', props: { text: 'y' } }],
+  }).valid,
   'un composant hors catalogue "allowsChildren" (TextLabel) avec des enfants est rejeté'
 );
 check(
@@ -181,5 +190,7 @@ console.log(`\n=== Résultat A2UI parser : ${passed} passés, ${failed} échoué
 if (failed > 0) {
   process.exit(1);
 } else {
-  console.log('Catalogue fermé A2UI conforme (rejet strict du hors-catalogue et des injections HTML/JS).');
+  console.log(
+    'Catalogue fermé A2UI conforme (rejet strict du hors-catalogue et des injections HTML/JS).'
+  );
 }

@@ -391,7 +391,9 @@ assert.strictEqual(
 );
 console.log('[TEST] ✓ focusMode: true créé et relu correctement\n');
 
-console.log('[TEST] Test 25: addScene() — une valeur non-booléenne pour focusMode est normalisée...');
+console.log(
+  '[TEST] Test 25: addScene() — une valeur non-booléenne pour focusMode est normalisée...'
+);
 const coercedFocusScene = sceneStore.addScene({ name: 'Coercion focusMode', focusMode: 'oui' });
 assert.strictEqual(
   coercedFocusScene.focusMode,
@@ -400,9 +402,15 @@ assert.strictEqual(
 );
 console.log('[TEST] ✓ Coercion booléenne correcte\n');
 
-console.log('[TEST] Test 26: updateScene() — active/désactive focusMode sur une scène existante...');
+console.log(
+  '[TEST] Test 26: updateScene() — active/désactive focusMode sur une scène existante...'
+);
 const toggledOn = sceneStore.updateScene(noFocusScene.id, { focusMode: true });
-assert.strictEqual(toggledOn.focusMode, true, 'updateScene({focusMode:true}) doit activer le Mode Focus');
+assert.strictEqual(
+  toggledOn.focusMode,
+  true,
+  'updateScene({focusMode:true}) doit activer le Mode Focus'
+);
 const toggledOff = sceneStore.updateScene(noFocusScene.id, { focusMode: false });
 assert.strictEqual(
   toggledOff.focusMode,

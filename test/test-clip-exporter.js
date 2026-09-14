@@ -109,7 +109,7 @@ const gen = spawnSync(
     check(
       'buildVideoFilters: sous-titres -> filtre subtitles avec chemin échappé + force_style',
       filters.length === 1 &&
-        filters[0].startsWith('subtitles=filename=C\\\\:/tmp/x.srt:force_style=\'') &&
+        filters[0].startsWith("subtitles=filename=C\\\\:/tmp/x.srt:force_style='") &&
         filters[0].includes('FontName=')
     );
   }
@@ -123,7 +123,12 @@ const gen = spawnSync(
   check(
     'buildFfmpegArgs: 16:9 sans sous-titres -> pas de -vf',
     !clipExporter
-      .buildFfmpegArgs({ sourcePath: 'in.mp4', outputPath: 'out.mp4', startSec: 0, durationSec: 20 })
+      .buildFfmpegArgs({
+        sourcePath: 'in.mp4',
+        outputPath: 'out.mp4',
+        startSec: 0,
+        durationSec: 20,
+      })
       .includes('-vf')
   );
   {
@@ -139,8 +144,17 @@ const gen = spawnSync(
       'buildFfmpegArgs: 9:16 -> -vf présent avec le filtre crop en valeur',
       vfIndex !== -1 && args[vfIndex + 1].startsWith('crop=')
     );
-    check('buildFfmpegArgs: -ss/-i/-t reflètent les paramètres', args.includes('-ss') && args[args.indexOf('-ss') + 1] === '5' && args[args.indexOf('-i') + 1] === 'in.mp4' && args[args.indexOf('-t') + 1] === '20');
-    check('buildFfmpegArgs: le fichier de sortie reste le dernier argument', args[args.length - 1] === 'out.mp4');
+    check(
+      'buildFfmpegArgs: -ss/-i/-t reflètent les paramètres',
+      args.includes('-ss') &&
+        args[args.indexOf('-ss') + 1] === '5' &&
+        args[args.indexOf('-i') + 1] === 'in.mp4' &&
+        args[args.indexOf('-t') + 1] === '20'
+    );
+    check(
+      'buildFfmpegArgs: le fichier de sortie reste le dernier argument',
+      args[args.length - 1] === 'out.mp4'
+    );
   }
 
   // --- exportClips() : aucun temps fort -> aucun extrait, pas d'erreur ---
@@ -245,7 +259,9 @@ const gen = spawnSync(
       // Hors fenêtre du clip ci-dessous (démarre à +2s, dure 15s -> fenêtre [2s,17s]) :
       { text: 'Bien après ce clip', started_at: start + 25000, ended_at: start + 26000 },
     ];
-    const tmpBefore = fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith('churchoverlay-clip-srt-'));
+    const tmpBefore = fs
+      .readdirSync(os.tmpdir())
+      .filter((f) => f.startsWith('churchoverlay-clip-srt-'));
 
     const r = await clipExporter.exportClips(sourcePath, outputDir, [entries[0]], start, {
       clipDurationSec: 15,
@@ -258,7 +274,9 @@ const gen = spawnSync(
       dur !== null && Math.abs(dur - 15) < 0.5
     );
 
-    const tmpAfter = fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith('churchoverlay-clip-srt-'));
+    const tmpAfter = fs
+      .readdirSync(os.tmpdir())
+      .filter((f) => f.startsWith('churchoverlay-clip-srt-'));
     check(
       'exportClips avec sous-titres : le .srt temporaire est bien supprimé après usage (pas de fuite dans %TEMP%)',
       tmpAfter.length === tmpBefore.length

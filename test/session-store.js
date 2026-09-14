@@ -146,7 +146,10 @@ function makeTmpDir() {
   });
 
   const segments = sessionStore.getTranscriptSegmentsSince(0);
-  assert(segments.length === 2, 'getTranscriptSegmentsSince(0) retrouve les 2 segments enregistrés');
+  assert(
+    segments.length === 2,
+    'getTranscriptSegmentsSince(0) retrouve les 2 segments enregistrés'
+  );
   assert(
     segments[0].text === 'Bienvenue à ce culte' && segments[1].text === 'Ouvrons nos bibles',
     'getTranscriptSegmentsSince retourne un ordre CHRONOLOGIQUE croissant (ORDER BY started_at ASC)'

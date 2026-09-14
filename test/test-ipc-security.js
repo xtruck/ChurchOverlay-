@@ -129,7 +129,8 @@ const bridgeBody = bridgeCallMatch ? bridgeCallMatch[1] : '';
 // `ipcRenderer: ipcRenderer`) — seules des fonctions qui l'enveloppent
 // (`(...) => ipcRenderer.invoke(...)`, `.on(...)`) sont autorisées.
 check(
-  !/(^|[^.\w])ipcRenderer\s*,/.test(bridgeBody) && !/ipcRenderer\s*:\s*ipcRenderer/.test(bridgeBody),
+  !/(^|[^.\w])ipcRenderer\s*,/.test(bridgeBody) &&
+    !/ipcRenderer\s*:\s*ipcRenderer/.test(bridgeBody),
   'aucune propriété n’expose ipcRenderer lui-même (raccourci ou alias direct)'
 );
 check(

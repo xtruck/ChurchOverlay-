@@ -242,14 +242,18 @@ const { chromium } = require(path.join(__dirname, '..', 'node_modules', 'playwri
     });
     check(
       'Mode Focus actif : le calque de fond porte bien un filtre flou/sombre',
-      !!result.bgFilter && result.bgFilter.includes('blur') && result.bgFilter.includes('brightness')
+      !!result.bgFilter &&
+        result.bgFilter.includes('blur') &&
+        result.bgFilter.includes('brightness')
     );
     check(
       "Mode Focus actif : le calque TEXTE ne porte AUCUN filtre (jamais flouté, c'est lui qu'on met en valeur)",
       !result.textFilter
     );
 
-    console.log('\n=== Test 9 : Mode Focus désactivé (par défaut) — aucun filtre sur le fond ===\n');
+    console.log(
+      '\n=== Test 9 : Mode Focus désactivé (par défaut) — aucun filtre sur le fond ===\n'
+    );
     result = await page.evaluate(() => {
       const c = document.getElementById('c');
       window.renderSceneDom(
@@ -290,7 +294,10 @@ const { chromium } = require(path.join(__dirname, '..', 'node_modules', 'playwri
       'fond média + Mode Focus : le filtre flou/sombre est appliqué à l’image de fond',
       !!result.bgFilter && result.bgFilter.includes('blur')
     );
-    check('fond média + Mode Focus : le texte reste nettement lisible (aucun filtre)', !result.textFilter);
+    check(
+      'fond média + Mode Focus : le texte reste nettement lisible (aucun filtre)',
+      !result.textFilter
+    );
 
     console.log(`\nErreurs console cumulées sur tout le test : ${consoleErrors.length}`);
     check(

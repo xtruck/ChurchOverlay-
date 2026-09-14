@@ -75,7 +75,10 @@ console.log('--- network-utils.js ---');
     'getLanIpAddress(): renvoie null sans interface IPv4 externe (loopback/IPv6 seuls)',
     networkUtils.getLanIpAddress() === null
   );
-  check('buildLanUrl(): renvoie null quand aucune IP LAN détectée', networkUtils.buildLanUrl('companion', 8765) === null);
+  check(
+    'buildLanUrl(): renvoie null quand aucune IP LAN détectée',
+    networkUtils.buildLanUrl('companion', 8765) === null
+  );
 
   os.networkInterfaces = originalNetworkInterfaces;
 }
@@ -117,13 +120,11 @@ console.log('--- live-subtitles-ws-handlers.js ---');
 
   // --- Garde-fou : aucune IP LAN détectée ---
   {
-    const handlers = liveSubtitlesWsHandlers.createHandlers(
-      makeCtx({ buildLanUrl: () => null })
-    );
+    const handlers = liveSubtitlesWsHandlers.createHandlers(makeCtx({ buildLanUrl: () => null }));
     const ws = fakeWs();
     await handlers.get('getCompanionQr')(ws, {});
     check(
-      "getCompanionQr: aucune IP LAN -> erreur claire, aucun QR généré",
+      'getCompanionQr: aucune IP LAN -> erreur claire, aucun QR généré',
       ws.messages.length === 1 && ws.messages[0].action === 'error'
     );
   }
@@ -136,11 +137,15 @@ console.log('--- live-subtitles-ws-handlers.js ---');
     const msg = ws.messages[0];
     check(
       'getCompanionQr: succès -> companionQrGenerated avec la bonne URL',
-      msg && msg.action === 'companionQrGenerated' && msg.url === 'http://192.168.1.10:8765/companion'
+      msg &&
+        msg.action === 'companionQrGenerated' &&
+        msg.url === 'http://192.168.1.10:8765/companion'
     );
     check(
       'getCompanionQr: qrDataUrl est un VRAI PNG en data URI (lib qrcode réellement appelée)',
-      !!msg && typeof msg.qrDataUrl === 'string' && msg.qrDataUrl.startsWith('data:image/png;base64,')
+      !!msg &&
+        typeof msg.qrDataUrl === 'string' &&
+        msg.qrDataUrl.startsWith('data:image/png;base64,')
     );
     check(
       "getCompanionQr: l'URL générée ne porte AUCUN jeton (route /companion volontairement publique)",
@@ -355,9 +360,8 @@ async function runIntegrationTests() {
   );
   check(
     'setCaptions envoyé par le viewer est bien resté sans effet (toujours enabled côté opérateur)',
-    (
-      await (await fetch(`http://127.0.0.1:${process.env.PORT}/api/captions`)).json()
-    ).enabled === true
+    (await (await fetch(`http://127.0.0.1:${process.env.PORT}/api/captions`)).json()).enabled ===
+      true
   );
   check(
     'un client viewer ne peut PAS générer le QR compagnon NI toucher aux réglages sous-titres — les 3 tentatives sont TOUTES rejetées par le RBAC (message exact, pas une erreur métier accidentellement identique)',
@@ -379,7 +383,10 @@ async function runIntegrationTests() {
   check(
     "un client opérateur n'est JAMAIS bloqué par le RBAC sur getCompanionQr (échoue ici pour une raison métier distincte, WS_HOST local)",
     operatorWs.testMessages.some(
-      (m) => m.action === 'error' && m.error.includes('accessible sur le réseau') && m.error !== RBAC_REJECTION
+      (m) =>
+        m.action === 'error' &&
+        m.error.includes('accessible sur le réseau') &&
+        m.error !== RBAC_REJECTION
     )
   );
 

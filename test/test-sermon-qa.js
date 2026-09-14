@@ -161,8 +161,7 @@ liveSegments = [
 const liveEntry = sermonQa.buildLiveEntry(1_000_000);
 assert(liveEntry && liveEntry.live === true, "l'entrée live doit être marquée live:true");
 assert(
-  liveEntry.fullTranscript.includes('pardon') &&
-    liveEntry.fullTranscript.includes('libère'),
+  liveEntry.fullTranscript.includes('pardon') && liveEntry.fullTranscript.includes('libère'),
   'la transcription live doit concaténer tous les segments enregistrés'
 );
 console.log('[TEST] ✓ buildLiveEntry() extrait bien la transcription du culte en cours\n');
@@ -185,7 +184,11 @@ console.log('[TEST] ✓ Le contexte live est bien inclus dans la recherche\n');
 console.log('[TEST] Test 3d: pickEvenlySpaced()...');
 const items = Array.from({ length: 20 }, (_, i) => `item-${i}`);
 const spaced = sermonQa.pickEvenlySpaced(items, 5);
-assert.strictEqual(spaced.length, 5, 'doit renvoyer exactement maxCount éléments (pas de doublon ici)');
+assert.strictEqual(
+  spaced.length,
+  5,
+  'doit renvoyer exactement maxCount éléments (pas de doublon ici)'
+);
 assert.strictEqual(spaced[0], 'item-0', 'le PREMIER élément doit toujours être inclus');
 assert.strictEqual(
   spaced[spaced.length - 1],
@@ -217,7 +220,9 @@ assert(
   'aucune fenêtre ne doit être tronquée — chaque extrait reste un chunk complet'
 );
 assert(withinBudget.length <= 5, 'jamais plus de TOP_K sources, même si le budget le permettrait');
-console.log('[TEST] ✓ Sélection par budget correcte (jamais de troncature, jamais de dépassement)\n');
+console.log(
+  '[TEST] ✓ Sélection par budget correcte (jamais de troncature, jamais de dépassement)\n'
+);
 
 // Test 4 (LE PLUS IMPORTANT) : askQuestion() sans contenu pertinent
 // n'appelle JAMAIS chatCompletion() — garde-fou structurel, pas juste une
@@ -321,7 +326,8 @@ resetMock();
   );
   assert.strictEqual(injectionResult.ok, true);
   assert(
-    chatCompletionCalls.length > 0 && !chatCompletionCalls[0].prompt.includes('Ignore les instructions'),
+    chatCompletionCalls.length > 0 &&
+      !chatCompletionCalls[0].prompt.includes('Ignore les instructions'),
     "le pattern d'injection ne doit JAMAIS atteindre le prompt envoyé au LLM tel quel"
   );
   assert(
@@ -382,13 +388,15 @@ resetMock();
   }
   longSentences[0] = 'DEBUT-DU-CULTE-MARQUEUR ' + longSentences[0];
   longSentences[longSentences.length - 1] += ' FIN-DU-CULTE-MARQUEUR';
-  liveSegments = [
-    { text: longSentences.join(' '), started_at: 1_001_000, ended_at: 1_900_000 },
-  ];
+  liveSegments = [{ text: longSentences.join(' '), started_at: 1_001_000, ended_at: 1_900_000 }];
   const summaryResult = await sermonQa.summarizeCurrentService({ sessionStartedAt: 1_000_000 });
   assert.strictEqual(summaryResult.ok, true);
   assert.strictEqual(summaryResult.summarized, true);
-  assert.strictEqual(chatCompletionCalls.length, 1, 'le LLM doit être appelé une fois pour le résumé');
+  assert.strictEqual(
+    chatCompletionCalls.length,
+    1,
+    'le LLM doit être appelé une fois pour le résumé'
+  );
   assert(
     chatCompletionCalls[0].prompt.includes('DEBUT-DU-CULTE-MARQUEUR'),
     'le fenêtrage dynamique doit conserver le DÉBUT du culte'

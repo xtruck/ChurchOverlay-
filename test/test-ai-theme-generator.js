@@ -154,10 +154,14 @@ async function runAsyncTests() {
     'Prompt-to-Theme: thème généré avec source=ai',
     !!promptTheme && promptTheme.source === 'ai'
   );
-  check('Prompt-to-Theme: le nom du thème généré est conservé', promptTheme.name === VALID_THEME.name);
+  check(
+    'Prompt-to-Theme: le nom du thème généré est conservé',
+    promptTheme.name === VALID_THEME.name
+  );
   check(
     'Prompt-to-Theme: le timeout de 5s (item 2) est bien transmis à chatCompletion',
-    lastPromptSeen.options.timeoutMs === PROMPT_TO_THEME_TIMEOUT_MS && PROMPT_TO_THEME_TIMEOUT_MS === 5000
+    lastPromptSeen.options.timeoutMs === PROMPT_TO_THEME_TIMEOUT_MS &&
+      PROMPT_TO_THEME_TIMEOUT_MS === 5000
   );
   check(
     'Prompt-to-Theme: la description de l’opérateur est bien interpolée dans le prompt LLM',
@@ -176,7 +180,10 @@ async function runAsyncTests() {
   };
   const gPrompt2 = new AIThemeGenerator(mockGroqBrokenJson);
   const brokenResult = await gPrompt2.generateFromPrompt('Un thème quelconque');
-  check('Prompt-to-Theme: JSON invalide -> null renvoyé (jamais une exception)', brokenResult === null);
+  check(
+    'Prompt-to-Theme: JSON invalide -> null renvoyé (jamais une exception)',
+    brokenResult === null
+  );
   console.log('[TEST] ✓ JSON invalide neutralisé sans crash\n');
 
   // --- Récupération après un JSON valide mais structurellement invalide
@@ -212,7 +219,10 @@ async function runAsyncTests() {
   };
   const timeoutResult = await gPrompt4.generateFromPrompt('Un thème quelconque');
   check('Prompt-to-Theme: timeout -> null renvoyé', timeoutResult === null);
-  check('Prompt-to-Theme: timeout -> onError notifié', timeoutErrorSeen === 'Timeout Groq Chat (5000ms)');
+  check(
+    'Prompt-to-Theme: timeout -> onError notifié',
+    timeoutErrorSeen === 'Timeout Groq Chat (5000ms)'
+  );
   console.log('[TEST] ✓ Timeout neutralisé, observé via onError\n');
 
   // --- Sans IA configurée / description vide : jamais d'appel LLM ---
@@ -312,7 +322,10 @@ async function runAsyncTests() {
     };
     const fakeThemeLoader = {
       loadTheme: (id) => {
-        check('generateTheme (WS): le repli demande bien le thème "mission-control"', id === 'mission-control');
+        check(
+          'generateTheme (WS): le repli demande bien le thème "mission-control"',
+          id === 'mission-control'
+        );
         return { id: 'mission-control', name: 'Mission Control' };
       },
       themeToCss: () => ({

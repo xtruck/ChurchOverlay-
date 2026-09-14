@@ -47,11 +47,14 @@ check(
 
 // --- buildSrt() : entrée vide/invalide ------------------------------------
 check('buildSrt([], start) -> chaîne vide', srtExport.buildSrt([], 1000) === '');
-check('buildSrt(segments, 0) -> chaîne vide (sessionStartedAt falsy)', srtExport.buildSrt([{ text: 'x', started_at: 5 }], 0) === '');
+check(
+  'buildSrt(segments, 0) -> chaîne vide (sessionStartedAt falsy)',
+  srtExport.buildSrt([{ text: 'x', started_at: 5 }], 0) === ''
+);
 check('buildSrt(null, start) -> chaîne vide', srtExport.buildSrt(null, 1000) === '');
 check(
   'buildSrt: segment sans texte/started_at ignoré, pas de crash',
-  srtExport.buildSrt([{ started_at: 1000 }, { text: '' , started_at: 1000 }], 500) === ''
+  srtExport.buildSrt([{ started_at: 1000 }, { text: '', started_at: 1000 }], 500) === ''
 );
 
 // --- buildSrt() : tri chronologique, même si les segments arrivent
@@ -147,7 +150,9 @@ check(
   const start = 500_000;
   // Pas de segment suivant, ended_at très tardif (silence long après le mot,
   // ou chemin non instrumenté) -> ne doit pas s'afficher indéfiniment.
-  const segments = [{ text: 'Silence long après ce mot', started_at: start + 1000, ended_at: start + 21000 }];
+  const segments = [
+    { text: 'Silence long après ce mot', started_at: start + 1000, ended_at: start + 21000 },
+  ];
   const srt = srtExport.buildSrt(segments, start);
   const [tsStart, tsEnd] = srt
     .split('\n')
@@ -178,10 +183,22 @@ check(
     windowStartMs: 2000,
     windowEndMs: 2000 + 15000,
   });
-  check('buildSrt fenêtré: segment dans la fenêtre conservé (début)', srt.includes('Dans la fenêtre - début'));
-  check('buildSrt fenêtré: segment dans la fenêtre conservé (suite)', srt.includes('Dans la fenêtre - suite'));
-  check('buildSrt fenêtré: segment après la fenêtre exclu', !srt.includes('Hors fenêtre - trop tard'));
-  check('buildSrt fenêtré: segment avant le début du culte exclu', !srt.includes('Hors fenêtre - trop tôt'));
+  check(
+    'buildSrt fenêtré: segment dans la fenêtre conservé (début)',
+    srt.includes('Dans la fenêtre - début')
+  );
+  check(
+    'buildSrt fenêtré: segment dans la fenêtre conservé (suite)',
+    srt.includes('Dans la fenêtre - suite')
+  );
+  check(
+    'buildSrt fenêtré: segment après la fenêtre exclu',
+    !srt.includes('Hors fenêtre - trop tard')
+  );
+  check(
+    'buildSrt fenêtré: segment avant le début du culte exclu',
+    !srt.includes('Hors fenêtre - trop tôt')
+  );
   // REBASAGE : le premier segment de la fenêtre (à +2s du culte, donc +0s de
   // la fenêtre) doit apparaître à 00:00:00 dans le .srt du CLIP, pas 00:00:02.
   check(

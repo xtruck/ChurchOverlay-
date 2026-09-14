@@ -329,7 +329,7 @@ async function simulateSegment(text) {
     fakeBibleLookup.findByQuotedText = originalFindByQuotedText;
   }
   check(
-    "auto + citation à faible score : showVerse quand même diffusé (citation exemptée du palier prédictif)",
+    'auto + citation à faible score : showVerse quand même diffusé (citation exemptée du palier prédictif)',
     received.some((m) => m.action === 'showVerse' && m.reference === 'Jean 3:16'),
     JSON.stringify(received)
   );
