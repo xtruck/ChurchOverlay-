@@ -1524,18 +1524,29 @@ function resolveDetectionConfidenceScore(reference) {
  */
 async function processTranscript(text, tracker, opts = {}) {
   log('Processing transcript: ' + text.substring(0, 100));
-  // AJOUT (audit — voir MIN_VERSE_CONFIDENCE) : `null` quand
-  // l'appelant ne transmet pas encore la confiance ASR (comportement
-  // historique préservé, voir chaque site d'appel d'enqueueTranscript).
+  // CORRECTIF (bug réel signalé en direct — repli chapitre affichant une
+  // référence jamais prononcée) : `null` quand l'appelant ne transmet pas de
+  // confiance ASR. L'ANCIEN comportement traitait "confiance inconnue" comme
+  // "autorisé sans condition" — un chemin audio réel (onPartialTranscript,
+  // source 'partial-fragment', voir plus bas) enfile un fragment stable SANS
+  // jamais transmettre `opts.confidence`, héritant ainsi silencieusement
+  // d'une confiance totale alors qu'aucune mesure de qualité ASR n'existe
+  // pour ce fragment — exactement le trou par lequel un charabia à confiance
+  // réelle basse (mesurée ailleurs, ex. "0.35 < 0.6, probable bruit" dans les
+  // logs) pouvait quand même armer scheduleChapterFallback() et s'afficher.
+  // "Confiance inconnue" signifie maintenant NON AUTORISÉ par défaut (repli
+  // prudent, cohérent avec le principe déjà répété dans ce fichier : "jamais
+  // affichée aveuglément"). Le SEUL appelant qui avait légitimement besoin de
+  // l'ancien comportement (l'action WS 'transcript' de misc-ws-handlers.js —
+  // saisie manuelle/débogage, sans confiance ASR à donner) transmet
+  // désormais explicitement confidence:1 plutôt que de compter sur ce défaut.
   const transcriptConfidence = typeof opts.confidence === 'number' ? opts.confidence : null;
   // AJOUT (chantier finalisation v1.0 — voir MIN_VERSE_CONFIDENCE en tête de
   // fichier) : seuil UNIQUE gardant tout déclenchement de verset (fast-path
   // exact, détection normale, fusion de fragments, sémantique, citation,
-  // repli chapitre) — calculé une seule fois ici, réutilisé partout plus
-  // bas. `null`/confiance inconnue = comportement historique (jamais
-  // bloquant), voir le commentaire sur transcriptConfidence ci-dessus.
+  // repli chapitre) — calculé une seule fois ici, réutilisé partout plus bas.
   const verseDetectionAllowed =
-    transcriptConfidence === null || transcriptConfidence >= MIN_VERSE_CONFIDENCE;
+    transcriptConfidence !== null && transcriptConfidence >= MIN_VERSE_CONFIDENCE;
 
   if (plugins) {
     plugins.emit('onTranscript', text).catch(() => {});
@@ -1747,8 +1758,14 @@ async function processTranscript(text, tracker, opts = {}) {
   // fast-path a matché : dans ce cas rien de ce qui suit ne s'exécute de
   // toute façon (chaque bloc est déjà protégé par `if (!reference)`).
   if (!reference && !verseDetectionAllowed) {
+    // CORRECTIF (trouvé en écrivant le test du chemin partial-fragment) :
+    // transcriptConfidence peut désormais être `null` ici (confiance
+    // inconnue = non autorisé, voir plus haut), pas seulement un nombre
+    // sous le seuil — .toFixed() sur null plantait tout le pipeline.
+    const confidenceLabel =
+      transcriptConfidence === null ? 'inconnue' : transcriptConfidence.toFixed(2);
     log(
-      `Détection de verset ignorée (confiance ${transcriptConfidence.toFixed(2)} < ${MIN_VERSE_CONFIDENCE}, probable bruit) : "${text.substring(0, 60)}"`
+      `Détection de verset ignorée (confiance ${confidenceLabel} < ${MIN_VERSE_CONFIDENCE}, probable bruit) : "${text.substring(0, 60)}"`
     );
   }
   // AJOUT (chantier ASR, Étape 4 — reconstruction de références fragmentées) :
@@ -2097,18 +2114,21 @@ async function processTranscript(text, tracker, opts = {}) {
     // bord (signal spéculatif), mais l'affichage réel n'est plus tributaire
     // d'un complément qui peut ne jamais venir.
     //
-    // CORRECTIF (audit — voir MIN_VERSE_CONFIDENCE en tête de
-    // fichier) : ce timer est la seule étape de tout ce chemin qui peut
-    // finir par AFFICHER quelque chose sans confirmation d'opérateur (mode
-    // confiance 'auto') — armé ici sans condition, il se déclenchait aussi
-    // sur un fragment de pur charabia à confiance à peine au-dessus du seuil
-    // de rejet. On ne l'arme que si la confiance est inconnue (chemins
-    // historiques, comportement préservé) ou suffisante ; sinon on
-    // s'arrête ici — candidateVerse et l'échauffement du cache ci-dessus
-    // ont déjà eu lieu, seul l'AFFICHAGE potentiel est retenu.
-    if (transcriptConfidence !== null && transcriptConfidence < MIN_VERSE_CONFIDENCE) {
+    // CORRECTIF (bug réel signalé en direct — voir verseDetectionAllowed
+    // en tête de processTranscript) : cette étape ne vérifiait QUE
+    // "confiance connue et insuffisante" — une confiance INCONNUE (null)
+    // armait quand même ce timer, exactement le trou par lequel un
+    // fragment audio sans confiance mesurable (ex. chemin partial-fragment
+    // avant son propre correctif) pouvait afficher une référence jamais
+    // prononcée avec certitude. Devenu un garde-fou redondant mais inerte
+    // maintenant que `reference` ne peut plus être défini sans que
+    // verseDetectionAllowed (transcriptConfidence connue ET suffisante)
+    // n'ait déjà été vrai plus haut dans cette même fonction — conservé
+    // uniquement comme filet de sécurité si un futur chemin venait à poser
+    // `reference` sans repasser par ce garde-fou en amont.
+    if (!verseDetectionAllowed) {
       log(
-        `Repli chapitre NON armé (confiance ${transcriptConfidence.toFixed(2)} < ${MIN_VERSE_CONFIDENCE}, probable bruit) : ${reference.book} ${reference.chapter}`
+        `Repli chapitre NON armé (confiance insuffisante ou inconnue) : ${reference.book} ${reference.chapter}`
       );
       return;
     }
@@ -3387,7 +3407,13 @@ function startPipeline() {
         if (recentPartialRefs.length > PARTIAL_WINDOW_SIZE) recentPartialRefs.shift();
         if (stable) {
           log('Appel direct sur partial (référence explicite, stable) : ' + fastMatch.raw);
-          await enqueueTranscript(text, tracker);
+          // CORRECTIF (voir verseDetectionAllowed) : ce chemin ne porte pas
+          // de confiance ASR, mais il est vetté indépendamment (regex EXACTE
+          // + confidence==='high' + stabilité sur ≥2 partials consécutifs,
+          // voir recentPartialRefs ci-dessus) — confiance maximale transmise
+          // explicitement plutôt que de dépendre d'une confiance manquante
+          // traitée comme "autorisé" par défaut.
+          await enqueueTranscript(text, tracker, { confidence: 1 });
         } else {
           // Première occurrence : référence potentiellement en cours de
           // stabilisation — jamais affichée aveuglément (mission). On diffuse
@@ -3434,7 +3460,20 @@ function startPipeline() {
         if (recentPartialTexts.length > PARTIAL_WINDOW_SIZE) recentPartialTexts.shift();
         if (stableText) {
           log('Fragment partiel stable enfilé pour fusion : ' + text.substring(0, 80));
-          await enqueueTranscript(text, tracker, { source: 'partial-fragment' });
+          // CORRECTIF (bug réel signalé en direct — voir verseDetectionAllowed) :
+          // ce fragment n'a AUCUN vetting indépendant (contrairement au
+          // fast-path exact ci-dessus) — juste répété deux fois de suite,
+          // souvent le signe d'un ASR bloqué à court de contenu sur de
+          // l'audio marginal, pas d'une vraie stabilité de parole claire.
+          // Transmet la VRAIE confiance Deepgram de ce partial (meta.confidence,
+          // déjà reçu par ce callback) au lieu de l'omettre — c'était
+          // précisément le trou par lequel un fragment de charabia à
+          // confiance basse pouvait armer le repli chapitre sans jamais
+          // passer par le garde-fou.
+          await enqueueTranscript(text, tracker, {
+            source: 'partial-fragment',
+            confidence: typeof meta?.confidence === 'number' ? meta.confidence : null,
+          });
         }
       }
     },

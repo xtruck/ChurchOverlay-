@@ -74,7 +74,11 @@ injectFakeModule('groq-wrapper.js', {
     throw new Error('non utilisé dans ce test');
   },
   async transcribeWithFallback() {
-    return { text: transcriptQueue.shift() || '', source: 'fake-groq' };
+    // AJOUT (voir server.js#verseDetectionAllowed — confiance inconnue
+    // n'est plus autorisée par défaut) : ce test simule des transcriptions
+    // claires et déterministes (texte choisi par le test, pas du bruit) —
+    // confiance haute explicite pour rester détectée après ce durcissement.
+    return { text: transcriptQueue.shift() || '', source: 'fake-groq', confidence: 0.85 };
   },
 });
 

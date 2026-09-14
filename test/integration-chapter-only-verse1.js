@@ -108,7 +108,17 @@ injectFakeModule('groq-wrapper.js', {
     throw new Error('non utilisé dans ce test');
   },
   async transcribeWithFallback() {
-    return { text: transcriptQueue.shift() || '', source: 'fake-groq' };
+    // AJOUT (voir server.js#verseDetectionAllowed — confiance inconnue
+    // n'est plus autorisée par défaut) : ce test simule une transcription
+    // CLAIRE ("Jean chapitre 3", pas du bruit) dont le seul problème est un
+    // numéro de verset non capté par la STT — sans rapport avec la
+    // confiance ASR elle-même. Une confiance haute explicite reflète ça,
+    // au lieu de dépendre d'un défaut "confiance absente = autorisé" qui
+    // masquerait le vrai comportement chez un appelant réel à confiance
+    // effectivement basse (voir integration-chapter-fallback-confidence-
+    // gate.js et integration-chapter-fallback-partial-fragment-confidence.js
+    // pour les tests dédiés à CE garde-fou).
+    return { text: transcriptQueue.shift() || '', source: 'fake-groq', confidence: 0.85 };
   },
 });
 

@@ -43,13 +43,19 @@ function createHandlers(ctx) {
         timestamp: Date.now(),
         source: sanitized.source || 'browser',
       });
-      // AJOUT (audit — voir server.js#CHAPTER_FALLBACK_MIN_CONFIDENCE) :
-      // transmet la confiance quand elle est fournie (test/débogage ou un
-      // futur appelant qui la connaîtrait) ; comportement historique
-      // (confiance inconnue -> le garde-fou fait confiance) intégralement
-      // préservé quand elle est absente.
-      const confidence = typeof sanitized.confidence === 'number' ? sanitized.confidence : null;
-      await enqueueTranscript(text, undefined, confidence !== null ? { confidence } : undefined);
+      // CORRECTIF (bug réel signalé en direct — voir server.js#
+      // verseDetectionAllowed) : "confiance inconnue" ne signifie plus
+      // "autorisé" par défaut côté garde-fou (un chemin audio interne
+      // héritait silencieusement de cette confiance par omission — voir le
+      // correctif dans server.js). Cette action WS reste le seul appelant
+      // légitimement TOUJOURS digne de confiance sans confiance ASR à
+      // donner (saisie manuelle/débogage — un opérateur qui tape du texte
+      // sait exactement ce qu'il a tapé) : elle le dit maintenant
+      // EXPLICITEMENT (confidence:1) au lieu de compter sur un défaut
+      // implicite partagé avec des chemins audio qui n'ont pas la même
+      // garantie.
+      const confidence = typeof sanitized.confidence === 'number' ? sanitized.confidence : 1;
+      await enqueueTranscript(text, undefined, { confidence });
     }
   });
 
