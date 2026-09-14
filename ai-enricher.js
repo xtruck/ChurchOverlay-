@@ -60,20 +60,33 @@ Extrais LE THÈME PRINCIPAL en 2-4 mots maximum + 3 mots-clés.
 Transcription: "${sanitizeForPrompt(transcriptBuffer.slice(-2000))}"
 Réponds uniquement en JSON valide: {"theme":"...","keywords":["...","...","..."]}`;
 
-  // CORRECTIF (bug observé en usage réel — log de production) : Groq répond
-  // parfois 400 json_validate_failed avec failed_generation VIDE (pas du
-  // JSON malformé à réparer, juste une génération ratée ce coup-ci — le
-  // modèle n'a rien produit de conforme) sur un extrait donné, alors que le
-  // même prompt réussit normalement à la tentative suivante. Un seul essai
-  // supplémentaire suffit à absorber cet aléa ponctuel sans transformer une
-  // vraie panne (clé API absente, rate limit, timeout réseau) en boucle de
-  // réessais — on ne retente QUE sur ce code d'erreur précis, une seule
-  // fois, jamais sur les autres.
+  // CORRECTIF (bug reproductible en usage réel — 3 occurrences en une
+  // session, log de production) : `json_mode: true` demande à Groq
+  // (response_format: {type:'json_object'}) de valider STRICTEMENT que la
+  // completion entière est du JSON pur — GROQ_MODEL_CHAT ('openai/gpt-oss-
+  // 20b') est un modèle de RAISONNEMENT (chaîne de pensée interne avant la
+  // réponse finale), pas garanti de produire une sortie strictement
+  // conforme sous ce mode strict à chaque appel ; d'où les 400
+  // json_validate_failed à failed_generation VIDE (le modèle n'a rien
+  // produit de conforme, pas du JSON malformé à réparer). semantic-
+  // detector.js appelle ce MÊME modèle, pour une tâche comparable, SANS
+  // json_mode — juste une instruction "réponds en JSON" dans le prompt +
+  // extractJsonObject() (déjà tolérant : JSON brut, bloc ```json```, ou
+  // premier { ... } trouvé dans une réponse libre) — et fonctionne de façon
+  // fiable en usage réel (voir server.js, "[semantic] Detected..."). Retire
+  // json_mode ici pour retomber sur ce même chemin déjà éprouvé, au lieu de
+  // dépendre de la validation stricte de Groq. Le retry-une-fois est
+  // conservé en défense en profondeur pour un aléa résiduel (le modèle ne
+  // produit parfois toujours rien d'exploitable), mais ne devrait plus être
+  // le mécanisme PRINCIPAL de fiabilité.
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const res = await chatCompletion(prompt, { json_mode: true, temperature: 0.2 });
+      const res = await chatCompletion(prompt, { temperature: 0.2 });
       const parsed = extractJsonObject(extractResponseText(res));
-      if (!parsed) return null;
+      if (!parsed) {
+        if (attempt === 0) continue;
+        return null;
+      }
       return { theme: parsed.theme, keywords: parsed.keywords || [] };
     } catch (e) {
       const isRetryableJsonFailure = /json_validate_failed/.test(e.message || '');
@@ -154,8 +167,11 @@ Réponds uniquement en JSON avec cette structure exacte:
 }`;
 
   try {
+    // CORRECTIF (voir detectSermonTheme ci-dessus pour le diagnostic complet) :
+    // même risque de 400 json_validate_failed avec GROQ_MODEL_CHAT (modèle
+    // de raisonnement) sous json_mode strict — retiré au profit de
+    // extractJsonObject(), déjà tolérant à une réponse libre.
     const res = await chatCompletion(prompt, {
-      json_mode: true,
       temperature: 0.3,
       max_tokens: 600,
     });
@@ -177,8 +193,11 @@ async function findCrossReferences(verseRef, verseText) {
 Réponds uniquement en JSON: [{"ref": "Livre Chapitre:Verset", "reason": "Brève explication en français"}]`;
 
   try {
+    // CORRECTIF (voir detectSermonTheme plus haut pour le diagnostic complet) :
+    // même risque de 400 json_validate_failed avec GROQ_MODEL_CHAT (modèle
+    // de raisonnement) sous json_mode strict — retiré au profit de
+    // extractJsonObject(), déjà tolérant à une réponse libre.
     const res = await chatCompletion(prompt, {
-      json_mode: true,
       temperature: 0.2,
       max_tokens: 300,
     });
