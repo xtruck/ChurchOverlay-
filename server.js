@@ -3282,10 +3282,25 @@ function startPipeline() {
         // transcrit sert d'indice de continuité pour Whisper (voir groq-wrapper.js).
         const contextHint = getRecentContext(300);
         const result = await transcribeWithRetry(segmentFile, contextHint);
-        // AJOUT (latence, §14) : chemin segment/batch — un seul évènement
-        // ASR (pas de partial), la marque 'asrFinal' couvre donc tout le
-        // temps de transcription (Groq/Deepgram batch).
-        if (tracker) tracker.mark('asrFinal');
+        // CORRECTIF (métrique sttFirstToken jamais peuplée en usage réel —
+        // voir latency-stats.js) : 'asrFirstPartial' n'était marqué que côté
+        // streaming Deepgram (audio-capture.js#onPartial), un chemin
+        // seulement actif quand ASR_PROVIDER=deepgram/streaming est réglé
+        // explicitement — la config par défaut (ASR_PROVIDER=auto, "[ASR]
+        // provider=auto mode=batch" dans les logs) n'ouvre jamais cette
+        // session streaming (voir audio-capture.js, `if (STATE.asrProvider
+        // === 'deepgram')`) : la métrique restait donc "(pas encore de
+        // donnée)" pour la quasi-totalité d'une session réelle, ce chemin
+        // batch/segment étant le PLUS emprunté (voir plus bas). Un appel
+        // batch (Groq/Deepgram) n'a structurellement PAS de "premier jeton" :
+        // toute la réponse arrive d'un coup — marquer 'asrFirstPartial' ici,
+        // au même instant que 'asrFinal', est donc la valeur honnête pour ce
+        // chemin (pas une approximation) : pour un énoncé batch,
+        // sttFirstToken == durée totale de l'aller-retour STT, par nature.
+        if (tracker) {
+          tracker.mark('asrFirstPartial');
+          tracker.mark('asrFinal');
+        }
         // Seuil rechargé à chaque segment (voir getTranscriptionConfidenceThreshold) :
         // ne bloque jamais quand la confiance est inconnue (ex. Groq sans
         // segments exploitables), ni sur une valeur malformée (NaN < seuil
