@@ -131,6 +131,82 @@ async function run() {
     );
   }
 
+  // --- Cache d'embeddings de requête (passe perf, Phase 6) ---
+  {
+    let embedCallCount = 0;
+    global.fetch = async (url, opts) => {
+      if (String(url).endsWith('/api/version')) return { ok: true };
+      embedCallCount++;
+      const body = JSON.parse(opts.body);
+      return { ok: true, json: async () => ({ embeddings: body.input.map(() => [7, 8, 9]) }) };
+    };
+    delete require.cache[require.resolve('../embedding-provider')];
+    const {
+      embedQuery,
+      _clearQueryCache,
+      QUERY_CACHE_MAX_ENTRIES,
+    } = require('../embedding-provider');
+
+    const first = await embedQuery('la grâce de Dieu');
+    check('cache embedQuery: 1er appel déclenche bien un appel réseau', embedCallCount === 1);
+
+    const second = await embedQuery('la grâce de Dieu');
+    check(
+      'cache embedQuery: même texte -> AUCUN nouvel appel réseau',
+      embedCallCount === 1 && second === first
+    );
+
+    const third = await embedQuery('  LA GRÂCE DE DIEU  ');
+    check(
+      'cache embedQuery: normalisation espace/casse -> toujours un hit de cache',
+      embedCallCount === 1 && third === first
+    );
+
+    await embedQuery('le pardon');
+    check('cache embedQuery: texte différent -> un nouvel appel réseau', embedCallCount === 2);
+
+    _clearQueryCache();
+    await embedQuery('la grâce de Dieu');
+    check(
+      'cache embedQuery: _clearQueryCache() force un nouvel appel réseau',
+      embedCallCount === 3
+    );
+
+    // --- Éviction LRU au-delà de QUERY_CACHE_MAX_ENTRIES ---
+    _clearQueryCache();
+    embedCallCount = 0;
+    for (let i = 0; i < QUERY_CACHE_MAX_ENTRIES + 1; i++) {
+      await embedQuery(`requête ${i}`);
+    }
+    check(
+      'cache embedQuery: remplissage initial = un appel réseau par requête distincte',
+      embedCallCount === QUERY_CACHE_MAX_ENTRIES + 1
+    );
+    await embedQuery('requête 0'); // la plus ancienne, doit avoir été évincée
+    check(
+      'cache embedQuery: la plus ancienne entrée est évincée une fois la capacité dépassée',
+      embedCallCount === QUERY_CACHE_MAX_ENTRIES + 2
+    );
+    await embedQuery(`requête ${QUERY_CACHE_MAX_ENTRIES}`); // la plus récente, encore en cache
+    check(
+      'cache embedQuery: une entrée récente reste bien en cache',
+      embedCallCount === QUERY_CACHE_MAX_ENTRIES + 2
+    );
+
+    // --- Un échec (embedding null) n'est jamais mis en cache ---
+    _clearQueryCache();
+    global.fetch = async (url) =>
+      String(url).endsWith('/api/version')
+        ? { ok: true }
+        : { ok: false, status: 500, text: async () => 'erreur' };
+    const failed1 = await embedQuery('requête vouée à échouer');
+    const failed2 = await embedQuery('requête vouée à échouer');
+    check(
+      'cache embedQuery: un échec (null) renvoie null sans planter',
+      failed1 === null && failed2 === null
+    );
+  }
+
   // --- Ollama : découpage en lots respecté (BATCH_SIZE) ---
   {
     const callSizes = [];

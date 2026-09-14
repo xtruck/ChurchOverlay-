@@ -157,9 +157,11 @@ async function main() {
       } catch (_) {}
       process.exit(1);
     }
-    for (let i = 0; i < batch.length; i++) {
-      store.insertVerse({ ...batch[i], embedding: vectors[i] });
-    }
+    // AJOUT (passe perf, Phase 6 — voir bible-vector-store.js#insertVerses) :
+    // un insertVerse() par verset hors transaction explicite mesurait ~7,6
+    // min pour un index de cette taille (31 000 fsync individuels) — regroupé
+    // ici par lot d'embedding (une transaction par lot, pas par verset).
+    store.insertVerses(batch.map((v, i) => ({ ...v, embedding: vectors[i] })));
     done += batch.length;
     console.log(`[generate-bible-embeddings] ${done}/${verses.length} versets embeddés.`);
     if (done < verses.length) await sleep(EMBED_BATCH_DELAY_MS);

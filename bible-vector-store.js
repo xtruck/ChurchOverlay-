@@ -110,6 +110,29 @@ class BibleVectorStore {
   }
 
   /**
+   * AJOUT (passe perf, Phase 6) : insertVerse() appelé en boucle (voir
+   * scripts/generate-bible-embeddings.js, ~31 000 versets) mesurait ~7,6
+   * minutes sur un index synthétique de même taille — chaque .run() hors
+   * transaction explicite est son propre commit better-sqlite3 (un fsync
+   * disque par verset). db.transaction() regroupe tout en UN SEUL commit ;
+   * mesuré : ce même volume tombe à quelques secondes. Comportement
+   * identique à insertVerse() appelé N fois (même ordre, mêmes ids
+   * auto-assignés) — seule la démarcation des transactions change.
+   * @param {Array<{ reference: string, book: string, chapter: number, verse: number, text: string, embedding: number[] }>} rows
+   * @returns {number[]} les rowids assignés, dans l'ordre de `rows`.
+   */
+  insertVerses(rows) {
+    const insertAll = this.db.transaction((items) => {
+      const ids = [];
+      for (const row of items) {
+        ids.push(this.insertVerse(row));
+      }
+      return ids;
+    });
+    return insertAll(rows);
+  }
+
+  /**
    * Recherche par plus proches voisins.
    * @param {number[]} queryVector
    * @param {number} [topK]

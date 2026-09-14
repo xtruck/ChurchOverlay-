@@ -276,6 +276,22 @@ async function embedTexts(texts, options = {}) {
   return embedTextsViaGemini(texts, options);
 }
 
+// AJOUT (passe perf, Phase 6 — cache d'embeddings) : bible-semantic-search.js
+// recherche par sujet (dashboard.js, action WS bibleSearch) recalculait
+// systématiquement l'embedding de la requête — un aller-retour réseau
+// (Ollama local ou, à défaut, Gemini) même pour une requête déjà tapée
+// quelques secondes plus tôt (un opérateur qui affine/répète une recherche
+// pendant la préparation d'un culte). Cache borné (LRU simple) uniquement
+// ici, PAS dans embedTexts() : l'indexation en masse (scripts/generate-
+// bible-embeddings.js, ~31 000 textes tous différents) n'aurait aucun hit
+// possible et ne ferait que gonfler ce cache pour rien.
+const QUERY_CACHE_MAX_ENTRIES = 50;
+const queryEmbeddingCache = new Map();
+
+function normalizeQueryCacheKey(text) {
+  return text.trim().toLowerCase();
+}
+
 /**
  * Raccourci pour un seul texte de requête (taskType=RETRIEVAL_QUERY côté
  * Gemini — asymétrique par rapport à RETRIEVAL_DOCUMENT utilisé à
@@ -285,8 +301,32 @@ async function embedTexts(texts, options = {}) {
  * @returns {Promise<number[]|null>}
  */
 async function embedQuery(text) {
+  const key = normalizeQueryCacheKey(text);
+  if (queryEmbeddingCache.has(key)) {
+    const cached = queryEmbeddingCache.get(key);
+    // Ré-insertion pour remonter cette clé en fin de Map (ordre = récence,
+    // voir l'éviction ci-dessous — LRU sans dépendance externe).
+    queryEmbeddingCache.delete(key);
+    queryEmbeddingCache.set(key, cached);
+    return cached;
+  }
+
   const result = await embedTexts([text], { taskType: 'RETRIEVAL_QUERY' });
-  return result && result.length > 0 ? result[0] : null;
+  const embedding = result && result.length > 0 ? result[0] : null;
+  // Jamais un null en cache : un échec transitoire (Ollama pas encore prêt,
+  // 429 Gemini...) ne doit pas rester "collé" indéfiniment pour cette requête.
+  if (embedding) {
+    queryEmbeddingCache.set(key, embedding);
+    if (queryEmbeddingCache.size > QUERY_CACHE_MAX_ENTRIES) {
+      queryEmbeddingCache.delete(queryEmbeddingCache.keys().next().value);
+    }
+  }
+  return embedding;
+}
+
+// AJOUT test — repartir d'un cache vide entre deux scénarios.
+function _clearQueryCache() {
+  queryEmbeddingCache.clear();
 }
 
 module.exports = {
@@ -296,4 +336,6 @@ module.exports = {
   isOllamaAvailable,
   CONFIG,
   OLLAMA_CONFIG,
+  _clearQueryCache,
+  QUERY_CACHE_MAX_ENTRIES,
 };

@@ -106,6 +106,78 @@ function tmpDbPath() {
   fs.unlinkSync(dbPath);
 }
 
+// --- insertVerses() (batch, une seule transaction) : même résultat que N insertVerse() ---
+{
+  const dbPath = tmpDbPath();
+  const store = new BibleVectorStore({ dbPath, vectorDim: 3 });
+  store.createForWriting();
+
+  const ids = store.insertVerses([
+    {
+      reference: 'Jean 3:16',
+      book: 'jean',
+      chapter: 3,
+      verse: 16,
+      text: 'Car Dieu a tant aimé le monde...',
+      embedding: [1, 0, 0],
+    },
+    {
+      reference: 'Psaume 23:1',
+      book: 'psaumes',
+      chapter: 23,
+      verse: 1,
+      text: "L'Éternel est mon berger...",
+      embedding: [0, 1, 0],
+    },
+  ]);
+
+  check('insertVerses: renvoie un id par ligne, dans le même ordre', ids.length === 2);
+  check('count: les 2 versets du lot sont bien insérés', store.count() === 2);
+  const nearest = store.knnSearch([1, 0, 0], 1);
+  check(
+    'insertVerses: le contenu est identique à un insertVerse() répété (knnSearch cohérent)',
+    nearest.length === 1 && nearest[0].reference === 'Jean 3:16'
+  );
+
+  store.close();
+  fs.unlinkSync(dbPath);
+}
+
+// --- insertVerses() : un échec en cours de lot annule tout le lot (transaction) ---
+{
+  const dbPath = tmpDbPath();
+  const store = new BibleVectorStore({ dbPath, vectorDim: 3 });
+  store.createForWriting();
+
+  let threw = false;
+  try {
+    store.insertVerses([
+      {
+        reference: 'Jean 3:16',
+        book: 'jean',
+        chapter: 3,
+        verse: 16,
+        text: 'valide',
+        embedding: [1, 0, 0],
+      },
+      // chapter manquant (NOT NULL) -- doit faire échouer CETTE ligne, et donc
+      // (transaction) annuler aussi la ligne valide insérée juste avant.
+      { reference: 'Invalide', book: 'x', verse: 1, text: 'invalide', embedding: [0, 1, 0] },
+    ]);
+  } catch (_) {
+    threw = true;
+  }
+
+  check('insertVerses: une ligne invalide dans le lot lève bien une erreur', threw);
+  check(
+    'insertVerses: transaction atomique -- la ligne valide du même lot est annulée aussi',
+    store.count() === 0
+  );
+
+  store.close();
+  fs.unlinkSync(dbPath);
+}
+
 // --- knnSearch sur store non ouvert ---
 {
   const store = new BibleVectorStore({ dbPath: tmpDbPath() });
