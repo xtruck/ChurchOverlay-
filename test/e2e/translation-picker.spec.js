@@ -10,7 +10,7 @@ test.describe('Sélecteur de version biblique', () => {
     page,
   }) => {
     await page.goto('/');
-    await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
+    await page.locator('.sidebar .nav-item[data-sections="propresenter-live,media-wall,studio"]').click();
 
     const frButtons = page.locator('#translationPicker [data-translation-lang="fr"]');
     await expect(frButtons).toHaveCount(2, { timeout: 5000 });
@@ -29,7 +29,7 @@ test.describe('Sélecteur de version biblique', () => {
     page,
   }) => {
     await page.goto('/');
-    await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
+    await page.locator('.sidebar .nav-item[data-sections="propresenter-live,media-wall,studio"]').click();
 
     const select = page.locator('#secondaryTranslationSelect');
     // 4 traductions au total dans FAKE_TRANSLATIONS (2 fr + 2 en) + "Aucune".
@@ -45,7 +45,7 @@ test.describe('Sélecteur de version biblique', () => {
     const secondPage = await context.newPage();
     await secondPage.goto('/');
     await secondPage
-      .locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]')
+      .locator('.sidebar .nav-item[data-sections="propresenter-live,media-wall,studio"]')
       .click();
     await expect(secondPage.locator('#secondaryTranslationSelect')).toHaveValue('fr|darby', {
       timeout: 5000,

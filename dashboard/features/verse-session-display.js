@@ -16,12 +16,7 @@ import {
 } from './audio-capture.js';
 import { showToast, addActivity, escapeHtmlDashboard, confirmDialog } from '../utils.js';
 import { setStatusStripItem } from './status-strip.js';
-import {
-  addSlideToStudio,
-  updatePgmDisplay,
-  updateStageDisplay,
-  updateAiCrossReferences,
-} from './propresenter-studio.js';
+import { addSlideToStudio, updatePgmDisplay, updateStageDisplay } from './propresenter-studio.js';
 
 export function displayVerse(message) {
   const refEl = document.getElementById('verseReference');
@@ -51,10 +46,12 @@ export function displayVerse(message) {
     provider: message.bibleVersion || 'LSG 1910',
   });
 
-  // Trigger AI Smart Cross-References
-  if (message.reference) {
-    updateAiCrossReferences(message.reference);
-  }
+  // CORRECTIF (redesign IA — étape 3) : les vraies références croisées
+  // arrivent déjà de façon universelle via le message serveur
+  // 'crossReferences' (déclenché automatiquement après CHAQUE showVerse,
+  // voir ws-dispatch.js) — pas besoin d'un second déclenchement local ici,
+  // qui n'alimentait de toute façon qu'un dictionnaire factice
+  // (updateAiCrossReferences(), retiré de propresenter-studio.js).
 
   if (message.confidence && refEl) {
     const confidenceEl = document.createElement('span');

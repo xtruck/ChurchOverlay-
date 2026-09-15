@@ -979,10 +979,15 @@ function renderCrossReferences(msg) {
 // un tap affiche directement le passage associé, sans changer d'onglet.
 // Jamais bloquant : reference introuvable/serveur indisponible -> showVerse
 // échoue comme n'importe quelle recherche manuelle, rien de spécifique ici.
+//
+// CORRECTIF (redesign IA — étape 3, fusion Studio Pro) : diffuse maintenant
+// aussi vers #ppAiSuggestionsChips (Studio Pro), qui affichait auparavant un
+// dictionnaire local figé de 11 entrées (SCRIPTURE_CROSS_REFS dans
+// propresenter-studio.js, retiré) sans le moindre rapport avec le verset
+// RÉELLEMENT affiché. Même HTML dans les deux conteneurs — jamais deux
+// copies divergentes des mêmes références.
 function renderCrossReferenceChips(results) {
-  const container = document.getElementById('crossRefChips');
-  if (!container) return;
-  container.innerHTML = (results || [])
+  const html = (results || [])
     .slice(0, 6)
     .map((r) => {
       const ref = escapeHtmlDashboard(r.ref || '');
@@ -990,6 +995,16 @@ function renderCrossReferenceChips(results) {
       return `<button type="button" class="alt-ref-chip" onclick="showCrossReferenceVerse('${safeAttr}')" title="${escapeHtmlDashboard(r.reason || '')}">${ref}</button>`;
     })
     .join('');
+
+  const container = document.getElementById('crossRefChips');
+  if (container) container.innerHTML = html;
+
+  const ppChips = document.getElementById('ppAiSuggestionsChips');
+  const ppRow = document.getElementById('ppAiSuggestionsRow');
+  if (ppChips) {
+    ppChips.innerHTML = html;
+    if (ppRow) ppRow.style.display = html ? 'flex' : 'none';
+  }
 }
 
 // Séparé de renderCrossReferenceChips() ci-dessus pour rester appelable

@@ -150,9 +150,10 @@ function waitForOpen(ws) {
       localStorage.setItem('churchoverlay_wizard_seen', '1');
     });
     await page.goto(`http://127.0.0.1:${process.env.PORT}/dashboard.html`, { waitUntil: 'load' });
-    // #rundownList vit dans <section id="overview"> — voir le même
-    // raisonnement dans integration-airlock-preview.js/integration-rundown-timeline.js.
-    await page.locator('.nav-item[data-sections="overview,transcript,controls"]').first().click();
+    // CORRECTIF (redesign IA — étape 3) : #rundownList vit maintenant dans
+    // #propresenter-live — voir le même raisonnement dans
+    // integration-airlock-preview.js/integration-rundown-timeline.js.
+    await page.locator('.nav-item[data-sections="propresenter-live,media-wall,studio"]').first().click();
     await page.waitForFunction(() => document.getElementById('rundownList').children.length > 0, {
       timeout: 5000,
     });
@@ -160,7 +161,12 @@ function waitForOpen(ws) {
     // ============================================================
     // État initial : ni en direct, ni armé, ni diffusé -> chip vide
     // ============================================================
-    const chipA = page.locator(`#cueStatus-${cueA.id}`);
+    // CORRECTIF (redesign IA — étape 3, fusion Studio Pro) : plus d'id fixe —
+    // la feuille de route se rend maintenant dans deux conteneurs
+    // (#rundownList et #ppRundownList, voir dashboard/features/rundown.js) —
+    // .first() cible la copie historique, les deux étant toujours
+    // identiques (refreshCueStatusChips() met à jour les deux à la fois).
+    const chipA = page.locator(`[data-cue-status="${cueA.id}"]`).first();
     check(
       'repère ni en direct/armé/diffusé -> chip de statut vide',
       (await chipA.textContent()).trim() === ''
@@ -174,7 +180,8 @@ function waitForOpen(ws) {
     });
     await rowA.locator('[data-action="arm"]').click();
     await page.waitForFunction(
-      (id) => (document.getElementById(`cueStatus-${id}`)?.textContent || '').includes('Armé'),
+      (id) =>
+        (document.querySelector(`[data-cue-status="${id}"]`)?.textContent || '').includes('Armé'),
       cueA.id,
       { timeout: 3000 }
     );
@@ -189,7 +196,7 @@ function waitForOpen(ws) {
     // ============================================================
     await page.click('#airlockDisarmBtn');
     await page.waitForFunction(
-      (id) => (document.getElementById(`cueStatus-${id}`)?.textContent || '').trim() === '',
+      (id) => (document.querySelector(`[data-cue-status="${id}"]`)?.textContent || '').trim() === '',
       cueA.id,
       { timeout: 3000 }
     );
@@ -200,7 +207,10 @@ function waitForOpen(ws) {
     // ============================================================
     opWs.send(JSON.stringify({ action: 'triggerRundownCue', id: cueA.id }));
     await page.waitForFunction(
-      (id) => (document.getElementById(`cueStatus-${id}`)?.textContent || '').includes('direct'),
+      (id) =>
+        (document.querySelector(`[data-cue-status="${id}"]`)?.textContent || '').includes(
+          'direct'
+        ),
       cueA.id,
       { timeout: 3000 }
     );
@@ -214,9 +224,12 @@ function waitForOpen(ws) {
     );
 
     opWs.send(JSON.stringify({ action: 'triggerRundownCue', id: cueB.id }));
-    const chipB = page.locator(`#cueStatus-${cueB.id}`);
+    const chipB = page.locator(`[data-cue-status="${cueB.id}"]`).first();
     await page.waitForFunction(
-      (id) => (document.getElementById(`cueStatus-${id}`)?.textContent || '').includes('direct'),
+      (id) =>
+        (document.querySelector(`[data-cue-status="${id}"]`)?.textContent || '').includes(
+          'direct'
+        ),
       cueB.id,
       { timeout: 3000 }
     );

@@ -120,13 +120,11 @@ const CLICK_BINDINGS = {
   ppMediaCueBgPurple: () => triggerMediaLibraryItem('bg-purple'),
   ppMediaCueBgGreen: () => triggerMediaLibraryItem('bg-green'),
 
-  // CORRECTIF (relevé pendant ce chantier) : ces deux repères appelaient
-  // `showToast(...)` en inline alors que showToast est un export ES de
-  // utils.js JAMAIS republié sur `window` — le clic levait donc une
-  // ReferenceError et n'affichait aucun toast. L'import en tête de fichier
-  // rend enfin le geste conforme à ce que le balisage annonçait.
-  ppSongCue1: () => showToast('Chant sélectionné', 'info'),
-  ppSongCue2: () => showToast('Chant sélectionné', 'info'),
+  // CORRECTIF (redesign IA — étape 3) : ppSongCue1/ppSongCue2 (2 chants
+  // codés en dur, cliquer dessus n'affichait qu'un toast générique) ont
+  // disparu du balisage — #ppSongLibraryList est désormais peuplé par le
+  // VRAI rendu dynamique de song-library.js, câblé via data-action/
+  // data-target comme sa liste jumelle #songLibraryList (voir son en-tête).
 
   // --- Studio : navigation lecture ---
   ppPrevChapterBtn: () => {
@@ -143,12 +141,11 @@ const CLICK_BINDINGS = {
   },
 
   // --- Studio : ambiances ---
-  setStudioMoodDarkBtn: () => window.setStudioMood('dark'),
-  setStudioMoodWarmBtn: () => window.setStudioMood('warm'),
-  setStudioMoodCoolBtn: () => window.setStudioMood('cool'),
-  setStudioMoodCelebrationBtn: () => window.setStudioMood('celebration'),
-  setStudioMoodPurpleBtn: () => window.setStudioMood('purple'),
-  setStudioMoodRegalBtn: () => window.setStudioMood('regal'),
+  // CORRECTIF (redesign IA — étape 3) : les 6 repères fixes ci-dessus ont
+  // disparu du balisage — #ppMoodPicker est désormais peuplé dynamiquement
+  // par renderMoodPicker() (mood-theme.js) avec data-action="set"
+  // data-target="mood", câblé via le délégateur (action-delegator.js), pas
+  // ce tableau CLICK_BINDINGS (réservé aux boutons STATIQUES à id fixe).
 
   // --- Mode confiance ---
   setTrustModeAutoBtn: () => window.setTrustMode('auto'),
@@ -364,8 +361,6 @@ const CUE_BUTTON_IDS = [
   'ppMediaCueBgBlue',
   'ppMediaCueBgPurple',
   'ppMediaCueBgGreen',
-  'ppSongCue1',
-  'ppSongCue2',
 ];
 
 const missing = [];

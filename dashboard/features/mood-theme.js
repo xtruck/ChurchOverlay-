@@ -10,22 +10,46 @@ import { registerAction } from '../action-delegator.js';
 /* ======================================================================
            Sélecteur d'ambiances (moods)
            ====================================================================== */
+// AJOUT (redesign IA — étape 3, fusion Studio Pro / Direct Classique) :
+// rendue à l'IDENTIQUE dans deux emplacements, tous deux à l'intérieur
+// d'#propresenter-live (Opérateur) depuis la fusion — le sélecteur détaillé
+// (#moodPicker, ex-"Direct Classique", relocalisé tel quel) et la palette
+// compacte du Studio Pro (#ppMoodPicker, classe .pp-mood-pill pour son
+// thème visuel sombre) — même liste réelle de thèmes (config/themes/*.json),
+// jamais deux implémentations divergentes. Remplace l'ancienne palette
+// Studio Pro (6 boutons
+// "Minimal Sombre"/"Or Solennel"/... codés en dur, envoyant une action WS
+// 'setTheme' jamais enregistrée dans action-registry.js — donc rejetée
+// silencieusement par le serveur, sans le moindre effet réel). data-id
+// sert déjà à data-action="set" (voir registerAction ci-dessous) ;
+// data-mood-btn est un doublon délibéré du même id, ciblable par
+// querySelectorAll depuis setActiveMoodButton() pour mettre à jour TOUTES
+// les copies du même bouton à la fois (un simple id serait dupliqué entre
+// les deux conteneurs, invalide en HTML et invisible à getElementById au-
+// delà de la première correspondance).
+const MOOD_PICKER_TARGETS = [
+  { id: 'moodPicker', btnClass: 'mood-btn' },
+  { id: 'ppMoodPicker', btnClass: 'pp-mood-pill' },
+];
+
 export function renderMoodPicker(moods) {
-  const container = document.getElementById('moodPicker');
-  if (!container) return;
-  if (!moods.length) {
-    container.innerHTML = '<span class="text-note">Générateur d\'ambiances indisponible.</span>';
-    return;
-  }
-  container.innerHTML = moods
-    .map(
-      (m) => `
-                <button class="mood-btn" id="mood-btn-${m.id}" data-action="set" data-target="mood" data-id="${m.id}" title="${m.name}">
+  for (const { id, btnClass } of MOOD_PICKER_TARGETS) {
+    const container = document.getElementById(id);
+    if (!container) continue;
+    if (!moods.length) {
+      container.innerHTML = '<span class="text-note">Générateur d\'ambiances indisponible.</span>';
+      continue;
+    }
+    container.innerHTML = moods
+      .map(
+        (m) => `
+                <button class="${btnClass}" data-mood-btn="${m.id}" data-action="set" data-target="mood" data-id="${m.id}" title="${m.name}">
                     ${m.name}
                 </button>
             `
-    )
-    .join('');
+      )
+      .join('');
+  }
 }
 
 export function setMoodTheme(mood) {
@@ -37,9 +61,10 @@ export function setMoodTheme(mood) {
 }
 
 export function setActiveMoodButton(mood) {
-  document.querySelectorAll('.mood-btn').forEach((btn) => btn.classList.remove('active'));
-  const active = document.getElementById(`mood-btn-${mood}`);
-  if (active) active.classList.add('active');
+  document.querySelectorAll('[data-mood-btn]').forEach((btn) => btn.classList.remove('active'));
+  document
+    .querySelectorAll(`[data-mood-btn="${mood}"]`)
+    .forEach((btn) => btn.classList.add('active'));
 }
 
 // AJOUT (audit — affichage/sortie, gratuit/léger, session parallèle) :

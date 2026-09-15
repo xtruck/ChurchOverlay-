@@ -242,7 +242,7 @@ function cueStatusChipHtml(cue, i) {
   const status = computeCueStatus(cue, i);
   const cls = status ? ` cue-status-${status.key}` : '';
   const content = status ? escapeHtmlDashboard(`${status.icon} ${status.text}`) : '';
-  return `<span class="cue-status-chip${cls}" id="cueStatus-${cue.id}">${content}</span>`;
+  return `<span class="cue-status-chip${cls}" data-cue-status="${cue.id}">${content}</span>`;
 }
 
 // AJOUT (Cue Cards) : appelé depuis airlock-preview.js après un armement/
@@ -251,13 +251,20 @@ function cueStatusChipHtml(cue, i) {
 // seule. Met à jour uniquement le chip de chaque repère (pas de
 // re-déclenchement des vérifications réseau de refreshCueReadinessBadges,
 // inutile ici et source de scintillement pour un simple armement).
+// CORRECTIF (redesign IA — étape 3, fusion Studio Pro) : data-cue-status +
+// querySelectorAll plutôt qu'un id + getElementById — la feuille de route se
+// rend maintenant dans deux conteneurs (#rundownList et #ppRundownList, voir
+// renderRundown() plus haut), un id par repère y serait dupliqué (invalide
+// en HTML, invisible à getElementById au-delà de la première correspondance).
 export function refreshCueStatusChips() {
   rundownCues.forEach((cue, i) => {
-    const el = document.getElementById(`cueStatus-${cue.id}`);
-    if (!el) return;
+    const chips = document.querySelectorAll(`[data-cue-status="${cue.id}"]`);
+    if (!chips.length) return;
     const status = computeCueStatus(cue, i);
-    el.className = status ? `cue-status-chip cue-status-${status.key}` : 'cue-status-chip';
-    el.textContent = status ? `${status.icon} ${status.text}` : '';
+    chips.forEach((el) => {
+      el.className = status ? `cue-status-chip cue-status-${status.key}` : 'cue-status-chip';
+      el.textContent = status ? `${status.icon} ${status.text}` : '';
+    });
   });
 }
 
@@ -323,18 +330,35 @@ export function renderRundown(message) {
 
   const countEl = document.getElementById('rundownCount');
   if (countEl) countEl.textContent = rundownCues.length;
-  const list = document.getElementById('rundownList');
-  if (!list) return;
+  // AJOUT (redesign IA — étape 3, fusion Studio Pro / Direct Classique) : la
+  // feuille de route se rend maintenant à l'IDENTIQUE dans deux emplacements,
+  // tous deux à l'intérieur d'#propresenter-live (Opérateur) depuis la fusion —
+  // la carte détaillée (#rundownList, ex-"Direct Classique", relocalisée telle
+  // quelle) et l'onglet compact "Rundown" du Studio Pro (#ppRundownList, qui
+  // n'affichait jusqu'ici jamais rien — aucun code ne le peuplait, seuls ses
+  // boutons "Suivant"/"Ajouter" fonctionnaient réellement). Même précédent
+  // déjà accepté que le Mur Média (carte détaillée) + l'onglet Média compact
+  // du Studio Pro, tous deux dans la même vue. Même liste réelle des deux
+  // côtés, jamais une copie divergente ; voir applyCueReadinessBadge() plus bas pour comment
+  // les mises à jour asynchrones de badge de préparation atteignent les deux
+  // copies à la fois.
+  const listTargets = ['rundownList', 'ppRundownList']
+    .map((id) => document.getElementById(id))
+    .filter(Boolean);
+  if (!listTargets.length) return;
 
   renderScheduleStatus();
 
   if (rundownCues.length === 0) {
-    list.innerHTML =
+    const emptyHtml =
       '<div class="empty-state-note">Feuille de route vide. Ajoutez une référence ci-dessus, ou depuis la Médiathèque/le Studio de scènes.</div>';
+    listTargets.forEach((el) => {
+      el.innerHTML = emptyHtml;
+    });
     return;
   }
 
-  list.innerHTML = rundownCues
+  const html = rundownCues
     .map((cue, i) => {
       const isActive = i === rundownActiveIndex;
       const checking = READINESS_LABELS.checking;
@@ -369,7 +393,7 @@ export function renderRundown(message) {
                     <span class="queue-item-position">${i + 1}</span>
                     <span
                       class="cue-readiness-badge ${checking.className}"
-                      id="cueReadiness-${cue.id}"
+                      data-cue-readiness="${cue.id}"
                       title="Vérification en cours…"
                       >${checking.icon}</span
                     >
@@ -397,6 +421,9 @@ export function renderRundown(message) {
             `;
     })
     .join('');
+  listTargets.forEach((el) => {
+    el.innerHTML = html;
+  });
 
   refreshCueReadinessBadges(rundownCues);
 }
@@ -406,8 +433,13 @@ export function renderRundown(message) {
 // s'affiche donc d'abord avec un badge "…", chaque badge est ensuite corrigé
 // en place une fois son résultat connu. Une reconnexion/réordonnancement
 // pendant que des vérifications sont en vol est sans risque : chaque callback
-// ne touche que SON PROPRE élément `#cueReadiness-<id>` (getElementById
-// renvoie null silencieusement si la liste a été redessinée entre-temps).
+// cible tous les éléments `[data-cue-readiness="<id>"]` via querySelectorAll
+// (jamais getElementById — CORRECTIF redesign IA étape 3 : la même feuille de
+// route se rend maintenant dans deux conteneurs, voir renderRundown()
+// ci-dessus, donc un id unique par repère serait dupliqué entre eux, invalide
+// en HTML et invisible à getElementById au-delà de la première
+// correspondance). Silencieux si la liste a été redessinée entre-temps
+// (querySelectorAll renvoie simplement une liste vide).
 function refreshCueReadinessBadges(cues) {
   for (const cue of cues) {
     checkCueReadiness(cue)
@@ -419,13 +451,15 @@ function refreshCueReadinessBadges(cues) {
 }
 
 function applyCueReadinessBadge(cueId, result) {
-  const badge = document.getElementById(`cueReadiness-${cueId}`);
-  if (!badge) return;
+  const badges = document.querySelectorAll(`[data-cue-readiness="${cueId}"]`);
+  if (!badges.length) return;
   const meta = READINESS_LABELS[result.status] || READINESS_LABELS.checking;
-  badge.className = `cue-readiness-badge ${meta.className}`;
-  badge.textContent = meta.icon;
-  const problems = result.checks.filter((c) => !c.ok).map((c) => c.message);
-  badge.title = problems.length ? `${meta.text} — ${problems.join(' · ')}` : meta.text;
+  badges.forEach((badge) => {
+    badge.className = `cue-readiness-badge ${meta.className}`;
+    badge.textContent = meta.icon;
+    const problems = result.checks.filter((c) => !c.ok).map((c) => c.message);
+    badge.title = problems.length ? `${meta.text} — ${problems.join(' · ')}` : meta.text;
+  });
 }
 
 window.addVerseToRundown = addVerseToRundown;

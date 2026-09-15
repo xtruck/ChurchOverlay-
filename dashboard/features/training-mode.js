@@ -8,29 +8,36 @@ import { registerAction } from '../action-delegator.js';
 (function () {
   let active = false;
 
+  // CORRECTIF (redesign IA — étape 3, fusion Studio Pro / Direct Classique) :
+  // #overview/#controls/#transcript ont disparu (fusionnés dans
+  // #propresenter-live) — getElementById(step.section) y renvoyait null pour
+  // 3 des 5 étapes (aucun crash, juste plus aucun encadré affiché, une
+  // régression silencieuse). Repointé vers un élément réel et toujours
+  // présent, spécifique à l'action décrite dans chaque étape, plutôt qu'une
+  // section entière désormais introuvable.
   const GUIDE_STEPS = [
     {
-      section: 'overview',
+      section: 'listeningBar',
       title: '1. Bienvenue !',
       text: "Commencez par vérifier que la bande d'écoute montre un niveau audio actif (point vert). Si le point est gris, vérifiez le micro.",
     },
     {
-      section: 'controls',
+      section: 'showManualVerseBtn',
       title: '2. Afficher un verset',
       text: 'Cliquez sur "Afficher un Verset" ou tapez une référence dans la barre de recherche. Le verset apparaît sur l\'écran de l\'église.',
     },
     {
-      section: 'transcript',
+      section: 'transcriptFeed',
       title: '3. Transcription auto',
       text: 'Le pasteur parle → le texte apparaît ici → le système détecte automatiquement les références bibliques.',
     },
     {
       section: 'media-wall',
       title: '4. Médias',
-      text: 'Dans PRÉPARATION, le Mur Média permet de préparer et déclencher des photos/vidéos pendant le culte.',
+      text: 'Le Mur Média (juste ici, dans Opérateur) permet de préparer et déclencher des photos/vidéos pendant le culte.',
     },
     {
-      section: 'controls',
+      section: 'toggleBlackScreenBtn',
       title: '5. Urgence',
       text: 'Utilisez "Écran Noir" pour une coupure immédiate, ou "Arrêt d\'Urgence" pour masquer le verset.',
     },

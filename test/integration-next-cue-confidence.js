@@ -231,10 +231,17 @@ function makeSourceFile(dir, filename, bytes) {
     // Les vérifications sont asynchrones (sondes réseau/police/rendu hors-écran) —
     // attend que tous les badges soient sortis de l'état "checking" plutôt qu'un
     // délai fixe fragile.
+    // CORRECTIF (redesign IA — étape 3, fusion Studio Pro) : le badge n'a
+    // plus d'id fixe — la feuille de route se rend maintenant à l'identique
+    // dans deux conteneurs (#rundownList et #ppRundownList, voir
+    // dashboard/features/rundown.js), donc un id par repère serait dupliqué
+    // entre eux (invalide en HTML). Ciblé par data-cue-readiness +
+    // querySelector à la place — voir applyCueReadinessBadge() qui met à
+    // jour TOUTES les copies via querySelectorAll.
     await page.waitForFunction(
       (ids) =>
         ids.every((id) => {
-          const el = document.getElementById(`cueReadiness-${id}`);
+          const el = document.querySelector(`[data-cue-readiness="${id}"]`);
           return el && !el.className.includes('cue-readiness-checking');
         }),
       addedCueIds,
@@ -243,7 +250,7 @@ function makeSourceFile(dir, filename, bytes) {
 
     const badgeState = async (cueId) =>
       page.evaluate((id) => {
-        const el = document.getElementById(`cueReadiness-${id}`);
+        const el = document.querySelector(`[data-cue-readiness="${id}"]`);
         return el ? { className: el.className, title: el.title } : null;
       }, cueId);
 

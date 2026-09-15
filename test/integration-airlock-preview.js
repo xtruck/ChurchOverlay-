@@ -169,11 +169,12 @@ function makeSourceFile(dir, filename, bytes) {
       localStorage.setItem('churchoverlay_wizard_seen', '1');
     });
     await page.goto(`http://127.0.0.1:${process.env.PORT}/dashboard.html`, { waitUntil: 'load' });
-    // #rundownList/#airlockCard vivent dans <section id="overview">, pas
-    // l'onglet actif par défaut ("propresenter-live", voir state.js#showSectionsFor)
-    // — sans ce clic, tous les éléments existent dans le DOM mais restent
-    // display:none, donc invisibles/non cliquables pour Playwright.
-    await page.locator('.nav-item[data-sections="overview,transcript,controls"]').first().click();
+    // CORRECTIF (redesign IA — étape 3, fusion Studio Pro / Direct
+    // Classique) : #rundownList/#airlockCard vivent maintenant directement
+    // dans #propresenter-live (<section id="overview"> a été retiré, son
+    // contenu fusionné ici) — clic conservé par robustesse (no-op, déjà
+    // l'onglet actif par défaut, voir state.js#showSectionsFor).
+    await page.locator('.nav-item[data-sections="propresenter-live,media-wall,studio"]').first().click();
     // getMediaLibrary/getSceneLibrary/getRundown envoyés automatiquement à
     // l'ouverture (voir state.js#initWebSocket) — laisse le temps que les
     // trois réponses arrivent avant d'interagir avec la feuille de route.

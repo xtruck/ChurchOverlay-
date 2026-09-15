@@ -193,7 +193,12 @@ function sleep(ms) {
     // Un champ de saisie visible et ordinaire du tableau de bord — la barre
     // "Saisir ou simuler une phrase" (search-detector-bar), jamais
     // spécifique à ce test.
-    await page.locator('.nav-item[data-sections*="overview"]').first().click();
+    // CORRECTIF (redesign IA — étape 3, fusion Studio Pro / Direct
+    // Classique) : #speechTextInput vit maintenant dans #propresenter-live
+    // (l'ancien #overview a été fusionné dedans) — "propresenter-live" est
+    // un sous-texte unique (contrairement à "studio", partagé avec
+    // Préparation), donc sans ambiguïté avec .first().
+    await page.locator('.nav-item[data-sections*="propresenter-live"]').first().click();
     await sleep(150);
     const searchInput = page.locator('#speechTextInput');
     await searchInput.click();

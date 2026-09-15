@@ -77,20 +77,34 @@ export function stepSongSection(id, direction) {
   showSongSectionNow(id);
 }
 
+// AJOUT (redesign IA — étape 3, fusion Studio Pro / Direct Classique) :
+// rendue à l'IDENTIQUE dans deux emplacements, tous deux à l'intérieur
+// d'#propresenter-live (Opérateur) depuis la fusion — la carte détaillée
+// (#songLibraryList, ex-"Direct Classique", relocalisée telle quelle) ET
+// l'onglet compact "Chants" du Studio Pro (#ppSongLibraryList) — ce dernier
+// affichait auparavant 2 chants intégralement codés en dur (Bénis
+// l'Éternel/Grâce Infinie), sans le moindre effet réel au clic (juste un
+// toast générique). Même liste réelle des deux côtés, jamais une copie
+// divergente.
 export function renderSongLibrary(songs) {
   songLibraryItems = Array.isArray(songs) ? songs : [];
-  const list = document.getElementById('songLibraryList');
+  const targets = ['songLibraryList', 'ppSongLibraryList']
+    .map((id) => document.getElementById(id))
+    .filter(Boolean);
   const countEl = document.getElementById('songLibraryCount');
   if (countEl) countEl.textContent = songLibraryItems.length;
-  if (!list) return;
+  if (!targets.length) return;
 
   if (songLibraryItems.length === 0) {
-    list.innerHTML =
+    const emptyHtml =
       '<div class="empty-state-note">Aucun chant ajouté. Collez des paroles ci-dessus.</div>';
+    targets.forEach((el) => {
+      el.innerHTML = emptyHtml;
+    });
     return;
   }
 
-  list.innerHTML = songLibraryItems
+  const html = songLibraryItems
     .map((song) => {
       const phrasesBadges = (song.triggerPhrases || [])
         .map((p) => `<span class="media-item-phrase-badge">${escapeHtmlDashboard(p)}</span>`)
@@ -114,6 +128,9 @@ export function renderSongLibrary(songs) {
             `;
     })
     .join('');
+  targets.forEach((el) => {
+    el.innerHTML = html;
+  });
 }
 
 window.addSongToLibrary = addSongToLibrary;

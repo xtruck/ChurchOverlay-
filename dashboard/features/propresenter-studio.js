@@ -12,6 +12,7 @@
 import { state, ws } from '../state.js';
 import { showToast } from '../utils.js';
 import { nextRundownCue } from './rundown.js';
+import { searchBibleByTopic } from './bible-search.js';
 import { registerAction } from '../action-delegator.js';
 
 const serviceStartTime = Date.now();
@@ -297,61 +298,25 @@ export function fireQuickScripture() {
 // ---------------------------------------------------------------------------
 // 7. MOOD PRESET PICKER
 // ---------------------------------------------------------------------------
-export function setStudioMood(mood) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    showToast('Non connecté au serveur — ambiance non appliquée.', 'error');
-    return;
-  }
-  ws.send(JSON.stringify({ action: 'setTheme', theme: mood }));
-  showToast(`Ambiance appliquée : ${mood}`, 'success');
-}
+// CORRECTIF (redesign IA — étape 3) : setStudioMood()/le palette de 6
+// ambiances codées en dur ont été retirés — envoyaient une action WS
+// 'setTheme' jamais enregistrée dans action-registry.js (rejetée
+// silencieusement par le serveur). #ppMoodPicker (dashboard.html) est
+// désormais peuplé par la VRAIE fonction renderMoodPicker() (voir
+// mood-theme.js), partagée avec le sélecteur d'ambiance de Direct
+// Classique — plus de palette Studio Pro séparée à maintenir ici.
 
 // ---------------------------------------------------------------------------
 // 8. AI COPILOT: SEMANTIC SEARCH & SCRIPTURE INTELLIGENCE
 // ---------------------------------------------------------------------------
-
-const SCRIPTURE_CROSS_REFS = {
-  'jean 3:16': ['Romains 5:8', '1 Jean 4:9', 'Éphésiens 2:8'],
-  'jean 3': ['Romains 5:8', '1 Jean 4:9', 'Jean 14:6'],
-  'psaume 23': ['Jean 10:11', 'Ésaïe 40:11', 'Psaume 91:1'],
-  'psaume 91': ['Psaume 23:1', 'Psaume 121:1', 'Romains 8:31'],
-  'matthieu 28': ['Actes 1:8', 'Marc 16:15', 'Matthieu 24:14'],
-  'romains 8': ['Romains 8:28', 'Romains 8:31', 'Philippiens 4:13'],
-  'philippiens 4': ['Philippiens 4:13', 'Ésaïe 40:31', 'Psaume 46:1'],
-  'esaie 40': ['Philippiens 4:13', 'Psaume 103:5', '2 Corinthiens 12:9'],
-  '1 corinthiens 13': ['1 Jean 4:7', 'Colossiens 3:14', 'Jean 13:34'],
-  'ephesiens 6': ['2 Corinthiens 10:4', '1 Thessaloniciens 5:8', 'Jacques 4:7'],
-  'hebreux 11': ['Romains 1:17', 'Jacques 2:17', '2 Corinthiens 5:7'],
-};
-
-export function updateAiCrossReferences(reference) {
-  const row = document.getElementById('ppAiSuggestionsRow');
-  const chipsContainer = document.getElementById('ppAiSuggestionsChips');
-  if (!row || !chipsContainer || !reference) return;
-
-  const normalized = reference.toLowerCase().trim();
-  let suggestions = [];
-
-  for (const [key, list] of Object.entries(SCRIPTURE_CROSS_REFS)) {
-    if (normalized.includes(key) || key.includes(normalized.split(':')[0])) {
-      suggestions = list;
-      break;
-    }
-  }
-
-  if (suggestions.length === 0) {
-    suggestions = ['Psaume 119:105', 'Proverbes 3:5', 'Jean 14:6'];
-  }
-
-  chipsContainer.innerHTML = suggestions
-    .map(
-      (ref) =>
-        `<button class="pp-chip-btn pp-verse-suggestion-chip" data-action="lookup" data-target="quick-verse" data-ref="${escapeHtml(ref)}">📖 ${escapeHtml(ref)}</button>`
-    )
-    .join('');
-
-  row.style.display = 'flex';
-}
+// CORRECTIF (redesign IA — étape 3) : updateAiCrossReferences()/
+// SCRIPTURE_CROSS_REFS (dictionnaire local de 11 entrées) ont été retirés —
+// les VRAIES références croisées (getCrossReferences, calculées côté
+// serveur pour le verset réellement affiché, quelle que soit sa source)
+// alimentent maintenant #ppAiSuggestionsChips directement depuis
+// renderCrossReferenceChips() dans ws-dispatch.js, en plus de sa cible
+// historique #crossRefChips — voir son en-tête pour le détail. Ancien
+// appelant retiré de verse-session-display.js#displayVerse.
 
 export function quickLookupVerse(ref) {
   if (!ref) return;
@@ -376,116 +341,25 @@ export function quickSemanticQuery(query) {
   executeAiSemanticSearch();
 }
 
+// CORRECTIF (redesign IA — étape 3) : envoyait auparavant une action WS
+// 'semanticSearch' jamais enregistrée dans action-registry.js (rejetée
+// silencieusement par le serveur) et n'affichait de toute façon toujours
+// que 3-10 versets tirés d'un dictionnaire local figé de 250ms en 250ms,
+// quelle que soit la vraie réponse serveur (ou son absence). Délègue
+// maintenant à searchBibleByTopic() (bible-search.js), qui envoie la
+// VRAIE action 'searchBible' — voir son en-tête pour l'honnêteté déjà
+// requise sur ce module (recherche par mot-clé sur des thèmes prédéfinis,
+// jamais un vrai index vectoriel/sémantique côté serveur). Les résultats
+// arrivent par le chemin réel existant (searchResults/searchError,
+// ws-dispatch.js) et s'affichent ici aussi — voir renderBibleSearchResults()/
+// renderBibleSearchError() dans bible-search.js pour la diffusion vers
+// #ppAiSearchResults en plus de sa cible historique #bibleSearchOutput.
 export function executeAiSemanticSearch() {
   const input = document.getElementById('ppAiSearchInput');
-  const resultsContainer = document.getElementById('ppAiSearchResults');
-  if (!input || !resultsContainer) return;
-
+  if (!input) return;
   const query = input.value.trim();
   if (!query) return;
-
-  resultsContainer.innerHTML = `
-    <div style="font-size: 11px; color: var(--pp-text-dim); text-align: center; padding: 10px;">
-      🔍 Analyse sémantique par l'IA...
-    </div>
-  `;
-
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ action: 'semanticSearch', query }));
-  }
-
-  // Fast client-side fallback / instant matching
-  setTimeout(() => {
-    const semanticDictionary = [
-      {
-        q: 'paix',
-        ref: 'Jean 14:27',
-        text: 'Je vous laisse la paix, je vous donne ma paix. Je ne vous donne pas comme le monde donne.',
-        score: 98,
-      },
-      {
-        q: 'amour',
-        ref: 'Jean 3:16',
-        text: 'Car Dieu a tant aimé le monde qu’il a donné son Fils unique...',
-        score: 99,
-      },
-      {
-        q: 'amour',
-        ref: '1 Corinthiens 13:4',
-        text: 'L’amour est patient, il est plein de bonté; l’amour n’est point envieux...',
-        score: 96,
-      },
-      {
-        q: 'foi',
-        ref: 'Hébreux 11:1',
-        text: 'Or la foi est une ferme assurance des choses qu’on espère, une démonstration de celles qu’on ne voit pas.',
-        score: 97,
-      },
-      {
-        q: 'tempête',
-        ref: 'Marc 4:39',
-        text: 'S’étant réveillé, il menaça le vent, et dit à la mer: Silence! tais-toi! Et le vent cessa, et il y eut un grand calme.',
-        score: 95,
-      },
-      {
-        q: 'eau',
-        ref: 'Matthieu 14:29',
-        text: 'Pierre sortit de la barque, et marcha sur les eaux, pour aller vers Jésus.',
-        score: 94,
-      },
-      {
-        q: 'force',
-        ref: 'Philippiens 4:13',
-        text: 'Je puis tout par celui qui me fortifie.',
-        score: 98,
-      },
-      {
-        q: 'bien',
-        ref: 'Romains 8:28',
-        text: 'Nous savons, du reste, que toutes choses concourent au bien de ceux qui aiment Dieu.',
-        score: 99,
-      },
-      {
-        q: 'berger',
-        ref: 'Psaume 23:1',
-        text: 'L’Éternel est mon berger: je ne manquerai de rien.',
-        score: 99,
-      },
-      {
-        q: 'armure',
-        ref: 'Éphésiens 6:11',
-        text: 'Revêtez-vous de toutes les armes de Dieu, afin de pouvoir tenir ferme contre les ruses du diable.',
-        score: 96,
-      },
-    ];
-
-    const qLower = query.toLowerCase();
-    const matches = semanticDictionary.filter(
-      (item) =>
-        qLower.includes(item.q) ||
-        item.ref.toLowerCase().includes(qLower) ||
-        item.text.toLowerCase().includes(qLower)
-    );
-
-    const displayMatches = matches.length > 0 ? matches : semanticDictionary.slice(0, 3);
-
-    resultsContainer.innerHTML = displayMatches
-      .map(
-        (item) => `
-        <div class="pp-cue-item" style="flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px;">
-          <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
-            <span class="pp-cue-label" style="color: var(--pp-blue-accent); font-weight: 700;">📖 ${item.ref}</span>
-            <span style="font-size: 9px; font-weight: 600; color: #10b981; background: rgba(16,185,129,0.12); padding: 1px 4px; border-radius: 2px;">${item.score}% IA MATCH</span>
-          </div>
-          <div style="font-size: 10.5px; color: var(--pp-text-muted); line-height: 1.35;">${escapeHtml(item.text)}</div>
-          <button class="btn btn-primary pp-quick-project-btn" data-action="lookup" data-target="quick-verse" data-ref="${escapeHtml(item.ref)}">
-            🚀 Projeter Immédiatement
-          </button>
-        </div>
-      `
-      )
-      .join('');
-  }, 250);
+  searchBibleByTopic(query);
 }
 
 export function generateKeyPointFromSpeech() {
@@ -544,7 +418,6 @@ window.ppClearSlide = ppClearSlide;
 window.ppClearMedia = ppClearMedia;
 window.ppClearProps = ppClearProps;
 window.fireQuickScripture = fireQuickScripture;
-window.setStudioMood = setStudioMood;
 // AJOUT (chantier nettoyage dashboard — purge des onclick inline) : les 3
 // points d'appel restants (puces de suggestion, bouton "Projeter
 // immédiatement", citations détectées en direct dans verse-session-display.js)

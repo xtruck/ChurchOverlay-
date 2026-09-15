@@ -32,6 +32,17 @@ export function renderBibleTopics(topics) {
     .join('');
 }
 
+// AJOUT (redesign IA — étape 3, fusion Studio Pro) : #ppAiSearchResults est
+// la cible de recherche du Studio Pro (voir executeAiSemanticSearch() dans
+// propresenter-studio.js, qui appelle cette même fonction) — remplit les
+// DEUX conteneurs avec le même contenu réel, jamais une copie divergente.
+function forEachSearchOutput(fn) {
+  ['bibleSearchOutput', 'ppAiSearchResults'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) fn(el);
+  });
+}
+
 export function searchBibleByTopic(topic) {
   if (!requireWsOrWarn()) return;
   const input = document.getElementById('bibleSearchInput');
@@ -41,8 +52,9 @@ export function searchBibleByTopic(topic) {
     return;
   }
   if (input && topic) input.value = topic;
-  const output = document.getElementById('bibleSearchOutput');
-  if (output) output.innerHTML = '<span class="stat-label">⏳ Recherche en cours...</span>';
+  forEachSearchOutput((el) => {
+    el.innerHTML = '<span class="stat-label">⏳ Recherche en cours...</span>';
+  });
   ws.send(JSON.stringify({ action: 'searchBible', query }));
 }
 
@@ -58,30 +70,29 @@ export function showFoundVerse(reference) {
 }
 
 export function renderBibleSearchResults(message) {
-  const output = document.getElementById('bibleSearchOutput');
-  if (!output) return;
   const results = message.results || [];
-  if (!results.length) {
-    output.innerHTML = `<span class="stat-label">Aucun verset trouvé pour "${escapeHtmlDashboard(message.query || '')}".</span>`;
-    return;
-  }
-  output.innerHTML = results
-    .map(
-      (r) => `<div class="queue-item">
+  const html = !results.length
+    ? `<span class="stat-label">Aucun verset trouvé pour "${escapeHtmlDashboard(message.query || '')}".</span>`
+    : results
+        .map(
+          (r) => `<div class="queue-item">
                 <span class="queue-item-ref">${escapeHtmlDashboard(r.reference)}</span>
                 <div class="queue-item-actions">
                     <button class="queue-icon-btn queue-send" data-action="show" data-target="found-verse" data-reference="${escapeHtmlDashboard(r.reference)}" title="Afficher ce verset">▶</button>
                 </div>
             </div>`
-    )
-    .join('');
+        )
+        .join('');
+  forEachSearchOutput((el) => {
+    el.innerHTML = html;
+  });
 }
 
 export function renderBibleSearchError(message) {
-  const output = document.getElementById('bibleSearchOutput');
-  if (output) {
-    output.innerHTML = `<span class="stat-label">❌ ${escapeHtmlDashboard(message.error || 'Recherche indisponible.')}</span>`;
-  }
+  const html = `<span class="stat-label">❌ ${escapeHtmlDashboard(message.error || 'Recherche indisponible.')}</span>`;
+  forEachSearchOutput((el) => {
+    el.innerHTML = html;
+  });
 }
 
 // CONSERVÉ : le bouton statique "Rechercher" (#searchBibleByTopicBtn, voir

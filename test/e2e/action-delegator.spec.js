@@ -52,7 +52,7 @@ test.describe('Délégation d’événements dynamiques (action-delegator.js, Po
     page,
   }) => {
     await page.goto('/');
-    await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
+    await page.locator('.sidebar .nav-item[data-sections="propresenter-live,media-wall,studio"]').click();
     await captureSentActions(page);
     await seedOneMediaItem(page);
 
@@ -69,7 +69,7 @@ test.describe('Délégation d’événements dynamiques (action-delegator.js, Po
     page,
   }) => {
     await page.goto('/');
-    await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
+    await page.locator('.sidebar .nav-item[data-sections="propresenter-live,media-wall,studio"]').click();
     await captureSentActions(page);
     await seedOneMediaItem(page);
 
@@ -86,7 +86,7 @@ test.describe('Délégation d’événements dynamiques (action-delegator.js, Po
     page,
   }) => {
     await page.goto('/');
-    await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
+    await page.locator('.sidebar .nav-item[data-sections="propresenter-live,media-wall,studio"]').click();
     await captureSentActions(page);
     await seedOneMediaItem(page); // isDefault: false -> data-is-default="false"
 

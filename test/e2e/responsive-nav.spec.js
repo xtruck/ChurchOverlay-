@@ -23,16 +23,17 @@ test.describe('Navigation responsive — repli sous 1024px', () => {
     // Clic sur "Régie" dans la barre du bas -> les sections changent
     // exactement comme depuis la sidebar (même gestionnaire, voir
     // dashboard/state.js).
-    // CORRECTIF (audit e2e — stale depuis la refonte "trois espaces") :
-    // l'ancien sélecteur combiné visait un unique onglet "Réglages" qui
-    // n'existe plus (voir dashboard.spec.js pour le même correctif) — 3
-    // espaces distincts désormais (Direct/Préparation/Régie).
+    // CORRECTIF (redesign IA — étape 3, fusion Studio Pro / Direct
+    // Classique) : #overview a disparu (fusionné dans #propresenter-live,
+    // voir dashboard.html) — l'espace vérifié comme masqué ici est
+    // désormais "Opérateur" (ex-"Studio Pro"), 3 espaces distincts au
+    // total (Opérateur/Préparation/Régie).
     await page.locator('.bottom-tab-bar .nav-item[data-sections="settings,overlay"]').click();
     await expect(page.locator('#settings')).toBeVisible();
-    await expect(page.locator('#overview')).toBeHidden();
+    await expect(page.locator('#propresenter-live')).toBeHidden();
 
     // Retour en largeur bureau : la sidebar doit refléter le DERNIER
-    // onglet cliqué ("Régie"), pas être restée bloquée sur "Direct"
+    // onglet cliqué ("Régie"), pas être restée bloquée sur "Opérateur"
     // — c'est précisément le bug que le correctif du lot 5 a corrigé.
     await page.setViewportSize({ width: 1280, height: 800 });
     await expect(page.locator('.sidebar')).toBeVisible();
@@ -40,7 +41,7 @@ test.describe('Navigation responsive — repli sous 1024px', () => {
       /active/
     );
     await expect(
-      page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]')
+      page.locator('.sidebar .nav-item[data-sections="propresenter-live,media-wall,studio"]')
     ).not.toHaveClass(/active/);
   });
 });

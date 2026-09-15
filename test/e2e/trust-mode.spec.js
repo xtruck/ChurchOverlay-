@@ -15,11 +15,12 @@ const { test, expect } = require('./fixtures');
 test.describe('Mode confiance', () => {
   test('cliquer un mode le rend actif (round-trip serveur réel)', async ({ page }) => {
     await page.goto('/');
-    // CORRECTIF (audit e2e — stale depuis PR #259, refonte "Studio Pro") :
-    // "Studio Pro" (propresenter-live) est désormais l'espace actif par
-    // défaut au chargement — les boutons de mode confiance vivent dans
-    // #overview, qui fait partie de l'espace "Direct Classique".
-    await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
+    // CORRECTIF (redesign IA — étape 3, fusion Studio Pro / Direct
+    // Classique) : "Opérateur" (propresenter-live) est l'espace actif par
+    // défaut au chargement — les boutons de mode confiance vivent
+    // maintenant directement dedans (#overview a été retiré, son contenu
+    // fusionné ici). Clic conservé par robustesse (no-op si déjà actif).
+    await page.locator('.sidebar .nav-item[data-sections="propresenter-live,media-wall,studio"]').click();
 
     // Scopé à #trustModeSelector (la carte détaillée) : depuis le chantier
     // innovation v1.0, un second groupe de boutons (.autonomy-mode-selector,
@@ -48,10 +49,10 @@ test.describe('Mode confiance', () => {
     page,
   }) => {
     await page.goto('/');
-    // CORRECTIF (audit e2e — stale depuis PR #259) : #pendingVerseBanner
-    // vit dans #overview ("Direct Classique"), plus l'espace actif par
+    // CORRECTIF (redesign IA — étape 3) : #pendingVerseBanner vit
+    // maintenant dans #propresenter-live ("Opérateur"), l'espace actif par
     // défaut (voir le test précédent).
-    await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
+    await page.locator('.sidebar .nav-item[data-sections="propresenter-live,media-wall,studio"]').click();
     const banner = page.locator('#pendingVerseBanner');
     await expect(banner).toBeHidden();
 
@@ -96,10 +97,10 @@ test.describe('Mode confiance', () => {
     page,
   }) => {
     await page.goto('/');
-    // CORRECTIF (audit e2e — stale depuis PR #259) : #pendingVerseBanner
-    // vit dans #overview ("Direct Classique"), plus l'espace actif par
+    // CORRECTIF (redesign IA — étape 3) : #pendingVerseBanner vit
+    // maintenant dans #propresenter-live ("Opérateur"), l'espace actif par
     // défaut.
-    await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
+    await page.locator('.sidebar .nav-item[data-sections="propresenter-live,media-wall,studio"]').click();
 
     // Bandeau visible : si le garde-fou "contexte de saisie" échouait, la
     // frappe Espace ci-dessous serait avalée par confirmPendingVerse() au

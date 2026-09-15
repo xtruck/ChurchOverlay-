@@ -124,9 +124,10 @@ function waitForOpen(ws) {
       localStorage.setItem('churchoverlay_wizard_seen', '1');
     });
     await page.goto(`http://127.0.0.1:${process.env.PORT}/dashboard.html`, { waitUntil: 'load' });
-    // #heroShareImageBtn vit dans <section id="overview">, pas l'onglet actif
-    // par défaut — même raisonnement que integration-airlock-preview.js.
-    await page.locator('.nav-item[data-sections="overview,transcript,controls"]').first().click();
+    // CORRECTIF (redesign IA — étape 3) : #heroShareImageBtn vit maintenant
+    // dans #propresenter-live — même raisonnement que
+    // integration-airlock-preview.js.
+    await page.locator('.nav-item[data-sections="propresenter-live,media-wall,studio"]').first().click();
     await page.waitForFunction(() => document.getElementById('heroShareImageBtn') !== null, {
       timeout: 5000,
     });

@@ -136,7 +136,7 @@ function sleep(ms) {
     await page.goto(`http://127.0.0.1:${process.env.PORT}/dashboard.html`, { waitUntil: 'load' });
     // #displayWindowControls vit dans <section id="settings">, pas l'onglet
     // actif par défaut — voir state.js#showSectionsFor (même raisonnement
-    // que integration-airlock-preview.js pour <section id="overview">).
+    // que integration-airlock-preview.js pour #propresenter-live).
     await page.locator('.nav-item[data-sections="settings,overlay"]').first().click();
     await page.waitForFunction(
       () => document.getElementById('outputStatus-overlay')?.textContent.trim() === 'Fermé',

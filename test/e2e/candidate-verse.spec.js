@@ -22,10 +22,12 @@ test.describe('Bandeaux candidateVerse', () => {
     page,
   }) => {
     await page.goto('/');
-    // CORRECTIF (audit e2e — stale depuis PR #259, refonte "Studio Pro") :
-    // #candidateNotice vit dans #overview ("Direct Classique"), plus
-    // l'espace actif par défaut (voir dashboard.spec.js).
-    await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
+    // CORRECTIF (redesign IA — étape 3, fusion Studio Pro / Direct
+    // Classique) : #candidateNotice vit maintenant dans #propresenter-live
+    // ("Opérateur"), qui est l'espace actif par défaut — ce clic est donc
+    // un no-op inoffensif (déjà l'onglet actif), conservé pour rester
+    // robuste si l'ordre des tests ou l'espace par défaut change un jour.
+    await page.locator('.sidebar .nav-item[data-sections="propresenter-live,media-wall,studio"]').click();
     const candidateNotice = page.locator('#candidateNotice');
 
     await expect(candidateNotice).toBeHidden();
@@ -61,7 +63,7 @@ test.describe('Bandeaux candidateVerse', () => {
 
   test('une nouvelle candidate remplace la précédente (jamais empilée)', async ({ page }) => {
     await page.goto('/');
-    await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
+    await page.locator('.sidebar .nav-item[data-sections="propresenter-live,media-wall,studio"]').click();
     const candidateNotice = page.locator('#candidateNotice');
 
     await page.evaluate(async () => {
@@ -92,7 +94,7 @@ test.describe('Bandeaux candidateVerse', () => {
 
   test('fuzzy : bandeau "Correction automatique" distinct du spéculatif', async ({ page }) => {
     await page.goto('/');
-    await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
+    await page.locator('.sidebar .nav-item[data-sections="propresenter-live,media-wall,studio"]').click();
     const candidateNotice = page.locator('#candidateNotice');
     const fuzzyNotice = page.locator('#fuzzyMatchNotice');
 
@@ -114,7 +116,7 @@ test.describe('Bandeaux candidateVerse', () => {
 
   test("l'activité affiche la référence, pas '[object Object]'", async ({ page }) => {
     await page.goto('/');
-    await page.locator('.sidebar .nav-item[data-sections="overview,transcript,controls"]').click();
+    await page.locator('.sidebar .nav-item[data-sections="propresenter-live,media-wall,studio"]').click();
     await page.evaluate(async () => {
       const { handleMessage } = await import('/dashboard/ws-dispatch.js');
       handleMessage({
