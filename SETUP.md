@@ -83,7 +83,7 @@ starts on `ws://127.0.0.1:8765` (or the `PORT` you configured).
    - Select "Browser"
    - Name it "Bible Overlay"
 4. **Set the URL** — copy it from the dashboard, don't type it by hand:
-   open the dashboard, go to **Régie**, and click **"📋 Copier le lien
+   open the dashboard, go to **Paramètres**, and click **"📋 Copier le lien
    pour OBS"**, then paste that into the Browser Source URL field.
    That link already includes the read-only viewer token the server
    requires once authentication is enabled — a hand-typed path like

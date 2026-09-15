@@ -12,8 +12,12 @@ test.describe('Recherche de versets par thème', () => {
   }) => {
     await page.goto('/');
 
-    // Bascule vers "Réglages" -> #analysis (où vit la carte de recherche).
-    await page.locator('.sidebar .nav-item[data-sections="analysis,studio"]').click();
+    // CORRECTIF (redesign IA — étape 5, tiroir d'outils secondaires) : la
+    // carte de recherche vit maintenant dans #secondaryDrawer (outil
+    // occasionnel, plus une section de nav) — voir dashboard.html et
+    // dashboard/features/secondary-drawer.js.
+    await page.locator('#secondaryDrawerToggle').click();
+    await page.locator('.secondary-drawer-tab[data-drawer-tab="bible-search"]').click();
 
     const topicChips = page.locator('#bibleTopicChips .mood-btn');
     await expect(topicChips.first()).toBeVisible({ timeout: 5000 });

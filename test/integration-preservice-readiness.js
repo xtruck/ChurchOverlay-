@@ -145,7 +145,7 @@ function waitForOpen(ws) {
     // masquée par défaut (style="display: none") tant qu'on n'a pas cliqué
     // le nav-item correspondant — même raisonnement que
     // integration-cue-cards.js pour #rundownList dans #propresenter-live.
-    await page.locator('.nav-item[data-sections="settings,overlay"]').first().click();
+    await page.locator('.nav-item[data-sections="studio,settings,overlay"]').first().click();
     await page.waitForFunction(
       () => document.getElementById('preServiceCheckBtn')?.offsetParent !== null,
       { timeout: 5000 }

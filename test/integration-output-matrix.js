@@ -137,7 +137,7 @@ function sleep(ms) {
     // #displayWindowControls vit dans <section id="settings">, pas l'onglet
     // actif par défaut — voir state.js#showSectionsFor (même raisonnement
     // que integration-airlock-preview.js pour #propresenter-live).
-    await page.locator('.nav-item[data-sections="settings,overlay"]').first().click();
+    await page.locator('.nav-item[data-sections="studio,settings,overlay"]').first().click();
     await page.waitForFunction(
       () => document.getElementById('outputStatus-overlay')?.textContent.trim() === 'Fermé',
       { timeout: 5000 }

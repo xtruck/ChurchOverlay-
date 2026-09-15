@@ -20,26 +20,24 @@ test.describe('Navigation responsive — repli sous 1024px', () => {
     await expect(page.locator('.sidebar')).toBeHidden();
     await expect(page.locator('.bottom-tab-bar')).toBeVisible();
 
-    // Clic sur "Régie" dans la barre du bas -> les sections changent
+    // Clic sur "Paramètres" dans la barre du bas -> les sections changent
     // exactement comme depuis la sidebar (même gestionnaire, voir
-    // dashboard/state.js).
-    // CORRECTIF (redesign IA — étape 3, fusion Studio Pro / Direct
-    // Classique) : #overview a disparu (fusionné dans #propresenter-live,
-    // voir dashboard.html) — l'espace vérifié comme masqué ici est
-    // désormais "Opérateur" (ex-"Studio Pro"), 3 espaces distincts au
-    // total (Opérateur/Préparation/Régie).
-    await page.locator('.bottom-tab-bar .nav-item[data-sections="settings,overlay"]').click();
+    // dashboard/state.js). Deux espaces au total désormais (Opérateur/
+    // Paramètres, redesign IA étapes 3-4).
+    await page
+      .locator('.bottom-tab-bar .nav-item[data-sections="studio,settings,overlay"]')
+      .click();
     await expect(page.locator('#settings')).toBeVisible();
     await expect(page.locator('#propresenter-live')).toBeHidden();
 
     // Retour en largeur bureau : la sidebar doit refléter le DERNIER
-    // onglet cliqué ("Régie"), pas être restée bloquée sur "Opérateur"
+    // onglet cliqué ("Paramètres"), pas être restée bloquée sur "Opérateur"
     // — c'est précisément le bug que le correctif du lot 5 a corrigé.
     await page.setViewportSize({ width: 1280, height: 800 });
     await expect(page.locator('.sidebar')).toBeVisible();
-    await expect(page.locator('.sidebar .nav-item[data-sections="settings,overlay"]')).toHaveClass(
-      /active/
-    );
+    await expect(
+      page.locator('.sidebar .nav-item[data-sections="studio,settings,overlay"]')
+    ).toHaveClass(/active/);
     await expect(
       page.locator('.sidebar .nav-item[data-sections="propresenter-live,media-wall,studio"]')
     ).not.toHaveClass(/active/);

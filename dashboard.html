@@ -193,22 +193,16 @@
               </svg>
               Opérateur
             </li>
-            <li class="nav-item" data-sections="analysis,studio">
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                <path d="M2 17l10 5 10-5" />
-                <path d="M2 12l10 5 10-5" />
-              </svg>
-              Préparation
-            </li>
-            <li class="nav-item" data-sections="settings,overlay">
+            <!-- CORRECTIF (redesign IA — étape 4, fusion Préparation / Régie) :
+                 les deux anciens espaces sont fusionnés en un seul,
+                 "Paramètres" — mêmes 4 <section> qu'avant (analysis/studio/
+                 settings/overlay), juste montrées ensemble par un seul
+                 data-sections désormais, plutôt que deux destinations de
+                 navigation séparées. Aucune section physiquement déplacée
+                 (contrairement à la fusion Opérateur de l'étape 3) : ces
+                 sections sont déjà de simples piles de cartes, pas de mise
+                 en page spécialisée à préserver. -->
+            <li class="nav-item" data-sections="studio,settings,overlay">
               <svg
                 width="18"
                 height="18"
@@ -222,7 +216,7 @@
                 />
                 <circle cx="12" cy="12" r="3" />
               </svg>
-              Régie
+              Paramètres
             </li>
           </ul>
         </div>
@@ -261,39 +255,12 @@
           </div>
 
           <div class="header-actions">
-            <!-- AJOUT (chantier nettoyage dashboard — divulgation progressive) :
-                         Mode Direct masque les panneaux secondaires (caméras IP,
-                         intégrations, réglages système, import/composeur de
-                         scène) partout où ils apparaissent, via
-                         body.mode-direct (voir dashboard.css et
-                         dashboard-cleanup.js). Persisté en localStorage —
-                         préférence PAR POSTE, jamais synchronisée entre
-                         opérateurs (chaque régie choisit sa propre densité
-                         d'affichage). Un raccourci reste toujours accessible
-                         quel que soit le mode : la palette Ctrl/Cmd+K
-                         ci-dessous n'est jamais masquée, elle. -->
-            <div class="direct-mode-selector" role="group" aria-label="Densité d'affichage">
-              <button
-                type="button"
-                class="direct-mode-btn"
-                data-action="set-dashboard-mode"
-                data-target="dashboard-cleanup"
-                data-mode="direct"
-                title="Mode Direct (Régie) — masque les panneaux non essentiels en direct"
-              >
-                🎬 Direct
-              </button>
-              <button
-                type="button"
-                class="direct-mode-btn active"
-                data-action="set-dashboard-mode"
-                data-target="dashboard-cleanup"
-                data-mode="config"
-                title="Mode Configuration — tout le tableau de bord"
-              >
-                ⚙️ Configuration
-              </button>
-            </div>
+            <!-- SUPPRIMÉ (redesign IA — étape 6) : le bascule Mode Direct/
+                 Configuration vivait ici (voir dashboard-cleanup.js) —
+                 redondant depuis la scission Opérateur/Paramètres et le
+                 tiroir d'outils secondaires (étapes 3-5), qui séparent déjà
+                 le live-essentiel de la configuration sans jamais les
+                 partager sur le même écran. -->
 
             <!-- AJOUT (palette de commandes) : point d'entrée visible à la
                          souris — le raccourci clavier seul (Ctrl/Cmd+K) n'est
@@ -305,6 +272,21 @@
               title="Rechercher une action (Ctrl/Cmd+K)"
             >
               🔎 Commandes <kbd>Ctrl</kbd>+<kbd>K</kbd>
+            </button>
+
+            <!-- AJOUT (redesign IA — étape 5, tiroir d'outils secondaires) :
+                 point d'entrée global (visible depuis Opérateur ET
+                 Paramètres) vers les outils occasionnels — voir
+                 dashboard/features/secondary-drawer.js et
+                 DASHBOARD-IA-REDESIGN-PROPOSAL.md pour le choix tiroir
+                 plutôt que dockview. -->
+            <button
+              class="command-palette-trigger"
+              id="secondaryDrawerToggle"
+              type="button"
+              title="Outils secondaires"
+            >
+              🧰 Outils
             </button>
 
             <div class="live-status-pill status live-status-pill-lg">
@@ -1205,10 +1187,10 @@
                Studio de scènes déplacée ici depuis #studio (Préparation) —
                "▶ Afficher"/CUT/Masquer sont des actions live (diriger le
                direct), pas de la préparation ; seul le composeur
-               (+ Nouvelle scène / Importer PowerPoint, déjà masqués en Mode
-               Direct via mode-direct-hide) reste dans #studio. Simple <div>,
-               pas un .section — se montre/masque automatiquement avec
-               #propresenter-live, sans toucher aux data-sections. -->
+               (+ Nouvelle scène / Importer PowerPoint) reste dans #studio.
+               Simple <div>, pas un .section — se montre/masque
+               automatiquement avec #propresenter-live, sans toucher aux
+               data-sections. -->
           <div class="card" data-group="studio">
             <div class="queue-panel-header">
               <span class="card-title"
@@ -1217,12 +1199,12 @@
               <div class="btn-row-tight">
                 <button
                   id="openSceneComposerBtn"
-                  class="btn btn-primary chip-sm mode-direct-hide"
-                  title="Composition de scène — masqué en Mode Direct (via la palette Ctrl/Cmd+K si besoin en plein culte)"
+                  class="btn btn-primary chip-sm"
+                  title="Composition de scène"
                 >
                   + Nouvelle scène
                 </button>
-                <button id="importPptxSlidesBtn" class="btn btn-secondary chip-sm mode-direct-hide">
+                <button id="importPptxSlidesBtn" class="btn btn-secondary chip-sm">
                   📥 Importer PowerPoint
                 </button>
                 <button id="hideSceneNowBtn" class="btn btn-secondary chip-sm">⏹ Masquer</button>
@@ -1397,6 +1379,19 @@
             </div>
           </section>
 
+          <!-- AJOUT (redesign IA — étape 5) : grille des caméras IP déjà
+               ajoutées — Operator-essential (regardée pendant le culte, voir
+               décision 2 du signoff), séparée du jumelage/config qui vit
+               maintenant dans le tiroir d'outils secondaires. Voir
+               dashboard/features/ip-camera-feed.js. -->
+          <div class="card" data-group="cameras" id="ipCameraFeedCard">
+            <div class="card-header">
+              <span class="card-title">Caméras IP (téléphones)</span>
+              <span id="ipCameraCount" class="status-badge warning">0</span>
+            </div>
+            <div class="queue-list" id="ipCameraList"></div>
+          </div>
+
           <!-- CORRECTIF (redesign IA — étape 3, fusion Studio Pro / Direct
                Classique) : le contenu de "Aperçu" (statut micro, mode confiance, détection rapide, ambiance, files d'attente, sas de diffusion, poster principal, médiathèque, chants, métriques, flux d'activité, verset en direct) déplacé(e) ici depuis l'ancien espace
                "Direct Classique" (section #overview, retirée — ses outils
@@ -1515,66 +1510,6 @@
                      d'attente est une nouveauté côté client (aucune modif.
                      serveur), inspirée des apps concurrentes comme Rhema. -->
           <div class="overview-panels-grid mb-7">
-            <div class="card">
-              <div class="card-header">
-                <span class="card-title">Ambiance</span>
-              </div>
-              <div class="mood-picker-row" id="moodPicker">
-                <span class="hint-text-sm">Connexion au serveur en cours...</span>
-              </div>
-              <div class="ambient-toggle-row">
-                <label class="toggle-switch">
-                  <input
-                    type="checkbox"
-                    id="ambientModeToggle"
-                    checked
-                    onchange="toggleAmbientMode(this.checked)"
-                    aria-labelledby="ambientModeToggleLabel"
-                  />
-                  <span class="toggle-slider"></span>
-                </label>
-                <!-- AJOUT (accessibilité) : le <label class="toggle-switch">
-                     n'enveloppe que l'input et le curseur, sans aucun texte —
-                     la case n'avait donc aucun nom accessible. aria-labelledby
-                     réutilise le libellé DÉJÀ visible ci-dessous plutôt que d'en
-                     dupliquer un dans un aria-label. -->
-                <span id="ambientModeToggleLabel">Cycle auto ambiances</span>
-              </div>
-              <!-- AJOUT (audit — affichage/sortie, gratuit/léger) : motif de fond
-                             optionnel, CSS pur (voir #pattern-layer dans overlay.html) — en
-                             plus du dégradé de thème déjà choisi ci-dessus. -->
-              <div class="mood-picker-row mt-tight" id="patternPicker">
-                <button class="mood-btn active" id="pattern-btn-none">Aucun motif</button>
-                <button class="mood-btn" id="pattern-btn-dots">Points</button>
-                <button class="mood-btn" id="pattern-btn-grid">Grille</button>
-                <button class="mood-btn" id="pattern-btn-diagonal">Diagonales</button>
-              </div>
-              <!-- AJOUT (chantier "Prompt-to-Theme") : habillage sur mesure
-                           généré par IA depuis une description libre — voir
-                           ai-theme-generator.js#generateThemeFromPrompt côté
-                           serveur. Repli garanti sur "Mission Control" en cas
-                           d'échec/timeout, jamais un rendu à moitié appliqué. -->
-              <div class="mood-picker-row mt-tight">
-                <input
-                  type="text"
-                  id="themePromptInput"
-                  class="input-flex-220"
-                  placeholder="Ex. Culte de Pâques lumineux, Soirée de louange sombre &amp; moderne..."
-                  maxlength="500"
-                  onkeydown="if (event.key === 'Enter') generateThemeFromPromptUI();"
-                  aria-label="Description du thème à générer"
-                />
-                <button
-                  class="btn btn-secondary chip-sm"
-                  id="generateThemeBtn"
-                  data-action="generate"
-                  data-target="theme-prompt"
-                >
-                  ✨ Générer
-                </button>
-              </div>
-              <div id="themeGenerationStatus" class="field-hint mt-tight"></div>
-            </div>
 
             <div class="card">
               <div class="queue-panel-header">
@@ -1711,35 +1646,6 @@
                          principal, pas seulement un média), toujours pilotée par
                          l'étoile ⭐ dans la liste Médiathèque ou le studio de
                          scènes ; voir poster-principal-card.js. -->
-            <div class="card" id="defaultPosterCard">
-              <div class="card-header">
-                <span class="card-title">Poster principal</span>
-                <div class="card-icon-wrap icon-amber-star">
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                  >
-                    <polygon
-                      points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
-                    />
-                  </svg>
-                </div>
-              </div>
-              <div id="defaultPosterEmpty" class="empty-state-note">
-                Aucun poster principal configuré — l'écran peut rester vide entre deux versets.
-                Cliquez l'étoile ☆ d'un média dans la Médiathèque ci-dessous pour en choisir un.
-              </div>
-              <div id="defaultPosterActive" class="default-poster-active">
-                <span class="default-poster-label" id="defaultPosterLabel"></span>
-                <button id="clearDefaultPosterFromCardBtn" class="btn btn-secondary btn-remove-xs">
-                  Retirer
-                </button>
-              </div>
-            </div>
 
             <!-- AJOUT (médiathèque — déclenchement vocal de photos/vidéos, voir
                          media-library.js) : mêmes classes CSS que la file d'attente
@@ -2461,409 +2367,24 @@
         </section>
 
         <!-- Analysis Section -->
-        <section id="analysis" class="section is-hidden">
-          <div class="analysis-stats-grid">
-            <div class="card" data-group="analyse">
-              <div class="card-header">
-                <span class="card-title">Analyse du Discours</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-label">Mots Détectés</span>
-                <span class="stat-value" id="wordCount">0</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-label">Points Clés</span>
-                <span class="stat-value" id="keyPoints">0</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-label">Thèmes Identifiés</span>
-                <span class="stat-value" id="themesCount">0</span>
-              </div>
-            </div>
-
-            <div class="card" data-group="analyse">
-              <div class="card-header">
-                <span class="card-title">Performances ML</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-label">Détections Totales</span>
-                <span class="stat-value" id="totalDetections">0</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-label">Haute Confiance</span>
-                <span class="stat-value" id="highConfidence">0</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-label">Confiance Moyenne</span>
-                <span class="stat-value" id="avgConfidence">100%</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="card mt-6" data-group="analyse">
-            <div class="card-header">
-              <span class="card-title">Thèmes Principaux</span>
-            </div>
-            <div id="themesList">
-              <div class="stat-row">
-                <span class="stat-label">Aucun thème analysé pour le moment</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Références croisées — affichées automatiquement quand un verset est diffusé -->
-          <div class="card mt-6" data-group="analyse">
-            <div class="card-header">
-              <span class="card-title">Références Croisées</span>
-              <span id="crossRefStatus" class="status-badge hidden-by-default"></span>
-            </div>
-            <div id="crossRefResults">
-              <div class="stat-row">
-                <span class="stat-label"
-                  >Les références croisées apparaissent automatiquement lorsqu'un verset est
-                  affiché.</span
-                >
-              </div>
-            </div>
-          </div>
-
-          <!-- Résumé IA en direct — rolling summary pendant le sermon -->
-          <div class="card mt-6" data-group="analyse">
-            <div class="card-header">
-              <span class="card-title">Résumé IA en Direct</span>
-              <button id="liveSummaryRefreshBtn" class="btn btn-secondary btn-2xs">
-                Actualiser
-              </button>
-            </div>
-            <div class="ai-summary-box" id="liveSummaryContent">
-              Le résumé se génère automatiquement pendant le sermon.
-            </div>
-          </div>
-
-          <!-- CORRECTIF (audit round 6) : ai-enricher.js était entièrement codé et
-                     câblé côté serveur (getLiveSummary / getSermonTheme / getCrossReferences /
-                     translateText / getPostServiceRecap) mais sans aucun bouton pour les
-                     déclencher — les modules IA étaient donc invisibles et inutilisables
-                     malgré l'activation dans config/features.json. -->
-          <div class="card mt-6" data-group="analyse">
-            <div class="card-header">
-              <span class="card-title">Fonctions IA Avancées</span>
-              <!-- AJOUT : badge de mode de culte auto-détecté (rafraîchi en tâche de
-                             fond, sans action de l'opérateur). Reste discret tant qu'aucune
-                             détection n'a encore eu lieu. -->
-              <span id="sermonModeBadge" class="status-badge hidden-by-default"></span>
-            </div>
-            <div class="wrap-btn-row mb-4">
-              <button id="requestSermonThemeBtn" class="btn btn-secondary">
-                Détecter le thème
-              </button>
-              <button id="requestLiveSummaryBtn" class="btn btn-secondary">Résumé en direct</button>
-              <button id="requestCrossReferencesBtn" class="btn btn-secondary">
-                Références croisées
-              </button>
-              <button id="requestLiveTranslationBtn" class="btn btn-secondary">
-                Traduire (EN)
-              </button>
-              <button id="requestPostServiceRecapBtn" class="btn btn-secondary">
-                Récap fin de culte
-              </button>
-              <button
-                id="exportPostServiceRecapBtn"
-                class="btn btn-secondary"
-                title="Génère d'abord le récap si nécessaire"
-              >
-                📄 Exporter le récap (.txt)
-              </button>
-              <!-- AJOUT (statistiques IA — diagnostic) : getAiStats existait déjà
-                           côté serveur, jamais exposé côté tableau de bord. Purement
-                           informatif (cache/appels du détecteur, corrections
-                           appliquées...), pas une action pour le culte en cours. -->
-              <button
-                id="requestAiStatsBtn"
-                class="btn btn-secondary"
-                title="Diagnostic — cache/appels du détecteur sémantique, corrections appliquées"
-              >
-                📊 Statistiques IA
-              </button>
-            </div>
-
-            <!-- AJOUT : traduction live automatique — quand activé, chaque verset
-                         affiché est traduit automatiquement et envoyé à l'overlay (double
-                         affichage FR/langue cible), sans clic manuel par verset. -->
-            <div class="auto-translate-row">
-              <label class="checkbox-label">
-                <input
-                  type="checkbox"
-                  id="autoTranslateToggle"
-                  onchange="onAutoTranslateToggle()"
-                />
-                <span>Traduction live sur l'overlay</span>
-              </label>
-              <select
-                class="ml-auto"
-                id="autoTranslateLang"
-                onchange="onAutoTranslateLangChange()"
-                aria-label="Langue de la traduction live"
-              >
-                <option value="en">Anglais</option>
-                <option value="es">Espagnol</option>
-                <option value="dyu">Dioula</option>
-              </select>
-            </div>
-
-            <!-- AJOUT (audit — mémoire des cultes, gratuit/léger) : recherche locale
-                         par mots-clés dans les cultes archivés (voir sermon-archive.js) —
-                         chaque clic sur "Récap fin de culte" ci-dessus alimente cette
-                         archive. Pas d'appel API, pas d'embedding, juste un fichier local. -->
-            <div class="inline-form-row mb-4">
-              <input
-                class="input-flex-220"
-                type="text"
-                id="archiveSearchInput"
-                placeholder="Ai-je déjà prêché sur... ?"
-                onkeydown="if (event.key === 'Enter') requestArchiveSearch();"
-                aria-label="Rechercher dans les prédications archivées"
-              />
-              <button id="requestArchiveSearchBtn" class="btn btn-secondary">
-                🔎 Chercher dans l'historique
-              </button>
-            </div>
-
-            <div id="aiEnricherOutput" class="stat-row stat-row-block">
-              <span class="stat-label">Aucune analyse IA lancée pour le moment.</span>
-            </div>
-          </div>
-
-          <!-- Récap post-culte — affiché quand le culte est terminé -->
-          <div
-            class="card mt-6 post-service-recap-card--hidden"
-            data-group="analyse"
-            id="postServiceRecapCard"
-          >
-            <div class="card-header">
-              <span class="card-title">Récap Post-Culte</span>
-              <div class="btn-group-sm">
-                <button id="exportPostServiceRecapArchiveBtn" class="btn btn-secondary btn-2xs">
-                  📄 Exporter .txt
-                </button>
-                <button id="exportHighlightsArchiveBtn" class="btn btn-secondary btn-2xs">
-                  📊 Exporter temps forts
-                </button>
-              </div>
-            </div>
-            <div class="ai-recap-box" id="postServiceRecapContent">
-              Cliquez sur "Récap fin de culte" dans Fonctions IA pour générer ce résumé.
-            </div>
-          </div>
-
-          <div class="card mt-6">
-            <div class="card-header">
-              <span class="card-title">Agent opérateur</span>
-              <span class="status-badge">Actions contrôlées</span>
-            </div>
-            <div class="field-hint mb-3">
-              L'agent consulte les ressources existantes et demande confirmation avant toute action
-              publique.
-            </div>
-            <div class="wrap-btn-row mb-4">
-              <input
-                class="input-flex-240"
-                type="text"
-                id="agentInput"
-                placeholder="Ex. Trouve Jean 3:16 et prépare son affichage"
-                onkeydown="if (event.key === 'Enter') runAgent();"
-                aria-label="Instruction pour l'agent opérateur"
-              />
-              <button id="runAgentBtn" class="btn btn-secondary">Lancer</button>
-              <button type="button" class="btn btn-primary agent-approve-btn" id="agentApproveBtn">
-                Confirmer l'action
-              </button>
-            </div>
-            <pre id="agentOutput" class="stat-row agent-output">Aucune exécution agent.</pre>
-          </div>
-
-          <!-- AJOUT (cahier des charges — assistant sermons, Point 5 "outil
-                     d'affichage, jamais de génération théologique") : carte VOLONTAIREMENT
-                     séparée des "Fonctions IA Avancées" ci-dessus (pas le même
-                     aiEnricherOutput partagé) — répond UNIQUEMENT à partir de prédications
-                     réellement archivées, jamais de contenu généré sans source (voir
-                     sermon-qa.js). Réservé à l'opérateur : jamais exposé sur
-                     companion.html/overlay.html. -->
-          <div class="card mt-6" data-group="analyse">
-            <div class="card-header">
-              <span class="card-title">Assistant Q&R — Prédications archivées</span>
-            </div>
-            <div class="field-hint mb-3">
-              Répond uniquement à partir des prédications déjà archivées (voir "Récap fin de culte"
-              ci-dessus) — jamais de théologie générée sans passage réel à citer.
-            </div>
-            <div class="inline-form-row mb-4">
-              <input
-                class="input-flex-220"
-                type="text"
-                id="sermonQaInput"
-                placeholder="Qu'a dit le pasteur sur... ?"
-                onkeydown="if (event.key === 'Enter') askSermonQuestion();"
-                aria-label="Question sur une prédication archivée"
-              />
-              <button id="askSermonQuestionBtn" class="btn btn-secondary">💬 Demander</button>
-            </div>
-            <div id="sermonQaOutput" class="stat-row stat-row-block">
-              <span class="stat-label">Posez une question sur une prédication passée.</span>
-            </div>
-            <div class="mt-3" id="sermonQaSources"></div>
-          </div>
-
-          <!-- AJOUT (recherche de versets par thème — fonctionnalité déjà codée
-                     côté serveur, jamais exposée côté tableau de bord jusqu'ici :
-                     voir bible-search.js). IMPORTANT : "par thème", pas "IA"/
-                     "sémantique" dans le libellé — le vrai index vectoriel n'est
-                     pas implémenté côté serveur, le matching réel est un
-                     rapprochement par mot-clé sur une douzaine de thèmes
-                     prédéfinis. Ne pas survendre. -->
-          <div class="card mt-6" data-group="analyse">
-            <div class="card-header">
-              <span class="card-title">Recherche de versets par thème</span>
-            </div>
-            <div class="field-hint mb-3">
-              Recherche par mot-clé sur des thèmes courants (amour, foi, pardon, grâce, paix...) —
-              pas une recherche IA/sémantique.
-            </div>
-            <div class="mood-picker-row mb-4" id="bibleTopicChips"></div>
-            <div class="inline-form-row mb-4">
-              <input
-                class="input-flex-220"
-                type="text"
-                id="bibleSearchInput"
-                placeholder="Rechercher un thème (ex. pardon, espérance...)"
-                onkeydown="if (event.key === 'Enter') searchBibleByTopic();"
-                aria-label="Rechercher des versets par thème"
-              />
-              <button id="searchBibleByTopicBtn" class="btn btn-secondary">🔎 Rechercher</button>
-            </div>
-            <div id="bibleSearchOutput" class="stat-row stat-row-block">
-              <span class="stat-label">Choisissez un thème ou tapez une recherche.</span>
-            </div>
-          </div>
-
-          <!-- AJOUT (audit round 9) : session-store.js (SQLite) enregistre déjà
-                     chaque verset affiché et chaque erreur de pipeline, mais rien ne
-                     relisait cette base côté tableau de bord — la persistance tournait
-                     "dans le vide". Panneau de consultation de l'historique. -->
-          <div class="card mt-6" data-group="analyse">
-            <div class="card-header">
-              <span class="card-title">Historique de session (persistant)</span>
-            </div>
-            <div class="wrap-btn-row mb-4">
-              <button id="requestSessionStats1Btn" class="btn btn-secondary">Dernières 24h</button>
-              <button id="requestSessionStats7Btn" class="btn btn-secondary">
-                7 derniers jours
-              </button>
-            </div>
-            <div id="sessionStatsOutput" class="stat-row stat-row-block">
-              <span class="stat-label">Cliquez sur une période pour charger l'historique.</span>
-            </div>
-
-            <!-- AJOUT (export des temps forts — voir highlight-export.js) :
-                         réutilise le même historique persistant ci-dessus, juste
-                         mis en forme pour un enregistrement vidéo du culte en cours
-                         (chapitres YouTube à coller dans la description, ou CSV). -->
-            <div class="section-divider-block">
-              <div class="wrap-btn-row mb-3">
-                <button id="exportHighlightsBtn" class="btn btn-secondary">
-                  🎬 Exporter les temps forts (culte en cours)
-                </button>
-              </div>
-              <div class="field-hint mb-2">
-                Versets, chants et médias affichés depuis le démarrage du serveur, au format
-                "chapitres YouTube" (à coller dans la description de la vidéo) — un export CSV est
-                aussi copié.
-              </div>
-              <textarea
-                class="highlights-export-output hidden-by-default"
-                id="highlightsExportOutput"
-                readonly
-                rows="6"
-                aria-label="Temps forts exportés (chapitres YouTube)"
-              ></textarea>
-            </div>
-
-            <!-- AJOUT (chantier 4.6 — extraits vidéo autour des temps forts) :
-                         découpe réellement la vidéo (voir clip-exporter.js), contrairement
-                         au bloc "Exporter les temps forts" ci-dessus qui ne produit que du
-                         texte (chapitres/CSV). Nécessite un enregistrement vidéo du culte
-                         déjà terminé sur disque (l'app n'enregistre pas elle-même). -->
-            <div class="section-divider-block">
-              <div class="subsection-title mb-2">
-                🎞️ Générer des extraits vidéo (réseaux sociaux)
-              </div>
-              <div class="field-hint mb-tight">
-                Découpe un extrait de
-                <input
-                  class="input-w-4rem"
-                  type="number"
-                  id="clipDurationInput"
-                  value="45"
-                  min="15"
-                  max="120"
-                  aria-label="Durée de chaque extrait vidéo, en secondes"
-                />
-                s autour de chaque temps fort, depuis un enregistrement vidéo déjà terminé sur
-                disque.
-              </div>
-              <!-- AJOUT (durcissement Social Clip Machine) : format de sortie et
-                           incrustation des sous-titres — voir clip-exporter.js/srt-export.js. -->
-              <div class="wrap-btn-row mb-tight">
-                <label for="clipAspectRatioSelect" class="field-hint">Format :</label>
-                <select id="clipAspectRatioSelect" aria-label="Format de l'extrait vidéo">
-                  <option value="16:9">16:9 (paysage)</option>
-                  <option value="9:16">9:16 (vertical — Reels/TikTok/Shorts)</option>
-                </select>
-                <label class="field-hint">
-                  <input type="checkbox" id="clipBurnSubtitlesCheckbox" />
-                  Incruster les sous-titres (.srt, à partir de la transcription du culte)
-                </label>
-              </div>
-              <div class="wrap-btn-row mb-tight">
-                <button id="pickClipSourceVideoBtn" class="btn btn-secondary">
-                  📂 Choisir la vidéo source
-                </button>
-                <button id="pickClipOutputFolderBtn" class="btn btn-secondary">
-                  📁 Choisir le dossier de destination
-                </button>
-              </div>
-              <div id="clipExportPaths" class="field-hint mb-tight"></div>
-              <button class="btn btn-primary" id="clipExportBtn">✂️ Générer les extraits</button>
-              <div id="clipExportStatus" class="field-hint mt-tight"></div>
-            </div>
-          </div>
-        </section>
+        <!-- SUPPRIMÉ (redesign IA — étape 5, tiroir d'outils secondaires) :
+             <section id="analysis"> hébergeait Analyse du Discours/
+             Performances ML/Thèmes Principaux/Références Croisées/Résumé IA
+             en Direct/Fonctions IA Avancées/Récap Post-Culte/Agent
+             opérateur/Assistant Q&R/Recherche par thème/Historique de
+             session — tous relocalisés dans #secondaryDrawer (voir plus bas
+             dans ce fichier), section devenue vide, retirée. "analysis"
+             retiré de data-sections="..." des deux copies du nav-item
+             "Paramètres" en conséquence. -->
 
         <!-- Settings Section -->
         <section id="settings" class="section is-hidden">
           <!-- AJOUT (sous-navigation par catégorie — filtre visuel des cartes
-                     de l'onglet Régie) : dashboard/features/settings-subnav.js
-                     et les attributs data-group="..." sur chaque carte
-                     existaient déjà, mais ce fichier n'était importé nulle
-                     part dans dashboard/main.js — et cette barre n'existait
-                     pas dans le HTML. Ce bloc ajoute ce que le script attend
-                     déjà (voir son commentaire d'en-tête), replacé ici plutôt
-                     que dans <section id="controls"> comme suggéré par ce
-                     commentaire : cette section-là appartient à l'onglet
-                     "Direct Classique" (voir data-sections sur .nav-item plus
-                     haut), pas à "Régie" — le commentaire du script date d'une
-                     structure de navigation antérieure (6 onglets, puis 2 vues
-                     "En Direct"/"Réglages", voir showSectionsFor() dans
-                     state.js) à la structure actuelle à 4 onglets. "Régie"
-                     n'affiche que #settings + #overlay : seuls les groupes qui
-                     y existent réellement (systeme/diffusion/cameras/
-                     integrations, voir grep data-group) sont listés
-                     ci-dessous — pas analyse/studio/media, qui vivent dans
-                     #analysis/#studio/#media-wall sous l'onglet "Préparation"
-                     (media-wall) ou "Direct Classique" (aucun ici, groupes
-                     confirmés carte par carte, pas seulement par un simple
-                     grep qui inclurait à tort le contenu de sections
-                     voisines). -->
+                     de l'onglet Paramètres) : voir dashboard/features/
+                     settings-subnav.js pour le mécanisme. Groupes listés
+                     ci-dessous = ceux réellement présents dans #settings/
+                     #overlay (systeme/diffusion/cameras/integrations),
+                     confirmés carte par carte. -->
           <div
             class="settings-subnav"
             role="tablist"
@@ -3048,33 +2569,6 @@
                      dashboard/features/overlay-theme-selector.js. Distinct
                      de « Identité de la marque » ci-dessus : change ce que
                      l'ASSEMBLÉE voit sur overlay.html, pas cet outil. -->
-          <div class="card settings-card-spaced" id="overlayThemeCard" data-group="systeme">
-            <div class="card-header">
-              <span class="card-title">Thème de l'affichage overlay</span>
-              <div class="card-icon-wrap">
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <circle cx="7" cy="12" r="4" fill="currentColor" opacity="0.35" stroke="none" />
-                  <circle cx="12" cy="8" r="4" fill="currentColor" opacity="0.6" stroke="none" />
-                  <circle cx="17" cy="12" r="4" fill="currentColor" stroke="none" />
-                </svg>
-              </div>
-            </div>
-            <div class="field-hint field-hint-flush">
-              Change l'apparence de l'overlay projeté à l'assemblée (overlay.html), en direct, sans
-              redémarrer le pipeline. Sans rapport avec « Identité de la marque » ci-dessus (qui ne
-              change que cet outil).
-            </div>
-            <div id="overlayThemeList" class="mood-picker-row">
-              <span class="stat-label">Chargement des thèmes...</span>
-            </div>
-          </div>
 
           <div class="card settings-card-spaced" id="apiSettingsCard" data-group="systeme">
             <div class="card-header">
@@ -3587,96 +3081,15 @@
             </div>
           </div>
 
-          <!-- AJOUT (demande explicite — plusieurs téléphones comme caméras
-                     multi-angles pour la diffusion). Distinct du panneau caméra
-                     ci-dessus : pas de navigator.mediaDevices ici, juste une URL de
-                     flux MJPEG réseau (app type "IP Webcam" côté téléphone) affichée
-                     directement via <img> — Chromium sait nativement lire un flux
-                     multipart/x-mixed-replace comme une image "vivante", sans
-                     librairie ni décodage vidéo ajouté. Voir ip-camera-store.js. -->
-          <div class="card" data-group="cameras">
-            <div class="card-header">
-              <span class="card-title">Caméras IP (téléphones)</span>
-              <span id="ipCameraCount" class="status-badge warning">0</span>
-            </div>
-            <div class="field-hint mb-3">
-              Pour utiliser plusieurs téléphones comme caméras, sans rien installer sur ce PC. Le
-              bouton 📋 sur chaque caméra copie le lien à coller directement dans une Source
-              Navigateur OBS.
-            </div>
-            <!-- AJOUT (caméra téléphone par QR code, demande explicite) : aucune app
-                         à installer — le téléphone scanne, ouvre phone-camera.html dans son
-                         propre navigateur, et devient une caméra IP comme les autres
-                         ci-dessous. Nécessite que le serveur soit accessible sur le réseau
-                         (WS_HOST) — voir le message d'erreur clair si ce n'est pas le cas. -->
-            <!-- AJOUT (demande explicite — "plus de paramètres") : nom ET qualité
-                         choisis AVANT de générer le QR — le téléphone lit son réglage de
-                         qualité directement dans l'URL scannée (voir phone-camera.html),
-                         il ne peut pas le demander à l'opérateur après coup. -->
-            <div class="camera-pairing-subsection">
-              <h4>📷 Sans application (QR code)</h4>
-              <div class="camera-pairing-qr-row">
-                <input
-                  type="text"
-                  id="cameraPairingLabelInput"
-                  placeholder="Nom (ex. Téléphone scène)"
-                  aria-label="Nom de la caméra"
-                  class="camera-pairing-label-input"
-                />
-                <select
-                  id="cameraPairingQualitySelect"
-                  title="Qualité du flux — plus haut = meilleure image mais plus de données sur le Wi-Fi"
-                  aria-label="Qualité du flux vidéo"
-                  class="camera-pairing-quality-select"
-                >
-                  <option value="low">Qualité basse (Wi-Fi faible)</option>
-                  <option value="medium" selected>Qualité moyenne</option>
-                  <option value="high">Qualité haute</option>
-                </select>
-                <button id="generateCameraPairingBtn" type="button" class="btn btn-primary">
-                  📷 Générer un QR code (téléphone, sans app)
-                </button>
-              </div>
-              <div id="cameraPairingBox" class="camera-pairing-box hidden-by-default">
-                <img
-                  id="cameraPairingQr"
-                  class="camera-pairing-qr-img"
-                  alt="QR code de jumelage caméra"
-                />
-                <div class="field-hint">
-                  Scannez avec l'appareil photo du téléphone (pas besoin d'app — s'ouvre dans le
-                  navigateur). Valable <span id="cameraPairingExpiry">10 minutes</span>.
-                </div>
-              </div>
-            </div>
-
-            <div class="camera-pairing-subsection">
-              <h4>🔧 Manuel (app « IP Webcam » ou équivalent)</h4>
-              <div class="field-hint mb-2">
-                Pour une app déjà en cours d'exécution sur un téléphone : notez son adresse (ex.
-                <code>http://192.168.1.50:8080</code>), ajoutez <code>/video</code>, et collez-la
-                ci-dessous.
-              </div>
-              <div class="input-row mb-3">
-                <input
-                  type="text"
-                  id="ipCameraLabelInput"
-                  placeholder="Nom (ex. Téléphone scène)"
-                  aria-label="Nom de la caméra IP"
-                />
-                <input
-                  type="text"
-                  id="ipCameraUrlInput"
-                  placeholder="http://192.168.1.50:8080/video"
-                  aria-label="URL du flux vidéo de la caméra IP"
-                />
-                <button id="addIpCameraBtn" type="button" class="btn btn-secondary">
-                  + Ajouter
-                </button>
-              </div>
-              <div class="queue-list" id="ipCameraList"></div>
-            </div>
-          </div>
+          <!-- CORRECTIF (redesign IA — étape 5) : cette carte combinait encore la
+               grille du flux live (#ipCameraList, Operator-essential — voir la
+               décision 2 du signoff, déjà appliquée au niveau JS à l'étape 2
+               via ip-camera-feed.js, mais jamais physiquement séparée ici) et
+               le jumelage/config (secondaire). Le jumelage rejoint
+               #secondaryDrawer (voir sa relocalisation vers data-drawer-pane
+               ="ip-cameras" plus bas) ; la grille elle-même est désormais sa
+               propre carte dans #propresenter-live (Opérateur), voir sa
+               relocalisation, étape 1/redesign — cherchez ipCameraFeedCard. -->
 
           <!-- AJOUT (habillage caméra — logo/titre par-dessus la caméra, demande
                      explicite "mieux qu'OBS"). branding-overlay.html est une Source
@@ -4312,22 +3725,7 @@
           </svg>
           <span>Opérateur</span>
         </li>
-        <li class="nav-item" data-sections="analysis,studio">
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <path d="M12 2L2 7l10 5 10-5-10-5z" />
-            <path d="M2 17l10 5 10-5" />
-            <path d="M2 12l10 5 10-5" />
-          </svg>
-          <span>Préparation</span>
-        </li>
-        <li class="nav-item" data-sections="settings,overlay">
+        <li class="nav-item" data-sections="studio,settings,overlay">
           <svg
             width="20"
             height="20"
@@ -4341,7 +3739,7 @@
             />
             <circle cx="12" cy="12" r="3" />
           </svg>
-          <span>Régie</span>
+          <span>Paramètres</span>
         </li>
       </ul>
     </nav>
@@ -4357,6 +3755,664 @@
          ensemble. La VRAIE palette Ctrl/Cmd+K reste #commandPalette,
          déclenchée par le bouton .command-palette-trigger ci-dessus,
          inchangée. -->
+
+    <!-- AJOUT (redesign IA — étape 5, tiroir d'outils secondaires) : panneau
+         latéral rétractable, joignable depuis Opérateur ET Paramètres (voir
+         #secondaryDrawerToggle plus haut) — regroupe les outils occasionnels
+         identifiés par DASHBOARD-IA-REDESIGN-PROPOSAL.md (ni Opérateur-
+         essentiel, ni Paramètres/config), un seul affiché à la fois via la
+         liste ci-dessous. Fermé par défaut ; ce n'est jamais un <section>
+         géré par showSectionsFor() — reste ouvert/fermé indépendamment de
+         l'espace actif. Voir dashboard/features/secondary-drawer.js. -->
+    <div id="secondaryDrawer" class="secondary-drawer is-hidden" aria-hidden="true">
+      <div
+        class="secondary-drawer-backdrop"
+        data-action="close"
+        data-target="secondary-drawer"
+      ></div>
+      <div class="secondary-drawer-panel">
+        <div class="secondary-drawer-header">
+          <span class="card-title">Outils secondaires</span>
+          <button
+            type="button"
+            class="btn btn-secondary btn-remove-xs"
+            data-action="close"
+            data-target="secondary-drawer"
+          >
+            ✕
+          </button>
+        </div>
+        <div class="secondary-drawer-body">
+          <nav class="secondary-drawer-nav">
+            <button type="button" class="secondary-drawer-tab active" data-drawer-tab="poster">
+              Poster principal
+            </button>
+            <button type="button" class="secondary-drawer-tab" data-drawer-tab="ambiance">
+              Ambiance
+            </button>
+            <button type="button" class="secondary-drawer-tab" data-drawer-tab="bible-search">
+              Recherche par thème
+            </button>
+            <button type="button" class="secondary-drawer-tab" data-drawer-tab="agent">
+              Agent opérateur
+            </button>
+            <button
+              type="button"
+              class="secondary-drawer-tab"
+              data-drawer-tab="discourse-analysis"
+            >
+              Analyse du discours
+            </button>
+            <button type="button" class="secondary-drawer-tab" data-drawer-tab="ml-performance">
+              Performances ML
+            </button>
+            <button type="button" class="secondary-drawer-tab" data-drawer-tab="main-themes">
+              Thèmes principaux
+            </button>
+            <button type="button" class="secondary-drawer-tab" data-drawer-tab="cross-refs">
+              Références croisées
+            </button>
+            <button type="button" class="secondary-drawer-tab" data-drawer-tab="ai-summary">
+              Résumé IA en direct
+            </button>
+            <button type="button" class="secondary-drawer-tab" data-drawer-tab="ai-advanced">
+              Fonctions IA avancées
+            </button>
+            <button type="button" class="secondary-drawer-tab" data-drawer-tab="recap">
+              Récap post-culte
+            </button>
+            <button type="button" class="secondary-drawer-tab" data-drawer-tab="qa">
+              Assistant Q&R
+            </button>
+            <button type="button" class="secondary-drawer-tab" data-drawer-tab="history">
+              Historique de session
+            </button>
+            <button type="button" class="secondary-drawer-tab" data-drawer-tab="overlay-theme">
+              Thème overlay
+            </button>
+            <button type="button" class="secondary-drawer-tab" data-drawer-tab="ip-cameras">
+              Jumelage caméra IP
+            </button>
+          </nav>
+          <div class="secondary-drawer-content">
+            <div class="secondary-drawer-pane active" data-drawer-pane="poster">
+            <div class="card" id="defaultPosterCard">
+              <div class="card-header">
+                <span class="card-title">Poster principal</span>
+                <div class="card-icon-wrap icon-amber-star">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <polygon
+                      points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+                    />
+                  </svg>
+                </div>
+              </div>
+              <div id="defaultPosterEmpty" class="empty-state-note">
+                Aucun poster principal configuré — l'écran peut rester vide entre deux versets.
+                Cliquez l'étoile ☆ d'un média dans la Médiathèque ci-dessous pour en choisir un.
+              </div>
+              <div id="defaultPosterActive" class="default-poster-active">
+                <span class="default-poster-label" id="defaultPosterLabel"></span>
+                <button id="clearDefaultPosterFromCardBtn" class="btn btn-secondary btn-remove-xs">
+                  Retirer
+                </button>
+              </div>
+            </div>
+            </div>
+            <div class="secondary-drawer-pane" data-drawer-pane="ambiance">
+            <div class="card">
+              <div class="card-header">
+                <span class="card-title">Ambiance</span>
+              </div>
+              <div class="mood-picker-row" id="moodPicker">
+                <span class="hint-text-sm">Connexion au serveur en cours...</span>
+              </div>
+              <div class="ambient-toggle-row">
+                <label class="toggle-switch">
+                  <input
+                    type="checkbox"
+                    id="ambientModeToggle"
+                    checked
+                    onchange="toggleAmbientMode(this.checked)"
+                    aria-labelledby="ambientModeToggleLabel"
+                  />
+                  <span class="toggle-slider"></span>
+                </label>
+                <!-- AJOUT (accessibilité) : le <label class="toggle-switch">
+                     n'enveloppe que l'input et le curseur, sans aucun texte —
+                     la case n'avait donc aucun nom accessible. aria-labelledby
+                     réutilise le libellé DÉJÀ visible ci-dessous plutôt que d'en
+                     dupliquer un dans un aria-label. -->
+                <span id="ambientModeToggleLabel">Cycle auto ambiances</span>
+              </div>
+              <!-- AJOUT (audit — affichage/sortie, gratuit/léger) : motif de fond
+                             optionnel, CSS pur (voir #pattern-layer dans overlay.html) — en
+                             plus du dégradé de thème déjà choisi ci-dessus. -->
+              <div class="mood-picker-row mt-tight" id="patternPicker">
+                <button class="mood-btn active" id="pattern-btn-none">Aucun motif</button>
+                <button class="mood-btn" id="pattern-btn-dots">Points</button>
+                <button class="mood-btn" id="pattern-btn-grid">Grille</button>
+                <button class="mood-btn" id="pattern-btn-diagonal">Diagonales</button>
+              </div>
+              <!-- AJOUT (chantier "Prompt-to-Theme") : habillage sur mesure
+                           généré par IA depuis une description libre — voir
+                           ai-theme-generator.js#generateThemeFromPrompt côté
+                           serveur. Repli garanti sur "Mission Control" en cas
+                           d'échec/timeout, jamais un rendu à moitié appliqué. -->
+              <div class="mood-picker-row mt-tight">
+                <input
+                  type="text"
+                  id="themePromptInput"
+                  class="input-flex-220"
+                  placeholder="Ex. Culte de Pâques lumineux, Soirée de louange sombre &amp; moderne..."
+                  maxlength="500"
+                  onkeydown="if (event.key === 'Enter') generateThemeFromPromptUI();"
+                  aria-label="Description du thème à générer"
+                />
+                <button
+                  class="btn btn-secondary chip-sm"
+                  id="generateThemeBtn"
+                  data-action="generate"
+                  data-target="theme-prompt"
+                >
+                  ✨ Générer
+                </button>
+              </div>
+              <div id="themeGenerationStatus" class="field-hint mt-tight"></div>
+            </div>
+            </div>
+            <div class="secondary-drawer-pane" data-drawer-pane="bible-search">
+          <div class="card mt-6" data-group="analyse">
+            <div class="card-header">
+              <span class="card-title">Recherche de versets par thème</span>
+            </div>
+            <div class="field-hint mb-3">
+              Recherche par mot-clé sur des thèmes courants (amour, foi, pardon, grâce, paix...) —
+              pas une recherche IA/sémantique.
+            </div>
+            <div class="mood-picker-row mb-4" id="bibleTopicChips"></div>
+            <div class="inline-form-row mb-4">
+              <input
+                class="input-flex-220"
+                type="text"
+                id="bibleSearchInput"
+                placeholder="Rechercher un thème (ex. pardon, espérance...)"
+                onkeydown="if (event.key === 'Enter') searchBibleByTopic();"
+                aria-label="Rechercher des versets par thème"
+              />
+              <button id="searchBibleByTopicBtn" class="btn btn-secondary">🔎 Rechercher</button>
+            </div>
+            <div id="bibleSearchOutput" class="stat-row stat-row-block">
+              <span class="stat-label">Choisissez un thème ou tapez une recherche.</span>
+            </div>
+          </div>
+            </div>
+            <div class="secondary-drawer-pane" data-drawer-pane="agent">
+          <div class="card mt-6">
+            <div class="card-header">
+              <span class="card-title">Agent opérateur</span>
+              <span class="status-badge">Actions contrôlées</span>
+            </div>
+            <div class="field-hint mb-3">
+              L'agent consulte les ressources existantes et demande confirmation avant toute action
+              publique.
+            </div>
+            <div class="wrap-btn-row mb-4">
+              <input
+                class="input-flex-240"
+                type="text"
+                id="agentInput"
+                placeholder="Ex. Trouve Jean 3:16 et prépare son affichage"
+                onkeydown="if (event.key === 'Enter') runAgent();"
+                aria-label="Instruction pour l'agent opérateur"
+              />
+              <button id="runAgentBtn" class="btn btn-secondary">Lancer</button>
+              <button type="button" class="btn btn-primary agent-approve-btn" id="agentApproveBtn">
+                Confirmer l'action
+              </button>
+            </div>
+            <pre id="agentOutput" class="stat-row agent-output">Aucune exécution agent.</pre>
+          </div>
+            </div>
+            <div class="secondary-drawer-pane" data-drawer-pane="discourse-analysis">
+            <div class="card" data-group="analyse">
+              <div class="card-header">
+                <span class="card-title">Analyse du Discours</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Mots Détectés</span>
+                <span class="stat-value" id="wordCount">0</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Points Clés</span>
+                <span class="stat-value" id="keyPoints">0</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Thèmes Identifiés</span>
+                <span class="stat-value" id="themesCount">0</span>
+              </div>
+            </div>
+            </div>
+            <div class="secondary-drawer-pane" data-drawer-pane="ml-performance">
+            <div class="card" data-group="analyse">
+              <div class="card-header">
+                <span class="card-title">Performances ML</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Détections Totales</span>
+                <span class="stat-value" id="totalDetections">0</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Haute Confiance</span>
+                <span class="stat-value" id="highConfidence">0</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Confiance Moyenne</span>
+                <span class="stat-value" id="avgConfidence">100%</span>
+              </div>
+            </div>
+            </div>
+            <div class="secondary-drawer-pane" data-drawer-pane="main-themes">
+          <div class="card mt-6" data-group="analyse">
+            <div class="card-header">
+              <span class="card-title">Thèmes Principaux</span>
+            </div>
+            <div id="themesList">
+              <div class="stat-row">
+                <span class="stat-label">Aucun thème analysé pour le moment</span>
+              </div>
+            </div>
+          </div>
+            </div>
+            <div class="secondary-drawer-pane" data-drawer-pane="cross-refs">
+          <div class="card mt-6" data-group="analyse">
+            <div class="card-header">
+              <span class="card-title">Références Croisées</span>
+              <span id="crossRefStatus" class="status-badge hidden-by-default"></span>
+            </div>
+            <div id="crossRefResults">
+              <div class="stat-row">
+                <span class="stat-label"
+                  >Les références croisées apparaissent automatiquement lorsqu'un verset est
+                  affiché.</span
+                >
+              </div>
+            </div>
+          </div>
+            </div>
+            <div class="secondary-drawer-pane" data-drawer-pane="ai-summary">
+          <div class="card mt-6" data-group="analyse">
+            <div class="card-header">
+              <span class="card-title">Résumé IA en Direct</span>
+              <button id="liveSummaryRefreshBtn" class="btn btn-secondary btn-2xs">
+                Actualiser
+              </button>
+            </div>
+            <div class="ai-summary-box" id="liveSummaryContent">
+              Le résumé se génère automatiquement pendant le sermon.
+            </div>
+          </div>
+            </div>
+            <div class="secondary-drawer-pane" data-drawer-pane="ai-advanced">
+          <div class="card mt-6" data-group="analyse">
+            <div class="card-header">
+              <span class="card-title">Fonctions IA Avancées</span>
+              <!-- AJOUT : badge de mode de culte auto-détecté (rafraîchi en tâche de
+                             fond, sans action de l'opérateur). Reste discret tant qu'aucune
+                             détection n'a encore eu lieu. -->
+              <span id="sermonModeBadge" class="status-badge hidden-by-default"></span>
+            </div>
+            <div class="wrap-btn-row mb-4">
+              <button id="requestSermonThemeBtn" class="btn btn-secondary">
+                Détecter le thème
+              </button>
+              <button id="requestLiveSummaryBtn" class="btn btn-secondary">Résumé en direct</button>
+              <button id="requestCrossReferencesBtn" class="btn btn-secondary">
+                Références croisées
+              </button>
+              <button id="requestLiveTranslationBtn" class="btn btn-secondary">
+                Traduire (EN)
+              </button>
+              <button id="requestPostServiceRecapBtn" class="btn btn-secondary">
+                Récap fin de culte
+              </button>
+              <button
+                id="exportPostServiceRecapBtn"
+                class="btn btn-secondary"
+                title="Génère d'abord le récap si nécessaire"
+              >
+                📄 Exporter le récap (.txt)
+              </button>
+              <!-- AJOUT (statistiques IA — diagnostic) : getAiStats existait déjà
+                           côté serveur, jamais exposé côté tableau de bord. Purement
+                           informatif (cache/appels du détecteur, corrections
+                           appliquées...), pas une action pour le culte en cours. -->
+              <button
+                id="requestAiStatsBtn"
+                class="btn btn-secondary"
+                title="Diagnostic — cache/appels du détecteur sémantique, corrections appliquées"
+              >
+                📊 Statistiques IA
+              </button>
+            </div>
+
+            <!-- AJOUT : traduction live automatique — quand activé, chaque verset
+                         affiché est traduit automatiquement et envoyé à l'overlay (double
+                         affichage FR/langue cible), sans clic manuel par verset. -->
+            <div class="auto-translate-row">
+              <label class="checkbox-label">
+                <input
+                  type="checkbox"
+                  id="autoTranslateToggle"
+                  onchange="onAutoTranslateToggle()"
+                />
+                <span>Traduction live sur l'overlay</span>
+              </label>
+              <select
+                class="ml-auto"
+                id="autoTranslateLang"
+                onchange="onAutoTranslateLangChange()"
+                aria-label="Langue de la traduction live"
+              >
+                <option value="en">Anglais</option>
+                <option value="es">Espagnol</option>
+                <option value="dyu">Dioula</option>
+              </select>
+            </div>
+
+            <!-- AJOUT (audit — mémoire des cultes, gratuit/léger) : recherche locale
+                         par mots-clés dans les cultes archivés (voir sermon-archive.js) —
+                         chaque clic sur "Récap fin de culte" ci-dessus alimente cette
+                         archive. Pas d'appel API, pas d'embedding, juste un fichier local. -->
+            <div class="inline-form-row mb-4">
+              <input
+                class="input-flex-220"
+                type="text"
+                id="archiveSearchInput"
+                placeholder="Ai-je déjà prêché sur... ?"
+                onkeydown="if (event.key === 'Enter') requestArchiveSearch();"
+                aria-label="Rechercher dans les prédications archivées"
+              />
+              <button id="requestArchiveSearchBtn" class="btn btn-secondary">
+                🔎 Chercher dans l'historique
+              </button>
+            </div>
+
+            <div id="aiEnricherOutput" class="stat-row stat-row-block">
+              <span class="stat-label">Aucune analyse IA lancée pour le moment.</span>
+            </div>
+          </div>
+            </div>
+            <div class="secondary-drawer-pane" data-drawer-pane="recap">
+          <div
+            class="card mt-6 post-service-recap-card--hidden"
+            data-group="analyse"
+            id="postServiceRecapCard"
+          >
+            <div class="card-header">
+              <span class="card-title">Récap Post-Culte</span>
+              <div class="btn-group-sm">
+                <button id="exportPostServiceRecapArchiveBtn" class="btn btn-secondary btn-2xs">
+                  📄 Exporter .txt
+                </button>
+                <button id="exportHighlightsArchiveBtn" class="btn btn-secondary btn-2xs">
+                  📊 Exporter temps forts
+                </button>
+              </div>
+            </div>
+            <div class="ai-recap-box" id="postServiceRecapContent">
+              Cliquez sur "Récap fin de culte" dans Fonctions IA pour générer ce résumé.
+            </div>
+          </div>
+            </div>
+            <div class="secondary-drawer-pane" data-drawer-pane="qa">
+          <div class="card mt-6" data-group="analyse">
+            <div class="card-header">
+              <span class="card-title">Assistant Q&R — Prédications archivées</span>
+            </div>
+            <div class="field-hint mb-3">
+              Répond uniquement à partir des prédications déjà archivées (voir "Récap fin de culte"
+              ci-dessus) — jamais de théologie générée sans passage réel à citer.
+            </div>
+            <div class="inline-form-row mb-4">
+              <input
+                class="input-flex-220"
+                type="text"
+                id="sermonQaInput"
+                placeholder="Qu'a dit le pasteur sur... ?"
+                onkeydown="if (event.key === 'Enter') askSermonQuestion();"
+                aria-label="Question sur une prédication archivée"
+              />
+              <button id="askSermonQuestionBtn" class="btn btn-secondary">💬 Demander</button>
+            </div>
+            <div id="sermonQaOutput" class="stat-row stat-row-block">
+              <span class="stat-label">Posez une question sur une prédication passée.</span>
+            </div>
+            <div class="mt-3" id="sermonQaSources"></div>
+          </div>
+            </div>
+            <div class="secondary-drawer-pane" data-drawer-pane="history">
+          <div class="card mt-6" data-group="analyse">
+            <div class="card-header">
+              <span class="card-title">Historique de session (persistant)</span>
+            </div>
+            <div class="wrap-btn-row mb-4">
+              <button id="requestSessionStats1Btn" class="btn btn-secondary">Dernières 24h</button>
+              <button id="requestSessionStats7Btn" class="btn btn-secondary">
+                7 derniers jours
+              </button>
+            </div>
+            <div id="sessionStatsOutput" class="stat-row stat-row-block">
+              <span class="stat-label">Cliquez sur une période pour charger l'historique.</span>
+            </div>
+
+            <!-- AJOUT (export des temps forts — voir highlight-export.js) :
+                         réutilise le même historique persistant ci-dessus, juste
+                         mis en forme pour un enregistrement vidéo du culte en cours
+                         (chapitres YouTube à coller dans la description, ou CSV). -->
+            <div class="section-divider-block">
+              <div class="wrap-btn-row mb-3">
+                <button id="exportHighlightsBtn" class="btn btn-secondary">
+                  🎬 Exporter les temps forts (culte en cours)
+                </button>
+              </div>
+              <div class="field-hint mb-2">
+                Versets, chants et médias affichés depuis le démarrage du serveur, au format
+                "chapitres YouTube" (à coller dans la description de la vidéo) — un export CSV est
+                aussi copié.
+              </div>
+              <textarea
+                class="highlights-export-output hidden-by-default"
+                id="highlightsExportOutput"
+                readonly
+                rows="6"
+                aria-label="Temps forts exportés (chapitres YouTube)"
+              ></textarea>
+            </div>
+
+            <!-- AJOUT (chantier 4.6 — extraits vidéo autour des temps forts) :
+                         découpe réellement la vidéo (voir clip-exporter.js), contrairement
+                         au bloc "Exporter les temps forts" ci-dessus qui ne produit que du
+                         texte (chapitres/CSV). Nécessite un enregistrement vidéo du culte
+                         déjà terminé sur disque (l'app n'enregistre pas elle-même). -->
+            <div class="section-divider-block">
+              <div class="subsection-title mb-2">
+                🎞️ Générer des extraits vidéo (réseaux sociaux)
+              </div>
+              <div class="field-hint mb-tight">
+                Découpe un extrait de
+                <input
+                  class="input-w-4rem"
+                  type="number"
+                  id="clipDurationInput"
+                  value="45"
+                  min="15"
+                  max="120"
+                  aria-label="Durée de chaque extrait vidéo, en secondes"
+                />
+                s autour de chaque temps fort, depuis un enregistrement vidéo déjà terminé sur
+                disque.
+              </div>
+              <!-- AJOUT (durcissement Social Clip Machine) : format de sortie et
+                           incrustation des sous-titres — voir clip-exporter.js/srt-export.js. -->
+              <div class="wrap-btn-row mb-tight">
+                <label for="clipAspectRatioSelect" class="field-hint">Format :</label>
+                <select id="clipAspectRatioSelect" aria-label="Format de l'extrait vidéo">
+                  <option value="16:9">16:9 (paysage)</option>
+                  <option value="9:16">9:16 (vertical — Reels/TikTok/Shorts)</option>
+                </select>
+                <label class="field-hint">
+                  <input type="checkbox" id="clipBurnSubtitlesCheckbox" />
+                  Incruster les sous-titres (.srt, à partir de la transcription du culte)
+                </label>
+              </div>
+              <div class="wrap-btn-row mb-tight">
+                <button id="pickClipSourceVideoBtn" class="btn btn-secondary">
+                  📂 Choisir la vidéo source
+                </button>
+                <button id="pickClipOutputFolderBtn" class="btn btn-secondary">
+                  📁 Choisir le dossier de destination
+                </button>
+              </div>
+              <div id="clipExportPaths" class="field-hint mb-tight"></div>
+              <button class="btn btn-primary" id="clipExportBtn">✂️ Générer les extraits</button>
+              <div id="clipExportStatus" class="field-hint mt-tight"></div>
+            </div>
+          </div>
+            </div>
+            <div class="secondary-drawer-pane" data-drawer-pane="overlay-theme">
+          <div class="card settings-card-spaced" id="overlayThemeCard" data-group="systeme">
+            <div class="card-header">
+              <span class="card-title">Thème de l'affichage overlay</span>
+              <div class="card-icon-wrap">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="7" cy="12" r="4" fill="currentColor" opacity="0.35" stroke="none" />
+                  <circle cx="12" cy="8" r="4" fill="currentColor" opacity="0.6" stroke="none" />
+                  <circle cx="17" cy="12" r="4" fill="currentColor" stroke="none" />
+                </svg>
+              </div>
+            </div>
+            <div class="field-hint field-hint-flush">
+              Change l'apparence de l'overlay projeté à l'assemblée (overlay.html), en direct, sans
+              redémarrer le pipeline. Sans rapport avec « Identité de la marque » ci-dessus (qui ne
+              change que cet outil).
+            </div>
+            <div id="overlayThemeList" class="mood-picker-row">
+              <span class="stat-label">Chargement des thèmes...</span>
+            </div>
+          </div>
+            </div>
+            <div class="secondary-drawer-pane" data-drawer-pane="ip-cameras">
+              <!-- AJOUT (demande explicite — plusieurs téléphones comme caméras
+                   multi-angles pour la diffusion). Distinct du panneau caméra
+                   ci-dessus : pas de navigator.mediaDevices ici, juste une URL de
+                   flux MJPEG réseau (app type "IP Webcam" côté téléphone) affichée
+                   directement via <img> — Chromium sait nativement lire un flux
+                   multipart/x-mixed-replace comme une image "vivante", sans
+                   librairie ni décodage vidéo ajouté. Voir ip-camera-store.js.
+                   La grille du flux live (déjà ajoutées) vit maintenant dans
+                   #ipCameraFeedCard (Opérateur) — voir dashboard/features/
+                   ip-camera-feed.js — ceci ne couvre que le jumelage. -->
+              <div class="card" data-group="cameras">
+                <div class="card-header">
+                  <span class="card-title">Jumelage caméra IP</span>
+                </div>
+                <div class="field-hint mb-3">
+                  Pour utiliser plusieurs téléphones comme caméras, sans rien installer sur ce PC. Le
+                  bouton 📋 sur chaque caméra copie le lien à coller directement dans une Source
+                  Navigateur OBS.
+                </div>
+                <!-- AJOUT (caméra téléphone par QR code, demande explicite) : aucune app
+                             à installer — le téléphone scanne, ouvre phone-camera.html dans son
+                             propre navigateur, et devient une caméra IP comme les autres
+                             ci-dessous. Nécessite que le serveur soit accessible sur le réseau
+                             (WS_HOST) — voir le message d'erreur clair si ce n'est pas le cas. -->
+                <!-- AJOUT (demande explicite — "plus de paramètres") : nom ET qualité
+                             choisis AVANT de générer le QR — le téléphone lit son réglage de
+                             qualité directement dans l'URL scannée (voir phone-camera.html),
+                             il ne peut pas le demander à l'opérateur après coup. -->
+                <div class="camera-pairing-subsection">
+                  <h4>📷 Sans application (QR code)</h4>
+                  <div class="camera-pairing-qr-row">
+                    <input
+                      type="text"
+                      id="cameraPairingLabelInput"
+                      placeholder="Nom (ex. Téléphone scène)"
+                      aria-label="Nom de la caméra"
+                      class="camera-pairing-label-input"
+                    />
+                    <select
+                      id="cameraPairingQualitySelect"
+                      title="Qualité du flux — plus haut = meilleure image mais plus de données sur le Wi-Fi"
+                      aria-label="Qualité du flux vidéo"
+                      class="camera-pairing-quality-select"
+                    >
+                      <option value="low">Qualité basse (Wi-Fi faible)</option>
+                      <option value="medium" selected>Qualité moyenne</option>
+                      <option value="high">Qualité haute</option>
+                    </select>
+                    <button id="generateCameraPairingBtn" type="button" class="btn btn-primary">
+                      📷 Générer un QR code (téléphone, sans app)
+                    </button>
+                  </div>
+                  <div id="cameraPairingBox" class="camera-pairing-box hidden-by-default">
+                    <img
+                      id="cameraPairingQr"
+                      class="camera-pairing-qr-img"
+                      alt="QR code de jumelage caméra"
+                    />
+                    <div class="field-hint">
+                      Scannez avec l'appareil photo du téléphone (pas besoin d'app — s'ouvre dans le
+                      navigateur). Valable <span id="cameraPairingExpiry">10 minutes</span>.
+                    </div>
+                  </div>
+                </div>
+
+                <div class="camera-pairing-subsection">
+                  <h4>🔧 Manuel (app « IP Webcam » ou équivalent)</h4>
+                  <div class="field-hint mb-2">
+                    Pour une app déjà en cours d'exécution sur un téléphone : notez son adresse (ex.
+                    <code>http://192.168.1.50:8080</code>), ajoutez <code>/video</code>, et collez-la
+                    ci-dessous.
+                  </div>
+                  <div class="input-row mb-3">
+                    <input
+                      type="text"
+                      id="ipCameraLabelInput"
+                      placeholder="Nom (ex. Téléphone scène)"
+                      aria-label="Nom de la caméra IP"
+                    />
+                    <input
+                      type="text"
+                      id="ipCameraUrlInput"
+                      placeholder="http://192.168.1.50:8080/video"
+                      aria-label="URL du flux vidéo de la caméra IP"
+                    />
+                    <button id="addIpCameraBtn" type="button" class="btn btn-secondary">
+                      + Ajouter
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- AJOUT (capture webcam — aperçu opérateur) : module isolé, chargé
          avant le tableau de bord pour que window.CameraCapture soit prêt.

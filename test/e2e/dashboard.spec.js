@@ -15,33 +15,23 @@ test.describe('Tableau de bord — fumée', () => {
     await page.goto('/');
 
     await expect(page.locator('.sidebar')).toBeVisible();
-    // CORRECTIF (redesign IA — étape 3, fusion Studio Pro / Direct
-    // Classique) : le dashboard a maintenant TROIS espaces (voir
-    // dashboard.html sidebar), pas quatre — "Direct Classique" a disparu
-    // comme destination de navigation séparée ; son contenu réel
-    // (#verseDisplay, transcription, panneau opérateur, langue de
-    // projection...) vit désormais physiquement à l'intérieur de
-    // #propresenter-live (voir dashboard.html pour le détail de chaque bloc
-    // relocalisé). "Opérateur" (ex-"Studio Pro", data-sections=
-    // "propresenter-live,media-wall,studio") reste l'espace actif par
-    // défaut au chargement.
+    // CORRECTIF (redesign IA — étapes 3-5) : DEUX espaces désormais —
+    // "Opérateur" (console de diffusion, actif par défaut) et "Paramètres"
+    // (ex-Préparation + ex-Régie fusionnés ; #analysis a depuis été retirée
+    // entièrement, tout son contenu relocalisé dans #secondaryDrawer, voir
+    // dashboard.html).
     await expect(page.locator('.sidebar .nav-item.active')).toContainText('Opérateur');
     await expect(page.locator('#propresenter-live')).toBeVisible();
     await expect(page.locator('#verseDisplay')).toBeVisible();
-    await expect(page.locator('#analysis')).toBeHidden();
-
-    // Clic sur "Préparation" -> ses sections (analysis/studio) apparaissent,
-    // "Opérateur" (et #verseDisplay, maintenant à l'intérieur) disparaît.
-    await page.locator('.sidebar .nav-item[data-sections="analysis,studio"]').click();
-    await expect(page.locator('.sidebar .nav-item.active')).toContainText('Préparation');
-    await expect(page.locator('#analysis')).toBeVisible();
-    await expect(page.locator('#propresenter-live')).toBeHidden();
     await expect(page.locator('#settings')).toBeHidden();
 
-    // Clic sur "Régie" -> ses sections (settings/overlay) apparaissent.
-    await page.locator('.sidebar .nav-item[data-sections="settings,overlay"]').click();
+    // Clic sur "Paramètres" -> ses sections apparaissent, "Opérateur" disparaît.
+    await page
+      .locator('.sidebar .nav-item[data-sections="studio,settings,overlay"]')
+      .click();
+    await expect(page.locator('.sidebar .nav-item.active')).toContainText('Paramètres');
     await expect(page.locator('#settings')).toBeVisible();
-    await expect(page.locator('#analysis')).toBeHidden();
+    await expect(page.locator('#propresenter-live')).toBeHidden();
 
     // Retour à "Opérateur".
     await page

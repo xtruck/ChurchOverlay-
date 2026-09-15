@@ -6401,57 +6401,6 @@ body {
   }
 }
 
-/* ===========================================================================
-   Chantier nettoyage dashboard — Mode Direct/Configuration (divulgation
-   progressive, voir dashboard/features/dashboard-cleanup.js). Même famille
-   visuelle que .autonomy-mode-selector juste en dessous.
-   =========================================================================== */
-.direct-mode-selector {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 3px;
-  border-radius: var(--radius-md);
-  background: var(--bg-input);
-  border: 1px solid var(--border-subtle);
-}
-.direct-mode-btn {
-  font-family: inherit;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text-dim);
-  background: transparent;
-  border: none;
-  border-radius: calc(var(--radius-md) - 2px);
-  padding: 0.4rem 0.7rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-}
-.direct-mode-btn:hover {
-  color: var(--text-main);
-}
-.direct-mode-btn.active {
-  background: var(--bg-card);
-  color: var(--text-main);
-  box-shadow: 0 0 0 1px var(--border-light);
-}
-.direct-mode-btn.active[data-mode='direct'] {
-  color: var(--accent-rose);
-  box-shadow: 0 0 0 1px var(--accent-rose);
-}
-
-/* Panneaux non essentiels EN DIRECT — masqués uniquement quand
-   body.mode-direct est actif (voir dashboard-cleanup.js), jamais démontés
-   du DOM : toutes leurs actions restent joignables via la palette Ctrl/Cmd+K.
-   Les attributs data-group déjà posés pour settings-subnav.js (filtre
-   "Réglages" existant, portée différente — catégorie plutôt que
-   direct/config) servent aussi ici de marqueurs fiables pour "caméras IP" /
-   "intégrations" / "réglages système avancés" plutôt que de dupliquer une
-   classe sur chaque carte une par une. `!important` nécessaire : ces cartes
-   portent déjà un style inline (style.display) posé par settings-subnav.js
-   lui-même, sans !important — cette règle doit toujours l'emporter en Mode
-   Direct, quel que soit ce que ce filtre affiche par ailleurs. */
 /* AJOUT (chantier nettoyage dashboard — extraction de styles inline,
    propresenter-studio.js) : mêmes valeurs que les style="..." qu'elles
    remplacent, aucun changement visuel. */
@@ -6505,13 +6454,6 @@ body {
   display: none !important;
 }
 
-body.mode-direct [data-group='cameras'],
-body.mode-direct [data-group='integrations'],
-body.mode-direct [data-group='systeme'],
-body.mode-direct .mode-direct-hide {
-  display: none !important;
-}
-
 /* ===========================================================================
    Chantier innovation v1.0 — Pilier 3 : sélecteur "Mode d'Autonomie" du
    header (voir dashboard.html#header-actions). Contrôle segmenté compact —
@@ -6555,4 +6497,86 @@ body.mode-direct .mode-direct-hide {
 .autonomy-btn.active[data-trust-mode='auto'] {
   color: var(--accent-emerald);
   box-shadow: 0 0 0 1px var(--accent-emerald);
+}
+
+/* AJOUT (redesign IA — étape 5, tiroir d'outils secondaires) : panneau
+   latéral rétractable, même famille visuelle que .command-palette-overlay
+   (fond semi-transparent + z-index élevé), mais ancré à droite plutôt que
+   centré — regroupe plusieurs outils (onglets internes), pas une seule
+   action ponctuelle. */
+.secondary-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+}
+.secondary-drawer.is-hidden {
+  display: none !important;
+}
+.secondary-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+}
+.secondary-drawer-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(720px, 92vw);
+  background: var(--bg-card);
+  border-left: 1px solid var(--border-subtle);
+  box-shadow: -16px 0 48px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+}
+.secondary-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+.secondary-drawer-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.secondary-drawer-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  width: 220px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 0.75rem;
+  border-right: 1px solid var(--border-subtle);
+}
+.secondary-drawer-tab {
+  text-align: left;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.secondary-drawer-tab:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+}
+.secondary-drawer-tab.active {
+  background: var(--primary);
+  color: #fff;
+}
+.secondary-drawer-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.25rem;
+}
+.secondary-drawer-pane {
+  display: none;
+}
+.secondary-drawer-pane.active {
+  display: block;
 }

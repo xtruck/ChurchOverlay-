@@ -1058,30 +1058,11 @@
     <!-- Médiathèque : photo/vidéo affichée en plein écran (voir action 'showMedia') -->
     <div id="media-layer" aria-hidden="true">
       <img id="media-layer-img" alt="" hidden />
-      <!-- CORRECTIF : l'attribut playsinline a de nouveau été retiré ici par
-           quelque chose dans cet environnement réagissant à l'avertissement
-           "not supported by Firefox" (voir commit 73c8890), et remplacé par
-           un <script> inline posant video.playsInline = true en JS — sauf
-           que la CSP de CETTE page est script-src 'self' STRICT (pas de
-           'unsafe-inline', volontairement, voir le commentaire de CSP en
-           haut du fichier) : ce script inline était bloqué au chargement, et
-           polluait la console de chaque page qui embarque overlay.html en
-           iframe (le panneau PROGRAMME du Studio ProPresenter, voir
-           #overlayFrame dans dashboard.html) sans même corriger quoi que ce
-           soit. L'attribut HTML est la seule option qui fonctionne
-           réellement sous cette CSP — restauré, script inline retiré.
-
-           AJOUT (Axe 2 — lecture vidéo robuste sous Electron/Chromium) :
-           muted (condition sine qua non de l'autoplay programmatique sans
-           interaction utilisateur — la politique d'autoplay de Chromium
-           refuse silencieusement .play() sur une vidéo sonore) et autoplay
-           (filet de sécurité si l'appel explicite .play(), voir
-           showMediaItem() dans overlay.js, était un jour manqué) rejoignent
-           playsinline ci-dessus, posés en dur pour la même raison : ce
-           sont des ATTRIBUTS HTML standards (contrairement à playsinline,
-           aucun souci de compatibilité Firefox pour ceux-là), donc aucune
-           dépendance à un script — reposés quand même aussi en JS dans
-           showMediaItem() à chaque changement de source, par robustesse. -->
+      <!-- playsinline/muted/autoplay posés en dur intentionnellement (voir
+           commit 73c8890) : un script inline pour les régler en JS serait
+           bloqué par la CSP stricte de cette page (script-src 'self', pas
+           d'unsafe-inline). L'avertissement "not supported by Firefox" sur
+           playsinline est accepté sciemment — ne pas le retirer. -->
       <video id="media-layer-video" hidden playsinline muted autoplay></video>
     </div>
 

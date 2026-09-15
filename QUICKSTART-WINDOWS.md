@@ -46,7 +46,7 @@ This will:
    - Select "Browser"
    - Click "Create New"
    - Name: "Bible Overlay"
-   - URL: copy it from the dashboard (**Régie → "📋 Copier le lien pour
+   - URL: copy it from the dashboard (**Paramètres → "📋 Copier le lien pour
      OBS"**) and paste it here — don't type a path by hand. That link
      includes the read-only viewer token the server requires once
      authentication is enabled; a hand-typed `file:///.../overlay.html`

@@ -1,6 +1,6 @@
 /**
  * dashboard/features/audio-vumeter.js — vumètre d'entrée micro permanent
- * pour l'Espace Régie. Affiche le niveau RMS moyen, le pic et la zone
+ * dans l'Opérateur. Affiche le niveau RMS moyen, le pic et la zone
  * (silence / trop faible / correct / fort / écrêté) en temps réel.
  *
  * A.1 — gain micro : la cause racine des erreurs de transcription est un

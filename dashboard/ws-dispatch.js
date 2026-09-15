@@ -344,21 +344,16 @@ export function handleMessage(message) {
         `${message.count} connexions refusées (jeton invalide) depuis l'origine « ${message.origin} »`,
         'warning'
       );
-      // CORRECTIF : le nom d'onglet cité ici ("Réglages") ne correspondait à
-      // aucun onglet réel de la barre latérale (qui s'appelle "Régie") —
-      // un opérateur suivant ce message à la lettre ne trouvait jamais le
-      // bouton "Copier le lien pour OBS" (voir #copyOverlayUrlBtn, section
-      // #overlay, montrée sous l'onglet "Régie").
       showToast(
-        `⚠️ Une source (OBS/affichage) échoue son authentification en boucle — vérifiez que son URL est à jour (Régie → Copier le lien pour OBS)`,
+        `⚠️ Une source (OBS/affichage) échoue son authentification en boucle — vérifiez que son URL est à jour (Paramètres → Copier le lien pour OBS)`,
         'error'
       );
       break;
     // AJOUT (Partie 3.1 — reconnexion automatique OBS) : une coupure OBS en
-    // plein culte ne doit jamais être silencieuse — visible dans le
-    // panneau OBS (RÉGIE) et dans l'activité, avec un toast à chaque
-    // changement d'état (peu fréquent par nature, pas besoin de throttle
-    // comme pour aiModuleError ci-dessus).
+    // plein culte ne doit jamais être silencieuse — visible dans le panneau
+    // OBS (Opérateur) et dans l'activité, avec un toast à chaque changement
+    // d'état (peu fréquent par nature, pas besoin de throttle comme pour
+    // aiModuleError ci-dessus).
     case 'obsConnectionStatus':
       updateObsConnectionStatus(message.status, message.reason);
       break;

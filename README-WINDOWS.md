@@ -54,7 +54,7 @@ without a microphone — see "Advanced Troubleshooting" below.)
    - Select "Browser"
    - Click "Create New"
    - **Name:** Bible Overlay
-   - **URL:** copy it from the dashboard (**Régie → "📋 Copier le lien
+   - **URL:** copy it from the dashboard (**Paramètres → "📋 Copier le lien
      pour OBS"**) and paste it here — don't type a path by hand. That
      link includes the read-only viewer token the server requires once
      authentication is enabled; a hand-typed `file:///.../overlay.html`
@@ -95,7 +95,7 @@ Before your first service, test the system:
 
 Don't hand-build the overlay.html path for OBS — see "🔌 OBS
 Configuration" above: copy the ready-made link (with the required
-viewer token already included) from the dashboard's Régie tab instead.
+viewer token already included) from the dashboard's Paramètres tab instead.
 
 ---
 

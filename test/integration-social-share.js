@@ -115,7 +115,13 @@ function waitForOpen(ws) {
     await waitForOpen(opWs);
 
     browser = await chromium.launch();
-    const page = await browser.newPage();
+    // CORRECTIF (audit — téléchargement jamais détecté) : acceptDownloads
+    // n'est plus true par défaut sur un BrowserContext Playwright récent —
+    // sans lui, page.waitForEvent('download') n'observe jamais l'export PNG
+    // réel déclenché par #heroShareImageBtn (canvas.toBlob + <a download>),
+    // alors que le téléchargement lui-même se produit bien. Sans rapport
+    // avec le contenu testé — juste la configuration de page manquante.
+    const page = await browser.newPage({ acceptDownloads: true });
     const consoleErrors = [];
     page.on('console', (msg) => {
       if (msg.type() === 'error') consoleErrors.push(msg.text());
