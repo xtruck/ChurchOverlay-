@@ -1781,25 +1781,30 @@ async function processTranscript(text, tracker, opts = {}) {
   // précédent (« 13 verset 4. », fin de l'énoncé C1) resterait dans le buffer
   // et se fusionnerait avec le début de l'énoncé suivant (« 2e Timothée
   // chapitre ») → « 2e Timothée chapitre 13 verset 4. » → 2timothee 13:4 FAUX.
-  if (verseDetectionAllowed) {
-    try {
-      if (detector.containsBookName(correctedText)) {
-        sessionState.resetTranscriptFragments();
-      }
-    } catch (e) {
-      warn('Fragment reset error: ' + e.message);
+  //
+  // CORRECTIF (bug réel signalé en direct — dictée mot par mot avec pauses,
+  // ex. « Psaume... 22... verset... 1 ») : la mise en BUFFER (ce bloc) n'est
+  // plus gardée par verseDetectionAllowed — elle n'affiche jamais rien par
+  // elle-même. Un mot isolé, surtout court (« 22 », « 1 »), reçoit souvent
+  // individuellement une confiance ASR basse faute de contexte ; l'exclure du
+  // buffer empêchait la fusion de jamais accumuler assez de fragments pour
+  // reconstruire la référence. La détection DIRECTE (ci-dessous) et
+  // l'ACCEPTATION d'une référence fusionnée (plus bas) restent, elles,
+  // strictement gardées par la confiance — voir getFusedFragmentsMaxConfidence.
+  try {
+    if (detector.containsBookName(correctedText)) {
+      sessionState.resetTranscriptFragments();
     }
-    sessionState.pushTranscriptFragment(correctedText);
+  } catch (e) {
+    warn('Fragment reset error: ' + e.message);
+  }
+  sessionState.pushTranscriptFragment(correctedText, Date.now(), transcriptConfidence);
 
-    if (!reference) {
-      try {
-        reference = detector.detectBilingual(
-          correctedText,
-          sessionState.getTranscriptionLanguage()
-        );
-      } catch (e) {
-        warn('Detector error: ' + e.message);
-      }
+  if (verseDetectionAllowed && !reference) {
+    try {
+      reference = detector.detectBilingual(correctedText, sessionState.getTranscriptionLanguage());
+    } catch (e) {
+      warn('Detector error: ' + e.message);
     }
   }
 
@@ -1814,7 +1819,17 @@ async function processTranscript(text, tracker, opts = {}) {
   // le résultat QUE s'il porte une référence complète (verseStart défini) :
   // une référence "chapitre seul" reconstruite n'est pas plus fiable qu'une
   // vraie et reste soumise à la garde anti-partial-tronqué ci-dessous.
-  if (!reference && verseDetectionAllowed) {
+  //
+  // CORRECTIF (bug réel signalé en direct — dictée mot par mot) : la garde de
+  // confiance ne dépend plus SEULEMENT de verseDetectionAllowed (confiance du
+  // seul fragment COURANT, souvent un mot court en toute fin d'énoncé, ex.
+  // « 1 ») — elle est satisfaite dès qu'UN fragment de la fenêtre fusionnée
+  // a atteint MIN_VERSE_CONFIDENCE (typiquement le nom du livre, plus long et
+  // mieux reconnu). Une fusion entièrement composée de fragments bas-confiance
+  // reste rejetée (protection anti-charabia d'origine préservée).
+  const fusionConfidenceAllowed =
+    verseDetectionAllowed || sessionState.getFusedFragmentsMaxConfidence() >= MIN_VERSE_CONFIDENCE;
+  if (!reference && fusionConfidenceAllowed) {
     try {
       const fusedText = sessionState.getFusedRecentText();
       if (fusedText && fusedText !== correctedText) {

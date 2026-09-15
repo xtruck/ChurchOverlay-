@@ -425,10 +425,18 @@ function getRecentTranscripts() {
 }
 
 // --- Fusion de fragments (chantier ASR, Étape 4) ---
-function pushTranscriptFragment(text, now = Date.now()) {
+// AJOUT (bug réel signalé en direct — dictée mot par mot avec pauses, ex.
+// « Psaume... 22... verset... 1 ») : `confidence` (3e paramètre, optionnel)
+// est désormais mémorisé par fragment. Un mot isolé prononcé avec une pause
+// avant/après reçoit souvent individuellement une confiance ASR basse (peu
+// de contexte) — voir getFusedFragmentsMaxConfidence(), utilisée par
+// server.js pour autoriser une fusion dès qu'AU MOINS un fragment de la
+// fenêtre est suffisamment fiable, plutôt que d'exiger que le DERNIER mot
+// seul (souvent le plus court, ex. « 1 ») le soit.
+function pushTranscriptFragment(text, now = Date.now(), confidence = null) {
   const cleaned = (text || '').trim().replace(/\s+/g, ' ');
   if (!cleaned) return;
-  recentFragments.push({ text: cleaned, at: now });
+  recentFragments.push({ text: cleaned, at: now, confidence });
   const cutoff = now - FRAGMENT_FUSION_WINDOW_MS;
   while (recentFragments.length > 0 && recentFragments[0].at < cutoff) {
     recentFragments.shift();
@@ -510,6 +518,25 @@ function getFusedRecentText(now = Date.now()) {
 }
 function getRecentFragments() {
   return recentFragments;
+}
+/**
+ * @returns {number} la plus haute confiance ASR parmi les fragments tombés
+ *   dans la fenêtre FRAGMENT_FUSION_WINDOW_MS (0 si aucun fragment n'a de
+ *   confiance connue). Sert de garde côté server.js pour la FUSION : évite
+ *   qu'une reconstruction entière de charabia basse-confiance soit acceptée
+ *   (chaque fragment individuellement peu fiable), tout en permettant à un
+ *   énoncé dicté mot par mot d'aboutir dès qu'UN de ses mots (souvent le nom
+ *   du livre, plus long et donc mieux reconnu) a été transcrit avec
+ *   confiance — au lieu d'exiger que ce soit le cas du DERNIER mot seul.
+ */
+function getFusedFragmentsMaxConfidence(now = Date.now()) {
+  const cutoff = now - FRAGMENT_FUSION_WINDOW_MS;
+  const inWindow = recentFragments.filter((f) => f.at >= cutoff);
+  let max = 0;
+  for (const f of inWindow) {
+    if (typeof f.confidence === 'number' && f.confidence > max) max = f.confidence;
+  }
+  return max;
 }
 
 // --- Accessibilité / affichage overlay (CSS pur côté client, aucun coût
@@ -684,6 +711,7 @@ module.exports = {
   removeLastTranscriptFragment,
   getFusedRecentText,
   getRecentFragments,
+  getFusedFragmentsMaxConfidence,
   getHighContrast,
   setHighContrast,
   // AJOUT (chantier innovation v1.0 — Pilier 4, Mode Focus vocal).

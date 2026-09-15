@@ -363,45 +363,84 @@ const VIEWPORT_MARGIN_PX = 120; // marge haut+bas pour rester lisible, pas coll�
 // réduits ENSEMBLE, chacun avec son propre plancher.
 function fitVerseCardToViewport() {
   const card = document.getElementById('verse-card');
+  const container = document.getElementById('overlay-container');
   const verseTextEl = document.getElementById('verse-text');
   const bilingualEl = document.getElementById('verse-text-bilingual');
   if (!card || !verseTextEl) return;
 
-  verseTextEl.style.fontSize = '';
-  if (bilingualEl) bilingualEl.style.fontSize = '';
+  if (container) {
+    container.style.width = '';
+    container.style.maxWidth = '';
+  }
   const maxCardHeight = window.innerHeight - VIEWPORT_MARGIN_PX;
   if (maxCardHeight <= 0) return;
 
-  let currentSize = parseFloat(getComputedStyle(verseTextEl).fontSize);
-  let bilingualSize = bilingualEl ? parseFloat(getComputedStyle(bilingualEl).fontSize) : null;
-  let guard = 0;
-  // CORRECTIF (redesign taille — retour opérateur direct) : le plafond de
-  // 30 itérations (2px chacune = 60px de réduction max) était calibré pour
-  // l'ancienne taille de verset max (~5.2rem/83px) — suffisant pour
-  // atteindre à peu près MIN_VERSE_FONT_PX (18px). Les nouvelles tailles de
-  // thème (jusqu'à ~9rem/144px, voir config/themes/*.json) ont besoin de
-  // beaucoup plus de marge pour espérer atteindre ce plancher sur un long
-  // verset : sans ce correctif, la boucle s'arrêtait à ~84px (144-60),
-  // laissant la carte déborder du cadre — capture d'écran 1920×1080 à
-  // l'appui. Calculé dynamiquement à partir de la taille de départ réelle
-  // plutôt qu'une constante à réajuster à chaque nouveau réglage de thème.
-  const maxGuardIterations = Math.ceil((currentSize - MIN_VERSE_FONT_PX) / 2) + 5;
-  while (card.scrollHeight > maxCardHeight && guard < maxGuardIterations) {
-    let shrankSomething = false;
-    if (currentSize > MIN_VERSE_FONT_PX) {
-      currentSize -= 2;
-      verseTextEl.style.fontSize = `${currentSize}px`;
-      shrankSomething = true;
+  function shrinkFontToFit() {
+    verseTextEl.style.fontSize = '';
+    if (bilingualEl) bilingualEl.style.fontSize = '';
+    let currentSize = parseFloat(getComputedStyle(verseTextEl).fontSize);
+    let bilingualSize = bilingualEl ? parseFloat(getComputedStyle(bilingualEl).fontSize) : null;
+    let guard = 0;
+    // CORRECTIF (redesign taille — retour opérateur direct) : le plafond de
+    // 30 itérations (2px chacune = 60px de réduction max) était calibré pour
+    // l'ancienne taille de verset max (~5.2rem/83px) — suffisant pour
+    // atteindre à peu près MIN_VERSE_FONT_PX (18px). Les nouvelles tailles de
+    // thème (jusqu'à ~9rem/144px, voir config/themes/*.json) ont besoin de
+    // beaucoup plus de marge pour espérer atteindre ce plancher sur un long
+    // verset : sans ce correctif, la boucle s'arrêtait à ~84px (144-60),
+    // laissant la carte déborder du cadre — capture d'écran 1920×1080 à
+    // l'appui. Calculé dynamiquement à partir de la taille de départ réelle
+    // plutôt qu'une constante à réajuster à chaque nouveau réglage de thème.
+    const maxGuardIterations = Math.ceil((currentSize - MIN_VERSE_FONT_PX) / 2) + 5;
+    while (card.scrollHeight > maxCardHeight && guard < maxGuardIterations) {
+      let shrankSomething = false;
+      if (currentSize > MIN_VERSE_FONT_PX) {
+        currentSize -= 2;
+        verseTextEl.style.fontSize = `${currentSize}px`;
+        shrankSomething = true;
+      }
+      if (bilingualEl && bilingualSize !== null && bilingualSize > MIN_VERSE_FONT_PX) {
+        bilingualSize -= 2;
+        bilingualEl.style.fontSize = `${bilingualSize}px`;
+        shrankSomething = true;
+      }
+      // Les deux blocs (ou le seul présent) ont atteint leur plancher — rien
+      // de plus à réduire, inutile de continuer à tourner jusqu'à `guard`.
+      if (!shrankSomething) break;
+      guard++;
     }
-    if (bilingualEl && bilingualSize !== null && bilingualSize > MIN_VERSE_FONT_PX) {
-      bilingualSize -= 2;
-      bilingualEl.style.fontSize = `${bilingualSize}px`;
-      shrankSomething = true;
+  }
+
+  shrinkFontToFit();
+
+  // CORRECTIF (bug réel signalé en direct — versets longs/bilingues encore
+  // coupés) : même au plancher de police (MIN_VERSE_FONT_PX), un verset très
+  // long ou une plage bilingue peut continuer à déborder de la hauteur
+  // disponible — .verse-card a overflow:hidden (voir plus haut), donc tout
+  // surplus restant était jusqu'ici rogné en silence, jamais visible ni
+  // signalé. Avant d'accepter un tel rognage, on ÉLARGIT la carte au-delà de
+  // ses 1700px/92vw par défaut, jusqu'à occuper presque toute la largeur de
+  // l'écran : plus de largeur par ligne = moins de lignes pour le même
+  // texte = moins de hauteur nécessaire. Le plancher de police est retenté à
+  // chaque palier de largeur, puisqu'une carte plus large change ce qui
+  // tient ou non.
+  if (container && card.scrollHeight > maxCardHeight) {
+    const SIDE_MARGIN_PX = 48;
+    const maxWidthPx = Math.max(0, window.innerWidth - SIDE_MARGIN_PX * 2);
+    const WIDTH_STEP_PX = 120;
+    let widthPx = container.getBoundingClientRect().width;
+    let guard = 0;
+    while (card.scrollHeight > maxCardHeight && widthPx < maxWidthPx && guard < 40) {
+      widthPx = Math.min(maxWidthPx, widthPx + WIDTH_STEP_PX);
+      // La CSS statique (voir overlay.html) plafonne #overlay-container à
+      // max-width:1700px — sans le relever aussi ici, elle écraserait tout
+      // `width` inline au-delà de cette valeur et l'élargissement n'aurait
+      // aucun effet réel sur les écrans où 1700px < notre cible.
+      container.style.width = `${widthPx}px`;
+      container.style.maxWidth = `${widthPx}px`;
+      shrinkFontToFit();
+      guard++;
     }
-    // Les deux blocs (ou le seul présent) ont atteint leur plancher — rien
-    // de plus à réduire, inutile de continuer à tourner jusqu'à `guard`.
-    if (!shrankSomething) break;
-    guard++;
   }
 }
 
@@ -1260,6 +1299,34 @@ function showReadingIndicator(show) {
   let rafId = null;
   let running = false;
 
+  // CORRECTIF (CPU trop élevé signalé en direct — cette animation tourne en
+  // continu tout le culte sur la fenêtre overlay, celle qui reste affichée à
+  // l'écran/au projecteur) : ctx.shadowBlur recalcule un flou Gaussien à
+  // CHAQUE particule à CHAQUE frame (18 fois × jusqu'à 60-144 fois/seconde
+  // selon l'écran) — l'une des primitives Canvas 2D les plus coûteuses,
+  // payée en continu pour un simple effet de lueur décoratif. Remplacé par
+  // un sprite de lueur PRÉ-RENDU (dégradé radial calculé une seule fois,
+  // régénéré seulement quand la couleur du thème change) : le dessin par
+  // frame se réduit à un drawImage() par particule, une opération de
+  // composition bitmap bien moins coûteuse qu'un flou recalculé à la volée.
+  let glowSprite = null;
+  const GLOW_SPRITE_SIZE = 28;
+
+  function buildGlowSprite() {
+    const off = document.createElement('canvas');
+    off.width = GLOW_SPRITE_SIZE;
+    off.height = GLOW_SPRITE_SIZE;
+    const octx = off.getContext('2d');
+    const r = GLOW_SPRITE_SIZE / 2;
+    const grad = octx.createRadialGradient(r, r, 0, r, r, r);
+    grad.addColorStop(0, particleColor);
+    grad.addColorStop(0.3, glowColor);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    octx.fillStyle = grad;
+    octx.fillRect(0, 0, GLOW_SPRITE_SIZE, GLOW_SPRITE_SIZE);
+    glowSprite = off;
+  }
+
   function readThemeColors() {
     // getComputedStyle() a un coût réel : on ne le fait qu'une fois toutes
     // les ~90 frames (autour d'1x/seconde à 90fps, moins souvent en dessous)
@@ -1268,6 +1335,7 @@ function showReadingIndicator(show) {
     const styles = getComputedStyle(document.body);
     particleColor = styles.getPropertyValue('--overlay-particle').trim() || particleColor;
     glowColor = styles.getPropertyValue('--overlay-glow').trim() || glowColor;
+    buildGlowSprite();
   }
 
   function makeParticle(randomizeY) {
@@ -1290,9 +1358,23 @@ function showReadingIndicator(show) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
+  // CORRECTIF (CPU trop élevé signalé en direct) : requestAnimationFrame
+  // redessine au taux de rafraîchissement de l'écran (60-144Hz selon le
+  // matériel) — inutile pour des particules qui dérivent lentement. On
+  // continue de PLANIFIER une frame à chaque vsync (requestAnimationFrame
+  // reste le mécanisme de minuterie le plus économe en veille), mais on
+  // saute le travail réel (effacement + 18 dessins) tant que moins de
+  // ~33ms (~30fps) se sont écoulées — coupe le coût de cette boucle
+  // d'environ moitié sur un écran 60Hz, davantage sur un écran plus rapide.
+  const FRAME_INTERVAL_MS = 1000 / 30;
   let lastTs = 0;
+  let lastDrawTs = 0;
   function tick(ts) {
     if (!running) return;
+    rafId = requestAnimationFrame(tick);
+    if (ts - lastDrawTs < FRAME_INTERVAL_MS) return;
+    lastDrawTs = ts;
+
     const dt = lastTs ? Math.min(0.05, (ts - lastTs) / 1000) : 0;
     lastTs = ts;
 
@@ -1308,15 +1390,10 @@ function showReadingIndicator(show) {
       const opacity =
         Math.max(0, Math.min(0.6, fadeIn, fadeOut)) * (0.7 + 0.3 * Math.sin(p.phase + ts / 900));
 
-      if (opacity > 0.01) {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fillStyle = particleColor;
+      if (opacity > 0.01 && glowSprite) {
+        const drawSize = GLOW_SPRITE_SIZE * (p.size / 2);
         ctx.globalAlpha = opacity;
-        ctx.shadowColor = glowColor;
-        ctx.shadowBlur = 8;
-        ctx.fill();
-        ctx.shadowBlur = 0;
+        ctx.drawImage(glowSprite, p.x - drawSize / 2, p.y - drawSize / 2, drawSize, drawSize);
         ctx.globalAlpha = 1;
       }
 
@@ -1324,7 +1401,6 @@ function showReadingIndicator(show) {
         Object.assign(p, makeParticle(false));
       }
     }
-    rafId = requestAnimationFrame(tick);
   }
 
   function start() {
