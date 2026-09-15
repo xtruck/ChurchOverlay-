@@ -1,8 +1,19 @@
 /**
- * dashboard/features/obs-scenes.js — panneau OBS Studio (scènes multiples),
- * piloté par IPC (window.churchOverlay), même famille que
- * propresenter-planning-center.js : la connexion elle-même vit dans le
- * process principal (accès à safeStorage pour le mot de passe), pas ici.
+ * dashboard/features/obs-scenes.js — panneau de télécommande OBS STUDIO
+ * (logiciel de diffusion EXTERNE), piloté par IPC (window.churchOverlay),
+ * même famille que propresenter-planning-center.js : la connexion elle-même
+ * vit dans le process principal (accès à safeStorage pour le mot de passe),
+ * pas ici.
+ *
+ * PRÉCISION (déjà source de confusion) : ce panneau change les SCÈNES D'OBS
+ * STUDIO (le logiciel externe) et peut mettre en pause la transcription
+ * ChurchOverlay selon son état (voir features.json#broadcast.multiScene,
+ * obs-controller.js#evaluateGate, session-state.js#getObsGate). Il n'a AUCUN
+ * rapport avec le Multiview de scènes ChurchOverlay (voir scene-studio.js /
+ * dashboard.html#sceneStudioList, panneau "Multiview — Studio de scènes") —
+ * celui-là affiche et diffuse les scènes COMPOSÉES DANS ChurchOverlay,
+ * indépendamment de tout logiciel externe. Les deux ne partagent aucun code,
+ * aucun état, aucune action WS.
  *
  * Le module obs-controller.js et son pont IPC (main.js) existaient déjà et
  * étaient testés (test/test-obs-gating.js), mais sans aucune interface —

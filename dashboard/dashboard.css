@@ -2184,6 +2184,22 @@ body {
   padding: 0.15rem;
 }
 
+/* CORRECTIF (Multiview — grille de scènes, décision d'architecture) : le
+   Studio de scènes réutilisait la même petite grille de vignettes que la
+   Médiathèque/le Mur Média (.media-gallery-grid, minmax 150px) — trop petit
+   pour une vraie vue multiview façon régie vidéo, où l'opérateur doit
+   pouvoir juger le rendu (texte lisible, cadrage de l'image) d'un coup
+   d'œil avant de CUT. Aucun nouveau mécanisme : mêmes cartes
+   (.media-gallery-card), même renderSceneDom() par vignette (voir
+   scene-studio.js) — seule la taille de la grille change. Empilée sur
+   .media-gallery-grid ci-dessus (même convention que .media-wall-grid),
+   pas une classe de remplacement. */
+.scene-multiview-grid {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1.1rem;
+  max-height: 70vh;
+}
+
 .media-gallery-card {
   display: flex;
   flex-direction: column;

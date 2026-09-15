@@ -1194,7 +1194,7 @@
           <div class="card" data-group="studio">
             <div class="queue-panel-header">
               <span class="card-title"
-                >Studio de scènes (<span id="sceneStudioCount">0</span>)</span
+                >Multiview — Studio de scènes (<span id="sceneStudioCount">0</span>)</span
               >
               <div class="btn-row-tight">
                 <button
@@ -1211,12 +1211,20 @@
               </div>
             </div>
             <div class="field-hint mb-3">
-              Composez un fond + du texte + un logo, puis déclenchez la scène sur l'overlay ou
-              épinglez-la comme poster principal (⭐) — elle reviendra automatiquement après chaque
-              verset, exactement comme un média épinglé dans la Médiathèque.
+              Vue multiview : chaque vignette est le rendu réel de la scène (même moteur que
+              l'overlay) — cliquez 👁 pour l'armer en Preview, puis CUT (ou barre d'espace) pour
+              l'envoyer en direct. Composez un fond + du texte + un logo, puis épinglez une scène
+              comme poster principal (⭐) — elle reviendra automatiquement après chaque verset,
+              exactement comme un média épinglé dans la Médiathèque.
               <br />
               <strong>Importer PowerPoint</strong> crée une scène texte par diapositive (le texte
               seul — pas les images ni la mise en forme d'origine), dans l'ordre réel du diaporama.
+              <br />
+              <em
+                >Ce Multiview affiche les scènes ChurchOverlay elles-mêmes — sans rapport avec le
+                panneau « Intégration OBS » plus bas, qui télécommande un logiciel OBS Studio
+                externe (changement de scène OBS, stream/enregistrement).</em
+              >
             </div>
 
             <!-- AJOUT (chantier ultime — switcher multiview dual-bus Program/
@@ -1248,7 +1256,7 @@
               </div>
             </div>
 
-            <div class="media-gallery-grid" id="sceneStudioList"></div>
+            <div class="media-gallery-grid scene-multiview-grid" id="sceneStudioList"></div>
           </div>
 
           <!-- CORRECTIF (redesign IA — étape 1, relocalisation) : panneau OBS
@@ -1263,10 +1271,15 @@
                #propresenter-live sans toucher aux data-sections. -->
           <div class="card" data-group="obs-live">
             <div class="card-header">
-              <span class="card-title">OBS Studio (scènes multiples)</span>
+              <span class="card-title">Télécommande OBS Studio (logiciel externe)</span>
             </div>
             <div class="field-hint mb-2">
               Outils → obs-websocket → Activer serveur WebSocket (déjà intégré depuis OBS 28+).
+              <br />
+              <em
+                >Change les scènes du logiciel OBS Studio installé sur cet ordinateur — sans
+                rapport avec le Multiview de scènes ChurchOverlay ci-dessus.</em
+              >
             </div>
             <div class="form-group">
               <label class="settings-toggle-label-compact">

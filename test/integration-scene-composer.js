@@ -193,7 +193,7 @@ function makeSourceFile(dir, filename) {
     await textRow.locator('input[type="text"]').fill(trickyText);
     await textRow.locator('select').nth(0).selectOption('top-center'); // position
     await textRow.locator('select').nth(1).selectOption('Manrope'); // police
-    await textRow.locator('input[type="number"]').fill('10'); // taille
+    await textRow.locator('input[type="number"]').first().fill('10'); // taille (1er des 2 : taille puis rotation)
     await textRow.locator('select').nth(2).selectOption('700'); // graisse
     await textRow.locator('input[type="color"]').fill('#ff00ff');
     await textRow.locator('select').nth(3).selectOption('left'); // alignement
@@ -205,7 +205,7 @@ function makeSourceFile(dir, filename) {
       .filter({ hasText: '🖼' });
     await imageRow.locator('select').nth(0).selectOption(logoMedia.id); // média
     await imageRow.locator('select').nth(1).selectOption('bottom-right'); // position
-    await imageRow.locator('input[type="number"]').fill('25'); // largeur
+    await imageRow.locator('input[type="number"]').first().fill('25'); // largeur (1er des 2 : largeur puis rotation)
 
     await sleep(150);
     const preview = await page.evaluate(() => ({

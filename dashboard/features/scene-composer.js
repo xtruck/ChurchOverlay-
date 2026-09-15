@@ -304,6 +304,7 @@ function renderComposerElementsList() {
             <button class="queue-icon-btn" data-action="quick-add-media" data-target="scene-composer-element" data-id="${el.id}" title="Importer une nouvelle image/vidéo pour cet élément">+ Importer</button>
             <select onchange="updateComposerElementField('${el.id}','position',this.value)">${posOptions}</select>
             <input type="number" min="1" max="100" value="${el.widthPct}" title="Largeur (% du cadre)" oninput="updateComposerElementField('${el.id}','widthPct',Number(this.value))" style="width: 70px">
+            <input type="number" min="-180" max="180" value="${el.rotationDeg || 0}" title="Rotation (degrés)" oninput="updateComposerElementField('${el.id}','rotationDeg',Number(this.value))" style="width: 60px">
             <button class="queue-icon-btn queue-remove" data-action="remove" data-target="scene-composer-element" data-id="${el.id}" title="Supprimer cet élément">✕</button>
           </div>`;
       }
@@ -327,6 +328,7 @@ function renderComposerElementsList() {
             <option value="center" ${el.align === 'center' ? 'selected' : ''}>Centre</option>
             <option value="right" ${el.align === 'right' ? 'selected' : ''}>Droite</option>
           </select>
+          <input type="number" min="-180" max="180" value="${el.rotationDeg || 0}" title="Rotation (degrés)" oninput="updateComposerElementField('${el.id}','rotationDeg',Number(this.value))" style="width: 60px">
           <button class="queue-icon-btn queue-remove" data-action="remove" data-target="scene-composer-element" data-id="${el.id}" title="Supprimer cet élément">✕</button>
         </div>`;
     })
