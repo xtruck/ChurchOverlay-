@@ -6,7 +6,7 @@
  * Extrait de dashboard/legacy-core.js (chantier de modularisation).
  */
 import { state } from '../state.js';
-import { showToast } from '../utils.js';
+import { showToast, copyToClipboard } from '../utils.js';
 
 // AJOUT (Confidence Rail — idée créative, brief produit) : lu par
 // confidence-rail.js pour composer son message unique prioritaire — reste
@@ -226,8 +226,7 @@ export function copyOverlayUrl() {
     showToast('Lien overlay pas encore disponible — attendez que le pipeline démarre.', 'error');
     return;
   }
-  navigator.clipboard
-    .writeText(state.overlayUrl)
+  copyToClipboard(state.overlayUrl)
     .then(() => {
       showToast(
         "Lien copié — collez-le dans OBS comme URL d'une Source Navigateur (Browser Source)",
@@ -257,8 +256,7 @@ export function copyBrandingOverlayUrl() {
     showToast('Lien pas encore disponible — attendez que le pipeline démarre.', 'error');
     return;
   }
-  navigator.clipboard
-    .writeText(state.brandingOverlayUrl)
+  copyToClipboard(state.brandingOverlayUrl)
     .then(() => {
       showToast(
         'Lien copié — collez-le dans OBS comme Source Navigateur, au-dessus de la caméra',
@@ -294,8 +292,7 @@ function makeNetworkUrlHandlers(stateKey, inputId, copyHintText) {
         showToast('Lien pas encore disponible — attendez que le pipeline démarre.', 'error');
         return;
       }
-      navigator.clipboard
-        .writeText(state[stateKey])
+      copyToClipboard(state[stateKey])
         .then(() => showToast(copyHintText, 'success'))
         .catch(() =>
           showToast(

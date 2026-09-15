@@ -8,7 +8,7 @@
  * Extrait de dashboard/legacy-core.js (chantier de modularisation).
  */
 import { state, ws } from '../state.js';
-import { showToast, escapeHtmlDashboard, requireWsOrWarn } from '../utils.js';
+import { showToast, escapeHtmlDashboard, requireWsOrWarn, copyToClipboard } from '../utils.js';
 
 // CORRECTIF (checklist mise en production, point 9) : bouton "Tester avant
 // le culte" — envoie une demande de vérification au serveur (connexion WS,
@@ -208,9 +208,8 @@ export function renderHighlightsExport(message) {
   output.value = message.youtubeChapters || '';
   output.style.display = 'block';
 
-  if (navigator.clipboard && navigator.clipboard.writeText && message.csv) {
-    navigator.clipboard
-      .writeText(message.csv)
+  if (message.csv) {
+    copyToClipboard(message.csv)
       .then(() =>
         showToast(
           `${message.count} temps fort(s) — CSV copié, chapitres YouTube ci-dessous.`,

@@ -26,6 +26,76 @@ import { getMediaLibraryItems } from './media-library.js';
 import { getSceneStudioItems } from './scene-studio.js';
 import { registerAction } from '../action-delegator.js';
 
+// CORRECTIF (retour opérateur — "impossible d'ajouter un média depuis le
+// composeur") : le fond/les éléments image du composeur ne proposaient
+// qu'un <select> des médias DÉJÀ présents dans la Médiathèque — sans rien
+// y avoir ajouté au préalable ailleurs dans le tableau de bord, ce menu
+// restait vide et rien ne se passait au clic (aucune erreur non plus,
+// juste un menu sans options). Réutilise le même sélecteur de fichier
+// natif que la Médiathèque (window.churchOverlay.pickMediaFile, voir
+// media-library.js) pour importer directement depuis le composeur, sans
+// devoir changer d'onglet. mediaLibraryUpdated (diffusé par le serveur
+// après l'ajout) est ce qui fait réellement apparaître le nouvel élément
+// dans getMediaLibraryItems() — ce module n'a aucun moyen direct d'attendre
+// cette confirmation serveur, donc on sonde la liste localement le temps
+// qu'elle arrive plutôt que de deviner un délai fixe.
+async function quickAddMedia() {
+  if (!window.churchOverlay || !window.churchOverlay.pickMediaFile) {
+    showToast(
+      "Ajout de média disponible uniquement dans l'application ChurchOverlay (pas dans un navigateur).",
+      'error'
+    );
+    return null;
+  }
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast('Non connecté au serveur.', 'error');
+    return null;
+  }
+  let sourcePath;
+  try {
+    sourcePath = await window.churchOverlay.pickMediaFile();
+  } catch (err) {
+    showToast(
+      'Échec de la sélection du fichier : ' + (err && err.message ? err.message : err),
+      'error'
+    );
+    return null;
+  }
+  if (!sourcePath) return null; // sélection annulée par l'opérateur
+
+  const existingIds = new Set(getMediaLibraryItems().map((m) => m.id));
+  const filename = sourcePath.split(/[\\/]/).pop() || 'media';
+  const label = filename.replace(/\.[^.]+$/, '');
+  ws.send(
+    JSON.stringify({ action: 'addMediaItem', sourcePath, label, triggerPhrases: [] })
+  );
+  showToast('Ajout du média en cours...', 'info');
+
+  return new Promise((resolve) => {
+    let attempts = 0;
+    const maxAttempts = 25; // ~5s à 200ms — largement au-delà d'un aller-retour WS local normal
+    const check = () => {
+      attempts++;
+      const newItem = getMediaLibraryItems().find((m) => !existingIds.has(m.id));
+      if (newItem) {
+        resolve(newItem.id);
+      } else if (attempts < maxAttempts) {
+        setTimeout(check, 200);
+      } else {
+        // Le média finira par apparaître dans la liste dès que
+        // mediaLibraryUpdated arrive (juste pas assez tôt pour être
+        // sélectionné automatiquement ici) — pas une vraie erreur.
+        showToast(
+          "L'import prend plus de temps que prévu — le média apparaîtra dans la liste une fois prêt.",
+          'info'
+        );
+        resolve(null);
+      }
+    };
+    setTimeout(check, 200);
+  });
+}
+
 // AJOUT (studio de scènes, lot 6/6 — composeur) : état local du formulaire de
 // composition, distinct de sceneStudioItems (qui reflète la galerie déjà
 // enregistrée côté serveur, voir scene-studio.js). `composerEditingId` null =
@@ -114,6 +184,7 @@ function renderComposerBgMediaOptions() {
 export function onComposerBgTypeChange() {
   const typeSelect = document.getElementById('composerBgTypeSelect');
   const mediaSelect = document.getElementById('composerBgMediaSelect');
+  const importBtn = document.getElementById('composerBgMediaImportBtn');
   const colorInput = document.getElementById('composerBgColorInput');
   composerBackground.type = typeSelect ? typeSelect.value : 'none';
   // CORRECTIF (visibilité par classe CSS, voir dashboard.html
@@ -122,6 +193,7 @@ export function onComposerBgTypeChange() {
   // !important gagne toujours sur un style inline tant que la classe
   // `is-hidden` reste posée sur l'élément.
   if (mediaSelect) mediaSelect.classList.toggle('is-hidden', composerBackground.type !== 'media');
+  if (importBtn) importBtn.classList.toggle('is-hidden', composerBackground.type !== 'media');
   if (colorInput) colorInput.classList.toggle('is-hidden', composerBackground.type !== 'color');
   updateComposerPreview();
 }
@@ -129,6 +201,24 @@ export function onComposerBgTypeChange() {
 export function onComposerBgMediaChange() {
   const mediaSelect = document.getElementById('composerBgMediaSelect');
   composerBackground.mediaId = mediaSelect && mediaSelect.value ? mediaSelect.value : null;
+  updateComposerPreview();
+}
+
+export async function quickAddBackgroundMedia() {
+  const newId = await quickAddMedia();
+  if (!newId) return;
+  composerBackground.mediaId = newId;
+  renderComposerBgMediaOptions();
+  updateComposerPreview();
+}
+
+async function quickAddElementMedia(elementId) {
+  const newId = await quickAddMedia();
+  if (!newId) return;
+  const el = composerElements.find((e) => e.id === elementId);
+  if (!el) return; // l'élément a pu être supprimé pendant l'import
+  el.mediaId = newId;
+  renderComposerElementsList();
   updateComposerPreview();
 }
 
@@ -211,6 +301,7 @@ function renderComposerElementsList() {
               <option value="">— choisir un média —</option>
               ${mediaOptions}
             </select>
+            <button class="queue-icon-btn" data-action="quick-add-media" data-target="scene-composer-element" data-id="${el.id}" title="Importer une nouvelle image/vidéo pour cet élément">+ Importer</button>
             <select onchange="updateComposerElementField('${el.id}','position',this.value)">${posOptions}</select>
             <input type="number" min="1" max="100" value="${el.widthPct}" title="Largeur (% du cadre)" oninput="updateComposerElementField('${el.id}','widthPct',Number(this.value))" style="width: 70px">
             <button class="queue-icon-btn queue-remove" data-action="remove" data-target="scene-composer-element" data-id="${el.id}" title="Supprimer cet élément">✕</button>
@@ -351,7 +442,15 @@ window.addComposerElement = addComposerElement;
 window.updateComposerElementField = updateComposerElementField;
 window.onComposerBgTypeChange = onComposerBgTypeChange;
 window.onComposerBgMediaChange = onComposerBgMediaChange;
+// AJOUT : #composerBgMediaImportBtn (dashboard.html) est un bouton STATIQUE
+// à id fixe (jamais recréé) — câblé via event-bindings.js#CLICK_BINDINGS,
+// pas registerAction()/action-delegator.js (réservé au contenu rendu
+// dynamiquement, voir son en-tête). Republiée sur window pour ce seul appelant.
+window.quickAddBackgroundMedia = quickAddBackgroundMedia;
 window.onComposerBgColorChange = onComposerBgColorChange;
 window.toggleComposerFocusMode = toggleComposerFocusMode;
 
 registerAction('scene-composer-element', 'remove', (el, data) => removeComposerElement(data.id));
+registerAction('scene-composer-element', 'quick-add-media', (el, data) =>
+  quickAddElementMedia(data.id)
+);

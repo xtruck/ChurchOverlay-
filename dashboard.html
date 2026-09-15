@@ -3640,6 +3640,22 @@
                     aria-label="Image de fond (médiathèque)"
                     class="scene-composer-bg-media-select is-hidden"
                   ></select>
+                  <!-- CORRECTIF (retour opérateur — "impossible d'ajouter un
+                       média depuis le composeur") : ce sélecteur ne listait
+                       QUE les médias déjà présents dans la Médiathèque — sans
+                       aucun y être déjà ajouté au préalable ailleurs dans le
+                       tableau de bord, ce champ restait vide et rien ne s'y
+                       passait au clic. Réutilise le même sélecteur de fichier
+                       natif que la Médiathèque (pickMediaFile), voir
+                       quickAddBackgroundMedia() dans scene-composer.js. -->
+                  <button
+                    type="button"
+                    id="composerBgMediaImportBtn"
+                    class="btn btn-secondary chip-sm is-hidden"
+                    title="Importer une nouvelle image/vidéo comme fond"
+                  >
+                    + Importer
+                  </button>
                   <input
                     type="color"
                     id="composerBgColorInput"

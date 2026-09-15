@@ -218,3 +218,30 @@ export function requireWsOrWarn() {
   }
   return true;
 }
+
+// CORRECTIF (audit — "Copier le lien" ne copiait rien dans OBS, plusieurs
+// boutons distincts à travers le tableau de bord dupliquaient chacun leur
+// propre appel à navigator.clipboard.writeText()) : cette API dépend d'un
+// contexte sécurisé — dashboard.html tourne en file://, pas en https — et
+// Chromium/Electron peut la refuser ou l'ignorer silencieusement selon le
+// focus/les permissions de la fenêtre à cet instant précis, sans toujours
+// lever une erreur exploitable. Le presse-papiers natif d'Electron (voir
+// window.churchOverlay.writeClipboardText, preload.js) est fiable quel que
+// soit le contexte — préféré en priorité ici ; navigator.clipboard reste le
+// repli pour le mode « serveur seul » dans un vrai navigateur (où
+// window.churchOverlay n'existe pas). Point d'entrée UNIQUE désormais pour
+// tout bouton "Copier" du tableau de bord — voir son en-tête pour la liste.
+export function copyToClipboard(text) {
+  if (window.churchOverlay && window.churchOverlay.writeClipboardText) {
+    try {
+      window.churchOverlay.writeClipboardText(text);
+      return Promise.resolve();
+    } catch (err) {
+      return Promise.reject(err);
+    }
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text);
+  }
+  return Promise.reject(new Error('Aucune API presse-papiers disponible.'));
+}

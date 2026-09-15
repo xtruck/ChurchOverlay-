@@ -2,7 +2,7 @@
  * dashboard/features/api-settings.js — panneau Clés API & Microphone.
  * Extrait de dashboard/legacy-core.js (chantier de modularisation).
  */
-import { showToast, confirmDialog } from '../utils.js';
+import { showToast, confirmDialog, copyToClipboard } from '../utils.js';
 import { setStatusStripItem } from './status-strip.js';
 
 // ---------------------------------------------------------------
@@ -171,13 +171,20 @@ import { setStatusStripItem } from './status-strip.js';
     link.addEventListener('click', (e) => {
       e.preventDefault();
       const url = link.dataset.url;
-      navigator.clipboard.writeText(url).then(() => {
-        const original = link.textContent;
-        link.textContent = 'Lien copié ✓';
-        setTimeout(() => {
-          link.textContent = original;
-        }, 2000);
-      });
+      copyToClipboard(url)
+        .then(() => {
+          const original = link.textContent;
+          link.textContent = 'Lien copié ✓';
+          setTimeout(() => {
+            link.textContent = original;
+          }, 2000);
+        })
+        .catch(() =>
+          showToast(
+            'Copie automatique impossible — sélectionnez le lien et copiez manuellement.',
+            'error'
+          )
+        );
     });
   });
 

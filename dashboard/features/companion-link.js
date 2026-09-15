@@ -3,7 +3,7 @@
  * (companion.html) pour l'assemblée, à coller dans un générateur de QR code.
  * Extrait de dashboard/legacy-core.js (chantier de modularisation).
  */
-import { showToast } from '../utils.js';
+import { showToast, copyToClipboard } from '../utils.js';
 import { getWsToken, ws } from '../state.js';
 import { registerAction } from '../action-delegator.js';
 
@@ -17,8 +17,7 @@ import { registerAction } from '../action-delegator.js';
 
 export function copyCompanionLink() {
   const url = window.location.origin + '/companion';
-  navigator.clipboard
-    .writeText(url)
+  copyToClipboard(url)
     .then(() => {
       showToast('Lien copié — collez-le dans un générateur de QR code.', 'success');
     })
@@ -40,8 +39,7 @@ export function copyMcpToken() {
     showToast('Aucun jeton disponible — redémarrez le tableau de bord.', 'error');
     return;
   }
-  navigator.clipboard
-    .writeText(token)
+  copyToClipboard(token)
     .then(() => {
       showToast('Jeton copié — collez-le dans la configuration MCP (WS_AUTH_TOKEN).', 'success');
     })

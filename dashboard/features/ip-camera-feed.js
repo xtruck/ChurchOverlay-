@@ -12,7 +12,7 @@
  * DASHBOARD-IA-REDESIGN-PROPOSAL.md, question ouverte 2).
  */
 import { state, ws } from '../state.js';
-import { showToast, escapeHtmlDashboard } from '../utils.js';
+import { showToast, escapeHtmlDashboard, copyToClipboard } from '../utils.js';
 import { updateNetworkStatusStrip } from './status-strip.js';
 import { registerAction } from '../action-delegator.js';
 
@@ -110,14 +110,9 @@ function deleteIpCameraItem(id) {
 function copyIpCameraUrl(id) {
   const item = ipCameraItems.find((c) => c.id === id);
   if (!item) return;
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard
-      .writeText(item.url)
-      .then(() => showToast('Lien copié — collez-le dans une Source Navigateur OBS.', 'success'))
-      .catch(() => showToast(item.url, 'info'));
-  } else {
-    showToast(item.url, 'info');
-  }
+  copyToClipboard(item.url)
+    .then(() => showToast('Lien copié — collez-le dans une Source Navigateur OBS.', 'success'))
+    .catch(() => showToast(item.url, 'info'));
 }
 
 // AJOUT (chantier nettoyage dashboard — purge des onclick inline) : les

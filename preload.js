@@ -34,7 +34,7 @@
 
 'use strict';
 
-const { contextBridge, ipcRenderer, webUtils } = require('electron');
+const { contextBridge, ipcRenderer, webUtils, clipboard } = require('electron');
 
 contextBridge.exposeInMainWorld('churchOverlay', {
   // --- Écran de configuration initiale (setup.html) -----------------------
@@ -193,4 +193,24 @@ contextBridge.exposeInMainWorld('churchOverlay', {
   // serveur (mediaLibrary.addItem(), voir media-library.js) que le
   // sélecteur natif, sans dupliquer la logique de copie de fichier.
   getPathForFile: (file) => webUtils.getPathForFile(file),
+
+  // --- CORRECTIF (audit — "Copier le lien" ne copie rien dans OBS) --------
+  // navigator.clipboard.writeText() (utilisé partout ailleurs dans le
+  // tableau de bord) dépend de l'API Clipboard du navigateur, qui exige un
+  // "contexte sécurisé" — dashboard.html tourne en file://, pas en https,
+  // et Chromium/Electron la refuse ou l'ignore silencieusement selon le
+  // focus/les permissions de la fenêtre au moment de l'appel, sans lever
+  // d'erreur exploitable (la Promise peut se résoudre ou rejeter selon les
+  // cas, parfois sans que rien ne se passe réellement). Le presse-papiers
+  // natif d'Electron (module 'clipboard', disponible directement ici même
+  // avec contextIsolation actif — le script de préchargement garde tout
+  // accès Node/Electron, c'est tout l'intérêt du pont) fonctionne de façon
+  // fiable quel que soit le contexte : préféré en priorité par les appelants
+  // (voir dashboard/utils.js#copyToClipboard), navigator.clipboard restant
+  // le repli pour le mode « serveur seul » dans un vrai navigateur, où
+  // window.churchOverlay n'existe pas du tout.
+  writeClipboardText: (text) => {
+    clipboard.writeText(text);
+    return true;
+  },
 });
