@@ -8,6 +8,16 @@
 import { state } from '../state.js';
 import { showToast, copyToClipboard } from '../utils.js';
 
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : setPipelineAlert()/
+// setTranscriptionHealth() basculaient l'icône entre deux emoji littéraux
+// (⚠️/⛔) via .textContent — remplacés par ces deux marquages SVG statiques
+// (chaînes fixes, jamais de contenu utilisateur : innerHTML sans risque ici),
+// mêmes deux états (avertissement/erreur), même déclenchement.
+const ICON_WARNING_SVG =
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l10 18H2z"></path><path d="M12 10v4M12 17h.01"></path></svg>';
+const ICON_ERROR_SVG =
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M15 9l-6 6M9 9l6 6"></path></svg>';
+
 // AJOUT (Confidence Rail — idée créative, brief produit) : lu par
 // confidence-rail.js pour composer son message unique prioritaire — reste
 // privé à ce module (pipelineAlertActive), jamais un second état dupliqué
@@ -36,7 +46,7 @@ export function setPipelineAlert(payload) {
   banner.classList.toggle('pipeline-banner--error', isError);
   banner.classList.toggle('pipeline-banner--warning', !isError);
   banner.style.display = 'flex';
-  if (icon) icon.textContent = isError ? '⛔' : '⚠️';
+  if (icon) icon.innerHTML = isError ? ICON_ERROR_SVG : ICON_WARNING_SVG;
   msg.textContent = payload.message || 'Le pipeline a rencontré un problème.';
   pipelineAlertActive = true;
 }
@@ -69,7 +79,7 @@ export function setTranscriptionHealth(payload) {
   banner.classList.toggle('pipeline-banner--error', isDegraded);
   banner.classList.toggle('pipeline-banner--warning', !isDegraded);
   banner.style.display = 'flex';
-  if (icon) icon.textContent = isDegraded ? '⛔' : '⚠️';
+  if (icon) icon.innerHTML = isDegraded ? ICON_ERROR_SVG : ICON_WARNING_SVG;
   msg.textContent = isDegraded
     ? `Transcription en difficulté (${payload.consecutiveFailures || 1} échec(s) d'affilée) — nouvelle tentative automatique en cours.`
     : `Nouvelle tentative de transcription (${payload.attempt}/${payload.maxAttempts})...`;

@@ -6487,6 +6487,9 @@ body {
 }
 
 .autonomy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   font-family: inherit;
   font-size: 0.78rem;
   font-weight: 600;
@@ -6498,6 +6501,14 @@ body {
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
+}
+/* AJOUT (redesign — remplacement des emoji Aperçu/Supervisé/Autonome par
+   des SVG) : dimension fixe pour rester alignée avec le texte, quelle que
+   soit la taille naturelle du viewBox de chaque icône. */
+.autonomy-btn svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
 }
 .autonomy-btn:hover {
   color: var(--text-main);

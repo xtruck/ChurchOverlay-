@@ -271,7 +271,8 @@
               type="button"
               title="Rechercher une action (Ctrl/Cmd+K)"
             >
-              🔎 Commandes <kbd>Ctrl</kbd>+<kbd>K</kbd>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.35-4.35"></path></svg>
+              Commandes <kbd>Ctrl</kbd>+<kbd>K</kbd>
             </button>
 
             <!-- AJOUT (redesign IA — étape 5, tiroir d'outils secondaires) :
@@ -286,7 +287,8 @@
               type="button"
               title="Outils secondaires"
             >
-              🧰 Outils
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect></svg>
+              Outils
             </button>
 
             <div class="live-status-pill status live-status-pill-lg">
@@ -322,7 +324,8 @@
                 data-trust-mode="manual"
                 title="Mode Aperçu — 0% automatique, tout affichage passe par une action manuelle (recherche, palette, feuille de route)"
               >
-                👁️ Aperçu
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                Aperçu
               </button>
               <button
                 type="button"
@@ -332,7 +335,8 @@
                 data-trust-mode="semi-auto"
                 title="Mode Supervisé — chaque détection reste en attente jusqu'à confirmation opérateur (barre d'espace)"
               >
-                🛡️ Supervisé
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"></path></svg>
+                Supervisé
               </button>
               <button
                 type="button"
@@ -342,7 +346,8 @@
                 data-trust-mode="auto"
                 title="Mode Autonome — affichage direct au-dessus de 90% de confiance, validation entre 70-89%, rejeté en dessous ; chaque décision automatique est journalisée (raison + score) dans le flux d'activité"
               >
-                🤖 Autonome
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="2"></rect><path d="M8 8V6a4 4 0 0 1 8 0v2"></path><circle cx="9" cy="13.5" r="1.2"></circle><circle cx="15" cy="13.5" r="1.2"></circle></svg>
+                Autonome
               </button>
             </div>
 
@@ -355,7 +360,8 @@
               id="focusModeToggleBtn"
               title="Mode focus — tout masquer sauf l'essentiel"
             >
-              🎯 Mode focus
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="4"></circle><circle cx="12" cy="12" r="0.6" fill="currentColor"></circle></svg>
+              Mode focus
             </button>
 
             <button class="btn btn-secondary" id="speechBtn">
@@ -388,7 +394,7 @@
                  local, voir ARCHITECTURE.md). -->
         <div id="offlineManualModeBanner" class="offline-manual-banner" role="alert">
           <div class="offline-manual-banner-content">
-            <span aria-hidden="true">🔴</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v6"></path><circle cx="12" cy="16.5" r="0.9" fill="currentColor"></circle></svg>
             <div class="offline-manual-banner-text">
               <strong>Hors ligne — la détection automatique ne répond plus</strong>
               <span
@@ -452,7 +458,7 @@
                  (seule l'icône de la zone de notification l'avait). -->
         <div id="pipelineAlertBanner" class="pipeline-banner pipeline-banner--with-action">
           <div class="pipeline-banner-content">
-            <span id="pipelineAlertIcon">⚠️</span>
+            <span id="pipelineAlertIcon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l10 18H2z"></path><path d="M12 10v4M12 17h.01"></path></svg></span>
             <span class="pipeline-alert-message" id="pipelineAlertMessage"></span>
           </div>
           <button id="restartPipelineBtn" class="btn btn-secondary flex-shrink-0">
@@ -470,7 +476,7 @@
                  bouton de redémarrage — la retry est déjà automatique côté
                  serveur (voir transcribeWithRetry() dans server.js). -->
         <div id="transcriptionHealthBanner" class="pipeline-banner">
-          <span id="transcriptionHealthIcon">⚠️</span>
+          <span id="transcriptionHealthIcon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l10 18H2z"></path><path d="M12 10v4M12 17h.01"></path></svg></span>
           <span class="transcription-health-message" id="transcriptionHealthMessage"></span>
         </div>
 
@@ -492,11 +498,12 @@
                  rerappeler à l'opérateur après une coupure réseau. -->
         <div id="aiDegradedBanner" class="pipeline-banner pipeline-banner--with-action">
           <div class="pipeline-banner-content">
-            <span id="aiDegradedIcon">⚠️</span>
+            <span id="aiDegradedIcon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l10 18H2z"></path><path d="M12 10v4M12 17h.01"></path></svg></span>
             <span class="ai-degraded-message" id="aiDegradedMessage"></span>
           </div>
           <button id="aiDegradedDismissBtn" class="btn btn-secondary flex-shrink-0">
-            ✕ Fermer
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+            Fermer
           </button>
         </div>
 
