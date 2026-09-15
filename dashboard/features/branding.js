@@ -10,6 +10,15 @@
 import { ws, getHttpOrigin } from '../state.js';
 import { showToast } from '../utils.js';
 
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : brandingVisibleToggleBtn
+// basculait son texte entre deux emoji littéraux (🙈/👁️) via .textContent —
+// remplacé par ces deux marquages SVG statiques (chaînes fixes, jamais de
+// contenu utilisateur : innerHTML sans risque ici), même déclenchement.
+const EYE_OFF_SVG =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 3l18 18"></path><path d="M10.6 5.2A10.4 10.4 0 0 1 12 5c7 0 11 7 11 7a13.2 13.2 0 0 1-3.4 4M6.6 6.6C3.7 8.4 1 12 1 12s4 7 11 7a10.5 10.5 0 0 0 4.2-.9"></path><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path></svg> Masquer';
+const EYE_ON_SVG =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path><circle cx="12" cy="12" r="3"></circle></svg> Afficher sur la diffusion';
+
 /* ======================================================================
    Habillage caméra (logo + titre/sous-titre, voir branding-store.js et
    branding-overlay.html). Contrairement au reste de la médiathèque, ce
@@ -83,7 +92,7 @@ export function renderBranding(branding) {
     statusBadge.className = 'status-badge ' + (branding.visible ? 'success' : 'warning');
   }
   if (toggleBtn) {
-    toggleBtn.textContent = branding.visible ? '🙈 Masquer' : '👁️ Afficher sur la diffusion';
+    toggleBtn.innerHTML = branding.visible ? EYE_OFF_SVG : EYE_ON_SVG;
   }
 }
 

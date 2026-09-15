@@ -7,6 +7,15 @@
  */
 import { showToast, addActivity, escapeHtmlDashboard } from '../utils.js';
 
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : cameraToggleBtn
+// basculait son texte entre deux emoji littéraux (📷/⏹) via .textContent —
+// remplacé par ces deux marquages SVG statiques (chaînes fixes, jamais de
+// contenu utilisateur : innerHTML sans risque ici), même déclenchement.
+const CAMERA_ICON_START =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2" y="7" width="15" height="12" rx="2"></rect><path d="M17 10l5-3v10l-5-3z"></path></svg> Démarrer la caméra';
+const CAMERA_ICON_STOP =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="1"></rect></svg> Arrêter la caméra';
+
 /* ============================================================================
  * Capture webcam — aperçu opérateur (voir camera-capture.js)
  * ----------------------------------------------------------------------------
@@ -55,7 +64,7 @@ function updateCameraButtonUI() {
   const placeholder = document.getElementById('cameraPreviewPlaceholder');
   const active = !!(window.CameraCapture && window.CameraCapture.isCapturing());
 
-  if (btn) btn.textContent = active ? '⏹ Arrêter la caméra' : '📷 Démarrer la caméra';
+  if (btn) btn.innerHTML = active ? CAMERA_ICON_STOP : CAMERA_ICON_START;
   if (badge) {
     badge.textContent = active ? 'Aperçu actif' : 'Capture arrêtée';
     badge.className = 'status-badge ' + (active ? 'success' : 'warning');
