@@ -200,7 +200,26 @@ function testAlias(normalized, name, book) {
     }
   }
 
-  const requireExplicitChapitre = name.length <= 2;
+  // CORRECTIF (bug réel signalé en direct — "Esther 1" affiché sans avoir
+  // été prononcé) : ce seuil était à <=2, mais l'alias FR d'Esther, "est"
+  // (3 lettres), est l'un des mots les plus courants du français parlé
+  // ("c'est", "il est", "qui est"...) — sans exiger le mot "chapitre"
+  // explicite juste après, "est" suivi de N'IMPORTE QUEL nombre à 1-3
+  // chiffres se lisait comme "Esther chapitre N" (ex. "c'est 1 la vérité" ->
+  // Esther 1). Repro : node -e "require('./detector.js').detectBilingual(\"c'est 1 la verite\")"
+  // -> {book:'esther', chapter:1} AVANT ce correctif. containsBookName() un
+  // peu plus bas dans ce même fichier appliquait déjà ce seuil à <=3 pour
+  // exactement cette raison ("les alias de <=3 lettres matcheraient des
+  // mots courants du français parlé") — seul testAlias() (le VRAI chemin de
+  // détection, pas juste le heuristique de reset de buffer) était resté à
+  // <=2, un oubli d'harmonisation. Aligné ici sur <=3, qui protège aussi
+  // "job" (Job, mot anglais/français courant) et "luc" (Luc, prénom courant)
+  // du même risque. Coût accepté : un livre à alias de 3 lettres ou moins
+  // (ex. "Rom 8", "Gen 1" tapés sans le mot "chapitre") n'est plus reconnu
+  // sans dire/taper "chapitre" — la recherche manuelle du tableau de bord
+  // utilise de toute façon un menu déroulant à nom complet, pas ces
+  // abréviations tapées à la main.
+  const requireExplicitChapitre = name.length <= 3;
   const chapitreKeyword = requireExplicitChapitre ? `chapitre\\s+` : `(?:chapitre\\s+)?`;
 
   // Standard Pattern

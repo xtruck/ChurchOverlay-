@@ -156,4 +156,41 @@ assert(
   'le connecteur « et » seul ne doit pas capturer un faux verset'
 );
 
+// CORRECTIF (bug réel signalé en direct — "Esther 1" affiché en plein
+// culte sans avoir jamais été prononcé) : "est" (3 lettres) est l'alias FR
+// d'Esther — l'un des mots les plus courants du français parlé ("c'est",
+// "il est", "qui est"...). Sans exiger le mot "chapitre" explicite juste
+// après un alias de 3 lettres ou moins (voir requireExplicitChapitre dans
+// detector.js#testAlias), "est" suivi de n'importe quel nombre à 1-3
+// chiffres — fréquent dans une conversation ordinaire pleine de chiffres —
+// se lisait comme "Esther chapitre N". Ces phrases n'ont RIEN à voir avec
+// les Écritures et ne doivent jamais matcher.
+const estFalsePositives = [
+  "c'est 1 la verite",
+  'il est 12 heures',
+  'ce job est 1 travail difficile',
+  'et voila comment ca marche, tu vois que c est 1 chose que je voulais dire',
+];
+for (const text of estFalsePositives) {
+  const result = detectExact(text);
+  assert.strictEqual(
+    result,
+    null,
+    `"${text}" ne doit jamais matcher Esther (alias "est" trop courant) — obtenu : ${JSON.stringify(result)}`
+  );
+}
+// Les vraies références utilisant un alias de 3 lettres ou moins doivent
+// rester détectées, à condition que "chapitre" soit bien dit/tapé — ce
+// correctif ne doit pas rendre Esther/Job/Luc indétectables.
+assert.deepStrictEqual(
+  { book: detectExact('esther chapitre 1').book, chapter: detectExact('esther chapitre 1').chapter },
+  { book: 'esther', chapter: 1 },
+  '"esther chapitre 1" doit toujours être détecté'
+);
+assert.deepStrictEqual(
+  { book: detectExact('job chapitre 1 verset 1').book, chapter: detectExact('job chapitre 1 verset 1').chapter },
+  { book: 'job', chapter: 1 },
+  '"job chapitre 1 verset 1" doit toujours être détecté'
+);
+
 console.log('✓ detector.js : tous les tests sont passés');
