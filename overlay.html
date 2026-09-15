@@ -53,13 +53,16 @@
            .hidden-display { display: none } (classe, spécificité plus
            faible), quel que soit l'ordre des règles — ce voile plein écran
            à 85% de noir restait donc affiché en permanence au-dessus de
-           tout l'overlay, sur n'importe quel thème. Aucun JS ne pilote
-           d'ailleurs cet élément (compteur avant-culte jamais branché) :
-           display retiré d'ici pour laisser .hidden-display s'appliquer
-           comme prévu ; align-items/justify-content/flex-direction
-           restent au cas où ce disposition serait un jour réactivée avec
-           display: flex posé en style inline par du JS (qui l'emporterait
-           alors sur .hidden-display via la spécificité du style en ligne). */
+           tout l'overlay, sur n'importe quel thème.
+           CORRECTIF (redesign — commentaire erroné trouvé en vérifiant) :
+           ce bloc affirmait auparavant qu'"aucun JS ne pilote cet élément"
+           — faux : overlay.js#startCountdown()/stopCountdown() le pilotent
+           bien, déclenchés par les actions WS 'countdownMode'/'countdownStop'
+           (voir son switch de dispatch). display reste retiré d'ici pour
+           laisser .hidden-display s'appliquer par défaut ; c'est
+           startCountdown() qui pose display:flex en style INLINE au moment
+           de démarrer un compte à rebours (la spécificité du style en ligne
+           l'emporte alors sur .hidden-display), pas ce bloc statique. */
         align-items: center;
         justify-content: center;
         flex-direction: column;
