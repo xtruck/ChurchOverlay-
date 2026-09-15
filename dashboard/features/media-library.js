@@ -1,16 +1,26 @@
 /**
- * dashboard/features/media-library.js — médiathèque (déclenchement vocal
- * ou manuel de photos/vidéos, voir media-library.js/server.js côté
- * backend). La liste vit côté serveur : le déclenchement vocal doit
+ * dashboard/features/media-library.js — médiathèque : ajout/organisation
+ * (upload, groupes nommés, détails d'affichage) de photos/vidéos
+ * déclenchables à la voix ou manuellement (voir media-library.js/server.js
+ * côté backend). La liste vit côté serveur : le déclenchement vocal doit
  * pouvoir la consulter pendant tout le culte, même si aucun tableau de
  * bord n'est ouvert à ce moment-là.
+ *
+ * Le Mur Média (grille de déclenchement rapide, regardée EN DIRECT) vit
+ * désormais dans media-wall.js, pas ici — voir son en-tête (redesign IA —
+ * étape 2, scission live/config, DASHBOARD-IA-REDESIGN-PROPOSAL.md). Ce
+ * fichier reste la source de vérité pour mediaLibraryItems
+ * (getMediaLibraryItems(), consommé aussi par media-wall.js et
+ * scene-studio.js) puisque c'est ici que le message serveur
+ * mediaLibraryUpdated est traité en premier (voir ws-dispatch.js).
+ *
  * Extrait de dashboard/legacy-core.js (chantier de modularisation) —
  * initMediaLibraryPanel() vit maintenant ici aussi (déplacé depuis son
  * emplacement d'origine, physiquement égaré près du code d'habillage
  * caméra alors qu'il appartient conceptuellement à ce fichier).
  */
 import { ws, getHttpOrigin } from '../state.js';
-import { showToast, escapeHtmlDashboard, isTypingContext } from '../utils.js';
+import { showToast, escapeHtmlDashboard } from '../utils.js';
 import { updatePosterCardMediaItems } from './poster-principal-card.js';
 import { registerAction } from '../action-delegator.js';
 
@@ -350,21 +360,21 @@ window.hideMediaNow = hideMediaNow;
 window.updateMediaPosterFormState = updateMediaPosterFormState;
 // CORRECTIF (délégation d'événements — voir action-delegator.js) :
 // triggerMediaLibraryItem/deleteMediaLibraryItem/saveMediaItemDetails/
-// toggleDefaultMediaItem/triggerMediaWallItem/deleteMediaGroup n'ont plus
-// besoin de window — voir registerAction ci-dessous, elles n'étaient
-// jamais appelées que par un onclick désormais retiré du balisage. La
-// seule exception externe (event-bindings.js appelait
-// window.triggerMediaLibraryItem pour ses 4 pseudo-boutons "médiathèque"
-// du studio ProPresenter) a été corrigée à sa vraie source : import direct
-// dans event-bindings.js (voir son en-tête), pas une exposition ici — ces
-// 7 fonctions restent donc entièrement privées à ce module.
+// toggleDefaultMediaItem/deleteMediaGroup n'ont plus besoin de window —
+// voir registerAction ci-dessous, elles n'étaient jamais appelées que par
+// un onclick désormais retiré du balisage. La seule exception externe
+// (event-bindings.js appelait window.triggerMediaLibraryItem pour ses 4
+// pseudo-boutons "médiathèque" du studio ProPresenter) a été corrigée à sa
+// vraie source : import direct dans event-bindings.js (voir son en-tête),
+// pas une exposition ici — ces fonctions restent donc entièrement privées
+// à ce module. (triggerMediaWallItem, qui suivait la même discipline, vit
+// maintenant dans media-wall.js — redesign IA, étape 2.)
 registerAction('media', 'delete', (el, data) => deleteMediaLibraryItem(data.id));
 registerAction('media', 'trigger', (el, data) => triggerMediaLibraryItem(data.id));
 registerAction('media', 'toggle-default', (el, data) =>
   toggleDefaultMediaItem(data.id, data.isDefault === 'true')
 );
 registerAction('media', 'save-details', (el, data) => saveMediaItemDetails(data.id));
-registerAction('media', 'card-click', (el, data) => triggerMediaWallItem(data.id));
 registerAction('media-group', 'delete', (el, data) => deleteMediaGroup(data.id));
 // AJOUT : addToRundown() est propriété de rundown.js, pas de ce module —
 // appelée via window (rundown.js la republie encore ainsi ; corriger CETTE
@@ -373,216 +383,6 @@ registerAction('media-group', 'delete', (el, data) => deleteMediaGroup(data.id))
 // l'ordre des imports de main.js.
 registerAction('media', 'add-to-rundown', (el, data) => {
   if (window.addToRundown) window.addToRundown('media', data.id, data.label);
-});
-
-// AJOUT (Partie 2.3 — Mur Média, états par tuile) : "à l'écran" et "déjà
-// utilisé" changent à CHAQUE déclenchement — un média peut être montré des
-// dizaines de fois pendant un culte. Reconstruire toute la grille en
-// innerHTML à chaque fois (comme mediaLibraryUpdated, plus bas) ne passerait
-// pas le test de charge du cahier des charges (200 médias, déclenchement
-// <300ms) : on bascule seulement les classes CSS des tuiles concernées,
-// jamais un re-rendu complet pour ces deux états. mediaOnScreenId/
-// mediaUsedIds vivent ici (pas dans ws-dispatch.js) pour rester à côté du
-// rendu qu'ils pilotent.
-let mediaOnScreenId = null;
-const mediaUsedIds = new Set();
-
-/**
- * Appelé par ws-dispatch.js sur 'showMedia' : marque la tuile comme "à
- * l'écran" (et "déjà utilisé" en permanence, pour le reste de la session
- * dashboard) sans reconstruire la grille.
- */
-export function markMediaOnScreen(id) {
-  if (mediaOnScreenId && mediaOnScreenId !== id) {
-    const prev = document.querySelector(`.media-gallery-card[data-media-id="${mediaOnScreenId}"]`);
-    if (prev) prev.classList.remove('is-on-screen');
-  }
-  mediaOnScreenId = id || null;
-  mediaUsedIds.add(id);
-  const card = document.querySelector(`.media-gallery-card[data-media-id="${id}"]`);
-  if (card) {
-    card.classList.add('is-on-screen', 'is-used');
-  }
-}
-
-/**
- * Appelé par ws-dispatch.js sur 'hideMedia'/'showVerse'/'showScene' : plus
- * rien de la médiathèque n'est à l'écran (l'overlay n'affiche qu'une seule
- * chose à la fois).
- */
-export function clearMediaOnScreen() {
-  if (!mediaOnScreenId) return;
-  const card = document.querySelector(`.media-gallery-card[data-media-id="${mediaOnScreenId}"]`);
-  if (card) card.classList.remove('is-on-screen');
-  mediaOnScreenId = null;
-}
-
-// Mur Média — grille visuelle pour déclenchement rapide pendant le culte
-export function renderMediaWall(items) {
-  const grid = document.getElementById('mediaWallGrid');
-  const countEl = document.getElementById('mediaWallCount');
-  if (!grid) return;
-  const list = Array.isArray(items) ? items : mediaLibraryItems;
-  if (countEl) countEl.textContent = list.length;
-  if (list.length === 0) {
-    grid.innerHTML =
-      '<div class="empty-state-note" style="grid-column: 1 / -1">Aucun média ajouté.</div>';
-    return;
-  }
-  grid.innerHTML = list
-    .map((item) => {
-      const thumbUrl = getHttpOrigin() + '/media/' + encodeURIComponent(item.filename || '');
-      // AJOUT (Partie 2.3 — état "fichier manquant") : voir media-library.js
-      // listItems() côté serveur — l'entrée existe dans l'index mais le
-      // fichier réel a disparu du disque. Barré, jamais cliquable : mieux
-      // vaut ne rien déclencher que déclencher un média cassé en plein culte.
-      if (item.fileMissing) {
-        return `
-          <div class="media-gallery-card is-missing" data-media-id="${item.id}" title="Fichier introuvable sur le disque">
-            <div class="media-gallery-thumb media-gallery-thumb-missing">⚠️</div>
-            <div class="media-gallery-label" style="font-size:0.75rem;padding:0.3rem 0.5rem;text-align:center;text-decoration:line-through;opacity:0.6;">
-              ${escapeHtmlDashboard(item.label || item.filename)}
-            </div>
-          </div>`;
-      }
-      const thumbMarkup =
-        item.mediaType === 'video'
-          ? `<video src="${thumbUrl}" muted preload="metadata" playsinline></video>`
-          : `<img src="${thumbUrl}" alt="${escapeHtmlDashboard(item.label || item.filename)}" loading="lazy">`;
-      const badges = [
-        item.isDefault ? '⭐' : '',
-        item.includeInLoop ? '🔁' : '',
-        mediaUsedIds.has(item.id) ? '✓' : '',
-      ].filter(Boolean);
-      const stateClasses = [
-        item.isDefault ? ' is-default' : '',
-        item.id === mediaOnScreenId ? ' is-on-screen' : '',
-        mediaUsedIds.has(item.id) ? ' is-used' : '',
-      ].join('');
-      return `
-        <div class="media-gallery-card${stateClasses}" data-media-id="${item.id}" style="cursor:pointer" data-action="card-click" data-target="media" data-id="${item.id}">
-          <div class="media-gallery-thumb">
-            ${thumbMarkup}
-            <span class="media-gallery-hotkey"></span>
-            ${badges.map((b) => `<span class="media-gallery-badge">${b}</span>`).join('')}
-          </div>
-          <div class="media-gallery-label" style="font-size:0.75rem;padding:0.3rem 0.5rem;text-align:center;">
-            ${escapeHtmlDashboard(item.label || item.filename)}
-          </div>
-        </div>`;
-    })
-    .join('');
-  renumberVisibleTiles();
-}
-window.renderMediaWall = renderMediaWall;
-
-// AJOUT (Partie 2.3 — touches 1-9, affordance visible) : numérote les 9
-// premières tuiles VISIBLES avec un badge discret dans le coin — sans ça,
-// l'opérateur devrait deviner quelle touche correspond à quelle tuile.
-// Recalculé à chaque rendu ET à chaque filtre (voir filterMediaWall), qui
-// change forcément quelles tuiles sont "les 9 premières visibles".
-function renumberVisibleTiles() {
-  const cards = Array.from(document.querySelectorAll('#mediaWallGrid .media-gallery-card'));
-  let hotkeyIndex = 0;
-  for (const card of cards) {
-    const badge = card.querySelector('.media-gallery-hotkey');
-    if (!badge) continue;
-    if (card.style.display !== 'none' && hotkeyIndex < 9) {
-      hotkeyIndex++;
-      badge.textContent = String(hotkeyIndex);
-      badge.style.display = 'block';
-    } else {
-      badge.textContent = '';
-      badge.style.display = 'none';
-    }
-  }
-}
-
-function triggerMediaWallItem(id) {
-  const item = mediaLibraryItems.find((i) => i.id === id);
-  if (item && item.fileMissing) {
-    showToast(`❌ "${item.label}" : fichier introuvable sur le disque, non déclenché.`, 'error');
-    return;
-  }
-  if (item) triggerMediaLibraryItem(item.id);
-}
-
-// AJOUT (Partie 2.3 — bouton "essayer") : envoie le texte tapé au VRAI
-// moteur de détection côté serveur (action WS testTriggerPhrase) — voir
-// dashboard.html pour le champ/bouton, et ws-dispatch.js pour
-// 'triggerPhraseTestResult' qui affiche la réponse ci-dessous.
-export function testTriggerPhrase() {
-  const input = document.getElementById('triggerPhraseTestInput');
-  const text = input ? input.value.trim() : '';
-  if (!text) return;
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    showToast('Non connecté au serveur — impossible de tester.', 'error');
-    return;
-  }
-  ws.send(JSON.stringify({ action: 'testTriggerPhrase', text }));
-}
-window.testTriggerPhrase = testTriggerPhrase;
-
-const TRIGGER_KIND_LABELS = { media: 'média', song: 'chant', scene: 'scène' };
-
-export function renderTriggerPhraseTestResult(result) {
-  const el = document.getElementById('triggerPhraseTestResult');
-  if (!el) return;
-  if (!result.text) {
-    el.textContent = '';
-    return;
-  }
-  if (result.matched) {
-    el.textContent = `✅ Déclencherait le ${TRIGGER_KIND_LABELS[result.kind] || result.kind} « ${result.label} »`;
-    el.style.color = 'var(--accent-green, #22c55e)';
-  } else {
-    el.textContent = '❌ Aucune correspondance — cette phrase ne déclencherait rien';
-    el.style.color = 'var(--accent-red, #ef4444)';
-  }
-}
-
-// AJOUT (Partie 2.3 — recherche instantanée) : filtre la grille EN PLACE
-// (affiche/masque des tuiles déjà rendues, comme markMediaOnScreen ci-dessus)
-// plutôt que de la reconstruire — même souci de performance sur une grosse
-// médiathèque (cahier des charges : 200 médias).
-function normalizeForSearch(text) {
-  return (text || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
-}
-
-export function filterMediaWall(query) {
-  const q = normalizeForSearch(query);
-  const cards = document.querySelectorAll('#mediaWallGrid .media-gallery-card');
-  cards.forEach((card) => {
-    const item = mediaLibraryItems.find((i) => i.id === card.dataset.mediaId);
-    if (!item) return;
-    const haystack = normalizeForSearch([item.label, ...(item.triggerPhrases || [])].join(' '));
-    card.style.display = !q || haystack.includes(q) ? '' : 'none';
-  });
-  renumberVisibleTiles();
-}
-window.filterMediaWall = filterMediaWall;
-
-// AJOUT (Partie 2.3 — parité clavier, touches 1-9) : les 9 premières tuiles
-// VISIBLES (après filtre — voir filterMediaWall ci-dessus) se déclenchent au
-// clavier, sans quitter le clavier pour attraper la souris en plein culte.
-// Actif uniquement quand le Mur Média est la section réellement affichée
-// (l'opérateur peut être sur un tout autre onglet de RÉGIE en même temps),
-// et jamais pendant une saisie ailleurs (garde-fou partagé avec la barre
-// d'espace du mode confiance — voir utils.js#isTypingContext).
-document.addEventListener('keydown', (e) => {
-  if (!/^[1-9]$/.test(e.key)) return;
-  if (isTypingContext()) return;
-  const section = document.getElementById('media-wall');
-  if (!section || section.style.display === 'none') return;
-  const visibleCards = Array.from(
-    document.querySelectorAll('#mediaWallGrid .media-gallery-card')
-  ).filter((card) => card.style.display !== 'none');
-  const index = Number(e.key) - 1;
-  const card = visibleCards[index];
-  if (!card) return;
-  e.preventDefault();
-  const item = mediaLibraryItems.find((i) => i.id === card.dataset.mediaId);
-  if (item && !item.fileMissing) triggerMediaLibraryItem(item.id);
 });
 
 // AJOUT (Partie 2.3 — groupes nommés déclenchables à la voix) : dire la

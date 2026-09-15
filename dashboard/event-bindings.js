@@ -48,10 +48,12 @@ import { showToast } from './utils.js';
 // son ordre d'évaluation, qui a déjà eu lieu.
 import { triggerMediaLibraryItem } from './features/media-library.js';
 // Même raisonnement pour openSceneComposer : plus republiée sur `window`
-// (privée à scene-studio.js, câblée au délégateur pour la galerie de
-// scènes) — import direct. scene-studio.js est déjà chargée via
-// ws-dispatch.js avant que ce fichier ne s'évalue (importé EN DERNIER).
-import { openSceneComposer } from './features/scene-studio.js';
+// (privée à scene-composer.js, câblée au délégateur de scene-studio.js
+// pour l'action 'scene'/'edit' de la galerie) — import direct.
+// scene-composer.js est déjà chargée via ws-dispatch.js (transitivement,
+// via scene-studio.js qui l'importe) avant que ce fichier ne s'évalue
+// (importé EN DERNIER).
+import { openSceneComposer } from './features/scene-composer.js';
 
 /**
  * Table déclarative id d'élément -> écouteur de clic, dans l'ordre du

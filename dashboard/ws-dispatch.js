@@ -49,14 +49,13 @@ import {
   renderClipExportProgress,
   renderClipExportComplete,
 } from './features/preservice-ai.js';
+import { renderMediaLibrary, renderMediaGroupsPanel } from './features/media-library.js';
 import {
-  renderMediaLibrary,
   renderMediaWall,
   markMediaOnScreen,
   clearMediaOnScreen,
   renderTriggerPhraseTestResult,
-  renderMediaGroupsPanel,
-} from './features/media-library.js';
+} from './features/media-wall.js';
 import {
   renderSceneStudioGallery,
   handlePptxImportResult,
@@ -65,7 +64,8 @@ import {
 import { handleServiceExportResult, handleServiceImportResult } from './features/service-export.js';
 import { renderRundown, applyRundownActiveCue } from './features/rundown.js';
 import { renderNetworkStatus } from './features/network-settings.js';
-import { renderIpCameras, showCameraPairingQr } from './features/ip-cameras.js';
+import { renderIpCameras } from './features/ip-camera-feed.js';
+import { showCameraPairingQr } from './features/ip-cameras.js';
 import { renderBranding } from './features/branding.js';
 import {
   setTranscriptionHealth,
