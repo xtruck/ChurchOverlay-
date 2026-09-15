@@ -28,11 +28,7 @@ import {
   formatReferenceLabel,
   updateDashboard,
 } from './features/verse-session-display.js';
-import {
-  renderMoodPicker,
-  setActiveMoodButton,
-  renderThemeGenerated,
-} from './features/mood-theme.js';
+import { renderThemeGenerated } from './features/mood-theme.js';
 import { renderCompanionQr } from './features/companion-link.js';
 import { renderSongLibrary } from './features/song-library.js';
 import { renderOfflineBibleStatus } from './features/offline-bible.js';
@@ -478,16 +474,13 @@ export function handleMessage(message) {
       );
       break;
     }
-    // AJOUT (innovation frontend — sélecteur d'ambiances) : le serveur
-    // envoyait déjà ces deux réponses (server.js: 'moodsList' sur
-    // getMoods, 'themeApplied' sur setMoodTheme) mais aucun cas ne les
-    // traitait ici — le générateur de thèmes IA restait invisible et
-    // inutilisable depuis le tableau de bord.
-    case 'moodsList':
-      renderMoodPicker(message.moods || []);
-      break;
+    // SUPPRIMÉ (retour opérateur direct — palette d'ambiances retirée du
+    // tableau de bord, voir mood-theme.js) : 'moodsList' alimentait le
+    // sélecteur de vignettes, désormais absent — plus aucun écouteur.
+    // 'themeApplied' garde son retour toast/activité (utile même sans
+    // palette, par ex. si l'ambiance change par commande vocale ou MCP)
+    // mais ne met plus en surbrillance de bouton.
     case 'themeApplied':
-      setActiveMoodButton(message.mood);
       addActivity(`Ambiance changée : ${message.themeName || message.mood}`, 'info');
       showToast(`Ambiance : ${message.themeName || message.mood}`, 'success');
       break;

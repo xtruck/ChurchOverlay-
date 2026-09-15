@@ -1131,10 +1131,20 @@
                 </div>
               </div>
 
-              <!-- RIGHT PANE: Stage Confidence & Ambiance (inspecteur étroit —
-                           le moniteur PGM, désormais pièce centrale dominante,
-                           a été déplacé en haut de .pp-center-column, voir
-                           Changement 2 "Le Plateau"). -->
+              <!-- RIGHT PANE: Stage Confidence (inspecteur étroit — le
+                           moniteur PGM, désormais pièce centrale dominante, a
+                           été déplacé en haut de .pp-center-column, voir
+                           Changement 2 "Le Plateau"). SUPPRIMÉ (retour
+                           opérateur direct — "je n'aime pas ce panneau, à
+                           retirer") : la palette d'ambiances (#ppMoodPicker,
+                           Joie/Paix/Repentance/...) et le curseur de vitesse
+                           de transition qui l'accompagnait vivaient ici —
+                           l'action WS setMoodTheme et le reste du système de
+                           thèmes (config/themes/*.json) restent pleinement
+                           fonctionnels, seul ce point d'entrée manuel dans le
+                           tableau de bord a été retiré (voir aussi la carte
+                           "Ambiance" du tiroir d'outils secondaires, réduite
+                           au même titre). -->
               <div class="pp-right-column">
                 <!-- Stage Display (Confidence Monitor) Preview -->
                 <div class="pp-monitor-group">
@@ -1148,44 +1158,6 @@
                       En attente du prochain texte...
                     </div>
                   </div>
-                </div>
-
-                <!-- Theme Mood Presets Palette (Restrained Professional) -->
-                <!-- CORRECTIF (redesign IA — étape 3, fusion Studio Pro) : les 6
-                     boutons codés en dur ici (Minimal Sombre/Or Solennel/...)
-                     envoyaient une action WS 'setTheme' jamais enregistrée dans
-                     action-registry.js — rejetée silencieusement par le serveur,
-                     sans le moindre effet réel malgré le toast de succès affiché.
-                     Remplacés par un conteneur peuplé dynamiquement avec les
-                     VRAIS thèmes (config/themes/*.json), rendu par
-                     renderMoodPicker() (mood-theme.js) — la même fonction qui
-                     peuple déjà #moodPicker (Direct Classique), voir son en-tête
-                     pour le mécanisme de mise à jour partagée. -->
-                <div class="pp-stack-6">
-                  <span class="pp-pane-title">Ambiance Visuelle</span>
-                  <div class="pp-mood-palette" id="ppMoodPicker">
-                    <span class="hint-text-sm">Connexion au serveur en cours...</span>
-                  </div>
-                </div>
-
-                <!-- Transition Speed Slider -->
-                <div class="pp-transition-card">
-                  <div class="pp-row-between">
-                    <span class="pp-nav-label">VITESSE TRANSITION</span>
-                    <span class="pp-transition-val" id="ppTransitionVal">0.5s</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="100"
-                    max="2000"
-                    value="500"
-                    class="pp-slider"
-                    aria-label="Vitesse de transition"
-                    oninput="
-                      document.getElementById('ppTransitionVal').textContent =
-                        (this.value / 1000).toFixed(1) + 's'
-                    "
-                  />
                 </div>
               </div>
             </div>
@@ -3955,29 +3927,22 @@
             <div class="secondary-drawer-pane" data-drawer-pane="ambiance">
             <div class="card">
               <div class="card-header">
-                <span class="card-title">Ambiance</span>
+                <span class="card-title">Motif & thème IA</span>
               </div>
-              <div class="mood-picker-row" id="moodPicker">
-                <span class="hint-text-sm">Connexion au serveur en cours...</span>
-              </div>
-              <div class="ambient-toggle-row">
-                <label class="toggle-switch">
-                  <input
-                    type="checkbox"
-                    id="ambientModeToggle"
-                    checked
-                    onchange="toggleAmbientMode(this.checked)"
-                    aria-labelledby="ambientModeToggleLabel"
-                  />
-                  <span class="toggle-slider"></span>
-                </label>
-                <!-- AJOUT (accessibilité) : le <label class="toggle-switch">
-                     n'enveloppe que l'input et le curseur, sans aucun texte —
-                     la case n'avait donc aucun nom accessible. aria-labelledby
-                     réutilise le libellé DÉJÀ visible ci-dessous plutôt que d'en
-                     dupliquer un dans un aria-label. -->
-                <span id="ambientModeToggleLabel">Cycle auto ambiances</span>
-              </div>
+              <!-- SUPPRIMÉ (retour opérateur direct — "je n'aime pas ce
+                   panneau, à retirer") : la palette d'ambiances (#moodPicker,
+                   Joie/Paix/Repentance/...) et la case "Cycle auto ambiances"
+                   qui l'accompagnait vivaient ici — voir mood-theme.js,
+                   allégé en conséquence (renderMoodPicker/setActiveMoodButton/
+                   toggleAmbientMode retirés, plus aucun appelant). L'action WS
+                   setMoodTheme et le reste du système de thèmes
+                   (config/themes/*.json) restent pleinement fonctionnels,
+                   seul ce point d'entrée manuel a été retiré — voir aussi la
+                   palette équivalente qui vivait dans la console Opérateur
+                   (#ppMoodPicker), retirée pour la même raison. Cette carte
+                   ne garde donc que le motif de fond CSS et le générateur de
+                   thème par IA ci-dessous, deux fonctionnalités distinctes de
+                   l'ambiance qui n'ont pas été visées par la demande. -->
               <!-- AJOUT (audit — affichage/sortie, gratuit/léger) : motif de fond
                              optionnel, CSS pur (voir #pattern-layer dans overlay.html) — en
                              plus du dégradé de thème déjà choisi ci-dessus. -->

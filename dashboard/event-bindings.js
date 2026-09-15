@@ -140,13 +140,6 @@ const CLICK_BINDINGS = {
     if (window.nextChapter) window.nextChapter();
   },
 
-  // --- Studio : ambiances ---
-  // CORRECTIF (redesign IA — étape 3) : les 6 repères fixes ci-dessus ont
-  // disparu du balisage — #ppMoodPicker est désormais peuplé dynamiquement
-  // par renderMoodPicker() (mood-theme.js) avec data-action="set"
-  // data-target="mood", câblé via le délégateur (action-delegator.js), pas
-  // ce tableau CLICK_BINDINGS (réservé aux boutons STATIQUES à id fixe).
-
   // --- Mode confiance ---
   setTrustModeAutoBtn: () => window.setTrustMode('auto'),
   setTrustModeSemiAutoBtn: () => window.setTrustMode('semi-auto'),

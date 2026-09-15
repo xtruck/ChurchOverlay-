@@ -296,15 +296,13 @@ export function fireQuickScripture() {
 }
 
 // ---------------------------------------------------------------------------
-// 7. MOOD PRESET PICKER
+// 7. MOOD PRESET PICKER — SUPPRIMÉ
 // ---------------------------------------------------------------------------
-// CORRECTIF (redesign IA — étape 3) : setStudioMood()/le palette de 6
-// ambiances codées en dur ont été retirés — envoyaient une action WS
-// 'setTheme' jamais enregistrée dans action-registry.js (rejetée
-// silencieusement par le serveur). #ppMoodPicker (dashboard.html) est
-// désormais peuplé par la VRAIE fonction renderMoodPicker() (voir
-// mood-theme.js), partagée avec le sélecteur d'ambiance de Direct
-// Classique — plus de palette Studio Pro séparée à maintenir ici.
+// setStudioMood()/la palette de 6 ambiances codées en dur avaient déjà été
+// retirées ici (redesign IA — étape 3). La palette qui les avait remplacées
+// (#ppMoodPicker dans dashboard.html, peuplée par mood-theme.js) a ensuite
+// été retirée à son tour du tableau de bord (retour opérateur direct — "je
+// n'aime pas ce panneau"), voir mood-theme.js. Rien à maintenir ici.
 
 // ---------------------------------------------------------------------------
 // 8. AI COPILOT: SEMANTIC SEARCH & SCRIPTURE INTELLIGENCE

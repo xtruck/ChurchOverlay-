@@ -65,8 +65,8 @@ import './features/training-mode.js';
 import './features/startup-wizard.js';
 import './features/companion-link.js';
 // AJOUT (lot 6) : mood-theme.js/song-library.js/offline-bible.js sont déjà
-// chargés indirectement (legacy-core.js les importe pour renderMoodPicker/
-// setActiveMoodButton/renderSongLibrary/renderOfflineBibleStatus) — pas
+// chargés indirectement (legacy-core.js les importe pour
+// renderSongLibrary/renderOfflineBibleStatus) — pas
 // besoin de les lister ici aussi (un module ES ne s'évalue qu'une fois,
 // peu importe par combien de chemins il est importé). verse-queue.js, lui,
 // n'est importé par personne d'autre : sans cette ligne, son
