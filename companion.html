@@ -20,38 +20,68 @@
       content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none';"
     />
     <title>ChurchOverlay — Mes versets</title>
+    <link rel="stylesheet" href="design-tokens.css" />
     <style>
-      /* CORRECTIF (chantier Studio Clair, Track A3) : identité "verrière
-   nocturne" remplacée par la palette Studio Clair — fond ivoire, carte
-   blanche, accent terracotta. Page volontairement simple : lecture
-   seule, pensée pour un téléphone qui vient de scanner un QR code
-   affiché en salle, pas une app à installer. */
-      /* CORRECTIF (chantier "Mission Control") : mêmes NOMS de variables,
-   nouvelles valeurs — alignées sur le bloc :root de
-   dashboard/dashboard.css. Page toujours volontairement simple.
+      /* CORRECTIF (redesign — élévation de l'identité visuelle) : polices
+   auto-hébergées (voir dashboard/fonts/), au lieu de dépendre de Georgia
+   (système) pour le corps de verset — Cormorant Garamond était déjà
+   citée en intention dans le font-family d'origine mais jamais réellement
+   chargée sur cette page (aucun @font-face/lien ici), donc silencieusement
+   retombée sur Georgia à chaque affichage. IBM Plex Sans, déjà la police
+   d'interface du reste de l'app, remplace le repli générique
+   system-ui pour le "chrome" (libellés/actions) de cette page aussi. */
+      @font-face {
+        font-family: 'Cormorant Garamond';
+        font-style: normal;
+        font-weight: 600;
+        font-display: swap;
+        src: url('dashboard/fonts/cormorant-garamond-600-latin.woff2') format('woff2');
+        unicode-range:
+          U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+          U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+      }
+      @font-face {
+        font-family: 'IBM Plex Sans';
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url('dashboard/fonts/ibm-plex-sans-400-latin.woff2') format('woff2');
+        unicode-range:
+          U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+          U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+      }
+      @font-face {
+        font-family: 'IBM Plex Sans';
+        font-style: normal;
+        font-weight: 700;
+        font-display: swap;
+        src: url('dashboard/fonts/ibm-plex-sans-700-latin.woff2') format('woff2');
+        unicode-range:
+          U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+          U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+      }
+      /* CORRECTIF (redesign) : --bg/--text/--accent/--border restent des
+   ALIAS LOCAUX (pas un renommage direct dans les ~30 règles qui les
+   consomment plus bas, y compris le bloc a2ui-* couplé en dur à
+   a2ui-parser.js — renommer aurait forcé à toucher un fichier tiers pour
+   rien) — mais pointent désormais vers design-tokens.css, la même
+   palette que le reste de l'app plutôt qu'une quatrième copie figée.
+   --bg-card n'a PAS besoin d'être redéfini ici : design-tokens.css utilise
+   déjà ce même nom, ses règles de consommation (.verse-card, etc.)
+   l'héritent donc directement du fichier partagé sans rien changer ici —
+   le redéfinir localement en `var(--bg-card)` aurait créé une référence
+   circulaire (valeur invalide).
 
-   NOTE PRODUIT : cette page est destinée à l'ASSEMBLÉE (téléphone
-   personnel après scan d'un QR code en salle), pas à l'opérateur. Le
-   passage au sombre est un choix explicite du demandeur, appliqué ici
-   sciemment. Deux points restent inchangés parce qu'ils servent la
-   lecture, pas l'esthétique : la serif du corps de verset (--text sur
-   fond sombre reste très lisible, et une serif reste le meilleur choix
-   pour lire de l'Écriture au calme), et le sans-serif system-ui déjà en
-   place sur les libellés/actions — ce partage serif-corps /
-   sans-chrome correspond d'ailleurs déjà à la logique Mission Control.
-
-   PAS de synchronisation en direct de la couleur d'accent possible ici :
-   cette page ne parle jamais WebSocket (simple polling HTTP sur
-   /api/verses et /api/captions) et sa CSP restreint connect-src à
-   'self'. --accent ci-dessous est donc le seul point à modifier, et doit
-   rester aligné sur --primary dans dashboard/dashboard.css. */
+   NOTE PRODUIT (toujours valable) : cette page est destinée à
+   l'ASSEMBLÉE (téléphone personnel après scan d'un QR code en salle),
+   volontairement sombre. PAS de synchronisation en direct de --accent
+   possible ici : cette page ne parle jamais WebSocket (simple polling
+   HTTP), --accent reste donc à réaligner à la main sur --primary. */
       :root {
-        --bg: #101219;
-        --bg-card: #171922;
-        --text: #e7e8ee;
-        --text-muted: #a5a9bc;
-        --accent: #f5a15a;
-        --border: rgba(255, 255, 255, 0.08);
+        --bg: var(--bg-base);
+        --text: var(--text-main);
+        --accent: var(--primary);
+        --border: var(--border-subtle);
         /* AJOUT (chantier "Diffusion des sous-titres en direct par QR code") :
      taille de police ajustable — multiplicateur appliqué au verset ET aux
      sous-titres (voir .verse-text/.caption-text plus bas), persisté en
@@ -64,11 +94,9 @@
       body {
         margin: 0;
         min-height: 100vh;
-        /* CORRECTIF (Mission Control) : fond PLAT — la maquette régie n'a pas
-     de dégradé. */
         background: var(--bg);
         color: var(--text);
-        font-family: 'Georgia', 'Cormorant Garamond', serif;
+        font-family: 'Cormorant Garamond', Georgia, serif;
         padding: 20px 16px 60px;
       }
       header {
@@ -86,7 +114,7 @@
         margin: 0;
         font-size: 0.85rem;
         color: var(--text-muted);
-        font-family: system-ui, sans-serif;
+        font-family: 'IBM Plex Sans', system-ui, sans-serif;
       }
       #list {
         max-width: 560px;
@@ -102,7 +130,7 @@
         padding: 16px 18px;
       }
       .verse-ref {
-        font-family: system-ui, sans-serif;
+        font-family: 'IBM Plex Sans', system-ui, sans-serif;
         font-size: 0.75rem;
         font-weight: 700;
         text-transform: uppercase;
@@ -116,7 +144,7 @@
       }
       .verse-time {
         margin-top: 10px;
-        font-family: system-ui, sans-serif;
+        font-family: 'IBM Plex Sans', system-ui, sans-serif;
         font-size: 0.72rem;
         color: var(--text-muted);
       }
@@ -130,9 +158,12 @@
         margin-top: 12px;
         padding-top: 10px;
         border-top: 1px solid var(--border);
-        font-family: system-ui, sans-serif;
+        font-family: 'IBM Plex Sans', system-ui, sans-serif;
       }
       .verse-action-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
         background: none;
         border: 1px solid var(--border);
         border-radius: 4px;
@@ -141,6 +172,11 @@
         padding: 5px 10px;
         cursor: pointer;
         font-family: inherit;
+      }
+      .verse-action-btn svg {
+        width: 13px;
+        height: 13px;
+        flex-shrink: 0;
       }
       .verse-action-btn.active {
         color: var(--accent);
@@ -168,7 +204,7 @@
         border: 1px solid var(--border);
         border-radius: 4px;
         color: var(--text);
-        font-family: system-ui, sans-serif;
+        font-family: 'IBM Plex Sans', system-ui, sans-serif;
         font-size: 0.88rem;
         padding: 8px 10px;
         resize: vertical;
@@ -187,7 +223,7 @@
       #empty {
         text-align: center;
         color: var(--text-muted);
-        font-family: system-ui, sans-serif;
+        font-family: 'IBM Plex Sans', system-ui, sans-serif;
         font-size: 0.9rem;
         margin-top: 40px;
         padding: 0 20px;
@@ -198,7 +234,7 @@
         left: 0;
         right: 0;
         text-align: center;
-        font-family: system-ui, sans-serif;
+        font-family: 'IBM Plex Sans', system-ui, sans-serif;
         font-size: 0.7rem;
         color: var(--text-muted);
         opacity: 0.6;
@@ -216,7 +252,7 @@
         border: 1px solid var(--border);
         border-radius: 6px;
         padding: 14px 18px;
-        font-family: system-ui, sans-serif;
+        font-family: 'IBM Plex Sans', system-ui, sans-serif;
       }
       #captionBar.visible {
         display: block;
@@ -255,7 +291,7 @@
         align-items: center;
         gap: 8px;
         flex-wrap: wrap;
-        font-family: system-ui, sans-serif;
+        font-family: 'IBM Plex Sans', system-ui, sans-serif;
       }
       .control-group {
         display: flex;
@@ -312,7 +348,7 @@
         gap: 10px;
       }
       .a2ui-card-title {
-        font-family: system-ui, sans-serif;
+        font-family: 'IBM Plex Sans', system-ui, sans-serif;
         font-size: 0.72rem;
         font-weight: 700;
         text-transform: uppercase;
@@ -320,7 +356,7 @@
         color: var(--accent);
       }
       .a2ui-card-subtitle {
-        font-family: system-ui, sans-serif;
+        font-family: 'IBM Plex Sans', system-ui, sans-serif;
         font-size: 0.85rem;
         color: var(--text-muted);
       }
@@ -338,7 +374,7 @@
         font-style: italic;
       }
       .a2ui-button {
-        font-family: system-ui, sans-serif;
+        font-family: 'IBM Plex Sans', system-ui, sans-serif;
         font-size: 0.9rem;
         font-weight: 600;
         padding: 10px 16px;
@@ -530,8 +566,8 @@
       <div class="verse-text">${escapeHtml(v.text || '')}</div>
       ${v.timestamp ? `<div class="verse-time">${formatTime(v.timestamp)}</div>` : ''}
       <div class="verse-actions">
-        <button type="button" class="verse-action-btn${entry.highlighted ? ' active' : ''}" data-action="highlight" data-key="${keyAttr}">⭐ Marquer</button>
-        <button type="button" class="verse-action-btn" data-action="toggle-note" data-key="${keyAttr}">📝 Ma note</button>
+        <button type="button" class="verse-action-btn${entry.highlighted ? ' active' : ''}" data-action="highlight" data-key="${keyAttr}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3l2.5 5.5 6 .7-4.4 4.1 1.2 6-5.3-3-5.3 3 1.2-6-4.4-4.1 6-.7z"/></svg> Marquer</button>
+        <button type="button" class="verse-action-btn" data-action="toggle-note" data-key="${keyAttr}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 17.5V20h2.5L18 8.5l-2.5-2.5L4 17.5z"/><path d="M13.5 4.5l3 3"/></svg> Ma note</button>
       </div>
       <div class="verse-note" data-note-key="${keyAttr}">
         <textarea aria-label="Votre note personnelle" placeholder="Votre note personnelle (visible uniquement sur cet appareil)..." data-key="${keyAttr}">${escapeHtml(entry.note || '')}</textarea>

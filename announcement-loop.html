@@ -28,35 +28,23 @@
   d'annonces préparée à l'avance", pas un flux piloté en direct).
   ============================================================================
 -->
+<link rel="stylesheet" href="design-tokens.css">
 <style>
-  /* CORRECTIF (chantier Studio Clair, Track C) : palette figée en dur à
-     celle de config/themes/studio-clair-ivoire.json — cette page n'est
-     pas branchée sur le système de thèmes overlay (theme-loader.js), elle
-     a son propre petit bloc de styles locaux comme branding-overlay.html/
-     stage-display.html ; la rebrancher serait un vrai chantier
-     d'architecture séparé, hors périmètre ici. Le fond passe du noir plein
-     écran à l'ivoire Studio Clair : les photos/vidéos restent centrées et
-     contenues (object-fit: contain) exactement comme avant, seule la
-     couleur derrière une image qui ne remplit pas tout l'écran change. */
-  /* CORRECTIF (chantier "Mission Control") : même raisonnement, nouvelle
-     palette — fond PLAT (le dégradé ivoire disparaît, la maquette régie n'a
-     pas de dégradé) aligné sur --bg-base de dashboard/dashboard.css. Ce fond
-     n'est visible qu'en bordure d'un média qui ne remplit pas tout l'écran
-     (object-fit: contain, inchangé) : un fond sombre y est la convention
-     habituelle du letterboxing, il détourne moins l'œil d'une photo qu'un
-     ivoire clair.
-     PAS de token d'accent défini ici, volontairement : cette page n'a AUCUN
-     élément coloré à l'accent (le seul texte est le message "aucun média",
-     volontairement discret). Ajouter un --mc-accent inutilisé n'aurait fait
-     qu'introduire une septième copie figée de la couleur à maintenir. */
-  :root {
-    --mc-bg: #101219;
-    --mc-text-dim: #6b6f80;
-  }
+  /* CORRECTIF (chantier redesign — élévation de l'identité visuelle) :
+     --mc-bg/--mc-text-dim (copies figées en dur) remplacés par
+     design-tokens.css (--bg-base/--text-dim), même valeurs — voir son
+     en-tête pour le raisonnement de consolidation. Cette page continue de
+     n'utiliser AUCUNE couleur d'accent, volontairement (voir commentaire
+     d'origine encore valable : le seul contenu textuel est le message
+     "aucun média", délibérément discret — pas de septième copie de couleur
+     à maintenir pour un élément qui n'en a jamais eu besoin). Le fond reste
+     PLAT (pas de dégradé) : visible seulement en bordure d'un média qui ne
+     remplit pas tout l'écran (object-fit: contain, inchangé) — un fond
+     sombre y est la convention habituelle du letterboxing. */
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0; width: 100%; height: 100%;
-    background: var(--mc-bg);
+    background: var(--bg-base);
     overflow: hidden;
   }
   #stage {
@@ -66,14 +54,48 @@
   #stage img, #stage video {
     max-width: 100%; max-height: 100%; object-fit: contain;
   }
+  /* AJOUT (redesign) : l'état vide était jusqu'ici deux lignes de texte brut
+     centrées — remplacé par un petit repère visuel (icône neutre, jamais un
+     emoji — voir la règle "No Emoji as Structural Icons") + une hiérarchie
+     typographique à deux niveaux (message principal / instruction), pour
+     que cet écran, vu par un technicien qui vérifie la sortie avant le
+     culte, se lise comme un vrai état d'application plutôt qu'un
+     placeholder oublié. */
+  /* CORRECTIF (redesign — trouvé en vérifiant visuellement) : cet état
+     n'était jamais recentré sur l'écran (ni position ni display:flex sur
+     lui-même) — seul text-align:center alignait le TEXTE dans sa propre
+     boîte, la boîte elle-même restant collée en haut-gauche de la page.
+     Repositionné en superposition plein écran, comme #stage, pour occuper
+     réellement la même zone. */
   #empty {
     display: none;
-    color: var(--mc-text-dim);
-    font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
-    font-size: 3vh;
+    position: fixed;
+    inset: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-4);
     text-align: center;
+    font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
   }
-  #empty.visible { display: block; }
+  #empty.visible { display: flex; }
+  #empty .empty-hint { max-width: 60vw; }
+  #empty svg {
+    width: 8vh;
+    height: 8vh;
+    color: var(--text-dim);
+    opacity: 0.7;
+  }
+  #empty .empty-title {
+    color: var(--text-muted);
+    font-size: clamp(1.1rem, 2.4vh, var(--text-xl));
+    font-weight: 600;
+  }
+  #empty .empty-hint {
+    color: var(--text-dim);
+    font-size: clamp(0.85rem, 1.6vh, var(--text-md));
+    line-height: var(--leading-relaxed);
+  }
 </style>
 </head>
 <body>
@@ -82,7 +104,16 @@
   <img id="stageImg" alt="" hidden>
   <video id="stageVideo" hidden muted></video>
 </div>
-<div id="empty">Aucun média inclus dans le diaporama.<br>Cochez "Diaporama" sur un élément de la médiathèque.</div>
+<div id="empty">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+    <rect x="3" y="5" width="18" height="13" rx="2"></rect>
+    <path d="M3 15l4.5-4.5a1.5 1.5 0 0 1 2.1 0L13 14"></path>
+    <circle cx="16" cy="9" r="1.5"></circle>
+    <path d="M9 21h6"></path>
+  </svg>
+  <div class="empty-title">Aucun média inclus dans le diaporama</div>
+  <div class="empty-hint">Cochez « Diaporama » sur un élément de la médiathèque pour l'ajouter ici.</div>
+</div>
 
 <script>
 'use strict';

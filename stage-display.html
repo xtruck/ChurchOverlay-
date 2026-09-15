@@ -11,6 +11,7 @@
   content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; connect-src 'self' ws: wss: http: https:; object-src 'none'; base-uri 'none'; form-action 'none';"
 />
 <title>ChurchOverlay — Écran scène</title>
+<link rel="stylesheet" href="design-tokens.css">
 <!--
   ============================================================================
   stage-display.html — Écran dédié aux musiciens/chantres
@@ -35,36 +36,30 @@
 -->
 <style>
   :root {
-    /* CORRECTIF (chantier Studio Clair) : exception délibérée au reste de
-       l'app — cet écran est consulté sous un éclairage de scène déjà très
-       lumineux, souvent dans une salle par ailleurs obscurcie ; un fond
+    /* CORRECTIF (chantier redesign — élévation de l'identité visuelle) :
+       --bg/--text/--text-dim/--ok/--warn/--err (copies figées en dur)
+       remplacés par design-tokens.css, mêmes valeurs — voir son en-tête.
+       EXCEPTION VOLONTAIRE PRÉSERVÉE (raison toujours valable, voir
+       l'historique du fichier) : cet écran reste sombre en toute
+       circonstance — consulté sous un éclairage de scène déjà très
+       lumineux, souvent dans une salle par ailleurs obscurcie, un fond
        clair y serait un vrai problème d'usage (éblouissement, casse
        l'adaptation à l'obscurité), pas juste un choix esthétique
-       différent. --bg/--text/--text-dim restent donc INCHANGÉS — seul
-       --accent est aligné sur le terracotta Studio Clair, pour un minimum
-       de cohérence de marque avec le reste de l'app sans toucher au fond
-       sombre ni au contraste. */
-    /* CORRECTIF (chantier "Mission Control") : cet écran était DÉJÀ sombre
-       (voir juste au-dessus) — l'exception qu'il constituait disparaît,
-       c'est désormais le reste de l'app qui l'a rejoint. Mêmes NOMS de
-       variables, seules les valeurs changent, alignées sur le bloc :root de
-       dashboard/dashboard.css. Les couleurs d'état ci-dessous (--ok/--warn/
-       --err) étaient jusqu'ici écrites en dur plus bas dans ce fichier
-       (#22c55e/#d97706/#ef4444) : tokenisées ici pour que la règle
-       "la couleur est RÉSERVÉE au statut" soit lisible en un seul endroit. */
-    --bg: #101219;
-    --text: #e7e8ee;
-    --text-dim: #6b6f80;
+       différent. Le partage du fichier de tokens ne change rien à ça : la
+       valeur PAR DÉFAUT de --bg-base y est déjà sombre. */
+    --bg: var(--bg-base);
+    --text: var(--text-main);
+    --ok: var(--accent-emerald);
+    --warn: var(--accent-amber);
+    --warn-ink: var(--on-primary);
+    --err: var(--accent-rose);
     /* --accent est écrasé EN DIRECT par le tableau de bord (voir le bloc
        'init'/'dashboardBrandingUpdate' dans le <script> plus bas) — cette
-       valeur n'est que le repli avant la première réponse du serveur. Elle
-       doit rester alignée sur --primary dans dashboard/dashboard.css et sur
+       valeur n'est que le repli avant la première réponse du serveur,
+       dérivée de --primary (design-tokens.css) plutôt qu'une troisième
+       copie figée de la même couleur. Doit rester alignée sur
        DEFAULT_ACCENT_COLOR dans dashboard/features/dashboard-branding.js. */
-    --accent: #f5a15a;
-    --ok: #34d399;
-    --warn: #fbbf24;
-    --warn-ink: #14161f;
-    --err: #f87171;
+    --accent: var(--primary);
   }
   * { box-sizing: border-box; }
   html, body {
@@ -78,8 +73,22 @@
     flex-direction: column;
     padding: 3vh 4vw;
   }
+  /* AJOUT (redesign) : légende au-dessus du chrono — un lecteur qui n'a
+     jamais vu cet écran ne devinait pas ce que "00:00" mesurait. Petite
+     capitale espacée, ton discret (--text-dim), même convention que les
+     étiquettes du tableau de bord (MICRO / CLÉS API...) — ne change rien à
+     la consigne "aucune distraction visuelle", juste une légende statique. */
+  #timerLabel {
+    font-family: var(--font-mono);
+    font-size: 1.4vh;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    opacity: 0.75;
+    margin-bottom: 0.3vh;
+  }
   #timer {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 3.2vh;
     color: var(--text-dim);
     letter-spacing: 0.05em;
@@ -97,33 +106,63 @@
     font-size: 3.4vh;
     color: var(--accent);
     font-weight: 600;
+    letter-spacing: 0.02em;
   }
   #text {
     font-size: 5.5vh;
-    line-height: 1.35;
+    line-height: var(--leading-relaxed);
     max-width: 90vw;
     white-space: pre-wrap;
   }
   #placeholder {
-    font-size: 3vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.6vh;
     color: var(--text-dim);
+  }
+  #placeholder svg {
+    width: 5vh;
+    height: 5vh;
+    opacity: 0.5;
+  }
+  #placeholder span {
+    font-size: 3vh;
   }
   #reference,
   #text {
     display: none;
   }
+  /* AJOUT (redesign) : préfixe "MESSAGE" — un texte qui apparaît soudain en
+     bas d'écran pendant qu'un musicien joue doit se lire comme une
+     notification, pas comme un sous-titre anonyme ; le préfixe permet de
+     comprendre la nature du texte en vision périphérique, sans lire la
+     phrase entière. */
   #stageMessage {
     display: none;
     position: fixed;
     left: 0; right: 0; bottom: 0;
-    padding: 2.5vh 4vw;
+    padding: 2.2vh 4vw 2.5vh;
     background: var(--warn);
     color: var(--warn-ink);
-    font-size: 4vh;
-    font-weight: 700;
     text-align: center;
+    box-shadow: var(--shadow-e3);
   }
   #stageMessage.visible { display: block; }
+  #stageMessagePrefix {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 1.5vh;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    opacity: 0.75;
+    margin-bottom: 0.6vh;
+  }
+  #stageMessageText {
+    font-size: 4vh;
+    font-weight: 700;
+  }
   #connIndicator {
     position: fixed;
     top: 2vh; right: 3vw;
@@ -137,15 +176,25 @@
 <body>
 
 <div id="connIndicator" title="État de la connexion"></div>
+<div id="timerLabel">Temps écoulé</div>
 <div id="timer">00:00</div>
 
 <div id="main">
-  <div id="placeholder">En attente...</div>
+  <div id="placeholder">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+      <circle cx="12" cy="12" r="9"></circle>
+      <path d="M12 7v5l3 3"></path>
+    </svg>
+    <span>En attente...</span>
+  </div>
   <div id="reference"></div>
   <div id="text"></div>
 </div>
 
-<div id="stageMessage"></div>
+<div id="stageMessage">
+  <span id="stageMessagePrefix">Message</span>
+  <span id="stageMessageText"></span>
+</div>
 
 <script>
 'use strict';
@@ -201,9 +250,8 @@ function applyAccentColor(branding) {
 }
 
 function showStageMessage(text) {
-  const el = document.getElementById('stageMessage');
-  el.textContent = text;
-  el.classList.add('visible');
+  document.getElementById('stageMessageText').textContent = text;
+  document.getElementById('stageMessage').classList.add('visible');
 }
 
 function clearStageMessage() {

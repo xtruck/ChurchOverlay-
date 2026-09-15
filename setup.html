@@ -8,46 +8,66 @@
      fichier a un vrai <script> inline (ligne ~344) avec la logique de
      l'assistant de config ; le refactorer vers un .js externe est un
      chantier séparé. object-src/base-uri/form-action restent stricts. -->
+<!-- CORRECTIF (redesign — élévation de l'identité visuelle) : style-src/
+     font-src n'autorisent plus fonts.googleapis.com/fonts.gstatic.com —
+     la police est désormais auto-hébergée (voir @font-face plus bas),
+     même discipline que dashboard.css (un <link> Google Fonts avait déjà
+     mesuré ~7.3s de retard bloquant sur un réseau où l'IPv6 est un trou
+     noir ; ne pas réintroduire cette dépendance CDN ici). -->
 <meta
   http-equiv="Content-Security-Policy"
-  content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none';"
+  content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none';"
 />
 <title>ChurchOverlay — Configuration initiale</title>
+<link rel="stylesheet" href="design-tokens.css">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-  
+  /* CORRECTIF (redesign) : police auto-hébergée (voir dashboard/fonts/) au
+     lieu du <link>/@import Google Fonts Inter — mêmes fichiers .woff2 que
+     dashboard.css, IBM Plex Sans est déjà la police d'interface du reste
+     de l'app (voir --overlay-font-ui dans overlay.html). */
+  @font-face {
+    font-family: 'IBM Plex Sans';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('dashboard/fonts/ibm-plex-sans-400-latin.woff2') format('woff2');
+    unicode-range:
+      U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+      U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  }
+  @font-face {
+    font-family: 'IBM Plex Sans';
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('dashboard/fonts/ibm-plex-sans-600-latin.woff2') format('woff2');
+    unicode-range:
+      U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+      U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  }
+  @font-face {
+    font-family: 'IBM Plex Sans';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('dashboard/fonts/ibm-plex-sans-700-latin.woff2') format('woff2');
+    unicode-range:
+      U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+      U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  }
+
   :root {
-    /* CORRECTIF (chantier Studio Clair, Track A2) : mêmes noms de
-       variables, nouvelles valeurs — fond clair, carte blanche solide
-       (plus de glass sombre translucide), accent terracotta. */
-    /* CORRECTIF (chantier "Mission Control") : même discipline une fois de
-       plus — mêmes NOMS de variables, seules les valeurs changent, alignées
-       sur le bloc :root de dashboard/dashboard.css. --accent est le SEUL
-       point à modifier pour rebrander cet écran (--accent-hover et le voile
-       de focus en dérivent via color-mix()) ; il doit rester aligné sur
-       --primary dans dashboard/dashboard.css. Pas de synchronisation en
-       direct possible ici : cet assistant s'exécute AVANT que le serveur ne
-       soit configuré, il n'a ni WebSocket ni accès réseau (CSP : connect-src
-       'self'). */
-    --bg-primary: #101219;
-    --glass-bg: #171922;
-    --glass-border: rgba(255, 255, 255, 0.08);
-    --text-primary: #e7e8ee;
-    --text-secondary: #a5a9bc;
-    --text-muted: #6b6f80;
-    --accent: #f5a15a;
-    --accent-hover: color-mix(in srgb, var(--accent) 85%, black);
-    /* --accent est un orange CLAIR : du texte blanc posé dessus tombe à
-       ~2:1 de contraste. Encre sombre dédiée pour les surfaces peintes en
-       --accent plein (.btn-primary) — même correctif que dans
-       dashboard/dashboard.css (--on-primary). */
-    --on-accent: #14161f;
-    /* La couleur est RÉSERVÉE au statut (vert/ambre/rouge), jamais
-       décorative — voir .status.success/.error/.warning plus bas. */
-    --success: #34d399;
-    --error: #f87171;
-    --warning: #fbbf24;
-    --bg-input: #0d0f16;
+    /* CORRECTIF (redesign — élévation de l'identité visuelle) : variables
+       locales retirées, désormais fournies par design-tokens.css (mêmes
+       valeurs, noms canoniques partagés par toute l'app — voir son
+       en-tête). --accent reste défini ICI localement : cet assistant
+       s'exécute AVANT que le serveur ne soit configuré (pas de WebSocket,
+       CSP connect-src 'self'), donc pas de synchronisation en direct
+       possible avec dashboard-branding.js comme sur les autres écrans —
+       il doit rester aligné à la main sur --primary. */
+    --accent: var(--primary);
+    --accent-hover: var(--primary-hover);
+    --on-accent: var(--on-primary);
   }
 
   * {
@@ -57,17 +77,9 @@
   }
 
   body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    /* CORRECTIF (Studio Clair) : même dégradé ivoire que le fond des
-       autres écrans du chantier (studio-clair-ivoire.json), au lieu du
-       bleu-nuit d'origine — ce fond de page n'était pas tokenisé, laissé
-       tel quel il aurait produit une carte claire flottant sur un fond
-       resté sombre. */
-    /* CORRECTIF (Mission Control) : fond PLAT et TOKENISÉ — plus de dégradé
-       (la maquette régie n'en a pas), et plus de hex en dur ici : c'est
-       exactement l'oubli qui avait produit le bug décrit juste au-dessus. */
-    background: var(--bg-primary);
-    color: var(--text-primary);
+    font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg-base);
+    color: var(--text-main);
     min-height: 100vh;
     display: flex;
     align-items: center;
@@ -76,39 +88,16 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    /* CORRECTIF (Studio Clair) : lueur décorative indigo -> terracotta
-       (--accent), opacité fortement réduite — un fond clair n'a besoin
-       que d'une touche très discrète, pas d'un halo saturé comme sur
-       fond sombre. */
-    /* CORRECTIF (Mission Control) : lueur décorative RETIRÉE — "pas de
-       lueur, pas de flou", et la couleur d'accent est réservée aux
-       éléments signifiants, jamais à un halo de fond. L'élément lui-même
-       est conservé (aucune modification du DOM dans ce chantier), il ne
-       peint simplement plus rien. */
-    background: none;
-    pointer-events: none;
-  }
-
   .container {
     position: relative;
     width: 100%;
     max-width: 520px;
-    /* CORRECTIF (Studio Clair) : --glass-bg est maintenant un blanc SOLIDE
-       (voir :root) — plus de fond à flouter, le backdrop-filter d'origine
-       est donc retiré (il ne faisait plus rien). */
-    background: var(--glass-bg);
-    border: 1px solid var(--glass-border);
-    /* CORRECTIF (Mission Control) : rayons resserrés (régie) et ombre
-       portée NOIRE au lieu de l'encre chaude du thème clair, qui virait au
-       brun sur un fond sombre. */
-    border-radius: 8px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
     padding: 40px;
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
-    animation: slideIn 0.4s ease-out;
+    box-shadow: var(--shadow-lift);
+    animation: slideIn 0.4s var(--ease-silk);
   }
 
   @keyframes slideIn {
@@ -127,37 +116,41 @@
     margin-bottom: 32px;
   }
 
-  .logo {
-    font-size: 48px;
-    margin-bottom: 12px;
+  /* AJOUT (redesign — pas d'emoji comme icône structurelle) : la croix
+     émoji ✝️ (rendu variable selon police système/OS) devient une icône
+     vectorielle dans un badge circulaire teinté --primary, cohérent avec
+     le traitement d'icône du reste de l'app plutôt qu'un glyphe de police. */
+  .logo-badge {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-lg);
+    background: var(--primary-glow);
+    border: 1px solid var(--border-active);
+    color: var(--primary);
     animation: float 3s ease-in-out infinite;
   }
+  .logo-badge svg { width: 28px; height: 28px; }
 
   @keyframes float {
     0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-8px); }
+    50% { transform: translateY(-6px); }
   }
 
   h1 {
-    font-size: 26px;
+    font-size: var(--text-2xl);
     font-weight: 700;
     margin-bottom: 8px;
-    /* CORRECTIF (Mission Control) : le titre était un dégradé de texte
-       accent -> vert. Deux problèmes : c'est de la couleur purement
-       décorative (elle est désormais réservée au statut), et mélanger
-       l'accent au VERT DE STATUT dans un titre brouille exactement le code
-       couleur que le reste de l'écran essaie d'établir. Titre plein, à
-       l'encre de texte normale. Les trois propriétés background-clip /
-       -webkit-text-fill-color sont retirées et pas seulement neutralisées :
-       laisser -webkit-text-fill-color: transparent aurait rendu le titre
-       littéralement invisible une fois le dégradé enlevé. */
-    color: var(--text-primary);
+    color: var(--text-main);
   }
 
   .subtitle {
-    color: var(--text-secondary);
-    font-size: 13px;
-    line-height: 1.6;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    line-height: var(--leading-relaxed);
   }
 
   .form-group {
@@ -167,15 +160,22 @@
   label {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     font-weight: 600;
     margin-bottom: 10px;
-    color: var(--text-primary);
-    font-size: 14px;
+    color: var(--text-main);
+    font-size: var(--text-sm);
+  }
+
+  label svg {
+    width: 16px;
+    height: 16px;
+    color: var(--text-dim);
+    flex-shrink: 0;
   }
 
   .optional-label {
-    color: var(--text-muted);
+    color: var(--text-dim);
     font-weight: 400;
   }
 
@@ -187,40 +187,42 @@
   select, input {
     width: 100%;
     background: var(--bg-input);
-    border: 1px solid var(--glass-border);
-    color: var(--text-primary);
-    border-radius: 6px;
+    border: 1px solid var(--border-subtle);
+    color: var(--text-main);
+    border-radius: var(--radius-md);
     padding: 12px 14px;
-    font-size: 13px;
+    font-size: var(--text-sm);
     font-family: inherit;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
   }
 
   select:focus, input:focus {
     outline: none;
     border-color: var(--accent);
-    /* Dérivé de --accent via color-mix() plutôt qu'un rgba() figé, pour
-       suivre automatiquement tout changement de couleur d'accent. */
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
   }
 
   .btn {
     cursor: pointer;
     border: none;
-    border-radius: 6px;
-    font-size: 13px;
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
     font-weight: 600;
     padding: 12px 18px;
-    transition: all 0.2s ease;
+    transition: all var(--duration-base) ease;
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
   }
 
+  .btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+
   .btn-secondary {
-    /* CORRECTIF (Mission Control) : voile clair sur fond sombre — un voile
-       d'encre sombre sur un panneau sombre était invisible. */
     background: rgba(255, 255, 255, 0.04);
-    color: var(--text-primary);
-    border: 1px solid var(--glass-border);
+    color: var(--text-main);
+    border: 1px solid var(--border-subtle);
   }
 
   .btn-secondary:hover {
@@ -230,15 +232,10 @@
 
   .btn-primary {
     width: 100%;
-    /* CORRECTIF (Mission Control) : aplat de couleur (plus de dégradé) et
-       surtout ENCRE SOMBRE au lieu de blanc — --accent est maintenant un
-       orange clair, du blanc dessus tombait à ~2:1 de contraste, illisible.
-       Même correctif que --on-primary dans dashboard/dashboard.css. La
-       lueur portée colorée disparaît aussi ("pas de lueur"). */
     background: var(--accent);
     color: var(--on-accent);
     padding: 14px 20px;
-    font-size: 14px;
+    font-size: var(--text-base);
   }
 
   .btn-primary:hover:not(:disabled) {
@@ -252,10 +249,10 @@
   }
 
   .hint {
-    color: var(--text-muted);
-    font-size: 11px;
+    color: var(--text-dim);
+    font-size: var(--text-xs);
     margin-top: 8px;
-    line-height: 1.5;
+    line-height: var(--leading-relaxed);
   }
 
   .hint a {
@@ -269,29 +266,26 @@
   }
 
   .status {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
     margin-top: 8px;
-    font-size: 12px;
+    font-size: var(--text-xs);
     min-height: 18px;
     padding: 4px 0;
   }
 
-  .status.success {
-    color: var(--success);
-  }
+  .status svg { width: 14px; height: 14px; flex-shrink: 0; }
 
-  .status.error {
-    color: var(--error);
-  }
-
-  .status.warning {
-    color: var(--warning);
-  }
+  .status.success { color: var(--accent-emerald); }
+  .status.error { color: var(--accent-rose); }
+  .status.warning { color: var(--accent-amber); }
 
   .toggle-password {
     background: none;
     border: none;
-    color: var(--text-secondary);
-    font-size: 11px;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
     padding: 4px 0;
     margin-top: 6px;
     cursor: pointer;
@@ -303,25 +297,30 @@
   }
 
   .footer {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
     margin-top: 28px;
     padding-top: 20px;
-    border-top: 1px solid var(--glass-border);
-    color: var(--text-muted);
-    font-size: 11px;
-    line-height: 1.6;
-    text-align: center;
+    border-top: 1px solid var(--border-subtle);
+    color: var(--text-dim);
+    font-size: var(--text-xs);
+    line-height: var(--leading-relaxed);
+  }
+
+  .footer svg {
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: var(--text-dim);
   }
 
   .spinner {
     display: inline-block;
     width: 14px;
     height: 14px;
-    /* CORRECTIF (Mission Control) : ce spinner n'apparaît QUE dans
-       .btn-primary (voir btnSave.innerHTML dans le <script>), dont le fond
-       est l'orange clair --accent : un spinner blanc y était à peine
-       visible. Même encre sombre que le libellé du bouton.
-       Fallback compatible Chrome < 111 : utiliser rgba() au lieu de
-       color-mix(), qui n'est pas supporté par les anciennes versions. */
+    /* Fallback compatible Chrome < 111 : rgba() plutôt que color-mix(). */
     border: 2px solid rgba(20, 22, 31, 0.3);
     border-top-color: var(--on-accent);
     border-radius: 50%;
@@ -341,10 +340,15 @@
 <body>
   <div class="container">
     <div class="header">
-      <div class="logo">✝️</div>
+      <div class="logo-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <path d="M12 2v20"></path>
+          <path d="M6 8h12"></path>
+        </svg>
+      </div>
       <h1>Configuration Initiale</h1>
       <p class="subtitle">
-        Configurez votre micro et votre clé API Groq pour commencer. 
+        Configurez votre micro et votre clé API Groq pour commencer.
         Rien d'autre à installer, tout est prêt !
       </p>
     </div>
@@ -353,14 +357,25 @@
       <!-- Microphone -->
       <div class="form-group">
         <label>
-          <span>🎤</span> Microphone
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+            <rect x="9" y="2" width="6" height="12" rx="3"></rect>
+            <path d="M5 10a7 7 0 0 0 14 0"></path>
+            <path d="M12 17v5M9 22h6"></path>
+          </svg>
+          Microphone
         </label>
         <div class="input-row">
           <select id="mic-select" title="Sélectionner un microphone">
             <option value="">Recherche des microphones…</option>
           </select>
           <button type="button" class="btn btn-secondary" id="btn-refresh">
-            🔄 Actualiser
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+              <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+              <path d="M21 3v5h-5"></path>
+              <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+              <path d="M3 21v-5h5"></path>
+            </svg>
+            Actualiser
           </button>
         </div>
         <div class="status" id="mic-status"></div>
@@ -369,7 +384,11 @@
       <!-- Groq API Key -->
       <div class="form-group">
         <label>
-          <span>🔑</span> Clé API Groq
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+            <circle cx="8" cy="15" r="4"></circle>
+            <path d="M11 12l9-9M17 3l3 3M14 6l3 3"></path>
+          </svg>
+          Clé API Groq
         </label>
         <input type="password" id="groq-key" placeholder="gsk_..." autocomplete="off" />
         <button type="button" class="toggle-password" id="btn-toggle-groq">Afficher</button>
@@ -383,7 +402,11 @@
       <!-- Deepgram API Key (Optional) -->
       <div class="form-group">
         <label>
-          <span>🔐</span> Clé API Deepgram <span class="optional-label">(optionnel)</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+            <rect x="5" y="11" width="14" height="10" rx="2"></rect>
+            <path d="M8 11V7a4 4 0 0 1 8 0v4"></path>
+          </svg>
+          Clé API Deepgram <span class="optional-label">(optionnel)</span>
         </label>
         <input type="password" id="deepgram-key" placeholder="Laisser vide si non utilisé" autocomplete="off" />
         <button type="button" class="toggle-password" id="btn-toggle-deepgram">Afficher</button>
@@ -396,7 +419,10 @@
       <!-- Gemini API Key (Optional) -->
       <div class="form-group">
         <label>
-          <span>✨</span> Clé API Gemini <span class="optional-label">(optionnel)</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+            <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z"></path>
+          </svg>
+          Clé API Gemini <span class="optional-label">(optionnel)</span>
         </label>
         <input type="password" id="gemini-key" placeholder="Laisser vide si non utilisé" autocomplete="off" />
         <button type="button" class="toggle-password" id="btn-toggle-gemini">Afficher</button>
@@ -408,13 +434,19 @@
 
       <!-- Save Button -->
       <button type="button" class="btn btn-primary" id="btn-save" disabled>
-        🚀 Enregistrer et démarrer
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M5 12l5 5L20 7"></path>
+        </svg>
+        Enregistrer et démarrer
       </button>
       <div class="status" id="save-status"></div>
 
       <div class="footer">
-        🔒 Toutes ces informations restent sur votre ordinateur.
-        Vous pourrez les modifier depuis le tableau de bord.
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <rect x="5" y="11" width="14" height="10" rx="2"></rect>
+          <path d="M8 11V7a4 4 0 0 1 8 0v4"></path>
+        </svg>
+        <span>Toutes ces informations restent sur votre ordinateur. Vous pourrez les modifier depuis le tableau de bord.</span>
       </div>
     </div>
   </div>
@@ -437,6 +469,21 @@
       linkGemini: document.getElementById('link-gemini'),
       setupForm: document.getElementById('setup-form'),
     };
+
+    // AJOUT (redesign — statuts avec icône, pas seulement couleur, voir
+    // règle "color-not-only") : petites icônes SVG inline réutilisées par
+    // setStatus() ci-dessous plutôt que dupliquées à chaque appel.
+    const STATUS_ICONS = {
+      success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12l5 5L20 7"/></svg>',
+      error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg>',
+      warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l10 18H2z"/><path d="M12 10v4M12 17h.01"/></svg>',
+    };
+    function setStatus(el, kind, text) {
+      el.className = kind ? `status ${kind}` : 'status';
+      el.innerHTML = kind && STATUS_ICONS[kind]
+        ? `${STATUS_ICONS[kind]}<span>${text}</span>`
+        : text;
+    }
 
     // Copy links
     elements.linkGroq.addEventListener('click', (e) => {
@@ -504,9 +551,8 @@
     // dashboard.html l'utilisera directement pour getUserMedia() au moment
     // de la capture réelle (plus besoin d'un nom "compatible ffmpeg").
     async function loadMicrophones(force = false) {
-      elements.micStatus.className = 'status';
-      elements.micStatus.textContent = '';
-      elements.micSelect.innerHTML = '<option value="">🔍 Recherche des microphones…</option>';
+      setStatus(elements.micStatus, null, '');
+      elements.micSelect.innerHTML = '<option value="">Recherche des microphones…</option>';
       elements.btnRefresh.disabled = true;
 
       let devices = [];
@@ -526,13 +572,12 @@
           .map((d) => ({ id: d.deviceId, label: d.label || 'Microphone (nom indisponible)' }));
       } catch (err) {
         elements.btnRefresh.disabled = false;
-        elements.micSelect.innerHTML = '<option value="">❌ Accès micro refusé</option>';
-        elements.micStatus.className = 'status error';
+        elements.micSelect.innerHTML = '<option value="">Accès micro refusé</option>';
         const isPermissionError = err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError');
-        elements.micStatus.textContent = isPermissionError
-          ? "⚠️ Autorisation micro refusée. Vérifiez Windows → Confidentialité → Microphone → " +
-            "\"Autoriser les applications de bureau à accéder au microphone\", puis cliquez sur Actualiser."
-          : `⚠️ Erreur : ${err && err.message ? err.message : err}. Cliquez sur Actualiser pour réessayer.`;
+        setStatus(elements.micStatus, 'error', isPermissionError
+          ? 'Autorisation micro refusée. Vérifiez Windows → Confidentialité → Microphone → ' +
+            '"Autoriser les applications de bureau à accéder au microphone", puis cliquez sur Actualiser.'
+          : `Erreur : ${err && err.message ? err.message : err}. Cliquez sur Actualiser pour réessayer.`);
         updateSaveEnabled();
         return;
       }
@@ -541,9 +586,8 @@
       elements.micSelect.innerHTML = '';
 
       if (devices.length === 0) {
-        elements.micSelect.innerHTML = '<option value="">❌ Aucun microphone détecté</option>';
-        elements.micStatus.className = 'status error';
-        elements.micStatus.textContent = "⚠️ Vérifiez qu'un micro est branché, puis cliquez sur Actualiser.";
+        elements.micSelect.innerHTML = '<option value="">Aucun microphone détecté</option>';
+        setStatus(elements.micStatus, 'error', "Vérifiez qu'un micro est branché, puis cliquez sur Actualiser.");
         updateSaveEnabled();
         return;
       }
@@ -554,8 +598,7 @@
         opt.textContent = label;
         elements.micSelect.appendChild(opt);
       });
-      elements.micStatus.className = 'status success';
-      elements.micStatus.textContent = `✅ ${devices.length} microphone(s) détecté(s)`;
+      setStatus(elements.micStatus, 'success', `${devices.length} microphone(s) détecté(s)`);
       updateSaveEnabled();
     }
 
@@ -579,9 +622,8 @@
     // Save configuration
     elements.btnSave.addEventListener('click', async () => {
       elements.btnSave.disabled = true;
-      elements.btnSave.innerHTML = '<span class=\"spinner\"></span> Enregistrement…';
-      elements.saveStatus.className = 'status';
-      elements.saveStatus.textContent = '';
+      elements.btnSave.innerHTML = '<span class="spinner"></span> Enregistrement…';
+      setStatus(elements.saveStatus, null, '');
 
       try {
         const result = await window.churchOverlay.saveSetup(
@@ -598,14 +640,12 @@
         // ('ffmpeg-setup-progress') qui n'existe plus — sans ce correctif,
         // la fenêtre restait ouverte indéfiniment sur "Enregistrement…"
         // après un clic sur le bouton, même en cas de succès.
-        elements.saveStatus.className = 'status success';
-        elements.saveStatus.textContent = '✅ Configuration enregistrée.';
+        setStatus(elements.saveStatus, 'success', 'Configuration enregistrée.');
         setTimeout(() => window.close(), 700);
       } catch (e) {
-        elements.saveStatus.className = 'status error';
-        elements.saveStatus.textContent = '❌ Erreur : ' + (e && e.message ? e.message : e);
+        setStatus(elements.saveStatus, 'error', 'Erreur : ' + (e && e.message ? e.message : e));
         elements.btnSave.disabled = false;
-        elements.btnSave.innerHTML = '🚀 Enregistrer et démarrer';
+        elements.btnSave.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg> Enregistrer et démarrer';
       }
     });
 
