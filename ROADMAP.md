@@ -12,6 +12,7 @@ Core pipeline only: mic → cloud ASR (Groq) → regex verse detection → hallu
 Each item below is a candidate future milestone, added as a new implementation behind an existing extension seam (`AsrProvider`, `VerseDetector`, `VerseSource`) wherever possible — not a rewrite.
 
 - **Local / hybrid ASR** (whisper.cpp, Deepgram) — new `AsrProvider` implementation
+- **Gemini Live + Google ADK as a `ReferenceInterpreter`** — using Gemini Live's full-duplex streaming understanding to propose a Bible reference directly from speech (instead of transcript + regex). Evaluated and explicitly deferred (not rejected outright): requires real session-management engineering (10-minute forced WebSocket reconnects, resumption tokens, 15-minute context cap without compression) that Groq's stateless per-chunk requests don't need. Its own output would still have to pass through the same hallucination-guard pipeline as any other interpreter — an LLM-proposed reference is never trusted directly, per ARCHITECTURE.md §15. If revisited, build it as an additional `ReferenceInterpreter`/`AsrProvider` implementation alongside Groq/RegexDetector, not a replacement.
 - **Semantic / paraphrase-aware verse detection** — new `VerseDetector` implementation
 - **Multiple Bible translations, offline Bible database, vector search** — new `VerseSource` implementations
 - Media library
