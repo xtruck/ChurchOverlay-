@@ -12,7 +12,8 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "start": "npm run build && electron .",
-    "test": "tsc && cd dist && node --test"
+    "test": "tsc && cd dist && node --test",
+    "test:live-groq": "tsc && cd dist && node --env-file=../.env --test apps/server/asr/groq-provider.live.test.js"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
