@@ -17,11 +17,20 @@ import type { Verse, VerseReference, VerseSource } from "../../../packages/contr
  * Every response is schema-validated before becoming a Verse
  * (ARCHITECTURE.md section 18: "HTTP success does not imply a valid verse
  * response... never render arbitrary fields from an external response").
- * Observed directly against the live API (not assumed): a bad reference
- * can come back as either a JSON `{"error": "..."}` body or a bare HTML
- * 404 page depending on the failure mode, so any non-OK status, and any
- * OK response whose body does not parse into the expected shape, is
- * treated as "no verse" rather than trusted.
+ *
+ * getVerse()'s contract (Promise<Verse | null>) only has room for two
+ * outcomes, so this class draws a deliberate line matching the
+ * conventional reading of that shape: `null` means "the service is
+ * healthy and confirms this reference has no verse" (the CircuitBreaker
+ * that will sit in front of this, per ARCHITECTURE.md section 21, must
+ * never open just because a reference is legitimately missing) — a
+ * *thrown* error means "something about the request or the service
+ * itself failed," which the caller can feed to a CircuitBreaker as a real
+ * failure. Concretely, observed directly against the live API (not
+ * assumed): an unknown book reliably returns HTTP 404, which this class
+ * treats as the "not found" case; a network failure, a non-404 error
+ * status, or a 200 response whose body doesn't parse into the expected
+ * shape are all treated as failures and thrown, not swallowed.
  *
  * `fetchImpl` is injectable so unit tests never make a real network call
  * (AGENTS.md sections 32-33): only a dedicated integration test may hit
@@ -45,25 +54,35 @@ export class FreeApiSource implements VerseSource {
     let response: Response
     try {
       response = await this.fetchImpl(url)
-    } catch {
-      // Network failure (offline, DNS, timeout, ...): no verse, not a crash.
-      // The caller decides retry/circuit-breaker policy, not this class.
-      return null
+    } catch (err) {
+      // Network failure (offline, DNS, timeout, ...): a real failure, not
+      // "not found" — let the caller's circuit breaker see it.
+      throw new Error(
+        `FreeApiSource: network request failed: ${err instanceof Error ? err.message : String(err)}`
+      )
     }
 
-    if (!response.ok) {
+    if (response.status === 404) {
+      // The one status this API uses to mean "this reference has no
+      // verse" — a healthy, confirmed negative, not a service failure.
       return null
+    }
+    if (!response.ok) {
+      throw new Error(`FreeApiSource: unexpected HTTP status ${response.status}`)
     }
 
     let body: unknown
     try {
       body = await response.json()
     } catch {
-      // HTTP 200 with a body that isn't even valid JSON: never trust it.
-      return null
+      throw new Error("FreeApiSource: response body was not valid JSON")
     }
 
-    return parseVerseResponse(body, reference)
+    const verse = parseVerseResponse(body, reference)
+    if (!verse) {
+      throw new Error("FreeApiSource: response was missing required verse fields")
+    }
+    return verse
   }
 }
 
