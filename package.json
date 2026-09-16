@@ -11,7 +11,8 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "start": "npm run build && electron ."
+    "start": "npm run build && electron .",
+    "test": "tsc && cd dist && node --test"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
