@@ -1,4 +1,4 @@
-# Live Verse Overlay — Architecture Specification
+# ChurchOverlay — Architecture Specification
 
 Version: 1.0
 Status: Architecture Baseline
@@ -7,7 +7,7 @@ Last Updated: 2026-09-16
 
 ## 1. Purpose
 
-Live Verse Overlay is a desktop application designed to listen to spoken Bible references through a microphone, transcribe speech using a cloud ASR provider, detect explicit Bible verse references, resolve those references against a known-valid verse index and Bible source, and display the verified verse in an OBS Browser Source overlay.
+ChurchOverlay is a desktop application designed to listen to spoken Bible references through a microphone, transcribe speech using a cloud ASR provider, detect explicit Bible verse references, resolve those references against a known-valid verse index and Bible source, and display the verified verse in an OBS Browser Source overlay.
 
 The primary design objective is:
 
@@ -1342,7 +1342,7 @@ Interfaces are sufficient for v1.
 ## 52. Recommended Project Structure
 
 ```text
-live-verse-overlay/
+churchoverlay/
 │
 ├── apps/
 │   ├── desktop/

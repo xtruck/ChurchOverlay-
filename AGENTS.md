@@ -1,8 +1,8 @@
-# AGENTS.md — Live Verse Overlay
+# AGENTS.md — ChurchOverlay
 
 ## 1. Mission
 
-You are an AI coding agent working on Live Verse Overlay.
+You are an AI coding agent working on ChurchOverlay.
 Your job is to implement requested features while preserving the architectural boundaries defined in `ARCHITECTURE.md`.
 The project is intentionally small.
 Do not turn it into a generalized church presentation platform.
