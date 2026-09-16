@@ -101,8 +101,8 @@ export function renderNetworkStatus(message) {
   }
   if (tokenStatus) {
     tokenStatus.textContent = message.wsAuthEnabled
-      ? 'généré automatiquement ✓'
-      : 'non disponible ⚠️';
+      ? 'généré automatiquement'
+      : 'non disponible';
   }
 }
 

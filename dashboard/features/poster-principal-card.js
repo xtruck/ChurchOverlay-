@@ -15,7 +15,14 @@
  * jamais dupliquée entre les deux modules.
  */
 import { ws } from '../state.js';
-import { showToast } from '../utils.js';
+import { showToast, escapeHtmlDashboard } from '../utils.js';
+
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : remplace les
+// 🎬/🖼️ littéraux ci-dessous.
+const ICON_SCENE =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg>';
+const ICON_IMAGE =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg>';
 
 let cachedMediaItems = [];
 let cachedSceneItems = [];
@@ -45,13 +52,17 @@ function renderPosterPrincipalCard() {
   const defaultMedia = cachedMediaItems.find((m) => m.isDefault);
 
   if (defaultScene) {
-    label.textContent = `🎬 ${defaultScene.name}`;
+    // CORRECTIF (redesign — trouvé en convertissant les icônes) : assigné
+    // en .textContent (comme avant, quand c'était un emoji), une balise
+    // <svg> se serait affichée telle quelle en texte brut au lieu d'être
+    // rendue — .innerHTML nécessite d'échapper le nom (texte opérateur).
+    label.innerHTML = `${ICON_SCENE} ${escapeHtmlDashboard(defaultScene.name)}`;
     empty.style.display = 'none';
     active.style.display = 'flex';
     active.dataset.id = defaultScene.id;
     active.dataset.type = 'scene';
   } else if (defaultMedia) {
-    label.textContent = `${defaultMedia.mediaType === 'video' ? '🎬' : '🖼️'} ${defaultMedia.label}`;
+    label.innerHTML = `${defaultMedia.mediaType === 'video' ? ICON_SCENE : ICON_IMAGE} ${escapeHtmlDashboard(defaultMedia.label)}`;
     empty.style.display = 'none';
     active.style.display = 'flex';
     active.dataset.id = defaultMedia.id;

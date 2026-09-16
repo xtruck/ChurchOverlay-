@@ -18,6 +18,14 @@ import { showToast, addActivity, escapeHtmlDashboard, confirmDialog } from '../u
 import { setStatusStripItem } from './status-strip.js';
 import { addSlideToStudio, updatePgmDisplay, updateStageDisplay } from './propresenter-studio.js';
 
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : remplace les
+// 🤖/📖 littéraux ci-dessous — même tracé de livre déjà posé ailleurs
+// (dashboard.html, chips de référence biblique).
+const ICON_AI =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="vertical-align: -1px;" aria-hidden="true"><rect x="4" y="8" width="16" height="12" rx="2"></rect><path d="M12 8V4M9 4h6"></path><circle cx="9" cy="14" r="1.2" fill="currentColor" stroke="none"></circle><circle cx="15" cy="14" r="1.2" fill="currentColor" stroke="none"></circle></svg>';
+const ICON_BOOK =
+  '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" style="vertical-align: -1px;" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>';
+
 export function displayVerse(message) {
   const refEl = document.getElementById('verseReference');
   const textEl = document.getElementById('verseText');
@@ -76,7 +84,11 @@ export function displayVerse(message) {
   if (pendingSemantic && refEl && Date.now() - pendingSemantic.receivedAt < 5000) {
     const aiBadge = document.createElement('span');
     aiBadge.className = 'status-badge ai';
-    aiBadge.textContent = `🤖 Détection IA (${Math.round(pendingSemantic.confidence * 100)}%)`;
+    // CORRECTIF (redesign — trouvé en convertissant les icônes) : assigné en
+    // .textContent (comme avant, avec un emoji), une balise <svg> se serait
+    // affichée telle quelle en texte brut — .innerHTML nécessaire pour la
+    // rendre (le pourcentage est un nombre calculé, rien à échapper).
+    aiBadge.innerHTML = `${ICON_AI} Détection IA (${Math.round(pendingSemantic.confidence * 100)}%)`;
     aiBadge.title = pendingSemantic.reasoning || 'Détecté par le détecteur sémantique (IA)';
     aiBadge.style.marginLeft = '10px';
     refEl.appendChild(aiBadge);
@@ -115,7 +127,7 @@ export function addTranscript(message) {
     // 1. Highlight potential Bible citations (Gold Amber tags)
     let highlighted = escapeHtmlDashboard(text).replace(
       /\b(Genèse|Exode|Lévitique|Nombres|Deutéronome|Josué|Juges|Ruth|Samuel|Rois|Chroniques|Esdras|Néhémie|Esther|Job|Psaume[s]?|Proverbe[s]?|Ecclésiaste|Cantique|Ésaïe|Jérémie|Lamentations|Ézéchiel|Daniel|Osée|Joël|Amos|Abdias|Jonas|Michée|Nahum|Habacuc|Sophonie|Aggée|Zacharie|Malachie|Matthieu|Marc|Luc|Jean|Actes|Romains|Corinthiens|Galates|Éphésiens|Philippiens|Colossiens|Thessaloniciens|Timothée|Tite|Philémon|Hébreux|Jacques|Pierre|Jude|Apocalypse)\s+\d+(:\d+)?/gi,
-      '<span class="pp-scripture-tag" data-action="lookup" data-target="quick-verse" data-ref="$&">📖 $&</span>'
+      `<span class="pp-scripture-tag" data-action="lookup" data-target="quick-verse" data-ref="$&">${ICON_BOOK} $&</span>`
     );
 
     // 2. Highlight Divine Names (Blue Cyan)

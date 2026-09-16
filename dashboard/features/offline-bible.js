@@ -22,11 +22,11 @@ export function renderOfflineBibleStatus(status) {
   clearTimeout(offlineBibleStatusPollTimer);
 
   if (status.status === 'done') {
-    el.textContent = '✅ Téléchargée';
+    el.textContent = 'Téléchargée';
     el.className = 'status-badge success';
   } else if (status.status === 'downloading') {
     const pct = status.total > 0 ? Math.round((status.downloaded / status.total) * 100) : 0;
-    el.textContent = `⏳ Téléchargement... ${pct}%`;
+    el.textContent = `Téléchargement... ${pct}%`;
     el.className = 'status-badge warning';
     offlineBibleStatusPollTimer = setTimeout(() => {
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -34,7 +34,7 @@ export function renderOfflineBibleStatus(status) {
       }
     }, 5000);
   } else if (status.status === 'error') {
-    el.textContent = '❌ Échec du téléchargement';
+    el.textContent = 'Échec du téléchargement';
     el.className = 'status-badge error';
   } else {
     el.textContent = 'En attente';

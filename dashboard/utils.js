@@ -35,15 +35,26 @@ export function createToastContainer() {
   return container;
 }
 
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : les 4 icônes de
+// toast étaient des emoji littéraux (ℹ️/✅/⚠️/⚡) — remplacées par ces
+// tracés SVG statiques (jamais de contenu utilisateur DANS ces constantes,
+// message reste échappé séparément juste en dessous).
+const TOAST_ICONS = {
+  info: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5M12 8h.01"></path></svg>',
+  success:
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M5 12l5 5L20 7"></path></svg>',
+  error:
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l10 18H2z"></path><path d="M12 10v4M12 17h.01"></path></svg>',
+  warning:
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l10 18H2z"></path><path d="M12 10v4M12 17h.01"></path></svg>',
+};
+
 export function showToast(message, type = 'info', duration = 3000) {
   const container = document.querySelector('.toast-container') || createToastContainer();
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
 
-  let icon = 'ℹ️';
-  if (type === 'success') icon = '✅';
-  if (type === 'error') icon = '⚠️';
-  if (type === 'warning') icon = '⚡';
+  const icon = TOAST_ICONS[type] || TOAST_ICONS.info;
 
   // CORRECTIF (audit production — XSS) : message est souvent un gabarit
   // incluant err.message ou un champ serveur dynamique, jamais échappé
@@ -81,6 +92,12 @@ export function showToast(message, type = 'info', duration = 3000) {
 // l'audio en direct, sans action opérateur) sont listées ici : un verset
 // 'manual'/déclenché par une commande vocale explicite est une décision de
 // l'opérateur, pas du pipeline — inutile de le justifier comme tel.
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : remplace le
+// 🧠 littéral marquant une justification de décision autonome du pipeline
+// dans le journal d'activité.
+const ICON_DECISION =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="vertical-align: -1px;" aria-hidden="true"><path d="M9.5 4A2.5 2.5 0 0 0 7 6.5v.55A2.5 2.5 0 0 0 5 9.5v.55A2.5 2.5 0 0 0 4 12.5a2.5 2.5 0 0 0 1.5 2.29V15.5A2.5 2.5 0 0 0 8 18a2.5 2.5 0 0 0 1.5-.5"></path><path d="M14.5 4A2.5 2.5 0 0 1 17 6.5v.55A2.5 2.5 0 0 1 19 9.5v.55A2.5 2.5 0 0 1 20 12.5a2.5 2.5 0 0 1-1.5 2.29V15.5A2.5 2.5 0 0 1 16 18a2.5 2.5 0 0 1-1.5-.5"></path><path d="M9.5 4v14M14.5 4v14"></path></svg>';
+
 const AUTONOMOUS_DETECTION_LABELS = {
   regex: 'détection automatique (référence reconnue dans la transcription)',
   quote: 'détection automatique (citation exacte reconnue)',
@@ -125,7 +142,7 @@ export function addActivity(title, type = 'info', decision = null) {
     // CORRECTIF (audit production — XSS) : mêmes champs dynamiques que
     // `title` ci-dessous (reason peut refléter un detectedBy/texte serveur),
     // échappés avant insertion.
-    decisionHtml = `<div class="activity-decision">🧠 ${escapeHtmlDashboard(parts.join(' — '))}</div>`;
+    decisionHtml = `<div class="activity-decision">${ICON_DECISION} ${escapeHtmlDashboard(parts.join(' — '))}</div>`;
   }
 
   // CORRECTIF (audit production — XSS) : title inclut souvent des champs

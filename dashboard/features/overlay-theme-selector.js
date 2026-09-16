@@ -16,6 +16,13 @@
 import { escapeHtmlDashboard, showToast } from '../utils.js';
 import { registerAction } from '../action-delegator.js';
 
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : remplace la
+// coche "✓" et les ❌ littéraux ci-dessous par ces tracés SVG statiques.
+const ICON_CHECK =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" style="vertical-align: -1px;" aria-hidden="true"><path d="M5 12l5 5L20 7"></path></svg>';
+const ICON_ERROR =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -1px;" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M15 9l-6 6M9 9l6 6"></path></svg>';
+
 export async function loadOverlayThemeSelector() {
   const listEl = document.getElementById('overlayThemeList');
   if (!listEl) return;
@@ -30,7 +37,7 @@ export async function loadOverlayThemeSelector() {
       window.churchOverlay.getActiveTheme(),
     ]);
     if (!listResult || !listResult.success || !listResult.data?.themes) {
-      listEl.innerHTML = `<span class="stat-label">❌ ${escapeHtmlDashboard(listResult?.error || 'Impossible de charger les thèmes.')}</span>`;
+      listEl.innerHTML = `<span class="stat-label">${ICON_ERROR} ${escapeHtmlDashboard(listResult?.error || 'Impossible de charger les thèmes.')}</span>`;
       return;
     }
     const activeId =
@@ -41,11 +48,11 @@ export async function loadOverlayThemeSelector() {
       .map((t) => {
         const isActive = t.id === activeId;
         const safeId = escapeHtmlDashboard(t.id);
-        return `<button type="button" class="mood-btn${isActive ? ' active' : ''}" data-action="select" data-target="overlay-theme" data-theme-id="${safeId}">${isActive ? '✓ ' : ''}${escapeHtmlDashboard(t.name)}</button>`;
+        return `<button type="button" class="mood-btn${isActive ? ' active' : ''}" data-action="select" data-target="overlay-theme" data-theme-id="${safeId}">${isActive ? ICON_CHECK + ' ' : ''}${escapeHtmlDashboard(t.name)}</button>`;
       })
       .join('');
   } catch (err) {
-    listEl.innerHTML = `<span class="stat-label">❌ ${escapeHtmlDashboard(err && err.message ? err.message : String(err))}</span>`;
+    listEl.innerHTML = `<span class="stat-label">${ICON_ERROR} ${escapeHtmlDashboard(err && err.message ? err.message : String(err))}</span>`;
   }
 }
 

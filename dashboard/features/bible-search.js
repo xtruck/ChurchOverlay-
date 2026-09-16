@@ -21,6 +21,11 @@ import { ws } from '../state.js';
 import { showToast, escapeHtmlDashboard, requireWsOrWarn } from '../utils.js';
 import { registerAction } from '../action-delegator.js';
 
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : remplace le ❌
+// littéral ci-dessous.
+const ICON_ERROR =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -1px;" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M15 9l-6 6M9 9l6 6"></path></svg>';
+
 export function renderBibleTopics(topics) {
   const container = document.getElementById('bibleTopicChips');
   if (!container) return;
@@ -89,7 +94,7 @@ export function renderBibleSearchResults(message) {
 }
 
 export function renderBibleSearchError(message) {
-  const html = `<span class="stat-label">❌ ${escapeHtmlDashboard(message.error || 'Recherche indisponible.')}</span>`;
+  const html = `<span class="stat-label">${ICON_ERROR} ${escapeHtmlDashboard(message.error || 'Recherche indisponible.')}</span>`;
   forEachSearchOutput((el) => {
     el.innerHTML = html;
   });

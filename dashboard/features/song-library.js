@@ -12,6 +12,13 @@ import { ws } from '../state.js';
 import { showToast, escapeHtmlDashboard } from '../utils.js';
 import { registerAction } from '../action-delegator.js';
 
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : remplace les
+// 🎵/✕ littéraux ci-dessous.
+const ICON_NOTE =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>';
+const ICON_REMOVE =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>';
+
 /* ======================================================================
    Bibliothèque de chants (déclenchement vocal ou manuel, section par
    section, voir song-library.js/server.js). Comme la médiathèque : la
@@ -112,7 +119,7 @@ export function renderSongLibrary(songs) {
       const current = (songSectionIndex[song.id] || 0) + 1;
       return `
                 <div class="queue-item">
-                    <span class="queue-item-position">🎵</span>
+                    <span class="queue-item-position">${ICON_NOTE}</span>
                     <div class="media-item-info">
                         <div class="media-item-label">${escapeHtmlDashboard(song.title)}</div>
                         <div class="media-item-phrases">${phrasesBadges || '<span class="media-item-phrase-badge">Déclenchement manuel uniquement</span>'}</div>
@@ -122,7 +129,7 @@ export function renderSongLibrary(songs) {
                         <span class="song-section-progress">${current}/${song.sectionCount}</span>
                         <button class="queue-icon-btn" data-action="step-next" data-target="song" data-id="${song.id}" title="Section suivante">▶</button>
                         <button class="queue-icon-btn queue-send" data-action="trigger" data-target="song" data-id="${song.id}" title="Afficher maintenant">▶▶</button>
-                        <button class="queue-icon-btn queue-remove" data-action="delete" data-target="song" data-id="${song.id}" title="Supprimer">✕</button>
+                        <button class="queue-icon-btn queue-remove" data-action="delete" data-target="song" data-id="${song.id}" title="Supprimer">${ICON_REMOVE}</button>
                     </div>
                 </div>
             `;

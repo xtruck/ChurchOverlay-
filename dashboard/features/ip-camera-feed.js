@@ -16,6 +16,14 @@ import { showToast, escapeHtmlDashboard, copyToClipboard } from '../utils.js';
 import { updateNetworkStatusStrip } from './status-strip.js';
 import { registerAction } from '../action-delegator.js';
 
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : remplace les
+// 📋/✕ littéraux ci-dessous — même presse-papiers déjà posé ailleurs
+// (dashboard.html, "Copier le lien pour OBS").
+const ICON_COPY =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"></rect><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3"></path></svg>';
+const ICON_REMOVE =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>';
+
 let ipCameraItems = [];
 const ipCameraMonitors = {}; // id -> intervalId, nettoyés à chaque ré-rendu
 
@@ -51,8 +59,8 @@ export function renderIpCameras(items) {
                         <span id="ipcam-status-${item.id}" class="status-badge warning">Connexion…</span>
                     </div>
                     <div class="queue-item-actions">
-                        <button class="queue-icon-btn" data-action="copy" data-target="ip-camera" data-id="${item.id}" title="Copier le lien pour OBS">📋</button>
-                        <button class="queue-icon-btn queue-remove" data-action="delete" data-target="ip-camera" data-id="${item.id}" title="Supprimer">✕</button>
+                        <button class="queue-icon-btn" data-action="copy" data-target="ip-camera" data-id="${item.id}" title="Copier le lien pour OBS">${ICON_COPY}</button>
+                        <button class="queue-icon-btn queue-remove" data-action="delete" data-target="ip-camera" data-id="${item.id}" title="Supprimer">${ICON_REMOVE}</button>
                     </div>
                 </div>
             `

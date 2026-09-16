@@ -9,6 +9,13 @@
  */
 import { showToast, escapeHtmlDashboard } from '../utils.js';
 
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : remplace les
+// ✅/❌ littéraux ci-dessous.
+const ICON_CHECK =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" style="vertical-align: -1px;" aria-hidden="true"><path d="M5 12l5 5L20 7"></path></svg>';
+const ICON_ERROR =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -1px;" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M15 9l-6 6M9 9l6 6"></path></svg>';
+
 export async function loadProPresenterConfig() {
   if (!window.churchOverlay || !window.churchOverlay.getProPresenterConfig) return;
   try {
@@ -60,11 +67,14 @@ export async function connectProPresenter() {
   try {
     const result = await window.churchOverlay.proPresenterConnect();
     if (statusEl) {
-      statusEl.textContent =
-        result && result.success ? '✅ Connecté' : '❌ ' + (result?.error || 'Échec');
+      statusEl.innerHTML =
+        result && result.success
+          ? `${ICON_CHECK} Connecté`
+          : `${ICON_ERROR} ${escapeHtmlDashboard(result?.error || 'Échec')}`;
     }
   } catch (err) {
-    if (statusEl) statusEl.textContent = '❌ ' + (err && err.message ? err.message : err);
+    if (statusEl)
+      statusEl.innerHTML = `${ICON_ERROR} ${escapeHtmlDashboard(err && err.message ? err.message : String(err))}`;
   }
 }
 
@@ -137,7 +147,8 @@ export async function fetchPlanningCenterPlan() {
   try {
     const result = await window.churchOverlay.fetchPlanningCenterPlan();
     if (!result || !result.success) {
-      if (statusEl) statusEl.textContent = '❌ ' + (result?.error || 'Échec du chargement');
+      if (statusEl)
+        statusEl.innerHTML = `${ICON_ERROR} ${escapeHtmlDashboard(result?.error || 'Échec du chargement')}`;
       return;
     }
     const dateLabel = result.data.planDate
@@ -148,7 +159,12 @@ export async function fetchPlanningCenterPlan() {
         })
       : '';
     if (statusEl) {
-      statusEl.textContent = `${escapeHtmlDashboard(result.data.planTitle)}${dateLabel ? ' — ' + dateLabel : ''}`;
+      // CORRECTIF (redesign — trouvé en convertissant les icônes) :
+      // escapeHtmlDashboard() encode pour une insertion via innerHTML —
+      // assigné ici à .textContent (qui échappe déjà tout seul), le titre
+      // du plan s'affichait avec ses entités HTML littérales (ex. "&amp;"
+      // au lieu de "&") dès qu'il contenait un caractère spécial.
+      statusEl.textContent = `${result.data.planTitle}${dateLabel ? ' — ' + dateLabel : ''}`;
     }
     if (itemsEl) {
       itemsEl.innerHTML = (result.data.items || [])
@@ -159,7 +175,8 @@ export async function fetchPlanningCenterPlan() {
         .join('');
     }
   } catch (err) {
-    if (statusEl) statusEl.textContent = '❌ ' + (err && err.message ? err.message : err);
+    if (statusEl)
+      statusEl.innerHTML = `${ICON_ERROR} ${escapeHtmlDashboard(err && err.message ? err.message : String(err))}`;
   }
 }
 

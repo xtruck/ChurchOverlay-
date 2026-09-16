@@ -52,7 +52,7 @@ export function generateThemeFromPromptUI() {
     if (statusEl) statusEl.textContent = 'Décrivez le thème voulu avant de générer.';
     return;
   }
-  if (statusEl) statusEl.textContent = '⏳ Génération en cours...';
+  if (statusEl) statusEl.textContent = 'Génération en cours...';
   ws.send(JSON.stringify({ action: 'generateTheme', description }));
 }
 
@@ -65,9 +65,9 @@ export function renderThemeGenerated(result) {
   const statusEl = document.getElementById('themeGenerationStatus');
   if (!statusEl) return;
   if (result.usedFallback) {
-    statusEl.textContent = `⚠ Génération indisponible — repli sur "${result.themeName}".`;
+    statusEl.textContent = `Génération indisponible — repli sur "${result.themeName}".`;
   } else {
-    statusEl.textContent = `✓ Thème "${result.themeName}" appliqué.`;
+    statusEl.textContent = `Thème "${result.themeName}" appliqué.`;
   }
 }
 
@@ -76,7 +76,7 @@ window.setBackgroundPattern = setBackgroundPattern;
 // reste nécessaire — dashboard.html#themePromptInput l'appelle encore via
 // onkeydown="...generateThemeFromPromptUI()" (touche Entrée), un attribut
 // DISTINCT de onclick, hors du périmètre de cette purge (voir le rapport de
-// session). Le bouton "✨ Générer" lui-même, en revanche, passe désormais
+// session). Le bouton "Générer" lui-même, en revanche, passe désormais
 // par data-action/data-target (voir juste en dessous).
 window.generateThemeFromPromptUI = generateThemeFromPromptUI;
 registerAction('theme-prompt', 'generate', () => generateThemeFromPromptUI());

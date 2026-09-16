@@ -23,6 +23,18 @@
 import { ws, getHttpOrigin } from '../state.js';
 import { showToast, escapeHtmlDashboard } from '../utils.js';
 import { getMediaLibraryItems } from './media-library.js';
+
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : remplace les
+// 🖼/🔤/✕ littéraux ci-dessous (badges de type d'élément + bouton
+// supprimer). Le test/integration-scene-composer.js repérait ces lignes
+// via leur emoji (Playwright .filter({hasText})) — mis à jour pour
+// chercher "Image #"/"Texte #" à la place, du texte qui reste présent.
+const ICON_IMAGE_ELEMENT =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg>';
+const ICON_TEXT_ELEMENT =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7V4h16v3M9 20h6M12 4v16"></path></svg>';
+const ICON_REMOVE =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>';
 import { getSceneStudioItems } from './scene-studio.js';
 import { registerAction } from '../action-delegator.js';
 
@@ -296,7 +308,7 @@ function renderComposerElementsList() {
           .join('');
         return `
           <div class="scene-composer-element-row">
-            <span class="scene-composer-element-badge">🖼 Image #${idx + 1}</span>
+            <span class="scene-composer-element-badge">${ICON_IMAGE_ELEMENT} Image #${idx + 1}</span>
             <select onchange="updateComposerElementField('${el.id}','mediaId',this.value)">
               <option value="">— choisir un média —</option>
               ${mediaOptions}
@@ -305,13 +317,13 @@ function renderComposerElementsList() {
             <select onchange="updateComposerElementField('${el.id}','position',this.value)">${posOptions}</select>
             <input type="number" min="1" max="100" value="${el.widthPct}" title="Largeur (% du cadre)" oninput="updateComposerElementField('${el.id}','widthPct',Number(this.value))" style="width: 70px">
             <input type="number" min="-180" max="180" value="${el.rotationDeg || 0}" title="Rotation (degrés)" oninput="updateComposerElementField('${el.id}','rotationDeg',Number(this.value))" style="width: 60px">
-            <button class="queue-icon-btn queue-remove" data-action="remove" data-target="scene-composer-element" data-id="${el.id}" title="Supprimer cet élément">✕</button>
+            <button class="queue-icon-btn queue-remove" data-action="remove" data-target="scene-composer-element" data-id="${el.id}" title="Supprimer cet élément">${ICON_REMOVE}</button>
           </div>`;
       }
 
       return `
         <div class="scene-composer-element-row">
-          <span class="scene-composer-element-badge">🔤 Texte #${idx + 1}</span>
+          <span class="scene-composer-element-badge">${ICON_TEXT_ELEMENT} Texte #${idx + 1}</span>
           <input type="text" id="composerElText-${el.id}" placeholder="Texte à afficher" oninput="updateComposerElementField('${el.id}','text',this.value)">
           <select onchange="updateComposerElementField('${el.id}','position',this.value)">${posOptions}</select>
           <select onchange="updateComposerElementField('${el.id}','fontFamily',this.value)">
@@ -329,7 +341,7 @@ function renderComposerElementsList() {
             <option value="right" ${el.align === 'right' ? 'selected' : ''}>Droite</option>
           </select>
           <input type="number" min="-180" max="180" value="${el.rotationDeg || 0}" title="Rotation (degrés)" oninput="updateComposerElementField('${el.id}','rotationDeg',Number(this.value))" style="width: 60px">
-          <button class="queue-icon-btn queue-remove" data-action="remove" data-target="scene-composer-element" data-id="${el.id}" title="Supprimer cet élément">✕</button>
+          <button class="queue-icon-btn queue-remove" data-action="remove" data-target="scene-composer-element" data-id="${el.id}" title="Supprimer cet élément">${ICON_REMOVE}</button>
         </div>`;
     })
     .join('');

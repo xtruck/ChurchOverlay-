@@ -40,8 +40,24 @@ import { renderContentPreview, getCurrentLive } from './airlock-preview.js';
 import { getRundownCues, getRundownActiveIndex, nextRundownCue } from './rundown.js';
 import { ppClearAll } from './propresenter-studio.js';
 import { toggleBlackScreen } from './verse-session-display.js';
+import { escapeHtmlDashboard } from '../utils.js';
 
-const CUE_TYPE_ICON = { verse: '📖', media: '📷', scene: '🎬' };
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : mêmes tracés
+// SVG que CUE_TYPE_ICON dans rundown.js (deux copies indépendantes du même
+// petit tableau, pas un import partagé — sans conséquence, purement
+// visuel).
+const CUE_TYPE_ICON = {
+  verse:
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>',
+  media:
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg>',
+  scene:
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg>',
+};
+const ICON_REMOVE =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>';
+const ICON_BLACK_SCREEN =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect></svg>';
 
 let overlay = null;
 let livePreviewEl = null;
@@ -61,7 +77,7 @@ function createOverlay() {
         <span class="status-dot"></span><span>Connecté</span>
       </span>
       <span class="focus-mode-clock" id="focusModeClock"></span>
-      <button type="button" class="btn btn-secondary chip-sm" id="focusModeExitBtn">✕ Quitter le mode focus</button>
+      <button type="button" class="btn btn-secondary chip-sm" id="focusModeExitBtn">${ICON_REMOVE} Quitter le mode focus</button>
     </div>
     <div class="focus-mode-body">
       <div class="focus-mode-panel">
@@ -76,7 +92,7 @@ function createOverlay() {
     </div>
     <div class="focus-mode-emergency">
       <button type="button" class="btn btn-danger" id="focusModeClearAllBtn">⏹ Tout effacer</button>
-      <button type="button" class="btn btn-secondary" id="focusModeBlackScreenBtn">⬛ Écran noir</button>
+      <button type="button" class="btn btn-secondary" id="focusModeBlackScreenBtn">${ICON_BLACK_SCREEN} Écran noir</button>
     </div>
   `;
   document.body.appendChild(overlay);
@@ -103,7 +119,12 @@ function renderNextCue() {
     goLiveBtn.disabled = true;
     return;
   }
-  nextCueEl.textContent = `${CUE_TYPE_ICON[next.type] || ''} ${next.label}`;
+  // CORRECTIF (redesign — trouvé en convertissant les icônes) : CUE_TYPE_ICON
+  // contient désormais du balisage SVG — assigné ici en .textContent (comme
+  // avant, quand c'était un emoji), la balise <svg> se serait affichée telle
+  // quelle en texte brut au lieu d'être rendue. .innerHTML nécessite
+  // d'échapper next.label (libellé de repère, texte opérateur).
+  nextCueEl.innerHTML = `${CUE_TYPE_ICON[next.type] || ''} ${escapeHtmlDashboard(next.label)}`;
   goLiveBtn.disabled = false;
 }
 

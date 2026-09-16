@@ -5,6 +5,23 @@
 import { showToast, confirmDialog, copyToClipboard } from '../utils.js';
 import { setStatusStripItem } from './status-strip.js';
 
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : messages de
+// statut composés en concaténant un emoji littéral (🔍/❌/⚠️/✅) au début
+// d'une chaîne .textContent — remplacé par ces marquages SVG statiques
+// assignés via .innerHTML (jamais de contenu utilisateur DANS ces
+// constantes ; les messages eux-mêmes restent des chaînes fixes ici, pas
+// de saisie opérateur interpolée sans échappement). Les <option> ne
+// peuvent pas contenir de balisage (rendu texte brut par le navigateur) :
+// leurs emoji sont simplement retirés plus bas, pas remplacés par une icône.
+const ICON_WARNING =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -1px;" aria-hidden="true"><path d="M12 3l10 18H2z"></path><path d="M12 10v4M12 17h.01"></path></svg>';
+const ICON_CHECK =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" style="vertical-align: -1px;" aria-hidden="true"><path d="M5 12l5 5L20 7"></path></svg>';
+const ICON_ERROR =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -1px;" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M15 9l-6 6M9 9l6 6"></path></svg>';
+const ICON_HOURGLASS =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 2h12M6 22h12M6 2c0 6 12 6 12 10s-12 4-12 10M18 2c0 6-12 6-12 10s12 4 12 10"></path></svg>';
+
 // ---------------------------------------------------------------
 // Paramètres — Clés API & Microphone
 // ---------------------------------------------------------------
@@ -47,14 +64,14 @@ import { setStatusStripItem } from './status-strip.js';
   function setBadge(el, configured) {
     if (!el) return;
     el.style.display = 'inline-block';
-    el.textContent = configured ? '✓ Configurée' : 'Non configurée';
+    el.textContent = configured ? 'Configurée' : 'Non configurée';
     el.className = 'status-badge ' + (configured ? 'success' : 'warning');
   }
 
   async function loadMicrophones(preselectId) {
     els.micStatus.className = 'field-hint';
     els.micStatus.textContent = '';
-    els.micSelect.innerHTML = '<option value="">🔍 Recherche des microphones…</option>';
+    els.micSelect.innerHTML = '<option value="">Recherche des microphones…</option>';
     els.btnRefreshMic.disabled = true;
 
     let devices;
@@ -67,14 +84,14 @@ import { setStatusStripItem } from './status-strip.js';
         .map((d) => ({ id: d.deviceId, label: d.label || 'Microphone (nom indisponible)' }));
     } catch (err) {
       els.btnRefreshMic.disabled = false;
-      els.micSelect.innerHTML = '<option value="">❌ Accès micro refusé</option>';
+      els.micSelect.innerHTML = '<option value="">Accès micro refusé</option>';
       els.micStatus.className = 'field-hint';
       els.micStatus.style.color = 'var(--accent-rose)';
       const isPermissionError =
         err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError');
-      els.micStatus.textContent = isPermissionError
-        ? "⚠️ Autorisation micro refusée (Windows → Confidentialité → Microphone). Cliquez sur Actualiser après avoir autorisé l'accès."
-        : `⚠️ Erreur : ${err && err.message ? err.message : err}`;
+      els.micStatus.innerHTML = isPermissionError
+        ? `${ICON_WARNING} Autorisation micro refusée (Windows → Confidentialité → Microphone). Cliquez sur Actualiser après avoir autorisé l'accès.`
+        : `${ICON_WARNING} Erreur : ${err && err.message ? err.message : err}`;
       return;
     }
 
@@ -82,10 +99,9 @@ import { setStatusStripItem } from './status-strip.js';
     els.micSelect.innerHTML = '';
 
     if (devices.length === 0) {
-      els.micSelect.innerHTML = '<option value="">❌ Aucun microphone détecté</option>';
+      els.micSelect.innerHTML = '<option value="">Aucun microphone détecté</option>';
       els.micStatus.style.color = 'var(--accent-rose)';
-      els.micStatus.textContent =
-        "⚠️ Vérifiez qu'un micro est branché, puis cliquez sur Actualiser.";
+      els.micStatus.innerHTML = `${ICON_WARNING} Vérifiez qu'un micro est branché, puis cliquez sur Actualiser.`;
       return;
     }
 
@@ -101,7 +117,7 @@ import { setStatusStripItem } from './status-strip.js';
     }
 
     els.micStatus.style.color = 'var(--accent-emerald)';
-    els.micStatus.textContent = `✅ ${devices.length} microphone(s) détecté(s)`;
+    els.micStatus.innerHTML = `${ICON_CHECK} ${devices.length} microphone(s) détecté(s)`;
   }
 
   async function refreshSettingsUi() {
@@ -174,7 +190,7 @@ import { setStatusStripItem } from './status-strip.js';
       copyToClipboard(url)
         .then(() => {
           const original = link.textContent;
-          link.textContent = 'Lien copié ✓';
+          link.textContent = 'Lien copié';
           setTimeout(() => {
             link.textContent = original;
           }, 2000);
@@ -238,13 +254,19 @@ import { setStatusStripItem } from './status-strip.js';
     const mic = els.micSelect.value;
     if (!mic) {
       els.saveStatus.style.color = 'var(--accent-rose)';
-      els.saveStatus.textContent = "⚠️ Sélectionnez un microphone avant d'enregistrer.";
+      els.saveStatus.innerHTML = `${ICON_WARNING} Sélectionnez un microphone avant d'enregistrer.`;
       return;
     }
 
     els.btnSave.disabled = true;
-    const originalLabel = els.btnSave.textContent;
-    els.btnSave.textContent = '⏳ Enregistrement…';
+    // CORRECTIF (redesign — trouvé en convertissant les icônes) : capturait
+    // .textContent (juste "Enregistrer", l'icône SVG posée dans
+    // dashboard.html en est absente) puis le réinjectait tel quel en
+    // .textContent au finally plus bas — l'icône du bouton disparaissait
+    // donc silencieusement après le premier enregistrement. .innerHTML
+    // capture/restaure le bouton dans son état complet (icône + texte).
+    const originalLabel = els.btnSave.innerHTML;
+    els.btnSave.innerHTML = `${ICON_HOURGLASS} Enregistrement…`;
     els.saveStatus.textContent = '';
 
     try {
@@ -264,15 +286,15 @@ import { setStatusStripItem } from './status-strip.js';
       els.deepgramInput.value = '';
       els.geminiInput.value = '';
       els.saveStatus.style.color = 'var(--accent-emerald)';
-      els.saveStatus.textContent = '✅ Configuration enregistrée — pipeline (re)démarré.';
+      els.saveStatus.innerHTML = `${ICON_CHECK} Configuration enregistrée — pipeline (re)démarré.`;
       showToast('Configuration API enregistrée', 'success');
       await refreshSettingsUi();
     } catch (err) {
       els.saveStatus.style.color = 'var(--accent-rose)';
-      els.saveStatus.textContent = '❌ Erreur : ' + (err && err.message ? err.message : err);
+      els.saveStatus.innerHTML = `${ICON_ERROR} Erreur : ${err && err.message ? err.message : err}`;
     } finally {
       els.btnSave.disabled = false;
-      els.btnSave.textContent = originalLabel;
+      els.btnSave.innerHTML = originalLabel;
     }
   });
 

@@ -189,7 +189,7 @@ function makeSourceFile(dir, filename) {
     await sleep(100);
     const textRow = page
       .locator('#composerElementsList .scene-composer-element-row')
-      .filter({ hasText: '🔤' });
+      .filter({ hasText: 'Texte #' });
     await textRow.locator('input[type="text"]').fill(trickyText);
     await textRow.locator('select').nth(0).selectOption('top-center'); // position
     await textRow.locator('select').nth(1).selectOption('Manrope'); // police
@@ -202,7 +202,7 @@ function makeSourceFile(dir, filename) {
     await sleep(100);
     const imageRow = page
       .locator('#composerElementsList .scene-composer-element-row')
-      .filter({ hasText: '🖼' });
+      .filter({ hasText: 'Image #' });
     await imageRow.locator('select').nth(0).selectOption(logoMedia.id); // média
     await imageRow.locator('select').nth(1).selectOption('bottom-right'); // position
     await imageRow.locator('input[type="number"]').first().fill('25'); // largeur (1er des 2 : largeur puis rotation)
@@ -290,7 +290,7 @@ function makeSourceFile(dir, filename) {
       );
       const reopenedTextRow = page
         .locator('#composerElementsList .scene-composer-element-row')
-        .filter({ hasText: '🔤' });
+        .filter({ hasText: 'Texte #' });
       check(
         'le texte de l’élément est pré-rempli intact (guillemets/chevrons compris)',
         (await reopenedTextRow.locator('input[type="text"]').inputValue()) === trickyText

@@ -23,6 +23,14 @@
 import { showToast, escapeHtmlDashboard } from '../utils.js';
 import { registerAction } from '../action-delegator.js';
 
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : remplace les
+// emoji littéraux (✅/❌/🔴/⏺/⏹) concaténés ci-dessous dans des chaînes
+// .textContent/.innerHTML.
+const ICON_CHECK =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" style="vertical-align: -1px;" aria-hidden="true"><path d="M5 12l5 5L20 7"></path></svg>';
+const ICON_ERROR =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -1px;" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M15 9l-6 6M9 9l6 6"></path></svg>';
+
 export async function loadObsConfig() {
   if (!window.churchOverlay || !window.churchOverlay.getObsConfig) return;
   try {
@@ -63,16 +71,17 @@ export async function connectObs() {
   try {
     const result = await window.churchOverlay.obsConnect();
     if (statusEl) {
-      statusEl.textContent =
+      statusEl.innerHTML =
         result && result.success
-          ? '✅ Connecté à OBS Studio'
-          : '❌ ' + (result?.error || 'Échec de connexion');
+          ? `${ICON_CHECK} Connecté à OBS Studio`
+          : `${ICON_ERROR} ${escapeHtmlDashboard(result?.error || 'Échec de connexion')}`;
     }
     if (result && result.success) {
       refreshObsScenes();
     }
   } catch (err) {
-    if (statusEl) statusEl.textContent = '❌ ' + (err && err.message ? err.message : err);
+    if (statusEl)
+      statusEl.innerHTML = `${ICON_ERROR} ${escapeHtmlDashboard(err && err.message ? err.message : String(err))}`;
   }
 }
 
@@ -84,7 +93,7 @@ export async function refreshObsScenes() {
     const result = await window.churchOverlay.obsListScenes();
     if (!result || !result.success) {
       if (listEl) {
-        listEl.innerHTML = `<span class="stat-label">❌ ${escapeHtmlDashboard(result?.error || 'Impossible de lister les scènes — OBS est-il connecté ?')}</span>`;
+        listEl.innerHTML = `<span class="stat-label">${ICON_ERROR} ${escapeHtmlDashboard(result?.error || 'Impossible de lister les scènes — OBS est-il connecté ?')}</span>`;
       }
       return;
     }
@@ -98,7 +107,7 @@ export async function refreshObsScenes() {
     }
   } catch (err) {
     if (listEl) {
-      listEl.innerHTML = `<span class="stat-label">❌ ${escapeHtmlDashboard(err && err.message ? err.message : String(err))}</span>`;
+      listEl.innerHTML = `<span class="stat-label">${ICON_ERROR} ${escapeHtmlDashboard(err && err.message ? err.message : String(err))}</span>`;
     }
   }
 }
@@ -123,7 +132,7 @@ export async function toggleObsRecording() {
     const result = await window.churchOverlay.obsToggleRecording();
     if (result && result.success) {
       showToast(
-        result.data?.recording ? '⏺ Enregistrement démarré' : '⏹ Enregistrement arrêté',
+        result.data?.recording ? 'Enregistrement démarré' : 'Enregistrement arrêté',
         'success'
       );
     } else {
@@ -141,7 +150,7 @@ export async function toggleObsStreaming() {
   try {
     const result = await window.churchOverlay.obsToggleStreaming();
     if (result && result.success) {
-      showToast(result.data?.streaming ? '🔴 Direct démarré' : '⏹ Direct arrêté', 'success');
+      showToast(result.data?.streaming ? 'Direct démarré' : 'Direct arrêté', 'success');
     } else {
       showToast('Échec du direct : ' + (result?.error || 'erreur inconnue'), 'error');
     }

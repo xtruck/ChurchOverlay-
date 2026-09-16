@@ -52,7 +52,21 @@ export function getRundownActiveIndex() {
   return rundownActiveIndex;
 }
 
-const CUE_TYPE_ICON = { verse: '📖', media: '📷', scene: '🎬' };
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : remplace les
+// emoji littéraux (📖/📷/🎬) marquant le type de chaque repère — même
+// tracé de livre déjà posé ailleurs (dashboard.html, chips de référence
+// biblique) pour "verse", icônes image/écran cohérentes avec le reste de
+// l'app pour "media"/"scene".
+const CUE_TYPE_ICON = {
+  verse:
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>',
+  media:
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg>',
+  scene:
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg>',
+};
+const ICON_REMOVE =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>';
 
 export function addVerseToRundown() {
   const input = document.getElementById('rundownRefInput');
@@ -415,7 +429,7 @@ export function renderRundown(message) {
                         <button class="queue-icon-btn" data-action="move-down" data-target="rundown" data-id="${cue.id}" title="Descendre" ${i === rundownCues.length - 1 ? 'disabled' : ''}>↓</button>
                         <button class="queue-icon-btn" data-action="arm" data-target="rundown" data-id="${cue.id}" title="Armer dans le sas de diffusion (aperçu avant direct)">⏏</button>
                         <button class="queue-icon-btn queue-send" data-action="trigger" data-target="rundown" data-id="${cue.id}" title="Déclencher maintenant, sans passer par le sas">▶</button>
-                        <button class="queue-icon-btn queue-remove" data-action="delete" data-target="rundown" data-id="${cue.id}" title="Retirer">✕</button>
+                        <button class="queue-icon-btn queue-remove" data-action="delete" data-target="rundown" data-id="${cue.id}" title="Retirer">${ICON_REMOVE}</button>
                     </div>
                 </div>
             `;

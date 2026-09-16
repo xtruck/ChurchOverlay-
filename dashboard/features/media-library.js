@@ -24,6 +24,23 @@ import { showToast, escapeHtmlDashboard } from '../utils.js';
 import { updatePosterCardMediaItems } from './poster-principal-card.js';
 import { registerAction } from '../action-delegator.js';
 
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : remplace les
+// emoji littéraux (⭐/☆/🔁/💾/➕/✕) ci-dessous — mêmes tracés que les icônes
+// déjà posées ailleurs dans dashboard.html (étoile plein/contour, boucle,
+// disquette, plus, croix) pour rester visuellement identique.
+const ICON_STAR_FILLED =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"></path></svg>';
+const ICON_STAR_OUTLINE =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"></path></svg>';
+const ICON_LOOP =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M17 2l4 4-4 4"></path><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><path d="M7 22l-4-4 4-4"></path><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>';
+const ICON_SAVE =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><path d="M17 21v-8H7v8M7 3v5h8"></path></svg>';
+const ICON_PLUS =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>';
+const ICON_REMOVE =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>';
+
 /* ======================================================================
    Médiathèque (déclenchement vocal ou manuel de photos/vidéos, voir
    media-library.js/server.js). Contrairement à la file d'attente de
@@ -242,8 +259,8 @@ export function renderMediaLibrary(items) {
           ? `<video src="${thumbUrl}" muted preload="metadata" playsinline></video>`
           : `<img src="${thumbUrl}" alt="${escapeHtmlDashboard(item.label)}" loading="lazy">`;
       const badges = [
-        item.isDefault ? '⭐ Poster' : '',
-        item.includeInLoop ? '🔁 Diaporama' : '',
+        item.isDefault ? `${ICON_STAR_FILLED} Poster` : '',
+        item.includeInLoop ? `${ICON_LOOP} Diaporama` : '',
       ].filter(Boolean);
       return `
                 <div class="media-gallery-card${item.isDefault ? ' is-default' : ''}">
@@ -259,7 +276,7 @@ export function renderMediaLibrary(items) {
                             <select id="mediaStyle-${item.id}" title="Style d'apparition à l'écran">
                                 ${styleOptions}
                             </select>
-                            <button class="queue-icon-btn" data-action="save-details" data-target="media" data-id="${item.id}" title="Enregistrer la durée/le style">💾</button>
+                            <button class="queue-icon-btn" data-action="save-details" data-target="media" data-id="${item.id}" title="Enregistrer la durée/le style">${ICON_SAVE}</button>
                         </div>
                         <!-- AJOUT (Partie 2.3 — groupes) : un média n'appartient qu'à
                              AU PLUS UN groupe à la fois (voir setItemGroup côté
@@ -282,9 +299,9 @@ export function renderMediaLibrary(items) {
                     </div>
                     <div class="media-gallery-actions">
                         <button class="btn btn-primary" data-action="trigger" data-target="media" data-id="${item.id}" title="Afficher maintenant sur l'overlay">▶ Afficher</button>
-                        <button class="queue-icon-btn" data-action="toggle-default" data-target="media" data-id="${item.id}" data-is-default="${item.isDefault ? 'true' : 'false'}" title="${item.isDefault ? 'Retirer le statut de poster principal' : 'Définir comme poster principal (affiché quand rien d’autre n’est à l’écran)'}">${item.isDefault ? '⭐' : '☆'}</button>
-                        <button class="queue-icon-btn" data-action="add-to-rundown" data-target="media" data-id="${item.id}" data-label="${escapeHtmlDashboard(item.label)}" title="Ajouter à la feuille de route">➕</button>
-                        <button class="queue-icon-btn queue-remove" data-action="delete" data-target="media" data-id="${item.id}" title="Supprimer">✕</button>
+                        <button class="queue-icon-btn" data-action="toggle-default" data-target="media" data-id="${item.id}" data-is-default="${item.isDefault ? 'true' : 'false'}" title="${item.isDefault ? 'Retirer le statut de poster principal' : 'Définir comme poster principal (affiché quand rien d’autre n’est à l’écran)'}">${item.isDefault ? ICON_STAR_FILLED : ICON_STAR_OUTLINE}</button>
+                        <button class="queue-icon-btn" data-action="add-to-rundown" data-target="media" data-id="${item.id}" data-label="${escapeHtmlDashboard(item.label)}" title="Ajouter à la feuille de route">${ICON_PLUS}</button>
+                        <button class="queue-icon-btn queue-remove" data-action="delete" data-target="media" data-id="${item.id}" title="Supprimer">${ICON_REMOVE}</button>
                     </div>
                 </div>
             `;
@@ -410,7 +427,7 @@ export function renderMediaGroupsPanel(groups) {
             <strong>${escapeHtmlDashboard(g.name)}</strong>
             <span style="color:var(--text-dim);font-size:0.78rem"> — ${g.memberIds.length} média(s) — "${escapeHtmlDashboard((g.triggerPhrases || []).join('", "'))}"</span>
           </div>
-          <button class="queue-icon-btn queue-remove" data-action="delete" data-target="media-group" data-id="${g.id}" title="Supprimer le groupe (les médias restent, juste détachés)">✕</button>
+          <button class="queue-icon-btn queue-remove" data-action="delete" data-target="media-group" data-id="${g.id}" title="Supprimer le groupe (les médias restent, juste détachés)">${ICON_REMOVE}</button>
         </div>`
     )
     .join('');

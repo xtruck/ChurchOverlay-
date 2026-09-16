@@ -15,6 +15,11 @@ import { nextRundownCue } from './rundown.js';
 import { searchBibleByTopic } from './bible-search.js';
 import { registerAction } from '../action-delegator.js';
 
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : remplace le 📖
+// littéral ci-dessous — même tracé de livre déjà posé ailleurs.
+const ICON_BOOK =
+  '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" style="vertical-align: -1px;" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>';
+
 const serviceStartTime = Date.now();
 const slideGridItems = [];
 let activeSlideId = null;
@@ -184,7 +189,7 @@ export function renderStudioSlides() {
       return `
         <div class="pp-presentation-slide ${isActive ? 'active is-live' : ''}" data-action="fire" data-target="studio-slide" data-index="${idx}">
           <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span class="pp-slide-header-ref">📖 ${escapeHtml(slide.reference)}</span>
+            <span class="pp-slide-header-ref">${ICON_BOOK} ${escapeHtml(slide.reference)}</span>
             ${isActive ? '<span style="font-size: 9px; font-weight: 800; color: #ff1744; background: rgba(255,23,68,0.2); padding: 1px 4px; border-radius: 2px;">LIVE</span>' : ''}
           </div>
           <div class="pp-slide-content-preview">${escapeHtml(slide.text || '')}</div>

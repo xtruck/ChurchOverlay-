@@ -10,6 +10,11 @@ import { ws } from '../state.js';
 import { showToast, addActivity, escapeHtmlDashboard } from '../utils.js';
 import { registerAction } from '../action-delegator.js';
 
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : remplace le ✕
+// littéral ci-dessous.
+const ICON_REMOVE =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>';
+
 /* ======================================================================
            File d'attente de versets (innovation frontend, inspirée de Rhema) :
            permet à l'opérateur de préparer à l'avance les versets d'une
@@ -85,7 +90,7 @@ export function renderQueue() {
                         <button class="queue-icon-btn" data-action="move-up" data-target="verse-queue" data-id="${item.id}" title="Monter" ${i === 0 ? 'disabled' : ''}>↑</button>
                         <button class="queue-icon-btn" data-action="move-down" data-target="verse-queue" data-id="${item.id}" title="Descendre" ${i === verseQueue.length - 1 ? 'disabled' : ''}>↓</button>
                         <button class="queue-icon-btn queue-send" data-action="send" data-target="verse-queue" data-id="${item.id}" title="Envoyer maintenant">▶</button>
-                        <button class="queue-icon-btn queue-remove" data-action="remove" data-target="verse-queue" data-id="${item.id}" title="Retirer">✕</button>
+                        <button class="queue-icon-btn queue-remove" data-action="remove" data-target="verse-queue" data-id="${item.id}" title="Retirer">${ICON_REMOVE}</button>
                     </div>
                 </div>
             `

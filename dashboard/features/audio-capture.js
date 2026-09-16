@@ -16,6 +16,14 @@ import { getWsToken, getWsPort } from '../state.js';
 import { updateMicButtonUI } from './verse-session-display.js';
 import { showToast, addActivity } from '../utils.js';
 
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : remplace les
+// 👁/🙈 littéraux ci-dessous — mêmes tracés œil/œil barré déjà posés
+// ailleurs (branding.js).
+const ICON_EYE =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+const ICON_EYE_OFF =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 3l18 18"></path><path d="M10.6 5.2A10.4 10.4 0 0 1 12 5c7 0 11 7 11 7a13.2 13.2 0 0 1-3.4 4M6.6 6.6C3.7 8.4 1 12 1 12s4 7 11 7a10.5 10.5 0 0 0 4.2-.9"></path><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path></svg>';
+
 // ==================================================================
 // CORRECTIF (problème signalé — "parler sans appuyer sur activer le
 // micro ne bougeait pas et ne passait pas") : la capture micro
@@ -217,7 +225,7 @@ export async function startRealAudioCapture() {
     updateMicButtonUI();
   } catch (err) {
     console.error('[dashboard] Échec démarrage capture micro réelle:', err);
-    showToast('❌ Micro : ' + (err && err.message ? err.message : err), 'error');
+    showToast('Micro : ' + (err && err.message ? err.message : err), 'error');
     updateMicButtonUI();
   }
 }
@@ -277,7 +285,7 @@ export function toggleLivePreview() {
   if (currentlyShown) {
     wrap.style.display = 'none';
     frame.src = 'about:blank';
-    btn.textContent = "👁 Afficher l'aperçu";
+    btn.innerHTML = `${ICON_EYE} Afficher l'aperçu`;
     return;
   }
 
@@ -286,7 +294,7 @@ export function toggleLivePreview() {
   const query = token ? `?token=${encodeURIComponent(token)}&port=${encodeURIComponent(port)}` : '';
   frame.src = 'overlay.html' + query;
   wrap.style.display = 'block';
-  btn.textContent = "🙈 Masquer l'aperçu";
+  btn.innerHTML = `${ICON_EYE_OFF} Masquer l'aperçu`;
 }
 
 if (window.churchOverlay && window.churchOverlay.onAudioPipelineReady) {

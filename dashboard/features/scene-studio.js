@@ -38,6 +38,29 @@ import { getCurrentLive } from './airlock-preview.js';
 // circulaire (scene-composer.js importe getSceneStudioItems() d'ici).
 import { openSceneComposer } from './scene-composer.js';
 
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : icônes SVG
+// inline réutilisées dans les gabarits de carte ci-dessous, à la place des
+// emoji littéraux (⭐/🎯/🎙/👁/✏/➕/✕) — chaînes fixes, jamais de contenu
+// utilisateur interpolé À L'INTÉRIEUR de ces constantes (le contenu
+// utilisateur réel — nom de scène, phrase déclencheuse — passe toujours par
+// escapeHtmlDashboard() séparément, inchangé).
+const ICON_STAR =
+  '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l2.5 5.5 6 .7-4.4 4.1 1.2 6-5.3-3-5.3 3 1.2-6-4.4-4.1 6-.7z"></path></svg>';
+const ICON_STAR_OUTLINE =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3l2.5 5.5 6 .7-4.4 4.1 1.2 6-5.3-3-5.3 3 1.2-6-4.4-4.1 6-.7z"></path></svg>';
+const ICON_TARGET =
+  '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="4"></circle><circle cx="12" cy="12" r="0.6" fill="currentColor"></circle></svg>';
+const ICON_MIC =
+  '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"></rect><path d="M5 10a7 7 0 0 0 14 0"></path><path d="M12 17v5M9 22h6"></path></svg>';
+const ICON_EYE =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+const ICON_PENCIL =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 17.5V20h2.5L18 8.5l-2.5-2.5L4 17.5z"></path><path d="M13.5 4.5l3 3"></path></svg>';
+const ICON_PLUS =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>';
+const ICON_X =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>';
+
 let sceneStudioItems = [];
 
 // AJOUT (chantier ultime — switcher multiview dual-bus Program/Preview) :
@@ -101,7 +124,7 @@ export function clearPreviewScene() {
  */
 export function cutToProgram() {
   if (!previewSceneId) {
-    showToast('Aucune scène en Preview — armez-en une (👁) avant de CUT.', 'warning');
+    showToast('Aucune scène en Preview — armez-en une avant de CUT.', 'warning');
     return;
   }
   triggerSceneStudioItem(previewSceneId);
@@ -212,31 +235,40 @@ export function renderSceneStudioGallery(scenes) {
 
   list.innerHTML = sceneStudioItems
     .map((scene) => {
-      const badge = scene.isDefault ? '<span class="media-gallery-badge">⭐ Poster</span>' : '';
+      const badge = scene.isDefault
+        ? `<span class="media-gallery-badge">${ICON_STAR} Poster</span>`
+        : '';
       // AJOUT (chantier overlay/composeur multi-scènes — Mode Focus) : rend
       // visible, d'un coup d'œil dans la galerie, si le fond de cette scène
       // s'estompera à l'affichage (voir scene-render.js#renderSceneDom).
       const focusModeBadge = scene.focusMode
-        ? '<span class="media-gallery-badge">🎯 Focus</span>'
+        ? `<span class="media-gallery-badge">${ICON_TARGET} Focus</span>`
         : '';
       // AJOUT (déclenchement vocal des scènes) : même badge que la
       // Médiathèque (.media-item-phrase-badge) — rend visible, d'un coup
       // d'œil dans la galerie, si une scène est atteignable à la voix ou
       // seulement au clic manuel (voir scene-store.js#matchTriggerPhrase).
       const phrasesBadges = (scene.triggerPhrases || [])
-        .map((p) => `<span class="media-item-phrase-badge">🎙 ${escapeHtmlDashboard(p)}</span>`)
+        .map(
+          (p) =>
+            `<span class="media-item-phrase-badge">${ICON_MIC} ${escapeHtmlDashboard(p)}</span>`
+        )
         .join('');
       // AJOUT (chantier ultime — Tally lumineux) : rouge prioritaire sur vert
       // — une scène ne peut jamais être "en Preview" ET "en Program" à
       // l'affichage (si elle est diffusée, la Preview n'a plus d'utilité
       // visuelle, même si previewSceneId la référence encore techniquement).
+      // CORRECTIF (redesign — pas d'emoji comme icône structurelle) : le
+      // rond de couleur (🔴/🟢) était redondant avec la couleur de fond déjà
+      // portée par .tally-badge--program/--preview (voir dashboard.css) —
+      // le texte PROGRAM/PREVIEW + cette couleur suffisent (color-not-only).
       const isLive = scene.id === liveSceneId;
       const isPreview = !isLive && scene.id === previewSceneId;
       const tallyClass = isLive ? ' tally-program' : isPreview ? ' tally-preview' : '';
       const tallyBadge = isLive
-        ? '<span class="tally-badge tally-badge--program">🔴 PROGRAM</span>'
+        ? '<span class="tally-badge tally-badge--program">PROGRAM</span>'
         : isPreview
-          ? '<span class="tally-badge tally-badge--preview">🟢 PREVIEW</span>'
+          ? '<span class="tally-badge tally-badge--preview">PREVIEW</span>'
           : '';
       return `
                 <div class="media-gallery-card${scene.isDefault ? ' is-default' : ''}${tallyClass}">
@@ -249,11 +281,11 @@ export function renderSceneStudioGallery(scenes) {
                     </div>
                     <div class="media-gallery-actions">
                         <button class="btn btn-primary" data-action="trigger" data-target="scene" data-id="${scene.id}" title="Afficher immédiatement sur l'overlay (contourne la Preview)">▶ Afficher</button>
-                        <button class="queue-icon-btn" data-action="preview" data-target="scene" data-id="${scene.id}" title="Envoyer en Preview (aperçu privé — CUT/TAKE ou Espace pour diffuser)">👁 Preview</button>
-                        <button class="queue-icon-btn" data-action="edit" data-target="scene" data-id="${scene.id}" title="Modifier cette scène">✏</button>
-                        <button class="queue-icon-btn" data-action="toggle-default" data-target="scene" data-id="${scene.id}" data-is-default="${scene.isDefault ? 'true' : 'false'}" title="${scene.isDefault ? 'Retirer le statut de poster principal' : 'Définir comme poster principal (affiché quand rien d’autre n’est à l’écran)'}">${scene.isDefault ? '⭐' : '☆'}</button>
-                        <button class="queue-icon-btn" data-action="add-to-rundown" data-target="scene" data-id="${scene.id}" data-label="${escapeHtmlDashboard(scene.name)}" title="Ajouter à la feuille de route">➕</button>
-                        <button class="queue-icon-btn queue-remove" data-action="delete" data-target="scene" data-id="${scene.id}" title="Supprimer">✕</button>
+                        <button class="queue-icon-btn" data-action="preview" data-target="scene" data-id="${scene.id}" title="Envoyer en Preview (aperçu privé — CUT/TAKE ou Espace pour diffuser)">${ICON_EYE} Preview</button>
+                        <button class="queue-icon-btn" data-action="edit" data-target="scene" data-id="${scene.id}" title="Modifier cette scène">${ICON_PENCIL}</button>
+                        <button class="queue-icon-btn" data-action="toggle-default" data-target="scene" data-id="${scene.id}" data-is-default="${scene.isDefault ? 'true' : 'false'}" title="${scene.isDefault ? 'Retirer le statut de poster principal' : 'Définir comme poster principal (affiché quand rien d’autre n’est à l’écran)'}">${scene.isDefault ? ICON_STAR : ICON_STAR_OUTLINE}</button>
+                        <button class="queue-icon-btn" data-action="add-to-rundown" data-target="scene" data-id="${scene.id}" data-label="${escapeHtmlDashboard(scene.name)}" title="Ajouter à la feuille de route">${ICON_PLUS}</button>
+                        <button class="queue-icon-btn queue-remove" data-action="delete" data-target="scene" data-id="${scene.id}" title="Supprimer">${ICON_X}</button>
                     </div>
                 </div>
             `;
@@ -282,12 +314,12 @@ export function renderSceneStudioGallery(scenes) {
     const isPreview = !isLive && scene.id === previewSceneId;
     const badgeMarkup =
       (isLive
-        ? '<span class="tally-badge tally-badge--program">🔴 PROGRAM</span>'
+        ? '<span class="tally-badge tally-badge--program">PROGRAM</span>'
         : isPreview
-          ? '<span class="tally-badge tally-badge--preview">🟢 PREVIEW</span>'
+          ? '<span class="tally-badge tally-badge--preview">PREVIEW</span>'
           : '') +
-      (scene.isDefault ? '<span class="media-gallery-badge">⭐ Poster</span>' : '') +
-      (scene.focusMode ? '<span class="media-gallery-badge">🎯 Focus</span>' : '');
+      (scene.isDefault ? `<span class="media-gallery-badge">${ICON_STAR} Poster</span>` : '') +
+      (scene.focusMode ? `<span class="media-gallery-badge">${ICON_TARGET} Focus</span>` : '');
     const canvas = document.createElement('div');
     canvas.className = 'scene-preview-canvas';
     previewEl.innerHTML = badgeMarkup;

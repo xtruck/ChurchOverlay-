@@ -10,6 +10,18 @@
 import { state, ws } from '../state.js';
 import { showToast, escapeHtmlDashboard, requireWsOrWarn, copyToClipboard } from '../utils.js';
 
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : remplace les
+// emoji littéraux (⏳/✅/❌/⚠️) concaténés ci-dessous — mêmes tracés que les
+// icônes déjà posées ailleurs dans l'app (api-settings.js, etc.).
+const ICON_HOURGLASS =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 2h12M6 22h12M6 2c0 6 12 6 12 10s-12 4-12 10M18 2c0 6-12 6-12 10s12 4 12 10"></path></svg>';
+const ICON_CHECK =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" style="vertical-align: -1px;" aria-hidden="true"><path d="M5 12l5 5L20 7"></path></svg>';
+const ICON_ERROR =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -1px;" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M15 9l-6 6M9 9l6 6"></path></svg>';
+const ICON_WARNING =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -1px;" aria-hidden="true"><path d="M12 3l10 18H2z"></path><path d="M12 10v4M12 17h.01"></path></svg>';
+
 // CORRECTIF (checklist mise en production, point 9) : bouton "Tester avant
 // le culte" — envoie une demande de vérification au serveur (connexion WS,
 // validité des clés Groq/Deepgram) et affiche le résultat sans quitter le
@@ -23,7 +35,7 @@ export function runPreServiceCheck() {
   }
   if (btn) {
     btn.disabled = true;
-    btn.textContent = '⏳ Vérification en cours...';
+    btn.innerHTML = `${ICON_HOURGLASS} Vérification en cours...`;
   }
   if (resultsEl) {
     resultsEl.style.display = 'none';
@@ -41,13 +53,13 @@ export function renderAiEnricherOutput(text) {
 
 export function requestSermonTheme() {
   if (!requireWsOrWarn()) return;
-  renderAiEnricherOutput('⏳ Analyse du thème en cours...');
+  renderAiEnricherOutput(`${ICON_HOURGLASS} Analyse du thème en cours...`);
   ws.send(JSON.stringify({ action: 'getSermonTheme' }));
 }
 
 export function requestLiveSummary() {
   if (!requireWsOrWarn()) return;
-  renderAiEnricherOutput('⏳ Génération du résumé en cours...');
+  renderAiEnricherOutput(`${ICON_HOURGLASS} Génération du résumé en cours...`);
   ws.send(JSON.stringify({ action: 'getLiveSummary' }));
 }
 
@@ -58,7 +70,7 @@ export function requestLiveSummary() {
 // décision en direct pendant un culte.
 export function requestAiStats() {
   if (!requireWsOrWarn()) return;
-  renderAiEnricherOutput('⏳ Chargement des statistiques IA...');
+  renderAiEnricherOutput(`${ICON_HOURGLASS} Chargement des statistiques IA...`);
   ws.send(JSON.stringify({ action: 'getAiStats' }));
 }
 
@@ -111,7 +123,7 @@ export function requestCrossReferences() {
     );
     return;
   }
-  renderAiEnricherOutput('⏳ Recherche de références croisées...');
+  renderAiEnricherOutput(`${ICON_HOURGLASS} Recherche de références croisées...`);
   ws.send(
     JSON.stringify({
       action: 'getCrossReferences',
@@ -128,13 +140,13 @@ export function requestLiveTranslation() {
     renderAiEnricherOutput('Aucun texte de verset à traduire pour le moment.');
     return;
   }
-  renderAiEnricherOutput('⏳ Traduction en cours...');
+  renderAiEnricherOutput(`${ICON_HOURGLASS} Traduction en cours...`);
   ws.send(JSON.stringify({ action: 'translateText', text: verse.text, targetLang: 'en' }));
 }
 
 export function requestPostServiceRecap() {
   if (!requireWsOrWarn()) return;
-  renderAiEnricherOutput('⏳ Génération du récapitulatif...');
+  renderAiEnricherOutput(`${ICON_HOURGLASS} Génération du récapitulatif...`);
   ws.send(JSON.stringify({ action: 'getPostServiceRecap' }));
 }
 
@@ -147,7 +159,7 @@ export function requestPostServiceRecap() {
 export function requestSessionStats(days) {
   if (!requireWsOrWarn()) return;
   const el = document.getElementById('sessionStatsOutput');
-  if (el) el.innerHTML = '<span class="stat-label">⏳ Chargement des statistiques...</span>';
+  if (el) el.innerHTML = `<span class="stat-label">${ICON_HOURGLASS} Chargement des statistiques...</span>`;
   ws.send(JSON.stringify({ action: 'getSessionStats', days: days || 1 }));
 }
 
@@ -297,13 +309,13 @@ export function startClipExport() {
 export function renderClipExportStarted() {
   const status = document.getElementById('clipExportStatus');
   const btn = document.getElementById('clipExportBtn');
-  if (status) status.textContent = '⏳ Export en cours…';
+  if (status) status.innerHTML = `${ICON_HOURGLASS} Export en cours…`;
   if (btn) btn.disabled = true;
 }
 
 export function renderClipExportProgress(message) {
   const status = document.getElementById('clipExportStatus');
-  if (status) status.textContent = `⏳ Extrait ${message.done}/${message.total}…`;
+  if (status) status.innerHTML = `${ICON_HOURGLASS} Extrait ${message.done}/${message.total}…`;
 }
 
 export function renderClipExportComplete(message) {
@@ -317,7 +329,7 @@ export function renderClipExportComplete(message) {
     return;
   }
   const errorNote = message.errors.length > 0 ? ` (${message.errors.length} échec(s))` : '';
-  status.textContent = `✅ ${message.clips.length} extrait(s) généré(s) dans ${message.outputDir}${errorNote}`;
+  status.innerHTML = `${ICON_CHECK} ${message.clips.length} extrait(s) généré(s) dans ${escapeHtmlDashboard(message.outputDir)}${errorNote}`;
   showToast(`${message.clips.length} extrait(s) vidéo généré(s).`, message.ok ? 'success' : 'info');
 }
 
@@ -549,7 +561,7 @@ export function requestArchiveSearch() {
     renderAiEnricherOutput('Tapez un mot-clé ou un thème avant de lancer la recherche.');
     return;
   }
-  renderAiEnricherOutput('⏳ Recherche dans les cultes archivés...');
+  renderAiEnricherOutput(`${ICON_HOURGLASS} Recherche dans les cultes archivés...`);
   ws.send(JSON.stringify({ action: 'getArchiveMatches', query }));
 }
 
@@ -569,7 +581,7 @@ export function askSermonQuestion() {
         '<span class="stat-label">Tapez une question avant de lancer la recherche.</span>';
     return;
   }
-  if (outputEl) outputEl.innerHTML = '<span class="stat-label">⏳ Recherche en cours...</span>';
+  if (outputEl) outputEl.innerHTML = `<span class="stat-label">${ICON_HOURGLASS} Recherche en cours...</span>`;
   if (sourcesEl) sourcesEl.innerHTML = '';
   ws.send(JSON.stringify({ action: 'askSermonQuestion', question }));
 }
@@ -585,7 +597,7 @@ export function renderSermonQaResult(result) {
   if (!outputEl) return;
 
   if (!result.ok) {
-    outputEl.innerHTML = `<span class="stat-label">❌ ${escapeHtmlDashboard(result.message || 'Erreur inconnue')}</span>`;
+    outputEl.innerHTML = `<span class="stat-label">${ICON_ERROR} ${escapeHtmlDashboard(result.message || 'Erreur inconnue')}</span>`;
     if (sourcesEl) sourcesEl.innerHTML = '';
     return;
   }
@@ -631,7 +643,7 @@ export function requestAutoTranslation(verse) {
 export function exportPostServiceRecap() {
   if (!state.lastPostServiceRecap) {
     if (!requireWsOrWarn()) return;
-    renderAiEnricherOutput('⏳ Génération du récapitulatif avant export...');
+    renderAiEnricherOutput(`${ICON_HOURGLASS} Génération du récapitulatif avant export...`);
     ws.send(JSON.stringify({ action: 'getPostServiceRecap' }));
     showToast(
       'Récap en cours de génération — cliquez à nouveau sur Exporter dans quelques secondes.',
@@ -669,12 +681,12 @@ export function renderPreServiceCheckResult(message) {
   const resultsEl = document.getElementById('preServiceCheckResults');
   if (btn) {
     btn.disabled = false;
-    btn.textContent = '✅ Tester avant le culte';
+    btn.innerHTML = `${ICON_CHECK} Tester avant le culte`;
   }
   if (!resultsEl) return;
 
   function row(label, ok, detail) {
-    const icon = ok ? '✅' : '⚠️';
+    const icon = ok ? ICON_CHECK : ICON_WARNING;
     return `<div class="preflight-row">
                     <span class="preflight-row-label">${icon} ${label}</span>
                     <span class="preflight-row-status ${ok ? 'ok' : 'warn'}">${detail || (ok ? 'OK' : 'Problème')}</span>
@@ -775,7 +787,7 @@ export function renderPreServiceCheckResult(message) {
         : 'Normale'
     ) +
     `<div class="preflight-note">
-                    ⚠️ Le microphone n'est pas vérifié ici — voir "Statut Capture Micro" ci-dessus.
+                    ${ICON_WARNING} Le microphone n'est pas vérifié ici — voir "Statut Capture Micro" ci-dessus.
                 </div>`;
 
   // AJOUT (Pre-Service Readiness Score) : bandeau récapitulatif au-dessus
@@ -785,7 +797,7 @@ export function renderPreServiceCheckResult(message) {
   // un badge "à vérifier" liste des points d'attention, pas des blocages.
   if (typeof message.readinessScore === 'number') {
     const badgeClass = message.readyToGoLive ? 'ok' : 'warn';
-    const badgeIcon = message.readyToGoLive ? '✅' : '⚠️';
+    const badgeIcon = message.readyToGoLive ? ICON_CHECK : ICON_WARNING;
     const badgeText = message.readyToGoLive
       ? 'Prêt pour le culte'
       : `${(message.readinessChecks || []).filter((c) => !c.ok).length} point(s) à vérifier`;

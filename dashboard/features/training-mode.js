@@ -5,6 +5,11 @@
  */
 import { registerAction } from '../action-delegator.js';
 
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : remplace le ✕
+// littéral ci-dessous.
+const ICON_REMOVE =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>';
+
 (function () {
   let active = false;
 
@@ -69,7 +74,7 @@ import { registerAction } from '../action-delegator.js';
       <div class="training-guide-actions">
         <button class="btn btn-secondary training-guide-btn" data-action="prev" data-target="training-guide">◀ Préc</button>
         <button class="btn btn-primary training-guide-btn" data-action="next" data-target="training-guide">Suiv ▶</button>
-        <button class="btn btn-secondary training-guide-btn" data-action="close" data-target="training-guide">✕ Fermer</button>
+        <button class="btn btn-secondary training-guide-btn" data-action="close" data-target="training-guide">${ICON_REMOVE} Fermer</button>
       </div>
     `;
     document.body.appendChild(guideBar);

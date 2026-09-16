@@ -297,7 +297,7 @@ export function handleMessage(message) {
       break;
     case 'audioSilenceWarning':
       addActivity(message.message, 'warning');
-      showToast(`⚠️ ${message.message}`, 'error');
+      showToast(message.message, 'error');
       break;
     // AJOUT (A.2 — visibilité des échecs IA) : jusqu'ici un échec d'appel
     // (Groq indisponible, timeout…) dans corrector/semanticDetector/
@@ -317,7 +317,7 @@ export function handleMessage(message) {
     case 'aiModuleError':
       addActivity(`Module IA en échec (${message.module}) : ${message.message}`, 'warning');
       if (shouldToastAiModuleError(message.module)) {
-        showToast(`⚠️ Module IA « ${message.module} » en échec — repli automatique actif`, 'error');
+        showToast(`Module IA « ${message.module} » en échec — repli automatique actif`, 'error');
       }
       // CORRECTIF (audit — bannière IA jamais mise à jour par un échec
       // d'exécution) : le toast/l'activité ci-dessus sont éphémères — un
@@ -341,7 +341,7 @@ export function handleMessage(message) {
         'warning'
       );
       showToast(
-        `⚠️ Une source (OBS/affichage) échoue son authentification en boucle — vérifiez que son URL est à jour (Paramètres → Copier le lien pour OBS)`,
+        `Une source (OBS/affichage) échoue son authentification en boucle — vérifiez que son URL est à jour (Paramètres → Copier le lien pour OBS)`,
         'error'
       );
       break;
@@ -648,11 +648,11 @@ export function handleMessage(message) {
           )
           .join(' ; ');
         addActivity(
-          `⚠️ ${message.collisions.length} collision(s) phonétique(s) pour "${message.itemLabel}" : ${details}`,
+          `${message.collisions.length} collision(s) phonétique(s) pour "${message.itemLabel}" : ${details}`,
           'warning'
         );
         showToast(
-          `⚠️ "${message.itemLabel}" : ${message.collisions.length} phrase(s) déclencheuse(s) trop proche(s) d'un autre média/chant — voir l'activité`,
+          `"${message.itemLabel}" : ${message.collisions.length} phrase(s) déclencheuse(s) trop proche(s) d'un autre média/chant — voir l'activité`,
           'error'
         );
       }
@@ -867,23 +867,36 @@ function shouldToastAiModuleError(moduleName) {
   return true;
 }
 
+// AJOUT (redesign — pas d'emoji comme icône structurelle) : remplace les
+// icônes ✅/❌/🔄 littérales ci-dessous, concaténées auparavant dans
+// statusEl.textContent (donc affichées comme texte brut, jamais rendues).
+const ICON_OBS_CONNECTED =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" style="vertical-align: -1px;" aria-hidden="true"><path d="M5 12l5 5L20 7"></path></svg>';
+const ICON_OBS_ERROR =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -1px;" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M15 9l-6 6M9 9l6 6"></path></svg>';
+const ICON_OBS_RECONNECTING =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -1px;" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"></path><path d="M21 3v6h-6"></path></svg>';
+
 // AJOUT (Partie 3.1 — assistant de connexion + reconnexion automatique
 // OBS) : met à jour le panneau OBS (RÉGIE) à chaque changement d'état de
 // connexion, y compris les tentatives de reconnexion après une coupure.
 const OBS_STATUS_LABELS = {
-  connected: { icon: '✅', label: (r) => r || 'Connecté à OBS Studio.' },
-  disconnected: { icon: '❌', label: (r) => r || 'Connexion OBS perdue.' },
-  reconnecting: { icon: '🔄', label: (r) => r || 'Reconnexion à OBS en cours…' },
-  error: { icon: '❌', label: (r) => r || 'Échec de connexion à OBS.' },
+  connected: { icon: ICON_OBS_CONNECTED, label: (r) => r || 'Connecté à OBS Studio.' },
+  disconnected: { icon: ICON_OBS_ERROR, label: (r) => r || 'Connexion OBS perdue.' },
+  reconnecting: { icon: ICON_OBS_RECONNECTING, label: (r) => r || 'Reconnexion à OBS en cours…' },
+  error: { icon: ICON_OBS_ERROR, label: (r) => r || 'Échec de connexion à OBS.' },
 };
 function updateObsConnectionStatus(status, reason) {
   const style = OBS_STATUS_LABELS[status] || OBS_STATUS_LABELS.error;
-  const text = `${style.icon} ${style.label(reason)}`;
+  const label = style.label(reason);
   const statusEl = document.getElementById('obsStatus');
-  if (statusEl) statusEl.textContent = text;
-  addActivity(`OBS : ${text}`, status === 'connected' ? 'success' : 'warning');
+  // CORRECTIF (audit production — XSS) : label peut refléter `reason`, un
+  // message d'erreur OBS transmis tel quel par le serveur — échappé avant
+  // insertion via innerHTML (nécessaire ici pour rendre l'icône SVG).
+  if (statusEl) statusEl.innerHTML = `${style.icon} ${escapeHtmlDashboard(label)}`;
+  addActivity(`OBS : ${label}`, status === 'connected' ? 'success' : 'warning');
   if (status !== 'connected') {
-    showToast(text, 'error');
+    showToast(`OBS : ${label}`, 'error');
   }
 }
 
