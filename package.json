@@ -1,0 +1,13 @@
+{
+  "name": "live-verse-overlay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Live Bible-verse detection and overlay for OBS, built as a small deterministic pipeline (see ARCHITECTURE.md).",
+  "main": "apps/desktop/main/index.js",
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "start": "electron ."
+  }
+}
