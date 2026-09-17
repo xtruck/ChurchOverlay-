@@ -1,6 +1,7 @@
 import { WebSocketServer, type WebSocket } from "ws"
 import type { AddressInfo } from "node:net"
-import type { WsMessage, WsRole } from "../../../packages/contracts"
+import type { AudioFrame, WsMessage, WsRole } from "../../../packages/contracts"
+import { decodeAudioFrame } from "../../../packages/shared/audio-frame-codec"
 import { validateWsMessage } from "./action-registry"
 
 export type ServerTokens = {
@@ -16,6 +17,11 @@ export type ChurchOverlayWsServerOptions = {
   readonly port: number
   readonly tokens: ServerTokens
   readonly onCommand?: (message: WsMessage, role: WsRole) => void
+  /** Binary WS frames (audio) — see packages/shared/audio-frame-codec.ts
+   * for why audio can't be a JSON WsMessage. Only ever fired for the
+   * operator connection; a viewer sending binary data is rejected the
+   * same as any other message a viewer isn't allowed to send. */
+  readonly onAudioFrame?: (frame: AudioFrame) => void
   readonly onRejected?: (reason: string, role: WsRole | null) => void
 }
 
@@ -44,6 +50,7 @@ export class ChurchOverlayWsServer {
   private readonly wss: WebSocketServer
   private readonly tokens: ServerTokens
   private readonly onCommand: ChurchOverlayWsServerOptions["onCommand"]
+  private readonly onAudioFrame: ChurchOverlayWsServerOptions["onAudioFrame"]
   private readonly onRejected: ChurchOverlayWsServerOptions["onRejected"]
   private readonly clientRoles = new WeakMap<WebSocket, WsRole>()
 
@@ -53,6 +60,7 @@ export class ChurchOverlayWsServer {
   constructor(options: ChurchOverlayWsServerOptions) {
     this.tokens = options.tokens
     this.onCommand = options.onCommand
+    this.onAudioFrame = options.onAudioFrame
     this.onRejected = options.onRejected
 
     this.wss = new WebSocketServer({
@@ -104,11 +112,16 @@ export class ChurchOverlayWsServer {
     const role: WsRole = socket.protocol === this.tokens.operatorToken ? "operator" : "viewer"
     this.clientRoles.set(socket, role)
 
-    socket.on("message", (data) => this.handleMessage(socket, role, data))
+    socket.on("message", (data, isBinary) => this.handleMessage(role, data, isBinary))
     socket.on("close", () => this.clientRoles.delete(socket))
   }
 
-  private handleMessage(_socket: WebSocket, role: WsRole, data: unknown): void {
+  private handleMessage(role: WsRole, data: unknown, isBinary: boolean): void {
+    if (isBinary) {
+      this.handleBinaryMessage(role, data)
+      return
+    }
+
     let parsed: unknown
     try {
       parsed = JSON.parse(String(data))
@@ -125,4 +138,39 @@ export class ChurchOverlayWsServer {
 
     this.onCommand?.(result.message, role)
   }
+
+  private handleBinaryMessage(role: WsRole, data: unknown): void {
+    // Audio is never a JSON command, but the same role boundary applies:
+    // only the operator's own microphone capture may ever send it
+    // (ARCHITECTURE.md section 25 — a viewer cannot issue application
+    // input of any kind, audio included).
+    if (role !== "operator") {
+      this.onRejected?.("only the operator connection may send audio frames", role)
+      return
+    }
+
+    let frame: AudioFrame
+    try {
+      frame = decodeAudioFrame(toUint8Array(data))
+    } catch (err) {
+      this.onRejected?.(
+        `malformed audio frame: ${err instanceof Error ? err.message : String(err)}`,
+        role
+      )
+      return
+    }
+
+    this.onAudioFrame?.(frame)
+  }
+}
+
+function toUint8Array(data: unknown): Uint8Array {
+  if (data instanceof Buffer) return new Uint8Array(data.buffer, data.byteOffset, data.length)
+  if (data instanceof ArrayBuffer) return new Uint8Array(data)
+  if (Array.isArray(data)) {
+    // ws can deliver a fragmented binary message as Buffer[] when
+    // fragmentation isn't handled internally; concatenate defensively.
+    return new Uint8Array(Buffer.concat(data as Buffer[]))
+  }
+  throw new Error(`unexpected binary message shape: ${Object.prototype.toString.call(data)}`)
 }

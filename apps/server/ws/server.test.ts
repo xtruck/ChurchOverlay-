@@ -2,7 +2,8 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { WebSocket } from "ws"
 import { ChurchOverlayWsServer } from "./server"
-import type { WsMessage, WsRole } from "../../../packages/contracts"
+import { encodeAudioFrame } from "../../../packages/shared/audio-frame-codec"
+import type { AudioFrame, WsMessage, WsRole } from "../../../packages/contracts"
 
 const TOKENS = { operatorToken: "op-secret-token", viewerToken: "viewer-secret-token" }
 
@@ -16,6 +17,7 @@ const TOKENS = { operatorToken: "op-secret-token", viewerToken: "viewer-secret-t
 async function startServer(
   overrides: Partial<{
     onCommand: (message: WsMessage, role: WsRole) => void
+    onAudioFrame: (frame: AudioFrame) => void
     onRejected: (reason: string, role: WsRole | null) => void
   }> = {}
 ): Promise<ChurchOverlayWsServer> {
@@ -154,6 +156,58 @@ test("ChurchOverlayWsServer: broadcast() delivers an event to every connected cl
 
     operatorSocket.close()
     viewerSocket.close()
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer: a binary audio frame from the operator reaches onAudioFrame, correctly decoded", async () => {
+  const frames: AudioFrame[] = []
+  const server = await startServer({ onAudioFrame: (frame) => frames.push(frame) })
+  try {
+    const socket = await connect(server.port, TOKENS.operatorToken)
+    const sent: AudioFrame = { samples: Int16Array.from([1, 2, 3, -1000]), sampleRate: 16000, sequence: 9 }
+    socket.send(encodeAudioFrame(sent))
+    await waitFor(() => frames.length === 1)
+
+    assert.equal(frames[0]?.sequence, 9)
+    assert.deepEqual(Array.from(frames[0]?.samples ?? []), [1, 2, 3, -1000])
+    socket.close()
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer: a viewer sending a binary audio frame is rejected, not delivered to onAudioFrame", async () => {
+  const frames: AudioFrame[] = []
+  const rejections: { reason: string; role: WsRole | null }[] = []
+  const server = await startServer({
+    onAudioFrame: (frame) => frames.push(frame),
+    onRejected: (reason, role) => rejections.push({ reason, role }),
+  })
+  try {
+    const socket = await connect(server.port, TOKENS.viewerToken)
+    socket.send(encodeAudioFrame({ samples: Int16Array.from([1]), sampleRate: 16000, sequence: 1 }))
+    await waitFor(() => rejections.length === 1)
+
+    assert.equal(frames.length, 0)
+    assert.equal(rejections[0]?.role, "viewer")
+    socket.close()
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer: a malformed binary frame is rejected without crashing the server", async () => {
+  const rejections: string[] = []
+  const server = await startServer({ onRejected: (reason) => rejections.push(reason) })
+  try {
+    const socket = await connect(server.port, TOKENS.operatorToken)
+    socket.send(Buffer.from([1, 2, 3])) // too short to contain even the sequence prefix
+    await waitFor(() => rejections.length === 1)
+
+    assert.match(rejections[0] ?? "", /malformed audio frame/)
+    socket.close()
   } finally {
     await server.close()
   }
