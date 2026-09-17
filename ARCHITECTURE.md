@@ -2513,10 +2513,14 @@ scene:goto      { index: number }             -- operator-only
 Broadcast events mirror the existing `verse:show`/`media:show` pattern — a scene
 change broadcasts the appropriate existing event for its kind (`verse:show` for a
 `"verse"` scene, `media:show` for a `"media"` scene) plus a new `rundown:state` event
-carrying `{ rundownId, cursor, scene }` so the dashboard can render "which scene is
-active" without re-deriving it from individual verse/media events. A `"blank"` scene
-broadcasts `verse:clear` **and** `media:clear` together, to guarantee the overlay is
-actually empty regardless of what was showing before.
+carrying `{ rundownId, cursor, scene, interrupted }` so the dashboard can render
+"which scene is active" without re-deriving it from individual verse/media events. An
+`"announcement"` scene needs its own pair of events, since nothing existing carries
+title+body text: new `announcement:show { title, body }` / `announcement:clear`,
+following the exact same shape as every other show/clear pair. A `"blank"` scene
+broadcasts `verse:clear`, `media:clear`, **and** `announcement:clear` together, to
+guarantee the overlay is actually empty regardless of what was showing before — the
+same reasoning, generalized to a third clearable content type.
 `ChurchOverlayWsServer`'s existing `onViewerConnected` callback (section 60.4) is
 reused, not duplicated, for late-join/reconnect sync of rundown state, the same way
 it already syncs media playback state.
@@ -2548,8 +2552,9 @@ rundown position itself.
 
 Invariant 22
 A `"blank"` scene and a cleared interrupt with no paused scene both result in a
-genuinely empty overlay (`verse:clear` and `media:clear` both fire) — never a stale
-verse or media cue left on screen because only one of the two clear events was sent.
+genuinely empty overlay (`verse:clear`, `media:clear`, and `announcement:clear` all
+fire) — never stale content left on screen because only some of the clear events
+were sent.
 
 ### 64.7 Tests required
 
