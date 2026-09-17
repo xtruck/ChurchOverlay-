@@ -2,6 +2,7 @@ import type {
   AsrProvider,
   AudioFrame,
   MediaShowPayload,
+  TranscriptResult,
   Verse,
   VerseDetector,
   VerseIndex,
@@ -22,6 +23,8 @@ import { passesTranscriptGate } from "./transcript-gate"
 import type { MediaLibrary } from "../media/media-library"
 import { MediaCueDetector } from "../media/media-cue-detector"
 import { MediaPlaybackController } from "../media/media-playback-controller"
+import { NavigationCommandDetector } from "../detector/navigation-command-detector"
+import { resolveNavigationCommand } from "../verse/resolve-navigation-command"
 
 /**
  * Every provider/seam is injected, never constructed inside this
@@ -97,6 +100,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const mediaLibrary = options.mediaLibrary
   const mediaCueDetector = mediaLibrary ? new MediaCueDetector(mediaLibrary) : null
   const mediaPlayback = new MediaPlaybackController()
+  const navigationCommandDetector = new NavigationCommandDetector()
+  // ARCHITECTURE.md section 61.4: updated by every verse:show, however
+  // triggered (detected, manual override, or navigation itself) — "next
+  // verse" after an operator's manual override continues from wherever
+  // the operator pointed, the least-surprising default.
+  let currentVersePosition: VerseReference | null = null
 
   const wsServer = new ChurchOverlayWsServer({
     host: options.host,
@@ -137,12 +146,24 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   })
 
   function broadcastVerse(verse: Verse, correlationId?: string): void {
+    currentVersePosition = verse.reference
     wsServer.broadcast({
       id: generateUlid(),
       type: "verse:show",
       timestamp: Date.now(),
       correlationId,
       payload: verse,
+    })
+  }
+
+  function broadcastVerseClear(correlationId?: string): void {
+    currentVersePosition = null
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "verse:clear",
+      timestamp: Date.now(),
+      correlationId,
+      payload: null,
     })
   }
 
@@ -186,13 +207,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         return
 
       case "verse:clear":
-        wsServer.broadcast({
-          id: generateUlid(),
-          type: "verse:clear",
-          timestamp: Date.now(),
-          correlationId: message.correlationId,
-          payload: null,
-        })
+        broadcastVerseClear(message.correlationId)
         return
 
       case "verse:override": {
@@ -289,6 +304,43 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     }
   }
 
+  /**
+   * ARCHITECTURE.md section 61: resolves each detected navigation command
+   * sequentially, not concurrently — the same reasoning
+   * resolveTranscriptVerses already documents for multiple detected verse
+   * references (keeps cache/circuit-breaker state changes easy to reason
+   * about, and here also keeps currentVersePosition updates from racing
+   * each other within one transcript).
+   */
+  async function handleNavigationCommands(transcript: TranscriptResult): Promise<void> {
+    for (const command of navigationCommandDetector.detect(transcript.text)) {
+      const resolution = resolveNavigationCommand(command, currentVersePosition, index)
+
+      if (resolution.kind === "cancel") {
+        broadcastVerseClear(transcript.correlationId)
+        continue
+      }
+      if (resolution.kind === "no-op") {
+        logger.info({
+          component: "app-core",
+          event: "navigation.no-op",
+          correlationId: transcript.correlationId,
+          metadata: { command },
+        })
+        continue
+      }
+
+      // Still the full resolveVerse() pipeline (cache -> circuit breaker ->
+      // source), not just the index.exists() check resolveNavigationCommand
+      // already did — existence isn't the same as having real verse text
+      // to display (invariant 17).
+      const verse = await resolveVerse(resolution.reference, source, cache, circuitBreaker, undefined, logger)
+      if (verse) {
+        broadcastVerse(verse, transcript.correlationId)
+      }
+    }
+  }
+
   asr.onTranscript((transcript) => {
     logger.info({
       component: "asr",
@@ -321,6 +373,21 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       for (const cue of mediaCueDetector.detect(transcript.text)) {
         broadcastMedia(mediaPlayback.activate(cue), transcript.correlationId)
       }
+    }
+
+    // Voice-driven verse navigation (ARCHITECTURE.md section 61), also
+    // running alongside verse detection and voice-triggered media, not
+    // instead of either. Gated by the same transcript rule (invariant 18):
+    // partial transcripts never reach NavigationCommandDetector.
+    if (passesTranscriptGate(transcript)) {
+      handleNavigationCommands(transcript).catch((err) => {
+        logger.error({
+          component: "app-core",
+          event: "navigation.failed",
+          correlationId: transcript.correlationId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
     }
   })
 

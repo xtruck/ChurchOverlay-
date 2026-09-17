@@ -49,16 +49,26 @@ function normalizeUtterance(text: string): string {
   return text.trim().replace(/\s+/g, " ").toLowerCase()
 }
 
+// Real ASR transcripts punctuate short spoken commands ("Cancel.", "Next!"),
+// so the whole-utterance exact-match needs to tolerate trailing
+// sentence-ending punctuation. Substring matching doesn't need this — a
+// trailing period after "next verse" is already inside a longer string
+// that .includes() matches regardless.
+function stripTrailingPunctuation(text: string): string {
+  return text.replace(/[.!?,;:]+$/, "")
+}
+
 export class NavigationCommandDetector implements INavigationCommandDetector {
   detect(text: string): NavigationCommand[] {
     const commands: NavigationCommand[] = []
     const normalized = normalizeUtterance(text)
+    const normalizedWhole = stripTrailingPunctuation(normalized)
 
     for (const rule of SUBSTRING_RULES) {
       if (normalized.includes(rule.phrase)) commands.push(rule.command)
     }
     for (const rule of WHOLE_UTTERANCE_RULES) {
-      if (normalized === rule.phrase) commands.push(rule.command)
+      if (normalizedWhole === rule.phrase) commands.push(rule.command)
     }
 
     for (const match of text.matchAll(GOTO_CHAPTER_PATTERN)) {

@@ -631,3 +631,189 @@ test("AppCore: media:select without a configured mediaLibrary is handled gracefu
     await app.stop()
   }
 })
+
+/**
+ * Named per AGENTS.md section 45 — a test double, not a real verse
+ * source. Echoes back whatever reference it's asked for as text, so
+ * navigation tests can assert on WHICH reference got resolved and
+ * broadcast (what matters for correctness here) without needing a full
+ * book/chapter/verse -> text mapping the way StubVerseSource's
+ * book-only keying can't provide.
+ */
+class EchoVerseSource implements VerseSource {
+  async getVerse(reference: VerseReference): Promise<Verse | null> {
+    return { reference, text: `text for ${JSON.stringify(reference)}`, translation: "kjv", source: "test" }
+  }
+}
+
+test("AppCore: 'next verse' spoken after a detected reference broadcasts the following verse", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const firstShow = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Turn to John 3:15.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    const firstMessage = await firstShow
+    assert.deepEqual((firstMessage.payload as Verse).reference, { book: "john", chapter: 3, verse: 15 })
+
+    const secondShow = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T2",
+      correlationId: "01B",
+      sequence: 2,
+      text: "Next verse.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    const secondMessage = await secondShow
+    assert.equal(secondMessage.type, "verse:show")
+    assert.deepEqual((secondMessage.payload as Verse).reference, { book: "john", chapter: 3, verse: 16 })
+
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: 'cancel' spoken after a shown verse broadcasts verse:clear", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const firstShow = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Turn to John 3:16.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    await firstShow
+
+    const secondShow = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T2",
+      correlationId: "01B",
+      sequence: 2,
+      text: "Cancel.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    const message = await secondShow
+    assert.equal(message.type, "verse:clear")
+
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: 'next verse' spoken with no prior verse shown broadcasts nothing", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    let received = false
+    viewerSocket.once("message", () => {
+      received = true
+    })
+
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01CORR",
+      sequence: 1,
+      text: "Next verse.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    assert.equal(received, false)
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: 'next verse' after a manual verse:override continues from the overridden reference", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const firstShow = waitForMessage(viewerSocket)
+    operatorSocket.send(
+      JSON.stringify({
+        id: "01A",
+        type: "verse:override",
+        timestamp: Date.now(),
+        payload: { book: "romans", chapter: 8, verse: 28 },
+      })
+    )
+    await firstShow
+
+    // Navigation is voice-only (ARCHITECTURE.md section 61.1) — simulated
+    // here via a transcript, exactly as a real spoken "next verse" would
+    // arrive, even though the position was set by a manual override, not
+    // a detected reference.
+    const secondShow = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01B",
+      sequence: 1,
+      text: "Next verse.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    const message = await secondShow
+    assert.deepEqual((message.payload as Verse).reference, { book: "romans", chapter: 8, verse: 29 })
+
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})

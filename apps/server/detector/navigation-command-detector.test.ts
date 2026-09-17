@@ -33,6 +33,14 @@ test("NavigationCommandDetector: short synonyms ('next', 'previous', 'cancel', '
   assert.deepEqual(detector.detect("Clear"), [{ kind: "cancel" }])
 })
 
+test("NavigationCommandDetector: short synonyms tolerate realistic ASR trailing punctuation", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("Next."), [{ kind: "next-verse" }])
+  assert.deepEqual(detector.detect("Cancel."), [{ kind: "cancel" }])
+  assert.deepEqual(detector.detect("Clear!"), [{ kind: "cancel" }])
+  assert.deepEqual(detector.detect("Previous?"), [{ kind: "previous-verse" }])
+})
+
 test("NavigationCommandDetector: short synonyms embedded in a longer sentence do NOT trigger", () => {
   const detector = new NavigationCommandDetector()
   assert.deepEqual(detector.detect("The next thing I want to say is important."), [])
