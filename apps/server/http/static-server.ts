@@ -10,11 +10,32 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   ".json": "application/json; charset=utf-8",
 }
 
+const MEDIA_CONTENT_TYPES: Readonly<Record<string, string>> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".m4a": "audio/mp4",
+}
+
+const MEDIA_PATH_PATTERN = /^\/media\/([^/]+)$/
+
+/** Narrow, structural — StaticServer depends on this shape, not the concrete MediaLibrary class (AGENTS.md section 26: one class, one responsibility). */
+export type MediaFileResolver = {
+  resolveFilePath(id: string): string | null
+}
+
 export type StaticServerOptions = {
   /** Defaults to 127.0.0.1, same reasoning as ChurchOverlayWsServer (ARCHITECTURE.md section 24). */
   readonly host?: string
   readonly port: number
   readonly rootDir: string
+  /** Optional — when provided, serves imported media under /media/<id> (ARCHITECTURE.md section 60.4). */
+  readonly mediaResolver?: MediaFileResolver
 }
 
 const DEFAULT_HOST = "127.0.0.1"
@@ -45,13 +66,22 @@ const DEFAULT_HOST = "127.0.0.1"
  * content types, rejects any request path that would resolve outside
  * `rootDir` (directory traversal via "../"), and returns 404 for anything
  * else rather than leaking arbitrary filesystem contents.
+ *
+ * Optionally also serves imported media under /media/<id> (ARCHITECTURE.md
+ * section 60.4) when constructed with a `mediaResolver` — a separate code
+ * path from the `rootDir` serving above, since the request's `id` is never
+ * joined onto a directory at all; it is resolved through MediaLibrary's
+ * own lookup first, which is what actually enforces "the overlay only
+ * ever loads what was really imported" (invariant 13).
  */
 export class StaticServer {
   private readonly server: Server
+  private readonly mediaResolver?: MediaFileResolver
   readonly ready: Promise<void>
 
   constructor(options: StaticServerOptions) {
     const rootDir = normalize(options.rootDir)
+    this.mediaResolver = options.mediaResolver
     this.server = createServer((req, res) => {
       this.handleRequest(req, res, rootDir).catch(() => {
         if (!res.headersSent) res.writeHead(500)
@@ -86,6 +116,13 @@ export class StaticServer {
     rootDir: string
   ): Promise<void> {
     const requestedPath = decodeURIComponent((req.url ?? "/").split("?")[0] ?? "/")
+
+    const mediaMatch = MEDIA_PATH_PATTERN.exec(requestedPath)
+    if (mediaMatch) {
+      await this.handleMediaRequest(res, mediaMatch[1] as string)
+      return
+    }
+
     const relativePath = requestedPath === "/" ? "/index.html" : requestedPath
     const resolvedPath = normalize(join(rootDir, relativePath))
 
@@ -103,6 +140,35 @@ export class StaticServer {
     }
 
     const contentType = CONTENT_TYPES[extname(resolvedPath)] ?? "application/octet-stream"
+    res.writeHead(200, { "Content-Type": contentType })
+    res.end(content)
+  }
+
+  /**
+   * ARCHITECTURE.md section 60.4 point 4: resolves `id` through the
+   * MediaLibrary-shaped resolver FIRST — the request path is never joined
+   * onto a directory directly the way the rootDir branch above does, so
+   * there is no path in the request that could ever reach outside the
+   * media directory, because no part of the request is ever used as a
+   * path (invariant 13: the overlay only ever loads what MediaLibrary
+   * actually imported).
+   */
+  private async handleMediaRequest(res: ServerResponse, id: string): Promise<void> {
+    const filePath = this.mediaResolver?.resolveFilePath(id)
+    if (!filePath) {
+      res.writeHead(404, { "Content-Type": "text/plain" }).end("Not Found")
+      return
+    }
+
+    let content: Buffer
+    try {
+      content = await readFile(filePath)
+    } catch {
+      res.writeHead(404, { "Content-Type": "text/plain" }).end("Not Found")
+      return
+    }
+
+    const contentType = MEDIA_CONTENT_TYPES[extname(filePath)] ?? "application/octet-stream"
     res.writeHead(200, { "Content-Type": contentType })
     res.end(content)
   }
