@@ -59,6 +59,6 @@ export class RegexDetector implements VerseDetector {
  * whitespace collapsed to a single space, lowercased. This is the same key
  * shape the Known-Valid Verse Index expects (see book-catalog.ts).
  */
-function normalizeBookName(rawBook: string): string {
+export function normalizeBookName(rawBook: string): string {
   return rawBook.trim().replace(/\s+/g, " ").toLowerCase()
 }
