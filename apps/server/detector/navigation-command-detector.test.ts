@@ -145,3 +145,58 @@ test("NavigationCommandDetector: voice commands to switch display mode", () => {
     { kind: "goto-display-mode", mode: "bilingual" },
   ])
 })
+
+// French phrases (ARCHITECTURE.md section 65 — confirmed explicitly: the
+// app's primary deployment target is a French-speaking church).
+test("NavigationCommandDetector: French substring phrases for verse/chapter navigation and cancel", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("Passons au verset suivant."), [{ kind: "next-verse" }])
+  assert.deepEqual(detector.detect("Retournons au verset précédent."), [{ kind: "previous-verse" }])
+  assert.deepEqual(detector.detect("Passons au chapitre suivant."), [{ kind: "next-chapter" }])
+  assert.deepEqual(detector.detect("Retournons au chapitre précédent."), [{ kind: "previous-chapter" }])
+  assert.deepEqual(detector.detect("Il faut effacer l'écran maintenant."), [{ kind: "cancel" }])
+})
+
+test("NavigationCommandDetector: French short synonyms only trigger as the whole utterance, with or without an accent", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("Suivant"), [{ kind: "next-verse" }])
+  assert.deepEqual(detector.detect("Précédent"), [{ kind: "previous-verse" }])
+  assert.deepEqual(detector.detect("Precedent"), [{ kind: "previous-verse" }]) // accent dropped by ASR
+  assert.deepEqual(detector.detect("Annuler"), [{ kind: "cancel" }])
+  assert.deepEqual(detector.detect("Effacer"), [{ kind: "cancel" }])
+  // Embedded in a longer sentence, must NOT trigger — same false-positive
+  // guard as the English short synonyms.
+  assert.deepEqual(detector.detect("Le suivant sur la liste est prêt."), [])
+})
+
+test("NavigationCommandDetector: a French 'chapitre N verset M' resolves as a bare continuation, with a French book name correctly excluded", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("Allons au chapitre 9, verset 3."), [
+    { kind: "goto-bare-chapter-verse", chapter: 9, verse: 3 },
+  ])
+  assert.deepEqual(detector.detect("Maintenant regardez le verset 17."), [{ kind: "goto-bare-verse", verse: 17 }])
+  // "Romains" is the stated book — must not be discarded as if it were a
+  // bare continuation using whatever book happens to be current.
+  assert.deepEqual(detector.detect("Allons à Romains chapitre 9, verset 3."), [])
+  // Accented French book name — same guard, with an accented capital.
+  assert.deepEqual(detector.detect("Allons à Ésaïe chapitre 6, verset 8."), [])
+})
+
+test("NavigationCommandDetector: French voice commands to switch display mode, independent of verb conjugation", () => {
+  const detector = new NavigationCommandDetector()
+  // "en français"/"en anglais" deliberately avoids depending on a specific
+  // verb conjugation — it matches "passons en français", "mets en
+  // français", "passe en français" and any other phrasing alike.
+  assert.deepEqual(detector.detect("Passons en français maintenant."), [
+    { kind: "goto-display-mode", mode: "french" },
+  ])
+  assert.deepEqual(detector.detect("Mets-toi en anglais pour ce passage."), [
+    { kind: "goto-display-mode", mode: "english" },
+  ])
+  assert.deepEqual(detector.detect("Français seulement pour ce passage."), [
+    { kind: "goto-display-mode", mode: "french" },
+  ])
+  assert.deepEqual(detector.detect("Mode bilingue pour la suite."), [
+    { kind: "goto-display-mode", mode: "bilingual" },
+  ])
+})

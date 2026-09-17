@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { RegexDetector } from "./regex-detector"
+import { RegexDetector, normalizeBookName } from "./regex-detector"
 
 test("RegexDetector: detects a single valid 'Book Chapter:Verse' reference", () => {
   const detector = new RegexDetector()
@@ -66,4 +66,42 @@ test("RegexDetector: a sentence-initial capitalized word is not absorbed into th
     { book: "john", chapter: 3, verse: 16 },
     { book: "romans", chapter: 8, verse: 28 },
   ])
+})
+
+// French book names (ARCHITECTURE.md section 65 — confirmed explicitly:
+// the app's primary deployment target is a French-speaking church).
+test("RegexDetector: detects a French book name (no accent in the book name itself)", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("Jean 3:16"), [{ book: "john", chapter: 3, verse: 16 }])
+  assert.deepEqual(detector.detect("Romains 8:28"), [{ book: "romans", chapter: 8, verse: 28 }])
+})
+
+test("RegexDetector: detects a French book name that starts with an accented capital letter", () => {
+  const detector = new RegexDetector()
+  // Regression coverage: \b (JS's word-boundary) does not recognize an
+  // accented letter as a "word" character at all, so a naive port of the
+  // English-only pattern would silently reject these outright, before
+  // normalizeBookName() ever runs.
+  assert.deepEqual(detector.detect("Ésaïe 6:8"), [{ book: "isaiah", chapter: 6, verse: 8 }])
+  assert.deepEqual(detector.detect("Éphésiens 2:8"), [{ book: "ephesians", chapter: 2, verse: 8 }])
+})
+
+test("RegexDetector: a French reference embedded mid-sentence is still detected correctly", () => {
+  const detector = new RegexDetector()
+  const result = detector.detect("Tournons-nous vers Jean 3:16 ce soir.")
+  assert.deepEqual(result, [{ book: "john", chapter: 3, verse: 16 }])
+})
+
+test("normalizeBookName: translates French book names to BOOK_CATALOG's canonical id, with or without accents", () => {
+  assert.equal(normalizeBookName("Jean"), "john")
+  assert.equal(normalizeBookName("Romains"), "romans")
+  assert.equal(normalizeBookName("Ésaïe"), "isaiah")
+  assert.equal(normalizeBookName("Esaie"), "isaiah") // accent-optional — ASR may drop it
+  assert.equal(normalizeBookName("1 Corinthiens"), "1 corinthians")
+  assert.equal(normalizeBookName("Apocalypse"), "revelation")
+})
+
+test("normalizeBookName: an English name is returned unchanged (still needs no translation)", () => {
+  assert.equal(normalizeBookName("John"), "john")
+  assert.equal(normalizeBookName("Romans"), "romans")
 })

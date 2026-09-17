@@ -1,5 +1,5 @@
 import type { NavigationCommand, NavigationCommandDetector as INavigationCommandDetector } from "../../../packages/contracts"
-import { normalizeBookName } from "./regex-detector"
+import { normalizeBookName, stripAccents } from "./regex-detector"
 
 /**
  * ARCHITECTURE.md section 61.2-61.3: voice-driven verse navigation, a
@@ -23,28 +23,56 @@ import { normalizeBookName } from "./regex-detector"
 type SubstringRule = { readonly phrase: string; readonly command: NavigationCommand }
 type WholeUtteranceRule = { readonly phrase: string; readonly command: NavigationCommand }
 
+// French phrases (ARCHITECTURE.md section 65 — confirmed explicitly: the
+// app's primary deployment target is a French-speaking church, so French
+// voice commands are not a "someday" nice-to-have but core coverage,
+// added alongside English rather than after it). Phrases are written
+// already accent-stripped ("precedent", not "précédent") since
+// normalizeUtterance() strips accents from the transcript before matching
+// — ASR output may or may not preserve accents correctly, and this way
+// both forms normalize to the same comparison.
 const SUBSTRING_RULES: readonly SubstringRule[] = [
   { phrase: "next verse", command: { kind: "next-verse" } },
+  { phrase: "verset suivant", command: { kind: "next-verse" } },
   { phrase: "previous verse", command: { kind: "previous-verse" } },
+  { phrase: "verset precedent", command: { kind: "previous-verse" } },
   { phrase: "go back", command: { kind: "previous-verse" } },
   { phrase: "next chapter", command: { kind: "next-chapter" } },
+  { phrase: "chapitre suivant", command: { kind: "next-chapter" } },
   { phrase: "previous chapter", command: { kind: "previous-chapter" } },
+  { phrase: "chapitre precedent", command: { kind: "previous-chapter" } },
   { phrase: "clear the screen", command: { kind: "cancel" } },
+  { phrase: "effacer l'ecran", command: { kind: "cancel" } },
+  { phrase: "efface l'ecran", command: { kind: "cancel" } },
   // ARCHITECTURE.md section 65.4 — a spoken display-mode switch. Longer,
   // specific phrases match as a substring, same reasoning as every other
-  // substring rule above.
+  // substring rule above. French phrases deliberately avoid a conjugated
+  // verb ("passer"/"passons"/"passez"/"passe" would each need their own
+  // entry to catch real spoken commands) — "en français"/"en anglais" is
+  // conjugation-independent and matches all of them ("passons en
+  // français", "mets en français", "passe en français", ...).
   { phrase: "switch to english", command: { kind: "goto-display-mode", mode: "english" } },
   { phrase: "english only", command: { kind: "goto-display-mode", mode: "english" } },
+  { phrase: "en anglais", command: { kind: "goto-display-mode", mode: "english" } },
+  { phrase: "anglais seulement", command: { kind: "goto-display-mode", mode: "english" } },
   { phrase: "switch to french", command: { kind: "goto-display-mode", mode: "french" } },
   { phrase: "french only", command: { kind: "goto-display-mode", mode: "french" } },
+  { phrase: "en francais", command: { kind: "goto-display-mode", mode: "french" } },
+  { phrase: "francais seulement", command: { kind: "goto-display-mode", mode: "french" } },
   { phrase: "switch to bilingual", command: { kind: "goto-display-mode", mode: "bilingual" } },
+  { phrase: "en bilingue", command: { kind: "goto-display-mode", mode: "bilingual" } },
+  { phrase: "mode bilingue", command: { kind: "goto-display-mode", mode: "bilingual" } },
 ]
 
 const WHOLE_UTTERANCE_RULES: readonly WholeUtteranceRule[] = [
   { phrase: "next", command: { kind: "next-verse" } },
+  { phrase: "suivant", command: { kind: "next-verse" } },
   { phrase: "previous", command: { kind: "previous-verse" } },
+  { phrase: "precedent", command: { kind: "previous-verse" } },
   { phrase: "cancel", command: { kind: "cancel" } },
+  { phrase: "annuler", command: { kind: "cancel" } },
   { phrase: "clear", command: { kind: "cancel" } },
+  { phrase: "effacer", command: { kind: "cancel" } },
 ]
 
 // "<book> chapter <number>" — e.g. "go to Romans chapter 8". Requires the
@@ -62,11 +90,17 @@ const WHOLE_UTTERANCE_RULES: readonly WholeUtteranceRule[] = [
 // matching book="to" (a lowercase word immediately before "chapter"),
 // producing a bogus goto-chapter command a real book-name check would
 // never have allowed. Book-name capitalization must stay genuinely
-// case-SENSITIVE for that check to mean anything; only the literal word
-// "chapter" itself needs to tolerate case, so it's spelled out instead of
-// relying on a pattern-wide /i.
+// case-SENSITIVE for that check to mean anything; only the literal
+// command words ("chapter"/"chapitre") need to tolerate case, so they're
+// spelled out instead of relying on a pattern-wide /i.
+//
+// `\p{Lu}[\p{L}]+` (Unicode letter properties, /u flag) and manual
+// `(?<![\p{L}\d])`/`(?![\p{L}\d])` boundaries in place of `\b` — same
+// reasoning as RegexDetector.REFERENCE_PATTERN's own fix: `\b` doesn't
+// recognize an accented letter as a "word" character at all, which would
+// silently reject an accented French book name ("Ésaïe") outright.
 const GOTO_CHAPTER_PATTERN =
-  /\b((?:[123]\s+)?[A-Z][A-Za-z]+)\s+[Cc]hapter\s+(\d{1,3})\b(?!:\d)(?!\s*,?\s*[Vv]erse\b)/g
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{Lu}[\p{L}]+)\s+(?:[Cc]hapter|[Cc]hapitre)\s+(\d{1,3})(?![\p{L}\d])(?!:\d)(?!\s*,?\s*(?:[Vv]erse|[Vv]erset)\b)/gu
 
 // ARCHITECTURE.md section 65.1: elliptical/continuation references —
 // "verse 16" or "chapter 9, verse 3" said after a book/chapter was already
@@ -78,23 +112,25 @@ const GOTO_CHAPTER_PATTERN =
 // so the command words themselves are spelled out in both cases instead.
 //
 // The lookbehind requires NO capitalized book-like word (optionally
-// numeral-prefixed, matching GOTO_CHAPTER_PATTERN's own book-name shape)
-// immediately before "chapter" — otherwise "Romans chapter 9, verse 3"
+// numeral-prefixed, matching GOTO_CHAPTER_PATTERN's own book-name shape,
+// Unicode-aware for the same accented-book-name reason) immediately
+// before "chapter"/"chapitre" — otherwise "Romans chapter 9, verse 3"
 // would be wrongly captured as a bare continuation using whatever book
 // happens to be current, silently discarding the book the speaker
 // actually said.
 const BARE_CHAPTER_VERSE_PATTERN =
-  /(?<!\b(?:[123]\s+)?[A-Z][A-Za-z]+\s)\b[Cc]hapter\s+(\d{1,3})[,]?\s+[Vv]erse\s+(\d{1,3})\b/g
+  /(?<!(?:[123]\s+)?\p{Lu}[\p{L}]+\s)\b(?:[Cc]hapter|[Cc]hapitre)\s+(\d{1,3})[,]?\s+(?:[Vv]erse|[Vv]erset)\s+(\d{1,3})\b/gu
 
-// The lookbehind here excludes a "verse M" that is really the tail of a
-// "chapter N, verse M" phrase already claimed by the pattern above —
-// without it, one utterance like "chapter 9, verse 3" would produce BOTH
-// a goto-bare-chapter-verse AND a redundant goto-bare-verse command for
-// the same resolved reference.
-const BARE_VERSE_PATTERN = /(?<!\b[Cc]hapter\s+\d{1,3}[,]?\s)\b[Vv]erse\s+(\d{1,3})\b/g
+// The lookbehind here excludes a "verse M"/"verset M" that is really the
+// tail of a "chapter N, verse M" phrase already claimed by the pattern
+// above — without it, one utterance like "chapter 9, verse 3" would
+// produce BOTH a goto-bare-chapter-verse AND a redundant goto-bare-verse
+// command for the same resolved reference.
+const BARE_VERSE_PATTERN =
+  /(?<!\b(?:[Cc]hapter|[Cc]hapitre)\s+\d{1,3}[,]?\s)\b(?:[Vv]erse|[Vv]erset)\s+(\d{1,3})\b/gu
 
 function normalizeUtterance(text: string): string {
-  return text.trim().replace(/\s+/g, " ").toLowerCase()
+  return stripAccents(text.trim().replace(/\s+/g, " ").toLowerCase())
 }
 
 // Real ASR transcripts punctuate short spoken commands ("Cancel.", "Next!"),

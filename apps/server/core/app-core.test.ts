@@ -1449,3 +1449,51 @@ test("AppCore: verse:show's trigger field reflects how each verse got there — 
     await app.stop()
   }
 })
+
+// ARCHITECTURE.md section 65: end-to-end French speech, confirming the
+// full pipeline (RegexDetector's Unicode-aware book-name matching,
+// NavigationCommandDetector's French phrases) works together, not just
+// each piece in isolation.
+test("AppCore: a French spoken reference and a French 'verset suivant' navigation both reach the overlay correctly", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const firstShow = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Tournons-nous vers Jean 3:15 ce soir.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    const firstMessage = await firstShow
+    assert.deepEqual((firstMessage.payload as Verse).reference, { book: "john", chapter: 3, verse: 15 })
+
+    const secondShow = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T2",
+      correlationId: "01B",
+      sequence: 2,
+      text: "Verset suivant.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    const secondMessage = await secondShow
+    assert.deepEqual((secondMessage.payload as Verse).reference, { book: "john", chapter: 3, verse: 16 })
+
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})

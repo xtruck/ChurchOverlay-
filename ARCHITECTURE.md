@@ -2812,3 +2812,53 @@ Groq's chat-completion API as a strictly separate, dashboard-only side channel t
 never touches the verse-detection pipeline. Each subsection above proceeds as its own
 implementation slice, verified and committed independently, not as one combined
 change.
+
+### 65.11 French voice-command and book-name support (found necessary mid-implementation)
+
+**Confirmed explicitly with the user, restated for emphasis**: the app's primary
+deployment target is a French-speaking church — French is not a secondary language
+bolted onto an English-first design, a point already established for verse *display*
+(section 63's bilingual/French work) but, until this subsection, never actually
+carried through to voice *detection* and *navigation*.
+
+**A real, pre-existing correctness gap, found and fixed here**: `RegexDetector`'s
+`REFERENCE_PATTERN` (section 12) required the book-name capture group to consist of
+plain ASCII letters (`[A-Z][A-Za-z]+`). A French book name that starts with an
+accented capital — "Ésaïe", "Éphésiens" — was silently rejected outright, before
+`normalizeBookName()` ever ran, because JS's `\b` word-boundary is defined in terms
+of `\w` (`[A-Za-z0-9_]` only) and does not recognize an accented letter as a "word"
+character at all. This meant a French sermon referencing any accented-book-name verse
+would never be detected — a significant, silent gap for the app's actual primary
+audience, not a cosmetic one. Fixed with Unicode letter properties (`\p{L}`/`\p{Lu}`,
+requiring the `u` flag) and manual Unicode-aware boundary assertions
+(`(?<![\p{L}\d])`/`(?![\p{L}\d])`) in place of `\b`, verified against both accented
+and plain book names before shipping, not assumed correct from adding `u` alone.
+
+**Separately, `normalizeBookName()` never translated a French book name to
+`BOOK_CATALOG`'s canonical (English-based) id at all** — "Jean" normalized to "jean",
+which matches nothing (`BOOK_CATALOG`'s id is "john"). Fixed with a
+`FRENCH_BOOK_ALIASES` lookup table (all 66 books, accent-stripped keys) consulted
+after normalization — no new dataset, `BOOK_CATALOG`'s ids/chapter-verse-counts are
+completely unchanged, this only adds a second way to name the same 66 entries. Accent
+handling uses Unicode NFD decomposition (`stripAccents()`), so ASR output that may or
+may not preserve accents correctly still resolves to the same lookup key either way.
+
+**`NavigationCommandDetector` (sections 61.3, 65.1, 65.4) gains French phrases
+alongside every English one**, not as a separate follow-up: next/previous verse and
+chapter, cancel/clear, the bare-continuation patterns, and the display-mode switch —
+all in French, using the same fixed-synonym-list philosophy and the same
+accent-tolerant normalization (utterance text is now accent-stripped before
+whole-utterance/substring comparison, same reasoning as the book-name fix above).
+`GOTO_CHAPTER_PATTERN`/`BARE_CHAPTER_VERSE_PATTERN`/`BARE_VERSE_PATTERN` all gained
+the same Unicode-aware boundary fix as `REFERENCE_PATTERN`, plus "chapitre"/"verset"
+as literal-word alternatives to "chapter"/"verse".
+
+**A real French-language-specific bug caught and fixed before shipping**: the
+first-drafted display-mode-switch phrases used a conjugated French verb ("passer à
+l'anglais"), which only matches that exact infinitive form — a real spoken command
+("passons en français", "mets en français", "passe en français") uses a *different*
+conjugation each time and would never match a single hardcoded infinitive. Fixed by
+choosing conjugation-independent phrasing ("en français"/"en anglais") that matches
+regardless of which verb form is actually spoken — found via this feature's own test
+suite (a test using a realistic imperative sentence failed against the
+infinitive-only phrase), not assumed correct from writing plausible-looking French.
