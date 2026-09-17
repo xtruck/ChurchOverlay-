@@ -2115,3 +2115,99 @@ pipeline: all four navigation categories in section 61.1, the synonym-list phras
 matching approach in section 61.3, and the explicit exclusion of mic start/stop from
 voice control. This note does not decide media/verse overlay precedence (section
 61.5) — that remains open for a future decision, not assumed here.
+
+## 62. Phase 2 Feature Note — NDI Output
+
+A dedicated architecture note, following the same AGENTS.md section 56 checklist as
+sections 60-61. Raised mid-session as a new capability, not part of the original three
+Phase 2 items in section 59 or media library/voice navigation above — approved for
+Phase 2 (confirmed explicitly: "add it to ROADMAP.md, scope it properly first," not
+build it immediately) but with real open questions this note surfaces rather than
+resolves, because they require verification this note cannot do on its own (SDK
+licensing terms, platform prebuild availability). This is design only — nothing in
+this section is implemented yet, and it must not be implemented until those open
+questions are actually answered.
+
+### 62.1 What problem this solves, and why it's a real architectural decision
+
+OBS's Browser Source (already built, section 33) already gets the overlay into OBS.
+NDI output is a genuinely different transport, not a replacement: it broadcasts the
+overlay as a discovered network video source any NDI-compatible receiver can pick up
+— OBS via its own NDI plugin, but also vision mixers, other computers on the same
+network, or software that has no Browser Source concept at all. This is a real,
+legitimate broadcast-production use case, not a redundant alternative to what already
+works — but it is genuinely new architecture, not a UI change: it requires rendering
+the overlay to actual video frames and requires a native, non-JavaScript dependency,
+neither of which any existing seam does.
+
+### 62.2 Which module owns this, and how it reuses what already exists
+
+A new sibling domain, `apps/desktop/main/ndi-output.ts` — main-process-only, since
+frame capture requires a real (if offscreen) Chromium renderer, which only the main
+process can create (ARCHITECTURE.md section 6.1). It does NOT duplicate the overlay's
+HTML/CSS/JS or reimplement rendering: it loads the exact same page StaticServer
+already serves to OBS (`apps/overlay/public/index.html`), in an Electron `BrowserWindow`
+constructed with `webPreferences: { offscreen: true }` — Electron's own offscreen
+rendering feature, built on the same Chromium already embedded in the app, capturing
+each rendered frame via the window's `paint` event. No second rendering engine, no
+screenshot-polling hack: this is the same overlay, the same code, rendered to a pixel
+buffer instead of a visible window.
+
+Each captured frame is handed to the new native dependency (section 62.3) for NDI
+transmission. This keeps `apps/overlay/public/` completely unaware that NDI exists —
+it has no idea whether it's being viewed by OBS's Browser Source, the overlay preview
+window, or this offscreen NDI renderer, matching section 57's "the overlay can be
+changed without modifying [transport]" success criterion extended to a new transport.
+
+### 62.3 The new dependency — evaluated, not assumed (AGENTS.md section 40)
+
+NDI is a proprietary protocol (Vizrt/NewTek) with no standard-library or pure-JS
+implementation possible — a native dependency is unavoidable, unlike most of this
+codebase's deliberate zero-dependency stance. The candidate is `grandiose`, a Node
+native addon wrapping the official NDI SDK. Before this is implemented, three things
+must actually be verified against grandiose's and NDI's current real terms — not
+assumed or fabricated here:
+
+1. **Licensing and redistribution.** What NDI's SDK license actually requires of an
+   app that bundles/uses it (branding requirements, redistribution terms, whether the
+   free tier is sufficient or "NDI Advanced" licensing is needed for this use case).
+2. **Platform/prebuild coverage.** Whether `grandiose` ships prebuilt binaries for
+   every platform this app targets (Windows/macOS/Linux), or whether some platforms
+   would require a native build toolchain at install time — a real
+   "might not install cleanly on every machine" risk to know about upfront, not
+   discover from a user's failed install.
+3. **Maintenance status.** Whether the specific package is actively maintained against
+   current Node/Electron ABI versions, given Electron's own Node version can be newer
+   than what a native addon's prebuilds were built against.
+
+### 62.4 Fail-safe behavior (ARCHITECTURE.md section 4.5)
+
+NDI output must be strictly additive and non-blocking: if the native module fails to
+load (missing prebuild, unsupported platform, NDI runtime not installed on the
+machine), the application logs the failure and simply does not offer NDI output —
+Browser Source and the overlay preview window continue working exactly as they do
+today, unaffected. NDI is never a required dependency for the app to start; it is an
+optional capability that degrades to "unavailable," never a startup failure.
+
+### 62.5 Open questions this note does not resolve
+
+- **Section 62.3's three verification items** — this note explicitly does not answer
+  them; they must be checked against grandiose's real, current documentation and the
+  real, current NDI SDK license before any code is written, not assumed favorable.
+- **Frame rate / send cadence.** The overlay is mostly static text with occasional
+  updates, not continuous motion video — whether to send a continuous fixed-rate frame
+  stream (what most NDI receivers expect) or something smarter tied to actual
+  `verse:show`/`media:show` events is an implementation decision for whoever writes
+  the actual capture loop, not decided here.
+- **Operator control surface.** Whether NDI output is always-on once configured, or
+  has its own start/stop control in the dashboard (mirroring the mic's own
+  start/stop) is not decided here.
+
+### 62.6 Confirms this is approved scope
+
+Confirmed explicitly, mid-session: NDI output is added to `ROADMAP.md`'s Phase 2
+section, scoped via this note before any code, per the same process already applied
+to media library and voice navigation. Unlike those two, this note does not clear
+NDI for implementation yet — section 62.3's three verification items are a real
+precondition, not a formality, given the licensing and native-dependency questions a
+purely architectural note cannot answer on its own.
