@@ -249,6 +249,28 @@
     padding: var(--space-6) 0;
   }
 
+  /* Transport controls for the currently-active video/audio cue
+     (ARCHITECTURE.md section 60.4's "full transport" — play/pause/stop;
+     seek is a known follow-up, see the comment in dashboard.js). Hidden
+     entirely for an image cue or when nothing is active. */
+  .media-now-playing {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--glass-border);
+  }
+  .media-now-playing-title {
+    font-size: 12px;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+
   .live-preview {
     background: radial-gradient(circle at 30% 15%, rgba(143, 125, 255, 0.16), transparent 60%), var(--glass-bg);
     border-radius: var(--radius-lg);
@@ -513,6 +535,13 @@
       </div>
       <div id="media-grid" class="media-grid">
         <div class="media-empty" data-i18n="media.empty">No media imported yet.</div>
+      </div>
+      <div id="media-now-playing" class="media-now-playing" style="display: none">
+        <span id="media-now-playing-title" class="media-now-playing-title"></span>
+        <div class="btn-row">
+          <button id="media-play-pause-btn" class="btn-secondary btn-small" data-i18n="media.pause">Pause</button>
+          <button id="media-stop-btn" class="btn-danger btn-small" data-i18n="media.stop">Stop</button>
+        </div>
       </div>
     </div>
 

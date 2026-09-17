@@ -58,6 +58,10 @@
   const uiLanguageToggleEl = document.getElementById("ui-language-toggle")
   const setupDisplayModeEl = document.getElementById("setup-display-mode")
   const setupUiLanguageEl = document.getElementById("setup-ui-language")
+  const mediaNowPlayingEl = document.getElementById("media-now-playing")
+  const mediaNowPlayingTitleEl = document.getElementById("media-now-playing-title")
+  const mediaPlayPauseBtn = document.getElementById("media-play-pause-btn")
+  const mediaStopBtn = document.getElementById("media-stop-btn")
 
   const t = (key, params) => window.i18n.t(key, params)
 
@@ -66,6 +70,7 @@
   let mediaStream = null
   let knownCues = []
   let activeCueId = null
+  let activePlaybackState = null // "playing" | "paused" | null (null: no active cue, or an image with no playback concept)
   let setupSelectedMode = "english"
   let setupSelectedUiLanguage = "en"
 
@@ -195,6 +200,41 @@
       .finally(() => {
         mediaImportBtn.disabled = false
       })
+  })
+
+  // Transport controls for the active video/audio cue (ARCHITECTURE.md
+  // section 60.4's confirmed "full transport" decision). Seek/scrub is a
+  // known, deliberate gap, not an oversight: a seek UI needs the media's
+  // total duration, which nothing in this codebase inspects or stores
+  // today (MediaLibrary only ever looks at the file extension) — adding
+  // it means solving "how do we know how long this file is" first, a
+  // separate piece of work, not something to fake with a slider that has
+  // no real range.
+  function updateNowPlayingBar(cue, playback) {
+    if (!cue || !playback) {
+      mediaNowPlayingEl.style.display = "none"
+      activePlaybackState = null
+      return
+    }
+    activePlaybackState = playback.state
+    mediaNowPlayingTitleEl.textContent = cue.title
+    mediaPlayPauseBtn.textContent = playback.state === "playing" ? t("media.pause") : t("media.play")
+    mediaNowPlayingEl.style.display = "flex"
+  }
+
+  mediaPlayPauseBtn.addEventListener("click", () => {
+    if (activePlaybackState === "playing") {
+      sendJson({ id: crypto.randomUUID(), type: "media:pause", timestamp: Date.now(), payload: null })
+      log(t("log.sentMediaPause"), "sent")
+    } else {
+      sendJson({ id: crypto.randomUUID(), type: "media:play", timestamp: Date.now(), payload: null })
+      log(t("log.sentMediaPlay"), "sent")
+    }
+  })
+
+  mediaStopBtn.addEventListener("click", () => {
+    sendJson({ id: crypto.randomUUID(), type: "media:clear", timestamp: Date.now(), payload: null })
+    log(t("log.sentMediaClear"), "sent")
   })
 
   // Deliberately similar to, but NOT required to stay byte-for-byte in
@@ -338,9 +378,11 @@
       } else if (message.type === "media:show") {
         activeCueId = message.payload.cue.id
         renderMediaGrid()
+        updateNowPlayingBar(message.payload.cue, message.payload.playback)
       } else if (message.type === "media:clear") {
         activeCueId = null
         renderMediaGrid()
+        updateNowPlayingBar(null, null)
       }
     })
   }
