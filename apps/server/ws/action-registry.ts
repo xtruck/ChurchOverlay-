@@ -1,4 +1,6 @@
 import type {
+  MediaCue,
+  MediaShowPayload,
   TranscriptResult,
   Verse,
   VerseReference,
@@ -104,12 +106,53 @@ function isStatusUpdatePayload(payload: unknown): payload is Record<string, unkn
   return isPlainObject(payload)
 }
 
+function isMediaSelectPayload(payload: unknown): payload is { id: string } {
+  return isPlainObject(payload) && isNonEmptyString(payload.id)
+}
+
+function isMediaSeekPayload(payload: unknown): payload is { positionMs: number } {
+  return isPlainObject(payload) && isFiniteNumber(payload.positionMs) && payload.positionMs >= 0
+}
+
+function isMediaCuePayload(payload: unknown): payload is MediaCue {
+  if (!isPlainObject(payload)) return false
+  return (
+    (payload.kind === "image" || payload.kind === "video" || payload.kind === "audio") &&
+    isNonEmptyString(payload.id) &&
+    isNonEmptyString(payload.title)
+  )
+}
+
+function isMediaPlaybackStatePayload(
+  payload: unknown
+): payload is { state: "playing" | "paused"; positionMs: number; asOfServerTime: number } {
+  if (!isPlainObject(payload)) return false
+  return (
+    (payload.state === "playing" || payload.state === "paused") &&
+    isFiniteNumber(payload.positionMs) &&
+    isFiniteNumber(payload.asOfServerTime)
+  )
+}
+
+function isMediaShowPayload(payload: unknown): payload is MediaShowPayload {
+  if (!isPlainObject(payload)) return false
+  if (!isMediaCuePayload(payload.cue)) return false
+  return payload.playback === undefined || isMediaPlaybackStatePayload(payload.playback)
+}
+
 /**
- * The v1 action set, exactly as listed in ARCHITECTURE.md section 30.
- * "verse:clear" is both a command (operator requests a clear) and an
- * event (the server confirms/broadcasts the clear to viewers) — see
- * packages/contracts/ws.ts. This registry validates it as the inbound
- * command case; the operator is the only role that ever sends it.
+ * The v1 action set from ARCHITECTURE.md section 30, plus the Phase 2
+ * media actions approved and specified in section 60 (media:select/
+ * play/pause/seek/clear/show) — an explicit, documented scope amendment
+ * (section 59), not a silent addition (AGENTS.md section 19 still keeps
+ * this registry small and purpose-built; every entry maps to a real,
+ * approved feature requirement).
+ *
+ * "verse:clear" and "media:clear" are both a command (operator requests
+ * a clear) and an event (the server confirms/broadcasts the clear to
+ * viewers) — see packages/contracts/ws.ts. This registry validates each
+ * as the inbound command case; the operator is the only role that ever
+ * sends either.
  */
 export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, ActionDefinition>> = {
   "mic:start": {
@@ -146,6 +189,36 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "event",
     allowedSenders: [],
     validatePayload: isVersePayload,
+  },
+  "media:select": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isMediaSelectPayload,
+  },
+  "media:play": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isNullPayload,
+  },
+  "media:pause": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isNullPayload,
+  },
+  "media:seek": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isMediaSeekPayload,
+  },
+  "media:clear": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isNullPayload,
+  },
+  "media:show": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isMediaShowPayload,
   },
 }
 

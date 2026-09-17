@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { validateWsMessage, ACTION_REGISTRY } from "./action-registry"
 
-test("ACTION_REGISTRY: contains exactly the seven v1 actions from ARCHITECTURE.md section 30", () => {
+test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 media actions (ARCHITECTURE.md sections 30, 60)", () => {
   assert.deepEqual(
     Object.keys(ACTION_REGISTRY).sort(),
     [
@@ -13,6 +13,12 @@ test("ACTION_REGISTRY: contains exactly the seven v1 actions from ARCHITECTURE.m
       "verse:clear",
       "verse:override",
       "verse:show",
+      "media:select",
+      "media:play",
+      "media:pause",
+      "media:seek",
+      "media:clear",
+      "media:show",
     ].sort()
   )
 })
@@ -186,4 +192,77 @@ test("validateWsMessage: rejects mic:start/mic:stop/verse:clear with a non-null 
     )
     assert.equal(result.ok, false, `${type} with a non-null payload must be rejected`)
   }
+})
+
+test("validateWsMessage: accepts a valid media:select command with an id", () => {
+  const result = validateWsMessage(
+    { id: "01ABC", type: "media:select", timestamp: 1700000000000, payload: { id: "01MEDIA" } },
+    "operator"
+  )
+  assert.equal(result.ok, true)
+})
+
+test("validateWsMessage: rejects media:select without a non-empty id", () => {
+  for (const payload of [{}, { id: "" }, { id: 5 }, null]) {
+    const result = validateWsMessage(
+      { id: "01ABC", type: "media:select", timestamp: 1700000000000, payload },
+      "operator"
+    )
+    assert.equal(result.ok, false, `payload ${JSON.stringify(payload)} must be rejected`)
+  }
+})
+
+test("validateWsMessage: rejects media:play/media:pause/media:clear with a non-null payload", () => {
+  for (const type of ["media:play", "media:pause", "media:clear"]) {
+    const result = validateWsMessage(
+      { id: "01ABC", type, timestamp: 1700000000000, payload: {} },
+      "operator"
+    )
+    assert.equal(result.ok, false, `${type} with a non-null payload must be rejected`)
+  }
+})
+
+test("validateWsMessage: accepts a valid media:seek command with a non-negative positionMs", () => {
+  const result = validateWsMessage(
+    { id: "01ABC", type: "media:seek", timestamp: 1700000000000, payload: { positionMs: 1500 } },
+    "operator"
+  )
+  assert.equal(result.ok, true)
+})
+
+test("validateWsMessage: rejects media:seek with a negative or missing positionMs", () => {
+  for (const payload of [{}, { positionMs: -1 }, { positionMs: "1500" }]) {
+    const result = validateWsMessage(
+      { id: "01ABC", type: "media:seek", timestamp: 1700000000000, payload },
+      "operator"
+    )
+    assert.equal(result.ok, false, `payload ${JSON.stringify(payload)} must be rejected`)
+  }
+})
+
+test("validateWsMessage: rejects any inbound sender for the media:show/media:select/media:play/media:pause/media:seek/media:clear role boundaries", () => {
+  const commands: Array<[string, unknown]> = [
+    ["media:select", { id: "01MEDIA" }],
+    ["media:play", null],
+    ["media:pause", null],
+    ["media:seek", { positionMs: 0 }],
+    ["media:clear", null],
+  ]
+  for (const [type, payload] of commands) {
+    const result = validateWsMessage(
+      { id: "01ABC", type, timestamp: 1700000000000, payload },
+      "viewer"
+    )
+    assert.equal(result.ok, false, `viewer sending ${type} must be rejected`)
+  }
+  const showResult = validateWsMessage(
+    {
+      id: "01ABC",
+      type: "media:show",
+      timestamp: 1700000000000,
+      payload: { cue: { kind: "image", id: "01MEDIA", title: "Welcome Slide" } },
+    },
+    "operator"
+  )
+  assert.equal(showResult.ok, false, "no client role may send media:show inbound")
 })

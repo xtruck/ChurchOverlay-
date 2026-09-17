@@ -6,6 +6,11 @@ export type WsCommandType =
   | "mic:stop"
   | "verse:clear"
   | "verse:override"
+  | "media:select"
+  | "media:play"
+  | "media:pause"
+  | "media:seek"
+  | "media:clear"
 
 /** Resulting state or information, consumed by the (read-only) overlay. */
 export type WsEventType =
@@ -13,6 +18,8 @@ export type WsEventType =
   | "transcript:partial"
   | "verse:show"
   | "verse:clear"
+  | "media:show"
+  | "media:clear"
 
 export type WsMessage<TPayload = unknown> = {
   id: string
