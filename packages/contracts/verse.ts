@@ -9,7 +9,22 @@ export type Verse = {
   text: string
   translation: string
   source: string
+  /**
+   * Phase 2 (ARCHITECTURE.md section 63.3): present only in bilingual
+   * display mode. Additive and backward-compatible — every existing
+   * reader of text/translation/reference is unaffected. In bilingual
+   * mode the top-level fields carry French (primary/prioritized) and
+   * this carries English (secondary), per section 63.4's overlay layout.
+   */
+  secondary?: {
+    text: string
+    translation: string
+    source: string
+  }
 }
+
+/** Phase 2 (ARCHITECTURE.md section 63.2). */
+export type DisplayMode = "english" | "french" | "bilingual"
 
 /** Extension seam — v1 ships one implementation (RegexDetector). See ARCHITECTURE.md §50. */
 export interface VerseDetector {

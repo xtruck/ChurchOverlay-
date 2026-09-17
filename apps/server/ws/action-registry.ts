@@ -60,14 +60,31 @@ function isVerseReferencePayload(payload: unknown): payload is VerseReference {
   )
 }
 
-function isVersePayload(payload: unknown): payload is Verse {
+function isVerseSecondaryPayload(
+  payload: unknown
+): payload is { text: string; translation: string; source: string } {
   if (!isPlainObject(payload)) return false
   return (
-    isVerseReferencePayload(payload.reference) &&
     typeof payload.text === "string" &&
     typeof payload.translation === "string" &&
     typeof payload.source === "string"
   )
+}
+
+function isVersePayload(payload: unknown): payload is Verse {
+  if (!isPlainObject(payload)) return false
+  if (
+    !(
+      isVerseReferencePayload(payload.reference) &&
+      typeof payload.text === "string" &&
+      typeof payload.translation === "string" &&
+      typeof payload.source === "string"
+    )
+  ) {
+    return false
+  }
+  // secondary (ARCHITECTURE.md section 63.3): optional, bilingual mode only.
+  return payload.secondary === undefined || isVerseSecondaryPayload(payload.secondary)
 }
 
 function isTranscriptPartialPayload(payload: unknown): payload is TranscriptResult {
