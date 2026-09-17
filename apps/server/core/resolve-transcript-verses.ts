@@ -7,6 +7,7 @@ import type {
 } from "../../../packages/contracts"
 import type { VerseCache } from "../verse/verse-cache"
 import type { CircuitBreaker } from "../verse/circuit-breaker"
+import type { Logger } from "../../../packages/shared/logger"
 import { processTranscript } from "./process-transcript"
 import { resolveVerse } from "../verse/resolve-verse"
 
@@ -40,13 +41,14 @@ export async function resolveTranscriptVerses(
   index: VerseIndex,
   source: VerseSource,
   cache: VerseCache,
-  circuitBreaker: CircuitBreaker
+  circuitBreaker: CircuitBreaker,
+  logger?: Logger
 ): Promise<Verse[]> {
   const references = processTranscript(transcript, detector, index)
 
   const verses: Verse[] = []
   for (const reference of references) {
-    const verse = await resolveVerse(reference, source, cache, circuitBreaker)
+    const verse = await resolveVerse(reference, source, cache, circuitBreaker, undefined, logger)
     if (verse) verses.push(verse)
   }
   return verses

@@ -3,7 +3,14 @@ import assert from "node:assert/strict"
 import { resolveVerse } from "./resolve-verse"
 import { VerseCache } from "./verse-cache"
 import { CircuitBreaker } from "./circuit-breaker"
+import { Logger } from "../../../packages/shared/logger"
 import type { Verse, VerseReference, VerseSource } from "../../../packages/contracts"
+
+function capturingLogger(): { logger: Logger; lines: unknown[] } {
+  const lines: unknown[] = []
+  const logger = new Logger({ write: (line) => lines.push(JSON.parse(line)) })
+  return { logger, lines }
+}
 
 const JOHN_3_16: VerseReference = { book: "john", chapter: 3, verse: 16 }
 const SOME_VERSE: Verse = {
@@ -92,6 +99,52 @@ test("resolveVerse: a thrown source error returns null, counts as a circuit-brea
   assert.equal(circuitBreaker.getState(), "open")
   assert.equal(cache.getVerse(JOHN_3_16, "kjv"), undefined)
   assert.equal(cache.isNegativelyCached(JOHN_3_16, "kjv"), false)
+})
+
+test("resolveVerse: a thrown source error is reported through the optional logger (ARCHITECTURE.md section 40)", async () => {
+  const cache = new VerseCache()
+  const circuitBreaker = new CircuitBreaker({ failureThreshold: 1 })
+  const source = new CountingFakeVerseSource(async () => {
+    throw new Error("bible-api.com is down")
+  })
+  const { logger, lines } = capturingLogger()
+
+  await resolveVerse(JOHN_3_16, source, cache, circuitBreaker, undefined, logger)
+
+  assert.equal(lines.length, 1)
+  const entry = lines[0] as { level: string; event: string; error: string }
+  assert.equal(entry.level, "error")
+  assert.equal(entry.event, "source-failed")
+  assert.equal(entry.error, "bible-api.com is down")
+})
+
+test("resolveVerse: an open circuit is reported through the optional logger, distinctly from a source failure", async () => {
+  const cache = new VerseCache()
+  const circuitBreaker = new CircuitBreaker({ failureThreshold: 1 })
+  const source = new CountingFakeVerseSource(async () => {
+    throw new Error("first call opens the circuit")
+  })
+  const { logger, lines } = capturingLogger()
+
+  await resolveVerse(JOHN_3_16, source, cache, circuitBreaker, undefined, logger)
+  lines.length = 0 // discard the first call's own source-failed log
+
+  const result = await resolveVerse(JOHN_3_16, source, cache, circuitBreaker, undefined, logger)
+  assert.equal(result, null)
+  assert.equal(lines.length, 1)
+  const entry = lines[0] as { level: string; event: string }
+  assert.equal(entry.level, "warn")
+  assert.equal(entry.event, "circuit-open")
+})
+
+test("resolveVerse: a confirmed 'not found' result logs nothing — only real failures are reported", async () => {
+  const cache = new VerseCache()
+  const circuitBreaker = new CircuitBreaker()
+  const source = new CountingFakeVerseSource(async () => null)
+  const { logger, lines } = capturingLogger()
+
+  await resolveVerse(JOHN_3_16, source, cache, circuitBreaker, undefined, logger)
+  assert.equal(lines.length, 0)
 })
 
 test("resolveVerse: an open circuit short-circuits without calling the source at all", async () => {

@@ -166,7 +166,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         // shape isn't existence: it still goes through resolveVerse()
         // exactly like a detected reference would.
         const reference = message.payload as VerseReference
-        const verse = await resolveVerse(reference, source, cache, circuitBreaker)
+        const verse = await resolveVerse(reference, source, cache, circuitBreaker, undefined, logger)
         if (verse) {
           broadcastVerse(verse, message.correlationId)
         } else {
@@ -205,7 +205,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       correlationId: transcript.correlationId,
       sequence: transcript.sequence,
     })
-    resolveTranscriptVerses(transcript, detector, index, source, cache, circuitBreaker)
+    resolveTranscriptVerses(transcript, detector, index, source, cache, circuitBreaker, logger)
       .then((verses) => {
         for (const verse of verses) {
           broadcastVerse(verse, transcript.correlationId)
