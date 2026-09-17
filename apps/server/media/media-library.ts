@@ -90,6 +90,7 @@ export class MediaLibrary {
   }
 }
 
-function normalizeTitle(title: string): string {
+/** Shared with MediaCueDetector — both must agree on what "the same title" means. */
+export function normalizeTitle(title: string): string {
   return title.trim().replace(/\s+/g, " ").toLowerCase()
 }
