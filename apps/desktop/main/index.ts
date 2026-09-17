@@ -6,9 +6,12 @@ import { StaticServer } from "../../server/http/static-server"
 import { RegexDetector } from "../../server/detector/regex-detector"
 import { KnownValidVerseIndex } from "../../server/verse/known-valid-verse-index"
 import { FreeApiSource } from "../../server/verse/free-api-source"
+import { GetBibleVerseSource } from "../../server/verse/get-bible-verse-source"
+import { LocalizedVerseSource } from "../../server/verse/localized-verse-source"
 import { GroqProvider } from "../../server/asr/groq-provider"
 import { MediaLibrary } from "../../server/media/media-library"
-import { ConfigStore, type AppConfig } from "./config-store"
+import { ConfigStore, DISPLAY_MODES, UI_LANGUAGES, type AppConfig, type UiLanguage } from "./config-store"
+import type { DisplayMode } from "../../../packages/contracts"
 import { inferMediaKind, deriveTitleFromFilename } from "./media-import"
 import { Logger } from "../../../packages/shared/logger"
 
@@ -43,6 +46,7 @@ let overlayWindow: BrowserWindow | null = null
 let currentTokens: { operatorToken: string; viewerToken: string } | null = null
 let configStore: ConfigStore | null = null
 let mediaLibrary: MediaLibrary | null = null
+let localizedVerseSource: LocalizedVerseSource | null = null
 
 function generateToken(): string {
   return randomBytes(24).toString("hex")
@@ -62,12 +66,17 @@ function getConfigStore(): ConfigStore {
  */
 async function startServices(config: AppConfig): Promise<{ port: number; token: string }> {
   currentTokens = { operatorToken: config.operatorToken, viewerToken: config.viewerToken }
+  localizedVerseSource = new LocalizedVerseSource(
+    new FreeApiSource(),
+    new GetBibleVerseSource(),
+    config.displayMode
+  )
 
   appCoreHandle = await startAppCore({
     asr: new GroqProvider({ apiKey: config.groqApiKey }),
     detector: new RegexDetector(),
     index: new KnownValidVerseIndex(),
-    source: new FreeApiSource(),
+    source: localizedVerseSource,
     logger,
     port: WS_PORT,
     tokens: currentTokens,
@@ -159,21 +168,86 @@ function createOverlayWindow(): void {
  * dashboard"): a single API-key field, not a general settings panel —
  * rotating the key or changing other settings later isn't built yet.
  */
-ipcMain.handle("get-startup-status", () => {
-  if (appCoreHandle && currentTokens) {
-    return { ready: true, port: appCoreHandle.wsServer.port, token: currentTokens.operatorToken }
+ipcMain.handle("get-startup-status", async () => {
+  // Read fresh from disk rather than cached module state, so the setup
+  // screen's own language (and, once services are running, the live
+  // display-mode toggle's initial value) always reflects whatever was
+  // last actually saved — including on a fresh launch, before
+  // startServices() has necessarily run at all.
+  let uiLanguage: UiLanguage = "en"
+  try {
+    const existing = await getConfigStore().load()
+    if (existing) uiLanguage = existing.uiLanguage
+  } catch {
+    // Corrupt/unreadable config: default silently here. complete-setup's
+    // own recovery path (section on setup.existing-config-unreadable)
+    // is where that gets actually fixed, not this read-only status check.
   }
-  return { ready: false }
+
+  if (appCoreHandle && currentTokens && localizedVerseSource) {
+    return {
+      ready: true,
+      port: appCoreHandle.wsServer.port,
+      token: currentTokens.operatorToken,
+      displayMode: localizedVerseSource.getMode(),
+      uiLanguage,
+    }
+  }
+  return { ready: false, uiLanguage }
+})
+
+/** ARCHITECTURE.md section 63.2: the live dashboard toggle, via IPC — an operator configuration action, not something that needs to round-trip through the WS server. */
+ipcMain.handle("set-display-mode", async (_event, payload: unknown) => {
+  const mode = DISPLAY_MODES.includes(payload as DisplayMode) ? (payload as DisplayMode) : null
+  if (!mode) {
+    throw new Error("Invalid display mode.")
+  }
+  if (!localizedVerseSource) {
+    throw new Error("Services are not started yet.")
+  }
+  localizedVerseSource.setMode(mode)
+
+  const store = getConfigStore()
+  const existing = await store.load().catch(() => null)
+  if (existing) {
+    await store.save({ ...existing, displayMode: mode })
+  }
+  return { displayMode: mode }
+})
+
+/** ARCHITECTURE.md section 63.5: same setup-default + live-toggle pattern as display mode, for the dashboard/setup UI's own language. */
+ipcMain.handle("set-ui-language", async (_event, payload: unknown) => {
+  const uiLanguage = UI_LANGUAGES.includes(payload as UiLanguage) ? (payload as UiLanguage) : null
+  if (!uiLanguage) {
+    throw new Error("Invalid UI language.")
+  }
+
+  const store = getConfigStore()
+  const existing = await store.load().catch(() => null)
+  if (existing) {
+    await store.save({ ...existing, uiLanguage })
+  }
+  return { uiLanguage }
 })
 
 ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
-  const groqApiKey =
-    typeof payload === "object" && payload !== null && "groqApiKey" in payload
-      ? String((payload as { groqApiKey: unknown }).groqApiKey ?? "").trim()
-      : ""
+  const payloadObject = typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {}
+
+  const groqApiKey = String(payloadObject.groqApiKey ?? "").trim()
   if (!groqApiKey) {
     throw new Error("A Groq API key is required.")
   }
+
+  // ARCHITECTURE.md section 63.2/63.5: both default to the existing
+  // established default (english/en) when the setup screen doesn't send
+  // one — never trust an unrecognized value from the renderer, since it's
+  // going straight into ConfigStore.
+  const displayMode = DISPLAY_MODES.includes(payloadObject.displayMode as DisplayMode)
+    ? (payloadObject.displayMode as DisplayMode)
+    : "english"
+  const uiLanguage = UI_LANGUAGES.includes(payloadObject.uiLanguage as UiLanguage)
+    ? (payloadObject.uiLanguage as UiLanguage)
+    : "en"
 
   const store = getConfigStore()
   // A corrupt or unreadable existing config must not permanently block
@@ -199,6 +273,8 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
     microphoneId: existing?.microphoneId ?? null,
     operatorToken: existing?.operatorToken ?? generateToken(),
     viewerToken: existing?.viewerToken ?? generateToken(),
+    displayMode,
+    uiLanguage,
   }
   await store.save(config)
 

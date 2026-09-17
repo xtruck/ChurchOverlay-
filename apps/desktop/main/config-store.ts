@@ -1,5 +1,12 @@
 import { mkdir, open, readFile, rename } from "node:fs/promises"
 import { dirname } from "node:path"
+import type { DisplayMode } from "../../../packages/contracts"
+
+/** Desktop-app-only concern (not part of the WS protocol) — the operator dashboard/setup UI's own language, ARCHITECTURE.md section 63.5. */
+export type UiLanguage = "en" | "fr"
+
+export const DISPLAY_MODES: readonly DisplayMode[] = ["english", "french", "bilingual"]
+export const UI_LANGUAGES: readonly UiLanguage[] = ["en", "fr"]
 
 /**
  * Matches Electron's `safeStorage` API shape exactly
@@ -19,6 +26,8 @@ export type AppConfig = {
   readonly microphoneId: string | null
   readonly operatorToken: string
   readonly viewerToken: string
+  readonly displayMode: DisplayMode
+  readonly uiLanguage: UiLanguage
 }
 
 type StoredConfig = {
@@ -26,6 +35,9 @@ type StoredConfig = {
   readonly microphoneId: string | null
   readonly operatorTokenEncrypted: string
   readonly viewerTokenEncrypted: string
+  /** Optional in storage: absent in configs saved before ARCHITECTURE.md section 63 existed. */
+  readonly displayMode?: string
+  readonly uiLanguage?: string
 }
 
 /**
@@ -73,6 +85,8 @@ export class ConfigStore {
       microphoneId: config.microphoneId,
       operatorTokenEncrypted: this.codec.encrypt(config.operatorToken).toString("base64"),
       viewerTokenEncrypted: this.codec.encrypt(config.viewerToken).toString("base64"),
+      displayMode: config.displayMode,
+      uiLanguage: config.uiLanguage,
     }
 
     await mkdir(dirname(this.filePath), { recursive: true })
@@ -94,7 +108,8 @@ export class ConfigStore {
       throw new Error(`ConfigStore: ${this.filePath} does not contain a valid config object`)
     }
 
-    const { groqApiKeyEncrypted, microphoneId, operatorTokenEncrypted, viewerTokenEncrypted } = stored
+    const { groqApiKeyEncrypted, microphoneId, operatorTokenEncrypted, viewerTokenEncrypted, displayMode, uiLanguage } =
+      stored
 
     if (
       typeof groqApiKeyEncrypted !== "string" ||
@@ -106,12 +121,23 @@ export class ConfigStore {
     if (microphoneId !== null && typeof microphoneId !== "string") {
       throw new Error(`ConfigStore: ${this.filePath} has an invalid microphoneId`)
     }
+    // Absent (a config saved before section 63 existed) defaults rather than
+    // fails — this is expected for an older file, not corruption. A present
+    // but invalid value IS corruption and still throws.
+    if (displayMode !== undefined && !DISPLAY_MODES.includes(displayMode as DisplayMode)) {
+      throw new Error(`ConfigStore: ${this.filePath} has an invalid displayMode`)
+    }
+    if (uiLanguage !== undefined && !UI_LANGUAGES.includes(uiLanguage as UiLanguage)) {
+      throw new Error(`ConfigStore: ${this.filePath} has an invalid uiLanguage`)
+    }
 
     return {
       groqApiKey: this.codec.decrypt(Buffer.from(groqApiKeyEncrypted, "base64")),
       microphoneId,
       operatorToken: this.codec.decrypt(Buffer.from(operatorTokenEncrypted, "base64")),
       viewerToken: this.codec.decrypt(Buffer.from(viewerTokenEncrypted, "base64")),
+      displayMode: (displayMode as DisplayMode | undefined) ?? "english",
+      uiLanguage: (uiLanguage as UiLanguage | undefined) ?? "en",
     }
   }
 }

@@ -24,6 +24,8 @@ const SAMPLE_CONFIG: AppConfig = {
   microphoneId: "default-mic",
   operatorToken: "operator-token-value",
   viewerToken: "viewer-token-value",
+  displayMode: "bilingual",
+  uiLanguage: "fr",
 }
 
 async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
@@ -123,5 +125,49 @@ test("ConfigStore: a second save() overwrites the first cleanly", async () => {
     const updated = { ...SAMPLE_CONFIG, microphoneId: "a-different-mic" }
     await store.save(updated)
     assert.deepEqual(await store.load(), updated)
+  })
+})
+
+// ARCHITECTURE.md section 63.2/63.5: displayMode/uiLanguage were added
+// after this file format already existed — a config saved by an older
+// version of the app must still load, defaulting rather than failing.
+test("ConfigStore: a config saved before displayMode/uiLanguage existed loads with defaults, not an error", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const codec = new FakeSecretCodec()
+    const legacyStored = {
+      groqApiKeyEncrypted: codec.encrypt(SAMPLE_CONFIG.groqApiKey).toString("base64"),
+      microphoneId: SAMPLE_CONFIG.microphoneId,
+      operatorTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.operatorToken).toString("base64"),
+      viewerTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.viewerToken).toString("base64"),
+      // no displayMode, no uiLanguage — exactly what an old file looks like
+    }
+    const { writeFile } = await import("node:fs/promises")
+    await writeFile(path, JSON.stringify(legacyStored), "utf8")
+
+    const store = new ConfigStore(path, codec)
+    const loaded = await store.load()
+    assert.equal(loaded?.displayMode, "english")
+    assert.equal(loaded?.uiLanguage, "en")
+  })
+})
+
+test("ConfigStore: load() throws on a present but invalid displayMode or uiLanguage (real corruption, not an old file)", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const codec = new FakeSecretCodec()
+    const baseStored = {
+      groqApiKeyEncrypted: codec.encrypt(SAMPLE_CONFIG.groqApiKey).toString("base64"),
+      microphoneId: SAMPLE_CONFIG.microphoneId,
+      operatorTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.operatorToken).toString("base64"),
+      viewerTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.viewerToken).toString("base64"),
+    }
+    const { writeFile } = await import("node:fs/promises")
+
+    await writeFile(path, JSON.stringify({ ...baseStored, displayMode: "spanish" }), "utf8")
+    await assert.rejects(() => new ConfigStore(path, codec).load(), /invalid displayMode/)
+
+    await writeFile(path, JSON.stringify({ ...baseStored, uiLanguage: "de" }), "utf8")
+    await assert.rejects(() => new ConfigStore(path, codec).load(), /invalid uiLanguage/)
   })
 })

@@ -31,11 +31,18 @@ import { contextBridge, ipcRenderer } from "electron"
  * opens the native file dialog and does the actual copy, and the
  * renderer gets back only a MediaCue (id/kind/title) — never the
  * operator's original filesystem path.
+ *
+ * setDisplayMode()/setUiLanguage() (ARCHITECTURE.md sections 63.2/63.5)
+ * are the live-toggle half of "setup default + live dashboard toggle" —
+ * completeSetup() carries the setup-time default for both.
  */
 contextBridge.exposeInMainWorld("churchOverlay", {
   getOperatorConnectionInfo: () => ipcRenderer.invoke("get-operator-connection-info"),
   getStartupStatus: () => ipcRenderer.invoke("get-startup-status"),
-  completeSetup: (groqApiKey: string) => ipcRenderer.invoke("complete-setup", { groqApiKey }),
+  completeSetup: (groqApiKey: string, displayMode: string, uiLanguage: string) =>
+    ipcRenderer.invoke("complete-setup", { groqApiKey, displayMode, uiLanguage }),
   importMediaFile: () => ipcRenderer.invoke("import-media-file"),
   listMediaCues: () => ipcRenderer.invoke("list-media-cues"),
+  setDisplayMode: (mode: string) => ipcRenderer.invoke("set-display-mode", mode),
+  setUiLanguage: (language: string) => ipcRenderer.invoke("set-ui-language", language),
 })
