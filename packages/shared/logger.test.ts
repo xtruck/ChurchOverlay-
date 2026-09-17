@@ -103,6 +103,30 @@ test("Logger: redacts a metadata value that looks like a credential, even under 
   assert.equal(record.metadata.description, "a perfectly normal sentence")
 })
 
+test("Logger: redacts a secret nested inside an object-valued metadata field, not just top-level keys", () => {
+  const { logger, lines } = captureLogger()
+  logger.info({
+    component: "config",
+    event: "loaded",
+    metadata: { config: { groqApiKey: "gsk_realvalue", microphoneId: "device-1" } },
+  })
+  const record = JSON.parse(lines[0] as string)
+  assert.equal(record.metadata.config.groqApiKey, "[REDACTED]")
+  assert.equal(record.metadata.config.microphoneId, "device-1")
+})
+
+test("Logger: redacts a secret inside an array of objects in metadata", () => {
+  const { logger, lines } = captureLogger()
+  logger.info({
+    component: "config",
+    event: "loaded",
+    metadata: { entries: [{ token: "abc123" }, { normalField: "fine" }] },
+  })
+  const record = JSON.parse(lines[0] as string)
+  assert.equal(record.metadata.entries[0].token, "[REDACTED]")
+  assert.equal(record.metadata.entries[1].normalField, "fine")
+})
+
 test("Logger: metadata is omitted entirely when not provided", () => {
   const { logger, lines } = captureLogger()
   logger.info({ component: "x", event: "e" })

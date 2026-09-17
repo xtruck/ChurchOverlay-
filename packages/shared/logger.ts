@@ -93,9 +93,20 @@ function redactSecrets(metadata: Record<string, unknown>): Record<string, unknow
       result[key] = REDACTED
     } else if (typeof value === "string" && SECRET_VALUE_PATTERN.test(value)) {
       result[key] = REDACTED
+    } else if (Array.isArray(value)) {
+      result[key] = value.map((item) => (isPlainObject(item) ? redactSecrets(item) : item))
+    } else if (isPlainObject(value)) {
+      // A secret nested inside a metadata value (e.g. { config: { groqApiKey: "..." } })
+      // must be caught the same as a top-level one — the key-name/value-shape
+      // checks above only ever looked at the immediate level.
+      result[key] = redactSecrets(value)
     } else {
       result[key] = value
     }
   }
   return result
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
