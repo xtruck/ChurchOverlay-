@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { validateWsMessage, ACTION_REGISTRY } from "./action-registry"
 
-test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 media and rundown actions (ARCHITECTURE.md sections 30, 60, 64)", () => {
+test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 media, rundown, and glossary actions (ARCHITECTURE.md sections 30, 60, 64, 65.5)", () => {
   assert.deepEqual(
     Object.keys(ACTION_REGISTRY).sort(),
     [
@@ -26,6 +26,8 @@ test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 me
       "rundown:state",
       "announcement:show",
       "announcement:clear",
+      "definition:show",
+      "definition:clear",
     ].sort()
   )
 })
@@ -387,6 +389,31 @@ test("validateWsMessage: rejects any inbound sender for the rundown:load/scene:*
       { id: "01ABC", type, timestamp: 1700000000000, payload },
       "operator"
     )
+    assert.equal(result.ok, false, `no client role may send ${type} inbound`)
+  }
+})
+
+test("ACTION_REGISTRY['definition:show'].validatePayload: accepts a valid definition, rejects a malformed one", () => {
+  assert.equal(
+    ACTION_REGISTRY["definition:show"].validatePayload({ term: "Grace", definition: "Unmerited favor." }),
+    true
+  )
+  for (const payload of [{}, { term: "Grace" }, { term: 5, definition: "x" }, null]) {
+    assert.equal(
+      ACTION_REGISTRY["definition:show"].validatePayload(payload),
+      false,
+      `payload ${JSON.stringify(payload)} must be rejected`
+    )
+  }
+})
+
+test("validateWsMessage: rejects any inbound sender for definition:show/definition:clear — server-only events", () => {
+  const events: Array<[string, unknown]> = [
+    ["definition:show", { term: "Grace", definition: "Unmerited favor." }],
+    ["definition:clear", null],
+  ]
+  for (const [type, payload] of events) {
+    const result = validateWsMessage({ id: "01ABC", type, timestamp: 1700000000000, payload }, "operator")
     assert.equal(result.ok, false, `no client role may send ${type} inbound`)
   }
 })

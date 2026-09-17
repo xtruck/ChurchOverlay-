@@ -27,6 +27,8 @@ export type WsEventType =
   | "announcement:show"
   | "announcement:clear"
   | "rundown:state"
+  | "definition:show"
+  | "definition:clear"
 
 /**
  * status:update's first real, concrete payload shape — ASR/transcription

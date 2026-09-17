@@ -1,6 +1,7 @@
 import type {
   AnnouncementShowPayload,
   AsrStatusPayload,
+  DefinitionShowPayload,
   MediaCue,
   MediaShowPayload,
   Rundown,
@@ -226,6 +227,10 @@ function isAnnouncementShowPayload(payload: unknown): payload is AnnouncementSho
   return isPlainObject(payload) && typeof payload.title === "string" && typeof payload.body === "string"
 }
 
+function isDefinitionShowPayload(payload: unknown): payload is DefinitionShowPayload {
+  return isPlainObject(payload) && typeof payload.term === "string" && typeof payload.definition === "string"
+}
+
 /**
  * The v1 action set from ARCHITECTURE.md section 30, plus the Phase 2
  * media actions approved and specified in section 60 (media:select/
@@ -337,6 +342,16 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     validatePayload: isAnnouncementShowPayload,
   },
   "announcement:clear": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isNullPayload,
+  },
+  "definition:show": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isDefinitionShowPayload,
+  },
+  "definition:clear": {
     kind: "event",
     allowedSenders: [],
     validatePayload: isNullPayload,

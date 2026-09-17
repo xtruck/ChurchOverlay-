@@ -225,6 +225,59 @@
     line-height: 1.45;
     text-align: center;
   }
+
+  /*
+    Glossary definition (ARCHITECTURE.md section 65.5) — visually DISTINCT
+    from the announcement card, deliberately: a definition is a momentary
+    aside the operator never manages (it clears itself on a fixed server
+    timer, section 65.5), not a scene. A compact lower-left corner card,
+    not a full-screen center takeover, reflects that difference at a
+    glance rather than looking like just another announcement.
+  */
+  #definition {
+    position: fixed;
+    left: 5%;
+    bottom: 9%;
+    z-index: 2;
+    max-width: 440px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(12px);
+    transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  #definition.visible { opacity: 1; transform: translateY(0); }
+  #definition-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 16px 22px;
+    border-radius: 14px;
+    background: linear-gradient(180deg, var(--scrim), rgba(6, 7, 10, 0.46));
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    #definition-card {
+      -webkit-backdrop-filter: blur(14px) saturate(115%);
+      backdrop-filter: blur(14px) saturate(115%);
+    }
+  }
+  #definition-term {
+    color: var(--accent);
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85);
+    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  #definition-body {
+    color: #ffffff;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+  }
 </style>
 </head>
 <body>
@@ -247,6 +300,12 @@
     <div id="announcement-card">
       <div id="announcement-title"></div>
       <div id="announcement-body"></div>
+    </div>
+  </div>
+  <div id="definition">
+    <div id="definition-card">
+      <div id="definition-term"></div>
+      <div id="definition-body"></div>
     </div>
   </div>
   <script src="/overlay.js"></script>

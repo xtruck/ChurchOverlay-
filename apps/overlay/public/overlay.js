@@ -28,6 +28,9 @@
   const announcementEl = document.getElementById("announcement")
   const announcementTitleEl = document.getElementById("announcement-title")
   const announcementBodyEl = document.getElementById("announcement-body")
+  const definitionEl = document.getElementById("definition")
+  const definitionTermEl = document.getElementById("definition-term")
+  const definitionBodyEl = document.getElementById("definition-body")
 
   function setStatus(text) {
     statusEl.textContent = text
@@ -206,6 +209,16 @@
     announcementEl.classList.remove("visible")
   }
 
+  function showDefinition(payload) {
+    definitionTermEl.textContent = payload.term
+    definitionBodyEl.textContent = payload.definition
+    definitionEl.classList.add("visible")
+  }
+
+  function clearDefinition() {
+    definitionEl.classList.remove("visible")
+  }
+
   function connect() {
     if (!token) {
       setStatus("no viewer token in URL (add ?token=...)")
@@ -243,6 +256,10 @@
         showAnnouncement(message.payload)
       } else if (message.type === "announcement:clear") {
         clearAnnouncement()
+      } else if (message.type === "definition:show") {
+        showDefinition(message.payload)
+      } else if (message.type === "definition:clear") {
+        clearDefinition()
       }
     })
   }
@@ -258,6 +275,7 @@
       clearVerse()
       clearMedia()
       clearAnnouncement()
+      clearDefinition()
     }
   })
 

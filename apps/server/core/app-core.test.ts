@@ -1497,3 +1497,80 @@ test("AppCore: a French spoken reference and a French 'verset suivant' navigatio
     await app.stop()
   }
 })
+
+// ARCHITECTURE.md section 65.5: on-demand glossary lookup by voice.
+test("AppCore: a spoken 'define grace' broadcasts definition:show, and it auto-clears after the configured delay", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    definitionClearMs: 50, // short, for a fast test — not the real 12s default
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const shown = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Can you define grace for us?",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    const shownMessage = await shown
+    assert.equal(shownMessage.type, "definition:show")
+    assert.deepEqual(shownMessage.payload, {
+      term: "Grace",
+      definition: "Unmerited favor from God — a gift given freely, not earned by good works.",
+    })
+
+    const cleared = waitForMessage(viewerSocket)
+    const clearedMessage = await cleared
+    assert.equal(clearedMessage.type, "definition:clear")
+
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: a term not in the glossary broadcasts nothing", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    let received = false
+    viewerSocket.once("message", () => {
+      received = true
+    })
+
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Define supercalifragilisticexpialidocious.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    assert.equal(received, false)
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})

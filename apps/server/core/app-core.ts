@@ -1,6 +1,7 @@
 import type {
   AsrProvider,
   AudioFrame,
+  DefinitionShowPayload,
   DisplayMode,
   MediaShowPayload,
   Rundown,
@@ -32,6 +33,7 @@ import { MediaPlaybackController } from "../media/media-playback-controller"
 import { NavigationCommandDetector } from "../detector/navigation-command-detector"
 import { resolveNavigationCommand } from "../verse/resolve-navigation-command"
 import { RundownController } from "../rundown/rundown-controller"
+import { GlossaryDetector } from "../glossary/glossary-detector"
 
 /**
  * Every provider/seam is injected, never constructed inside this
@@ -89,6 +91,14 @@ export type StartAppCoreOptions = {
    * survives a restart identically to a dashboard-toggled one.
    */
   readonly onDisplayModeChanged?: (mode: DisplayMode) => void
+  /**
+   * Optional (ARCHITECTURE.md section 65.5) — how long a voice-triggered
+   * glossary definition stays on screen before the server clears it on
+   * its own, unprompted. Defaults to 12 seconds. Exposed here (rather
+   * than a hardcoded constant) so tests can use a short delay instead of
+   * waiting out the real default.
+   */
+  readonly definitionClearMs?: number
 }
 
 export type AppCoreHandle = {
@@ -122,6 +132,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const mediaPlayback = new MediaPlaybackController()
   const navigationCommandDetector = new NavigationCommandDetector()
   const rundownController = new RundownController()
+  const glossaryDetector = new GlossaryDetector()
+  const definitionClearMs = options.definitionClearMs ?? 12000
+  let definitionClearTimer: ReturnType<typeof setTimeout> | null = null
   // ARCHITECTURE.md section 61.4: updated by every verse:show, however
   // triggered (detected, manual override, or navigation itself) — "next
   // verse" after an operator's manual override continues from wherever
@@ -299,6 +312,30 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       correlationId,
       payload: null,
     })
+  }
+
+  /**
+   * ARCHITECTURE.md section 65.5: a voice-triggered glossary definition is
+   * a momentary aside, not a persistent scene the operator manages —
+   * unlike every other content type in this app, it clears itself on a
+   * fixed server-owned timer rather than needing an explicit clear
+   * command. A new definition replaces (restarts the timer for) whatever
+   * was already showing, the same "most recent wins" reasoning the
+   * rundown's paused-scene state already uses elsewhere.
+   */
+  function broadcastDefinition(definition: DefinitionShowPayload, correlationId?: string): void {
+    if (definitionClearTimer) clearTimeout(definitionClearTimer)
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "definition:show",
+      timestamp: Date.now(),
+      correlationId,
+      payload: definition,
+    })
+    definitionClearTimer = setTimeout(() => {
+      definitionClearTimer = null
+      wsServer.broadcast({ id: generateUlid(), type: "definition:clear", timestamp: Date.now(), payload: null })
+    }, definitionClearMs)
   }
 
   function broadcastRundownState(state: RundownStatePayload, correlationId?: string): void {
@@ -556,12 +593,13 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       }
 
       // status:update / transcript:partial / verse:show / media:show /
-      // rundown:state / announcement:show / announcement:clear are all
-      // server-originated events; the action registry's role check (empty
-      // allowedSenders) already refuses any client attempting to send
-      // them inbound, so onCommand is never actually invoked for these.
-      // Kept only so this switch stays exhaustive and explicit rather
-      // than silently ignoring a case (AGENTS.md section 25).
+      // rundown:state / announcement:show / announcement:clear /
+      // definition:show / definition:clear are all server-originated
+      // events; the action registry's role check (empty allowedSenders)
+      // already refuses any client attempting to send them inbound, so
+      // onCommand is never actually invoked for these. Kept only so this
+      // switch stays exhaustive and explicit rather than silently
+      // ignoring a case (AGENTS.md section 25).
       case "status:update":
       case "transcript:partial":
       case "verse:show":
@@ -569,6 +607,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       case "rundown:state":
       case "announcement:show":
       case "announcement:clear":
+      case "definition:show":
+      case "definition:clear":
         logger.warn({
           component: "app-core",
           event: "unreachable-command",
@@ -711,6 +751,15 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         })
       })
     }
+
+    // On-demand glossary lookup by voice (ARCHITECTURE.md section 65.5),
+    // also running alongside everything else above, not instead of it.
+    // Gated by the same transcript rule as every other detector: partial
+    // transcripts never reach GlossaryDetector.
+    if (passesTranscriptGate(transcript)) {
+      const definition = glossaryDetector.detect(transcript.text)
+      if (definition) broadcastDefinition(definition, transcript.correlationId)
+    }
   })
 
   asr.onError?.((err) => {
@@ -732,6 +781,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   return {
     wsServer,
     async stop() {
+      if (definitionClearTimer) clearTimeout(definitionClearTimer)
       await asr.stop().catch(() => {})
       await wsServer.close()
       logger.info({ component: "app-core", event: "stopped" })
