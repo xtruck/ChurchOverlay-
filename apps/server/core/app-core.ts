@@ -13,6 +13,7 @@ import { generateUlid } from "../../../packages/shared/ulid"
 import type { Logger } from "../../../packages/shared/logger"
 import { VerseCache } from "../verse/verse-cache"
 import { CircuitBreaker } from "../verse/circuit-breaker"
+import { SilenceGate } from "../audio/silence-gate"
 import { ChurchOverlayWsServer, type ServerTokens } from "../ws/server"
 import { resolveTranscriptVerses } from "./resolve-transcript-verses"
 import { resolveVerse } from "../verse/resolve-verse"
@@ -50,6 +51,7 @@ export type StartAppCoreOptions = {
   readonly tokens: ServerTokens
   readonly cache?: VerseCache
   readonly circuitBreaker?: CircuitBreaker
+  readonly silenceGate?: SilenceGate
 }
 
 export type AppCoreHandle = {
@@ -76,6 +78,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const { logger, asr, detector, index, source } = options
   const cache = options.cache ?? new VerseCache()
   const circuitBreaker = options.circuitBreaker ?? new CircuitBreaker()
+  const silenceGate = options.silenceGate ?? new SilenceGate()
 
   const wsServer = new ChurchOverlayWsServer({
     host: options.host,
@@ -116,7 +119,16 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   }
 
   async function handleAudioFrame(frame: AudioFrame): Promise<void> {
-    await asr.sendAudio(frame)
+    // ARCHITECTURE.md section 9 / AGENTS.md section 11: reduce unnecessary
+    // ASR requests by not forwarding obvious silence. This must never
+    // silently discard SPEECH without a trace, which is exactly why the
+    // gate's own metrics (not just its pass/fail decision) are logged
+    // when the mic stops, below — an operator with a "nothing is being
+    // detected" complaint can see whether frames were even reaching ASR.
+    const { forwarded } = silenceGate.process(frame)
+    if (forwarded) {
+      await asr.sendAudio(frame)
+    }
   }
 
   async function handleCommand(message: WsMessage, role: WsRole): Promise<void> {
@@ -128,7 +140,11 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
 
       case "mic:stop":
         await asr.stop()
-        logger.info({ component: "app-core", event: "mic.stopped" })
+        logger.info({
+          component: "app-core",
+          event: "mic.stopped",
+          metadata: silenceGate.getMetrics(),
+        })
         return
 
       case "verse:clear":

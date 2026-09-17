@@ -105,7 +105,7 @@ test("AppCore: mic:start and mic:stop commands reach the injected AsrProvider", 
   }
 })
 
-test("AppCore: a binary audio frame from the operator reaches the injected AsrProvider", async () => {
+test("AppCore: a loud binary audio frame from the operator reaches the injected AsrProvider", async () => {
   const asr = new FakeAsrProvider()
   const app = await startAppCore({
     asr,
@@ -118,9 +118,51 @@ test("AppCore: a binary audio frame from the operator reaches the injected AsrPr
   })
   try {
     const socket = await connect(app.wsServer.port, TOKENS.operatorToken)
-    socket.send(encodeAudioFrame({ samples: Int16Array.from([1, 2, 3]), sampleRate: 16000, sequence: 5 }))
+    // Loud enough to clear the SilenceGate's default threshold — this is
+    // a speech-like frame, not silence. See the dedicated silence test
+    // below for the gate actually filtering something out.
+    socket.send(
+      encodeAudioFrame({ samples: Int16Array.from(new Array(160).fill(5000)), sampleRate: 16000, sequence: 5 })
+    )
     await waitFor(() => asr.sentFrames.length === 1)
     assert.equal(asr.sentFrames[0]?.sequence, 5)
+    socket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+// This is the actual behavior ARCHITECTURE.md section 9's "silence
+// gating works" checklist item means — not just that SilenceGate's own
+// unit tests pass in isolation, but that AppCore genuinely applies it to
+// every frame before the real ASR provider (and its real API cost) ever
+// sees it.
+test("AppCore: a frame of pure silence is filtered by the SilenceGate and never reaches the AsrProvider", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const socket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    socket.send(
+      encodeAudioFrame({ samples: Int16Array.from(new Array(160).fill(0)), sampleRate: 16000, sequence: 1 })
+    )
+    // A loud frame afterward proves the connection/pipeline is still
+    // alive and working — the silent one wasn't dropped by some
+    // unrelated failure.
+    socket.send(
+      encodeAudioFrame({ samples: Int16Array.from(new Array(160).fill(5000)), sampleRate: 16000, sequence: 2 })
+    )
+    await waitFor(() => asr.sentFrames.length === 1)
+
+    assert.equal(asr.sentFrames.length, 1)
+    assert.equal(asr.sentFrames[0]?.sequence, 2)
     socket.close()
   } finally {
     await app.stop()
