@@ -1,9 +1,13 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { WebSocket } from "ws"
 import { startAppCore } from "./app-core"
 import { RegexDetector } from "../detector/regex-detector"
 import { KnownValidVerseIndex } from "../verse/known-valid-verse-index"
+import { MediaLibrary } from "../media/media-library"
 import { encodeAudioFrame } from "../../../packages/shared/audio-frame-codec"
 import { Logger } from "../../../packages/shared/logger"
 import type {
@@ -358,4 +362,272 @@ test("AppCore: stop() stops the ASR provider and closes the WS server", async ()
 
   assert.equal(asr.stopCalls, 1)
   await assert.rejects(() => connect(port, TOKENS.operatorToken))
+})
+
+async function withMediaLibrary(fn: (library: MediaLibrary, sourceDir: string) => Promise<void>): Promise<void> {
+  const root = await mkdtemp(join(tmpdir(), "churchoverlay-appcore-media-test-"))
+  try {
+    const library = new MediaLibrary({ mediaDir: join(root, "media") })
+    await fn(library, root)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+}
+
+test("AppCore: media:select with a real imported id broadcasts media:show playing at position 0", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const source = join(dir, "clip.mp4")
+    await writeFile(source, "x")
+    const cue = await mediaLibrary.import(source, "Intro Clip", "video")
+
+    const app = await startAppCore({
+      asr: new FakeAsrProvider(),
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new StubVerseSource({}),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+    })
+    try {
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+      const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      const viewerReceived = waitForMessage(viewerSocket)
+
+      operatorSocket.send(
+        JSON.stringify({ id: "01A", type: "media:select", timestamp: Date.now(), payload: { id: cue.id } })
+      )
+
+      const message = await viewerReceived
+      assert.equal(message.type, "media:show")
+      const payload = message.payload as { cue: unknown; playback: { state: string; positionMs: number } }
+      assert.deepEqual(payload.cue, cue)
+      assert.equal(payload.playback.state, "playing")
+      assert.equal(payload.playback.positionMs, 0)
+      operatorSocket.close()
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+test("AppCore: media:select with an unknown id broadcasts nothing", async () => {
+  await withMediaLibrary(async (mediaLibrary) => {
+    const app = await startAppCore({
+      asr: new FakeAsrProvider(),
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new StubVerseSource({}),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+    })
+    try {
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+      const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      let received = false
+      viewerSocket.once("message", () => {
+        received = true
+      })
+
+      operatorSocket.send(
+        JSON.stringify({ id: "01A", type: "media:select", timestamp: Date.now(), payload: { id: "unknown-id" } })
+      )
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      assert.equal(received, false)
+      operatorSocket.close()
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+test("AppCore: media:pause after media:select broadcasts an updated media:show with state paused", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const source = join(dir, "clip.mp4")
+    await writeFile(source, "x")
+    const cue = await mediaLibrary.import(source, "Intro Clip", "video")
+
+    const app = await startAppCore({
+      asr: new FakeAsrProvider(),
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new StubVerseSource({}),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+    })
+    try {
+      const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+      const firstShow = waitForMessage(viewerSocket)
+      operatorSocket.send(
+        JSON.stringify({ id: "01A", type: "media:select", timestamp: Date.now(), payload: { id: cue.id } })
+      )
+      await firstShow
+
+      const secondShow = waitForMessage(viewerSocket)
+      operatorSocket.send(JSON.stringify({ id: "01B", type: "media:pause", timestamp: Date.now(), payload: null }))
+      const message = await secondShow
+
+      assert.equal(message.type, "media:show")
+      assert.equal((message.payload as { playback: { state: string } }).playback.state, "paused")
+      operatorSocket.close()
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+test("AppCore: a viewer connecting while a media cue is already active immediately receives a sync media:show", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const source = join(dir, "welcome.png")
+    await writeFile(source, "x")
+    const cue = await mediaLibrary.import(source, "Welcome Slide", "image")
+
+    const app = await startAppCore({
+      asr: new FakeAsrProvider(),
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new StubVerseSource({}),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+    })
+    try {
+      const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      const firstViewer = await connect(app.wsServer.port, TOKENS.viewerToken)
+      const firstShow = waitForMessage(firstViewer)
+      operatorSocket.send(
+        JSON.stringify({ id: "01A", type: "media:select", timestamp: Date.now(), payload: { id: cue.id } })
+      )
+      await firstShow
+
+      const lateViewer = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
+      const syncMessage = await waitForMessage(lateViewer)
+
+      assert.equal(syncMessage.type, "media:show")
+      assert.deepEqual(syncMessage.payload, { cue })
+      operatorSocket.close()
+      firstViewer.close()
+      lateViewer.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+test("AppCore: a spoken cue title in a final transcript automatically broadcasts media:show", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const source = join(dir, "welcome.png")
+    await writeFile(source, "x")
+    const cue = await mediaLibrary.import(source, "Welcome Slide", "image")
+
+    const asr = new FakeAsrProvider()
+    const app = await startAppCore({
+      asr,
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new StubVerseSource({}),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+    })
+    try {
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+      const viewerReceived = waitForMessage(viewerSocket)
+
+      asr.emitTranscript({
+        id: "01T",
+        correlationId: "01CORR",
+        sequence: 1,
+        text: "Let's put up the welcome slide now.",
+        state: "final",
+        timestamp: Date.now(),
+      })
+
+      const message = await viewerReceived
+      assert.equal(message.type, "media:show")
+      assert.deepEqual(message.payload, { cue })
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+test("AppCore: a spoken cue title in a partial transcript never triggers media:show", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const source = join(dir, "welcome.png")
+    await writeFile(source, "x")
+    await mediaLibrary.import(source, "Welcome Slide", "image")
+
+    const asr = new FakeAsrProvider()
+    const app = await startAppCore({
+      asr,
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new StubVerseSource({}),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+    })
+    try {
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+      let received = false
+      viewerSocket.once("message", () => {
+        received = true
+      })
+
+      asr.emitTranscript({
+        id: "01T",
+        correlationId: "01CORR",
+        sequence: 1,
+        text: "Let's put up the welcome slide now.",
+        state: "partial",
+        timestamp: Date.now(),
+      })
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      assert.equal(received, false)
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+test("AppCore: media:select without a configured mediaLibrary is handled gracefully, not a crash", async () => {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    // no mediaLibrary
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    operatorSocket.send(
+      JSON.stringify({ id: "01A", type: "media:select", timestamp: Date.now(), payload: { id: "anything" } })
+    )
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    // Reaching here without the process crashing or the server dying is the assertion.
+    operatorSocket.close()
+  } finally {
+    await app.stop()
+  }
 })

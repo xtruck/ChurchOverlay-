@@ -1,6 +1,7 @@
 import type {
   AsrProvider,
   AudioFrame,
+  MediaShowPayload,
   Verse,
   VerseDetector,
   VerseIndex,
@@ -17,6 +18,10 @@ import { SilenceGate } from "../audio/silence-gate"
 import { ChurchOverlayWsServer, type ServerTokens } from "../ws/server"
 import { resolveTranscriptVerses } from "./resolve-transcript-verses"
 import { resolveVerse } from "../verse/resolve-verse"
+import { passesTranscriptGate } from "./transcript-gate"
+import type { MediaLibrary } from "../media/media-library"
+import { MediaCueDetector } from "../media/media-cue-detector"
+import { MediaPlaybackController } from "../media/media-playback-controller"
 
 /**
  * Every provider/seam is injected, never constructed inside this
@@ -52,6 +57,16 @@ export type StartAppCoreOptions = {
   readonly cache?: VerseCache
   readonly circuitBreaker?: CircuitBreaker
   readonly silenceGate?: SilenceGate
+  /**
+   * Optional (ARCHITECTURE.md section 60) — when absent, media commands
+   * are handled gracefully (logged, no-op) rather than crashing or being
+   * silently unhandled; existing callers that predate Phase 2 need no
+   * changes. When present, wires up both voice-triggered media detection
+   * (MediaCueDetector, constructed internally here — not a separate
+   * seam of its own, same as VerseCache/CircuitBreaker/SilenceGate above)
+   * and the operator's media:select/play/pause/seek/clear commands.
+   */
+  readonly mediaLibrary?: MediaLibrary
 }
 
 export type AppCoreHandle = {
@@ -79,6 +94,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const cache = options.cache ?? new VerseCache()
   const circuitBreaker = options.circuitBreaker ?? new CircuitBreaker()
   const silenceGate = options.silenceGate ?? new SilenceGate()
+  const mediaLibrary = options.mediaLibrary
+  const mediaCueDetector = mediaLibrary ? new MediaCueDetector(mediaLibrary) : null
+  const mediaPlayback = new MediaPlaybackController()
 
   const wsServer = new ChurchOverlayWsServer({
     host: options.host,
@@ -106,6 +124,16 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     onRejected: (reason, role) => {
       logger.warn({ component: "ws", event: "message.rejected", metadata: { reason, role } })
     },
+    // ARCHITECTURE.md section 60.4's reconnect/late-join sync: a viewer
+    // that connects while a media cue is already active must see it
+    // immediately, without ever giving viewers a way to ask for one
+    // (invariant 8).
+    onViewerConnected: (send) => {
+      const payload = mediaPlayback.currentPayloadForSync()
+      if (payload) {
+        send({ id: generateUlid(), type: "media:show", timestamp: Date.now(), payload })
+      }
+    },
   })
 
   function broadcastVerse(verse: Verse, correlationId?: string): void {
@@ -115,6 +143,16 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       timestamp: Date.now(),
       correlationId,
       payload: verse,
+    })
+  }
+
+  function broadcastMedia(payload: MediaShowPayload, correlationId?: string): void {
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "media:show",
+      timestamp: Date.now(),
+      correlationId,
+      payload,
     })
   }
 
@@ -180,8 +218,60 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         return
       }
 
-      // status:update / transcript:partial / verse:show are server-
-      // originated events; the action registry's role check (empty
+      case "media:select": {
+        if (!mediaLibrary) {
+          logger.warn({ component: "app-core", event: "media.not-configured", correlationId: message.correlationId })
+          return
+        }
+        const { id } = message.payload as { id: string }
+        const cue = mediaLibrary.resolve(id)
+        if (!cue) {
+          logger.info({
+            component: "app-core",
+            event: "media.select-rejected",
+            correlationId: message.correlationId,
+            metadata: { id },
+          })
+          return
+        }
+        broadcastMedia(mediaPlayback.activate(cue), message.correlationId)
+        return
+      }
+
+      case "media:play": {
+        const payload = mediaPlayback.play()
+        if (payload) broadcastMedia(payload, message.correlationId)
+        return
+      }
+
+      case "media:pause": {
+        const payload = mediaPlayback.pause()
+        if (payload) broadcastMedia(payload, message.correlationId)
+        return
+      }
+
+      case "media:seek": {
+        const { positionMs } = message.payload as { positionMs: number }
+        const payload = mediaPlayback.seek(positionMs)
+        if (payload) broadcastMedia(payload, message.correlationId)
+        return
+      }
+
+      case "media:clear": {
+        if (mediaPlayback.clear()) {
+          wsServer.broadcast({
+            id: generateUlid(),
+            type: "media:clear",
+            timestamp: Date.now(),
+            correlationId: message.correlationId,
+            payload: null,
+          })
+        }
+        return
+      }
+
+      // status:update / transcript:partial / verse:show / media:show are
+      // server-originated events; the action registry's role check (empty
       // allowedSenders) already refuses any client attempting to send
       // them inbound, so onCommand is never actually invoked for these.
       // Kept only so this switch stays exhaustive and explicit rather
@@ -189,6 +279,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       case "status:update":
       case "transcript:partial":
       case "verse:show":
+      case "media:show":
         logger.warn({
           component: "app-core",
           event: "unreachable-command",
@@ -219,6 +310,18 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
           error: err instanceof Error ? err.message : String(err),
         })
       })
+
+    // Voice-triggered media (ARCHITECTURE.md section 60.3), running
+    // alongside verse detection above, not instead of it — a sentence can
+    // plausibly contain both a spoken verse reference and a spoken cue
+    // title. Gated by the same transcript rule as verse detection
+    // (invariant 1 / invariant 13, section 60.6): partial transcripts
+    // never reach MediaCueDetector.
+    if (mediaCueDetector && passesTranscriptGate(transcript)) {
+      for (const cue of mediaCueDetector.detect(transcript.text)) {
+        broadcastMedia(mediaPlayback.activate(cue), transcript.correlationId)
+      }
+    }
   })
 
   asr.onError?.((err) => {
