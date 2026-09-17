@@ -50,3 +50,20 @@ test("RegexDetector: does not match a bare time-like pattern with no preceding c
   const result = detector.detect("the meeting starts at 3:16 today")
   assert.deepEqual(result, [])
 })
+
+// CORRECTIF (found via resolve-transcript-verses.test.ts): a sentence-
+// initial capitalized word immediately before a real book name must not
+// be swallowed into the book group. An earlier version of this pattern
+// allowed the book group to greedily consume any run of consecutive
+// capitalized words, so "Read John 3:16" parsed as book="Read John"
+// instead of book="John" — a real, silent misdetection of a genuine
+// reference (not a hallucination-guard case: KnownValidVerseIndex
+// correctly rejects "read john", but the actual verse was lost with it).
+test("RegexDetector: a sentence-initial capitalized word is not absorbed into the following book name", () => {
+  const detector = new RegexDetector()
+  const result = detector.detect("Read John 3:16 and then Romans 8:28.")
+  assert.deepEqual(result, [
+    { book: "john", chapter: 3, verse: 16 },
+    { book: "romans", chapter: 8, verse: 28 },
+  ])
+})
