@@ -55,28 +55,43 @@ async function main(): Promise<void> {
   })
 
   // __dirname here is dist/scripts (this file is compiled, but the
-  // static HTML/JS assets it serves are plain files tsc never copies) —
+  // static HTML/JS assets it serve are plain files tsc never copies) —
   // two levels up from dist/scripts reaches the repo root.
-  const staticServer = new StaticServer({
+  //
+  // Two separate StaticServer instances, deliberately: apps/overlay/public
+  // (the real, read-only overlay page) is the one directory the real
+  // Electron app's StaticServer ever points at, so this preview must serve
+  // it identically — nothing dev-only mixed in. The operator-impersonating
+  // dev dashboard (apps/overlay/dev-preview/) is a genuinely separate,
+  // separately-served page that must never be reachable from the same
+  // rootDir the production app uses (see static-server.ts's doc comment).
+  const overlayServer = new StaticServer({
     port: 8788,
     rootDir: join(__dirname, "..", "..", "apps", "overlay", "public"),
   })
-  await staticServer.ready
+  await overlayServer.ready
+
+  const dashboardServer = new StaticServer({
+    port: 8789,
+    rootDir: join(__dirname, "..", "..", "apps", "overlay", "dev-preview"),
+  })
+  await dashboardServer.ready
 
   const wsPort = app.wsServer.port
-  const httpPort = staticServer.port
+  const overlayHttpPort = overlayServer.port
+  const dashboardHttpPort = dashboardServer.port
 
   console.log("")
   console.log("ChurchOverlay dev preview is running.")
   console.log("")
-  console.log("Operator dashboard (open this one and click around):")
+  console.log("Operator dashboard (dev-only preview, open this one and click around):")
   console.log(
-    `  http://127.0.0.1:${httpPort}/dashboard.html?token=${tokens.operatorToken}&wsPort=${wsPort}`
+    `  http://127.0.0.1:${dashboardHttpPort}/dashboard.html?token=${tokens.operatorToken}&wsPort=${wsPort}`
   )
   console.log("")
-  console.log("Overlay (open in a second tab/window to see verses appear):")
+  console.log("Overlay (the real page — open in a second tab/window to see verses appear):")
   console.log(
-    `  http://127.0.0.1:${httpPort}/index.html?token=${tokens.viewerToken}&wsPort=${wsPort}`
+    `  http://127.0.0.1:${overlayHttpPort}/index.html?token=${tokens.viewerToken}&wsPort=${wsPort}`
   )
   console.log("")
   console.log("Try it: in the dashboard, type \"John 3:16\" and click \"Show on overlay\".")
@@ -86,7 +101,8 @@ async function main(): Promise<void> {
   const shutdown = async () => {
     console.log("\nShutting down…")
     await app.stop()
-    await staticServer.close()
+    await overlayServer.close()
+    await dashboardServer.close()
     process.exit(0)
   }
   process.on("SIGINT", shutdown)

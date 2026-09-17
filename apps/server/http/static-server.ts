@@ -20,16 +20,26 @@ export type StaticServerOptions = {
 const DEFAULT_HOST = "127.0.0.1"
 
 /**
- * Serves the overlay and operator dashboard pages over plain HTTP — kept
- * entirely separate from ChurchOverlayWsServer (AGENTS.md section 26: one
- * class, one responsibility) and running on its own port rather than
- * sharing the WS server's, to avoid coupling an already-tested class to a
- * static-file concern it was never designed for.
+ * Serves the overlay page over plain HTTP — kept entirely separate from
+ * ChurchOverlayWsServer (AGENTS.md section 26: one class, one
+ * responsibility) and running on its own port rather than sharing the WS
+ * server's, to avoid coupling an already-tested class to a static-file
+ * concern it was never designed for.
  *
  * This exists because OBS's Browser Source (and any plain browser loading
  * the overlay for preview) needs an actual URL to load — there is no
  * IPC/contextBridge available there the way there is inside the Electron
  * dashboard renderer.
+ *
+ * The real operator dashboard is the Electron BrowserWindow in
+ * apps/desktop/main/index.ts, loaded via loadFile() with its own
+ * preload/contextBridge boundary (ARCHITECTURE.md section 7) — never
+ * through this server. Whatever rootDir this is pointed at is reachable
+ * by anyone on 127.0.0.1 with no Electron-level sandboxing at all, so it
+ * must only ever contain the read-only, viewer-role overlay page. The
+ * dev-only browser dashboard (apps/overlay/dev-preview/) can fully
+ * impersonate the operator with nothing but the token in its URL — it
+ * must run on its own StaticServer instance, never this one.
  *
  * Deliberately minimal and defensive: serves only a small fixed set of
  * content types, rejects any request path that would resolve outside
