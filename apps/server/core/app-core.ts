@@ -11,7 +11,9 @@ import type {
   VerseDetector,
   VerseIndex,
   VerseReference,
+  VerseShowPayload,
   VerseSource,
+  VerseTrigger,
   WsMessage,
   WsRole,
 } from "../../../packages/contracts"
@@ -133,7 +135,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   // existing acknowledged "no verse resync at all" gap (ARCHITECTURE.md
   // section 60.5), since it would show something visibly wrong rather than
   // just nothing.
-  let lastShownVerse: Verse | null = null
+  let lastShownVerse: VerseShowPayload | null = null
   // Surfaces ASR health to the operator dashboard (a real, concrete use of
   // status:update — see its own doc comment in action-registry.ts, written
   // when nothing produced it yet). Tracked so a transcript arriving after
@@ -206,15 +208,16 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     },
   })
 
-  function showVerse(verse: Verse, correlationId?: string): void {
+  function showVerse(verse: Verse, trigger: VerseTrigger, correlationId?: string): void {
     currentVersePosition = verse.reference
-    lastShownVerse = verse
+    const payload: VerseShowPayload = { ...verse, trigger }
+    lastShownVerse = payload
     wsServer.broadcast({
       id: generateUlid(),
       type: "verse:show",
       timestamp: Date.now(),
       correlationId,
-      payload: verse,
+      payload,
     })
   }
 
@@ -237,10 +240,10 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
    * showVerse() directly via activateScene() below, since the rundown
    * cursor is already correctly positioned and must not re-pause itself).
    */
-  function broadcastVerse(verse: Verse, correlationId?: string): void {
+  function broadcastVerse(verse: Verse, trigger: VerseTrigger, correlationId?: string): void {
     const rundownState = rundownController.interrupt()
     if (rundownState) broadcastRundownState(rundownState, correlationId)
-    showVerse(verse, correlationId)
+    showVerse(verse, trigger, correlationId)
   }
 
   /**
@@ -322,7 +325,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       case "verse": {
         const verse = await resolveVerse(scene.reference, source, cache, circuitBreaker, translationIdFor(source), logger)
         if (verse) {
-          showVerse(verse, correlationId)
+          showVerse(verse, "rundown", correlationId)
         } else {
           logger.info({
             component: "app-core",
@@ -378,7 +381,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       case "verse": {
         const verse = await resolveVerse(scene.reference, source, cache, circuitBreaker, translationIdFor(source), logger)
         if (verse) {
-          send({ id: generateUlid(), type: "verse:show", timestamp: Date.now(), payload: verse })
+          const payload: VerseShowPayload = { ...verse, trigger: "rundown" }
+          send({ id: generateUlid(), type: "verse:show", timestamp: Date.now(), payload })
         } else {
           logger.info({
             component: "app-core",
@@ -449,7 +453,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         const reference = message.payload as VerseReference
         const verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
         if (verse) {
-          broadcastVerse(verse, message.correlationId)
+          broadcastVerse(verse, "override", message.correlationId)
         } else {
           logger.info({
             component: "app-core",
@@ -647,7 +651,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       // to display (invariant 17).
       const verse = await resolveVerse(resolution.reference, source, cache, circuitBreaker, translationIdFor(source), logger)
       if (verse) {
-        broadcastVerse(verse, transcript.correlationId)
+        broadcastVerse(verse, "navigation", transcript.correlationId)
       }
     }
   }
@@ -669,7 +673,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     resolveTranscriptVerses(transcript, detector, index, source, cache, circuitBreaker, logger)
       .then((verses) => {
         for (const verse of verses) {
-          broadcastVerse(verse, transcript.correlationId)
+          broadcastVerse(verse, "detected", transcript.correlationId)
         }
       })
       .catch((err) => {

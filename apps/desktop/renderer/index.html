@@ -366,6 +366,18 @@
     letter-spacing: 0.06em;
   }
   #live-verse-empty { color: var(--text-tertiary); font-size: 13px; font-family: var(--font-mono); }
+  /* ARCHITECTURE.md section 65.2: the adapted "confidence badge" — this
+     app's detection is deterministic, so there's no graduated confidence
+     to show; what varies is HOW the verse got here. Dashboard-only, never
+     sent to the overlay/audience. */
+  #live-verse-trigger {
+    margin-top: 6px;
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
 
   button {
     font-family: var(--font-ui);
@@ -630,6 +642,7 @@
       <div id="live-verse-empty" data-i18n="livePreview.empty">Nothing is live right now.</div>
       <div id="live-verse-text" style="display: none"></div>
       <div id="live-verse-ref" style="display: none"></div>
+      <div id="live-verse-trigger" style="display: none"></div>
     </div>
 
     <div class="card glass cell-log">

@@ -49,6 +49,7 @@
   const liveVerseEmptyEl = document.getElementById("live-verse-empty")
   const liveVerseTextEl = document.getElementById("live-verse-text")
   const liveVerseRefEl = document.getElementById("live-verse-ref")
+  const liveVerseTriggerEl = document.getElementById("live-verse-trigger")
   const setupScreenEl = document.getElementById("setup-screen")
   const appShellEl = document.getElementById("app-shell")
   const setupKeyInput = document.getElementById("setup-groq-key")
@@ -145,6 +146,13 @@
     return book.replace(/\b\w/g, (c) => c.toUpperCase())
   }
 
+  const TRIGGER_LABEL_KEYS = {
+    detected: "livePreview.trigger.detected",
+    override: "livePreview.trigger.override",
+    navigation: "livePreview.trigger.navigation",
+    rundown: "livePreview.trigger.rundown",
+  }
+
   function showLiveVerse(verse) {
     liveVerseEmptyEl.style.display = "none"
     liveVerseTextEl.style.display = "block"
@@ -152,9 +160,18 @@
     liveVerseTextEl.textContent = verse.text
     const ref = verse.reference
     liveVerseRefEl.textContent = capitalize(ref.book) + " " + ref.chapter + ":" + ref.verse
+
+    const triggerKey = TRIGGER_LABEL_KEYS[verse.trigger]
+    if (triggerKey) {
+      liveVerseTriggerEl.textContent = t(triggerKey)
+      liveVerseTriggerEl.style.display = "block"
+    } else {
+      liveVerseTriggerEl.style.display = "none"
+    }
   }
 
   function clearLiveVerse() {
+    liveVerseTriggerEl.style.display = "none"
     liveVerseEmptyEl.style.display = "block"
     liveVerseTextEl.style.display = "none"
     liveVerseRefEl.style.display = "none"

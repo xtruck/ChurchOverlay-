@@ -7,7 +7,7 @@ import type {
   RundownScene,
   RundownStatePayload,
   TranscriptResult,
-  Verse,
+  VerseShowPayload,
   VerseReference,
   WsCommandType,
   WsEventType,
@@ -76,14 +76,17 @@ function isVerseSecondaryPayload(
   )
 }
 
-function isVersePayload(payload: unknown): payload is Verse {
+const VERSE_TRIGGERS = ["detected", "override", "navigation", "rundown"] as const
+
+function isVersePayload(payload: unknown): payload is VerseShowPayload {
   if (!isPlainObject(payload)) return false
   if (
     !(
       isVerseReferencePayload(payload.reference) &&
       typeof payload.text === "string" &&
       typeof payload.translation === "string" &&
-      typeof payload.source === "string"
+      typeof payload.source === "string" &&
+      (VERSE_TRIGGERS as readonly unknown[]).includes(payload.trigger)
     )
   ) {
     return false

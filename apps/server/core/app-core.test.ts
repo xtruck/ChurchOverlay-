@@ -260,7 +260,10 @@ test("AppCore: verse:override with a reference that resolves broadcasts verse:sh
 
     const message = await viewerReceived
     assert.equal(message.type, "verse:show")
-    assert.deepEqual(message.payload, johnVerse)
+    // ARCHITECTURE.md section 65.2: verse:show's payload is Verse plus a
+    // trigger field — "override" here, since this came from a manual
+    // verse:override command, not a live detection.
+    assert.deepEqual(message.payload, { ...johnVerse, trigger: "override" })
     operatorSocket.close()
     viewerSocket.close()
   } finally {
@@ -335,7 +338,8 @@ test("AppCore: a real spoken reference in an ASR transcript automatically reache
 
     const message = await viewerReceived
     assert.equal(message.type, "verse:show")
-    assert.deepEqual(message.payload, johnVerse)
+    // ARCHITECTURE.md section 65.2: a live-detected verse's trigger is "detected".
+    assert.deepEqual(message.payload, { ...johnVerse, trigger: "detected" })
     assert.equal(message.correlationId, "01CORR")
     viewerSocket.close()
   } finally {
@@ -1385,6 +1389,62 @@ test("AppCore: 'switch to french' with a source that has no setMode() capability
     })
     await new Promise((resolve) => setTimeout(resolve, 50))
     // Reaching here without the process crashing is the assertion.
+  } finally {
+    await app.stop()
+  }
+})
+
+// ARCHITECTURE.md section 65.2: every verse:show trigger value, covering
+// all four ways a verse can end up on screen.
+test("AppCore: verse:show's trigger field reflects how each verse got there — detected, navigation, and rundown", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const detected = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Turn to John 3:15.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    assert.equal(((await detected).payload as { trigger: string }).trigger, "detected")
+
+    const navigated = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T2",
+      correlationId: "01B",
+      sequence: 2,
+      text: "Next verse.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    assert.equal(((await navigated).payload as { trigger: string }).trigger, "navigation")
+
+    const rundown: Rundown = {
+      id: "01RUNDOWN",
+      title: "Sunday Service",
+      scenes: [{ kind: "verse", reference: { book: "romans", chapter: 8, verse: 28 } }],
+    }
+    const rundownMessages = waitForMessages(viewerSocket, 2) // rundown:state + verse:show
+    operatorSocket.send(JSON.stringify({ id: "01C", type: "rundown:load", timestamp: Date.now(), payload: { rundown } }))
+    const verseFromRundown = (await rundownMessages).find((m) => m.type === "verse:show")
+    assert.equal((verseFromRundown?.payload as { trigger: string }).trigger, "rundown")
+
+    operatorSocket.close()
+    viewerSocket.close()
   } finally {
     await app.stop()
   }

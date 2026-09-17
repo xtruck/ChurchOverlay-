@@ -26,6 +26,22 @@ export type Verse = {
 /** Phase 2 (ARCHITECTURE.md section 63.2). */
 export type DisplayMode = "english" | "french" | "bilingual"
 
+/**
+ * Phase 2 (ARCHITECTURE.md section 65.2) — "how did this verse get shown,"
+ * a dashboard-only operator-context field, never sent to the overlay/
+ * audience. The adapted equivalent of the researched "confidence badge"
+ * idea: this app's detection is deterministic (regex + hallucination
+ * guard), not fuzzy/semantic, so there is no graduated confidence to show
+ * — every accepted detection is equally "exact" by construction. What
+ * genuinely varies, and is useful operator context, is the trigger.
+ */
+export type VerseTrigger = "detected" | "override" | "navigation" | "rundown"
+
+/** verse:show's actual wire payload — Verse's pure content plus the trigger. */
+export type VerseShowPayload = Verse & {
+  readonly trigger: VerseTrigger
+}
+
 /** Extension seam — v1 ships one implementation (RegexDetector). See ARCHITECTURE.md §50. */
 export interface VerseDetector {
   detect(text: string): VerseReference[]
