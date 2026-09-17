@@ -15,6 +15,7 @@
     "test": "tsc && cd dist && node --test",
     "test:live-groq": "tsc && cd dist && node --env-file=../.env --test apps/server/asr/groq-provider.live.test.js",
     "dev:preview": "tsc && node --env-file=.env dist/scripts/dev-preview.js",
+    "dry-run": "tsc && node dist/scripts/dry-run.js",
     "package": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder"
   },
