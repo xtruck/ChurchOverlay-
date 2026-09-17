@@ -57,6 +57,23 @@
   let audioContext = null
   let mediaStream = null
 
+  // Bounded, backoff-aware reconnect (ARCHITECTURE.md section 48, AGENTS.md
+  // section 37 — "infinite retry loops" specifically forbidden). This is
+  // the operator's always-on console for a live service, so it must keep
+  // trying indefinitely rather than give up after N attempts — "bounded"
+  // here means the DELAY is capped and grows via backoff, not that
+  // reconnection ever stops. Duplicated (not shared) with overlay.js's
+  // identical copy — same no-build-step reasoning as float32ToInt16 above.
+  const BASE_RECONNECT_DELAY_MS = 1000
+  const MAX_RECONNECT_DELAY_MS = 30000
+  let reconnectAttempts = 0
+
+  function nextReconnectDelay() {
+    const delay = Math.min(BASE_RECONNECT_DELAY_MS * 2 ** reconnectAttempts, MAX_RECONNECT_DELAY_MS)
+    reconnectAttempts += 1
+    return delay
+  }
+
   function log(text, kind) {
     const line = document.createElement("div")
     line.className = "log-line" + (kind ? " event-" + kind : "")
@@ -95,6 +112,18 @@
     liveVerseRefEl.style.display = "none"
   }
 
+  // Deliberately similar to, but NOT required to stay byte-for-byte in
+  // sync with, RegexDetector's REFERENCE_PATTERN in
+  // apps/server/detector/regex-detector.ts — unlike float32ToInt16/
+  // encodeAudioFrame above, a mismatch here is not a correctness risk:
+  // this only decides whether the manual-override input field accepts
+  // what the operator typed, then sends it as a plain payload. The
+  // server-side resolveVerse()/KnownValidVerseIndex path re-validates
+  // it exactly like a detected reference regardless of what this parser
+  // let through (see app-core.ts's verse:override handler, ARCHITECTURE.md
+  // section 36). Intentionally looser than the server pattern (e.g. it
+  // doesn't require the book name to start with a capital letter), since
+  // rejecting a typo-free field here isn't a security boundary.
   function parseReference(text) {
     const match = /^\s*((?:[123]\s+)?[A-Za-z]+)\s+(\d{1,3}):(\d{1,3})\s*$/.exec(text)
     if (!match) return null
@@ -189,13 +218,16 @@
     ws = new WebSocket("ws://127.0.0.1:" + port, [token])
 
     ws.addEventListener("open", () => {
+      reconnectAttempts = 0
       setStatus("connected · operator", "connected")
       log("connected", "received")
     })
     ws.addEventListener("close", () => {
-      setStatus("disconnected — retrying…", "disconnected")
-      log("disconnected, retrying in 2s", "error")
-      setTimeout(() => connect(port, token), 2000)
+      const delay = nextReconnectDelay()
+      const delaySeconds = Math.round(delay / 1000)
+      setStatus("disconnected — retrying in " + delaySeconds + "s…", "disconnected")
+      log("disconnected, retrying in " + delaySeconds + "s", "error")
+      setTimeout(() => connect(port, token), delay)
     })
     ws.addEventListener("error", () => log("connection error", "error"))
     ws.addEventListener("message", (event) => {

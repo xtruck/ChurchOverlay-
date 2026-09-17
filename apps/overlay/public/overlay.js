@@ -24,6 +24,23 @@
     statusEl.textContent = text
   }
 
+  // Bounded, backoff-aware reconnect (ARCHITECTURE.md section 48, AGENTS.md
+  // section 37 — "infinite retry loops" specifically forbidden). This is a
+  // live, always-on broadcast overlay, so it must keep trying indefinitely
+  // rather than give up after N attempts — "bounded" here means the DELAY
+  // is capped and grows via backoff, not that reconnection ever stops.
+  // Duplicated (not shared) with dashboard.js's identical copy — same
+  // no-build-step reasoning as float32ToInt16 elsewhere in this codebase.
+  const BASE_RECONNECT_DELAY_MS = 1000
+  const MAX_RECONNECT_DELAY_MS = 30000
+  let reconnectAttempts = 0
+
+  function nextReconnectDelay() {
+    const delay = Math.min(BASE_RECONNECT_DELAY_MS * 2 ** reconnectAttempts, MAX_RECONNECT_DELAY_MS)
+    reconnectAttempts += 1
+    return delay
+  }
+
   function capitalize(book) {
     return book.replace(/\b\w/g, (c) => c.toUpperCase())
   }
@@ -47,10 +64,14 @@
     setStatus("connecting…")
     const ws = new WebSocket("ws://127.0.0.1:" + wsPort, [token])
 
-    ws.addEventListener("open", () => setStatus("connected"))
+    ws.addEventListener("open", () => {
+      reconnectAttempts = 0
+      setStatus("connected")
+    })
     ws.addEventListener("close", () => {
-      setStatus("disconnected — retrying…")
-      setTimeout(connect, 2000)
+      const delay = nextReconnectDelay()
+      setStatus("disconnected — retrying in " + Math.round(delay / 1000) + "s…")
+      setTimeout(connect, delay)
     })
     ws.addEventListener("error", () => setStatus("connection error"))
     ws.addEventListener("message", (event) => {
