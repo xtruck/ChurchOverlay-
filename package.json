@@ -14,15 +14,47 @@
     "start": "npm run build && electron .",
     "test": "tsc && cd dist && node --test",
     "test:live-groq": "tsc && cd dist && node --env-file=../.env --test apps/server/asr/groq-provider.live.test.js",
-    "dev:preview": "tsc && node --env-file=.env dist/scripts/dev-preview.js"
+    "dev:preview": "tsc && node --env-file=.env dist/scripts/dev-preview.js",
+    "package": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.1",
     "electron": "^44.4.1",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.6.0"
   },
   "dependencies": {
     "ws": "^8.21.3"
+  },
+  "build": {
+    "appId": "com.churchoverlay.app",
+    "productName": "ChurchOverlay",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/apps/**/*",
+      "dist/packages/**/*",
+      "apps/desktop/renderer/**/*.html",
+      "apps/desktop/renderer/**/*.js",
+      "apps/overlay/public/**/*",
+      "package.json",
+      "!**/*.test.js",
+      "!**/*.test.js.map",
+      "!**/*.map"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "AudioVideo"
+    }
   }
 }
