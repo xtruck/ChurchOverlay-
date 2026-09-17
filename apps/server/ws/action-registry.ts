@@ -82,12 +82,24 @@ function isTranscriptPartialPayload(payload: unknown): payload is TranscriptResu
 }
 
 // status:update's payload shape is intentionally left unopinionated in v1:
-// no component that produces or consumes it exists yet (no mic capture, no
-// ASR, no connection-state tracker). Pinning down a rigid shape now would
-// be inventing a requirement (AGENTS.md section 58) rather than
-// implementing one. It is validated as "some plain object", which rejects
-// garbage (arrays, primitives, null) without guessing at fields that have
-// no real producer yet.
+// mic capture and GroqProvider exist now, but nothing broadcasts
+// status:update itself — no concrete status signal (connection health? a
+// circuit-breaker state? something else?) has actually been specified.
+// Pinning down a rigid shape without one would be inventing a requirement
+// (AGENTS.md section 58) rather than implementing one. It is validated as
+// "some plain object", which rejects garbage (arrays, primitives, null)
+// without guessing at fields nothing produces yet.
+//
+// transcript:partial is in the same position for a different reason:
+// GroqProvider (v1's only AsrProvider) never emits state: "partial" at
+// all — see its own doc comment — because Groq's transcription API has no
+// partial-result concept. isTranscriptPartialPayload below still requires
+// state === "partial", so nothing may legitimately relabel a final
+// transcript as one just to give the dashboard something to show; a
+// dashboard.js handler for this event already exists and is harmless,
+// forward-compatible dead code until a future AsrProvider (still within
+// the fixed extension seam, ARCHITECTURE.md section 50) actually streams
+// partials.
 function isStatusUpdatePayload(payload: unknown): payload is Record<string, unknown> {
   return isPlainObject(payload)
 }

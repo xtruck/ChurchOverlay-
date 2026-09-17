@@ -1081,8 +1081,12 @@ Overlay
 Example input:
 
 ```text
-Jean trois seize
+Turn with me to John 3:16
 ```
+
+(v1's detector is syntactic, not semantic — see section 12 — so dry-run
+input must be the same digit-based "Book Chapter:Verse" form real speech
+is expected to contain, not a paraphrase or a different language.)
 
 This allows rapid testing of the complete downstream pipeline.
 
