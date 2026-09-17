@@ -2403,3 +2403,173 @@ against `BOOK_CATALOG`'s actual book-numbering order rather than assumed. The
 versification-mismatch risk (section 63.1) is flagged, not silently ignored — treated
 as an ordinary per-language "not found" case the existing bilingual-resolution design
 already tolerates gracefully.
+
+## 64. Phase 2 Feature Note — Service Rundown & Scenes
+
+A dedicated architecture note, following the same AGENTS.md section 56 checklist as
+sections 60-63. This is design only — nothing in this section is implemented yet. It
+settles the one open question section 59.4 explicitly deferred: rundown/live-detection
+precedence.
+
+### 64.1 What this feature is
+
+A rundown is an ordered, pre-planned list of **scenes** an operator steps through
+during a service — replacing today's single implicit state (a verse showing, or
+nothing) with an explicit state machine (named states, defined transitions, per
+section 48). A scene is one of:
+
+```ts
+// packages/contracts/rundown.ts (new)
+export type RundownScene =
+  | { readonly kind: "verse"; readonly reference: VerseReference }
+  | { readonly kind: "media"; readonly mediaCueId: string }
+  | { readonly kind: "announcement"; readonly title: string; readonly body: string }
+  | { readonly kind: "blank" }
+
+export interface Rundown {
+  readonly id: string
+  readonly title: string
+  readonly scenes: readonly RundownScene[]
+}
+```
+
+An "announcement" scene is a new, minimal kind of content — plain title+body text
+overlaid the same way a verse card is today — not a general slide/layout editor; that
+would be a materially bigger feature nothing has asked for (AGENTS.md section 58).
+
+### 64.2 Resolved: rundown/live-detection precedence (closes section 59.4)
+
+**Confirmed explicitly: live detection always wins.** A live-detected verse (or a
+manual `verse:override`, or voice navigation from section 61 — anything that already
+goes through `resolveVerse()`'s hallucination-guard pipeline) always overlays
+immediately, regardless of what scene the rundown currently has on air. This matches
+the app's original core value proposition (hands-free live scripture display) —
+a rundown plans *ahead of time* what to show between moments of live speech, it does
+not get to suppress live speech once it happens.
+
+**How control returns afterward — the resolved transition model:**
+
+- Showing a live/overridden/navigated verse while a rundown scene is on air does not
+  move the rundown's cursor. The scene that was on air is remembered as **paused**,
+  not replaced or lost.
+- When the interrupting verse is subsequently cleared (`verse:clear`, from any
+  trigger — manual, voice "cancel", or a caller clearing it programmatically) **and**
+  a scene was paused, the overlay automatically resumes showing that paused scene —
+  the interruption ending is what hands control back, not a separate operator action.
+  This is the least-surprising behavior (AGENTS.md section 61): an operator who
+  didn't touch the rundown expects it to still be where they left it once the verse
+  is gone.
+- An explicit rundown action during an interrupt (`scene:next`, `scene:previous`,
+  `scene:goto`) is a deliberate operator override and always wins immediately: it
+  clears the interrupting verse, discards the "paused scene" (the operator just
+  changed their mind about what should be showing), and moves the cursor as
+  requested. This mirrors the existing precedent that a manual `verse:override`
+  already takes priority as a deliberate operator action.
+- If no rundown is loaded at all, behavior is completely unchanged from today —
+  this feature only introduces new states when a rundown is actually active.
+
+### 64.3 State machine
+
+```text
+states:
+  no-rundown         — unchanged v1/Phase 2 behavior; no rundown loaded
+  scene-active       — a rundown is loaded; scenes[cursor] is what the overlay shows
+  verse-interrupt    — a live/overridden/navigated verse is showing; the rundown
+                       (if any) has a paused scene remembered underneath it
+
+transitions:
+  no-rundown          --rundown:load-->             scene-active (cursor 0)
+  scene-active        --scene:next/previous/goto-->  scene-active (new cursor)
+  scene-active        --verse detected/overridden/navigated-->
+                                                      verse-interrupt (remembers paused = cursor)
+  verse-interrupt     --verse:clear-->               scene-active (cursor = paused), or
+                                                      no-rundown if paused was never set
+                                                      (interrupt happened with no rundown loaded)
+  verse-interrupt     --scene:next/previous/goto-->  scene-active (new cursor, interrupt discarded)
+  scene-active/verse-interrupt --rundown:load-->     scene-active (new rundown, cursor 0,
+                                                      any interrupt/pause discarded)
+```
+
+A "no-op" (e.g. `scene:next` past the rundown's last scene) broadcasts nothing and
+changes nothing, logged at info level — the same failure direction section 61.4
+already establishes for navigation boundaries, applied consistently here.
+
+### 64.4 Server ownership and WS surface
+
+**Server-authoritative, in-memory** — a new `RundownController`
+(`apps/server/rundown/rundown-controller.ts`), owned by `AppCore` alongside
+`MediaPlaybackController` and the navigation/current-position state, not a new
+top-level seam (same "approved Phase 2 growth beyond v1's four seams" reasoning as
+sections 60.2 and 61.2). New operator-only WS commands, schema-validated the same way
+`verse:override` and the media commands already are:
+
+```text
+rundown:load    { rundown: Rundown }         -- operator-only, loads and activates
+scene:next      {}                            -- operator-only
+scene:previous  {}                            -- operator-only
+scene:goto      { index: number }             -- operator-only
+```
+
+Broadcast events mirror the existing `verse:show`/`media:show` pattern — a scene
+change broadcasts the appropriate existing event for its kind (`verse:show` for a
+`"verse"` scene, `media:show` for a `"media"` scene) plus a new `rundown:state` event
+carrying `{ rundownId, cursor, scene }` so the dashboard can render "which scene is
+active" without re-deriving it from individual verse/media events. A `"blank"` scene
+broadcasts `verse:clear` **and** `media:clear` together, to guarantee the overlay is
+actually empty regardless of what was showing before.
+`ChurchOverlayWsServer`'s existing `onViewerConnected` callback (section 60.4) is
+reused, not duplicated, for late-join/reconnect sync of rundown state, the same way
+it already syncs media playback state.
+
+### 64.5 What this note deliberately leaves open
+
+- **Rundown authoring UI.** This note defines the data shape (`Rundown`/
+  `RundownScene`) and the runtime state machine, not how an operator builds a rundown
+  in the dashboard (drag-and-drop reordering, a scene picker, editing an
+  announcement's text). That is implementation-level UI design, done when this
+  feature is actually built, not decided here.
+- **Persistence across app restarts.** Whether a loaded rundown survives an app
+  restart (saved to disk like `MediaLibrary`'s files, or purely in-memory and lost on
+  restart like today's verse-display state) is not decided here — flagged as an
+  implementation-time decision, defaulting to the least-surprising choice (persist,
+  matching `MediaLibrary`'s precedent) unless that proves materially harder than
+  expected.
+
+### 64.6 New correctness invariants this feature adds
+
+Invariant 20
+A live-detected, overridden, or voice-navigated verse never fails to display because
+a rundown scene is on air — section 64.2's precedence is absolute, not best-effort.
+
+Invariant 21
+Rundown state (cursor, paused scene) is server-authoritative only, mirroring
+invariant 15 and invariant 19 for the same reason: no client computes or persists
+rundown position itself.
+
+Invariant 22
+A `"blank"` scene and a cleared interrupt with no paused scene both result in a
+genuinely empty overlay (`verse:clear` and `media:clear` both fire) — never a stale
+verse or media cue left on screen because only one of the two clear events was sent.
+
+### 64.7 Tests required
+
+- `RundownController` unit tests: cursor advances/wraps correctly for `scene:next`/
+  `scene:previous`/`scene:goto`; out-of-range `scene:goto` is a no-op; loading a new
+  rundown resets cursor and discards any paused scene; a verse interrupt pauses the
+  current scene and clearing it resumes exactly that scene; an explicit scene
+  navigation during an interrupt discards the paused scene instead of resuming it.
+- `AppCore`-level integration tests (mirroring `app-core.test.ts`): a detected verse
+  while a media scene is active immediately overlays the verse, then clearing it
+  resumes the media scene; an operator calling `scene:next` while a verse-interrupt
+  is showing switches scenes immediately and does not later resume the discarded
+  scene; a `"blank"` scene broadcasts both `verse:clear` and `media:clear`.
+
+### 64.8 Confirms this is approved scope
+
+Confirmed explicitly: the rundown/live-detection precedence question from section
+59.4 is resolved as "live detection always wins," with control returning to a paused
+scene when the interrupting verse clears, and an explicit rundown action always
+discarding a paused scene rather than resuming it. Scene kinds are verse, media,
+announcement (new, minimal), and blank — no general slide/layout editor. Rundown
+authoring UI and cross-restart persistence are explicitly left open per section 64.5,
+not assumed here.
