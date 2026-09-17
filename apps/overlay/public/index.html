@@ -96,6 +96,30 @@
     font-weight: 400;
   }
 
+  /*
+    Bilingual mode (ARCHITECTURE.md section 63.4): present only when a
+    verse:show payload carries `secondary` — French (primary, above, in
+    #verse-text) stays in the existing styling; English (secondary) is
+    visually subordinate: smaller, italic, slightly less opaque. Hidden
+    entirely (not just empty) for single-language mode, so it takes no
+    layout space at all.
+  */
+  #verse-secondary-text {
+    display: none;
+    color: rgba(255, 255, 255, 0.75);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-style: italic;
+    font-weight: 500;
+    font-size: clamp(14px, 1.8vw, 24px);
+    line-height: 1.45;
+    text-align: center;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
+  }
+  #verse-secondary-text.visible { display: block; }
+
   #verse-ref-row {
     display: flex;
     align-items: center;
@@ -126,6 +150,7 @@
   <div id="verse">
     <div id="verse-card">
       <div id="verse-text"></div>
+      <div id="verse-secondary-text"></div>
       <div id="verse-ref-row">
         <div id="verse-reference"></div>
       </div>

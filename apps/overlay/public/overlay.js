@@ -19,6 +19,7 @@
   const verseEl = document.getElementById("verse")
   const verseCardEl = document.getElementById("verse-card")
   const textEl = document.getElementById("verse-text")
+  const secondaryTextEl = document.getElementById("verse-secondary-text")
   const refEl = document.getElementById("verse-reference")
 
   function setStatus(text) {
@@ -52,8 +53,17 @@
   // aware, but not text-length aware, so it alone can't guarantee this.
   // Steps the font size down until the card fits within a safe fraction
   // of the viewport, or hits a legibility floor (never shrinks forever).
+  //
+  // Bilingual mode (ARCHITECTURE.md section 63.4) extends this to measure
+  // the COMBINED card height across both text blocks, not just the
+  // primary one — #verse-secondary-text's own font size is stepped down
+  // in proportion to the primary's, rather than left fixed, since a long
+  // secondary (English) translation can just as easily overflow on its
+  // own.
   const MAX_FONT_PX = 44
   const MIN_FONT_PX = 15
+  const SECONDARY_FONT_RATIO = 0.55 // matches the visual hierarchy already set in CSS's own clamp() sizing
+  const MIN_SECONDARY_FONT_PX = 12
   const MAX_HEIGHT_FRACTION = 0.62 // leaves headroom above/below for #verse's own vertical placement
   const MAX_WIDTH_FRACTION = 0.86 // matches #verse's 7%-each-side padding
 
@@ -62,12 +72,18 @@
     const maxHeight = window.innerHeight * MAX_HEIGHT_FRACTION
     let fontSize = MAX_FONT_PX
     textEl.style.fontSize = fontSize + "px"
+    if (secondaryTextEl.classList.contains("visible")) {
+      secondaryTextEl.style.fontSize = Math.max(MIN_SECONDARY_FONT_PX, fontSize * SECONDARY_FONT_RATIO) + "px"
+    }
     while (
       (verseCardEl.scrollWidth > maxWidth || verseCardEl.scrollHeight > maxHeight) &&
       fontSize > MIN_FONT_PX
     ) {
       fontSize -= 1
       textEl.style.fontSize = fontSize + "px"
+      if (secondaryTextEl.classList.contains("visible")) {
+        secondaryTextEl.style.fontSize = Math.max(MIN_SECONDARY_FONT_PX, fontSize * SECONDARY_FONT_RATIO) + "px"
+      }
     }
   }
 
@@ -75,6 +91,15 @@
     textEl.textContent = verse.text
     const ref = verse.reference
     refEl.textContent = capitalize(ref.book) + " " + ref.chapter + ":" + ref.verse
+
+    if (verse.secondary) {
+      secondaryTextEl.textContent = verse.secondary.text
+      secondaryTextEl.classList.add("visible")
+    } else {
+      secondaryTextEl.classList.remove("visible")
+      secondaryTextEl.textContent = ""
+    }
+
     fitVerseText()
     verseEl.classList.add("visible")
   }
