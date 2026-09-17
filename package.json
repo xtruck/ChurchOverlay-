@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "start": "npm run build && electron .",
     "test": "tsc && cd dist && node --test",
-    "test:live-groq": "tsc && cd dist && node --env-file=../.env --test apps/server/asr/groq-provider.live.test.js"
+    "test:live-groq": "tsc && cd dist && node --env-file=../.env --test apps/server/asr/groq-provider.live.test.js",
+    "dev:preview": "tsc && node --env-file=.env dist/scripts/dev-preview.js"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
