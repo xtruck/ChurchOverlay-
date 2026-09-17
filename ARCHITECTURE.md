@@ -2211,3 +2211,195 @@ to media library and voice navigation. Unlike those two, this note does not clea
 NDI for implementation yet — section 62.3's three verification items are a real
 precondition, not a formality, given the licensing and native-dependency questions a
 purely architectural note cannot answer on its own.
+
+## 63. Phase 2 Feature Note — Bilingual Display & French Localization
+
+A dedicated architecture note, following the same AGENTS.md section 56 checklist as
+sections 60-62. Raised mid-session: the app's real target audience is a French-
+speaking church, not an English-speaking one. This is two related but distinct
+changes, both confirmed explicitly rather than assumed:
+
+1. **Verse content** can display in English only, French only, or both at once
+   (bilingual, French prioritized/larger).
+2. **The app's own interface** (dashboard, setup screen) is translated to French,
+   with a language switch — not just the verse content.
+
+This is design only — nothing in this section is implemented yet.
+
+### 63.1 The French Bible source — verified live, not assumed
+
+`api.getbible.net` (a real, live, free, no-API-key-required service — verified
+directly, matching this project's existing practice of confirming external API shapes
+before writing code against them, not assuming them) serves `ls1910`, Louis Segond
+(1910) — the standard French Protestant translation, functionally analogous to KJV's
+role for English-speaking Protestants. Its endpoint shape, confirmed by a real
+request: `GET https://api.getbible.net/v2/ls1910/{book_nr}/{chapter}.json` returns a
+whole chapter, `{ ..., verses: [{ chapter, verse, name, text }, ...] }`; the specific
+verse is found by filtering that array. Errors are RFC 9457 `problem+json`.
+Rate limits (50 req/s sustained, ~100k/hour) are far beyond a single church's live
+service traffic — no bearer token needed for this use case.
+
+`book_nr` uses standard canonical numbering (Genesis=1 ... Revelation=66) — verified
+directly against `BOOK_CATALOG`'s own array order (`apps/server/verse/book-catalog.ts`)
+rather than assumed: John is `book_nr` 43 there and index 42 (0-based) in
+`BOOK_CATALOG`, Matthew is 40, Genesis is 1, Revelation is 66 — an exact match. A new
+`GetBibleVerseSource` (`apps/server/verse/get-bible-verse-source.ts`, sibling to
+`FreeApiSource`) computes `book_nr` as `BOOK_CATALOG.findIndex(...) + 1`, matching
+`FreeApiSource`'s own established pattern: an HTTP 404 or a verse number genuinely
+absent from the chapter's `verses` array resolves `null` (confirmed not found); a
+network error, non-2xx status, or malformed body throws (a real service failure,
+distinguishable by the circuit breaker exactly as section 21 already requires).
+
+**A real risk this note flags rather than silently ignores: versification can differ
+between translations.** `ls1910`'s own metadata describes "Segond versification" —
+some books (Psalms numbering is the classic example across Bible translation
+traditions generally) can split or number verses slightly differently than the
+English versification `KnownValidVerseIndex` validates against. A reference confirmed
+to exist in English is not guaranteed to have an exact same-numbered match in the
+French source. This is treated as an ordinary "confirmed not found" for that source
+specifically (resolves `null`, not a thrown error) — section 63.3's bilingual
+resolution already tolerates one language resolving and the other not.
+
+### 63.2 Display mode as a `VerseSource` capability, not a new WS action
+
+Confirmed explicitly: the mode setting (English / French / Bilingual) has a
+setup-time default AND a live dashboard toggle. The key design decision: **this
+never needs a new WS action or protocol change at all.** `verse:show`'s payload is
+still just a `Verse` — the overlay does not need to know a "mode" exists; it reacts
+to whatever shape of `Verse` it actually receives (section 63.4).
+
+```ts
+// packages/contracts/verse.ts, extended
+export type DisplayMode = "english" | "french" | "bilingual"
+```
+
+A new `LocalizedVerseSource` (`apps/server/verse/localized-verse-source.ts`)
+implements the existing `VerseSource` interface — no change to `VerseSource` itself,
+`resolveVerse()`, `resolveTranscriptVerses()`, or `AppCore`'s `source` dependency at
+all, matching section 57's own success criterion ("a new verse source can be added
+without modifying the detector") extended to "without modifying anything downstream
+of it either":
+
+```ts
+export class LocalizedVerseSource implements VerseSource {
+  private mode: DisplayMode
+  constructor(
+    private readonly english: VerseSource,
+    private readonly french: VerseSource,
+    initialMode: DisplayMode
+  ) { this.mode = initialMode }
+
+  setMode(mode: DisplayMode): void { this.mode = mode }
+  getMode(): DisplayMode { return this.mode }
+
+  async getVerse(reference: VerseReference): Promise<Verse | null> {
+    if (this.mode === "english") return this.english.getVerse(reference)
+    if (this.mode === "french") return this.french.getVerse(reference)
+    const [fr, en] = await Promise.all([
+      this.french.getVerse(reference),
+      this.english.getVerse(reference),
+    ])
+    if (!fr) return null // French is primary in bilingual mode; if it's not found, there's nothing to show
+    return en ? { ...fr, secondary: { text: en.text, translation: en.translation, source: en.source } } : fr
+  }
+}
+```
+
+`setMode`/`getMode` are additions beyond the `VerseSource` interface, the same
+documented pattern `GroqProvider.onError` already uses for `AsrProvider` (an optional
+capability a specific implementation offers, not a change to the shared interface).
+The Electron main process constructs one `LocalizedVerseSource` and injects it as
+`AppCore`'s `source` — `AppCore` itself needs zero changes to its resolution logic.
+
+**The live toggle goes through IPC, not WS.** Changing the mode is an operator
+configuration action with no reason to round-trip through the WS server: a new
+`set-display-mode` IPC handler (main process) updates `ConfigStore` (so the choice
+persists as the new default) and calls the live `LocalizedVerseSource.setMode()`
+directly, since main process already holds that reference. `get-startup-status`'s
+response gains a `displayMode` field so the dashboard can initialize its toggle
+control correctly on load.
+
+### 63.3 Data model: `Verse` gains an optional `secondary` field
+
+```ts
+// packages/contracts/verse.ts, Verse extended
+export type Verse = {
+  reference: VerseReference
+  text: string
+  translation: string
+  source: string
+  secondary?: {
+    text: string
+    translation: string
+    source: string
+  }
+}
+```
+
+Additive and backward-compatible (AGENTS.md section 43's own required framing:
+why/what changes/what breaks/tests) — `text`/`translation`/`reference` keep meaning
+exactly what they already do everywhere in the codebase; every existing consumer that
+only reads those fields is unaffected. `secondary` is populated only in bilingual
+mode. In bilingual mode, the top-level fields carry **French** (primary/prioritized,
+confirmed explicitly) and `secondary` carries English — matching section 63.4's
+"French larger, on top" layout exactly, since the overlay renders top-level fields as
+the primary block.
+
+### 63.4 Overlay rendering: stacked, French primary, auto-shrink extended to two blocks
+
+Confirmed explicitly: stacked layout, French (top-level `Verse` fields) above in the
+existing primary verse-text styling, English (`secondary`, when present) below in a
+visually secondary treatment (smaller, per section 63.3's own field-priority choice).
+`apps/overlay/public/overlay.js`'s existing `fitVerseText()` (added for long-verse
+auto-shrink) is extended to measure the COMBINED card height across both text
+blocks when `secondary` is present, not just the primary block — the same safe-
+shrink-until-it-fits algorithm, just accounting for more content. A single-language
+`Verse` (no `secondary`) renders exactly as it already does today — zero visual
+change for English-only or French-only mode.
+
+### 63.5 UI localization (i18n) — full dashboard and setup screen
+
+Confirmed explicitly: not just verse-language settings — the operator dashboard and
+setup screen's own interface text is translated to French, with a language switch,
+English still available. No new dependency (AGENTS.md section 40): a small,
+dependency-free key-based lookup, matching this codebase's existing "no build step"
+plain-JS renderer files.
+
+- `apps/desktop/renderer/i18n.js` (new): two flat dictionaries (`en`, `fr`) keyed by
+  short dot-path strings (e.g. `"mic.title"`), a `t(key)` lookup, and
+  `applyTranslations()` which walks every element carrying a `data-i18n="key"`
+  attribute and sets its text content — the same "plain browser JS, no build step"
+  convention `dashboard.js`/`overlay.js` already use.
+- `apps/desktop/renderer/index.html` markup gains `data-i18n` attributes on every
+  user-facing string (labels, headings, button text, setup-screen copy); strings
+  `dashboard.js` generates dynamically (activity-log lines, status text) call `t()`
+  directly rather than hardcoding English.
+- The chosen UI language persists via `ConfigStore` (a new `uiLanguage` field,
+  alongside `displayMode`) — set at setup time, changeable via a header toggle the
+  same way `displayMode` has one, both following the identical setup-default +
+  live-toggle pattern from section 63.2.
+- This is a real, large amount of mechanical translation work (every string in the
+  dashboard and setup screen), not a small addition — sized accordingly as its own
+  implementation slice, separate from the verse-bilingual work in sections 63.1-63.4.
+
+### 63.6 What this note does not decide
+
+- **Exact French UI copy.** Translating every string accurately is implementation
+  work, not an architectural decision — this note establishes the mechanism
+  (`data-i18n` + a lookup table), not the actual French text.
+- **Whether other languages beyond English/French are ever added.** The `i18n.js`
+  dictionary structure accommodates more languages trivially (another top-level key),
+  but nothing beyond English/French is in scope here — AGENTS.md section 58's
+  "don't invent requirements" applies to speculative additional languages nothing has
+  asked for.
+
+### 63.7 Confirms this is approved scope
+
+Confirmed explicitly, mid-session: bilingual verse display (English/French/Bilingual
+modes, French prioritized in bilingual mode, both a setup default and a live
+dashboard toggle) and full UI localization to French with a language switch. Verified
+against a real, live API (`api.getbible.net`/`ls1910`) rather than assumed, and
+against `BOOK_CATALOG`'s actual book-numbering order rather than assumed. The
+versification-mismatch risk (section 63.1) is flagged, not silently ignored — treated
+as an ordinary per-language "not found" case the existing bilingual-resolution design
+already tolerates gracefully.
