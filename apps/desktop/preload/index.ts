@@ -25,9 +25,17 @@ import { contextBridge, ipcRenderer } from "electron"
  * screen to the main process, which is the only place that ever
  * persists it (via ConfigStore + safeStorage) — the renderer sends it
  * once and never stores or re-reads it itself.
+ *
+ * importMediaFile() is the same pattern applied to local files
+ * (ARCHITECTURE.md section 60.4): the renderer asks, the main process
+ * opens the native file dialog and does the actual copy, and the
+ * renderer gets back only a MediaCue (id/kind/title) — never the
+ * operator's original filesystem path.
  */
 contextBridge.exposeInMainWorld("churchOverlay", {
   getOperatorConnectionInfo: () => ipcRenderer.invoke("get-operator-connection-info"),
   getStartupStatus: () => ipcRenderer.invoke("get-startup-status"),
   completeSetup: (groqApiKey: string) => ipcRenderer.invoke("complete-setup", { groqApiKey }),
+  importMediaFile: () => ipcRenderer.invoke("import-media-file"),
+  listMediaCues: () => ipcRenderer.invoke("list-media-cues"),
 })

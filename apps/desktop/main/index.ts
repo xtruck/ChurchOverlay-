@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, safeStorage } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, safeStorage } from "electron"
 import { randomBytes } from "node:crypto"
 import { join } from "node:path"
 import { startAppCore, type AppCoreHandle } from "../../server/core/app-core"
@@ -7,7 +7,9 @@ import { RegexDetector } from "../../server/detector/regex-detector"
 import { KnownValidVerseIndex } from "../../server/verse/known-valid-verse-index"
 import { FreeApiSource } from "../../server/verse/free-api-source"
 import { GroqProvider } from "../../server/asr/groq-provider"
+import { MediaLibrary } from "../../server/media/media-library"
 import { ConfigStore, type AppConfig } from "./config-store"
+import { inferMediaKind, deriveTitleFromFilename } from "./media-import"
 import { Logger } from "../../../packages/shared/logger"
 
 /**
@@ -40,6 +42,7 @@ let dashboardWindow: BrowserWindow | null = null
 let overlayWindow: BrowserWindow | null = null
 let currentTokens: { operatorToken: string; viewerToken: string } | null = null
 let configStore: ConfigStore | null = null
+let mediaLibrary: MediaLibrary | null = null
 
 function generateToken(): string {
   return randomBytes(24).toString("hex")
@@ -68,6 +71,7 @@ async function startServices(config: AppConfig): Promise<{ port: number; token: 
     logger,
     port: WS_PORT,
     tokens: currentTokens,
+    mediaLibrary: mediaLibrary ?? undefined,
   })
 
   staticServer = new StaticServer({
@@ -208,6 +212,54 @@ ipcMain.handle("get-operator-connection-info", () => {
   return { port: appCoreHandle.wsServer.port, token: currentTokens.operatorToken }
 })
 
+/**
+ * ARCHITECTURE.md section 60.4 points 1-2: the renderer only ever asks
+ * for a file to be picked and imported — it never receives a raw
+ * filesystem path back, only the resulting MediaCue (an id + kind +
+ * title). dialog.showOpenDialog and the actual file copy both happen
+ * here in the main process; the operator's original path is never sent
+ * anywhere past this handler.
+ */
+ipcMain.handle("import-media-file", async () => {
+  if (!dashboardWindow) {
+    throw new Error("dashboard window is not available")
+  }
+  if (!mediaLibrary) {
+    throw new Error("media library is not initialized yet")
+  }
+
+  const result = await dialog.showOpenDialog(dashboardWindow, {
+    title: "Import media",
+    properties: ["openFile"],
+    filters: [
+      { name: "Images", extensions: ["jpg", "jpeg", "png", "webp"] },
+      { name: "Video", extensions: ["mp4", "webm"] },
+      { name: "Audio", extensions: ["mp3", "wav", "m4a"] },
+    ],
+  })
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true as const }
+  }
+
+  const filePath = result.filePaths[0] as string
+  const kind = inferMediaKind(filePath)
+  if (!kind) {
+    return { canceled: false as const, error: "That file type isn't supported." }
+  }
+
+  try {
+    const cue = await mediaLibrary.import(filePath, deriveTitleFromFilename(filePath), kind)
+    logger.info({ component: "main", event: "media.imported", metadata: { id: cue.id, kind: cue.kind } })
+    return { canceled: false as const, cue }
+  } catch (err) {
+    return { canceled: false as const, error: err instanceof Error ? err.message : String(err) }
+  }
+})
+
+ipcMain.handle("list-media-cues", () => {
+  return mediaLibrary?.list() ?? []
+})
+
 async function shutdown(): Promise<void> {
   await appCoreHandle?.stop().catch((err) => {
     logger.error({ component: "main", event: "shutdown.app-core-failed", error: String(err) })
@@ -238,6 +290,7 @@ app.whenReady().then(async () => {
     encrypt: (plaintext) => safeStorage.encryptString(plaintext),
     decrypt: (ciphertext) => safeStorage.decryptString(ciphertext),
   })
+  mediaLibrary = new MediaLibrary({ mediaDir: join(app.getPath("userData"), "media") })
 
   // The dashboard window opens immediately either way — get-startup-status
   // (above) is what tells its renderer whether to show the setup screen
