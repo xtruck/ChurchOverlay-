@@ -13,6 +13,7 @@ import { Logger } from "../../../packages/shared/logger"
 import type {
   AsrProvider,
   AudioFrame,
+  Rundown,
   TranscriptResult,
   Verse,
   VerseReference,
@@ -73,6 +74,30 @@ async function connect(port: number, token: string): Promise<WebSocket> {
 function waitForMessage(socket: WebSocket): Promise<WsMessage> {
   return new Promise((resolve) => {
     socket.once("message", (data) => resolve(JSON.parse(data.toString())))
+  })
+}
+
+/**
+ * For a single trigger that broadcasts multiple messages in quick
+ * succession (e.g. a rundown scene activation's rundown:state plus its
+ * content event) — a persistent listener accumulating into an array,
+ * NOT multiple stacked `once` calls. Registering N `once` listeners
+ * upfront does not give "first listener gets message 1, second gets
+ * message 2": emit() invokes every currently-registered listener for
+ * that event on EACH emission, so two once-listeners would both fire on
+ * the first message and neither would see the second.
+ */
+function waitForMessages(socket: WebSocket, count: number): Promise<WsMessage[]> {
+  return new Promise((resolve) => {
+    const collected: WsMessage[] = []
+    const handler = (data: { toString(): string }) => {
+      collected.push(JSON.parse(data.toString()))
+      if (collected.length === count) {
+        socket.off("message", handler)
+        resolve(collected)
+      }
+    }
+    socket.on("message", handler)
   })
 }
 
@@ -810,6 +835,257 @@ test("AppCore: 'next verse' after a manual verse:override continues from the ove
     })
     const message = await secondShow
     assert.deepEqual((message.payload as Verse).reference, { book: "romans", chapter: 8, verse: 29 })
+
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: rundown:load activates the first scene, broadcasting rundown:state then its content", async () => {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const rundown: Rundown = {
+      id: "01RUNDOWN",
+      title: "Sunday Service",
+      scenes: [{ kind: "announcement", title: "Welcome", body: "Glad you're here." }],
+    }
+
+    const messages = waitForMessages(viewerSocket, 2)
+    operatorSocket.send(JSON.stringify({ id: "01A", type: "rundown:load", timestamp: Date.now(), payload: { rundown } }))
+    const [stateMsg, contentMsg] = await messages
+
+    assert.equal(stateMsg?.type, "rundown:state")
+    assert.deepEqual(stateMsg?.payload, {
+      rundownId: "01RUNDOWN",
+      cursor: 0,
+      scene: { kind: "announcement", title: "Welcome", body: "Glad you're here." },
+      interrupted: false,
+    })
+    assert.equal(contentMsg?.type, "announcement:show")
+    assert.deepEqual(contentMsg?.payload, { title: "Welcome", body: "Glad you're here." })
+
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: a detected verse while a rundown's media scene is active immediately overlays the verse, then clearing it resumes the media scene", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const source = join(dir, "welcome.png")
+    await writeFile(source, "x")
+    const cue = await mediaLibrary.import(source, "Welcome Slide", "image")
+
+    const asr = new FakeAsrProvider()
+    const app = await startAppCore({
+      asr,
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new EchoVerseSource(),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+    })
+    try {
+      const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+      const rundown: Rundown = {
+        id: "01RUNDOWN",
+        title: "Sunday Service",
+        scenes: [{ kind: "media", mediaCueId: cue.id }],
+      }
+
+      const loadMessages = waitForMessages(viewerSocket, 2)
+      operatorSocket.send(JSON.stringify({ id: "01A", type: "rundown:load", timestamp: Date.now(), payload: { rundown } }))
+      const [loadState, loadContent] = await loadMessages
+      assert.equal(loadState?.type, "rundown:state")
+      assert.equal(loadContent?.type, "media:show")
+
+      // A live-detected verse must interrupt immediately, per ARCHITECTURE.md section 64.2.
+      const interruptMessages = waitForMessages(viewerSocket, 2)
+      asr.emitTranscript({
+        id: "01T",
+        correlationId: "01B",
+        sequence: 1,
+        text: "Turn to John 3:16.",
+        state: "final",
+        timestamp: Date.now(),
+      })
+      const [interruptState, verseShow] = await interruptMessages
+      assert.equal(interruptState?.type, "rundown:state")
+      assert.equal((interruptState?.payload as { interrupted: boolean }).interrupted, true)
+      assert.equal(verseShow?.type, "verse:show")
+
+      // Clearing the interrupting verse must resume exactly the paused media scene.
+      const resumeMessages = waitForMessages(viewerSocket, 3)
+      operatorSocket.send(JSON.stringify({ id: "01C", type: "verse:clear", timestamp: Date.now(), payload: null }))
+      const [clearMsg, resumeState, resumedMedia] = await resumeMessages
+      assert.equal(clearMsg?.type, "verse:clear")
+      assert.equal(resumeState?.type, "rundown:state")
+      assert.equal((resumeState?.payload as { interrupted: boolean }).interrupted, false)
+      assert.equal(resumedMedia?.type, "media:show")
+      assert.deepEqual((resumedMedia?.payload as { cue: unknown }).cue, cue)
+
+      operatorSocket.close()
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+test("AppCore: an explicit scene:next during a verse interrupt switches scenes immediately and discards the paused scene instead of resuming it later", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const source = join(dir, "welcome.png")
+    await writeFile(source, "x")
+    const cue = await mediaLibrary.import(source, "Welcome Slide", "image")
+
+    const asr = new FakeAsrProvider()
+    const app = await startAppCore({
+      asr,
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new EchoVerseSource(),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+    })
+    try {
+      const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+      const rundown: Rundown = {
+        id: "01RUNDOWN",
+        title: "Sunday Service",
+        scenes: [
+          { kind: "announcement", title: "Welcome", body: "Glad you're here." },
+          { kind: "media", mediaCueId: cue.id },
+        ],
+      }
+
+      const loadMessages = waitForMessages(viewerSocket, 2)
+      operatorSocket.send(JSON.stringify({ id: "01A", type: "rundown:load", timestamp: Date.now(), payload: { rundown } }))
+      await loadMessages
+
+      const interruptMessages = waitForMessages(viewerSocket, 2)
+      asr.emitTranscript({
+        id: "01T",
+        correlationId: "01B",
+        sequence: 1,
+        text: "Turn to John 3:16.",
+        state: "final",
+        timestamp: Date.now(),
+      })
+      await interruptMessages
+
+      // The operator explicitly advances the rundown while the verse is
+      // still interrupting — this must win immediately and discard the pause.
+      const nextMessages = waitForMessages(viewerSocket, 2)
+      operatorSocket.send(JSON.stringify({ id: "01C", type: "scene:next", timestamp: Date.now(), payload: null }))
+      const [nextState, nextContent] = await nextMessages
+      assert.equal(nextState?.type, "rundown:state")
+      assert.deepEqual(nextState?.payload, {
+        rundownId: "01RUNDOWN",
+        cursor: 1,
+        scene: { kind: "media", mediaCueId: cue.id },
+        interrupted: false,
+      })
+      assert.equal(nextContent?.type, "media:show")
+
+      // Clearing the (already-superseded) verse now must NOT resurrect the
+      // discarded announcement scene — only the plain clear should fire.
+      let extraMessages = 0
+      viewerSocket.on("message", () => {
+        extraMessages += 1
+      })
+      operatorSocket.send(JSON.stringify({ id: "01D", type: "verse:clear", timestamp: Date.now(), payload: null }))
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      assert.equal(extraMessages, 1) // exactly the verse:clear itself, nothing resumed
+
+      operatorSocket.close()
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+test("AppCore: a 'blank' scene broadcasts verse:clear, media:clear, and announcement:clear together", async () => {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const rundown: Rundown = {
+      id: "01RUNDOWN",
+      title: "Sunday Service",
+      scenes: [{ kind: "blank" }],
+    }
+
+    const messages = waitForMessages(viewerSocket, 4)
+    operatorSocket.send(JSON.stringify({ id: "01A", type: "rundown:load", timestamp: Date.now(), payload: { rundown } }))
+    const received = await messages
+    const types = received.map((m) => m.type).sort()
+    assert.deepEqual(types, ["announcement:clear", "media:clear", "rundown:state", "verse:clear"])
+
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: scene:goto with an out-of-range index is a no-op, broadcasting nothing", async () => {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const rundown: Rundown = { id: "01RUNDOWN", title: "Sunday Service", scenes: [{ kind: "blank" }] }
+    const loadMessages = waitForMessages(viewerSocket, 4)
+    operatorSocket.send(JSON.stringify({ id: "01A", type: "rundown:load", timestamp: Date.now(), payload: { rundown } }))
+    await loadMessages
+
+    let received = false
+    viewerSocket.once("message", () => {
+      received = true
+    })
+    operatorSocket.send(JSON.stringify({ id: "01B", type: "scene:goto", timestamp: Date.now(), payload: { index: 99 } }))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    assert.equal(received, false)
 
     operatorSocket.close()
     viewerSocket.close()

@@ -1,6 +1,10 @@
 import type {
+  AnnouncementShowPayload,
   MediaCue,
   MediaShowPayload,
+  Rundown,
+  RundownScene,
+  RundownStatePayload,
   TranscriptResult,
   Verse,
   VerseReference,
@@ -157,6 +161,61 @@ function isMediaShowPayload(payload: unknown): payload is MediaShowPayload {
   return payload.playback === undefined || isMediaPlaybackStatePayload(payload.playback)
 }
 
+// ARCHITECTURE.md section 64: Service Rundown & Scenes.
+
+function isRundownScenePayload(payload: unknown): payload is RundownScene {
+  if (!isPlainObject(payload)) return false
+  switch (payload.kind) {
+    case "verse":
+      return isVerseReferencePayload(payload.reference)
+    case "media":
+      return isNonEmptyString(payload.mediaCueId)
+    case "announcement":
+      return typeof payload.title === "string" && typeof payload.body === "string"
+    case "blank":
+      return true
+    default:
+      return false
+  }
+}
+
+function isRundownPayload(payload: unknown): payload is Rundown {
+  if (!isPlainObject(payload)) return false
+  return (
+    isNonEmptyString(payload.id) &&
+    isNonEmptyString(payload.title) &&
+    Array.isArray(payload.scenes) &&
+    payload.scenes.every(isRundownScenePayload)
+  )
+}
+
+function isRundownLoadPayload(payload: unknown): payload is { rundown: Rundown } {
+  return isPlainObject(payload) && isRundownPayload(payload.rundown)
+}
+
+function isSceneGotoPayload(payload: unknown): payload is { index: number } {
+  return (
+    isPlainObject(payload) &&
+    isFiniteNumber(payload.index) &&
+    Number.isInteger(payload.index) &&
+    payload.index >= 0
+  )
+}
+
+function isRundownStatePayload(payload: unknown): payload is RundownStatePayload {
+  if (!isPlainObject(payload)) return false
+  return (
+    isNonEmptyString(payload.rundownId) &&
+    isFiniteNumber(payload.cursor) &&
+    isRundownScenePayload(payload.scene) &&
+    typeof payload.interrupted === "boolean"
+  )
+}
+
+function isAnnouncementShowPayload(payload: unknown): payload is AnnouncementShowPayload {
+  return isPlainObject(payload) && typeof payload.title === "string" && typeof payload.body === "string"
+}
+
 /**
  * The v1 action set from ARCHITECTURE.md section 30, plus the Phase 2
  * media actions approved and specified in section 60 (media:select/
@@ -236,6 +295,41 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "event",
     allowedSenders: [],
     validatePayload: isMediaShowPayload,
+  },
+  "rundown:load": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isRundownLoadPayload,
+  },
+  "scene:next": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isNullPayload,
+  },
+  "scene:previous": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isNullPayload,
+  },
+  "scene:goto": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isSceneGotoPayload,
+  },
+  "rundown:state": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isRundownStatePayload,
+  },
+  "announcement:show": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isAnnouncementShowPayload,
+  },
+  "announcement:clear": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isNullPayload,
   },
 }
 

@@ -11,6 +11,10 @@ export type WsCommandType =
   | "media:pause"
   | "media:seek"
   | "media:clear"
+  | "rundown:load"
+  | "scene:next"
+  | "scene:previous"
+  | "scene:goto"
 
 /** Resulting state or information, consumed by the (read-only) overlay. */
 export type WsEventType =
@@ -20,6 +24,9 @@ export type WsEventType =
   | "verse:clear"
   | "media:show"
   | "media:clear"
+  | "announcement:show"
+  | "announcement:clear"
+  | "rundown:state"
 
 export type WsMessage<TPayload = unknown> = {
   id: string

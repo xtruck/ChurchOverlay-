@@ -2,6 +2,9 @@ import type {
   AsrProvider,
   AudioFrame,
   MediaShowPayload,
+  Rundown,
+  RundownScene,
+  RundownStatePayload,
   TranscriptResult,
   Verse,
   VerseDetector,
@@ -25,6 +28,7 @@ import { MediaCueDetector } from "../media/media-cue-detector"
 import { MediaPlaybackController } from "../media/media-playback-controller"
 import { NavigationCommandDetector } from "../detector/navigation-command-detector"
 import { resolveNavigationCommand } from "../verse/resolve-navigation-command"
+import { RundownController } from "../rundown/rundown-controller"
 
 /**
  * Every provider/seam is injected, never constructed inside this
@@ -101,6 +105,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const mediaCueDetector = mediaLibrary ? new MediaCueDetector(mediaLibrary) : null
   const mediaPlayback = new MediaPlaybackController()
   const navigationCommandDetector = new NavigationCommandDetector()
+  const rundownController = new RundownController()
   // ARCHITECTURE.md section 61.4: updated by every verse:show, however
   // triggered (detected, manual override, or navigation itself) — "next
   // verse" after an operator's manual override continues from wherever
@@ -142,10 +147,30 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       if (payload) {
         send({ id: generateUlid(), type: "media:show", timestamp: Date.now(), payload })
       }
+      // ARCHITECTURE.md section 64.4 (reusing section 60.4's reconnect/
+      // late-join sync pattern): a viewer that connects while a rundown is
+      // showing a verse/announcement/blank scene must see it immediately.
+      // Media scenes are deliberately excluded here — the block above
+      // already resyncs mediaPlayback's actual current state without the
+      // side effect activate() has (resetting playback to position 0),
+      // which re-running scene content for a "media" scene would cause.
+      const rundownState = rundownController.currentState()
+      if (rundownState) {
+        send({ id: generateUlid(), type: "rundown:state", timestamp: Date.now(), payload: rundownState })
+        if (rundownState.scene.kind !== "media") {
+          syncSceneContent(rundownState.scene, send).catch((err) => {
+            logger.error({
+              component: "app-core",
+              event: "rundown.viewer-sync-failed",
+              error: err instanceof Error ? err.message : String(err),
+            })
+          })
+        }
+      }
     },
   })
 
-  function broadcastVerse(verse: Verse, correlationId?: string): void {
+  function showVerse(verse: Verse, correlationId?: string): void {
     currentVersePosition = verse.reference
     wsServer.broadcast({
       id: generateUlid(),
@@ -156,7 +181,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     })
   }
 
-  function broadcastVerseClear(correlationId?: string): void {
+  function clearVerse(correlationId?: string): void {
     currentVersePosition = null
     wsServer.broadcast({
       id: generateUlid(),
@@ -167,6 +192,40 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     })
   }
 
+  /**
+   * ARCHITECTURE.md section 64.2: the live-detection-always-wins path — used
+   * for a detected reference, a manual override, or voice navigation, never
+   * for a rundown's own "verse" scene activation (that goes through
+   * showVerse() directly via activateScene() below, since the rundown
+   * cursor is already correctly positioned and must not re-pause itself).
+   */
+  function broadcastVerse(verse: Verse, correlationId?: string): void {
+    const rundownState = rundownController.interrupt()
+    if (rundownState) broadcastRundownState(rundownState, correlationId)
+    showVerse(verse, correlationId)
+  }
+
+  /**
+   * The live-clear path (manual verse:clear, voice "cancel"). Hands control
+   * back to whatever rundown scene was paused underneath the interrupting
+   * verse (section 64.2) — resuming re-displays that scene's real content,
+   * not just its metadata.
+   */
+  function broadcastVerseClear(correlationId?: string): void {
+    clearVerse(correlationId)
+    const resumed = rundownController.resumeFromInterrupt()
+    if (resumed) {
+      activateScene(resumed, correlationId).catch((err) => {
+        logger.error({
+          component: "app-core",
+          event: "rundown.resume-failed",
+          correlationId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
+    }
+  }
+
   function broadcastMedia(payload: MediaShowPayload, correlationId?: string): void {
     wsServer.broadcast({
       id: generateUlid(),
@@ -175,6 +234,104 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       correlationId,
       payload,
     })
+  }
+
+  function broadcastAnnouncement(payload: { title: string; body: string }, correlationId?: string): void {
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "announcement:show",
+      timestamp: Date.now(),
+      correlationId,
+      payload,
+    })
+  }
+
+  function broadcastAnnouncementClear(correlationId?: string): void {
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "announcement:clear",
+      timestamp: Date.now(),
+      correlationId,
+      payload: null,
+    })
+  }
+
+  function broadcastRundownState(state: RundownStatePayload, correlationId?: string): void {
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "rundown:state",
+      timestamp: Date.now(),
+      correlationId,
+      payload: state,
+    })
+  }
+
+  /**
+   * ARCHITECTURE.md section 64.4: actually displays a scene's real content
+   * (not just rundown:state metadata) — used for rundown:load, scene:next/
+   * previous/goto, and resuming from an interrupt. "media" resets playback
+   * to position 0 via mediaPlayback.activate(), which is correct here (a
+   * genuine new activation) but wrong for the viewer-resync path below.
+   */
+  async function activateScene(state: RundownStatePayload, correlationId?: string): Promise<void> {
+    broadcastRundownState(state, correlationId)
+    const scene = state.scene
+    switch (scene.kind) {
+      case "verse": {
+        const verse = await resolveVerse(scene.reference, source, cache, circuitBreaker, undefined, logger)
+        if (verse) showVerse(verse, correlationId)
+        return
+      }
+      case "media": {
+        if (!mediaLibrary) return
+        const cue = mediaLibrary.resolve(scene.mediaCueId)
+        if (cue) broadcastMedia(mediaPlayback.activate(cue), correlationId)
+        return
+      }
+      case "announcement":
+        broadcastAnnouncement({ title: scene.title, body: scene.body }, correlationId)
+        return
+      case "blank":
+        // Invariant 22: always clear all three content channels, regardless
+        // of whether each one had anything active — over-clearing is safe,
+        // under-clearing leaves stale content on screen.
+        clearVerse(correlationId)
+        mediaPlayback.clear()
+        wsServer.broadcast({ id: generateUlid(), type: "media:clear", timestamp: Date.now(), correlationId, payload: null })
+        broadcastAnnouncementClear(correlationId)
+        return
+    }
+  }
+
+  /**
+   * A newly-connected viewer's resync for a non-media scene (media is
+   * handled independently, see onViewerConnected above). Sends directly to
+   * the one connecting viewer via `send`, never broadcasts — an existing
+   * audience mid-verse must not be interrupted just because someone else
+   * joined.
+   */
+  async function syncSceneContent(scene: RundownScene, send: (message: WsMessage) => void): Promise<void> {
+    switch (scene.kind) {
+      case "verse": {
+        const verse = await resolveVerse(scene.reference, source, cache, circuitBreaker, undefined, logger)
+        if (verse) send({ id: generateUlid(), type: "verse:show", timestamp: Date.now(), payload: verse })
+        return
+      }
+      case "announcement":
+        send({
+          id: generateUlid(),
+          type: "announcement:show",
+          timestamp: Date.now(),
+          payload: { title: scene.title, body: scene.body },
+        })
+        return
+      case "blank":
+        send({ id: generateUlid(), type: "verse:clear", timestamp: Date.now(), payload: null })
+        send({ id: generateUlid(), type: "announcement:clear", timestamp: Date.now(), payload: null })
+        return
+      case "media":
+        return // handled independently above
+    }
   }
 
   async function handleAudioFrame(frame: AudioFrame): Promise<void> {
@@ -285,7 +442,46 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         return
       }
 
-      // status:update / transcript:partial / verse:show / media:show are
+      case "rundown:load": {
+        const { rundown } = message.payload as { rundown: Rundown }
+        const state = rundownController.load(rundown)
+        if (state) {
+          await activateScene(state, message.correlationId)
+        } else {
+          logger.info({
+            component: "app-core",
+            event: "rundown.load-rejected",
+            correlationId: message.correlationId,
+            metadata: { rundownId: rundown.id },
+          })
+        }
+        return
+      }
+
+      case "scene:next": {
+        const state = rundownController.next()
+        if (state) await activateScene(state, message.correlationId)
+        else logSceneNoOp("next", message.correlationId)
+        return
+      }
+
+      case "scene:previous": {
+        const state = rundownController.previous()
+        if (state) await activateScene(state, message.correlationId)
+        else logSceneNoOp("previous", message.correlationId)
+        return
+      }
+
+      case "scene:goto": {
+        const { index } = message.payload as { index: number }
+        const state = rundownController.goto(index)
+        if (state) await activateScene(state, message.correlationId)
+        else logSceneNoOp("goto", message.correlationId, { index })
+        return
+      }
+
+      // status:update / transcript:partial / verse:show / media:show /
+      // rundown:state / announcement:show / announcement:clear are all
       // server-originated events; the action registry's role check (empty
       // allowedSenders) already refuses any client attempting to send
       // them inbound, so onCommand is never actually invoked for these.
@@ -295,6 +491,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       case "transcript:partial":
       case "verse:show":
       case "media:show":
+      case "rundown:state":
+      case "announcement:show":
+      case "announcement:clear":
         logger.warn({
           component: "app-core",
           event: "unreachable-command",
@@ -302,6 +501,15 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         })
         return
     }
+  }
+
+  function logSceneNoOp(action: "next" | "previous" | "goto", correlationId?: string, metadata?: Record<string, unknown>): void {
+    logger.info({
+      component: "app-core",
+      event: "scene.no-op",
+      correlationId,
+      metadata: { action, ...metadata },
+    })
   }
 
   /**
