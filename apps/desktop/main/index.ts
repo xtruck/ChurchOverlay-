@@ -22,6 +22,16 @@ import { Logger } from "../../../packages/shared/logger"
 const WS_PORT = 8787
 const OVERLAY_HTTP_PORT = 8788
 
+// This compiled file lives at dist/apps/desktop/main/index.js (tsconfig's
+// rootDir/outDir mirror the source tree exactly). The renderer HTML/JS and
+// the overlay's static assets are plain files tsc never compiles or
+// copies — they only exist under the repo root, not under dist/ — so
+// paths into them must climb out of dist/apps/desktop/main entirely
+// (4 levels) rather than just up within it, the same gap that had to be
+// fixed for scripts/dev-preview.ts and scripts/dry-run.ts (each 2 levels
+// under dist/, not 3).
+const REPO_ROOT = join(__dirname, "..", "..", "..", "..")
+
 const logger = new Logger({ minLevel: "info" })
 
 let appCoreHandle: AppCoreHandle | null = null
@@ -62,7 +72,7 @@ async function startServices(config: AppConfig): Promise<{ port: number; token: 
 
   staticServer = new StaticServer({
     port: OVERLAY_HTTP_PORT,
-    rootDir: join(__dirname, "..", "..", "overlay", "public"),
+    rootDir: join(REPO_ROOT, "apps", "overlay", "public"),
   })
   await staticServer.ready
 
@@ -91,7 +101,7 @@ function createDashboardWindow(): void {
     },
   })
 
-  dashboardWindow.loadFile(join(__dirname, "..", "renderer", "index.html"))
+  dashboardWindow.loadFile(join(REPO_ROOT, "apps", "desktop", "renderer", "index.html"))
 
   dashboardWindow.on("closed", () => {
     dashboardWindow = null
@@ -162,7 +172,24 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
   }
 
   const store = getConfigStore()
-  const existing = await store.load()
+  // A corrupt or unreadable existing config must not permanently block
+  // setup — this handler's whole purpose is to write a fresh, valid one.
+  // The exact failure the app hit on a real first run: a stale/malformed
+  // config.json made ConfigStore.load() throw, which is correct for
+  // load()'s own contract (fail loud on corruption) but would otherwise
+  // make every subsequent complete-setup attempt fail the same way,
+  // forever, with no way for the operator to recover short of manually
+  // deleting the file.
+  let existing: AppConfig | null = null
+  try {
+    existing = await store.load()
+  } catch (err) {
+    logger.warn({
+      component: "main",
+      event: "setup.existing-config-unreadable",
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
   const config: AppConfig = {
     groqApiKey,
     microphoneId: existing?.microphoneId ?? null,
