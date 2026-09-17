@@ -377,6 +377,10 @@
   button:active:not(:disabled) { transform: scale(0.97); }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
   button:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+  /* Media tiles and rundown chips are role="button" divs/spans (keyboard-
+     operable via dashboard.js's makeInteractive()), not real <button>
+     elements, so the rule above doesn't reach them on its own. */
+  [role="button"]:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
 
   .btn-primary { background: var(--accent); color: var(--accent-ink); }
   .btn-primary:hover:not(:disabled) { background: var(--accent-strong); }

@@ -193,7 +193,8 @@
       tile.title = cue.title
       tile.innerHTML = mediaIconSvg(cue.kind) + '<div class="media-tile-title"></div>'
       tile.querySelector(".media-tile-title").textContent = cue.title
-      tile.addEventListener("click", () => {
+      tile.setAttribute("aria-label", cue.title)
+      makeInteractive(tile, () => {
         sendJson({ id: crypto.randomUUID(), type: "media:select", timestamp: Date.now(), payload: { id: cue.id } })
         log(t("log.sentMediaSelect", { title: cue.title }), "sent")
       })
@@ -292,7 +293,8 @@
       if (isActive && currentRundownState.interrupted) chip.title = t("rundown.interruptedHint")
       chip.innerHTML = sceneIconSvg(scene.kind) + "<span></span>"
       chip.querySelector("span").textContent = sceneSummary(scene)
-      chip.addEventListener("click", () => {
+      chip.setAttribute("aria-label", sceneSummary(scene))
+      makeInteractive(chip, () => {
         sendJson({ id: crypto.randomUUID(), type: "scene:goto", timestamp: Date.now(), payload: { index } })
         log(t("log.sentSceneGoto", { index }), "sent")
       })
@@ -319,7 +321,8 @@
       up.className = "chip-action"
       up.textContent = "↑"
       up.title = t("rundown.builder.moveUp")
-      up.addEventListener("click", (event) => {
+      up.setAttribute("aria-label", t("rundown.builder.moveUp"))
+      makeInteractive(up, (event) => {
         event.stopPropagation()
         if (index === 0) return
         ;[draftScenes[index - 1], draftScenes[index]] = [draftScenes[index], draftScenes[index - 1]]
@@ -330,7 +333,8 @@
       down.className = "chip-action"
       down.textContent = "↓"
       down.title = t("rundown.builder.moveDown")
-      down.addEventListener("click", (event) => {
+      down.setAttribute("aria-label", t("rundown.builder.moveDown"))
+      makeInteractive(down, (event) => {
         event.stopPropagation()
         if (index === draftScenes.length - 1) return
         ;[draftScenes[index], draftScenes[index + 1]] = [draftScenes[index + 1], draftScenes[index]]
@@ -340,7 +344,8 @@
       const remove = document.createElement("span")
       remove.className = "chip-action chip-remove"
       remove.textContent = "×"
-      remove.addEventListener("click", (event) => {
+      remove.setAttribute("aria-label", t("rundown.builder.removeScene"))
+      makeInteractive(remove, (event) => {
         event.stopPropagation()
         draftScenes.splice(index, 1)
         renderDraftSceneList()
@@ -512,6 +517,24 @@
       chapter: Number.parseInt(match[2], 10),
       verse: Number.parseInt(match[3], 10),
     }
+  }
+
+  // Media tiles and rundown scene chips are non-<button> elements (a
+  // <div> grid tile, a chip with several independently-clickable actions
+  // inside it) so they need this explicitly — a plain click listener
+  // alone is invisible to keyboard and screen-reader users. Found during
+  // a full-codebase audit: none of the new Phase 2 interactive elements
+  // had this, unlike every pre-existing v1 control (all real <button>s).
+  function makeInteractive(el, onActivate) {
+    el.setAttribute("role", "button")
+    el.setAttribute("tabindex", "0")
+    el.addEventListener("click", onActivate)
+    el.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault()
+        onActivate(event)
+      }
+    })
   }
 
   function sendJson(message) {

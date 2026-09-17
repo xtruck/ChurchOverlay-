@@ -87,6 +87,12 @@ async function startServices(config: AppConfig): Promise<{ port: number; token: 
   staticServer = new StaticServer({
     port: OVERLAY_HTTP_PORT,
     rootDir: join(REPO_ROOT, "apps", "overlay", "public"),
+    // Without this, "/media/<id>" 404s regardless of what the overlay
+    // itself tries to render (ARCHITECTURE.md section 60.4) — found
+    // missing entirely during a full-codebase audit, alongside the
+    // overlay never having any media-rendering code to call it in the
+    // first place (both fixed together).
+    mediaResolver: mediaLibrary ?? undefined,
   })
   await staticServer.ready
 

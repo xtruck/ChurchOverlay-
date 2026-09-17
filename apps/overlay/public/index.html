@@ -38,6 +38,7 @@
     position: fixed;
     top: 14px;
     left: 14px;
+    z-index: 3;
     font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
     font-size: 11px;
     letter-spacing: 0.04em;
@@ -53,6 +54,7 @@
     left: 0;
     right: 0;
     bottom: 9%;
+    z-index: 2;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -143,10 +145,95 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
+
+  /*
+    Media Library (ARCHITECTURE.md section 60) had no audience-facing
+    display at all until this — the server/dashboard side was fully built
+    and tested, but the actual OBS overlay only ever handled verse:show/
+    verse:clear. An image/video cue is a full "scene" (a slide inserted
+    between segments), so it fills the frame on an opaque black backdrop
+    rather than the transparent-body treatment the verse card uses — z-index
+    keeps it BEHIND the verse/announcement layers, so a live-detected verse
+    interrupting a rundown's media scene (section 64.2) still overlays on
+    top instead of the two fighting for the same layer. Audio has no visual
+    at all — it plays without ever toggling this layer's visibility.
+  */
+  #media-layer {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    z-index: 1;
+  }
+  #media-layer.visible { display: flex; }
+  #media-image, #media-video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  /* Announcement (ARCHITECTURE.md section 64.1) — new content type, reuses
+     the verse card's scrim-first legibility recipe with its own simpler
+     title+body layout. Sits above the media layer, same as #verse. */
+  #announcement {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 7%;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(18px);
+    transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  #announcement.visible { opacity: 1; transform: translateY(0); }
+  #announcement-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    max-width: 1000px;
+    padding: 36px 52px;
+    border-radius: 20px;
+    background: linear-gradient(180deg, var(--scrim), rgba(6, 7, 10, 0.46));
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    #announcement-card {
+      -webkit-backdrop-filter: blur(18px) saturate(115%);
+      backdrop-filter: blur(18px) saturate(115%);
+    }
+  }
+  #announcement-title {
+    color: var(--accent);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.85);
+    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-size: clamp(20px, 2.6vw, 34px);
+    font-weight: 700;
+    text-align: center;
+  }
+  #announcement-body {
+    color: #ffffff;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.85);
+    font-family: "Instrument Serif", Georgia, "Times New Roman", serif;
+    font-size: clamp(18px, 2.4vw, 30px);
+    line-height: 1.45;
+    text-align: center;
+  }
 </style>
 </head>
 <body>
   <div id="status">connecting…</div>
+  <div id="media-layer">
+    <img id="media-image" alt="" style="display: none" />
+    <video id="media-video" style="display: none" playsinline></video>
+  </div>
+  <audio id="media-audio"></audio>
   <div id="verse">
     <div id="verse-card">
       <div id="verse-text"></div>
@@ -154,6 +241,12 @@
       <div id="verse-ref-row">
         <div id="verse-reference"></div>
       </div>
+    </div>
+  </div>
+  <div id="announcement">
+    <div id="announcement-card">
+      <div id="announcement-title"></div>
+      <div id="announcement-body"></div>
     </div>
   </div>
   <script src="/overlay.js"></script>

@@ -21,6 +21,13 @@
   const textEl = document.getElementById("verse-text")
   const secondaryTextEl = document.getElementById("verse-secondary-text")
   const refEl = document.getElementById("verse-reference")
+  const mediaLayerEl = document.getElementById("media-layer")
+  const mediaImageEl = document.getElementById("media-image")
+  const mediaVideoEl = document.getElementById("media-video")
+  const mediaAudioEl = document.getElementById("media-audio")
+  const announcementEl = document.getElementById("announcement")
+  const announcementTitleEl = document.getElementById("announcement-title")
+  const announcementBodyEl = document.getElementById("announcement-body")
 
   function setStatus(text) {
     statusEl.textContent = text
@@ -108,6 +115,97 @@
     verseEl.classList.remove("visible")
   }
 
+  // Media Library (ARCHITECTURE.md section 60) had server/dashboard support
+  // fully built but no audience-facing display at all until this. Image/
+  // video fill #media-layer (a full-frame "scene"); audio has no visual —
+  // it just plays, never touching that layer's visibility.
+  let activeMediaCueId = null
+
+  // Mirrors MediaPlaybackController.computeCurrentPositionMs() exactly
+  // (ARCHITECTURE.md section 60.5's timestamp-and-recompute sync model) —
+  // the overlay is a separate client and must derive "where we actually
+  // are" from the same formula the server used to build the payload,
+  // never trust a stale positionMs as if it were still current.
+  function computePositionSeconds(playback) {
+    if (!playback) return 0
+    if (playback.state === "paused") return playback.positionMs / 1000
+    return (playback.positionMs + (Date.now() - playback.asOfServerTime)) / 1000
+  }
+
+  function syncPlayback(el, playback) {
+    if (!playback) return
+    const targetSeconds = computePositionSeconds(playback)
+    // Only correct drift beyond ~0.4s — re-seeking on every message would
+    // cause visible stutter for a value that is already close enough.
+    if (Math.abs(el.currentTime - targetSeconds) > 0.4) el.currentTime = targetSeconds
+    if (playback.state === "playing") el.play().catch(() => {})
+    else el.pause()
+  }
+
+  function showMedia(payload) {
+    const { cue, playback } = payload
+    const isNewCue = activeMediaCueId !== cue.id
+    activeMediaCueId = cue.id
+    const url = "/media/" + cue.id
+
+    if (cue.kind === "image") {
+      mediaVideoEl.pause()
+      mediaVideoEl.style.display = "none"
+      mediaVideoEl.removeAttribute("src")
+      mediaAudioEl.pause()
+      mediaAudioEl.removeAttribute("src")
+      if (isNewCue) mediaImageEl.src = url
+      mediaImageEl.style.display = "block"
+      mediaLayerEl.classList.add("visible")
+      return
+    }
+
+    if (cue.kind === "video") {
+      mediaImageEl.style.display = "none"
+      mediaImageEl.removeAttribute("src")
+      mediaAudioEl.pause()
+      mediaAudioEl.removeAttribute("src")
+      if (isNewCue) mediaVideoEl.src = url
+      mediaVideoEl.style.display = "block"
+      mediaLayerEl.classList.add("visible")
+      syncPlayback(mediaVideoEl, playback)
+      return
+    }
+
+    // audio — no visual takeover at all; whatever else is showing (verse,
+    // announcement, or nothing) stays exactly as it is.
+    mediaImageEl.style.display = "none"
+    mediaImageEl.removeAttribute("src")
+    mediaVideoEl.pause()
+    mediaVideoEl.style.display = "none"
+    mediaVideoEl.removeAttribute("src")
+    mediaLayerEl.classList.remove("visible")
+    if (isNewCue) mediaAudioEl.src = url
+    syncPlayback(mediaAudioEl, playback)
+  }
+
+  function clearMedia() {
+    activeMediaCueId = null
+    mediaImageEl.style.display = "none"
+    mediaImageEl.removeAttribute("src")
+    mediaVideoEl.pause()
+    mediaVideoEl.style.display = "none"
+    mediaVideoEl.removeAttribute("src")
+    mediaAudioEl.pause()
+    mediaAudioEl.removeAttribute("src")
+    mediaLayerEl.classList.remove("visible")
+  }
+
+  function showAnnouncement(payload) {
+    announcementTitleEl.textContent = payload.title
+    announcementBodyEl.textContent = payload.body
+    announcementEl.classList.add("visible")
+  }
+
+  function clearAnnouncement() {
+    announcementEl.classList.remove("visible")
+  }
+
   function connect() {
     if (!token) {
       setStatus("no viewer token in URL (add ?token=...)")
@@ -137,6 +235,14 @@
         showVerse(message.payload)
       } else if (message.type === "verse:clear") {
         clearVerse()
+      } else if (message.type === "media:show") {
+        showMedia(message.payload)
+      } else if (message.type === "media:clear") {
+        clearMedia()
+      } else if (message.type === "announcement:show") {
+        showAnnouncement(message.payload)
+      } else if (message.type === "announcement:clear") {
+        clearAnnouncement()
       }
     })
   }
@@ -144,8 +250,15 @@
   // Local emergency clear (ARCHITECTURE.md section 35): must not require
   // a server round trip, and must never become a channel for issuing
   // application commands — this only ever hides the LOCAL visual state.
+  // "local visual state" is the whole overlay, not just the verse card —
+  // an operator hitting Escape in an emergency needs everything gone, not
+  // just whichever content type happened to be on screen.
   window.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") clearVerse()
+    if (event.key === "Escape") {
+      clearVerse()
+      clearMedia()
+      clearAnnouncement()
+    }
   })
 
   // Re-fit on resize (the overlay preview window is resizable; a fixed
