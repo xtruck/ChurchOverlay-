@@ -82,6 +82,21 @@ async function startServices(config: AppConfig): Promise<{ port: number; token: 
     port: WS_PORT,
     tokens: currentTokens,
     mediaLibrary: mediaLibrary ?? undefined,
+    // ARCHITECTURE.md section 65.4: a voice-triggered display-mode switch
+    // persists exactly like the set-display-mode IPC handler below does,
+    // so it survives a restart identically to a dashboard-toggled one.
+    onDisplayModeChanged: (mode) => {
+      getConfigStore()
+        .load()
+        .then((existing) => (existing ? getConfigStore().save({ ...existing, displayMode: mode }) : undefined))
+        .catch((err) => {
+          logger.error({
+            component: "main",
+            event: "display-mode-persist-failed",
+            error: err instanceof Error ? err.message : String(err),
+          })
+        })
+    },
   })
 
   staticServer = new StaticServer({

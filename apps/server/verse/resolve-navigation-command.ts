@@ -38,8 +38,35 @@ export function resolveNavigationCommand(
     return index.exists(candidate) ? { kind: "reference", reference: candidate } : { kind: "no-op" }
   }
 
+  // ARCHITECTURE.md section 65.4: never produces a VerseReference at all —
+  // AppCore intercepts this kind directly and never calls resolveVerse()
+  // for it. This branch only exists so the function stays total/defensive
+  // rather than throwing if it's ever reached anyway.
+  if (command.kind === "goto-display-mode") {
+    return { kind: "no-op" }
+  }
+
   if (!currentPosition) {
     return { kind: "no-op" }
+  }
+
+  // ARCHITECTURE.md section 65.1: elliptical/continuation references,
+  // resolved against currentPosition rather than a stated book (and, for
+  // goto-bare-verse, chapter too) — still validated through
+  // KnownValidVerseIndex.exists() exactly like every other computed
+  // reference (invariant 17), no exception for a "simpler" case.
+  if (command.kind === "goto-bare-verse") {
+    const candidate: VerseReference = {
+      book: currentPosition.book,
+      chapter: currentPosition.chapter,
+      verse: command.verse,
+    }
+    return index.exists(candidate) ? { kind: "reference", reference: candidate } : { kind: "no-op" }
+  }
+
+  if (command.kind === "goto-bare-chapter-verse") {
+    const candidate: VerseReference = { book: currentPosition.book, chapter: command.chapter, verse: command.verse }
+    return index.exists(candidate) ? { kind: "reference", reference: candidate } : { kind: "no-op" }
   }
 
   const candidate = computeCandidate(command.kind, currentPosition)

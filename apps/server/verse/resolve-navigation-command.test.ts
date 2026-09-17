@@ -128,3 +128,56 @@ test("resolveNavigationCommand: a current position with an unknown book is a no-
   assert.deepEqual(resolveNavigationCommand({ kind: "next-chapter" }, current, index), { kind: "no-op" })
   assert.deepEqual(resolveNavigationCommand({ kind: "previous-chapter" }, current, index), { kind: "no-op" })
 })
+
+// ARCHITECTURE.md section 65.1: elliptical/continuation references.
+test("resolveNavigationCommand: goto-bare-verse reuses the current book AND chapter", () => {
+  const current: VerseReference = { book: "john", chapter: 3, verse: 15 }
+  const result = resolveNavigationCommand({ kind: "goto-bare-verse", verse: 16 }, current, index)
+  assert.deepEqual(result, { kind: "reference", reference: { book: "john", chapter: 3, verse: 16 } })
+})
+
+test("resolveNavigationCommand: goto-bare-verse with no current position is a no-op", () => {
+  assert.deepEqual(resolveNavigationCommand({ kind: "goto-bare-verse", verse: 16 }, null, index), { kind: "no-op" })
+})
+
+test("resolveNavigationCommand: goto-bare-verse for a verse that doesn't exist in the current chapter is a no-op (never bypasses the hallucination guard)", () => {
+  const current: VerseReference = { book: "john", chapter: 3, verse: 15 } // John 3 has 36 verses
+  const result = resolveNavigationCommand({ kind: "goto-bare-verse", verse: 999 }, current, index)
+  assert.deepEqual(result, { kind: "no-op" })
+})
+
+test("resolveNavigationCommand: goto-bare-chapter-verse reuses the current book only", () => {
+  const current: VerseReference = { book: "romans", chapter: 1, verse: 1 }
+  const result = resolveNavigationCommand({ kind: "goto-bare-chapter-verse", chapter: 8, verse: 28 }, current, index)
+  assert.deepEqual(result, { kind: "reference", reference: { book: "romans", chapter: 8, verse: 28 } })
+})
+
+test("resolveNavigationCommand: goto-bare-chapter-verse with no current position is a no-op", () => {
+  assert.deepEqual(
+    resolveNavigationCommand({ kind: "goto-bare-chapter-verse", chapter: 8, verse: 28 }, null, index),
+    { kind: "no-op" }
+  )
+})
+
+test("resolveNavigationCommand: goto-bare-chapter-verse for a chapter/verse that doesn't exist is a no-op", () => {
+  const current: VerseReference = { book: "romans", chapter: 1, verse: 1 }
+  const result = resolveNavigationCommand({ kind: "goto-bare-chapter-verse", chapter: 999, verse: 1 }, current, index)
+  assert.deepEqual(result, { kind: "no-op" })
+})
+
+// ARCHITECTURE.md section 65.4: never produces a VerseReference — AppCore
+// intercepts this kind directly, but resolveNavigationCommand still stays
+// total/defensive rather than throwing if reached anyway.
+test("resolveNavigationCommand: goto-display-mode is always a no-op here, regardless of current position", () => {
+  assert.deepEqual(resolveNavigationCommand({ kind: "goto-display-mode", mode: "french" }, null, index), {
+    kind: "no-op",
+  })
+  assert.deepEqual(
+    resolveNavigationCommand(
+      { kind: "goto-display-mode", mode: "french" },
+      { book: "john", chapter: 3, verse: 16 },
+      index
+    ),
+    { kind: "no-op" }
+  )
+})

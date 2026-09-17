@@ -53,6 +53,18 @@ export type NavigationCommand =
   | { readonly kind: "previous-chapter" }
   | { readonly kind: "goto-chapter"; readonly book: string; readonly chapter: number }
   | { readonly kind: "cancel" }
+  /**
+   * Phase 2 (ARCHITECTURE.md section 65.1): "verse 16" said after "Romans
+   * chapter 8" — reuses currentPosition's book AND chapter.
+   */
+  | { readonly kind: "goto-bare-verse"; readonly verse: number }
+  /**
+   * Phase 2 (ARCHITECTURE.md section 65.1): "chapter 9, verse 3" — reuses
+   * currentPosition's book only.
+   */
+  | { readonly kind: "goto-bare-chapter-verse"; readonly chapter: number; readonly verse: number }
+  /** Phase 2 (ARCHITECTURE.md section 65.4): a spoken display-mode switch. */
+  | { readonly kind: "goto-display-mode"; readonly mode: DisplayMode }
 
 export interface NavigationCommandDetector {
   detect(text: string): NavigationCommand[]

@@ -1,6 +1,7 @@
 import type {
   AsrProvider,
   AudioFrame,
+  DisplayMode,
   MediaShowPayload,
   Rundown,
   RundownScene,
@@ -74,6 +75,18 @@ export type StartAppCoreOptions = {
    * and the operator's media:select/play/pause/seek/clear commands.
    */
   readonly mediaLibrary?: MediaLibrary
+  /**
+   * Optional (ARCHITECTURE.md section 65.4) — called after a voice-
+   * triggered "switch to french"/"english only"/"switch to bilingual"
+   * command successfully changes `source`'s live mode (via its optional
+   * setMode() capability, same duck-typed pattern as translationIdFor()).
+   * AppCore itself has no ConfigStore/persistence concern (it is provider-
+   * agnostic, per section 57) — this hook exists solely so the Electron
+   * main process can persist the change exactly like its existing
+   * set-display-mode IPC handler does, so a voice-triggered switch
+   * survives a restart identically to a dashboard-toggled one.
+   */
+  readonly onDisplayModeChanged?: (mode: DisplayMode) => void
 }
 
 export type AppCoreHandle = {
@@ -102,6 +115,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const circuitBreaker = options.circuitBreaker ?? new CircuitBreaker()
   const silenceGate = options.silenceGate ?? new SilenceGate()
   const mediaLibrary = options.mediaLibrary
+  const onDisplayModeChanged = options.onDisplayModeChanged
   const mediaCueDetector = mediaLibrary ? new MediaCueDetector(mediaLibrary) : null
   const mediaPlayback = new MediaPlaybackController()
   const navigationCommandDetector = new NavigationCommandDetector()
@@ -577,8 +591,40 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
    * about, and here also keeps currentVersePosition updates from racing
    * each other within one transcript).
    */
+  /**
+   * ARCHITECTURE.md section 65.4: an optional duck-typed capability check,
+   * same pattern as translationIdFor() — a source with no setMode() (e.g.
+   * a plain FreeApiSource/GetBibleVerseSource used standalone, not
+   * wrapped in LocalizedVerseSource) simply has nothing to change here.
+   */
+  function setModeFor(mode: DisplayMode): boolean {
+    const withMode = source as VerseSource & { setMode?: (mode: DisplayMode) => void }
+    if (!withMode.setMode) return false
+    withMode.setMode(mode)
+    return true
+  }
+
   async function handleNavigationCommands(transcript: TranscriptResult): Promise<void> {
     for (const command of navigationCommandDetector.detect(transcript.text)) {
+      if (command.kind === "goto-display-mode") {
+        if (setModeFor(command.mode)) {
+          onDisplayModeChanged?.(command.mode)
+          logger.info({
+            component: "app-core",
+            event: "navigation.display-mode-changed",
+            correlationId: transcript.correlationId,
+            metadata: { mode: command.mode },
+          })
+        } else {
+          logger.info({
+            component: "app-core",
+            event: "navigation.display-mode-not-configured",
+            correlationId: transcript.correlationId,
+          })
+        }
+        continue
+      }
+
       const resolution = resolveNavigationCommand(command, currentVersePosition, index)
 
       if (resolution.kind === "cancel") {

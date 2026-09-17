@@ -1275,3 +1275,117 @@ test("AppCore: a transcript with no prior ASR error broadcasts no status:update 
     await app.stop()
   }
 })
+
+// ARCHITECTURE.md section 65.1: elliptical/continuation references.
+test("AppCore: a bare 'verse N' spoken after a detected reference continues from its book and chapter", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const firstShow = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Turn to Romans 8:28.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    await firstShow
+
+    const secondShow = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T2",
+      correlationId: "01B",
+      sequence: 2,
+      text: "Now look at verse 29.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    const message = await secondShow
+    assert.deepEqual((message.payload as Verse).reference, { book: "romans", chapter: 8, verse: 29 })
+
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+/** Named per AGENTS.md section 45 — a test double with the optional setMode() capability. */
+class ModeAwareVerseSource implements VerseSource {
+  modeChanges: string[] = []
+  async getVerse(reference: VerseReference): Promise<Verse | null> {
+    return { reference, text: `text for ${JSON.stringify(reference)}`, translation: "kjv", source: "test" }
+  }
+  setMode(mode: string): void {
+    this.modeChanges.push(mode)
+  }
+}
+
+// ARCHITECTURE.md section 65.4: a spoken display-mode switch.
+test("AppCore: 'switch to french' calls the source's setMode() and invokes onDisplayModeChanged", async () => {
+  const asr = new FakeAsrProvider()
+  const source = new ModeAwareVerseSource()
+  const changedModes: string[] = []
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source,
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    onDisplayModeChanged: (mode) => changedModes.push(mode),
+  })
+  try {
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Let's switch to French for this next part.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    await waitFor(() => source.modeChanges.length === 1)
+    assert.deepEqual(source.modeChanges, ["french"])
+    assert.deepEqual(changedModes, ["french"])
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: 'switch to french' with a source that has no setMode() capability is handled gracefully, not a crash", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(), // no setMode()
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Switch to French.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    // Reaching here without the process crashing is the assertion.
+  } finally {
+    await app.stop()
+  }
+})
