@@ -41,6 +41,7 @@
     font-family: var(--font-ui);
   }
   body { display: flex; flex-direction: column; }
+  #app-shell { display: flex; flex-direction: column; height: 100%; }
 
   header {
     display: flex;
@@ -208,9 +209,51 @@
   .log-line.event-sent .log-text { color: var(--accent); }
   .log-line.event-received .log-text { color: var(--success); }
   .log-line.event-error .log-text { color: var(--danger); }
+
+  .setup-screen {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .setup-card {
+    width: 100%;
+    max-width: 420px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    padding: var(--space-8) var(--space-6);
+    text-align: center;
+  }
+  .setup-card .brand-mark { margin: 0 auto var(--space-4); }
+  .setup-card h2 { font-size: 16px; margin: 0 0 6px; }
+  .setup-card p { font-size: 12.5px; color: var(--text-secondary); line-height: 1.5; margin: 0 0 var(--space-6); }
+  .setup-card label { text-align: left; }
+  .setup-card input { margin-bottom: var(--space-4); }
+  #setup-error {
+    display: none;
+    color: var(--danger);
+    font-size: 12px;
+    margin: -6px 0 var(--space-4);
+    text-align: left;
+  }
 </style>
 </head>
 <body>
+  <div id="setup-screen" class="setup-screen" style="display: none">
+    <div class="setup-card">
+      <div class="brand-mark" style="width: 40px; height: 40px; font-size: 15px;">CO</div>
+      <h2>Set up ChurchOverlay</h2>
+      <p>Enter your Groq API key to start transcribing. It's encrypted and stored locally — this only needs to be done once.</p>
+      <label for="setup-groq-key">Groq API key</label>
+      <input id="setup-groq-key" type="password" placeholder="gsk_…" autocomplete="off" />
+      <div id="setup-error"></div>
+      <button id="setup-save-btn" class="btn-primary" style="width: 100%">Save and continue</button>
+    </div>
+  </div>
+
+  <div id="app-shell" style="display: none">
   <header>
     <div class="brand">
       <div class="brand-mark">CO</div>
@@ -264,6 +307,7 @@
       </div>
     </div>
   </main>
+  </div>
 
   <script src="./dashboard.js"></script>
 </body>

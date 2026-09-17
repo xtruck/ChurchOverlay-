@@ -47,6 +47,11 @@
   const liveVerseEmptyEl = document.getElementById("live-verse-empty")
   const liveVerseTextEl = document.getElementById("live-verse-text")
   const liveVerseRefEl = document.getElementById("live-verse-ref")
+  const setupScreenEl = document.getElementById("setup-screen")
+  const appShellEl = document.getElementById("app-shell")
+  const setupKeyInput = document.getElementById("setup-groq-key")
+  const setupErrorEl = document.getElementById("setup-error")
+  const setupSaveBtn = document.getElementById("setup-save-btn")
 
   let ws = null
   let audioContext = null
@@ -214,8 +219,60 @@
     })
   }
 
+  function showAppShell() {
+    setupScreenEl.style.display = "none"
+    appShellEl.style.display = "flex"
+  }
+
+  function showSetupScreen() {
+    appShellEl.style.display = "none"
+    setupScreenEl.style.display = "flex"
+  }
+
+  function setSetupError(text) {
+    setupErrorEl.textContent = text
+    setupErrorEl.style.display = text ? "block" : "none"
+  }
+
+  setupSaveBtn.addEventListener("click", () => {
+    const apiKey = setupKeyInput.value.trim()
+    if (!apiKey) {
+      setSetupError("Enter a Groq API key to continue.")
+      return
+    }
+    setSetupError("")
+    setupSaveBtn.disabled = true
+    setupSaveBtn.textContent = "Saving…"
+
+    window.churchOverlay
+      .completeSetup(apiKey)
+      .then((info) => {
+        showAppShell()
+        connect(info.port, info.token)
+      })
+      .catch((err) => {
+        setSetupError(err.message)
+        setupSaveBtn.disabled = false
+        setupSaveBtn.textContent = "Save and continue"
+      })
+  })
+
+  // On load, ask main whether services are already running (a Groq key
+  // was saved on a previous run) or this is a genuine first run — the
+  // setup screen only appears when there is nothing to connect to yet
+  // (ARCHITECTURE.md section 2.1 item 21).
   window.churchOverlay
-    .getOperatorConnectionInfo()
-    .then((info) => connect(info.port, info.token))
-    .catch((err) => setStatus("failed to get connection info: " + err.message, "disconnected"))
+    .getStartupStatus()
+    .then((status) => {
+      if (status.ready) {
+        showAppShell()
+        connect(status.port, status.token)
+      } else {
+        showSetupScreen()
+      }
+    })
+    .catch((err) => {
+      showSetupScreen()
+      setSetupError("Could not check startup status: " + err.message)
+    })
 })()

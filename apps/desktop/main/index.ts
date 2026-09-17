@@ -29,60 +29,25 @@ let staticServer: StaticServer | null = null
 let dashboardWindow: BrowserWindow | null = null
 let overlayWindow: BrowserWindow | null = null
 let currentTokens: { operatorToken: string; viewerToken: string } | null = null
+let configStore: ConfigStore | null = null
 
 function generateToken(): string {
   return randomBytes(24).toString("hex")
 }
 
-/**
- * First-run bootstrap: if no config exists yet, or it exists but has no
- * Groq key, seed one from GROQ_API_KEY in the environment (the same
- * pattern the repo's .env-based dev workflow already uses) and generate
- * fresh WS tokens, then persist all of it through ConfigStore so it is
- * encrypted at rest from then on. This is a deliberately minimal v1
- * bootstrap — a real settings UI for entering/rotating the Groq key is
- * not built yet; ROADMAP-worthy, not something to invent here.
- */
-async function loadOrCreateConfig(configStore: ConfigStore): Promise<AppConfig> {
-  const existing = await configStore.load()
-  if (existing && existing.groqApiKey) {
-    return existing
+function getConfigStore(): ConfigStore {
+  if (!configStore) {
+    throw new Error("configStore accessed before initialization")
   }
-
-  const groqApiKey = process.env.GROQ_API_KEY ?? existing?.groqApiKey ?? ""
-  const config: AppConfig = {
-    groqApiKey,
-    microphoneId: existing?.microphoneId ?? null,
-    operatorToken: existing?.operatorToken ?? generateToken(),
-    viewerToken: existing?.viewerToken ?? generateToken(),
-  }
-  await configStore.save(config)
-  return config
+  return configStore
 }
 
-async function startServices(): Promise<void> {
-  if (!safeStorage.isEncryptionAvailable()) {
-    // ARCHITECTURE.md section 38: "The application must never write
-    // plaintext secrets to disk." If the OS can't back safeStorage (no
-    // keychain/credential store available), we must not silently fall
-    // back to writing the config unencrypted — fail loudly instead.
-    throw new Error(
-      "safeStorage encryption is not available on this system — refusing to start rather than write secrets unencrypted (ARCHITECTURE.md section 38)."
-    )
-  }
-
-  const configStore = new ConfigStore(join(app.getPath("userData"), "config.json"), {
-    encrypt: (plaintext) => safeStorage.encryptString(plaintext),
-    decrypt: (ciphertext) => safeStorage.decryptString(ciphertext),
-  })
-
-  const config = await loadOrCreateConfig(configStore)
-  if (!config.groqApiKey) {
-    throw new Error(
-      "No Groq API key configured. Set GROQ_API_KEY in the environment for first run (a real settings UI to enter it is not built yet)."
-    )
-  }
-
+/**
+ * Starts AppCore + StaticServer for a config that already has a Groq key
+ * — called either at launch (if a key was already saved from a previous
+ * run) or once the operator finishes the setup screen for the first time.
+ */
+async function startServices(config: AppConfig): Promise<{ port: number; token: string }> {
   currentTokens = { operatorToken: config.operatorToken, viewerToken: config.viewerToken }
 
   appCoreHandle = await startAppCore({
@@ -106,6 +71,10 @@ async function startServices(): Promise<void> {
     event: "services.started",
     metadata: { wsPort: appCoreHandle.wsServer.port, httpPort: staticServer.port },
   })
+
+  createOverlayWindow()
+
+  return { port: appCoreHandle.wsServer.port, token: currentTokens.operatorToken }
 }
 
 function createDashboardWindow(): void {
@@ -169,6 +138,42 @@ function createOverlayWindow(): void {
   })
 }
 
+/**
+ * The dashboard renderer calls this once on load to decide whether to
+ * show its normal operator UI or a first-run setup screen. Deliberately
+ * minimal (ARCHITECTURE.md section 2.1 item 21, "minimal operator
+ * dashboard"): a single API-key field, not a general settings panel —
+ * rotating the key or changing other settings later isn't built yet.
+ */
+ipcMain.handle("get-startup-status", () => {
+  if (appCoreHandle && currentTokens) {
+    return { ready: true, port: appCoreHandle.wsServer.port, token: currentTokens.operatorToken }
+  }
+  return { ready: false }
+})
+
+ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
+  const groqApiKey =
+    typeof payload === "object" && payload !== null && "groqApiKey" in payload
+      ? String((payload as { groqApiKey: unknown }).groqApiKey ?? "").trim()
+      : ""
+  if (!groqApiKey) {
+    throw new Error("A Groq API key is required.")
+  }
+
+  const store = getConfigStore()
+  const existing = await store.load()
+  const config: AppConfig = {
+    groqApiKey,
+    microphoneId: existing?.microphoneId ?? null,
+    operatorToken: existing?.operatorToken ?? generateToken(),
+    viewerToken: existing?.viewerToken ?? generateToken(),
+  }
+  await store.save(config)
+
+  return startServices(config)
+})
+
 ipcMain.handle("get-operator-connection-info", () => {
   if (!appCoreHandle || !currentTokens) {
     throw new Error("services are not started yet")
@@ -186,30 +191,52 @@ async function shutdown(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
-  try {
-    await startServices()
-  } catch (err) {
+  if (!safeStorage.isEncryptionAvailable()) {
+    // ARCHITECTURE.md section 38: "The application must never write
+    // plaintext secrets to disk." If the OS can't back safeStorage (no
+    // keychain/credential store available), we must not silently fall
+    // back to writing the config unencrypted, and there is no safe
+    // degraded mode to run in instead — quit with a clear logged reason
+    // rather than open a window that can never save a working config.
     logger.error({
       component: "main",
       event: "startup.failed",
-      error: err instanceof Error ? err.message : String(err),
+      error: "safeStorage encryption is not available on this system.",
     })
-    // ARCHITECTURE.md section 4.5 "Fail safely" is about ASR/Bible API/WS/
-    // mic/cache/renderer failures once running — a failed *startup*
-    // (e.g. no Groq key, no safeStorage) has nothing safe left to degrade
-    // into, so quitting with a clear logged reason is correct here rather
-    // than opening a window backed by services that never started.
     app.quit()
     return
   }
 
+  configStore = new ConfigStore(join(app.getPath("userData"), "config.json"), {
+    encrypt: (plaintext) => safeStorage.encryptString(plaintext),
+    decrypt: (ciphertext) => safeStorage.decryptString(ciphertext),
+  })
+
+  // The dashboard window opens immediately either way — get-startup-status
+  // (above) is what tells its renderer whether to show the setup screen
+  // or connect normally, rather than main deciding that before any window
+  // exists (the previous design, which quit the whole app with only a log
+  // line if no key was configured — unusable for anyone without an
+  // environment variable already set).
   createDashboardWindow()
-  createOverlayWindow()
+
+  try {
+    const existing = await configStore.load()
+    if (existing && existing.groqApiKey) {
+      await startServices(existing)
+    }
+  } catch (err) {
+    logger.error({
+      component: "main",
+      event: "startup.services-failed",
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createDashboardWindow()
-      createOverlayWindow()
+      if (appCoreHandle) createOverlayWindow()
     }
   })
 })

@@ -7,19 +7,27 @@ import { contextBridge, ipcRenderer } from "electron"
  * ipcRenderer access — so the renderer cannot reach arbitrary main-
  * process capabilities.
  *
- * getOperatorConnectionInfo() is the one place this hands the renderer
- * something secret-shaped: the operator token needed to open the
- * renderer's own WebSocket connection to the local server, plus the port
- * to connect on. This does not violate "renderer must not access
- * secrets" (ARCHITECTURE.md section 6.2) in the sense that rule actually
- * protects against: the renderer never touches the filesystem, safeStorage,
- * or any application secret beyond this one token, and it receives that
- * token only for its own sanctioned connection to a server on the SAME
- * machine, handed to it explicitly by the main process it already trusts.
- * The threat this token defends against is an unrelated local process or
- * web page connecting to the WS server — not the dashboard renderer
- * itself, which the main process created and is choosing to talk to.
+ * getOperatorConnectionInfo() and getStartupStatus() are the one place
+ * this hands the renderer something secret-shaped: the operator token
+ * needed to open the renderer's own WebSocket connection to the local
+ * server, plus the port to connect on. This does not violate "renderer
+ * must not access secrets" (ARCHITECTURE.md section 6.2) in the sense
+ * that rule actually protects against: the renderer never touches the
+ * filesystem, safeStorage, or any application secret beyond this one
+ * token, and it receives that token only for its own sanctioned
+ * connection to a server on the SAME machine, handed to it explicitly by
+ * the main process it already trusts. The threat this token defends
+ * against is an unrelated local process or web page connecting to the WS
+ * server — not the dashboard renderer itself, which the main process
+ * created and is choosing to talk to.
+ *
+ * completeSetup() carries the Groq API key from the first-run setup
+ * screen to the main process, which is the only place that ever
+ * persists it (via ConfigStore + safeStorage) — the renderer sends it
+ * once and never stores or re-reads it itself.
  */
 contextBridge.exposeInMainWorld("churchOverlay", {
   getOperatorConnectionInfo: () => ipcRenderer.invoke("get-operator-connection-info"),
+  getStartupStatus: () => ipcRenderer.invoke("get-startup-status"),
+  completeSetup: (groqApiKey: string) => ipcRenderer.invoke("complete-setup", { groqApiKey }),
 })
