@@ -17,6 +17,7 @@
 
   const statusEl = document.getElementById("status")
   const verseEl = document.getElementById("verse")
+  const verseCardEl = document.getElementById("verse-card")
   const textEl = document.getElementById("verse-text")
   const refEl = document.getElementById("verse-reference")
 
@@ -45,10 +46,36 @@
     return book.replace(/\b\w/g, (c) => c.toUpperCase())
   }
 
+  // Auto-shrink to fit: a long verse (a wordy translation, or a small OBS
+  // Browser Source size) must never run off-screen or get visually cut
+  // off — the CSS clamp() on #verse-text's font-size is viewport-width
+  // aware, but not text-length aware, so it alone can't guarantee this.
+  // Steps the font size down until the card fits within a safe fraction
+  // of the viewport, or hits a legibility floor (never shrinks forever).
+  const MAX_FONT_PX = 44
+  const MIN_FONT_PX = 15
+  const MAX_HEIGHT_FRACTION = 0.62 // leaves headroom above/below for #verse's own vertical placement
+  const MAX_WIDTH_FRACTION = 0.86 // matches #verse's 7%-each-side padding
+
+  function fitVerseText() {
+    const maxWidth = window.innerWidth * MAX_WIDTH_FRACTION
+    const maxHeight = window.innerHeight * MAX_HEIGHT_FRACTION
+    let fontSize = MAX_FONT_PX
+    textEl.style.fontSize = fontSize + "px"
+    while (
+      (verseCardEl.scrollWidth > maxWidth || verseCardEl.scrollHeight > maxHeight) &&
+      fontSize > MIN_FONT_PX
+    ) {
+      fontSize -= 1
+      textEl.style.fontSize = fontSize + "px"
+    }
+  }
+
   function showVerse(verse) {
     textEl.textContent = verse.text
     const ref = verse.reference
     refEl.textContent = capitalize(ref.book) + " " + ref.chapter + ":" + ref.verse
+    fitVerseText()
     verseEl.classList.add("visible")
   }
 
@@ -94,6 +121,13 @@
   // application commands — this only ever hides the LOCAL visual state.
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape") clearVerse()
+  })
+
+  // Re-fit on resize (the overlay preview window is resizable; a fixed
+  // OBS Browser Source size won't fire this, which is fine — it only
+  // needs to fit once, at whatever size it was given).
+  window.addEventListener("resize", () => {
+    if (verseEl.classList.contains("visible")) fitVerseText()
   })
 
   connect()
