@@ -92,13 +92,8 @@ paraphrase detection
 vector search
 offline Bible database
 multiple translations
-media library
-songs
-scenes
-rundown
 cameras
-branding engine
-AI agent
+branding engine (as a distinct subsystem)
 MCP
 ProPresenter
 Planning Center
@@ -110,6 +105,14 @@ dynamic plugins
 ```
 
 If a user request requires one of these, identify it as a scope change instead of quietly implementing it.
+
+**Amendment (ARCHITECTURE.md section 59):** `media library`, `songs`/`scenes`/`rundown`,
+and `AI agent` (now scoped as a broader AI copilot, not implemented) were removed from
+this list — approved for Phase 2 development, in that order, each still requiring its
+own dedicated architecture note before code (ARCHITECTURE.md section 59.3). Also
+approved: a generic, brandable audience (church name/branding in first-run setup, no
+church-specific defaults) — still a local single-install app, not a hosted product.
+Everything else above remains locked exactly as before.
 
 ## 5. Never Bypass Architectural Boundaries
 

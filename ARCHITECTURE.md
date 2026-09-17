@@ -65,13 +65,13 @@ They must remain documented in `ROADMAP.md` and must not enter the implementatio
 - Vector search.
 - Multiple Bible translations.
 - Offline Bible database.
-- Media library.
-- Songs/lyrics.
-- Scenes.
-- Rundown/service planning.
+- Media library (**approved for Phase 2 — see section 59; not yet implemented**).
+- Songs/lyrics (**approved for Phase 2 — see section 59; not yet implemented**).
+- Scenes (**approved for Phase 2 — see section 59; not yet implemented**).
+- Rundown/service planning (**approved for Phase 2 — see section 59; not yet implemented**).
 - Cameras.
 - Branding engine.
-- AI agent.
+- AI agent (**approved for Phase 2 as a broader AI copilot — see section 59; not yet implemented**).
 - MCP server.
 - ProPresenter integration.
 - Planning Center integration.
@@ -1501,3 +1501,122 @@ Real requirements before features.
 Small interfaces before frameworks.
 
 This document is the architectural baseline for v1.
+
+## 59. Phase 2 — Approved Scope Expansion
+
+Recorded here per AGENTS.md section 43's requirement that a scope change be explained
+(why, what changes, what breaks, what tests are required) before it happens, not folded
+in silently. Sections 1-58 above remain the accurate v1 baseline — nothing in them is
+retracted by this section. This section governs what comes *after* v1, not a
+retroactive rewrite of it.
+
+### 59.1 Why
+
+Two decisions were made together, both confirmed explicitly rather than assumed:
+
+1. **Audience.** ChurchOverlay is no longer scoped as one specific church's internal
+   tool — it's meant to be a product other churches can install and run themselves.
+   Concretely, this means: it stays a **local, single-install Electron desktop app** —
+   no backend, no hosting, no multi-tenant account system (a hosted/multi-tenant
+   version is a fundamentally different architecture — real backend, auth, per-tenant
+   data isolation — and is explicitly NOT what this section approves; it would need its
+   own separate architecture review if ever pursued). What changes is genericness: a
+   church name/branding step in first-run setup (today's setup screen only asks for a
+   Groq API key), and no church-specific text or defaults left anywhere in UI copy or
+   `package.json` metadata.
+2. **Feature scope.** Three items from section 3's out-of-scope list are approved to
+   move forward: media library & song lyrics, service rundown & scenes, and an AI
+   copilot. Each still requires its own dedicated architecture note before its code
+   starts (section 59.3) — this section approves the *scope change itself* and the
+   *build order*, not a full technical design for all three at once.
+
+### 59.2 What changes
+
+- Sections 2-3's v1 scope lock is amended: media library, songs/lyrics, scenes,
+  rundown/service planning, and "AI agent" (now understood as a broader AI copilot, not
+  only the `ReferenceInterpreter` idea in `ROADMAP.md`) are no longer permanently
+  out-of-scope — see the updated markers in section 3. Everything else on that list
+  (local/hybrid ASR, semantic detection, cameras, branding engine as a distinct
+  subsystem, MCP server, ProPresenter/Planning Center integration, automated OBS
+  control, remote/cloud sync, multi-user networking, mobile application, cloud backend,
+  dynamic plugin loading) remains locked out exactly as before. `AGENTS.md` section 4's
+  "Do NOT implement" list is amended the same way.
+- A visual refactor (internally "Phase 0") of the existing v1 screens — operator
+  dashboard, overlay, and the first-run setup screen — is approved as a single full
+  pass: same screens, actions, and data, restyled. This does not touch section 2's
+  scope list at all; it is exactly the kind of dashboard/overlay redesign section 57
+  item 3-4 already says should be possible without touching ASR or verse validation,
+  and carries no scope-change requirement on its own. Build order within that pass:
+  dashboard first (highest surface area), then overlay, then the setup screen — a
+  sequencing choice, not separate rounds of review.
+- Build order for the three approved features, chosen by risk and dependency: **media
+  library & song lyrics**, then **service rundown & scenes**, then **AI copilot**.
+  Media/lyrics is self-contained and never touches the verse pipeline, so it's the
+  safest first real addition. Rundown/scenes builds on having media cues to sequence
+  and forces state-machine design work (section 48's pattern: named states, defined
+  transitions, invalid transitions handled safely) that the AI copilot will also need.
+  AI copilot goes last — `ROADMAP.md` already documents why its one concretely-evaluated
+  approach (Gemini Live as a `ReferenceInterpreter`) needs real session-management
+  engineering the current Groq batch model doesn't, and "AI copilot" has now been
+  confirmed to mean something broader than that one idea, which raises its own,
+  not-yet-answered design questions (section 59.4).
+- Resolved product decisions for the rundown feature, to remove ambiguity before its
+  architecture note is written: **live voice-detected verse display keeps running in
+  the background while a rundown is active** — starting a rundown does not suspend
+  automatic detection. The exact precedence between a live-detected verse and whatever
+  scene the rundown currently has on air is still open (section 59.4) and must be
+  settled in that feature's own architecture note, not guessed at here.
+- Resolved product decision for the media library: v1 of that feature supports
+  **images and video/audio backgrounds**, not images only. Video/audio pulls in real
+  complexity images alone don't (playback control, a new WS event cadence for a
+  running clip) — that complexity is now in scope for this feature, not deferred to a
+  later one.
+
+### 59.3 What each feature needs before code (unchanged from the original plan)
+
+Each of the three needs its own short architecture note — which module owns it, which
+interface it uses, which invariant it could affect, how it will be tested, confirmation
+it's the approved Phase 2 scope and not scope creep beyond it:
+
+- **Media library & song lyrics** — lowest risk. Needs a new `MediaCue`/`LyricsCue`
+  concept alongside `Verse`, a new WS event type (`media:show`, distinct from
+  `verse:show` — AGENTS.md section 19 keeps the action registry small and adds types
+  only when a real feature needs them, which this now is), and secure file handling for
+  operator-selected local images/video/audio: either a scoped Electron `dialog` picker
+  or a dedicated IPC channel where the main process reads the file and the renderer
+  never receives a raw filesystem path (AGENTS.md section 28's secrets/renderer-
+  isolation reasoning extended to arbitrary local files). Nothing existing breaks; this
+  is additive. Tests needed: a new source unit-tested the way `FreeApiSource` is, a
+  WS/action-registry test for `media:show`, and at least one deliberate
+  "malicious/traversal path" test — AGENTS.md section 15's "no arbitrary filesystem
+  paths from untrusted WS payloads" applies directly here.
+- **Service rundown & scenes** — medium risk. A real new stateful subsystem: a
+  pre-planned sequence of scenes (verse mode, an announcement slide, a media cue,
+  blank) the operator steps through, replacing today's single implicit state (verse
+  showing or cleared) with an explicit state machine (named states, defined
+  transitions, per section 48). New operator-only WS commands (`scene:next`,
+  `scene:previous`, `scene:goto`, `rundown:load`), schema-validated the same way
+  `verse:override` is. Its architecture note must settle the precedence question left
+  open in section 59.4.
+- **AI copilot** — highest risk by a clear margin. `ROADMAP.md`'s existing
+  Gemini-Live-as-`ReferenceInterpreter` writeup is one candidate building block, not
+  the whole feature now that "AI copilot" has been confirmed to mean something
+  broader (section 59.4 has the open question). Whatever form it takes, any
+  AI-proposed Bible reference must still pass through the same hallucination-guard
+  pipeline `RegexDetector`'s output does today (section 15) — an AI-proposed reference
+  is never trusted directly, regardless of which AI approach is eventually chosen. This
+  item does not proceed to code before its own dedicated architecture review.
+
+### 59.4 Open questions carried forward (not decided by this section)
+
+- **Rundown/live-detection precedence.** Confirmed: live detection keeps running
+  during a rundown. Not yet decided: when both a live-detected verse and the rundown's
+  current scene want the overlay at the same moment, which wins, and how does control
+  return afterward? This shapes the rundown state machine's actual transition table and
+  must be settled in that feature's architecture note before its code starts.
+- **AI copilot's actual shape.** Confirmed broader than the `ReferenceInterpreter`
+  idea alone. Not yet decided: sermon/topic assistance, auto-generated slide
+  suggestions, a chat-style assistant in the dashboard, the original reference-proposal
+  idea, or some combination — each has a materially different risk profile and none is
+  assumed here. This must be scoped concretely in that feature's own dedicated
+  architecture review, per section 59.3, before any code.
