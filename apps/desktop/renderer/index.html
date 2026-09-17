@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>ChurchOverlay — Operator</title>
+<style>
+  body {
+    margin: 0;
+    font-family: system-ui, sans-serif;
+    background: #0f1115;
+    color: #e5e7eb;
+    padding: 24px;
+  }
+  h1 { font-size: 18px; margin: 0 0 16px; }
+  #status { font-family: monospace; font-size: 13px; margin-bottom: 20px; }
+  .status-connected { color: #34d399; }
+  .status-disconnected { color: #ef4444; }
+  .row { display: flex; gap: 12px; margin-bottom: 16px; }
+  .card {
+    background: #1a1d24;
+    border: 1px solid #2a2d36;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+    max-width: 560px;
+  }
+  label { display: block; font-size: 12px; color: #9ca3af; margin-bottom: 6px; }
+  input, select {
+    width: 100%;
+    box-sizing: border-box;
+    background: #0f1115;
+    border: 1px solid #2a2d36;
+    color: #e5e7eb;
+    padding: 8px 10px;
+    border-radius: 6px;
+    margin-bottom: 10px;
+    font-family: monospace;
+  }
+  button {
+    background: #f5a15a;
+    color: #1a1d24;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-weight: bold;
+    cursor: pointer;
+    margin-right: 8px;
+  }
+  button.secondary { background: #2a2d36; color: #e5e7eb; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  #transcript {
+    font-family: monospace;
+    font-size: 13px;
+    min-height: 40px;
+    color: #d1d5db;
+  }
+  #log {
+    font-family: monospace;
+    font-size: 12px;
+    color: #9ca3af;
+    max-width: 560px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  #log div { padding: 2px 0; border-bottom: 1px solid #1a1d24; }
+</style>
+</head>
+<body>
+  <h1>ChurchOverlay — Operator</h1>
+  <div id="status">connecting…</div>
+
+  <div class="card">
+    <label>Microphone</label>
+    <div class="row">
+      <button id="mic-start-btn">Start listening</button>
+      <button id="mic-stop-btn" disabled class="secondary">Stop</button>
+    </div>
+    <label>Last transcript</label>
+    <div id="transcript">(nothing yet)</div>
+  </div>
+
+  <div class="card">
+    <label for="reference">Manual override — verse reference (e.g. "John 3:16")</label>
+    <input id="reference" type="text" placeholder="John 3:16" />
+    <button id="show-btn">Show on overlay</button>
+    <button id="clear-btn" class="secondary">Clear</button>
+  </div>
+
+  <div class="card">
+    <label>Activity</label>
+    <div id="log"></div>
+  </div>
+
+  <script src="./dashboard.js"></script>
+</body>
+</html>
