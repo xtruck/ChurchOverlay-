@@ -2590,3 +2590,225 @@ discarding a paused scene rather than resuming it. Scene kinds are verse, media,
 announcement (new, minimal), and blank — no general slide/layout editor. Rundown
 authoring UI and cross-restart persistence are explicitly left open per section 64.5,
 not assumed here.
+
+## 65. Phase 2 Feature Note — Web-Research-Driven Enhancements
+
+A dedicated architecture note covering a batch of smaller features, sourced from
+researching how established church presentation tools (ProPresenter, EasyWorship,
+Proclaim, OpenLP) and newer AI-native competitors (VerseFlash, NaveLight, Pewbeam,
+Kairos) handle live scripture display, service planning, and AI-assisted features —
+explicitly to find ideas this app didn't already have planned, not to re-litigate
+anything already scoped. Design only for each subsection below; implementation
+proceeds subsection by subsection, not as one slice.
+
+### 65.1 Elliptical reference resolution ("continuation" references)
+
+**Problem confirmed from real preaching speech patterns**: a preacher says "Romans
+chapter 8," then later just "verse 16" or "chapter 9, verse 3" — a full "Book
+Chapter:Verse" utterance is the exception in a sermon, not the norm, once the book is
+already established. `RegexDetector`'s `REFERENCE_PATTERN` requires a full "Book
+Chapter:Verse" every time and has no memory of what was said before — it is
+correctly stateless per its own doc comment (ARCHITECTURE.md section 12). This gap
+is closed the same way section 61 closed "next verse": as a **new pair of
+`NavigationCommand` kinds**, resolved against `currentVersePosition` (the same
+server-authoritative state section 61.4 already introduced), not as a change to
+`RegexDetector` itself.
+
+```ts
+// packages/contracts/verse.ts, NavigationCommand extended
+| { readonly kind: "goto-bare-verse"; readonly verse: number }
+| { readonly kind: "goto-bare-chapter-verse"; readonly chapter: number; readonly verse: number }
+```
+
+Phrase recognition, in `NavigationCommandDetector`:
+
+```text
+goto-bare-verse:          "verse <N>" — reuses currentPosition's book AND chapter
+goto-bare-chapter-verse:  "chapter <N> verse <M>" (or "chapter <N>, verse <M>") —
+                          reuses currentPosition's book only
+```
+
+**Both patterns require a negative lookbehind excluding a book name (or a
+`goto-chapter`-style "chapter" already attached to one) immediately before
+"chapter"/"verse"**, so "Romans chapter 8" (a real `goto-chapter`) and "Romans
+chapter 8, verse 16" (destined to be its own full-reference detection once spoken
+that way) are never miscaptured as a *bare* continuation using the wrong (current,
+not stated) book. The bare-verse pattern additionally excludes a match that is the
+tail of a "chapter N ... verse M" phrase already claimed by the bare-chapter-verse
+pattern, so one utterance never produces two redundant commands for the same
+resolved reference.
+
+Resolution mirrors `goto-chapter`'s existing shape in `resolveNavigationCommand()`:
+no-op with no `currentPosition` (nothing to continue from) or an unknown/out-of-range
+result (still validated through `KnownValidVerseIndex.exists()` — invariant 17
+applies here exactly as it does to every other navigation-computed reference, no
+exception for a "simpler" case).
+
+**Known, accepted limitation**: a book name mentioned much earlier in a long,
+rambling sentence (not immediately before "chapter"/"verse") could still be missed
+by the lookbehind and get treated as a continuation. This is the same class of
+tradeoff section 61.3 already accepts for short synonyms — mitigated, not
+eliminated, and flagged rather than silently assumed away.
+
+### 65.2 Trigger-source indicator (adapted from "confidence badge")
+
+The research's "visible confidence badge" idea does not translate directly: this
+app's detection is fully deterministic (regex match + hallucination-guard
+validation), not fuzzy/semantic, so there is no graduated confidence to display —
+every accepted detection is equally "exact" by construction (section 15). The
+**meaningful equivalent for this architecture** is surfacing *how* a shown verse got
+there, since that genuinely varies and is useful operator context: detected from
+speech, a manual override, voice navigation, or a rundown scene.
+
+`broadcastVerse()`'s call sites already know this distinction (it is implicit in
+which function called them) — this note adds a `trigger` field to `verse:show`'s
+payload envelope (not to `Verse` itself, which stays pure verse-content data with no
+knowledge of why it's being shown):
+
+```text
+trigger: "detected" | "override" | "navigation" | "rundown"
+```
+
+Dashboard-only surface (a small label on the Live Preview card) — the overlay (what
+the congregation/broadcast sees) does not show this, since it is operator context,
+not audience content.
+
+### 65.3 Auto-send vs. review-and-approve mode
+
+**Confirmed explicitly with the user**: auto-send remains the default, unchanged
+from today's behavior — this is an additive opt-in mode, not a behavior change
+anyone already running the app would notice unless they turn it on.
+
+A new per-install setting (`ConfigStore.verseConfirmationMode: "auto" | "review"`,
+defaulting to `"auto"`, same setup-default + live-toggle pattern section 63.2
+established for display mode) changes exactly one thing: when a **detected**
+reference resolves successfully, instead of calling `broadcastVerse()` immediately,
+it is held as a **pending suggestion** and a new operator-only event
+(`verse:pending { verse: Verse }`) is sent instead. The operator dashboard shows a
+"Verse detected: John 3:16 — show?" prompt with a confirm button, which sends a new
+operator command (`verse:confirm-pending`) that then calls `broadcastVerse()` for
+real. A new pending suggestion replaces (does not queue behind) any not-yet-confirmed
+one — the same "most recent wins" reasoning invariant 15-adjacent state already uses
+elsewhere, since an unconfirmed suggestion for a verse spoken two sentences ago is
+almost never still wanted once a newer one exists.
+
+**Only affects detection.** Manual override, voice navigation, and rundown scene
+activation are all explicit operator-driven actions already — this mode has no
+effect on them, matching the confirmed scope ("review" is specifically about
+live-detected suggestions, not gating every possible verse-display path).
+
+### 65.4 Voice command to switch translation/display mode
+
+Extends the same synonym-list `NavigationCommandDetector` domain (section 61.3) with
+new whole-utterance-adjacent phrases mapped to a new `NavigationCommand` kind:
+
+```text
+goto-display-mode: "switch to english", "switch to french", "switch to bilingual"
+                    (also "english only"/"french only" as accepted synonyms)
+```
+
+Resolution does not go through `resolveNavigationCommand()`'s `VerseReference`
+machinery at all (there is no reference involved) — `AppCore` handles this kind
+directly, calling `LocalizedVerseSource.setMode()` exactly like the existing
+`set-display-mode` IPC handler does today (section 63.2), and persists the change to
+`ConfigStore` the same way, so a voice-triggered switch survives a restart
+identically to a dashboard-toggled one.
+
+### 65.5 On-demand word/term definition lookup by voice
+
+A small, fixed, bundled glossary (`apps/server/glossary/glossary.ts` — a plain
+`Record<string, string>`, dozens of common theological terms, not hundreds; not a
+Greek/Hebrew lexicon, which is a real, separate data-licensing undertaking flagged
+as out of scope for this note) and a `GlossaryDetector` sibling to
+`NavigationCommandDetector`, matching `"define <term>"` / `"what does <term> mean"`.
+A found term broadcasts a new `definition:show { term, definition }` event,
+displayed by the overlay similarly to (but visually distinct from) the announcement
+card (section 64.4), auto-clearing after a fixed duration (defaulting 12 seconds — a
+definition is a momentary aside, not a persistent scene the operator manages, unlike
+every other content type in this app) rather than needing an explicit clear. A term
+not found in the glossary logs an info-level "not found" event and displays nothing —
+same "no-op is the safe failure direction" principle as every other detector.
+
+### 65.6 Phone-based second-operator remote
+
+**Confirmed explicitly with the user**: reuses the existing operator token/role — a
+phone visiting the remote page authenticates exactly like the desktop dashboard does
+today (same `Sec-WebSocket-Protocol` handshake, same `ChurchOverlayWsServer`, no new
+`WsRole`). This is a deliberate trust-boundary decision, not an oversight: anyone who
+can already reach the operator dashboard is already fully trusted (ARCHITECTURE.md
+section 24 — the WS server binds to 127.0.0.1/LAN, not the public internet), so a
+second client with the same token is not a larger attack surface than the existing
+single-dashboard assumption, just a second window onto the same trust level.
+
+A new, separate, mobile-first static page (`apps/remote/public/`, its own minimal
+HTML/CSS/JS, no build step, matching every other renderer in this codebase) served by
+a new `StaticServer` instance (or the existing overlay one, with the operator token
+required in its own URL exactly like the overlay's viewer token already is, section
+26) — scoped deliberately narrow: rundown scene navigation (`scene:next/previous`,
+tap-to-goto) and media clear only. It does NOT expose mic start/stop, media import,
+or manual verse override — not a security boundary (the token already grants that),
+but a *usability* one: a phone screen is a poor fit for typing a verse reference or
+managing file imports, so the remote's own UI simply doesn't offer them, the same
+"least surprising, smallest useful surface" reasoning as every other UI decision in
+this codebase. The desktop dashboard gains a "Remote" panel showing a QR code
+(encoding the remote page's full URL with the operator token) for the second
+operator to scan.
+
+### 65.7 AI sermon-notes copilot (strictly separate side channel)
+
+**Confirmed explicitly with the user**: uses Groq's chat-completion API (the same
+provider/API-key relationship already established for ASR, not a second AI vendor)
+to periodically summarize the rolling final-transcript text into short bullet-point
+notes. This is the concrete scope decision section 59.4/61.5 left open for "AI
+copilot" — sermon/topic assistance, specifically, not the broader "chat-style
+assistant" or "reference-proposal" ideas also once floated; those remain unscoped.
+
+**The hard boundary, non-negotiable**: this side channel NEVER feeds into, informs,
+or is consulted by the verse-detection/hallucination-guard pipeline in either
+direction. It is a read-only observer of the same final-transcript stream
+`RegexDetector`/`NavigationCommandDetector` already see, producing its own
+independent output (`sermonNotes:update { notes: string }`, a new WS event, dashboard-
+only — never sent to the overlay/audience) on a fixed cadence (every ~60 seconds of
+accumulated final-transcript text, not on every single transcript, both to bound the
+API cost and because a summary of one sentence is not a useful summary). A
+summarization failure (API error, rate limit) logs and skips that cycle silently
+recoverable next cycle — never affects mic capture, ASR, or verse display in any way.
+Explicitly labeled "AI-generated notes" in the UI, never presented as verified
+content, matching the same hallucination-guard-adjacent honesty this app already
+applies everywhere else that isn't the guarded pipeline itself.
+
+### 65.8 Post-service content export
+
+A new `SessionRecorder` (owned by `AppCore`, alongside `RundownController`) appends
+`{ reference, text, translation, timestamp }` to an in-memory list every time
+`broadcastVerse()` actually shows a verse — reusing already-verified data the
+pipeline already produced, generating nothing new and carrying no hallucination risk
+of its own. A new operator-only command (`session:export`) returns (via IPC, not WS —
+this is a file-save action, the same reasoning `import-media-file` already uses) a
+plain-text transcript (timestamped list of every verse shown) and simple PNG "quote
+card" images (verse text + reference, reusing the overlay's own card visual styling
+rendered to an offscreen canvas) saved to a user-chosen folder via `dialog.showSaveDialog`.
+Deliberately excludes AI-picked "highlight moments" or video clip generation (the
+research's own "poor fit, flag only" finding) — this only repackages what the
+operator's own service already verified and displayed, nothing inferred.
+
+### 65.9 What this note does not decide
+
+- **Exact glossary term list and definitions** (section 65.5) — implementation-time
+  content work, not an architectural decision.
+- **Remote page's exact visual design** (section 65.6) — a mobile-first layout
+  decision made when built, following this codebase's existing design system.
+- **Sermon-notes summarization prompt wording and exact cadence tuning** (section
+  65.7) — implementation detail, tuned once real usage exists.
+- **Quote-card visual template** (section 65.8) — reuses the overlay's existing verse
+  card styling as a starting point, not a new design system.
+
+### 65.10 Confirms this is approved scope
+
+Confirmed explicitly with the user: auto-send stays the default for section 65.3;
+the phone remote (section 65.6) reuses the existing operator token/role rather than a
+new narrower one; the AI sermon-notes copilot (section 65.7) is approved to use
+Groq's chat-completion API as a strictly separate, dashboard-only side channel that
+never touches the verse-detection pipeline. Each subsection above proceeds as its own
+implementation slice, verified and committed independently, not as one combined
+change.
