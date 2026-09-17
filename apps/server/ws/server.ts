@@ -23,6 +23,17 @@ export type ChurchOverlayWsServerOptions = {
    * same as any other message a viewer isn't allowed to send. */
   readonly onAudioFrame?: (frame: AudioFrame) => void
   readonly onRejected?: (reason: string, role: WsRole | null) => void
+  /**
+   * Fired when a viewer connection opens, handing back a `send` scoped to
+   * that ONE connection — never a way to reach any other client. This
+   * exists for exactly one purpose (ARCHITECTURE.md section 60.4's
+   * reconnect/late-join sync): letting the caller push a `media:show`
+   * resync event to a newly-connected viewer without giving viewers any
+   * new way to ask for one (that would violate invariant 8 — the overlay
+   * cannot issue application commands). Never fired for an operator
+   * connection.
+   */
+  readonly onViewerConnected?: (send: (message: WsMessage) => void) => void
 }
 
 const DEFAULT_HOST = "127.0.0.1"
@@ -52,6 +63,7 @@ export class ChurchOverlayWsServer {
   private readonly onCommand: ChurchOverlayWsServerOptions["onCommand"]
   private readonly onAudioFrame: ChurchOverlayWsServerOptions["onAudioFrame"]
   private readonly onRejected: ChurchOverlayWsServerOptions["onRejected"]
+  private readonly onViewerConnected: ChurchOverlayWsServerOptions["onViewerConnected"]
   private readonly clientRoles = new WeakMap<WebSocket, WsRole>()
 
   /** Resolves once the server is actually listening. */
@@ -62,6 +74,7 @@ export class ChurchOverlayWsServer {
     this.onCommand = options.onCommand
     this.onAudioFrame = options.onAudioFrame
     this.onRejected = options.onRejected
+    this.onViewerConnected = options.onViewerConnected
 
     this.wss = new WebSocketServer({
       host: options.host ?? DEFAULT_HOST,
@@ -114,6 +127,12 @@ export class ChurchOverlayWsServer {
 
     socket.on("message", (data, isBinary) => this.handleMessage(role, data, isBinary))
     socket.on("close", () => this.clientRoles.delete(socket))
+
+    if (role === "viewer") {
+      this.onViewerConnected?.((message) => {
+        if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message))
+      })
+    }
   }
 
   private handleMessage(role: WsRole, data: unknown, isBinary: boolean): void {

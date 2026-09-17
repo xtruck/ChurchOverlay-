@@ -19,6 +19,7 @@ async function startServer(
     onCommand: (message: WsMessage, role: WsRole) => void
     onAudioFrame: (frame: AudioFrame) => void
     onRejected: (reason: string, role: WsRole | null) => void
+    onViewerConnected: (send: (message: WsMessage) => void) => void
   }> = {}
 ): Promise<ChurchOverlayWsServer> {
   const server = new ChurchOverlayWsServer({ port: 0, tokens: TOKENS, ...overrides })
@@ -207,6 +208,50 @@ test("ChurchOverlayWsServer: a malformed binary frame is rejected without crashi
     await waitFor(() => rejections.length === 1)
 
     assert.match(rejections[0] ?? "", /malformed audio frame/)
+    socket.close()
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer: onViewerConnected fires for a new viewer connection, and the send it hands back reaches only that connection", async () => {
+  const server = await startServer({
+    onViewerConnected: (send) => {
+      send({ id: "01SYNC", type: "verse:show", timestamp: Date.now(), payload: null })
+    },
+  })
+  try {
+    const operatorSocket = await connect(server.port, TOKENS.operatorToken)
+    let operatorReceived = false
+    operatorSocket.once("message", () => {
+      operatorReceived = true
+    })
+
+    // The server may send the sync message the instant the connection
+    // opens, so the "message" listener must be attached before (or in
+    // the same tick as) the socket is created — not after awaiting
+    // connect()'s own "open" resolution, which risks missing it.
+    const viewerSocket = new WebSocket(`ws://127.0.0.1:${server.port}`, [TOKENS.viewerToken])
+    const viewerMessage = waitForMessage(viewerSocket)
+    const message = JSON.parse(await viewerMessage) as WsMessage
+    assert.equal(message.id, "01SYNC")
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    assert.equal(operatorReceived, false, "onViewerConnected must not reach the operator connection")
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer: onViewerConnected does not fire for an operator connection", async () => {
+  const calls: unknown[] = []
+  const server = await startServer({ onViewerConnected: (send) => calls.push(send) })
+  try {
+    const socket = await connect(server.port, TOKENS.operatorToken)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    assert.equal(calls.length, 0)
     socket.close()
   } finally {
     await server.close()
