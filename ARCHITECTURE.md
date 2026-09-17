@@ -2527,17 +2527,29 @@ it already syncs media playback state.
 
 ### 64.5 What this note deliberately leaves open
 
-- **Rundown authoring UI.** This note defines the data shape (`Rundown`/
-  `RundownScene`) and the runtime state machine, not how an operator builds a rundown
-  in the dashboard (drag-and-drop reordering, a scene picker, editing an
-  announcement's text). That is implementation-level UI design, done when this
-  feature is actually built, not decided here.
-- **Persistence across app restarts.** Whether a loaded rundown survives an app
-  restart (saved to disk like `MediaLibrary`'s files, or purely in-memory and lost on
-  restart like today's verse-display state) is not decided here — flagged as an
-  implementation-time decision, defaulting to the least-surprising choice (persist,
-  matching `MediaLibrary`'s precedent) unless that proves materially harder than
-  expected.
+- **Rundown authoring UI — now built, resolved as button-based, not drag-and-drop.**
+  A new "Service Rundown" card in the operator dashboard (`apps/desktop/renderer/`)
+  lets the operator build a scene list (scene-kind picker, per-kind fields for verse/
+  media/announcement/blank, an "Add scene" button) with simple ↑/↓/× buttons to
+  reorder or remove a drafted scene before loading it via `rundown:load`. Chosen over
+  a drag-and-drop list deliberately: no new dependency is needed (AGENTS.md section
+  40), and reordering a short pre-service scene list a few times is a low enough
+  frequency action that button clicks are not a real usability cost. The loaded
+  rundown's active scenes render as a row of clickable chips (`scene:goto` on click),
+  with the active chip highlighted and marked when `interrupted` per section 64.2.
+  Because `rundown:state` only ever broadcasts the current scene (section 64.4), not
+  the whole list, the dashboard renders the full chip row from the scene list it last
+  loaded itself — a rundown loaded by some other means (not yet possible; there is
+  only one operator dashboard) would only show its single current scene, a graceful
+  degradation rather than a guess.
+- **Persistence across app restarts — still not implemented, in-memory only.**
+  `RundownController`'s loaded rundown lives only in memory, same as today's
+  pre-rundown verse-display state — it does not survive an app restart. This remains
+  flagged as a genuine gap, not a silent one: an operator restarting the app mid-
+  service would need to rebuild or re-load the rundown. Deferred rather than solved
+  now since it needs its own decision (a file format, a save location under
+  `userData`, and whether the mid-rundown cursor position should also survive a
+  restart or just the scene list) — not something to bolt on without that thought.
 
 ### 64.6 New correctness invariants this feature adds
 

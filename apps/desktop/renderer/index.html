@@ -156,11 +156,12 @@
     flex: 1;
     display: grid;
     grid-template-columns: 1.05fr 1.05fr 1.5fr;
-    grid-template-rows: auto auto 1fr;
+    grid-template-rows: auto auto 1fr auto;
     grid-template-areas:
       "mic      mic      live"
       "override media    live"
-      "log      media    live";
+      "log      media    live"
+      "rundown  rundown  rundown";
     gap: var(--space-4);
     padding: var(--space-6);
     overflow: auto;
@@ -169,7 +170,7 @@
   @media (max-width: 900px) {
     main {
       grid-template-columns: 1fr;
-      grid-template-areas: "mic" "override" "media" "live" "log";
+      grid-template-areas: "mic" "override" "media" "live" "log" "rundown";
       grid-template-rows: none;
     }
   }
@@ -178,6 +179,7 @@
   .cell-media { grid-area: media; }
   .cell-live { grid-area: live; }
   .cell-log { grid-area: log; }
+  .cell-rundown { grid-area: rundown; }
 
   .card {
     border-radius: var(--radius-lg);
@@ -247,6 +249,60 @@
     font-size: 12px;
     text-align: center;
     padding: var(--space-6) 0;
+  }
+
+  /* ARCHITECTURE.md section 64.5's authoring UI: a horizontal strip of
+     scene "chips" for the active rundown (click to jump via scene:goto),
+     and an identical chip style for the builder's draft list below it —
+     one shared scene-summary visual language for both. */
+  .rundown-scene-list {
+    display: flex;
+    gap: var(--space-2);
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .rundown-scene-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid var(--glass-border);
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+    white-space: nowrap;
+  }
+  .rundown-scene-chip:hover { border-color: var(--glass-border-strong); }
+  .rundown-scene-chip.active { border-color: var(--accent); background: rgba(143, 125, 255, 0.14); color: var(--text-primary); }
+  .rundown-scene-chip.interrupted { border-color: var(--danger); }
+  .rundown-scene-chip .chip-icon { width: 14px; height: 14px; flex-shrink: 0; }
+  .rundown-scene-chip .chip-action {
+    margin-left: 2px;
+    color: var(--text-tertiary);
+    font-size: 13px;
+    line-height: 1;
+    padding: 2px;
+  }
+  .rundown-scene-chip .chip-action:hover { color: var(--text-primary); }
+  .rundown-scene-chip .chip-action.chip-remove:hover { color: var(--danger); }
+  .rundown-empty { color: var(--text-tertiary); font-size: 12px; padding: var(--space-2) 0; }
+
+  .rundown-builder { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--glass-border); }
+
+  select {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid var(--glass-border-strong);
+    color: var(--text-primary);
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    margin-bottom: var(--space-3);
   }
 
   /* Transport controls for the currently-active video/audio cue
@@ -555,6 +611,54 @@
     <div class="card glass cell-log">
       <div class="card-title" data-i18n="activity.title">Activity</div>
       <div id="log"></div>
+    </div>
+
+    <div class="card glass cell-rundown">
+      <div class="media-header">
+        <div class="card-title" data-i18n="rundown.title">Service Rundown</div>
+        <button id="rundown-builder-toggle-btn" class="btn-secondary btn-small" data-i18n="rundown.buildButton">+ Build</button>
+      </div>
+
+      <div id="rundown-scene-list" class="rundown-scene-list">
+        <div class="rundown-empty" data-i18n="rundown.empty">No rundown loaded.</div>
+      </div>
+      <div class="btn-row" style="margin-top: var(--space-3)">
+        <button id="rundown-prev-btn" class="btn-secondary btn-block" disabled data-i18n="rundown.previous">◀ Previous</button>
+        <button id="rundown-next-btn" class="btn-secondary btn-block" disabled data-i18n="rundown.next">Next ▶</button>
+      </div>
+
+      <div id="rundown-builder" class="rundown-builder" style="display: none">
+        <label data-i18n="rundown.builder.sceneKindLabel">Scene type</label>
+        <div id="rundown-scene-kind" class="option-list" role="group" aria-label="Scene type">
+          <button type="button" data-kind="verse" class="active" data-i18n="rundown.builder.kind.verse">Verse</button>
+          <button type="button" data-kind="media" data-i18n="rundown.builder.kind.media">Media</button>
+          <button type="button" data-kind="announcement" data-i18n="rundown.builder.kind.announcement">Announcement</button>
+          <button type="button" data-kind="blank" data-i18n="rundown.builder.kind.blank">Blank</button>
+        </div>
+
+        <div id="rundown-field-verse">
+          <label for="rundown-verse-input" data-i18n="rundown.builder.verseLabel">Verse reference</label>
+          <input id="rundown-verse-input" type="text" placeholder="John 3:16" />
+        </div>
+        <div id="rundown-field-media" style="display: none">
+          <label for="rundown-media-select" data-i18n="rundown.builder.mediaLabel">Media cue</label>
+          <select id="rundown-media-select"></select>
+        </div>
+        <div id="rundown-field-announcement" style="display: none">
+          <label for="rundown-announcement-title" data-i18n="rundown.builder.announcementTitleLabel">Title</label>
+          <input id="rundown-announcement-title" type="text" placeholder="Welcome" />
+          <label for="rundown-announcement-body" data-i18n="rundown.builder.announcementBodyLabel">Message</label>
+          <input id="rundown-announcement-body" type="text" placeholder="Glad you're here." />
+        </div>
+
+        <button id="rundown-add-scene-btn" class="btn-secondary" style="width: 100%; margin-bottom: var(--space-3)" data-i18n="rundown.builder.addButton">+ Add scene</button>
+
+        <div id="rundown-draft-list" class="rundown-scene-list">
+          <div class="rundown-empty" data-i18n="rundown.builder.draftEmpty">No scenes added yet.</div>
+        </div>
+
+        <button id="rundown-load-btn" class="btn-primary" style="width: 100%; margin-top: var(--space-3)" data-i18n="rundown.builder.loadButton">Load rundown</button>
+      </div>
     </div>
   </main>
   </div>

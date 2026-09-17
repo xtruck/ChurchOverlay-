@@ -62,6 +62,22 @@
   const mediaNowPlayingTitleEl = document.getElementById("media-now-playing-title")
   const mediaPlayPauseBtn = document.getElementById("media-play-pause-btn")
   const mediaStopBtn = document.getElementById("media-stop-btn")
+  const rundownSceneListEl = document.getElementById("rundown-scene-list")
+  const rundownPrevBtn = document.getElementById("rundown-prev-btn")
+  const rundownNextBtn = document.getElementById("rundown-next-btn")
+  const rundownBuilderToggleBtn = document.getElementById("rundown-builder-toggle-btn")
+  const rundownBuilderEl = document.getElementById("rundown-builder")
+  const rundownSceneKindEl = document.getElementById("rundown-scene-kind")
+  const rundownFieldVerseEl = document.getElementById("rundown-field-verse")
+  const rundownFieldMediaEl = document.getElementById("rundown-field-media")
+  const rundownFieldAnnouncementEl = document.getElementById("rundown-field-announcement")
+  const rundownVerseInput = document.getElementById("rundown-verse-input")
+  const rundownMediaSelectEl = document.getElementById("rundown-media-select")
+  const rundownAnnouncementTitleInput = document.getElementById("rundown-announcement-title")
+  const rundownAnnouncementBodyInput = document.getElementById("rundown-announcement-body")
+  const rundownAddSceneBtn = document.getElementById("rundown-add-scene-btn")
+  const rundownDraftListEl = document.getElementById("rundown-draft-list")
+  const rundownLoadBtn = document.getElementById("rundown-load-btn")
 
   const t = (key, params) => window.i18n.t(key, params)
 
@@ -73,6 +89,19 @@
   let activePlaybackState = null // "playing" | "paused" | null (null: no active cue, or an image with no playback concept)
   let setupSelectedMode = "english"
   let setupSelectedUiLanguage = "en"
+
+  // ARCHITECTURE.md section 64.5's authoring UI. `rundown:state` broadcasts
+  // only the CURRENT scene (ARCHITECTURE.md section 64.4), not the whole
+  // scene list — so the full list rendered here is whatever this dashboard
+  // itself last loaded via rundown:load. If a rundown was loaded some other
+  // way (or before this dashboard connected), loadedRundownScenes won't
+  // match and the scene list falls back to showing just the one active
+  // scene rather than guessing at a list it never actually saw.
+  let draftScenes = []
+  let draftSelectedKind = "verse"
+  let loadedRundownScenes = []
+  let loadedRundownId = null
+  let currentRundownState = null // last rundown:state payload, or null if no rundown is active
 
   // Bounded, backoff-aware reconnect (ARCHITECTURE.md section 48, AGENTS.md
   // section 37 — "infinite retry loops" specifically forbidden). This is
@@ -178,9 +207,235 @@
       .then((cues) => {
         knownCues = cues
         renderMediaGrid()
+        renderRundownMediaOptions()
       })
       .catch((err) => log(t("log.mediaLoadFailed", { error: err.message }), "error"))
   }
+
+  // One icon per RundownScene kind (packages/contracts/rundown.ts) — same
+  // plain-inline-SVG convention as MEDIA_ICONS above, sized for the smaller
+  // chip context via the .chip-icon class rather than .media-tile-icon.
+  const SCENE_ICONS = {
+    verse: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
+    media: '<rect x="2.5" y="5.5" width="14" height="13" rx="2"/><path d="m20.5 9 v6 l-4-3z"/>',
+    announcement: '<path d="M3 11v2a2 2 0 0 0 2 2h1l4 4V5L6 9H5a2 2 0 0 0-2 2z"/><path d="M17 8a5 5 0 0 1 0 8"/>',
+    blank: '<rect x="4" y="4" width="16" height="16" rx="2"/>',
+  }
+
+  function sceneIconSvg(kind) {
+    const paths = SCENE_ICONS[kind] || SCENE_ICONS.blank
+    return (
+      '<svg class="chip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">' +
+      paths +
+      "</svg>"
+    )
+  }
+
+  function sceneSummary(scene) {
+    switch (scene.kind) {
+      case "verse":
+        return capitalize(scene.reference.book) + " " + scene.reference.chapter + ":" + scene.reference.verse
+      case "media": {
+        const cue = knownCues.find((c) => c.id === scene.mediaCueId)
+        return cue ? cue.title : t("rundown.unknownMedia")
+      }
+      case "announcement":
+        return scene.title
+      case "blank":
+        return t("rundown.blankLabel")
+    }
+  }
+
+  function renderRundownMediaOptions() {
+    rundownMediaSelectEl.innerHTML = ""
+    if (knownCues.length === 0) {
+      const option = document.createElement("option")
+      option.value = ""
+      option.textContent = t("rundown.builder.noMediaOption")
+      rundownMediaSelectEl.appendChild(option)
+      return
+    }
+    for (const cue of knownCues) {
+      const option = document.createElement("option")
+      option.value = cue.id
+      option.textContent = cue.title
+      rundownMediaSelectEl.appendChild(option)
+    }
+  }
+
+  // The currently-active rundown (this dashboard's own scene list, click-
+  // to-jump via scene:goto). Rendered separately from the builder's draft
+  // list below, even though both use the same .rundown-scene-chip look.
+  function renderRundownSceneList() {
+    rundownSceneListEl.innerHTML = ""
+    if (!currentRundownState) {
+      const empty = document.createElement("div")
+      empty.className = "rundown-empty"
+      empty.textContent = t("rundown.empty")
+      rundownSceneListEl.appendChild(empty)
+      rundownPrevBtn.disabled = true
+      rundownNextBtn.disabled = true
+      return
+    }
+    rundownPrevBtn.disabled = false
+    rundownNextBtn.disabled = false
+
+    const knowsFullList = loadedRundownId === currentRundownState.rundownId && loadedRundownScenes.length > 0
+    const scenes = knowsFullList ? loadedRundownScenes : [currentRundownState.scene]
+    const activeIndex = knowsFullList ? currentRundownState.cursor : 0
+
+    scenes.forEach((scene, index) => {
+      const isActive = index === activeIndex
+      const chip = document.createElement("div")
+      chip.className =
+        "rundown-scene-chip" + (isActive ? " active" : "") + (isActive && currentRundownState.interrupted ? " interrupted" : "")
+      if (isActive && currentRundownState.interrupted) chip.title = t("rundown.interruptedHint")
+      chip.innerHTML = sceneIconSvg(scene.kind) + "<span></span>"
+      chip.querySelector("span").textContent = sceneSummary(scene)
+      chip.addEventListener("click", () => {
+        sendJson({ id: crypto.randomUUID(), type: "scene:goto", timestamp: Date.now(), payload: { index } })
+        log(t("log.sentSceneGoto", { index }), "sent")
+      })
+      rundownSceneListEl.appendChild(chip)
+    })
+  }
+
+  function renderDraftSceneList() {
+    rundownDraftListEl.innerHTML = ""
+    if (draftScenes.length === 0) {
+      const empty = document.createElement("div")
+      empty.className = "rundown-empty"
+      empty.textContent = t("rundown.builder.draftEmpty")
+      rundownDraftListEl.appendChild(empty)
+      return
+    }
+    draftScenes.forEach((scene, index) => {
+      const chip = document.createElement("div")
+      chip.className = "rundown-scene-chip"
+      chip.innerHTML = sceneIconSvg(scene.kind) + "<span></span>"
+      chip.querySelector("span").textContent = sceneSummary(scene)
+
+      const up = document.createElement("span")
+      up.className = "chip-action"
+      up.textContent = "↑"
+      up.title = t("rundown.builder.moveUp")
+      up.addEventListener("click", (event) => {
+        event.stopPropagation()
+        if (index === 0) return
+        ;[draftScenes[index - 1], draftScenes[index]] = [draftScenes[index], draftScenes[index - 1]]
+        renderDraftSceneList()
+      })
+
+      const down = document.createElement("span")
+      down.className = "chip-action"
+      down.textContent = "↓"
+      down.title = t("rundown.builder.moveDown")
+      down.addEventListener("click", (event) => {
+        event.stopPropagation()
+        if (index === draftScenes.length - 1) return
+        ;[draftScenes[index], draftScenes[index + 1]] = [draftScenes[index + 1], draftScenes[index]]
+        renderDraftSceneList()
+      })
+
+      const remove = document.createElement("span")
+      remove.className = "chip-action chip-remove"
+      remove.textContent = "×"
+      remove.addEventListener("click", (event) => {
+        event.stopPropagation()
+        draftScenes.splice(index, 1)
+        renderDraftSceneList()
+      })
+
+      chip.append(up, down, remove)
+      rundownDraftListEl.appendChild(chip)
+    })
+  }
+
+  function showLiveAnnouncement(payload) {
+    liveVerseEmptyEl.style.display = "none"
+    liveVerseTextEl.style.display = "block"
+    liveVerseRefEl.style.display = "block"
+    liveVerseTextEl.textContent = payload.body
+    liveVerseRefEl.textContent = payload.title
+  }
+
+  rundownBuilderToggleBtn.addEventListener("click", () => {
+    const isHidden = rundownBuilderEl.style.display === "none"
+    rundownBuilderEl.style.display = isHidden ? "block" : "none"
+    rundownBuilderToggleBtn.textContent = isHidden ? t("rundown.buildButtonClose") : t("rundown.buildButton")
+  })
+
+  function updateRundownBuilderFieldsVisibility() {
+    rundownFieldVerseEl.style.display = draftSelectedKind === "verse" ? "block" : "none"
+    rundownFieldMediaEl.style.display = draftSelectedKind === "media" ? "block" : "none"
+    rundownFieldAnnouncementEl.style.display = draftSelectedKind === "announcement" ? "block" : "none"
+  }
+
+  wireOptionGroup(rundownSceneKindEl, "kind", (kind) => {
+    draftSelectedKind = kind
+    updateRundownBuilderFieldsVisibility()
+  })
+
+  rundownAddSceneBtn.addEventListener("click", () => {
+    let scene
+    if (draftSelectedKind === "verse") {
+      const reference = parseReference(rundownVerseInput.value)
+      if (!reference) {
+        log(t("log.parseError", { text: rundownVerseInput.value }), "error")
+        return
+      }
+      scene = { kind: "verse", reference }
+      rundownVerseInput.value = ""
+    } else if (draftSelectedKind === "media") {
+      const mediaCueId = rundownMediaSelectEl.value
+      if (!mediaCueId) {
+        log(t("rundown.builder.noMediaSelected"), "error")
+        return
+      }
+      scene = { kind: "media", mediaCueId }
+    } else if (draftSelectedKind === "announcement") {
+      const title = rundownAnnouncementTitleInput.value.trim()
+      const body = rundownAnnouncementBodyInput.value.trim()
+      if (!title || !body) {
+        log(t("rundown.builder.announcementIncomplete"), "error")
+        return
+      }
+      scene = { kind: "announcement", title, body }
+      rundownAnnouncementTitleInput.value = ""
+      rundownAnnouncementBodyInput.value = ""
+    } else {
+      scene = { kind: "blank" }
+    }
+    draftScenes.push(scene)
+    renderDraftSceneList()
+  })
+
+  rundownLoadBtn.addEventListener("click", () => {
+    if (draftScenes.length === 0) {
+      log(t("rundown.builder.emptyRundownError"), "error")
+      return
+    }
+    const rundown = { id: crypto.randomUUID(), title: t("rundown.defaultTitle"), scenes: draftScenes.slice() }
+    loadedRundownId = rundown.id
+    loadedRundownScenes = draftScenes.slice()
+    sendJson({ id: crypto.randomUUID(), type: "rundown:load", timestamp: Date.now(), payload: { rundown } })
+    log(t("log.sentRundownLoad", { count: rundown.scenes.length }), "sent")
+
+    // Collapse the builder after loading — attention should go back to the
+    // now-active scene list, not stay on the builder form.
+    rundownBuilderEl.style.display = "none"
+    rundownBuilderToggleBtn.textContent = t("rundown.buildButton")
+  })
+
+  rundownPrevBtn.addEventListener("click", () => {
+    sendJson({ id: crypto.randomUUID(), type: "scene:previous", timestamp: Date.now(), payload: null })
+    log(t("log.sentScenePrevious"), "sent")
+  })
+
+  rundownNextBtn.addEventListener("click", () => {
+    sendJson({ id: crypto.randomUUID(), type: "scene:next", timestamp: Date.now(), payload: null })
+    log(t("log.sentSceneNext"), "sent")
+  })
 
   mediaImportBtn.addEventListener("click", () => {
     mediaImportBtn.disabled = true
@@ -383,6 +638,13 @@
         activeCueId = null
         renderMediaGrid()
         updateNowPlayingBar(null, null)
+      } else if (message.type === "announcement:show") {
+        showLiveAnnouncement(message.payload)
+      } else if (message.type === "announcement:clear") {
+        clearLiveVerse()
+      } else if (message.type === "rundown:state") {
+        currentRundownState = message.payload
+        renderRundownSceneList()
       }
     })
   }
