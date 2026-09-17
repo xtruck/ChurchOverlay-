@@ -52,10 +52,14 @@
   const setupKeyInput = document.getElementById("setup-groq-key")
   const setupErrorEl = document.getElementById("setup-error")
   const setupSaveBtn = document.getElementById("setup-save-btn")
+  const mediaGridEl = document.getElementById("media-grid")
+  const mediaImportBtn = document.getElementById("media-import-btn")
 
   let ws = null
   let audioContext = null
   let mediaStream = null
+  let knownCues = []
+  let activeCueId = null
 
   // Bounded, backoff-aware reconnect (ARCHITECTURE.md section 48, AGENTS.md
   // section 37 — "infinite retry loops" specifically forbidden). This is
@@ -111,6 +115,79 @@
     liveVerseTextEl.style.display = "none"
     liveVerseRefEl.style.display = "none"
   }
+
+  // One icon per MediaCueKind (apps/server/media's own "kind" discriminant,
+  // packages/contracts/media.ts) — plain inline SVG, never an emoji, per
+  // the design system's own icon rule.
+  const MEDIA_ICONS = {
+    image:
+      '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-5-5-9 9"/>',
+    video: '<rect x="2.5" y="5.5" width="14" height="13" rx="2"/><path d="m20.5 9 v6 l-4-3z"/>',
+    audio:
+      '<path d="M9 18V5l10-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/>',
+  }
+
+  function mediaIconSvg(kind) {
+    const paths = MEDIA_ICONS[kind] || MEDIA_ICONS.image
+    return (
+      '<svg class="media-tile-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">' +
+      paths +
+      "</svg>"
+    )
+  }
+
+  function renderMediaGrid() {
+    mediaGridEl.innerHTML = ""
+    if (knownCues.length === 0) {
+      const empty = document.createElement("div")
+      empty.className = "media-empty"
+      empty.textContent = "No media imported yet."
+      mediaGridEl.appendChild(empty)
+      return
+    }
+    for (const cue of knownCues) {
+      const tile = document.createElement("div")
+      tile.className = "media-tile" + (cue.id === activeCueId ? " active" : "")
+      tile.title = cue.title
+      tile.innerHTML = mediaIconSvg(cue.kind) + '<div class="media-tile-title"></div>'
+      tile.querySelector(".media-tile-title").textContent = cue.title
+      tile.addEventListener("click", () => {
+        sendJson({ id: crypto.randomUUID(), type: "media:select", timestamp: Date.now(), payload: { id: cue.id } })
+        log("sent media:select " + cue.title, "sent")
+      })
+      mediaGridEl.appendChild(tile)
+    }
+  }
+
+  function loadMediaCues() {
+    window.churchOverlay
+      .listMediaCues()
+      .then((cues) => {
+        knownCues = cues
+        renderMediaGrid()
+      })
+      .catch((err) => log("failed to load media library: " + err.message, "error"))
+  }
+
+  mediaImportBtn.addEventListener("click", () => {
+    mediaImportBtn.disabled = true
+    window.churchOverlay
+      .importMediaFile()
+      .then((result) => {
+        if (result.canceled) return
+        if (result.error) {
+          log("import failed: " + result.error, "error")
+          return
+        }
+        knownCues.push(result.cue)
+        renderMediaGrid()
+        log("imported " + result.cue.title, "received")
+      })
+      .catch((err) => log("import failed: " + err.message, "error"))
+      .finally(() => {
+        mediaImportBtn.disabled = false
+      })
+  })
 
   // Deliberately similar to, but NOT required to stay byte-for-byte in
   // sync with, RegexDetector's REFERENCE_PATTERN in
@@ -247,6 +324,12 @@
         transcriptEl.textContent = message.payload.text
       } else if (message.type === "verse:clear") {
         clearLiveVerse()
+      } else if (message.type === "media:show") {
+        activeCueId = message.payload.cue.id
+        renderMediaGrid()
+      } else if (message.type === "media:clear") {
+        activeCueId = null
+        renderMediaGrid()
       }
     })
   }
@@ -254,6 +337,11 @@
   function showAppShell() {
     setupScreenEl.style.display = "none"
     appShellEl.style.display = "flex"
+    // A separate IPC channel from the WS connection below — the media
+    // library should populate as soon as the shell is usable, not wait on
+    // (or reload every time on) the WS connection's own open/reconnect
+    // cycle.
+    loadMediaCues()
   }
 
   function showSetupScreen() {
