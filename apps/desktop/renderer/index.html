@@ -3,71 +3,132 @@
 <head>
 <meta charset="UTF-8" />
 <title>ChurchOverlay — Operator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+  rel="stylesheet"
+/>
 <style>
+  /*
+    "Verse Ops Console" visual system (Phase 0 — ARCHITECTURE.md section 59):
+    a vibrant mesh-gradient background, a dark-tinted glassmorphism card
+    system (translucent + blurred, NOT the usual light/white glass recipe —
+    this console is used in a dim room during a live service, so legibility
+    wins over brightness), Instrument Serif for display/heading moments,
+    Instrument Sans for UI/body text, and JetBrains Mono for anything
+    data-shaped (timestamps, RMS metrics, the activity log) so figures stay
+    tabular and don't shift layout. Cosmetic only — no IDs, WS actions, or
+    IPC calls change; dashboard.js's DOM contract is untouched.
+  */
   :root {
-    --bg-base: #0a0b0f;
-    --bg-surface: #14161c;
-    --bg-surface-raised: #1c1f27;
-    --border-subtle: #262a34;
-    --border-strong: #363b47;
-    --text-primary: #f2f3f5;
-    --text-secondary: #9aa1ae;
-    --text-tertiary: #5c6270;
-    --accent: #f5a15a;
-    --accent-strong: #ff8f3d;
+    --mesh-1: #7c6bff;
+    --mesh-2: #ff6fae;
+    --mesh-3: #2fd8b0;
+    --mesh-4: #3fb6ff;
+    --bg-void: #0a0a12;
+
+    --glass-bg: rgba(20, 20, 34, 0.58);
+    --glass-bg-raised: rgba(28, 28, 46, 0.68);
+    --glass-border: rgba(255, 255, 255, 0.12);
+    --glass-border-strong: rgba(255, 255, 255, 0.22);
+    --glass-blur: 20px;
+
+    --text-primary: #f5f5fb;
+    --text-secondary: #b7b7cc;
+    --text-tertiary: #82829c;
+
+    --accent: #8f7dff;
+    --accent-strong: #a996ff;
+    --accent-ink: #17102f;
     --success: #34d399;
-    --danger: #f87171;
-    --danger-soft: rgba(248, 113, 113, 0.14);
-    --radius-sm: 6px;
-    --radius-md: 10px;
-    --radius-lg: 16px;
+    --danger: #ff7086;
+    --danger-soft: rgba(255, 112, 134, 0.16);
+
+    --radius-sm: 8px;
+    --radius-md: 14px;
+    --radius-lg: 22px;
     --space-2: 8px;
     --space-3: 12px;
     --space-4: 16px;
     --space-6: 24px;
     --space-8: 32px;
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.24);
+
+    --shadow-card: 0 1px 1px rgba(0, 0, 0, 0.25), 0 24px 48px -16px rgba(0, 0, 0, 0.6);
     --ease: cubic-bezier(0.4, 0, 0.2, 1);
-    --font-ui: -apple-system, "Segoe UI", Inter, system-ui, sans-serif;
-    --font-mono: "SF Mono", "Cascadia Code", Consolas, monospace;
+
+    --font-display: "Instrument Serif", Georgia, serif;
+    --font-ui: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
   }
 
   * { box-sizing: border-box; }
   html, body {
     margin: 0;
     height: 100%;
-    background: var(--bg-base);
     color: var(--text-primary);
     font-family: var(--font-ui);
   }
-  body { display: flex; flex-direction: column; }
-  #app-shell { display: flex; flex-direction: column; height: 100%; }
+  body {
+    display: flex;
+    flex-direction: column;
+    background-color: var(--bg-void);
+    background-image:
+      radial-gradient(at 12% 18%, color-mix(in srgb, var(--mesh-1) 55%, transparent) 0px, transparent 42%),
+      radial-gradient(at 88% 8%, color-mix(in srgb, var(--mesh-4) 50%, transparent) 0px, transparent 40%),
+      radial-gradient(at 82% 82%, color-mix(in srgb, var(--mesh-2) 45%, transparent) 0px, transparent 45%),
+      radial-gradient(at 15% 92%, color-mix(in srgb, var(--mesh-3) 45%, transparent) 0px, transparent 45%);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+  }
+  #app-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 
-  header {
+  @media (prefers-reduced-motion: no-preference) {
+    .status-pill.connected .status-dot { animation: pulse-dot 2s infinite; }
+    .mic-visual.active .mic-bar { animation: mic-bounce 1.2s ease-in-out infinite; }
+  }
+
+  /* Glass surface — the one shared recipe every card/panel/header uses. */
+  .glass {
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--shadow-card);
+  }
+
+  header.glass {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: var(--space-4) var(--space-6);
-    border-bottom: 1px solid var(--border-subtle);
-    background: linear-gradient(180deg, var(--bg-surface), var(--bg-base));
+    border-left: none;
+    border-right: none;
+    border-top: none;
+    border-radius: 0;
   }
   .brand { display: flex; align-items: center; gap: var(--space-3); }
   .brand-mark {
-    width: 32px; height: 32px;
+    width: 34px; height: 34px;
     border-radius: var(--radius-sm);
-    background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+    background: linear-gradient(135deg, var(--accent), var(--mesh-2));
     display: flex; align-items: center; justify-content: center;
-    font-weight: 700; color: #1a1206; font-size: 13px;
+    font-family: var(--font-display);
+    font-weight: 400; color: var(--accent-ink); font-size: 16px;
   }
-  .brand h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: 0.01em; }
-  .brand .sub { font-size: 11px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.08em; }
+  .brand h1 {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 19px; margin: 0; font-weight: 400; letter-spacing: 0.01em;
+  }
+  .brand .sub { font-size: 11px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.1em; }
 
   .status-pill {
     display: flex; align-items: center; gap: var(--space-2);
-    padding: 6px 12px;
+    padding: 7px 14px;
     border-radius: 999px;
-    background: var(--bg-surface-raised);
-    border: 1px solid var(--border-subtle);
+    background: var(--glass-bg-raised);
+    border: 1px solid var(--glass-border);
     font-size: 12px;
     font-family: var(--font-mono);
   }
@@ -76,10 +137,7 @@
     background: var(--text-tertiary);
     transition: background 0.2s var(--ease);
   }
-  .status-pill.connected .status-dot {
-    background: var(--success);
-    animation: pulse-dot 2s infinite;
-  }
+  .status-pill.connected .status-dot { background: var(--success); }
   .status-pill.disconnected .status-dot { background: var(--danger); }
   @keyframes pulse-dot {
     0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5); }
@@ -87,65 +145,117 @@
     100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
   }
 
+  /*
+    Bento grid (ARCHITECTURE.md section 59.2 / the plan's own "grows here"
+    requirement): the media-library placeholder is already its own named
+    grid area today, locked — when that feature ships, its content swaps
+    in place, no grid restructuring needed. 3 columns x 3 rows; the live
+    verse preview is the deliberate hero cell.
+  */
   main {
     flex: 1;
     display: grid;
-    grid-template-columns: 380px 1fr;
-    gap: var(--space-6);
+    grid-template-columns: 1.05fr 1.05fr 1.5fr;
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas:
+      "mic      mic      live"
+      "override media    live"
+      "log      log      live";
+    gap: var(--space-4);
     padding: var(--space-6);
     overflow: auto;
     min-height: 0;
   }
-  .col { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+  @media (max-width: 900px) {
+    main {
+      grid-template-columns: 1fr;
+      grid-template-areas: "mic" "override" "media" "live" "log";
+      grid-template-rows: none;
+    }
+  }
+  .cell-mic { grid-area: mic; }
+  .cell-override { grid-area: override; }
+  .cell-media { grid-area: media; }
+  .cell-live { grid-area: live; }
+  .cell-log { grid-area: log; }
 
   .card {
-    background: var(--bg-surface);
-    border: 1px solid var(--border-subtle);
     border-radius: var(--radius-lg);
     padding: var(--space-4);
-    box-shadow: var(--shadow-card);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
   .card-title {
-    font-size: 11px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.08em;
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.09em;
     color: var(--text-tertiary);
     margin-bottom: var(--space-3);
   }
 
+  .card-locked {
+    background: transparent;
+    border: 1.5px dashed var(--glass-border-strong);
+    box-shadow: none;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 6px;
+    color: var(--text-tertiary);
+  }
+  .card-locked .lock-icon {
+    width: 22px; height: 22px;
+    opacity: 0.6;
+  }
+  .card-locked .card-locked-title {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 16px;
+    color: var(--text-secondary);
+  }
+  .card-locked .card-locked-sub {
+    font-size: 11px;
+    letter-spacing: 0.04em;
+  }
+
   .live-preview {
-    background: radial-gradient(circle at 30% 20%, #1a1c24, #0a0b0f 70%);
+    background: radial-gradient(circle at 30% 15%, rgba(143, 125, 255, 0.16), transparent 60%), var(--glass-bg);
     border-radius: var(--radius-lg);
-    border: 1px solid var(--border-subtle);
-    min-height: 280px;
+    border: 1px solid var(--glass-border);
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    backdrop-filter: blur(var(--glass-blur));
+    box-shadow: var(--shadow-card);
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
     text-align: center;
     padding: var(--space-8);
     position: relative;
+    min-height: 280px;
   }
   .live-preview::before {
     content: "LIVE PREVIEW";
     position: absolute;
-    top: var(--space-3); left: var(--space-4);
-    font-size: 10px; font-weight: 700;
-    letter-spacing: 0.12em;
+    top: var(--space-4); left: var(--space-4);
+    font-size: 10px; font-weight: 600; font-family: var(--font-mono);
+    letter-spacing: 0.14em;
     color: var(--text-tertiary);
   }
   #live-verse-text {
-    font-size: 22px;
-    line-height: 1.5;
+    font-family: var(--font-display);
+    font-size: 30px;
+    line-height: 1.45;
     color: var(--text-primary);
     max-width: 640px;
-    font-family: Georgia, serif;
   }
   #live-verse-ref {
-    margin-top: var(--space-3);
-    color: var(--accent);
-    font-weight: 700;
-    font-size: 13px;
-    letter-spacing: 0.04em;
+    margin-top: var(--space-4);
+    color: var(--accent-strong);
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 12.5px;
+    letter-spacing: 0.06em;
   }
-  #live-verse-empty { color: var(--text-tertiary); font-size: 13px; }
+  #live-verse-empty { color: var(--text-tertiary); font-size: 13px; font-family: var(--font-mono); }
 
   button {
     font-family: var(--font-ui);
@@ -157,21 +267,22 @@
   }
   button:active:not(:disabled) { transform: scale(0.97); }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
 
-  .btn-primary { background: var(--accent); color: #1a1206; }
+  .btn-primary { background: var(--accent); color: var(--accent-ink); }
   .btn-primary:hover:not(:disabled) { background: var(--accent-strong); }
-  .btn-secondary { background: var(--bg-surface-raised); color: var(--text-primary); border: 1px solid var(--border-strong); }
-  .btn-secondary:hover:not(:disabled) { background: var(--border-subtle); }
-  .btn-danger { background: var(--danger-soft); color: var(--danger); border: 1px solid rgba(248, 113, 113, 0.3); }
-  .btn-danger:hover:not(:disabled) { background: rgba(248, 113, 113, 0.22); }
+  .btn-secondary { background: var(--glass-bg-raised); color: var(--text-primary); border: 1px solid var(--glass-border-strong); }
+  .btn-secondary:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
+  .btn-danger { background: var(--danger-soft); color: var(--danger); border: 1px solid rgba(255, 112, 134, 0.35); }
+  .btn-danger:hover:not(:disabled) { background: rgba(255, 112, 134, 0.24); }
   .btn-block { flex: 1; }
   .btn-row { display: flex; gap: var(--space-2); }
 
   label { display: block; font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: var(--space-2); }
-  input[type="text"] {
+  input[type="text"], input[type="password"] {
     width: 100%;
-    background: var(--bg-base);
-    border: 1px solid var(--border-strong);
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid var(--glass-border-strong);
     color: var(--text-primary);
     padding: 10px 12px;
     border-radius: var(--radius-sm);
@@ -180,11 +291,11 @@
     margin-bottom: var(--space-3);
     transition: border-color 0.15s var(--ease);
   }
-  input[type="text"]:focus { outline: none; border-color: var(--accent); }
+  input[type="text"]:focus, input[type="password"]:focus { outline: none; border-color: var(--accent); }
 
   .mic-visual { display: flex; align-items: center; gap: 3px; height: 32px; margin-bottom: var(--space-3); }
-  .mic-bar { flex: 1; background: var(--border-subtle); border-radius: 2px; height: 20%; transition: background 0.2s ease; }
-  .mic-visual.active .mic-bar { background: var(--accent); animation: mic-bounce 1.2s ease-in-out infinite; }
+  .mic-bar { flex: 1; background: var(--glass-border-strong); border-radius: 2px; height: 20%; transition: background 0.2s ease; }
+  .mic-visual.active .mic-bar { background: var(--accent-strong); }
   .mic-visual.active .mic-bar:nth-child(2) { animation-delay: 0.1s; }
   .mic-visual.active .mic-bar:nth-child(3) { animation-delay: 0.2s; }
   .mic-visual.active .mic-bar:nth-child(4) { animation-delay: 0.3s; }
@@ -196,17 +307,17 @@
     font-size: 12px;
     color: var(--text-secondary);
     min-height: 20px;
-    line-height: 1.5;
+    line-height: 1.6;
     padding: var(--space-3);
-    background: var(--bg-base);
+    background: rgba(0, 0, 0, 0.22);
     border-radius: var(--radius-sm);
-    border: 1px solid var(--border-subtle);
+    border: 1px solid var(--glass-border);
   }
 
-  #log { font-family: var(--font-mono); font-size: 11.5px; max-height: 260px; overflow-y: auto; }
-  .log-line { padding: 5px 0; border-bottom: 1px solid var(--border-subtle); display: flex; gap: var(--space-2); color: var(--text-secondary); }
-  .log-time { color: var(--text-tertiary); flex-shrink: 0; }
-  .log-line.event-sent .log-text { color: var(--accent); }
+  #log { font-family: var(--font-mono); font-size: 11.5px; overflow-y: auto; flex: 1; min-height: 60px; }
+  .log-line { padding: 5px 0; border-bottom: 1px solid var(--glass-border); display: flex; gap: var(--space-2); color: var(--text-secondary); }
+  .log-time { color: var(--text-tertiary); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  .log-line.event-sent .log-text { color: var(--accent-strong); }
   .log-line.event-received .log-text { color: var(--success); }
   .log-line.event-error .log-text { color: var(--danger); }
 
@@ -215,20 +326,23 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: var(--space-6);
   }
   .setup-card {
     width: 100%;
-    max-width: 420px;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-subtle);
+    max-width: 440px;
     border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-card);
     padding: var(--space-8) var(--space-6);
     text-align: center;
   }
   .setup-card .brand-mark { margin: 0 auto var(--space-4); }
-  .setup-card h2 { font-size: 16px; margin: 0 0 6px; }
-  .setup-card p { font-size: 12.5px; color: var(--text-secondary); line-height: 1.5; margin: 0 0 var(--space-6); }
+  .setup-card h2 {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 400;
+    font-size: 24px; margin: 0 0 8px;
+  }
+  .setup-card p { font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin: 0 0 var(--space-6); }
   .setup-card label { text-align: left; }
   .setup-card input { margin-bottom: var(--space-4); }
   #setup-error {
@@ -242,8 +356,8 @@
 </head>
 <body>
   <div id="setup-screen" class="setup-screen" style="display: none">
-    <div class="setup-card">
-      <div class="brand-mark" style="width: 40px; height: 40px; font-size: 15px;">CO</div>
+    <div class="setup-card glass">
+      <div class="brand-mark" style="width: 44px; height: 44px; font-size: 19px;">CO</div>
       <h2>Set up ChurchOverlay</h2>
       <p>Enter your Groq API key to start transcribing. It's encrypted and stored locally — this only needs to be done once.</p>
       <label for="setup-groq-key">Groq API key</label>
@@ -254,12 +368,12 @@
   </div>
 
   <div id="app-shell" style="display: none">
-  <header>
+  <header class="glass">
     <div class="brand">
       <div class="brand-mark">CO</div>
       <div>
         <h1>ChurchOverlay</h1>
-        <div class="sub">Operator Console</div>
+        <div class="sub">Verse Ops Console</div>
       </div>
     </div>
     <div id="status-pill" class="status-pill disconnected">
@@ -269,42 +383,47 @@
   </header>
 
   <main>
-    <div class="col">
-      <div class="card">
-        <div class="card-title">Microphone</div>
-        <div id="mic-visual" class="mic-visual">
-          <div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div>
-        </div>
-        <div class="btn-row">
-          <button id="mic-start-btn" class="btn-primary btn-block">Start listening</button>
-          <button id="mic-stop-btn" class="btn-secondary btn-block" disabled>Stop</button>
-        </div>
-        <label style="margin-top: 16px">Last transcript</label>
-        <div id="transcript">Waiting for speech…</div>
+    <div class="card glass cell-mic">
+      <div class="card-title">Microphone</div>
+      <div id="mic-visual" class="mic-visual">
+        <div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div>
       </div>
+      <div class="btn-row">
+        <button id="mic-start-btn" class="btn-primary btn-block">Start listening</button>
+        <button id="mic-stop-btn" class="btn-secondary btn-block" disabled>Stop</button>
+      </div>
+      <label style="margin-top: 16px">Last transcript</label>
+      <div id="transcript">Waiting for speech…</div>
+    </div>
 
-      <div class="card">
-        <div class="card-title">Manual Override</div>
-        <label for="reference">Verse reference</label>
-        <input id="reference" type="text" placeholder="John 3:16" />
-        <div class="btn-row">
-          <button id="show-btn" class="btn-primary btn-block">Show on overlay</button>
-          <button id="clear-btn" class="btn-danger">Clear</button>
-        </div>
+    <div class="card glass cell-override">
+      <div class="card-title">Manual Override</div>
+      <label for="reference">Verse reference</label>
+      <input id="reference" type="text" placeholder="John 3:16" />
+      <div class="btn-row">
+        <button id="show-btn" class="btn-primary btn-block">Show on overlay</button>
+        <button id="clear-btn" class="btn-danger">Clear</button>
       </div>
     </div>
 
-    <div class="col">
-      <div class="live-preview">
-        <div id="live-verse-empty">Nothing is live right now.</div>
-        <div id="live-verse-text" style="display: none"></div>
-        <div id="live-verse-ref" style="display: none"></div>
-      </div>
+    <div class="card card-locked cell-media" aria-label="Media Library and Song Lyrics — coming in Phase 2">
+      <svg class="lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+        <rect x="4.5" y="10.5" width="15" height="9.5" rx="2" />
+        <path d="M7.5 10.5V7a4.5 4.5 0 0 1 9 0v3.5" />
+      </svg>
+      <div class="card-locked-title">Media Library &amp; Song Lyrics</div>
+      <div class="card-locked-sub">Coming in Phase 2</div>
+    </div>
 
-      <div class="card">
-        <div class="card-title">Activity</div>
-        <div id="log"></div>
-      </div>
+    <div class="live-preview cell-live">
+      <div id="live-verse-empty">Nothing is live right now.</div>
+      <div id="live-verse-text" style="display: none"></div>
+      <div id="live-verse-ref" style="display: none"></div>
+    </div>
+
+    <div class="card glass cell-log">
+      <div class="card-title">Activity</div>
+      <div id="log"></div>
     </div>
   </main>
   </div>
