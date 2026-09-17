@@ -1620,3 +1620,498 @@ it's the approved Phase 2 scope and not scope creep beyond it:
   idea, or some combination — each has a materially different risk profile and none is
   assumed here. This must be scoped concretely in that feature's own dedicated
   architecture review, per section 59.3, before any code.
+
+## 60. Phase 2 Feature Note — Media Library
+
+Superseded scope note: the original version of this section covered "Media Library &
+Song Lyrics." Lyrics/song-text-block support is dropped from Phase 2 entirely
+(confirmed explicitly) — this feature is Media Library only (images, video, audio).
+`ROADMAP.md` is updated to match.
+
+The dedicated architecture note section 59.3 requires before this feature's code
+starts, following AGENTS.md section 56's checklist. This is design only — nothing in
+this section is implemented yet.
+
+### 60.1 Which module owns this
+
+A new sibling domain to `apps/server/verse/`, not an extension of it: `apps/server/media/`.
+Media cues are not verses — they don't flow through hallucination-guard validation or
+`VerseSource` at all. Reusing `Verse`/`VerseSource` machinery for a concept that was
+never a Bible reference would violate the section 4.2 boundary ("Verse Source does not
+decide whether to display a verse") by stretching what a "verse" means rather than
+adding a real sibling. The Electron main process (`apps/desktop/main/index.ts`) owns
+the one piece of this that must live there: the native file picker and the
+copy-into-app-storage step (section 60.3) — the same place `ConfigStore` already owns
+secure local persistence.
+
+Detection is a real exception to "doesn't flow through detection" above: this feature
+adds voice-triggered media (section 60.3), a second, sibling `VerseDetector`-shaped
+component living in `apps/server/media/`, not in `apps/server/detector/` — it detects
+media-cue names, not Bible references, and must never be confused with or merged into
+`RegexDetector`.
+
+### 60.2 New contracts
+
+```ts
+// packages/contracts/media.ts (new file)
+export type MediaCueKind = "image" | "video" | "audio"
+
+export type MediaCue = {
+  kind: MediaCueKind
+  id: string
+  /** Also the voice-trigger phrase — section 60.3. Operator-assigned at import time. */
+  title: string
+}
+```
+
+`id` is a ULID assigned at import time (section 60.3) — never a filesystem path. For
+`image`/`video`/`audio`, the overlay resolves `id` to a URL itself (`/media/<id>`,
+section 60.3); the WS payload never carries a path or URL directly, matching how
+`verse:show`'s payload carries a resolved `Verse`, not instructions for how to fetch
+one.
+
+Because v1 of this feature includes full playback transport (section 60.5 — play,
+pause, seek), `video`/`audio` cues have real ongoing server-side state, unlike a
+`Verse`, which is fire-and-forget. `media:show`'s payload carries that state alongside
+the cue:
+
+```ts
+// packages/contracts/media.ts (new file), continued
+export type MediaPlaybackState = {
+  state: "playing" | "paused"
+  positionMs: number
+  /** Server clock reading when positionMs was true — see section 60.5's sync model. */
+  asOfServerTime: number
+}
+
+export type MediaShowPayload = {
+  cue: MediaCue
+  /** Present only for kind "video"/"audio"; omitted for "image", which has no playback concept. */
+  playback?: MediaPlaybackState
+}
+```
+
+Six new WS actions, small and purpose-built per AGENTS.md section 19 — one pair for
+display/clear (mirroring `verse:show`/`verse:clear`'s exact shape) plus three
+operator-only transport commands that only apply to `video`/`audio` cues:
+
+```text
+media:select   (command, operator-only)  — payload: { id: string }
+media:play     (command, operator-only)  — payload: null (resumes the active cue)
+media:pause    (command, operator-only)  — payload: null (pauses the active cue)
+media:seek     (command, operator-only)  — payload: { positionMs: number }
+media:clear    (command, operator-only; also broadcast as an event, exactly
+                 like verse:clear already is both)
+media:show     (event, server -> viewers) — payload: MediaShowPayload
+```
+
+`media:select`/`media:seek` never carry the file itself or a raw path — only an `id`
+already known to `apps/server/media/`'s library from a prior import (section 60.3), or
+a plain millisecond offset. `media:play`/`media:pause`/`media:clear` are rejected if no
+cue is currently active (nothing to act on) — schema-validated in `action-registry.ts`
+exactly like `verse:override`'s existing pattern.
+
+### 60.3 Voice-triggered media
+
+Confirmed explicitly: a media cue's `title` (assigned by the operator at import time)
+doubles as a spoken trigger phrase — saying it during a live service shows the cue
+automatically, the same product behavior verse detection already provides for Bible
+references.
+
+**Exact-phrase match only, confirmed explicitly (not fuzzy/paraphrase matching).**
+This keeps the same deterministic, syntactic-only philosophy AGENTS.md sections 12-14
+already establish for `RegexDetector` — a media trigger that fires on close-but-wrong
+matches is the same class of risk (a false positive shows the wrong thing at the wrong
+moment) as the semantic/paraphrase-aware verse detection `ROADMAP.md` already defers as
+high-risk. A new `MediaCueDetector` (`apps/server/media/media-cue-detector.ts`) checks
+whether a final transcript's text contains any currently-imported cue's `title`,
+case-insensitively, after the same whitespace-normalization `RegexDetector`'s own
+`normalizeBookName()` already applies. No stemming, no synonym matching, no fuzzy
+distance — a title that isn't said exactly is simply never triggered, which is the
+correct, safe failure direction (nothing displays) rather than the unsafe one
+(something wrong displays).
+
+**Gated the same way verse detection is.** `MediaCueDetector` only ever sees
+transcripts that already passed the existing transcript gate (`state: "final"` only)
+— partial transcripts never reach it, mirroring invariant 1 exactly. It runs alongside
+`RegexDetector` in the same `onTranscript` handler `resolveTranscriptVerses` already
+lives in (AppCore, sections 22-23), not instead of it: a single sentence could
+plausibly contain both a spoken verse reference and a spoken cue title, and both
+should fire independently.
+
+**One activation path, two triggers.** A detected title and an operator's
+`media:select` command both funnel through the same internal "activate this cue"
+function in the module from section 60.1 — the same pattern `verse:override` and a
+detected verse reference already share by both calling `resolveVerse()` (section 36).
+There is no separate code path for "shown by voice" versus "shown by the operator's
+click"; only how activation was triggered differs.
+
+**Uniqueness, enforced at import, not at detection time.** `MediaLibrary` rejects
+importing a cue whose `title` exactly matches an existing one's — the same way a
+filesystem wouldn't let two files share a path — so `MediaCueDetector` never has to
+choose between two equally-valid matches. A title that happens to also be a substring
+of a longer, unrelated spoken sentence still triggers; this is the same deterministic
+tradeoff `RegexDetector` already accepts (syntactic matching over natural-language
+understanding), not a new risk category this feature introduces.
+
+### 60.4 File handling and the security boundary this feature actually adds
+
+This is the one part of this feature that can genuinely violate AGENTS.md section 15
+("no arbitrary filesystem paths from untrusted WS payloads") if built carelessly, so
+it gets the most detail:
+
+1. The operator picks a file via Electron's own `dialog.showOpenDialog`, invoked from
+   the main process only (a new IPC handler, e.g. `pick-media-file`, following the
+   existing `complete-setup` pattern — the renderer asks, the main process does the
+   filesystem-touching work, the renderer gets back an opaque result).
+2. The main process copies the selected file into a dedicated, app-owned directory
+   under `app.getPath("userData")` (e.g. `.../ChurchOverlay/media/`), naming it by a
+   freshly generated ULID plus its original extension. The original path the operator
+   picked is never retained or sent anywhere past this step.
+3. A new `MediaLibrary` class (`apps/server/media/media-library.ts`) tracks imported
+   cues (id -> kind, title, stored filename) and is the only component that turns an
+   `id` back into a real file. `resolve(id): MediaCue | null` — returns `null` for any
+   unknown id, exactly like `VerseIndex.exists()` returns false for an unknown
+   reference, never throwing or leaking a path.
+4. `StaticServer` gains one new capability: serving files from `MediaLibrary`'s
+   directory under a fixed prefix (`/media/<id>`), resolving `id` through
+   `MediaLibrary.resolve()` first — never joining the request path onto the directory
+   directly the way its existing `rootDir` serving does. An unknown or malformed id is
+   a 404, the same failure shape as any other not-found request; there is no path in
+   the request that can ever reach outside the media directory, because no part of the
+   request is ever used as a path.
+5. Import-time validation: an explicit extension/type allowlist (images:
+   `.jpg`/`.jpeg`/`.png`/`.webp`; video: `.mp4`/`.webm`; audio: `.mp3`/`.wav`/`.m4a`),
+   matching `FreeApiSource`'s own precedent of validating rather than trusting input
+   shape. The threat model here is narrower than an external API response, though:
+   the file comes from the operator's own disk via a trusted native OS dialog, not
+   from an untrusted network response or a WS payload — the allowlist exists to reject
+   obvious mistakes and keep the overlay's `<img>`/`<video>`/`<audio>` handling
+   predictable, not to defend against a malicious file the operator deliberately chose
+   to import on their own machine.
+
+### 60.5 Playback transport and the sync model
+
+Confirmed explicitly (this was flagged as a genuine architectural fork, not decided
+silently, per AGENTS.md section 61): v1 of this feature needs full transport — play,
+pause, and seek/scrub, not just show-from-start/clear. That's real additional
+complexity, concentrated entirely in one place: the server must hold authoritative
+playback state per active cue, because unlike a `Verse`, "currently playing a video at
+position X" is ongoing state a newly-connecting or reconnecting viewer needs to catch
+up to, not a one-shot event.
+
+**The server is the single source of truth for playback state**, tracked in the same
+module that owns `MediaLibrary` (section 60.1). Every operator transport command
+(`media:select`/`media:play`/`media:pause`/`media:seek`) updates that server-side state
+and immediately re-broadcasts a fresh `media:show` with it — there is no client-side
+authority anywhere, including the operator dashboard's own preview.
+
+**Position sync uses a timestamp-and-recompute model, not a running server clock
+broadcast continuously.** Every `media:show` carries `positionMs` plus
+`asOfServerTime` (the server's own `Date.now()` when that position was true). A
+receiving client — the overlay, or the dashboard's own transport UI — computes the
+actual position on arrival:
+
+```text
+if playback.state === "playing":
+  actualPositionMs = playback.positionMs + (Date.now() - playback.asOfServerTime)
+else: // "paused"
+  actualPositionMs = playback.positionMs
+```
+
+This is deliberately simpler than a general media-sync protocol (buffering
+acknowledgements, round-trip-time compensation, adaptive drift correction) because
+ARCHITECTURE.md section 49's own security model already constrains the real topology:
+the WS server binds to `127.0.0.1` only — every client is the same machine. Network
+latency between the server and its own overlay/dashboard is negligible in practice, so
+a single timestamp-and-recompute step is sufficient; building anything more elaborate
+would be solving a distributed-systems problem this app's actual deployment doesn't
+have (AGENTS.md section 41: no premature frameworks).
+
+**Reconnect/late-join sync, without giving the overlay a way to ask for one.**
+Invariant 8 (section 47) forbids the overlay issuing application commands at all —
+adding a "what's currently playing?" query from the viewer would mean adding an
+inbound message type for a role that is supposed to never send one, eroding that
+invariant for this feature's convenience. Instead: `ChurchOverlayWsServer`'s existing
+connection handler (`apps/server/ws/server.ts`) gains one small addition — when a
+**viewer** connection opens and a media cue is currently active, the server
+immediately sends that one connection a `media:show` with freshly recomputed
+`positionMs`/`asOfServerTime`, exactly as if it had just been broadcast. Purely a
+server-initiated push on a connection event, not a new inbound capability for viewers.
+
+This same reconnect gap already exists, unaddressed, for `verse:show` (a viewer that
+reconnects mid-verse sees nothing until the next detection or clear) — out of scope
+for this note to fix, since it wasn't asked for here, but worth flagging as a possible
+follow-up consistency improvement once this pattern exists for media.
+
+### 60.6 New correctness invariants this feature adds
+
+Alongside section 47's twelve existing invariants — this feature does touch one
+extension of them now (voice-triggered media, section 60.3), so it is no longer true
+that it "never goes near detection"; it deliberately mirrors invariant 1 rather than
+bypassing it:
+
+Invariant 13
+`MediaCueDetector` never sees a partial transcript — only transcripts that already
+passed the same transcript gate `RegexDetector` does (`state: "final"` only). This
+mirrors invariant 1 exactly, applied to the new detector rather than a new invariant
+about a different concern.
+
+Invariant 14
+The overlay never loads a file the operator did not import through `MediaLibrary` —
+every media URL it ever requests is `/media/<id>`, where `id` came from a `media:show`
+broadcast the server itself sent, never from a value the overlay renderer constructs.
+
+Invariant 15
+Playback state is authoritative on the server only. No client — overlay or dashboard —
+ever advances, computes, or persists `positionMs` on its own initiative; it only ever
+recomputes the current position from the most recent `media:show` it received, per
+section 60.5's formula. Two clients (the dashboard's own preview and the real overlay)
+must never be able to drift into disagreement about what's currently on air, because
+neither one owns the state — the server does.
+
+Invariant 16
+`media:play`/`media:pause`/`media:seek` never reach the overlay's inbound side at all
+— the overlay's role (`viewer`) has an empty `allowedSenders` for every media action,
+exactly as it already does for every existing command, per invariant 8.
+
+### 60.7 Tests required
+
+- `MediaLibrary` unit tests: import assigns a fresh ULID, rejects a disallowed
+  extension, rejects a duplicate title, `resolve()` returns `null` for an unknown id
+  (not a throw).
+- `MediaCueDetector` unit tests, mirroring `regex-detector.test.ts`'s style: an exact
+  (case-insensitive) title match triggers, a close-but-not-exact phrase does not, a
+  transcript containing both a verse reference and a cue title triggers both
+  independently, and — mirroring `transcript-gate.test.ts` — a `state: "partial"`
+  transcript is never even passed to it.
+- `StaticServer`'s new `/media/<id>` route: serves an imported file correctly, 404s an
+  unknown id, and — mirroring the existing directory-traversal test's own lesson about
+  `fetch()` normalizing `../` client-side — a raw `node:http` request confirming a
+  crafted id can never resolve outside the media directory.
+- `action-registry.test.ts`: `media:select`/`media:play`/`media:pause`/`media:seek`
+  schema validation and operator-only role checks, and `media:clear`'s dual
+  command/event shape, mirroring the existing `verse:clear` tests exactly.
+- Playback state-machine unit tests (the new module from section 60.1): `play` after
+  `pause` resumes from the paused `positionMs`, not from 0; `seek` while paused stays
+  paused at the new position; `seek` while playing keeps playing from the new position;
+  `play`/`pause`/`seek`/`clear` with no active cue are rejected, not silently ignored.
+- The timestamp-and-recompute formula (section 60.5) as an isolated, injectable-clock
+  unit test: given a known `asOfServerTime`/`positionMs`/`state` and a known "now",
+  the computed `actualPositionMs` matches by hand-calculation — the same style already
+  used for `generateUlid`'s known-value test.
+- One integration test through the real wiring (mirroring `app-core.test.ts`'s
+  pattern): a `media:select` command with a real imported id broadcasts `media:show`
+  with `state: "playing"` and `positionMs: 0`; a subsequent `media:pause` broadcasts an
+  updated `media:show` with `state: "paused"` and a recomputed `positionMs`; a viewer
+  that connects *after* a cue is already active immediately receives a `media:show`
+  sync event without sending anything itself (section 60.5's reconnect behavior); an
+  unknown id in `media:select` broadcasts nothing.
+
+### 60.8 Confirms this is approved scope
+
+Media library is the first item in `ROADMAP.md`'s Phase 2 section, approved in section
+59. Lyrics/song-text-block support, originally planned alongside it, is dropped from
+Phase 2 entirely (confirmed explicitly, section 60) — this feature is images/video/audio
+only. Also confirmed and folded into this note: full playback transport for
+video/audio (section 60.5, confirmed explicitly as a genuine architectural decision,
+not assumed) and voice-triggered media by exact title match (section 60.3, likewise
+confirmed explicitly). This note specifies how to build exactly what was approved: it
+does not add anything beyond that (no multi-cue queueing, no crossfade/transition
+effects between cues, no fuzzy/paraphrase title matching, no remote/networked sync
+beyond the single local machine section 60.5's model already assumes), and any of
+those would be a further scope question, not something this note has quietly folded
+in.
+
+## 61. Phase 2 Feature Note — Voice-Driven Verse Navigation
+
+A dedicated architecture note, following the same AGENTS.md section 56 checklist as
+section 60. This was raised mid-session as an addition to v1's existing explicit
+Bible-reference detection, not part of the original three Phase 2 items in section
+59 — it extends the *existing, already-shipped* verse pipeline rather than
+introducing a new domain, so it is scoped and confirmed here rather than folded
+retroactively into section 59's original approval. This is design only — nothing in
+this section is implemented yet.
+
+### 61.1 What was confirmed, explicitly
+
+Four command categories, confirmed by name: next/previous verse, next/previous
+chapter, cancel/clear by voice, and jump-to-a-named-book-and-chapter (e.g. "go to
+Romans chapter 8" — a bare book+chapter with no verse number, which
+`RegexDetector`'s existing pattern does not match today since it requires a
+`chapter:verse` colon form). Phrase recognition uses **a small, fixed set of
+synonyms per command** (confirmed explicitly, not exact-single-phrase-only and not
+fuzzy/semantic matching — see section 61.3). Voice control is scoped to navigation,
+clearing, and the media voice-trigger from section 60.3 — **not** microphone
+start/stop, which stays a manual dashboard action (confirmed explicitly; also
+inherently circular, since the mic must already be listening for any voice command
+to be heard at all).
+
+### 61.2 Which module owns this, and why it is NOT `VerseDetector`
+
+`VerseDetector.detect(text): VerseReference[]` is a pure function of the transcript
+text alone (section 12) — it has no access to, and needs none, because an explicit
+reference like "John 3:16" is fully self-contained. "Next verse" is not: resolving it
+requires knowing what is *currently displayed*, which is state, not text. Forcing
+navigation through the `VerseDetector` interface would mean either smuggling state
+into a seam explicitly documented as stateless, or having every `VerseDetector`
+implementation suddenly need a state dependency it was never designed for. Instead,
+this is a new pair of components, split the same way detection and resolution are
+already split for ordinary references:
+
+- `NavigationCommandDetector` (`apps/server/detector/navigation-command-detector.ts`,
+  sibling to `RegexDetector`) — a pure, stateless function of text, exactly like
+  `VerseDetector`. It recognizes command phrases and outputs *what was asked for*,
+  never a resolved reference.
+- `resolveNavigationCommand()` (`apps/server/verse/resolve-navigation-command.ts`,
+  sibling to `resolve-verse.ts`) — takes a detected command plus the current
+  position (section 61.4) and computes the target `VerseReference` (or a clear),
+  using the exact same `BOOK_CATALOG` data `KnownValidVerseIndex` already uses.
+
+Per ARCHITECTURE.md section 50, v1 shipped with exactly four extension seams. Phase
+2 is an explicit, approved amendment to v1's scope (section 59) and both this
+feature and section 60's `MediaCueDetector` add further seam-shaped components
+beyond that original count — expected and fine for approved Phase 2 work, not a
+quiet violation of section 50's "exactly four," which describes v1 as shipped, not a
+permanent ceiling on the whole project.
+
+```ts
+// packages/contracts/verse.ts, extended
+export type NavigationCommand =
+  | { kind: "next-verse" }
+  | { kind: "previous-verse" }
+  | { kind: "next-chapter" }
+  | { kind: "previous-chapter" }
+  | { kind: "goto-chapter"; book: string; chapter: number }
+  | { kind: "cancel" }
+
+export interface NavigationCommandDetector {
+  detect(text: string): NavigationCommand[]
+}
+```
+
+### 61.3 Phrase recognition — the confirmed synonym-list approach
+
+Each command maps to a small, explicit, hand-written list of accepted phrases —
+still fully deterministic (no stemming, no fuzzy distance, no semantic matching;
+same philosophy as section 60.3's exact-title matching, just one list per command
+instead of one phrase per media cue):
+
+```text
+next-verse:       "next verse", "next"
+previous-verse:   "previous verse", "go back", "previous"
+next-chapter:     "next chapter"
+previous-chapter: "previous chapter"
+cancel:           "cancel", "clear", "clear the screen"
+goto-chapter:     pattern-matched, not a fixed list — "<book> chapter <number>"
+                  (e.g. "go to Romans chapter 8"), reusing RegexDetector's own
+                  book-name capture group but requiring the literal word "chapter"
+                  and NO trailing ":<verse>" (that form is already
+                  RegexDetector's territory and must not double-fire here)
+```
+
+Short, common words as synonyms ("next", "previous", "clear") carry real false-
+positive risk in ordinary speech ("clear" said in an unrelated sentence, "next" as
+in "the next thing I want to say"). This is an accepted, explicit tradeoff of the
+confirmed synonym-list approach, not an oversight — mitigated, not eliminated, by
+requiring these short synonyms to be the transcript's *entire* trimmed text (a
+one- or two-word utterance) rather than matching them as a substring anywhere in a
+longer sentence. The longer, more specific phrases ("next verse", "clear the
+screen") match as a substring like section 60.3's title matching does, since they
+carry enough specificity on their own.
+
+### 61.4 Current-position state and boundary rules
+
+**Server-authoritative, in-memory, updated by every verse display — however it was
+triggered.** `AppCore` (sections 22-23) already broadcasts every `verse:show`; it
+gains one small addition: after broadcasting, record `{ book, chapter, verse }` as
+the current position. This applies uniformly whether the verse came from detection,
+a manual `verse:override`, or navigation itself — "next verse" after an operator's
+manual override continues from wherever the operator pointed, which is the least
+surprising behavior (section 61's own "least surprising, documented" default,
+AGENTS.md section 61). `verse:clear` (however triggered) resets it to `null`.
+
+**Boundary rollover uses `BOOK_CATALOG`'s existing order and chapter/verse-count
+data** (`apps/server/verse/book-catalog.ts`) — the same dataset `KnownValidVerseIndex`
+already validates against, so no new dataset is introduced:
+
+```text
+next-verse:       verse+1 if within the current chapter's verse count;
+                  else chapter+1, verse 1, if another chapter remains in the book;
+                  else the next book in BOOK_CATALOG's order, chapter 1, verse 1;
+                  else (Revelation 22:21) no-op.
+previous-verse:   mirrors next-verse backward; no-op before Genesis 1:1.
+next-chapter:     chapter+1, verse 1, within the book; else next book, chapter 1,
+                  verse 1; else no-op at the last book's last chapter.
+previous-chapter: chapter-1, verse 1, within the book; else the previous book's
+                  LAST chapter, verse 1; else no-op before Genesis chapter 1.
+goto-chapter:     the named book's given chapter, verse 1.
+```
+
+A "no-op" broadcasts nothing and changes nothing, logged at info level (AGENTS.md
+section 25: never silently drop without a trace) — the correct failure direction is
+nothing happening, not something incorrect appearing, exactly the same principle
+`MediaCueDetector`'s exact-match-only design (section 60.3) already applies.
+
+**Every computed reference is still validated through `KnownValidVerseIndex.exists()`
+before display — never skipped, even though it was computed from the same
+catalog.** This is not redundant defensiveness: it is the same "never bypass the
+hallucination guard for any code path that produces a `VerseReference`" rule
+invariant 7 already establishes for every other path, applied consistently to a new
+one, rather than a special case that gets to skip it because "we computed it
+ourselves."
+
+### 61.5 What this note deliberately leaves open
+
+**Media/verse overlay precedence is not resolved here.** If a media cue (section 60)
+is currently showing and a voice-navigated (or detected, or overridden) verse fires,
+which one the overlay actually displays is not decided by this note — the same class
+of "what's currently on air when two things want the screen" question section 59.4
+already deferred for rundown/scenes. Out of scope for this note to invent; flagged
+for a follow-up decision once both features exist side by side, not blocking this
+one (navigation only needs to track "what verse reference is current," which is
+well-defined independent of whatever else the overlay might also be showing).
+
+### 61.6 New correctness invariants this feature adds
+
+Invariant 17
+Navigation commands never bypass `KnownValidVerseIndex.exists()`. A computed
+reference that fails existence validation (which should not happen given
+`BOOK_CATALOG`-derived computation, but is never assumed) broadcasts nothing, exactly
+like an invalid detected or overridden reference does today.
+
+Invariant 18
+`NavigationCommandDetector` only ever sees final transcripts, mirroring invariant 1
+and invariant 13 (section 60.6) — partial transcripts never trigger navigation.
+
+Invariant 19
+Current-position state is server-authoritative only, mirroring invariant 15's
+playback-state rule for the same reason: no client computes or persists "what verse
+is current" itself, it only ever reflects the most recent `verse:show`/`verse:clear`
+it received.
+
+### 61.7 Tests required
+
+- `NavigationCommandDetector` unit tests: each fixed synonym triggers its command;
+  a short synonym ("next", "clear") embedded inside an unrelated longer sentence does
+  NOT trigger (the whole-utterance requirement from section 61.3); the longer
+  phrases DO trigger as a substring; `goto-chapter` parses "Romans chapter 8"
+  correctly and does not fire on "Romans 8:16" (RegexDetector's own territory).
+- `resolveNavigationCommand()` unit tests, using real `BOOK_CATALOG` data: next/
+  previous verse within a chapter; rollover at a chapter boundary; rollover at a
+  book boundary; no-op at Genesis 1:1 and at Revelation's last verse; next/previous
+  chapter with and without a book-boundary crossing; `goto-chapter` for a valid
+  book/chapter and for an invalid one (existing `KnownValidVerseIndex` behavior,
+  reused, not reimplemented).
+- `AppCore`-level integration test (mirroring `app-core.test.ts`): a detected verse
+  followed by a spoken "next verse" broadcasts the correct following verse; "cancel"
+  after a shown verse broadcasts `verse:clear`; "next verse" with no prior verse
+  shown broadcasts nothing.
+
+### 61.8 Confirms this is approved scope
+
+Confirmed explicitly, mid-session, as an extension of the already-shipped verse
+pipeline: all four navigation categories in section 61.1, the synonym-list phrase
+matching approach in section 61.3, and the explicit exclusion of mic start/stop from
+voice control. This note does not decide media/verse overlay precedence (section
+61.5) — that remains open for a future decision, not assumed here.
