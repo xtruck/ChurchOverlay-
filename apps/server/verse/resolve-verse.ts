@@ -6,6 +6,22 @@ import { CircuitBreaker } from "./circuit-breaker"
 const DEFAULT_TRANSLATION = "kjv"
 
 /**
+ * Reads a VerseSource's optional getTranslationId() capability (see
+ * LocalizedVerseSource's doc comment) — an implementation that can return
+ * meaningfully different results for the same reference depending on
+ * live-mutable state (e.g. a display-mode toggle) must be able to change
+ * resolveVerse()'s cache key accordingly, or a stale result from a
+ * previous mode gets served back after the switch. A source with no such
+ * state (FreeApiSource, GetBibleVerseSource on their own) simply has
+ * nothing to report here, and resolveVerse() falls back to its own
+ * DEFAULT_TRANSLATION.
+ */
+export function translationIdFor(source: VerseSource): string | undefined {
+  const withId = source as VerseSource & { getTranslationId?: () => string }
+  return withId.getTranslationId?.()
+}
+
+/**
  * Composes a VerseSource with its supporting infrastructure
  * (ARCHITECTURE.md sections 16-21): check the cache first (both the
  * positive and negative sides), consult the circuit breaker before

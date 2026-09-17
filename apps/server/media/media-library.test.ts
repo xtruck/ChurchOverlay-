@@ -85,6 +85,24 @@ test("MediaLibrary: import() rejects a duplicate title, case-insensitively and w
   })
 })
 
+// Regression coverage for the audit finding: an empty/whitespace-only
+// title normalizes to "", and "".includes("") is always true, so
+// MediaCueDetector's substring check would fire on every single
+// transcript for the rest of the service.
+test("MediaLibrary: import() rejects an empty or whitespace-only title", async () => {
+  await withTempDirs(async (sourceDir, mediaDir) => {
+    const library = new MediaLibrary({ mediaDir })
+
+    const empty = join(sourceDir, "a.png")
+    await writeFile(empty, "a")
+    await assert.rejects(() => library.import(empty, "", "image"))
+
+    const whitespace = join(sourceDir, "b.png")
+    await writeFile(whitespace, "b")
+    await assert.rejects(() => library.import(whitespace, "   ", "image"))
+  })
+})
+
 test("MediaLibrary: findByTitle() matches case-insensitively and returns null for no match", async () => {
   await withTempDirs(async (sourceDir, mediaDir) => {
     const sourcePath = join(sourceDir, "a.png")

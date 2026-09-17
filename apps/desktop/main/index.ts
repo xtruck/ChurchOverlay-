@@ -69,7 +69,8 @@ async function startServices(config: AppConfig): Promise<{ port: number; token: 
   localizedVerseSource = new LocalizedVerseSource(
     new FreeApiSource(),
     new GetBibleVerseSource(),
-    config.displayMode
+    config.displayMode,
+    logger
   )
 
   appCoreHandle = await startAppCore({

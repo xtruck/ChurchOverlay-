@@ -9,7 +9,7 @@ import type { VerseCache } from "../verse/verse-cache"
 import type { CircuitBreaker } from "../verse/circuit-breaker"
 import type { Logger } from "../../../packages/shared/logger"
 import { processTranscript } from "./process-transcript"
-import { resolveVerse } from "../verse/resolve-verse"
+import { resolveVerse, translationIdFor } from "../verse/resolve-verse"
 
 /**
  * Completes the Application Core pipeline from ARCHITECTURE.md section 23,
@@ -48,7 +48,7 @@ export async function resolveTranscriptVerses(
 
   const verses: Verse[] = []
   for (const reference of references) {
-    const verse = await resolveVerse(reference, source, cache, circuitBreaker, undefined, logger)
+    const verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
     if (verse) verses.push(verse)
   }
   return verses

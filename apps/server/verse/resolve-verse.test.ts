@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { resolveVerse } from "./resolve-verse"
+import { resolveVerse, translationIdFor } from "./resolve-verse"
 import { VerseCache } from "./verse-cache"
 import { CircuitBreaker } from "./circuit-breaker"
 import { Logger } from "../../../packages/shared/logger"
@@ -163,4 +163,65 @@ test("resolveVerse: an open circuit short-circuits without calling the source at
   const result = await resolveVerse(anotherReference, source, cache, circuitBreaker)
   assert.equal(result, null)
   assert.equal(source.callCount, 1) // still just the first call
+})
+
+test("translationIdFor: reads a source's optional getTranslationId() capability when present", () => {
+  const withId: VerseSource & { getTranslationId(): string } = {
+    async getVerse() {
+      return null
+    },
+    getTranslationId() {
+      return "bilingual"
+    },
+  }
+  assert.equal(translationIdFor(withId), "bilingual")
+})
+
+test("translationIdFor: returns undefined for a source with no such capability, without throwing", () => {
+  const plain: VerseSource = {
+    async getVerse() {
+      return null
+    },
+  }
+  assert.equal(translationIdFor(plain), undefined)
+})
+
+// ARCHITECTURE.md section 16: a real regression test for the bug the audit
+// found — a source whose output depends on live-mutable state (like
+// LocalizedVerseSource's display mode) must not have its result served
+// back from the cache under a DIFFERENT mode just because the reference
+// is the same. Modeled here with a minimal fake rather than the real
+// LocalizedVerseSource, since the bug is in resolveVerse()'s cache-key
+// wiring, not in that class itself.
+test("resolveVerse: switching a source's mode (via getTranslationId) does not serve a stale result cached under the previous mode", async () => {
+  const cache = new VerseCache()
+  const circuitBreaker = new CircuitBreaker()
+  let mode = "english"
+  const modeSwitchingSource: VerseSource & { getTranslationId(): string } = {
+    async getVerse(reference) {
+      return { reference, text: `${mode} text`, translation: mode, source: "test" }
+    },
+    getTranslationId() {
+      return mode
+    },
+  }
+
+  const english = await resolveVerse(
+    JOHN_3_16,
+    modeSwitchingSource,
+    cache,
+    circuitBreaker,
+    translationIdFor(modeSwitchingSource)
+  )
+  assert.equal(english?.text, "english text")
+
+  mode = "french"
+  const french = await resolveVerse(
+    JOHN_3_16,
+    modeSwitchingSource,
+    cache,
+    circuitBreaker,
+    translationIdFor(modeSwitchingSource)
+  )
+  assert.equal(french?.text, "french text") // NOT the stale "english text" from before the switch
 })

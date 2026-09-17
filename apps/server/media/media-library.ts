@@ -50,6 +50,15 @@ export class MediaLibrary {
         `MediaLibrary: "${extension}" is not an allowed extension for kind "${kind}"`
       )
     }
+    // An empty/whitespace-only title normalizes to "", and "".includes("")
+    // (MediaCueDetector's substring check) is always true — that cue would
+    // fire on every single transcript for the rest of the service. Reject
+    // it here, the same operator-mistake-to-surface-immediately treatment
+    // duplicate-title already gets below, since a blank title is just as
+    // unusable for voice-triggered matching.
+    if (normalizeTitle(title).length === 0) {
+      throw new Error("MediaLibrary: title must not be empty")
+    }
     if (this.findByTitle(title)) {
       throw new Error(`MediaLibrary: a cue titled "${title}" already exists`)
     }

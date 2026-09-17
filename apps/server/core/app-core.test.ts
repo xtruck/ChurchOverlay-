@@ -1060,6 +1060,105 @@ test("AppCore: a 'blank' scene broadcasts verse:clear, media:clear, and announce
   }
 })
 
+// Regression coverage for the audit finding: activateScene()'s "verse"/
+// "media" cases silently returned on a resolution failure, with zero
+// diagnostic trace — violating AGENTS.md section 25's "never silently
+// swallow errors" rule the sibling verse:override/media:select handlers
+// already followed.
+test("AppCore: a rundown verse scene that fails to resolve logs a diagnostic instead of doing nothing silently", async () => {
+  const lines: unknown[] = []
+  const logger = new Logger({ write: (line) => lines.push(JSON.parse(line)) })
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}), // always resolves to null — nothing configured
+    logger,
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const rundown: Rundown = {
+      id: "01RUNDOWN",
+      title: "Sunday Service",
+      scenes: [{ kind: "verse", reference: { book: "john", chapter: 3, verse: 16 } }],
+    }
+    operatorSocket.send(JSON.stringify({ id: "01A", type: "rundown:load", timestamp: Date.now(), payload: { rundown } }))
+
+    await waitFor(() => lines.some((l) => (l as { event: string }).event === "rundown.scene-verse-unresolved"))
+    operatorSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+// Regression coverage for the audit finding: a viewer reconnecting during a
+// verse-interrupt was resynced with the rundown's PAUSED scene's own
+// content, not the verse that is actually visible on screen right now.
+test("AppCore: a viewer connecting during a verse-interrupt is resynced with the live verse, not the rundown's paused scene", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const source = join(dir, "welcome.png")
+    await writeFile(source, "x")
+    const cue = await mediaLibrary.import(source, "Welcome Slide", "image")
+
+    const asr = new FakeAsrProvider()
+    const app = await startAppCore({
+      asr,
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new EchoVerseSource(),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+    })
+    try {
+      const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+      const rundown: Rundown = {
+        id: "01RUNDOWN",
+        title: "Sunday Service",
+        scenes: [{ kind: "media", mediaCueId: cue.id }],
+      }
+      const loadMessages = waitForMessages(viewerSocket, 2)
+      operatorSocket.send(JSON.stringify({ id: "01A", type: "rundown:load", timestamp: Date.now(), payload: { rundown } }))
+      await loadMessages
+
+      const interruptMessages = waitForMessages(viewerSocket, 2)
+      asr.emitTranscript({
+        id: "01T",
+        correlationId: "01B",
+        sequence: 1,
+        text: "Turn to John 3:16.",
+        state: "final",
+        timestamp: Date.now(),
+      })
+      await interruptMessages
+
+      // A late viewer connects WHILE the verse is interrupting the media scene.
+      const lateViewer = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
+      // media:show (mediaPlayback's own independent resync, unaffected by the
+      // interrupt) + rundown:state + verse:show (the fix under test).
+      const synced = await waitForMessages(lateViewer, 3)
+      const types = synced.map((m) => m.type).sort()
+      assert.deepEqual(types, ["media:show", "rundown:state", "verse:show"])
+
+      const verseMsg = synced.find((m) => m.type === "verse:show")
+      assert.deepEqual((verseMsg?.payload as Verse).reference, { book: "john", chapter: 3, verse: 16 })
+      const rundownStateMsg = synced.find((m) => m.type === "rundown:state")
+      assert.equal((rundownStateMsg?.payload as { interrupted: boolean }).interrupted, true)
+
+      operatorSocket.close()
+      viewerSocket.close()
+      lateViewer.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
 test("AppCore: scene:goto with an out-of-range index is a no-op, broadcasting nothing", async () => {
   const app = await startAppCore({
     asr: new FakeAsrProvider(),

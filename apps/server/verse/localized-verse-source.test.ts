@@ -1,7 +1,14 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { LocalizedVerseSource } from "./localized-verse-source"
+import { Logger } from "../../../packages/shared/logger"
 import type { Verse, VerseReference, VerseSource } from "../../../packages/contracts"
+
+function capturingLogger(): { logger: Logger; lines: unknown[] } {
+  const lines: unknown[] = []
+  const logger = new Logger({ write: (line) => lines.push(JSON.parse(line)) })
+  return { logger, lines }
+}
 
 const JOHN_3_16: VerseReference = { book: "john", chapter: 3, verse: 16 }
 
@@ -116,4 +123,41 @@ test("LocalizedVerseSource: bilingual mode resolves both sources concurrently, n
   // bilingual mode), so it starts first; English's own async work still begins
   // before French's shorter timer resolves, proving true concurrency.
   assert.deepEqual(order, ["french-start", "english-start", "french-end", "english-end"])
+})
+
+test("LocalizedVerseSource: getTranslationId() reports the current mode, for resolveVerse()'s cache key", () => {
+  const source = new LocalizedVerseSource(new StubVerseSource(ENGLISH_VERSE), new StubVerseSource(FRENCH_VERSE), "english")
+  assert.equal(source.getTranslationId(), "english")
+  source.setMode("bilingual")
+  assert.equal(source.getTranslationId(), "bilingual")
+})
+
+// Regression coverage for the audit finding: Promise.all previously meant a
+// real thrown failure in EITHER language sank the whole bilingual lookup,
+// even when the other language was perfectly healthy.
+test("LocalizedVerseSource: bilingual mode with a French (primary) failure re-throws rather than degrading", async () => {
+  const english = new StubVerseSource(ENGLISH_VERSE)
+  const french = new StubVerseSource(async () => {
+    throw new Error("getbible.net is down")
+  })
+  const source = new LocalizedVerseSource(english, french, "bilingual")
+
+  await assert.rejects(() => source.getVerse(JOHN_3_16), /getbible\.net is down/)
+})
+
+test("LocalizedVerseSource: bilingual mode with an English (secondary) failure degrades to French alone, logging the failure", async () => {
+  const english = new StubVerseSource(async () => {
+    throw new Error("bible-api.com is down")
+  })
+  const french = new StubVerseSource(FRENCH_VERSE)
+  const { logger, lines } = capturingLogger()
+  const source = new LocalizedVerseSource(english, french, "bilingual", logger)
+
+  const result = await source.getVerse(JOHN_3_16)
+  assert.deepEqual(result, FRENCH_VERSE) // no `secondary` — degraded, not thrown
+  assert.equal(lines.length, 1)
+  const entry = lines[0] as { level: string; event: string; error: string }
+  assert.equal(entry.level, "warn")
+  assert.equal(entry.event, "secondary-language-failed")
+  assert.equal(entry.error, "bible-api.com is down")
 })

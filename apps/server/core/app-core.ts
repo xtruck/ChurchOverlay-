@@ -21,7 +21,7 @@ import { CircuitBreaker } from "../verse/circuit-breaker"
 import { SilenceGate } from "../audio/silence-gate"
 import { ChurchOverlayWsServer, type ServerTokens } from "../ws/server"
 import { resolveTranscriptVerses } from "./resolve-transcript-verses"
-import { resolveVerse } from "../verse/resolve-verse"
+import { resolveVerse, translationIdFor } from "../verse/resolve-verse"
 import { passesTranscriptGate } from "./transcript-gate"
 import type { MediaLibrary } from "../media/media-library"
 import { MediaCueDetector } from "../media/media-cue-detector"
@@ -111,6 +111,15 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   // verse" after an operator's manual override continues from wherever
   // the operator pointed, the least-surprising default.
   let currentVersePosition: VerseReference | null = null
+  // The actual resolved Verse behind currentVersePosition, kept only so a
+  // newly-connecting viewer can be resynced with what is REALLY on screen
+  // during a verse-interrupt (see onViewerConnected below) — without this,
+  // a reconnect mid-interrupt would resync the rundown's paused scene
+  // instead of the verse actually covering it, which is worse than the
+  // existing acknowledged "no verse resync at all" gap (ARCHITECTURE.md
+  // section 60.5), since it would show something visibly wrong rather than
+  // just nothing.
+  let lastShownVerse: Verse | null = null
 
   const wsServer = new ChurchOverlayWsServer({
     host: options.host,
@@ -157,7 +166,15 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       const rundownState = rundownController.currentState()
       if (rundownState) {
         send({ id: generateUlid(), type: "rundown:state", timestamp: Date.now(), payload: rundownState })
-        if (rundownState.scene.kind !== "media") {
+        if (rundownState.interrupted) {
+          // The scene rundownController reports here is the PAUSED one —
+          // what's actually visible right now is the interrupting verse
+          // (section 64.2), so that's what a reconnecting viewer needs,
+          // not the paused scene's own content underneath it.
+          if (lastShownVerse) {
+            send({ id: generateUlid(), type: "verse:show", timestamp: Date.now(), payload: lastShownVerse })
+          }
+        } else if (rundownState.scene.kind !== "media") {
           syncSceneContent(rundownState.scene, send).catch((err) => {
             logger.error({
               component: "app-core",
@@ -172,6 +189,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
 
   function showVerse(verse: Verse, correlationId?: string): void {
     currentVersePosition = verse.reference
+    lastShownVerse = verse
     wsServer.broadcast({
       id: generateUlid(),
       type: "verse:show",
@@ -183,6 +201,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
 
   function clearVerse(correlationId?: string): void {
     currentVersePosition = null
+    lastShownVerse = null
     wsServer.broadcast({
       id: generateUlid(),
       type: "verse:clear",
@@ -278,14 +297,35 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     const scene = state.scene
     switch (scene.kind) {
       case "verse": {
-        const verse = await resolveVerse(scene.reference, source, cache, circuitBreaker, undefined, logger)
-        if (verse) showVerse(verse, correlationId)
+        const verse = await resolveVerse(scene.reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+        if (verse) {
+          showVerse(verse, correlationId)
+        } else {
+          logger.info({
+            component: "app-core",
+            event: "rundown.scene-verse-unresolved",
+            correlationId,
+            metadata: { reference: scene.reference },
+          })
+        }
         return
       }
       case "media": {
-        if (!mediaLibrary) return
+        if (!mediaLibrary) {
+          logger.warn({ component: "app-core", event: "rundown.scene-media-not-configured", correlationId })
+          return
+        }
         const cue = mediaLibrary.resolve(scene.mediaCueId)
-        if (cue) broadcastMedia(mediaPlayback.activate(cue), correlationId)
+        if (cue) {
+          broadcastMedia(mediaPlayback.activate(cue), correlationId)
+        } else {
+          logger.info({
+            component: "app-core",
+            event: "rundown.scene-media-unresolved",
+            correlationId,
+            metadata: { mediaCueId: scene.mediaCueId },
+          })
+        }
         return
       }
       case "announcement":
@@ -313,8 +353,16 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   async function syncSceneContent(scene: RundownScene, send: (message: WsMessage) => void): Promise<void> {
     switch (scene.kind) {
       case "verse": {
-        const verse = await resolveVerse(scene.reference, source, cache, circuitBreaker, undefined, logger)
-        if (verse) send({ id: generateUlid(), type: "verse:show", timestamp: Date.now(), payload: verse })
+        const verse = await resolveVerse(scene.reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+        if (verse) {
+          send({ id: generateUlid(), type: "verse:show", timestamp: Date.now(), payload: verse })
+        } else {
+          logger.info({
+            component: "app-core",
+            event: "rundown.viewer-sync-verse-unresolved",
+            metadata: { reference: scene.reference },
+          })
+        }
         return
       }
       case "announcement":
@@ -376,7 +424,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         // shape isn't existence: it still goes through resolveVerse()
         // exactly like a detected reference would.
         const reference = message.payload as VerseReference
-        const verse = await resolveVerse(reference, source, cache, circuitBreaker, undefined, logger)
+        const verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
         if (verse) {
           broadcastVerse(verse, message.correlationId)
         } else {
@@ -542,7 +590,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       // source), not just the index.exists() check resolveNavigationCommand
       // already did — existence isn't the same as having real verse text
       // to display (invariant 17).
-      const verse = await resolveVerse(resolution.reference, source, cache, circuitBreaker, undefined, logger)
+      const verse = await resolveVerse(resolution.reference, source, cache, circuitBreaker, translationIdFor(source), logger)
       if (verse) {
         broadcastVerse(verse, transcript.correlationId)
       }
