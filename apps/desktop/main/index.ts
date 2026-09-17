@@ -27,6 +27,7 @@ const logger = new Logger({ minLevel: "info" })
 let appCoreHandle: AppCoreHandle | null = null
 let staticServer: StaticServer | null = null
 let dashboardWindow: BrowserWindow | null = null
+let overlayWindow: BrowserWindow | null = null
 let currentTokens: { operatorToken: string; viewerToken: string } | null = null
 
 function generateToken(): string {
@@ -128,6 +129,46 @@ function createDashboardWindow(): void {
   })
 }
 
+/**
+ * The Overlay Renderer as its own execution context (ARCHITECTURE.md
+ * section 6.3): a local preview of exactly what OBS's Browser Source
+ * shows, so the operator doesn't need OBS running just to check what's
+ * live. It loads the SAME page StaticServer already serves for OBS —
+ * not a separate implementation — via a plain HTTP URL with the viewer
+ * token baked in by the main process (which already knows it), rather
+ * than a URL the operator has to construct by hand.
+ *
+ * No preload at all: the overlay must not access secrets, the
+ * filesystem, or any Node API (section 6.3, section 33) — it needs
+ * nothing beyond what any browser tab already has, so it gets nothing
+ * beyond that.
+ */
+function createOverlayWindow(): void {
+  if (!appCoreHandle || !staticServer || !currentTokens) {
+    throw new Error("createOverlayWindow() called before services started")
+  }
+
+  overlayWindow = new BrowserWindow({
+    width: 960,
+    height: 540,
+    title: "ChurchOverlay — Overlay Preview",
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+    },
+  })
+
+  const url =
+    `http://127.0.0.1:${staticServer.port}/index.html` +
+    `?token=${currentTokens.viewerToken}&wsPort=${appCoreHandle.wsServer.port}`
+  overlayWindow.loadURL(url)
+
+  overlayWindow.on("closed", () => {
+    overlayWindow = null
+  })
+}
+
 ipcMain.handle("get-operator-connection-info", () => {
   if (!appCoreHandle || !currentTokens) {
     throw new Error("services are not started yet")
@@ -163,9 +204,13 @@ app.whenReady().then(async () => {
   }
 
   createDashboardWindow()
+  createOverlayWindow()
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createDashboardWindow()
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createDashboardWindow()
+      createOverlayWindow()
+    }
   })
 })
 
