@@ -274,6 +274,15 @@ test("validateWsMessage: rejects any inbound sender for the media:show/media:sel
   assert.equal(showResult.ok, false, "no client role may send media:show inbound")
 })
 
+test("ACTION_REGISTRY['status:update'].validatePayload: accepts a valid ASR health payload, rejects an invalid or missing asrHealth", () => {
+  assert.equal(ACTION_REGISTRY["status:update"].validatePayload({ asrHealth: "ok" }), true)
+  assert.equal(ACTION_REGISTRY["status:update"].validatePayload({ asrHealth: "error", error: "network timeout" }), true)
+
+  for (const payload of [{}, { asrHealth: "unknown" }, { asrHealth: "ok", error: 5 }, null]) {
+    assert.equal(ACTION_REGISTRY["status:update"].validatePayload(payload), false, `payload ${JSON.stringify(payload)} must be rejected`)
+  }
+})
+
 const VALID_RUNDOWN = {
   id: "01RUNDOWN",
   title: "Sunday Service",

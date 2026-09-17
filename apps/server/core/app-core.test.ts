@@ -29,6 +29,7 @@ class FakeAsrProvider implements AsrProvider {
   stopCalls = 0
   sentFrames: AudioFrame[] = []
   private transcriptCallback: ((result: TranscriptResult) => void) | null = null
+  private errorCallback: ((error: Error) => void) | null = null
 
   async start(): Promise<void> {
     this.startCalls += 1
@@ -41,6 +42,12 @@ class FakeAsrProvider implements AsrProvider {
   }
   onTranscript(callback: (result: TranscriptResult) => void): void {
     this.transcriptCallback = callback
+  }
+  onError(callback: (error: Error) => void): void {
+    this.errorCallback = callback
+  }
+  emitError(error: Error): void {
+    this.errorCallback?.(error)
   }
   emitTranscript(result: TranscriptResult): void {
     this.transcriptCallback?.(result)
@@ -1187,6 +1194,82 @@ test("AppCore: scene:goto with an out-of-range index is a no-op, broadcasting no
     assert.equal(received, false)
 
     operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+// A web-research-driven addition: ASR failures were previously only ever a
+// server-side log line, invisible to the operator dashboard mid-service.
+test("AppCore: an ASR error broadcasts status:update, and the next successful transcript broadcasts recovery", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const errorMessage = waitForMessage(viewerSocket)
+    asr.emitError(new Error("Groq connection lost"))
+    const errorStatus = await errorMessage
+    assert.equal(errorStatus.type, "status:update")
+    assert.deepEqual(errorStatus.payload, { asrHealth: "error", error: "Groq connection lost" })
+
+    const recoveryMessage = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Welcome everyone.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    const recoveryStatus = await recoveryMessage
+    assert.equal(recoveryStatus.type, "status:update")
+    assert.deepEqual(recoveryStatus.payload, { asrHealth: "ok" })
+
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: a transcript with no prior ASR error broadcasts no status:update at all", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    let received = false
+    viewerSocket.once("message", () => {
+      received = true
+    })
+
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Welcome everyone.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    assert.equal(received, false)
     viewerSocket.close()
   } finally {
     await app.stop()

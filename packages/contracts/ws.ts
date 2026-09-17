@@ -28,6 +28,19 @@ export type WsEventType =
   | "announcement:clear"
   | "rundown:state"
 
+/**
+ * status:update's first real, concrete payload shape — ASR/transcription
+ * health, surfaced to the operator dashboard so an ASR failure mid-service
+ * is visible rather than only ever a server-side log line. Not a rigid
+ * enum-of-everything: future status signals (a circuit-breaker state,
+ * connection health) can be added as additional optional fields without
+ * breaking this one, the same additive philosophy Verse.secondary uses.
+ */
+export type AsrStatusPayload = {
+  readonly asrHealth: "ok" | "error"
+  readonly error?: string
+}
+
 export type WsMessage<TPayload = unknown> = {
   id: string
   type: WsCommandType | WsEventType

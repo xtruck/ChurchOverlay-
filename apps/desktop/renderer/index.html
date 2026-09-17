@@ -187,6 +187,7 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
+    overflow-y: auto;
   }
   .card-title {
     font-size: 11px; font-weight: 600;
@@ -466,6 +467,22 @@
     text-align: left;
   }
 
+  /* ASR/transcription health (status:update, a real producer for the
+     previously-unopinionated event) — a persistent, unmissable warning
+     right next to the mic controls the operator is already watching,
+     rather than only ever a server-side log line an operator has no
+     reason to be looking at mid-service. */
+  .asr-health-warning {
+    margin-top: var(--space-3);
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    background: var(--danger-soft);
+    border: 1px solid rgba(255, 112, 134, 0.35);
+    color: var(--danger);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
   /* ARCHITECTURE.md section 63.2/63.5: setup-time defaults for verse
      display mode and UI language, as a vertical list of option buttons
      (longer descriptive text than the header's compact toggle allows). */
@@ -576,6 +593,9 @@
       </div>
       <label style="margin-top: 16px" data-i18n="mic.lastTranscriptLabel">Last transcript</label>
       <div id="transcript" data-i18n="mic.waitingForSpeech">Waiting for speech…</div>
+      <div id="asr-health-warning" class="asr-health-warning" role="alert" style="display: none">
+        <span id="asr-health-warning-text"></span>
+      </div>
     </div>
 
     <div class="card glass cell-override">

@@ -1,5 +1,6 @@
 import type {
   AnnouncementShowPayload,
+  AsrStatusPayload,
   MediaCue,
   MediaShowPayload,
   Rundown,
@@ -104,16 +105,18 @@ function isTranscriptPartialPayload(payload: unknown): payload is TranscriptResu
   )
 }
 
-// status:update's payload shape is intentionally left unopinionated in v1:
-// mic capture and GroqProvider exist now, but nothing broadcasts
-// status:update itself — no concrete status signal (connection health? a
-// circuit-breaker state? something else?) has actually been specified.
-// Pinning down a rigid shape without one would be inventing a requirement
-// (AGENTS.md section 58) rather than implementing one. It is validated as
-// "some plain object", which rejects garbage (arrays, primitives, null)
-// without guessing at fields nothing produces yet.
+// status:update now has a real producer: AppCore broadcasts ASR/
+// transcription health (asrHealth: "ok"/"error") when GroqProvider's
+// onError fires and again on the next successful transcript (the
+// recovery signal) — previously only ever a server-side log line, with
+// no way for the operator dashboard to know transcription had failed
+// mid-service. Additional status signals (a circuit-breaker state,
+// connection health) can still be added as further optional fields on
+// AsrStatusPayload later without a breaking change, the same additive
+// philosophy Verse.secondary already uses — this is not a closed enum of
+// everything status:update will ever carry.
 //
-// transcript:partial is in the same position for a different reason:
+// transcript:partial is in a similar "not yet produced" position, for a different reason:
 // GroqProvider (v1's only AsrProvider) never emits state: "partial" at
 // all — see its own doc comment — because Groq's transcription API has no
 // partial-result concept. isTranscriptPartialPayload below still requires
@@ -123,8 +126,12 @@ function isTranscriptPartialPayload(payload: unknown): payload is TranscriptResu
 // forward-compatible dead code until a future AsrProvider (still within
 // the fixed extension seam, ARCHITECTURE.md section 50) actually streams
 // partials.
-function isStatusUpdatePayload(payload: unknown): payload is Record<string, unknown> {
-  return isPlainObject(payload)
+function isStatusUpdatePayload(payload: unknown): payload is AsrStatusPayload {
+  if (!isPlainObject(payload)) return false
+  return (
+    (payload.asrHealth === "ok" || payload.asrHealth === "error") &&
+    (payload.error === undefined || typeof payload.error === "string")
+  )
 }
 
 function isMediaSelectPayload(payload: unknown): payload is { id: string } {

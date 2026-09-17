@@ -44,6 +44,8 @@
   const micStartBtn = document.getElementById("mic-start-btn")
   const micStopBtn = document.getElementById("mic-stop-btn")
   const micVisualEl = document.getElementById("mic-visual")
+  const asrHealthWarningEl = document.getElementById("asr-health-warning")
+  const asrHealthWarningTextEl = document.getElementById("asr-health-warning-text")
   const liveVerseEmptyEl = document.getElementById("live-verse-empty")
   const liveVerseTextEl = document.getElementById("live-verse-text")
   const liveVerseRefEl = document.getElementById("live-verse-ref")
@@ -156,6 +158,20 @@
     liveVerseEmptyEl.style.display = "block"
     liveVerseTextEl.style.display = "none"
     liveVerseRefEl.style.display = "none"
+  }
+
+  // ASR/transcription health (status:update) — see ARCHITECTURE.md's
+  // action-registry comment: a real producer now exists (AppCore
+  // broadcasts this on a GroqProvider error, and again on the next
+  // successful transcript as the recovery signal).
+  function handleStatusUpdate(payload) {
+    if (!payload) return
+    if (payload.asrHealth === "error") {
+      asrHealthWarningTextEl.textContent = t("mic.transcriptionError", { error: payload.error || "" })
+      asrHealthWarningEl.style.display = "block"
+    } else if (payload.asrHealth === "ok") {
+      asrHealthWarningEl.style.display = "none"
+    }
   }
 
   // One icon per MediaCueKind (apps/server/media's own "kind" discriminant,
@@ -668,6 +684,8 @@
       } else if (message.type === "rundown:state") {
         currentRundownState = message.payload
         renderRundownSceneList()
+      } else if (message.type === "status:update") {
+        handleStatusUpdate(message.payload)
       }
     })
   }

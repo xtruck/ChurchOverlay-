@@ -120,6 +120,11 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   // section 60.5), since it would show something visibly wrong rather than
   // just nothing.
   let lastShownVerse: Verse | null = null
+  // Surfaces ASR health to the operator dashboard (a real, concrete use of
+  // status:update — see its own doc comment in action-registry.ts, written
+  // when nothing produced it yet). Tracked so a transcript arriving after
+  // an error can broadcast the recovery, not just the failure.
+  let asrHasError = false
 
   const wsServer = new ChurchOverlayWsServer({
     host: options.host,
@@ -263,6 +268,10 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       correlationId,
       payload,
     })
+  }
+
+  function broadcastAsrStatus(payload: { asrHealth: "ok" | "error"; error?: string }): void {
+    wsServer.broadcast({ id: generateUlid(), type: "status:update", timestamp: Date.now(), payload })
   }
 
   function broadcastAnnouncementClear(correlationId?: string): void {
@@ -604,6 +613,13 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       correlationId: transcript.correlationId,
       sequence: transcript.sequence,
     })
+    // A transcript arriving at all means the ASR pipeline is working again
+    // — the operator-facing recovery signal for whatever error, if any,
+    // was last broadcast below.
+    if (asrHasError) {
+      asrHasError = false
+      broadcastAsrStatus({ asrHealth: "ok" })
+    }
     resolveTranscriptVerses(transcript, detector, index, source, cache, circuitBreaker, logger)
       .then((verses) => {
         for (const verse of verses) {
@@ -649,6 +665,15 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
 
   asr.onError?.((err) => {
     logger.error({ component: "asr", event: "transcript.failed", error: err.message })
+    // A local server-log line alone left the operator no way to know
+    // transcription had failed mid-service — a real gap surfaced by web
+    // research into how broadcast-captioning tooling treats ASR/network
+    // health as a first-class, always-visible signal. Broadcasting it
+    // gives the dashboard something concrete to show, without inventing
+    // a policy for WHAT the operator should do about it (that stays a
+    // human decision, per AGENTS.md section 39 — this only reports state).
+    asrHasError = true
+    broadcastAsrStatus({ asrHealth: "error", error: err.message })
   })
 
   await wsServer.ready
