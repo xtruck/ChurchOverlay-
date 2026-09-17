@@ -54,12 +54,20 @@
   const setupSaveBtn = document.getElementById("setup-save-btn")
   const mediaGridEl = document.getElementById("media-grid")
   const mediaImportBtn = document.getElementById("media-import-btn")
+  const displayModeToggleEl = document.getElementById("display-mode-toggle")
+  const uiLanguageToggleEl = document.getElementById("ui-language-toggle")
+  const setupDisplayModeEl = document.getElementById("setup-display-mode")
+  const setupUiLanguageEl = document.getElementById("setup-ui-language")
+
+  const t = (key, params) => window.i18n.t(key, params)
 
   let ws = null
   let audioContext = null
   let mediaStream = null
   let knownCues = []
   let activeCueId = null
+  let setupSelectedMode = "english"
+  let setupSelectedUiLanguage = "en"
 
   // Bounded, backoff-aware reconnect (ARCHITECTURE.md section 48, AGENTS.md
   // section 37 — "infinite retry loops" specifically forbidden). This is
@@ -141,7 +149,7 @@
     if (knownCues.length === 0) {
       const empty = document.createElement("div")
       empty.className = "media-empty"
-      empty.textContent = "No media imported yet."
+      empty.textContent = t("media.empty")
       mediaGridEl.appendChild(empty)
       return
     }
@@ -153,7 +161,7 @@
       tile.querySelector(".media-tile-title").textContent = cue.title
       tile.addEventListener("click", () => {
         sendJson({ id: crypto.randomUUID(), type: "media:select", timestamp: Date.now(), payload: { id: cue.id } })
-        log("sent media:select " + cue.title, "sent")
+        log(t("log.sentMediaSelect", { title: cue.title }), "sent")
       })
       mediaGridEl.appendChild(tile)
     }
@@ -166,7 +174,7 @@
         knownCues = cues
         renderMediaGrid()
       })
-      .catch((err) => log("failed to load media library: " + err.message, "error"))
+      .catch((err) => log(t("log.mediaLoadFailed", { error: err.message }), "error"))
   }
 
   mediaImportBtn.addEventListener("click", () => {
@@ -176,14 +184,14 @@
       .then((result) => {
         if (result.canceled) return
         if (result.error) {
-          log("import failed: " + result.error, "error")
+          log(t("log.importFailed", { error: result.error }), "error")
           return
         }
         knownCues.push(result.cue)
         renderMediaGrid()
-        log("imported " + result.cue.title, "received")
+        log(t("log.imported", { title: result.cue.title }), "received")
       })
-      .catch((err) => log("import failed: " + err.message, "error"))
+      .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
       .finally(() => {
         mediaImportBtn.disabled = false
       })
@@ -213,7 +221,7 @@
 
   function sendJson(message) {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      log("not connected — can't send", "error")
+      log(t("log.notConnected"), "error")
       return
     }
     ws.send(JSON.stringify(message))
@@ -222,16 +230,16 @@
   showBtn.addEventListener("click", () => {
     const reference = parseReference(referenceInput.value)
     if (!reference) {
-      log('could not parse "' + referenceInput.value + '" as "Book Chapter:Verse"', "error")
+      log(t("log.parseError", { text: referenceInput.value }), "error")
       return
     }
     sendJson({ id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: reference })
-    log("sent verse:override " + JSON.stringify(reference), "sent")
+    log(t("log.sentVerseOverride", { reference: JSON.stringify(reference) }), "sent")
   })
 
   clearBtn.addEventListener("click", () => {
     sendJson({ id: crypto.randomUUID(), type: "verse:clear", timestamp: Date.now(), payload: null })
-    log("sent verse:clear", "sent")
+    log(t("log.sentVerseClear"), "sent")
   })
 
   async function startMic() {
@@ -241,7 +249,7 @@
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       })
     } catch (err) {
-      log("microphone permission denied or unavailable: " + err.message, "error")
+      log(t("log.micPermissionDenied", { error: err.message }), "error")
       return
     }
 
@@ -267,7 +275,7 @@
     micStartBtn.disabled = true
     micStopBtn.disabled = false
     micVisualEl.classList.add("active")
-    log("microphone started", "sent")
+    log(t("log.micStarted"), "sent")
   }
 
   async function stopMic() {
@@ -284,29 +292,29 @@
     micStartBtn.disabled = false
     micStopBtn.disabled = true
     micVisualEl.classList.remove("active")
-    log("microphone stopped", "sent")
+    log(t("log.micStopped"), "sent")
   }
 
   micStartBtn.addEventListener("click", () => startMic())
   micStopBtn.addEventListener("click", () => stopMic())
 
   function connect(port, token) {
-    setStatus("connecting…", "disconnected")
+    setStatus(t("status.connecting"), "disconnected")
     ws = new WebSocket("ws://127.0.0.1:" + port, [token])
 
     ws.addEventListener("open", () => {
       reconnectAttempts = 0
-      setStatus("connected · operator", "connected")
-      log("connected", "received")
+      setStatus(t("status.connectedOperator"), "connected")
+      log(t("log.connected"), "received")
     })
     ws.addEventListener("close", () => {
       const delay = nextReconnectDelay()
       const delaySeconds = Math.round(delay / 1000)
-      setStatus("disconnected — retrying in " + delaySeconds + "s…", "disconnected")
-      log("disconnected, retrying in " + delaySeconds + "s", "error")
+      setStatus(t("status.disconnectedRetrying", { seconds: delaySeconds }), "disconnected")
+      log(t("log.disconnectedRetrying", { seconds: delaySeconds }), "error")
       setTimeout(() => connect(port, token), delay)
     })
-    ws.addEventListener("error", () => log("connection error", "error"))
+    ws.addEventListener("error", () => log(t("log.connectionError"), "error"))
     ws.addEventListener("message", (event) => {
       let message
       try {
@@ -314,7 +322,10 @@
       } catch {
         return
       }
-      log("received " + message.type, "received")
+      // message.type is a wire-protocol identifier (e.g. "verse:show"),
+      // not user-facing text — it stays in English regardless of UI
+      // language, same as any other protocol/technical identifier.
+      log(t("log.received", { type: message.type }), "received")
 
       if (message.type === "transcript:partial") {
         const text = message.payload && message.payload.text
@@ -354,26 +365,63 @@
     setupErrorEl.style.display = text ? "block" : "none"
   }
 
+  // ARCHITECTURE.md section 63.2/63.5: option-list groups (setup screen)
+  // and segmented toggles (header) share the same "one active choice
+  // among siblings" behavior — a single small helper wires both.
+  function wireOptionGroup(groupEl, datasetKey, onSelect) {
+    groupEl.querySelectorAll("button").forEach((button) => {
+      button.addEventListener("click", () => {
+        groupEl.querySelectorAll("button").forEach((b) => b.classList.remove("active"))
+        button.classList.add("active")
+        onSelect(button.dataset[datasetKey])
+      })
+    })
+  }
+
+  wireOptionGroup(setupDisplayModeEl, "mode", (mode) => {
+    setupSelectedMode = mode
+  })
+  wireOptionGroup(setupUiLanguageEl, "lang", (lang) => {
+    setupSelectedUiLanguage = lang
+    window.i18n.setLanguage(lang) // live preview on the setup screen itself
+  })
+
+  wireOptionGroup(displayModeToggleEl, "mode", (mode) => {
+    window.churchOverlay.setDisplayMode(mode).catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
+  })
+  wireOptionGroup(uiLanguageToggleEl, "lang", (lang) => {
+    window.i18n.setLanguage(lang)
+    window.churchOverlay.setUiLanguage(lang).catch(() => {})
+  })
+
+  function setActiveOption(groupEl, datasetKey, value) {
+    groupEl.querySelectorAll("button").forEach((button) => {
+      button.classList.toggle("active", button.dataset[datasetKey] === value)
+    })
+  }
+
   setupSaveBtn.addEventListener("click", () => {
     const apiKey = setupKeyInput.value.trim()
     if (!apiKey) {
-      setSetupError("Enter a Groq API key to continue.")
+      setSetupError(t("setup.enterKeyError"))
       return
     }
     setSetupError("")
     setupSaveBtn.disabled = true
-    setupSaveBtn.textContent = "Saving…"
+    setupSaveBtn.textContent = t("setup.saving")
 
     window.churchOverlay
-      .completeSetup(apiKey)
+      .completeSetup(apiKey, setupSelectedMode, setupSelectedUiLanguage)
       .then((info) => {
+        setActiveOption(displayModeToggleEl, "mode", setupSelectedMode)
+        setActiveOption(uiLanguageToggleEl, "lang", setupSelectedUiLanguage)
         showAppShell()
         connect(info.port, info.token)
       })
       .catch((err) => {
         setSetupError(err.message)
         setupSaveBtn.disabled = false
-        setupSaveBtn.textContent = "Save and continue"
+        setupSaveBtn.textContent = t("setup.saveButton")
       })
   })
 
@@ -384,7 +432,12 @@
   window.churchOverlay
     .getStartupStatus()
     .then((status) => {
+      window.i18n.setLanguage(status.uiLanguage || "en")
+      setActiveOption(setupUiLanguageEl, "lang", status.uiLanguage || "en")
+      setActiveOption(uiLanguageToggleEl, "lang", status.uiLanguage || "en")
+
       if (status.ready) {
+        setActiveOption(displayModeToggleEl, "mode", status.displayMode || "english")
         showAppShell()
         connect(status.port, status.token)
       } else {

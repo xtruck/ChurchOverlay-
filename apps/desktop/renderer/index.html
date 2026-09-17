@@ -263,8 +263,8 @@
     position: relative;
     min-height: 280px;
   }
-  .live-preview::before {
-    content: "LIVE PREVIEW";
+  /* A real element (not ::before content) so i18n.js can translate it — CSS content strings can't be swapped by data-i18n. */
+  .live-preview-label {
     position: absolute;
     top: var(--space-4); left: var(--space-4);
     font-size: 10px; font-weight: 600; font-family: var(--font-mono);
@@ -383,18 +383,76 @@
     margin: -6px 0 var(--space-4);
     text-align: left;
   }
+
+  /* ARCHITECTURE.md section 63.2/63.5: setup-time defaults for verse
+     display mode and UI language, as a vertical list of option buttons
+     (longer descriptive text than the header's compact toggle allows). */
+  .option-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--space-4); }
+  .option-list button {
+    background: rgba(0, 0, 0, 0.22);
+    color: var(--text-secondary);
+    border: 1px solid var(--glass-border-strong);
+    text-align: left;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .option-list button.active {
+    border-color: var(--accent);
+    background: rgba(143, 125, 255, 0.14);
+    color: var(--text-primary);
+  }
+  .option-list button:hover:not(.active) { background: rgba(255, 255, 255, 0.05); }
+
+  /* The live header toggle — same setting, compact abbreviations (EN/FR/EN+FR
+     read the same regardless of UI language, so these labels are never
+     translated) since it lives in the header alongside the status pill. */
+  .header-controls { display: flex; align-items: center; gap: var(--space-3); }
+  .segmented {
+    display: flex;
+    background: var(--glass-bg-raised);
+    border: 1px solid var(--glass-border);
+    border-radius: 999px;
+    padding: 3px;
+    gap: 2px;
+  }
+  .segmented button {
+    background: transparent;
+    color: var(--text-tertiary);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 5px 11px;
+    border-radius: 999px;
+  }
+  .segmented button.active { background: var(--accent); color: var(--accent-ink); }
+  .segmented button:hover:not(.active) { background: rgba(255, 255, 255, 0.06); color: var(--text-primary); }
 </style>
 </head>
 <body>
   <div id="setup-screen" class="setup-screen" style="display: none">
     <div class="setup-card glass">
       <div class="brand-mark" style="width: 44px; height: 44px; font-size: 19px;">CO</div>
-      <h2>Set up ChurchOverlay</h2>
-      <p>Enter your Groq API key to start transcribing. It's encrypted and stored locally — this only needs to be done once.</p>
-      <label for="setup-groq-key">Groq API key</label>
+      <h2 data-i18n="setup.title">Set up ChurchOverlay</h2>
+      <p data-i18n="setup.description">Enter your Groq API key to start transcribing. It's encrypted and stored locally — this only needs to be done once.</p>
+      <label for="setup-groq-key" data-i18n="setup.groqKeyLabel">Groq API key</label>
       <input id="setup-groq-key" type="password" placeholder="gsk_…" autocomplete="off" />
+
+      <label data-i18n="setup.displayModeLabel">Verse display language</label>
+      <div id="setup-display-mode" class="option-list" role="group" aria-label="Verse display language">
+        <button type="button" data-mode="english" class="active" data-i18n="setup.displayMode.english">English only</button>
+        <button type="button" data-mode="french" data-i18n="setup.displayMode.french">French only</button>
+        <button type="button" data-mode="bilingual" data-i18n="setup.displayMode.bilingual">Bilingual (French + English)</button>
+      </div>
+
+      <label data-i18n="setup.uiLanguageLabel">Interface language</label>
+      <div id="setup-ui-language" class="option-list" role="group" aria-label="Interface language">
+        <button type="button" data-lang="en" class="active" data-i18n="setup.uiLanguage.en">English</button>
+        <button type="button" data-lang="fr" data-i18n="setup.uiLanguage.fr">French</button>
+      </div>
+
       <div id="setup-error"></div>
-      <button id="setup-save-btn" class="btn-primary" style="width: 100%">Save and continue</button>
+      <button id="setup-save-btn" class="btn-primary" style="width: 100%" data-i18n="setup.saveButton">Save and continue</button>
     </div>
   </div>
 
@@ -404,62 +462,75 @@
       <div class="brand-mark">CO</div>
       <div>
         <h1>ChurchOverlay</h1>
-        <div class="sub">Verse Ops Console</div>
+        <div class="sub" data-i18n="header.subtitle">Verse Ops Console</div>
       </div>
     </div>
-    <div id="status-pill" class="status-pill disconnected">
-      <span class="status-dot"></span>
-      <span id="status-text">connecting…</span>
+    <div class="header-controls">
+      <div id="display-mode-toggle" class="segmented" role="group" aria-label="Verse display language" title="Verse display language">
+        <button type="button" data-mode="english">EN</button>
+        <button type="button" data-mode="french">FR</button>
+        <button type="button" data-mode="bilingual">EN+FR</button>
+      </div>
+      <div id="ui-language-toggle" class="segmented" role="group" aria-label="Interface language" title="Interface language">
+        <button type="button" data-lang="en">EN</button>
+        <button type="button" data-lang="fr">FR</button>
+      </div>
+      <div id="status-pill" class="status-pill disconnected">
+        <span class="status-dot"></span>
+        <span id="status-text" data-i18n="status.connecting">connecting…</span>
+      </div>
     </div>
   </header>
 
   <main>
     <div class="card glass cell-mic">
-      <div class="card-title">Microphone</div>
+      <div class="card-title" data-i18n="mic.title">Microphone</div>
       <div id="mic-visual" class="mic-visual">
         <div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div>
       </div>
       <div class="btn-row">
-        <button id="mic-start-btn" class="btn-primary btn-block">Start listening</button>
-        <button id="mic-stop-btn" class="btn-secondary btn-block" disabled>Stop</button>
+        <button id="mic-start-btn" class="btn-primary btn-block" data-i18n="mic.start">Start listening</button>
+        <button id="mic-stop-btn" class="btn-secondary btn-block" disabled data-i18n="mic.stop">Stop</button>
       </div>
-      <label style="margin-top: 16px">Last transcript</label>
-      <div id="transcript">Waiting for speech…</div>
+      <label style="margin-top: 16px" data-i18n="mic.lastTranscriptLabel">Last transcript</label>
+      <div id="transcript" data-i18n="mic.waitingForSpeech">Waiting for speech…</div>
     </div>
 
     <div class="card glass cell-override">
-      <div class="card-title">Manual Override</div>
-      <label for="reference">Verse reference</label>
+      <div class="card-title" data-i18n="override.title">Manual Override</div>
+      <label for="reference" data-i18n="override.referenceLabel">Verse reference</label>
       <input id="reference" type="text" placeholder="John 3:16" />
       <div class="btn-row">
-        <button id="show-btn" class="btn-primary btn-block">Show on overlay</button>
-        <button id="clear-btn" class="btn-danger">Clear</button>
+        <button id="show-btn" class="btn-primary btn-block" data-i18n="override.showButton">Show on overlay</button>
+        <button id="clear-btn" class="btn-danger" data-i18n="override.clearButton">Clear</button>
       </div>
     </div>
 
     <div class="card glass cell-media">
       <div class="media-header">
-        <div class="card-title">Media Library</div>
-        <button id="media-import-btn" class="btn-secondary btn-small">+ Import</button>
+        <div class="card-title" data-i18n="media.title">Media Library</div>
+        <button id="media-import-btn" class="btn-secondary btn-small" data-i18n="media.importButton">+ Import</button>
       </div>
       <div id="media-grid" class="media-grid">
-        <div class="media-empty">No media imported yet.</div>
+        <div class="media-empty" data-i18n="media.empty">No media imported yet.</div>
       </div>
     </div>
 
     <div class="live-preview cell-live">
-      <div id="live-verse-empty">Nothing is live right now.</div>
+      <div class="live-preview-label" data-i18n="livePreview.label">LIVE PREVIEW</div>
+      <div id="live-verse-empty" data-i18n="livePreview.empty">Nothing is live right now.</div>
       <div id="live-verse-text" style="display: none"></div>
       <div id="live-verse-ref" style="display: none"></div>
     </div>
 
     <div class="card glass cell-log">
-      <div class="card-title">Activity</div>
+      <div class="card-title" data-i18n="activity.title">Activity</div>
       <div id="log"></div>
     </div>
   </main>
   </div>
 
+  <script src="./i18n.js"></script>
   <script src="./dashboard.js"></script>
 </body>
 </html>
