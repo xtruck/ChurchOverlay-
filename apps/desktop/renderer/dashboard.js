@@ -34,7 +34,8 @@
     return buffer
   }
 
-  const statusEl = document.getElementById("status")
+  const statusPillEl = document.getElementById("status-pill")
+  const statusTextEl = document.getElementById("status-text")
   const logEl = document.getElementById("log")
   const transcriptEl = document.getElementById("transcript")
   const referenceInput = document.getElementById("reference")
@@ -42,20 +43,51 @@
   const clearBtn = document.getElementById("clear-btn")
   const micStartBtn = document.getElementById("mic-start-btn")
   const micStopBtn = document.getElementById("mic-stop-btn")
+  const micVisualEl = document.getElementById("mic-visual")
+  const liveVerseEmptyEl = document.getElementById("live-verse-empty")
+  const liveVerseTextEl = document.getElementById("live-verse-text")
+  const liveVerseRefEl = document.getElementById("live-verse-ref")
 
   let ws = null
   let audioContext = null
   let mediaStream = null
 
-  function log(text) {
+  function log(text, kind) {
     const line = document.createElement("div")
-    line.textContent = new Date().toLocaleTimeString() + "  " + text
+    line.className = "log-line" + (kind ? " event-" + kind : "")
+    const time = document.createElement("span")
+    time.className = "log-time"
+    time.textContent = new Date().toLocaleTimeString()
+    const body = document.createElement("span")
+    body.className = "log-text"
+    body.textContent = text
+    line.append(time, body)
     logEl.prepend(line)
+    while (logEl.children.length > 50) logEl.removeChild(logEl.lastChild)
   }
 
-  function setStatus(text, connected) {
-    statusEl.textContent = text
-    statusEl.className = connected ? "status-connected" : "status-disconnected"
+  function setStatus(text, state) {
+    statusTextEl.textContent = text
+    statusPillEl.className = "status-pill " + state
+  }
+
+  function capitalize(book) {
+    return book.replace(/\b\w/g, (c) => c.toUpperCase())
+  }
+
+  function showLiveVerse(verse) {
+    liveVerseEmptyEl.style.display = "none"
+    liveVerseTextEl.style.display = "block"
+    liveVerseRefEl.style.display = "block"
+    liveVerseTextEl.textContent = verse.text
+    const ref = verse.reference
+    liveVerseRefEl.textContent = capitalize(ref.book) + " " + ref.chapter + ":" + ref.verse
+  }
+
+  function clearLiveVerse() {
+    liveVerseEmptyEl.style.display = "block"
+    liveVerseTextEl.style.display = "none"
+    liveVerseRefEl.style.display = "none"
   }
 
   function parseReference(text) {
@@ -70,7 +102,7 @@
 
   function sendJson(message) {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      log("not connected — can't send")
+      log("not connected — can't send", "error")
       return
     }
     ws.send(JSON.stringify(message))
@@ -79,16 +111,16 @@
   showBtn.addEventListener("click", () => {
     const reference = parseReference(referenceInput.value)
     if (!reference) {
-      log('could not parse "' + referenceInput.value + '" as "Book Chapter:Verse"')
+      log('could not parse "' + referenceInput.value + '" as "Book Chapter:Verse"', "error")
       return
     }
     sendJson({ id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: reference })
-    log("sent verse:override " + JSON.stringify(reference))
+    log("sent verse:override " + JSON.stringify(reference), "sent")
   })
 
   clearBtn.addEventListener("click", () => {
     sendJson({ id: crypto.randomUUID(), type: "verse:clear", timestamp: Date.now(), payload: null })
-    log("sent verse:clear")
+    log("sent verse:clear", "sent")
   })
 
   async function startMic() {
@@ -98,7 +130,7 @@
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       })
     } catch (err) {
-      log("microphone permission denied or unavailable: " + err.message)
+      log("microphone permission denied or unavailable: " + err.message, "error")
       return
     }
 
@@ -123,7 +155,8 @@
     sendJson({ id: crypto.randomUUID(), type: "mic:start", timestamp: Date.now(), payload: null })
     micStartBtn.disabled = true
     micStopBtn.disabled = false
-    log("microphone started")
+    micVisualEl.classList.add("active")
+    log("microphone started", "sent")
   }
 
   async function stopMic() {
@@ -139,26 +172,27 @@
     }
     micStartBtn.disabled = false
     micStopBtn.disabled = true
-    log("microphone stopped")
+    micVisualEl.classList.remove("active")
+    log("microphone stopped", "sent")
   }
 
   micStartBtn.addEventListener("click", () => startMic())
   micStopBtn.addEventListener("click", () => stopMic())
 
   function connect(port, token) {
-    setStatus("connecting…", false)
+    setStatus("connecting…", "disconnected")
     ws = new WebSocket("ws://127.0.0.1:" + port, [token])
 
     ws.addEventListener("open", () => {
-      setStatus("connected (operator)", true)
-      log("connected")
+      setStatus("connected · operator", "connected")
+      log("connected", "received")
     })
     ws.addEventListener("close", () => {
-      setStatus("disconnected — retrying…", false)
-      log("disconnected, retrying in 2s")
+      setStatus("disconnected — retrying…", "disconnected")
+      log("disconnected, retrying in 2s", "error")
       setTimeout(() => connect(port, token), 2000)
     })
-    ws.addEventListener("error", () => log("connection error"))
+    ws.addEventListener("error", () => log("connection error", "error"))
     ws.addEventListener("message", (event) => {
       let message
       try {
@@ -166,10 +200,16 @@
       } catch {
         return
       }
-      log("received " + message.type)
-      if (message.type === "transcript:partial" || message.type === "verse:show") {
-        const text = message.payload && (message.payload.text || "")
+      log("received " + message.type, "received")
+
+      if (message.type === "transcript:partial") {
+        const text = message.payload && message.payload.text
         if (text) transcriptEl.textContent = text
+      } else if (message.type === "verse:show") {
+        showLiveVerse(message.payload)
+        transcriptEl.textContent = message.payload.text
+      } else if (message.type === "verse:clear") {
+        clearLiveVerse()
       }
     })
   }
@@ -177,5 +217,5 @@
   window.churchOverlay
     .getOperatorConnectionInfo()
     .then((info) => connect(info.port, info.token))
-    .catch((err) => setStatus("failed to get connection info: " + err.message, false))
+    .catch((err) => setStatus("failed to get connection info: " + err.message, "disconnected"))
 })()

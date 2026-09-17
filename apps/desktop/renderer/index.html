@@ -4,92 +4,266 @@
 <meta charset="UTF-8" />
 <title>ChurchOverlay — Operator</title>
 <style>
-  body {
+  :root {
+    --bg-base: #0a0b0f;
+    --bg-surface: #14161c;
+    --bg-surface-raised: #1c1f27;
+    --border-subtle: #262a34;
+    --border-strong: #363b47;
+    --text-primary: #f2f3f5;
+    --text-secondary: #9aa1ae;
+    --text-tertiary: #5c6270;
+    --accent: #f5a15a;
+    --accent-strong: #ff8f3d;
+    --success: #34d399;
+    --danger: #f87171;
+    --danger-soft: rgba(248, 113, 113, 0.14);
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.24);
+    --ease: cubic-bezier(0.4, 0, 0.2, 1);
+    --font-ui: -apple-system, "Segoe UI", Inter, system-ui, sans-serif;
+    --font-mono: "SF Mono", "Cascadia Code", Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
     margin: 0;
-    font-family: system-ui, sans-serif;
-    background: #0f1115;
-    color: #e5e7eb;
-    padding: 24px;
+    height: 100%;
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
   }
-  h1 { font-size: 18px; margin: 0 0 16px; }
-  #status { font-family: monospace; font-size: 13px; margin-bottom: 20px; }
-  .status-connected { color: #34d399; }
-  .status-disconnected { color: #ef4444; }
-  .row { display: flex; gap: 12px; margin-bottom: 16px; }
-  .card {
-    background: #1a1d24;
-    border: 1px solid #2a2d36;
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 16px;
-    max-width: 560px;
+  body { display: flex; flex-direction: column; }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-4) var(--space-6);
+    border-bottom: 1px solid var(--border-subtle);
+    background: linear-gradient(180deg, var(--bg-surface), var(--bg-base));
   }
-  label { display: block; font-size: 12px; color: #9ca3af; margin-bottom: 6px; }
-  input, select {
-    width: 100%;
-    box-sizing: border-box;
-    background: #0f1115;
-    border: 1px solid #2a2d36;
-    color: #e5e7eb;
-    padding: 8px 10px;
-    border-radius: 6px;
-    margin-bottom: 10px;
-    font-family: monospace;
+  .brand { display: flex; align-items: center; gap: var(--space-3); }
+  .brand-mark {
+    width: 32px; height: 32px;
+    border-radius: var(--radius-sm);
+    background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; color: #1a1206; font-size: 13px;
   }
-  button {
-    background: #f5a15a;
-    color: #1a1d24;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 6px;
-    font-weight: bold;
-    cursor: pointer;
-    margin-right: 8px;
-  }
-  button.secondary { background: #2a2d36; color: #e5e7eb; }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
-  #transcript {
-    font-family: monospace;
-    font-size: 13px;
-    min-height: 40px;
-    color: #d1d5db;
-  }
-  #log {
-    font-family: monospace;
+  .brand h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: 0.01em; }
+  .brand .sub { font-size: 11px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.08em; }
+
+  .status-pill {
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: var(--bg-surface-raised);
+    border: 1px solid var(--border-subtle);
     font-size: 12px;
-    color: #9ca3af;
-    max-width: 560px;
-    max-height: 200px;
-    overflow-y: auto;
+    font-family: var(--font-mono);
   }
-  #log div { padding: 2px 0; border-bottom: 1px solid #1a1d24; }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-tertiary);
+    transition: background 0.2s var(--ease);
+  }
+  .status-pill.connected .status-dot {
+    background: var(--success);
+    animation: pulse-dot 2s infinite;
+  }
+  .status-pill.disconnected .status-dot { background: var(--danger); }
+  @keyframes pulse-dot {
+    0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5); }
+    70% { box-shadow: 0 0 0 8px rgba(52, 211, 153, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+  }
+
+  main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: var(--space-6);
+    padding: var(--space-6);
+    overflow: auto;
+    min-height: 0;
+  }
+  .col { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+
+  .card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+    box-shadow: var(--shadow-card);
+  }
+  .card-title {
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-3);
+  }
+
+  .live-preview {
+    background: radial-gradient(circle at 30% 20%, #1a1c24, #0a0b0f 70%);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-subtle);
+    min-height: 280px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+    padding: var(--space-8);
+    position: relative;
+  }
+  .live-preview::before {
+    content: "LIVE PREVIEW";
+    position: absolute;
+    top: var(--space-3); left: var(--space-4);
+    font-size: 10px; font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--text-tertiary);
+  }
+  #live-verse-text {
+    font-size: 22px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    max-width: 640px;
+    font-family: Georgia, serif;
+  }
+  #live-verse-ref {
+    margin-top: var(--space-3);
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+  }
+  #live-verse-empty { color: var(--text-tertiary); font-size: 13px; }
+
+  button {
+    font-family: var(--font-ui);
+    font-size: 13px; font-weight: 600;
+    border: none; border-radius: var(--radius-sm);
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: transform 0.1s var(--ease), background 0.15s var(--ease), opacity 0.15s var(--ease);
+  }
+  button:active:not(:disabled) { transform: scale(0.97); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn-primary { background: var(--accent); color: #1a1206; }
+  .btn-primary:hover:not(:disabled) { background: var(--accent-strong); }
+  .btn-secondary { background: var(--bg-surface-raised); color: var(--text-primary); border: 1px solid var(--border-strong); }
+  .btn-secondary:hover:not(:disabled) { background: var(--border-subtle); }
+  .btn-danger { background: var(--danger-soft); color: var(--danger); border: 1px solid rgba(248, 113, 113, 0.3); }
+  .btn-danger:hover:not(:disabled) { background: rgba(248, 113, 113, 0.22); }
+  .btn-block { flex: 1; }
+  .btn-row { display: flex; gap: var(--space-2); }
+
+  label { display: block; font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: var(--space-2); }
+  input[type="text"] {
+    width: 100%;
+    background: var(--bg-base);
+    border: 1px solid var(--border-strong);
+    color: var(--text-primary);
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    margin-bottom: var(--space-3);
+    transition: border-color 0.15s var(--ease);
+  }
+  input[type="text"]:focus { outline: none; border-color: var(--accent); }
+
+  .mic-visual { display: flex; align-items: center; gap: 3px; height: 32px; margin-bottom: var(--space-3); }
+  .mic-bar { flex: 1; background: var(--border-subtle); border-radius: 2px; height: 20%; transition: background 0.2s ease; }
+  .mic-visual.active .mic-bar { background: var(--accent); animation: mic-bounce 1.2s ease-in-out infinite; }
+  .mic-visual.active .mic-bar:nth-child(2) { animation-delay: 0.1s; }
+  .mic-visual.active .mic-bar:nth-child(3) { animation-delay: 0.2s; }
+  .mic-visual.active .mic-bar:nth-child(4) { animation-delay: 0.3s; }
+  .mic-visual.active .mic-bar:nth-child(5) { animation-delay: 0.15s; }
+  @keyframes mic-bounce { 0%, 100% { height: 20%; } 50% { height: 90%; } }
+
+  #transcript {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-secondary);
+    min-height: 20px;
+    line-height: 1.5;
+    padding: var(--space-3);
+    background: var(--bg-base);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-subtle);
+  }
+
+  #log { font-family: var(--font-mono); font-size: 11.5px; max-height: 260px; overflow-y: auto; }
+  .log-line { padding: 5px 0; border-bottom: 1px solid var(--border-subtle); display: flex; gap: var(--space-2); color: var(--text-secondary); }
+  .log-time { color: var(--text-tertiary); flex-shrink: 0; }
+  .log-line.event-sent .log-text { color: var(--accent); }
+  .log-line.event-received .log-text { color: var(--success); }
+  .log-line.event-error .log-text { color: var(--danger); }
 </style>
 </head>
 <body>
-  <h1>ChurchOverlay — Operator</h1>
-  <div id="status">connecting…</div>
-
-  <div class="card">
-    <label>Microphone</label>
-    <div class="row">
-      <button id="mic-start-btn">Start listening</button>
-      <button id="mic-stop-btn" disabled class="secondary">Stop</button>
+  <header>
+    <div class="brand">
+      <div class="brand-mark">CO</div>
+      <div>
+        <h1>ChurchOverlay</h1>
+        <div class="sub">Operator Console</div>
+      </div>
     </div>
-    <label>Last transcript</label>
-    <div id="transcript">(nothing yet)</div>
-  </div>
+    <div id="status-pill" class="status-pill disconnected">
+      <span class="status-dot"></span>
+      <span id="status-text">connecting…</span>
+    </div>
+  </header>
 
-  <div class="card">
-    <label for="reference">Manual override — verse reference (e.g. "John 3:16")</label>
-    <input id="reference" type="text" placeholder="John 3:16" />
-    <button id="show-btn">Show on overlay</button>
-    <button id="clear-btn" class="secondary">Clear</button>
-  </div>
+  <main>
+    <div class="col">
+      <div class="card">
+        <div class="card-title">Microphone</div>
+        <div id="mic-visual" class="mic-visual">
+          <div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div>
+        </div>
+        <div class="btn-row">
+          <button id="mic-start-btn" class="btn-primary btn-block">Start listening</button>
+          <button id="mic-stop-btn" class="btn-secondary btn-block" disabled>Stop</button>
+        </div>
+        <label style="margin-top: 16px">Last transcript</label>
+        <div id="transcript">Waiting for speech…</div>
+      </div>
 
-  <div class="card">
-    <label>Activity</label>
-    <div id="log"></div>
-  </div>
+      <div class="card">
+        <div class="card-title">Manual Override</div>
+        <label for="reference">Verse reference</label>
+        <input id="reference" type="text" placeholder="John 3:16" />
+        <div class="btn-row">
+          <button id="show-btn" class="btn-primary btn-block">Show on overlay</button>
+          <button id="clear-btn" class="btn-danger">Clear</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="live-preview">
+        <div id="live-verse-empty">Nothing is live right now.</div>
+        <div id="live-verse-text" style="display: none"></div>
+        <div id="live-verse-ref" style="display: none"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Activity</div>
+        <div id="log"></div>
+      </div>
+    </div>
+  </main>
 
   <script src="./dashboard.js"></script>
 </body>
