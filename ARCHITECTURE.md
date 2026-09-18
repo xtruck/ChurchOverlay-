@@ -2697,6 +2697,16 @@ activation are all explicit operator-driven actions already — this mode has no
 effect on them, matching the confirmed scope ("review" is specifically about
 live-detected suggestions, not gating every possible verse-display path).
 
+**Implemented as live-toggle-only, not a setup-screen default**, a small deviation
+from "same setup-default + live-toggle pattern as display mode" above: unlike
+`displayMode`/`uiLanguage`, there is no setup-screen control for this one. "Auto" is
+the confirmed default for every fresh install regardless, so a setup-time choice
+would only ever offer switching to "review" one step earlier than the header's own
+live toggle already allows — not enough additional value to justify a fourth setup
+screen field. `AppCoreHandle` gained a `setVerseConfirmationMode()` method (the same
+"main process calls it directly, then persists" shape as `LocalizedVerseSource.setMode()`)
+so the live dashboard toggle and `ConfigStore` both stay in sync without a restart.
+
 ### 65.4 Voice command to switch translation/display mode
 
 Extends the same synonym-list `NavigationCommandDetector` domain (section 61.3) with

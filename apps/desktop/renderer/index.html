@@ -368,6 +368,42 @@
     letter-spacing: 0.06em;
   }
   #live-verse-empty { color: var(--text-tertiary); font-size: 13px; font-family: var(--font-mono); }
+  /* ARCHITECTURE.md section 65.3: review mode's holding prompt — visually
+     distinct from an actually-live verse (an amber/accent-bordered card,
+     not the plain live-preview text), since nothing is on the overlay
+     yet, only awaiting a decision. */
+  .verse-pending-banner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    max-width: 520px;
+    padding: var(--space-6);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--accent);
+    background: rgba(143, 125, 255, 0.1);
+  }
+  .verse-pending-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent-strong);
+  }
+  #verse-pending-text {
+    font-family: var(--font-display);
+    font-size: 22px;
+    line-height: 1.4;
+    color: var(--text-primary);
+    text-align: center;
+  }
+  #verse-pending-ref {
+    color: var(--accent-strong);
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+  }
   /* ARCHITECTURE.md section 65.2: the adapted "confidence badge" — this
      app's detection is deterministic, so there's no graduated confidence
      to show; what varies is HOW the verse got here. Dashboard-only, never
@@ -617,6 +653,10 @@
         <button type="button" data-lang="en">EN</button>
         <button type="button" data-lang="fr">FR</button>
       </div>
+      <div id="verse-confirmation-toggle" class="segmented" role="group" aria-label="Verse confirmation mode" title="Verse confirmation mode">
+        <button type="button" data-confirmation-mode="auto" data-i18n="header.confirmationMode.auto">Auto</button>
+        <button type="button" data-confirmation-mode="review" data-i18n="header.confirmationMode.review">Review</button>
+      </div>
       <div id="status-pill" class="status-pill disconnected">
         <span class="status-dot"></span>
         <span id="status-text" data-i18n="status.connecting">connecting…</span>
@@ -670,6 +710,12 @@
 
     <div class="live-preview cell-live">
       <div class="live-preview-label" data-i18n="livePreview.label">LIVE PREVIEW</div>
+      <div id="verse-pending-banner" class="verse-pending-banner" style="display: none">
+        <div class="verse-pending-label" data-i18n="livePreview.pendingLabel">Verse detected — awaiting confirmation</div>
+        <div id="verse-pending-text"></div>
+        <div id="verse-pending-ref"></div>
+        <button id="verse-pending-confirm-btn" class="btn-primary" data-i18n="livePreview.pendingConfirm">Show on overlay</button>
+      </div>
       <div id="live-verse-empty" data-i18n="livePreview.empty">Nothing is live right now.</div>
       <div id="live-verse-text" style="display: none"></div>
       <div id="live-verse-ref" style="display: none"></div>

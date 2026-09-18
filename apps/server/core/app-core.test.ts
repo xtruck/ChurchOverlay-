@@ -1574,3 +1574,206 @@ test("AppCore: a term not in the glossary broadcasts nothing", async () => {
     await app.stop()
   }
 })
+
+// ARCHITECTURE.md section 65.3: auto-send vs. review-and-approve mode.
+test("AppCore: in review mode, a detected verse broadcasts verse:pending, not verse:show", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    verseConfirmationMode: "review",
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const pending = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Turn to John 3:16.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    const message = await pending
+    assert.equal(message.type, "verse:pending")
+    assert.deepEqual((message.payload as Verse).reference, { book: "john", chapter: 3, verse: 16 })
+
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: confirming a pending verse broadcasts verse:show with trigger 'detected'", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    verseConfirmationMode: "review",
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const pending = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Turn to John 3:16.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    await pending
+
+    const shown = waitForMessage(viewerSocket)
+    operatorSocket.send(
+      JSON.stringify({ id: "01B", type: "verse:confirm-pending", timestamp: Date.now(), payload: null })
+    )
+    const message = await shown
+    assert.equal(message.type, "verse:show")
+    assert.deepEqual(message.payload, {
+      reference: { book: "john", chapter: 3, verse: 16 },
+      text: 'text for {"book":"john","chapter":3,"verse":16}',
+      translation: "kjv",
+      source: "test",
+      trigger: "detected",
+    })
+
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: a new pending detection replaces (not queues behind) an earlier unconfirmed one", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    verseConfirmationMode: "review",
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const firstPending = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Turn to John 3:15.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    await firstPending
+
+    const secondPending = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T2",
+      correlationId: "01B",
+      sequence: 2,
+      text: "Turn to Romans 8:28.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    await secondPending
+
+    const shown = waitForMessage(viewerSocket)
+    operatorSocket.send(
+      JSON.stringify({ id: "01C", type: "verse:confirm-pending", timestamp: Date.now(), payload: null })
+    )
+    const message = await shown
+    // The confirmed verse is the SECOND (most recent) one, not the first.
+    assert.deepEqual((message.payload as Verse).reference, { book: "romans", chapter: 8, verse: 28 })
+
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: confirming with nothing pending is a no-op, not a crash", async () => {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    verseConfirmationMode: "review",
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    let received = false
+    viewerSocket.once("message", () => {
+      received = true
+    })
+
+    operatorSocket.send(
+      JSON.stringify({ id: "01A", type: "verse:confirm-pending", timestamp: Date.now(), payload: null })
+    )
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    assert.equal(received, false)
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: setVerseConfirmationMode() switches modes live, without restarting the server", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    // starts in "auto" (the default)
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    app.setVerseConfirmationMode("review")
+
+    const pending = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Turn to John 3:16.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    const message = await pending
+    assert.equal(message.type, "verse:pending")
+
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})

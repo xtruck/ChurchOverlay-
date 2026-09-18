@@ -79,21 +79,30 @@ function isVerseSecondaryPayload(
 
 const VERSE_TRIGGERS = ["detected", "override", "navigation", "rundown"] as const
 
-function isVersePayload(payload: unknown): payload is VerseShowPayload {
+/** The Verse shape alone, shared by isVersePayload (adds `trigger`) and isVersePendingPayload (adds nothing — a pending suggestion has no trigger yet, since it hasn't been shown). */
+function isBareVersePayload(payload: unknown): payload is Record<string, unknown> {
   if (!isPlainObject(payload)) return false
   if (
     !(
       isVerseReferencePayload(payload.reference) &&
       typeof payload.text === "string" &&
       typeof payload.translation === "string" &&
-      typeof payload.source === "string" &&
-      (VERSE_TRIGGERS as readonly unknown[]).includes(payload.trigger)
+      typeof payload.source === "string"
     )
   ) {
     return false
   }
   // secondary (ARCHITECTURE.md section 63.3): optional, bilingual mode only.
   return payload.secondary === undefined || isVerseSecondaryPayload(payload.secondary)
+}
+
+function isVersePayload(payload: unknown): payload is VerseShowPayload {
+  return isBareVersePayload(payload) && (VERSE_TRIGGERS as readonly unknown[]).includes(payload.trigger)
+}
+
+/** ARCHITECTURE.md section 65.3: verse:pending's payload — a plain Verse, no trigger (it hasn't been shown yet). */
+function isVersePendingPayload(payload: unknown): payload is Record<string, unknown> {
+  return isBareVersePayload(payload)
 }
 
 function isTranscriptPartialPayload(payload: unknown): payload is TranscriptResult {
@@ -266,6 +275,11 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     allowedSenders: ["operator"],
     validatePayload: isVerseReferencePayload,
   },
+  "verse:confirm-pending": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isNullPayload,
+  },
   "status:update": {
     kind: "event",
     allowedSenders: [],
@@ -280,6 +294,11 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "event",
     allowedSenders: [],
     validatePayload: isVersePayload,
+  },
+  "verse:pending": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isVersePendingPayload,
   },
   "media:select": {
     kind: "command",

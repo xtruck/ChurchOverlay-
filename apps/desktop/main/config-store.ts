@@ -1,12 +1,13 @@
 import { mkdir, open, readFile, rename } from "node:fs/promises"
 import { dirname } from "node:path"
-import type { DisplayMode } from "../../../packages/contracts"
+import type { DisplayMode, VerseConfirmationMode } from "../../../packages/contracts"
 
 /** Desktop-app-only concern (not part of the WS protocol) — the operator dashboard/setup UI's own language, ARCHITECTURE.md section 63.5. */
 export type UiLanguage = "en" | "fr"
 
 export const DISPLAY_MODES: readonly DisplayMode[] = ["english", "french", "bilingual"]
 export const UI_LANGUAGES: readonly UiLanguage[] = ["en", "fr"]
+export const VERSE_CONFIRMATION_MODES: readonly VerseConfirmationMode[] = ["auto", "review"]
 
 /**
  * Matches Electron's `safeStorage` API shape exactly
@@ -37,6 +38,12 @@ export type AppConfig = {
    * defaulted to true.
    */
   readonly allowPhoneRemote: boolean
+  /**
+   * ARCHITECTURE.md section 65.3 — confirmed explicitly: "auto" stays the
+   * default, unchanged from every existing/new install unless the
+   * operator explicitly switches to "review".
+   */
+  readonly verseConfirmationMode: VerseConfirmationMode
 }
 
 type StoredConfig = {
@@ -49,6 +56,8 @@ type StoredConfig = {
   readonly uiLanguage?: string
   /** Optional in storage: absent in configs saved before ARCHITECTURE.md section 65.6 existed. */
   readonly allowPhoneRemote?: boolean
+  /** Optional in storage: absent in configs saved before ARCHITECTURE.md section 65.3 existed. */
+  readonly verseConfirmationMode?: string
 }
 
 /**
@@ -99,6 +108,7 @@ export class ConfigStore {
       displayMode: config.displayMode,
       uiLanguage: config.uiLanguage,
       allowPhoneRemote: config.allowPhoneRemote,
+      verseConfirmationMode: config.verseConfirmationMode,
     }
 
     await mkdir(dirname(this.filePath), { recursive: true })
@@ -128,6 +138,7 @@ export class ConfigStore {
       displayMode,
       uiLanguage,
       allowPhoneRemote,
+      verseConfirmationMode,
     } = stored
 
     if (
@@ -152,6 +163,12 @@ export class ConfigStore {
     if (allowPhoneRemote !== undefined && typeof allowPhoneRemote !== "boolean") {
       throw new Error(`ConfigStore: ${this.filePath} has an invalid allowPhoneRemote`)
     }
+    if (
+      verseConfirmationMode !== undefined &&
+      !VERSE_CONFIRMATION_MODES.includes(verseConfirmationMode as VerseConfirmationMode)
+    ) {
+      throw new Error(`ConfigStore: ${this.filePath} has an invalid verseConfirmationMode`)
+    }
 
     return {
       groqApiKey: this.codec.decrypt(Buffer.from(groqApiKeyEncrypted, "base64")),
@@ -164,6 +181,10 @@ export class ConfigStore {
       // false — the opt-in, off-by-default confirmed decision applies
       // just as much to an existing install upgrading as to a fresh one.
       allowPhoneRemote: allowPhoneRemote ?? false,
+      // Absent (a config saved before section 65.3 existed) defaults to
+      // "auto" — the confirmed unchanged-behavior default applies just as
+      // much to an existing install upgrading as to a fresh one.
+      verseConfirmationMode: (verseConfirmationMode as VerseConfirmationMode | undefined) ?? "auto",
     }
   }
 }

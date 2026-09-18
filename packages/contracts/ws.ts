@@ -15,6 +15,7 @@ export type WsCommandType =
   | "scene:next"
   | "scene:previous"
   | "scene:goto"
+  | "verse:confirm-pending"
 
 /** Resulting state or information, consumed by the (read-only) overlay. */
 export type WsEventType =
@@ -29,6 +30,7 @@ export type WsEventType =
   | "rundown:state"
   | "definition:show"
   | "definition:clear"
+  | "verse:pending"
 
 /**
  * status:update's first real, concrete payload shape — ASR/transcription

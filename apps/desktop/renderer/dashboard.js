@@ -59,6 +59,11 @@
   const mediaImportBtn = document.getElementById("media-import-btn")
   const displayModeToggleEl = document.getElementById("display-mode-toggle")
   const uiLanguageToggleEl = document.getElementById("ui-language-toggle")
+  const verseConfirmationToggleEl = document.getElementById("verse-confirmation-toggle")
+  const versePendingBannerEl = document.getElementById("verse-pending-banner")
+  const versePendingTextEl = document.getElementById("verse-pending-text")
+  const versePendingRefEl = document.getElementById("verse-pending-ref")
+  const versePendingConfirmBtn = document.getElementById("verse-pending-confirm-btn")
   const setupDisplayModeEl = document.getElementById("setup-display-mode")
   const setupUiLanguageEl = document.getElementById("setup-ui-language")
   const setupAllowPhoneRemoteEl = document.getElementById("setup-allow-phone-remote")
@@ -160,6 +165,7 @@
   }
 
   function showLiveVerse(verse) {
+    clearPendingVerse() // a real verse:show always supersedes any pending prompt
     liveVerseEmptyEl.style.display = "none"
     liveVerseTextEl.style.display = "block"
     liveVerseRefEl.style.display = "block"
@@ -182,6 +188,26 @@
     liveVerseTextEl.style.display = "none"
     liveVerseRefEl.style.display = "none"
   }
+
+  // ARCHITECTURE.md section 65.3: review mode's holding prompt for a
+  // DETECTED reference — a fresh verse:pending REPLACES whatever was
+  // showing before (the server itself already enforces "most recent
+  // wins"; this mirrors that on the display side too).
+  function showPendingVerse(verse) {
+    versePendingTextEl.textContent = verse.text
+    const ref = verse.reference
+    versePendingRefEl.textContent = capitalize(ref.book) + " " + ref.chapter + ":" + ref.verse
+    versePendingBannerEl.style.display = "flex"
+  }
+
+  function clearPendingVerse() {
+    versePendingBannerEl.style.display = "none"
+  }
+
+  versePendingConfirmBtn.addEventListener("click", () => {
+    sendJson({ id: crypto.randomUUID(), type: "verse:confirm-pending", timestamp: Date.now(), payload: null })
+    log(t("log.sentVerseConfirmPending"), "sent")
+  })
 
   // ASR/transcription health (status:update) — see ARCHITECTURE.md's
   // action-registry comment: a real producer now exists (AppCore
@@ -709,6 +735,8 @@
         renderRundownSceneList()
       } else if (message.type === "status:update") {
         handleStatusUpdate(message.payload)
+      } else if (message.type === "verse:pending") {
+        showPendingVerse(message.payload)
       }
     })
   }
@@ -788,6 +816,11 @@
     window.i18n.setLanguage(lang)
     window.churchOverlay.setUiLanguage(lang).catch(() => {})
   })
+  wireOptionGroup(verseConfirmationToggleEl, "confirmationMode", (mode) => {
+    window.churchOverlay
+      .setVerseConfirmationMode(mode)
+      .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
+  })
 
   function setActiveOption(groupEl, datasetKey, value) {
     groupEl.querySelectorAll("button").forEach((button) => {
@@ -810,6 +843,7 @@
       .then((info) => {
         setActiveOption(displayModeToggleEl, "mode", setupSelectedMode)
         setActiveOption(uiLanguageToggleEl, "lang", setupSelectedUiLanguage)
+        setActiveOption(verseConfirmationToggleEl, "confirmationMode", info.verseConfirmationMode || "auto")
         renderRemotePanel(info.remoteUrl, info.allowPhoneRemote)
         showAppShell()
         connect(info.port, info.token)
@@ -834,6 +868,7 @@
 
       if (status.ready) {
         setActiveOption(displayModeToggleEl, "mode", status.displayMode || "english")
+        setActiveOption(verseConfirmationToggleEl, "confirmationMode", status.verseConfirmationMode || "auto")
         renderRemotePanel(status.remoteUrl, status.allowPhoneRemote)
         showAppShell()
         connect(status.port, status.token)

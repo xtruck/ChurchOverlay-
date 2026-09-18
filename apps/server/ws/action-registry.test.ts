@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { validateWsMessage, ACTION_REGISTRY } from "./action-registry"
 
-test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 media, rundown, and glossary actions (ARCHITECTURE.md sections 30, 60, 64, 65.5)", () => {
+test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 media, rundown, glossary, and verse-confirmation actions (ARCHITECTURE.md sections 30, 60, 64, 65.3, 65.5)", () => {
   assert.deepEqual(
     Object.keys(ACTION_REGISTRY).sort(),
     [
@@ -13,6 +13,8 @@ test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 me
       "verse:clear",
       "verse:override",
       "verse:show",
+      "verse:pending",
+      "verse:confirm-pending",
       "media:select",
       "media:play",
       "media:pause",
@@ -416,4 +418,51 @@ test("validateWsMessage: rejects any inbound sender for definition:show/definiti
     const result = validateWsMessage({ id: "01ABC", type, timestamp: 1700000000000, payload }, "operator")
     assert.equal(result.ok, false, `no client role may send ${type} inbound`)
   }
+})
+
+const VALID_PENDING_VERSE = {
+  reference: { book: "john", chapter: 3, verse: 16 },
+  text: "For God so loved the world...",
+  translation: "kjv",
+  source: "bible-api.com",
+}
+
+test("validateWsMessage: accepts a valid verse:confirm-pending command (null payload) from an operator", () => {
+  const result = validateWsMessage(
+    { id: "01ABC", type: "verse:confirm-pending", timestamp: 1700000000000, payload: null },
+    "operator"
+  )
+  assert.equal(result.ok, true)
+})
+
+test("validateWsMessage: rejects verse:confirm-pending with a non-null payload, and rejects a viewer sending it", () => {
+  const withPayload = validateWsMessage(
+    { id: "01ABC", type: "verse:confirm-pending", timestamp: 1700000000000, payload: {} },
+    "operator"
+  )
+  assert.equal(withPayload.ok, false)
+  const fromViewer = validateWsMessage(
+    { id: "01ABC", type: "verse:confirm-pending", timestamp: 1700000000000, payload: null },
+    "viewer"
+  )
+  assert.equal(fromViewer.ok, false)
+})
+
+test("ACTION_REGISTRY['verse:pending'].validatePayload: accepts a valid pending Verse (no trigger required), rejects a malformed one", () => {
+  assert.equal(ACTION_REGISTRY["verse:pending"].validatePayload(VALID_PENDING_VERSE), true)
+  for (const payload of [{}, { ...VALID_PENDING_VERSE, reference: null }, null]) {
+    assert.equal(
+      ACTION_REGISTRY["verse:pending"].validatePayload(payload),
+      false,
+      `payload ${JSON.stringify(payload)} must be rejected`
+    )
+  }
+})
+
+test("validateWsMessage: rejects any inbound sender for verse:pending — a server-only event", () => {
+  const result = validateWsMessage(
+    { id: "01ABC", type: "verse:pending", timestamp: 1700000000000, payload: VALID_PENDING_VERSE },
+    "operator"
+  )
+  assert.equal(result.ok, false)
 })

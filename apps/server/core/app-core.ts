@@ -12,6 +12,7 @@ import type {
   VerseDetector,
   VerseIndex,
   VerseReference,
+  VerseConfirmationMode,
   VerseShowPayload,
   VerseSource,
   VerseTrigger,
@@ -99,10 +100,27 @@ export type StartAppCoreOptions = {
    * waiting out the real default.
    */
   readonly definitionClearMs?: number
+  /**
+   * Optional (ARCHITECTURE.md section 65.3) — confirmed explicitly:
+   * "auto" (the default, unchanged from pre-existing behavior) shows a
+   * detected reference immediately; "review" holds it as a pending
+   * suggestion (verse:pending) until the operator confirms it
+   * (verse:confirm-pending). Only ever affects DETECTED references —
+   * manual override, voice navigation, and rundown scene activation are
+   * already explicit operator actions and are never held.
+   */
+  readonly verseConfirmationMode?: VerseConfirmationMode
 }
 
 export type AppCoreHandle = {
   readonly wsServer: ChurchOverlayWsServer
+  /**
+   * ARCHITECTURE.md section 65.3: the live-toggle half of "setup default +
+   * live dashboard toggle" (the same pattern section 63.2 established for
+   * display mode) — called by the Electron main process's own IPC
+   * handler, which also persists the change to ConfigStore.
+   */
+  setVerseConfirmationMode(mode: VerseConfirmationMode): void
   stop(): Promise<void>
 }
 
@@ -135,6 +153,14 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const glossaryDetector = new GlossaryDetector()
   const definitionClearMs = options.definitionClearMs ?? 12000
   let definitionClearTimer: ReturnType<typeof setTimeout> | null = null
+  // ARCHITECTURE.md section 65.3: "auto" is the confirmed default —
+  // unchanged from every existing behavior unless the operator explicitly
+  // switches to "review". pendingVerse holds at most one not-yet-confirmed
+  // detection — a newer one replaces (does not queue behind) an older
+  // unconfirmed one, the same "most recent wins" reasoning the rundown's
+  // paused-scene state already uses.
+  let verseConfirmationMode: VerseConfirmationMode = options.verseConfirmationMode ?? "auto"
+  let pendingVerse: Verse | null = null
   // ARCHITECTURE.md section 61.4: updated by every verse:show, however
   // triggered (detected, manual override, or navigation itself) — "next
   // verse" after an operator's manual override continues from wherever
@@ -257,6 +283,18 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     const rundownState = rundownController.interrupt()
     if (rundownState) broadcastRundownState(rundownState, correlationId)
     showVerse(verse, trigger, correlationId)
+  }
+
+  /**
+   * ARCHITECTURE.md section 65.3: review mode's holding path for a
+   * DETECTED reference — a new pending suggestion replaces (not queues
+   * behind) any earlier not-yet-confirmed one, since an unconfirmed
+   * suggestion for a verse spoken two sentences ago is almost never still
+   * wanted once a newer one exists.
+   */
+  function broadcastPendingVerse(verse: Verse, correlationId?: string): void {
+    pendingVerse = verse
+    wsServer.broadcast({ id: generateUlid(), type: "verse:pending", timestamp: Date.now(), correlationId, payload: verse })
   }
 
   /**
@@ -502,6 +540,21 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         return
       }
 
+      case "verse:confirm-pending": {
+        // ARCHITECTURE.md section 65.3: confirming a pending suggestion
+        // still shows it as "detected" (that's what it was), not a new
+        // trigger kind of its own — confirmation is how review mode
+        // delivers a detection, not a different way a verse got there.
+        if (pendingVerse) {
+          const verse = pendingVerse
+          pendingVerse = null
+          broadcastVerse(verse, "detected", message.correlationId)
+        } else {
+          logger.info({ component: "app-core", event: "verse.no-pending-to-confirm", correlationId: message.correlationId })
+        }
+        return
+      }
+
       case "media:select": {
         if (!mediaLibrary) {
           logger.warn({ component: "app-core", event: "media.not-configured", correlationId: message.correlationId })
@@ -592,17 +645,18 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         return
       }
 
-      // status:update / transcript:partial / verse:show / media:show /
-      // rundown:state / announcement:show / announcement:clear /
-      // definition:show / definition:clear are all server-originated
-      // events; the action registry's role check (empty allowedSenders)
-      // already refuses any client attempting to send them inbound, so
-      // onCommand is never actually invoked for these. Kept only so this
-      // switch stays exhaustive and explicit rather than silently
-      // ignoring a case (AGENTS.md section 25).
+      // status:update / transcript:partial / verse:show / verse:pending /
+      // media:show / rundown:state / announcement:show /
+      // announcement:clear / definition:show / definition:clear are all
+      // server-originated events; the action registry's role check (empty
+      // allowedSenders) already refuses any client attempting to send
+      // them inbound, so onCommand is never actually invoked for these.
+      // Kept only so this switch stays exhaustive and explicit rather
+      // than silently ignoring a case (AGENTS.md section 25).
       case "status:update":
       case "transcript:partial":
       case "verse:show":
+      case "verse:pending":
       case "media:show":
       case "rundown:state":
       case "announcement:show":
@@ -713,7 +767,11 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     resolveTranscriptVerses(transcript, detector, index, source, cache, circuitBreaker, logger)
       .then((verses) => {
         for (const verse of verses) {
-          broadcastVerse(verse, "detected", transcript.correlationId)
+          if (verseConfirmationMode === "review") {
+            broadcastPendingVerse(verse, transcript.correlationId)
+          } else {
+            broadcastVerse(verse, "detected", transcript.correlationId)
+          }
         }
       })
       .catch((err) => {
@@ -780,6 +838,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
 
   return {
     wsServer,
+    setVerseConfirmationMode(mode: VerseConfirmationMode) {
+      verseConfirmationMode = mode
+    },
     async stop() {
       if (definitionClearTimer) clearTimeout(definitionClearTimer)
       await asr.stop().catch(() => {})

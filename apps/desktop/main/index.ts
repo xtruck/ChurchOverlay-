@@ -11,8 +11,15 @@ import { GetBibleVerseSource } from "../../server/verse/get-bible-verse-source"
 import { LocalizedVerseSource } from "../../server/verse/localized-verse-source"
 import { GroqProvider } from "../../server/asr/groq-provider"
 import { MediaLibrary } from "../../server/media/media-library"
-import { ConfigStore, DISPLAY_MODES, UI_LANGUAGES, type AppConfig, type UiLanguage } from "./config-store"
-import type { DisplayMode } from "../../../packages/contracts"
+import {
+  ConfigStore,
+  DISPLAY_MODES,
+  UI_LANGUAGES,
+  VERSE_CONFIRMATION_MODES,
+  type AppConfig,
+  type UiLanguage,
+} from "./config-store"
+import type { DisplayMode, VerseConfirmationMode } from "../../../packages/contracts"
 import { inferMediaKind, deriveTitleFromFilename } from "./media-import"
 import { Logger } from "../../../packages/shared/logger"
 
@@ -52,6 +59,7 @@ let mediaLibrary: MediaLibrary | null = null
 let localizedVerseSource: LocalizedVerseSource | null = null
 let currentRemoteUrl: string | null = null
 let currentAllowPhoneRemote = false
+let currentVerseConfirmationMode: VerseConfirmationMode = "auto"
 
 function generateToken(): string {
   return randomBytes(24).toString("hex")
@@ -114,6 +122,7 @@ async function startServices(
     port: WS_PORT,
     tokens: currentTokens,
     mediaLibrary: mediaLibrary ?? undefined,
+    verseConfirmationMode: config.verseConfirmationMode,
     // ARCHITECTURE.md section 65.4: a voice-triggered display-mode switch
     // persists exactly like the set-display-mode IPC handler below does,
     // so it survives a restart identically to a dashboard-toggled one.
@@ -166,6 +175,7 @@ async function startServices(
   }
   currentRemoteUrl = remoteUrl
   currentAllowPhoneRemote = config.allowPhoneRemote
+  currentVerseConfirmationMode = config.verseConfirmationMode
 
   logger.info({
     component: "main",
@@ -280,6 +290,7 @@ ipcMain.handle("get-startup-status", async () => {
       uiLanguage,
       remoteUrl: currentRemoteUrl,
       allowPhoneRemote: currentAllowPhoneRemote,
+      verseConfirmationMode: currentVerseConfirmationMode,
     }
   }
   return { ready: false, uiLanguage }
@@ -317,6 +328,33 @@ ipcMain.handle("set-ui-language", async (_event, payload: unknown) => {
     await store.save({ ...existing, uiLanguage })
   }
   return { uiLanguage }
+})
+
+/**
+ * ARCHITECTURE.md section 65.3: the live-toggle half of "auto-send vs.
+ * review-and-approve" — no setup-screen control for this one (unlike
+ * display mode/UI language), only this live dashboard toggle, since
+ * "auto" is the confirmed default every install starts with regardless.
+ */
+ipcMain.handle("set-verse-confirmation-mode", async (_event, payload: unknown) => {
+  const mode = VERSE_CONFIRMATION_MODES.includes(payload as VerseConfirmationMode)
+    ? (payload as VerseConfirmationMode)
+    : null
+  if (!mode) {
+    throw new Error("Invalid verse confirmation mode.")
+  }
+  if (!appCoreHandle) {
+    throw new Error("Services are not started yet.")
+  }
+  appCoreHandle.setVerseConfirmationMode(mode)
+  currentVerseConfirmationMode = mode
+
+  const store = getConfigStore()
+  const existing = await store.load().catch(() => null)
+  if (existing) {
+    await store.save({ ...existing, verseConfirmationMode: mode })
+  }
+  return { verseConfirmationMode: mode }
 })
 
 ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
@@ -365,6 +403,11 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
     groqApiKey,
     microphoneId: existing?.microphoneId ?? null,
     operatorToken: existing?.operatorToken ?? generateToken(),
+    // ARCHITECTURE.md section 65.3: not a setup-screen control (unlike
+    // displayMode/uiLanguage) — "auto" is the confirmed default for every
+    // fresh install; changeable afterward via the live dashboard toggle
+    // only (set-verse-confirmation-mode), which persists it from then on.
+    verseConfirmationMode: existing?.verseConfirmationMode ?? "auto",
     viewerToken: existing?.viewerToken ?? generateToken(),
     displayMode,
     uiLanguage,

@@ -8,6 +8,8 @@
     en: {
       "app.title": "ChurchOverlay — Operator",
       "header.subtitle": "Verse Ops Console",
+      "header.confirmationMode.auto": "Auto",
+      "header.confirmationMode.review": "Review",
       "setup.title": "Set up ChurchOverlay",
       "setup.description":
         "Enter your Groq API key to start transcribing. It's encrypted and stored locally — this only needs to be done once.",
@@ -51,6 +53,9 @@
       "livePreview.trigger.override": "manual override",
       "livePreview.trigger.navigation": "voice navigation",
       "livePreview.trigger.rundown": "from rundown",
+      "livePreview.pendingLabel": "Verse detected — awaiting confirmation",
+      "livePreview.pendingConfirm": "Show on overlay",
+      "log.sentVerseConfirmPending": "sent verse:confirm-pending",
       "activity.title": "Activity",
       "status.connecting": "connecting…",
       "status.connectedOperator": "connected · operator",
@@ -110,6 +115,8 @@
     fr: {
       "app.title": "ChurchOverlay — Opérateur",
       "header.subtitle": "Console de Verset",
+      "header.confirmationMode.auto": "Auto",
+      "header.confirmationMode.review": "Vérifier",
       "setup.title": "Configurer ChurchOverlay",
       "setup.description":
         "Entrez votre clé API Groq pour démarrer la transcription. Elle est chiffrée et stockée localement — cela ne doit être fait qu'une seule fois.",
@@ -153,6 +160,9 @@
       "livePreview.trigger.override": "contrôle manuel",
       "livePreview.trigger.navigation": "navigation vocale",
       "livePreview.trigger.rundown": "depuis le déroulé",
+      "livePreview.pendingLabel": "Verset détecté — en attente de confirmation",
+      "livePreview.pendingConfirm": "Afficher sur l'incrustation",
+      "log.sentVerseConfirmPending": "envoi de verse:confirm-pending",
       "activity.title": "Activité",
       "status.connecting": "connexion…",
       "status.connectedOperator": "connecté · opérateur",

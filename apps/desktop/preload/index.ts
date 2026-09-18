@@ -45,4 +45,5 @@ contextBridge.exposeInMainWorld("churchOverlay", {
   listMediaCues: () => ipcRenderer.invoke("list-media-cues"),
   setDisplayMode: (mode: string) => ipcRenderer.invoke("set-display-mode", mode),
   setUiLanguage: (language: string) => ipcRenderer.invoke("set-ui-language", language),
+  setVerseConfirmationMode: (mode: string) => ipcRenderer.invoke("set-verse-confirmation-mode", mode),
 })

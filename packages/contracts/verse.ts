@@ -42,6 +42,15 @@ export type VerseShowPayload = Verse & {
   readonly trigger: VerseTrigger
 }
 
+/**
+ * Phase 2 (ARCHITECTURE.md section 65.3) — confirmed explicitly: "auto"
+ * stays the default, unchanged from pre-existing behavior. Only affects
+ * DETECTED references — manual override, voice navigation, and rundown
+ * scene activation are all already explicit operator-driven actions and
+ * are never held for confirmation.
+ */
+export type VerseConfirmationMode = "auto" | "review"
+
 /** Extension seam — v1 ships one implementation (RegexDetector). See ARCHITECTURE.md §50. */
 export interface VerseDetector {
   detect(text: string): VerseReference[]
