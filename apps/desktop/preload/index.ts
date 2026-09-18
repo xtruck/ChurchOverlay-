@@ -47,4 +47,5 @@ contextBridge.exposeInMainWorld("churchOverlay", {
   setUiLanguage: (language: string) => ipcRenderer.invoke("set-ui-language", language),
   setVerseConfirmationMode: (mode: string) => ipcRenderer.invoke("set-verse-confirmation-mode", mode),
   exportSession: () => ipcRenderer.invoke("export-session"),
+  setEnableSermonNotes: (enabled: boolean) => ipcRenderer.invoke("set-enable-sermon-notes", enabled),
 })

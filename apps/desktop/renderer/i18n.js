@@ -114,6 +114,11 @@
       "log.sentScenePrevious": "sent scene:previous",
       "log.sentSceneNext": "sent scene:next",
       "log.sentRundownLoad": "sent rundown:load ({count} scenes)",
+      "sermonNotes.title": "Sermon Notes (AI)",
+      "sermonNotes.off": "Off",
+      "sermonNotes.on": "On",
+      "sermonNotes.disclaimer": "AI-generated summary — not verified content.",
+      "sermonNotes.empty": "No notes yet.",
     },
     fr: {
       "app.title": "ChurchOverlay — Opérateur",
@@ -224,6 +229,11 @@
       "log.sentScenePrevious": "envoi de scene:previous",
       "log.sentSceneNext": "envoi de scene:next",
       "log.sentRundownLoad": "envoi de rundown:load ({count} scènes)",
+      "sermonNotes.title": "Notes de sermon (IA)",
+      "sermonNotes.off": "Désactivé",
+      "sermonNotes.on": "Activé",
+      "sermonNotes.disclaimer": "Résumé généré par IA — contenu non vérifié.",
+      "sermonNotes.empty": "Aucune note pour l'instant.",
     },
   }
 

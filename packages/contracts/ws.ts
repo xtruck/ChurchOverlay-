@@ -31,6 +31,7 @@ export type WsEventType =
   | "definition:show"
   | "definition:clear"
   | "verse:pending"
+  | "sermonNotes:update"
 
 /**
  * status:update's first real, concrete payload shape — ASR/transcription

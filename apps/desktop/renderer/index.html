@@ -156,12 +156,13 @@
     flex: 1;
     display: grid;
     grid-template-columns: 1.05fr 1.05fr 1.5fr;
-    grid-template-rows: auto auto 1fr auto auto;
+    grid-template-rows: auto auto 1fr auto auto auto;
     grid-template-areas:
       "mic      mic      live"
       "override media    live"
       "log      media    live"
       "rundown  rundown  rundown"
+      "notes    notes    notes"
       "remote   remote   remote";
     gap: var(--space-4);
     padding: var(--space-6);
@@ -171,7 +172,7 @@
   @media (max-width: 900px) {
     main {
       grid-template-columns: 1fr;
-      grid-template-areas: "mic" "override" "media" "live" "log" "rundown" "remote";
+      grid-template-areas: "mic" "override" "media" "live" "log" "rundown" "notes" "remote";
       grid-template-rows: none;
     }
   }
@@ -181,6 +182,7 @@
   .cell-live { grid-area: live; }
   .cell-log { grid-area: log; }
   .cell-rundown { grid-area: rundown; }
+  .cell-notes { grid-area: notes; }
   .cell-remote { grid-area: remote; }
 
   .card {
@@ -487,6 +489,22 @@
   .log-line.event-received .log-text { color: var(--success); }
   .log-line.event-error .log-text { color: var(--danger); }
 
+  /* ARCHITECTURE.md section 65.7: explicitly labeled "AI-generated notes",
+     never presented as verified content — a persistent, always-visible
+     disclaimer, not just a one-time tooltip. */
+  .sermon-notes-disclaimer {
+    font-size: 11px;
+    font-style: italic;
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-3);
+  }
+  .sermon-notes-feed { overflow-y: auto; flex: 1; min-height: 60px; display: flex; flex-direction: column; gap: var(--space-3); }
+  .sermon-notes-empty { color: var(--text-tertiary); font-size: 12px; }
+  .sermon-notes-entry { padding: var(--space-2) 0; border-bottom: 1px solid var(--glass-border); }
+  .sermon-notes-entry:last-child { border-bottom: none; }
+  .sermon-notes-time { color: var(--text-tertiary); font-size: 10.5px; font-variant-numeric: tabular-nums; margin-bottom: 4px; }
+  .sermon-notes-text { color: var(--text-secondary); font-size: 13px; line-height: 1.6; white-space: pre-line; }
+
   .setup-screen {
     height: 100%;
     display: flex;
@@ -775,6 +793,20 @@
         </div>
 
         <button id="rundown-load-btn" class="btn-primary" style="width: 100%; margin-top: var(--space-3)" data-i18n="rundown.builder.loadButton">Load rundown</button>
+      </div>
+    </div>
+
+    <div class="card glass cell-notes">
+      <div class="media-header">
+        <div class="card-title" data-i18n="sermonNotes.title">Sermon Notes (AI)</div>
+        <div id="sermon-notes-toggle" class="segmented" role="group" aria-label="AI sermon notes" title="AI sermon notes">
+          <button type="button" data-notes-enabled="off" data-i18n="sermonNotes.off">Off</button>
+          <button type="button" data-notes-enabled="on" data-i18n="sermonNotes.on">On</button>
+        </div>
+      </div>
+      <div class="sermon-notes-disclaimer" data-i18n="sermonNotes.disclaimer">AI-generated summary — not verified content.</div>
+      <div id="sermon-notes-feed" class="sermon-notes-feed">
+        <div class="sermon-notes-empty" data-i18n="sermonNotes.empty">No notes yet.</div>
       </div>
     </div>
 

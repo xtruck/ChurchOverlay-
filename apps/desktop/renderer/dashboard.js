@@ -73,6 +73,8 @@
   const remoteUrlInput = document.getElementById("remote-url")
   const remoteCopyBtn = document.getElementById("remote-copy-btn")
   const exportSessionBtn = document.getElementById("export-session-btn")
+  const sermonNotesToggleEl = document.getElementById("sermon-notes-toggle")
+  const sermonNotesFeedEl = document.getElementById("sermon-notes-feed")
   const mediaNowPlayingEl = document.getElementById("media-now-playing")
   const mediaNowPlayingTitleEl = document.getElementById("media-now-playing-title")
   const mediaPlayPauseBtn = document.getElementById("media-play-pause-btn")
@@ -147,6 +149,26 @@
     line.append(time, body)
     logEl.prepend(line)
     while (logEl.children.length > 50) logEl.removeChild(logEl.lastChild)
+  }
+
+  // ARCHITECTURE.md section 65.7: dashboard-only feed of AI-generated
+  // sermon-notes summaries, newest first — same prepend/cap pattern as
+  // the Activity log above, since both are append-only running feeds.
+  function appendSermonNote(text) {
+    const empty = sermonNotesFeedEl.querySelector(".sermon-notes-empty")
+    if (empty) empty.remove()
+
+    const entry = document.createElement("div")
+    entry.className = "sermon-notes-entry"
+    const time = document.createElement("div")
+    time.className = "sermon-notes-time"
+    time.textContent = new Date().toLocaleTimeString()
+    const body = document.createElement("div")
+    body.className = "sermon-notes-text"
+    body.textContent = text
+    entry.append(time, body)
+    sermonNotesFeedEl.prepend(entry)
+    while (sermonNotesFeedEl.children.length > 20) sermonNotesFeedEl.removeChild(sermonNotesFeedEl.lastChild)
   }
 
   function setStatus(text, state) {
@@ -738,6 +760,8 @@
         handleStatusUpdate(message.payload)
       } else if (message.type === "verse:pending") {
         showPendingVerse(message.payload)
+      } else if (message.type === "sermonNotes:update") {
+        appendSermonNote(message.payload.notes)
       }
     })
   }
@@ -845,6 +869,11 @@
       .setVerseConfirmationMode(mode)
       .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
   })
+  wireOptionGroup(sermonNotesToggleEl, "notesEnabled", (value) => {
+    window.churchOverlay
+      .setEnableSermonNotes(value === "on")
+      .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
+  })
 
   function setActiveOption(groupEl, datasetKey, value) {
     groupEl.querySelectorAll("button").forEach((button) => {
@@ -868,6 +897,7 @@
         setActiveOption(displayModeToggleEl, "mode", setupSelectedMode)
         setActiveOption(uiLanguageToggleEl, "lang", setupSelectedUiLanguage)
         setActiveOption(verseConfirmationToggleEl, "confirmationMode", info.verseConfirmationMode || "auto")
+        setActiveOption(sermonNotesToggleEl, "notesEnabled", info.enableSermonNotes ? "on" : "off")
         renderRemotePanel(info.remoteUrl, info.allowPhoneRemote)
         showAppShell()
         connect(info.port, info.token)
@@ -893,6 +923,7 @@
       if (status.ready) {
         setActiveOption(displayModeToggleEl, "mode", status.displayMode || "english")
         setActiveOption(verseConfirmationToggleEl, "confirmationMode", status.verseConfirmationMode || "auto")
+        setActiveOption(sermonNotesToggleEl, "notesEnabled", status.enableSermonNotes ? "on" : "off")
         renderRemotePanel(status.remoteUrl, status.allowPhoneRemote)
         showAppShell()
         connect(status.port, status.token)

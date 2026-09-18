@@ -44,6 +44,13 @@ export type AppConfig = {
    * operator explicitly switches to "review".
    */
   readonly verseConfirmationMode: VerseConfirmationMode
+  /**
+   * ARCHITECTURE.md section 65.7 — opt-in, off by default, mirroring
+   * allowPhoneRemote's reasoning above but for real per-request Groq API
+   * cost rather than network exposure: the AI sermon-notes copilot never
+   * runs, and never makes an API call, unless explicitly turned on.
+   */
+  readonly enableSermonNotes: boolean
 }
 
 type StoredConfig = {
@@ -58,6 +65,8 @@ type StoredConfig = {
   readonly allowPhoneRemote?: boolean
   /** Optional in storage: absent in configs saved before ARCHITECTURE.md section 65.3 existed. */
   readonly verseConfirmationMode?: string
+  /** Optional in storage: absent in configs saved before ARCHITECTURE.md section 65.7 existed. */
+  readonly enableSermonNotes?: boolean
 }
 
 /**
@@ -109,6 +118,7 @@ export class ConfigStore {
       uiLanguage: config.uiLanguage,
       allowPhoneRemote: config.allowPhoneRemote,
       verseConfirmationMode: config.verseConfirmationMode,
+      enableSermonNotes: config.enableSermonNotes,
     }
 
     await mkdir(dirname(this.filePath), { recursive: true })
@@ -139,6 +149,7 @@ export class ConfigStore {
       uiLanguage,
       allowPhoneRemote,
       verseConfirmationMode,
+      enableSermonNotes,
     } = stored
 
     if (
@@ -169,6 +180,9 @@ export class ConfigStore {
     ) {
       throw new Error(`ConfigStore: ${this.filePath} has an invalid verseConfirmationMode`)
     }
+    if (enableSermonNotes !== undefined && typeof enableSermonNotes !== "boolean") {
+      throw new Error(`ConfigStore: ${this.filePath} has an invalid enableSermonNotes`)
+    }
 
     return {
       groqApiKey: this.codec.decrypt(Buffer.from(groqApiKeyEncrypted, "base64")),
@@ -185,6 +199,9 @@ export class ConfigStore {
       // "auto" — the confirmed unchanged-behavior default applies just as
       // much to an existing install upgrading as to a fresh one.
       verseConfirmationMode: (verseConfirmationMode as VerseConfirmationMode | undefined) ?? "auto",
+      // Absent (a config saved before section 65.7 existed) defaults to
+      // false — same opt-in-for-cost reasoning as allowPhoneRemote above.
+      enableSermonNotes: enableSermonNotes ?? false,
     }
   }
 }

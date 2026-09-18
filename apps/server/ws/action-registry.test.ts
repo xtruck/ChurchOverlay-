@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { validateWsMessage, ACTION_REGISTRY } from "./action-registry"
 
-test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 media, rundown, glossary, and verse-confirmation actions (ARCHITECTURE.md sections 30, 60, 64, 65.3, 65.5)", () => {
+test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 media, rundown, glossary, verse-confirmation, and sermon-notes actions (ARCHITECTURE.md sections 30, 60, 64, 65.3, 65.5, 65.7)", () => {
   assert.deepEqual(
     Object.keys(ACTION_REGISTRY).sort(),
     [
@@ -30,6 +30,7 @@ test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 me
       "announcement:clear",
       "definition:show",
       "definition:clear",
+      "sermonNotes:update",
     ].sort()
   )
 })
@@ -465,4 +466,28 @@ test("validateWsMessage: rejects any inbound sender for verse:pending — a serv
     "operator"
   )
   assert.equal(result.ok, false)
+})
+
+test("ACTION_REGISTRY['sermonNotes:update'].validatePayload: accepts a valid notes string, rejects a malformed one", () => {
+  assert.equal(ACTION_REGISTRY["sermonNotes:update"].validatePayload({ notes: "- Point one\n- Point two" }), true)
+  for (const payload of [{}, { notes: 5 }, { notes: null }, null]) {
+    assert.equal(
+      ACTION_REGISTRY["sermonNotes:update"].validatePayload(payload),
+      false,
+      `payload ${JSON.stringify(payload)} must be rejected`
+    )
+  }
+})
+
+test("validateWsMessage: rejects any inbound sender for sermonNotes:update — a server-only event", () => {
+  const asOperator = validateWsMessage(
+    { id: "01ABC", type: "sermonNotes:update", timestamp: 1700000000000, payload: { notes: "- A point" } },
+    "operator"
+  )
+  const asViewer = validateWsMessage(
+    { id: "01ABC", type: "sermonNotes:update", timestamp: 1700000000000, payload: { notes: "- A point" } },
+    "viewer"
+  )
+  assert.equal(asOperator.ok, false)
+  assert.equal(asViewer.ok, false)
 })

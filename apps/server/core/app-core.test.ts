@@ -1830,3 +1830,224 @@ test("AppCore: getSessionEntries() records every verse actually shown, regardles
     await app.stop()
   }
 })
+
+/**
+ * Named per AGENTS.md section 45 — a test double, not a real
+ * SermonNotesGenerator (which would make a real Groq API call).
+ */
+class FakeSermonNotesGenerator {
+  calls: string[] = []
+  private response: string | Error = "- A point"
+
+  setResponse(response: string | Error): void {
+    this.response = response
+  }
+
+  async summarize(transcriptText: string): Promise<string> {
+    this.calls.push(transcriptText)
+    if (this.response instanceof Error) throw this.response
+    return this.response
+  }
+}
+
+// ARCHITECTURE.md section 65.7: AI sermon-notes copilot — a strictly
+// separate, dashboard-only side channel gated by a live enable/disable
+// flag, never touching the verse-detection pipeline.
+test("AppCore: sermon notes stay off by default even with a generator configured — no summarize() call, no broadcast", async () => {
+  const asr = new FakeAsrProvider()
+  const generator = new FakeSermonNotesGenerator()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    sermonNotesGenerator: generator,
+    sermonNotesIntervalMs: 30,
+    // sermonNotesEnabled deliberately omitted — must default to off.
+  })
+  try {
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Today we are talking about grace and forgiveness.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(generator.calls.length, 0)
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: once enabled, sermon notes accumulate final-transcript text and broadcast sermonNotes:update on the configured cadence", async () => {
+  const asr = new FakeAsrProvider()
+  const generator = new FakeSermonNotesGenerator()
+  generator.setResponse("- Grace is unmerited favor\n- Forgiveness is offered freely")
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    sermonNotesGenerator: generator,
+    sermonNotesEnabled: true,
+    sermonNotesIntervalMs: 30,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Today we are talking about grace.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    // A partial transcript must never reach the accumulated buffer
+    // (same invariant every other detector already respects).
+    asr.emitTranscript({
+      id: "01T2",
+      correlationId: "01B",
+      sequence: 2,
+      text: "Today we are talking about grace and forgi",
+      state: "partial",
+      timestamp: Date.now(),
+    })
+    asr.emitTranscript({
+      id: "01T3",
+      correlationId: "01C",
+      sequence: 3,
+      text: "And forgiveness is offered freely to all.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+
+    const update = await waitForMessage(viewerSocket)
+    assert.equal(update.type, "sermonNotes:update")
+    assert.deepEqual(update.payload, {
+      notes: "- Grace is unmerited favor\n- Forgiveness is offered freely",
+    })
+    assert.equal(generator.calls.length, 1)
+    assert.equal(
+      generator.calls[0],
+      "Today we are talking about grace. And forgiveness is offered freely to all."
+    )
+
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: an empty accumulated buffer never calls summarize(), and a failed cycle recovers cleanly on the next one", async () => {
+  const asr = new FakeAsrProvider()
+  const generator = new FakeSermonNotesGenerator()
+  generator.setResponse(new Error("rate limited"))
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    sermonNotesGenerator: generator,
+    sermonNotesEnabled: true,
+    sermonNotesIntervalMs: 30,
+  })
+  try {
+    // Nothing accumulated yet — the first cycle(s) must not call summarize().
+    await new Promise((resolve) => setTimeout(resolve, 70))
+    assert.equal(generator.calls.length, 0)
+
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "A failing cycle should not crash anything.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    await waitFor(() => generator.calls.length === 1)
+
+    // The failure must not affect mic/ASR/verse display: recover and
+    // succeed cleanly on the very next cycle with fresh text.
+    generator.setResponse("- Recovered")
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    asr.emitTranscript({
+      id: "01T2",
+      correlationId: "01B",
+      sequence: 2,
+      text: "New text after the failure.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    const update = await waitForMessage(viewerSocket)
+    assert.equal(update.type, "sermonNotes:update")
+    assert.deepEqual(update.payload, { notes: "- Recovered" })
+    // The failed cycle's text must have been cleared, not retried
+    // alongside the new text.
+    assert.equal(generator.calls[1], "New text after the failure.")
+
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: setSermonNotesEnabled() is a live toggle — turning it on starts accumulating, turning it off discards the buffer", async () => {
+  const asr = new FakeAsrProvider()
+  const generator = new FakeSermonNotesGenerator()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    sermonNotesGenerator: generator,
+    sermonNotesIntervalMs: 30,
+  })
+  try {
+    // Off by default: accumulated text must be discarded, not queued.
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Said while disabled.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 70))
+    assert.equal(generator.calls.length, 0)
+
+    app.setSermonNotesEnabled(true)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    asr.emitTranscript({
+      id: "01T2",
+      correlationId: "01B",
+      sequence: 2,
+      text: "Said after enabling.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    const update = await waitForMessage(viewerSocket)
+    assert.equal(update.type, "sermonNotes:update")
+    // Only the text spoken after enabling — "Said while disabled" must
+    // not have been silently queued up and summarized once turned on.
+    assert.equal(generator.calls[0], "Said after enabling.")
+
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})

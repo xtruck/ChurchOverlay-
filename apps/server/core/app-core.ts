@@ -59,6 +59,17 @@ type ObservableAsrProvider = AsrProvider & {
   onError?(callback: (error: Error) => void): void
 }
 
+/**
+ * ARCHITECTURE.md section 65.7 — the seam AppCore actually depends on
+ * (same "depend on the narrow shape you use, not the concrete class"
+ * pattern as VerseSource/AsrProvider): AppCore only ever calls
+ * summarize(), never constructs a SermonNotesGenerator itself, so it
+ * takes this minimal interface rather than the concrete class type.
+ */
+type SermonNotesSummarizer = {
+  summarize(transcriptText: string): Promise<string>
+}
+
 export type StartAppCoreOptions = {
   readonly asr: ObservableAsrProvider
   readonly detector: VerseDetector
@@ -111,6 +122,28 @@ export type StartAppCoreOptions = {
    * already explicit operator actions and are never held.
    */
   readonly verseConfirmationMode?: VerseConfirmationMode
+  /**
+   * Optional (ARCHITECTURE.md section 65.7) — a strictly separate,
+   * dashboard-only side channel that never feeds into or is consulted by
+   * the verse-detection/hallucination-guard pipeline (the hard boundary
+   * the section documents). When absent, no sermon-notes summarization
+   * ever happens — same "optional capability, gracefully absent"
+   * pattern as mediaLibrary above. When present but sermonNotesEnabled
+   * is false (the default, mirroring allowPhoneRemote's opt-in-for-cost
+   * reasoning), the generator is held ready but never invoked, so a live
+   * dashboard toggle can turn it on mid-service without reconstructing
+   * AppCore.
+   */
+  readonly sermonNotesGenerator?: SermonNotesSummarizer
+  readonly sermonNotesEnabled?: boolean
+  /**
+   * Defaults to 60 seconds (ARCHITECTURE.md section 65.7: "every ~60
+   * seconds of accumulated final-transcript text, not on every single
+   * transcript"). Exposed here, same reasoning as definitionClearMs
+   * above, so tests can use a short interval instead of waiting out the
+   * real default.
+   */
+  readonly sermonNotesIntervalMs?: number
 }
 
 export type AppCoreHandle = {
@@ -122,6 +155,15 @@ export type AppCoreHandle = {
    * handler, which also persists the change to ConfigStore.
    */
   setVerseConfirmationMode(mode: VerseConfirmationMode): void
+  /**
+   * ARCHITECTURE.md section 65.7: the live-toggle half of "held ready,
+   * gated by a flag" — called by the Electron main process's own IPC
+   * handler, which also persists the change to ConfigStore. Disabling
+   * mid-cycle also discards whatever transcript text had already
+   * accumulated, so re-enabling later never summarizes stale text from
+   * while it was off.
+   */
+  setSermonNotesEnabled(enabled: boolean): void
   /**
    * ARCHITECTURE.md section 65.8: the Electron main process's own
    * export-session IPC handler reads this to build the plain-text
@@ -189,6 +231,42 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   // when nothing produced it yet). Tracked so a transcript arriving after
   // an error can broadcast the recovery, not just the failure.
   let asrHasError = false
+  // ARCHITECTURE.md section 65.7: a rolling buffer of final-transcript text,
+  // flushed and summarized on a fixed cadence rather than per-transcript —
+  // both to bound Groq API cost and because a summary of one sentence isn't
+  // a useful summary.
+  const sermonNotesGenerator = options.sermonNotesGenerator
+  const sermonNotesIntervalMs = options.sermonNotesIntervalMs ?? 60000
+  let sermonNotesEnabled = options.sermonNotesEnabled ?? false
+  let sermonNotesBuffer = ""
+  const sermonNotesTimer: ReturnType<typeof setInterval> | null = sermonNotesGenerator
+    ? setInterval(() => {
+        if (!sermonNotesEnabled) return
+        const text = sermonNotesBuffer.trim()
+        sermonNotesBuffer = ""
+        if (!text) return
+        sermonNotesGenerator
+          .summarize(text)
+          .then((notes) => {
+            wsServer.broadcast({
+              id: generateUlid(),
+              type: "sermonNotes:update",
+              timestamp: Date.now(),
+              payload: { notes },
+            })
+          })
+          .catch((err) => {
+            // ARCHITECTURE.md section 65.7: "logs and skips that cycle
+            // silently recoverable next cycle — never affects mic capture,
+            // ASR, or verse display in any way."
+            logger.error({
+              component: "app-core",
+              event: "sermon-notes.summarize-failed",
+              error: err instanceof Error ? err.message : String(err),
+            })
+          })
+      }, sermonNotesIntervalMs)
+    : null
 
   const wsServer = new ChurchOverlayWsServer({
     host: options.host,
@@ -661,12 +739,13 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
 
       // status:update / transcript:partial / verse:show / verse:pending /
       // media:show / rundown:state / announcement:show /
-      // announcement:clear / definition:show / definition:clear are all
-      // server-originated events; the action registry's role check (empty
-      // allowedSenders) already refuses any client attempting to send
-      // them inbound, so onCommand is never actually invoked for these.
-      // Kept only so this switch stays exhaustive and explicit rather
-      // than silently ignoring a case (AGENTS.md section 25).
+      // announcement:clear / definition:show / definition:clear /
+      // sermonNotes:update are all server-originated events; the action
+      // registry's role check (empty allowedSenders) already refuses any
+      // client attempting to send them inbound, so onCommand is never
+      // actually invoked for these. Kept only so this switch stays
+      // exhaustive and explicit rather than silently ignoring a case
+      // (AGENTS.md section 25).
       case "status:update":
       case "transcript:partial":
       case "verse:show":
@@ -677,6 +756,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       case "announcement:clear":
       case "definition:show":
       case "definition:clear":
+      case "sermonNotes:update":
         logger.warn({
           component: "app-core",
           event: "unreachable-command",
@@ -832,6 +912,14 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       const definition = glossaryDetector.detect(transcript.text)
       if (definition) broadcastDefinition(definition, transcript.correlationId)
     }
+
+    // ARCHITECTURE.md section 65.7: a read-only observer of the same
+    // final-transcript stream every other detector sees — accumulated
+    // text only, never consulted by or fed back into the guarded
+    // verse-detection pipeline above.
+    if (sermonNotesGenerator && sermonNotesEnabled && passesTranscriptGate(transcript)) {
+      sermonNotesBuffer += (sermonNotesBuffer ? " " : "") + transcript.text
+    }
   })
 
   asr.onError?.((err) => {
@@ -855,11 +943,16 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     setVerseConfirmationMode(mode: VerseConfirmationMode) {
       verseConfirmationMode = mode
     },
+    setSermonNotesEnabled(enabled: boolean) {
+      sermonNotesEnabled = enabled
+      if (!enabled) sermonNotesBuffer = ""
+    },
     getSessionEntries() {
       return sessionRecorder.getEntries()
     },
     async stop() {
       if (definitionClearTimer) clearTimeout(definitionClearTimer)
+      if (sermonNotesTimer) clearInterval(sermonNotesTimer)
       await asr.stop().catch(() => {})
       await wsServer.close()
       logger.info({ component: "app-core", event: "stopped" })

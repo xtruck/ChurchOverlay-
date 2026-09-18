@@ -2817,6 +2817,27 @@ Explicitly labeled "AI-generated notes" in the UI, never presented as verified
 content, matching the same hallucination-guard-adjacent honesty this app already
 applies everywhere else that isn't the guarded pipeline itself.
 
+**Implementation notes:** opt-in, off by default, via a new `enableSermonNotes`
+ConfigStore field — the same "opt-in, off by default" shape as `allowPhoneRemote`
+(section 65.6), but for real per-request Groq API cost rather than network exposure.
+Unlike `allowPhoneRemote`, this is not a setup-screen control: like
+`verseConfirmationMode` (section 65.3), it is a live dashboard toggle only
+(`sermonNotes:update`'s own header segmented control, "Off"/"On"), since turning AI
+notes on or off is an ongoing per-service choice, not a one-time install decision.
+`AppCore` accepts an optional `SermonNotesGenerator`-shaped dependency (a minimal
+`{ summarize(text): Promise<string> }` seam, not the concrete class — the same
+"depend on the shape you use" pattern as `VerseSource`/`AsrProvider`) plus an
+`enableSermonNotes` flag; when the generator is absent, none of this code path runs
+at all. When present but disabled, the generator is held ready (constructed once,
+reusing the same Groq API key as ASR) but never invoked, so the live toggle can turn
+summarization on mid-service without reconstructing `AppCore`. Disabling the toggle
+also discards whatever transcript text had already accumulated, so re-enabling later
+never summarizes stale text spoken while it was off. The dashboard's own "Sermon
+Notes (AI)" card is a standalone feed (newest first, same prepend/cap pattern as the
+Activity log), with a persistent, always-visible disclaimer line rather than a
+one-time tooltip — the same "never presented as verified content" requirement the
+note above states, made durable in the UI rather than relying on a first impression.
+
 ### 65.8 Post-service content export
 
 A new `SessionRecorder` (owned by `AppCore`, alongside `RundownController`) appends

@@ -7,6 +7,7 @@ import type {
   Rundown,
   RundownScene,
   RundownStatePayload,
+  SermonNotesPayload,
   TranscriptResult,
   VerseShowPayload,
   VerseReference,
@@ -240,6 +241,10 @@ function isDefinitionShowPayload(payload: unknown): payload is DefinitionShowPay
   return isPlainObject(payload) && typeof payload.term === "string" && typeof payload.definition === "string"
 }
 
+function isSermonNotesPayload(payload: unknown): payload is SermonNotesPayload {
+  return isPlainObject(payload) && typeof payload.notes === "string"
+}
+
 /**
  * The v1 action set from ARCHITECTURE.md section 30, plus the Phase 2
  * media actions approved and specified in section 60 (media:select/
@@ -374,6 +379,11 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "event",
     allowedSenders: [],
     validatePayload: isNullPayload,
+  },
+  "sermonNotes:update": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isSermonNotesPayload,
   },
 }
 

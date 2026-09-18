@@ -12,6 +12,7 @@ import { FreeApiSource } from "../../server/verse/free-api-source"
 import { GetBibleVerseSource } from "../../server/verse/get-bible-verse-source"
 import { LocalizedVerseSource } from "../../server/verse/localized-verse-source"
 import { GroqProvider } from "../../server/asr/groq-provider"
+import { SermonNotesGenerator } from "../../server/ai/sermon-notes-generator"
 import { MediaLibrary } from "../../server/media/media-library"
 import {
   ConfigStore,
@@ -62,6 +63,7 @@ let localizedVerseSource: LocalizedVerseSource | null = null
 let currentRemoteUrl: string | null = null
 let currentAllowPhoneRemote = false
 let currentVerseConfirmationMode: VerseConfirmationMode = "auto"
+let currentEnableSermonNotes = false
 
 function generateToken(): string {
   return randomBytes(24).toString("hex")
@@ -125,6 +127,14 @@ async function startServices(
     tokens: currentTokens,
     mediaLibrary: mediaLibrary ?? undefined,
     verseConfirmationMode: config.verseConfirmationMode,
+    // ARCHITECTURE.md section 65.7: always constructed (it makes no
+    // network call until summarize() is actually invoked, and holding it
+    // ready costs nothing) — reuses the same Groq API key already
+    // established for ASR, not a second AI vendor. Gated by
+    // sermonNotesEnabled below, so a live dashboard toggle can turn it on
+    // mid-service without reconstructing AppCore.
+    sermonNotesGenerator: new SermonNotesGenerator({ apiKey: config.groqApiKey }),
+    sermonNotesEnabled: config.enableSermonNotes,
     // ARCHITECTURE.md section 65.4: a voice-triggered display-mode switch
     // persists exactly like the set-display-mode IPC handler below does,
     // so it survives a restart identically to a dashboard-toggled one.
@@ -178,6 +188,7 @@ async function startServices(
   currentRemoteUrl = remoteUrl
   currentAllowPhoneRemote = config.allowPhoneRemote
   currentVerseConfirmationMode = config.verseConfirmationMode
+  currentEnableSermonNotes = config.enableSermonNotes
 
   logger.info({
     component: "main",
@@ -293,6 +304,7 @@ ipcMain.handle("get-startup-status", async () => {
       remoteUrl: currentRemoteUrl,
       allowPhoneRemote: currentAllowPhoneRemote,
       verseConfirmationMode: currentVerseConfirmationMode,
+      enableSermonNotes: currentEnableSermonNotes,
     }
   }
   return { ready: false, uiLanguage }
@@ -359,6 +371,31 @@ ipcMain.handle("set-verse-confirmation-mode", async (_event, payload: unknown) =
   return { verseConfirmationMode: mode }
 })
 
+/**
+ * ARCHITECTURE.md section 65.7: the live-toggle half of the AI sermon-
+ * notes copilot — no setup-screen control (same reasoning as
+ * set-verse-confirmation-mode above), since this is an ongoing per-
+ * service choice, not a one-time install decision. "off" is the
+ * confirmed default every install starts with regardless.
+ */
+ipcMain.handle("set-enable-sermon-notes", async (_event, payload: unknown) => {
+  if (typeof payload !== "boolean") {
+    throw new Error("Invalid enableSermonNotes value.")
+  }
+  if (!appCoreHandle) {
+    throw new Error("Services are not started yet.")
+  }
+  appCoreHandle.setSermonNotesEnabled(payload)
+  currentEnableSermonNotes = payload
+
+  const store = getConfigStore()
+  const existing = await store.load().catch(() => null)
+  if (existing) {
+    await store.save({ ...existing, enableSermonNotes: payload })
+  }
+  return { enableSermonNotes: payload }
+})
+
 ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
   const payloadObject = typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {}
 
@@ -410,6 +447,11 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
     // fresh install; changeable afterward via the live dashboard toggle
     // only (set-verse-confirmation-mode), which persists it from then on.
     verseConfirmationMode: existing?.verseConfirmationMode ?? "auto",
+    // ARCHITECTURE.md section 65.7: not a setup-screen control (same
+    // reasoning as verseConfirmationMode above) — "off" is the confirmed
+    // default for every fresh install; changeable afterward only via the
+    // live dashboard toggle (set-enable-sermon-notes).
+    enableSermonNotes: existing?.enableSermonNotes ?? false,
     viewerToken: existing?.viewerToken ?? generateToken(),
     displayMode,
     uiLanguage,
