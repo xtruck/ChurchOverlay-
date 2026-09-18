@@ -2435,7 +2435,9 @@ export interface Rundown {
 
 An "announcement" scene is a new, minimal kind of content — plain title+body text
 overlaid the same way a verse card is today — not a general slide/layout editor; that
-would be a materially bigger feature nothing has asked for (AGENTS.md section 58).
+would be a materially bigger feature nothing has asked for (AGENTS.md section 39).
+(This was later built anyway, deliberately, as its own reviewed scope change — see
+section 66.)
 
 ### 64.2 Resolved: rundown/live-detection precedence (closes section 59.4)
 
@@ -2587,9 +2589,11 @@ Confirmed explicitly: the rundown/live-detection precedence question from sectio
 59.4 is resolved as "live detection always wins," with control returning to a paused
 scene when the interrupting verse clears, and an explicit rundown action always
 discarding a paused scene rather than resuming it. Scene kinds are verse, media,
-announcement (new, minimal), and blank — no general slide/layout editor. Rundown
-authoring UI and cross-restart persistence are explicitly left open per section 64.5,
-not assumed here.
+announcement (new, minimal), and blank — no general slide/layout editor. (Superseded
+later, deliberately and explicitly — see section 66, which adds a fifth,
+free-form-canvas scene kind as its own reviewed scope change, not a silent
+reversal.) Rundown authoring UI and cross-restart persistence are explicitly left
+open per section 64.5, not assumed here.
 
 ## 65. Phase 2 Feature Note — Web-Research-Driven Enhancements
 
@@ -2946,3 +2950,266 @@ choosing conjugation-independent phrasing ("en français"/"en anglais") that mat
 regardless of which verb form is actually spoken — found via this feature's own test
 suite (a test using a realistic imperative sentence failed against the
 infinitive-only phrase), not assumed correct from writing plausible-looking French.
+
+## 66. Phase 2 Feature Note — Canvas Scene Editor & Sidebar App Shell
+
+A dedicated architecture note, following the same AGENTS.md section 56 checklist as
+sections 60-65. Unlike every prior Phase 2 note, this one does not just add new scope
+within previously-agreed boundaries — it explicitly **reverses** a boundary this
+project stated twice before. That reversal is the whole reason this note exists as
+its own section rather than an amendment tucked into section 64: AGENTS.md section 43
+requires architecture changes to be explained and made deliberately, never silently.
+
+### 66.1 What this feature is, and what it explicitly supersedes
+
+Two paired but architecturally separate changes, both confirmed explicitly with the
+user after being shown the real scope tradeoff (a thumbnail-reorder-grid mockup vs. a
+full canvas-editor mockup):
+
+1. **A sidebar-navigation app shell** for the operator dashboard
+   (`apps/desktop/renderer/`) — Live / Rundown & Scenes / Media Library / Settings
+   each become a full-screen view switched via a persistent sidebar, replacing
+   today's single-page CSS grid where every card gets its own cramped internal
+   scroll region. This part is presentation-only: no new contracts, no new server
+   behavior, no new invariants — it introduces nothing this note needs to guard.
+2. **A new `"canvas"` `RundownScene` kind** — a free-form scene an operator builds by
+   positioning text, image, and background layers on a stage, with per-layer
+   typography/color/size, additive to (never replacing) the existing four fixed-
+   template kinds (`verse`, `media`, `announcement`, `blank`).
+
+Part 2 directly reverses three explicit prior statements in this exact codebase, and
+this note supersedes all three by name rather than quietly overwriting them:
+
+- `packages/contracts/rundown.ts`'s own doc comment: *"Not a general slide/layout
+  editor."*
+- This document, section 64.1: *"not a general slide/layout editor; that would be a
+  materially bigger feature nothing has asked for"* — and section 64.8's closing
+  line: *"Scene kinds are verse, media, announcement (new, minimal), and blank — no
+  general slide/layout editor."* (Section 64.1's own citation of "AGENTS.md section
+  58" for this point was already a drifted reference by the time this note was
+  written — AGENTS.md section 58 is "AI Agent Behavior"; the actual scope-discipline
+  section is **AGENTS.md section 39**. Corrected here for the record.)
+- AGENTS.md's original v1 scope lock (section 4), whose "Do NOT implement" list
+  names `ProPresenter` explicitly. The later amendment to that list (recorded
+  immediately below it) carved out `media library`, `songs`/`scenes`/`rundown`, and a
+  broader `AI agent` copilot — it did **not** carve out ProPresenter-style editing.
+
+These three statements are left in place in their original sections, not deleted —
+they were correct decisions when written, for the scope that existed then. This
+section records that the decision changed, and why, rather than erasing that a
+different decision was ever made.
+
+### 66.2 Resolved open questions
+
+- **Canvas aspect ratio: one fixed 16:9 ratio, project-wide.** Not per-scene. Layer
+  positions are stored as percentages of this one stage, so they mean the same thing
+  in the dashboard editor, the live-preview, and the real overlay regardless of which
+  scene is active. A per-scene ratio was considered and explicitly rejected for this
+  phase — it would require the overlay to letterbox/pillarbox mismatched ratios
+  against its actual OBS Browser Source window, a materially bigger rendering problem
+  deferred, not solved, by this note.
+- **Canvas layers are operator-authored only in this phase.** No layer's content is
+  ever populated by live transcript detection or voice navigation — every layer's
+  text/image/background is typed or picked directly in the editor. This is what lets
+  this phase skip the hallucination-guard pipeline entirely for canvas content (see
+  invariant 23) without inventing a new exception to it. Live-verse-bound text boxes
+  are explicitly deferred (section 66.5).
+- **Image and background assets reuse `MediaLibrary`** (`apps/server/media/`) — no
+  new upload path, no new asset store. A canvas image/background layer references a
+  `mediaCueId` exactly the way a `"media"` scene already does.
+- **A canvas scene is paused/resumed by `RundownController` identically to every
+  other kind.** `RundownController` (`apps/server/rundown/rundown-controller.ts`)
+  never inspects `scene.kind` — it only tracks cursor position and a paused-cursor
+  flag — so a 5th scene kind requires zero changes to it. The precedence rule from
+  section 64.2 ("live detection always wins") applies to a canvas scene exactly as it
+  does to a media or announcement scene today: an interrupting verse pauses it, and
+  clearing that verse resumes exactly that canvas scene.
+- **Text sizing is fixed at authoring time (`fontSizePx`), not auto-fit.** The
+  overlay's existing verse card has a bespoke JS auto-shrink algorithm
+  (`fitVerseText()` in `overlay.js`) because its content length is unpredictable
+  (whatever the current verse's text happens to be). A canvas text layer's box size
+  is chosen by the operator in the editor, so what they see there is exactly what
+  ships — true WYSIWYG — rather than a second auto-fit algorithm silently resizing
+  their layout at render time.
+- **The editor is hand-written vanilla JS, not a canvas/interaction library.** The
+  dashboard renderer has zero runtime dependencies today and a hand-authored CSP
+  (`script-src 'self'`). The needed interactions — drag-move, resize via 8 handles,
+  front/back z-order, snap-to-edge/center, keyboard nudge — are well within
+  `PointerEvent` + CSS absolute positioning + `getBoundingClientRect()` for the small
+  number of layers a scene actually has; this is not a general infinite-canvas,
+  rotation, or vector-path editing problem. A third-party library would be the
+  largest dependency surface in this renderer, several candidates render to
+  `<canvas>` internally (which would break the "each layer is a real DOM node" the
+  overlay renderer in section 66.4 depends on for its fonts/CSS to apply per layer),
+  and most assume a bundler this project has deliberately never adopted (AGENTS.md
+  sections 40-41). Consistent with `fitVerseText()`'s own precedent: hand-rolled,
+  fully-understood UI logic over a library black box.
+
+### 66.3 Data model
+
+```ts
+// packages/contracts/rundown.ts (extends the existing union — see section 66.1's
+// note on why the file's original "not a general slide/layout editor" doc comment
+// stays in place rather than being deleted)
+
+export type CanvasLayerBase = {
+  readonly id: string
+  readonly x: number       // 0-100, left edge, % of the fixed 16:9 stage
+  readonly y: number       // 0-100, top edge
+  readonly width: number   // 0-100, % of stage width
+  readonly height: number  // 0-100, % of stage height
+  readonly zIndex: number
+}
+
+export type CanvasTextLayer = CanvasLayerBase & {
+  readonly kind: "text"
+  readonly text: string
+  readonly fontFamily: "serif" | "sans" | "mono" // the 3 fonts already loaded overlay-wide
+  readonly fontSizePx: number
+  readonly color: string
+  readonly align: "left" | "center" | "right"
+}
+
+export type CanvasImageLayer = CanvasLayerBase & {
+  readonly kind: "image"
+  readonly mediaCueId: string
+}
+
+export type CanvasBackgroundLayer = CanvasLayerBase & {
+  readonly kind: "background"
+  readonly color: string | null
+  readonly mediaCueId: string | null // mutually exclusive with color; validated at the WS boundary, section 66.4
+}
+
+export type CanvasLayer = CanvasTextLayer | CanvasImageLayer | CanvasBackgroundLayer
+
+export type CanvasSceneData = { readonly layers: readonly CanvasLayer[] }
+
+export type RundownScene =
+  | { readonly kind: "verse"; readonly reference: VerseReference }
+  | { readonly kind: "media"; readonly mediaCueId: string }
+  | { readonly kind: "announcement"; readonly title: string; readonly body: string }
+  | { readonly kind: "blank" }
+  | { readonly kind: "canvas"; readonly canvas: CanvasSceneData } // new
+
+/** Payload for the new "canvas:show" WS event. */
+export type CanvasShowPayload = CanvasSceneData
+```
+
+No changes to `Verse`, `VerseShowPayload`, `MediaCue`, or `MediaShowPayload` — a
+canvas layer references existing content types (a `mediaCueId`) rather than
+duplicating their shape.
+
+### 66.4 Server ownership and WS surface
+
+- `RundownController`: **unchanged** (section 66.2).
+- `apps/server/core/app-core.ts`'s `activateScene()` gains a `case "canvas":` that
+  broadcasts the scene's `CanvasSceneData` directly via a new `broadcastCanvas()` —
+  no `resolveVerse()`, no `KnownValidVerseIndex` involvement, per invariant 23. The
+  existing `"blank"` branch gains a `canvas:clear` broadcast alongside its existing
+  three, so a canvas scene never survives underneath a subsequent blank scene
+  (invariant 24). `syncSceneContent()` (the late-join/reconnect-viewer path) gets the
+  matching `case "canvas"` direct-send, and its own `"blank"` branch also sends
+  `canvas:clear`.
+- `apps/server/ws/action-registry.ts` gains two new server-only events,
+  `canvas:show`/`canvas:clear`, registered with `allowedSenders: []` exactly like
+  `announcement:show`/`announcement:clear` — no client role may ever send them
+  inbound. A new `isCanvasShowPayload` validator checks every layer's `id` is a
+  non-empty string, `x`/`y`/`width`/`height` are numbers in `[0, 100]`, `zIndex` is a
+  number, and each layer's `kind`-specific required fields are present and correctly
+  typed (mirroring `isAnnouncementShowPayload`'s existing structural-validation
+  style).
+- `apps/overlay/public/overlay.js` gains a generic layer renderer (`showCanvas()`) —
+  the first content type in this app whose WS payload carries a whole list of
+  positioned elements rather than one fixed-template's fields. It coexists with, and
+  does not replace, the four existing fixed-position templates (`#verse`,
+  `#media-layer`, `#announcement`, `#definition`).
+
+### 66.5 What this note deliberately leaves open
+
+Named explicitly here so their absence in the first implementation reads as a
+decision, not an oversight:
+
+- **Live-verse or voice-bound text boxes inside a canvas scene.** Would require a
+  fourth `CanvasTextLayer` variant carrying a `VerseReference`, and a real decision on
+  whether that reference must pass through `KnownValidVerseIndex` — the first time a
+  canvas layer's content could originate from something other than direct operator
+  authorship. Not decided here; invariant 23 explicitly scopes this note to
+  operator-authored-only content.
+- **Undo/redo** in the editor.
+- **Advanced typography** — gradients, shadows, drop-shadow text, or any font beyond
+  the three already loaded overlay-wide (Instrument Serif, Instrument Sans,
+  JetBrains Mono). No custom font upload/loading.
+- **An asset library beyond `MediaLibrary` reuse** — no new image/video upload path
+  specific to the canvas editor.
+- **Multi-select or grouping** of layers.
+- **Alignment guides/snapping beyond snap-to-edge and snap-to-center** — no ruler
+  overlay, no arbitrary-angle guides.
+- **Canvas layer persistence across restarts.** Rundowns already do not persist
+  across restarts (section 64.5's own open item) — unchanged by this note, but now
+  applies to a larger, more effortful-to-recreate payload than a single
+  `VerseReference` string.
+- **A built-in "verse card" starting preset inside the canvas editor** (i.e., a
+  button that drops in something styled like today's fixed verse card as a starting
+  point, rather than authoring one from scratch with a text layer) — an
+  implementation-time editor-UX decision, not an architectural one.
+
+### 66.6 New correctness invariants this feature adds
+
+Invariant 23
+A canvas layer's content is operator-authored only in this phase — every layer's
+text/image/background is typed or selected directly in the editor, never derived
+from ASR transcript text or voice navigation. Any future feature that lets live
+detection or voice commands populate a canvas layer's content must route that
+content through the same `KnownValidVerseIndex`/`detectValidatedReferences` guard
+every other transcript-derived reference already uses (invariant 5, invariant 17) —
+never a third, unguarded path into the overlay.
+
+Invariant 24
+Ending a canvas scene — by moving to any other scene, including `"blank"` — always
+broadcasts `canvas:clear` alongside whatever else that transition already clears,
+mirroring invariant 22's "over-clearing is safe, under-clearing is not." A canvas
+layer must never remain visible underneath a scene that replaced it.
+
+### 66.7 Tests required
+
+- `apps/server/ws/action-registry.test.ts`: `canvas:show`/`canvas:clear` accepted
+  only as server-originated events (no client role may send either inbound);
+  `isCanvasShowPayload` accepts a valid mixed-layer list and rejects out-of-range
+  `x`/`y`/`width`/`height`, an unrecognized layer `kind`, and a layer missing its
+  kind-specific required fields.
+- `apps/server/core/app-core.test.ts`: activating a `"canvas"` scene broadcasts
+  `rundown:state` followed by `canvas:show` with the exact layer list; activating a
+  `"blank"` scene immediately after a canvas scene was active also broadcasts
+  `canvas:clear` (the invariant 24 regression test); a viewer connecting while a
+  canvas scene is active receives `canvas:show` via the direct-send resync path, not
+  a broadcast.
+- `apps/server/rundown/rundown-controller.test.ts`: a `"canvas"` scene round-trips
+  through `load()`/`next()`/`previous()`/`goto()` exactly like every other kind — a
+  cheap regression guard that widening the union to 5 members didn't silently break
+  anything in a controller that is supposed to be completely content-agnostic.
+- Headless-Chrome screenshot verification (this project's established method for
+  every UI-facing change, used throughout sections 60-65): the sidebar app shell's
+  four views at the new window size with no internal per-card scrollbars remaining;
+  the overlay's generic layer renderer showing a mixed text/image/background layer
+  set at correct positions and z-order, then correctly empty after both
+  `canvas:clear` and a real Escape keypress; the dashboard canvas editor's drag,
+  resize, z-order, and snap-to-edge behavior, plus a save-then-reopen round-trip of
+  an authored scene.
+
+### 66.8 Confirms this is approved scope
+
+Confirmed explicitly with the user, after being shown the real tradeoff directly (a
+thumbnail-reorder-grid mockup vs. a full canvas-editor mockup, and a one-screen-but-
+wider mockup vs. a sidebar-with-full-screen-views mockup): a sidebar-navigation app
+shell (Live / Rundown & Scenes / Media Library / Settings) and a full WYSIWYG canvas
+scene editor (drag-position, resize, z-order, per-layer typography/color) are both
+approved scope, phased as independently shippable slices — app shell first, then the
+canvas data model and server support, then the overlay's generic renderer, then the
+editor UI itself. This explicitly supersedes `packages/contracts/rundown.ts`'s "not a
+general slide/layout editor" doc comment, this document's own section 64.1 and
+section 64.8 statements to the same effect, and AGENTS.md section 4's original
+"Do NOT implement: ProPresenter" line — each is left in the record as the correct
+decision for the scope that existed when written, not deleted, per section 66.1.
+Live-verse-bound canvas content, undo/redo, and every other item in section 66.5
+remain explicitly out of scope for this phase.
