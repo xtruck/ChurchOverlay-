@@ -16,6 +16,8 @@
   const wsPort = params.get("wsPort") || window.location.port
 
   const statusEl = document.getElementById("status")
+  const posterLayerEl = document.getElementById("poster-layer")
+  const posterImageEl = document.getElementById("poster-image")
   const verseEl = document.getElementById("verse")
   const verseCardEl = document.getElementById("verse-card")
   const textEl = document.getElementById("verse-text")
@@ -200,6 +202,22 @@
     mediaLayerEl.classList.remove("visible")
   }
 
+  // Principal poster (ARCHITECTURE.md section 67) — a persistent backdrop,
+  // not a scene. No playback/position sync needed (posters are always a
+  // static image, enforced server-side) and no "restore" logic: this
+  // layer is simply always on while a poster is appointed, sitting at the
+  // lowest z-index so everything else already renders correctly on top
+  // of it without either side needing to know about the other.
+  function showPoster(payload) {
+    posterImageEl.src = "/media/" + payload.cue.id
+    posterLayerEl.classList.add("visible")
+  }
+
+  function clearPoster() {
+    posterImageEl.removeAttribute("src")
+    posterLayerEl.classList.remove("visible")
+  }
+
   function showAnnouncement(payload) {
     announcementTitleEl.textContent = payload.title
     announcementBodyEl.textContent = payload.body
@@ -352,6 +370,10 @@
         showCanvas(message.payload)
       } else if (message.type === "canvas:clear") {
         clearCanvas()
+      } else if (message.type === "poster:show") {
+        showPoster(message.payload)
+      } else if (message.type === "poster:clear") {
+        clearPoster()
       }
     })
   }

@@ -106,7 +106,6 @@
 
   @media (prefers-reduced-motion: no-preference) {
     .status-pill.connected .status-dot { animation: pulse-dot 2s infinite; }
-    .mic-visual.active .mic-bar { animation: mic-bounce 1.2s ease-in-out infinite; }
   }
 
   /* Glass surface — the one shared recipe every card/panel/header uses. */
@@ -282,6 +281,7 @@
     min-height: 0;
   }
   .media-tile {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -298,6 +298,7 @@
   }
   .media-tile:hover { border-color: var(--glass-border-strong); background: rgba(255, 255, 255, 0.05); }
   .media-tile.active { border-color: var(--accent); background: rgba(143, 125, 255, 0.14); }
+  .media-tile.poster { border-color: var(--warning, #e0a030); }
   .media-tile-icon { width: 26px; height: 26px; color: var(--text-secondary); flex-shrink: 0; }
   .media-tile-title {
     font-size: 10.5px;
@@ -307,6 +308,34 @@
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
+  }
+  /* Section 67.1: the operator "appoints" one image cue as the day's
+     principal poster from right here in the library, not a separate
+     screen — a small pin toggle in the tile corner. Filled/lit when this
+     cue is the current poster; a ring-only outline otherwise so an empty
+     library doesn't read as "broken buttons everywhere." */
+  .media-tile-poster-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 1px solid var(--glass-border-strong);
+    background: rgba(0, 0, 0, 0.45);
+    color: var(--text-tertiary);
+    cursor: pointer;
+    padding: 0;
+  }
+  .media-tile-poster-btn svg { width: 12px; height: 12px; }
+  .media-tile-poster-btn:hover { color: var(--text-primary); border-color: var(--accent); }
+  .media-tile-poster-btn.active {
+    background: var(--warning, #e0a030);
+    border-color: var(--warning, #e0a030);
+    color: #1a1200;
   }
   .media-empty {
     grid-column: 1 / -1;
@@ -609,15 +638,20 @@
   input[type="text"]:focus, input[type="password"]:focus { outline: none; border-color: var(--accent); }
   #remote-url { flex: 1; min-width: 0; margin-bottom: 0; }
   #remote-disabled, #remote-no-lan { color: var(--text-tertiary); font-size: 12px; }
+  .settings-hint { color: var(--text-tertiary); font-size: 12px; margin: -4px 0 var(--space-3); line-height: 1.5; }
 
-  .mic-visual { display: flex; align-items: center; gap: 3px; height: 32px; margin-bottom: var(--space-3); }
-  .mic-bar { flex: 1; background: var(--glass-border-strong); border-radius: 2px; height: 20%; transition: background 0.2s ease; }
+  /*
+    A real level meter (ARCHITECTURE.md production audit finding): bar
+    heights are set directly by dashboard.js from the actual captured
+    audio's RMS, on the same Int16 scale the server's SilenceGate
+    threshold is evaluated against — not a canned animation that ran
+    unconditionally whenever the mic was merely "on." The short height
+    transition smooths frame-to-frame jumps into something that reads as
+    a genuine meter rather than a jittery bar chart.
+  */
+  .mic-visual { display: flex; align-items: flex-end; gap: 3px; height: 32px; margin-bottom: var(--space-3); }
+  .mic-bar { flex: 1; background: var(--glass-border-strong); border-radius: 2px; height: 20%; transition: height 0.08s linear, background 0.2s ease; }
   .mic-visual.active .mic-bar { background: var(--accent-strong); }
-  .mic-visual.active .mic-bar:nth-child(2) { animation-delay: 0.1s; }
-  .mic-visual.active .mic-bar:nth-child(3) { animation-delay: 0.2s; }
-  .mic-visual.active .mic-bar:nth-child(4) { animation-delay: 0.3s; }
-  .mic-visual.active .mic-bar:nth-child(5) { animation-delay: 0.15s; }
-  @keyframes mic-bounce { 0%, 100% { height: 20%; } 50% { height: 90%; } }
 
   #transcript {
     font-family: var(--font-mono);
@@ -1047,6 +1081,11 @@
             <div class="card-title" data-i18n="media.title">Media Library</div>
             <button id="media-import-btn" class="btn-secondary btn-small" data-i18n="media.importButton">+ Import</button>
           </div>
+          <p class="settings-hint" data-i18n="media.posterHint">
+            Pin an image as the day's principal poster — it stays on screen for the whole
+            service, under everything else, and can be spoken back on screen anytime by
+            saying its name.
+          </p>
           <div id="media-grid" class="media-grid">
             <div class="media-empty" data-i18n="media.empty">No media imported yet.</div>
           </div>
@@ -1061,6 +1100,23 @@
       </div>
 
       <div id="view-settings" class="view">
+        <!-- ARCHITECTURE.md production audit finding: this URL already
+             existed for the in-app overlay preview window, but was never
+             shown anywhere for the operator to actually paste into a real
+             OBS Browser Source — there was no way to connect OBS at all
+             short of reading source code for the port and constructing
+             the token-bearing URL by hand. -->
+        <div class="card glass" style="max-width: 640px; margin-bottom: var(--space-4)">
+          <div class="card-title" data-i18n="obs.title">OBS Overlay</div>
+          <p class="settings-hint" data-i18n="obs.hint">
+            Paste this into OBS: Sources → + → Browser Source → URL.
+          </p>
+          <label data-i18n="obs.linkLabel">Overlay URL</label>
+          <div class="btn-row">
+            <input id="obs-url" type="text" readonly />
+            <button id="obs-copy-btn" class="btn-secondary btn-small" data-i18n="obs.copyButton">Copy</button>
+          </div>
+        </div>
         <div class="card glass" style="max-width: 640px">
           <div class="card-title" data-i18n="remote.title">Phone Remote</div>
           <div id="remote-disabled" data-i18n="remote.disabled">

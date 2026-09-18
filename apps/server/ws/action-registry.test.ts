@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { validateWsMessage, ACTION_REGISTRY } from "./action-registry"
 
-test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 media, rundown, glossary, verse-confirmation, sermon-notes, and canvas actions (ARCHITECTURE.md sections 30, 60, 64, 65.3, 65.5, 65.7, 66)", () => {
+test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 media, rundown, glossary, verse-confirmation, sermon-notes, canvas, and poster actions (ARCHITECTURE.md sections 30, 60, 64, 65.3, 65.5, 65.7, 66, 67)", () => {
   assert.deepEqual(
     Object.keys(ACTION_REGISTRY).sort(),
     [
@@ -33,6 +33,9 @@ test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 me
       "sermonNotes:update",
       "canvas:show",
       "canvas:clear",
+      "poster:set",
+      "poster:clear",
+      "poster:show",
     ].sort()
   )
 })
@@ -584,4 +587,75 @@ test("validateWsMessage: rejects canvas:clear with a non-null payload", () => {
     "operator"
   )
   assert.equal(result.ok, false)
+})
+
+// ARCHITECTURE.md section 67.3: the principal poster's WS surface.
+const VALID_POSTER_CUE = { id: "01POSTER", kind: "image", title: "Sunday Service Poster" }
+
+test("validateWsMessage: accepts a valid poster:set command from an operator, rejects a viewer sending it", () => {
+  const fromOperator = validateWsMessage(
+    { id: "01ABC", type: "poster:set", timestamp: 1700000000000, payload: { mediaCueId: "01M" } },
+    "operator"
+  )
+  const fromViewer = validateWsMessage(
+    { id: "01ABC", type: "poster:set", timestamp: 1700000000000, payload: { mediaCueId: "01M" } },
+    "viewer"
+  )
+  assert.equal(fromOperator.ok, true)
+  assert.equal(fromViewer.ok, false)
+})
+
+test("validateWsMessage: rejects poster:set without a non-empty mediaCueId", () => {
+  for (const payload of [{}, { mediaCueId: "" }, { mediaCueId: 5 }, null]) {
+    const result = validateWsMessage(
+      { id: "01ABC", type: "poster:set", timestamp: 1700000000000, payload },
+      "operator"
+    )
+    assert.equal(result.ok, false, `payload ${JSON.stringify(payload)} must be rejected`)
+  }
+})
+
+test("validateWsMessage: accepts a valid poster:clear command (null payload) from an operator, rejects a viewer sending it", () => {
+  const fromOperator = validateWsMessage(
+    { id: "01ABC", type: "poster:clear", timestamp: 1700000000000, payload: null },
+    "operator"
+  )
+  const fromViewer = validateWsMessage(
+    { id: "01ABC", type: "poster:clear", timestamp: 1700000000000, payload: null },
+    "viewer"
+  )
+  assert.equal(fromOperator.ok, true)
+  assert.equal(fromViewer.ok, false)
+})
+
+test("validateWsMessage: rejects poster:clear with a non-null payload", () => {
+  const result = validateWsMessage(
+    { id: "01ABC", type: "poster:clear", timestamp: 1700000000000, payload: {} },
+    "operator"
+  )
+  assert.equal(result.ok, false)
+})
+
+test("ACTION_REGISTRY['poster:show'].validatePayload: accepts a valid poster cue, rejects a malformed one", () => {
+  assert.equal(ACTION_REGISTRY["poster:show"].validatePayload({ cue: VALID_POSTER_CUE }), true)
+  for (const payload of [{}, { cue: { ...VALID_POSTER_CUE, kind: "sticker" } }, { cue: null }, null]) {
+    assert.equal(
+      ACTION_REGISTRY["poster:show"].validatePayload(payload),
+      false,
+      `payload ${JSON.stringify(payload)} must be rejected`
+    )
+  }
+})
+
+test("validateWsMessage: rejects any inbound sender for poster:show — a server-only event", () => {
+  const asOperator = validateWsMessage(
+    { id: "01ABC", type: "poster:show", timestamp: 1700000000000, payload: { cue: VALID_POSTER_CUE } },
+    "operator"
+  )
+  const asViewer = validateWsMessage(
+    { id: "01ABC", type: "poster:show", timestamp: 1700000000000, payload: { cue: VALID_POSTER_CUE } },
+    "viewer"
+  )
+  assert.equal(asOperator.ok, false)
+  assert.equal(asViewer.ok, false)
 })

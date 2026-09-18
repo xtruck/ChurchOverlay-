@@ -24,6 +24,52 @@
     return output
   }
 
+  // Same RMS formula as apps/server/audio/silence-gate.ts's computeRms(),
+  // duplicated deliberately (no build step to share it — see this file's
+  // own float32ToInt16 comment for the established precedent) so the
+  // mic-visual bars reflect the exact same scale the server's
+  // SilenceGate threshold is actually evaluated against.
+  function computeRmsInt16(samples) {
+    if (samples.length === 0) return 0
+    let sumOfSquares = 0
+    for (let i = 0; i < samples.length; i++) {
+      sumOfSquares += samples[i] * samples[i]
+    }
+    return Math.sqrt(sumOfSquares / samples.length)
+  }
+
+  // A real level meter, not a canned animation (a production audit found
+  // the old version bounced unconditionally whenever the mic was merely
+  // "on," giving no way to tell actual silence from actual speech). Peak-
+  // hold with linear decay reads more like a genuine VU meter than a
+  // frame-to-frame jump would. MIC_LEVEL_REFERENCE_RMS is a rough ceiling
+  // for normal speaking volume on the Int16 scale — not a precise
+  // calibration, just enough range for the bars to visibly move.
+  const MIC_LEVEL_REFERENCE_RMS = 4000
+  const MIC_LEVEL_DECAY_PER_FRAME = 0.08
+  let micLevelDisplayed = 0
+  const micBarEls = () => micVisualEl.querySelectorAll(".mic-bar")
+
+  function updateMicLevel(rms) {
+    const target = Math.max(0, Math.min(1, rms / MIC_LEVEL_REFERENCE_RMS))
+    micLevelDisplayed = Math.max(target, micLevelDisplayed - MIC_LEVEL_DECAY_PER_FRAME)
+    const bars = micBarEls()
+    bars.forEach((bar, index) => {
+      // A slight per-bar falloff from center so it reads as a level
+      // meter, not five identical bars moving in lockstep.
+      const centerDistance = Math.abs(index - (bars.length - 1) / 2)
+      const barLevel = Math.max(0, micLevelDisplayed - centerDistance * 0.08)
+      bar.style.height = Math.max(6, barLevel * 100) + "%"
+    })
+  }
+
+  function resetMicLevel() {
+    micLevelDisplayed = 0
+    micBarEls().forEach((bar) => {
+      bar.style.height = ""
+    })
+  }
+
   function encodeAudioFrame(samples, sequence) {
     const buffer = new ArrayBuffer(4 + samples.length * 2)
     const view = new DataView(buffer)
@@ -72,6 +118,8 @@
   const remoteNoLanEl = document.getElementById("remote-no-lan")
   const remoteUrlInput = document.getElementById("remote-url")
   const remoteCopyBtn = document.getElementById("remote-copy-btn")
+  const obsUrlInput = document.getElementById("obs-url")
+  const obsCopyBtn = document.getElementById("obs-copy-btn")
   const exportSessionBtn = document.getElementById("export-session-btn")
   const sermonNotesToggleEl = document.getElementById("sermon-notes-toggle")
   const sidebarEl = document.getElementById("sidebar")
@@ -138,6 +186,7 @@
   let mediaStream = null
   let knownCues = []
   let activeCueId = null
+  let principalPosterCueId = null
   let activePlaybackState = null // "playing" | "paused" | null (null: no active cue, or an image with no playback concept)
   let setupSelectedMode = "english"
   let setupSelectedUiLanguage = "en"
@@ -308,6 +357,14 @@
     )
   }
 
+  // Section 67.1: a plain pin outline, filled solid when this cue is the
+  // current principal poster — same convention as MEDIA_ICONS/SCENE_ICONS
+  // above (inline SVG, no emoji).
+  const POSTER_PIN_ICON =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">' +
+    '<path d="M12 2v6.5M12 2 8 8.5h8L12 2Z"/><path d="M8.5 8.5 6 21l6-4 6 4-2.5-12.5"/>' +
+    "</svg>"
+
   function renderMediaGrid() {
     mediaGridEl.innerHTML = ""
     if (knownCues.length === 0) {
@@ -318,8 +375,9 @@
       return
     }
     for (const cue of knownCues) {
+      const isPoster = cue.id === principalPosterCueId
       const tile = document.createElement("div")
-      tile.className = "media-tile" + (cue.id === activeCueId ? " active" : "")
+      tile.className = "media-tile" + (cue.id === activeCueId ? " active" : "") + (isPoster ? " poster" : "")
       tile.title = cue.title
       tile.innerHTML = mediaIconSvg(cue.kind) + '<div class="media-tile-title"></div>'
       tile.querySelector(".media-tile-title").textContent = cue.title
@@ -328,6 +386,36 @@
         sendJson({ id: crypto.randomUUID(), type: "media:select", timestamp: Date.now(), payload: { id: cue.id } })
         log(t("log.sentMediaSelect", { title: cue.title }), "sent")
       })
+      // Only an image cue can be the principal poster (section 67.1/67.3 —
+      // the overlay's poster layer only ever renders a still image). The
+      // cue's existing title is also its voice-trigger phrase, per the
+      // user's explicit correction: naming a cue IS appointing its trigger.
+      if (cue.kind === "image") {
+        const posterBtn = document.createElement("button")
+        posterBtn.type = "button"
+        posterBtn.className = "media-tile-poster-btn" + (isPoster ? " active" : "")
+        posterBtn.innerHTML = POSTER_PIN_ICON
+        posterBtn.title = isPoster
+          ? t("media.posterUnsetTooltip", { title: cue.title })
+          : t("media.posterSetTooltip", { title: cue.title })
+        posterBtn.setAttribute("aria-label", posterBtn.title)
+        posterBtn.addEventListener("click", (event) => {
+          event.stopPropagation()
+          if (isPoster) {
+            sendJson({ id: crypto.randomUUID(), type: "poster:clear", timestamp: Date.now(), payload: null })
+            log(t("log.sentPosterClear"), "sent")
+          } else {
+            sendJson({
+              id: crypto.randomUUID(),
+              type: "poster:set",
+              timestamp: Date.now(),
+              payload: { mediaCueId: cue.id },
+            })
+            log(t("log.sentPosterSet", { title: cue.title }), "sent")
+          }
+        })
+        tile.appendChild(posterBtn)
+      }
       mediaGridEl.appendChild(tile)
     }
   }
@@ -1217,9 +1305,18 @@
     const workletNode = new AudioWorkletNode(audioContext, "pcm-capture-processor")
 
     workletNode.port.onmessage = (event) => {
-      if (!ws || ws.readyState !== WebSocket.OPEN) return
       const { samples, sequence } = event.data
       const pcm16 = float32ToInt16(samples)
+      // A production audit found this feedback bar was purely decorative
+      // (a canned CSS animation, unconditional on real signal) — an
+      // operator had no way to tell "my voice isn't registering" from
+      // "it's registering, nobody's spoken yet" until the silence gate's
+      // own server-side decision showed up in the log. Driving the bars
+      // from the SAME Int16 scale the server's SilenceGate thresholds
+      // against makes that gap actually observable, not just fixed in
+      // theory: what the operator sees IS what's being evaluated.
+      updateMicLevel(computeRmsInt16(pcm16))
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
       ws.send(encodeAudioFrame(pcm16, sequence))
     }
 
@@ -1246,6 +1343,7 @@
     micStartBtn.disabled = false
     micStopBtn.disabled = true
     micVisualEl.classList.remove("active")
+    resetMicLevel()
     log(t("log.micStopped"), "sent")
   }
 
@@ -1301,6 +1399,12 @@
         showLiveAnnouncement(message.payload)
       } else if (message.type === "announcement:clear") {
         clearLiveVerse()
+      } else if (message.type === "poster:show") {
+        principalPosterCueId = message.payload.cue.id
+        renderMediaGrid()
+      } else if (message.type === "poster:clear") {
+        principalPosterCueId = null
+        renderMediaGrid()
       } else if (message.type === "rundown:state") {
         currentRundownState = message.payload
         renderRundownSceneList()
@@ -1386,6 +1490,20 @@
     navigator.clipboard
       .writeText(remoteUrlInput.value)
       .then(() => log(t("log.remoteLinkCopied"), "sent"))
+      .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
+  })
+
+  // A production audit found this URL was previously never surfaced
+  // anywhere for the operator to paste into OBS's own Browser Source —
+  // it existed only as an internal detail of the in-app preview window.
+  function renderObsPanel(overlayUrl) {
+    if (overlayUrl) obsUrlInput.value = overlayUrl
+  }
+
+  obsCopyBtn.addEventListener("click", () => {
+    navigator.clipboard
+      .writeText(obsUrlInput.value)
+      .then(() => log(t("log.obsLinkCopied"), "sent"))
       .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
   })
 
@@ -1480,6 +1598,7 @@
         setActiveOption(verseConfirmationToggleEl, "confirmationMode", info.verseConfirmationMode || "auto")
         setActiveOption(sermonNotesToggleEl, "notesEnabled", info.enableSermonNotes ? "on" : "off")
         renderRemotePanel(info.remoteUrl, info.allowPhoneRemote)
+        renderObsPanel(info.overlayUrl)
         showAppShell()
         connect(info.port, info.token)
       })
@@ -1506,6 +1625,7 @@
         setActiveOption(verseConfirmationToggleEl, "confirmationMode", status.verseConfirmationMode || "auto")
         setActiveOption(sermonNotesToggleEl, "notesEnabled", status.enableSermonNotes ? "on" : "off")
         renderRemotePanel(status.remoteUrl, status.allowPhoneRemote)
+        renderObsPanel(status.overlayUrl)
         showAppShell()
         connect(status.port, status.token)
       } else {

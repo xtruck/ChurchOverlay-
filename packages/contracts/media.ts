@@ -19,3 +19,12 @@ export type MediaShowPayload = {
   /** Present only for kind "video"/"audio"; omitted for "image", which has no playback concept. */
   readonly playback?: MediaPlaybackState
 }
+
+/**
+ * Payload for the "poster:show" WS event (ARCHITECTURE.md section 67.3).
+ * `cue.kind` is always "image" — enforced at the AppCore layer when
+ * `poster:set` is handled, not re-typed here.
+ */
+export type PosterShowPayload = {
+  readonly cue: MediaCue
+}

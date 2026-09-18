@@ -2211,3 +2211,529 @@ test("AppCore: setSermonNotesEnabled() is a live toggle — turning it on starts
     await app.stop()
   }
 })
+
+// ARCHITECTURE.md section 67: Principal Poster & Verse Auto-Clear.
+
+test("AppCore: poster:set with a real imported image cue broadcasts poster:show", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const source = join(dir, "poster.png")
+    await writeFile(source, "x")
+    const cue = await mediaLibrary.import(source, "Sunday Service Poster", "image")
+
+    const app = await startAppCore({
+      asr: new FakeAsrProvider(),
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new StubVerseSource({}),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+    })
+    try {
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+      const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      const viewerReceived = waitForMessage(viewerSocket)
+
+      operatorSocket.send(
+        JSON.stringify({ id: "01A", type: "poster:set", timestamp: Date.now(), payload: { mediaCueId: cue.id } })
+      )
+
+      const message = await viewerReceived
+      assert.equal(message.type, "poster:show")
+      assert.deepEqual((message.payload as { cue: unknown }).cue, cue)
+      operatorSocket.close()
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+test("AppCore: poster:set with a non-image cue id is rejected — no broadcast", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const source = join(dir, "clip.mp4")
+    await writeFile(source, "x")
+    const cue = await mediaLibrary.import(source, "Intro Clip", "video")
+
+    const app = await startAppCore({
+      asr: new FakeAsrProvider(),
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new StubVerseSource({}),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+    })
+    try {
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+      const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      let received = false
+      viewerSocket.once("message", () => {
+        received = true
+      })
+
+      operatorSocket.send(
+        JSON.stringify({ id: "01A", type: "poster:set", timestamp: Date.now(), payload: { mediaCueId: cue.id } })
+      )
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      assert.equal(received, false)
+      operatorSocket.close()
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+test("AppCore: poster:set with an unknown id is rejected — no broadcast", async () => {
+  await withMediaLibrary(async (mediaLibrary) => {
+    const app = await startAppCore({
+      asr: new FakeAsrProvider(),
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new StubVerseSource({}),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+    })
+    try {
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+      const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      let received = false
+      viewerSocket.once("message", () => {
+        received = true
+      })
+
+      operatorSocket.send(
+        JSON.stringify({
+          id: "01A",
+          type: "poster:set",
+          timestamp: Date.now(),
+          payload: { mediaCueId: "unknown-id" },
+        })
+      )
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      assert.equal(received, false)
+      operatorSocket.close()
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+test("AppCore: poster:clear broadcasts poster:clear", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const source = join(dir, "poster.png")
+    await writeFile(source, "x")
+    const cue = await mediaLibrary.import(source, "Sunday Service Poster", "image")
+
+    const app = await startAppCore({
+      asr: new FakeAsrProvider(),
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new StubVerseSource({}),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+    })
+    try {
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+      const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+
+      const shown = waitForMessage(viewerSocket)
+      operatorSocket.send(
+        JSON.stringify({ id: "01A", type: "poster:set", timestamp: Date.now(), payload: { mediaCueId: cue.id } })
+      )
+      await shown
+
+      const cleared = waitForMessage(viewerSocket)
+      operatorSocket.send(JSON.stringify({ id: "01B", type: "poster:clear", timestamp: Date.now(), payload: null }))
+      const message = await cleared
+
+      assert.equal(message.type, "poster:clear")
+      assert.equal(message.payload, null)
+      operatorSocket.close()
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+test("AppCore: a viewer connecting while a principal poster is active immediately receives a sync poster:show", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const source = join(dir, "poster.png")
+    await writeFile(source, "x")
+    const cue = await mediaLibrary.import(source, "Sunday Service Poster", "image")
+
+    const app = await startAppCore({
+      asr: new FakeAsrProvider(),
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new StubVerseSource({}),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+    })
+    try {
+      const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      const firstViewer = await connect(app.wsServer.port, TOKENS.viewerToken)
+      const shown = waitForMessage(firstViewer)
+      operatorSocket.send(
+        JSON.stringify({ id: "01A", type: "poster:set", timestamp: Date.now(), payload: { mediaCueId: cue.id } })
+      )
+      await shown
+      firstViewer.close()
+
+      // Deliberately not `await connect(...)` here: the server sends the
+      // sync message the instant it accepts the connection, which can be
+      // before this socket's own "open" event fires. Constructing it
+      // directly and attaching the message listener synchronously (same
+      // pattern as the media:show sync test above) guarantees the
+      // listener is in place before any data could possibly arrive —
+      // awaiting "open" first would introduce a race that can drop it.
+      const lateViewer = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
+      const message = await waitForMessage(lateViewer)
+
+      assert.equal(message.type, "poster:show")
+      assert.deepEqual((message.payload as { cue: unknown }).cue, cue)
+      operatorSocket.close()
+      lateViewer.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+test("AppCore: a verse shown while a principal poster is active auto-clears after the configured delay", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const source = join(dir, "poster.png")
+    await writeFile(source, "x")
+    const cue = await mediaLibrary.import(source, "Sunday Service Poster", "image")
+    const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
+
+    const app = await startAppCore({
+      asr: new FakeAsrProvider(),
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new StubVerseSource({ john: johnVerse }),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+      verseAutoClearMs: 50, // short, for a fast test — not the real 2-minute default
+    })
+    try {
+      const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+      const posterShown = waitForMessage(viewerSocket)
+      operatorSocket.send(
+        JSON.stringify({ id: "01A", type: "poster:set", timestamp: Date.now(), payload: { mediaCueId: cue.id } })
+      )
+      await posterShown
+
+      const verseShown = waitForMessage(viewerSocket)
+      operatorSocket.send(
+        JSON.stringify({
+          id: "01B",
+          type: "verse:override",
+          timestamp: Date.now(),
+          payload: { book: "john", chapter: 3, verse: 16 },
+        })
+      )
+      const shownMessage = await verseShown
+      assert.equal(shownMessage.type, "verse:show")
+
+      // No operator action clears this — the server does it on its own,
+      // unprompted, so the poster underneath reappears.
+      const autoCleared = await waitForMessage(viewerSocket)
+      assert.equal(autoCleared.type, "verse:clear")
+
+      operatorSocket.close()
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+test("AppCore: a second verse shown before the auto-clear timer fires resets the countdown rather than stacking", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const source = join(dir, "poster.png")
+    await writeFile(source, "x")
+    const cue = await mediaLibrary.import(source, "Sunday Service Poster", "image")
+
+    const app = await startAppCore({
+      asr: new FakeAsrProvider(),
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new EchoVerseSource(),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+      verseAutoClearMs: 80,
+    })
+    try {
+      const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+      const posterShown = waitForMessage(viewerSocket)
+      operatorSocket.send(
+        JSON.stringify({ id: "01A", type: "poster:set", timestamp: Date.now(), payload: { mediaCueId: cue.id } })
+      )
+      await posterShown
+
+      const firstShown = waitForMessage(viewerSocket)
+      operatorSocket.send(
+        JSON.stringify({
+          id: "01B",
+          type: "verse:override",
+          timestamp: Date.now(),
+          payload: { book: "john", chapter: 3, verse: 16 },
+        })
+      )
+      await firstShown
+
+      // Well inside the first verse's 80ms window.
+      await new Promise((resolve) => setTimeout(resolve, 40))
+
+      const secondShown = waitForMessage(viewerSocket)
+      operatorSocket.send(
+        JSON.stringify({
+          id: "01C",
+          type: "verse:override",
+          timestamp: Date.now(),
+          payload: { book: "john", chapter: 3, verse: 17 },
+        })
+      )
+      await secondShown
+      const secondShownAt = Date.now()
+
+      const clearedMessage = await waitForMessage(viewerSocket)
+      assert.equal(clearedMessage.type, "verse:clear")
+      // If the first verse's timer had kept running unreset, it would
+      // have fired ~40ms after the second verse (80ms after the first).
+      // A properly reset timer fires ~80ms after the SECOND verse instead.
+      const elapsedSinceSecondShow = Date.now() - secondShownAt
+      assert.ok(
+        elapsedSinceSecondShow >= 65,
+        `expected the timer to reset to the second verse's own window, got ${elapsedSinceSecondShow}ms`
+      )
+
+      operatorSocket.close()
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+test("AppCore: a manual verse:clear before the auto-clear timer fires cancels it — no later spurious clear", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const source = join(dir, "poster.png")
+    await writeFile(source, "x")
+    const cue = await mediaLibrary.import(source, "Sunday Service Poster", "image")
+
+    const app = await startAppCore({
+      asr: new FakeAsrProvider(),
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new EchoVerseSource(),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+      verseAutoClearMs: 60,
+    })
+    try {
+      const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+      const posterShown = waitForMessage(viewerSocket)
+      operatorSocket.send(
+        JSON.stringify({ id: "01A", type: "poster:set", timestamp: Date.now(), payload: { mediaCueId: cue.id } })
+      )
+      await posterShown
+
+      const verseShown = waitForMessage(viewerSocket)
+      operatorSocket.send(
+        JSON.stringify({
+          id: "01B",
+          type: "verse:override",
+          timestamp: Date.now(),
+          payload: { book: "john", chapter: 3, verse: 16 },
+        })
+      )
+      await verseShown
+
+      const manualClear = waitForMessage(viewerSocket)
+      operatorSocket.send(JSON.stringify({ id: "01C", type: "verse:clear", timestamp: Date.now(), payload: null }))
+      const manualClearMessage = await manualClear
+      assert.equal(manualClearMessage.type, "verse:clear")
+
+      // Past the 60ms window the (now-cancelled) auto-clear would have
+      // fired at — a second, spurious verse:clear here means the manual
+      // clear failed to cancel the timer.
+      let secondClearReceived = false
+      const listener = (data: { toString(): string }) => {
+        const message = JSON.parse(data.toString()) as WsMessage
+        if (message.type === "verse:clear") secondClearReceived = true
+      }
+      viewerSocket.on("message", listener)
+      await new Promise((resolve) => setTimeout(resolve, 90))
+      viewerSocket.off("message", listener)
+      assert.equal(secondClearReceived, false)
+
+      operatorSocket.close()
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+test("AppCore: a verse shown with no principal poster configured never arms an auto-clear timer", async () => {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    verseAutoClearMs: 40,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const verseShown = waitForMessage(viewerSocket)
+    operatorSocket.send(
+      JSON.stringify({
+        id: "01A",
+        type: "verse:override",
+        timestamp: Date.now(),
+        payload: { book: "john", chapter: 3, verse: 16 },
+      })
+    )
+    await verseShown
+
+    let clearReceived = false
+    const listener = (data: { toString(): string }) => {
+      const message = JSON.parse(data.toString()) as WsMessage
+      if (message.type === "verse:clear") clearReceived = true
+    }
+    viewerSocket.on("message", listener)
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    viewerSocket.off("message", listener)
+    assert.equal(clearReceived, false)
+
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: speaking a poster-marked cue's title re-shows it as poster:show, not media:show", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const source = join(dir, "poster.png")
+    await writeFile(source, "x")
+    const cue = await mediaLibrary.import(source, "Sunday Service Poster", "image")
+    const asr = new FakeAsrProvider()
+
+    const app = await startAppCore({
+      asr,
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new StubVerseSource({}),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+    })
+    try {
+      const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+      const posterShown = waitForMessage(viewerSocket)
+      operatorSocket.send(
+        JSON.stringify({ id: "01A", type: "poster:set", timestamp: Date.now(), payload: { mediaCueId: cue.id } })
+      )
+      await posterShown
+
+      // Simulates it having been covered by other content, and someone
+      // later speaking its name to bring it back — the exact scenario the
+      // voice-trigger amendment (section 67.1) was requested for.
+      const spokenAgain = waitForMessage(viewerSocket)
+      asr.emitTranscript({
+        id: "01T",
+        correlationId: "01B",
+        sequence: 1,
+        text: "Let's put up the Sunday Service Poster now.",
+        state: "final",
+        timestamp: Date.now(),
+      })
+      const message = await spokenAgain
+
+      assert.equal(message.type, "poster:show")
+      assert.deepEqual((message.payload as { cue: unknown }).cue, cue)
+
+      operatorSocket.close()
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+test("AppCore: speaking a cue's title that was never appointed as a poster still triggers ordinary media:show", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const source = join(dir, "clip.mp4")
+    await writeFile(source, "x")
+    const cue = await mediaLibrary.import(source, "Welcome Video", "video")
+    const asr = new FakeAsrProvider()
+
+    const app = await startAppCore({
+      asr,
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new StubVerseSource({}),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+    })
+    try {
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+      const shown = waitForMessage(viewerSocket)
+
+      asr.emitTranscript({
+        id: "01T",
+        correlationId: "01A",
+        sequence: 1,
+        text: "Let's roll the Welcome Video.",
+        state: "final",
+        timestamp: Date.now(),
+      })
+      const message = await shown
+
+      assert.equal(message.type, "media:show")
+      assert.deepEqual((message.payload as { cue: unknown }).cue, cue)
+
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})

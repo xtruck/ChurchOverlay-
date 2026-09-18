@@ -33,9 +33,12 @@ test("MediaLibrary: import() copies the file, assigns a fresh ULID, and resolve(
     assert.ok(isValidUlid(cue.id))
     assert.deepEqual(library.resolve(cue.id), cue)
 
+    // The copied media file plus the persisted metadata file (below) —
+    // not just the media file alone.
     const filesInMediaDir = await readdir(mediaDir)
-    assert.equal(filesInMediaDir.length, 1)
-    assert.ok(filesInMediaDir[0]?.startsWith(cue.id))
+    assert.equal(filesInMediaDir.length, 2)
+    assert.ok(filesInMediaDir.some((f) => f.startsWith(cue.id)))
+    assert.ok(filesInMediaDir.includes("media-cues.json"))
   })
 })
 
@@ -130,6 +133,72 @@ test("MediaLibrary: list() returns every imported cue", async () => {
 
     assert.deepEqual(
       library.list().map((c) => c.id).sort(),
+      [cueA.id, cueB.id].sort()
+    )
+  })
+})
+
+// Regression coverage for the production bug found post-launch: imported
+// cues were held in memory only, so every app restart silently lost them
+// even though the copied media files themselves remained on disk.
+test("MediaLibrary: a cue imported by one instance is visible to a fresh instance after load() — survives a restart", async () => {
+  await withTempDirs(async (sourceDir, mediaDir) => {
+    const sourcePath = join(sourceDir, "welcome.png")
+    await writeFile(sourcePath, "fake png bytes")
+
+    const firstInstance = new MediaLibrary({ mediaDir })
+    await firstInstance.load() // no metadata file yet — must be a no-op, not a throw
+    const cue = await firstInstance.import(sourcePath, "Welcome Slide", "image")
+
+    // A brand-new instance, simulating the app restarting — nothing
+    // carries over except what's on disk.
+    const secondInstance = new MediaLibrary({ mediaDir })
+    assert.equal(secondInstance.resolve(cue.id), null, "before load(), a fresh instance has nothing")
+
+    await secondInstance.load()
+    assert.deepEqual(secondInstance.resolve(cue.id), cue)
+    assert.deepEqual(secondInstance.list(), [cue])
+    assert.equal(secondInstance.resolveFilePath(cue.id), firstInstance.resolveFilePath(cue.id))
+  })
+})
+
+test("MediaLibrary: load() with no metadata file yet is a no-op, not an error (first run)", async () => {
+  await withTempDirs(async (_sourceDir, mediaDir) => {
+    const library = new MediaLibrary({ mediaDir })
+    await assert.doesNotReject(() => library.load())
+    assert.deepEqual(library.list(), [])
+  })
+})
+
+test("MediaLibrary: load() with a corrupt metadata file does not throw — starts as an empty library instead", async () => {
+  await withTempDirs(async (_sourceDir, mediaDir) => {
+    await mkdir(mediaDir, { recursive: true })
+    await writeFile(join(mediaDir, "media-cues.json"), "{ not valid json", "utf8")
+
+    const library = new MediaLibrary({ mediaDir })
+    await assert.doesNotReject(() => library.load())
+    assert.deepEqual(library.list(), [])
+  })
+})
+
+test("MediaLibrary: multiple imports across restarts all survive — persistence isn't a one-shot overwrite", async () => {
+  await withTempDirs(async (sourceDir, mediaDir) => {
+    const first = join(sourceDir, "a.png")
+    const second = join(sourceDir, "b.png")
+    await writeFile(first, "a")
+    await writeFile(second, "b")
+
+    const instance1 = new MediaLibrary({ mediaDir })
+    const cueA = await instance1.import(first, "Slide A", "image")
+
+    const instance2 = new MediaLibrary({ mediaDir })
+    await instance2.load()
+    const cueB = await instance2.import(second, "Slide B", "image")
+
+    const instance3 = new MediaLibrary({ mediaDir })
+    await instance3.load()
+    assert.deepEqual(
+      instance3.list().map((c) => c.id).sort(),
       [cueA.id, cueB.id].sort()
     )
   })

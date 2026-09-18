@@ -160,6 +160,30 @@
   }
 
   /*
+    Principal poster (ARCHITECTURE.md section 67) — a persistent backdrop,
+    not a scene: z-index 0, strictly BELOW #media-layer, so a voice-
+    triggered media cue or rundown scene still opaquely covers it exactly
+    like it would cover plain black, and a verse card (which only covers
+    its own bottom-anchored region) reveals the poster around its edges —
+    the whole point of this feature. No pause/resume logic needed: unlike
+    every other content type, this layer is never explicitly "resumed,"
+    it was simply never hidden by anything that didn't already cover it.
+  */
+  #poster-layer {
+    position: fixed;
+    inset: 0;
+    display: none;
+    background: #000;
+    z-index: 0;
+  }
+  #poster-layer.visible { display: block; }
+  #poster-image {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  /*
     Media Library (ARCHITECTURE.md section 60) had no audience-facing
     display at all until this — the server/dashboard side was fully built
     and tested, but the actual OBS overlay only ever handled verse:show/
@@ -329,6 +353,9 @@
 </head>
 <body>
   <div id="status">connecting…</div>
+  <div id="poster-layer">
+    <img id="poster-image" alt="" />
+  </div>
   <div id="media-layer">
     <img id="media-image" alt="" style="display: none" />
     <video id="media-video" style="display: none" playsinline></video>

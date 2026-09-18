@@ -4,6 +4,7 @@ import type {
   CanvasSceneData,
   DefinitionShowPayload,
   DisplayMode,
+  MediaCue,
   MediaShowPayload,
   Rundown,
   RundownScene,
@@ -145,6 +146,15 @@ export type StartAppCoreOptions = {
    * real default.
    */
   readonly sermonNotesIntervalMs?: number
+  /**
+   * Optional (ARCHITECTURE.md section 67.2) — how long a verse shown while
+   * a principal poster is active stays on screen before the server clears
+   * it on its own, unprompted, so the poster underneath becomes visible
+   * again. Defaults to 2 minutes. Exposed here, same reasoning as
+   * definitionClearMs above, so tests can use a short delay instead of
+   * waiting out the real default.
+   */
+  readonly verseAutoClearMs?: number
 }
 
 export type AppCoreHandle = {
@@ -205,6 +215,21 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const glossaryDetector = new GlossaryDetector()
   const definitionClearMs = options.definitionClearMs ?? 12000
   let definitionClearTimer: ReturnType<typeof setTimeout> | null = null
+  // ARCHITECTURE.md section 67: a principal poster is a persistent
+  // background layer, not a scene the rundown state machine needs to know
+  // about — held here purely so showVerse() knows whether to arm the
+  // auto-clear timer below. Not persisted across restarts (section 67.2's
+  // documented gap, matching the rundown's own).
+  let principalPosterCueId: string | null = null
+  // Every cue id ever appointed as a poster via poster:set stays voice-
+  // triggerable by its own title for the rest of the session (section
+  // 67.1's amendment: "name it so speaking that name puts it up") — a
+  // cue is either a poster or a regular voice-triggered media cue, never
+  // both; once marked, MediaCueDetector matches route here instead of
+  // the normal media:show path, for as long as the app keeps running.
+  const posterCueIds = new Set<string>()
+  const verseAutoClearMs = options.verseAutoClearMs ?? 120000 // 2 minutes (section 67.2)
+  let verseAutoClearTimer: ReturnType<typeof setTimeout> | null = null
   // ARCHITECTURE.md section 65.3: "auto" is the confirmed default —
   // unchanged from every existing behavior unless the operator explicitly
   // switches to "review". pendingVerse holds at most one not-yet-confirmed
@@ -300,6 +325,17 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // immediately, without ever giving viewers a way to ask for one
     // (invariant 8).
     onViewerConnected: (send) => {
+      // ARCHITECTURE.md section 67.3: a principal poster is a persistent
+      // backdrop, not scene state — synced independently of the
+      // media/rundown blocks below, the same "late-join sync" reasoning
+      // section 60.4 already established for every other persistent
+      // content type.
+      if (principalPosterCueId !== null) {
+        const posterCue = mediaLibrary?.resolve(principalPosterCueId) ?? null
+        if (posterCue) {
+          send({ id: generateUlid(), type: "poster:show", timestamp: Date.now(), payload: { cue: posterCue } })
+        }
+      }
       const payload = mediaPlayback.currentPayloadForSync()
       if (payload) {
         send({ id: generateUlid(), type: "media:show", timestamp: Date.now(), payload })
@@ -351,11 +387,32 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       correlationId,
       payload,
     })
+    // ARCHITECTURE.md section 67 / invariant 25: every trigger funnels
+    // through here, so this is the one place that needs to know about
+    // verse auto-clear — no principal poster configured means no timer is
+    // ever armed, zero behavior change for installs not using this
+    // feature. A new verse always resets (never queues behind) a pending
+    // timer, the same "most recent wins" pattern definitionClearTimer
+    // already uses.
+    if (verseAutoClearTimer) clearTimeout(verseAutoClearTimer)
+    if (principalPosterCueId !== null) {
+      verseAutoClearTimer = setTimeout(() => {
+        verseAutoClearTimer = null
+        broadcastVerseClear(correlationId)
+      }, verseAutoClearMs)
+    }
   }
 
   function clearVerse(correlationId?: string): void {
     currentVersePosition = null
     lastShownVerse = null
+    // Invariant 25: whatever ended the verse (manual clear, navigation, a
+    // "blank" scene), any pending auto-clear timer for it is now stale —
+    // cancel it so it can never later fire against different content.
+    if (verseAutoClearTimer) {
+      clearTimeout(verseAutoClearTimer)
+      verseAutoClearTimer = null
+    }
     wsServer.broadcast({
       id: generateUlid(),
       type: "verse:clear",
@@ -465,6 +522,32 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     wsServer.broadcast({
       id: generateUlid(),
       type: "canvas:clear",
+      timestamp: Date.now(),
+      correlationId,
+      payload: null,
+    })
+  }
+
+  /**
+   * ARCHITECTURE.md section 67.3: a principal poster is purely a
+   * persistent visual backdrop (invariant 26) — no hallucination-guard
+   * involvement, no rundown interaction beyond what MediaLibrary.resolve()
+   * and broadcastVerseClear() already provide elsewhere.
+   */
+  function broadcastPoster(cue: MediaCue, correlationId?: string): void {
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "poster:show",
+      timestamp: Date.now(),
+      correlationId,
+      payload: { cue },
+    })
+  }
+
+  function broadcastPosterClear(correlationId?: string): void {
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "poster:clear",
       timestamp: Date.now(),
       correlationId,
       payload: null,
@@ -682,6 +765,42 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         return
       }
 
+      case "poster:set": {
+        if (!mediaLibrary) {
+          logger.warn({ component: "app-core", event: "poster.not-configured", correlationId: message.correlationId })
+          return
+        }
+        const { mediaCueId } = message.payload as { mediaCueId: string }
+        const cue = mediaLibrary.resolve(mediaCueId)
+        // ARCHITECTURE.md section 67.1: a poster is a static graphic —
+        // "image" is a business rule enforced here, not at the schema
+        // layer (action-registry.ts only checks that mediaCueId is a
+        // non-empty string, since it can't know the cue's kind without
+        // resolving it).
+        if (!cue || cue.kind !== "image") {
+          logger.info({
+            component: "app-core",
+            event: "poster.set-rejected",
+            correlationId: message.correlationId,
+            metadata: { mediaCueId, resolvedKind: cue?.kind ?? null },
+          })
+          return
+        }
+        principalPosterCueId = cue.id
+        // Confirmed with the user: appointing a poster also makes its
+        // existing title (already unique, already the voice-trigger
+        // phrase every MediaCue has) bring it back up by voice for the
+        // rest of the session — see the posterCueIds declaration above.
+        posterCueIds.add(cue.id)
+        broadcastPoster(cue, message.correlationId)
+        return
+      }
+
+      case "poster:clear":
+        principalPosterCueId = null
+        broadcastPosterClear(message.correlationId)
+        return
+
       case "media:select": {
         if (!mediaLibrary) {
           logger.warn({ component: "app-core", event: "media.not-configured", correlationId: message.correlationId })
@@ -775,12 +894,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       // status:update / transcript:partial / verse:show / verse:pending /
       // media:show / rundown:state / announcement:show /
       // announcement:clear / definition:show / definition:clear /
-      // sermonNotes:update / canvas:show / canvas:clear are all server-
-      // originated events; the action registry's role check (empty
-      // allowedSenders) already refuses any client attempting to send
-      // them inbound, so onCommand is never actually invoked for these.
-      // Kept only so this switch stays exhaustive and explicit rather
-      // than silently ignoring a case (AGENTS.md section 25).
+      // sermonNotes:update / canvas:show / canvas:clear / poster:show are
+      // all server-originated events; the action registry's role check
+      // (empty allowedSenders) already refuses any client attempting to
+      // send them inbound, so onCommand is never actually invoked for
+      // these. Kept only so this switch stays exhaustive and explicit
+      // rather than silently ignoring a case (AGENTS.md section 25).
       case "status:update":
       case "transcript:partial":
       case "verse:show":
@@ -794,6 +913,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       case "sermonNotes:update":
       case "canvas:show":
       case "canvas:clear":
+      case "poster:show":
         logger.warn({
           component: "app-core",
           event: "unreachable-command",
@@ -922,7 +1042,16 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // never reach MediaCueDetector.
     if (mediaCueDetector && passesTranscriptGate(transcript)) {
       for (const cue of mediaCueDetector.detect(transcript.text)) {
-        broadcastMedia(mediaPlayback.activate(cue), transcript.correlationId)
+        // ARCHITECTURE.md section 67.1's amendment: a cue once appointed
+        // as a poster stays voice-triggerable by its own (already unique)
+        // title for the rest of the session — speaking its name puts it
+        // up as the persistent poster, not a temporary media:show scene.
+        if (posterCueIds.has(cue.id)) {
+          principalPosterCueId = cue.id
+          broadcastPoster(cue, transcript.correlationId)
+        } else {
+          broadcastMedia(mediaPlayback.activate(cue), transcript.correlationId)
+        }
       }
     }
 

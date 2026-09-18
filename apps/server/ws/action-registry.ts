@@ -6,6 +6,7 @@ import type {
   DefinitionShowPayload,
   MediaCue,
   MediaShowPayload,
+  PosterShowPayload,
   Rundown,
   RundownScene,
   RundownStatePayload,
@@ -182,6 +183,20 @@ function isMediaShowPayload(payload: unknown): payload is MediaShowPayload {
   if (!isPlainObject(payload)) return false
   if (!isMediaCuePayload(payload.cue)) return false
   return payload.playback === undefined || isMediaPlaybackStatePayload(payload.playback)
+}
+
+/**
+ * ARCHITECTURE.md section 67.3: schema validation only checks shape here —
+ * that `cue.kind` is actually "image" (not video/audio) is a business rule
+ * enforced where the poster is actually set (AppCore), the same "shape
+ * here, meaning there" split every other payload in this registry follows.
+ */
+function isPosterSetPayload(payload: unknown): payload is { mediaCueId: string } {
+  return isPlainObject(payload) && isNonEmptyString(payload.mediaCueId)
+}
+
+function isPosterShowPayload(payload: unknown): payload is PosterShowPayload {
+  return isPlainObject(payload) && isMediaCuePayload(payload.cue)
 }
 
 // ARCHITECTURE.md section 64: Service Rundown & Scenes.
@@ -452,6 +467,24 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "event",
     allowedSenders: [],
     validatePayload: isNullPayload,
+  },
+  "poster:set": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isPosterSetPayload,
+  },
+  // Dual command/event, same reasoning as verse:clear/media:clear above:
+  // the operator sends this to unset the poster; the server also
+  // broadcasts it back out to sync every viewer.
+  "poster:clear": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isNullPayload,
+  },
+  "poster:show": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isPosterShowPayload,
   },
 }
 

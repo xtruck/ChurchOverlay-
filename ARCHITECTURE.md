@@ -3257,3 +3257,272 @@ section 64.8 statements to the same effect, and AGENTS.md section 4's original
 decision for the scope that existed when written, not deleted, per section 66.1.
 Live-verse-bound canvas content, undo/redo, and every other item in section 66.5
 remain explicitly out of scope for this phase.
+
+## 67. Phase 2 Feature Note — Principal Poster & Verse Auto-Clear
+
+A dedicated architecture note, following the same AGENTS.md section 56 checklist as
+sections 60-66. Sourced directly from a real described church workflow: a static
+"Sunday service poster" image stays on screen for the whole service by default;
+when a verse is spoken it briefly overlays, then automatically clears on its own
+after a fixed delay, revealing the poster again — no operator action needed to
+either show or hide it.
+
+### 67.1 What this feature is
+
+Two small, tightly-coupled additions:
+
+1. **Principal poster** — one operator-designated image `MediaCue`, held as a new
+   persistent background layer, always visible whenever nothing else is actively
+   covering it. Restricted to `kind: "image"` — a poster is a static graphic, not a
+   video or audio cue; `MediaCue.kind` already exists, so this is a validation rule,
+   not a new type.
+2. **Verse auto-clear** — while a principal poster is active, any verse that shows
+   (regardless of trigger — detected, override, navigation, or a rundown verse
+   scene) automatically clears itself after a fixed 2-minute delay, exactly as if
+   the operator had sent `verse:clear` themselves. Without a principal poster
+   configured, verse behavior is completely unchanged from today (stays until
+   explicitly cleared) — this is additive, not a change to existing behavior for
+   churches not using this feature.
+
+**Amendment, confirmed with the user**: a poster is voice-triggerable by name, not
+only settable from the dashboard — this reuses the exact mechanism `MediaCueDetector`
+(section 60.3) already provides for every media cue: each `MediaCue.title` is already
+a unique, operator-assigned voice-trigger phrase. Appointing a cue as a poster (via
+`poster:set`, whether sent from the dashboard's picker or triggered internally the
+same way) marks its id in a session-lifetime `posterCueIds` set; from then on, when
+`MediaCueDetector.detect()` matches that cue's title in a transcript, `AppCore` routes
+it to `broadcastPoster()` instead of the normal `media:show` path. A cue is either a
+poster or a regular voice-triggered media cue for the rest of the session, never
+both — this is the general design principle this whole app already follows (per the
+user's own restated intent): **content reaches the overlay by voice command as the
+default and expected path, not a special case; a manual dashboard action is the
+exception, for when voice isn't practical or available.** This is not a new
+mechanism bolted onto posters specifically — it is the poster feature correctly
+plugging into infrastructure that already existed for exactly this reason.
+
+### 67.2 Resolved decisions
+
+- **Fits the existing z-index stack without changing it.** The overlay already
+  layers content by z-index: media (1) below verse/announcement/definition (2)
+  below canvas (3). The poster becomes a NEW base layer at z-index 0 — strictly
+  below everything else — so it needs no pause/resume logic of its own (unlike a
+  rundown scene): it is simply always rendered, and other content visually covers
+  it (opaquely, for a full-frame media cue; partially, for a verse card, which
+  reveals the poster around its edges exactly as the church's own described
+  workflow wants). Clearing whatever was covering it doesn't need to "restore" the
+  poster — it was never hidden, only obscured.
+- **Auto-clear duration is a fixed 2 minutes for this phase, not a dashboard
+  setting.** Matches the literal request; a configurable duration is a small,
+  clearly-separable addition if asked for later (AGENTS.md section 39 — don't build
+  what nothing has asked for yet).
+- **Not persisted across restarts.** Held in-memory in `AppCore`, the same
+  documented gap rundowns already have (section 64.5) — a fresh app launch starts
+  with no principal poster until the operator picks one again. Cheap to add
+  `ConfigStore` persistence later if this proves annoying in practice.
+- **Auto-clear reuses `broadcastVerseClear()` exactly**, not a bespoke clear path —
+  so a verse auto-clearing while a rundown scene is paused underneath it resumes
+  that scene correctly, identically to a manual clear (section 64.2's existing
+  precedence rules are completely unaffected).
+- **The timer resets on every new verse**, the same "most recent wins" pattern
+  `definitionClearTimer` (section 65.5) already established — showing a second
+  verse 30 seconds after the first restarts the 2-minute countdown from the new
+  verse, rather than clearing early on the first verse's original schedule.
+- **Escape (the local emergency clear, section 35) does NOT clear the poster —
+  reconsidered from an earlier draft of this note.** The poster's entire purpose is
+  to be the stable, known-safe backdrop everything else temporarily overlays; Escape
+  exists for "something wrong is on screen, make it stop now." Wiping the poster too
+  would replace a known-safe image with plain black at exactly the moment a stable
+  screen matters most. Escape clears verse/media/announcement/definition/canvas —
+  every *temporary* content type — and leaves the poster exactly where section 67.1
+  already says it belongs: always there unless something else is deliberately
+  covering it.
+
+### 67.3 Data model and WS surface
+
+```ts
+// packages/contracts/media.ts (new)
+export type PosterShowPayload = { readonly cue: MediaCue } // cue.kind is always "image", enforced at the WS boundary, not re-typed here
+```
+
+New WS types (`packages/contracts/ws.ts`): commands `poster:set { mediaCueId: string }`
+and `poster:clear` (also broadcast as an event — the same dual command/event reuse
+`verse:clear`/`media:clear` already use); event `poster:show { cue: MediaCue }`.
+
+`apps/server/ws/action-registry.ts`: `poster:set` (operator-only, validates a
+non-empty `mediaCueId`), `poster:clear` (operator-sendable command, `null` payload,
+also server-broadcast), `poster:show` (server-only event, reuses the existing
+`isMediaCuePayload` validator for its `cue` field).
+
+`apps/server/core/app-core.ts`: new in-memory `principalPosterCueId: string | null`
+and `posterCueIds: Set<string>` (the amendment above — every cue ever appointed via
+`poster:set` stays in this set for the rest of the session, making its title
+voice-triggerable as a poster from then on). `poster:set` resolves the id via
+`mediaLibrary`, rejects (logs, no broadcast) if not found or not `kind: "image"`; on
+success, adds the id to `posterCueIds`, sets `principalPosterCueId`, and broadcasts
+`poster:show`. The existing voice-triggered-media block (section 60.3, where
+`mediaCueDetector.detect()` already runs per transcript) checks `posterCueIds.has(cue.id)`
+first — a match routes to the same poster-show logic instead of the normal
+`broadcastMedia()` call. `poster:clear` clears `principalPosterCueId` only (not
+`posterCueIds` — the appointment persists so the poster can be voice-triggered back
+later) and broadcasts `poster:clear`. `onViewerConnected` sends `poster:show`
+to a newly-connecting viewer if a poster is currently active — the same late-join
+sync every other persistent content type already gets. `showVerse()` — the one
+function every verse trigger already funnels through (section 65.8's own reasoning
+for why `SessionRecorder` hooks in there) — starts/resets a `verseAutoClearTimer`
+whenever `principalPosterCueId` is non-null, firing `broadcastVerseClear()` after
+120000ms (2 minutes). No principal poster configured means no timer is ever
+started — zero behavior change for existing installs.
+
+`apps/overlay/public/`: a new `#poster-layer` at z-index 0 (below `#media-layer`'s
+z-index 1), a plain full-frame `<img>`, shown/cleared by `poster:show`/`poster:clear`.
+Escape also calls `clearPoster()`.
+
+`apps/desktop/renderer/`: a new "Principal Poster" card in the Settings view — a
+dropdown of imported image cues (reusing the existing Media Library list, filtered
+to `kind === "image"`, the same filtering `renderRundownMediaOptions()` already does
+for canvas image/background layers) plus "Set" and "Clear" buttons.
+
+### 67.4 New correctness invariants this feature adds
+
+Invariant 25
+A verse auto-clear timer only ever fires while a principal poster is configured,
+and always resets (not queues) on every new verse shown — never clears a verse that
+has already been replaced or cleared by any other means. A manual `verse:clear`,
+navigation, or scene transition cancels any pending auto-clear timer, so it can
+never fire against stale state.
+
+Invariant 26
+The principal poster layer never participates in the hallucination-guard pipeline
+and never itself triggers a broadcast beyond `poster:show`/`poster:clear` — it is
+purely a persistent visual backdrop, with no interaction with verse detection,
+navigation, or the rundown state machine beyond the two both already rely on
+(`MediaLibrary.resolve()`, `broadcastVerseClear()`).
+
+### 67.5 Tests required
+
+- `apps/server/ws/action-registry.test.ts`: `poster:set`/`poster:clear`/`poster:show`
+  role boundaries and payload validation (a non-image `mediaCueId` is a business-
+  logic rejection at the `AppCore` layer, not a schema-validation one — the schema
+  only requires a non-empty string id).
+- `apps/server/core/app-core.test.ts`: setting a poster broadcasts `poster:show`;
+  setting an unknown or non-image id broadcasts nothing and logs; clearing broadcasts
+  `poster:clear`; a viewer connecting while a poster is active is synced; showing a
+  verse while a poster is active auto-clears after the configured delay (tests use a
+  short override, the same pattern `definitionClearMs` already supports); a second
+  verse shown before the first's timer fires resets the countdown rather than
+  clearing early; a manual `verse:clear` before the timer fires prevents the
+  scheduled auto-clear from firing at all (no double-broadcast); showing a verse with
+  no poster configured never starts a timer (regression guard for existing
+  installs).
+
+### 67.6 Confirms this is approved scope
+
+A principal poster (image-only, in-memory, one at a time) as a new base overlay
+layer, and a 2-minute verse auto-clear tied exclusively to having one configured,
+reusing the existing z-index stack and `broadcastVerseClear()` path rather than
+inventing new precedence rules. A configurable auto-clear duration and cross-restart
+persistence are both explicitly left open, not assumed here, per section 67.2.
+
+## 68. Production Audit — Real Bugs Found and Fixed
+
+Everything built through section 67 had been verified with real unit/integration
+tests and headless-Chrome screenshots, but never run end-to-end as a real user would:
+a real microphone, a real restart, a real OBS instance. The first real usage session
+surfaced three genuine production bugs that no amount of mocked-input testing would
+have caught — recorded here per this project's own "verify, don't assume" discipline,
+so the record shows these were found and fixed deliberately, not silently patched.
+
+### 68.1 MediaLibrary had no persistence at all
+
+`apps/server/media/media-library.ts` held every imported cue's metadata in a plain
+in-memory `Map` — `import()` correctly copied the actual file to disk, but the
+`{id, kind, title}` record pointing to it lived only in RAM. Every app restart
+silently lost every previously-imported media cue, even though the underlying files
+were still sitting untouched in the media directory. A stale `media-library.json`
+already existed in the userData folder from an entirely different, older prototype
+schema (fields like `triggerPhrases`/`transitionStyle`/`isDefault` that match nothing
+in the current `MediaCue` contract) — confusingly present on disk, but never read by
+any current code, which made this bug easy to miss by inspection alone (it looks like
+persistence exists, from a directory listing) and harder to reproduce without
+actually restarting a real running instance.
+
+**Fixed**: `MediaLibrary` now persists a `media-cues.json` file (deliberately a new,
+distinct name from the stale prototype file, to avoid any future confusion between
+the two) inside its own `mediaDir`, using the exact same atomic-write discipline
+`ConfigStore` already established (temp file + fsync + rename). A new `load()`
+method, called once at startup in `apps/desktop/main/index.ts` right after
+construction — mirroring `ConfigStore.load()`'s own explicit call site — reads it
+back in. A missing or corrupt metadata file is not a startup failure (same
+recoverable-over-blocking philosophy as `ConfigStore`'s own corruption handling):
+the operator can always re-import.
+
+### 68.2 The silence gate's default threshold was untested against real hardware
+
+`apps/server/audio/silence-gate.ts`'s own doc comment already admitted this: the
+default RMS threshold (500) was "a conservative v1 placeholder... no real
+microphone/hardware has been exercised yet." Measuring against a real microphone
+confirmed the risk was real, not theoretical: ambient room noise alone (no one
+speaking) averaged ~1100 RMS, but with enough variance that roughly half of
+individual frames still measured under 500 — meaning normal speech from a quieter
+speaker, a quieter room, or a less sensitive microphone could plausibly fall under
+the threshold and be silently discarded before ever reaching Groq. From an operator's
+seat, a silently-discarded frame is indistinguishable from "the microphone doesn't
+work."
+
+**Fixed**: lowered the default to 150, biasing toward forwarding borderline audio.
+The cost of a false positive (an occasional wasted Groq call on genuine silence,
+returning empty/irrelevant text `resolveTranscriptVerses` simply finds no verse in)
+is negligible; the cost of a false negative (real speech silently discarded) is total
+pipeline failure from the operator's point of view. Still not a scientifically final
+value — see 68.3 below for what actually closes that gap.
+
+### 68.3 No way to observe whether the microphone was actually registering anything
+
+`apps/desktop/renderer/index.html`'s mic-visual bars (`#mic-visual .mic-bar`) played a
+canned CSS `@keyframes` bounce animation whenever `.active` was set — unconditionally,
+regardless of whether the silence gate was forwarding real audio or rejecting silence
+every single frame. An operator had no way to visually distinguish "my voice is
+registering, nobody's spoken a verse yet" from "the gate is silently rejecting
+everything I say" — both looked identical.
+
+**Fixed**: the bars are now a real, live level meter. `dashboard.js` computes the RMS
+of each captured frame on the exact same Int16 scale `SilenceGate` evaluates against
+(`computeRmsInt16()`, deliberately duplicating `silence-gate.ts`'s own `computeRms()`
+formula — the established no-build-step duplication precedent, e.g.
+`float32ToInt16()` elsewhere in this same file), and drives each bar's height directly
+from it with peak-hold-and-decay smoothing. This doesn't just fix the mic — it makes
+the *next* audio-related bug like 68.2 self-diagnosable from the dashboard alone,
+without needing to read server logs or measure hardware externally.
+
+### 68.4 No way to actually connect a real OBS instance to the app
+
+The overlay's HTTP URL (`http://127.0.0.1:<port>/index.html?token=<viewerToken>&wsPort=<wsPort>`)
+already existed and was already correct — `apps/desktop/main/index.ts`'s
+`createOverlayWindow()` uses this exact URL for the in-app local preview window. It
+was never surfaced anywhere in the dashboard for the operator to copy into a real
+OBS Browser Source, though. Short of reading this project's own source code to find
+the hardcoded port and manually reconstructing the token-bearing URL, there was no
+way for an operator to connect real OBS to this app at all.
+
+**Fixed**: a new "OBS Overlay" card in the Settings view (mirroring the existing
+Phone Remote panel's exact copyable-URL-plus-Copy-button pattern) shows this URL with
+a one-line instruction ("Sources → + → Browser Source → URL"). `startServices()`
+returns it alongside the existing `remoteUrl`/`allowPhoneRemote` fields, and
+`get-startup-status` exposes it the same way, so it's populated identically on first
+launch and on every subsequent app start.
+
+### 68.5 Tests added
+
+- `apps/server/media/media-library.test.ts`: a cue imported by one `MediaLibrary`
+  instance is visible to a fresh instance after `load()` (the restart-survival
+  regression test); `load()` with no metadata file yet or a corrupt one does not
+  throw; multiple imports across simulated restarts all survive, not just the most
+  recent one.
+- `apps/server/audio/silence-gate.test.ts`: the default threshold now forwards a
+  moderate-volume frame that the old (500) default would have rejected — pins the
+  lowered value so a future change can't silently re-tighten it.
+
+No new test coverage was written for 68.3/68.4 (client-side visual/UX fixes verified
+by direct interaction with a real running instance, not unit-testable in isolation)
+— consistent with this project's existing convention of headless-Chrome/live-instance
+verification for renderer-only changes.

@@ -61,6 +61,7 @@ let configStore: ConfigStore | null = null
 let mediaLibrary: MediaLibrary | null = null
 let localizedVerseSource: LocalizedVerseSource | null = null
 let currentRemoteUrl: string | null = null
+let currentOverlayUrl: string | null = null
 let currentAllowPhoneRemote = false
 let currentVerseConfirmationMode: VerseConfirmationMode = "auto"
 let currentEnableSermonNotes = false
@@ -100,7 +101,7 @@ function getConfigStore(): ConfigStore {
  */
 async function startServices(
   config: AppConfig
-): Promise<{ port: number; token: string; remoteUrl: string | null; allowPhoneRemote: boolean }> {
+): Promise<{ port: number; token: string; remoteUrl: string | null; allowPhoneRemote: boolean; overlayUrl: string }> {
   currentTokens = { operatorToken: config.operatorToken, viewerToken: config.viewerToken }
   localizedVerseSource = new LocalizedVerseSource(
     new FreeApiSource(),
@@ -185,6 +186,16 @@ async function startServices(
       logger.warn({ component: "main", event: "remote.no-lan-ip-found" })
     }
   }
+  // ARCHITECTURE.md production audit finding: this exact URL already
+  // existed (createOverlayWindow() below uses it for the in-app preview
+  // window) but was never surfaced anywhere for the operator to copy into
+  // a REAL OBS Browser Source — there was no way to actually connect OBS
+  // to this app at all short of reading the source code for the port
+  // number and constructing the token-bearing URL by hand.
+  const overlayUrl =
+    `http://127.0.0.1:${staticServer.port}/index.html` +
+    `?token=${config.viewerToken}&wsPort=${appCoreHandle.wsServer.port}`
+  currentOverlayUrl = overlayUrl
   currentRemoteUrl = remoteUrl
   currentAllowPhoneRemote = config.allowPhoneRemote
   currentVerseConfirmationMode = config.verseConfirmationMode
@@ -207,6 +218,7 @@ async function startServices(
     token: currentTokens.operatorToken,
     remoteUrl,
     allowPhoneRemote: config.allowPhoneRemote,
+    overlayUrl,
   }
 }
 
@@ -305,6 +317,7 @@ ipcMain.handle("get-startup-status", async () => {
       displayMode: localizedVerseSource.getMode(),
       uiLanguage,
       remoteUrl: currentRemoteUrl,
+      overlayUrl: currentOverlayUrl,
       allowPhoneRemote: currentAllowPhoneRemote,
       verseConfirmationMode: currentVerseConfirmationMode,
       enableSermonNotes: currentEnableSermonNotes,
@@ -659,6 +672,18 @@ app.whenReady().then(async () => {
     decrypt: (ciphertext) => safeStorage.decryptString(ciphertext),
   })
   mediaLibrary = new MediaLibrary({ mediaDir: join(app.getPath("userData"), "media") })
+  try {
+    await mediaLibrary.load()
+  } catch (err) {
+    // A corrupt/unreadable metadata file must not block startup — the
+    // operator can always re-import (same reasoning as the setup-time
+    // config-unreadable recovery path below).
+    logger.warn({
+      component: "main",
+      event: "media-library.load-failed",
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
 
   // The dashboard window opens immediately either way — get-startup-status
   // (above) is what tells its renderer whether to show the setup screen

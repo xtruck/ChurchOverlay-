@@ -16,6 +16,8 @@ export type WsCommandType =
   | "scene:previous"
   | "scene:goto"
   | "verse:confirm-pending"
+  | "poster:set"
+  | "poster:clear"
 
 /** Resulting state or information, consumed by the (read-only) overlay. */
 export type WsEventType =
@@ -34,6 +36,8 @@ export type WsEventType =
   | "sermonNotes:update"
   | "canvas:show"
   | "canvas:clear"
+  | "poster:show"
+  | "poster:clear"
 
 /**
  * status:update's first real, concrete payload shape — ASR/transcription

@@ -71,3 +71,16 @@ test("SilenceGate: a custom threshold is respected", () => {
   assert.equal(strict.process(frame).forwarded, false)
   assert.equal(lenient.process(frame).forwarded, true)
 })
+
+// Regression coverage for a real production bug: the original default
+// threshold (500) was measured post-launch to be too strict — real
+// ambient room noise on real hardware averaged ~1100 RMS with individual
+// frames still dipping below 500, meaning quieter speech could plausibly
+// be silently discarded. The default was lowered to 150; this pins that
+// a moderate-volume frame that used to be rejected is now forwarded,
+// so a future change can't silently re-tighten it back to the old value.
+test("SilenceGate: the default threshold forwards moderate-volume audio that the old (500) default would have rejected", () => {
+  const gate = new SilenceGate()
+  const moderateFrame = makeFrame(new Array(160).fill(200))
+  assert.equal(gate.process(moderateFrame).forwarded, true)
+})
