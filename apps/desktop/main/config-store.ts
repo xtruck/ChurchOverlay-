@@ -28,6 +28,15 @@ export type AppConfig = {
   readonly viewerToken: string
   readonly displayMode: DisplayMode
   readonly uiLanguage: UiLanguage
+  /**
+   * ARCHITECTURE.md section 65.6 — confirmed explicitly with the user:
+   * opt-in, off by default. When true, the WS server and the remote page's
+   * StaticServer bind to 0.0.0.0 (reachable from the local network) instead
+   * of 127.0.0.1-only, so a phone on the same WiFi can reach the operator
+   * remote. A real network-exposure change, not a cosmetic setting — never
+   * defaulted to true.
+   */
+  readonly allowPhoneRemote: boolean
 }
 
 type StoredConfig = {
@@ -38,6 +47,8 @@ type StoredConfig = {
   /** Optional in storage: absent in configs saved before ARCHITECTURE.md section 63 existed. */
   readonly displayMode?: string
   readonly uiLanguage?: string
+  /** Optional in storage: absent in configs saved before ARCHITECTURE.md section 65.6 existed. */
+  readonly allowPhoneRemote?: boolean
 }
 
 /**
@@ -87,6 +98,7 @@ export class ConfigStore {
       viewerTokenEncrypted: this.codec.encrypt(config.viewerToken).toString("base64"),
       displayMode: config.displayMode,
       uiLanguage: config.uiLanguage,
+      allowPhoneRemote: config.allowPhoneRemote,
     }
 
     await mkdir(dirname(this.filePath), { recursive: true })
@@ -108,8 +120,15 @@ export class ConfigStore {
       throw new Error(`ConfigStore: ${this.filePath} does not contain a valid config object`)
     }
 
-    const { groqApiKeyEncrypted, microphoneId, operatorTokenEncrypted, viewerTokenEncrypted, displayMode, uiLanguage } =
-      stored
+    const {
+      groqApiKeyEncrypted,
+      microphoneId,
+      operatorTokenEncrypted,
+      viewerTokenEncrypted,
+      displayMode,
+      uiLanguage,
+      allowPhoneRemote,
+    } = stored
 
     if (
       typeof groqApiKeyEncrypted !== "string" ||
@@ -130,6 +149,9 @@ export class ConfigStore {
     if (uiLanguage !== undefined && !UI_LANGUAGES.includes(uiLanguage as UiLanguage)) {
       throw new Error(`ConfigStore: ${this.filePath} has an invalid uiLanguage`)
     }
+    if (allowPhoneRemote !== undefined && typeof allowPhoneRemote !== "boolean") {
+      throw new Error(`ConfigStore: ${this.filePath} has an invalid allowPhoneRemote`)
+    }
 
     return {
       groqApiKey: this.codec.decrypt(Buffer.from(groqApiKeyEncrypted, "base64")),
@@ -138,6 +160,10 @@ export class ConfigStore {
       viewerToken: this.codec.decrypt(Buffer.from(viewerTokenEncrypted, "base64")),
       displayMode: (displayMode as DisplayMode | undefined) ?? "english",
       uiLanguage: (uiLanguage as UiLanguage | undefined) ?? "en",
+      // Absent (a config saved before section 65.6 existed) defaults to
+      // false — the opt-in, off-by-default confirmed decision applies
+      // just as much to an existing install upgrading as to a fresh one.
+      allowPhoneRemote: allowPhoneRemote ?? false,
     }
   }
 }

@@ -2742,17 +2742,47 @@ single-dashboard assumption, just a second window onto the same trust level.
 
 A new, separate, mobile-first static page (`apps/remote/public/`, its own minimal
 HTML/CSS/JS, no build step, matching every other renderer in this codebase) served by
-a new `StaticServer` instance (or the existing overlay one, with the operator token
-required in its own URL exactly like the overlay's viewer token already is, section
-26) — scoped deliberately narrow: rundown scene navigation (`scene:next/previous`,
-tap-to-goto) and media clear only. It does NOT expose mic start/stop, media import,
-or manual verse override — not a security boundary (the token already grants that),
-but a *usability* one: a phone screen is a poor fit for typing a verse reference or
-managing file imports, so the remote's own UI simply doesn't offer them, the same
-"least surprising, smallest useful surface" reasoning as every other UI decision in
-this codebase. The desktop dashboard gains a "Remote" panel showing a QR code
-(encoding the remote page's full URL with the operator token) for the second
-operator to scan.
+a new `StaticServer` instance — scoped deliberately narrow: rundown scene navigation
+(`scene:next/previous`, tap-to-goto) and media clear only. It does NOT expose mic
+start/stop, media import, or manual verse override — not a security boundary (the
+token already grants that), but a *usability* one: a phone screen is a poor fit for
+typing a verse reference or managing file imports, so the remote's own UI simply
+doesn't offer them, the same "least surprising, smallest useful surface" reasoning as
+every other UI decision in this codebase. The desktop dashboard gains a "Remote"
+panel showing the full link as selectable text with a copy button.
+
+**Found necessary during implementation, confirmed via a follow-up question**: this
+feature is only reachable at all once the local server binds to something other than
+127.0.0.1 (a phone is a different device — loopback is by definition unreachable from
+it). Confirmed explicitly: **opt-in, off by default** — a new `ConfigStore.allowPhoneRemote:
+boolean` (default `false`, same backward-compatible-defaulting pattern as
+`displayMode`/`uiLanguage`), set via a checkbox on the setup screen. When `true`,
+`ChurchOverlayWsServer` and the remote page's `StaticServer` both bind to `0.0.0.0`
+(reachable from the local network) instead of the existing 127.0.0.1-only default
+(section 24); when `false` (the default for every existing and new install), nothing
+about the network exposure changes at all. The dashboard's Remote panel reads the
+machine's LAN IPv4 address (`os.networkInterfaces()`, first non-internal entry) to
+build the link's full LAN-reachable URL; a machine with no such address (rare) still
+runs with the feature "on" but has no reachable link to show, surfaced as its own
+distinct message rather than silently showing nothing.
+
+**Simplified from a QR code to a copyable text link, deliberately**: generating a
+correct QR code requires either a new dependency (against this codebase's own
+"no build step, minimal dependencies" convention for renderer files, AGENTS.md
+section 40) or hand-vendoring a non-trivial encoding algorithm this session could not
+actually verify scans correctly with a real phone camera. Shipping an unverified QR
+implementation risked a link that LOOKS right but doesn't scan — worse than the
+honest, simpler alternative. A future revisit can add a real QR code once it can
+actually be verified against a physical device.
+
+**Simplified to a setup-time-only setting, not a live dashboard toggle**: unlike
+`displayMode`/`uiLanguage`, `allowPhoneRemote` is not exposed as a live toggle after
+setup. Changing network binding for an already-running WS server would mean tearing
+down and rebinding it mid-service, disconnecting every already-connected client
+(dashboard, overlay, any existing remote) to do so — a real behavior change for a
+setting that is rarely revisited, not worth the complexity it would add. Changing it
+later means re-running setup (or editing the config file directly) and restarting the
+app — a real, documented limitation, not a silent gap.
 
 ### 65.7 AI sermon-notes copilot (strictly separate side channel)
 

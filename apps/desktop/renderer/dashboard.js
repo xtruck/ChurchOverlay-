@@ -61,6 +61,12 @@
   const uiLanguageToggleEl = document.getElementById("ui-language-toggle")
   const setupDisplayModeEl = document.getElementById("setup-display-mode")
   const setupUiLanguageEl = document.getElementById("setup-ui-language")
+  const setupAllowPhoneRemoteEl = document.getElementById("setup-allow-phone-remote")
+  const remoteDisabledEl = document.getElementById("remote-disabled")
+  const remoteEnabledEl = document.getElementById("remote-enabled")
+  const remoteNoLanEl = document.getElementById("remote-no-lan")
+  const remoteUrlInput = document.getElementById("remote-url")
+  const remoteCopyBtn = document.getElementById("remote-copy-btn")
   const mediaNowPlayingEl = document.getElementById("media-now-playing")
   const mediaNowPlayingTitleEl = document.getElementById("media-now-playing-title")
   const mediaPlayPauseBtn = document.getElementById("media-play-pause-btn")
@@ -722,6 +728,33 @@
     setupScreenEl.style.display = "flex"
   }
 
+  // ARCHITECTURE.md section 65.6: the phone remote's own panel — one of
+  // three states (disabled / enabled with a link / enabled but no LAN
+  // address was found), never all three at once.
+  function renderRemotePanel(remoteUrl, allowPhoneRemoteEnabled) {
+    if (remoteUrl) {
+      remoteDisabledEl.style.display = "none"
+      remoteNoLanEl.style.display = "none"
+      remoteEnabledEl.style.display = "block"
+      remoteUrlInput.value = remoteUrl
+    } else if (allowPhoneRemoteEnabled) {
+      remoteDisabledEl.style.display = "none"
+      remoteEnabledEl.style.display = "none"
+      remoteNoLanEl.style.display = "block"
+    } else {
+      remoteEnabledEl.style.display = "none"
+      remoteNoLanEl.style.display = "none"
+      remoteDisabledEl.style.display = "block"
+    }
+  }
+
+  remoteCopyBtn.addEventListener("click", () => {
+    navigator.clipboard
+      .writeText(remoteUrlInput.value)
+      .then(() => log(t("log.remoteLinkCopied"), "sent"))
+      .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
+  })
+
   function setSetupError(text) {
     setupErrorEl.textContent = text
     setupErrorEl.style.display = text ? "block" : "none"
@@ -773,10 +806,11 @@
     setupSaveBtn.textContent = t("setup.saving")
 
     window.churchOverlay
-      .completeSetup(apiKey, setupSelectedMode, setupSelectedUiLanguage)
+      .completeSetup(apiKey, setupSelectedMode, setupSelectedUiLanguage, setupAllowPhoneRemoteEl.checked)
       .then((info) => {
         setActiveOption(displayModeToggleEl, "mode", setupSelectedMode)
         setActiveOption(uiLanguageToggleEl, "lang", setupSelectedUiLanguage)
+        renderRemotePanel(info.remoteUrl, info.allowPhoneRemote)
         showAppShell()
         connect(info.port, info.token)
       })
@@ -800,6 +834,7 @@
 
       if (status.ready) {
         setActiveOption(displayModeToggleEl, "mode", status.displayMode || "english")
+        renderRemotePanel(status.remoteUrl, status.allowPhoneRemote)
         showAppShell()
         connect(status.port, status.token)
       } else {

@@ -156,12 +156,13 @@
     flex: 1;
     display: grid;
     grid-template-columns: 1.05fr 1.05fr 1.5fr;
-    grid-template-rows: auto auto 1fr auto;
+    grid-template-rows: auto auto 1fr auto auto;
     grid-template-areas:
       "mic      mic      live"
       "override media    live"
       "log      media    live"
-      "rundown  rundown  rundown";
+      "rundown  rundown  rundown"
+      "remote   remote   remote";
     gap: var(--space-4);
     padding: var(--space-6);
     overflow: auto;
@@ -170,7 +171,7 @@
   @media (max-width: 900px) {
     main {
       grid-template-columns: 1fr;
-      grid-template-areas: "mic" "override" "media" "live" "log" "rundown";
+      grid-template-areas: "mic" "override" "media" "live" "log" "rundown" "remote";
       grid-template-rows: none;
     }
   }
@@ -180,6 +181,7 @@
   .cell-live { grid-area: live; }
   .cell-log { grid-area: log; }
   .cell-rundown { grid-area: rundown; }
+  .cell-remote { grid-area: remote; }
 
   .card {
     border-radius: var(--radius-lg);
@@ -418,6 +420,8 @@
     transition: border-color 0.15s var(--ease);
   }
   input[type="text"]:focus, input[type="password"]:focus { outline: none; border-color: var(--accent); }
+  #remote-url { flex: 1; min-width: 0; margin-bottom: 0; }
+  #remote-disabled, #remote-no-lan { color: var(--text-tertiary); font-size: 12px; }
 
   .mic-visual { display: flex; align-items: center; gap: 3px; height: 32px; margin-bottom: var(--space-3); }
   .mic-bar { flex: 1; background: var(--glass-border-strong); border-radius: 2px; height: 20%; transition: background 0.2s ease; }
@@ -477,6 +481,28 @@
     font-size: 12px;
     margin: -6px 0 var(--space-4);
     text-align: left;
+  }
+
+  /* ARCHITECTURE.md section 65.6 — opt-in, off by default; the checkbox
+     text itself carries the network-exposure warning rather than hiding
+     it in a tooltip, since this is a real trust-boundary decision. */
+  .checkbox-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-4);
+    cursor: pointer;
+  }
+  .checkbox-row input[type="checkbox"] {
+    margin: 2px 0 0;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    accent-color: var(--accent);
   }
 
   /* ASR/transcription health (status:update, a real producer for the
@@ -561,6 +587,11 @@
         <button type="button" data-lang="en" class="active" data-i18n="setup.uiLanguage.en">English</button>
         <button type="button" data-lang="fr" data-i18n="setup.uiLanguage.fr">French</button>
       </div>
+
+      <label class="checkbox-row" for="setup-allow-phone-remote">
+        <input type="checkbox" id="setup-allow-phone-remote" />
+        <span data-i18n="setup.allowPhoneRemote">Allow a phone remote on this WiFi network (exposes this app to your local network)</span>
+      </label>
 
       <div id="setup-error"></div>
       <button id="setup-save-btn" class="btn-primary" style="width: 100%" data-i18n="setup.saveButton">Save and continue</button>
@@ -695,6 +726,23 @@
         </div>
 
         <button id="rundown-load-btn" class="btn-primary" style="width: 100%; margin-top: var(--space-3)" data-i18n="rundown.builder.loadButton">Load rundown</button>
+      </div>
+    </div>
+
+    <div class="card glass cell-remote">
+      <div class="card-title" data-i18n="remote.title">Phone Remote</div>
+      <div id="remote-disabled" data-i18n="remote.disabled">
+        Not enabled. Turn on "Allow a phone remote" during setup to use this.
+      </div>
+      <div id="remote-enabled" style="display: none">
+        <label data-i18n="remote.linkLabel">Open this link on a phone connected to the same WiFi</label>
+        <div class="btn-row">
+          <input id="remote-url" type="text" readonly />
+          <button id="remote-copy-btn" class="btn-secondary btn-small" data-i18n="remote.copyButton">Copy</button>
+        </div>
+      </div>
+      <div id="remote-no-lan" style="display: none" data-i18n="remote.noLan">
+        Enabled, but no local network address was found on this machine.
       </div>
     </div>
   </main>

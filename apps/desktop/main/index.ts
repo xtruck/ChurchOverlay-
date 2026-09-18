@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, safeStorage } from "electron"
 import { randomBytes } from "node:crypto"
+import { networkInterfaces } from "node:os"
 import { join } from "node:path"
 import { startAppCore, type AppCoreHandle } from "../../server/core/app-core"
 import { StaticServer } from "../../server/http/static-server"
@@ -26,6 +27,7 @@ import { Logger } from "../../../packages/shared/logger"
 
 const WS_PORT = 8787
 const OVERLAY_HTTP_PORT = 8788
+const REMOTE_HTTP_PORT = 8789
 
 // This compiled file lives at dist/apps/desktop/main/index.js (tsconfig's
 // rootDir/outDir mirror the source tree exactly). The renderer HTML/JS and
@@ -41,15 +43,35 @@ const logger = new Logger({ minLevel: "info" })
 
 let appCoreHandle: AppCoreHandle | null = null
 let staticServer: StaticServer | null = null
+let remoteStaticServer: StaticServer | null = null
 let dashboardWindow: BrowserWindow | null = null
 let overlayWindow: BrowserWindow | null = null
 let currentTokens: { operatorToken: string; viewerToken: string } | null = null
 let configStore: ConfigStore | null = null
 let mediaLibrary: MediaLibrary | null = null
 let localizedVerseSource: LocalizedVerseSource | null = null
+let currentRemoteUrl: string | null = null
+let currentAllowPhoneRemote = false
 
 function generateToken(): string {
   return randomBytes(24).toString("hex")
+}
+
+/**
+ * ARCHITECTURE.md section 65.6: the address a phone on the same WiFi
+ * would use to reach this machine — the first non-internal IPv4 address
+ * Node reports. Returns null if none is found (e.g. no network adapter
+ * up at all), in which case the remote feature has nothing reachable to
+ * offer even though the operator opted in.
+ */
+function getLanIpAddress(): string | null {
+  const interfaces = networkInterfaces()
+  for (const entries of Object.values(interfaces)) {
+    for (const entry of entries ?? []) {
+      if (entry.family === "IPv4" && !entry.internal) return entry.address
+    }
+  }
+  return null
 }
 
 function getConfigStore(): ConfigStore {
@@ -64,7 +86,9 @@ function getConfigStore(): ConfigStore {
  * — called either at launch (if a key was already saved from a previous
  * run) or once the operator finishes the setup screen for the first time.
  */
-async function startServices(config: AppConfig): Promise<{ port: number; token: string }> {
+async function startServices(
+  config: AppConfig
+): Promise<{ port: number; token: string; remoteUrl: string | null; allowPhoneRemote: boolean }> {
   currentTokens = { operatorToken: config.operatorToken, viewerToken: config.viewerToken }
   localizedVerseSource = new LocalizedVerseSource(
     new FreeApiSource(),
@@ -73,12 +97,20 @@ async function startServices(config: AppConfig): Promise<{ port: number; token: 
     logger
   )
 
+  // ARCHITECTURE.md section 65.6: opt-in, off by default — binding to
+  // 0.0.0.0 (reachable from the local network) only ever happens when the
+  // operator explicitly enabled the phone remote. Otherwise this stays
+  // undefined, so ChurchOverlayWsServer keeps its existing 127.0.0.1-only
+  // default (section 24) exactly as before this feature existed.
+  const wsHost = config.allowPhoneRemote ? "0.0.0.0" : undefined
+
   appCoreHandle = await startAppCore({
     asr: new GroqProvider({ apiKey: config.groqApiKey }),
     detector: new RegexDetector(),
     index: new KnownValidVerseIndex(),
     source: localizedVerseSource,
     logger,
+    host: wsHost,
     port: WS_PORT,
     tokens: currentTokens,
     mediaLibrary: mediaLibrary ?? undefined,
@@ -111,15 +143,48 @@ async function startServices(config: AppConfig): Promise<{ port: number; token: 
   })
   await staticServer.ready
 
+  // ARCHITECTURE.md section 65.6: the remote page's own StaticServer only
+  // ever runs when the operator opted in — no point exposing a second
+  // HTTP server on the network for a feature nobody enabled. Loopback-only
+  // installs (the default) are completely unaffected by this block.
+  let remoteUrl: string | null = null
+  if (config.allowPhoneRemote) {
+    remoteStaticServer = new StaticServer({
+      host: "0.0.0.0",
+      port: REMOTE_HTTP_PORT,
+      rootDir: join(REPO_ROOT, "apps", "remote", "public"),
+    })
+    await remoteStaticServer.ready
+    const lanIp = getLanIpAddress()
+    if (lanIp) {
+      remoteUrl =
+        `http://${lanIp}:${remoteStaticServer.port}/index.html` +
+        `?token=${config.operatorToken}&wsPort=${appCoreHandle.wsServer.port}`
+    } else {
+      logger.warn({ component: "main", event: "remote.no-lan-ip-found" })
+    }
+  }
+  currentRemoteUrl = remoteUrl
+  currentAllowPhoneRemote = config.allowPhoneRemote
+
   logger.info({
     component: "main",
     event: "services.started",
-    metadata: { wsPort: appCoreHandle.wsServer.port, httpPort: staticServer.port },
+    metadata: {
+      wsPort: appCoreHandle.wsServer.port,
+      httpPort: staticServer.port,
+      remoteHttpPort: remoteStaticServer?.port,
+    },
   })
 
   createOverlayWindow()
 
-  return { port: appCoreHandle.wsServer.port, token: currentTokens.operatorToken }
+  return {
+    port: appCoreHandle.wsServer.port,
+    token: currentTokens.operatorToken,
+    remoteUrl,
+    allowPhoneRemote: config.allowPhoneRemote,
+  }
 }
 
 function createDashboardWindow(): void {
@@ -213,6 +278,8 @@ ipcMain.handle("get-startup-status", async () => {
       token: currentTokens.operatorToken,
       displayMode: localizedVerseSource.getMode(),
       uiLanguage,
+      remoteUrl: currentRemoteUrl,
+      allowPhoneRemote: currentAllowPhoneRemote,
     }
   }
   return { ready: false, uiLanguage }
@@ -270,6 +337,10 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
   const uiLanguage = UI_LANGUAGES.includes(payloadObject.uiLanguage as UiLanguage)
     ? (payloadObject.uiLanguage as UiLanguage)
     : "en"
+  // ARCHITECTURE.md section 65.6: opt-in, off by default — anything other
+  // than a literal boolean true from the renderer is treated as false,
+  // never trusted as "the operator meant to enable network exposure."
+  const allowPhoneRemote = payloadObject.allowPhoneRemote === true
 
   const store = getConfigStore()
   // A corrupt or unreadable existing config must not permanently block
@@ -297,6 +368,7 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
     viewerToken: existing?.viewerToken ?? generateToken(),
     displayMode,
     uiLanguage,
+    allowPhoneRemote,
   }
   await store.save(config)
 
@@ -364,6 +436,9 @@ async function shutdown(): Promise<void> {
   })
   await staticServer?.close().catch((err) => {
     logger.error({ component: "main", event: "shutdown.static-server-failed", error: String(err) })
+  })
+  await remoteStaticServer?.close().catch((err) => {
+    logger.error({ component: "main", event: "shutdown.remote-static-server-failed", error: String(err) })
   })
 }
 
