@@ -96,6 +96,33 @@
   const rundownFieldMediaEl = document.getElementById("rundown-field-media")
   const rundownFieldAnnouncementEl = document.getElementById("rundown-field-announcement")
   const rundownFieldCanvasEl = document.getElementById("rundown-field-canvas")
+  const canvasAddTextBtn = document.getElementById("canvas-add-text-btn")
+  const canvasAddImageBtn = document.getElementById("canvas-add-image-btn")
+  const canvasAddBackgroundBtn = document.getElementById("canvas-add-background-btn")
+  const canvasStageEl = document.getElementById("canvas-stage")
+  const canvasInspectorEmptyEl = document.getElementById("canvas-inspector-empty")
+  const canvasInspectorFieldsEl = document.getElementById("canvas-inspector-fields")
+  const canvasLayerXInput = document.getElementById("canvas-layer-x")
+  const canvasLayerYInput = document.getElementById("canvas-layer-y")
+  const canvasLayerWidthInput = document.getElementById("canvas-layer-width")
+  const canvasLayerHeightInput = document.getElementById("canvas-layer-height")
+  const canvasFieldTextEl = document.getElementById("canvas-field-text")
+  const canvasLayerTextInput = document.getElementById("canvas-layer-text")
+  const canvasLayerFontEl = document.getElementById("canvas-layer-font")
+  const canvasLayerFontSizeInput = document.getElementById("canvas-layer-font-size")
+  const canvasLayerColorInput = document.getElementById("canvas-layer-color")
+  const canvasLayerAlignEl = document.getElementById("canvas-layer-align")
+  const canvasFieldImageEl = document.getElementById("canvas-field-image")
+  const canvasLayerMediaSelect = document.getElementById("canvas-layer-media")
+  const canvasFieldBackgroundEl = document.getElementById("canvas-field-background")
+  const canvasLayerFillModeEl = document.getElementById("canvas-layer-fill-mode")
+  const canvasBackgroundColorFieldEl = document.getElementById("canvas-background-color-field")
+  const canvasLayerBgColorInput = document.getElementById("canvas-layer-bg-color")
+  const canvasBackgroundMediaFieldEl = document.getElementById("canvas-background-media-field")
+  const canvasLayerBgMediaSelect = document.getElementById("canvas-layer-bg-media")
+  const canvasLayerBackBtn = document.getElementById("canvas-layer-back-btn")
+  const canvasLayerFrontBtn = document.getElementById("canvas-layer-front-btn")
+  const canvasLayerDeleteBtn = document.getElementById("canvas-layer-delete-btn")
   const rundownVerseInput = document.getElementById("rundown-verse-input")
   const rundownMediaSelectEl = document.getElementById("rundown-media-select")
   const rundownAnnouncementTitleInput = document.getElementById("rundown-announcement-title")
@@ -124,6 +151,13 @@
   // scene rather than guessing at a list it never actually saw.
   let draftScenes = []
   let draftSelectedKind = "verse"
+  // ARCHITECTURE.md section 66, Phase 4: the in-progress canvas scene
+  // being built in the builder's canvas field — mirrors draftScenes' own
+  // "dashboard-only, in-memory, until Load rundown" pattern. Committed
+  // into draftScenes (and reset) when "+ Add scene" fires while "canvas"
+  // is the selected kind.
+  let draftCanvasLayers = []
+  let selectedCanvasLayerId = null
   let loadedRundownScenes = []
   let loadedRundownId = null
   let currentRundownState = null // last rundown:state payload, or null if no rundown is active
@@ -345,25 +379,35 @@
       case "blank":
         return t("rundown.blankLabel")
       case "canvas":
-        return t("rundown.canvasLabel")
+        return t("rundown.canvasLabel") + " (" + scene.canvas.layers.length + ")"
+    }
+  }
+
+  function populateMediaSelect(selectEl, cues) {
+    selectEl.innerHTML = ""
+    if (cues.length === 0) {
+      const option = document.createElement("option")
+      option.value = ""
+      option.textContent = t("rundown.builder.noMediaOption")
+      selectEl.appendChild(option)
+      return
+    }
+    for (const cue of cues) {
+      const option = document.createElement("option")
+      option.value = cue.id
+      option.textContent = cue.title
+      selectEl.appendChild(option)
     }
   }
 
   function renderRundownMediaOptions() {
-    rundownMediaSelectEl.innerHTML = ""
-    if (knownCues.length === 0) {
-      const option = document.createElement("option")
-      option.value = ""
-      option.textContent = t("rundown.builder.noMediaOption")
-      rundownMediaSelectEl.appendChild(option)
-      return
-    }
-    for (const cue of knownCues) {
-      const option = document.createElement("option")
-      option.value = cue.id
-      option.textContent = cue.title
-      rundownMediaSelectEl.appendChild(option)
-    }
+    populateMediaSelect(rundownMediaSelectEl, knownCues)
+    // ARCHITECTURE.md section 66.3: a canvas image/background layer only
+    // ever holds an image or video cue (mediaKind) — never audio, which
+    // has no visual to place on a stage.
+    const visualCues = knownCues.filter((cue) => cue.kind === "image" || cue.kind === "video")
+    populateMediaSelect(canvasLayerMediaSelect, visualCues)
+    populateMediaSelect(canvasLayerBgMediaSelect, visualCues)
   }
 
   // The currently-active rundown (this dashboard's own scene list, click-
@@ -512,18 +556,500 @@
       rundownAnnouncementTitleInput.value = ""
       rundownAnnouncementBodyInput.value = ""
     } else if (draftSelectedKind === "canvas") {
-      // ARCHITECTURE.md section 66, Phase 2 stopgap: an empty canvas (no
-      // layers) round-trips correctly through rundown:load/scene:*, but
-      // the real drag/resize/style editor UI ships in Phase 4 — for now
-      // this just lets a canvas scene exist and be reordered like any
-      // other kind.
-      scene = { kind: "canvas", canvas: { layers: [] } }
+      // ARCHITECTURE.md section 66, Phase 4: commits whatever layers were
+      // built in the canvas editor field, then resets it so the next
+      // canvas scene starts from a blank stage.
+      const invalidImageLayer = draftCanvasLayers.find((l) => l.kind === "image" && !l.mediaCueId)
+      if (invalidImageLayer) {
+        log(t("rundown.canvasEditor.imageLayerMissingMedia"), "error")
+        return
+      }
+      scene = { kind: "canvas", canvas: { layers: draftCanvasLayers.slice() } }
+      draftCanvasLayers = []
+      selectedCanvasLayerId = null
+      renderCanvasStage()
+      renderCanvasInspector()
     } else {
       scene = { kind: "blank" }
     }
     draftScenes.push(scene)
     renderDraftSceneList()
   })
+
+  // ============================================================
+  // ARCHITECTURE.md section 66, Phase 4: the WYSIWYG canvas editor.
+  // Hand-written (no canvas/interact dependency, section 66.2's decisive
+  // call) — pointer capture for drag/resize, percentage-based coordinates
+  // throughout (matching CanvasLayer's own 0-100 stage-relative model),
+  // snap-to-edge/center against the stage and other layers, and keyboard
+  // nudge for accessibility/precision.
+  //
+  // Known simplification: image/background media layers render as a
+  // labeled placeholder box in this editor stage, not the real pixels —
+  // this dashboard is loaded via file:// (apps/desktop/main/index.ts's
+  // loadFile()), not through the overlay's own StaticServer, so a
+  // same-origin "/media/<id>" URL the overlay uses doesn't resolve here.
+  // The real overlay (apps/overlay/public/overlay.js's showCanvas())
+  // renders the actual image/video correctly; only this editor's own
+  // preview is a placeholder. Position/size/z-order are still exactly
+  // WYSIWYG for every layer kind.
+  // ============================================================
+
+  const CANVAS_FONT_FAMILIES = {
+    serif: "'Instrument Serif', Georgia, serif",
+    sans: "'Instrument Sans', -apple-system, 'Segoe UI', system-ui, sans-serif",
+    mono: "'JetBrains Mono', 'SF Mono', Consolas, monospace",
+  }
+  const MIN_LAYER_SIZE_PCT = 3
+  const SNAP_THRESHOLD_PCT = 1.5
+
+  function clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max)
+  }
+
+  function findCanvasLayer(id) {
+    return draftCanvasLayers.find((l) => l.id === id)
+  }
+
+  function nextCanvasZIndex() {
+    return draftCanvasLayers.length === 0 ? 1 : Math.max(...draftCanvasLayers.map((l) => l.zIndex)) + 1
+  }
+
+  function buildLayerContentEl(layer) {
+    const content = document.createElement("div")
+    content.className = "layer-content"
+    if (layer.kind === "text") {
+      content.classList.add("layer-text")
+      content.textContent = layer.text
+      content.style.fontFamily = CANVAS_FONT_FAMILIES[layer.fontFamily] || CANVAS_FONT_FAMILIES.sans
+      content.style.fontSize = layer.fontSizePx + "px"
+      content.style.color = layer.color
+      content.style.textAlign = layer.align
+      content.style.justifyContent = layer.align === "left" ? "flex-start" : layer.align === "right" ? "flex-end" : "center"
+    } else if (layer.kind === "image") {
+      const cue = knownCues.find((c) => c.id === layer.mediaCueId)
+      content.style.display = "flex"
+      content.style.alignItems = "center"
+      content.style.justifyContent = "center"
+      content.style.background = "rgba(255,255,255,0.08)"
+      content.style.color = "var(--text-secondary)"
+      content.style.fontSize = "11px"
+      content.style.textAlign = "center"
+      content.style.padding = "4px"
+      content.textContent = cue ? cue.title : t("rundown.canvasEditor.noMediaChosen")
+    } else {
+      // background
+      const cue = layer.mediaCueId ? knownCues.find((c) => c.id === layer.mediaCueId) : null
+      if (cue) {
+        content.style.display = "flex"
+        content.style.alignItems = "center"
+        content.style.justifyContent = "center"
+        content.style.background = "rgba(255,255,255,0.08)"
+        content.style.color = "var(--text-secondary)"
+        content.style.fontSize = "11px"
+        content.textContent = cue.title
+      } else if (layer.color) {
+        content.style.background = layer.color
+      }
+    }
+    return content
+  }
+
+  function renderCanvasStage() {
+    canvasStageEl.innerHTML = ""
+    const sorted = draftCanvasLayers.slice().sort((a, b) => a.zIndex - b.zIndex)
+    for (const layer of sorted) {
+      const el = document.createElement("div")
+      el.className = "canvas-editor-layer" + (layer.id === selectedCanvasLayerId ? " selected" : "")
+      el.style.left = layer.x + "%"
+      el.style.top = layer.y + "%"
+      el.style.width = layer.width + "%"
+      el.style.height = layer.height + "%"
+      el.style.zIndex = layer.zIndex
+      el.appendChild(buildLayerContentEl(layer))
+      el.addEventListener("pointerdown", (e) => startLayerDrag(e, layer, el))
+      if (layer.id === selectedCanvasLayerId) {
+        for (const dir of ["nw", "n", "ne", "e", "se", "s", "sw", "w"]) {
+          const handle = document.createElement("div")
+          handle.className = "canvas-resize-handle " + dir
+          handle.addEventListener("pointerdown", (e) => startLayerResize(e, layer, el, dir))
+          el.appendChild(handle)
+        }
+      }
+      canvasStageEl.appendChild(el)
+    }
+  }
+
+  function renderCanvasInspector() {
+    const layer = findCanvasLayer(selectedCanvasLayerId)
+    if (!layer) {
+      canvasInspectorEmptyEl.style.display = "block"
+      canvasInspectorFieldsEl.style.display = "none"
+      return
+    }
+    canvasInspectorEmptyEl.style.display = "none"
+    canvasInspectorFieldsEl.style.display = "block"
+
+    canvasLayerXInput.value = Math.round(layer.x * 10) / 10
+    canvasLayerYInput.value = Math.round(layer.y * 10) / 10
+    canvasLayerWidthInput.value = Math.round(layer.width * 10) / 10
+    canvasLayerHeightInput.value = Math.round(layer.height * 10) / 10
+
+    canvasFieldTextEl.style.display = layer.kind === "text" ? "block" : "none"
+    canvasFieldImageEl.style.display = layer.kind === "image" ? "block" : "none"
+    canvasFieldBackgroundEl.style.display = layer.kind === "background" ? "block" : "none"
+
+    if (layer.kind === "text") {
+      canvasLayerTextInput.value = layer.text
+      setActiveOption(canvasLayerFontEl, "font", layer.fontFamily)
+      canvasLayerFontSizeInput.value = layer.fontSizePx
+      canvasLayerColorInput.value = layer.color
+      setActiveOption(canvasLayerAlignEl, "align", layer.align)
+    } else if (layer.kind === "image") {
+      canvasLayerMediaSelect.value = layer.mediaCueId || ""
+    } else if (layer.kind === "background") {
+      const fillMode = layer.mediaCueId ? "media" : "color"
+      setActiveOption(canvasLayerFillModeEl, "fill", fillMode)
+      canvasBackgroundColorFieldEl.style.display = fillMode === "color" ? "block" : "none"
+      canvasBackgroundMediaFieldEl.style.display = fillMode === "media" ? "block" : "none"
+      canvasLayerBgColorInput.value = layer.color || "#000000"
+      canvasLayerBgMediaSelect.value = layer.mediaCueId || ""
+    }
+  }
+
+  function updateSelectedLayer(mutate, options) {
+    const layer = findCanvasLayer(selectedCanvasLayerId)
+    if (!layer) return
+    mutate(layer)
+    renderCanvasStage()
+    if (!options || !options.skipInspectorRefresh) renderCanvasInspector()
+  }
+
+  function selectCanvasLayer(id) {
+    selectedCanvasLayerId = id
+    renderCanvasStage()
+    renderCanvasInspector()
+  }
+
+  canvasStageEl.addEventListener("pointerdown", (e) => {
+    if (e.target === canvasStageEl) selectCanvasLayer(null)
+  })
+
+  // Arrow-key nudge (1x / shift for 10x, in the same 0-100 stage-percent
+  // units as everything else) and Delete/Backspace, matching the
+  // keyboard-first convention makeInteractive() already establishes
+  // elsewhere in this file.
+  canvasStageEl.addEventListener("keydown", (e) => {
+    const layer = findCanvasLayer(selectedCanvasLayerId)
+    if (!layer) return
+    const step = e.shiftKey ? 2 : 0.5
+    let handled = true
+    if (e.key === "ArrowLeft") layer.x = clamp(layer.x - step, 0, 100 - layer.width)
+    else if (e.key === "ArrowRight") layer.x = clamp(layer.x + step, 0, 100 - layer.width)
+    else if (e.key === "ArrowUp") layer.y = clamp(layer.y - step, 0, 100 - layer.height)
+    else if (e.key === "ArrowDown") layer.y = clamp(layer.y + step, 0, 100 - layer.height)
+    else if (e.key === "Delete" || e.key === "Backspace") {
+      draftCanvasLayers = draftCanvasLayers.filter((l) => l.id !== selectedCanvasLayerId)
+      selectedCanvasLayerId = null
+    } else {
+      handled = false
+    }
+    if (handled) {
+      e.preventDefault()
+      renderCanvasStage()
+      renderCanvasInspector()
+    }
+  })
+
+  function collectSnapLinesX(excludeId) {
+    const lines = [0, 50, 100]
+    for (const l of draftCanvasLayers) {
+      if (l.id === excludeId) continue
+      lines.push(l.x, l.x + l.width / 2, l.x + l.width)
+    }
+    return lines
+  }
+  function collectSnapLinesY(excludeId) {
+    const lines = [0, 50, 100]
+    for (const l of draftCanvasLayers) {
+      if (l.id === excludeId) continue
+      lines.push(l.y, l.y + l.height / 2, l.y + l.height)
+    }
+    return lines
+  }
+  function snapValue(value, lines) {
+    for (const line of lines) {
+      if (Math.abs(value - line) <= SNAP_THRESHOLD_PCT) return line
+    }
+    return value
+  }
+  function snapPosition(layer, rawX, rawY) {
+    const linesX = collectSnapLinesX(layer.id)
+    const linesY = collectSnapLinesY(layer.id)
+    let x = rawX
+    const leftSnap = snapValue(rawX, linesX)
+    const centerXSnap = snapValue(rawX + layer.width / 2, linesX) - layer.width / 2
+    const rightSnap = snapValue(rawX + layer.width, linesX) - layer.width
+    if (leftSnap !== rawX) x = leftSnap
+    else if (centerXSnap !== rawX) x = centerXSnap
+    else if (rightSnap !== rawX) x = rightSnap
+
+    let y = rawY
+    const topSnap = snapValue(rawY, linesY)
+    const centerYSnap = snapValue(rawY + layer.height / 2, linesY) - layer.height / 2
+    const bottomSnap = snapValue(rawY + layer.height, linesY) - layer.height
+    if (topSnap !== rawY) y = topSnap
+    else if (centerYSnap !== rawY) y = centerYSnap
+    else if (bottomSnap !== rawY) y = bottomSnap
+
+    return { x: clamp(x, 0, 100 - layer.width), y: clamp(y, 0, 100 - layer.height) }
+  }
+
+  function startLayerDrag(e, layer, el) {
+    if (e.target !== el && !e.target.classList.contains("layer-content")) return // a resize handle owns this pointerdown instead
+    e.stopPropagation()
+    e.preventDefault()
+    // Only select (which fully re-renders the stage, per renderCanvasStage()
+    // clearing and rebuilding every layer element) when switching to a
+    // DIFFERENT layer. Calling it unconditionally here — even when `layer`
+    // is already selected — would replace `el` with a fresh DOM node right
+    // before setPointerCapture()/addEventListener() below, leaving them
+    // attached to a now-detached element that never receives the real
+    // pointermove/pointerup events the browser sends to the NEW node.
+    if (selectedCanvasLayerId !== layer.id) selectCanvasLayer(layer.id)
+    const stageRect = canvasStageEl.getBoundingClientRect()
+    const startClientX = e.clientX
+    const startClientY = e.clientY
+    const startX = layer.x
+    const startY = layer.y
+    // Pointer capture keeps pointermove/pointerup reaching this element
+    // even once the pointer moves outside its (shrinking/moving) bounds
+    // mid-drag — real hardware input always supports this; the try/catch
+    // is only a defensive fallback (dragging still mostly works without
+    // it, as long as the pointer stays over the element).
+    try {
+      el.setPointerCapture(e.pointerId)
+    } catch {
+      // ignore — see comment above
+    }
+
+    function onMove(moveEvent) {
+      const dxPct = ((moveEvent.clientX - startClientX) / stageRect.width) * 100
+      const dyPct = ((moveEvent.clientY - startClientY) / stageRect.height) * 100
+      const rawX = clamp(startX + dxPct, 0, 100 - layer.width)
+      const rawY = clamp(startY + dyPct, 0, 100 - layer.height)
+      const snapped = snapPosition(layer, rawX, rawY)
+      layer.x = snapped.x
+      layer.y = snapped.y
+      el.style.left = layer.x + "%"
+      el.style.top = layer.y + "%"
+      renderCanvasInspector()
+    }
+    function onUp() {
+      try {
+        el.releasePointerCapture(e.pointerId)
+      } catch {
+        // ignore
+      }
+      el.removeEventListener("pointermove", onMove)
+      el.removeEventListener("pointerup", onUp)
+    }
+    el.addEventListener("pointermove", onMove)
+    el.addEventListener("pointerup", onUp)
+  }
+
+  function startLayerResize(e, layer, el, direction) {
+    e.stopPropagation()
+    e.preventDefault()
+    // No selectCanvasLayer() call needed here (unlike startLayerDrag): a
+    // resize handle only ever exists in the DOM for the already-selected
+    // layer (renderCanvasStage() only renders handles for
+    // selectedCanvasLayerId), so re-selecting would only destructively
+    // re-render the stage — and detach handleEl below — for no reason.
+    const stageRect = canvasStageEl.getBoundingClientRect()
+    const startClientX = e.clientX
+    const startClientY = e.clientY
+    const start = { x: layer.x, y: layer.y, width: layer.width, height: layer.height }
+    const handleEl = e.currentTarget
+    try {
+      handleEl.setPointerCapture(e.pointerId)
+    } catch {
+      // ignore — see the comment in startLayerDrag() above
+    }
+
+    function onMove(moveEvent) {
+      const dxPct = ((moveEvent.clientX - startClientX) / stageRect.width) * 100
+      const dyPct = ((moveEvent.clientY - startClientY) / stageRect.height) * 100
+      let x = start.x
+      let y = start.y
+      let width = start.width
+      let height = start.height
+
+      if (direction.includes("e")) width = clamp(start.width + dxPct, MIN_LAYER_SIZE_PCT, 100 - start.x)
+      if (direction.includes("w")) {
+        const newX = clamp(start.x + dxPct, 0, start.x + start.width - MIN_LAYER_SIZE_PCT)
+        width = start.width + (start.x - newX)
+        x = newX
+      }
+      if (direction.includes("s")) height = clamp(start.height + dyPct, MIN_LAYER_SIZE_PCT, 100 - start.y)
+      if (direction.includes("n")) {
+        const newY = clamp(start.y + dyPct, 0, start.y + start.height - MIN_LAYER_SIZE_PCT)
+        height = start.height + (start.y - newY)
+        y = newY
+      }
+
+      layer.x = x
+      layer.y = y
+      layer.width = width
+      layer.height = height
+      el.style.left = x + "%"
+      el.style.top = y + "%"
+      el.style.width = width + "%"
+      el.style.height = height + "%"
+      renderCanvasInspector()
+    }
+    function onUp() {
+      try {
+        handleEl.releasePointerCapture(e.pointerId)
+      } catch {
+        // ignore
+      }
+      handleEl.removeEventListener("pointermove", onMove)
+      handleEl.removeEventListener("pointerup", onUp)
+      renderCanvasStage() // rebuilds handle positions cleanly against the final size
+    }
+    handleEl.addEventListener("pointermove", onMove)
+    handleEl.addEventListener("pointerup", onUp)
+  }
+
+  canvasAddTextBtn.addEventListener("click", () => {
+    const layer = {
+      id: crypto.randomUUID(),
+      kind: "text",
+      x: 20,
+      y: 40,
+      width: 60,
+      height: 20,
+      zIndex: nextCanvasZIndex(),
+      text: t("rundown.canvasEditor.defaultText"),
+      fontFamily: "serif",
+      fontSizePx: 48,
+      color: "#ffffff",
+      align: "center",
+    }
+    draftCanvasLayers.push(layer)
+    selectCanvasLayer(layer.id)
+  })
+
+  canvasAddImageBtn.addEventListener("click", () => {
+    const firstCue = knownCues.find((c) => c.kind === "image" || c.kind === "video")
+    const layer = {
+      id: crypto.randomUUID(),
+      kind: "image",
+      x: 25,
+      y: 25,
+      width: 50,
+      height: 50,
+      zIndex: nextCanvasZIndex(),
+      mediaCueId: firstCue ? firstCue.id : "",
+      mediaKind: firstCue ? firstCue.kind : "image",
+    }
+    draftCanvasLayers.push(layer)
+    selectCanvasLayer(layer.id)
+  })
+
+  canvasAddBackgroundBtn.addEventListener("click", () => {
+    const layer = {
+      id: crypto.randomUUID(),
+      kind: "background",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      zIndex: 0,
+      color: "#0a0a12",
+      mediaCueId: null,
+      mediaKind: null,
+    }
+    draftCanvasLayers.push(layer)
+    selectCanvasLayer(layer.id)
+  })
+
+  canvasLayerXInput.addEventListener("input", () =>
+    updateSelectedLayer((l) => { l.x = clamp(Number(canvasLayerXInput.value) || 0, 0, 100 - l.width) }, { skipInspectorRefresh: true })
+  )
+  canvasLayerYInput.addEventListener("input", () =>
+    updateSelectedLayer((l) => { l.y = clamp(Number(canvasLayerYInput.value) || 0, 0, 100 - l.height) }, { skipInspectorRefresh: true })
+  )
+  canvasLayerWidthInput.addEventListener("input", () =>
+    updateSelectedLayer((l) => { l.width = clamp(Number(canvasLayerWidthInput.value) || 1, MIN_LAYER_SIZE_PCT, 100 - l.x) }, { skipInspectorRefresh: true })
+  )
+  canvasLayerHeightInput.addEventListener("input", () =>
+    updateSelectedLayer((l) => { l.height = clamp(Number(canvasLayerHeightInput.value) || 1, MIN_LAYER_SIZE_PCT, 100 - l.y) }, { skipInspectorRefresh: true })
+  )
+  canvasLayerTextInput.addEventListener("input", () =>
+    updateSelectedLayer((l) => { l.text = canvasLayerTextInput.value }, { skipInspectorRefresh: true })
+  )
+  wireOptionGroup(canvasLayerFontEl, "font", (font) => updateSelectedLayer((l) => { l.fontFamily = font }))
+  canvasLayerFontSizeInput.addEventListener("input", () =>
+    updateSelectedLayer((l) => { l.fontSizePx = Number(canvasLayerFontSizeInput.value) || 16 }, { skipInspectorRefresh: true })
+  )
+  canvasLayerColorInput.addEventListener("input", () =>
+    updateSelectedLayer((l) => { l.color = canvasLayerColorInput.value }, { skipInspectorRefresh: true })
+  )
+  wireOptionGroup(canvasLayerAlignEl, "align", (align) => updateSelectedLayer((l) => { l.align = align }))
+
+  canvasLayerMediaSelect.addEventListener("change", () =>
+    updateSelectedLayer((l) => {
+      const cue = knownCues.find((c) => c.id === canvasLayerMediaSelect.value)
+      l.mediaCueId = cue ? cue.id : ""
+      l.mediaKind = cue ? cue.kind : "image"
+    })
+  )
+
+  wireOptionGroup(canvasLayerFillModeEl, "fill", (fill) =>
+    updateSelectedLayer((l) => {
+      if (fill === "color") {
+        l.mediaCueId = null
+        l.mediaKind = null
+        if (!l.color) l.color = "#000000"
+      } else {
+        l.color = null
+      }
+    })
+  )
+  canvasLayerBgColorInput.addEventListener("input", () =>
+    updateSelectedLayer((l) => { l.color = canvasLayerBgColorInput.value }, { skipInspectorRefresh: true })
+  )
+  canvasLayerBgMediaSelect.addEventListener("change", () =>
+    updateSelectedLayer((l) => {
+      const cue = knownCues.find((c) => c.id === canvasLayerBgMediaSelect.value)
+      l.mediaCueId = cue ? cue.id : null
+      l.mediaKind = cue ? cue.kind : null
+    })
+  )
+
+  canvasLayerFrontBtn.addEventListener("click", () =>
+    updateSelectedLayer((l) => {
+      const maxZ = draftCanvasLayers.reduce((m, x) => Math.max(m, x.zIndex), 0)
+      l.zIndex = maxZ + 1
+    })
+  )
+  canvasLayerBackBtn.addEventListener("click", () =>
+    updateSelectedLayer((l) => {
+      const minZ = draftCanvasLayers.reduce((m, x) => Math.min(m, x.zIndex), 0)
+      l.zIndex = minZ - 1
+    })
+  )
+  canvasLayerDeleteBtn.addEventListener("click", () => {
+    draftCanvasLayers = draftCanvasLayers.filter((l) => l.id !== selectedCanvasLayerId)
+    selectedCanvasLayerId = null
+    renderCanvasStage()
+    renderCanvasInspector()
+  })
+
+  renderCanvasStage()
+  renderCanvasInspector()
 
   rundownLoadBtn.addEventListener("click", () => {
     if (draftScenes.length === 0) {

@@ -358,6 +358,95 @@
 
   .rundown-builder { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--glass-border); }
 
+  /*
+    ARCHITECTURE.md section 66, Phase 4: the WYSIWYG canvas editor. The
+    stage is a fixed 16:9 authoring surface (section 66.2's "one fixed
+    ratio, project-wide" decision) — every layer's x/y/width/height is a
+    percentage of it, so the same numbers mean the same thing here, in
+    this stage's own live preview, and on the real overlay regardless of
+    each surface's actual pixel size.
+  */
+  .canvas-editor-toolbar { display: flex; gap: var(--space-2); margin-bottom: var(--space-3); }
+  .canvas-editor-body { display: flex; gap: var(--space-4); align-items: flex-start; }
+  .canvas-stage {
+    position: relative;
+    width: 100%;
+    max-width: 720px;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--glass-border-strong);
+    overflow: hidden;
+    flex-shrink: 0;
+    outline: none;
+  }
+  .canvas-stage:focus-visible { border-color: var(--accent); }
+  .canvas-editor-layer {
+    position: absolute;
+    box-sizing: border-box;
+    cursor: move;
+    user-select: none;
+    border: 1px dashed transparent;
+  }
+  .canvas-editor-layer:hover { border-color: rgba(255, 255, 255, 0.35); }
+  .canvas-editor-layer.selected { border: 1px solid var(--accent); }
+  .canvas-editor-layer .layer-content { width: 100%; height: 100%; overflow: hidden; pointer-events: none; }
+  .canvas-editor-layer .layer-content.layer-text {
+    display: flex;
+    align-items: center;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  }
+  .canvas-editor-layer .layer-content img,
+  .canvas-editor-layer .layer-content video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .canvas-resize-handle {
+    position: absolute;
+    width: 9px;
+    height: 9px;
+    background: var(--accent);
+    border: 1px solid var(--accent-ink);
+    border-radius: 2px;
+  }
+  .canvas-resize-handle.nw { top: -5px; left: -5px; cursor: nwse-resize; }
+  .canvas-resize-handle.n  { top: -5px; left: calc(50% - 4px); cursor: ns-resize; }
+  .canvas-resize-handle.ne { top: -5px; right: -5px; cursor: nesw-resize; }
+  .canvas-resize-handle.e  { top: calc(50% - 4px); right: -5px; cursor: ew-resize; }
+  .canvas-resize-handle.se { bottom: -5px; right: -5px; cursor: nwse-resize; }
+  .canvas-resize-handle.s  { bottom: -5px; left: calc(50% - 4px); cursor: ns-resize; }
+  .canvas-resize-handle.sw { bottom: -5px; left: -5px; cursor: nesw-resize; }
+  .canvas-resize-handle.w  { top: calc(50% - 4px); left: -5px; cursor: ew-resize; }
+  .canvas-snap-guide {
+    position: absolute;
+    background: var(--accent-strong);
+    pointer-events: none;
+  }
+  .canvas-snap-guide.vertical { width: 1px; top: 0; bottom: 0; }
+  .canvas-snap-guide.horizontal { height: 1px; left: 0; right: 0; }
+
+  .canvas-inspector { flex: 1; min-width: 220px; }
+  .canvas-inspector-row { margin-bottom: var(--space-3); }
+  .canvas-inspector-grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .canvas-inspector-grid4 input { margin-bottom: 0; }
+  input[type="color"] {
+    width: 100%;
+    height: 38px;
+    padding: 2px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--glass-border-strong);
+    background: rgba(0, 0, 0, 0.22);
+    margin-bottom: var(--space-3);
+  }
+  input[type="number"] {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid var(--glass-border-strong);
+    color: var(--text-primary);
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    margin-bottom: var(--space-3);
+  }
+
   select {
     width: 100%;
     background: rgba(0, 0, 0, 0.22);
@@ -864,11 +953,80 @@
               <label for="rundown-announcement-body" data-i18n="rundown.builder.announcementBodyLabel">Message</label>
               <input id="rundown-announcement-body" type="text" placeholder="Glad you're here." />
             </div>
-            <!-- ARCHITECTURE.md section 66, Phase 2 stopgap: the real
-                 drag/resize/style canvas editor ships in Phase 4. -->
+            <!-- ARCHITECTURE.md section 66, Phase 4: the real WYSIWYG
+                 canvas editor — drag-position, resize, z-order, and
+                 per-layer style, hand-written (no canvas/interact
+                 dependency, section 66.2). -->
             <div id="rundown-field-canvas" style="display: none">
-              <div class="rundown-empty" data-i18n="rundown.builder.canvasPlaceholder">
-                Adds an empty canvas scene — the visual layout editor is coming soon.
+              <div class="canvas-editor-toolbar">
+                <button type="button" id="canvas-add-text-btn" class="btn-secondary btn-small" data-i18n="rundown.canvasEditor.addText">+ Text</button>
+                <button type="button" id="canvas-add-image-btn" class="btn-secondary btn-small" data-i18n="rundown.canvasEditor.addImage">+ Image</button>
+                <button type="button" id="canvas-add-background-btn" class="btn-secondary btn-small" data-i18n="rundown.canvasEditor.addBackground">+ Background</button>
+              </div>
+              <div class="canvas-editor-body">
+                <div id="canvas-stage" class="canvas-stage" tabindex="0"></div>
+                <div id="canvas-inspector" class="canvas-inspector">
+                  <div id="canvas-inspector-empty" class="rundown-empty" data-i18n="rundown.canvasEditor.selectHint">
+                    Select a layer to edit it, or drag directly on the stage.
+                  </div>
+                  <div id="canvas-inspector-fields" style="display: none">
+                    <div class="canvas-inspector-row">
+                      <label data-i18n="rundown.canvasEditor.position">Position &amp; size (%)</label>
+                      <div class="canvas-inspector-grid4">
+                        <input id="canvas-layer-x" type="number" min="0" max="100" placeholder="X" />
+                        <input id="canvas-layer-y" type="number" min="0" max="100" placeholder="Y" />
+                        <input id="canvas-layer-width" type="number" min="1" max="100" placeholder="W" />
+                        <input id="canvas-layer-height" type="number" min="1" max="100" placeholder="H" />
+                      </div>
+                    </div>
+                    <div id="canvas-field-text">
+                      <label for="canvas-layer-text" data-i18n="rundown.canvasEditor.textLabel">Text</label>
+                      <input id="canvas-layer-text" type="text" placeholder="Welcome" />
+                      <label data-i18n="rundown.canvasEditor.fontLabel">Font</label>
+                      <div id="canvas-layer-font" class="option-list" role="group" aria-label="Font">
+                        <button type="button" data-font="serif" data-i18n="rundown.canvasEditor.fontSerif">Serif</button>
+                        <button type="button" data-font="sans" data-i18n="rundown.canvasEditor.fontSans">Sans</button>
+                        <button type="button" data-font="mono" data-i18n="rundown.canvasEditor.fontMono">Mono</button>
+                      </div>
+                      <label for="canvas-layer-font-size" data-i18n="rundown.canvasEditor.fontSizeLabel">Font size (px)</label>
+                      <input id="canvas-layer-font-size" type="number" min="8" max="200" />
+                      <label for="canvas-layer-color" data-i18n="rundown.canvasEditor.colorLabel">Color</label>
+                      <input id="canvas-layer-color" type="color" />
+                      <label data-i18n="rundown.canvasEditor.alignLabel">Alignment</label>
+                      <div id="canvas-layer-align" class="option-list" role="group" aria-label="Text alignment">
+                        <button type="button" data-align="left" data-i18n="rundown.canvasEditor.alignLeft">Left</button>
+                        <button type="button" data-align="center" data-i18n="rundown.canvasEditor.alignCenter">Center</button>
+                        <button type="button" data-align="right" data-i18n="rundown.canvasEditor.alignRight">Right</button>
+                      </div>
+                    </div>
+                    <div id="canvas-field-image" style="display: none">
+                      <label for="canvas-layer-media" data-i18n="rundown.canvasEditor.mediaLabel">Media</label>
+                      <select id="canvas-layer-media"></select>
+                    </div>
+                    <div id="canvas-field-background" style="display: none">
+                      <label data-i18n="rundown.canvasEditor.fillLabel">Fill</label>
+                      <div id="canvas-layer-fill-mode" class="option-list" role="group" aria-label="Background fill">
+                        <button type="button" data-fill="color" data-i18n="rundown.canvasEditor.fillColor">Solid color</button>
+                        <button type="button" data-fill="media" data-i18n="rundown.canvasEditor.fillMedia">Media</button>
+                      </div>
+                      <div id="canvas-background-color-field">
+                        <label for="canvas-layer-bg-color" data-i18n="rundown.canvasEditor.colorLabel">Color</label>
+                        <input id="canvas-layer-bg-color" type="color" />
+                      </div>
+                      <div id="canvas-background-media-field" style="display: none">
+                        <label for="canvas-layer-bg-media" data-i18n="rundown.canvasEditor.mediaLabel">Media</label>
+                        <select id="canvas-layer-bg-media"></select>
+                      </div>
+                    </div>
+                    <div class="canvas-inspector-row">
+                      <div class="btn-row">
+                        <button type="button" id="canvas-layer-back-btn" class="btn-secondary btn-small" data-i18n="rundown.canvasEditor.sendBack">Send back</button>
+                        <button type="button" id="canvas-layer-front-btn" class="btn-secondary btn-small" data-i18n="rundown.canvasEditor.bringFront">Bring front</button>
+                        <button type="button" id="canvas-layer-delete-btn" class="btn-danger btn-small" data-i18n="rundown.canvasEditor.deleteLayer">Delete</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 

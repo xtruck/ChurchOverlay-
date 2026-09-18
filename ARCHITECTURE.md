@@ -3205,6 +3205,42 @@ layer must never remain visible underneath a scene that replaced it.
   resize, z-order, and snap-to-edge behavior, plus a save-then-reopen round-trip of
   an authored scene.
 
+**Implementation notes, found during Phase 4:**
+
+A real, non-obvious bug caught by driving the editor with genuine CDP-level mouse
+events (not synthetic `dispatchEvent()` calls, which don't establish a real active
+pointer and so don't reliably exercise `setPointerCapture()`): `startLayerDrag()`/
+`startLayerResize()` originally called `selectCanvasLayer()` unconditionally on
+every pointerdown, including when the layer was already selected. `selectCanvasLayer()`
+calls `renderCanvasStage()`, which clears and rebuilds the entire stage's DOM — so a
+redundant re-selection destroyed the very `el`/`handleEl` the drag/resize handler was
+about to call `setPointerCapture()` and attach `pointermove`/`pointerup` listeners to,
+leaving them bound to an already-detached node that never receives the real browser
+events sent to its freshly-created replacement. Fixed by only calling
+`selectCanvasLayer()` when switching to a genuinely different layer (`startLayerDrag`),
+and not calling it at all in `startLayerResize` (a resize handle only ever exists in
+the DOM for the already-selected layer, so re-selecting there was always redundant).
+This is the kind of bug that is invisible to synthetic-event-based testing and only
+surfaces under real input — a caution for any future interactive-editor work in this
+codebase.
+
+Also found necessary during implementation: `CanvasImageLayer`/`CanvasBackgroundLayer`
+needed a `mediaKind: "image" | "video"` field (section 66.3) so the overlay's renderer
+knows which element type to build — not anticipated when the data model was first
+drafted in Phase 2, surfaced only once Phase 3's renderer was actually written.
+
+The editor's own stage renders image/background media layers as a labeled placeholder
+box, not the real image/video pixels — `apps/desktop/renderer/` is loaded via `file://`
+(`loadFile()`), not through the overlay's own StaticServer, so the same-origin
+`/media/<id>` URL scheme the overlay uses to fetch real media doesn't resolve from the
+dashboard's origin. Position, size, and z-order are still exactly WYSIWYG for every
+layer kind (verified above); only the pixel content of image/background layers is a
+placeholder in the editor's own preview. The real overlay renders the actual media
+correctly (section 66.4/Phase 3). A future pass could add an IPC method to read a
+media file as a `data:` URL for the editor's own preview, but that is a new capability
+this note does not scope — recorded here as a known, deliberate simplification, not a
+silent gap.
+
 ### 66.8 Confirms this is approved scope
 
 Confirmed explicitly with the user, after being shown the real tradeoff directly (a
