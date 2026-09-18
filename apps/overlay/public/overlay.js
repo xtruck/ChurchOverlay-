@@ -31,6 +31,7 @@
   const definitionEl = document.getElementById("definition")
   const definitionTermEl = document.getElementById("definition-term")
   const definitionBodyEl = document.getElementById("definition-body")
+  const canvasLayerEl = document.getElementById("canvas-layer")
 
   function setStatus(text) {
     statusEl.textContent = text
@@ -219,6 +220,93 @@
     definitionEl.classList.remove("visible")
   }
 
+  // Canvas scene (ARCHITECTURE.md section 66) — the first content type
+  // rendered from a whole list of positioned layers rather than one fixed
+  // template's fields. Every layer is a real DOM node, absolutely
+  // positioned by percentage inside #canvas-layer (never a <canvas>/WebGL
+  // surface), so each layer keeps its own font/CSS the same as the rest
+  // of this page. Duplicated in apps/desktop/renderer/dashboard.js as
+  // renderCanvasLayers() for the editor's own live preview — keep both in
+  // sync, same no-build-step reasoning as fitVerseText()'s neighbors.
+  const CANVAS_FONT_FAMILIES = {
+    serif: "'Instrument Serif', Georgia, 'Times New Roman', serif",
+    sans: "'Instrument Sans', -apple-system, 'Segoe UI', system-ui, sans-serif",
+    mono: "'JetBrains Mono', 'SF Mono', Consolas, monospace",
+  }
+
+  function buildCanvasLayerElement(layer) {
+    let el
+    if (layer.kind === "text") {
+      el = document.createElement("div")
+      el.className = "canvas-layer-item canvas-layer-text"
+      el.textContent = layer.text
+      el.style.fontFamily = CANVAS_FONT_FAMILIES[layer.fontFamily] || CANVAS_FONT_FAMILIES.sans
+      el.style.fontSize = layer.fontSizePx + "px"
+      el.style.color = layer.color
+      el.style.textAlign = layer.align
+    } else if (layer.kind === "image") {
+      el = document.createElement(layer.mediaKind === "video" ? "video" : "img")
+      el.className = "canvas-layer-item canvas-layer-image"
+      el.src = "/media/" + layer.mediaCueId
+      if (layer.mediaKind === "video") {
+        el.autoplay = true
+        el.loop = true
+        el.muted = true
+        el.playsInline = true
+      } else {
+        el.alt = ""
+      }
+    } else {
+      // "background" — fills the whole stage, ignoring its own x/y/width/
+      // height (a background is always the full 0/0/100/100 frame by
+      // definition); only its color/media choice varies.
+      el = document.createElement("div")
+      el.className = "canvas-layer-item"
+      el.style.left = "0%"
+      el.style.top = "0%"
+      el.style.width = "100%"
+      el.style.height = "100%"
+      el.style.zIndex = layer.zIndex
+      if (layer.mediaCueId) {
+        const mediaEl = document.createElement(layer.mediaKind === "video" ? "video" : "img")
+        mediaEl.className = "canvas-layer-media"
+        mediaEl.src = "/media/" + layer.mediaCueId
+        if (layer.mediaKind === "video") {
+          mediaEl.autoplay = true
+          mediaEl.loop = true
+          mediaEl.muted = true
+          mediaEl.playsInline = true
+        } else {
+          mediaEl.alt = ""
+        }
+        el.appendChild(mediaEl)
+      } else if (layer.color) {
+        el.style.background = layer.color
+      }
+      return el
+    }
+    el.style.left = layer.x + "%"
+    el.style.top = layer.y + "%"
+    el.style.width = layer.width + "%"
+    el.style.height = layer.height + "%"
+    el.style.zIndex = layer.zIndex
+    return el
+  }
+
+  function showCanvas(payload) {
+    canvasLayerEl.innerHTML = ""
+    const sorted = payload.layers.slice().sort((a, b) => a.zIndex - b.zIndex)
+    for (const layer of sorted) {
+      canvasLayerEl.appendChild(buildCanvasLayerElement(layer))
+    }
+    canvasLayerEl.classList.add("visible")
+  }
+
+  function clearCanvas() {
+    canvasLayerEl.classList.remove("visible")
+    canvasLayerEl.innerHTML = ""
+  }
+
   function connect() {
     if (!token) {
       setStatus("no viewer token in URL (add ?token=...)")
@@ -260,6 +348,10 @@
         showDefinition(message.payload)
       } else if (message.type === "definition:clear") {
         clearDefinition()
+      } else if (message.type === "canvas:show") {
+        showCanvas(message.payload)
+      } else if (message.type === "canvas:clear") {
+        clearCanvas()
       }
     })
   }
@@ -276,6 +368,7 @@
       clearMedia()
       clearAnnouncement()
       clearDefinition()
+      clearCanvas()
     }
   })
 

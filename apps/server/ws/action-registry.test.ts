@@ -292,8 +292,8 @@ test("ACTION_REGISTRY['status:update'].validatePayload: accepts a valid ASR heal
 
 const VALID_CANVAS_LAYERS = [
   { id: "01LAYER-TEXT", kind: "text", x: 10, y: 10, width: 80, height: 20, zIndex: 1, text: "Welcome", fontFamily: "serif", fontSizePx: 48, color: "#ffffff", align: "center" },
-  { id: "01LAYER-IMAGE", kind: "image", x: 20, y: 40, width: 60, height: 40, zIndex: 2, mediaCueId: "01MEDIA" },
-  { id: "01LAYER-BG", kind: "background", x: 0, y: 0, width: 100, height: 100, zIndex: 0, color: "#000000", mediaCueId: null },
+  { id: "01LAYER-IMAGE", kind: "image", x: 20, y: 40, width: 60, height: 40, zIndex: 2, mediaCueId: "01MEDIA", mediaKind: "image" },
+  { id: "01LAYER-BG", kind: "background", x: 0, y: 0, width: 100, height: 100, zIndex: 0, color: "#000000", mediaCueId: null, mediaKind: null },
 ]
 
 const VALID_RUNDOWN = {
@@ -526,9 +526,30 @@ test("ACTION_REGISTRY['canvas:show'].validatePayload: accepts a valid mixed-laye
   const unknownKind = { ...VALID_CANVAS_LAYERS[0], kind: "video" }
   const missingTextFields = { id: "01L", kind: "text", x: 0, y: 0, width: 10, height: 10, zIndex: 1 }
   const missingImageMediaCueId = { id: "01L", kind: "image", x: 0, y: 0, width: 10, height: 10, zIndex: 1 }
-  const badBackgroundColor = { id: "01L", kind: "background", x: 0, y: 0, width: 10, height: 10, zIndex: 1, color: 5, mediaCueId: null }
+  const imageMissingMediaKind = { id: "01L", kind: "image", x: 0, y: 0, width: 10, height: 10, zIndex: 1, mediaCueId: "01M" }
+  const backgroundMediaCueIdWithoutMediaKind = {
+    id: "01L",
+    kind: "background",
+    x: 0,
+    y: 0,
+    width: 10,
+    height: 10,
+    zIndex: 1,
+    color: null,
+    mediaCueId: "01M",
+    mediaKind: null,
+  }
+  const badBackgroundColor = { id: "01L", kind: "background", x: 0, y: 0, width: 10, height: 10, zIndex: 1, color: 5, mediaCueId: null, mediaKind: null }
 
-  for (const layer of [outOfRangeX, unknownKind, missingTextFields, missingImageMediaCueId, badBackgroundColor]) {
+  for (const layer of [
+    outOfRangeX,
+    unknownKind,
+    missingTextFields,
+    missingImageMediaCueId,
+    imageMissingMediaKind,
+    backgroundMediaCueIdWithoutMediaKind,
+    badBackgroundColor,
+  ]) {
     assert.equal(
       ACTION_REGISTRY["canvas:show"].validatePayload({ layers: [layer] }),
       false,

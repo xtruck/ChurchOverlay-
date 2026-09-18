@@ -3073,12 +3073,20 @@ export type CanvasTextLayer = CanvasLayerBase & {
 export type CanvasImageLayer = CanvasLayerBase & {
   readonly kind: "image"
   readonly mediaCueId: string
+  // Captured at authoring time (the editor already has the full MediaCue,
+  // kind included, from the Media Library picker) so the overlay's
+  // renderer knows whether to build an <img> or <video> element without a
+  // second lookup or a fragile "try img, fall back to video" guess —
+  // found necessary during Phase 3 implementation, not anticipated here
+  // originally.
+  readonly mediaKind: "image" | "video"
 }
 
 export type CanvasBackgroundLayer = CanvasLayerBase & {
   readonly kind: "background"
   readonly color: string | null
   readonly mediaCueId: string | null // mutually exclusive with color; validated at the WS boundary, section 66.4
+  readonly mediaKind: "image" | "video" | null // null exactly when mediaCueId is null
 }
 
 export type CanvasLayer = CanvasTextLayer | CanvasImageLayer | CanvasBackgroundLayer

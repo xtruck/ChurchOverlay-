@@ -25,15 +25,24 @@ export type CanvasTextLayer = CanvasLayerBase & {
   readonly align: "left" | "center" | "right"
 }
 
+/**
+ * `mediaKind` is captured at authoring time (the editor already has the
+ * full `MediaCue` — kind included — from the Media Library picker) rather
+ * than looked up again here, so the overlay's renderer knows whether to
+ * build an `<img>` or `<video>` element without a second round trip or a
+ * fragile "try img, fall back to video" guess.
+ */
 export type CanvasImageLayer = CanvasLayerBase & {
   readonly kind: "image"
   readonly mediaCueId: string
+  readonly mediaKind: "image" | "video"
 }
 
 export type CanvasBackgroundLayer = CanvasLayerBase & {
   readonly kind: "background"
   readonly color: string | null
   readonly mediaCueId: string | null
+  readonly mediaKind: "image" | "video" | null
 }
 
 export type CanvasLayer = CanvasTextLayer | CanvasImageLayer | CanvasBackgroundLayer

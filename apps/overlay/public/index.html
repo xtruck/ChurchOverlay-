@@ -291,6 +291,40 @@
     font-size: 15px;
     line-height: 1.5;
   }
+
+  /*
+    Canvas scene (ARCHITECTURE.md section 66) — the first content type
+    whose WS payload carries a whole list of positioned elements rather
+    than one fixed template's fields. z-index 3, ABOVE the four legacy
+    templates above (media:1, verse/announcement/definition:2), since only
+    one scene is ever on screen at a time and a canvas scene replaces
+    whatever was showing, not layers alongside it. #canvas-layer itself is
+    the stage; each layer is a real DOM node absolutely positioned inside
+    it by percentage (matching the 0-100 coordinate space every layer's
+    x/y/width/height is authored in), never a <canvas>/WebGL surface, so
+    each layer keeps its own font/CSS exactly like the rest of this page.
+  */
+  #canvas-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 3;
+    display: none;
+    overflow: hidden;
+    background: #000;
+  }
+  #canvas-layer.visible { display: block; }
+  .canvas-layer-item { position: absolute; }
+  .canvas-layer-text {
+    color: #ffffff;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.85);
+    line-height: 1.3;
+    overflow: hidden;
+  }
+  .canvas-layer-image, .canvas-layer-media {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
 </style>
 </head>
 <body>
@@ -321,6 +355,7 @@
       <div id="definition-body"></div>
     </div>
   </div>
+  <div id="canvas-layer"></div>
   <script src="/overlay.js"></script>
 </body>
 </html>

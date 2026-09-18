@@ -1082,6 +1082,7 @@ const SAMPLE_CANVAS_LAYERS = [
     zIndex: 0,
     color: "#0a0a12",
     mediaCueId: null,
+    mediaKind: null,
   },
   {
     id: "01LAYER-TEXT",

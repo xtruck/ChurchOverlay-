@@ -224,11 +224,12 @@ function isCanvasLayerPayload(payload: unknown): payload is CanvasLayer {
         (payload.align === "left" || payload.align === "center" || payload.align === "right")
       )
     case "image":
-      return isNonEmptyString(payload.mediaCueId)
+      return isNonEmptyString(payload.mediaCueId) && (payload.mediaKind === "image" || payload.mediaKind === "video")
     case "background":
       return (
         (payload.color === null || typeof payload.color === "string") &&
-        (payload.mediaCueId === null || typeof payload.mediaCueId === "string")
+        ((payload.mediaCueId === null && payload.mediaKind === null) ||
+          (typeof payload.mediaCueId === "string" && (payload.mediaKind === "image" || payload.mediaKind === "video")))
       )
     default:
       return false
