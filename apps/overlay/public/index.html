@@ -2,6 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+<!--
+  Electron Security Warning fix (docs/tutorial/security.md) — same reasoning
+  as apps/desktop/renderer/index.html's own CSP comment: default-src 'none'
+  plus explicit allowances. img-src/media-src 'self' cover the voice-
+  triggered media layer's images/video/audio, all served same-origin from
+  "/media/<id>" by this page's own StaticServer (never a remote URL).
+  connect-src allows ws://127.0.0.1:* since the WS server runs on a
+  different port than the HTTP port serving this page.
+-->
+<meta
+  http-equiv="Content-Security-Policy"
+  content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; media-src 'self'; connect-src 'self' ws://127.0.0.1:*; base-uri 'none'; form-action 'none';"
+/>
 <title>ChurchOverlay — Overlay</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

@@ -3,6 +3,21 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<!--
+  Electron Security Warning fix (docs/tutorial/security.md) — same
+  reasoning as the dashboard/overlay pages' own CSP comments, with one
+  difference: connect-src allows the bare "ws:" scheme rather than a pinned
+  ws://127.0.0.1:* host, because this page (ARCHITECTURE.md section 65.6)
+  is opened from whatever LAN IP the operator's machine reports at the
+  time — 'self' can't be used for the WS connection (different port than
+  this page's own HTTP port) and the exact host isn't knowable in advance.
+  The operator token remains the real access control here, not this policy
+  (section 65.6 already documents this isn't a security boundary).
+-->
+<meta
+  http-equiv="Content-Security-Policy"
+  content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' ws:; base-uri 'none'; form-action 'none';"
+/>
 <title>ChurchOverlay — Remote</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

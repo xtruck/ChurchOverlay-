@@ -2,6 +2,27 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+<!--
+  Electron Security Warning fix (docs/tutorial/security.md): a real CSP,
+  not just nodeIntegration:false/contextIsolation:true. default-src 'none'
+  denies everything not explicitly listed below.
+    - script-src 'self': only this app's own local scripts run — no inline
+      <script> or eval anywhere in this codebase, so no 'unsafe-inline'/
+      'unsafe-eval' is needed here.
+    - style-src needs 'unsafe-inline': this file's own inline <style> block
+      and its hardcoded style="display:none" attributes require it — CSP
+      has no practical alternative without a build step to add per-style
+      hashes/nonces. This is a much narrower risk than script 'unsafe-inline'
+      (CSS injection, not arbitrary JS execution).
+    - connect-src allows ws://127.0.0.1:* — the dashboard always connects
+      to the local server on loopback (apps/desktop/renderer/dashboard.js),
+      on a different port than this page itself, so 'self' alone would not
+      cover it.
+-->
+<meta
+  http-equiv="Content-Security-Policy"
+  content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' ws://127.0.0.1:*; base-uri 'none'; form-action 'none';"
+/>
 <title>ChurchOverlay — Operator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
