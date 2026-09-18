@@ -170,3 +170,46 @@ test("RundownController: currentState() reflects the active scene without mutati
   assert.deepEqual(first, second)
   assert.equal(first?.cursor, 1)
 })
+
+// ARCHITECTURE.md section 66.7: a cheap regression guard that widening
+// RundownScene to a 5th "canvas" member didn't silently break anything in
+// a controller that is supposed to be completely content-agnostic — it
+// never inspects scene.kind, only tracks cursor/pause position.
+test("RundownController: a 'canvas' scene round-trips through load()/next()/goto() exactly like any other kind", () => {
+  const canvasScene = {
+    kind: "canvas" as const,
+    canvas: {
+      layers: [
+        {
+          id: "01LAYER",
+          kind: "text" as const,
+          x: 10,
+          y: 10,
+          width: 80,
+          height: 20,
+          zIndex: 1,
+          text: "Welcome",
+          fontFamily: "serif" as const,
+          fontSizePx: 48,
+          color: "#ffffff",
+          align: "center" as const,
+        },
+      ],
+    },
+  }
+  const rundownWithCanvas: Rundown = {
+    id: "01RUNDOWN-CANVAS",
+    title: "Sunday Service",
+    scenes: [{ kind: "blank" }, canvasScene],
+  }
+
+  const controller = new RundownController()
+  const loaded = controller.load(rundownWithCanvas)
+  assert.deepEqual(loaded, { rundownId: "01RUNDOWN-CANVAS", cursor: 0, scene: { kind: "blank" }, interrupted: false })
+
+  const advanced = controller.next()
+  assert.deepEqual(advanced, { rundownId: "01RUNDOWN-CANVAS", cursor: 1, scene: canvasScene, interrupted: false })
+
+  const wentBack = controller.goto(0)
+  assert.deepEqual(wentBack, { rundownId: "01RUNDOWN-CANVAS", cursor: 0, scene: { kind: "blank" }, interrupted: false })
+})

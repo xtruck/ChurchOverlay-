@@ -1,6 +1,7 @@
 import type {
   AsrProvider,
   AudioFrame,
+  CanvasSceneData,
   DefinitionShowPayload,
   DisplayMode,
   MediaShowPayload,
@@ -445,6 +446,32 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   }
 
   /**
+   * ARCHITECTURE.md section 66.4: a canvas scene's layers are broadcast
+   * exactly as authored — no resolveVerse()/hallucination-guard
+   * involvement, since every layer is operator-authored only in this
+   * phase (invariant 23).
+   */
+  function broadcastCanvas(canvas: CanvasSceneData, correlationId?: string): void {
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "canvas:show",
+      timestamp: Date.now(),
+      correlationId,
+      payload: canvas,
+    })
+  }
+
+  function broadcastCanvasClear(correlationId?: string): void {
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "canvas:clear",
+      timestamp: Date.now(),
+      correlationId,
+      payload: null,
+    })
+  }
+
+  /**
    * ARCHITECTURE.md section 65.5: a voice-triggered glossary definition is
    * a momentary aside, not a persistent scene the operator manages —
    * unlike every other content type in this app, it clears itself on a
@@ -524,14 +551,18 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       case "announcement":
         broadcastAnnouncement({ title: scene.title, body: scene.body }, correlationId)
         return
+      case "canvas":
+        broadcastCanvas(scene.canvas, correlationId)
+        return
       case "blank":
-        // Invariant 22: always clear all three content channels, regardless
+        // Invariant 22/24: always clear every content channel, regardless
         // of whether each one had anything active — over-clearing is safe,
         // under-clearing leaves stale content on screen.
         clearVerse(correlationId)
         mediaPlayback.clear()
         wsServer.broadcast({ id: generateUlid(), type: "media:clear", timestamp: Date.now(), correlationId, payload: null })
         broadcastAnnouncementClear(correlationId)
+        broadcastCanvasClear(correlationId)
         return
     }
   }
@@ -567,9 +598,13 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
           payload: { title: scene.title, body: scene.body },
         })
         return
+      case "canvas":
+        send({ id: generateUlid(), type: "canvas:show", timestamp: Date.now(), payload: scene.canvas })
+        return
       case "blank":
         send({ id: generateUlid(), type: "verse:clear", timestamp: Date.now(), payload: null })
         send({ id: generateUlid(), type: "announcement:clear", timestamp: Date.now(), payload: null })
+        send({ id: generateUlid(), type: "canvas:clear", timestamp: Date.now(), payload: null })
         return
       case "media":
         return // handled independently above
@@ -740,12 +775,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       // status:update / transcript:partial / verse:show / verse:pending /
       // media:show / rundown:state / announcement:show /
       // announcement:clear / definition:show / definition:clear /
-      // sermonNotes:update are all server-originated events; the action
-      // registry's role check (empty allowedSenders) already refuses any
-      // client attempting to send them inbound, so onCommand is never
-      // actually invoked for these. Kept only so this switch stays
-      // exhaustive and explicit rather than silently ignoring a case
-      // (AGENTS.md section 25).
+      // sermonNotes:update / canvas:show / canvas:clear are all server-
+      // originated events; the action registry's role check (empty
+      // allowedSenders) already refuses any client attempting to send
+      // them inbound, so onCommand is never actually invoked for these.
+      // Kept only so this switch stays exhaustive and explicit rather
+      // than silently ignoring a case (AGENTS.md section 25).
       case "status:update":
       case "transcript:partial":
       case "verse:show":
@@ -757,6 +792,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       case "definition:show":
       case "definition:clear":
       case "sermonNotes:update":
+      case "canvas:show":
+      case "canvas:clear":
         logger.warn({
           component: "app-core",
           event: "unreachable-command",

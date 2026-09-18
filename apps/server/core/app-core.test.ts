@@ -1058,14 +1058,173 @@ test("AppCore: a 'blank' scene broadcasts verse:clear, media:clear, and announce
       scenes: [{ kind: "blank" }],
     }
 
-    const messages = waitForMessages(viewerSocket, 4)
+    const messages = waitForMessages(viewerSocket, 5)
     operatorSocket.send(JSON.stringify({ id: "01A", type: "rundown:load", timestamp: Date.now(), payload: { rundown } }))
     const received = await messages
     const types = received.map((m) => m.type).sort()
-    assert.deepEqual(types, ["announcement:clear", "media:clear", "rundown:state", "verse:clear"])
+    assert.deepEqual(types, ["announcement:clear", "canvas:clear", "media:clear", "rundown:state", "verse:clear"])
 
     operatorSocket.close()
     viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+const SAMPLE_CANVAS_LAYERS = [
+  {
+    id: "01LAYER-BG",
+    kind: "background" as const,
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 100,
+    zIndex: 0,
+    color: "#0a0a12",
+    mediaCueId: null,
+  },
+  {
+    id: "01LAYER-TEXT",
+    kind: "text" as const,
+    x: 10,
+    y: 40,
+    width: 80,
+    height: 20,
+    zIndex: 1,
+    text: "Welcome",
+    fontFamily: "serif" as const,
+    fontSizePx: 48,
+    color: "#ffffff",
+    align: "center" as const,
+  },
+]
+
+// ARCHITECTURE.md section 66.4/66.7: activating a canvas scene broadcasts
+// its layers exactly as authored, with no resolveVerse()/hallucination-
+// guard involvement (invariant 23 — every layer here is operator-authored).
+test("AppCore: activating a 'canvas' scene broadcasts rundown:state then canvas:show with the exact layer list", async () => {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const rundown: Rundown = {
+      id: "01RUNDOWN",
+      title: "Sunday Service",
+      scenes: [{ kind: "canvas", canvas: { layers: SAMPLE_CANVAS_LAYERS } }],
+    }
+
+    const messages = waitForMessages(viewerSocket, 2)
+    operatorSocket.send(JSON.stringify({ id: "01A", type: "rundown:load", timestamp: Date.now(), payload: { rundown } }))
+    const [stateMessage, showMessage] = await messages
+
+    assert.equal(stateMessage?.type, "rundown:state")
+    assert.deepEqual(stateMessage?.payload, {
+      rundownId: "01RUNDOWN",
+      cursor: 0,
+      scene: { kind: "canvas", canvas: { layers: SAMPLE_CANVAS_LAYERS } },
+      interrupted: false,
+    })
+    assert.equal(showMessage?.type, "canvas:show")
+    assert.deepEqual(showMessage?.payload, { layers: SAMPLE_CANVAS_LAYERS })
+
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+// Invariant 24 regression test: a canvas scene must never survive
+// underneath a subsequent blank scene.
+test("AppCore: a 'blank' scene after a 'canvas' scene also broadcasts canvas:clear", async () => {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const rundown: Rundown = {
+      id: "01RUNDOWN",
+      title: "Sunday Service",
+      scenes: [{ kind: "canvas", canvas: { layers: SAMPLE_CANVAS_LAYERS } }, { kind: "blank" }],
+    }
+
+    const loadMessages = waitForMessages(viewerSocket, 2)
+    operatorSocket.send(JSON.stringify({ id: "01A", type: "rundown:load", timestamp: Date.now(), payload: { rundown } }))
+    await loadMessages
+
+    const nextMessages = waitForMessages(viewerSocket, 5)
+    operatorSocket.send(JSON.stringify({ id: "01B", type: "scene:next", timestamp: Date.now(), payload: null }))
+    const received = await nextMessages
+    const types = received.map((m) => m.type).sort()
+    assert.deepEqual(types, ["announcement:clear", "canvas:clear", "media:clear", "rundown:state", "verse:clear"])
+
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+// The late-join/reconnect resync path (syncSceneContent) for a canvas
+// scene — a newly-connecting viewer must see it immediately, direct-sent
+// rather than broadcast (same pattern as every other non-media scene kind).
+test("AppCore: a viewer connecting while a 'canvas' scene is active immediately receives a sync canvas:show", async () => {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const firstViewer = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const rundown: Rundown = {
+      id: "01RUNDOWN",
+      title: "Sunday Service",
+      scenes: [{ kind: "canvas", canvas: { layers: SAMPLE_CANVAS_LAYERS } }],
+    }
+    const loadMessages = waitForMessages(firstViewer, 2)
+    operatorSocket.send(JSON.stringify({ id: "01A", type: "rundown:load", timestamp: Date.now(), payload: { rundown } }))
+    await loadMessages
+
+    // A second viewer connects after the canvas scene is already active.
+    // Deliberately NOT using the connect() helper here: it resolves only
+    // after the "open" event fires, and the server sends its sync
+    // messages as soon as it accepts the connection — possibly before
+    // "open" is even processed client-side. Registering the message
+    // listener via a raw WebSocket first (matching the existing
+    // media-sync test's own pattern) avoids racing and missing them.
+    const secondViewer = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
+    const syncMessages = waitForMessages(secondViewer, 2)
+    const [syncState, syncShow] = await syncMessages
+    assert.equal(syncState?.type, "rundown:state")
+    assert.equal(syncShow?.type, "canvas:show")
+    assert.deepEqual(syncShow?.payload, { layers: SAMPLE_CANVAS_LAYERS })
+
+    operatorSocket.close()
+    firstViewer.close()
+    secondViewer.close()
   } finally {
     await app.stop()
   }
@@ -1185,7 +1344,7 @@ test("AppCore: scene:goto with an out-of-range index is a no-op, broadcasting no
     const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
 
     const rundown: Rundown = { id: "01RUNDOWN", title: "Sunday Service", scenes: [{ kind: "blank" }] }
-    const loadMessages = waitForMessages(viewerSocket, 4)
+    const loadMessages = waitForMessages(viewerSocket, 5)
     operatorSocket.send(JSON.stringify({ id: "01A", type: "rundown:load", timestamp: Date.now(), payload: { rundown } }))
     await loadMessages
 

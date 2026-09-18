@@ -847,6 +847,7 @@
               <button type="button" data-kind="media" data-i18n="rundown.builder.kind.media">Media</button>
               <button type="button" data-kind="announcement" data-i18n="rundown.builder.kind.announcement">Announcement</button>
               <button type="button" data-kind="blank" data-i18n="rundown.builder.kind.blank">Blank</button>
+              <button type="button" data-kind="canvas" data-i18n="rundown.builder.kind.canvas">Canvas</button>
             </div>
 
             <div id="rundown-field-verse">
@@ -862,6 +863,13 @@
               <input id="rundown-announcement-title" type="text" placeholder="Welcome" />
               <label for="rundown-announcement-body" data-i18n="rundown.builder.announcementBodyLabel">Message</label>
               <input id="rundown-announcement-body" type="text" placeholder="Glad you're here." />
+            </div>
+            <!-- ARCHITECTURE.md section 66, Phase 2 stopgap: the real
+                 drag/resize/style canvas editor ships in Phase 4. -->
+            <div id="rundown-field-canvas" style="display: none">
+              <div class="rundown-empty" data-i18n="rundown.builder.canvasPlaceholder">
+                Adds an empty canvas scene — the visual layout editor is coming soon.
+              </div>
             </div>
 
             <button id="rundown-add-scene-btn" class="btn-secondary" style="width: 100%; margin-bottom: var(--space-3)" data-i18n="rundown.builder.addButton">+ Add scene</button>

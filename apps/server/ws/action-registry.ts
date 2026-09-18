@@ -1,6 +1,8 @@
 import type {
   AnnouncementShowPayload,
   AsrStatusPayload,
+  CanvasLayer,
+  CanvasShowPayload,
   DefinitionShowPayload,
   MediaCue,
   MediaShowPayload,
@@ -184,6 +186,59 @@ function isMediaShowPayload(payload: unknown): payload is MediaShowPayload {
 
 // ARCHITECTURE.md section 64: Service Rundown & Scenes.
 
+/**
+ * ARCHITECTURE.md section 66.4: structural validation for one canvas
+ * layer — every field is checked, including per-kind required fields, the
+ * same discipline every other inbound/outbound payload in this registry
+ * already applies (AGENTS.md section 17).
+ */
+function isCanvasLayerBaseValid(payload: Record<string, unknown>): boolean {
+  return (
+    isNonEmptyString(payload.id) &&
+    isFiniteNumber(payload.x) &&
+    payload.x >= 0 &&
+    payload.x <= 100 &&
+    isFiniteNumber(payload.y) &&
+    payload.y >= 0 &&
+    payload.y <= 100 &&
+    isFiniteNumber(payload.width) &&
+    payload.width >= 0 &&
+    payload.width <= 100 &&
+    isFiniteNumber(payload.height) &&
+    payload.height >= 0 &&
+    payload.height <= 100 &&
+    isFiniteNumber(payload.zIndex)
+  )
+}
+
+function isCanvasLayerPayload(payload: unknown): payload is CanvasLayer {
+  if (!isPlainObject(payload)) return false
+  if (!isCanvasLayerBaseValid(payload)) return false
+  switch (payload.kind) {
+    case "text":
+      return (
+        typeof payload.text === "string" &&
+        (payload.fontFamily === "serif" || payload.fontFamily === "sans" || payload.fontFamily === "mono") &&
+        isFiniteNumber(payload.fontSizePx) &&
+        typeof payload.color === "string" &&
+        (payload.align === "left" || payload.align === "center" || payload.align === "right")
+      )
+    case "image":
+      return isNonEmptyString(payload.mediaCueId)
+    case "background":
+      return (
+        (payload.color === null || typeof payload.color === "string") &&
+        (payload.mediaCueId === null || typeof payload.mediaCueId === "string")
+      )
+    default:
+      return false
+  }
+}
+
+function isCanvasSceneDataPayload(payload: unknown): payload is CanvasShowPayload {
+  return isPlainObject(payload) && Array.isArray(payload.layers) && payload.layers.every(isCanvasLayerPayload)
+}
+
 function isRundownScenePayload(payload: unknown): payload is RundownScene {
   if (!isPlainObject(payload)) return false
   switch (payload.kind) {
@@ -195,6 +250,8 @@ function isRundownScenePayload(payload: unknown): payload is RundownScene {
       return typeof payload.title === "string" && typeof payload.body === "string"
     case "blank":
       return true
+    case "canvas":
+      return isCanvasSceneDataPayload(payload.canvas)
     default:
       return false
   }
@@ -384,6 +441,16 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "event",
     allowedSenders: [],
     validatePayload: isSermonNotesPayload,
+  },
+  "canvas:show": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isCanvasSceneDataPayload,
+  },
+  "canvas:clear": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isNullPayload,
   },
 }
 

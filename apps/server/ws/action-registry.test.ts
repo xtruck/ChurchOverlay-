@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { validateWsMessage, ACTION_REGISTRY } from "./action-registry"
 
-test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 media, rundown, glossary, verse-confirmation, and sermon-notes actions (ARCHITECTURE.md sections 30, 60, 64, 65.3, 65.5, 65.7)", () => {
+test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 media, rundown, glossary, verse-confirmation, sermon-notes, and canvas actions (ARCHITECTURE.md sections 30, 60, 64, 65.3, 65.5, 65.7, 66)", () => {
   assert.deepEqual(
     Object.keys(ACTION_REGISTRY).sort(),
     [
@@ -31,6 +31,8 @@ test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 me
       "definition:show",
       "definition:clear",
       "sermonNotes:update",
+      "canvas:show",
+      "canvas:clear",
     ].sort()
   )
 })
@@ -288,6 +290,12 @@ test("ACTION_REGISTRY['status:update'].validatePayload: accepts a valid ASR heal
   }
 })
 
+const VALID_CANVAS_LAYERS = [
+  { id: "01LAYER-TEXT", kind: "text", x: 10, y: 10, width: 80, height: 20, zIndex: 1, text: "Welcome", fontFamily: "serif", fontSizePx: 48, color: "#ffffff", align: "center" },
+  { id: "01LAYER-IMAGE", kind: "image", x: 20, y: 40, width: 60, height: 40, zIndex: 2, mediaCueId: "01MEDIA" },
+  { id: "01LAYER-BG", kind: "background", x: 0, y: 0, width: 100, height: 100, zIndex: 0, color: "#000000", mediaCueId: null },
+]
+
 const VALID_RUNDOWN = {
   id: "01RUNDOWN",
   title: "Sunday Service",
@@ -296,6 +304,7 @@ const VALID_RUNDOWN = {
     { kind: "announcement", title: "Welcome", body: "Glad you're here." },
     { kind: "media", mediaCueId: "01MEDIA" },
     { kind: "verse", reference: { book: "john", chapter: 3, verse: 16 } },
+    { kind: "canvas", canvas: { layers: VALID_CANVAS_LAYERS } },
   ],
 }
 
@@ -335,9 +344,25 @@ test("validateWsMessage: rejects rundown:load with a malformed scene or missing 
     },
     "operator"
   )
+  const malformedCanvasLayer = validateWsMessage(
+    {
+      id: "01ABC",
+      type: "rundown:load",
+      timestamp: 1700000000000,
+      payload: {
+        rundown: {
+          id: "01R",
+          title: "X",
+          scenes: [{ kind: "canvas", canvas: { layers: [{ id: "01L", kind: "text", x: 0, y: 0, width: 10, height: 10, zIndex: 1 }] } }],
+        },
+      },
+    },
+    "operator"
+  )
   assert.equal(malformedScene.ok, false)
   assert.equal(unknownKind.ok, false)
   assert.equal(missingTitle.ok, false)
+  assert.equal(malformedCanvasLayer.ok, false, "a text layer missing text/fontFamily/fontSizePx/color/align must be rejected")
 })
 
 test("validateWsMessage: rejects scene:next/scene:previous with a non-null payload", () => {
@@ -490,4 +515,52 @@ test("validateWsMessage: rejects any inbound sender for sermonNotes:update — a
   )
   assert.equal(asOperator.ok, false)
   assert.equal(asViewer.ok, false)
+})
+
+// ARCHITECTURE.md section 66.4/66.7: the canvas scene editor's WS surface.
+test("ACTION_REGISTRY['canvas:show'].validatePayload: accepts a valid mixed-layer list, rejects malformed layers", () => {
+  assert.equal(ACTION_REGISTRY["canvas:show"].validatePayload({ layers: VALID_CANVAS_LAYERS }), true)
+  assert.equal(ACTION_REGISTRY["canvas:show"].validatePayload({ layers: [] }), true)
+
+  const outOfRangeX = { ...VALID_CANVAS_LAYERS[0], x: 150 }
+  const unknownKind = { ...VALID_CANVAS_LAYERS[0], kind: "video" }
+  const missingTextFields = { id: "01L", kind: "text", x: 0, y: 0, width: 10, height: 10, zIndex: 1 }
+  const missingImageMediaCueId = { id: "01L", kind: "image", x: 0, y: 0, width: 10, height: 10, zIndex: 1 }
+  const badBackgroundColor = { id: "01L", kind: "background", x: 0, y: 0, width: 10, height: 10, zIndex: 1, color: 5, mediaCueId: null }
+
+  for (const layer of [outOfRangeX, unknownKind, missingTextFields, missingImageMediaCueId, badBackgroundColor]) {
+    assert.equal(
+      ACTION_REGISTRY["canvas:show"].validatePayload({ layers: [layer] }),
+      false,
+      `layer ${JSON.stringify(layer)} must be rejected`
+    )
+  }
+  for (const payload of [{}, { layers: "not-an-array" }, null]) {
+    assert.equal(
+      ACTION_REGISTRY["canvas:show"].validatePayload(payload),
+      false,
+      `payload ${JSON.stringify(payload)} must be rejected`
+    )
+  }
+})
+
+test("validateWsMessage: rejects any inbound sender for canvas:show/canvas:clear — server-only events", () => {
+  const events: Array<[string, unknown]> = [
+    ["canvas:show", { layers: VALID_CANVAS_LAYERS }],
+    ["canvas:clear", null],
+  ]
+  for (const [type, payload] of events) {
+    const asOperator = validateWsMessage({ id: "01ABC", type, timestamp: 1700000000000, payload }, "operator")
+    const asViewer = validateWsMessage({ id: "01ABC", type, timestamp: 1700000000000, payload }, "viewer")
+    assert.equal(asOperator.ok, false, `no client role may send ${type} inbound (operator)`)
+    assert.equal(asViewer.ok, false, `no client role may send ${type} inbound (viewer)`)
+  }
+})
+
+test("validateWsMessage: rejects canvas:clear with a non-null payload", () => {
+  const result = validateWsMessage(
+    { id: "01ABC", type: "canvas:clear", timestamp: 1700000000000, payload: {} },
+    "operator"
+  )
+  assert.equal(result.ok, false)
 })

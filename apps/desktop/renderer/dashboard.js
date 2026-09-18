@@ -95,6 +95,7 @@
   const rundownFieldVerseEl = document.getElementById("rundown-field-verse")
   const rundownFieldMediaEl = document.getElementById("rundown-field-media")
   const rundownFieldAnnouncementEl = document.getElementById("rundown-field-announcement")
+  const rundownFieldCanvasEl = document.getElementById("rundown-field-canvas")
   const rundownVerseInput = document.getElementById("rundown-verse-input")
   const rundownMediaSelectEl = document.getElementById("rundown-media-select")
   const rundownAnnouncementTitleInput = document.getElementById("rundown-announcement-title")
@@ -316,6 +317,10 @@
     media: '<rect x="2.5" y="5.5" width="14" height="13" rx="2"/><path d="m20.5 9 v6 l-4-3z"/>',
     announcement: '<path d="M3 11v2a2 2 0 0 0 2 2h1l4 4V5L6 9H5a2 2 0 0 0-2 2z"/><path d="M17 8a5 5 0 0 1 0 8"/>',
     blank: '<rect x="4" y="4" width="16" height="16" rx="2"/>',
+    // ARCHITECTURE.md section 66, Phase 2 stopgap: a canvas scene's real
+    // editor UI ships in Phase 4 — this icon just distinguishes it in the
+    // scene-chip lists until then.
+    canvas: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 15l4-4 3 3 5-5 6 6"/>',
   }
 
   function sceneIconSvg(kind) {
@@ -339,6 +344,8 @@
         return scene.title
       case "blank":
         return t("rundown.blankLabel")
+      case "canvas":
+        return t("rundown.canvasLabel")
     }
   }
 
@@ -469,6 +476,7 @@
     rundownFieldVerseEl.style.display = draftSelectedKind === "verse" ? "block" : "none"
     rundownFieldMediaEl.style.display = draftSelectedKind === "media" ? "block" : "none"
     rundownFieldAnnouncementEl.style.display = draftSelectedKind === "announcement" ? "block" : "none"
+    rundownFieldCanvasEl.style.display = draftSelectedKind === "canvas" ? "block" : "none"
   }
 
   wireOptionGroup(rundownSceneKindEl, "kind", (kind) => {
@@ -503,6 +511,13 @@
       scene = { kind: "announcement", title, body }
       rundownAnnouncementTitleInput.value = ""
       rundownAnnouncementBodyInput.value = ""
+    } else if (draftSelectedKind === "canvas") {
+      // ARCHITECTURE.md section 66, Phase 2 stopgap: an empty canvas (no
+      // layers) round-trips correctly through rundown:load/scene:*, but
+      // the real drag/resize/style editor UI ships in Phase 4 — for now
+      // this just lets a canvas scene exist and be reordered like any
+      // other kind.
+      scene = { kind: "canvas", canvas: { layers: [] } }
     } else {
       scene = { kind: "blank" }
     }
