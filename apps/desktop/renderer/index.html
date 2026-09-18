@@ -167,44 +167,84 @@
   }
 
   /*
-    Bento grid (ARCHITECTURE.md section 59.2 / the plan's own "grows here"
-    requirement): the media-library placeholder is already its own named
-    grid area today, locked — when that feature ships, its content swaps
-    in place, no grid restructuring needed. 3 columns x 3 rows; the live
-    verse preview is the deliberate hero cell.
+    Sidebar app shell (ARCHITECTURE.md section 66, Phase 1): each of Live /
+    Rundown & Scenes / Media Library / Settings gets the ENTIRE content
+    area when active, switched via the sidebar — replacing the old bento
+    grid where every card was squeezed into a fixed-height cell and grew
+    its own internal scrollbar the moment content exceeded it. This is
+    presentation-only: dashboard.js binds every interactive element by ID,
+    never by grid position (section 66.1), so nothing below changes what
+    any button/toggle/input actually does, only where it visually lives.
   */
-  main {
+  .shell {
     flex: 1;
-    display: grid;
-    grid-template-columns: 1.05fr 1.05fr 1.5fr;
-    grid-template-rows: auto auto 1fr auto auto auto;
-    grid-template-areas:
-      "mic      mic      live"
-      "override media    live"
-      "log      media    live"
-      "rundown  rundown  rundown"
-      "notes    notes    notes"
-      "remote   remote   remote";
-    gap: var(--space-4);
-    padding: var(--space-6);
-    overflow: auto;
+    display: flex;
     min-height: 0;
+    overflow: hidden;
   }
+  .sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: var(--space-4);
+    border-radius: 0;
+    border-top: none;
+    border-bottom: none;
+    border-left: none;
+  }
+  .sidebar-nav-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 11px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .sidebar-nav-item:hover:not(.active) { background: rgba(255, 255, 255, 0.05); }
+  .sidebar-nav-item.active { background: rgba(143, 125, 255, 0.14); color: var(--text-primary); }
+
   @media (max-width: 900px) {
-    main {
+    .sidebar { width: 160px; }
+  }
+
+  /* One view fills the entire content area at a time; the WHOLE view
+     scrolls as a page if its content is taller than the window, instead
+     of each card getting its own tiny scroll region. */
+  .shell-content { flex: 1; min-width: 0; position: relative; }
+  .view { display: none; height: 100%; overflow-y: auto; padding: var(--space-6); }
+  .view.active { display: block; }
+
+  .view-live-grid {
+    display: grid;
+    grid-template-columns: minmax(320px, 400px) 1fr;
+    grid-template-rows: auto auto auto 1fr;
+    grid-template-areas:
+      "mic      live"
+      "override live"
+      "log      live"
+      "notes    live";
+    gap: var(--space-4);
+    min-height: 100%;
+  }
+  @media (max-width: 1100px) {
+    .view-live-grid {
       grid-template-columns: 1fr;
-      grid-template-areas: "mic" "override" "media" "live" "log" "rundown" "notes" "remote";
+      grid-template-areas: "mic" "override" "live" "log" "notes";
       grid-template-rows: none;
     }
   }
-  .cell-mic { grid-area: mic; }
-  .cell-override { grid-area: override; }
-  .cell-media { grid-area: media; }
-  .cell-live { grid-area: live; }
-  .cell-log { grid-area: log; }
-  .cell-rundown { grid-area: rundown; }
-  .cell-notes { grid-area: notes; }
-  .cell-remote { grid-area: remote; }
+  .view-live-grid .cell-mic { grid-area: mic; }
+  .view-live-grid .cell-override { grid-area: override; }
+  .view-live-grid .cell-live { grid-area: live; }
+  .view-live-grid .cell-log { grid-area: log; }
+  .view-live-grid .cell-notes { grid-area: notes; }
 
   .card {
     border-radius: var(--radius-lg);
@@ -212,7 +252,6 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    overflow-y: auto;
   }
   .card-title {
     font-size: 11px; font-weight: 600;
@@ -703,148 +742,175 @@
     </div>
   </header>
 
-  <main>
-    <div class="card glass cell-mic">
-      <div class="card-title" data-i18n="mic.title">Microphone</div>
-      <div id="mic-visual" class="mic-visual">
-        <div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div>
-      </div>
-      <div class="btn-row">
-        <button id="mic-start-btn" class="btn-primary btn-block" data-i18n="mic.start">Start listening</button>
-        <button id="mic-stop-btn" class="btn-secondary btn-block" disabled data-i18n="mic.stop">Stop</button>
-      </div>
-      <label style="margin-top: 16px" data-i18n="mic.lastTranscriptLabel">Last transcript</label>
-      <div id="transcript" data-i18n="mic.waitingForSpeech">Waiting for speech…</div>
-      <div id="asr-health-warning" class="asr-health-warning" role="alert" style="display: none">
-        <span id="asr-health-warning-text"></span>
-      </div>
-    </div>
+  <main class="shell">
+    <nav id="sidebar" class="sidebar glass" aria-label="Main navigation">
+      <button type="button" id="nav-live" class="sidebar-nav-item active" data-view="live">
+        <span data-i18n="nav.live">Live</span>
+      </button>
+      <button type="button" id="nav-rundown" class="sidebar-nav-item" data-view="rundown">
+        <span data-i18n="nav.rundown">Rundown &amp; Scenes</span>
+      </button>
+      <button type="button" id="nav-media" class="sidebar-nav-item" data-view="media">
+        <span data-i18n="nav.media">Media Library</span>
+      </button>
+      <button type="button" id="nav-settings" class="sidebar-nav-item" data-view="settings">
+        <span data-i18n="nav.settings">Settings</span>
+      </button>
+    </nav>
 
-    <div class="card glass cell-override">
-      <div class="card-title" data-i18n="override.title">Manual Override</div>
-      <label for="reference" data-i18n="override.referenceLabel">Verse reference</label>
-      <input id="reference" type="text" placeholder="John 3:16" />
-      <div class="btn-row">
-        <button id="show-btn" class="btn-primary btn-block" data-i18n="override.showButton">Show on overlay</button>
-        <button id="clear-btn" class="btn-danger" data-i18n="override.clearButton">Clear</button>
-      </div>
-    </div>
+    <div class="shell-content">
+      <div id="view-live" class="view active">
+        <div class="view-live-grid">
+          <div class="card glass cell-mic">
+            <div class="card-title" data-i18n="mic.title">Microphone</div>
+            <div id="mic-visual" class="mic-visual">
+              <div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div>
+            </div>
+            <div class="btn-row">
+              <button id="mic-start-btn" class="btn-primary btn-block" data-i18n="mic.start">Start listening</button>
+              <button id="mic-stop-btn" class="btn-secondary btn-block" disabled data-i18n="mic.stop">Stop</button>
+            </div>
+            <label style="margin-top: 16px" data-i18n="mic.lastTranscriptLabel">Last transcript</label>
+            <div id="transcript" data-i18n="mic.waitingForSpeech">Waiting for speech…</div>
+            <div id="asr-health-warning" class="asr-health-warning" role="alert" style="display: none">
+              <span id="asr-health-warning-text"></span>
+            </div>
+          </div>
 
-    <div class="card glass cell-media">
-      <div class="media-header">
-        <div class="card-title" data-i18n="media.title">Media Library</div>
-        <button id="media-import-btn" class="btn-secondary btn-small" data-i18n="media.importButton">+ Import</button>
-      </div>
-      <div id="media-grid" class="media-grid">
-        <div class="media-empty" data-i18n="media.empty">No media imported yet.</div>
-      </div>
-      <div id="media-now-playing" class="media-now-playing" style="display: none">
-        <span id="media-now-playing-title" class="media-now-playing-title"></span>
-        <div class="btn-row">
-          <button id="media-play-pause-btn" class="btn-secondary btn-small" data-i18n="media.pause">Pause</button>
-          <button id="media-stop-btn" class="btn-danger btn-small" data-i18n="media.stop">Stop</button>
+          <div class="card glass cell-override">
+            <div class="card-title" data-i18n="override.title">Manual Override</div>
+            <label for="reference" data-i18n="override.referenceLabel">Verse reference</label>
+            <input id="reference" type="text" placeholder="John 3:16" />
+            <div class="btn-row">
+              <button id="show-btn" class="btn-primary btn-block" data-i18n="override.showButton">Show on overlay</button>
+              <button id="clear-btn" class="btn-danger" data-i18n="override.clearButton">Clear</button>
+            </div>
+          </div>
+
+          <div class="live-preview cell-live">
+            <div class="live-preview-label" data-i18n="livePreview.label">LIVE PREVIEW</div>
+            <div id="verse-pending-banner" class="verse-pending-banner" style="display: none">
+              <div class="verse-pending-label" data-i18n="livePreview.pendingLabel">Verse detected — awaiting confirmation</div>
+              <div id="verse-pending-text"></div>
+              <div id="verse-pending-ref"></div>
+              <button id="verse-pending-confirm-btn" class="btn-primary" data-i18n="livePreview.pendingConfirm">Show on overlay</button>
+            </div>
+            <div id="live-verse-empty" data-i18n="livePreview.empty">Nothing is live right now.</div>
+            <div id="live-verse-text" style="display: none"></div>
+            <div id="live-verse-ref" style="display: none"></div>
+            <div id="live-verse-trigger" style="display: none"></div>
+          </div>
+
+          <div class="card glass cell-log">
+            <div class="media-header">
+              <div class="card-title" data-i18n="activity.title">Activity</div>
+              <button id="export-session-btn" class="btn-secondary btn-small" data-i18n="session.exportButton">Export session</button>
+            </div>
+            <div id="log"></div>
+          </div>
+
+          <div class="card glass cell-notes">
+            <div class="media-header">
+              <div class="card-title" data-i18n="sermonNotes.title">Sermon Notes (AI)</div>
+              <div id="sermon-notes-toggle" class="segmented" role="group" aria-label="AI sermon notes" title="AI sermon notes">
+                <button type="button" data-notes-enabled="off" data-i18n="sermonNotes.off">Off</button>
+                <button type="button" data-notes-enabled="on" data-i18n="sermonNotes.on">On</button>
+              </div>
+            </div>
+            <div class="sermon-notes-disclaimer" data-i18n="sermonNotes.disclaimer">AI-generated summary — not verified content.</div>
+            <div id="sermon-notes-feed" class="sermon-notes-feed">
+              <div class="sermon-notes-empty" data-i18n="sermonNotes.empty">No notes yet.</div>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="live-preview cell-live">
-      <div class="live-preview-label" data-i18n="livePreview.label">LIVE PREVIEW</div>
-      <div id="verse-pending-banner" class="verse-pending-banner" style="display: none">
-        <div class="verse-pending-label" data-i18n="livePreview.pendingLabel">Verse detected — awaiting confirmation</div>
-        <div id="verse-pending-text"></div>
-        <div id="verse-pending-ref"></div>
-        <button id="verse-pending-confirm-btn" class="btn-primary" data-i18n="livePreview.pendingConfirm">Show on overlay</button>
-      </div>
-      <div id="live-verse-empty" data-i18n="livePreview.empty">Nothing is live right now.</div>
-      <div id="live-verse-text" style="display: none"></div>
-      <div id="live-verse-ref" style="display: none"></div>
-      <div id="live-verse-trigger" style="display: none"></div>
-    </div>
+      <div id="view-rundown" class="view">
+        <div class="card glass" style="height: 100%">
+          <div class="media-header">
+            <div class="card-title" data-i18n="rundown.title">Service Rundown</div>
+            <button id="rundown-builder-toggle-btn" class="btn-secondary btn-small" data-i18n="rundown.buildButton">+ Build</button>
+          </div>
 
-    <div class="card glass cell-log">
-      <div class="media-header">
-        <div class="card-title" data-i18n="activity.title">Activity</div>
-        <button id="export-session-btn" class="btn-secondary btn-small" data-i18n="session.exportButton">Export session</button>
-      </div>
-      <div id="log"></div>
-    </div>
+          <div id="rundown-scene-list" class="rundown-scene-list">
+            <div class="rundown-empty" data-i18n="rundown.empty">No rundown loaded.</div>
+          </div>
+          <div class="btn-row" style="margin-top: var(--space-3)">
+            <button id="rundown-prev-btn" class="btn-secondary btn-block" disabled data-i18n="rundown.previous">◀ Previous</button>
+            <button id="rundown-next-btn" class="btn-secondary btn-block" disabled data-i18n="rundown.next">Next ▶</button>
+          </div>
 
-    <div class="card glass cell-rundown">
-      <div class="media-header">
-        <div class="card-title" data-i18n="rundown.title">Service Rundown</div>
-        <button id="rundown-builder-toggle-btn" class="btn-secondary btn-small" data-i18n="rundown.buildButton">+ Build</button>
-      </div>
+          <div id="rundown-builder" class="rundown-builder" style="display: none">
+            <label data-i18n="rundown.builder.sceneKindLabel">Scene type</label>
+            <div id="rundown-scene-kind" class="option-list" role="group" aria-label="Scene type">
+              <button type="button" data-kind="verse" class="active" data-i18n="rundown.builder.kind.verse">Verse</button>
+              <button type="button" data-kind="media" data-i18n="rundown.builder.kind.media">Media</button>
+              <button type="button" data-kind="announcement" data-i18n="rundown.builder.kind.announcement">Announcement</button>
+              <button type="button" data-kind="blank" data-i18n="rundown.builder.kind.blank">Blank</button>
+            </div>
 
-      <div id="rundown-scene-list" class="rundown-scene-list">
-        <div class="rundown-empty" data-i18n="rundown.empty">No rundown loaded.</div>
-      </div>
-      <div class="btn-row" style="margin-top: var(--space-3)">
-        <button id="rundown-prev-btn" class="btn-secondary btn-block" disabled data-i18n="rundown.previous">◀ Previous</button>
-        <button id="rundown-next-btn" class="btn-secondary btn-block" disabled data-i18n="rundown.next">Next ▶</button>
-      </div>
+            <div id="rundown-field-verse">
+              <label for="rundown-verse-input" data-i18n="rundown.builder.verseLabel">Verse reference</label>
+              <input id="rundown-verse-input" type="text" placeholder="John 3:16" />
+            </div>
+            <div id="rundown-field-media" style="display: none">
+              <label for="rundown-media-select" data-i18n="rundown.builder.mediaLabel">Media cue</label>
+              <select id="rundown-media-select"></select>
+            </div>
+            <div id="rundown-field-announcement" style="display: none">
+              <label for="rundown-announcement-title" data-i18n="rundown.builder.announcementTitleLabel">Title</label>
+              <input id="rundown-announcement-title" type="text" placeholder="Welcome" />
+              <label for="rundown-announcement-body" data-i18n="rundown.builder.announcementBodyLabel">Message</label>
+              <input id="rundown-announcement-body" type="text" placeholder="Glad you're here." />
+            </div>
 
-      <div id="rundown-builder" class="rundown-builder" style="display: none">
-        <label data-i18n="rundown.builder.sceneKindLabel">Scene type</label>
-        <div id="rundown-scene-kind" class="option-list" role="group" aria-label="Scene type">
-          <button type="button" data-kind="verse" class="active" data-i18n="rundown.builder.kind.verse">Verse</button>
-          <button type="button" data-kind="media" data-i18n="rundown.builder.kind.media">Media</button>
-          <button type="button" data-kind="announcement" data-i18n="rundown.builder.kind.announcement">Announcement</button>
-          <button type="button" data-kind="blank" data-i18n="rundown.builder.kind.blank">Blank</button>
-        </div>
+            <button id="rundown-add-scene-btn" class="btn-secondary" style="width: 100%; margin-bottom: var(--space-3)" data-i18n="rundown.builder.addButton">+ Add scene</button>
 
-        <div id="rundown-field-verse">
-          <label for="rundown-verse-input" data-i18n="rundown.builder.verseLabel">Verse reference</label>
-          <input id="rundown-verse-input" type="text" placeholder="John 3:16" />
-        </div>
-        <div id="rundown-field-media" style="display: none">
-          <label for="rundown-media-select" data-i18n="rundown.builder.mediaLabel">Media cue</label>
-          <select id="rundown-media-select"></select>
-        </div>
-        <div id="rundown-field-announcement" style="display: none">
-          <label for="rundown-announcement-title" data-i18n="rundown.builder.announcementTitleLabel">Title</label>
-          <input id="rundown-announcement-title" type="text" placeholder="Welcome" />
-          <label for="rundown-announcement-body" data-i18n="rundown.builder.announcementBodyLabel">Message</label>
-          <input id="rundown-announcement-body" type="text" placeholder="Glad you're here." />
-        </div>
+            <div id="rundown-draft-list" class="rundown-scene-list">
+              <div class="rundown-empty" data-i18n="rundown.builder.draftEmpty">No scenes added yet.</div>
+            </div>
 
-        <button id="rundown-add-scene-btn" class="btn-secondary" style="width: 100%; margin-bottom: var(--space-3)" data-i18n="rundown.builder.addButton">+ Add scene</button>
-
-        <div id="rundown-draft-list" class="rundown-scene-list">
-          <div class="rundown-empty" data-i18n="rundown.builder.draftEmpty">No scenes added yet.</div>
-        </div>
-
-        <button id="rundown-load-btn" class="btn-primary" style="width: 100%; margin-top: var(--space-3)" data-i18n="rundown.builder.loadButton">Load rundown</button>
-      </div>
-    </div>
-
-    <div class="card glass cell-notes">
-      <div class="media-header">
-        <div class="card-title" data-i18n="sermonNotes.title">Sermon Notes (AI)</div>
-        <div id="sermon-notes-toggle" class="segmented" role="group" aria-label="AI sermon notes" title="AI sermon notes">
-          <button type="button" data-notes-enabled="off" data-i18n="sermonNotes.off">Off</button>
-          <button type="button" data-notes-enabled="on" data-i18n="sermonNotes.on">On</button>
+            <button id="rundown-load-btn" class="btn-primary" style="width: 100%; margin-top: var(--space-3)" data-i18n="rundown.builder.loadButton">Load rundown</button>
+          </div>
         </div>
       </div>
-      <div class="sermon-notes-disclaimer" data-i18n="sermonNotes.disclaimer">AI-generated summary — not verified content.</div>
-      <div id="sermon-notes-feed" class="sermon-notes-feed">
-        <div class="sermon-notes-empty" data-i18n="sermonNotes.empty">No notes yet.</div>
-      </div>
-    </div>
 
-    <div class="card glass cell-remote">
-      <div class="card-title" data-i18n="remote.title">Phone Remote</div>
-      <div id="remote-disabled" data-i18n="remote.disabled">
-        Not enabled. Turn on "Allow a phone remote" during setup to use this.
-      </div>
-      <div id="remote-enabled" style="display: none">
-        <label data-i18n="remote.linkLabel">Open this link on a phone connected to the same WiFi</label>
-        <div class="btn-row">
-          <input id="remote-url" type="text" readonly />
-          <button id="remote-copy-btn" class="btn-secondary btn-small" data-i18n="remote.copyButton">Copy</button>
+      <div id="view-media" class="view">
+        <div class="card glass" style="height: 100%">
+          <div class="media-header">
+            <div class="card-title" data-i18n="media.title">Media Library</div>
+            <button id="media-import-btn" class="btn-secondary btn-small" data-i18n="media.importButton">+ Import</button>
+          </div>
+          <div id="media-grid" class="media-grid">
+            <div class="media-empty" data-i18n="media.empty">No media imported yet.</div>
+          </div>
+          <div id="media-now-playing" class="media-now-playing" style="display: none">
+            <span id="media-now-playing-title" class="media-now-playing-title"></span>
+            <div class="btn-row">
+              <button id="media-play-pause-btn" class="btn-secondary btn-small" data-i18n="media.pause">Pause</button>
+              <button id="media-stop-btn" class="btn-danger btn-small" data-i18n="media.stop">Stop</button>
+            </div>
+          </div>
         </div>
       </div>
-      <div id="remote-no-lan" style="display: none" data-i18n="remote.noLan">
-        Enabled, but no local network address was found on this machine.
+
+      <div id="view-settings" class="view">
+        <div class="card glass" style="max-width: 640px">
+          <div class="card-title" data-i18n="remote.title">Phone Remote</div>
+          <div id="remote-disabled" data-i18n="remote.disabled">
+            Not enabled. Turn on "Allow a phone remote" during setup to use this.
+          </div>
+          <div id="remote-enabled" style="display: none">
+            <label data-i18n="remote.linkLabel">Open this link on a phone connected to the same WiFi</label>
+            <div class="btn-row">
+              <input id="remote-url" type="text" readonly />
+              <button id="remote-copy-btn" class="btn-secondary btn-small" data-i18n="remote.copyButton">Copy</button>
+            </div>
+          </div>
+          <div id="remote-no-lan" style="display: none" data-i18n="remote.noLan">
+            Enabled, but no local network address was found on this machine.
+          </div>
+        </div>
       </div>
     </div>
   </main>

@@ -74,6 +74,13 @@
   const remoteCopyBtn = document.getElementById("remote-copy-btn")
   const exportSessionBtn = document.getElementById("export-session-btn")
   const sermonNotesToggleEl = document.getElementById("sermon-notes-toggle")
+  const sidebarEl = document.getElementById("sidebar")
+  const viewEls = {
+    live: document.getElementById("view-live"),
+    rundown: document.getElementById("view-rundown"),
+    media: document.getElementById("view-media"),
+    settings: document.getElementById("view-settings"),
+  }
   const sermonNotesFeedEl = document.getElementById("sermon-notes-feed")
   const mediaNowPlayingEl = document.getElementById("media-now-playing")
   const mediaNowPlayingTitleEl = document.getElementById("media-now-playing-title")
@@ -769,12 +776,45 @@
   function showAppShell() {
     setupScreenEl.style.display = "none"
     appShellEl.style.display = "flex"
+    let lastView = "live"
+    try {
+      lastView = localStorage.getItem("churchOverlay.activeView") || "live"
+    } catch {
+      // Private-window/blocked-storage: default to the Live view.
+    }
+    showView(lastView)
     // A separate IPC channel from the WS connection below — the media
     // library should populate as soon as the shell is usable, not wait on
     // (or reload every time on) the WS connection's own open/reconnect
     // cycle.
     loadMediaCues()
   }
+
+  // ARCHITECTURE.md section 66, Phase 1: the sidebar app shell's own
+  // screen switch — the exact same binary style.display toggle pattern
+  // showAppShell()/showSetupScreen() already use, generalized from 2
+  // named panels to N. Persisted to localStorage as a per-viewer
+  // convenience only (which tab was open last) — never anything the main
+  // process needs to know or restore on its behalf.
+  function showView(viewName) {
+    const target = viewEls[viewName] ? viewName : "live"
+    for (const [name, el] of Object.entries(viewEls)) {
+      el.classList.toggle("active", name === target)
+    }
+    sidebarEl.querySelectorAll(".sidebar-nav-item").forEach((button) => {
+      button.classList.toggle("active", button.dataset.view === target)
+    })
+    try {
+      localStorage.setItem("churchOverlay.activeView", target)
+    } catch {
+      // Private-window/blocked-storage: the view still switches correctly
+      // this session, it just won't be remembered next launch.
+    }
+  }
+
+  sidebarEl.querySelectorAll(".sidebar-nav-item").forEach((button) => {
+    button.addEventListener("click", () => showView(button.dataset.view))
+  })
 
   function showSetupScreen() {
     appShellEl.style.display = "none"

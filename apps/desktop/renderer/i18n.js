@@ -119,6 +119,10 @@
       "sermonNotes.on": "On",
       "sermonNotes.disclaimer": "AI-generated summary — not verified content.",
       "sermonNotes.empty": "No notes yet.",
+      "nav.live": "Live",
+      "nav.rundown": "Rundown & Scenes",
+      "nav.media": "Media Library",
+      "nav.settings": "Settings",
     },
     fr: {
       "app.title": "ChurchOverlay — Opérateur",
@@ -234,6 +238,10 @@
       "sermonNotes.on": "Activé",
       "sermonNotes.disclaimer": "Résumé généré par IA — contenu non vérifié.",
       "sermonNotes.empty": "Aucune note pour l'instant.",
+      "nav.live": "En direct",
+      "nav.rundown": "Déroulé et scènes",
+      "nav.media": "Bibliothèque multimédia",
+      "nav.settings": "Paramètres",
     },
   }
 

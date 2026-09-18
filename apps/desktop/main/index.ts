@@ -212,8 +212,11 @@ async function startServices(
 
 function createDashboardWindow(): void {
   dashboardWindow = new BrowserWindow({
-    width: 1100,
-    height: 760,
+    // ARCHITECTURE.md section 66, Phase 1: sized for the sidebar app shell
+    // (each view gets the full window) rather than the old 3-column bento
+    // grid this size was originally tuned for.
+    width: 1440,
+    height: 900,
     webPreferences: {
       // ARCHITECTURE.md section 7 / AGENTS.md section 27: never enable
       // nodeIntegration merely to simplify implementation.
