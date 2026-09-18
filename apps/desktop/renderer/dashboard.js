@@ -72,6 +72,7 @@
   const remoteNoLanEl = document.getElementById("remote-no-lan")
   const remoteUrlInput = document.getElementById("remote-url")
   const remoteCopyBtn = document.getElementById("remote-copy-btn")
+  const exportSessionBtn = document.getElementById("export-session-btn")
   const mediaNowPlayingEl = document.getElementById("media-now-playing")
   const mediaNowPlayingTitleEl = document.getElementById("media-now-playing-title")
   const mediaPlayPauseBtn = document.getElementById("media-play-pause-btn")
@@ -781,6 +782,29 @@
       .writeText(remoteUrlInput.value)
       .then(() => log(t("log.remoteLinkCopied"), "sent"))
       .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
+  })
+
+  // ARCHITECTURE.md section 65.8: post-service content export — a
+  // plain-text transcript plus one quote-card PNG per shown verse, saved
+  // to an operator-chosen folder.
+  exportSessionBtn.addEventListener("click", () => {
+    exportSessionBtn.disabled = true
+    exportSessionBtn.textContent = t("session.exporting")
+    window.churchOverlay
+      .exportSession()
+      .then((result) => {
+        if (result.canceled) return
+        if (result.error) {
+          log(result.error, "error")
+        } else {
+          log(t("log.sessionExported", { count: result.count, targetDir: result.targetDir }), "received")
+        }
+      })
+      .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
+      .finally(() => {
+        exportSessionBtn.disabled = false
+        exportSessionBtn.textContent = t("session.exportButton")
+      })
   })
 
   function setSetupError(text) {

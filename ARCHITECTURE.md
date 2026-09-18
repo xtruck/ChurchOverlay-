@@ -2832,6 +2832,29 @@ Deliberately excludes AI-picked "highlight moments" or video clip generation (th
 research's own "poor fit, flag only" finding) — this only repackages what the
 operator's own service already verified and displayed, nothing inferred.
 
+**Implementation notes, two small deviations from the above:** recording happens in
+`showVerse()` (the one function every trigger ultimately calls), not the detection-
+specific `broadcastVerse()` described above — a complete post-service record should
+include every verse actually shown, regardless of how it got there, which is a
+strictly broader and more correct scope than the original wording. And export uses
+`dialog.showOpenDialog` with `openDirectory` (a folder picker) rather than
+`showSaveDialog`, since this produces multiple files (one transcript plus one PNG per
+verse) into one chosen location, not a single file to name.
+
+Quote cards are rendered by loading a small standalone HTML page into a hidden
+`BrowserWindow` and screenshotting it via Electron's own `capturePage()` — no new
+dependency (a hand-rolled image-encoding library would need one), and no custom
+rendering algorithm of its own to get subtly wrong, unlike a hand-vendored QR encoder
+(section 65.6's own reasoning for why that idea was simplified instead) — `capturePage()`
+is a well-established, already-trusted Electron API, not a novel mechanism this
+session needed to independently verify from scratch. The HTML template's visual
+correctness WAS verified directly, via a real headless-Chrome screenshot, before
+shipping. Typography is a simplified, system-font approximation of the overlay's own
+card styling (Georgia serif, not the overlay's Google-Fonts Instrument Serif) — a
+static export image loaded via a `data:` URL cannot reliably wait on a network font
+fetch before `capturePage()` runs, so this avoids that race entirely rather than
+risking an inconsistently-rendered card.
+
 ### 65.9 What this note does not decide
 
 - **Exact glossary term list and definitions** (section 65.5) — implementation-time

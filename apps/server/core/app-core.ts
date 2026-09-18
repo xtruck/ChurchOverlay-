@@ -35,6 +35,7 @@ import { NavigationCommandDetector } from "../detector/navigation-command-detect
 import { resolveNavigationCommand } from "../verse/resolve-navigation-command"
 import { RundownController } from "../rundown/rundown-controller"
 import { GlossaryDetector } from "../glossary/glossary-detector"
+import { SessionRecorder, type SessionEntry } from "./session-recorder"
 
 /**
  * Every provider/seam is injected, never constructed inside this
@@ -121,6 +122,13 @@ export type AppCoreHandle = {
    * handler, which also persists the change to ConfigStore.
    */
   setVerseConfirmationMode(mode: VerseConfirmationMode): void
+  /**
+   * ARCHITECTURE.md section 65.8: the Electron main process's own
+   * export-session IPC handler reads this to build the plain-text
+   * transcript and quote-card images — a snapshot of every verse shown
+   * this session, regardless of how it was triggered.
+   */
+  getSessionEntries(): readonly SessionEntry[]
   stop(): Promise<void>
 }
 
@@ -150,6 +158,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const mediaPlayback = new MediaPlaybackController()
   const navigationCommandDetector = new NavigationCommandDetector()
   const rundownController = new RundownController()
+  const sessionRecorder = new SessionRecorder()
   const glossaryDetector = new GlossaryDetector()
   const definitionClearMs = options.definitionClearMs ?? 12000
   let definitionClearTimer: ReturnType<typeof setTimeout> | null = null
@@ -251,10 +260,15 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     currentVersePosition = verse.reference
     const payload: VerseShowPayload = { ...verse, trigger }
     lastShownVerse = payload
+    const timestamp = Date.now()
+    // ARCHITECTURE.md section 65.8: recorded here (not the detection-only
+    // broadcastVerse()) so a post-service export includes every verse
+    // that was actually visible, regardless of how it got there.
+    sessionRecorder.record(verse, timestamp)
     wsServer.broadcast({
       id: generateUlid(),
       type: "verse:show",
-      timestamp: Date.now(),
+      timestamp,
       correlationId,
       payload,
     })
@@ -840,6 +854,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     wsServer,
     setVerseConfirmationMode(mode: VerseConfirmationMode) {
       verseConfirmationMode = mode
+    },
+    getSessionEntries() {
+      return sessionRecorder.getEntries()
     },
     async stop() {
       if (definitionClearTimer) clearTimeout(definitionClearTimer)

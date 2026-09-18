@@ -46,4 +46,5 @@ contextBridge.exposeInMainWorld("churchOverlay", {
   setDisplayMode: (mode: string) => ipcRenderer.invoke("set-display-mode", mode),
   setUiLanguage: (language: string) => ipcRenderer.invoke("set-ui-language", language),
   setVerseConfirmationMode: (mode: string) => ipcRenderer.invoke("set-verse-confirmation-mode", mode),
+  exportSession: () => ipcRenderer.invoke("export-session"),
 })

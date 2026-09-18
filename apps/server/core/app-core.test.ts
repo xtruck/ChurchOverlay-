@@ -1777,3 +1777,56 @@ test("AppCore: setVerseConfirmationMode() switches modes live, without restartin
     await app.stop()
   }
 })
+
+// ARCHITECTURE.md section 65.8: post-service content export.
+test("AppCore: getSessionEntries() records every verse actually shown, regardless of trigger", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    // Detected.
+    const firstShow = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Turn to John 3:16.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    await firstShow
+
+    // Manual override.
+    const secondShow = waitForMessage(viewerSocket)
+    operatorSocket.send(
+      JSON.stringify({
+        id: "01B",
+        type: "verse:override",
+        timestamp: Date.now(),
+        payload: { book: "romans", chapter: 8, verse: 28 },
+      })
+    )
+    await secondShow
+
+    const entries = app.getSessionEntries()
+    assert.equal(entries.length, 2)
+    assert.deepEqual(entries[0]?.reference, { book: "john", chapter: 3, verse: 16 })
+    assert.deepEqual(entries[1]?.reference, { book: "romans", chapter: 8, verse: 28 })
+    assert.equal(typeof entries[0]?.timestamp, "number")
+
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})

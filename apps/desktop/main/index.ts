@@ -2,7 +2,9 @@ import { app, BrowserWindow, dialog, ipcMain, safeStorage } from "electron"
 import { randomBytes } from "node:crypto"
 import { networkInterfaces } from "node:os"
 import { join } from "node:path"
+import { writeFile } from "node:fs/promises"
 import { startAppCore, type AppCoreHandle } from "../../server/core/app-core"
+import type { SessionEntry } from "../../server/core/session-recorder"
 import { StaticServer } from "../../server/http/static-server"
 import { RegexDetector } from "../../server/detector/regex-detector"
 import { KnownValidVerseIndex } from "../../server/verse/known-valid-verse-index"
@@ -471,6 +473,111 @@ ipcMain.handle("import-media-file", async () => {
 
 ipcMain.handle("list-media-cues", () => {
   return mediaLibrary?.list() ?? []
+})
+
+function capitalizeBookName(book: string): string {
+  return book.replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+}
+
+/**
+ * ARCHITECTURE.md section 65.8: a "quote card" image (verse text +
+ * reference), rendered by loading a small standalone HTML page into a
+ * hidden BrowserWindow and screenshotting it via Electron's own
+ * capturePage() — no new dependency (a hand-rolled image-encoding library
+ * would need one), and no custom rendering logic of its own to get wrong,
+ * unlike e.g. a hand-vendored QR encoder (section 65.6's own reasoning for
+ * why THAT idea was simplified instead). Colors/typography are a
+ * simplified, system-font approximation of the overlay's own card styling
+ * (Georgia serif, not the overlay's Google-Fonts Instrument Serif) — a
+ * static export image loaded via a data: URL can't reliably wait on a
+ * network font fetch before capture, so this avoids that race entirely.
+ */
+async function renderQuoteCardPng(entry: SessionEntry): Promise<Buffer> {
+  const reference = `${capitalizeBookName(entry.reference.book)} ${entry.reference.chapter}:${entry.reference.verse}`
+  const html = `<!DOCTYPE html>
+<html><head><style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1920px; height: 1080px;
+    display: flex; align-items: center; justify-content: center;
+    background: #0a0a12;
+    background-image:
+      radial-gradient(at 15% 20%, rgba(124, 107, 255, 0.35) 0px, transparent 45%),
+      radial-gradient(at 85% 85%, rgba(255, 111, 174, 0.3) 0px, transparent 45%);
+  }
+  .card { max-width: 1400px; padding: 80px; text-align: center; }
+  .text { font-family: Georgia, "Times New Roman", serif; font-size: 56px; line-height: 1.5; color: #f5f5fb; }
+  .ref {
+    margin-top: 40px; font-family: Consolas, monospace; font-size: 26px;
+    letter-spacing: 0.1em; text-transform: uppercase; color: #a996ff; font-weight: 700;
+  }
+</style></head>
+<body>
+  <div class="card">
+    <div class="text">${escapeHtml(entry.text)}</div>
+    <div class="ref">${escapeHtml(reference)}</div>
+  </div>
+</body></html>`
+
+  const win = new BrowserWindow({ width: 1920, height: 1080, show: false, webPreferences: { offscreen: true } })
+  try {
+    await win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html))
+    const image = await win.webContents.capturePage()
+    return image.toPNG()
+  } finally {
+    win.destroy()
+  }
+}
+
+/**
+ * ARCHITECTURE.md section 65.8: a plain-text transcript plus one quote-
+ * card PNG per shown verse, saved to an operator-chosen folder — this
+ * only repackages already-verified data the pipeline produced, nothing
+ * inferred or AI-picked (the research's own "poor fit" finding for
+ * AI-selected highlight moments).
+ */
+ipcMain.handle("export-session", async () => {
+  if (!dashboardWindow) {
+    throw new Error("dashboard window is not available")
+  }
+  if (!appCoreHandle) {
+    throw new Error("services are not started yet")
+  }
+
+  const entries = appCoreHandle.getSessionEntries()
+  if (entries.length === 0) {
+    return { canceled: false as const, error: "Nothing was shown this session yet." }
+  }
+
+  const result = await dialog.showOpenDialog(dashboardWindow, {
+    title: "Choose a folder to export to",
+    properties: ["openDirectory", "createDirectory"],
+  })
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true as const }
+  }
+  const targetDir = result.filePaths[0] as string
+
+  const transcriptLines = entries.map((entry) => {
+    const reference = `${capitalizeBookName(entry.reference.book)} ${entry.reference.chapter}:${entry.reference.verse}`
+    const time = new Date(entry.timestamp).toLocaleTimeString()
+    return `[${time}] ${reference} (${entry.translation})\n${entry.text}\n`
+  })
+  await writeFile(join(targetDir, "transcript.txt"), transcriptLines.join("\n"), "utf8")
+
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i]
+    if (!entry) continue
+    const png = await renderQuoteCardPng(entry)
+    await writeFile(join(targetDir, `quote-card-${i + 1}.png`), png)
+  }
+
+  logger.info({ component: "main", event: "session.exported", metadata: { count: entries.length, targetDir } })
+  return { canceled: false as const, count: entries.length, targetDir }
 })
 
 async function shutdown(): Promise<void> {
