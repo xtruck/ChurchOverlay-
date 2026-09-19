@@ -1,37 +1,67 @@
 {
-  "name": "church-overlay",
+  "name": "churchoverlay",
+  "productName": "ChurchOverlay",
+  "version": "0.1.0",
   "private": true,
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "tsx server.ts",
-    "build": "esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "start": "node dist/server.cjs",
-    "lint": "tsc --noEmit"
+  "description": "Live Bible-verse detection and overlay for OBS, built as a small deterministic pipeline (see ARCHITECTURE.md).",
+  "main": "dist/apps/desktop/main/index.js",
+  "engines": {
+    "node": ">=20.12"
   },
-  "dependencies": {
-    "@google/genai": "^2.4.0",
-    "@tailwindcss/vite": "^4.3.3",
-    "@vitejs/plugin-react": "^6.1.1",
-    "dotenv": "^17.2.3",
-    "express": "^4.21.2",
-    "lucide-react": "^0.546.0",
-    "motion": "^12.23.24",
-    "react": "^19.0.1",
-    "react-dom": "^19.0.1",
-    "vite": "^8.3.0",
-    "ws": "^8.21.3"
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "start": "npm run build && electron .",
+    "start:web": "npm run build && node dist/apps/web/index.js",
+    "test": "tsc && cd dist && node --test",
+    "test:live-groq": "tsc && cd dist && node --env-file=../.env --test apps/server/asr/groq-provider.live.test.js",
+    "dev:preview": "tsc && node --env-file=.env dist/scripts/dev-preview.js",
+    "dry-run": "tsc && node dist/scripts/dry-run.js",
+    "package": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
-    "@types/node": "^22.14.0",
-    "@types/react": "^19.3.0",
-    "@types/react-dom": "^19.3.0",
+    "@types/node": "^22.0.0",
     "@types/ws": "^8.18.1",
-    "autoprefixer": "^10.4.21",
-    "esbuild": "^0.25.0",
-    "tailwindcss": "^4.3.3",
-    "tsx": "^4.21.0",
-    "typescript": "^7.0.2"
+    "electron": "^44.4.1",
+    "electron-builder": "^26.15.3",
+    "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "ws": "^8.21.3"
+  },
+  "build": {
+    "appId": "com.churchoverlay.app",
+    "productName": "ChurchOverlay",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/apps/**/*",
+      "dist/packages/**/*",
+      "apps/desktop/renderer/**/*.html",
+      "apps/desktop/renderer/**/*.js",
+      "apps/overlay/public/**/*",
+      "apps/remote/public/**/*",
+      "apps/server/verse/data/**/*",
+      "package.json",
+      "!**/*.test.js",
+      "!**/*.test.js.map",
+      "!**/*.map"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "AudioVideo"
+    }
   }
 }

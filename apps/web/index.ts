@@ -5,26 +5,33 @@ import { extname, join } from "node:path"
 import { mkdir, writeFile, unlink } from "node:fs/promises"
 import { randomBytes } from "node:crypto"
 
-import { startAppCore, type AppCoreHandle } from "./apps/server/core/app-core"
-import { FreeApiSource } from "./apps/server/verse/free-api-source"
-import { GetBibleVerseSource } from "./apps/server/verse/get-bible-verse-source"
-import { LocalizedVerseSource } from "./apps/server/verse/localized-verse-source"
-import { loadOfflineBibleData, OfflineVerseSource } from "./apps/server/verse/offline-verse-source"
-import { OfflineFallbackVerseSource } from "./apps/server/verse/offline-fallback-verse-source"
-import { RegexDetector } from "./apps/server/detector/regex-detector"
-import { KnownValidVerseIndex } from "./apps/server/verse/known-valid-verse-index"
-import { MediaLibrary } from "./apps/server/media/media-library"
-import { SessionHistoryStore } from "./apps/server/core/session-history-store"
-import { SermonNotesGenerator } from "./apps/server/ai/sermon-notes-generator"
-import { Logger } from "./packages/shared/logger"
-import { HybridAsrProvider } from "./apps/server/asr/hybrid-provider"
-import { GLOSSARY } from "./apps/server/glossary/glossary"
-import type { DisplayMode, VerseConfirmationMode, MediaCueKind } from "./packages/contracts"
+import { startAppCore, type AppCoreHandle } from "../server/core/app-core"
+import { FreeApiSource } from "../server/verse/free-api-source"
+import { GetBibleVerseSource } from "../server/verse/get-bible-verse-source"
+import { LocalizedVerseSource } from "../server/verse/localized-verse-source"
+import { loadOfflineBibleData, OfflineVerseSource } from "../server/verse/offline-verse-source"
+import { OfflineFallbackVerseSource } from "../server/verse/offline-fallback-verse-source"
+import { RegexDetector } from "../server/detector/regex-detector"
+import { KnownValidVerseIndex } from "../server/verse/known-valid-verse-index"
+import { MediaLibrary } from "../server/media/media-library"
+import { SessionHistoryStore } from "../server/core/session-history-store"
+import { SermonNotesGenerator } from "../server/ai/sermon-notes-generator"
+import { Logger } from "../../packages/shared/logger"
+import { HybridAsrProvider } from "../server/asr/hybrid-provider"
+import { GLOSSARY } from "../server/glossary/glossary"
+import type { DisplayMode, VerseConfirmationMode, MediaCueKind } from "../../packages/contracts"
 
 export type UiLanguage = "en" | "fr"
 
 const PORT = 3000
 const HOST = "0.0.0.0"
+
+// Compiled to dist/apps/web/index.js — three levels up reaches the repo
+// root, matching apps/desktop/main/index.ts's own REPO_ROOT pattern
+// (ARCHITECTURE.md section 80). Resolving from __dirname rather than
+// process.cwd() means static/data paths are correct regardless of the
+// directory the process was launched from.
+const REPO_ROOT = join(__dirname, "..", "..", "..")
 
 const logger = new Logger({ minLevel: "info" })
 
@@ -49,7 +56,7 @@ async function main() {
   let enableSermonNotes = false
 
   // Data directories
-  const dataDir = join(process.cwd(), "data")
+  const dataDir = join(REPO_ROOT, "data")
   const mediaDir = join(dataDir, "media")
   const tempDir = join(dataDir, "temp")
   await mkdir(mediaDir, { recursive: true })
@@ -125,6 +132,7 @@ async function main() {
     source: localizedVerseSource,
     logger,
     server: httpServer,
+    port: PORT,
     tokens,
     mediaLibrary,
     sessionHistoryStore,
@@ -138,7 +146,7 @@ async function main() {
 
   // Static serving for Media
   app.get("/media/:id", (req: Request, res: Response) => {
-    const filePath = mediaLibrary.resolveFilePath(req.params.id)
+    const filePath = req.params.id ? mediaLibrary.resolveFilePath(req.params.id) : null
     if (!filePath) {
       res.status(404).send("Media not found")
       return
@@ -292,6 +300,10 @@ async function main() {
 
   app.delete("/api/media/:id", async (req: Request, res: Response) => {
     try {
+      if (!req.params.id) {
+        res.status(400).json({ error: "Missing id" })
+        return
+      }
       await mediaLibrary.remove(req.params.id)
       res.json({ success: true })
     } catch (err) {
@@ -322,11 +334,11 @@ async function main() {
       }
       const detector = new RegexDetector()
       const refs = detector.detect(q)
-      if (refs.length === 0) {
+      const ref = refs[0]
+      if (!ref) {
         res.status(404).json({ error: "No recognizable verse reference in query" })
         return
       }
-      const ref = refs[0]
       const index = new KnownValidVerseIndex()
       if (!index.exists(ref)) {
         res.status(400).json({ error: `Invalid reference: ${ref.book} ${ref.chapter}:${ref.verse}` })
@@ -355,15 +367,15 @@ async function main() {
   })
 
   // Overlay static files
-  const overlayStaticDir = join(process.cwd(), "apps", "overlay", "public")
+  const overlayStaticDir = join(REPO_ROOT, "apps", "overlay", "public")
   app.use("/overlay", express.static(overlayStaticDir))
 
   // Remote static files
-  const remoteStaticDir = join(process.cwd(), "apps", "remote", "public")
+  const remoteStaticDir = join(REPO_ROOT, "apps", "remote", "public")
   app.use("/remote", express.static(remoteStaticDir))
 
   // Operator Dashboard static files & index
-  const rendererDir = join(process.cwd(), "apps", "desktop", "renderer")
+  const rendererDir = join(REPO_ROOT, "apps", "desktop", "renderer")
   app.use(express.static(rendererDir))
   app.get("/", (_req: Request, res: Response) => {
     res.sendFile(join(rendererDir, "index.html"))

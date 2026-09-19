@@ -4282,3 +4282,96 @@ display) — verified live via the actual running app (three real verses shown t
 the Manual Override UI, confirmed the summary count, per-verse ranking, and per-day
 grouping all matched), consistent with this project's established convention for
 renderer-only display changes.
+
+## 80. Web Server Mode (`apps/web/index.ts`)
+
+A second, non-Electron entry point that runs the same `AppCore` behind an Express HTTP
+server instead of an Electron `BrowserWindow` pair, so ChurchOverlay can also run
+headless on a machine with no display — reachable over the network from any browser,
+rather than requiring the desktop app on the machine running OBS.
+
+**What it is**: `apps/web/index.ts` (`npm run start:web`) builds the exact same
+dependency graph the Electron main process builds — `LocalizedVerseSource` wrapping an
+`OfflineFallbackVerseSource` (section 77), `MediaLibrary`, `SessionHistoryStore` (section
+79), an optional `SermonNotesGenerator` — and drives them through the same
+`startAppCore()` used everywhere else. `AppCore` itself required zero changes; this is
+purely a new *host process* for it, per the provider-agnostic design section 57 already
+committed to.
+
+**ASR**: the desktop app only constructs `AppCore` once setup has already collected a
+Groq key (`ConfigStore.completeSetup`), so it never needs an ASR provider that tolerates
+"no key yet." The web server starts immediately at process boot, before any key is
+necessarily known — `HybridAsrProvider` (`apps/server/asr/hybrid-provider.ts`) exists to
+bridge that gap: it always offers `DryRunAsrProvider`'s synthetic-text injection (section
+44), and layers real `GroqProvider` transcription on top the moment `setApiKey()` is
+called (from `POST /api/setup`), routing both through one `onTranscript` callback so
+`AppCore` never has to know which half produced a given transcript.
+
+**Single-port HTTP + WebSocket**: the REST API, the static overlay/remote/dashboard
+pages, and the WebSocket protocol all needed to live on one port (simpler hosting,
+firewall, and reverse-proxy story than two). `ChurchOverlayWsServer` previously always
+opened its own standalone TCP listener (`new WebSocketServer({host, port})`) — the
+Electron app's own local-only use case never needed anything else. `ChurchOverlayWsServerOptions`
+gained an optional `server?: http.Server`: when present, the underlying `WebSocketServer`
+is constructed with `{server: options.server}` instead of `{host, port}`, which is `ws`'s
+own documented way to attach WebSocket upgrade handling to an already-existing HTTP
+server rather than binding a second listener. `apps/web/index.ts` creates one
+`http.Server`, hands it to Express, calls `.listen()` on it itself, then passes that same
+server into `startAppCore({..., server: httpServer, port: PORT})` — `port` stays required
+on the type (the desktop app's standalone mode still needs it to bind its own listener)
+but is unused for binding when `server` is present.
+
+### 80.1 A real hang found and fixed while wiring this up
+
+The first version hung indefinitely on startup: `httpServer.listen()` returned, the HTTP
+server was reachable, but every route registered *after* `startAppCore()`'s call site —
+`/api/status`, `/api/media`, the static overlay/dashboard mounts, all of it — 404'd,
+because `await startAppCore(...)` itself never resolved. Root cause, found by tracing
+`ChurchOverlayWsServer.ready` (`wss.once("listening", () => resolve())`): `ws`'s own
+source (`websocket-server.js`) only *forwards* an externally-provided server's
+`'listening'` event as it happens going forward — it does not check whether that server
+is already listening. Since `apps/web/index.ts` calls `httpServer.listen()` and awaits
+its own `'listening'` callback *before* constructing `ChurchOverlayWsServer`, the
+external server's one and only `'listening'` event had already fired and was gone by the
+time `ws` attached its forwarding listener — so `ready` wagered on an event that was
+never coming again, and hung forever. Fixed by checking `options.server?.listening` at
+construction time: if the external server is already listening, `ready` resolves
+immediately instead of waiting for an event that has already happened. Caught live —
+via `curl` against a running instance showing "Cannot GET" on routes that plainly exist
+in the source — not by code inspection; the type system had no way to flag it, since
+`ready` is a valid `Promise<void>` either way.
+
+### 80.2 A known, deliberately-scoped gap: the served dashboard is Electron-shaped
+
+`apps/desktop/renderer/`'s `dashboard.js` is built entirely around `window.churchOverlay.*`
+(the Electron preload/contextBridge surface) for every non-trivial action — mic setup,
+media import/rename/delete, settings, session export. Web Server Mode serves those same
+static files at `/` for convenience (a live overlay/remote pair plus a REST API are
+useful without any dashboard at all), but a plain browser tab has no `window.churchOverlay`
+bridge, so dashboard interactions that depend on it will fail in that context. This is a
+known, out-of-scope gap, not an oversight: building a browser-native operator dashboard
+(calling the REST endpoints this section already added instead of IPC) is real,
+separate-phase work, deliberately not bundled into "make the web server run" scope. The
+overlay (`/overlay`) and phone remote (`/remote`) pages are unaffected — both were
+already plain, IPC-free static pages before this section, and both are fully functional
+in Web Server Mode.
+
+### 80.3 Tests added
+
+`hybrid-provider.test.ts`: no-`apiKey` construction leaves `sendAudio()`/`start()`/
+`stop()` as safe no-ops and `hasRealProvider()` false; `emitText()` works identically
+with or without a key configured; constructing with a key makes `hasRealProvider()` true
+immediately; `setApiKey()` with a real key routes real transcription through the same
+`onTranscript` callback `emitText()` uses; `setApiKey('')` clears back to the no-key
+state; calling `setApiKey()` while the mic is already active starts the new provider
+immediately, without a separate `start()` call; `onError` forwards once a real provider
+is configured; `stop()` is safe whether or not a real provider exists.
+
+No new automated test covers the `ready`-promise fix directly (it is an integration
+behavior of two library internals — Express/http and `ws` — rather than a unit of this
+codebase's own logic); it was verified live instead: built and ran the actual compiled
+server, confirmed `/api/status`, `/api/glossary`, `/api/media`, and the overlay static
+route all responded correctly (they 404'd before the fix and 200'd after), confirmed a
+real `ws` client connects and completes the token handshake on the *same* port Express is
+listening on, and exercised the full media lifecycle end to end — `POST /api/media/upload`,
+`POST /api/media/rename`, `DELETE /api/media/:id` — against the running process.

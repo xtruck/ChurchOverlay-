@@ -1,4 +1,5 @@
 import { WebSocketServer, type WebSocket } from "ws"
+import type { Server as HttpServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import type { AudioFrame, WsMessage, WsRole } from "../../../packages/contracts"
 import { decodeAudioFrame } from "../../../packages/shared/audio-frame-codec"
@@ -12,9 +13,23 @@ export type ServerTokens = {
 export type ChurchOverlayWsServerOptions = {
   /** Defaults to 127.0.0.1. Passing anything else IS the explicit
    * security decision ARCHITECTURE.md section 24 requires before binding
-   * externally — there is no separate, easier-to-miss flag for it. */
+   * externally — there is no separate, easier-to-miss flag for it.
+   * Ignored when `server` is provided — the external server's own
+   * host/port binding is what's in effect (ARCHITECTURE.md section 80). */
   readonly host?: string
   readonly port: number
+  /**
+   * ARCHITECTURE.md section 80 (Web Server Mode): when provided, the
+   * WebSocket server attaches to this EXISTING http.Server (e.g. an
+   * Express app's listener) instead of opening its own independent
+   * TCP listener on `host`/`port`. This lets one process serve REST +
+   * static files + WebSocket upgrades on a single port. `port` is
+   * still required on the type (the desktop app's standalone mode
+   * always needs it) but is not used to bind a new listener in this
+   * mode — `port` getter below reads the external server's own bound
+   * address instead.
+   */
+  readonly server?: HttpServer
   readonly tokens: ServerTokens
   readonly onCommand?: (message: WsMessage, role: WsRole) => void
   /** Binary WS frames (audio) — see packages/shared/audio-frame-codec.ts
@@ -76,16 +91,30 @@ export class ChurchOverlayWsServer {
     this.onRejected = options.onRejected
     this.onViewerConnected = options.onViewerConnected
 
-    this.wss = new WebSocketServer({
-      host: options.host ?? DEFAULT_HOST,
-      port: options.port,
-      handleProtocols: (protocols) => this.resolveProtocol(protocols),
-    })
+    this.wss = options.server
+      ? new WebSocketServer({
+          server: options.server,
+          handleProtocols: (protocols) => this.resolveProtocol(protocols),
+        })
+      : new WebSocketServer({
+          host: options.host ?? DEFAULT_HOST,
+          port: options.port,
+          handleProtocols: (protocols) => this.resolveProtocol(protocols),
+        })
 
-    this.ready = new Promise((resolve, reject) => {
-      this.wss.once("listening", () => resolve())
-      this.wss.once("error", reject)
-    })
+    this.ready =
+      // An externally-provided server that is ALREADY listening (the
+      // normal case — apps/web/index.ts calls httpServer.listen() itself
+      // before constructing this class) has already fired its own
+      // 'listening' event; ws only forwards that event going forward; it
+      // never fires again. Waiting for it here would hang forever. See
+      // ARCHITECTURE.md section 80.
+      options.server?.listening
+        ? Promise.resolve()
+        : new Promise((resolve, reject) => {
+            this.wss.once("listening", () => resolve())
+            this.wss.once("error", reject)
+          })
 
     this.wss.on("connection", (socket) => this.handleConnection(socket))
   }

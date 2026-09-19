@@ -22,6 +22,7 @@ import type {
   WsMessage,
   WsRole,
 } from "../../../packages/contracts"
+import type { Server as HttpServer } from "node:http"
 import { generateUlid } from "../../../packages/shared/ulid"
 import type { Logger } from "../../../packages/shared/logger"
 import { VerseCache } from "../verse/verse-cache"
@@ -82,6 +83,15 @@ export type StartAppCoreOptions = {
   readonly logger: Logger
   readonly host?: string
   readonly port: number
+  /**
+   * ARCHITECTURE.md section 80 (Web Server Mode) — when provided, the
+   * WebSocket server attaches to this existing http.Server instead of
+   * opening its own standalone listener, so one process (e.g. an Express
+   * app) can serve REST + static files + WS upgrades on a single port.
+   * Passed straight through to ChurchOverlayWsServer; see its own `server`
+   * option doc comment for the attach-vs-standalone behavior.
+   */
+  readonly server?: HttpServer
   readonly tokens: ServerTokens
   readonly cache?: VerseCache
   readonly circuitBreaker?: CircuitBreaker
@@ -316,6 +326,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const wsServer = new ChurchOverlayWsServer({
     host: options.host,
     port: options.port,
+    server: options.server,
     tokens: options.tokens,
     onCommand: (message, role) => {
       handleCommand(message, role).catch((err) =>
