@@ -405,7 +405,17 @@
       return
     }
     setStatus("connecting…")
-    const ws = new WebSocket("ws://127.0.0.1:" + wsPort, [token])
+    // ARCHITECTURE.md section 65.6: once allowPhoneRemote is on, the WS
+    // server binds to 0.0.0.0 (LAN-reachable), and this overlay page can
+    // just as well be opened from a different machine on the network
+    // (e.g. a separate OBS PC) as from the same one serving it. Using
+    // window.location.hostname — the address this very page was loaded
+    // from — instead of a hardcoded "127.0.0.1" is exactly the fix
+    // remote.js already applies for the identical reason (its own
+    // comment above this line's counterpart). A same-machine setup still
+    // works unchanged: window.location.hostname is "127.0.0.1" (or
+    // "localhost") in that case too.
+    const ws = new WebSocket("ws://" + window.location.hostname + ":" + wsPort, [token])
 
     ws.addEventListener("open", () => {
       reconnectAttempts = 0
