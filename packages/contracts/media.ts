@@ -28,3 +28,13 @@ export type MediaShowPayload = {
 export type PosterShowPayload = {
   readonly cue: MediaCue
 }
+
+/**
+ * poster:set-duration's payload (ARCHITECTURE.md section 82.2) — operator-
+ * configurable, off (manual-clear-only) by default. `null` means "no
+ * auto-clear," matching this codebase's established optional-capability,
+ * off-by-default convention rather than inventing a sentinel number.
+ */
+export type PosterSetDurationPayload = {
+  readonly durationMs: number | null
+}

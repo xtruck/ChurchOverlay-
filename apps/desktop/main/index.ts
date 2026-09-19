@@ -26,7 +26,7 @@ import {
   type AppConfig,
   type UiLanguage,
 } from "./config-store"
-import type { DisplayMode, MediaCueKind, VerseConfirmationMode } from "../../../packages/contracts"
+import type { DisplayMode, MediaCueKind, VerseConfirmationMode, VerseLayout } from "../../../packages/contracts"
 import { inferMediaKind, deriveTitleFromFilename } from "./media-import"
 import { Logger } from "../../../packages/shared/logger"
 
@@ -64,11 +64,13 @@ let configStore: ConfigStore | null = null
 let mediaLibrary: MediaLibrary | null = null
 let sessionHistoryStore: SessionHistoryStore | null = null
 let localizedVerseSource: LocalizedVerseSource | null = null
+let asrProvider: GroqProvider | null = null
 let currentRemoteUrl: string | null = null
 let currentOverlayUrl: string | null = null
 let currentAllowPhoneRemote = false
 let currentVerseConfirmationMode: VerseConfirmationMode = "auto"
 let currentEnableSermonNotes = false
+let currentVerseLayout: VerseLayout = "fullscreen"
 // ARCHITECTURE.md section 74 (production audit): the operator-picked file
 // path, held here between the native file-picker dialog and the
 // renderer's title confirmation step, so the actual import still happens
@@ -96,6 +98,18 @@ function getLanIpAddress(): string | null {
     }
   }
   return null
+}
+
+/**
+ * ARCHITECTURE.md section 81: maps the display/translation mode to a
+ * Whisper language hint. "bilingual" deliberately has no single correct
+ * hint (a genuinely mixed-language service), so it stays undefined —
+ * Whisper's own per-chunk auto-detection is the least-wrong option there.
+ */
+function whisperLanguageFor(mode: DisplayMode): string | undefined {
+  if (mode === "french") return "fr"
+  if (mode === "english") return "en"
+  return undefined
 }
 
 function getConfigStore(): ConfigStore {
@@ -145,8 +159,14 @@ async function startServices(
   // default (section 24) exactly as before this feature existed.
   const wsHost = config.allowPhoneRemote ? "0.0.0.0" : undefined
 
+  asrProvider = new GroqProvider({
+    apiKey: config.groqApiKey,
+    logger,
+    language: whisperLanguageFor(config.displayMode),
+  })
+
   appCoreHandle = await startAppCore({
-    asr: new GroqProvider({ apiKey: config.groqApiKey, logger }),
+    asr: asrProvider,
     detector: new RegexDetector(),
     index: new KnownValidVerseIndex(),
     source: localizedVerseSource,
@@ -169,6 +189,7 @@ async function startServices(
     // persists exactly like the set-display-mode IPC handler below does,
     // so it survives a restart identically to a dashboard-toggled one.
     onDisplayModeChanged: (mode) => {
+      asrProvider?.setLanguage(whisperLanguageFor(mode))
       getConfigStore()
         .load()
         .then((existing) => (existing ? getConfigStore().save({ ...existing, displayMode: mode }) : undefined))
@@ -176,6 +197,20 @@ async function startServices(
           logger.error({
             component: "main",
             event: "display-mode-persist-failed",
+            error: err instanceof Error ? err.message : String(err),
+          })
+        })
+    },
+    verseLayout: config.verseLayout,
+    onVerseLayoutChanged: (layout) => {
+      currentVerseLayout = layout
+      getConfigStore()
+        .load()
+        .then((existing) => (existing ? getConfigStore().save({ ...existing, verseLayout: layout }) : undefined))
+        .catch((err) => {
+          logger.error({
+            component: "main",
+            event: "verse-layout-persist-failed",
             error: err instanceof Error ? err.message : String(err),
           })
         })
@@ -227,6 +262,7 @@ async function startServices(
   currentAllowPhoneRemote = config.allowPhoneRemote
   currentVerseConfirmationMode = config.verseConfirmationMode
   currentEnableSermonNotes = config.enableSermonNotes
+  currentVerseLayout = config.verseLayout
 
   logger.info({
     component: "main",
@@ -306,6 +342,7 @@ ipcMain.handle("get-startup-status", async () => {
       allowPhoneRemote: currentAllowPhoneRemote,
       verseConfirmationMode: currentVerseConfirmationMode,
       enableSermonNotes: currentEnableSermonNotes,
+      verseLayout: currentVerseLayout,
     }
   }
   return { ready: false, uiLanguage }
@@ -321,6 +358,7 @@ ipcMain.handle("set-display-mode", async (_event, payload: unknown) => {
     throw new Error("Services are not started yet.")
   }
   localizedVerseSource.setMode(mode)
+  asrProvider?.setLanguage(whisperLanguageFor(mode))
 
   const store = getConfigStore()
   const existing = await store.load().catch(() => null)
@@ -453,6 +491,11 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
     // default for every fresh install; changeable afterward only via the
     // live dashboard toggle (set-enable-sermon-notes).
     enableSermonNotes: existing?.enableSermonNotes ?? false,
+    // ARCHITECTURE.md section 82: not a setup-screen control (same
+    // reasoning as verseConfirmationMode above) — "fullscreen" is the
+    // confirmed default for every fresh install; changeable afterward
+    // only via the live dashboard toggle (layout:set).
+    verseLayout: existing?.verseLayout ?? "fullscreen",
     viewerToken: existing?.viewerToken ?? generateToken(),
     displayMode,
     uiLanguage,

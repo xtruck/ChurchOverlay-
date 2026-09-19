@@ -117,6 +117,9 @@
   const displayModeToggleEl = document.getElementById("display-mode-toggle")
   const uiLanguageToggleEl = document.getElementById("ui-language-toggle")
   const verseConfirmationToggleEl = document.getElementById("verse-confirmation-toggle")
+  const verseLayoutToggleEl = document.getElementById("verse-layout-toggle")
+  const posterDurationInputEl = document.getElementById("poster-duration-input")
+  const posterDurationApplyBtn = document.getElementById("poster-duration-apply-btn")
   const versePendingBannerEl = document.getElementById("verse-pending-banner")
   const versePendingTextEl = document.getElementById("verse-pending-text")
   const versePendingRefEl = document.getElementById("verse-pending-ref")
@@ -1929,6 +1932,27 @@
       .setEnableSermonNotes(value === "on")
       .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
   })
+  // ARCHITECTURE.md section 82: a pure WS round trip like poster:set
+  // above — this is a viewer-facing broadcast setting, not a
+  // ConfigStore/IPC concern in itself (persistence happens on the main
+  // process side via onVerseLayoutChanged, triggered by this same
+  // layout:set command).
+  wireOptionGroup(verseLayoutToggleEl, "layout", (layout) => {
+    sendJson({ id: crypto.randomUUID(), type: "layout:set", timestamp: Date.now(), payload: { layout } })
+    log(t("log.sentLayoutSet", { layout }), "sent")
+  })
+  posterDurationApplyBtn.addEventListener("click", () => {
+    const raw = posterDurationInputEl.value.trim()
+    const minutes = raw === "" ? null : Number(raw)
+    const durationMs = minutes === null || !Number.isFinite(minutes) || minutes <= 0 ? null : minutes * 60000
+    sendJson({
+      id: crypto.randomUUID(),
+      type: "poster:set-duration",
+      timestamp: Date.now(),
+      payload: { durationMs },
+    })
+    log(t("log.sentPosterDuration", { minutes: durationMs === null ? t("verseLayout.posterDurationManual") : String(minutes) }), "sent")
+  })
 
   function setActiveOption(groupEl, datasetKey, value) {
     groupEl.querySelectorAll("button").forEach((button) => {
@@ -1953,6 +1977,7 @@
         setActiveOption(uiLanguageToggleEl, "lang", setupSelectedUiLanguage)
         setActiveOption(verseConfirmationToggleEl, "confirmationMode", info.verseConfirmationMode || "auto")
         setActiveOption(sermonNotesToggleEl, "notesEnabled", info.enableSermonNotes ? "on" : "off")
+        setActiveOption(verseLayoutToggleEl, "layout", info.verseLayout || "fullscreen")
         renderRemotePanel(info.remoteUrl, info.allowPhoneRemote)
         renderObsPanel(info.overlayUrl)
         renderOverlayPreview(info.overlayUrl)
@@ -1982,6 +2007,7 @@
         setActiveOption(displayModeToggleEl, "mode", status.displayMode || "english")
         setActiveOption(verseConfirmationToggleEl, "confirmationMode", status.verseConfirmationMode || "auto")
         setActiveOption(sermonNotesToggleEl, "notesEnabled", status.enableSermonNotes ? "on" : "off")
+        setActiveOption(verseLayoutToggleEl, "layout", status.verseLayout || "fullscreen")
         renderRemotePanel(status.remoteUrl, status.allowPhoneRemote)
         renderObsPanel(status.overlayUrl)
         renderOverlayPreview(status.overlayUrl)

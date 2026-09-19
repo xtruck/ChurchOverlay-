@@ -112,6 +112,43 @@
   }
 
   /*
+    ARCHITECTURE.md section 82: fullscreen layout — the confirmed default.
+    Unlike lower-third (above), this deliberately gives #verse-card an
+    OPAQUE full-bleed background rather than the translucent scrim: the
+    user's explicit requirement is that a poster/media backdrop underneath
+    is fully covered while a verse is showing, not just dimmed around a
+    small card. #verse itself switches from bottom-anchored to filling and
+    centering in the whole viewport; text sizes step up so a full screen
+    of otherwise-empty space still reads as intentional, not a lower-third
+    card stretched thin.
+  */
+  #verse.fullscreen {
+    inset: 0;
+    bottom: auto;
+    justify-content: center;
+    padding: 0 10%;
+  }
+  #verse.fullscreen #verse-card {
+    max-width: none;
+    width: 100%;
+    height: 100%;
+    justify-content: center;
+    border-radius: 0;
+    border: none;
+    background: linear-gradient(180deg, #0b0d12, #06070a);
+    box-shadow: none;
+  }
+  /*
+    #verse-text/#verse-secondary-text font-size is NOT set here —
+    overlay.js's fitVerseText() always sets it as an inline style (an
+    auto-shrink-to-fit algorithm, not a fixed size), which would silently
+    override any font-size declared in this stylesheet regardless of
+    specificity. fitVerseText() itself branches on this fullscreen class
+    to use a much larger cap and a bigger available area — see its own
+    comment in overlay.js.
+  */
+
+  /*
     Bilingual mode (ARCHITECTURE.md section 63.4): present only when a
     verse:show payload carries `secondary` — French (primary, above, in
     #verse-text) stays in the existing styling; English (secondary) is

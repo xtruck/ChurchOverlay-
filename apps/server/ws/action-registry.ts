@@ -6,12 +6,14 @@ import type {
   DefinitionShowPayload,
   MediaCue,
   MediaShowPayload,
+  PosterSetDurationPayload,
   PosterShowPayload,
   Rundown,
   RundownScene,
   RundownStatePayload,
   SermonNotesPayload,
   TranscriptResult,
+  VerseLayoutPayload,
   VerseShowPayload,
   VerseReference,
   WsCommandType,
@@ -220,6 +222,19 @@ function isPosterSetPayload(payload: unknown): payload is { mediaCueId: string }
 
 function isPosterShowPayload(payload: unknown): payload is PosterShowPayload {
   return isPlainObject(payload) && isMediaCuePayload(payload.cue)
+}
+
+/** ARCHITECTURE.md section 82.2 — null (no auto-clear) or a positive, finite duration; anything else (negative, zero, NaN, non-number) is rejected. */
+function isPosterSetDurationPayload(payload: unknown): payload is PosterSetDurationPayload {
+  if (!isPlainObject(payload)) return false
+  const { durationMs } = payload
+  if (durationMs === null) return true
+  return typeof durationMs === "number" && Number.isFinite(durationMs) && durationMs > 0
+}
+
+/** ARCHITECTURE.md section 82 — same shape validates both layout:set and layout:update. */
+function isVerseLayoutPayload(payload: unknown): payload is VerseLayoutPayload {
+  return isPlainObject(payload) && (payload.layout === "fullscreen" || payload.layout === "lower-third")
 }
 
 // ARCHITECTURE.md section 64: Service Rundown & Scenes.
@@ -513,6 +528,21 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "event",
     allowedSenders: [],
     validatePayload: isPosterShowPayload,
+  },
+  "poster:set-duration": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isPosterSetDurationPayload,
+  },
+  "layout:set": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isVerseLayoutPayload,
+  },
+  "layout:update": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isVerseLayoutPayload,
   },
 }
 

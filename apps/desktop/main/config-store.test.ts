@@ -29,6 +29,7 @@ const SAMPLE_CONFIG: AppConfig = {
   allowPhoneRemote: true,
   verseConfirmationMode: "review",
   enableSermonNotes: true,
+  verseLayout: "lower-third",
 }
 
 async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
@@ -282,6 +283,50 @@ test("ConfigStore: a config saved before enableSermonNotes existed loads with it
     const store = new ConfigStore(path, codec)
     const loaded = await store.load()
     assert.equal(loaded?.enableSermonNotes, false)
+  })
+})
+
+// ARCHITECTURE.md section 82: verseLayout was added after this file format
+// already existed — same backward-compatible defaulting (to "fullscreen",
+// the confirmed default) as the others above.
+test("ConfigStore: a config saved before verseLayout existed loads with it defaulting to 'fullscreen'", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const codec = new FakeSecretCodec()
+    const legacyStored = {
+      groqApiKeyEncrypted: codec.encrypt(SAMPLE_CONFIG.groqApiKey).toString("base64"),
+      microphoneId: SAMPLE_CONFIG.microphoneId,
+      operatorTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.operatorToken).toString("base64"),
+      viewerTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.viewerToken).toString("base64"),
+      displayMode: "english",
+      uiLanguage: "en",
+      allowPhoneRemote: false,
+      verseConfirmationMode: "auto",
+      enableSermonNotes: false,
+      // no verseLayout — exactly what a pre-section-82 file looks like
+    }
+    const { writeFile } = await import("node:fs/promises")
+    await writeFile(path, JSON.stringify(legacyStored), "utf8")
+
+    const store = new ConfigStore(path, codec)
+    const loaded = await store.load()
+    assert.equal(loaded?.verseLayout, "fullscreen")
+  })
+})
+
+test("ConfigStore: load() throws on a present but invalid verseLayout (real corruption, not an old file)", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const codec = new FakeSecretCodec()
+    const baseStored = {
+      groqApiKeyEncrypted: codec.encrypt(SAMPLE_CONFIG.groqApiKey).toString("base64"),
+      microphoneId: SAMPLE_CONFIG.microphoneId,
+      operatorTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.operatorToken).toString("base64"),
+      viewerTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.viewerToken).toString("base64"),
+    }
+    const { writeFile } = await import("node:fs/promises")
+    await writeFile(path, JSON.stringify({ ...baseStored, verseLayout: "sidebar" }), "utf8")
+    await assert.rejects(() => new ConfigStore(path, codec).load(), /invalid verseLayout/)
   })
 })
 

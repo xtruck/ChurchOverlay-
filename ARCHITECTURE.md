@@ -4375,3 +4375,212 @@ route all responded correctly (they 404'd before the fix and 200'd after), confi
 real `ws` client connects and completes the token handshake on the *same* port Express is
 listening on, and exercised the full media lifecycle end to end — `POST /api/media/upload`,
 `POST /api/media/rename`, `DELETE /api/media/:id` — against the running process.
+
+## 81. Transcription Responsiveness & French-Priority Accuracy
+
+Live-testing feedback, verbatim in substance: the operator had to speak loudly and
+repeat themselves before the app "caught" what was said, and — since the app's primary
+audience is French-speaking, with English usage already considered acceptable —
+transcription/detection accuracy for French specifically needed to improve more than
+English.
+
+### 81.1 The silence-gate hangover fix (the actual cause of "speak loudly and repeat")
+
+Root cause, confirmed by reading the real call chain rather than assumed: `handleAudioFrame()`
+only calls `asr.sendAudio(frame)` when `SilenceGate.process(frame).forwarded` is true —
+a frame the gate rejects never reaches `GroqProvider` at all. `GroqProvider`'s 2-second
+buffering window (section 70) only accumulates samples from frames that actually arrive
+via `sendAudio()`. Real speech has natural volume dips — unvoiced consonants, breaths, a
+word trailing off — that briefly fall under any single fixed RMS threshold. Under the old
+strict per-frame gate, a normal sentence got chopped frame-by-frame at each quiet dip:
+the audio that reached Groq had silent gaps spliced out of it (fragmenting words and
+hurting Whisper's accuracy), and because only "loud enough" frames counted toward the
+2-second buffer, it took far longer in real time than the sentence itself took to speak
+to accumulate a full buffered chunk — which is exactly what "have to speak loudly and
+repeat" feels like from an operator's chair.
+
+Fixed with a standard VAD hangover window (`SilenceGate`'s new `hangoverMs` option,
+default 600ms): once the gate is "open" (any frame at or above threshold), it stays open
+through brief dips for `hangoverMs` before actually closing, refilling to the full
+budget on every fresh above-threshold frame. One continuous utterance is now forwarded
+as one continuous stream instead of being chopped into whichever individual frames
+happened to clear the bar. The gate's original purpose — not forwarding *obvious*,
+sustained silence, to avoid wasted ASR calls (section 9) — is unaffected: hangover only
+bridges brief dips within active speech, not long silent stretches between utterances.
+
+### 81.2 A Whisper language hint, tied to display mode
+
+`GroqProvider.transcribe()` never told Whisper what language to expect — every 2-second
+chunk was auto-detected independently, which is a real, confirmed accuracy cost on short
+clips (an ambiguous phoneme or accent can flip the detected language between chunks,
+degrading both the transcript and, downstream, verse-reference detection). Whisper's API
+accepts an explicit `language` hint for exactly this case.
+
+`GroqProvider` and `HybridAsrProvider` both gained an optional `language`
+(constructor option) and `setLanguage()` (live-updatable, since a display-mode switch
+mid-service — voice, dashboard, or REST — should retarget Whisper immediately, not just
+at the next restart). The hint is derived from the existing `DisplayMode` setting via a
+small `whisperLanguageFor()` mapping (duplicated in `apps/desktop/main/index.ts` and
+`apps/web/index.ts` — "duplicated, not shared," the same convention this codebase already
+uses for small logic with no build step to share a module through): `"french"` → `"fr"`,
+`"english"` → `"en"`, `"bilingual"` → `undefined` (no hint at all). Bilingual deliberately
+stays unhinted — a genuinely mixed-language service has no single correct hint, and
+Whisper's own per-chunk auto-detection is the least-wrong option there. Wired into every
+place `DisplayMode` already changes: initial construction from the persisted/initial
+mode, the voice-triggered `onDisplayModeChanged` callback, and the dashboard/REST
+mode-change handlers (`set-display-mode` IPC, `/api/mode`, `/api/setup`) in both the
+desktop app and the web server.
+
+### 81.3 Tests added
+
+`silence-gate.test.ts`: a brief below-threshold dip immediately after a loud frame is
+still forwarded; forwarding stops once sustained silence actually exhausts the hangover
+budget; a fresh above-threshold frame mid-stream refills the budget rather than leaving
+it to decay from the first loud frame. Two pre-existing tests (`is inclusive at the
+threshold boundary`, `accumulates accurate metrics across a mix of silent and loud
+frames`) needed `hangoverMs: 0` added — their actual intent (per-frame boundary
+correctness, metrics-accumulation correctness) is orthogonal to hangover, and hangover's
+now-correct behavior of forwarding a following dip would otherwise break their
+unrelated assertions.
+
+No new automated test covers the Whisper `language` parameter reaching the real API
+(that would require a live Groq call, out of scope for the unit suite — `groq-provider.live.test.ts`
+already exists for that category and wasn't extended here); `hybrid-provider.ts`'s
+`setLanguage()` plumbing itself is straightforward pass-through with no independent
+logic worth a dedicated unit test beyond what `groq-provider.test.ts` already covers for
+`GroqProvider.setLanguage()`'s effect on the request.
+
+## 82. Verse Display Layout, Unconditional Verse Auto-Clear, and Configurable Poster/Media Duration
+
+Live-testing feedback, three related requests about what actually renders on the OBS
+overlay and for how long.
+
+### 82.1 Verse auto-clear widened from poster-gated to unconditional, and bumped to 2:30
+
+Section 67.2 originally armed a verse auto-clear timer only while a principal poster was
+active (so the poster underneath would reappear on its own). Confirmed explicitly, firmly,
+by the user: **every** shown verse must clear itself after a fixed ceiling — 2 minutes 30
+seconds — regardless of whether a poster is configured at all. The `principalPosterCueId !== null`
+gate around arming `verseAutoClearTimer` in `showVerse()` was removed; the timer now arms
+unconditionally on every verse shown, any trigger. `verseAutoClearMs`'s default changed
+from 120000 to 150000. The option remains overridable (tests use short delays), and
+"most recent wins" (a new verse resets, never queues behind, a pending timer) is
+unchanged from section 67.2's original design.
+
+### 82.2 Verse display layout: fullscreen (default) vs. lower-third
+
+Purely a presentation choice for the overlay — carries no effect on detection, lookup, or
+caching. Until now the verse card only ever rendered as a lower-third card, by design
+(section 67's own comment: "a verse card ... reveals the poster around its edges — the
+whole point of this feature"). Confirmed with the user: **fullscreen** should be the
+default (readable from across a room), with lower-third available for when video/media
+shares the screen and a full-bleed verse would otherwise cover it.
+
+**Data model**: `VerseLayout = "fullscreen" | "lower-third"` (`packages/contracts/verse.ts`).
+A new WS command/event pair, `layout:set` (operator → server) / `layout:update`
+(server → all clients, same payload shape `{layout}`) — validated in
+`action-registry.ts` exactly like `poster:set`/`poster:show`. `AppCore` holds
+`verseLayout` state (default `"fullscreen"`), broadcasts `layout:update` whenever
+`layout:set` is handled, calls the new optional `onVerseLayoutChanged` hook (mirroring
+`onDisplayModeChanged`'s pattern exactly, for persistence outside AppCore's own
+concern), and — critically — sends `layout:update` to every new viewer connection via
+`onViewerConnected`, unconditionally and first (before the poster/media/rundown resync
+blocks), so a reconnecting OBS browser source or a fresh page load always applies the
+correct layout before anything else renders.
+
+**Persistence**: `ConfigStore` gained a `verseLayout` field (Electron only), following
+the exact migration/validation pattern every other optional field there already uses
+(absent-in-an-old-file defaults to `"fullscreen"`, present-but-invalid throws). The web
+server (`apps/web/index.ts`) does not persist it across restarts, matching `displayMode`'s
+own existing lack of persistence there.
+
+**Overlay rendering**: `#verse.fullscreen` (new CSS) switches from bottom-anchored to
+filling and centering the whole viewport, with an **opaque** full-bleed card background
+— deliberately not the lower-third's translucent scrim, because the user's explicit
+requirement is that a poster/media backdrop underneath is fully covered while a
+fullscreen verse is showing, not just dimmed around a small card. This is a natural
+consequence of z-index stacking already established in section 67 (`#verse` at z-index
+2, above `#poster-layer`'s z-index 0) — no poster-specific code was needed; an opaque
+`#verse.fullscreen` simply covers it, and clearing the verse naturally reveals the
+poster again since it was never actually hidden, only covered.
+
+A real bug found while wiring this: `overlay.js`'s `fitVerseText()` always sets an
+inline `font-size` (an auto-shrink-to-fit algorithm, not a fixed size) — which
+unconditionally overrides any font-size declared in the stylesheet, including a
+`.fullscreen`-scoped override, regardless of CSS specificity. `fitVerseText()` itself
+now branches on the `.fullscreen` class to use a much larger font cap (120px vs. 44px)
+and a bigger available-area fraction, rather than declaring dead CSS that inline styles
+would have silently overridden anyway.
+
+**Dashboard control**: a new "Verse Display" settings card (`apps/desktop/renderer/`)
+with a fullscreen/lower-third toggle sending `layout:set` directly over the existing WS
+connection (the same pattern `poster:set` already uses from the Media Library view) —
+not an IPC round trip, since this is fundamentally a viewer-facing broadcast setting,
+not a `ConfigStore`-only concern in itself (persistence happens via `onVerseLayoutChanged`,
+triggered by the same command).
+
+### 82.3 Configurable poster/media auto-clear duration
+
+Confirmed with the user: a principal poster should be able to auto-clear on its own
+after an operator-configured duration — off (manual `poster:clear` only) by default,
+matching this codebase's established optional-capability, off-by-default convention
+(`allowPhoneRemote`, `enableSermonNotes`, etc.) rather than a fixed built-in duration
+like section 82.1's verse ceiling.
+
+New WS command `poster:set-duration` (operator-only, payload `{durationMs: number | null}`,
+`null` meaning "no auto-clear"), validated in `action-registry.ts`. `AppCore` holds
+`posterAutoClearMs` (default `null`) and a `posterAutoClearTimer`, armed/reset on every
+`poster:set` (mirroring `verseAutoClearTimer`'s "most recent wins" pattern) and
+re-armed immediately if the duration itself changes while a poster is already showing
+(an operator adjusting this mid-service shouldn't have to re-set the poster to apply
+it). `poster:clear` — whether manual or timer-fired — cancels any pending timer.
+Exposed as an initial `StartAppCoreOptions.posterAutoClearMs` for parity/testability,
+same pattern as `verseAutoClearMs`. Not persisted across restarts (session-only,
+defaulting to manual-only each run) — the user asked for it to be *settable*, not
+necessarily remembered forever the way the verse layout preference is.
+
+**Dashboard control**: a number input (minutes) in the same "Verse Display" settings
+card, sending `poster:set-duration` on an explicit "Apply" click rather than on every
+keystroke.
+
+### 82.4 A real test-infrastructure bug found and fixed while wiring section 82.2
+
+`layout:update` firing unconditionally on every viewer connection (section 82.2) broke
+one existing test outright and put roughly a dozen more at risk: `waitForMessage`/
+`waitForMessages` (the shared test helpers already filtering `transcript:partial`/`final`
+echoes per section 70's own fix) needed the same filtering extended to `layout:update` —
+renamed the underlying predicate from `isTranscriptEcho` to `isAutoSyncNoise`. Six raw
+`.once("message")`-based tests asserting "nothing at all is broadcast" for a rejected
+command needed individual narrowing to "no *specific* message type fires," the same
+remediation section 70 already established for the identical class of bug — a boolean
+"any message arrived" flag is fundamentally incompatible with an unconditional per-connection
+sync message that has nothing to do with what the test is actually checking.
+
+Separately, and more seriously: `AppCore.stop()` never cleared `verseAutoClearTimer` (a
+pre-existing gap, true since section 67.2 first introduced it) or the new
+`posterAutoClearTimer`. This was easy to never trigger before section 82.1 — the old
+poster-gated verse timer was rarely armed in tests — but section 82.1's unconditional
+arming turned it into an near-universal leaked `setTimeout` that kept the `node --test`
+process alive past every individual test's own completion, surfacing as the entire test
+*file* timing out well after all of its individual tests had already reported passing.
+Both timers are now cleared in `stop()` alongside the pre-existing `definitionClearTimer`/
+`sermonNotesTimer` cleanup.
+
+### 82.5 Tests added
+
+`action-registry.test.ts`: `layout:set`/`layout:update`/`poster:set-duration` role
+boundaries and payload validation (valid layouts, invalid layout strings, positive vs.
+non-positive/non-finite/missing `durationMs`, `null` accepted for "no auto-clear").
+
+`app-core.test.ts`: a new connection is synced with the current verse layout via
+`layout:update` before anything else; `layout:set` broadcasts `layout:update` and
+invokes `onVerseLayoutChanged`; `poster:set-duration` auto-clears a poster after the
+configured delay and a fresh `poster:set` resets the countdown; with no duration
+configured, a poster never auto-clears; the verse-auto-clear test suite's own
+"no principal poster configured" case was inverted from "never arms a timer" to "still
+auto-clears" (section 82.1's behavior change).
+
+`config-store.test.ts`: `verseLayout` round-trips through `AppConfig`; a config saved
+before section 82 existed defaults it to `"fullscreen"`; a present-but-invalid value
+throws (real corruption, not an old file) — the same three-test pattern every other
+optional `ConfigStore` field already follows.

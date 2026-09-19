@@ -51,6 +51,20 @@ export type VerseShowPayload = Verse & {
  */
 export type VerseConfirmationMode = "auto" | "review"
 
+/**
+ * ARCHITECTURE.md section 82 — purely a presentation choice for the
+ * overlay; carries no effect on detection, lookup, or caching. "fullscreen"
+ * is the default (confirmed with the user: verse-only display should read
+ * from across a room), "lower-third" is for when video/media is on screen
+ * at the same time and a full-bleed verse would cover it.
+ */
+export type VerseLayout = "fullscreen" | "lower-third"
+
+/** layout:set's payload (operator -> server) and layout:update's (server -> viewers) — same shape, different direction. */
+export type VerseLayoutPayload = {
+  readonly layout: VerseLayout
+}
+
 /** Extension seam — v1 ships one implementation (RegexDetector). See ARCHITECTURE.md §50. */
 export interface VerseDetector {
   detect(text: string): VerseReference[]

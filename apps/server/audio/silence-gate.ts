@@ -62,6 +62,26 @@ const CALIBRATION_MULTIPLIER = 1.5
 const MIN_CALIBRATED_THRESHOLD = 80
 const MAX_CALIBRATED_THRESHOLD = 2000
 
+// ARCHITECTURE.md section 81: a real, reported bug — operators had to
+// speak unnaturally loudly and repeat themselves before the app "caught"
+// what they said. Root cause: per-frame gating with no hysteresis. Real
+// speech has natural volume dips (unvoiced consonants, breaths, a word
+// trailing off) that briefly fall under any single fixed threshold, and
+// GroqProvider's 2-second buffer only accumulates samples from frames
+// that ACTUALLY REACH sendAudio() — a frame this gate rejects never gets
+// there at all. So a normal sentence, rejected frame by frame at each
+// quiet dip, took far longer in real time to accumulate 2 buffered
+// seconds than the sentence itself took to speak, and the audio that did
+// arrive had silent gaps spliced out of it, fragmenting words. A one-shot
+// louder utterance with fewer dips could clear the bar fast enough to
+// feel like "you have to shout." A hangover window fixes this the
+// standard VAD way: once the gate opens (any frame at/above threshold),
+// it stays open through brief dips for hangoverMs before actually
+// closing, so one continuous utterance is forwarded as one continuous
+// stream instead of being chopped into whichever frames individually
+// cleared the bar.
+const DEFAULT_HANGOVER_MS = 600
+
 export type SilenceGateResult = {
   readonly forwarded: boolean
   readonly rms: number
@@ -78,11 +98,14 @@ export type SilenceGateMetrics = {
 export type SilenceGateOptions = {
   readonly threshold?: number
   readonly calibrationDurationMs?: number
+  readonly hangoverMs?: number
 }
 
 export class SilenceGate {
   private threshold: number
   private readonly calibrationDurationMs: number
+  private readonly hangoverMs: number
+  private hangoverRemainingMs = 0
   private framesReceived = 0
   private framesRejected = 0
   private framesForwarded = 0
@@ -104,6 +127,7 @@ export class SilenceGate {
       typeof thresholdOrOptions === "number" ? { threshold: thresholdOrOptions } : thresholdOrOptions
     this.threshold = options.threshold ?? DEFAULT_RMS_THRESHOLD
     this.calibrationDurationMs = options.calibrationDurationMs ?? DEFAULT_CALIBRATION_DURATION_MS
+    this.hangoverMs = options.hangoverMs ?? DEFAULT_HANGOVER_MS
   }
 
   /**
@@ -123,6 +147,7 @@ export class SilenceGate {
     this.calibrationRmsSum = 0
     this.calibrationFrameCount = 0
     this.calibrationTargetSamples = 0 // recomputed from the first frame's own sampleRate
+    this.hangoverRemainingMs = 0
   }
 
   process(frame: AudioFrame): SilenceGateResult {
@@ -153,7 +178,20 @@ export class SilenceGate {
     this.rmsSum += rms
     if (rms > this.maxRms) this.maxRms = rms
 
-    const forwarded = rms >= this.threshold
+    // Hangover (see the class-level comment above DEFAULT_HANGOVER_MS):
+    // a frame at/above threshold always forwards and refills the
+    // hangover budget; a frame below threshold still forwards as long as
+    // hangover budget remains from a recent above-threshold frame, and
+    // only that remaining budget is spent, not refilled.
+    const aboveThreshold = rms >= this.threshold
+    const forwarded = aboveThreshold || this.hangoverRemainingMs > 0
+    if (aboveThreshold) {
+      this.hangoverRemainingMs = this.hangoverMs
+    } else if (this.hangoverRemainingMs > 0) {
+      const frameDurationMs = (frame.samples.length / frame.sampleRate) * 1000
+      this.hangoverRemainingMs = Math.max(0, this.hangoverRemainingMs - frameDurationMs)
+    }
+
     if (forwarded) {
       this.framesForwarded += 1
     } else {

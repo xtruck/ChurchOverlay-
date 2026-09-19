@@ -16,6 +16,7 @@ import type {
   VerseIndex,
   VerseReference,
   VerseConfirmationMode,
+  VerseLayout,
   VerseShowPayload,
   VerseSource,
   VerseTrigger,
@@ -145,6 +146,22 @@ export type StartAppCoreOptions = {
    */
   readonly verseConfirmationMode?: VerseConfirmationMode
   /**
+   * Optional (ARCHITECTURE.md section 82) — the overlay's initial verse
+   * display layout, "fullscreen" by default. Purely a presentation
+   * choice for the overlay; carries no effect on detection/lookup.
+   * Changed live via the layout:set command; onVerseLayoutChanged below
+   * mirrors onDisplayModeChanged's pattern for persisting the change.
+   */
+  readonly verseLayout?: VerseLayout
+  readonly onVerseLayoutChanged?: (layout: VerseLayout) => void
+  /**
+   * Optional (ARCHITECTURE.md section 82.2) — the poster/media auto-clear
+   * duration a fresh AppCore starts with; absent or null means "no
+   * auto-clear" (manual poster:clear only), matching the option's own
+   * off-by-default convention. Changed live via poster:set-duration.
+   */
+  readonly posterAutoClearMs?: number | null
+  /**
    * Optional (ARCHITECTURE.md section 65.7) — a strictly separate,
    * dashboard-only side channel that never feeds into or is consulted by
    * the verse-detection/hallucination-guard pipeline (the hard boundary
@@ -167,12 +184,13 @@ export type StartAppCoreOptions = {
    */
   readonly sermonNotesIntervalMs?: number
   /**
-   * Optional (ARCHITECTURE.md section 67.2) — how long a verse shown while
-   * a principal poster is active stays on screen before the server clears
-   * it on its own, unprompted, so the poster underneath becomes visible
-   * again. Defaults to 2 minutes. Exposed here, same reasoning as
-   * definitionClearMs above, so tests can use a short delay instead of
-   * waiting out the real default.
+   * Optional (ARCHITECTURE.md section 67.2, widened to unconditional in
+   * section 82.1) — how long ANY shown verse stays on screen before the
+   * server clears it on its own, unprompted, regardless of whether a
+   * principal poster is configured. Confirmed explicitly with the user as
+   * a firm ceiling: 2 minutes 30 seconds, no exceptions. Exposed here,
+   * same reasoning as definitionClearMs above, so tests can use a short
+   * delay instead of waiting out the real default.
    */
   readonly verseAutoClearMs?: number
 }
@@ -250,6 +268,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   // auto-clear timer below. Not persisted across restarts (section 67.2's
   // documented gap, matching the rundown's own).
   let principalPosterCueId: string | null = null
+  // ARCHITECTURE.md section 82.2 — confirmed with the user: operator-
+  // configurable, off (manual-clear-only) by default, matching this
+  // codebase's established optional-capability convention rather than a
+  // fixed built-in duration like the verse ceiling above.
+  let posterAutoClearMs: number | null = options.posterAutoClearMs ?? null
+  let posterAutoClearTimer: ReturnType<typeof setTimeout> | null = null
   // Every cue id ever appointed as a poster via poster:set stays voice-
   // triggerable by its own title for the rest of the session (section
   // 67.1's amendment: "name it so speaking that name puts it up") — a
@@ -257,7 +281,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   // both; once marked, MediaCueDetector matches route here instead of
   // the normal media:show path, for as long as the app keeps running.
   const posterCueIds = new Set<string>()
-  const verseAutoClearMs = options.verseAutoClearMs ?? 120000 // 2 minutes (section 67.2)
+  const verseAutoClearMs = options.verseAutoClearMs ?? 150000 // 2 minutes 30 seconds (section 82.1) — confirmed as a firm ceiling for every shown verse, not just poster-backed ones
   let verseAutoClearTimer: ReturnType<typeof setTimeout> | null = null
   // ARCHITECTURE.md section 65.3: "auto" is the confirmed default —
   // unchanged from every existing behavior unless the operator explicitly
@@ -266,6 +290,10 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   // unconfirmed one, the same "most recent wins" reasoning the rundown's
   // paused-scene state already uses.
   let verseConfirmationMode: VerseConfirmationMode = options.verseConfirmationMode ?? "auto"
+  // ARCHITECTURE.md section 82: purely a presentation choice for the
+  // overlay — never consulted by detection/lookup/caching.
+  let verseLayout: VerseLayout = options.verseLayout ?? "fullscreen"
+  const onVerseLayoutChanged = options.onVerseLayoutChanged
   let pendingVerse: Verse | null = null
   // ARCHITECTURE.md section 61.4: updated by every verse:show, however
   // triggered (detected, manual override, or navigation itself) — "next
@@ -355,6 +383,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // immediately, without ever giving viewers a way to ask for one
     // (invariant 8).
     onViewerConnected: (send) => {
+      // ARCHITECTURE.md section 82: a fresh viewer connection (e.g. an
+      // OBS browser source reloading) must apply the current layout
+      // before anything else renders — otherwise it briefly shows the
+      // CSS default until the next layout:set happens to be sent, which
+      // could be an entire service later.
+      send({ id: generateUlid(), type: "layout:update", timestamp: Date.now(), payload: { layout: verseLayout } })
       // ARCHITECTURE.md section 67.3: a principal poster is a persistent
       // backdrop, not scene state — synced independently of the
       // media/rundown blocks below, the same "late-join sync" reasoning
@@ -442,20 +476,19 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       correlationId,
       payload,
     })
-    // ARCHITECTURE.md section 67 / invariant 25: every trigger funnels
-    // through here, so this is the one place that needs to know about
-    // verse auto-clear — no principal poster configured means no timer is
-    // ever armed, zero behavior change for installs not using this
-    // feature. A new verse always resets (never queues behind) a pending
-    // timer, the same "most recent wins" pattern definitionClearTimer
-    // already uses.
+    // ARCHITECTURE.md section 67 / 82.1 / invariant 25: every trigger
+    // funnels through here, so this is the one place that needs to know
+    // about verse auto-clear. Widened in section 82.1 from "only while a
+    // principal poster is active" to unconditional, per the user's
+    // explicit, firm instruction: every shown verse clears itself after
+    // verseAutoClearMs, no exceptions. A new verse always resets (never
+    // queues behind) a pending timer, the same "most recent wins" pattern
+    // definitionClearTimer already uses.
     if (verseAutoClearTimer) clearTimeout(verseAutoClearTimer)
-    if (principalPosterCueId !== null) {
-      verseAutoClearTimer = setTimeout(() => {
-        verseAutoClearTimer = null
-        broadcastVerseClear(correlationId)
-      }, verseAutoClearMs)
-    }
+    verseAutoClearTimer = setTimeout(() => {
+      verseAutoClearTimer = null
+      broadcastVerseClear(correlationId)
+    }, verseAutoClearMs)
   }
 
   function clearVerse(correlationId?: string): void {
@@ -606,6 +639,37 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       timestamp: Date.now(),
       correlationId,
       payload: null,
+    })
+  }
+
+  // ARCHITECTURE.md section 82.2: a NEW poster resets (never queues
+  // behind) any pending auto-clear, the same "most recent wins" pattern
+  // verseAutoClearTimer/definitionClearTimer already use.
+  function armPosterAutoClear(correlationId?: string): void {
+    if (posterAutoClearTimer) clearTimeout(posterAutoClearTimer)
+    posterAutoClearTimer = null
+    if (posterAutoClearMs === null) return
+    posterAutoClearTimer = setTimeout(() => {
+      posterAutoClearTimer = null
+      principalPosterCueId = null
+      broadcastPosterClear(correlationId)
+    }, posterAutoClearMs)
+  }
+
+  function cancelPosterAutoClear(): void {
+    if (posterAutoClearTimer) {
+      clearTimeout(posterAutoClearTimer)
+      posterAutoClearTimer = null
+    }
+  }
+
+  function broadcastLayout(correlationId?: string): void {
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "layout:update",
+      timestamp: Date.now(),
+      correlationId,
+      payload: { layout: verseLayout },
     })
   }
 
@@ -874,13 +938,36 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         // rest of the session — see the posterCueIds declaration above.
         posterCueIds.add(cue.id)
         broadcastPoster(cue, message.correlationId)
+        armPosterAutoClear(message.correlationId)
         return
       }
 
       case "poster:clear":
         principalPosterCueId = null
+        cancelPosterAutoClear()
         broadcastPosterClear(message.correlationId)
         return
+
+      case "poster:set-duration": {
+        const { durationMs } = message.payload as { durationMs: number | null }
+        posterAutoClearMs = durationMs
+        // A duration change while a poster is already showing re-arms
+        // immediately against the NEW duration (or cancels outright, for
+        // null) — an operator adjusting this mid-service shouldn't have
+        // to re-set the poster just to apply it.
+        if (principalPosterCueId !== null) {
+          armPosterAutoClear(message.correlationId)
+        }
+        return
+      }
+
+      case "layout:set": {
+        const { layout } = message.payload as { layout: VerseLayout }
+        verseLayout = layout
+        onVerseLayoutChanged?.(layout)
+        broadcastLayout(message.correlationId)
+        return
+      }
 
       case "media:select": {
         if (!mediaLibrary) {
@@ -1219,6 +1306,16 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     async stop() {
       if (definitionClearTimer) clearTimeout(definitionClearTimer)
       if (sermonNotesTimer) clearInterval(sermonNotesTimer)
+      // ARCHITECTURE.md section 82.1: verseAutoClearMs went from a
+      // narrow, poster-gated condition (rarely armed in tests) to firing
+      // on EVERY verse:show — a real, pre-existing gap (stop() never
+      // cleared this timer even before that change) that was previously
+      // easy to never trigger, and now hangs `node --test`'s process
+      // exit on almost any test that shows a verse and stops before the
+      // real ~2.5-minute default fires. posterAutoClearTimer is the same
+      // class of leak for its own new feature.
+      if (verseAutoClearTimer) clearTimeout(verseAutoClearTimer)
+      if (posterAutoClearTimer) clearTimeout(posterAutoClearTimer)
       await asr.stop().catch(() => {})
       await wsServer.close()
       logger.info({ component: "app-core", event: "stopped" })

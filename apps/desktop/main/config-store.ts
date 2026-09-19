@@ -1,6 +1,6 @@
 import { mkdir, open, readFile, rename } from "node:fs/promises"
 import { dirname } from "node:path"
-import type { DisplayMode, VerseConfirmationMode } from "../../../packages/contracts"
+import type { DisplayMode, VerseConfirmationMode, VerseLayout } from "../../../packages/contracts"
 
 /** Desktop-app-only concern (not part of the WS protocol) — the operator dashboard/setup UI's own language, ARCHITECTURE.md section 63.5. */
 export type UiLanguage = "en" | "fr"
@@ -8,6 +8,7 @@ export type UiLanguage = "en" | "fr"
 export const DISPLAY_MODES: readonly DisplayMode[] = ["english", "french", "bilingual"]
 export const UI_LANGUAGES: readonly UiLanguage[] = ["en", "fr"]
 export const VERSE_CONFIRMATION_MODES: readonly VerseConfirmationMode[] = ["auto", "review"]
+export const VERSE_LAYOUTS: readonly VerseLayout[] = ["fullscreen", "lower-third"]
 
 /**
  * Matches Electron's `safeStorage` API shape exactly
@@ -51,6 +52,12 @@ export type AppConfig = {
    * runs, and never makes an API call, unless explicitly turned on.
    */
   readonly enableSermonNotes: boolean
+  /**
+   * ARCHITECTURE.md section 82 — confirmed with the user: full-bleed
+   * verse text should be the default (readable from across a room), with
+   * lower-third available for when video/media shares the screen.
+   */
+  readonly verseLayout: VerseLayout
 }
 
 type StoredConfig = {
@@ -67,6 +74,8 @@ type StoredConfig = {
   readonly verseConfirmationMode?: string
   /** Optional in storage: absent in configs saved before ARCHITECTURE.md section 65.7 existed. */
   readonly enableSermonNotes?: boolean
+  /** Optional in storage: absent in configs saved before ARCHITECTURE.md section 82 existed. */
+  readonly verseLayout?: string
 }
 
 /**
@@ -119,6 +128,7 @@ export class ConfigStore {
       allowPhoneRemote: config.allowPhoneRemote,
       verseConfirmationMode: config.verseConfirmationMode,
       enableSermonNotes: config.enableSermonNotes,
+      verseLayout: config.verseLayout,
     }
 
     await mkdir(dirname(this.filePath), { recursive: true })
@@ -150,6 +160,7 @@ export class ConfigStore {
       allowPhoneRemote,
       verseConfirmationMode,
       enableSermonNotes,
+      verseLayout,
     } = stored
 
     if (
@@ -183,6 +194,9 @@ export class ConfigStore {
     if (enableSermonNotes !== undefined && typeof enableSermonNotes !== "boolean") {
       throw new Error(`ConfigStore: ${this.filePath} has an invalid enableSermonNotes`)
     }
+    if (verseLayout !== undefined && !VERSE_LAYOUTS.includes(verseLayout as VerseLayout)) {
+      throw new Error(`ConfigStore: ${this.filePath} has an invalid verseLayout`)
+    }
 
     return {
       groqApiKey: this.codec.decrypt(Buffer.from(groqApiKeyEncrypted, "base64")),
@@ -202,6 +216,10 @@ export class ConfigStore {
       // Absent (a config saved before section 65.7 existed) defaults to
       // false — same opt-in-for-cost reasoning as allowPhoneRemote above.
       enableSermonNotes: enableSermonNotes ?? false,
+      // Absent (a config saved before section 82 existed) defaults to
+      // "fullscreen" — the confirmed default for every existing install
+      // upgrading, not just fresh ones.
+      verseLayout: (verseLayout as VerseLayout | undefined) ?? "fullscreen",
     }
   }
 }

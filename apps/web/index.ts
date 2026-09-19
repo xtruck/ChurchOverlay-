@@ -33,6 +33,18 @@ const HOST = "0.0.0.0"
 // directory the process was launched from.
 const REPO_ROOT = join(__dirname, "..", "..", "..")
 
+/**
+ * ARCHITECTURE.md section 81: maps the display/translation mode to a
+ * Whisper language hint. "bilingual" deliberately has no single correct
+ * hint (a genuinely mixed-language service), so it stays undefined —
+ * Whisper's own per-chunk auto-detection is the least-wrong option there.
+ */
+function whisperLanguageFor(mode: DisplayMode): string | undefined {
+  if (mode === "french") return "fr"
+  if (mode === "english") return "en"
+  return undefined
+}
+
 const logger = new Logger({ minLevel: "info" })
 
 async function main() {
@@ -92,7 +104,11 @@ async function main() {
     logger
   )
 
-  const hybridAsr = new HybridAsrProvider({ apiKey: groqApiKey, logger })
+  const hybridAsr = new HybridAsrProvider({
+    apiKey: groqApiKey,
+    logger,
+    language: whisperLanguageFor(displayMode),
+  })
   let sermonNotesGen: SermonNotesGenerator | undefined = groqApiKey
     ? new SermonNotesGenerator({ apiKey: groqApiKey })
     : undefined
@@ -182,6 +198,7 @@ async function main() {
       if (body.displayMode) {
         displayMode = body.displayMode as DisplayMode
         localizedVerseSource.setMode(displayMode)
+        hybridAsr.setLanguage(whisperLanguageFor(displayMode))
       }
       if (body.uiLanguage) {
         uiLanguage = body.uiLanguage as UiLanguage
@@ -214,6 +231,7 @@ async function main() {
     if (mode === "english" || mode === "french" || mode === "bilingual") {
       displayMode = mode
       localizedVerseSource.setMode(mode)
+      hybridAsr.setLanguage(whisperLanguageFor(mode))
       res.json({ success: true, mode })
     } else {
       res.status(400).json({ error: "Invalid mode" })

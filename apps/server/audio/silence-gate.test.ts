@@ -22,7 +22,12 @@ test("SilenceGate: forwards a frame with clearly loud, speech-like amplitude", (
 })
 
 test("SilenceGate: is inclusive at the threshold boundary (rms === threshold forwards)", () => {
-  const gate = new SilenceGate(500)
+  // hangoverMs: 0 isolates the per-frame threshold check this test is
+  // actually about — without it, the "at threshold" frame's own hangover
+  // (ARCHITECTURE.md section 81) would carry the very next frame through
+  // regardless of its own RMS, which is a real and correct behavior but
+  // not what this specific test is checking.
+  const gate = new SilenceGate({ threshold: 500, hangoverMs: 0 })
   const atThreshold = gate.process(makeFrame(new Array(100).fill(500)))
   const justBelow = gate.process(makeFrame(new Array(100).fill(499)))
   assert.equal(atThreshold.forwarded, true)
@@ -38,7 +43,10 @@ test("SilenceGate: never throws on an empty samples array, and treats it as sile
 })
 
 test("SilenceGate: accumulates accurate metrics across a mix of silent and loud frames", () => {
-  const gate = new SilenceGate(500)
+  // hangoverMs: 0 — see the boundary test above; this test is about
+  // metrics accumulation, not hangover, and hangover would otherwise
+  // forward the trailing silent frame too (correctly, per section 81).
+  const gate = new SilenceGate({ threshold: 500, hangoverMs: 0 })
   gate.process(makeFrame(new Array(100).fill(0))) // silent -> rejected
   gate.process(makeFrame(new Array(100).fill(1000))) // loud -> forwarded
   gate.process(makeFrame(new Array(100).fill(2000))) // loud -> forwarded
@@ -50,6 +58,43 @@ test("SilenceGate: accumulates accurate metrics across a mix of silent and loud 
   assert.equal(metrics.framesForwarded, 2)
   assert.equal(metrics.maxRms, 2000)
   assert.equal(metrics.averageRms, (0 + 1000 + 2000 + 0) / 4)
+})
+
+// ARCHITECTURE.md section 81 — the actual fix for the reported "have to
+// speak loudly and repeat" bug: a brief below-threshold dip mid-utterance
+// (a real, normal feature of speech) must not be silently dropped the way
+// a strict per-frame gate would.
+test("SilenceGate: a brief below-threshold dip right after a loud frame is still forwarded (hangover)", () => {
+  const gate = new SilenceGate({ threshold: 500, hangoverMs: 50 })
+  const loud = gate.process(makeFrame(new Array(160).fill(1000), 0)) // 10ms @ 16kHz
+  const quietDip = gate.process(makeFrame(new Array(160).fill(0), 1)) // another 10ms, well inside the 50ms budget
+  assert.equal(loud.forwarded, true)
+  assert.equal(quietDip.forwarded, true)
+})
+
+test("SilenceGate: forwarding stops once the hangover budget is actually exhausted by sustained silence", () => {
+  const gate = new SilenceGate({ threshold: 500, hangoverMs: 20 })
+  gate.process(makeFrame(new Array(160).fill(1000), 0)) // arms a 20ms hangover budget
+  // Each frame is 160 samples @ 16kHz = 10ms; three consecutive silent
+  // frames (30ms) exceed the 20ms budget.
+  gate.process(makeFrame(new Array(160).fill(0), 1))
+  gate.process(makeFrame(new Array(160).fill(0), 2))
+  const afterBudgetExhausted = gate.process(makeFrame(new Array(160).fill(0), 3))
+  assert.equal(afterBudgetExhausted.forwarded, false)
+})
+
+test("SilenceGate: a fresh above-threshold frame refills the hangover budget rather than leaving it to decay from the first one", () => {
+  const gate = new SilenceGate({ threshold: 500, hangoverMs: 20 })
+  gate.process(makeFrame(new Array(160).fill(1000), 0)) // arms 20ms
+  gate.process(makeFrame(new Array(160).fill(0), 1)) // 10ms of the budget spent, still forwarded
+  gate.process(makeFrame(new Array(160).fill(1000), 2)) // above threshold again — refills to a full 20ms
+  gate.process(makeFrame(new Array(160).fill(0), 3)) // only 10ms into the REFILLED budget
+  const stillForwarded = gate.process(makeFrame(new Array(160).fill(0), 4)) // 20ms into the REFILLED budget
+  // Without the refill at frame 2, this would be the third consecutive
+  // silent frame after the original loud one (30ms > the original 20ms
+  // budget) and would already be rejected — see the exhaustion test
+  // above. Still being forwarded here is the actual evidence of refill.
+  assert.equal(stillForwarded.forwarded, true)
 })
 
 test("SilenceGate: getMetrics() before any frame is processed reports zeros, not NaN", () => {

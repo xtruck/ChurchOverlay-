@@ -89,15 +89,27 @@ async function connect(port: number, token: string): Promise<WebSocket> {
 // echo out, keeping the other ~40 emitTranscript-driven tests correct in
 // intent without individually rewriting each one. Tests for the echo
 // itself use the raw socket "message" event directly, not these helpers.
+//
+// ARCHITECTURE.md section 82: onViewerConnected now ALSO unconditionally
+// sends layout:update to every new connection (before any other resync
+// content), for exactly the same reason transcript echoes needed
+// filtering here — dozens of existing tests connect a fresh viewer and
+// assert "the next/first message is X," and would otherwise all break on
+// this new, unrelated-to-them first message. Tests for layout:update
+// itself use the raw socket "message" event directly, same precedent.
 function isTranscriptEcho(message: WsMessage): boolean {
   return message.type === "transcript:partial" || message.type === "transcript:final"
+}
+
+function isAutoSyncNoise(message: WsMessage): boolean {
+  return isTranscriptEcho(message) || message.type === "layout:update"
 }
 
 function waitForMessage(socket: WebSocket): Promise<WsMessage> {
   return new Promise((resolve) => {
     const handler = (data: { toString(): string }) => {
       const message = JSON.parse(data.toString())
-      if (isTranscriptEcho(message)) return
+      if (isAutoSyncNoise(message)) return
       socket.off("message", handler)
       resolve(message)
     }
@@ -120,7 +132,7 @@ function waitForMessages(socket: WebSocket, count: number): Promise<WsMessage[]>
     const collected: WsMessage[] = []
     const handler = (data: { toString(): string }) => {
       const message = JSON.parse(data.toString())
-      if (isTranscriptEcho(message)) return
+      if (isAutoSyncNoise(message)) return
       collected.push(message)
       if (collected.length === count) {
         socket.off("message", handler)
@@ -363,8 +375,13 @@ test("AppCore: verse:override with a reference the source can't resolve broadcas
   try {
     const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
     const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    // ARCHITECTURE.md section 82: layout:update is now sent unconditionally
+    // on connect — expected noise here too, same reasoning as the
+    // transcript-echo exclusions elsewhere in this file.
     let received = false
-    viewerSocket.once("message", () => {
+    viewerSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString())
+      if (message.type === "layout:update") return
       received = true
     })
 
@@ -549,8 +566,12 @@ test("AppCore: media:select with an unknown id broadcasts nothing", async () => 
     try {
       const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
       const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      // ARCHITECTURE.md section 82: layout:update is now sent
+      // unconditionally on connect — expected noise here too.
       let received = false
-      viewerSocket.once("message", () => {
+      viewerSocket.on("message", (data) => {
+        const message = JSON.parse(data.toString())
+        if (message.type === "layout:update") return
         received = true
       })
 
@@ -2037,8 +2058,12 @@ test("AppCore: confirming with nothing pending is a no-op, not a crash", async (
   try {
     const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
     const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    // ARCHITECTURE.md section 82: layout:update is now sent
+    // unconditionally on connect — expected noise here too.
     let received = false
-    viewerSocket.once("message", () => {
+    viewerSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString())
+      if (message.type === "layout:update") return
       received = true
     })
 
@@ -2505,8 +2530,12 @@ test("AppCore: poster:set with a non-image cue id is rejected — no broadcast",
     try {
       const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
       const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      // ARCHITECTURE.md section 82: layout:update is now sent
+      // unconditionally on connect — expected noise here too.
       let received = false
-      viewerSocket.once("message", () => {
+      viewerSocket.on("message", (data) => {
+        const message = JSON.parse(data.toString())
+        if (message.type === "layout:update") return
         received = true
       })
 
@@ -2539,8 +2568,12 @@ test("AppCore: poster:set with an unknown id is rejected — no broadcast", asyn
     try {
       const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
       const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      // ARCHITECTURE.md section 82: layout:update is now sent
+      // unconditionally on connect — expected noise here too.
       let received = false
-      viewerSocket.once("message", () => {
+      viewerSocket.on("message", (data) => {
+        const message = JSON.parse(data.toString())
+        if (message.type === "layout:update") return
         received = true
       })
 
@@ -2595,6 +2628,156 @@ test("AppCore: poster:clear broadcasts poster:clear", async () => {
 
       assert.equal(message.type, "poster:clear")
       assert.equal(message.payload, null)
+      operatorSocket.close()
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+// ARCHITECTURE.md section 82.
+test("AppCore: a new connection is synced with the current verse layout via layout:update, before anything else", async () => {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    verseLayout: "lower-third",
+  })
+  try {
+    const viewerSocket = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
+    const message = await new Promise<WsMessage>((resolve) => {
+      viewerSocket.once("message", (data: { toString(): string }) => resolve(JSON.parse(data.toString())))
+    })
+    assert.equal(message.type, "layout:update")
+    assert.deepEqual(message.payload, { layout: "lower-third" })
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: layout:set from the operator broadcasts layout:update and calls onVerseLayoutChanged", async () => {
+  const changes: string[] = []
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    onVerseLayoutChanged: (layout) => changes.push(layout),
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const update = new Promise<WsMessage>((resolve) => {
+      viewerSocket.once("message", (data: { toString(): string }) => resolve(JSON.parse(data.toString())))
+    })
+    operatorSocket.send(
+      JSON.stringify({ id: "01A", type: "layout:set", timestamp: Date.now(), payload: { layout: "lower-third" } })
+    )
+    const message = await update
+
+    assert.equal(message.type, "layout:update")
+    assert.deepEqual(message.payload, { layout: "lower-third" })
+    assert.deepEqual(changes, ["lower-third"])
+
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: poster:set-duration auto-clears the poster after the configured delay, and a new poster:set resets the countdown", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const source = join(dir, "poster.png")
+    await writeFile(source, "x")
+    const cue = await mediaLibrary.import(source, "Sunday Service Poster", "image")
+
+    const app = await startAppCore({
+      asr: new FakeAsrProvider(),
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new StubVerseSource({}),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+    })
+    try {
+      const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+      operatorSocket.send(
+        JSON.stringify({
+          id: "01A",
+          type: "poster:set-duration",
+          timestamp: Date.now(),
+          payload: { durationMs: 50 },
+        })
+      )
+
+      const shown = waitForMessage(viewerSocket)
+      operatorSocket.send(
+        JSON.stringify({ id: "01B", type: "poster:set", timestamp: Date.now(), payload: { mediaCueId: cue.id } })
+      )
+      await shown
+
+      const autoCleared = await waitForMessage(viewerSocket)
+      assert.equal(autoCleared.type, "poster:clear")
+
+      operatorSocket.close()
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+test("AppCore: with no poster:set-duration configured, a poster never auto-clears (manual-only default)", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const source = join(dir, "poster.png")
+    await writeFile(source, "x")
+    const cue = await mediaLibrary.import(source, "Sunday Service Poster", "image")
+
+    const app = await startAppCore({
+      asr: new FakeAsrProvider(),
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new StubVerseSource({}),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+    })
+    try {
+      const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+      const shown = waitForMessage(viewerSocket)
+      operatorSocket.send(
+        JSON.stringify({ id: "01A", type: "poster:set", timestamp: Date.now(), payload: { mediaCueId: cue.id } })
+      )
+      await shown
+
+      let clearReceived = false
+      const listener = (data: { toString(): string }) => {
+        const message = JSON.parse(data.toString())
+        if (message.type === "poster:clear") clearReceived = true
+      }
+      viewerSocket.on("message", listener)
+      await new Promise((resolve) => setTimeout(resolve, 80))
+      viewerSocket.off("message", listener)
+      assert.equal(clearReceived, false)
+
       operatorSocket.close()
       viewerSocket.close()
     } finally {
@@ -2838,7 +3021,7 @@ test("AppCore: a manual verse:clear before the auto-clear timer fires cancels it
   })
 })
 
-test("AppCore: a verse shown with no principal poster configured never arms an auto-clear timer", async () => {
+test("AppCore: a verse shown with no principal poster configured still auto-clears after the configured delay (section 82.1 — unconditional, not poster-gated)", async () => {
   const app = await startAppCore({
     asr: new FakeAsrProvider(),
     detector: new RegexDetector(),
@@ -2864,15 +3047,8 @@ test("AppCore: a verse shown with no principal poster configured never arms an a
     )
     await verseShown
 
-    let clearReceived = false
-    const listener = (data: { toString(): string }) => {
-      const message = JSON.parse(data.toString()) as WsMessage
-      if (message.type === "verse:clear") clearReceived = true
-    }
-    viewerSocket.on("message", listener)
-    await new Promise((resolve) => setTimeout(resolve, 80))
-    viewerSocket.off("message", listener)
-    assert.equal(clearReceived, false)
+    const autoCleared = await waitForMessage(viewerSocket)
+    assert.equal(autoCleared.type, "verse:clear")
 
     operatorSocket.close()
     viewerSocket.close()

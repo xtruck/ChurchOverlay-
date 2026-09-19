@@ -1393,6 +1393,27 @@
             Enabled, but no local network address was found on this machine.
           </div>
         </div>
+        <!-- ARCHITECTURE.md section 82: purely a presentation choice for
+             the overlay — full screen (the default, readable from across
+             a room) vs. lower third (leaves the poster/media backdrop
+             visible around the edges, for when video is also on screen). -->
+        <div class="card glass" style="max-width: 640px; margin-top: var(--space-4)">
+          <div class="card-title" data-i18n="verseLayout.title">Verse Display</div>
+          <p class="settings-hint" data-i18n="verseLayout.hint">
+            How a shown verse appears on the overlay.
+          </p>
+          <div id="verse-layout-toggle" class="segmented" role="group" aria-label="Verse display layout" title="Verse display layout">
+            <button type="button" data-layout="fullscreen" class="active" data-i18n="verseLayout.fullscreen">Full Screen</button>
+            <button type="button" data-layout="lower-third" data-i18n="verseLayout.lowerThird">Lower Third</button>
+          </div>
+          <label for="poster-duration-input" data-i18n="verseLayout.posterDurationLabel" style="margin-top: var(--space-3); display: block">
+            Poster/media auto-clear (minutes, blank = manual only)
+          </label>
+          <div class="btn-row">
+            <input id="poster-duration-input" type="number" min="0" step="0.5" placeholder="—" style="max-width: 120px" />
+            <button id="poster-duration-apply-btn" class="btn-secondary btn-small" data-i18n="verseLayout.posterDurationApply">Apply</button>
+          </div>
+        </div>
       </div>
     </div>
   </main>

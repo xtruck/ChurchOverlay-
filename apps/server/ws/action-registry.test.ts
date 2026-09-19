@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { validateWsMessage, ACTION_REGISTRY } from "./action-registry"
 
-test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 media, rundown, glossary, verse-confirmation, sermon-notes, canvas, poster, and transcript-final actions (ARCHITECTURE.md sections 30, 60, 64, 65.3, 65.5, 65.7, 66, 67, 70)", () => {
+test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 media, rundown, glossary, verse-confirmation, sermon-notes, canvas, poster, layout, and transcript-final actions (ARCHITECTURE.md sections 30, 60, 64, 65.3, 65.5, 65.7, 66, 67, 70, 82)", () => {
   assert.deepEqual(
     Object.keys(ACTION_REGISTRY).sort(),
     [
@@ -37,6 +37,9 @@ test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 me
       "poster:set",
       "poster:clear",
       "poster:show",
+      "poster:set-duration",
+      "layout:set",
+      "layout:update",
     ].sort()
   )
 })
@@ -673,6 +676,79 @@ test("validateWsMessage: rejects any inbound sender for poster:show — a server
   )
   const asViewer = validateWsMessage(
     { id: "01ABC", type: "poster:show", timestamp: 1700000000000, payload: { cue: VALID_POSTER_CUE } },
+    "viewer"
+  )
+  assert.equal(asOperator.ok, false)
+  assert.equal(asViewer.ok, false)
+})
+
+test("validateWsMessage: accepts a valid poster:set-duration command from an operator (including null = no auto-clear), rejects a viewer sending it", () => {
+  for (const durationMs of [90000, null]) {
+    const fromOperator = validateWsMessage(
+      { id: "01ABC", type: "poster:set-duration", timestamp: 1700000000000, payload: { durationMs } },
+      "operator"
+    )
+    assert.equal(fromOperator.ok, true, `durationMs ${durationMs} should be accepted`)
+  }
+  const fromViewer = validateWsMessage(
+    { id: "01ABC", type: "poster:set-duration", timestamp: 1700000000000, payload: { durationMs: 90000 } },
+    "viewer"
+  )
+  assert.equal(fromViewer.ok, false)
+})
+
+test("validateWsMessage: rejects poster:set-duration with a non-positive, non-finite, or missing durationMs", () => {
+  for (const payload of [{}, { durationMs: 0 }, { durationMs: -1 }, { durationMs: NaN }, { durationMs: "90000" }]) {
+    const result = validateWsMessage(
+      { id: "01ABC", type: "poster:set-duration", timestamp: 1700000000000, payload },
+      "operator"
+    )
+    assert.equal(result.ok, false, `payload ${JSON.stringify(payload)} must be rejected`)
+  }
+})
+
+test("validateWsMessage: accepts a valid layout:set command from an operator, rejects a viewer sending it", () => {
+  const fromOperator = validateWsMessage(
+    { id: "01ABC", type: "layout:set", timestamp: 1700000000000, payload: { layout: "fullscreen" } },
+    "operator"
+  )
+  const fromViewer = validateWsMessage(
+    { id: "01ABC", type: "layout:set", timestamp: 1700000000000, payload: { layout: "fullscreen" } },
+    "viewer"
+  )
+  assert.equal(fromOperator.ok, true)
+  assert.equal(fromViewer.ok, false)
+})
+
+test("validateWsMessage: rejects layout:set with anything other than 'fullscreen' or 'lower-third'", () => {
+  for (const payload of [{}, { layout: "" }, { layout: "sidebar" }, { layout: 5 }, null]) {
+    const result = validateWsMessage(
+      { id: "01ABC", type: "layout:set", timestamp: 1700000000000, payload },
+      "operator"
+    )
+    assert.equal(result.ok, false, `payload ${JSON.stringify(payload)} must be rejected`)
+  }
+})
+
+test("ACTION_REGISTRY['layout:update'].validatePayload: accepts both valid layouts, rejects anything else", () => {
+  assert.equal(ACTION_REGISTRY["layout:update"].validatePayload({ layout: "fullscreen" }), true)
+  assert.equal(ACTION_REGISTRY["layout:update"].validatePayload({ layout: "lower-third" }), true)
+  for (const payload of [{}, { layout: "sidebar" }, null]) {
+    assert.equal(
+      ACTION_REGISTRY["layout:update"].validatePayload(payload),
+      false,
+      `payload ${JSON.stringify(payload)} must be rejected`
+    )
+  }
+})
+
+test("validateWsMessage: rejects any inbound sender for layout:update — a server-only event", () => {
+  const asOperator = validateWsMessage(
+    { id: "01ABC", type: "layout:update", timestamp: 1700000000000, payload: { layout: "fullscreen" } },
+    "operator"
+  )
+  const asViewer = validateWsMessage(
+    { id: "01ABC", type: "layout:update", timestamp: 1700000000000, payload: { layout: "fullscreen" } },
     "viewer"
   )
   assert.equal(asOperator.ok, false)

@@ -126,17 +126,31 @@
   const MAX_HEIGHT_FRACTION = 0.62 // leaves headroom above/below for #verse's own vertical placement
   const MAX_WIDTH_FRACTION = 0.86 // matches #verse's 7%-each-side padding
 
+  // ARCHITECTURE.md section 82: fitVerseText() sets an inline font-size,
+  // which always wins over the CSS clamp()s on #verse.fullscreen — so
+  // without a separate, much larger cap here, a fullscreen verse would
+  // still render at the same size as lower-third, wasting the entire
+  // point of "seen from across a room." Bigger max, and bigger available
+  // area (the card now fills the whole viewport, not a bottom third).
+  const FULLSCREEN_MAX_FONT_PX = 120
+  const FULLSCREEN_MIN_FONT_PX = 28
+  const FULLSCREEN_MAX_HEIGHT_FRACTION = 0.72
+  const FULLSCREEN_MAX_WIDTH_FRACTION = 0.8
+
   function fitVerseText() {
-    const maxWidth = window.innerWidth * MAX_WIDTH_FRACTION
-    const maxHeight = window.innerHeight * MAX_HEIGHT_FRACTION
-    let fontSize = MAX_FONT_PX
+    const isFullscreen = verseEl.classList.contains("fullscreen")
+    const maxWidth = window.innerWidth * (isFullscreen ? FULLSCREEN_MAX_WIDTH_FRACTION : MAX_WIDTH_FRACTION)
+    const maxHeight = window.innerHeight * (isFullscreen ? FULLSCREEN_MAX_HEIGHT_FRACTION : MAX_HEIGHT_FRACTION)
+    const maxFontPx = isFullscreen ? FULLSCREEN_MAX_FONT_PX : MAX_FONT_PX
+    const minFontPx = isFullscreen ? FULLSCREEN_MIN_FONT_PX : MIN_FONT_PX
+    let fontSize = maxFontPx
     textEl.style.fontSize = fontSize + "px"
     if (secondaryTextEl.classList.contains("visible")) {
       secondaryTextEl.style.fontSize = Math.max(MIN_SECONDARY_FONT_PX, fontSize * SECONDARY_FONT_RATIO) + "px"
     }
     while (
       (verseCardEl.scrollWidth > maxWidth || verseCardEl.scrollHeight > maxHeight) &&
-      fontSize > MIN_FONT_PX
+      fontSize > minFontPx
     ) {
       fontSize -= 1
       textEl.style.fontSize = fontSize + "px"
@@ -165,6 +179,20 @@
 
   function clearVerse() {
     verseEl.classList.remove("visible")
+  }
+
+  // ARCHITECTURE.md section 82 — "fullscreen" is the confirmed default
+  // (matches the CSS's own unprefixed #verse rules being the lower-third
+  // base and .fullscreen being the override... but the class itself
+  // starts ABSENT until the server's own layout:update arrives, so a
+  // brand-new connection defaults to fullscreen here too, before the
+  // first real message even lands, keeping the very first render correct
+  // rather than lower-third-then-flip).
+  verseEl.classList.add("fullscreen")
+
+  function setVerseLayout(layout) {
+    verseEl.classList.toggle("fullscreen", layout === "fullscreen")
+    if (verseEl.classList.contains("visible")) fitVerseText()
   }
 
   // Media Library (ARCHITECTURE.md section 60) had server/dashboard support
@@ -420,6 +448,8 @@
         showPoster(message.payload)
       } else if (message.type === "poster:clear") {
         clearPoster()
+      } else if (message.type === "layout:update") {
+        setVerseLayout(message.payload.layout)
       }
     })
   }

@@ -15,6 +15,8 @@ export type HybridAsrProviderOptions = {
   readonly model?: string
   readonly chunkDurationMs?: number
   readonly now?: () => number
+  /** ARCHITECTURE.md section 81 — passed straight through to GroqProvider; see its own doc comment. */
+  readonly language?: string
 }
 
 /**
@@ -42,6 +44,7 @@ export class HybridAsrProvider implements AsrProvider {
   private readonly model?: string
   private readonly chunkDurationMs?: number
   private readonly now?: () => number
+  private language?: string
 
   private readonly dryRun: DryRunAsrProvider
   private real: GroqProvider | null = null
@@ -56,6 +59,7 @@ export class HybridAsrProvider implements AsrProvider {
     this.model = options.model
     this.chunkDurationMs = options.chunkDurationMs
     this.now = options.now
+    this.language = options.language
 
     // Always available, regardless of whether a real key is ever set —
     // dry-run testing must not depend on Groq configuration.
@@ -91,6 +95,7 @@ export class HybridAsrProvider implements AsrProvider {
       model: this.model,
       chunkDurationMs: this.chunkDurationMs,
       now: this.now,
+      language: this.language,
     })
     this.real.onTranscript((result) => this.transcriptCallback?.(result))
     this.real.onError((err) => this.errorCallback?.(err))
@@ -105,6 +110,12 @@ export class HybridAsrProvider implements AsrProvider {
   /** Whether real (Groq) transcription is currently configured — the web server's /api/status exposes this as hasGroqKey. */
   hasRealProvider(): boolean {
     return this.real !== null
+  }
+
+  /** ARCHITECTURE.md section 81 — retargets the real provider immediately if one exists, and is remembered for the next setApiKey() if not. */
+  setLanguage(language: string | undefined): void {
+    this.language = language
+    this.real?.setLanguage(language)
   }
 
   async start(): Promise<void> {

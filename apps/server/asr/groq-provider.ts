@@ -26,6 +26,18 @@ export type GroqProviderOptions = {
   readonly url?: string
   readonly now?: () => number
   /**
+   * ARCHITECTURE.md section 81 — an ISO-639-1 code (e.g. "fr", "en")
+   * telling Whisper what language to expect, instead of letting it
+   * auto-detect per 2-second chunk. Confirmed with the user: this app's
+   * primary audience speaks French, and per-chunk auto-detection on short
+   * clips is a real accuracy cost — an ambiguous phoneme or accent can
+   * flip the detected language between chunks, degrading both the
+   * transcript itself and, downstream, verse-reference detection. Absent
+   * (auto-detect) is still the right default for a genuinely bilingual
+   * service, where no single fixed hint could be correct throughout.
+   */
+  readonly language?: string
+  /**
    * ARCHITECTURE.md production audit (section 74) — optional, same
    * pattern as onError()/getTranslationId() elsewhere: absent by
    * default, so nothing downstream is forced to handle a logger it
@@ -76,6 +88,7 @@ export class GroqProvider implements AsrProvider {
   private readonly url: string
   private readonly now: () => number
   private readonly logger?: Logger
+  private language: string | undefined
 
   private transcriptCallback: ((result: TranscriptResult) => void) | null = null
   private errorCallback: ((error: Error) => void) | null = null
@@ -97,6 +110,12 @@ export class GroqProvider implements AsrProvider {
     this.url = options.url ?? DEFAULT_URL
     this.now = options.now ?? Date.now
     this.logger = options.logger
+    this.language = options.language
+  }
+
+  /** Live-updatable (ARCHITECTURE.md section 81) — a display-mode switch mid-service (voice, dashboard, or API) should retarget Whisper immediately, not just at construction. */
+  setLanguage(language: string | undefined): void {
+    this.language = language
   }
 
   async start(): Promise<void> {
@@ -189,6 +208,9 @@ export class GroqProvider implements AsrProvider {
     form.append("file", new Blob([wavBytes], { type: "audio/wav" }), "audio.wav")
     form.append("model", this.model)
     form.append("response_format", "json")
+    if (this.language) {
+      form.append("language", this.language)
+    }
 
     const response = await this.fetchImpl(this.url, {
       method: "POST",
