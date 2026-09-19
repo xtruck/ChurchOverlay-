@@ -61,7 +61,24 @@ export async function resolveVerse(
   const cached = cache.getVerse(reference, translation)
   if (cached) return cached
 
-  if (cache.isNegativelyCached(reference, translation)) return null
+  if (cache.isNegativelyCached(reference, translation)) {
+    // ARCHITECTURE.md production audit (section 74): a hypothesis for an
+    // intermittently-missing verse — the reference WAS detected and
+    // logged upstream in processTranscript, but a prior transient
+    // failure for this exact reference (a network hiccup against the
+    // bilingual API, section 63) silently suppresses every repeat for up
+    // to DEFAULT_NEGATIVE_TTL_MS (5 minutes), with no log at the point
+    // that actually happens — indistinguishable, from the outside, from
+    // the reference never having been detected at all. Logged at the
+    // same level as the circuit-open case just below, which already
+    // covers the sibling "resolution silently produced nothing" path.
+    logger?.warn({
+      component: "verse-resolver",
+      event: "suppressed-negative-cache",
+      metadata: { reference, translation, remainingMs: cache.negativeCacheRemainingMs(reference, translation) },
+    })
+    return null
+  }
 
   if (!circuitBreaker.canProceed()) {
     logger?.warn({

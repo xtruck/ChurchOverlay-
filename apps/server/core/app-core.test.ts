@@ -1367,6 +1367,55 @@ test("AppCore: a viewer connecting during a verse-interrupt is resynced with the
   })
 })
 
+// ARCHITECTURE.md production audit (section 74): a real, structural gap
+// found alongside the interrupt case above — a verse shown OUTSIDE any
+// rundown (no rundown loaded at all, the common live-service case) was
+// never resynced to a reconnecting viewer, since the old code only ever
+// checked lastShownVerse inside the rundown-interrupted branch. A
+// dropped OBS/overlay WS connection reconnecting while a verse was
+// showing would silently never see it again.
+test("AppCore: a viewer connecting while a verse is showing with NO rundown loaded is still resynced with verse:show", async () => {
+  const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({ john: johnVerse }),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const shown = waitForMessage(viewerSocket)
+    operatorSocket.send(
+      JSON.stringify({
+        id: "01A",
+        type: "verse:override",
+        timestamp: Date.now(),
+        payload: { book: "john", chapter: 3, verse: 16 },
+      })
+    )
+    await shown
+
+    // A late viewer connects while the verse is showing — no rundown was
+    // ever loaded, so rundownController.currentState() is null.
+    const lateViewer = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
+    const syncMessage = await waitForMessage(lateViewer)
+
+    assert.equal(syncMessage.type, "verse:show")
+    assert.deepEqual((syncMessage.payload as Verse).reference, { book: "john", chapter: 3, verse: 16 })
+
+    operatorSocket.close()
+    viewerSocket.close()
+    lateViewer.close()
+  } finally {
+    await app.stop()
+  }
+})
+
 test("AppCore: scene:goto with an out-of-range index is a no-op, broadcasting nothing", async () => {
   const app = await startAppCore({
     asr: new FakeAsrProvider(),

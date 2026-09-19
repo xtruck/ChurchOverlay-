@@ -54,6 +54,21 @@ export class LruTtlCache<T> {
     this.entries.delete(key)
   }
 
+  /**
+   * ARCHITECTURE.md production audit (section 74): the diagnosable half
+   * of a negative-cache suppression — how much longer this key will stay
+   * suppressed, using this cache's own injected clock (not the caller's),
+   * so it stays correct under an injected test clock too. Deliberately
+   * does not call get() internally: a diagnostic read must never mutate
+   * LRU recency ordering as a side effect of merely inspecting the cache.
+   */
+  getRemainingTtlMs(key: string): number | undefined {
+    const entry = this.entries.get(key)
+    if (!entry) return undefined
+    const remaining = entry.expiresAt - this.now()
+    return remaining > 0 ? remaining : undefined
+  }
+
   size(): number {
     return this.entries.size
   }

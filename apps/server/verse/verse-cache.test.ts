@@ -92,3 +92,19 @@ test("VerseCache: the positive and negative caches are independently bounded", (
   assert.equal(cache.getVerse({ book: "john", chapter: 1, verse: 1 }, "kjv"), undefined)
   assert.deepEqual(cache.getVerse({ book: "john", chapter: 2, verse: 1 }, "kjv"), makeVerse())
 })
+
+// ARCHITECTURE.md production audit (section 74): backs resolve-verse.ts's
+// negative-cache-suppression diagnostic log.
+test("VerseCache: negativeCacheRemainingMs() reports time left for a negatively-cached reference, undefined otherwise", () => {
+  let now = 0
+  const cache = new VerseCache({ negativeTtlMs: 1000, now: () => now })
+  assert.equal(cache.negativeCacheRemainingMs(JOHN_3_16, "kjv"), undefined) // never cached at all
+
+  cache.setNotFound(JOHN_3_16, "kjv")
+  assert.equal(cache.negativeCacheRemainingMs(JOHN_3_16, "kjv"), 1000)
+  now = 400
+  assert.equal(cache.negativeCacheRemainingMs(JOHN_3_16, "kjv"), 600)
+
+  cache.setVerse(JOHN_3_16, "kjv", makeVerse()) // a fresh positive result clears the negative entry
+  assert.equal(cache.negativeCacheRemainingMs(JOHN_3_16, "kjv"), undefined)
+})

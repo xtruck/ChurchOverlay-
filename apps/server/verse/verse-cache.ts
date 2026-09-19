@@ -79,6 +79,16 @@ export class VerseCache {
     return this.negative.get(buildVerseCacheKey(reference, translation)) === true
   }
 
+  /**
+   * ARCHITECTURE.md production audit (section 74): how many milliseconds
+   * remain before this reference stops being silently suppressed —
+   * exposed purely for resolve-verse.ts's own diagnostic log at the
+   * suppression point, not used for any resolution decision itself.
+   */
+  negativeCacheRemainingMs(reference: VerseReference, translation: string): number | undefined {
+    return this.negative.getRemainingTtlMs(buildVerseCacheKey(reference, translation))
+  }
+
   setNotFound(reference: VerseReference, translation: string): void {
     const key = buildVerseCacheKey(reference, translation)
     this.negative.set(key, true, this.negativeTtlMs)

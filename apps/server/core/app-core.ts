@@ -367,6 +367,19 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
             })
           })
         }
+      } else if (lastShownVerse) {
+        // ARCHITECTURE.md production audit (section 74): a real,
+        // structural gap, not just a narrow timing race — this branch
+        // did not exist at all before. A verse shown OUTSIDE any rundown
+        // (the common case: live detection/override/navigation with no
+        // rundown loaded) was never resynced to a reconnecting viewer,
+        // full stop — only the rundown-interrupt case above was covered.
+        // A dropped OBS/overlay WS connection (section 48's bounded
+        // reconnect backoff, commit 362e51d) reconnecting while a verse
+        // was showing would silently never see it again until the next
+        // detection — a plausible, previously-unfixed explanation for an
+        // intermittently "missing" verse that WAS genuinely detected.
+        send({ id: generateUlid(), type: "verse:show", timestamp: Date.now(), payload: lastShownVerse })
       }
     },
   })

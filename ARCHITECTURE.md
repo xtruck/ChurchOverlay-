@@ -3838,3 +3838,46 @@ the cue's own current title, throws for an unknown id) and `remove()` (deletes b
 metadata and the actual file from disk, persists across a restart, is a safe no-op for
 an unknown id). `media-import.test.ts`'s existing full-Windows-path test needed no
 changes — it already covered this exact scenario.
+
+### 74.3 A verse resolution failure was silently invisible, and a verse-resync gap was found and fixed
+
+Two related findings while investigating "a spoken reference sometimes doesn't appear
+on the overlay."
+
+**Diagnosability first**: `resolve-verse.ts`'s negative-cache short-circuit
+(`if (cache.isNegativelyCached(...)) return null`) had no log at all, unlike the
+`circuit-open` case immediately below it. A reference that failed once (a transient
+network hiccup against the bilingual API, section 63) is silently suppressed for every
+repeat within `DEFAULT_NEGATIVE_TTL_MS` (5 minutes) — even though the detection itself
+was already logged upstream in `processTranscript`, making this indistinguishable from
+"never detected at all" without a log at the exact point the suppression happens.
+**Fixed**: logs `component: "verse-resolver", event: "suppressed-negative-cache"` with
+the reference and remaining suppression time, at the same `warn` level as `circuit-open`.
+Getting the remaining time required a small addition to the cache layers themselves:
+`LruTtlCache.getRemainingTtlMs()` (read-only — does not touch LRU recency, unlike `get()`)
+and `VerseCache.negativeCacheRemainingMs()`, both using the cache's own injected clock
+so the value stays correct under a test-injected clock too.
+
+**A real, structural resync gap, found while checking that hypothesis**: `onViewerConnected`
+only ever resynced `lastShownVerse` to a reconnecting viewer inside the
+`rundownState.interrupted` branch. If no rundown was loaded at all — the common case for
+a live service using only voice-detected/manually-overridden verses, no rundown feature
+in use — a verse currently showing was **never** resynced to a reconnecting viewer, full
+stop. Combined with the bounded exponential-backoff WS reconnect (commit 362e51d,
+section 48), a dropped OBS/overlay connection reconnecting while a verse was showing
+would silently never see it again until the next detection — a concrete, previously-
+unfixed explanation for an intermittently "missing" verse that genuinely had been
+detected. **Fixed**: added an `else if (lastShownVerse)` branch alongside the existing
+rundown-state check, firing only when no rundown is active (the rundown-verse-scene and
+rundown-interrupt cases were already correctly handled and are unaffected — no duplicate
+sync introduced for either).
+
+Tests added: `lru-ttl-cache.test.ts` (`getRemainingTtlMs()` reports correctly against
+an injected clock, returns undefined for a missing/expired key, and is confirmed
+read-only with respect to LRU eviction order); `verse-cache.test.ts`
+(`negativeCacheRemainingMs()` end to end, including that a fresh positive result clears
+it); `resolve-verse.test.ts` (the suppression log fires with the right fields on a
+second lookup, and — unchanged — the first, fresh "not found" still logs nothing);
+`app-core.test.ts` (a viewer connecting while a verse is showing with **no rundown
+loaded at all** is resynced with `verse:show` — the exact scenario that was previously
+unhandled, alongside the pre-existing interrupt-case test).

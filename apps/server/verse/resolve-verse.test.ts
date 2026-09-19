@@ -137,6 +137,30 @@ test("resolveVerse: an open circuit is reported through the optional logger, dis
   assert.equal(entry.event, "circuit-open")
 })
 
+// ARCHITECTURE.md production audit (section 74): a hypothesis for an
+// intermittently-missing verse — the reference was detected and logged
+// upstream, but a prior transient failure silently suppresses every
+// repeat for up to the negative TTL, with no log at the point that
+// actually happens. This confirms it's now traceable.
+test("resolveVerse: a suppressed negative-cache hit is logged with the reference and remaining TTL, distinctly from a fresh 'not found'", async () => {
+  const cache = new VerseCache({ negativeTtlMs: 60000 })
+  const source = new CountingFakeVerseSource(async () => null)
+  const { logger, lines } = capturingLogger()
+
+  await resolveVerse(JOHN_3_16, source, cache, new CircuitBreaker(), undefined, logger)
+  assert.equal(lines.length, 0) // the first, fresh 'not found' logs nothing (existing behavior, unchanged)
+
+  const result = await resolveVerse(JOHN_3_16, source, cache, new CircuitBreaker(), undefined, logger)
+  assert.equal(result, null)
+  assert.equal(source.callCount, 1) // the second call never reaches the source — suppressed by the negative cache
+  assert.equal(lines.length, 1)
+  const entry = lines[0] as { level: string; event: string; metadata: { reference: unknown; remainingMs: number } }
+  assert.equal(entry.level, "warn")
+  assert.equal(entry.event, "suppressed-negative-cache")
+  assert.deepEqual(entry.metadata.reference, JOHN_3_16)
+  assert.ok(entry.metadata.remainingMs > 0 && entry.metadata.remainingMs <= 60000)
+})
+
 test("resolveVerse: a confirmed 'not found' result logs nothing — only real failures are reported", async () => {
   const cache = new VerseCache()
   const circuitBreaker = new CircuitBreaker()

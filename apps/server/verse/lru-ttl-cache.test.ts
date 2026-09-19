@@ -77,3 +77,33 @@ test("LruTtlCache: rejects a non-positive or non-integer maxEntries (must be bou
   assert.throws(() => new LruTtlCache<string>(-1))
   assert.throws(() => new LruTtlCache<string>(1.5))
 })
+
+// ARCHITECTURE.md production audit (section 74): getRemainingTtlMs()
+// backs resolve-verse.ts's negative-cache-suppression diagnostic log.
+test("LruTtlCache: getRemainingTtlMs() reports time left using the cache's own injected clock", () => {
+  let now = 0
+  const cache = new LruTtlCache<string>(10, () => now)
+  cache.set("a", "value-a", 1000)
+  assert.equal(cache.getRemainingTtlMs("a"), 1000)
+  now = 400
+  assert.equal(cache.getRemainingTtlMs("a"), 600)
+})
+
+test("LruTtlCache: getRemainingTtlMs() returns undefined for a missing or already-expired key", () => {
+  let now = 0
+  const cache = new LruTtlCache<string>(10, () => now)
+  assert.equal(cache.getRemainingTtlMs("missing"), undefined)
+  cache.set("a", "value-a", 1000)
+  now = 1000
+  assert.equal(cache.getRemainingTtlMs("a"), undefined)
+})
+
+test("LruTtlCache: getRemainingTtlMs() does not affect LRU recency ordering (a read-only diagnostic)", () => {
+  const cache = new LruTtlCache<string>(2)
+  cache.set("a", "1", 10_000)
+  cache.set("b", "2", 10_000)
+  cache.getRemainingTtlMs("a") // must NOT count as touching "a"
+  cache.set("c", "3", 10_000) // over capacity -> still evicts "a" (the true least-recently-used)
+  assert.equal(cache.get("a"), undefined)
+  assert.equal(cache.get("b"), "2")
+})
