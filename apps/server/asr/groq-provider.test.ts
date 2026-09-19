@@ -2,6 +2,13 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { GroqProvider } from "./groq-provider"
 import type { AudioFrame } from "../../../packages/contracts"
+import { Logger } from "../../../packages/shared/logger"
+
+function capturingLogger(): { logger: Logger; lines: unknown[] } {
+  const lines: unknown[] = []
+  const logger = new Logger({ minLevel: "debug", write: (line) => lines.push(JSON.parse(line)) })
+  return { logger, lines }
+}
 
 function makeFrame(sampleValues: number[], sequence = 0): AudioFrame {
   return { samples: Int16Array.from(sampleValues), sampleRate: 16000, sequence }
@@ -96,6 +103,57 @@ test("GroqProvider: a transcript mixing real French/English text with a stray no
   await provider.sendAudio(oneSecondFrame(0))
 
   assert.equal(results.length, 0)
+})
+
+// ARCHITECTURE.md production audit (section 74): a debug-level (never
+// warn) trace of every dropped chunk, so a report of "this bug is still
+// happening" can be checked against a specific build's logs.
+test("GroqProvider: a dropped non-Latin-script transcript is traced via the optional logger, truncated, at debug level", async () => {
+  const { logger, lines } = capturingLogger()
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    logger,
+    fetchImpl: fakeFetch(() => jsonResponse({ text: "你好，世界。这是一段很长的被幻觉出来的中文文本，用来测试截断行为是否正常工作。" })),
+  })
+  provider.onTranscript(() => {})
+
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame(0))
+
+  assert.equal(lines.length, 1)
+  const entry = lines[0] as { level: string; event: string; metadata: { textPreview: string } }
+  assert.equal(entry.level, "debug")
+  assert.equal(entry.event, "transcript.non-latin-script-dropped")
+  assert.ok(entry.metadata.textPreview.length <= 80)
+})
+
+test("GroqProvider: a normal, accepted transcript logs nothing — the debug trace is only for dropped chunks", async () => {
+  const { logger, lines } = capturingLogger()
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    logger,
+    fetchImpl: fakeFetch(() => jsonResponse({ text: "Turn to John 3:16" })),
+  })
+  provider.onTranscript(() => {})
+
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame(0))
+
+  assert.equal(lines.length, 0)
+})
+
+test("GroqProvider: without a logger configured, a dropped non-Latin-script transcript still doesn't throw", async () => {
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    fetchImpl: fakeFetch(() => jsonResponse({ text: "你好，世界" })),
+  })
+  provider.onTranscript(() => {})
+
+  await provider.start()
+  await assert.doesNotReject(() => provider.sendAudio(oneSecondFrame(0)))
 })
 
 test("GroqProvider: sends the expected multipart fields (model, response_format) and auth header", async () => {

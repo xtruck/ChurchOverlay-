@@ -124,7 +124,7 @@ async function startServices(
   const wsHost = config.allowPhoneRemote ? "0.0.0.0" : undefined
 
   appCoreHandle = await startAppCore({
-    asr: new GroqProvider({ apiKey: config.groqApiKey }),
+    asr: new GroqProvider({ apiKey: config.groqApiKey, logger }),
     detector: new RegexDetector(),
     index: new KnownValidVerseIndex(),
     source: localizedVerseSource,

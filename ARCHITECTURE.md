@@ -3881,3 +3881,26 @@ second lookup, and — unchanged — the first, fresh "not found" still logs not
 `app-core.test.ts` (a viewer connecting while a verse is showing with **no rundown
 loaded at all** is resynced with `verse:show` — the exact scenario that was previously
 unhandled, alongside the pre-existing interrupt-case test).
+
+### 74.4 The language-hallucination filter (section 73.1) had no way to confirm it was working
+
+Section 73.1's fix (dropping any transcript containing non-Latin script) shipped with
+no log at all — a deliberate choice at the time ("indistinguishable from a quiet moment
+producing nothing"), but that same silence means there was no way to confirm, from logs
+alone, whether a report of "the hallucinated-language bug is still happening" was
+against this exact fix or an earlier build without it.
+
+**Fixed**: `GroqProvider` takes an optional `logger` (same "absent by default, present
+capability" pattern as `onError`/`getTranslationId` elsewhere — nothing downstream is
+forced to handle a logger it doesn't have). When a chunk is dropped for non-Latin
+script, it logs `component: "asr", event: "transcript.non-latin-script-dropped"` with
+the rejected text truncated to 80 characters — `debug` level, deliberately not `warn`,
+since this is expected routine filtering, not a fault; it stays silent at this app's
+`minLevel: "info"` default and only appears if that's intentionally lowered to
+investigate a specific report. `main/index.ts` now passes its existing `logger` through
+to `GroqProvider`'s constructor (previously constructed with only `apiKey`).
+
+Tests added: `groq-provider.test.ts` covers the debug log firing with a truncated
+preview on a dropped chunk, confirms a normal accepted transcript logs nothing (the
+trace is drop-only, not a log of everything), and confirms a dropped chunk still
+doesn't throw when no logger is configured at all.

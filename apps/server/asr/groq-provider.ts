@@ -1,5 +1,6 @@
 import type { AsrProvider, AudioFrame, TranscriptResult } from "../../../packages/contracts"
 import { generateUlid } from "../../../packages/shared/ulid"
+import type { Logger } from "../../../packages/shared/logger"
 
 const DEFAULT_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 const DEFAULT_MODEL = "whisper-large-v3-turbo"
@@ -24,6 +25,17 @@ export type GroqProviderOptions = {
   readonly fetchImpl?: typeof fetch
   readonly url?: string
   readonly now?: () => number
+  /**
+   * ARCHITECTURE.md production audit (section 74) — optional, same
+   * pattern as onError()/getTranslationId() elsewhere: absent by
+   * default, so nothing downstream is forced to handle a logger it
+   * doesn't have. When present, backs a debug-level (never warn — this
+   * is expected, routine behavior, not a fault) trace of every chunk the
+   * non-Latin-script filter (section 73.1) drops, so a report of "the
+   * hallucinated-language bug is still happening" can be confirmed
+   * against a specific build rather than argued from memory.
+   */
+  readonly logger?: Logger
 }
 
 /**
@@ -63,6 +75,7 @@ export class GroqProvider implements AsrProvider {
   private readonly fetchImpl: typeof fetch
   private readonly url: string
   private readonly now: () => number
+  private readonly logger?: Logger
 
   private transcriptCallback: ((result: TranscriptResult) => void) | null = null
   private errorCallback: ((error: Error) => void) | null = null
@@ -83,6 +96,7 @@ export class GroqProvider implements AsrProvider {
     this.fetchImpl = options.fetchImpl ?? fetch
     this.url = options.url ?? DEFAULT_URL
     this.now = options.now ?? Date.now
+    this.logger = options.logger
   }
 
   async start(): Promise<void> {
@@ -141,7 +155,20 @@ export class GroqProvider implements AsrProvider {
       // display. Not a real ASR failure (no onError call): from the
       // operator's perspective this is indistinguishable from a quiet
       // moment producing nothing, which is the correct framing.
-      if (containsNonLatinScript(text)) return
+      if (containsNonLatinScript(text)) {
+        // debug, deliberately not warn: this is expected, routine
+        // filtering, not a fault — logged only so a report of "this bug
+        // is still happening" can be checked against a specific build's
+        // logs (with minLevel lowered to debug) rather than argued from
+        // memory. Truncated: this is a diagnostic breadcrumb, not a
+        // transcript archive.
+        this.logger?.debug({
+          component: "asr",
+          event: "transcript.non-latin-script-dropped",
+          metadata: { textPreview: text.slice(0, 80) },
+        })
+        return
+      }
       this.sequence += 1
       this.transcriptCallback?.({
         id: generateUlid(this.now()),
