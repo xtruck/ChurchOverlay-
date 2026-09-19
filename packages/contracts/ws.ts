@@ -23,6 +23,7 @@ export type WsCommandType =
 export type WsEventType =
   | "status:update"
   | "transcript:partial"
+  | "transcript:final"
   | "verse:show"
   | "verse:clear"
   | "media:show"

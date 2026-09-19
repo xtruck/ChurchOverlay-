@@ -78,9 +78,28 @@ async function connect(port: number, token: string): Promise<WebSocket> {
   })
 }
 
+// ARCHITECTURE.md section 70: every real transcript now also broadcasts a
+// transcript:partial/transcript:final echo, unconditionally, before any of
+// the semantic work (verse detection, media triggers, etc.) it's about to
+// test even runs. Almost every test in this file's actual intent is "wait
+// for the interesting event this action causes," not literally "the very
+// next WS frame of any kind" — so both wait helpers below filter this
+// echo out, keeping the other ~40 emitTranscript-driven tests correct in
+// intent without individually rewriting each one. Tests for the echo
+// itself use the raw socket "message" event directly, not these helpers.
+function isTranscriptEcho(message: WsMessage): boolean {
+  return message.type === "transcript:partial" || message.type === "transcript:final"
+}
+
 function waitForMessage(socket: WebSocket): Promise<WsMessage> {
   return new Promise((resolve) => {
-    socket.once("message", (data) => resolve(JSON.parse(data.toString())))
+    const handler = (data: { toString(): string }) => {
+      const message = JSON.parse(data.toString())
+      if (isTranscriptEcho(message)) return
+      socket.off("message", handler)
+      resolve(message)
+    }
+    socket.on("message", handler)
   })
 }
 
@@ -98,7 +117,9 @@ function waitForMessages(socket: WebSocket, count: number): Promise<WsMessage[]>
   return new Promise((resolve) => {
     const collected: WsMessage[] = []
     const handler = (data: { toString(): string }) => {
-      collected.push(JSON.parse(data.toString()))
+      const message = JSON.parse(data.toString())
+      if (isTranscriptEcho(message)) return
+      collected.push(message)
       if (collected.length === count) {
         socket.off("message", handler)
         resolve(collected)
@@ -360,9 +381,15 @@ test("AppCore: a hallucination-guard-rejected transcript reaches the overlay as 
   })
   try {
     const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
-    let received = false
-    viewerSocket.once("message", () => {
-      received = true
+    // ARCHITECTURE.md section 70: a transcript:final echo is now expected
+    // and correct for every transcript, rejected or not (that's the whole
+    // point of the fix — the operator sees what was heard regardless of
+    // whether a verse was found in it). What this test actually asserts
+    // is "no verse is shown," not "literally nothing is ever broadcast."
+    let verseShown = false
+    viewerSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString())
+      if (message.type === "verse:show") verseShown = true
     })
 
     asr.emitTranscript({
@@ -375,7 +402,7 @@ test("AppCore: a hallucination-guard-rejected transcript reaches the overlay as 
     })
     await new Promise((resolve) => setTimeout(resolve, 50))
 
-    assert.equal(received, false)
+    assert.equal(verseShown, false)
     viewerSocket.close()
   } finally {
     await app.stop()
@@ -621,9 +648,14 @@ test("AppCore: a spoken cue title in a partial transcript never triggers media:s
     })
     try {
       const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
-      let received = false
-      viewerSocket.once("message", () => {
-        received = true
+      // ARCHITECTURE.md section 70: a transcript:partial echo is expected
+      // here too (the raw text is always echoed, regardless of gating) —
+      // what this test actually asserts is that media:show specifically
+      // never fires for a partial transcript.
+      let mediaShown = false
+      viewerSocket.on("message", (data) => {
+        const message = JSON.parse(data.toString())
+        if (message.type === "media:show") mediaShown = true
       })
 
       asr.emitTranscript({
@@ -636,7 +668,7 @@ test("AppCore: a spoken cue title in a partial transcript never triggers media:s
       })
       await new Promise((resolve) => setTimeout(resolve, 50))
 
-      assert.equal(received, false)
+      assert.equal(mediaShown, false)
       viewerSocket.close()
     } finally {
       await app.stop()
@@ -783,9 +815,14 @@ test("AppCore: 'next verse' spoken with no prior verse shown broadcasts nothing"
   })
   try {
     const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
-    let received = false
-    viewerSocket.once("message", () => {
-      received = true
+    // ARCHITECTURE.md section 70: a transcript:final echo is expected
+    // here too — this test's actual assertion is that verse:show
+    // specifically never fires with no prior verse position to advance
+    // from.
+    let verseShown = false
+    viewerSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString())
+      if (message.type === "verse:show") verseShown = true
     })
 
     asr.emitTranscript({
@@ -798,7 +835,7 @@ test("AppCore: 'next verse' spoken with no prior verse shown broadcasts nothing"
     })
     await new Promise((resolve) => setTimeout(resolve, 50))
 
-    assert.equal(received, false)
+    assert.equal(verseShown, false)
     viewerSocket.close()
   } finally {
     await app.stop()
@@ -1418,9 +1455,13 @@ test("AppCore: a transcript with no prior ASR error broadcasts no status:update 
   })
   try {
     const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
-    let received = false
-    viewerSocket.once("message", () => {
-      received = true
+    // ARCHITECTURE.md section 70: a transcript:final echo is expected for
+    // every transcript now — this test's actual assertion is that
+    // status:update specifically never fires absent a prior ASR error.
+    let statusUpdateReceived = false
+    viewerSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString())
+      if (message.type === "status:update") statusUpdateReceived = true
     })
 
     asr.emitTranscript({
@@ -1433,7 +1474,7 @@ test("AppCore: a transcript with no prior ASR error broadcasts no status:update 
     })
     await new Promise((resolve) => setTimeout(resolve, 50))
 
-    assert.equal(received, false)
+    assert.equal(statusUpdateReceived, false)
     viewerSocket.close()
   } finally {
     await app.stop()
@@ -1713,9 +1754,13 @@ test("AppCore: a term not in the glossary broadcasts nothing", async () => {
   })
   try {
     const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
-    let received = false
-    viewerSocket.once("message", () => {
-      received = true
+    // ARCHITECTURE.md section 70: a transcript:final echo is expected here
+    // too — this test's actual assertion is that definition:show
+    // specifically never fires for an unknown term.
+    let definitionShown = false
+    viewerSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString())
+      if (message.type === "definition:show") definitionShown = true
     })
 
     asr.emitTranscript({
@@ -1728,7 +1773,7 @@ test("AppCore: a term not in the glossary broadcasts nothing", async () => {
     })
     await new Promise((resolve) => setTimeout(resolve, 50))
 
-    assert.equal(received, false)
+    assert.equal(definitionShown, false)
     viewerSocket.close()
   } finally {
     await app.stop()

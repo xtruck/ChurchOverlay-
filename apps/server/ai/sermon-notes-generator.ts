@@ -1,5 +1,14 @@
 const DEFAULT_URL = "https://api.groq.com/openai/v1/chat/completions"
-const DEFAULT_MODEL = "llama-3.3-70b-versatile"
+// ARCHITECTURE.md section 71: live testing surfaced a real
+// "does not exist or you do not have access to it" error from Groq for
+// llama-3.3-70b-versatile on a real API key, even though Groq's own docs
+// still list it as a current production model — consistent with
+// account/key-tier gating on the larger model, not a wrong or deprecated
+// model id. Defaulting to the smallest production Llama model instead:
+// far more likely to be available on any Groq key regardless of tier,
+// and more than capable for a 3-5 bullet-point summarization task, which
+// doesn't need a 70B model's capacity.
+const DEFAULT_MODEL = "llama-3.1-8b-instant"
 
 // Verified directly against Groq's real, current API documentation before
 // writing this (https://console.groq.com/docs/api-reference#chat-create),

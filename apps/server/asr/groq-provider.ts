@@ -3,7 +3,18 @@ import { generateUlid } from "../../../packages/shared/ulid"
 
 const DEFAULT_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 const DEFAULT_MODEL = "whisper-large-v3-turbo"
-const DEFAULT_CHUNK_DURATION_MS = 4000
+// ARCHITECTURE.md section 70: the user's stated ceiling is speech-to-
+// overlay in under 5 seconds. This buffering delay is the single largest,
+// most controllable component of that budget — Groq's own inference on a
+// short clip is typically well under a second, and everything after a
+// transcript arrives (verse resolution, WS broadcast, overlay render) is
+// near-instant. 2s keeps worst-case buffering + a real API round trip
+// comfortably inside the 5s ceiling, while still giving Whisper enough
+// audio context for short phrases (a spoken verse reference or cue title)
+// to transcribe accurately — shorter risks cutting words at chunk
+// boundaries and multiplies API call volume for no latency win once
+// network/inference time dominates anyway.
+const DEFAULT_CHUNK_DURATION_MS = 2000
 const SAMPLE_RATE = 16000
 
 export type GroqProviderOptions = {
@@ -119,6 +130,18 @@ export class GroqProvider implements AsrProvider {
 
     try {
       const text = await this.transcribe(samples)
+      // ARCHITECTURE.md section 73: confirmed live, a real Whisper failure
+      // mode — fed ambient noise or unclear audio with no `language` hint,
+      // it sometimes hallucinates fluent-looking text in a language never
+      // actually spoken (Chinese, in the reported case), rather than
+      // returning empty or garbled output. This app's confirmed audience is
+      // French/English only, so any non-Latin-script result is noise, not
+      // a real transcript worth acting on — dropped here, at the source,
+      // rather than reaching verse detection or the dashboard's transcript
+      // display. Not a real ASR failure (no onError call): from the
+      // operator's perspective this is indistinguishable from a quiet
+      // moment producing nothing, which is the correct framing.
+      if (containsNonLatinScript(text)) return
       this.sequence += 1
       this.transcriptCallback?.({
         id: generateUlid(this.now()),
@@ -160,6 +183,23 @@ export class GroqProvider implements AsrProvider {
     }
     return text.trim()
   }
+}
+
+// ARCHITECTURE.md section 73: this app's confirmed languages (French,
+// English) are both written entirely in Latin script (including accented
+// letters) — a legitimate transcript in either can never contain a
+// character from these blocks. Deliberately conservative: any ONE
+// matching character is enough to reject the whole chunk, since a real
+// hallucinated-language response is fluent text, not an isolated stray
+// character. Covers the scripts Whisper has actually been observed
+// hallucinating into (CJK, Japanese kana, Hangul) plus the other major
+// non-Latin scripts, so a future hallucination into a different unwanted
+// language doesn't require rediscovering this fix.
+const NON_LATIN_SCRIPT_PATTERN =
+  /[一-鿿぀-ヿㇰ-ㇿ가-힯Ѐ-ӿ؀-ۿݐ-ݿ֐-׿฀-๿ऀ-ॿ]/
+
+function containsNonLatinScript(text: string): boolean {
+  return NON_LATIN_SCRIPT_PATTERN.test(text)
 }
 
 function concatenateSamples(frames: readonly Int16Array[], totalLength: number): Int16Array {

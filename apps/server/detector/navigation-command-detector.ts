@@ -34,11 +34,17 @@ type WholeUtteranceRule = { readonly phrase: string; readonly command: Navigatio
 const SUBSTRING_RULES: readonly SubstringRule[] = [
   { phrase: "next verse", command: { kind: "next-verse" } },
   { phrase: "verset suivant", command: { kind: "next-verse" } },
+  // ARCHITECTURE.md section 72: confirmed live-testing gap — French
+  // naturally allows "next X" as either "X suivant" (noun-first) or
+  // "prochain X" (adjective-first), and only the former was covered.
+  // A speaker saying "le prochain verset" got no match at all.
+  { phrase: "prochain verset", command: { kind: "next-verse" } },
   { phrase: "previous verse", command: { kind: "previous-verse" } },
   { phrase: "verset precedent", command: { kind: "previous-verse" } },
   { phrase: "go back", command: { kind: "previous-verse" } },
   { phrase: "next chapter", command: { kind: "next-chapter" } },
   { phrase: "chapitre suivant", command: { kind: "next-chapter" } },
+  { phrase: "prochain chapitre", command: { kind: "next-chapter" } },
   { phrase: "previous chapter", command: { kind: "previous-chapter" } },
   { phrase: "chapitre precedent", command: { kind: "previous-chapter" } },
   { phrase: "clear the screen", command: { kind: "cancel" } },

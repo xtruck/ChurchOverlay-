@@ -122,6 +122,27 @@ function isTranscriptPartialPayload(payload: unknown): payload is TranscriptResu
   )
 }
 
+// ARCHITECTURE.md section 70: the operator-facing counterpart to
+// transcript:partial, for exactly the case that comment below says
+// transcript:partial deliberately excludes — GroqProvider's real, final
+// chunk transcripts. A production audit found the dashboard had no way
+// to show what was actually heard at all: verse detection consumed every
+// transcript internally, but the raw text it acted on was never
+// broadcast anywhere, so the operator could see the mic level meter
+// moving with zero way to judge transcription accuracy or latency.
+function isTranscriptFinalPayload(payload: unknown): payload is TranscriptResult {
+  if (!isPlainObject(payload)) return false
+  return (
+    isNonEmptyString(payload.id) &&
+    isNonEmptyString(payload.correlationId) &&
+    isFiniteNumber(payload.sequence) &&
+    typeof payload.text === "string" &&
+    payload.state === "final" &&
+    (payload.providerConfidence === undefined || isFiniteNumber(payload.providerConfidence)) &&
+    isFiniteNumber(payload.timestamp)
+  )
+}
+
 // status:update now has a real producer: AppCore broadcasts ASR/
 // transcription health (asrHealth: "ok"/"error") when GroqProvider's
 // onError fires and again on the next successful transcript (the
@@ -367,6 +388,11 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "event",
     allowedSenders: [],
     validatePayload: isTranscriptPartialPayload,
+  },
+  "transcript:final": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isTranscriptFinalPayload,
   },
   "verse:show": {
     kind: "event",

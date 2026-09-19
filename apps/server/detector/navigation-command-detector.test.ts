@@ -157,6 +157,16 @@ test("NavigationCommandDetector: French substring phrases for verse/chapter navi
   assert.deepEqual(detector.detect("Il faut effacer l'écran maintenant."), [{ kind: "cancel" }])
 })
 
+// ARCHITECTURE.md section 72: "prochain X" (adjective-first) is just as
+// natural in French as "X suivant" (noun-first) — a live-testing gap
+// found "le prochain verset" produced no command at all under the old
+// "suivant"-only coverage.
+test("NavigationCommandDetector: the 'prochain X' (adjective-first) French word order is recognized alongside 'X suivant'", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("Passons au prochain verset."), [{ kind: "next-verse" }])
+  assert.deepEqual(detector.detect("Passons au prochain chapitre."), [{ kind: "next-chapter" }])
+})
+
 test("NavigationCommandDetector: French short synonyms only trigger as the whole utterance, with or without an accent", () => {
   const detector = new NavigationCommandDetector()
   assert.deepEqual(detector.detect("Suivant"), [{ kind: "next-verse" }])

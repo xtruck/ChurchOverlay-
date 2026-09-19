@@ -92,10 +92,7 @@
   const micVisualEl = document.getElementById("mic-visual")
   const asrHealthWarningEl = document.getElementById("asr-health-warning")
   const asrHealthWarningTextEl = document.getElementById("asr-health-warning-text")
-  const liveVerseEmptyEl = document.getElementById("live-verse-empty")
-  const liveVerseTextEl = document.getElementById("live-verse-text")
-  const liveVerseRefEl = document.getElementById("live-verse-ref")
-  const liveVerseTriggerEl = document.getElementById("live-verse-trigger")
+  const overlayPreviewFrameEl = document.getElementById("overlay-preview-frame")
   const setupScreenEl = document.getElementById("setup-screen")
   const appShellEl = document.getElementById("app-shell")
   const setupKeyInput = document.getElementById("setup-groq-key")
@@ -271,36 +268,49 @@
     return book.replace(/\b\w/g, (c) => c.toUpperCase())
   }
 
-  const TRIGGER_LABEL_KEYS = {
-    detected: "livePreview.trigger.detected",
-    override: "livePreview.trigger.override",
-    navigation: "livePreview.trigger.navigation",
-    rundown: "livePreview.trigger.rundown",
+  // ARCHITECTURE.md section 72: same table as overlay.js's own copy
+  // (duplicated, not shared — no build step, same precedent as
+  // float32ToInt16/reconnect-backoff between these two files) — used so
+  // the pending-verse-confirmation banner's reference line matches what
+  // the overlay itself will show once confirmed.
+  const FRENCH_BOOK_NAMES = {
+    genesis: "Genèse", exodus: "Exode", leviticus: "Lévitique", numbers: "Nombres",
+    deuteronomy: "Deutéronome", joshua: "Josué", judges: "Juges", ruth: "Ruth",
+    "1 samuel": "1 Samuel", "2 samuel": "2 Samuel", "1 kings": "1 Rois", "2 kings": "2 Rois",
+    "1 chronicles": "1 Chroniques", "2 chronicles": "2 Chroniques", ezra: "Esdras",
+    nehemiah: "Néhémie", esther: "Esther", job: "Job", psalm: "Psaumes",
+    proverbs: "Proverbes", ecclesiastes: "Ecclésiaste", "song of solomon": "Cantique des Cantiques",
+    isaiah: "Ésaïe", jeremiah: "Jérémie", lamentations: "Lamentations", ezekiel: "Ézéchiel",
+    daniel: "Daniel", hosea: "Osée", joel: "Joël", amos: "Amos", obadiah: "Abdias",
+    jonah: "Jonas", micah: "Michée", nahum: "Nahum", habakkuk: "Habacuc",
+    zephaniah: "Sophonie", haggai: "Aggée", zechariah: "Zacharie", malachi: "Malachie",
+    matthew: "Matthieu", mark: "Marc", luke: "Luc", john: "Jean", acts: "Actes",
+    romans: "Romains", "1 corinthians": "1 Corinthiens", "2 corinthians": "2 Corinthiens",
+    galatians: "Galates", ephesians: "Éphésiens", philippians: "Philippiens",
+    colossians: "Colossiens", "1 thessalonians": "1 Thessaloniciens",
+    "2 thessalonians": "2 Thessaloniciens", "1 timothy": "1 Timothée", "2 timothy": "2 Timothée",
+    titus: "Tite", philemon: "Philémon", hebrews: "Hébreux", james: "Jacques",
+    "1 peter": "1 Pierre", "2 peter": "2 Pierre", "1 john": "1 Jean", "2 john": "2 Jean",
+    "3 john": "3 Jean", jude: "Jude", revelation: "Apocalypse",
   }
 
-  function showLiveVerse(verse) {
-    clearPendingVerse() // a real verse:show always supersedes any pending prompt
-    liveVerseEmptyEl.style.display = "none"
-    liveVerseTextEl.style.display = "block"
-    liveVerseRefEl.style.display = "block"
-    liveVerseTextEl.textContent = verse.text
-    const ref = verse.reference
-    liveVerseRefEl.textContent = capitalize(ref.book) + " " + ref.chapter + ":" + ref.verse
-
-    const triggerKey = TRIGGER_LABEL_KEYS[verse.trigger]
-    if (triggerKey) {
-      liveVerseTriggerEl.textContent = t(triggerKey)
-      liveVerseTriggerEl.style.display = "block"
-    } else {
-      liveVerseTriggerEl.style.display = "none"
-    }
+  function formatReference(ref) {
+    return capitalize(ref.book) + " " + ref.chapter + ":" + ref.verse
   }
 
-  function clearLiveVerse() {
-    liveVerseTriggerEl.style.display = "none"
-    liveVerseEmptyEl.style.display = "block"
-    liveVerseTextEl.style.display = "none"
-    liveVerseRefEl.style.display = "none"
+  function formatBilingualReference(ref) {
+    const frenchName = FRENCH_BOOK_NAMES[ref.book]
+    const frenchRef = (frenchName || capitalize(ref.book)) + " " + ref.chapter + ":" + ref.verse
+    return frenchRef + " · " + formatReference(ref)
+  }
+
+  // ARCHITECTURE.md section 69: the embedded overlay-preview-frame iframe
+  // now shows what's actually live (a real, independent WS connection —
+  // see renderOverlayPreview below), so a real verse:show has nothing
+  // left to render dashboard-side beyond clearing any pending-confirmation
+  // prompt it supersedes.
+  function showLiveVerse() {
+    clearPendingVerse()
   }
 
   // ARCHITECTURE.md section 65.3: review mode's holding prompt for a
@@ -310,7 +320,7 @@
   function showPendingVerse(verse) {
     versePendingTextEl.textContent = verse.text
     const ref = verse.reference
-    versePendingRefEl.textContent = capitalize(ref.book) + " " + ref.chapter + ":" + ref.verse
+    versePendingRefEl.textContent = verse.secondary ? formatBilingualReference(ref) : formatReference(ref)
     versePendingBannerEl.style.display = "flex"
   }
 
@@ -588,14 +598,6 @@
       chip.append(up, down, remove)
       rundownDraftListEl.appendChild(chip)
     })
-  }
-
-  function showLiveAnnouncement(payload) {
-    liveVerseEmptyEl.style.display = "none"
-    liveVerseTextEl.style.display = "block"
-    liveVerseRefEl.style.display = "block"
-    liveVerseTextEl.textContent = payload.body
-    liveVerseRefEl.textContent = payload.title
   }
 
   rundownBuilderToggleBtn.addEventListener("click", () => {
@@ -1379,14 +1381,15 @@
       // language, same as any other protocol/technical identifier.
       log(t("log.received", { type: message.type }), "received")
 
-      if (message.type === "transcript:partial") {
+      if (message.type === "transcript:partial" || message.type === "transcript:final") {
+        // ARCHITECTURE.md section 70: the operator needs to see what was
+        // actually heard, continuously, to judge transcription accuracy
+        // and latency — this field always reflects the raw ASR output,
+        // never something else (like verse text) overwriting it.
         const text = message.payload && message.payload.text
         if (text) transcriptEl.textContent = text
       } else if (message.type === "verse:show") {
-        showLiveVerse(message.payload)
-        transcriptEl.textContent = message.payload.text
-      } else if (message.type === "verse:clear") {
-        clearLiveVerse()
+        showLiveVerse()
       } else if (message.type === "media:show") {
         activeCueId = message.payload.cue.id
         renderMediaGrid()
@@ -1395,10 +1398,6 @@
         activeCueId = null
         renderMediaGrid()
         updateNowPlayingBar(null, null)
-      } else if (message.type === "announcement:show") {
-        showLiveAnnouncement(message.payload)
-      } else if (message.type === "announcement:clear") {
-        clearLiveVerse()
       } else if (message.type === "poster:show") {
         principalPosterCueId = message.payload.cue.id
         renderMediaGrid()
@@ -1494,10 +1493,21 @@
   })
 
   // A production audit found this URL was previously never surfaced
-  // anywhere for the operator to paste into OBS's own Browser Source —
-  // it existed only as an internal detail of the in-app preview window.
+  // anywhere for the operator to paste into OBS's own Browser Source.
   function renderObsPanel(overlayUrl) {
     if (overlayUrl) obsUrlInput.value = overlayUrl
+  }
+
+  // ARCHITECTURE.md section 69: points the embedded Live-view preview at
+  // the same overlay URL the OBS panel above shows — the app's own
+  // former standalone preview window is gone, combined into this one
+  // iframe instead. Setting src only once (skipping a redundant
+  // reassignment on every status poll) avoids reloading — and briefly
+  // blanking — the live preview's own independent WS connection.
+  function renderOverlayPreview(overlayUrl) {
+    if (overlayUrl && overlayPreviewFrameEl.src !== overlayUrl) {
+      overlayPreviewFrameEl.src = overlayUrl
+    }
   }
 
   obsCopyBtn.addEventListener("click", () => {
@@ -1599,6 +1609,7 @@
         setActiveOption(sermonNotesToggleEl, "notesEnabled", info.enableSermonNotes ? "on" : "off")
         renderRemotePanel(info.remoteUrl, info.allowPhoneRemote)
         renderObsPanel(info.overlayUrl)
+        renderOverlayPreview(info.overlayUrl)
         showAppShell()
         connect(info.port, info.token)
       })
@@ -1626,6 +1637,7 @@
         setActiveOption(sermonNotesToggleEl, "notesEnabled", status.enableSermonNotes ? "on" : "off")
         renderRemotePanel(status.remoteUrl, status.allowPhoneRemote)
         renderObsPanel(status.overlayUrl)
+        renderOverlayPreview(status.overlayUrl)
         showAppShell()
         connect(status.port, status.token)
       } else {

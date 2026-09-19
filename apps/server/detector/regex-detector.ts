@@ -45,9 +45,45 @@ import type { VerseDetector, VerseReference } from "../../../packages/contracts"
  * (`(?<![\p{L}\d])` / `(?![\p{L}\d])`) in place of `\b`, verified against
  * both plain-ASCII and accented book names before shipping — not assumed
  * to "just work" from adding the `u` flag alone.
+ *
+ * CORRECTIF (ARCHITECTURE.md section 72 — confirmed with the user via a
+ * real live-testing session): the book-name group originally required an
+ * uppercase first letter (`\p{Lu}`), relying entirely on the ASR
+ * provider capitalizing spoken book names correctly. In practice Whisper
+ * capitalizes proper nouns it recognizes as such, but several real book
+ * names double as ordinary English/French words ("Job", "Acts", "Mark",
+ * "James", "Numbers", "Actes") and are routinely transcribed lowercase
+ * mid-sentence — silently losing a genuine reference the same way the
+ * "Read John 3:16" greedy-match bug above did, for a different reason.
+ * Relaxed to `\p{L}` (any letter, either case) so a lowercase-transcribed
+ * real book name is no longer syntactically excluded before it ever
+ * reaches the book-name group.
+ *
+ * This does NOT reopen the "does not know which book names are real"
+ * boundary this detector otherwise holds to (see the class doc comment
+ * above) — STOPWORDS below is a small, fixed list of common short
+ * function words (articles/prepositions/conjunctions), not book-catalog
+ * knowledge, added purely to keep this same relaxation from resurrecting
+ * the "the meeting starts at 3:16 today" false-candidate case the
+ * capitalization requirement used to filter out as a side effect. Any
+ * other lowercase word directly before "N:M" — real book name or not —
+ * still produces a candidate; existence is, as always, KnownValidVerseIndex's
+ * job downstream, not this detector's.
  */
 const REFERENCE_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{Lu}[\p{L}]+)\s+(\d{1,3}):(\d{1,3})(?![\p{L}\d])/gu
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)\s+(\d{1,3}):(\d{1,3})(?![\p{L}\d])/gu
+
+// Deliberately small and conservative: only the short function words most
+// likely to coincidentally precede a "N:M"-shaped pattern in ordinary
+// transcribed speech (English and French). Not an attempt at a general
+// stopword list, and not book-catalog knowledge — see the CORRECTIF above.
+const STOPWORDS = new Set([
+  "at", "is", "in", "on", "to", "the", "a", "an", "and", "or", "but", "of",
+  "it", "was", "were", "be", "by", "with", "for", "as", "that", "this",
+  "le", "la", "les", "un", "une", "des", "de", "du", "et", "ou", "mais",
+  "est", "sont", "etait", "dans", "sur", "pour", "par", "avec", "que",
+  "qui", "ce", "cette",
+])
 
 export class RegexDetector implements VerseDetector {
   detect(text: string): VerseReference[] {
@@ -59,8 +95,11 @@ export class RegexDetector implements VerseDetector {
       const rawVerse = match[3]
       if (!rawBook || !rawChapter || !rawVerse) continue
 
+      const book = normalizeBookName(rawBook)
+      if (STOPWORDS.has(book)) continue
+
       references.push({
-        book: normalizeBookName(rawBook),
+        book,
         chapter: Number.parseInt(rawChapter, 10),
         verse: Number.parseInt(rawVerse, 10),
       })

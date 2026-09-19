@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { validateWsMessage, ACTION_REGISTRY } from "./action-registry"
 
-test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 media, rundown, glossary, verse-confirmation, sermon-notes, canvas, and poster actions (ARCHITECTURE.md sections 30, 60, 64, 65.3, 65.5, 65.7, 66, 67)", () => {
+test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 media, rundown, glossary, verse-confirmation, sermon-notes, canvas, poster, and transcript-final actions (ARCHITECTURE.md sections 30, 60, 64, 65.3, 65.5, 65.7, 66, 67, 70)", () => {
   assert.deepEqual(
     Object.keys(ACTION_REGISTRY).sort(),
     [
@@ -10,6 +10,7 @@ test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 me
       "mic:stop",
       "status:update",
       "transcript:partial",
+      "transcript:final",
       "verse:clear",
       "verse:override",
       "verse:show",
@@ -654,6 +655,44 @@ test("validateWsMessage: rejects any inbound sender for poster:show — a server
   )
   const asViewer = validateWsMessage(
     { id: "01ABC", type: "poster:show", timestamp: 1700000000000, payload: { cue: VALID_POSTER_CUE } },
+    "viewer"
+  )
+  assert.equal(asOperator.ok, false)
+  assert.equal(asViewer.ok, false)
+})
+
+const VALID_TRANSCRIPT_FINAL_PAYLOAD = {
+  id: "01T",
+  correlationId: "01CORR",
+  sequence: 1,
+  text: "turn to john three sixteen",
+  state: "final",
+  timestamp: 1700000000000,
+}
+
+test("ACTION_REGISTRY['transcript:final'].validatePayload: accepts a real final transcript, rejects a mislabeled or malformed one", () => {
+  assert.equal(ACTION_REGISTRY["transcript:final"].validatePayload(VALID_TRANSCRIPT_FINAL_PAYLOAD), true)
+  for (const payload of [
+    { ...VALID_TRANSCRIPT_FINAL_PAYLOAD, state: "partial" },
+    { ...VALID_TRANSCRIPT_FINAL_PAYLOAD, text: undefined },
+    { ...VALID_TRANSCRIPT_FINAL_PAYLOAD, sequence: "1" },
+    null,
+  ]) {
+    assert.equal(
+      ACTION_REGISTRY["transcript:final"].validatePayload(payload),
+      false,
+      `payload ${JSON.stringify(payload)} must be rejected`
+    )
+  }
+})
+
+test("validateWsMessage: rejects any inbound sender for transcript:final — a server-only event", () => {
+  const asOperator = validateWsMessage(
+    { id: "01ABC", type: "transcript:final", timestamp: 1700000000000, payload: VALID_TRANSCRIPT_FINAL_PAYLOAD },
+    "operator"
+  )
+  const asViewer = validateWsMessage(
+    { id: "01ABC", type: "transcript:final", timestamp: 1700000000000, payload: VALID_TRANSCRIPT_FINAL_PAYLOAD },
     "viewer"
   )
   assert.equal(asOperator.ok, false)

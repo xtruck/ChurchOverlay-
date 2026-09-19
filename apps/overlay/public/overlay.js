@@ -60,6 +60,52 @@
     return book.replace(/\b\w/g, (c) => c.toUpperCase())
   }
 
+  // ARCHITECTURE.md section 72: canonical (English) book id -> proper
+  // French display name, WITH accents/capitalization restored for display
+  // — deliberately separate from RegexDetector's FRENCH_BOOK_ALIASES
+  // (apps/server/detector/regex-detector.ts), which strips accents for
+  // robust *matching* and can't be reused as-is for display. Duplicated
+  // here rather than sent over the wire: this is static, non-secret
+  // reference data, the same "duplicated, not shared, no build step"
+  // precedent as float32ToInt16/reconnect-backoff elsewhere in this file.
+  const FRENCH_BOOK_NAMES = {
+    genesis: "Genèse", exodus: "Exode", leviticus: "Lévitique", numbers: "Nombres",
+    deuteronomy: "Deutéronome", joshua: "Josué", judges: "Juges", ruth: "Ruth",
+    "1 samuel": "1 Samuel", "2 samuel": "2 Samuel", "1 kings": "1 Rois", "2 kings": "2 Rois",
+    "1 chronicles": "1 Chroniques", "2 chronicles": "2 Chroniques", ezra: "Esdras",
+    nehemiah: "Néhémie", esther: "Esther", job: "Job", psalm: "Psaumes",
+    proverbs: "Proverbes", ecclesiastes: "Ecclésiaste", "song of solomon": "Cantique des Cantiques",
+    isaiah: "Ésaïe", jeremiah: "Jérémie", lamentations: "Lamentations", ezekiel: "Ézéchiel",
+    daniel: "Daniel", hosea: "Osée", joel: "Joël", amos: "Amos", obadiah: "Abdias",
+    jonah: "Jonas", micah: "Michée", nahum: "Nahum", habakkuk: "Habacuc",
+    zephaniah: "Sophonie", haggai: "Aggée", zechariah: "Zacharie", malachi: "Malachie",
+    matthew: "Matthieu", mark: "Marc", luke: "Luc", john: "Jean", acts: "Actes",
+    romans: "Romains", "1 corinthians": "1 Corinthiens", "2 corinthians": "2 Corinthiens",
+    galatians: "Galates", ephesians: "Éphésiens", philippians: "Philippiens",
+    colossians: "Colossiens", "1 thessalonians": "1 Thessaloniciens",
+    "2 thessalonians": "2 Thessaloniciens", "1 timothy": "1 Timothée", "2 timothy": "2 Timothée",
+    titus: "Tite", philemon: "Philémon", hebrews: "Hébreux", james: "Jacques",
+    "1 peter": "1 Pierre", "2 peter": "2 Pierre", "1 john": "1 Jean", "2 john": "2 Jean",
+    "3 john": "3 Jean", jude: "Jude", revelation: "Apocalypse",
+  }
+
+  function formatReference(ref) {
+    return capitalize(ref.book) + " " + ref.chapter + ":" + ref.verse
+  }
+
+  // ARCHITECTURE.md section 72: a viewer confirmed both languages must be
+  // visible in bilingual mode, not just the verse text — the reference
+  // line was showing only the English book name even while the verse
+  // itself displayed in French, which read as a mismatch/bug ("I say
+  // Jean, it shows John"). verse.secondary only exists in bilingual mode
+  // (LocalizedVerseSource), so its presence is exactly the right signal —
+  // French first, matching the primary/secondary text hierarchy below.
+  function formatBilingualReference(ref) {
+    const frenchName = FRENCH_BOOK_NAMES[ref.book]
+    const frenchRef = (frenchName || capitalize(ref.book)) + " " + ref.chapter + ":" + ref.verse
+    return frenchRef + " · " + formatReference(ref)
+  }
+
   // Auto-shrink to fit: a long verse (a wordy translation, or a small OBS
   // Browser Source size) must never run off-screen or get visually cut
   // off — the CSS clamp() on #verse-text's font-size is viewport-width
@@ -103,7 +149,7 @@
   function showVerse(verse) {
     textEl.textContent = verse.text
     const ref = verse.reference
-    refEl.textContent = capitalize(ref.book) + " " + ref.chapter + ":" + ref.verse
+    refEl.textContent = verse.secondary ? formatBilingualReference(ref) : formatReference(ref)
 
     if (verse.secondary) {
       secondaryTextEl.textContent = verse.secondary.text

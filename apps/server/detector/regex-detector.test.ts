@@ -34,21 +34,40 @@ test("RegexDetector: detects multiple references in one transcript, in order, in
 // CORRECTIF/IMPORTANT (architecture boundary, see ARCHITECTURE.md sections
 // 12.2, 14, 15 and AGENTS.md section 12): the detector is intentionally
 // unaware of which book names are real. It only recognizes the *syntactic*
-// shape "Capitalized Words Chapter:Verse" and reports it as a candidate
-// reference. Rejecting nonexistent books (or invalid chapter/verse numbers)
-// is the Known-Valid Verse Index's job, applied downstream — never the
-// detector's. This test locks in that separation of concerns: an
-// unrecognized/ambiguous "book" still produces a structured reference here.
+// shape "Word(s) Chapter:Verse" (either case, since section 72) and
+// reports it as a candidate reference. Rejecting nonexistent books (or
+// invalid chapter/verse numbers) is the Known-Valid Verse Index's job,
+// applied downstream — never the detector's. This test locks in that
+// separation of concerns: an unrecognized/ambiguous "book" still produces
+// a structured reference here.
 test("RegexDetector: still emits a structured reference for an unrecognized/ambiguous book name (existence is validated downstream, not here)", () => {
   const detector = new RegexDetector()
   const result = detector.detect("Frogs 3:16 is not a real verse.")
   assert.deepEqual(result, [{ book: "frogs", chapter: 3, verse: 16 }])
 })
 
-test("RegexDetector: does not match a bare time-like pattern with no preceding capitalized book", () => {
+// ARCHITECTURE.md section 72: capitalization is no longer what filters
+// this out (lowercase book names are now allowed, to catch real books
+// like "job"/"acts" that ASR often doesn't capitalize) — the small
+// STOPWORDS list is what excludes "at" here specifically.
+test("RegexDetector: does not match a common short function word directly before a digit:digit pattern", () => {
   const detector = new RegexDetector()
   const result = detector.detect("the meeting starts at 3:16 today")
   assert.deepEqual(result, [])
+})
+
+// ARCHITECTURE.md section 72: the real gap this closes — several genuine
+// book names double as ordinary words ("Job", "Acts", "Mark") and Whisper
+// routinely transcribes them lowercase mid-sentence, silently losing a
+// real reference under the old capitalization-only requirement.
+test("RegexDetector: detects a lowercase-transcribed real book name (e.g. 'job', 'acts') just as well as a capitalized one", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("let's read job 3:16 together"), [
+    { book: "job", chapter: 3, verse: 16 },
+  ])
+  assert.deepEqual(detector.detect("turn to acts 3:16 please"), [
+    { book: "acts", chapter: 3, verse: 16 },
+  ])
 })
 
 // CORRECTIF (found via resolve-transcript-verses.test.ts): a sentence-

@@ -3526,3 +3526,232 @@ No new test coverage was written for 68.3/68.4 (client-side visual/UX fixes veri
 by direct interaction with a real running instance, not unit-testable in isolation)
 — consistent with this project's existing convention of headless-Chrome/live-instance
 verification for renderer-only changes.
+
+## 69. Combined Overlay Preview — the In-App Preview Window Is Gone
+
+Live-testing turned up a UX complaint the audit above didn't cover: `createOverlayWindow()`
+(section 6.3) opened the overlay preview as a *second*, separate OS window alongside the
+main dashboard. Live use showed this was simply unwanted — a second window to manage,
+easy to close accidentally, and disconnected from the dashboard it's meant to accompany.
+Separately, the Live view's own "LIVE PREVIEW" panel was never a real preview at all: it
+was a hand-rolled re-implementation covering only verse and announcement text
+(`showLiveVerse`/`showLiveAnnouncement` in `dashboard.js`), and had already silently
+drifted out of sync with reality — it had no rendering at all for media, posters, or
+canvas scenes, all added in later sections.
+
+**Fixed**: `createOverlayWindow()` and the separate `overlayWindow` `BrowserWindow` are
+removed entirely. The Live view's preview panel now embeds the real overlay page — the
+exact same page StaticServer serves to OBS — in a sandboxed `<iframe>`
+(`#overlay-preview-frame`), pointed at the same `overlayUrl` the OBS settings card
+already showed (section 68.4). This is not a second implementation to keep in sync: the
+iframe opens its own independent WS connection (as a `viewer`, via the URL's own
+token/wsPort query params, exactly like a real OBS Browser Source would) and renders
+through the actual `overlay.js`, so it can never drift from what the audience sees.
+`dashboard.js`'s CSP gained `frame-src http://127.0.0.1:*` to allow it — loopback-only,
+the same trust boundary the WS connection already uses.
+
+The now-redundant mimic functions (`showLiveVerse`'s DOM manipulation, `clearLiveVerse`,
+`showLiveAnnouncement`) were removed along with their backing `#live-verse-*` elements.
+`showLiveVerse()` keeps exactly one real side effect — clearing a pending-confirmation
+prompt a real `verse:show` always supersedes — everything else is now the iframe's job.
+The pending-verse-confirmation banner (an operator *action* prompt, not a preview of
+overlay state) is unaffected and stays in the Live view alongside the embedded frame.
+
+## 70. Transcription Visibility & Latency Budget
+
+A second live-testing finding, more serious than 69: the operator dashboard had **no
+way to see what the ASR actually transcribed, ever**, for any real (non-partial)
+transcript. `AppCore`'s `asr.onTranscript()` handler (wired in `startAppCore()`) fed
+every transcript into verse detection, media/glossary/navigation matching, and sermon
+notes — but never broadcast the transcript's own text to any client. The WS contract's
+only transcript event, `transcript:partial`, was validated (`isTranscriptPartialPayload`
+in `action-registry.ts`) to strictly require `state === "partial"` — and `GroqProvider`,
+v1's only `AsrProvider`, documents that it **never** emits `state: "partial"` at all
+(Groq's transcription API is a batch endpoint with no interim-result concept). The two
+facts combined meant this channel was dead code by construction: nothing could ever
+legally flow through it. From the operator's seat, the mic level meter (section 68.3)
+moved with real speech, but the last-transcript field never updated for anything except
+a verse actually being detected — no way to judge transcription accuracy, or how long
+it was taking.
+
+**Fixed**: added `transcript:final` as a proper, distinct WS event
+(`isTranscriptFinalPayload`, mirroring `isTranscriptPartialPayload` but requiring
+`state === "final"`) — the honest counterpart for what `GroqProvider` actually produces,
+rather than relaxing `transcript:partial`'s validator to accept a mislabeled final
+result. `asr.onTranscript()` now broadcasts every transcript (`transcript:partial` or
+`transcript:final`, branching on `transcript.state`) as the *first* thing it does, before
+any of the async verse-resolution work — the fastest possible signal back to the
+operator, not something waiting behind it. `dashboard.js` merges both event types into
+one handler updating the "Last transcript" field, and `verse:show` no longer overwrites
+that field with verse text (a pre-existing conflation) — it now always reflects the raw
+ASR output, matching what its own label says.
+
+**Latency budget, confirmed with the user**: speech-to-overlay must stay under 5 seconds
+end to end, ideally less. `GroqProvider` buffers audio and flushes a chunk to Groq's
+batch endpoint once `chunkDurationMs` has accumulated (`groq-provider.ts`) — this
+buffering delay is the single largest, most controllable component of the budget; Groq's
+own inference on a short clip is typically well under a second, and everything after a
+transcript arrives (verse resolution, WS broadcast, overlay render) is near-instant.
+`DEFAULT_CHUNK_DURATION_MS` is lowered from 4000ms to 2000ms — worst-case buffering plus
+a real API round trip now lands comfortably under the 5s ceiling with margin, while still
+giving Whisper enough audio context to transcribe short phrases (a spoken verse
+reference or cue title) accurately. Going shorter was considered and rejected: it
+multiplies API call volume for no latency win once network/inference time dominates
+anyway, and risks truncating words at chunk boundaries.
+
+### 70.1 Tests added
+
+`apps/server/ws/action-registry.test.ts`: `transcript:final`'s validator accepts a real
+final transcript and rejects one mislabeled as partial (or otherwise malformed); the
+fixed-set registry-keys test includes it; a role-boundary test confirms no inbound
+sender (operator or viewer) may send it, matching every other server-only event.
+`groq-provider.test.ts`'s existing tests were unaffected — they already pass
+`chunkDurationMs` explicitly rather than relying on the default.
+
+## 71. Sermon Notes Default Model — Account-Tier Access, Not a Wrong Model ID
+
+Live testing with the transcription pipeline now visibly working (section 70) surfaced
+a real, repeating failure once sermon notes tried to summarize: `sermon-notes.summarize-
+failed` — `"The model llama-3.3-70b-versatile does not exist or you do not have access
+to it."` Checked directly against Groq's own current model documentation before
+concluding anything (this project's standing "verify, don't assume" discipline for
+external APIs): `llama-3.3-70b-versatile` **is** still listed as a current production
+model there. That rules out a stale/deprecated model id as the cause — the far more
+likely explanation is Groq gating access to its larger models by API key/account tier,
+which this specific key doesn't clear, while smaller production models are typically
+available regardless of tier.
+
+**Fixed**: `SermonNotesGenerator`'s default model changes from `llama-3.3-70b-versatile`
+to `llama-3.1-8b-instant` — the smallest current production Llama model on Groq, so far
+more likely to be usable on any key, and comfortably capable for a 3-5 bullet-point
+summarization task that never needed a 70B model's capacity. `model` was already a
+constructor option (`main/index.ts` was just never passing one, always taking the
+default); no other wiring changes. This is an account-entitlement issue on Groq's side,
+not something a code change can fully guarantee fixed for every possible key — if
+`llama-3.1-8b-instant` also fails with the same "no access" error for a given key, that
+points at the Groq account itself (billing/verification status), worth checking directly
+on Groq's console, rather than at this app.
+
+No test pinned the old default model string (`sermon-notes-generator.test.ts` only
+asserts `typeof body.model === "string"`), so this change needed no test updates.
+
+## 72. Detection Robustness & Bilingual Reference Display
+
+Three more findings from the same live-testing session, all pointing at the same
+theme: recognition was too brittle against how people actually speak and how ASR
+actually transcribes, and the overlay's reference line didn't match its own bilingual
+promise.
+
+### 72.1 Real book names transcribed lowercase were silently missed
+
+`RegexDetector`'s pattern required the book-name group to start with an uppercase
+letter (`\p{Lu}`), relying entirely on Whisper capitalizing spoken book names
+correctly. Several real books double as ordinary words in both languages ("Job",
+"Acts", "Mark", "Numbers", "Actes") and are routinely transcribed lowercase
+mid-sentence — the reference was lost silently, with no error, indistinguishable from
+never having been detected.
+
+**Fixed**: relaxed the book-name group to `\p{L}` (any letter, either case). This does
+not reopen the "detector doesn't know which book names are real" boundary
+(ARCHITECTURE.md sections 12.2/14/15) — existence validation stays entirely
+`KnownValidVerseIndex`'s job downstream. A small, fixed `STOPWORDS` set (common short
+English/French function words — "at", "the", "le", "de", ...) prevents this relaxation
+from resurrecting the "the meeting starts at 3:16 today" false-candidate case the
+capitalization requirement used to filter out as a side effect; this is a generic
+function-word list, not book-catalog knowledge.
+
+### 72.2 French "next verse"/"next chapter" only covered one word order
+
+`NavigationCommandDetector`'s French phrases only covered "X suivant" (noun-first —
+"verset suivant"). French equally naturally allows "prochain X" (adjective-first — "le
+prochain verset"), which produced no command at all. **Fixed**: added "prochain
+verset"/"prochain chapitre" alongside the existing "suivant" phrases.
+
+### 72.3 The overlay's reference line ignored bilingual mode entirely
+
+In bilingual display mode the verse text correctly shows French (primary) with English
+underneath (secondary, via `LocalizedVerseSource`) — but the reference line
+(`#verse-reference`) always showed only the canonical English book name regardless of
+mode, e.g. a French primary verse under the label "John 3:5". A viewer confirmed this
+reads as a mismatch/bug, not a deliberate choice.
+
+**Fixed**: a new `FRENCH_BOOK_NAMES` table (canonical English id -> proper French name,
+with accents/capitalization restored — deliberately separate from
+`FRENCH_BOOK_ALIASES` in `regex-detector.ts`, which strips accents for matching and
+isn't fit for display) is duplicated into `overlay.js` and `dashboard.js` (the
+established no-build-step "duplicated, not shared" precedent). `verse.secondary`'s
+presence is the same signal `LocalizedVerseSource` already uses for "bilingual mode is
+active" — when present, the reference line shows both names ("Jean 3:5 · John 3:5",
+French first to match the primary/secondary text hierarchy); otherwise unchanged.
+Applied to both the overlay's `showVerse()` and the dashboard's pending-verse-
+confirmation banner (`showPendingVerse()`), the same `Verse` shape in both places.
+
+### 72.4 Tests added
+
+`regex-detector.test.ts`: a lowercase real book name ("job 3:16", "acts 3:16") is now
+detected; the existing "at 3:16" false-candidate test is retitled to reflect that
+STOPWORDS, not capitalization, is now what excludes it.
+`navigation-command-detector.test.ts`: "prochain verset"/"prochain chapitre" trigger
+the same commands as their "suivant" counterparts.
+No test coverage for 72.3 (client-side rendering, verified by reading the two
+duplicated tables against each other and against `BOOK_CATALOG`'s id list directly) —
+consistent with this project's convention for renderer-only display changes.
+
+## 73. Hallucinated-Language Transcripts & Activity Log Layout
+
+Two more live-testing findings once the transcript pipeline became visible (section 70)
+made these two failure modes visible for the first time — neither is new, both were
+simply invisible before.
+
+### 73.1 Whisper occasionally hallucinates fluent text in an unspoken language
+
+Confirmed directly: fed unclear or ambient audio, Groq's Whisper endpoint sometimes
+returns fluent-looking text in a language nobody actually spoke (Chinese, in the
+reported case) rather than empty or garbled output — a known category of Whisper
+failure, not something specific to this app's audio pipeline. This app's confirmed
+audience is French/English only. Whisper's `language` parameter can't express "either
+of these two, never anything else" (it accepts exactly one hint per request), and
+hard-coding either language would degrade accuracy for genuine speech in the other —
+not an acceptable tradeoff for a bilingual church.
+
+**Fixed**: French and English are both written entirely in Latin script, so any
+non-Latin-script character in a returned transcript is unambiguous noise, never a
+legitimate result in either supported language. `GroqProvider.flush()` now checks the
+transcribed text against `NON_LATIN_SCRIPT_PATTERN` (CJK, Japanese kana, Hangul,
+Cyrillic, Arabic, Hebrew, Thai, Devanagari) before emitting anything — a single matching
+character drops the whole chunk. This is not treated as an ASR error (`onError` is not
+called): from the operator's perspective it's indistinguishable from a quiet moment
+producing nothing, which is the correct framing, not a failure to surface.
+
+### 73.2 The Activity log had no bounded height, so it grew the whole page
+
+`dashboard.js`'s `log()` already capped retained entries at 50 and `#log` already had
+`overflow-y: auto` — but the Live view's grid rows below the embedded preview are
+`auto`-height, so nothing was ever actually constraining `#log`'s height for that
+`overflow` to apply against. A growing log just made its card, and the whole page,
+taller — confirmed materially worse once every transcript started being echoed here too
+(section 70's fix), which multiplied how often new lines arrived while speaking.
+
+**Fixed**: `#log` gets an explicit `max-height` (~5 lines) independent of the
+surrounding grid, so it scrolls internally regardless of the grid's own sizing. Nothing
+about retention changed — all 50 entries are still there, a scroll away, not discarded.
+
+### 73.3 Tests added
+
+`groq-provider.test.ts`: a transcript that's entirely non-Latin script is dropped with
+neither `onTranscript` nor `onError` firing; a transcript mixing real French/English
+text with even one stray non-Latin character is also dropped whole (not partially
+cleaned), confirming the deliberately conservative "any match rejects the chunk" rule.
+No test coverage for 73.2 (CSS-only layout fix) — consistent with this project's
+convention for renderer-only display changes.
+
+### 73.4 Reported but not independently reproducible: a spoken reference that didn't show
+
+Also reported in the same session: a spoken Bible reference that didn't appear on the
+overlay. Without the exact transcript text, root cause couldn't be confirmed directly —
+but two fixes landed in this same batch that directly address the two most likely
+causes: 72.1 (a lowercase-transcribed book name being silently unmatched) and 73.1 (the
+chunk containing that reference being entirely discarded as a hallucinated-language
+false positive, if Whisper mis-transcribed part of it into another script). If a
+reference is still missed after this, that points at a third, not-yet-identified cause
+worth capturing with the exact transcript text next time.

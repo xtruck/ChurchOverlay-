@@ -60,6 +60,44 @@ test("GroqProvider: automatically transcribes once the chunk duration is reached
   assert.equal(result.sequence, 1)
 })
 
+// ARCHITECTURE.md section 73: a confirmed real Whisper failure mode —
+// fed unclear/ambient audio, it sometimes hallucinates fluent text in a
+// language never spoken, instead of returning empty output. This app's
+// only supported languages (French, English) are both pure Latin script,
+// so any non-Latin-script result is noise, dropped at the source.
+test("GroqProvider: a transcript containing non-Latin script (e.g. hallucinated Chinese) is silently dropped, not emitted or errored", async () => {
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    fetchImpl: fakeFetch(() => jsonResponse({ text: "你好，世界" })),
+  })
+  const results: unknown[] = []
+  const errors: Error[] = []
+  provider.onTranscript((r) => results.push(r))
+  provider.onError((e) => errors.push(e))
+
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame(0))
+
+  assert.equal(results.length, 0)
+  assert.equal(errors.length, 0)
+})
+
+test("GroqProvider: a transcript mixing real French/English text with a stray non-Latin character is still dropped (whole-chunk, not partial)", async () => {
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    fetchImpl: fakeFetch(() => jsonResponse({ text: "Turn to John 3:16 世界" })),
+  })
+  const results: unknown[] = []
+  provider.onTranscript((r) => results.push(r))
+
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame(0))
+
+  assert.equal(results.length, 0)
+})
+
 test("GroqProvider: sends the expected multipart fields (model, response_format) and auth header", async () => {
   const captured: CapturedRequest[] = []
   const provider = new GroqProvider({

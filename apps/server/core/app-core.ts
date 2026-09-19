@@ -891,8 +891,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         return
       }
 
-      // status:update / transcript:partial / verse:show / verse:pending /
-      // media:show / rundown:state / announcement:show /
+      // status:update / transcript:partial / transcript:final / verse:show /
+      // verse:pending / media:show / rundown:state / announcement:show /
       // announcement:clear / definition:show / definition:clear /
       // sermonNotes:update / canvas:show / canvas:clear / poster:show are
       // all server-originated events; the action registry's role check
@@ -902,6 +902,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       // rather than silently ignoring a case (AGENTS.md section 25).
       case "status:update":
       case "transcript:partial":
+      case "transcript:final":
       case "verse:show":
       case "verse:pending":
       case "media:show":
@@ -1007,6 +1008,21 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       event: "transcript.received",
       correlationId: transcript.correlationId,
       sequence: transcript.sequence,
+    })
+    // ARCHITECTURE.md section 70: a production audit found that every
+    // transcript was consumed internally (verse detection, media/glossary/
+    // navigation matching) without the raw text ever reaching the
+    // dashboard — the operator could see the mic level meter respond to
+    // speech but had no way to see, or judge the accuracy or latency of,
+    // what was actually transcribed. Broadcast first, before any of the
+    // async work below, so this is the fastest possible signal back to
+    // the operator, not something waiting behind verse resolution.
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: transcript.state === "partial" ? "transcript:partial" : "transcript:final",
+      timestamp: Date.now(),
+      correlationId: transcript.correlationId,
+      payload: transcript,
     })
     // A transcript arriving at all means the ASR pipeline is working again
     // — the operator-facing recovery signal for whatever error, if any,

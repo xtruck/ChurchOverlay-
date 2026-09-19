@@ -18,10 +18,15 @@
       to the local server on loopback (apps/desktop/renderer/dashboard.js),
       on a different port than this page itself, so 'self' alone would not
       cover it.
+    - frame-src allows http://127.0.0.1:* (ARCHITECTURE.md section 69): the
+      Live view embeds the real overlay page — the exact same page OBS's
+      Browser Source loads — in an iframe, so what the operator sees here
+      is never a second, hand-maintained reimplementation that could drift
+      out of sync. Loopback-only, same trust boundary as the WS connection.
 -->
 <meta
   http-equiv="Content-Security-Policy"
-  content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' ws://127.0.0.1:*; base-uri 'none'; form-action 'none';"
+  content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' ws://127.0.0.1:*; frame-src http://127.0.0.1:*; base-uri 'none'; form-action 'none';"
 />
 <title>ChurchOverlay — Operator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -532,22 +537,18 @@
     letter-spacing: 0.14em;
     color: var(--text-tertiary);
   }
-  #live-verse-text {
-    font-family: var(--font-display);
-    font-size: 30px;
-    line-height: 1.45;
-    color: var(--text-primary);
-    max-width: 640px;
+  /* ARCHITECTURE.md section 69: a real 16:9 window onto the actual
+     overlay page, filling the live-preview card rather than floating at
+     a fixed size — the card's own padding/min-height already give it
+     room, so the frame just needs to fill what's left. */
+  .overlay-preview-frame {
+    width: 100%;
+    max-width: 480px;
+    aspect-ratio: 16 / 9;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    background: #000;
   }
-  #live-verse-ref {
-    margin-top: var(--space-4);
-    color: var(--accent-strong);
-    font-family: var(--font-mono);
-    font-weight: 500;
-    font-size: 12.5px;
-    letter-spacing: 0.06em;
-  }
-  #live-verse-empty { color: var(--text-tertiary); font-size: 13px; font-family: var(--font-mono); }
   /* ARCHITECTURE.md section 65.3: review mode's holding prompt — visually
      distinct from an actually-live verse (an amber/accent-bordered card,
      not the plain live-preview text), since nothing is on the overlay
@@ -584,19 +585,6 @@
     font-size: 12px;
     letter-spacing: 0.06em;
   }
-  /* ARCHITECTURE.md section 65.2: the adapted "confidence badge" — this
-     app's detection is deterministic, so there's no graduated confidence
-     to show; what varies is HOW the verse got here. Dashboard-only, never
-     sent to the overlay/audience. */
-  #live-verse-trigger {
-    margin-top: 6px;
-    color: var(--text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
   button {
     font-family: var(--font-ui);
     font-size: 13px; font-weight: 600;
@@ -665,7 +653,16 @@
     border: 1px solid var(--glass-border);
   }
 
-  #log { font-family: var(--font-mono); font-size: 11.5px; overflow-y: auto; flex: 1; min-height: 60px; }
+  /* ARCHITECTURE.md section 73: the Live grid's rows below the preview
+     are auto-height, so nothing was actually constraining this list —
+     overflow-y:auto had no bounded height to ever overflow against, and
+     a growing log just made the whole page taller instead of scrolling
+     internally. This got materially worse once every transcript started
+     being echoed here too (section 70). A fixed max-height (~5 lines)
+     makes it self-contained regardless of the grid; older entries are
+     still there, just a scroll away, not discarded (see the existing
+     50-entry cap in dashboard.js's log()). */
+  #log { font-family: var(--font-mono); font-size: 11.5px; overflow-y: auto; flex: 1; min-height: 60px; max-height: 160px; }
   .log-line { padding: 5px 0; border-bottom: 1px solid var(--glass-border); display: flex; gap: var(--space-2); color: var(--text-secondary); }
   .log-time { color: var(--text-tertiary); flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .log-line.event-sent .log-text { color: var(--accent-strong); }
@@ -918,10 +915,19 @@
               <div id="verse-pending-ref"></div>
               <button id="verse-pending-confirm-btn" class="btn-primary" data-i18n="livePreview.pendingConfirm">Show on overlay</button>
             </div>
-            <div id="live-verse-empty" data-i18n="livePreview.empty">Nothing is live right now.</div>
-            <div id="live-verse-text" style="display: none"></div>
-            <div id="live-verse-ref" style="display: none"></div>
-            <div id="live-verse-trigger" style="display: none"></div>
+            <!-- ARCHITECTURE.md section 69: embeds the REAL overlay page —
+                 the exact same page OBS's Browser Source loads, over its
+                 own independent WS connection — instead of a hand-rolled
+                 reimplementation that only ever covered verse/announcement
+                 text and had already drifted out of sync with media,
+                 posters, and canvas scenes. src is set once the app knows
+                 the overlay URL (see renderOverlayPreview in dashboard.js). -->
+            <iframe
+              id="overlay-preview-frame"
+              class="overlay-preview-frame"
+              title="Overlay preview"
+              sandbox="allow-scripts"
+            ></iframe>
           </div>
 
           <div class="card glass cell-log">
