@@ -8,12 +8,18 @@
   plus explicit allowances. img-src/media-src 'self' cover the voice-
   triggered media layer's images/video/audio, all served same-origin from
   "/media/<id>" by this page's own StaticServer (never a remote URL).
-  connect-src allows ws://127.0.0.1:* since the WS server runs on a
-  different port than the HTTP port serving this page.
+  connect-src allows the bare "ws:" scheme rather than a pinned
+  ws://127.0.0.1:* host, matching apps/remote/public/index.html's own CSP
+  and for the identical reason (ARCHITECTURE.md section 65.6): once
+  allowPhoneRemote is on, the WS server binds to 0.0.0.0, and this page can
+  be opened from whatever LAN address reaches it — not only 127.0.0.1 — so
+  the exact host isn't knowable in advance. As section 65.6 already
+  documents, the viewer token remains the real access control here, not
+  this policy.
 -->
 <meta
   http-equiv="Content-Security-Policy"
-  content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; media-src 'self'; connect-src 'self' ws://127.0.0.1:*; base-uri 'none'; form-action 'none';"
+  content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; media-src 'self'; connect-src 'self' ws:; base-uri 'none'; form-action 'none';"
 />
 <title>ChurchOverlay — Overlay</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
