@@ -11,6 +11,8 @@ import { KnownValidVerseIndex } from "../../server/verse/known-valid-verse-index
 import { FreeApiSource } from "../../server/verse/free-api-source"
 import { GetBibleVerseSource } from "../../server/verse/get-bible-verse-source"
 import { LocalizedVerseSource } from "../../server/verse/localized-verse-source"
+import { loadOfflineBibleData, OfflineVerseSource } from "../../server/verse/offline-verse-source"
+import { OfflineFallbackVerseSource } from "../../server/verse/offline-fallback-verse-source"
 import { GroqProvider } from "../../server/asr/groq-provider"
 import { SermonNotesGenerator } from "../../server/ai/sermon-notes-generator"
 import { MediaLibrary } from "../../server/media/media-library"
@@ -109,12 +111,29 @@ async function startServices(
   config: AppConfig
 ): Promise<{ port: number; token: string; remoteUrl: string | null; allowPhoneRemote: boolean; overlayUrl: string }> {
   currentTokens = { operatorToken: config.operatorToken, viewerToken: config.viewerToken }
-  localizedVerseSource = new LocalizedVerseSource(
-    new FreeApiSource(),
-    new GetBibleVerseSource(),
-    config.displayMode,
-    logger
-  )
+  // ARCHITECTURE.md section 77: a live-API outage (the venue's own
+  // internet, or the API itself) no longer means the French source stops
+  // resolving verses at all — a bundled, always-available offline Bible
+  // backs it up. Degrades to the plain live source, unwrapped, if the
+  // bundled data somehow fails to load (a real packaging bug worth
+  // logging loudly, but not worth failing the entire app over — the live
+  // source alone is exactly what shipped before this feature existed).
+  let frenchSource: GetBibleVerseSource | OfflineFallbackVerseSource = new GetBibleVerseSource()
+  try {
+    const offlineData = await loadOfflineBibleData()
+    frenchSource = new OfflineFallbackVerseSource({
+      primary: new GetBibleVerseSource(),
+      offline: new OfflineVerseSource(offlineData),
+      logger,
+    })
+  } catch (err) {
+    logger.error({
+      component: "main",
+      event: "offline-bible-data.load-failed",
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+  localizedVerseSource = new LocalizedVerseSource(new FreeApiSource(), frenchSource, config.displayMode, logger)
 
   // ARCHITECTURE.md section 65.6: opt-in, off by default — binding to
   // 0.0.0.0 (reachable from the local network) only ever happens when the

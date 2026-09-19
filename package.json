@@ -41,6 +41,7 @@
       "apps/desktop/renderer/**/*.html",
       "apps/desktop/renderer/**/*.js",
       "apps/overlay/public/**/*",
+      "apps/server/verse/data/**/*",
       "package.json",
       "!**/*.test.js",
       "!**/*.test.js.map",

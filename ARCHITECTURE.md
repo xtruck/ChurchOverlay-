@@ -4081,3 +4081,102 @@ after.
 `action-registry.test.ts`: `isStatusUpdatePayload` accepts the new optional fields and
 rejects wrong-typed values for either, and — unchanged — still accepts a bare
 `{ asrHealth }` payload with neither field present.
+
+## 77. Offline Bible Fallback (French)
+
+User-requested "innovating ideas" follow-up. This app's confirmed primary audience is
+French-speaking churches, and its live French verse source (`GetBibleVerseSource`,
+section 63.1) depends entirely on a network connection and an external API being
+reachable — a venue's own internet dropping, or the API having an outage, previously
+meant French verse resolution simply stopped working for as long as that lasted, with
+no recovery until connectivity returned.
+
+**What it does**: `apps/server/verse/data/fra_lsg.json` bundles the full Louis Segond
+1910 text (the same public-domain translation `GetBibleVerseSource` fetches live —
+verified directly against the file's own structure and a real spot-check, e.g. John
+3:16, before building anything on top of it; same "verify, don't assume" discipline
+`BOOK_CATALOG`'s own KJV source comment already documents). `OfflineVerseSource` reads
+it (via `loadOfflineBibleData()`, called once at startup, mirroring
+`MediaLibrary.load()`/`ConfigStore.load()`'s own explicit-load pattern) and resolves
+references from it — a pure in-memory lookup, never a network call, so it can never
+itself be the thing that fails. `OfflineFallbackVerseSource` wraps the live
+`GetBibleVerseSource` with it: `main/index.ts` now constructs the French source as
+`OfflineFallbackVerseSource({ primary: GetBibleVerseSource, offline: OfflineVerseSource })`
+and hands that to `LocalizedVerseSource` exactly where a bare `GetBibleVerseSource`
+used to go — `LocalizedVerseSource` needed zero changes, since it only ever calls
+`getVerse()` on its wrapped sources.
+
+**Why this wrapper holds its own `CircuitBreaker`, separate from `resolveVerse()`'s
+own**: once wrapped, this source practically never throws upward — a primary failure
+always resolves via offline instead. Without its own breaker, `resolveVerse()`'s outer
+circuit-breaker check would see only successes and keep letting every single
+detection re-attempt a live API that's confirmed down. The inner breaker keeps that
+"stop hammering a known-down service" protection where it belongs, while still
+guaranteeing the operator-facing outcome (a French verse still resolves) that section's
+own point is about.
+
+Bundled as a source-tree static asset, not compiled by `tsc` into `dist` — the exact
+same pattern `apps/overlay/public` and `apps/desktop/renderer` already use for shipped
+files that aren't TypeScript. `apps/server/verse/data/**/*` was added to
+electron-builder's `files` list in `package.json` alongside them. Loading the bundled
+file failing at all (a real packaging bug, not a legitimate runtime state) degrades to
+the plain unwrapped `GetBibleVerseSource` rather than blocking app startup — logged
+loudly, but the app still functions exactly as it did before this feature existed.
+
+### 77.1 A real, pre-existing gap this surfaced: BOOK_CATALOG's KJV versification doesn't match Louis Segond's
+
+Building a rigorous cross-check test (comparing the offline data's actual chapter/verse
+structure against `BOOK_CATALOG`, rather than trusting the bundled file blindly) found
+**106 chapters** — the overwhelming majority in Psalms, plus scattered others across
+Exodus, Leviticus, Numbers, 1 Samuel, 1 Kings, 2 Chronicles, Job, Ecclesiastes, Song of
+Solomon, Isaiah, Ezekiel, Hosea, Jonah, Micah, Nahum, Mark, Acts, 2 Corinthians, 3 John,
+and Revelation — where the verse count per chapter differs between `BOOK_CATALOG`
+(explicitly sourced from a KJV-based table, per its own comment) and Louis Segond's
+actual French text. The Psalms cases follow one well-documented, single pattern: LSG
+(following Hebrew-tradition versification) counts a Psalm's superscription ("Psaume de
+David...") as verse 1, where KJV prints it as an unnumbered heading above verse 1 —
+shifting every later verse in that Psalm by exactly one. The scattered non-Psalms cases
+are individually smaller, similarly well-documented translation-to-translation
+versification differences, not data corruption in either source.
+
+**This is not a bug introduced by this feature** — `KnownValidVerseIndex` (the
+hallucination guard) has always validated every detected reference, French or English,
+against this same single KJV-based `BOOK_CATALOG`. This offline-fallback work is simply
+the first thing to have directly, comprehensively compared it against a real
+independently-sourced French text and made the mismatch concrete and countable, rather
+than it staying an invisible characteristic of the existing catalog.
+
+**Real consequence, left as a known limitation rather than fixed here**: a French
+speaker legitimately citing a verse using LSG's own numbering — most commonly a Psalm's
+final verse in one of the affected chapters (e.g. "Psaume 3:9", valid in LSG, where
+`BOOK_CATALOG` says Psalm 3 has only 8 verses) — would have that reference rejected by
+`KnownValidVerseIndex` as "nonexistent" before ever reaching a `VerseSource`, live or
+offline. Fixing this properly means `KnownValidVerseIndex` becoming versification-aware
+(a separate valid chapter/verse-count table per translation tradition, validated against
+whichever language was actually detected) — a real, separate, and non-trivial
+architecture change in its own right, deliberately not attempted as a side effect of
+adding an offline fallback. Recorded here so it's a tracked, visible gap rather than a
+silently-discovered-and-ignored one.
+
+### 77.2 Tests added
+
+`offline-verse-source.test.ts`: `OfflineVerseSource` resolves a known reference with the
+correct shape (including the distinct `source: "offline-bundled"` provenance marker,
+same `translation` as the live source), returns null (never throws) for an unmapped
+book or a chapter/verse absent from the data; `loadOfflineBibleData()` reads/parses a
+real file and rejects (rather than silently returning empty) for a missing one.
+
+`offline-fallback-verse-source.test.ts`: a healthy primary is used directly (offline
+never even called); a primary confirming "not found" (`null`) is trusted as-is (offline
+not consulted — this must never override a definitive live "no"); a thrown primary
+error falls back to offline and is logged; once the wrapper's own circuit breaker
+opens, primary is skipped entirely on subsequent calls (confirming the whole point of
+the inner breaker, not just that fallback works once); a later successful primary call
+resets its own failure streak.
+
+`offline-bible-book-keys.test.ts`: the hand-written 66-entry book-key mapping table
+covers exactly `BOOK_CATALOG`'s ids (no more, no fewer), has no two ids colliding on
+the same offline key, and — checked directly against the real bundled file, not
+assumed — every mapped key actually exists in it, with the same chapter count per book
+as `BOOK_CATALOG` (per-chapter verse counts are deliberately not asserted exactly equal,
+per 77.1's finding).
