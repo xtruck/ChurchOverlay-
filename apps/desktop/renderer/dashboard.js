@@ -92,6 +92,7 @@
   const micVisualEl = document.getElementById("mic-visual")
   const asrHealthWarningEl = document.getElementById("asr-health-warning")
   const asrHealthWarningTextEl = document.getElementById("asr-health-warning-text")
+  const micCalibratingStatusEl = document.getElementById("mic-calibrating-status")
   const overlayPreviewFrameEl = document.getElementById("overlay-preview-frame")
   const setupScreenEl = document.getElementById("setup-screen")
   const appShellEl = document.getElementById("app-shell")
@@ -356,6 +357,17 @@
       asrHealthWarningEl.style.display = "block"
     } else if (payload.asrHealth === "ok") {
       asrHealthWarningEl.style.display = "none"
+    }
+    // ARCHITECTURE.md section 76: the ~1.5s auto-calibration window
+    // deliberately forwards nothing yet — without this status line,
+    // that looks identical to "the mic doesn't work."
+    if (payload.micCalibrating === true) {
+      micCalibratingStatusEl.style.display = "block"
+    } else if (payload.micCalibrating === false) {
+      micCalibratingStatusEl.style.display = "none"
+      if (typeof payload.micThreshold === "number") {
+        log(t("log.micCalibrated", { threshold: Math.round(payload.micThreshold) }), "received")
+      }
     }
   }
 
@@ -1512,6 +1524,7 @@
     micStartBtn.disabled = false
     micStopBtn.disabled = true
     micVisualEl.classList.remove("active")
+    micCalibratingStatusEl.style.display = "none"
     resetMicLevel()
     log(t("log.micStopped"), "sent")
   }

@@ -835,6 +835,16 @@
     font-size: 12px;
     line-height: 1.5;
   }
+  .mic-calibrating-status {
+    margin-top: var(--space-3);
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    background: rgba(143, 125, 255, 0.1);
+    border: 1px solid var(--accent);
+    color: var(--accent-strong);
+    font-size: 12px;
+    line-height: 1.5;
+  }
 
   /* ARCHITECTURE.md section 63.2/63.5: setup-time defaults for verse
      display mode and UI language, as a vertical list of option buttons
@@ -971,6 +981,12 @@
               <button id="mic-start-btn" class="btn-primary btn-block" data-i18n="mic.start">Start listening</button>
               <button id="mic-stop-btn" class="btn-secondary btn-block" disabled data-i18n="mic.stop">Stop</button>
             </div>
+            <!-- ARCHITECTURE.md section 76: the ~1.5s auto-calibration
+                 window after mic:start deliberately forwards nothing yet
+                 — without this, that window looks identical to "the mic
+                 doesn't work," the exact complaint this feature exists
+                 to prevent a repeat of. -->
+            <div id="mic-calibrating-status" class="mic-calibrating-status" style="display: none" data-i18n="mic.calibrating">Calibrating to room noise…</div>
             <label style="margin-top: 16px" data-i18n="mic.lastTranscriptLabel">Last transcript</label>
             <div id="transcript" data-i18n="mic.waitingForSpeech">Waiting for speech…</div>
             <div id="asr-health-warning" class="asr-health-warning" role="alert" style="display: none">

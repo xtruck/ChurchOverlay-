@@ -84,3 +84,79 @@ test("SilenceGate: the default threshold forwards moderate-volume audio that the
   const moderateFrame = makeFrame(new Array(160).fill(200))
   assert.equal(gate.process(moderateFrame).forwarded, true)
 })
+
+// ARCHITECTURE.md section 76: one fixed global threshold can't be right
+// for every room. startCalibration() derives a fresh one from THIS
+// room's own ambient noise instead.
+test("SilenceGate: accepts a bare number (backward-compatible with every existing call site)", () => {
+  const gate = new SilenceGate(300)
+  assert.equal(gate.getThreshold(), 300)
+})
+
+test("SilenceGate: during calibration, every frame is rejected regardless of loudness, and isCalibrating() is true", () => {
+  const gate = new SilenceGate({ calibrationDurationMs: 100 })
+  gate.startCalibration()
+  assert.equal(gate.isCalibrating(), true)
+  // 100ms at 16kHz = 1600 samples; one 800-sample frame is not enough to finish.
+  const result = gate.process(makeFrame(new Array(800).fill(10000)))
+  assert.equal(result.forwarded, false)
+  assert.equal(gate.isCalibrating(), true)
+})
+
+test("SilenceGate: calibration finishes once enough audio has accumulated, deriving a threshold from the measured ambient RMS", () => {
+  const gate = new SilenceGate({ calibrationDurationMs: 100 })
+  gate.startCalibration()
+  // 100ms at 16kHz = 1600 samples; two 800-sample frames at RMS 200 finish it.
+  gate.process(makeFrame(new Array(800).fill(200)))
+  assert.equal(gate.isCalibrating(), true)
+  gate.process(makeFrame(new Array(800).fill(200)))
+  assert.equal(gate.isCalibrating(), false)
+  // ambient average (200) * the 1.5x multiplier = 300.
+  assert.equal(gate.getThreshold(), 300)
+})
+
+test("SilenceGate: a calibrated threshold is clamped to a sane floor for a near-silent room", () => {
+  const gate = new SilenceGate({ calibrationDurationMs: 100 })
+  gate.startCalibration()
+  gate.process(makeFrame(new Array(1600).fill(1))) // near-zero ambient RMS
+  assert.equal(gate.isCalibrating(), false)
+  assert.equal(gate.getThreshold(), 80) // the documented MIN_CALIBRATED_THRESHOLD, not ~1.5
+})
+
+test("SilenceGate: a calibrated threshold is clamped to a sane ceiling for a very loud room", () => {
+  const gate = new SilenceGate({ calibrationDurationMs: 100 })
+  gate.startCalibration()
+  gate.process(makeFrame(new Array(1600).fill(5000))) // a loud transient during calibration
+  assert.equal(gate.isCalibrating(), false)
+  assert.equal(gate.getThreshold(), 2000) // the documented MAX_CALIBRATED_THRESHOLD, not 7500
+})
+
+test("SilenceGate: frames during calibration still count toward the running metrics, as rejected", () => {
+  const gate = new SilenceGate({ calibrationDurationMs: 100 })
+  gate.startCalibration()
+  gate.process(makeFrame(new Array(1600).fill(200)))
+  const metrics = gate.getMetrics()
+  assert.equal(metrics.framesReceived, 1)
+  assert.equal(metrics.framesRejected, 1)
+  assert.equal(metrics.framesForwarded, 0)
+})
+
+test("SilenceGate: after calibration finishes, normal gating resumes using the newly-calibrated threshold", () => {
+  const gate = new SilenceGate({ calibrationDurationMs: 100 })
+  gate.startCalibration()
+  gate.process(makeFrame(new Array(1600).fill(200))) // finishes calibration -> threshold 300
+  assert.equal(gate.process(makeFrame(new Array(100).fill(250))).forwarded, false) // below 300
+  assert.equal(gate.process(makeFrame(new Array(100).fill(350))).forwarded, true) // above 300
+})
+
+test("SilenceGate: calling startCalibration() again restarts it, discarding any in-progress measurement", () => {
+  const gate = new SilenceGate({ calibrationDurationMs: 100 })
+  gate.startCalibration()
+  gate.process(makeFrame(new Array(1600).fill(5000))) // would calibrate to the loud-room ceiling
+  assert.equal(gate.isCalibrating(), false)
+
+  gate.startCalibration() // a fresh mic:start — must not be influenced by the prior session
+  assert.equal(gate.isCalibrating(), true)
+  gate.process(makeFrame(new Array(1600).fill(200)))
+  assert.equal(gate.getThreshold(), 300) // the quiet second calibration, not a leftover from the loud first one
+})

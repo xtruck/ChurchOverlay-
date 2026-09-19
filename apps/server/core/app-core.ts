@@ -1,5 +1,6 @@
 import type {
   AsrProvider,
+  AsrStatusPayload,
   AudioFrame,
   CanvasSceneData,
   DefinitionShowPayload,
@@ -501,7 +502,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     })
   }
 
-  function broadcastAsrStatus(payload: { asrHealth: "ok" | "error"; error?: string }): void {
+  function broadcastAsrStatus(payload: AsrStatusPayload): void {
     wsServer.broadcast({ id: generateUlid(), type: "status:update", timestamp: Date.now(), payload })
   }
 
@@ -714,7 +715,23 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // gate's own metrics (not just its pass/fail decision) are logged
     // when the mic stops, below — an operator with a "nothing is being
     // detected" complaint can see whether frames were even reaching ASR.
+    const wasCalibrating = silenceGate.isCalibrating()
     const { forwarded } = silenceGate.process(frame)
+    // ARCHITECTURE.md section 76: the calibration-just-finished transition
+    // is only observable here, as a side effect of process() — this is
+    // the one place that can see it happen and tell the dashboard.
+    if (wasCalibrating && !silenceGate.isCalibrating()) {
+      logger.info({
+        component: "app-core",
+        event: "mic.calibrated",
+        metadata: { threshold: silenceGate.getThreshold() },
+      })
+      broadcastAsrStatus({
+        asrHealth: asrHasError ? "error" : "ok",
+        micCalibrating: false,
+        micThreshold: silenceGate.getThreshold(),
+      })
+    }
     if (forwarded) {
       await asr.sendAudio(frame)
     }
@@ -723,6 +740,16 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   async function handleCommand(message: WsMessage, role: WsRole): Promise<void> {
     switch (message.type) {
       case "mic:start":
+        // ARCHITECTURE.md section 76: a fresh threshold for THIS room,
+        // right before THIS session, rather than one fixed global
+        // constant guessed from a single past measurement (section
+        // 68.2). Broadcast first so the dashboard can show "Calibrating…"
+        // immediately — the ~1.5s window where the gate deliberately
+        // forwards nothing yet would otherwise look identical to the mic
+        // simply not working, the exact complaint this whole feature
+        // exists to prevent a repeat of.
+        silenceGate.startCalibration()
+        broadcastAsrStatus({ asrHealth: asrHasError ? "error" : "ok", micCalibrating: true })
         await asr.start()
         logger.info({ component: "app-core", event: "mic.started" })
         return

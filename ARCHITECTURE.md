@@ -4008,3 +4008,76 @@ it. No code against this section should land before this note itself has been re
 explicitly approved, per AGENTS.md section 4 and this project's own established
 practice of an architecture note preceding a real scope change (e.g. section 66.1's
 explicit supersede-and-confirm before the canvas editor itself was built).
+
+## 76. Silence Gate Auto-Calibration
+
+Confirmed with the user (an "innovating ideas" follow-up to the section 68.2 fix, not
+a bug report): the silence gate's threshold was, and until this section remained, one
+fixed global constant (150) tuned from a single room's measurement. A quiet chapel and
+a hall with HVAC noise genuinely need different thresholds — no single hardcoded number
+is correct for both, and the section 68.2 fix could only ever pick a value that erred
+toward one failure mode (discarding real speech) over the other (wasting API calls on
+noise), never actually solve the underlying mismatch.
+
+**What it does**: `mic:start` now begins a ~1.5-second calibration window before any
+audio is actually screened for real. During that window, every incoming frame's RMS is
+measured but nothing is forwarded to ASR — once enough audio has accumulated
+(`calibrationDurationMs` worth, default 1500ms), the gate derives a new threshold from
+the measured ambient average (`ambientAverage × 1.5`, clamped to `[80, 2000]`) and
+resumes normal gating with it. `SilenceGate.startCalibration()` can be called again on
+a later `mic:start` (a new service, a different day, possibly a different room) without
+reconstructing the gate — each calibration is independent and overwrites the prior
+threshold.
+
+**Why the 1.5x multiplier, not something tighter to the ambient average**: half of
+ambient frames are already below their own average by definition, so a threshold set
+AT the average would still reject a coin-flip's worth of pure silence while very likely
+still accepting real speech (reliably louder than ambient noise). This is a modest
+margin, deliberately biased toward forwarding borderline audio — the same asymmetric-
+cost reasoning section 68.2's lowered default used (a wasted ASR call on residual noise
+is cheap; discarding real speech is not).
+
+**Why a floor and ceiling on the calibrated value**: a calibration window is a single
+sample of a few seconds, not a robust statistical estimate. A near-silent room could
+calibrate to a near-zero threshold that then forwards electrical hum as "speech"; a
+loud transient exactly during calibration (a door slam, a mic bump) could calibrate to
+a threshold so high it then rejects real speech for the entire rest of the session. The
+clamp (`[80, 2000]`) keeps a bad calibration window from producing a worse outcome than
+the old fixed default ever did.
+
+**Operator-visible, not a silent delay**: `status:update` gained two additive optional
+fields, `micCalibrating`/`micThreshold` (same additive philosophy `Verse.secondary`
+already established). The dashboard shows a "Calibrating to room noise…" line for the
+duration of the window — without it, 1.5 seconds of the mic visibly doing nothing right
+after pressing "Start listening" would read exactly like the original "the mic doesn't
+work" complaint this whole feature exists to prevent a repeat of. The activity log also
+records the resolved threshold once calibration finishes, for the same diagnosability
+reasoning as section 74.4's ASR debug log — an operator (or a future debugging session)
+can see what the gate actually calibrated to, not just that calibration happened.
+
+`SilenceGate`'s constructor now accepts either a bare number (every existing call site,
+tests included, needed zero changes) or an options object
+(`{ threshold?, calibrationDurationMs? }`) for the new capability, matching the
+"additive, no forced migration" pattern this codebase already uses for optional
+capabilities elsewhere (`onError`, `getTranslationId`).
+
+### 76.1 Tests added
+
+`silence-gate.test.ts`: the bare-number constructor form still works; every frame is
+rejected during calibration regardless of loudness; calibration finishes once enough
+audio accumulates and derives the documented `1.5x` threshold; the floor and ceiling
+clamps are exercised directly (a near-silent and a very-loud calibration window each
+produce the clamped value, not the raw arithmetic one); calibration frames count in the
+running metrics as rejected; normal gating resumes correctly with the new threshold
+immediately after; a second `startCalibration()` call cleanly discards an in-progress
+or completed prior calibration rather than being influenced by it.
+
+`app-core.test.ts`: an end-to-end test confirms `mic:start` broadcasts the
+`micCalibrating: true` status, forwards nothing to the injected `AsrProvider` while
+calibrating (even a loud frame), broadcasts `micCalibrating: false` with a real
+threshold once calibration finishes, and that normal forwarding resumes immediately
+after.
+
+`action-registry.test.ts`: `isStatusUpdatePayload` accepts the new optional fields and
+rejects wrong-typed values for either, and — unchanged — still accepts a bare
+`{ asrHealth }` payload with neither field present.

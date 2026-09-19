@@ -294,6 +294,24 @@ test("ACTION_REGISTRY['status:update'].validatePayload: accepts a valid ASR heal
   }
 })
 
+// ARCHITECTURE.md section 76: micCalibrating/micThreshold are additive
+// optional fields (the same philosophy Verse.secondary already uses) —
+// an older payload with only asrHealth must keep validating.
+test("ACTION_REGISTRY['status:update'].validatePayload: accepts the optional micCalibrating/micThreshold fields, rejects wrong-typed ones", () => {
+  assert.equal(ACTION_REGISTRY["status:update"].validatePayload({ asrHealth: "ok", micCalibrating: true }), true)
+  assert.equal(
+    ACTION_REGISTRY["status:update"].validatePayload({ asrHealth: "ok", micCalibrating: false, micThreshold: 340 }),
+    true
+  )
+  for (const payload of [
+    { asrHealth: "ok", micCalibrating: "yes" },
+    { asrHealth: "ok", micThreshold: "340" },
+    { asrHealth: "ok", micThreshold: Number.NaN },
+  ]) {
+    assert.equal(ACTION_REGISTRY["status:update"].validatePayload(payload), false, `payload ${JSON.stringify(payload)} must be rejected`)
+  }
+})
+
 const VALID_CANVAS_LAYERS = [
   { id: "01LAYER-TEXT", kind: "text", x: 10, y: 10, width: 80, height: 20, zIndex: 1, text: "Welcome", fontFamily: "serif", fontSizePx: 48, color: "#ffffff", align: "center" },
   { id: "01LAYER-IMAGE", kind: "image", x: 20, y: 40, width: 60, height: 40, zIndex: 2, mediaCueId: "01MEDIA", mediaKind: "image" },

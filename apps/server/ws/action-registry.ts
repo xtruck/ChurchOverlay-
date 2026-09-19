@@ -168,7 +168,9 @@ function isStatusUpdatePayload(payload: unknown): payload is AsrStatusPayload {
   if (!isPlainObject(payload)) return false
   return (
     (payload.asrHealth === "ok" || payload.asrHealth === "error") &&
-    (payload.error === undefined || typeof payload.error === "string")
+    (payload.error === undefined || typeof payload.error === "string") &&
+    (payload.micCalibrating === undefined || typeof payload.micCalibrating === "boolean") &&
+    (payload.micThreshold === undefined || isFiniteNumber(payload.micThreshold))
   )
 }
 

@@ -6,6 +6,7 @@ import { join } from "node:path"
 import { WebSocket } from "ws"
 import { startAppCore } from "./app-core"
 import { RegexDetector } from "../detector/regex-detector"
+import { SilenceGate } from "../audio/silence-gate"
 import { KnownValidVerseIndex } from "../verse/known-valid-verse-index"
 import { MediaLibrary } from "../media/media-library"
 import { encodeAudioFrame } from "../../../packages/shared/audio-frame-codec"
@@ -157,6 +158,62 @@ test("AppCore: mic:start and mic:stop commands reach the injected AsrProvider", 
     await waitFor(() => asr.stopCalls === 1)
 
     socket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+// ARCHITECTURE.md section 76: mic:start now triggers a brief ambient-
+// noise calibration before any audio is actually forwarded — this is
+// the end-to-end wiring test (SilenceGate's own unit tests already cover
+// the calibration math itself), confirming AppCore actually starts it,
+// broadcasts the in-progress status, forwards nothing while calibrating,
+// and broadcasts the finished status with a real threshold once enough
+// audio has accumulated.
+test("AppCore: mic:start triggers calibration — nothing is forwarded to ASR until it finishes, and the dashboard is told both times", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    silenceGate: new SilenceGate({ calibrationDurationMs: 10 }), // short, for a fast test
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const calibratingStarted = waitForMessage(viewerSocket)
+    operatorSocket.send(JSON.stringify({ id: "01A", type: "mic:start", timestamp: Date.now(), payload: null }))
+    const startedMsg = await calibratingStarted
+    assert.equal(startedMsg.type, "status:update")
+    assert.deepEqual(startedMsg.payload, { asrHealth: "ok", micCalibrating: true })
+
+    // 10ms at 16kHz is a small handful of samples — one loud frame is
+    // enough to finish calibration, but it must still be REJECTED (part
+    // of the calibration measurement, not real speech being forwarded).
+    const calibratingFinished = waitForMessage(viewerSocket)
+    operatorSocket.send(
+      encodeAudioFrame({ samples: Int16Array.from(new Array(200).fill(5000)), sampleRate: 16000, sequence: 1 })
+    )
+    const finishedMsg = await calibratingFinished
+    assert.equal(finishedMsg.type, "status:update")
+    const finishedPayload = finishedMsg.payload as { asrHealth: string; micCalibrating: boolean; micThreshold: number }
+    assert.equal(finishedPayload.micCalibrating, false)
+    assert.ok(finishedPayload.micThreshold > 0)
+    assert.equal(asr.sentFrames.length, 0) // the calibration frame itself was never forwarded
+
+    // A genuinely loud frame AFTER calibration finishes reaches the ASR normally.
+    operatorSocket.send(
+      encodeAudioFrame({ samples: Int16Array.from(new Array(160).fill(10000)), sampleRate: 16000, sequence: 2 })
+    )
+    await waitFor(() => asr.sentFrames.length === 1)
+
+    operatorSocket.close()
+    viewerSocket.close()
   } finally {
     await app.stop()
   }

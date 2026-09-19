@@ -51,6 +51,17 @@ export type WsEventType =
 export type AsrStatusPayload = {
   readonly asrHealth: "ok" | "error"
   readonly error?: string
+  /**
+   * ARCHITECTURE.md section 76 (silence-gate auto-calibration): true for
+   * the brief window right after mic:start while the gate measures this
+   * room's ambient noise, before any real speech is being listened for
+   * yet. micThreshold carries the resulting calibrated RMS value once
+   * calibration finishes (micCalibrating: false) — additive fields, the
+   * same philosophy Verse.secondary already uses, so an operator dashboard
+   * that predates this still works unmodified against asrHealth alone.
+   */
+  readonly micCalibrating?: boolean
+  readonly micThreshold?: number
 }
 
 export type WsMessage<TPayload = unknown> = {
