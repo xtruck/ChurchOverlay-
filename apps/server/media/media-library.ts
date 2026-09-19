@@ -1,4 +1,4 @@
-import { copyFile, mkdir, open, readFile, rename } from "node:fs/promises"
+import { copyFile, mkdir, open, readFile, rename, unlink } from "node:fs/promises"
 import { extname, join } from "node:path"
 import type { MediaCue, MediaCueKind } from "../../../packages/contracts"
 import { generateUlid } from "../../../packages/shared/ulid"
@@ -123,6 +123,62 @@ export class MediaLibrary {
     this.storedFilenames.set(id, storedFilename)
     await this.persist()
     return cue
+  }
+
+  /**
+   * ARCHITECTURE.md production audit follow-up: an operator who imported
+   * the wrong file (or picked a title with a typo) previously had no way
+   * to fix it short of restarting the app and hoping the stale metadata
+   * file didn't still list it — remove/rename let a mistake be corrected
+   * directly, not just prevented at import time.
+   *
+   * Same duplicate-title/empty-title checks as import() — a rename is
+   * really "the same cue with a different title," so it must satisfy the
+   * same section 60.3 uniqueness invariant, not a weaker one. The cue's
+   * own current title is excluded from the collision check: renaming
+   * "X" to "X" (a no-op edit) must not spuriously reject as a duplicate
+   * of itself.
+   */
+  async rename(id: string, newTitle: string): Promise<MediaCue> {
+    const existing = this.cues.get(id)
+    if (!existing) {
+      throw new Error(`MediaLibrary: no cue with id "${id}"`)
+    }
+    if (normalizeTitle(newTitle).length === 0) {
+      throw new Error("MediaLibrary: title must not be empty")
+    }
+    const collision = this.findByTitle(newTitle)
+    if (collision && collision.id !== id) {
+      throw new Error(`MediaLibrary: a cue titled "${newTitle}" already exists`)
+    }
+
+    const renamed: MediaCue = { ...existing, title: newTitle }
+    this.cues.set(id, renamed)
+    await this.persist()
+    return renamed
+  }
+
+  /**
+   * Removes a cue's metadata and deletes its copied file from disk.
+   * Unknown id is a no-op (returns false), not an error — matches
+   * resolve()'s own "never throws for an unknown id" convention, since
+   * the operator-facing action ("remove this tile") has nothing left to
+   * do if it's already gone.
+   */
+  async remove(id: string): Promise<boolean> {
+    const storedFilename = this.storedFilenames.get(id)
+    if (!storedFilename) return false
+
+    try {
+      await unlink(join(this.mediaDir, storedFilename))
+    } catch (err) {
+      if (!isNotFoundError(err)) throw err
+    }
+
+    this.cues.delete(id)
+    this.storedFilenames.delete(id)
+    await this.persist()
+    return true
   }
 
   resolve(id: string): MediaCue | null {

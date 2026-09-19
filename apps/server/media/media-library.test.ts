@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { MediaLibrary } from "./media-library"
@@ -201,5 +201,83 @@ test("MediaLibrary: multiple imports across restarts all survive — persistence
       instance3.list().map((c) => c.id).sort(),
       [cueA.id, cueB.id].sort()
     )
+  })
+})
+
+// ARCHITECTURE.md production audit (section 74): an operator who
+// imported the wrong file, or typo'd a title, had no fix short of
+// restarting and hoping the mistake didn't survive. rename()/remove()
+// let it be corrected directly.
+
+test("MediaLibrary: rename() updates the title and persists it across a restart", async () => {
+  await withTempDirs(async (sourceDir, mediaDir) => {
+    const sourcePath = join(sourceDir, "welcome.png")
+    await writeFile(sourcePath, "x")
+
+    const library = new MediaLibrary({ mediaDir })
+    const cue = await library.import(sourcePath, "Welcom Slied", "image")
+
+    const renamed = await library.rename(cue.id, "Welcome Slide")
+    assert.equal(renamed.id, cue.id)
+    assert.equal(renamed.title, "Welcome Slide")
+    assert.equal(library.resolve(cue.id)?.title, "Welcome Slide")
+
+    const reloaded = new MediaLibrary({ mediaDir })
+    await reloaded.load()
+    assert.equal(reloaded.resolve(cue.id)?.title, "Welcome Slide")
+  })
+})
+
+test("MediaLibrary: rename() rejects an empty title or a title colliding with a different cue", async () => {
+  await withTempDirs(async (sourceDir, mediaDir) => {
+    const a = join(sourceDir, "a.png")
+    const b = join(sourceDir, "b.png")
+    await writeFile(a, "a")
+    await writeFile(b, "b")
+
+    const library = new MediaLibrary({ mediaDir })
+    const cueA = await library.import(a, "Slide A", "image")
+    const cueB = await library.import(b, "Slide B", "image")
+
+    await assert.rejects(() => library.rename(cueA.id, "   "))
+    await assert.rejects(() => library.rename(cueA.id, "slide b")) // case-insensitive collision with cueB
+    // Renaming to its own current title (a no-op edit) must NOT be
+    // rejected as colliding with "itself".
+    const unchanged = await library.rename(cueB.id, "Slide B")
+    assert.equal(unchanged.title, "Slide B")
+  })
+})
+
+test("MediaLibrary: rename() throws for an unknown id", async () => {
+  await withTempDirs(async (_sourceDir, mediaDir) => {
+    const library = new MediaLibrary({ mediaDir })
+    await assert.rejects(() => library.rename("unknown-id", "New Title"))
+  })
+})
+
+test("MediaLibrary: remove() deletes the stored file and the metadata, and survives a restart", async () => {
+  await withTempDirs(async (sourceDir, mediaDir) => {
+    const sourcePath = join(sourceDir, "welcome.png")
+    await writeFile(sourcePath, "x")
+
+    const library = new MediaLibrary({ mediaDir })
+    const cue = await library.import(sourcePath, "Welcome Slide", "image")
+    const storedPath = library.resolveFilePath(cue.id) as string
+
+    const removed = await library.remove(cue.id)
+    assert.equal(removed, true)
+    assert.equal(library.resolve(cue.id), null)
+    await assert.rejects(() => stat(storedPath)) // the copied file is actually gone, not just the metadata entry
+
+    const reloaded = new MediaLibrary({ mediaDir })
+    await reloaded.load()
+    assert.equal(reloaded.resolve(cue.id), null)
+  })
+})
+
+test("MediaLibrary: remove() with an unknown id is a no-op that returns false, not an error", async () => {
+  await withTempDirs(async (_sourceDir, mediaDir) => {
+    const library = new MediaLibrary({ mediaDir })
+    assert.equal(await library.remove("unknown-id"), false)
   })
 })

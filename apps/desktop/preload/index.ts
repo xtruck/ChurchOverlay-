@@ -28,9 +28,20 @@ import { contextBridge, ipcRenderer } from "electron"
  *
  * importMediaFile() is the same pattern applied to local files
  * (ARCHITECTURE.md section 60.4): the renderer asks, the main process
- * opens the native file dialog and does the actual copy, and the
- * renderer gets back only a MediaCue (id/kind/title) — never the
- * operator's original filesystem path.
+ * opens the native file dialog, and the renderer gets back a suggested
+ * title (derived from the filename) plus nothing else identifying the
+ * file — never the operator's original filesystem path. The renderer
+ * shows its own confirmation dialog for that title (ARCHITECTURE.md
+ * section 74 — it IS the voice-trigger phrase, so it must be
+ * confirmable/editable, not silently accepted); confirmMediaImport()
+ * is where the main process actually copies the file, using only the
+ * title text handed back to it. cancelMediaImport() discards the
+ * pending pick if the operator dismisses that dialog instead.
+ *
+ * renameMediaCue()/deleteMediaCue() (ARCHITECTURE.md section 74) let an
+ * operator fix an import mistake directly — the wrong file imported, or
+ * a typo'd title — without restarting the app. Same "id in, never a raw
+ * path" shape as everything else here.
  *
  * setDisplayMode()/setUiLanguage() (ARCHITECTURE.md sections 63.2/63.5)
  * are the live-toggle half of "setup default + live dashboard toggle" —
@@ -42,7 +53,11 @@ contextBridge.exposeInMainWorld("churchOverlay", {
   completeSetup: (groqApiKey: string, displayMode: string, uiLanguage: string, allowPhoneRemote: boolean) =>
     ipcRenderer.invoke("complete-setup", { groqApiKey, displayMode, uiLanguage, allowPhoneRemote }),
   importMediaFile: () => ipcRenderer.invoke("import-media-file"),
+  confirmMediaImport: (title: string) => ipcRenderer.invoke("confirm-media-import", title),
+  cancelMediaImport: () => ipcRenderer.invoke("cancel-media-import"),
   listMediaCues: () => ipcRenderer.invoke("list-media-cues"),
+  renameMediaCue: (id: string, newTitle: string) => ipcRenderer.invoke("rename-media-cue", id, newTitle),
+  deleteMediaCue: (id: string) => ipcRenderer.invoke("delete-media-cue", id),
   setDisplayMode: (mode: string) => ipcRenderer.invoke("set-display-mode", mode),
   setUiLanguage: (language: string) => ipcRenderer.invoke("set-ui-language", language),
   setVerseConfirmationMode: (mode: string) => ipcRenderer.invoke("set-verse-confirmation-mode", mode),

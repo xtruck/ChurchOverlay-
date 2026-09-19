@@ -22,7 +22,7 @@ import {
   type AppConfig,
   type UiLanguage,
 } from "./config-store"
-import type { DisplayMode, VerseConfirmationMode } from "../../../packages/contracts"
+import type { DisplayMode, MediaCueKind, VerseConfirmationMode } from "../../../packages/contracts"
 import { inferMediaKind, deriveTitleFromFilename } from "./media-import"
 import { Logger } from "../../../packages/shared/logger"
 
@@ -64,6 +64,13 @@ let currentOverlayUrl: string | null = null
 let currentAllowPhoneRemote = false
 let currentVerseConfirmationMode: VerseConfirmationMode = "auto"
 let currentEnableSermonNotes = false
+// ARCHITECTURE.md section 74 (production audit): the operator-picked file
+// path, held here between the native file-picker dialog and the
+// renderer's title confirmation step, so the actual import still happens
+// entirely in the main process — the renderer never receives the raw
+// filesystem path, only the derived suggested title (section 60.4's
+// "never a raw path past this handler" boundary, unchanged).
+let pendingMediaImport: { filePath: string; kind: MediaCueKind } | null = null
 
 function generateToken(): string {
   return randomBytes(24).toString("hex")
@@ -442,11 +449,14 @@ ipcMain.handle("get-operator-connection-info", () => {
 
 /**
  * ARCHITECTURE.md section 60.4 points 1-2: the renderer only ever asks
- * for a file to be picked and imported — it never receives a raw
- * filesystem path back, only the resulting MediaCue (an id + kind +
- * title). dialog.showOpenDialog and the actual file copy both happen
- * here in the main process; the operator's original path is never sent
- * anywhere past this handler.
+ * for a file to be picked — it never receives a raw filesystem path
+ * back. dialog.showOpenDialog happens here in the main process, and the
+ * actual file copy is deferred to confirm-media-import below: this
+ * handler now only picks the file and returns a suggested title for the
+ * renderer's confirmation step (ARCHITECTURE.md section 74) — the
+ * title IS the voice-trigger phrase (section 60.3), so silently
+ * defaulting to a filename-derived one without ever asking was a real
+ * missing-feature gap, not a style choice.
  */
 ipcMain.handle("import-media-file", async () => {
   if (!dashboardWindow) {
@@ -475,17 +485,80 @@ ipcMain.handle("import-media-file", async () => {
     return { canceled: false as const, error: "That file type isn't supported." }
   }
 
-  try {
-    const cue = await mediaLibrary.import(filePath, deriveTitleFromFilename(filePath), kind)
-    logger.info({ component: "main", event: "media.imported", metadata: { id: cue.id, kind: cue.kind } })
-    return { canceled: false as const, cue }
-  } catch (err) {
-    return { canceled: false as const, error: err instanceof Error ? err.message : String(err) }
+  pendingMediaImport = { filePath, kind }
+  return { canceled: false as const, needsTitle: true as const, suggestedTitle: deriveTitleFromFilename(filePath) }
+})
+
+/**
+ * ARCHITECTURE.md section 74: completes the import started by
+ * import-media-file above, once the operator has confirmed or edited
+ * the suggested title in the renderer's own dialog. Still the only place
+ * the actual file copy happens — the renderer supplies just the final
+ * title text, never a path.
+ */
+ipcMain.handle("confirm-media-import", async (_event, title: string) => {
+  if (!mediaLibrary) {
+    throw new Error("media library is not initialized yet")
   }
+  const pending = pendingMediaImport
+  if (!pending) {
+    return { error: "No import is pending — pick a file again." }
+  }
+  pendingMediaImport = null
+
+  const trimmedTitle = title.trim()
+  if (!trimmedTitle) {
+    return { error: "Title cannot be empty." }
+  }
+
+  try {
+    const cue = await mediaLibrary.import(pending.filePath, trimmedTitle, pending.kind)
+    logger.info({ component: "main", event: "media.imported", metadata: { id: cue.id, kind: cue.kind } })
+    return { cue }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) }
+  }
+})
+
+/** ARCHITECTURE.md section 74: the operator dismissed the title dialog without confirming — discard the pending file, nothing is imported. */
+ipcMain.handle("cancel-media-import", async () => {
+  pendingMediaImport = null
 })
 
 ipcMain.handle("list-media-cues", () => {
   return mediaLibrary?.list() ?? []
+})
+
+/**
+ * ARCHITECTURE.md section 74: the operator confirmed a real bug — an
+ * import made with the wrong file, or a title with a typo, had no fix
+ * short of restarting the app and hoping the stale metadata didn't
+ * survive. Rename and delete let a mistake be corrected directly.
+ */
+ipcMain.handle("rename-media-cue", async (_event, id: string, newTitle: string) => {
+  if (!mediaLibrary) {
+    throw new Error("media library is not initialized yet")
+  }
+  try {
+    const cue = await mediaLibrary.rename(id, newTitle)
+    logger.info({ component: "main", event: "media.renamed", metadata: { id: cue.id } })
+    return { cue }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) }
+  }
+})
+
+ipcMain.handle("delete-media-cue", async (_event, id: string) => {
+  if (!mediaLibrary) {
+    throw new Error("media library is not initialized yet")
+  }
+  try {
+    const removed = await mediaLibrary.remove(id)
+    if (removed) logger.info({ component: "main", event: "media.deleted", metadata: { id } })
+    return { removed }
+  } catch (err) {
+    return { removed: false, error: err instanceof Error ? err.message : String(err) }
+  }
 })
 
 function capitalizeBookName(book: string): string {

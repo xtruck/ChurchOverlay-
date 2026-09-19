@@ -1,4 +1,11 @@
-import { basename, extname } from "node:path"
+// Explicitly node:path/win32, not the platform-dependent node:path: this
+// app only ever receives paths from Electron's native file dialog on
+// Windows (its only supported OS, per package.json's electron-builder
+// config), so a path here is always Windows-shaped regardless of which
+// path module Node would otherwise auto-select for the host platform.
+// Forcing win32 semantics removes that implicit, easy-to-break
+// dependency rather than relying on it holding by coincidence.
+import { basename, extname } from "node:path/win32"
 import type { MediaCueKind } from "../../../packages/contracts"
 
 const EXTENSION_KINDS: Readonly<Record<string, MediaCueKind>> = {

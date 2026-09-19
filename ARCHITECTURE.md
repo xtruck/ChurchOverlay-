@@ -3755,3 +3755,86 @@ chunk containing that reference being entirely discarded as a hallucinated-langu
 false positive, if Whisper mis-transcribed part of it into another script). If a
 reference is still missed after this, that points at a third, not-yet-identified cause
 worth capturing with the exact transcript text next time.
+
+## 74. Production Audit (commit dfb6261) — Media Library Findings
+
+A follow-up audit against commit dfb6261 found the media grid itself hadn't been
+exercised with real content — every prior test/screenshot used tiny placeholder files.
+
+### 74.1 The media grid never showed the actual imported content
+
+`renderMediaGrid()` in `dashboard.js` rendered `mediaIconSvg(cue.kind)` for every tile —
+the same generic per-kind icon regardless of what was actually imported. Two identical-
+looking image tiles were indistinguishable without opening them; an operator managing a
+real library (product photos, slide variants, service posters) had no visual way to
+tell them apart at a glance.
+
+**Fixed**: image cues render a real `<img src="<origin>/media/<id>">`; video cues
+render a real `<video preload="metadata">` (its first frame, no autoplay); audio keeps
+the icon (no meaningful still frame exists for it). The dashboard is loaded via
+`file://` (`main/index.ts`'s `loadFile()`) — a different origin from the static server
+that actually serves `/media/<id>` — so a bare relative path would silently fail; the
+origin is derived from the same `overlayUrl` the OBS settings panel and embedded
+preview iframe already use (`setMediaOrigin()`), never a second guess at the port.
+
+**A second, related bug found only by actually loading a real image**: the CSP's
+`default-src 'none'` had no `img-src`/`media-src` override, so every thumbnail was
+silently blocked — not a broken-image icon, a permanently blank tile that looked like a
+dark placeholder rather than an error. Confirmed by checking `naturalWidth`/`naturalHeight`
+directly (both 0 despite `img.complete === true`, the signature of a failed load) before
+concluding the feature worked. Fixed by adding `img-src 'self' http://127.0.0.1:*;
+media-src http://127.0.0.1:*` to the CSP, loopback-only like every other origin
+allowance in this file.
+
+Tile size (`.media-grid`'s `minmax(92px, 1fr)`) was also bumped to `minmax(180px, 1fr)`
+— a real thumbnail is only worth showing if it's actually recognizable at a glance.
+
+No new automated test: this is a renderer-only visual change, verified live (CDP
+screenshot + `naturalWidth` check against a real imported image) rather than unit-
+tested, consistent with this project's established convention for renderer-only
+display changes (68.3/68.4/72.3/73.2).
+
+### 74.2 No way to fix a media import mistake — title at import, or after the fact
+
+Two related gaps, both centered on the same problem: a cue's title is also its voice-
+trigger phrase (section 60.3), so getting it wrong is not cosmetic — it changes what
+speaking that phrase does.
+
+`deriveTitleFromFilename()` silently became a cue's permanent title with no
+confirmation step at all — an operator importing "IMG_4821.jpg" got exactly that as
+its voice trigger, with no chance to review or edit it before the file was copied in.
+**Fixed**: `import-media-file` now only picks the file and returns a suggested title;
+a new renderer-side confirm/edit dialog (no native alternative exists with an editable
+text field) shows it, pre-filled but editable, before `confirm-media-import` completes
+the actual copy. The operator's original filesystem path is still never sent to the
+renderer at any point (section 60.4's boundary, unchanged) — the main process holds it
+in `pendingMediaImport` between the two steps.
+
+Separately, an operator who noticed a title mistake **after** import — or imported the
+wrong file entirely — had no fix short of restarting the app and hoping the mistake
+didn't survive in the persisted metadata. **Fixed**: `MediaLibrary` gained
+`rename()`/`remove()` (same duplicate-title/empty-title rules as `import()` — a rename
+is the same cue with a different title, not a weaker case); the dashboard exposes both
+as always-visible per-tile buttons (a pencil and a trash icon, mirroring the existing
+always-visible poster-pin convention rather than hiding them behind hover). Renaming
+reuses the same confirm/edit dialog import uses, just pre-filled with the current title
+instead of a filename-derived suggestion. Deleting asks for confirmation first (a real,
+irreversible file removal) and — if the cue being deleted is the current principal
+poster or the cue currently on screen — proactively sends `poster:clear`/`media:clear`
+first, so removing a live cue can never leave a dangling reference on the overlay.
+
+A confirmed, unrelated platform-dependence bug was fixed alongside this:
+`media-import.ts` imported `basename`/`extname` from the platform-dependent `node:path`
+rather than explicitly `node:path/win32`, even though this app only ever receives
+Windows-shaped paths from Electron's native dialog (its only supported OS). Verified
+directly rather than assumed: on this actual Windows runtime the existing full-path
+test already passed, since Node's `node:path` auto-selects `win32` behavior when
+`process.platform === "win32"` — so this was hardened for correctness independent of
+the host platform, not a regression fix for an currently-observed failure.
+
+Tests added: `media-library.test.ts` covers `rename()` (persists across a restart,
+rejects an empty title or a collision with a *different* cue, allows a no-op rename to
+the cue's own current title, throws for an unknown id) and `remove()` (deletes both the
+metadata and the actual file from disk, persists across a restart, is a safe no-op for
+an unknown id). `media-import.test.ts`'s existing full-Windows-path test needed no
+changes — it already covered this exact scenario.

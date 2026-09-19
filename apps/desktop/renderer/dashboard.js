@@ -100,6 +100,11 @@
   const setupSaveBtn = document.getElementById("setup-save-btn")
   const mediaGridEl = document.getElementById("media-grid")
   const mediaImportBtn = document.getElementById("media-import-btn")
+  const mediaTitleModalEl = document.getElementById("media-title-modal")
+  const mediaTitleModalHeadingEl = document.getElementById("media-title-modal-heading")
+  const mediaTitleInput = document.getElementById("media-title-input")
+  const mediaTitleCancelBtn = document.getElementById("media-title-cancel-btn")
+  const mediaTitleConfirmBtn = document.getElementById("media-title-confirm-btn")
   const displayModeToggleEl = document.getElementById("display-mode-toggle")
   const uiLanguageToggleEl = document.getElementById("ui-language-toggle")
   const verseConfirmationToggleEl = document.getElementById("verse-confirmation-toggle")
@@ -184,6 +189,13 @@
   let knownCues = []
   let activeCueId = null
   let principalPosterCueId = null
+  // ARCHITECTURE.md production audit: this renderer is loaded via file://
+  // (apps/desktop/main/index.ts's loadFile()), a different origin from the
+  // static server that actually serves "/media/<id>" — a bare relative
+  // path here would resolve against file:// and fail. Set once the real
+  // overlayUrl is known (see setMediaOrigin below), giving the media grid
+  // an absolute base to build real thumbnail URLs from.
+  let mediaOrigin = null
   let activePlaybackState = null // "playing" | "paused" | null (null: no active cue, or an image with no playback concept)
   let setupSelectedMode = "english"
   let setupSelectedUiLanguage = "en"
@@ -367,12 +379,43 @@
     )
   }
 
+  // Production audit finding: every tile showed the same generic per-kind
+  // icon, never the actual imported content — impossible to tell two
+  // images or two videos apart at a glance. Real thumbnails for image
+  // (an <img>) and video (a <video preload="metadata">, showing its first
+  // frame without autoplaying); audio keeps the icon, since there is no
+  // meaningful still frame for it. Falls back to the icon for image/video
+  // too if mediaOrigin isn't known yet (the brief window before the app
+  // shell's startup status resolves).
+  function mediaThumbnailHtml(cue) {
+    if (mediaOrigin && cue.kind === "image") {
+      return `<img class="media-tile-thumb" src="${mediaOrigin}/media/${cue.id}" alt="" />`
+    }
+    if (mediaOrigin && cue.kind === "video") {
+      return `<video class="media-tile-thumb" src="${mediaOrigin}/media/${cue.id}" preload="metadata" muted></video>`
+    }
+    return mediaIconSvg(cue.kind)
+  }
+
   // Section 67.1: a plain pin outline, filled solid when this cue is the
   // current principal poster — same convention as MEDIA_ICONS/SCENE_ICONS
   // above (inline SVG, no emoji).
   const POSTER_PIN_ICON =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">' +
     '<path d="M12 2v6.5M12 2 8 8.5h8L12 2Z"/><path d="M8.5 8.5 6 21l6-4 6 4-2.5-12.5"/>' +
+    "</svg>"
+
+  // ARCHITECTURE.md section 74 (production audit): an operator who
+  // imported the wrong file, or named it wrong, needs a way to fix it
+  // directly — not just prevented from repeating the mistake next time.
+  const RENAME_ICON =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">' +
+    '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>' +
+    "</svg>"
+  const DELETE_ICON =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">' +
+    '<path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/>' +
+    '<path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6"/>' +
     "</svg>"
 
   function renderMediaGrid() {
@@ -389,7 +432,7 @@
       const tile = document.createElement("div")
       tile.className = "media-tile" + (cue.id === activeCueId ? " active" : "") + (isPoster ? " poster" : "")
       tile.title = cue.title
-      tile.innerHTML = mediaIconSvg(cue.kind) + '<div class="media-tile-title"></div>'
+      tile.innerHTML = mediaThumbnailHtml(cue) + '<div class="media-tile-title"></div>'
       tile.querySelector(".media-tile-title").textContent = cue.title
       tile.setAttribute("aria-label", cue.title)
       makeInteractive(tile, () => {
@@ -426,6 +469,32 @@
         })
         tile.appendChild(posterBtn)
       }
+
+      const tileActions = document.createElement("div")
+      tileActions.className = "media-tile-actions"
+      const renameBtn = document.createElement("button")
+      renameBtn.type = "button"
+      renameBtn.className = "media-tile-action-btn"
+      renameBtn.innerHTML = RENAME_ICON
+      renameBtn.title = t("media.renameTooltip", { title: cue.title })
+      renameBtn.setAttribute("aria-label", renameBtn.title)
+      renameBtn.addEventListener("click", (event) => {
+        event.stopPropagation()
+        showMediaTitleModal("rename", cue.title, cue.id)
+      })
+      const deleteBtn = document.createElement("button")
+      deleteBtn.type = "button"
+      deleteBtn.className = "media-tile-action-btn media-tile-action-btn-danger"
+      deleteBtn.innerHTML = DELETE_ICON
+      deleteBtn.title = t("media.deleteTooltip", { title: cue.title })
+      deleteBtn.setAttribute("aria-label", deleteBtn.title)
+      deleteBtn.addEventListener("click", (event) => {
+        event.stopPropagation()
+        deleteMediaCue(cue)
+      })
+      tileActions.append(renameBtn, deleteBtn)
+      tile.appendChild(tileActions)
+
       mediaGridEl.appendChild(tile)
     }
   }
@@ -1168,6 +1237,106 @@
     log(t("log.sentSceneNext"), "sent")
   })
 
+  // ARCHITECTURE.md section 74: the title is also the voice-trigger
+  // phrase (section 60.3), so the SAME confirm/edit dialog serves two
+  // moments — right after picking a file (mode "import", pre-filled with
+  // the main process's filename-derived suggestion) and fixing an
+  // existing cue's title later (mode "rename", pre-filled with its
+  // current title) — rather than building a second dialog for what is,
+  // to the operator, the same action: "here's the name, confirm or edit
+  // it." mediaTitleModalMode/mediaTitleModalCueId are which one is active.
+  let mediaTitleModalMode = "import"
+  let mediaTitleModalCueId = null
+
+  function showMediaTitleModal(mode, suggestedTitle, cueId) {
+    mediaTitleModalMode = mode
+    mediaTitleModalCueId = cueId ?? null
+    mediaTitleInput.value = suggestedTitle
+    mediaTitleModalHeadingEl.textContent = t(
+      mode === "rename" ? "media.titleModal.renameHeading" : "media.titleModal.heading"
+    )
+    mediaTitleConfirmBtn.textContent = t(
+      mode === "rename" ? "media.titleModal.saveButton" : "media.titleModal.confirmButton"
+    )
+    mediaTitleModalEl.style.display = "flex"
+    mediaTitleInput.focus()
+    mediaTitleInput.select()
+  }
+
+  function hideMediaTitleModal() {
+    mediaTitleModalEl.style.display = "none"
+  }
+
+  function confirmMediaTitleModal() {
+    const title = mediaTitleInput.value.trim()
+    if (!title) return // empty title: let the operator keep editing, same as main's own rejection
+    mediaTitleConfirmBtn.disabled = true
+
+    const request =
+      mediaTitleModalMode === "rename"
+        ? window.churchOverlay.renameMediaCue(mediaTitleModalCueId, title)
+        : window.churchOverlay.confirmMediaImport(title)
+
+    request
+      .then((result) => {
+        if (result.error) {
+          log(t("log.importFailed", { error: result.error }), "error")
+          return
+        }
+        if (mediaTitleModalMode === "rename") {
+          const index = knownCues.findIndex((c) => c.id === result.cue.id)
+          if (index !== -1) knownCues[index] = result.cue
+          log(t("log.renamedMedia", { title: result.cue.title }), "sent")
+        } else {
+          knownCues.push(result.cue)
+          log(t("log.imported", { title: result.cue.title }), "received")
+        }
+        renderMediaGrid()
+        hideMediaTitleModal()
+      })
+      .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
+      .finally(() => {
+        mediaTitleConfirmBtn.disabled = false
+      })
+  }
+
+  mediaTitleConfirmBtn.addEventListener("click", confirmMediaTitleModal)
+  mediaTitleInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") confirmMediaTitleModal()
+  })
+  mediaTitleCancelBtn.addEventListener("click", () => {
+    if (mediaTitleModalMode === "import") window.churchOverlay.cancelMediaImport().catch(() => {})
+    hideMediaTitleModal()
+  })
+
+  // ARCHITECTURE.md section 74: an operator who imported the wrong file
+  // has no fix short of removing it and re-importing — deleting a cue
+  // that's currently the poster or on screen would otherwise leave a
+  // dangling reference, so this proactively clears it via the same
+  // WS commands the operator's own poster/media buttons already use,
+  // before the file itself is gone.
+  function deleteMediaCue(cue) {
+    if (!window.confirm(t("media.deleteConfirm", { title: cue.title }))) return
+    if (cue.id === principalPosterCueId) {
+      sendJson({ id: crypto.randomUUID(), type: "poster:clear", timestamp: Date.now(), payload: null })
+    }
+    if (cue.id === activeCueId) {
+      sendJson({ id: crypto.randomUUID(), type: "media:clear", timestamp: Date.now(), payload: null })
+    }
+    window.churchOverlay
+      .deleteMediaCue(cue.id)
+      .then((result) => {
+        if (result.error) {
+          log(t("log.deleteFailed", { error: result.error }), "error")
+          return
+        }
+        knownCues = knownCues.filter((c) => c.id !== cue.id)
+        renderMediaGrid()
+        log(t("log.deletedMedia", { title: cue.title }), "sent")
+      })
+      .catch((err) => log(t("log.deleteFailed", { error: err.message }), "error"))
+  }
+
   mediaImportBtn.addEventListener("click", () => {
     mediaImportBtn.disabled = true
     window.churchOverlay
@@ -1178,9 +1347,7 @@
           log(t("log.importFailed", { error: result.error }), "error")
           return
         }
-        knownCues.push(result.cue)
-        renderMediaGrid()
-        log(t("log.imported", { title: result.cue.title }), "received")
+        showMediaTitleModal("import", result.suggestedTitle)
       })
       .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
       .finally(() => {
@@ -1498,6 +1665,15 @@
     if (overlayUrl) obsUrlInput.value = overlayUrl
   }
 
+  // Derives mediaOrigin from the same overlayUrl the OBS panel and the
+  // embedded preview iframe already use — one real, known-good origin,
+  // not a second guess at the static server's port.
+  function setMediaOrigin(overlayUrl) {
+    if (!overlayUrl) return
+    mediaOrigin = new URL(overlayUrl).origin
+    renderMediaGrid()
+  }
+
   // ARCHITECTURE.md section 69: points the embedded Live-view preview at
   // the same overlay URL the OBS panel above shows — the app's own
   // former standalone preview window is gone, combined into this one
@@ -1610,6 +1786,7 @@
         renderRemotePanel(info.remoteUrl, info.allowPhoneRemote)
         renderObsPanel(info.overlayUrl)
         renderOverlayPreview(info.overlayUrl)
+        setMediaOrigin(info.overlayUrl)
         showAppShell()
         connect(info.port, info.token)
       })
@@ -1638,6 +1815,7 @@
         renderRemotePanel(status.remoteUrl, status.allowPhoneRemote)
         renderObsPanel(status.overlayUrl)
         renderOverlayPreview(status.overlayUrl)
+        setMediaOrigin(status.overlayUrl)
         showAppShell()
         connect(status.port, status.token)
       } else {
