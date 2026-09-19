@@ -3904,3 +3904,107 @@ Tests added: `groq-provider.test.ts` covers the debug log firing with a truncate
 preview on a dropped chunk, confirms a normal accepted transcript logs nothing (the
 trace is drop-only, not a log of everything), and confirms a dropped chunk still
 doesn't throw when no logger is configured at all.
+
+## 75. Proposed — Merging Media Library and Scene Editor into One "Studio" View
+
+**Status: proposal only. No code has been written against this section. Per AGENTS.md
+section 4, this note is meant to be read and approved before any of it is built** — the
+data model already supports everything described below, but that is exactly why this
+needs a deliberate decision rather than being treated as a natural next increment: it's
+a real scope/workflow change (two dashboard views become one, with a new drag-and-drop
+interaction), not a bug fix.
+
+### 75.1 The problem this solves
+
+Today, `#nav-media` and `#nav-rundown` (section 66, Phase 1's sidebar app shell) are two
+separate full-screen views. Building a canvas scene that uses an imported image or video
+(`CanvasImageLayer`, or a video/image `CanvasBackgroundLayer`) requires the operator to
+already know the exact media cue exists, switch to the Rundown view's canvas editor,
+open its media picker (a `<select>`, per section 66's Phase 4 build), and pick it by
+title from a dropdown — never seeing the actual thumbnail (now real, per section 74.1)
+at the moment of picking. Renaming that same cue (section 74.2) requires switching back
+to the Media view entirely. The two views hold pieces of what is, in practice, one
+workflow — "build a scene using my imported media" — with a screen switch in the middle
+of it every time.
+
+### 75.2 What already exists — nothing new to invent in the data model
+
+`packages/contracts/rundown.ts`'s `CanvasLayer` union already covers everything this
+proposes to make easier to reach:
+
+- `CanvasImageLayer` (`mediaCueId` + `mediaKind: "image" | "video"`) — a media item
+  placed as a foreground layer.
+- `CanvasBackgroundLayer` (`color: string | null` OR `mediaCueId`/`mediaKind`, mutually
+  exclusive) — a full-bleed background, which is already just "a background layer whose
+  media happens to be a video" for an animated background. No new layer kind, no new
+  field, no contract change.
+- `CanvasTextLayer` is unaffected by this proposal entirely.
+
+This note is about **reachability and workflow**, not data model — everything it
+describes is already expressible today via the existing canvas editor's own
+add-layer/media-picker flow (section 66, Phase 4). What changes is how directly an
+operator gets from "I have this image" to "it's a layer on my scene."
+
+### 75.3 The proposed design
+
+One "Studio" view replaces the separate Media and Rundown sidebar entries
+(`#nav-media`/`#nav-rundown` become a single `#nav-studio`, or `#nav-rundown` absorbs
+`#nav-media`'s content — naming and exact sidebar structure is an implementation
+decision, not part of what needs approval here). Inside it: a media library panel (the
+real-thumbnail grid from section 74.1, including its rename/delete actions from 74.2)
+docked to one side, and the existing canvas scene editor stage (section 66, Phase 4) on
+the other — an OBS-style layout, library on the left, canvas on the right.
+
+Dragging a tile from the library panel onto the canvas stage:
+
+- Dropped onto empty canvas space → creates a new `CanvasImageLayer` at the drop
+  position, sized to a sensible default, using that cue's `id`/`kind`.
+- Dropped onto the stage's background region specifically (a distinct drop target, not
+  just "anywhere with no layer under the cursor" — needs its own precise definition at
+  build time) → sets/replaces the scene's `CanvasBackgroundLayer`.
+
+This is additive to the existing add-layer flow, not a replacement for it: the
+canvas editor's own "+ Image layer" button and its `<select>`-based media picker
+(section 66 Phase 4) still work exactly as they do today, for an operator who prefers
+that path or is on a device without convenient drag-and-drop. Renaming a cue happens
+directly in the docked library panel, using the exact same dialog section 74.2 already
+built — no separate "enter rename mode" step for Studio specifically.
+
+### 75.4 Resolved open questions from a plain merge
+
+- **The canvas editor's own "real pixels" gap** (section 66 Phase 4's documented
+  limitation: layer previews inside the editor are labeled placeholder boxes, not real
+  images, because the dashboard is `file://` and can't resolve `/media/<id>` on its
+  own) is **already independently fixed** by section 74.1's `mediaOrigin` mechanism —
+  the same absolute-origin technique the media grid's thumbnails now use applies
+  identically to the canvas editor's own layer previews. Worth doing either as part of
+  this merge or as its own small, separate fix beforehand; either way, it stops being a
+  "known simplification" once `mediaOrigin` is in reach of the canvas editor's own
+  render code too.
+- **Drag source vs. drop target** — the library panel drag needs real `dragstart`/
+  `dragover`/`drop` wiring (or an equivalent pointer-based implementation, matching the
+  canvas editor's own existing hand-written pointer-capture approach rather than mixing
+  the two interaction models); this is new interaction code, not a reuse of the
+  editor's existing drag-to-move-a-layer logic (which drags an existing layer, not a
+  library tile into a new one).
+
+### 75.5 Explicitly out of scope for this note
+
+- Any change to `CanvasLayer`'s shape, or to the WS/contracts layer at all.
+- Multi-select drag (dragging several tiles onto the canvas at once).
+- A different visual design for the library panel than section 74.1's existing grid —
+  it's proposed to be reused as-is, docked, not redesigned.
+- Deciding the exact sidebar/nav-item naming (`#nav-studio` vs. relabeling
+  `#nav-rundown`) — a naming detail for build time, not an architectural question.
+
+### 75.6 What approval means
+
+Approving this section means: build one Studio view combining the existing media grid
+and canvas editor with drag-to-place wiring between them, reusing every existing
+component (thumbnails, rename/delete dialog, canvas editor, `CanvasLayer` contract)
+as-is. It does not mean any specific button layout, drag-target hit-testing precision,
+or sidebar copy is locked in — those remain implementation details for whoever builds
+it. No code against this section should land before this note itself has been read and
+explicitly approved, per AGENTS.md section 4 and this project's own established
+practice of an architecture note preceding a real scope change (e.g. section 66.1's
+explicit supersede-and-confirm before the canvas editor itself was built).
