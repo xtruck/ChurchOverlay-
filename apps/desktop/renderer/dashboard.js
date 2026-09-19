@@ -106,6 +106,11 @@
   const mediaTitleInput = document.getElementById("media-title-input")
   const mediaTitleCancelBtn = document.getElementById("media-title-cancel-btn")
   const mediaTitleConfirmBtn = document.getElementById("media-title-confirm-btn")
+  const voiceCommandsBtn = document.getElementById("voice-commands-btn")
+  const voiceCommandsModalEl = document.getElementById("voice-commands-modal")
+  const voiceCommandsCloseBtn = document.getElementById("voice-commands-close-btn")
+  const voiceCommandsMediaListEl = document.getElementById("voice-commands-media-list")
+  const voiceCommandsGlossaryListEl = document.getElementById("voice-commands-glossary-list")
   const displayModeToggleEl = document.getElementById("display-mode-toggle")
   const uiLanguageToggleEl = document.getElementById("ui-language-toggle")
   const verseConfirmationToggleEl = document.getElementById("verse-confirmation-toggle")
@@ -1319,6 +1324,80 @@
   mediaTitleCancelBtn.addEventListener("click", () => {
     if (mediaTitleModalMode === "import") window.churchOverlay.cancelMediaImport().catch(() => {})
     hideMediaTitleModal()
+  })
+
+  // ARCHITECTURE.md section 78: several real bugs this project found
+  // came down to an operator not knowing the exact phrase a voice
+  // command needed — a reference, not a settings screen, so it's just
+  // shown/hidden, never anything here written back anywhere.
+  let glossaryTermsCache = null
+
+  function renderVoiceCommandsDynamicLists() {
+    voiceCommandsMediaListEl.innerHTML = ""
+    if (knownCues.length === 0) {
+      const empty = document.createElement("div")
+      empty.className = "voice-commands-empty"
+      empty.textContent = t("voiceCommands.noMedia")
+      voiceCommandsMediaListEl.appendChild(empty)
+    } else {
+      for (const cue of knownCues) {
+        const row = document.createElement("div")
+        row.className = "voice-commands-item"
+        const label = document.createElement("span")
+        label.textContent = cue.id === principalPosterCueId ? t("voiceCommands.posterLabel") : cue.kind
+        const phrase = document.createElement("code")
+        phrase.textContent = '"' + cue.title + '"'
+        row.append(phrase, label)
+        voiceCommandsMediaListEl.appendChild(row)
+      }
+    }
+
+    voiceCommandsGlossaryListEl.innerHTML = ""
+    if (glossaryTermsCache === null) {
+      const loading = document.createElement("div")
+      loading.className = "voice-commands-empty"
+      loading.textContent = t("voiceCommands.loadingGlossary")
+      voiceCommandsGlossaryListEl.appendChild(loading)
+      window.churchOverlay
+        .listGlossaryTerms()
+        .then((terms) => {
+          glossaryTermsCache = terms
+          if (voiceCommandsModalEl.style.display !== "none") renderVoiceCommandsDynamicLists()
+        })
+        .catch(() => {
+          glossaryTermsCache = []
+        })
+      return
+    }
+    if (glossaryTermsCache.length === 0) {
+      const empty = document.createElement("div")
+      empty.className = "voice-commands-empty"
+      empty.textContent = t("voiceCommands.noGlossary")
+      voiceCommandsGlossaryListEl.appendChild(empty)
+    } else {
+      for (const entry of glossaryTermsCache) {
+        const row = document.createElement("div")
+        row.className = "voice-commands-item"
+        const label = document.createElement("span")
+        label.textContent = entry.term
+        const phrase = document.createElement("code")
+        // The real trigger phrase, not a guessed template — English and
+        // French entries use different verbs ("define" vs. "definis"/
+        // "que veut dire"), section 78's own fix for the earlier mistake
+        // of assuming one universal phrasing across both languages.
+        phrase.textContent = '"' + entry.examplePhrase + '"'
+        row.append(label, phrase)
+        voiceCommandsGlossaryListEl.appendChild(row)
+      }
+    }
+  }
+
+  voiceCommandsBtn.addEventListener("click", () => {
+    renderVoiceCommandsDynamicLists()
+    voiceCommandsModalEl.style.display = "flex"
+  })
+  voiceCommandsCloseBtn.addEventListener("click", () => {
+    voiceCommandsModalEl.style.display = "none"
   })
 
   // ARCHITECTURE.md section 74: an operator who imported the wrong file

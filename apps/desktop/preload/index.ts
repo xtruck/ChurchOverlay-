@@ -56,6 +56,7 @@ contextBridge.exposeInMainWorld("churchOverlay", {
   confirmMediaImport: (title: string) => ipcRenderer.invoke("confirm-media-import", title),
   cancelMediaImport: () => ipcRenderer.invoke("cancel-media-import"),
   listMediaCues: () => ipcRenderer.invoke("list-media-cues"),
+  listGlossaryTerms: () => ipcRenderer.invoke("list-glossary-terms"),
   renameMediaCue: (id: string, newTitle: string) => ipcRenderer.invoke("rename-media-cue", id, newTitle),
   deleteMediaCue: (id: string) => ipcRenderer.invoke("delete-media-cue", id),
   setDisplayMode: (mode: string) => ipcRenderer.invoke("set-display-mode", mode),

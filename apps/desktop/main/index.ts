@@ -7,6 +7,7 @@ import { startAppCore, type AppCoreHandle } from "../../server/core/app-core"
 import type { SessionEntry } from "../../server/core/session-recorder"
 import { StaticServer } from "../../server/http/static-server"
 import { RegexDetector } from "../../server/detector/regex-detector"
+import { GLOSSARY } from "../../server/glossary/glossary"
 import { KnownValidVerseIndex } from "../../server/verse/known-valid-verse-index"
 import { FreeApiSource } from "../../server/verse/free-api-source"
 import { GetBibleVerseSource } from "../../server/verse/get-bible-verse-source"
@@ -546,6 +547,19 @@ ipcMain.handle("cancel-media-import", async () => {
 
 ipcMain.handle("list-media-cues", () => {
   return mediaLibrary?.list() ?? []
+})
+
+/**
+ * ARCHITECTURE.md section 78: the dashboard's Voice Commands reference
+ * needs to show what to actually SAY, not just which terms exist — each
+ * entry's own first trigger phrase (glossary.ts's own "each entry is its
+ * own English or French trigger phrase" — English entries use "define
+ * X", French ones use "definis X"/"que veut dire X", never a single
+ * universal template across both). GLOSSARY is a fixed, compiled-in
+ * dataset, so this is a plain read, no live state to manage.
+ */
+ipcMain.handle("list-glossary-terms", () => {
+  return GLOSSARY.map((entry) => ({ term: entry.term, examplePhrase: entry.phrases[0] }))
 })
 
 /**

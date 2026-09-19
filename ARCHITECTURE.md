@@ -4180,3 +4180,39 @@ the same offline key, and — checked directly against the real bundled file, no
 assumed — every mapped key actually exists in it, with the same chapter count per book
 as `BOOK_CATALOG` (per-chapter verse counts are deliberately not asserted exactly equal,
 per 77.1's finding).
+
+## 78. Voice Commands Reference
+
+User-requested "innovating ideas" follow-up. Several real bugs this project found
+during live testing came down to an operator not knowing the exact phrase a voice
+command needed — section 72.2's "prochain verset" gap being the clearest example: the
+feature already worked, the operator just had no way to know "verset suivant" was the
+only recognized phrasing until it silently didn't respond to a different, equally
+natural one. There was no in-app answer to "what can I say?" at all.
+
+**What it is**: a reference, not a settings screen — nothing in it is editable, it
+only answers what's currently voice-triggerable. A "Voice Commands" button pinned to
+the bottom of the sidebar (visible regardless of which view is active, since voice
+commands are relevant during any of them) opens a modal with three sections:
+
+- **Navigation** — a static table of every `NavigationCommandDetector` phrase
+  (`SUBSTRING_RULES`/`WHOLE_UTTERANCE_RULES`, section 65/72.2), English and French
+  together per action.
+- **Media & posters** — populated live from `knownCues` (the same data the Media
+  Library grid already has, section 74.1) — exactly the titles that are currently
+  real voice triggers, not a stale or hypothetical list.
+- **Glossary** — populated via a new `list-glossary-terms` IPC call returning each
+  entry's own first trigger phrase, not a guessed universal template. This was a real
+  mistake caught before shipping: an earlier draft's static heading assumed every
+  glossary entry could be triggered with `"define [term]"`, but `glossary.ts`'s own
+  design is per-entry, per-language trigger phrases (English entries use "define X",
+  French ones use "definis X" / "que veut dire X") — verified directly against
+  `glossary.ts`'s real data (confirmed live via the actual running modal, showing
+  "Grace" → `"define grace"` alongside "Grâce" → `"definis la grace"`) before writing
+  the final copy, rather than shipping the guessed template.
+
+No new automated tests: this is a renderer-only reference display plus two trivial,
+stateless IPC reads (`list-glossary-terms` returns a fixed compiled-in dataset;
+`list-media-cues` already existed and is unit-untouched) — verified live via the actual
+running app screenshot, consistent with this project's established convention for
+renderer-only display changes.
