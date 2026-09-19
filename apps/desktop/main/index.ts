@@ -17,6 +17,7 @@ import { OfflineFallbackVerseSource } from "../../server/verse/offline-fallback-
 import { GroqProvider } from "../../server/asr/groq-provider"
 import { SermonNotesGenerator } from "../../server/ai/sermon-notes-generator"
 import { MediaLibrary } from "../../server/media/media-library"
+import { SessionHistoryStore } from "../../server/core/session-history-store"
 import {
   ConfigStore,
   DISPLAY_MODES,
@@ -61,6 +62,7 @@ let dashboardWindow: BrowserWindow | null = null
 let currentTokens: { operatorToken: string; viewerToken: string } | null = null
 let configStore: ConfigStore | null = null
 let mediaLibrary: MediaLibrary | null = null
+let sessionHistoryStore: SessionHistoryStore | null = null
 let localizedVerseSource: LocalizedVerseSource | null = null
 let currentRemoteUrl: string | null = null
 let currentOverlayUrl: string | null = null
@@ -153,6 +155,7 @@ async function startServices(
     port: WS_PORT,
     tokens: currentTokens,
     mediaLibrary: mediaLibrary ?? undefined,
+    sessionHistoryStore: sessionHistoryStore ?? undefined,
     verseConfirmationMode: config.verseConfirmationMode,
     // ARCHITECTURE.md section 65.7: always constructed (it makes no
     // network call until summarize() is actually invoked, and holding it
@@ -659,6 +662,16 @@ async function renderQuoteCardPng(entry: SessionEntry): Promise<Buffer> {
  * inferred or AI-picked (the research's own "poor fit" finding for
  * AI-selected highlight moments).
  */
+/**
+ * ARCHITECTURE.md section 79: the dashboard's History view reads the raw
+ * entries and aggregates them itself (most-shown verses, per-day
+ * grouping) — main.ts stays a thin passthrough, same division of
+ * responsibility as list-media-cues.
+ */
+ipcMain.handle("get-session-history", () => {
+  return appCoreHandle?.getSessionHistory() ?? []
+})
+
 ipcMain.handle("export-session", async () => {
   if (!dashboardWindow) {
     throw new Error("dashboard window is not available")
@@ -742,6 +755,22 @@ app.whenReady().then(async () => {
     logger.warn({
       component: "main",
       event: "media-library.load-failed",
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+
+  // ARCHITECTURE.md section 79: a persistent, cross-restart verse history
+  // for the dashboard's own History view — a corrupt/unreadable file is,
+  // same as media-library.load-failed above, not worth blocking startup
+  // over (history just starts fresh; nothing about live verse display
+  // depends on it).
+  sessionHistoryStore = new SessionHistoryStore({ historyDir: app.getPath("userData") })
+  try {
+    await sessionHistoryStore.load()
+  } catch (err) {
+    logger.warn({
+      component: "main",
+      event: "session-history.load-failed",
       error: err instanceof Error ? err.message : String(err),
     })
   }

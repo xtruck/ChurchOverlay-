@@ -333,6 +333,27 @@
     font-family: var(--font-mono); font-size: 11.5px; color: var(--accent-strong); text-align: right;
   }
   .voice-commands-empty { color: var(--text-tertiary); font-size: 12px; font-style: italic; }
+
+  /* ARCHITECTURE.md section 79 */
+  .history-summary {
+    font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary);
+    margin-bottom: var(--space-5); padding-bottom: var(--space-4); border-bottom: 1px solid var(--glass-border);
+  }
+  .history-summary strong { color: var(--accent-strong); font-weight: 600; }
+  .history-columns { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); }
+  @media (max-width: 900px) { .history-columns { grid-template-columns: 1fr; } }
+  .history-columns h3 {
+    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-tertiary); margin-bottom: var(--space-3);
+  }
+  .history-list { display: flex; flex-direction: column; gap: 6px; }
+  .history-row {
+    display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3);
+    padding: 7px 0; border-bottom: 1px solid var(--glass-border); font-size: 12.5px;
+  }
+  .history-row span:first-child { color: var(--text-primary); }
+  .history-row span:last-child { color: var(--text-tertiary); font-family: var(--font-mono); font-size: 11.5px; flex-shrink: 0; }
+  .history-empty { color: var(--text-tertiary); font-size: 12px; font-style: italic; }
   .card-title {
     font-size: 11px; font-weight: 600;
     text-transform: uppercase; letter-spacing: 0.09em;
@@ -1001,6 +1022,9 @@
       <button type="button" id="nav-media" class="sidebar-nav-item" data-view="media">
         <span data-i18n="nav.media">Media Library</span>
       </button>
+      <button type="button" id="nav-history" class="sidebar-nav-item" data-view="history">
+        <span data-i18n="nav.history">History</span>
+      </button>
       <button type="button" id="nav-settings" class="sidebar-nav-item" data-view="settings">
         <span data-i18n="nav.settings">Settings</span>
       </button>
@@ -1247,6 +1271,28 @@
               <button id="media-play-pause-btn" class="btn-secondary btn-small" data-i18n="media.pause">Pause</button>
               <button id="media-stop-btn" class="btn-danger btn-small" data-i18n="media.stop">Stop</button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ARCHITECTURE.md section 79: cross-restart verse history — a
+           persistent counterpart to the existing "export THIS session"
+           feature, answering "what have I shown across every service,
+           ever" instead of just today's. Read-only, nothing here is
+           editable. -->
+      <div id="view-history" class="view">
+        <div class="card glass" style="height: 100%">
+          <div class="card-title" data-i18n="history.title">History</div>
+          <div id="history-summary" class="history-summary"></div>
+          <div class="history-columns">
+            <section>
+              <h3 data-i18n="history.mostShownHeading">Most-shown verses</h3>
+              <div id="history-most-shown" class="history-list"></div>
+            </section>
+            <section>
+              <h3 data-i18n="history.recentServicesHeading">Recent services</h3>
+              <div id="history-recent-services" class="history-list"></div>
+            </section>
           </div>
         </div>
       </div>

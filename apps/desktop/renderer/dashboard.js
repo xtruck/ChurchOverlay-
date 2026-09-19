@@ -111,6 +111,9 @@
   const voiceCommandsCloseBtn = document.getElementById("voice-commands-close-btn")
   const voiceCommandsMediaListEl = document.getElementById("voice-commands-media-list")
   const voiceCommandsGlossaryListEl = document.getElementById("voice-commands-glossary-list")
+  const historySummaryEl = document.getElementById("history-summary")
+  const historyMostShownEl = document.getElementById("history-most-shown")
+  const historyRecentServicesEl = document.getElementById("history-recent-services")
   const displayModeToggleEl = document.getElementById("display-mode-toggle")
   const uiLanguageToggleEl = document.getElementById("ui-language-toggle")
   const verseConfirmationToggleEl = document.getElementById("verse-confirmation-toggle")
@@ -135,6 +138,7 @@
     live: document.getElementById("view-live"),
     rundown: document.getElementById("view-rundown"),
     media: document.getElementById("view-media"),
+    history: document.getElementById("view-history"),
     settings: document.getElementById("view-settings"),
   }
   const sermonNotesFeedEl = document.getElementById("sermon-notes-feed")
@@ -1718,6 +1722,80 @@
   sidebarEl.querySelectorAll(".sidebar-nav-item").forEach((button) => {
     button.addEventListener("click", () => showView(button.dataset.view))
   })
+
+  // ARCHITECTURE.md section 79: a persistent, cross-restart record of
+  // every verse shown — this view answers "what have I shown across
+  // every service, ever," aggregated client-side from the raw entries
+  // main.ts hands back (the same thin-passthrough division of
+  // responsibility list-media-cues already uses). Re-fetched every time
+  // the view is opened, not cached, so it reflects verses shown since
+  // the operator last looked.
+  function localDateKey(timestamp) {
+    const d = new Date(timestamp)
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0")
+  }
+
+  function referenceKey(ref) {
+    return ref.book + " " + ref.chapter + ":" + ref.verse
+  }
+
+  function renderHistoryView() {
+    historySummaryEl.textContent = t("history.loading")
+    historyMostShownEl.innerHTML = ""
+    historyRecentServicesEl.innerHTML = ""
+
+    window.churchOverlay
+      .getSessionHistory()
+      .then((entries) => {
+        if (entries.length === 0) {
+          historySummaryEl.textContent = t("history.empty")
+          return
+        }
+
+        const dayCount = new Map()
+        const verseCount = new Map()
+        for (const entry of entries) {
+          const day = localDateKey(entry.timestamp)
+          dayCount.set(day, (dayCount.get(day) || 0) + 1)
+          const key = referenceKey(entry.reference)
+          verseCount.set(key, (verseCount.get(key) || 0) + 1)
+        }
+
+        historySummaryEl.innerHTML =
+          "<strong>" + entries.length + "</strong> " + t("history.versesShownAcross") +
+          " <strong>" + dayCount.size + "</strong> " + (dayCount.size === 1 ? t("history.daySingular") : t("history.dayPlural"))
+
+        const topVerses = Array.from(verseCount.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 10)
+        for (const [key, count] of topVerses) {
+          const row = document.createElement("div")
+          row.className = "history-row"
+          row.innerHTML = "<span></span><span></span>"
+          row.children[0].textContent = key
+          row.children[1].textContent = "×" + count
+          historyMostShownEl.appendChild(row)
+        }
+
+        const recentDays = Array.from(dayCount.entries())
+          .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+          .slice(0, 14)
+        for (const [day, count] of recentDays) {
+          const row = document.createElement("div")
+          row.className = "history-row"
+          row.innerHTML = "<span></span><span></span>"
+          row.children[0].textContent = day
+          row.children[1].textContent = count + " " + (count === 1 ? t("history.verseSingular") : t("history.versePlural"))
+          historyRecentServicesEl.appendChild(row)
+        }
+      })
+      .catch((err) => {
+        historySummaryEl.textContent = ""
+        log(t("log.historyLoadFailed", { error: err.message }), "error")
+      })
+  }
+
+  document.getElementById("nav-history").addEventListener("click", renderHistoryView)
 
   function showSetupScreen() {
     appShellEl.style.display = "none"

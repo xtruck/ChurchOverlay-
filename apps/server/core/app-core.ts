@@ -39,6 +39,7 @@ import { resolveNavigationCommand } from "../verse/resolve-navigation-command"
 import { RundownController } from "../rundown/rundown-controller"
 import { GlossaryDetector } from "../glossary/glossary-detector"
 import { SessionRecorder, type SessionEntry } from "./session-recorder"
+import type { SessionHistoryStore, SessionHistoryEntry } from "./session-history-store"
 
 /**
  * Every provider/seam is injected, never constructed inside this
@@ -95,6 +96,14 @@ export type StartAppCoreOptions = {
    * and the operator's media:select/play/pause/seek/clear commands.
    */
   readonly mediaLibrary?: MediaLibrary
+  /**
+   * Optional (ARCHITECTURE.md section 79) — a persistent, cross-restart
+   * record of every verse shown, separate from SessionRecorder (in-memory,
+   * cleared every restart). Absent by default, same "optional capability,
+   * gracefully absent" pattern as mediaLibrary above — no history is kept
+   * unless the Electron main process constructs and loads one.
+   */
+  readonly sessionHistoryStore?: SessionHistoryStore
   /**
    * Optional (ARCHITECTURE.md section 65.4) — called after a voice-
    * triggered "switch to french"/"english only"/"switch to bilingual"
@@ -183,6 +192,14 @@ export type AppCoreHandle = {
    * this session, regardless of how it was triggered.
    */
   getSessionEntries(): readonly SessionEntry[]
+  /**
+   * ARCHITECTURE.md section 79: the persistent, cross-restart counterpart
+   * to getSessionEntries() above — every verse ever recorded, not just
+   * this run's. Empty when no sessionHistoryStore was configured, the
+   * same "absent capability, empty/no-op result" pattern used elsewhere
+   * (e.g. mediaLibrary-less media:select handling).
+   */
+  getSessionHistory(): readonly SessionHistoryEntry[]
   stop(): Promise<void>
 }
 
@@ -213,6 +230,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const navigationCommandDetector = new NavigationCommandDetector()
   const rundownController = new RundownController()
   const sessionRecorder = new SessionRecorder()
+  const sessionHistoryStore = options.sessionHistoryStore
   const glossaryDetector = new GlossaryDetector()
   const definitionClearMs = options.definitionClearMs ?? 12000
   let definitionClearTimer: ReturnType<typeof setTimeout> | null = null
@@ -394,6 +412,18 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // broadcastVerse()) so a post-service export includes every verse
     // that was actually visible, regardless of how it got there.
     sessionRecorder.record(verse, timestamp)
+    // ARCHITECTURE.md section 79: the same event, additionally recorded
+    // to persistent cross-restart history when configured — a write
+    // failure here must never affect verse display itself (fire-and-
+    // forget with logging, the same pattern handleAudioFrame's own
+    // async work elsewhere in this file already uses).
+    sessionHistoryStore?.record(verse, timestamp).catch((err) => {
+      logger.error({
+        component: "app-core",
+        event: "session-history.record-failed",
+        error: err instanceof Error ? err.message : String(err),
+      })
+    })
     wsServer.broadcast({
       id: generateUlid(),
       type: "verse:show",
@@ -1171,6 +1201,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     },
     getSessionEntries() {
       return sessionRecorder.getEntries()
+    },
+    getSessionHistory() {
+      return sessionHistoryStore?.getEntries() ?? []
     },
     async stop() {
       if (definitionClearTimer) clearTimeout(definitionClearTimer)

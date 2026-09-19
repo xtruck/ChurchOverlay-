@@ -7,6 +7,7 @@ import { WebSocket } from "ws"
 import { startAppCore } from "./app-core"
 import { RegexDetector } from "../detector/regex-detector"
 import { SilenceGate } from "../audio/silence-gate"
+import { SessionHistoryStore } from "./session-history-store"
 import { KnownValidVerseIndex } from "../verse/known-valid-verse-index"
 import { MediaLibrary } from "../media/media-library"
 import { encodeAudioFrame } from "../../../packages/shared/audio-frame-codec"
@@ -2137,6 +2138,90 @@ test("AppCore: getSessionEntries() records every verse actually shown, regardles
 
     operatorSocket.close()
     viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+// ARCHITECTURE.md section 79: the persistent, cross-restart counterpart
+// to getSessionEntries() above — a real SessionHistoryStore against a
+// temp dir (not a fake), the same "real integration, not a mock of our
+// own code" discipline withMediaLibrary already uses elsewhere in this
+// file.
+test("AppCore: getSessionHistory() records every shown verse to the configured SessionHistoryStore, and survives via it independent of getSessionEntries()", async () => {
+  const root = await mkdtemp(join(tmpdir(), "churchoverlay-appcore-history-test-"))
+  try {
+    const sessionHistoryStore = new SessionHistoryStore({ historyDir: root })
+    const asr = new FakeAsrProvider()
+    const app = await startAppCore({
+      asr,
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new EchoVerseSource(),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      sessionHistoryStore,
+    })
+    try {
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+      const shown = waitForMessage(viewerSocket)
+      asr.emitTranscript({
+        id: "01T",
+        correlationId: "01A",
+        sequence: 1,
+        text: "Turn to John 3:16.",
+        state: "final",
+        timestamp: Date.now(),
+      })
+      await shown
+      // record() is fire-and-forget from showVerse()'s perspective — give
+      // its own async file write a turn to actually land before asserting.
+      await waitFor(() => app.getSessionHistory().length === 1)
+
+      const history = app.getSessionHistory()
+      assert.equal(history.length, 1)
+      assert.deepEqual(history[0]?.reference, { book: "john", chapter: 3, verse: 16 })
+
+      // Independently persisted — a FRESH store instance loading from the
+      // same directory eventually sees it too, without going through
+      // AppCore at all. Polled, not checked once immediately: the actual
+      // disk write is fire-and-forget from showVerse()'s perspective (verse
+      // display must never be blocked by it), while getSessionHistory()
+      // above reflects the in-memory push that happens synchronously,
+      // before that write has necessarily landed — checking once right
+      // after would race the write itself.
+      let reloadedCount = 0
+      const deadline = Date.now() + 2000
+      while (Date.now() < deadline && reloadedCount !== 1) {
+        const reloaded = new SessionHistoryStore({ historyDir: root })
+        await reloaded.load()
+        reloadedCount = reloaded.getEntries().length
+        if (reloadedCount !== 1) await new Promise((resolve) => setTimeout(resolve, 20))
+      }
+      assert.equal(reloadedCount, 1)
+
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("AppCore: getSessionHistory() is an empty array when no SessionHistoryStore is configured, not an error", async () => {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    assert.deepEqual(app.getSessionHistory(), [])
   } finally {
     await app.stop()
   }

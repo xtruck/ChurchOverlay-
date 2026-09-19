@@ -4216,3 +4216,69 @@ stateless IPC reads (`list-glossary-terms` returns a fixed compiled-in dataset;
 `list-media-cues` already existed and is unit-untouched) — verified live via the actual
 running app screenshot, consistent with this project's established convention for
 renderer-only display changes.
+
+## 79. Session History (Cross-Restart Verse Analytics)
+
+User-requested "innovating ideas" follow-up. `SessionRecorder` (section 65.8) already
+tracks every verse shown, but only in memory, cleared on every restart — it backs the
+existing "export THIS session" feature and structurally cannot answer "what have I
+shown across every service, ever." There was no way to see which verses come up most,
+or even how many services had used the app at all, beyond memory.
+
+**What it is**: `SessionHistoryStore` (`apps/server/core/session-history-store.ts`)
+persists every verse shown to `session-history.json` in userData, using the exact same
+atomic-write discipline `ConfigStore`/`MediaLibrary` already established (temp file,
+fsync, rename). Deliberately a separate class from `SessionRecorder`, not a
+replacement — they answer different questions and have different lifetimes (per-restart
+vs. cross-restart), and `showVerse()` (the one function every trigger already funnels
+through, per `SessionRecorder`'s own doc comment) now records to both. Bounded at 5000
+entries (AGENTS.md section 36 — every store must be bounded; comfortably over a year of
+real usage before the oldest entries roll off). Optional on `StartAppCoreOptions`
+(absent by default, same "optional capability, gracefully absent" pattern as
+`mediaLibrary`) — recording is fire-and-forget from `showVerse()`'s perspective
+(logged, not thrown, on failure) so a disk write can never block or slow down live
+verse display.
+
+The dashboard's new "History" sidebar view fetches the raw entries (`get-session-history`
+IPC, a thin passthrough — the same division of responsibility `list-media-cues` already
+uses) and aggregates them client-side: total verses shown, distinct days with activity,
+a "most-shown verses" ranking, and a per-day breakdown of the most recent two weeks.
+Days are inferred by grouping timestamps on their local calendar date — there is no
+explicit "start/end service" concept anywhere in this app, and a calendar-day grouping
+is a reasonable, simple proxy for "one service" without inventing new state to track
+service boundaries explicitly.
+
+### 79.1 A real test-authoring bug found and fixed while writing this
+
+The first version of `app-core.test.ts`'s integration test checked
+`app.getSessionHistory()` (in-memory) immediately, then constructed a **second**
+`SessionHistoryStore` instance pointed at the same directory and asserted it saw the
+entry too — and hung. Root cause, confirmed by isolating it in a standalone script
+before touching the test: `getSessionHistory()`'s in-memory array updates
+*synchronously* the moment `record()` is called (before its `await`s even run), while
+the actual disk write is fire-and-forget from `showVerse()`'s perspective by design —
+so checking a second, independent instance's `load()` immediately after was a genuine
+race against that write actually landing. When it lost the race, the test's own
+assertion threw, which (a known failure shape from earlier in this project) skipped the
+socket cleanup below it and left `app.stop()` hanging on a socket nothing ever closed.
+Fixed by polling the reload with a short retry loop instead of checking once — the
+actual feature was correct throughout; only the test's timing assumption was wrong.
+
+### 79.2 Tests added
+
+`session-history-store.test.ts`: `record()`/`getEntries()` round-trip exactly; a
+recorded entry survives a restart (a fresh instance's `load()`); `load()` with no file
+yet is a no-op; `getEntries()` returns a defensive copy; sequential recording preserves
+order and count (the eviction *shape*, without pinning the exact 5000 cap as part of
+the test's contract).
+
+`app-core.test.ts`: every shown verse reaches the configured `SessionHistoryStore` (and
+is independently visible via a fresh instance loading the same directory, polled per
+79.1's finding); `getSessionHistory()` is an empty array (not an error) when no store is
+configured at all.
+
+No new tests for the dashboard's History view itself (renderer-only aggregation and
+display) — verified live via the actual running app (three real verses shown through
+the Manual Override UI, confirmed the summary count, per-verse ranking, and per-day
+grouping all matched), consistent with this project's established convention for
+renderer-only display changes.
