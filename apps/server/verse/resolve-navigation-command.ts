@@ -68,8 +68,11 @@ export function resolveNavigationCommand(
     }
     // PROD AUDIT 2026-09: this branch used to always no-op even though it
     // computed the precise reason. Two exact production cases:
-    //   "Daniel chapitre 13 verset 14" — Daniel has 12 chapters
-    //   "Esaïe chapitre 4, verset 18" — Isaiah 4 has 22 verses
+    //   "Daniel chapitre 13 verset 14" — Daniel has 12 chapters, so this
+    //     falls back to the book's last chapter at its last verse: 12:13.
+    //   "Esaïe chapitre 4, verset 18" — Isaiah 4 has 6 verses (verified
+    //     against BOOK_CATALOG; the "22" that appears near it in the catalog
+    //     is chapter 2's count), so this clamps to 4:6.
     // Same fallback mechanism as goto-chapter above: an out-of-range
     // chapter falls back to the book's LAST VALID chapter; a verse beyond
     // a valid chapter's end is clamped to that chapter's LAST VERSE (not
