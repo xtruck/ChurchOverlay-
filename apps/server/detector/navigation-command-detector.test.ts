@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { NavigationCommandDetector } from "./navigation-command-detector"
+import { NavigationCommandDetector, containsCatalogBookName } from "./navigation-command-detector"
 
 test("NavigationCommandDetector: 'next verse' as a substring triggers next-verse", () => {
   const detector = new NavigationCommandDetector()
@@ -225,4 +225,78 @@ test("NavigationCommandDetector: French voice commands to switch display mode, i
   assert.deepEqual(detector.detect("Mode bilingue pour la suite."), [
     { kind: "goto-display-mode", mode: "bilingual" },
   ])
+})
+
+// ---------------------------------------------------------------------------
+// PROD AUDIT 2026-09, point 3: bare "<Book> N" with NO "chapitre"/"chapter"
+// keyword. The production journal shows "Daniel 8" spoken 3 times, which
+// produced no command at all AND no near-miss log (the near-miss guard
+// required a chapitre/verset keyword in the text).
+// ---------------------------------------------------------------------------
+
+test("NavigationCommandDetector: a bare '<Book> N' with no keyword produces goto-chapter — the exact production case 'Daniel 8'", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("Daniel 8"), [{ kind: "goto-chapter", book: "daniel", chapter: 8 }])
+})
+
+test("NavigationCommandDetector: each repeated bare '<Book> N' occurrence produces its own command (production journal repeated it 3x)", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("Daniel 8. Daniel 8. Daniel 8."), [
+    { kind: "goto-chapter", book: "daniel", chapter: 8 },
+    { kind: "goto-chapter", book: "daniel", chapter: 8 },
+    { kind: "goto-chapter", book: "daniel", chapter: 8 },
+  ])
+})
+
+test("NavigationCommandDetector: the bare '<Book> N' pattern does NOT collide with RegexDetector's 'Book N:M' references", () => {
+  const detector = new NavigationCommandDetector()
+  // RegexDetector owns these; a competing goto-chapter here would fight the
+  // real verse:show for the same utterance.
+  assert.deepEqual(detector.detect("Turn to Daniel 8:1 tonight."), [])
+  assert.deepEqual(detector.detect("Regardons Daniel 8:1."), [])
+})
+
+test("NavigationCommandDetector: the bare '<Book> N' pattern does not swallow a following 'verset M' continuation", () => {
+  const detector = new NavigationCommandDetector()
+  // "Daniel 8 verset 5" is an elliptical continuation ("verset 5" resolved
+  // against the current position), not a chapter jump to Daniel 8 — the
+  // (?!...verse|verset) guard keeps the two from both firing.
+  assert.deepEqual(detector.detect("Daniel 8 verset 5"), [{ kind: "goto-bare-verse", verse: 5 }])
+})
+
+test("NavigationCommandDetector: the bare '<Book> N' pattern only accepts real BOOK_CATALOG names", () => {
+  const detector = new NavigationCommandDetector()
+  // Ordinary words followed by a number must not become chapter jumps.
+  assert.deepEqual(detector.detect("Salut 8"), [])
+  assert.deepEqual(detector.detect("Ensuite 8"), [])
+  assert.deepEqual(detector.detect("Nous avons 8 personnes"), [])
+})
+
+test("NavigationCommandDetector: the bare '<Book> N' pattern handles accented and lowercase book names via normalizeBookName()", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("Ésaïe 6"), [{ kind: "goto-chapter", book: "isaiah", chapter: 6 }])
+  assert.deepEqual(detector.detect("daniel 8"), [{ kind: "goto-chapter", book: "daniel", chapter: 8 }])
+  // Numeral-prefixed book, same as GOTO_CHAPTER_PATTERN supports.
+  assert.deepEqual(detector.detect("1 Corinthiens 13"), [
+    { kind: "goto-chapter", book: "1 corinthians", chapter: 13 },
+  ])
+})
+
+// The near-miss guard (AppCore) needs to know whether a transcript merely
+// MENTIONS a book, even with no navigation/reference keyword anywhere in the
+// text — that is the exact gap that made "Daniel 8" invisible in production.
+test("containsCatalogBookName: true for a transcript that mentions a catalog book with no keyword at all", () => {
+  assert.equal(containsCatalogBookName("Daniel 8"), true)
+  assert.equal(containsCatalogBookName("Nous étions dans Ésaïe hier soir"), true)
+  assert.equal(containsCatalogBookName("daniel"), true)
+})
+
+test("containsCatalogBookName: false for text with no catalog book name", () => {
+  assert.equal(containsCatalogBookName("Salut 8"), false)
+  assert.equal(containsCatalogBookName("Bonsoir tout le monde"), false)
+  assert.equal(containsCatalogBookName(""), false)
+})
+
+test("containsCatalogBookName: does not fire on the English word 'to' (the classic RegexDetector false-positive trap)", () => {
+  assert.equal(containsCatalogBookName("Turn to chapter 9"), false)
 })

@@ -149,6 +149,29 @@ const BARE_CHAPTER_VERSE_PATTERN =
 const BARE_VERSE_PATTERN =
   /(?<!\b(?:[Cc]hapter|[Cc]hapitre)\s+\d{1,3}[,]?\s)\b(?:[Vv]erse|[Vv]erset)\s+(\d{1,3})\b/gu
 
+// PROD AUDIT 2026-09: "<Book> N" without any "chapitre"/"chapter" keyword —
+// e.g. the production case "Daniel 8", repeated 3 times and previously
+// invisible even to the near-miss log (no keyword in the text). Must NOT
+// collide with RegexDetector's "Book N:M" reference pattern: the (?!\s*:) /
+// (?![\p{L}\d]) guards ensure "Daniel 8:1" is left to RegexDetector. The
+// number alone must not be a bare chapter/verse continuation (a following
+// "verset M" would be claimed by BOOK_CHAPTER_VERSE_PATTERN / BARE_VERSE).
+const BOOK_BARE_CHAPTER_PATTERN =
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)\s+(\d{1,3})(?!\s*:)(?![\p{L}\d])(?!\s*,?\s*(?:[Vv]erse|[Vv]erset)\b)/gu
+
+// PROD AUDIT 2026-09: near-miss guard helper for AppCore. True if any word
+// in the text normalizes to a catalog book name — lets the near-miss log
+// fire for book mentions with NO chapitre/verset keyword at all ("Daniel 8"
+// before the pattern above existed). Lives here (not inlined in AppCore)
+// so all book-name knowledge stays inside the detector module.
+export function containsCatalogBookName(text: string): boolean {
+  const words = text.split(/[^\p{L}\d]+/u).filter(Boolean)
+  return words.some((w) => {
+    const book = normalizeBookName(w)
+    return BOOK_CATALOG.some((b: { readonly id: string }) => b.id === book)
+  })
+}
+
 function normalizeUtterance(text: string): string {
   return stripAccents(text.trim().replace(/\s+/g, " ").toLowerCase())
 }
@@ -257,6 +280,26 @@ export class NavigationCommandDetector implements INavigationCommandDetector {
       if (spanOverlaps(span, usedSpans)) continue
       usedSpans.push(span)
       commands.push({ kind: "goto-bare-verse", verse })
+    }
+
+    // PROD AUDIT 2026-09: "<Book> N" without "chapitre" — the production
+    // case "Daniel 8". Runs LAST so keyword-bearing patterns claim their
+    // spans first, and so its spans can't suppress them. Catalog-validated
+    // like every other book pattern here.
+    for (const match of text.matchAll(BOOK_BARE_CHAPTER_PATTERN)) {
+      const rawBook = match[1]
+      const rawChapter = match[2]
+      if (!rawBook || !rawChapter) continue
+      const book = normalizeBookName(rawBook)
+      if (!BOOK_CATALOG.some((b: { readonly id: string }) => b.id === book)) continue
+      const span: MatchSpan = { start: match.index!, end: match.index! + match[0].length }
+      if (spanOverlaps(span, usedSpans)) continue
+      usedSpans.push(span)
+      commands.push({
+        kind: "goto-chapter",
+        book,
+        chapter: Number.parseInt(rawChapter, 10),
+      })
     }
 
     return commands

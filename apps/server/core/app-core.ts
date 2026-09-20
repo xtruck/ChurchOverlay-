@@ -36,7 +36,7 @@ import { passesTranscriptGate } from "./transcript-gate"
 import type { MediaLibrary } from "../media/media-library"
 import { MediaCueDetector } from "../media/media-cue-detector"
 import { MediaPlaybackController } from "../media/media-playback-controller"
-import { NavigationCommandDetector } from "../detector/navigation-command-detector"
+import { NavigationCommandDetector, containsCatalogBookName } from "../detector/navigation-command-detector"
 import { resolveNavigationCommand } from "../verse/resolve-navigation-command"
 import { RundownController } from "../rundown/rundown-controller"
 import { GlossaryDetector } from "../glossary/glossary-detector"
@@ -1260,11 +1260,22 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // with the text. This turns every future pattern gap into a grep instead of
     // an investigation.
     // Use synchronous detector checks to avoid async in this callback.
+    // PROD AUDIT 2026-09: extended — "Daniel 8" (no chapitre/verset keyword at
+    // all) repeated 3 times in production and stayed invisible even to this
+    // log. A word that IS a catalog book name now counts as a near-miss
+    // trigger too (containsCatalogBookName, exported by the detector module).
+    // The exact-matches-nothing guard (zero validated refs, zero commands) is
+    // unchanged, so a successfully detected utterance still does NOT log a
+    // near-miss.
     const hasChapterVerseKeywords = /chapitre|chapter|verset|verse/i.test(transcript.text)
     const detectorRefs = detector.detect(transcript.text)
     const validatedRefs = detectorRefs.filter((r) => index.exists(r))
     const navCommands = navigationCommandDetector.detect(transcript.text)
-    if (hasChapterVerseKeywords && validatedRefs.length === 0 && navCommands.length === 0) {
+    if (
+      (hasChapterVerseKeywords || containsCatalogBookName(transcript.text)) &&
+      validatedRefs.length === 0 &&
+      navCommands.length === 0
+    ) {
       logger.warn({
         component: "app-core",
         event: "detector.near-miss",
