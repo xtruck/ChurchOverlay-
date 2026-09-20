@@ -205,6 +205,50 @@ test("GroqProvider: prompt field is sent, includes the real current verse refere
   assert.ok(prompt.includes("chapitre") && prompt.includes("verset"), "prompt must contain command keywords")
 })
 
+// PROD AUDIT 2026-09 (point 4), the contract half: the tests around this
+// one inspect the prompt's CONTENT. The audit's finding was "zero tests
+// inspect the real prompt field", so the field NAME and its unconditional
+// presence deserve an explicit pin of their own: Groq's
+// /audio/transcriptions endpoint documents the field as exactly "prompt",
+// and a silent rename (or omitting it when no reference is set) would
+// disable the lexical bias entirely while every content assertion above
+// kept passing.
+test("GroqProvider: the FormData sent to fetch uses the exact field name 'prompt', and always includes it", async () => {
+  const captured: CapturedRequest[] = []
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    fetchImpl: fakeFetch(() => jsonResponse({ text: "x" }), captured),
+  })
+  provider.onTranscript(() => {})
+
+  await provider.start()
+  // Deliberately NO setCurrentVerseRef() call: the field must be present
+  // even in the no-reference case.
+  await provider.sendAudio(oneSecondFrame(0))
+
+  assert.equal(captured.length, 1)
+  assert.equal(captured[0]?.init?.method, "POST")
+  const form = captured[0]?.init?.body as FormData
+  assert.ok(form instanceof FormData, "the body must be a real FormData instance")
+
+  const fieldNames = Array.from(form.keys())
+  assert.ok(
+    fieldNames.includes("prompt"),
+    `FormData must include a 'prompt' field; got: ${fieldNames.join(", ")}`
+  )
+  // A near-miss name (typo, or the older OpenAI-style "text_prompt") is
+  // silently ignored by Groq — no error, no bias — so pin its absence.
+  assert.ok(!fieldNames.includes("text_prompt"), "'text_prompt' is not the documented field name")
+  assert.ok(!fieldNames.includes("prompts"), "the field name is singular 'prompt'")
+
+  const prompt = form.get("prompt")
+  assert.ok(
+    typeof prompt === "string" && prompt.length > 0,
+    "prompt must be a non-empty string even when no verse reference is set"
+  )
+})
+
 // TASK B: a very long reference must not blow Groq's documented 224-token
 // prompt limit — the dynamic part is dropped whole (never truncated
 // mid-word) when the budget is exceeded.
