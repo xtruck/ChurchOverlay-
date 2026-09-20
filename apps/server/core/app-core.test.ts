@@ -3149,3 +3149,91 @@ test("AppCore: speaking a cue's title that was never appointed as a poster still
     }
   })
 })
+
+// TASK 0: near-miss log should NOT fire when BOOK_CHAPTER_VERSE_PATTERN
+// successfully matches. This test verifies that a transcript containing
+// chapter/verse keywords that successfully matches the new pattern does
+// NOT produce a "detector.near-miss" log event.
+test("AppCore: near-miss log does NOT fire when BOOK_CHAPTER_VERSE_PATTERN matches", async () => {
+  const lines: unknown[] = []
+  const logger = new Logger({ minLevel: "warn", write: (line) => lines.push(JSON.parse(line)) })
+  const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({ john: johnVerse }),
+    logger,
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const shown = waitForMessage(viewerSocket)
+
+    // This transcript contains "chapitre" and "verset" keywords but should
+    // match BOOK_CHAPTER_VERSE_PATTERN and produce a verse:show, NOT a
+    // detector.near-miss log event.
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Jean chapitre 3 verset 16",
+      state: "final",
+      timestamp: Date.now(),
+    })
+
+    await shown
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    const nearMissLogs = lines.filter((l) => (l as { event: string }).event === "detector.near-miss")
+    assert.equal(nearMissLogs.length, 0, "near-miss should not fire when pattern matches successfully")
+
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+// TASK 0: near-miss log SHOULD fire when chapter/verse keywords are present
+// but NO pattern matches (e.g., malformed reference that doesn't match any
+// pattern and doesn't resolve to a valid verse).
+test("AppCore: near-miss log fires when chapter/verse keywords present but no pattern matches", async () => {
+  const lines: unknown[] = []
+  const logger = new Logger({ minLevel: "warn", write: (line) => lines.push(JSON.parse(line)) })
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger,
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    // This transcript contains "chapitre" and "verset" but "frogs" is not
+    // a valid book, so no pattern should match and no verse should be shown.
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Ouvrons Frogs chapitre 3 verset 16",
+      state: "final",
+      timestamp: Date.now(),
+    })
+
+    // Wait a bit for processing
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const nearMissLogs = lines.filter((l) => (l as { event: string }).event === "detector.near-miss")
+    assert.equal(nearMissLogs.length, 1, "near-miss should fire when keywords present but no match")
+
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
