@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { GroqProvider } from "./groq-provider"
+import { GroqProvider, MAX_PROMPT_CHARS, MAX_PROMPT_TOKENS, CONSERVATIVE_CHARS_PER_TOKEN } from "./groq-provider"
 import type { AudioFrame } from "../../../packages/contracts"
 import { Logger } from "../../../packages/shared/logger"
 
@@ -224,9 +224,76 @@ test("GroqProvider: an over-budget verse reference is dropped whole from the pro
   const form = captured[0]?.init?.body as FormData
   const prompt = form.get("prompt") as string
   assert.ok(typeof prompt === "string" && prompt.length > 0)
-  assert.ok(prompt.length <= 800, "prompt must stay within the character budget")
+  assert.ok(prompt.length <= MAX_PROMPT_CHARS, "prompt must stay within the character budget")
   assert.ok(!prompt.includes("XXXX"), "over-budget reference must be dropped, not truncated")
   assert.ok(prompt.includes("chapitre"), "static keyword base must survive")
+})
+
+// PROD AUDIT 2026-09 (point 5): the documented 224-token limit must be an
+// enforced, testable invariant — not just a comment. The previous 800-char
+// budget was derived from an English "~4 chars/token" rule that is too
+// optimistic for accented French (~3.3-3.5), so 800 chars could exceed 224
+// tokens. This test fails the build if the budget is ever raised back above
+// the derivation, or if a real prompt is ever longer than the budget.
+test("GroqProvider: the prompt never exceeds the documented 224-token budget, with or without a verse reference", async () => {
+  // The budget itself must be derived from the documented limit, not chosen.
+  assert.ok(
+    MAX_PROMPT_CHARS <= MAX_PROMPT_TOKENS * CONSERVATIVE_CHARS_PER_TOKEN,
+    `budget ${MAX_PROMPT_CHARS} chars exceeds ${MAX_PROMPT_TOKENS} tokens at ${CONSERVATIVE_CHARS_PER_TOKEN} chars/token`
+  )
+
+  const captured: CapturedRequest[] = []
+  let callCount = 0
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    fetchImpl: fakeFetch(() => {
+      callCount += 1
+      return jsonResponse({ text: `chunk-${callCount}` })
+    }, captured),
+  })
+  provider.onTranscript(() => {})
+
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame(0)) // flush 1: static base only
+  provider.setCurrentVerseRef("Jean 3:16")
+  await provider.sendAudio(oneSecondFrame(1)) // flush 2: base + real reference
+
+  assert.equal(captured.length, 2)
+  const baseOnly = (captured[0]?.init?.body as FormData).get("prompt") as string
+  const withRef = (captured[1]?.init?.body as FormData).get("prompt") as string
+
+  assert.ok(baseOnly.length <= MAX_PROMPT_CHARS, `static base is ${baseOnly.length} chars, budget ${MAX_PROMPT_CHARS}`)
+  assert.ok(withRef.length <= MAX_PROMPT_CHARS, `prompt with reference is ${withRef.length} chars, budget ${MAX_PROMPT_CHARS}`)
+  assert.ok(withRef.includes("Jean 3:16"), "the reference must actually be present in the accepted prompt")
+})
+
+// PROD AUDIT 2026-09 (point 5): regression guard for the reported duplicate
+// book name. Measured on the current source: 56 entries, 56 unique — the
+// reported "jean listed twice (57 entries / 56 unique)" does NOT reproduce.
+// This test pins uniqueness of the real, sent prompt so it cannot regress.
+test("GroqProvider: the sent prompt lists no Bible book name twice", async () => {
+  const captured: CapturedRequest[] = []
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    fetchImpl: fakeFetch(() => jsonResponse({ text: "x" }), captured),
+  })
+  provider.onTranscript(() => {})
+
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame(0))
+
+  const prompt = (captured[0]?.init?.body as FormData).get("prompt") as string
+  // The prompt is "<keywords>. <book, book, ...>[. Référence actuelle: ...]"
+  const bookSegment = prompt.split(". ")[1]
+  assert.ok(typeof bookSegment === "string" && bookSegment.length > 0, "book segment must be present")
+
+  const books = bookSegment.split(", ").map((b) => b.trim()).filter((b) => b.length > 0)
+  assert.ok(books.length >= 50, `expected the full book list, got ${books.length} entries`)
+
+  const duplicates = books.filter((b, i) => books.indexOf(b) !== i)
+  assert.deepEqual(duplicates, [], `duplicate book names in prompt: ${duplicates.join(", ")}`)
 })
 
 // TASK B: clearVerse() — setCurrentVerseRef(null) — removes the reference

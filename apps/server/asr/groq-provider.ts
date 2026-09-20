@@ -27,11 +27,23 @@ const MIN_CHUNK_DURATION_MS = 700
 // Overlap to retain when a max-cap flush splits an utterance (~500ms)
 const OVERLAP_MS = 500
 
-// TASK B: conservative character budget for the Whisper prompt. Groq
-// documents the prompt at max 224 tokens; at ~4 chars/token for accented
-// French, 800 chars keeps the prompt safely inside that limit while
-// leaving room for the dynamic verse reference.
-const MAX_PROMPT_CHARS = 800
+// TASK B: conservative character budget for the Whisper prompt.
+//
+// Groq documents the transcription `prompt` at a maximum of 224 tokens
+// (https://console.groq.com/docs/speech-to-text). The previous value here
+// was 800, justified as "~4 chars/token for French" — that ratio is an
+// English-prose heuristic and is too optimistic for accented French, which
+// the multilingual BPE used by Whisper tokenizes at ~3.3-3.5 chars/token.
+// At 800 chars the prompt could therefore be ~230-240 tokens, i.e. ABOVE
+// the documented limit it was meant to respect.
+//
+// Recalculated conservatively at the low end of that range and rounded
+// down for extra margin (224 * 3.3 = 739, budget set to 730):
+// the static base measures 582 chars, so a normal reference (~30 chars)
+// still fits comfortably.
+export const MAX_PROMPT_TOKENS = 224
+export const CONSERVATIVE_CHARS_PER_TOKEN = 3.3
+export const MAX_PROMPT_CHARS = 730
 
 export type GroqProviderOptions = {
   readonly apiKey: string
@@ -184,8 +196,8 @@ export class GroqProvider implements AsrProvider {
     // last-shown reference — no hard-coded value anywhere.
     if (this.currentVerseRef) {
       const withRef = `${base}. Référence actuelle: ${this.currentVerseRef}`
-      // ~4 chars/token for French text keeps us safely under the 224-token
-      // documented limit (224 * 4 = 896; 800 leaves margin).
+      // See MAX_PROMPT_CHARS above for the derivation (224 documented
+      // tokens * 3.3 chars/token for accented French = 739, budget 730).
       if (withRef.length <= MAX_PROMPT_CHARS) {
         return withRef
       }
