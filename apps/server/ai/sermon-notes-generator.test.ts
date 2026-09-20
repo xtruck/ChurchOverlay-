@@ -98,7 +98,7 @@ test("SermonNotesGenerator: trims whitespace from the returned notes", async () 
 })
 
 // PROD AUDIT 2026-09 circuit breaker: the production journal showed 7
-// identical requests in ~9 minutes against a decommissioned model. A
+// identical requests in ~9 minutes against an unavailable model. A
 // permanent model error must disable the generator after ONE attempt.
 test("SermonNotesGenerator: circuit breaker trips on model_decommissioned — exactly one request, no retry storm", async () => {
   const captured: CapturedRequest[] = []
@@ -110,8 +110,7 @@ test("SermonNotesGenerator: circuit breaker trips on model_decommissioned — ex
           {
             error: {
               code: "model_decommissioned",
-              message:
-                "Model llama-3.1-8b-instant decommissioned on 2026-08-16 and is no longer available.",
+              message: "The model `llama-3.1-8b-instant` has been decommissioned and is no longer available.",
             },
           },
           400
@@ -154,7 +153,26 @@ test("SermonNotesGenerator: transient errors (500) do NOT trip the circuit break
   assert.equal(captured.length, 2)
 })
 
-test("SermonNotesGenerator: default model is the Groq-recommended replacement, not the decommissioned one", () => {
+test("SermonNotesGenerator: circuit breaker trips on the real access/tier wording observed in production", async () => {
+  const captured: CapturedRequest[] = []
+  const generator = new SermonNotesGenerator({
+    apiKey: "test-key",
+    fetchImpl: fakeFetch(
+      () =>
+        jsonResponse(
+          { error: { message: "The model `llama-3.3-70b-versatile` does not exist or you do not have access to it." } },
+          404
+        ),
+      captured
+    ),
+  })
+
+  await assert.rejects(() => generator.summarize("text"), /do not have access/)
+  await assert.rejects(() => generator.summarize("text"), /disabled for this session/)
+  assert.equal(captured.length, 1, "the breaker must stop the request storm after one attempt")
+})
+
+test("SermonNotesGenerator: default model is openai/gpt-oss-20b, a Production model with published developer-plan pricing", () => {
   const captured: CapturedRequest[] = []
   const generator = new SermonNotesGenerator({
     apiKey: "test-key",
@@ -163,5 +181,9 @@ test("SermonNotesGenerator: default model is the Groq-recommended replacement, n
   void generator.summarize("text")
   const body = JSON.parse(String(captured[0]?.init?.body)) as { model: string }
   assert.equal(body.model, "openai/gpt-oss-20b")
+  // The Llama entries on Groq's Supported Models page are now "Enterprise"
+  // (Contact Sales), so they are no longer the right default for a normal
+  // developer-plan API key. Asserted here to pin that decision.
   assert.notEqual(body.model, "llama-3.1-8b-instant")
+  assert.notEqual(body.model, "llama-3.3-70b-versatile")
 })

@@ -1,10 +1,19 @@
 const DEFAULT_URL = "https://api.groq.com/openai/v1/chat/completions"
-// PROD AUDIT 2026-09: llama-3.1-8b-instant was DECOMMISSIONED by Groq on
-// 2026-08-16 (console.groq.com/docs/deprecations). Groq's recommended
-// replacement is openai/gpt-oss-20b — more than capable for a 3-5
-// bullet-point summarization task, and available on every key tier.
-// (Previous comment justified llama-3.1-8b-instant as "most likely to be
-// available" — that reasoning is now obsolete; the model no longer exists.)
+// AUDIT CORRECTION 2026-09: the earlier claim that llama-3.1-8b-instant was
+// "decommissioned 2026-08-16" is FALSE and has been removed. Verified
+// against Groq's own live docs: llama-3.1-8b-instant is still listed under
+// Production Models, and the deprecations page's most recent entry is
+// March 2025 — there is no August 2026 entry at all.
+//
+// The real, verified reason to prefer openai/gpt-oss-20b: on the current
+// Supported Models page both Llama entries are now labelled "Enterprise"
+// with "Contact Sales" pricing and no published rate limits
+// (llama-3.1-8b-instant and llama-3.3-70b-versatile), whereas
+// openai/gpt-oss-20b is a Production model with published developer-plan
+// pricing ($0.075/$0.30 per 1M tokens) and rate limits (250K TPM / 1K RPM).
+// That is consistent with the originally-observed real error on a normal
+// API key — "does not exist or you do not have access to it" — which is an
+// access/tier error on a contact-sales model, not a deprecation.
 const DEFAULT_MODEL = "openai/gpt-oss-20b"
 
 // Verified directly against Groq's real, current API documentation before
@@ -54,11 +63,11 @@ export class SermonNotesGenerator {
 
   async summarize(transcriptText: string): Promise<string> {
     // PROD AUDIT 2026-09 circuit breaker: the production journal showed 7
-    // identical requests in ~9 minutes against a decommissioned model — a
-    // request storm AGENTS.md section 37 forbids. A model_decommissioned /
-    // model-not-found error is PERMANENT: retrying can never succeed, so
-    // the first one disables this generator for the rest of the session
-    // (a restart re-enables it, e.g. after a config/model change).
+    // identical requests in ~9 minutes against an unavailable model — a
+    // request storm AGENTS.md section 37 forbids. A model that does not
+    // exist / is not accessible on this key can never succeed on retry, so
+    // the first such error disables this generator for the rest of the
+    // session (a restart re-enables it, e.g. after a model change).
     // Transient errors (network, rate limit, 5xx) keep retrying normally.
     if (this.disabledReason) {
       throw new Error(`SermonNotesGenerator disabled for this session: ${this.disabledReason}`)
@@ -117,11 +126,16 @@ function extractGroqErrorMessage(body: unknown): string | undefined {
   return typeof error.message === "string" ? error.message : undefined
 }
 
-// PROD AUDIT 2026-09: matches Groq's real error shapes for a model that
-// no longer exists — "model_decommissioned" (the documented error code
-// for a post-deprecation-date model) and the two message wordings Groq
-// actually returns ("model ... does not exist" / "decommissioned").
-// Deliberately narrow: a transient 429/5xx must NOT trip the breaker.
+// PROD AUDIT 2026-09: matches the error wordings Groq actually returns for
+// a model that is unavailable to this key — "model_decommissioned" (the
+// code Groq has used for retired models), "model ... does not exist", and
+// the access/tier wording "does not exist or you do not have access to it"
+// observed in production. Note: Groq's Error Codes page documents only HTTP
+// statuses plus a generic {message, type} object — the individual error
+// codes below are matched on message text, which is why the check is
+// deliberately narrow and substring-based.
+// Deliberately NOT tripped by transient failures: 429/5xx must keep
+// retrying normally, so the message must mention the model or decommission.
 export function isPermanentModelError(message: string): boolean {
   const lower = message.toLowerCase()
   return (
