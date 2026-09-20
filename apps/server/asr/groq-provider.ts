@@ -27,6 +27,12 @@ const MIN_CHUNK_DURATION_MS = 700
 // Overlap to retain when a max-cap flush splits an utterance (~500ms)
 const OVERLAP_MS = 500
 
+// TASK B: conservative character budget for the Whisper prompt. Groq
+// documents the prompt at max 224 tokens; at ~4 chars/token for accented
+// French, 800 chars keeps the prompt safely inside that limit while
+// leaving room for the dynamic verse reference.
+const MAX_PROMPT_CHARS = 800
+
 export type GroqProviderOptions = {
   readonly apiKey: string
   readonly model?: string
@@ -139,35 +145,58 @@ export class GroqProvider implements AsrProvider {
     this.currentVerseRef = ref
   }
 
-  /** TASK B: Build the prompt for Groq Whisper to bias vocabulary towards Bible terms. */
+  /** TASK B: Build the prompt for Groq Whisper to bias vocabulary towards Bible terms.
+   *
+   * Groq documents the `prompt` parameter at a maximum of 224 tokens
+   * (https://console.groq.com/docs/speech-to-text — prompt guidance). The
+   * static keyword + book-list portion measures ~71 words (~180-200 tokens
+   * once sub-word tokenization of accented French is accounted for), which
+   * leaves little headroom — so the dynamic verse reference is only
+   * appended if the joined prompt stays under a conservative character
+   * budget, and is dropped (never silently truncated mid-word) otherwise.
+   */
   private buildPrompt(): string {
     const parts: string[] = []
 
     // Command keywords (French + English)
-    parts.push("chapitre, verset, suivant, pr\u00e9c\u00e9dent, annuler, chapter, verse, next, previous, cancel")
+    parts.push("chapitre, verset, suivant, précédent, annuler, chapter, verse, next, previous, cancel")
 
     // Most frequent Bible books (French names) — prioritize to stay within token limit
     const frequentBooks = [
-      "gen\u00e8se", "exode", "l\u00e9vitique", "nombres", "deut\u00e9ronome",
-      "josu\u00e9", "juges", "ruth", "samuel", "rois", "chroniques",
-      "esdras", "n\u00e9h\u00e9mie", "esther", "job", "psaumes", "proverbes",
-      "eccl\u00e9siaste", "cantique", "isa\u00efe", "j\u00e9r\u00e9mie", "lamentations",
-      "\u00e9z\u00e9chiel", "daniel", "os\u00e9e", "jo\u00ebl", "amos", "abdias",
-      "jonas", "mich\u00e9e", "nahum", "habacuc", "sophonie", "agg\u00e9e",
+      "genèse", "exode", "lévitique", "nombres", "deutéronome",
+      "josué", "juges", "ruth", "samuel", "rois", "chroniques",
+      "esdras", "néhémie", "esther", "job", "psaumes", "proverbes",
+      "ecclésiaste", "cantique", "isaïe", "jérémie", "lamentations",
+      "ézéchiel", "daniel", "osée", "joël", "amos", "abdias",
+      "jonas", "michée", "nahum", "habacuc", "sophonie", "aggée",
       "zacharie", "malachie", "matthieu", "marc", "luc", "jean",
-      "actes", "romains", "corinthiens", "galates", "eph\u00e9siens",
-      "philippiens", "colossiens", "thessaloniciens", "timoth\u00e9e",
-      "tite", "philemon", "h\u00e9breux", "jacques", "pierre", "jean",
+      "actes", "romains", "corinthiens", "galates", "éphésiens",
+      "philippiens", "colossiens", "thessaloniciens", "timothée",
+      "tite", "philemon", "hébreux", "jacques", "pierre",
       "jude", "apocalypse"
     ]
     parts.push(frequentBooks.join(", "))
 
-    // Dynamic context: currently displayed verse
+    const base = parts.join(". ")
+
+    // Dynamic context: currently displayed verse. TASK B correction: the
+    // reference passed in by AppCore (via setCurrentVerseRef) is the real
+    // last-shown reference — no hard-coded value anywhere.
     if (this.currentVerseRef) {
-      parts.push(`R\u00e9f\u00e9rence actuelle: ${this.currentVerseRef}`)
+      const withRef = `${base}. Référence actuelle: ${this.currentVerseRef}`
+      // ~4 chars/token for French text keeps us safely under the 224-token
+      // documented limit (224 * 4 = 896; 800 leaves margin).
+      if (withRef.length <= MAX_PROMPT_CHARS) {
+        return withRef
+      }
+      this.logger?.debug({
+        component: "asr",
+        event: "prompt.verse-ref-dropped",
+        metadata: { refPreview: this.currentVerseRef.slice(0, 40), baseChars: base.length },
+      })
     }
 
-    return parts.join(". ")
+    return base
   }
 
   async start(): Promise<void> {
@@ -407,8 +436,38 @@ export class GroqProvider implements AsrProvider {
     if (typeof text !== "string") {
       throw new Error("Groq response did not include a text field")
     }
+
+    // TASK B: log FR/PT (or other Romance-language) divergence. When the
+    // expected language is French but a transcript comes back with strong
+    // Portuguese/Spanish lexical markers, that is a per-chunk
+    // language-detection flip worth observing (debug-level: it is a data
+    // quality signal, not a fault). Detection is a cheap, deterministic
+    // heuristic — good enough to spot the trend in logs, never used to
+    // alter or reject the transcript itself.
+    if (this.language === "fr" && looksLikePortugueseOrSpanish(text)) {
+      this.logger?.debug({
+        component: "asr",
+        event: "transcript.language-divergence",
+        metadata: { expected: this.language, textPreview: text.slice(0, 80) },
+      })
+    }
+
     return text.trim()
   }
+}
+
+// TASK B: heuristic Romance-language divergence markers for a French-
+// expected transcript. Presence of several markers together is a strong
+// signal; a single marker alone would false-positive on legitimate French.
+const PT_ES_DIVERGENCE_PATTERNS = [
+  /\b(não|você|obrigado|senhor\b.*\bdeus|espirito|espíritu|gracias|señor)\b/i,
+  /\b\w+ção\b/i,
+  /\b\w+ción\b/i,
+]
+
+function looksLikePortugueseOrSpanish(text: string): boolean {
+  const matches = PT_ES_DIVERGENCE_PATTERNS.filter((p) => p.test(text)).length
+  return matches >= 2
 }
 
 // ARCHITECTURE.md section 73: this app's confirmed languages (French,

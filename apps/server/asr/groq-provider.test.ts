@@ -181,6 +181,131 @@ test("GroqProvider: sends the expected multipart fields (model, response_format)
   assert.ok(form.get("file") instanceof Blob)
 })
 
+// TASK B: the prompt field is a real FormData field and its content comes
+// from setCurrentVerseRef() — the actual last-shown reference, not a
+// hard-coded value.
+test("GroqProvider: prompt field is sent, includes the real current verse reference from setCurrentVerseRef()", async () => {
+  const captured: CapturedRequest[] = []
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    fetchImpl: fakeFetch(() => jsonResponse({ text: "x" }), captured),
+  })
+  provider.onTranscript(() => {})
+
+  provider.setCurrentVerseRef("Jean 3:16")
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame(0))
+
+  assert.equal(captured.length, 1)
+  const form = captured[0]?.init?.body as FormData
+  const prompt = form.get("prompt")
+  assert.ok(typeof prompt === "string" && prompt.length > 0, "prompt field must be present")
+  assert.ok(prompt.includes("Jean 3:16"), "prompt must contain the real current verse reference")
+  assert.ok(prompt.includes("chapitre") && prompt.includes("verset"), "prompt must contain command keywords")
+})
+
+// TASK B: a very long reference must not blow Groq's documented 224-token
+// prompt limit — the dynamic part is dropped whole (never truncated
+// mid-word) when the budget is exceeded.
+test("GroqProvider: an over-budget verse reference is dropped whole from the prompt, not truncated", async () => {
+  const captured: CapturedRequest[] = []
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    fetchImpl: fakeFetch(() => jsonResponse({ text: "x" }), captured),
+  })
+  provider.onTranscript(() => {})
+
+  provider.setCurrentVerseRef("X".repeat(1000))
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame(0))
+
+  const form = captured[0]?.init?.body as FormData
+  const prompt = form.get("prompt") as string
+  assert.ok(typeof prompt === "string" && prompt.length > 0)
+  assert.ok(prompt.length <= 800, "prompt must stay within the character budget")
+  assert.ok(!prompt.includes("XXXX"), "over-budget reference must be dropped, not truncated")
+  assert.ok(prompt.includes("chapitre"), "static keyword base must survive")
+})
+
+// TASK B: clearVerse() — setCurrentVerseRef(null) — removes the reference
+// from subsequent prompts (no stale reference leaking between verses).
+test("GroqProvider: setCurrentVerseRef(null) clears the reference from the prompt", async () => {
+  const captured: CapturedRequest[] = []
+  let callCount = 0
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    fetchImpl: fakeFetch(() => {
+      callCount += 1
+      return jsonResponse({ text: `chunk-${callCount}` })
+    }, captured),
+  })
+  provider.onTranscript(() => {})
+
+  await provider.start()
+  provider.setCurrentVerseRef("Jean 3:16")
+  await provider.sendAudio(oneSecondFrame(0)) // flush 1: ref present
+  provider.setCurrentVerseRef(null)
+  await provider.sendAudio(oneSecondFrame(1)) // flush 2: ref cleared
+
+  assert.equal(captured.length, 2)
+  const prompt1 = (captured[0]?.init?.body as FormData).get("prompt") as string
+  const prompt2 = (captured[1]?.init?.body as FormData).get("prompt") as string
+  assert.ok(prompt1.includes("Jean 3:16"))
+  assert.ok(!prompt2.includes("Jean 3:16"))
+})
+
+// TASK B: FR/PT language divergence is observable in logs without altering
+// the transcript. Requires the logger AND language: "fr" to be configured.
+test("GroqProvider: a Portuguese-looking transcript under language 'fr' logs a language-divergence event, transcript unchanged", async () => {
+  const { logger, lines } = capturingLogger()
+  const captured: CapturedRequest[] = []
+  const ptText = "Não, obrigado senhor deus da salvação eterna"
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    language: "fr",
+    logger,
+    chunkDurationMs: 1000,
+    fetchImpl: fakeFetch(() => jsonResponse({ text: ptText }), captured),
+  })
+  const results: { text: string }[] = []
+  provider.onTranscript((r) => results.push(r as { text: string }))
+
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame(0))
+
+  assert.equal(results.length, 1)
+  assert.equal(results[0]?.text, ptText, "transcript itself must not be altered")
+
+  const divergences = lines.filter(
+    (l) => (l as { event: string }).event === "transcript.language-divergence"
+  )
+  assert.equal(divergences.length, 1, "exactly one divergence event should be logged")
+})
+
+// ...and French text under language 'fr' logs no divergence event.
+test("GroqProvider: a normal French transcript under language 'fr' logs no divergence event", async () => {
+  const { logger, lines } = capturingLogger()
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    language: "fr",
+    logger,
+    chunkDurationMs: 1000,
+    fetchImpl: fakeFetch(() => jsonResponse({ text: "Turn with me to Jean chapitre 3 verset 16" })),
+  })
+  provider.onTranscript(() => {})
+
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame(0))
+
+  const divergences = lines.filter(
+    (l) => (l as { event: string }).event === "transcript.language-divergence"
+  )
+  assert.equal(divergences.length, 0)
+})
+
 test("GroqProvider: does not flush again until another full chunk accumulates, and increments sequence per chunk", async () => {
   const captured: CapturedRequest[] = []
   let callCount = 0
