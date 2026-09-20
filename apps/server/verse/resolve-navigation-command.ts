@@ -66,17 +66,43 @@ export function resolveNavigationCommand(
     if (index.exists(candidate)) {
       return { kind: "reference", reference: candidate }
     }
-    // Determine specific reason for the failure
+    // PROD AUDIT 2026-09: this branch used to always no-op even though it
+    // computed the precise reason. Two exact production cases:
+    //   "Daniel chapitre 13 verset 14" — Daniel has 12 chapters
+    //   "Esaïe chapitre 4, verset 18" — Isaiah 4 has 22 verses
+    // Same fallback mechanism as goto-chapter above: an out-of-range
+    // chapter falls back to the book's LAST VALID chapter; a verse beyond
+    // a valid chapter's end is clamped to that chapter's LAST VERSE (not
+    // verse:1 — the speaker clearly wanted the end of the chapter they
+    // named). Always validated through index.exists() (invariant 17);
+    // fallback:true lets AppCore broadcast a dashboard warning.
     const bookIndex = BOOK_CATALOG.findIndex((b) => b.id === command.book)
     if (bookIndex < 0) {
       return { kind: "no-op", reason: "unknown_book" }
     }
     const book = BOOK_CATALOG[bookIndex]!
-    if (command.chapter < 1 || command.chapter > book.chapters.length) {
+    const lastChapter = book.chapters.length
+    if (command.chapter < 1 || command.chapter > lastChapter) {
+      const lastChapterRef: VerseReference = {
+        book: command.book,
+        chapter: lastChapter,
+        verse: book.chapters[lastChapter - 1]!,
+      }
+      if (index.exists(lastChapterRef)) {
+        return { kind: "reference", reference: lastChapterRef, fallback: true as const }
+      }
       return { kind: "no-op", reason: "chapter_out_of_range" }
     }
     const versesInChapter = book.chapters[command.chapter - 1]!
     if (command.verse < 1 || command.verse > versesInChapter) {
+      const clampedRef: VerseReference = {
+        book: command.book,
+        chapter: command.chapter,
+        verse: versesInChapter,
+      }
+      if (index.exists(clampedRef)) {
+        return { kind: "reference", reference: clampedRef, fallback: true as const }
+      }
       return { kind: "no-op", reason: "verse_out_of_range" }
     }
     return { kind: "no-op", reason: "verse_out_of_range" }

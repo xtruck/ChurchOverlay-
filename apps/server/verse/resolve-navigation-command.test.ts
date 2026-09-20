@@ -184,3 +184,46 @@ test("resolveNavigationCommand: goto-display-mode is always a no-op here, regard
     { kind: "no-op", reason: "no_current_position" }
   )
 })
+
+// PROD AUDIT 2026-09: both exact production cases. "Daniel chapitre 13
+// verset 14" used to no-op (Daniel has 12 chapters); it now falls back to
+// the book's LAST chapter at its LAST verse, with fallback:true.
+test("resolveNavigationCommand: 'Daniel chapitre 13 verset 14' falls back to Daniel 12:13 with fallback:true (production case)", () => {
+  const result = resolveNavigationCommand(
+    { kind: "goto-book-chapter-verse", book: "daniel", chapter: 13, verse: 14 },
+    null,
+    index
+  )
+  assert.deepEqual(result, {
+    kind: "reference",
+    reference: { book: "daniel", chapter: 12, verse: 13 }, // Daniel has 12 chapters; ch12 has 13 verses
+    fallback: true,
+  })
+})
+
+// PROD AUDIT 2026-09: "Esaïe chapitre 4, verset 18" — chapter is valid,
+// the verse alone is out of range (Isaiah 4 has 6 verses); clamps to the
+// chapter's LAST verse, not verse:1.
+test("resolveNavigationCommand: 'Esaïe chapitre 4 verset 18' clamps to Isaiah 4:6 with fallback:true (production case)", () => {
+  const result = resolveNavigationCommand(
+    { kind: "goto-book-chapter-verse", book: "isaiah", chapter: 4, verse: 18 },
+    null,
+    index
+  )
+  assert.deepEqual(result, {
+    kind: "reference",
+    reference: { book: "isaiah", chapter: 4, verse: 6 }, // Isaiah 4 has exactly 6 verses
+    fallback: true,
+  })
+})
+
+// Exact in-range references must NEVER get the fallback flag — only the
+// out-of-range clamp path marks it.
+test("resolveNavigationCommand: goto-book-chapter-verse with an exact valid reference resolves without fallback", () => {
+  const result = resolveNavigationCommand(
+    { kind: "goto-book-chapter-verse", book: "john", chapter: 3, verse: 16 },
+    null,
+    index
+  )
+  assert.deepEqual(result, { kind: "reference", reference: { book: "john", chapter: 3, verse: 16 } })
+})
