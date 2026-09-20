@@ -140,6 +140,15 @@ export class ChurchOverlayWsServer {
 
   close(): Promise<void> {
     return new Promise((resolve, reject) => {
+      // wss.close() only stops accepting NEW connections and then waits for
+      // every EXISTING client socket to close on its own. Any client that
+      // never closes keeps this promise pending forever (and keeps the Node
+      // event loop alive — observed as the test suite hanging after all
+      // tests pass). A server shutdown is authoritative: terminate all
+      // connected clients first, then close the listener.
+      for (const client of this.wss.clients) {
+        client.terminate()
+      }
       this.wss.close((err) => (err ? reject(err) : resolve()))
     })
   }
