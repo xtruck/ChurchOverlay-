@@ -130,7 +130,7 @@ export function stripAccents(text: string): string {
  * "Romains 8:28") would never resolve at all, since normalizeBookName()
  * previously only trimmed/lowercased without translating.
  */
-const FRENCH_BOOK_ALIASES: Readonly<Record<string, string>> = {
+export const FRENCH_BOOK_ALIASES: Readonly<Record<string, string>> = {
   genese: "genesis",
   exode: "exodus",
   levitique: "leviticus",

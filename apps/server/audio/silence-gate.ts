@@ -85,6 +85,12 @@ const DEFAULT_HANGOVER_MS = 600
 export type SilenceGateResult = {
   readonly forwarded: boolean
   readonly rms: number
+  /**
+   * True on the specific frame where an active hangover countdown reaches 0
+   * (i.e., speech was detected, then enough silence followed that the hangover expired).
+   * This signals the end of an utterance — the ASR provider should flush its buffer.
+   */
+  readonly utteranceEnded: boolean
 }
 
 export type SilenceGateMetrics = {
@@ -171,7 +177,7 @@ export class SilenceGate {
       if (this.calibrationSampleCount >= this.calibrationTargetSamples) {
         this.finishCalibration()
       }
-      return { forwarded: false, rms }
+      return { forwarded: false, rms, utteranceEnded: false }
     }
 
     this.framesReceived += 1
@@ -184,6 +190,7 @@ export class SilenceGate {
     // hangover budget remains from a recent above-threshold frame, and
     // only that remaining budget is spent, not refilled.
     const aboveThreshold = rms >= this.threshold
+    const wasHangoverActive = this.hangoverRemainingMs > 0
     const forwarded = aboveThreshold || this.hangoverRemainingMs > 0
     if (aboveThreshold) {
       this.hangoverRemainingMs = this.hangoverMs
@@ -192,13 +199,16 @@ export class SilenceGate {
       this.hangoverRemainingMs = Math.max(0, this.hangoverRemainingMs - frameDurationMs)
     }
 
+    // utteranceEnded is true when hangover was active and just expired on this frame
+    const utteranceEnded = wasHangoverActive && this.hangoverRemainingMs === 0
+
     if (forwarded) {
       this.framesForwarded += 1
     } else {
       this.framesRejected += 1
     }
 
-    return { forwarded, rms }
+    return { forwarded, rms, utteranceEnded }
   }
 
   /** True while a calibration window is still accumulating — lets a caller (AppCore) know not to report "mic started" as fully live just yet. */

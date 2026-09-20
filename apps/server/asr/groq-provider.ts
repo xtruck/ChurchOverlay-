@@ -1,6 +1,7 @@
 import type { AsrProvider, AudioFrame, TranscriptResult } from "../../../packages/contracts"
 import { generateUlid } from "../../../packages/shared/ulid"
 import type { Logger } from "../../../packages/shared/logger"
+import { FRENCH_BOOK_ALIASES } from "../detector/regex-detector"
 
 const DEFAULT_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 const DEFAULT_MODEL = "whisper-large-v3-turbo"
@@ -17,6 +18,14 @@ const DEFAULT_MODEL = "whisper-large-v3-turbo"
 // network/inference time dominates anyway.
 const DEFAULT_CHUNK_DURATION_MS = 2000
 const SAMPLE_RATE = 16000
+
+// TASK 3: utterance-aligned chunking constants
+// Maximum time to buffer before forcing a flush (8 seconds — long unbroken speech)
+const MAX_CHUNK_DURATION_MS = 8000
+// Minimum time before a flush can occur (700ms — avoid flushing on single words)
+const MIN_CHUNK_DURATION_MS = 700
+// Overlap to retain when a max-cap flush splits an utterance (~500ms)
+const OVERLAP_MS = 500
 
 export type GroqProviderOptions = {
   readonly apiKey: string
@@ -99,6 +108,13 @@ export class GroqProvider implements AsrProvider {
   private sequence = 0
   private correlationId = ""
 
+  // TASK 3: utterance-aligned chunking state
+  private lastTranscriptText = ""
+  private lastFlushTime = 0
+
+  // TASK B: prompt for lexical bias
+  private currentVerseRef: string | null = null
+
   constructor(options: GroqProviderOptions) {
     if (!options.apiKey) {
       throw new Error("GroqProvider requires an apiKey")
@@ -118,12 +134,50 @@ export class GroqProvider implements AsrProvider {
     this.language = language
   }
 
+  /** TASK B: Update the current verse reference for dynamic prompt context. */
+  setCurrentVerseRef(ref: string | null): void {
+    this.currentVerseRef = ref
+  }
+
+  /** TASK B: Build the prompt for Groq Whisper to bias vocabulary towards Bible terms. */
+  private buildPrompt(): string {
+    const parts: string[] = []
+
+    // Command keywords (French + English)
+    parts.push("chapitre, verset, suivant, pr\u00e9c\u00e9dent, annuler, chapter, verse, next, previous, cancel")
+
+    // Most frequent Bible books (French names) — prioritize to stay within token limit
+    const frequentBooks = [
+      "gen\u00e8se", "exode", "l\u00e9vitique", "nombres", "deut\u00e9ronome",
+      "josu\u00e9", "juges", "ruth", "samuel", "rois", "chroniques",
+      "esdras", "n\u00e9h\u00e9mie", "esther", "job", "psaumes", "proverbes",
+      "eccl\u00e9siaste", "cantique", "isa\u00efe", "j\u00e9r\u00e9mie", "lamentations",
+      "\u00e9z\u00e9chiel", "daniel", "os\u00e9e", "jo\u00ebl", "amos", "abdias",
+      "jonas", "mich\u00e9e", "nahum", "habacuc", "sophonie", "agg\u00e9e",
+      "zacharie", "malachie", "matthieu", "marc", "luc", "jean",
+      "actes", "romains", "corinthiens", "galates", "eph\u00e9siens",
+      "philippiens", "colossiens", "thessaloniciens", "timoth\u00e9e",
+      "tite", "philemon", "h\u00e9breux", "jacques", "pierre", "jean",
+      "jude", "apocalypse"
+    ]
+    parts.push(frequentBooks.join(", "))
+
+    // Dynamic context: currently displayed verse
+    if (this.currentVerseRef) {
+      parts.push(`R\u00e9f\u00e9rence actuelle: ${this.currentVerseRef}`)
+    }
+
+    return parts.join(". ")
+  }
+
   async start(): Promise<void> {
     this.active = true
     this.bufferedFrames = []
     this.bufferedSampleCount = 0
     this.sequence = 0
     this.correlationId = generateUlid(this.now())
+    this.lastTranscriptText = ""
+    this.lastFlushTime = this.now()
   }
 
   async sendAudio(audio: AudioFrame): Promise<void> {
@@ -135,8 +189,24 @@ export class GroqProvider implements AsrProvider {
     this.bufferedSampleCount += audio.samples.length
 
     const bufferedDurationMs = (this.bufferedSampleCount / SAMPLE_RATE) * 1000
-    if (bufferedDurationMs >= this.chunkDurationMs) {
+
+    // TASK 3: flush conditions with utterance alignment
+    // Priority order:
+    // 1. Max cap reached (8s) — force flush with overlap retention (even mid-utterance)
+    // 2. Utterance ended (from SilenceGate) — handled via onUtteranceEnd() call
+    // 3. Chunk duration reached (fallback for backward compat) — respect min floor
+    // 4. Min floor (700ms) prevents premature flushes on single words
+
+    // 1. Max cap reached (8s) — force flush with overlap retention
+    if (bufferedDurationMs >= MAX_CHUNK_DURATION_MS) {
+      await this.flushWithOverlap()
+      return
+    }
+
+    // 2. Fallback: chunk duration reached (backward compat) — respect min floor
+    if (bufferedDurationMs >= this.chunkDurationMs && bufferedDurationMs >= MIN_CHUNK_DURATION_MS) {
       await this.flush()
+      return
     }
   }
 
@@ -145,6 +215,147 @@ export class GroqProvider implements AsrProvider {
       await this.flush()
     }
     this.active = false
+  }
+
+  /**
+   * TASK 3: Called when SilenceGate detects end of utterance (hangover expired).
+   * Flushes the buffer if minimum duration (700ms) has been reached.
+   * This is called from AppCore when SilenceGate reports utteranceEnded.
+   */
+  async onUtteranceEnd(): Promise<void> {
+    if (!this.active) return
+    const bufferedDurationMs = (this.bufferedSampleCount / SAMPLE_RATE) * 1000
+    const timeSinceLastFlush = this.now() - this.lastFlushTime
+
+    // Only flush if we've buffered at least the minimum duration
+    // This avoids flushing on single words / brief noise
+    if (bufferedDurationMs >= MIN_CHUNK_DURATION_MS && this.bufferedSampleCount > 0) {
+      await this.flush()
+    }
+  }
+
+  /**
+   * TASK 3: Force flush when max duration (8s) is reached, with overlap retention.
+   * Retains ~500ms of audio as overlap for the next chunk to avoid cutting words.
+   * Performs text-level deduplication at the seam.
+   */
+  private async flushWithOverlap(): Promise<void> {
+    if (this.bufferedSampleCount === 0) return
+
+    const totalSamples = this.bufferedSampleCount
+    const overlapSamples = Math.round((OVERLAP_MS / 1000) * SAMPLE_RATE)
+    const flushSamples = totalSamples - overlapSamples
+
+    if (flushSamples <= 0) {
+      // Not enough samples to flush with overlap, just do a normal flush
+      await this.flush()
+      return
+    }
+
+    // Extract the samples to flush (excluding overlap)
+    const samplesToFlush = this.extractSamples(this.bufferedFrames, flushSamples)
+    // Retain the overlap samples for the next chunk
+    const overlapFrames = this.extractFrames(this.bufferedFrames, overlapSamples, totalSamples)
+
+    // Flush the main portion
+    await this.flushSamples(samplesToFlush)
+
+    // Retain overlap frames as the start of the next buffer
+    this.bufferedFrames = overlapFrames
+    this.bufferedSampleCount = overlapSamples
+    this.lastFlushTime = this.now()
+  }
+
+  /**
+   * Helper to extract a specific number of samples from the beginning of buffered frames
+   */
+  private extractSamples(frames: Int16Array[], sampleCount: number): Int16Array {
+    const result = new Int16Array(sampleCount)
+    let offset = 0
+    let remaining = sampleCount
+    for (const frame of frames) {
+      const take = Math.min(frame.length, remaining)
+      result.set(frame.subarray(0, take), offset)
+      offset += take
+      remaining -= take
+      if (remaining === 0) break
+    }
+    return result
+  }
+
+  /**
+   * Extract frames representing the last N samples for overlap retention
+   */
+  private extractFrames(frames: Int16Array[], overlapSamples: number, totalSamples: number): Int16Array[] {
+    const result: Int16Array[] = []
+    let remaining = overlapSamples
+    // Start from the end and work backwards
+    for (let i = frames.length - 1; i >= 0 && remaining > 0; i--) {
+      const frame = frames[i]!
+      const take = Math.min(frame.length, remaining)
+      const start = frame.length - take
+      result.unshift(frame.subarray(start))
+      remaining -= take
+    }
+    return result
+  }
+
+  /**
+   * Flush a specific sample array (used for flushWithOverlap)
+   */
+  private async flushSamples(samples: Int16Array): Promise<void> {
+    try {
+      const text = await this.transcribe(samples)
+      if (containsNonLatinScript(text)) {
+        this.logger?.debug({
+          component: "asr",
+          event: "transcript.non-latin-script-dropped",
+          metadata: { textPreview: text.slice(0, 80) },
+        })
+        return
+      }
+      // TASK 3: text-level deduplication at seam
+      const dedupedText = this.deduplicateOverlap(this.lastTranscriptText, text)
+      this.lastTranscriptText = text // Store full text for next overlap check
+
+      this.sequence += 1
+      this.transcriptCallback?.({
+        id: generateUlid(this.now()),
+        correlationId: this.correlationId,
+        sequence: this.sequence,
+        text: dedupedText,
+        state: "final",
+        timestamp: this.now(),
+      })
+      this.lastFlushTime = this.now()
+    } catch (err) {
+      this.errorCallback?.(err instanceof Error ? err : new Error(String(err)))
+    }
+  }
+
+  /**
+   * TASK 3: Simple text-level deduplication at chunk seam.
+   * If the end of the previous transcript and start of current transcript
+   * share a common word sequence (2+ words), drop the duplicate from current.
+   * Conservative: only removes exact word matches, not fuzzy.
+   */
+  private deduplicateOverlap(prevText: string, currText: string): string {
+    if (!prevText || !currText) return currText
+
+    const prevWords = prevText.trim().split(/\s+/)
+    const currWords = currText.trim().split(/\s+/)
+
+    // Look for common suffix/prefix of 2+ words
+    const maxCheck = Math.min(prevWords.length, currWords.length, 5) // limit check
+    for (let len = maxCheck; len >= 2; len--) {
+      const prevSuffix = prevWords.slice(-len).join(" ")
+      const currPrefix = currWords.slice(0, len).join(" ")
+      if (prevSuffix.toLowerCase() === currPrefix.toLowerCase()) {
+        // Found overlap - remove the duplicate prefix from current
+        return currWords.slice(len).join(" ")
+      }
+    }
+    return currText
   }
 
   onTranscript(callback: (result: TranscriptResult) => void): void {
@@ -160,46 +371,7 @@ export class GroqProvider implements AsrProvider {
     const samples = concatenateSamples(this.bufferedFrames, this.bufferedSampleCount)
     this.bufferedFrames = []
     this.bufferedSampleCount = 0
-
-    try {
-      const text = await this.transcribe(samples)
-      // ARCHITECTURE.md section 73: confirmed live, a real Whisper failure
-      // mode — fed ambient noise or unclear audio with no `language` hint,
-      // it sometimes hallucinates fluent-looking text in a language never
-      // actually spoken (Chinese, in the reported case), rather than
-      // returning empty or garbled output. This app's confirmed audience is
-      // French/English only, so any non-Latin-script result is noise, not
-      // a real transcript worth acting on — dropped here, at the source,
-      // rather than reaching verse detection or the dashboard's transcript
-      // display. Not a real ASR failure (no onError call): from the
-      // operator's perspective this is indistinguishable from a quiet
-      // moment producing nothing, which is the correct framing.
-      if (containsNonLatinScript(text)) {
-        // debug, deliberately not warn: this is expected, routine
-        // filtering, not a fault — logged only so a report of "this bug
-        // is still happening" can be checked against a specific build's
-        // logs (with minLevel lowered to debug) rather than argued from
-        // memory. Truncated: this is a diagnostic breadcrumb, not a
-        // transcript archive.
-        this.logger?.debug({
-          component: "asr",
-          event: "transcript.non-latin-script-dropped",
-          metadata: { textPreview: text.slice(0, 80) },
-        })
-        return
-      }
-      this.sequence += 1
-      this.transcriptCallback?.({
-        id: generateUlid(this.now()),
-        correlationId: this.correlationId,
-        sequence: this.sequence,
-        text,
-        state: "final",
-        timestamp: this.now(),
-      })
-    } catch (err) {
-      this.errorCallback?.(err instanceof Error ? err : new Error(String(err)))
-    }
+    await this.flushSamples(samples)
   }
 
   private async transcribe(samples: Int16Array): Promise<string> {
@@ -210,6 +382,11 @@ export class GroqProvider implements AsrProvider {
     form.append("response_format", "json")
     if (this.language) {
       form.append("language", this.language)
+    }
+    // TASK B: Add prompt for lexical bias
+    const prompt = this.buildPrompt()
+    if (prompt) {
+      form.append("prompt", prompt)
     }
 
     const response = await this.fetchImpl(this.url, {

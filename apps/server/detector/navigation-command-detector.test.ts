@@ -68,12 +68,18 @@ test("NavigationCommandDetector: 'goto-chapter' does NOT fire on RegexDetector's
   assert.deepEqual(detector.detect("Turn to Romans 8:28 tonight."), [])
 })
 
-// Regression coverage for two real bugs found via section 65.1's own test
-// suite while adding the bare-continuation patterns above.
-test("NavigationCommandDetector: 'goto-chapter' does NOT fire when a verse indicator follows ('Book chapter N, verse M' is a full reference in prose form)", () => {
+// TASK 1: "Book chapter N, verse M" now produces goto-book-chapter-verse
+// (a full reference in prose form with all three components). The old
+// behavior was to reject this as RegexDetector's territory, but that left
+// French "Jean chapitre 3 verset 16" unhandled. The new pattern catches it.
+test("NavigationCommandDetector: 'Book chapter N, verse M' produces goto-book-chapter-verse", () => {
   const detector = new NavigationCommandDetector()
-  assert.deepEqual(detector.detect("Turn to Romans chapter 9, verse 3."), [])
-  assert.deepEqual(detector.detect("Turn to Romans chapter 9 verse 3."), [])
+  assert.deepEqual(detector.detect("Turn to Romans chapter 9, verse 3."), [
+    { kind: "goto-book-chapter-verse", book: "romans", chapter: 9, verse: 3 },
+  ])
+  assert.deepEqual(detector.detect("Turn to Romans chapter 9 verse 3."), [
+    { kind: "goto-book-chapter-verse", book: "romans", chapter: 9, verse: 3 },
+  ])
 })
 
 test("NavigationCommandDetector: 'goto-chapter' does NOT treat a lowercase word immediately before 'chapter N' as a book name", () => {
@@ -119,12 +125,17 @@ test("NavigationCommandDetector: 'chapter N, verse M' does NOT also fire a redun
   assert.deepEqual(result, [{ kind: "goto-bare-chapter-verse", chapter: 9, verse: 3 }])
 })
 
-test("NavigationCommandDetector: a book name immediately before 'chapter N verse M' is NOT captured as a bare continuation", () => {
+// TASK 1: a stated book name before "chapter N verse M" now correctly
+// produces goto-book-chapter-verse (not a bare continuation). This fixes
+// the dead zone where "Jean chapitre 3 verset 16" was unhandled.
+test("NavigationCommandDetector: a book name before 'chapter N verse M' produces goto-book-chapter-verse", () => {
   const detector = new NavigationCommandDetector()
-  // "Romans" is the stated book — must not be silently discarded in favor
-  // of whatever book happens to be current.
-  assert.deepEqual(detector.detect("Turn to Romans chapter 9, verse 3."), [])
-  assert.deepEqual(detector.detect("Turn to 1 Corinthians chapter 13, verse 4."), [])
+  assert.deepEqual(detector.detect("Turn to Romans chapter 9, verse 3."), [
+    { kind: "goto-book-chapter-verse", book: "romans", chapter: 9, verse: 3 },
+  ])
+  assert.deepEqual(detector.detect("Turn to 1 Corinthians chapter 13, verse 4."), [
+    { kind: "goto-book-chapter-verse", book: "1 corinthians", chapter: 13, verse: 4 },
+  ])
 })
 
 test("NavigationCommandDetector: a book name immediately before a bare 'verse N' phrase is unaffected (verse pattern has no book-name guard of its own, by design)", () => {
@@ -179,17 +190,22 @@ test("NavigationCommandDetector: French short synonyms only trigger as the whole
   assert.deepEqual(detector.detect("Le suivant sur la liste est prêt."), [])
 })
 
-test("NavigationCommandDetector: a French 'chapitre N verset M' resolves as a bare continuation, with a French book name correctly excluded", () => {
+// TASK 1: French book name before "chapitre N verset M" now correctly
+// produces goto-book-chapter-verse (not a bare continuation).
+test("NavigationCommandDetector: a French 'chapitre N verset M' with a stated book produces goto-book-chapter-verse", () => {
   const detector = new NavigationCommandDetector()
   assert.deepEqual(detector.detect("Allons au chapitre 9, verset 3."), [
     { kind: "goto-bare-chapter-verse", chapter: 9, verse: 3 },
   ])
   assert.deepEqual(detector.detect("Maintenant regardez le verset 17."), [{ kind: "goto-bare-verse", verse: 17 }])
-  // "Romains" is the stated book — must not be discarded as if it were a
-  // bare continuation using whatever book happens to be current.
-  assert.deepEqual(detector.detect("Allons à Romains chapitre 9, verset 3."), [])
-  // Accented French book name — same guard, with an accented capital.
-  assert.deepEqual(detector.detect("Allons à Ésaïe chapitre 6, verset 8."), [])
+  // "Romains" is the stated book — now correctly produces goto-book-chapter-verse
+  assert.deepEqual(detector.detect("Allons à Romains chapitre 9, verset 3."), [
+    { kind: "goto-book-chapter-verse", book: "romans", chapter: 9, verse: 3 },
+  ])
+  // Accented French book name — same behavior, now produces goto-book-chapter-verse
+  assert.deepEqual(detector.detect("Allons à Ésaïe chapitre 6, verset 8."), [
+    { kind: "goto-book-chapter-verse", book: "isaiah", chapter: 6, verse: 8 },
+  ])
 })
 
 test("NavigationCommandDetector: French voice commands to switch display mode, independent of verb conjugation", () => {

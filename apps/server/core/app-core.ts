@@ -450,6 +450,11 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
 
   function showVerse(verse: Verse, trigger: VerseTrigger, correlationId?: string): void {
     currentVersePosition = verse.reference
+    // TASK B: Update ASR prompt with current verse reference for dynamic context
+    const refStr = `${verse.reference.book} ${verse.reference.chapter}:${verse.reference.verse}`
+    if ("setCurrentVerseRef" in asr && typeof asr.setCurrentVerseRef === "function") {
+      (asr as { setCurrentVerseRef: (ref: string | null) => void }).setCurrentVerseRef(refStr)
+    }
     const payload: VerseShowPayload = { ...verse, trigger }
     lastShownVerse = payload
     const timestamp = Date.now()
@@ -494,6 +499,10 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   function clearVerse(correlationId?: string): void {
     currentVersePosition = null
     lastShownVerse = null
+    // TASK B: Clear ASR prompt context when verse is cleared
+    if ("setCurrentVerseRef" in asr && typeof asr.setCurrentVerseRef === "function") {
+      (asr as { setCurrentVerseRef: (ref: string | null) => void }).setCurrentVerseRef(null)
+    }
     // Invariant 25: whatever ended the verse (manual clear, navigation, a
     // "blank" scene), any pending auto-clear timer for it is now stale —
     // cancel it so it can never later fire against different content.
@@ -821,7 +830,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // when the mic stops, below — an operator with a "nothing is being
     // detected" complaint can see whether frames were even reaching ASR.
     const wasCalibrating = silenceGate.isCalibrating()
-    const { forwarded } = silenceGate.process(frame)
+    const { forwarded, utteranceEnded } = silenceGate.process(frame)
     // ARCHITECTURE.md section 76: the calibration-just-finished transition
     // is only observable here, as a side effect of process() — this is
     // the one place that can see it happen and tell the dashboard.
@@ -839,6 +848,13 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     }
     if (forwarded) {
       await asr.sendAudio(frame)
+    }
+    // TASK 3: when SilenceGate signals end of utterance, flush ASR buffer
+    if (utteranceEnded) {
+      // The asr is typed as AsrProvider but we know it's GroqProvider with onUtteranceEnd
+      if ("onUtteranceEnd" in asr && typeof asr.onUtteranceEnd === "function") {
+        await (asr as { onUtteranceEnd: () => Promise<void> }).onUtteranceEnd()
+      }
     }
   }
 
@@ -1150,13 +1166,25 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         continue
       }
       if (resolution.kind === "no-op") {
-        logger.info({
+        logger.warn({
           component: "app-core",
           event: "navigation.no-op",
           correlationId: transcript.correlationId,
-          metadata: { command },
+          metadata: { command, reason: resolution.reason },
         })
         continue
+      }
+
+      // TASK 5: if this was a fallback (out-of-range chapter), broadcast a
+      // warning so the dashboard can surface it. The reference is valid (last
+      // chapter of the book) so we proceed to resolveVerse() normally.
+      if (resolution.fallback) {
+        logger.warn({
+          component: "app-core",
+          event: "navigation.fallback",
+          correlationId: transcript.correlationId,
+          metadata: { originalCommand: command, fallbackReference: resolution.reference },
+        })
       }
 
       // Still the full resolveVerse() pipeline (cache -> circuit breaker ->
@@ -1171,11 +1199,20 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   }
 
   asr.onTranscript((transcript) => {
+    // TASK 4: log transcript text (truncated to 120 chars for 30-day rotating logs)
+    // and textLength. Full text goes to dashboard via WS broadcast.
+    const textPreview = transcript.text.length > 120 ? transcript.text.slice(0, 120) + "…" : transcript.text
     logger.info({
       component: "asr",
       event: "transcript.received",
       correlationId: transcript.correlationId,
       sequence: transcript.sequence,
+      metadata: {
+        text: textPreview,
+        textLength: transcript.text.length,
+        // TASK 4: include SilenceGate metrics so VAD starvation is diagnosable from one session
+        silenceGate: silenceGate.getMetrics(),
+      },
     })
     // ARCHITECTURE.md section 70: a production audit found that every
     // transcript was consumed internally (verse detection, media/glossary/
@@ -1217,6 +1254,24 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
           error: err instanceof Error ? err.message : String(err),
         })
       })
+
+    // TASK 4: NEAR-MISS LOG — when a transcript contains chapter/verse keywords
+    // but produced zero references AND zero commands, log event "detector.near-miss"
+    // with the text. This turns every future pattern gap into a grep instead of
+    // an investigation.
+    // Use synchronous detector checks to avoid async in this callback.
+    const hasChapterVerseKeywords = /chapitre|chapter|verset|verse/i.test(transcript.text)
+    const detectorRefs = detector.detect(transcript.text)
+    const validatedRefs = detectorRefs.filter((r) => index.exists(r))
+    const navCommands = navigationCommandDetector.detect(transcript.text)
+    if (hasChapterVerseKeywords && validatedRefs.length === 0 && navCommands.length === 0) {
+      logger.warn({
+        component: "app-core",
+        event: "detector.near-miss",
+        correlationId: transcript.correlationId,
+        metadata: { text: transcript.text },
+      })
+    }
 
     // Voice-triggered media (ARCHITECTURE.md section 60.3), running
     // alongside verse detection above, not instead of it — a sentence can

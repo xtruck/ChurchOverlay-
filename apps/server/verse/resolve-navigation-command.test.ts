@@ -27,7 +27,7 @@ test("resolveNavigationCommand: next-verse rolls into the next BOOK at a book bo
 test("resolveNavigationCommand: next-verse at the very last verse of the Bible (Revelation 22:21) is a no-op", () => {
   const current: VerseReference = { book: "revelation", chapter: 22, verse: 21 } // Revelation's last chapter has exactly 21 verses
   const result = resolveNavigationCommand({ kind: "next-verse" }, current, index)
-  assert.deepEqual(result, { kind: "no-op" })
+  assert.deepEqual(result, { kind: "no-op", reason: "verse_out_of_range" })
 })
 
 test("resolveNavigationCommand: previous-verse within a chapter", () => {
@@ -51,7 +51,7 @@ test("resolveNavigationCommand: previous-verse rolls into the previous BOOK's la
 test("resolveNavigationCommand: previous-verse at the very first verse of the Bible (Genesis 1:1) is a no-op", () => {
   const current: VerseReference = { book: "genesis", chapter: 1, verse: 1 }
   const result = resolveNavigationCommand({ kind: "previous-verse" }, current, index)
-  assert.deepEqual(result, { kind: "no-op" })
+  assert.deepEqual(result, { kind: "no-op", reason: "verse_out_of_range" })
 })
 
 test("resolveNavigationCommand: next-chapter within a book", () => {
@@ -69,7 +69,7 @@ test("resolveNavigationCommand: next-chapter rolls into the next book at the las
 test("resolveNavigationCommand: next-chapter at the last chapter of the last book (Revelation 22) is a no-op", () => {
   const current: VerseReference = { book: "revelation", chapter: 22, verse: 1 }
   const result = resolveNavigationCommand({ kind: "next-chapter" }, current, index)
-  assert.deepEqual(result, { kind: "no-op" })
+  assert.deepEqual(result, { kind: "no-op", reason: "verse_out_of_range" })
 })
 
 test("resolveNavigationCommand: previous-chapter within a book", () => {
@@ -87,14 +87,14 @@ test("resolveNavigationCommand: previous-chapter rolls into the previous book's 
 test("resolveNavigationCommand: previous-chapter at the first chapter of the first book (Genesis 1) is a no-op", () => {
   const current: VerseReference = { book: "genesis", chapter: 1, verse: 1 }
   const result = resolveNavigationCommand({ kind: "previous-chapter" }, current, index)
-  assert.deepEqual(result, { kind: "no-op" })
+  assert.deepEqual(result, { kind: "no-op", reason: "verse_out_of_range" })
 })
 
 test("resolveNavigationCommand: next-verse/previous-verse/next-chapter/previous-chapter with no current position are all no-ops", () => {
-  assert.deepEqual(resolveNavigationCommand({ kind: "next-verse" }, null, index), { kind: "no-op" })
-  assert.deepEqual(resolveNavigationCommand({ kind: "previous-verse" }, null, index), { kind: "no-op" })
-  assert.deepEqual(resolveNavigationCommand({ kind: "next-chapter" }, null, index), { kind: "no-op" })
-  assert.deepEqual(resolveNavigationCommand({ kind: "previous-chapter" }, null, index), { kind: "no-op" })
+  assert.deepEqual(resolveNavigationCommand({ kind: "next-verse" }, null, index), { kind: "no-op", reason: "no_current_position" })
+  assert.deepEqual(resolveNavigationCommand({ kind: "previous-verse" }, null, index), { kind: "no-op", reason: "no_current_position" })
+  assert.deepEqual(resolveNavigationCommand({ kind: "next-chapter" }, null, index), { kind: "no-op", reason: "no_current_position" })
+  assert.deepEqual(resolveNavigationCommand({ kind: "previous-chapter" }, null, index), { kind: "no-op", reason: "no_current_position" })
 })
 
 test("resolveNavigationCommand: goto-chapter for a valid book/chapter resolves to verse 1", () => {
@@ -105,12 +105,15 @@ test("resolveNavigationCommand: goto-chapter for a valid book/chapter resolves t
 test("resolveNavigationCommand: goto-chapter for an invalid book or out-of-range chapter is a no-op (never bypasses the hallucination guard)", () => {
   assert.deepEqual(
     resolveNavigationCommand({ kind: "goto-chapter", book: "frogs", chapter: 1 }, null, index),
-    { kind: "no-op" }
+    { kind: "no-op", reason: "unknown_book" }
   )
-  assert.deepEqual(
-    resolveNavigationCommand({ kind: "goto-chapter", book: "john", chapter: 999 }, null, index),
-    { kind: "no-op" }
-  )
+  // TASK 5: out-of-range chapter now falls back to last valid chapter instead of no-op
+  // This test now expects the fallback behavior
+  const fallbackResult = resolveNavigationCommand({ kind: "goto-chapter", book: "john", chapter: 999 }, null, index)
+  assert.equal(fallbackResult.kind, "reference")
+  assert.equal(fallbackResult.fallback, true)
+  assert.equal(fallbackResult.reference.chapter, 21) // John has 21 chapters
+  assert.equal(fallbackResult.reference.verse, 1)
 })
 
 test("resolveNavigationCommand: cancel always resolves to cancel, regardless of current position", () => {
@@ -123,10 +126,10 @@ test("resolveNavigationCommand: cancel always resolves to cancel, regardless of 
 
 test("resolveNavigationCommand: a current position with an unknown book is a no-op, not a crash", () => {
   const current: VerseReference = { book: "not-a-real-book", chapter: 1, verse: 1 }
-  assert.deepEqual(resolveNavigationCommand({ kind: "next-verse" }, current, index), { kind: "no-op" })
-  assert.deepEqual(resolveNavigationCommand({ kind: "previous-verse" }, current, index), { kind: "no-op" })
-  assert.deepEqual(resolveNavigationCommand({ kind: "next-chapter" }, current, index), { kind: "no-op" })
-  assert.deepEqual(resolveNavigationCommand({ kind: "previous-chapter" }, current, index), { kind: "no-op" })
+  assert.deepEqual(resolveNavigationCommand({ kind: "next-verse" }, current, index), { kind: "no-op", reason: "verse_out_of_range" })
+  assert.deepEqual(resolveNavigationCommand({ kind: "previous-verse" }, current, index), { kind: "no-op", reason: "verse_out_of_range" })
+  assert.deepEqual(resolveNavigationCommand({ kind: "next-chapter" }, current, index), { kind: "no-op", reason: "verse_out_of_range" })
+  assert.deepEqual(resolveNavigationCommand({ kind: "previous-chapter" }, current, index), { kind: "no-op", reason: "verse_out_of_range" })
 })
 
 // ARCHITECTURE.md section 65.1: elliptical/continuation references.
@@ -137,13 +140,13 @@ test("resolveNavigationCommand: goto-bare-verse reuses the current book AND chap
 })
 
 test("resolveNavigationCommand: goto-bare-verse with no current position is a no-op", () => {
-  assert.deepEqual(resolveNavigationCommand({ kind: "goto-bare-verse", verse: 16 }, null, index), { kind: "no-op" })
+  assert.deepEqual(resolveNavigationCommand({ kind: "goto-bare-verse", verse: 16 }, null, index), { kind: "no-op", reason: "no_current_position" })
 })
 
 test("resolveNavigationCommand: goto-bare-verse for a verse that doesn't exist in the current chapter is a no-op (never bypasses the hallucination guard)", () => {
   const current: VerseReference = { book: "john", chapter: 3, verse: 15 } // John 3 has 36 verses
   const result = resolveNavigationCommand({ kind: "goto-bare-verse", verse: 999 }, current, index)
-  assert.deepEqual(result, { kind: "no-op" })
+  assert.deepEqual(result, { kind: "no-op", reason: "verse_out_of_range" })
 })
 
 test("resolveNavigationCommand: goto-bare-chapter-verse reuses the current book only", () => {
@@ -155,14 +158,14 @@ test("resolveNavigationCommand: goto-bare-chapter-verse reuses the current book 
 test("resolveNavigationCommand: goto-bare-chapter-verse with no current position is a no-op", () => {
   assert.deepEqual(
     resolveNavigationCommand({ kind: "goto-bare-chapter-verse", chapter: 8, verse: 28 }, null, index),
-    { kind: "no-op" }
+    { kind: "no-op", reason: "no_current_position" }
   )
 })
 
 test("resolveNavigationCommand: goto-bare-chapter-verse for a chapter/verse that doesn't exist is a no-op", () => {
   const current: VerseReference = { book: "romans", chapter: 1, verse: 1 }
   const result = resolveNavigationCommand({ kind: "goto-bare-chapter-verse", chapter: 999, verse: 1 }, current, index)
-  assert.deepEqual(result, { kind: "no-op" })
+  assert.deepEqual(result, { kind: "no-op", reason: "chapter_out_of_range" })
 })
 
 // ARCHITECTURE.md section 65.4: never produces a VerseReference — AppCore
@@ -170,7 +173,7 @@ test("resolveNavigationCommand: goto-bare-chapter-verse for a chapter/verse that
 // total/defensive rather than throwing if reached anyway.
 test("resolveNavigationCommand: goto-display-mode is always a no-op here, regardless of current position", () => {
   assert.deepEqual(resolveNavigationCommand({ kind: "goto-display-mode", mode: "french" }, null, index), {
-    kind: "no-op",
+    kind: "no-op", reason: "no_current_position"
   })
   assert.deepEqual(
     resolveNavigationCommand(
@@ -178,6 +181,6 @@ test("resolveNavigationCommand: goto-display-mode is always a no-op here, regard
       { book: "john", chapter: 3, verse: 16 },
       index
     ),
-    { kind: "no-op" }
+    { kind: "no-op", reason: "no_current_position" }
   )
 })

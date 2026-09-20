@@ -2,9 +2,9 @@ import type { NavigationCommand, VerseIndex, VerseReference } from "../../../pac
 import { BOOK_CATALOG } from "./book-catalog"
 
 export type NavigationResolution =
-  | { readonly kind: "reference"; readonly reference: VerseReference }
+  | { readonly kind: "reference"; readonly reference: VerseReference; readonly fallback?: boolean }
   | { readonly kind: "cancel" }
-  | { readonly kind: "no-op" }
+  | { readonly kind: "no-op"; readonly reason: "chapter_out_of_range" | "verse_out_of_range" | "no_current_position" | "unknown_book" }
 
 /**
  * ARCHITECTURE.md section 61.4: computes the target reference for a
@@ -35,7 +35,51 @@ export function resolveNavigationCommand(
 
   if (command.kind === "goto-chapter") {
     const candidate: VerseReference = { book: command.book, chapter: command.chapter, verse: 1 }
-    return index.exists(candidate) ? { kind: "reference", reference: candidate } : { kind: "no-op" }
+    if (index.exists(candidate)) {
+      return { kind: "reference", reference: candidate }
+    }
+    // TASK 5: out-of-range chapter — instead of no-op, fall back to the
+    // book's last valid chapter (verse 1) so that subsequent bare-verse
+    // commands ("verset 16") have a valid currentPosition to resolve against.
+    // This matches the observed live sequence: "Jean chapitre 23" (John has 21
+    // chapters) -> falls back to John 21:1 -> "verset 16" resolves to John 21:16.
+    // The caller (AppCore) should broadcast a warning for the dashboard.
+    const bookIndex = BOOK_CATALOG.findIndex((b) => b.id === command.book)
+    if (bookIndex < 0) {
+      return { kind: "no-op", reason: "unknown_book" }
+    }
+    const book = BOOK_CATALOG[bookIndex]!
+    const lastChapter = book.chapters.length
+    const fallback: VerseReference = { book: command.book, chapter: lastChapter, verse: 1 }
+    if (index.exists(fallback)) {
+      return { kind: "reference", reference: fallback, fallback: true as const }
+    }
+    return { kind: "no-op", reason: "chapter_out_of_range" }
+  }
+
+  // TASK 1: explicit "<book> chapitre|chapter N[,] verset|verse M" — full
+  // reference with all three components. Resolves independently of
+  // currentPosition (unlike the bare patterns). Still validated through
+  // index.exists() per Invariant 17.
+  if (command.kind === "goto-book-chapter-verse") {
+    const candidate: VerseReference = { book: command.book, chapter: command.chapter, verse: command.verse }
+    if (index.exists(candidate)) {
+      return { kind: "reference", reference: candidate }
+    }
+    // Determine specific reason for the failure
+    const bookIndex = BOOK_CATALOG.findIndex((b) => b.id === command.book)
+    if (bookIndex < 0) {
+      return { kind: "no-op", reason: "unknown_book" }
+    }
+    const book = BOOK_CATALOG[bookIndex]!
+    if (command.chapter < 1 || command.chapter > book.chapters.length) {
+      return { kind: "no-op", reason: "chapter_out_of_range" }
+    }
+    const versesInChapter = book.chapters[command.chapter - 1]!
+    if (command.verse < 1 || command.verse > versesInChapter) {
+      return { kind: "no-op", reason: "verse_out_of_range" }
+    }
+    return { kind: "no-op", reason: "verse_out_of_range" }
   }
 
   // ARCHITECTURE.md section 65.4: never produces a VerseReference at all —
@@ -43,11 +87,11 @@ export function resolveNavigationCommand(
   // for it. This branch only exists so the function stays total/defensive
   // rather than throwing if it's ever reached anyway.
   if (command.kind === "goto-display-mode") {
-    return { kind: "no-op" }
+    return { kind: "no-op", reason: "no_current_position" }
   }
 
   if (!currentPosition) {
-    return { kind: "no-op" }
+    return { kind: "no-op", reason: "no_current_position" }
   }
 
   // ARCHITECTURE.md section 65.1: elliptical/continuation references,
@@ -61,19 +105,38 @@ export function resolveNavigationCommand(
       chapter: currentPosition.chapter,
       verse: command.verse,
     }
-    return index.exists(candidate) ? { kind: "reference", reference: candidate } : { kind: "no-op" }
+    if (index.exists(candidate)) {
+      return { kind: "reference", reference: candidate }
+    }
+    // Verse doesn't exist in the current chapter
+    return { kind: "no-op", reason: "verse_out_of_range" }
   }
 
   if (command.kind === "goto-bare-chapter-verse") {
     const candidate: VerseReference = { book: currentPosition.book, chapter: command.chapter, verse: command.verse }
-    return index.exists(candidate) ? { kind: "reference", reference: candidate } : { kind: "no-op" }
+    if (index.exists(candidate)) {
+      return { kind: "reference", reference: candidate }
+    }
+    // Check if chapter is out of range for the current book
+    const bookIndex = BOOK_CATALOG.findIndex((b) => b.id === currentPosition.book)
+    if (bookIndex >= 0) {
+      const book = BOOK_CATALOG[bookIndex]!
+      if (command.chapter < 1 || command.chapter > book.chapters.length) {
+        return { kind: "no-op", reason: "chapter_out_of_range" }
+      }
+    }
+    return { kind: "no-op", reason: "verse_out_of_range" }
   }
 
   const candidate = computeCandidate(command.kind, currentPosition)
   if (!candidate) {
-    return { kind: "no-op" }
+    // computeCandidate returns null at Bible boundaries (Genesis 1:1, Revelation 22:21)
+    return { kind: "no-op", reason: "verse_out_of_range" }
   }
-  return index.exists(candidate) ? { kind: "reference", reference: candidate } : { kind: "no-op" }
+  if (!index.exists(candidate)) {
+    return { kind: "no-op", reason: "verse_out_of_range" }
+  }
+  return { kind: "reference", reference: candidate }
 }
 
 function computeCandidate(

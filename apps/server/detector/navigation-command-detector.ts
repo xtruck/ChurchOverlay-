@@ -1,5 +1,6 @@
 import type { NavigationCommand, NavigationCommandDetector as INavigationCommandDetector } from "../../../packages/contracts"
 import { normalizeBookName, stripAccents } from "./regex-detector"
+import { BOOK_CATALOG } from "../verse/book-catalog"
 
 /**
  * ARCHITECTURE.md section 61.2-61.3: voice-driven verse navigation, a
@@ -105,25 +106,38 @@ const WHOLE_UTTERANCE_RULES: readonly WholeUtteranceRule[] = [
 // reasoning as RegexDetector.REFERENCE_PATTERN's own fix: `\b` doesn't
 // recognize an accented letter as a "word" character at all, which would
 // silently reject an accented French book name ("Ésaïe") outright.
+//
+// CORRECTIF (TASK 2): relaxed book-name group from \p{Lu} (uppercase only)
+// to \p{L} (any case) and added catalog validation via normalizeBookName()
+// — this allows lowercase-transcribed real book names ("jean") while still
+// rejecting non-books ("to") via BOOK_CATALOG lookup.
 const GOTO_CHAPTER_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{Lu}[\p{L}]+)\s+(?:[Cc]hapter|[Cc]hapitre)\s+(\d{1,3})(?![\p{L}\d])(?!:\d)(?!\s*,?\s*(?:[Vv]erse|[Vv]erset)\b)/gu
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)\s+(?:[Cc]hapter|[Cc]hapitre)\s+(\d{1,3})(?![\p{L}\d])(?!:\d)(?!\s*,?\s*(?:[Vv]erse|[Vv]erset)\b)/gu
+
+// TASK 1 + TASK 2: "<book> chapter|chapitre N[,] verse|verset M" — full
+// prose-form reference with all three components. Unlike goto-chapter (no
+// verse) and bare patterns (depend on currentPosition), this resolves
+// independently. Must run BEFORE bare patterns so the bare patterns'
+// lookbehinds (which exclude a capitalized book-like word) don't
+// incorrectly suppress it. Book-name group uses \p{L} (any case) instead of
+// \p{Lu} (uppercase only) — TASK 2 relaxes the capitalization heuristic
+// and validates against BOOK_CATALOG via normalizeBookName() instead.
+// Accented letters are handled via \p{L}/\p{Lu} and Unicode boundaries.
+const BOOK_CHAPTER_VERSE_PATTERN =
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)\s+(?:[Cc]hapter|[Cc]hapitre)\s+(\d{1,3})[,]?\s+(?:[Vv]erse|[Vv]erset)\s+(\d{1,3})(?![\p{L}\d])/gu
 
 // ARCHITECTURE.md section 65.1: elliptical/continuation references —
 // "verse 16" or "chapter 9, verse 3" said after a book/chapter was already
 // established, resolved against currentPosition (resolveNavigationCommand)
 // rather than a stated book. Deliberately NOT case-insensitive as a whole
-// pattern (unlike GOTO_CHAPTER_PATTERN): the negative lookbehind needs
-// `[A-Z]` to mean "an actual capitalized word" (a real book-name
-// candidate), which an /i flag would defeat by also matching lowercase —
-// so the command words themselves are spelled out in both cases instead.
-//
-// The lookbehind requires NO capitalized book-like word (optionally
-// numeral-prefixed, matching GOTO_CHAPTER_PATTERN's own book-name shape,
-// Unicode-aware for the same accented-book-name reason) immediately
-// before "chapter"/"chapitre" — otherwise "Romans chapter 9, verse 3"
-// would be wrongly captured as a bare continuation using whatever book
-// happens to be current, silently discarding the book the speaker
-// actually said.
+// pattern (unlike GOTO_CHAPTER_PATTERN): the negative lookbehind uses
+// \p{Lu} (uppercase) to exclude capitalized book-like words — this correctly
+// rejects "Romans chapter 9, verse 3" (full reference) but passes
+// "Turn to chapter 9" (lowercase "to" is not a book). TASK 2: the new
+// BOOK_CHAPTER_VERSE_PATTERN runs first and handles lowercase books with
+// catalog validation, so this lookbehind correctly stays \p{Lu} (uppercase
+// heuristic) — "jean" is caught by the new pattern first, "to" in
+// "Turn to chapter 9" is lowercase and passes through.
 const BARE_CHAPTER_VERSE_PATTERN =
   /(?<!(?:[123]\s+)?\p{Lu}[\p{L}]+\s)\b(?:[Cc]hapter|[Cc]hapitre)\s+(\d{1,3})[,]?\s+(?:[Vv]erse|[Vv]erset)\s+(\d{1,3})\b/gu
 
@@ -165,10 +179,53 @@ export class NavigationCommandDetector implements INavigationCommandDetector {
       const rawBook = match[1]
       const rawChapter = match[2]
       if (!rawBook || !rawChapter) continue
+      const book = normalizeBookName(rawBook)
+      // TASK 2: only accept if the normalized book name exists in the catalog.
+      // This replaces the \p{Lu} capitalization check — "jean" passes because
+      // normalizeBookName("jean") -> "john" which is in BOOK_CATALOG; "to" fails
+      // because "to" is not a book. STOPWORDS from RegexDetector are NOT reused
+      // here because the catalog itself is the authority.
+      if (!BOOK_CATALOG.some((b: { readonly id: string }) => b.id === book)) continue
       commands.push({
         kind: "goto-chapter",
-        book: normalizeBookName(rawBook),
+        book,
         chapter: Number.parseInt(rawChapter, 10),
+      })
+    }
+
+    // TASK 1: book + chapter + verse in prose form ("Jean chapitre 3 verset 16",
+    // "John chapter 3 verse 16"). Runs before bare patterns so the bare patterns'
+    // negative lookbehinds (which exclude a capitalized book-like word) don't
+    // suppress it. Book name is validated via normalizeBookName() which checks
+    // BOOK_CATALOG (TASK 2) — this replaces the fragile \p{Lu} capitalization
+    // heuristic with a real catalog lookup.
+    type MatchSpan = { start: number; end: number }
+    const usedSpans: MatchSpan[] = []
+
+    function spanOverlaps(newSpan: MatchSpan, existingSpans: MatchSpan[]): boolean {
+      return existingSpans.some(s => newSpan.start < s.end && s.start < newSpan.end)
+    }
+
+    for (const match of text.matchAll(BOOK_CHAPTER_VERSE_PATTERN)) {
+      const rawBook = match[1]
+      const rawChapter = match[2]
+      const rawVerse = match[3]
+      if (!rawBook || !rawChapter || !rawVerse) continue
+      const book = normalizeBookName(rawBook)
+      // TASK 2: only accept if the normalized book name exists in the catalog.
+      // This replaces the \p{Lu} capitalization check — "jean" passes because
+      // normalizeBookName("jean") -> "john" which is in BOOK_CATALOG; "to" fails
+      // because "to" is not a book. STOPWORDS from RegexDetector are NOT reused
+      // here because the catalog itself is the authority.
+      if (!BOOK_CATALOG.some((b: { readonly id: string }) => b.id === book)) continue
+      const span: MatchSpan = { start: match.index!, end: match.index! + match[0].length }
+      if (spanOverlaps(span, usedSpans)) continue
+      usedSpans.push(span)
+      commands.push({
+        kind: "goto-book-chapter-verse",
+        book,
+        chapter: Number.parseInt(rawChapter, 10),
+        verse: Number.parseInt(rawVerse, 10),
       })
     }
 
@@ -176,17 +233,30 @@ export class NavigationCommandDetector implements INavigationCommandDetector {
       const rawChapter = match[1]
       const rawVerse = match[2]
       if (!rawChapter || !rawVerse) continue
+      const chapter = Number.parseInt(rawChapter, 10)
+      const verse = Number.parseInt(rawVerse, 10)
+      // De-duplicate by span overlap, not value equality — a repeated utterance
+      // of the same reference later in the transcript is a distinct occurrence
+      // and should produce a separate command (Task 0 regression).
+      const span: MatchSpan = { start: match.index!, end: match.index! + match[0].length }
+      if (spanOverlaps(span, usedSpans)) continue
+      usedSpans.push(span)
       commands.push({
         kind: "goto-bare-chapter-verse",
-        chapter: Number.parseInt(rawChapter, 10),
-        verse: Number.parseInt(rawVerse, 10),
+        chapter,
+        verse,
       })
     }
 
     for (const match of text.matchAll(BARE_VERSE_PATTERN)) {
       const rawVerse = match[1]
       if (!rawVerse) continue
-      commands.push({ kind: "goto-bare-verse", verse: Number.parseInt(rawVerse, 10) })
+      const verse = Number.parseInt(rawVerse, 10)
+      // De-duplicate by span overlap, not value equality.
+      const span: MatchSpan = { start: match.index!, end: match.index! + match[0].length }
+      if (spanOverlaps(span, usedSpans)) continue
+      usedSpans.push(span)
+      commands.push({ kind: "goto-bare-verse", verse })
     }
 
     return commands

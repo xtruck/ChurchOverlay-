@@ -97,11 +97,21 @@ export type NavigationCommand =
    * chapter 8" — reuses currentPosition's book AND chapter.
    */
   | { readonly kind: "goto-bare-verse"; readonly verse: number }
-  /**
-   * Phase 2 (ARCHITECTURE.md section 65.1): "chapter 9, verse 3" — reuses
-   * currentPosition's book only.
-   */
+/**
+ * Phase 2 (ARCHITECTURE.md section 65.1): "chapter 9, verse 3" — reuses
+ * currentPosition's book only.
+ */
   | { readonly kind: "goto-bare-chapter-verse"; readonly chapter: number; readonly verse: number }
+  /**
+   * TASK 1: explicit "<book> chapitre|chapter N[,] verset|verse M" — a full
+   * reference spoken in prose form. Unlike goto-chapter (no verse) and the
+   * bare patterns (depend on currentPosition), this carries all three
+   * components and resolves independently. French and English word orders
+   * both supported. Must run BEFORE bare patterns to avoid duplicate
+   * commands (the bare patterns' lookbehinds will suppress their own
+   * redundant matches when this one fires first).
+   */
+  | { readonly kind: "goto-book-chapter-verse"; readonly book: string; readonly chapter: number; readonly verse: number }
   /** Phase 2 (ARCHITECTURE.md section 65.4): a spoken display-mode switch. */
   | { readonly kind: "goto-display-mode"; readonly mode: DisplayMode }
 
