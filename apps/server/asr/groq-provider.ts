@@ -152,7 +152,36 @@ export class GroqProvider implements AsrProvider {
     this.language = language
   }
 
-  /** TASK B: Update the current verse reference for dynamic prompt context. */
+  /**
+   * TASK B: Update the current verse reference for dynamic prompt context.
+   *
+   * CAPTURE POINT (audited 2026-09) — when exactly is this value read?
+   *
+   * It is read at FLUSH time, not at buffer time. The chain is:
+   *   sendAudio()/stop()/onUtteranceEnd() -> flush()/flushWithOverlap()
+   *     -> flushSamples() -> transcribe() -> buildPrompt()
+   * Every function in that chain runs synchronously up to its first
+   * `await`, and buildPrompt() is called immediately before `fetchImpl()`
+   * with NO await in between. So the reference is captured in the same
+   * synchronous tick that builds the FormData and dispatches the request:
+   *   - a setCurrentVerseRef() during buffering (before the chunk is full)
+   *     DOES affect that chunk's prompt;
+   *   - a setCurrentVerseRef() while the request is already in flight does
+   *     NOT affect it, and only applies to the next flush.
+   * Both directions are pinned by tests in groq-provider.test.ts
+   * ("currentVerseRef is read at flush time, not at buffer time" and
+   * "a setCurrentVerseRef() while a request is in flight ...").
+   *
+   * Known, accepted limitation (deliberately not "fixed"): if the operator
+   * clears or changes the verse between the audio being buffered and the
+   * chunk flushing, the prompt reflects the CURRENT on-screen reference
+   * rather than the one showing while that audio was spoken. This is a
+   * lexical-bias hint only: it can never influence which verse is shown,
+   * because detection/validation/hallucination-guard all run on the final
+   * transcript (AGENTS.md sections 13-14). Snapshotting the reference at
+   * buffer time would instead send a stale hint for audio recorded before
+   * a mid-chunk verse change, for no correctness gain (AGENTS.md 57).
+   */
   setCurrentVerseRef(ref: string | null): void {
     this.currentVerseRef = ref
   }

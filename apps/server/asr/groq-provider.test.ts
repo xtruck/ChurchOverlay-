@@ -324,6 +324,104 @@ test("GroqProvider: setCurrentVerseRef(null) clears the reference from the promp
   assert.ok(!prompt2.includes("Jean 3:16"))
 })
 
+// PROD AUDIT 2026-09 (point 6), direction 1: the reference is read at FLUSH
+// time, not at buffer time. Audio is buffered first with NO reference set,
+// then a reference is set while that same audio is still buffered, then the
+// chunk is completed. If the value were captured at buffer time this prompt
+// would carry no reference at all — asserting it IS present pins the real
+// capture point, so a future "snapshot at buffer time" change cannot pass
+// silently.
+test("GroqProvider: currentVerseRef is read at flush time, not at buffer time", async () => {
+  const captured: CapturedRequest[] = []
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000, // 1s chunks
+    fetchImpl: fakeFetch(() => jsonResponse({ text: "x" }), captured),
+  })
+  provider.onTranscript(() => {})
+
+  await provider.start()
+  // Half a second of audio: buffered, NOT yet flushed (500ms < 1000ms).
+  await provider.sendAudio(makeFrame(new Array(8000).fill(1000), 0))
+  assert.equal(captured.length, 0, "half a chunk must not flush")
+
+  // The verse changes AFTER this audio was buffered but BEFORE it flushes.
+  provider.setCurrentVerseRef("Romains 8:28")
+
+  // Complete the chunk — this is the flush that turns buffered audio into a
+  // request, and it is the point at which the reference is read.
+  await provider.sendAudio(makeFrame(new Array(8000).fill(1000), 1))
+
+  assert.equal(captured.length, 1)
+  const prompt = (captured[0]?.init?.body as FormData).get("prompt") as string
+  assert.ok(
+    prompt.includes("Romains 8:28"),
+    "the flush must use the reference current AT FLUSH TIME (buffer-time capture would have sent none)"
+  )
+})
+
+// PROD AUDIT 2026-09 (point 6), direction 2: a setCurrentVerseRef() that
+// arrives while a request is ALREADY IN FLIGHT cannot change that request —
+// its FormData was fully built (buildPrompt() runs synchronously right
+// before fetchImpl) before the change happened. The change applies only to
+// the NEXT flush. This is the precise, bounded statement of the race the
+// audit flagged, and it is correct behavior, not a bug: the in-flight audio
+// was spoken while the old verse was on screen, so the old verse is the
+// right lexical-bias hint for it.
+test("GroqProvider: a setCurrentVerseRef() while a request is in flight does not change that request, only the next flush", async () => {
+  const captured: CapturedRequest[] = []
+  let resolveFetch: ((response: Response) => void) | undefined
+  // Only the FIRST request is held open (the one we want to observe "in
+  // flight"). The second flush at the end of this test must resolve
+  // normally, otherwise it would await a promise nothing ever settles and
+  // the test would hang rather than fail.
+  let fetchCallCount = 0
+  const deferredFetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    captured.push({ url: String(input), init })
+    fetchCallCount++
+    if (fetchCallCount > 1) return jsonResponse({ text: "x" })
+    return await new Promise<Response>((resolve) => {
+      resolveFetch = resolve
+    })
+  }) as typeof fetch
+
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    fetchImpl: deferredFetch,
+  })
+  provider.onTranscript(() => {})
+
+  provider.setCurrentVerseRef("Jean 3:16")
+  await provider.start()
+
+  // Kick off a flush but deliberately DON'T await it: the request is now
+  // dispatched and awaiting a response — the "in flight" state.
+  const inFlight = provider.sendAudio(oneSecondFrame(0))
+  assert.equal(captured.length, 1, "the request must be dispatched synchronously")
+  const sentPrompt = (captured[0]?.init?.body as FormData).get("prompt") as string
+  assert.ok(sentPrompt.includes("Jean 3:16"), "the dispatched request carries the ref from dispatch time")
+
+  // The operator changes the verse while that request is still in flight.
+  provider.setCurrentVerseRef("Romains 8:28")
+
+  assert.ok(resolveFetch, "fetch must have been called and be awaiting its response")
+  resolveFetch(jsonResponse({ text: "x" }))
+  await inFlight
+
+  // The already-dispatched request is unaffected: its FormData was built
+  // before the change.
+  const afterFlight = (captured[0]?.init?.body as FormData).get("prompt") as string
+  assert.ok(afterFlight.includes("Jean 3:16"), "in-flight request keeps its dispatch-time reference")
+  assert.ok(!afterFlight.includes("Romains 8:28"), "in-flight request must NOT pick up the later reference")
+
+  // ...and the change does apply to the next flush.
+  await provider.sendAudio(oneSecondFrame(1))
+  assert.equal(captured.length, 2)
+  const nextPrompt = (captured[1]?.init?.body as FormData).get("prompt") as string
+  assert.ok(nextPrompt.includes("Romains 8:28"), "the new reference applies to the next flush")
+})
+
 // TASK B: FR/PT language divergence is observable in logs without altering
 // the transcript. Requires the logger AND language: "fr" to be configured.
 test("GroqProvider: a Portuguese-looking transcript under language 'fr' logs a language-divergence event, transcript unchanged", async () => {
