@@ -96,3 +96,72 @@ test("SermonNotesGenerator: trims whitespace from the returned notes", async () 
   const result = await generator.summarize("text")
   assert.equal(result, "- A point")
 })
+
+// PROD AUDIT 2026-09 circuit breaker: the production journal showed 7
+// identical requests in ~9 minutes against a decommissioned model. A
+// permanent model error must disable the generator after ONE attempt.
+test("SermonNotesGenerator: circuit breaker trips on model_decommissioned — exactly one request, no retry storm", async () => {
+  const captured: CapturedRequest[] = []
+  const generator = new SermonNotesGenerator({
+    apiKey: "test-key",
+    fetchImpl: fakeFetch(
+      () =>
+        jsonResponse(
+          {
+            error: {
+              code: "model_decommissioned",
+              message:
+                "Model llama-3.1-8b-instant decommissioned on 2026-08-16 and is no longer available.",
+            },
+          },
+          400
+        ),
+      captured
+    ),
+  })
+
+  await assert.rejects(() => generator.summarize("text"), /decommissioned/)
+  // A second summarize() must not hit the network at all.
+  await assert.rejects(() => generator.summarize("more text"), /disabled for this session/)
+  assert.equal(captured.length, 1, `expected exactly 1 request, got ${captured.length}`)
+})
+
+test("SermonNotesGenerator: circuit breaker also trips on the 'does not exist' wording", async () => {
+  const captured: CapturedRequest[] = []
+  const generator = new SermonNotesGenerator({
+    apiKey: "test-key",
+    fetchImpl: fakeFetch(
+      () => jsonResponse({ error: { message: "The model `nope` does not exist" } }, 404),
+      captured
+    ),
+  })
+
+  await assert.rejects(() => generator.summarize("text"), /does not exist/)
+  await assert.rejects(() => generator.summarize("text"), /disabled for this session/)
+  assert.equal(captured.length, 1)
+})
+
+test("SermonNotesGenerator: transient errors (500) do NOT trip the circuit breaker — each call retries normally", async () => {
+  const captured: CapturedRequest[] = []
+  const generator = new SermonNotesGenerator({
+    apiKey: "test-key",
+    fetchImpl: fakeFetch(() => new Response("server error", { status: 500 }), captured),
+  })
+
+  await assert.rejects(() => generator.summarize("text"), /status 500/)
+  await assert.rejects(() => generator.summarize("text"), /status 500/)
+  // Both attempts reached the network — the breaker did not trip.
+  assert.equal(captured.length, 2)
+})
+
+test("SermonNotesGenerator: default model is the Groq-recommended replacement, not the decommissioned one", () => {
+  const captured: CapturedRequest[] = []
+  const generator = new SermonNotesGenerator({
+    apiKey: "test-key",
+    fetchImpl: fakeFetch(() => jsonResponse(chatCompletionBody("- x")), captured),
+  })
+  void generator.summarize("text")
+  const body = JSON.parse(String(captured[0]?.init?.body)) as { model: string }
+  assert.equal(body.model, "openai/gpt-oss-20b")
+  assert.notEqual(body.model, "llama-3.1-8b-instant")
+})

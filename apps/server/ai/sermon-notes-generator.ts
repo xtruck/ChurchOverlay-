@@ -1,14 +1,11 @@
 const DEFAULT_URL = "https://api.groq.com/openai/v1/chat/completions"
-// ARCHITECTURE.md section 71: live testing surfaced a real
-// "does not exist or you do not have access to it" error from Groq for
-// llama-3.3-70b-versatile on a real API key, even though Groq's own docs
-// still list it as a current production model — consistent with
-// account/key-tier gating on the larger model, not a wrong or deprecated
-// model id. Defaulting to the smallest production Llama model instead:
-// far more likely to be available on any Groq key regardless of tier,
-// and more than capable for a 3-5 bullet-point summarization task, which
-// doesn't need a 70B model's capacity.
-const DEFAULT_MODEL = "llama-3.1-8b-instant"
+// PROD AUDIT 2026-09: llama-3.1-8b-instant was DECOMMISSIONED by Groq on
+// 2026-08-16 (console.groq.com/docs/deprecations). Groq's recommended
+// replacement is openai/gpt-oss-20b — more than capable for a 3-5
+// bullet-point summarization task, and available on every key tier.
+// (Previous comment justified llama-3.1-8b-instant as "most likely to be
+// available" — that reasoning is now obsolete; the model no longer exists.)
+const DEFAULT_MODEL = "openai/gpt-oss-20b"
 
 // Verified directly against Groq's real, current API documentation before
 // writing this (https://console.groq.com/docs/api-reference#chat-create),
@@ -41,6 +38,9 @@ export class SermonNotesGenerator {
   private readonly model: string
   private readonly fetchImpl: typeof fetch
   private readonly url: string
+  // Circuit-breaker state: set once on a permanent model error, checked
+  // at the top of every summarize() call. `undefined` = still active.
+  private disabledReason: string | undefined
 
   constructor(options: SermonNotesGeneratorOptions) {
     if (!options.apiKey) {
@@ -53,6 +53,17 @@ export class SermonNotesGenerator {
   }
 
   async summarize(transcriptText: string): Promise<string> {
+    // PROD AUDIT 2026-09 circuit breaker: the production journal showed 7
+    // identical requests in ~9 minutes against a decommissioned model — a
+    // request storm AGENTS.md section 37 forbids. A model_decommissioned /
+    // model-not-found error is PERMANENT: retrying can never succeed, so
+    // the first one disables this generator for the rest of the session
+    // (a restart re-enables it, e.g. after a config/model change).
+    // Transient errors (network, rate limit, 5xx) keep retrying normally.
+    if (this.disabledReason) {
+      throw new Error(`SermonNotesGenerator disabled for this session: ${this.disabledReason}`)
+    }
+
     const response = await this.fetchImpl(this.url, {
       method: "POST",
       headers: {
@@ -70,9 +81,12 @@ export class SermonNotesGenerator {
 
     if (!response.ok) {
       const errorBody = await safeReadJson(response)
-      throw new Error(
+      const message =
         extractGroqErrorMessage(errorBody) ?? `Groq chat completion failed with status ${response.status}`
-      )
+      if (isPermanentModelError(message)) {
+        this.disabledReason = message
+      }
+      throw new Error(message)
     }
 
     const body = await safeReadJson(response)
@@ -101,6 +115,20 @@ function extractGroqErrorMessage(body: unknown): string | undefined {
   const error = body.error
   if (!isPlainObject(error)) return undefined
   return typeof error.message === "string" ? error.message : undefined
+}
+
+// PROD AUDIT 2026-09: matches Groq's real error shapes for a model that
+// no longer exists — "model_decommissioned" (the documented error code
+// for a post-deprecation-date model) and the two message wordings Groq
+// actually returns ("model ... does not exist" / "decommissioned").
+// Deliberately narrow: a transient 429/5xx must NOT trip the breaker.
+export function isPermanentModelError(message: string): boolean {
+  const lower = message.toLowerCase()
+  return (
+    lower.includes("model_decommissioned") ||
+    (lower.includes("model") && lower.includes("does not exist")) ||
+    lower.includes("decommissioned")
+  )
 }
 
 function extractMessageContent(body: unknown): string | undefined {
