@@ -6,6 +6,7 @@ import { join } from "node:path"
 import { WebSocket } from "ws"
 import { startAppCore } from "./app-core"
 import { RegexDetector } from "../detector/regex-detector"
+import { correctTranscription } from "../asr/transcription-corrector"
 import { SilenceGate } from "../audio/silence-gate"
 import { SessionHistoryStore } from "./session-history-store"
 import { KnownValidVerseIndex } from "../verse/known-valid-verse-index"
@@ -2955,6 +2956,63 @@ test("AppCore: a second verse shown before the auto-clear timer fires resets the
       await app.stop()
     }
   })
+})
+
+test("AppCore: correctTranscription is wired into the transcript pipeline — 'V.C.' hallucination reaches the dashboard as 'verset'", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    // Collect the transcript:final broadcast on the raw socket. This is the
+    // operator-dashboard echo (ARCHITECTURE.md section 70) and, crucially, it
+    // is the SAME corrected text every downstream detector now consumes.
+    let finalText: string | null = null
+    viewerSocket.on("message", (data) => {
+      const message: WsMessage = JSON.parse(data.toString())
+      if (message.type === "transcript:final") {
+        finalText = (message.payload as { text: string }).text ?? null
+      }
+    })
+
+    // Production hallucination observed in agent-transcripts / sermon-notes
+    // buffer: "verset" was regularly ASR-transcribed as "V.C." (6 of 34
+    // transcripts in one service). Without the fix, this raw text reaches
+    // the broadcast — and every detector — unchanged.
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01CORRC",
+      sequence: 1,
+      text: "le V.C. 6",
+      state: "final",
+      timestamp: Date.now(),
+    })
+
+    await waitFor(() => finalText !== null)
+
+    // The broadcast text must equal EXACTLY what correctTranscription()
+    // produces — i.e. the correction is applied before the text reaches any
+    // consumer (dashboard, detectors, near-miss log).
+    const expected = correctTranscription("le V.C. 6").correctedText
+    assert.equal(finalText, expected)
+    // The raw, uncorrected hallucination token must never be present.
+    assert.ok(
+      !String(finalText).includes("V.C."),
+      `expected the 'V.C.' hallucination to be corrected away, got ${finalText}`
+    )
+
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
 })
 
 test("AppCore: a manual verse:clear before the auto-clear timer fires cancels it — no later spurious clear", async () => {

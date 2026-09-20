@@ -33,6 +33,7 @@ import { ChurchOverlayWsServer, type ServerTokens } from "../ws/server"
 import { resolveTranscriptVerses } from "./resolve-transcript-verses"
 import { resolveVerse, translationIdFor } from "../verse/resolve-verse"
 import { passesTranscriptGate } from "./transcript-gate"
+import { correctTranscription } from "../asr/transcription-corrector"
 import type { MediaLibrary } from "../media/media-library"
 import { MediaCueDetector } from "../media/media-cue-detector"
 import { MediaPlaybackController } from "../media/media-playback-controller"
@@ -1199,6 +1200,46 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   }
 
   asr.onTranscript((transcript) => {
+    // TACHE UNIQUE (audit priorité absolue): apply deterministic phonetic
+    // correction to the raw ASR text BEFORE any consumer sees it, so the
+    // transcript.received log, every detector, and the operator dashboard
+    // all act on corrected text — not the raw hallucinated text.
+    //
+    // Production evidence (agent-transcripts / sermon-notes buffer review):
+    // "verset" was regularly hallucinated as "V.C."/"WC" (6 times in 34
+    // transcripts in one real service), and "psaume" as "some"/"sam".
+    // Because correctTranscription() was never wired into the pipeline,
+    // those tokens reached RegexDetector / NavigationCommandDetector /
+    // the dashboard uncorrected, so verse resolution failed silently and
+    // the operator saw garbled text.
+    //
+    // correctTranscription() is conservative (table-driven, only touches
+    // non-protected tokens); it returns the SAME text unchanged when there
+    // is nothing to fix, so transcripts with no known confusion are a
+    // no-op and cost a single regex split.
+    const corrected = correctTranscription(transcript.text)
+    const correctedText = corrected.correctedText
+    // Audit trail at debug so it never drowns the info-level transcript
+    // log — but it IS greppable when tracing a "why did it detect X" case.
+    if (corrected.corrections.length > 0) {
+      logger.debug({
+        component: "asr",
+        event: "asr.correction-applied",
+        correlationId: transcript.correlationId,
+        sequence: transcript.sequence,
+        metadata: {
+          original: transcript.text,
+          corrected: correctedText,
+          corrections: corrected.corrections,
+        },
+      })
+    }
+    // Rebind the LOCAL parameter to a corrected copy. This does NOT mutate
+    // the provider's object (spread creates a new one); it simply makes
+    // every downstream transcript.text read — the log preview, the WS
+    // broadcast payload, processTranscript(), handleNavigationCommands(),
+    // media/glossary/sermon-notes — see the corrected text.
+    transcript = { ...transcript, text: correctedText }
     // TASK 4: log transcript text (truncated to 120 chars for 30-day rotating logs)
     // and textLength. Full text goes to dashboard via WS broadcast.
     const textPreview = transcript.text.length > 120 ? transcript.text.slice(0, 120) + "…" : transcript.text
