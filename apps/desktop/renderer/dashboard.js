@@ -23,7 +23,9 @@
     }
 
     function renderNdiStatus(status) {
-      const state = status?.state || "disabled"
+      currentNdiStatus = status || { state: "disabled" }
+      const state = currentNdiStatus.state || "disabled"
+      ndiEnabled = state === "running" || state === "starting"
       ndiToggleBtn.disabled = state === "starting"
       ndiToggleBtn.textContent = t(state === "running" ? "ndi.disable" : "ndi.enable")
       ndiStatusEl.textContent =
@@ -71,7 +73,7 @@
     })
 
     ndiToggleBtn.addEventListener("click", () => {
-      const shouldEnable = ndiToggleBtn.textContent === t("ndi.enable")
+      const shouldEnable = !ndiEnabled
       ndiToggleBtn.disabled = true
       window.churchOverlay
         .setNdiEnabled(shouldEnable)
@@ -235,6 +237,8 @@
   let activePlaybackState = null // "playing" | "paused" | null (null: no active cue, or an image with no playback concept)
   let setupSelectedMode = "english"
   let setupSelectedUiLanguage = "en"
+  let ndiEnabled = false
+  let currentNdiStatus = { state: "disabled" }
 
   // ARCHITECTURE.md section 64.5's authoring UI. `rundown:state` broadcasts
   // only the CURRENT scene (ARCHITECTURE.md section 64.4), not the whole
@@ -1965,6 +1969,7 @@
   })
   wireOptionGroup(uiLanguageToggleEl, "lang", (lang) => {
     window.i18n.setLanguage(lang)
+    renderNdiStatus(currentNdiStatus)
     window.churchOverlay.setUiLanguage(lang).catch(() => {})
   })
   wireOptionGroup(verseConfirmationToggleEl, "confirmationMode", (mode) => {
