@@ -4693,3 +4693,20 @@ owns or infers this timer.
 Per-media timing is deliberately separate from the principal-poster timer. Pinning
 remains an image-only poster-layer feature; its existing `poster:set-duration`
 behavior is unchanged.
+
+## 85. Deepgram Streaming ASR Option
+
+`DeepgramProvider` is an optional cloud ASR adapter using Deepgram's persistent
+WebSocket streaming endpoint with canonical PCM16/16 kHz mono audio. It emits
+honest `partial` and `final` transcript states, while AppCore continues to gate
+all verse detection and media detection on final transcripts only.
+
+Desktop startup selects Deepgram when an encrypted `deepgramApiKey` is configured;
+otherwise it uses the existing Groq batch provider. Groq remains available as an
+explicit fallback, and sermon-notes AI remains disabled when no Groq key exists.
+Neither key is exposed to renderers or written in plaintext.
+
+This reduces local CPU/RAM/GPU usage compared with local inference, but it does
+not provide unlimited free usage: Deepgram remains subject to account pricing,
+credits, and service limits. Streaming reduces request overhead and latency; it
+does not remove the provider's billing boundary.

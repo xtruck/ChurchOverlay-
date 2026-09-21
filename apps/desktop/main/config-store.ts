@@ -25,6 +25,7 @@ export interface SecretCodec {
 
 export type AppConfig = {
   readonly groqApiKey: string
+  readonly deepgramApiKey?: string
   readonly microphoneId: string | null
   readonly operatorToken: string
   readonly viewerToken: string
@@ -63,6 +64,7 @@ export type AppConfig = {
 
 type StoredConfig = {
   readonly groqApiKeyEncrypted: string
+  readonly deepgramApiKeyEncrypted?: string
   readonly microphoneId: string | null
   readonly operatorTokenEncrypted: string
   readonly viewerTokenEncrypted: string
@@ -122,6 +124,7 @@ export class ConfigStore {
   async save(config: AppConfig): Promise<void> {
     const stored: StoredConfig = {
       groqApiKeyEncrypted: this.codec.encrypt(config.groqApiKey).toString("base64"),
+      ...(config.deepgramApiKey ? { deepgramApiKeyEncrypted: this.codec.encrypt(config.deepgramApiKey).toString("base64") } : {}),
       microphoneId: config.microphoneId,
       operatorTokenEncrypted: this.codec.encrypt(config.operatorToken).toString("base64"),
       viewerTokenEncrypted: this.codec.encrypt(config.viewerToken).toString("base64"),
@@ -155,6 +158,7 @@ export class ConfigStore {
 
     const {
       groqApiKeyEncrypted,
+      deepgramApiKeyEncrypted,
       microphoneId,
       operatorTokenEncrypted,
       viewerTokenEncrypted,
@@ -207,6 +211,9 @@ export class ConfigStore {
 
     return {
       groqApiKey: this.codec.decrypt(Buffer.from(groqApiKeyEncrypted, "base64")),
+      ...(typeof deepgramApiKeyEncrypted === "string"
+        ? { deepgramApiKey: this.codec.decrypt(Buffer.from(deepgramApiKeyEncrypted, "base64")) }
+        : {}),
       microphoneId,
       operatorToken: this.codec.decrypt(Buffer.from(operatorTokenEncrypted, "base64")),
       viewerToken: this.codec.decrypt(Buffer.from(viewerTokenEncrypted, "base64")),

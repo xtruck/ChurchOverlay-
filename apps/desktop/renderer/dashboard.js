@@ -119,6 +119,7 @@
   const setupScreenEl = document.getElementById("setup-screen")
   const appShellEl = document.getElementById("app-shell")
   const setupKeyInput = document.getElementById("setup-groq-key")
+  const setupDeepgramKeyInput = document.getElementById("setup-deepgram-key")
   const setupErrorEl = document.getElementById("setup-error")
   const setupSaveBtn = document.getElementById("setup-save-btn")
   const mediaGridEl = document.getElementById("media-grid")
@@ -2040,8 +2041,9 @@
 
   setupSaveBtn.addEventListener("click", () => {
     const apiKey = setupKeyInput.value.trim()
-    if (!apiKey) {
-      setSetupError(t("setup.enterKeyError"))
+    const deepgramApiKey = setupDeepgramKeyInput.value.trim()
+    if (!apiKey && !deepgramApiKey) {
+      setSetupError("Enter a Groq or Deepgram API key.")
       return
     }
     setSetupError("")
@@ -2049,7 +2051,7 @@
     setupSaveBtn.textContent = t("setup.saving")
 
     window.churchOverlay
-      .completeSetup(apiKey, setupSelectedMode, setupSelectedUiLanguage, setupAllowPhoneRemoteEl.checked)
+      .completeSetup(apiKey, deepgramApiKey, setupSelectedMode, setupSelectedUiLanguage, setupAllowPhoneRemoteEl.checked)
       .then((info) => {
         setActiveOption(displayModeToggleEl, "mode", setupSelectedMode)
         setActiveOption(uiLanguageToggleEl, "lang", setupSelectedUiLanguage)

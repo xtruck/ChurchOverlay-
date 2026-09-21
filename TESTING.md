@@ -71,6 +71,7 @@ Current status:
 | invalid WS message | `action-registry.test.ts`, `server.test.ts` |
 | diagnostics snapshot contains operational state without secrets | `app-core.test.ts` |
 | optional NDI output degrades without the native addon and bounds pending frames | `ndi-output.test.ts` |
+| Deepgram provider emits validated partial/final streaming transcripts | `deepgram-provider.test.ts` |
 | default verse display auto-clears after the fixed 2:30 ceiling | `app-core.test.ts` |
 | media cue auto-clear duration persists across restart | `media-library.test.ts` |
 | media:set-duration accepts positive durations and rejects invalid values | `action-registry.test.ts` |

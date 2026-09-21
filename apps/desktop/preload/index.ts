@@ -50,8 +50,8 @@ import { contextBridge, ipcRenderer } from "electron"
 contextBridge.exposeInMainWorld("churchOverlay", {
   getOperatorConnectionInfo: () => ipcRenderer.invoke("get-operator-connection-info"),
   getStartupStatus: () => ipcRenderer.invoke("get-startup-status"),
-  completeSetup: (groqApiKey: string, displayMode: string, uiLanguage: string, allowPhoneRemote: boolean) =>
-    ipcRenderer.invoke("complete-setup", { groqApiKey, displayMode, uiLanguage, allowPhoneRemote }),
+  completeSetup: (groqApiKey: string, deepgramApiKey: string, displayMode: string, uiLanguage: string, allowPhoneRemote: boolean) =>
+    ipcRenderer.invoke("complete-setup", { groqApiKey, deepgramApiKey, displayMode, uiLanguage, allowPhoneRemote }),
   importMediaFile: () => ipcRenderer.invoke("import-media-file"),
   confirmMediaImport: (title: string) => ipcRenderer.invoke("confirm-media-import", title),
   cancelMediaImport: () => ipcRenderer.invoke("cancel-media-import"),

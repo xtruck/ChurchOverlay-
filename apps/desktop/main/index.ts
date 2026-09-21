@@ -15,6 +15,7 @@ import { LocalizedVerseSource } from "../../server/verse/localized-verse-source"
 import { loadOfflineBibleData, OfflineVerseSource } from "../../server/verse/offline-verse-source"
 import { OfflineFallbackVerseSource } from "../../server/verse/offline-fallback-verse-source"
 import { GroqProvider } from "../../server/asr/groq-provider"
+import { DeepgramProvider } from "../../server/asr/deepgram-provider"
 import { SermonNotesGenerator } from "../../server/ai/sermon-notes-generator"
 import { MediaLibrary } from "../../server/media/media-library"
 import { SessionHistoryStore } from "../../server/core/session-history-store"
@@ -65,7 +66,7 @@ let configStore: ConfigStore | null = null
 let mediaLibrary: MediaLibrary | null = null
 let sessionHistoryStore: SessionHistoryStore | null = null
 let localizedVerseSource: LocalizedVerseSource | null = null
-let asrProvider: GroqProvider | null = null
+let asrProvider: (GroqProvider | DeepgramProvider) | null = null
 let currentRemoteUrl: string | null = null
 let currentOverlayUrl: string | null = null
 let currentAllowPhoneRemote = false
@@ -169,11 +170,13 @@ async function startServices(
   // default (section 24) exactly as before this feature existed.
   const wsHost = config.allowPhoneRemote ? "0.0.0.0" : undefined
 
-  asrProvider = new GroqProvider({
-    apiKey: config.groqApiKey,
-    logger,
-    language: whisperLanguageFor(config.displayMode),
-  })
+  asrProvider = config.deepgramApiKey
+    ? new DeepgramProvider({ apiKey: config.deepgramApiKey, language: whisperLanguageFor(config.displayMode) })
+    : new GroqProvider({
+        apiKey: config.groqApiKey,
+        logger,
+        language: whisperLanguageFor(config.displayMode),
+      })
 
   appCoreHandle = await startAppCore({
     asr: asrProvider,
@@ -193,7 +196,7 @@ async function startServices(
     // established for ASR, not a second AI vendor. Gated by
     // sermonNotesEnabled below, so a live dashboard toggle can turn it on
     // mid-service without reconstructing AppCore.
-    sermonNotesGenerator: new SermonNotesGenerator({ apiKey: config.groqApiKey }),
+    ...(config.groqApiKey ? { sermonNotesGenerator: new SermonNotesGenerator({ apiKey: config.groqApiKey }) } : {}),
     sermonNotesEnabled: config.enableSermonNotes,
     // ARCHITECTURE.md section 65.4: a voice-triggered display-mode switch
     // persists exactly like the set-display-mode IPC handler below does,
@@ -503,8 +506,9 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
   const payloadObject = typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {}
 
   const groqApiKey = String(payloadObject.groqApiKey ?? "").trim()
-  if (!groqApiKey) {
-    throw new Error("A Groq API key is required.")
+  const deepgramApiKey = String(payloadObject.deepgramApiKey ?? "").trim()
+  if (!groqApiKey && !deepgramApiKey) {
+    throw new Error("A Groq or Deepgram API key is required.")
   }
 
   // ARCHITECTURE.md section 63.2/63.5: both default to the existing
@@ -543,6 +547,9 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
   }
   const config: AppConfig = {
     groqApiKey,
+    ...(deepgramApiKey || existing?.deepgramApiKey
+      ? { deepgramApiKey: deepgramApiKey || existing?.deepgramApiKey }
+      : {}),
     microphoneId: existing?.microphoneId ?? null,
     operatorToken: existing?.operatorToken ?? generateToken(),
     // ARCHITECTURE.md section 65.3: not a setup-screen control (unlike
@@ -914,7 +921,7 @@ app.whenReady().then(async () => {
 
   try {
     const existing = await configStore.load()
-    if (existing && existing.groqApiKey) {
+    if (existing && (existing.groqApiKey || existing.deepgramApiKey)) {
       await startServices(existing)
     }
   } catch (err) {
