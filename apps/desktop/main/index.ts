@@ -139,6 +139,11 @@ async function startServices(
   overlayUrl: string
   ndi: ReturnType<NDIOutput["getStatus"]>
 }> {
+  // Setup can be submitted again after a partial startup failure. Tear down
+  // any previous listeners first so a retry never inherits 8787/8788.
+  if (appCoreHandle || staticServer || remoteStaticServer || ndiOutput) {
+    await shutdown()
+  }
   currentTokens = { operatorToken: config.operatorToken, viewerToken: config.viewerToken }
   // ARCHITECTURE.md section 77: a live-API outage (the venue's own
   // internet, or the API itself) no longer means the French source stops
@@ -584,7 +589,14 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
   }
   await store.save(config)
 
-  return startServices(config)
+  try {
+    return await startServices(config)
+  } catch (error) {
+    // startServices opens resources in stages. If a later listener fails,
+    // release every earlier listener before returning the IPC error.
+    await shutdown()
+    throw error
+  }
 })
 
 ipcMain.handle("get-operator-connection-info", () => {
@@ -853,20 +865,30 @@ ipcMain.handle("export-diagnostics", async () => {
 })
 
 async function shutdown(): Promise<void> {
-  await ndiOutput?.stop().catch((err) => {
+  const output = ndiOutput
+  ndiOutput = null
+  await output?.stop().catch((err) => {
     logger.error({ component: "ndi", event: "shutdown.failed", error: String(err) })
   })
   ndiWindow?.destroy()
   ndiWindow = null
-  await appCoreHandle?.stop().catch((err) => {
+  const core = appCoreHandle
+  appCoreHandle = null
+  await core?.stop().catch((err) => {
     logger.error({ component: "main", event: "shutdown.app-core-failed", error: String(err) })
   })
-  await staticServer?.close().catch((err) => {
+  const overlayServer = staticServer
+  staticServer = null
+  await overlayServer?.close().catch((err) => {
     logger.error({ component: "main", event: "shutdown.static-server-failed", error: String(err) })
   })
-  await remoteStaticServer?.close().catch((err) => {
+  const remoteServer = remoteStaticServer
+  remoteStaticServer = null
+  await remoteServer?.close().catch((err) => {
     logger.error({ component: "main", event: "shutdown.remote-static-server-failed", error: String(err) })
   })
+  currentOverlayUrl = null
+  currentRemoteUrl = null
 }
 
 app.whenReady().then(async () => {
