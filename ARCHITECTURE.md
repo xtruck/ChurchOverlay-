@@ -2378,8 +2378,11 @@ plain-JS renderer files.
 - `apps/desktop/renderer/i18n.js` (new): two flat dictionaries (`en`, `fr`) keyed by
   short dot-path strings (e.g. `"mic.title"`), a `t(key)` lookup, and
   `applyTranslations()` which walks every element carrying a `data-i18n="key"`
-  attribute and sets its text content — the same "plain browser JS, no build step"
-  convention `dashboard.js`/`overlay.js` already use.
+  attribute and sets its text content. The same pass also translates
+  `data-i18n-placeholder`, `data-i18n-aria-label`, and `data-i18n-title` attributes,
+  so French mode does not leave accessibility names and tooltips in English — the
+  same "plain browser JS, no build step" convention `dashboard.js`/`overlay.js`
+  already use.
 - `apps/desktop/renderer/index.html` markup gains `data-i18n` attributes on every
   user-facing string (labels, headings, button text, setup-screen copy); strings
   `dashboard.js` generates dynamically (activity-log lines, status text) call `t()`
