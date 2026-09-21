@@ -408,7 +408,9 @@
       asrHealthWarningEl.style.display = "block"
     } else if (payload.asrHealth === "failover") {
       asrHealthWarningEl.classList.add("asr-health-warning-failover")
-      asrHealthWarningTextEl.textContent = payload.error || "Deepgram failover active"
+      asrHealthWarningTextEl.textContent = t("mic.failoverActive")
+      asrReturnPrimaryBtn.textContent = t("mic.returnPrimary")
+      asrReturnPrimaryBtn.setAttribute("aria-label", t("mic.returnPrimary"))
       asrReturnPrimaryBtn.style.display = "inline-block"
       asrHealthWarningEl.style.display = "block"
     } else if (payload.asrHealth === "ok") {
