@@ -25,6 +25,20 @@
       "setup.uiLanguage.en": "English",
       "setup.uiLanguage.fr": "French",
       "setup.allowPhoneRemote": "Allow a phone remote on this WiFi network (exposes this app to your local network)",
+      "a11y.verseDisplayLanguage": "Verse display language",
+      "a11y.interfaceLanguage": "Interface language",
+      "a11y.confirmationMode": "Verse confirmation mode",
+      "a11y.mainNavigation": "Main navigation",
+      "a11y.overlayPreview": "Overlay preview",
+      "a11y.sermonNotes": "AI sermon notes",
+      "a11y.sceneType": "Scene type",
+      "a11y.font": "Font",
+      "a11y.textAlignment": "Text alignment",
+      "a11y.backgroundFill": "Background fill",
+      "a11y.verseLayout": "Verse display layout",
+      "placeholder.verseReference": "John 3:16",
+      "placeholder.welcome": "Welcome",
+      "placeholder.welcomeMessage": "Glad you're here.",
       "obs.title": "OBS Overlay",
       "obs.hint": "Paste this into OBS: Sources → + → Browser Source → URL.",
       "obs.linkLabel": "Overlay URL",
@@ -241,6 +255,20 @@
       "setup.uiLanguage.en": "Anglais",
       "setup.uiLanguage.fr": "Français",
       "setup.allowPhoneRemote": "Autoriser une télécommande sur téléphone via ce réseau WiFi (expose cette application à votre réseau local)",
+      "a11y.verseDisplayLanguage": "Langue d'affichage des versets",
+      "a11y.interfaceLanguage": "Langue de l'interface",
+      "a11y.confirmationMode": "Mode de confirmation des versets",
+      "a11y.mainNavigation": "Navigation principale",
+      "a11y.overlayPreview": "Aperçu de l'incrustation",
+      "a11y.sermonNotes": "Notes de sermon par IA",
+      "a11y.sceneType": "Type de scène",
+      "a11y.font": "Police",
+      "a11y.textAlignment": "Alignement du texte",
+      "a11y.backgroundFill": "Fond",
+      "a11y.verseLayout": "Mise en page du verset",
+      "placeholder.verseReference": "Jean 3:16",
+      "placeholder.welcome": "Bienvenue",
+      "placeholder.welcomeMessage": "Nous sommes heureux de vous accueillir.",
       "obs.title": "Incrustation OBS",
       "obs.hint": "Collez ceci dans OBS : Sources → + → Source navigateur → URL.",
       "obs.linkLabel": "URL de l'incrustation",
@@ -459,6 +487,12 @@
     })
     document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
       el.setAttribute("placeholder", t(el.getAttribute("data-i18n-placeholder")))
+    })
+    document.querySelectorAll("[data-i18n-aria-label]").forEach((el) => {
+      el.setAttribute("aria-label", t(el.getAttribute("data-i18n-aria-label")))
+    })
+    document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+      el.setAttribute("title", t(el.getAttribute("data-i18n-title")))
     })
   }
 

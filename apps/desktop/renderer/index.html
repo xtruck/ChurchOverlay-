@@ -967,14 +967,14 @@
       <input id="setup-groq-key" type="password" placeholder="gsk_…" autocomplete="off" />
 
       <label data-i18n="setup.displayModeLabel">Verse display language</label>
-      <div id="setup-display-mode" class="option-list" role="group" aria-label="Verse display language">
+      <div id="setup-display-mode" class="option-list" role="group" data-i18n-aria-label="a11y.verseDisplayLanguage">
         <button type="button" data-mode="english" class="active" data-i18n="setup.displayMode.english">English only</button>
         <button type="button" data-mode="french" data-i18n="setup.displayMode.french">French only</button>
         <button type="button" data-mode="bilingual" data-i18n="setup.displayMode.bilingual">Bilingual (French + English)</button>
       </div>
 
       <label data-i18n="setup.uiLanguageLabel">Interface language</label>
-      <div id="setup-ui-language" class="option-list" role="group" aria-label="Interface language">
+      <div id="setup-ui-language" class="option-list" role="group" data-i18n-aria-label="a11y.interfaceLanguage">
         <button type="button" data-lang="en" class="active" data-i18n="setup.uiLanguage.en">English</button>
         <button type="button" data-lang="fr" data-i18n="setup.uiLanguage.fr">French</button>
       </div>
@@ -999,16 +999,16 @@
       </div>
     </div>
     <div class="header-controls">
-      <div id="display-mode-toggle" class="segmented" role="group" aria-label="Verse display language" title="Verse display language">
+      <div id="display-mode-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.verseDisplayLanguage" data-i18n-title="a11y.verseDisplayLanguage">
         <button type="button" data-mode="english">EN</button>
         <button type="button" data-mode="french">FR</button>
         <button type="button" data-mode="bilingual">EN+FR</button>
       </div>
-      <div id="ui-language-toggle" class="segmented" role="group" aria-label="Interface language" title="Interface language">
+      <div id="ui-language-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.interfaceLanguage" data-i18n-title="a11y.interfaceLanguage">
         <button type="button" data-lang="en">EN</button>
         <button type="button" data-lang="fr">FR</button>
       </div>
-      <div id="verse-confirmation-toggle" class="segmented" role="group" aria-label="Verse confirmation mode" title="Verse confirmation mode">
+      <div id="verse-confirmation-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.confirmationMode" data-i18n-title="a11y.confirmationMode">
         <button type="button" data-confirmation-mode="auto" data-i18n="header.confirmationMode.auto">Auto</button>
         <button type="button" data-confirmation-mode="review" data-i18n="header.confirmationMode.review">Review</button>
       </div>
@@ -1020,7 +1020,7 @@
   </header>
 
   <main class="shell">
-    <nav id="sidebar" class="sidebar glass" aria-label="Main navigation">
+    <nav id="sidebar" class="sidebar glass" data-i18n-aria-label="a11y.mainNavigation">
       <button type="button" id="nav-live" class="sidebar-nav-item active" data-view="live">
         <span data-i18n="nav.live">Live</span>
       </button>
@@ -1078,7 +1078,7 @@
           <div class="card glass cell-override">
             <div class="card-title" data-i18n="override.title">Manual Override</div>
             <label for="reference" data-i18n="override.referenceLabel">Verse reference</label>
-            <input id="reference" type="text" placeholder="John 3:16" />
+            <input id="reference" type="text" data-i18n-placeholder="placeholder.verseReference" />
             <div class="btn-row">
               <button id="show-btn" class="btn-primary btn-block" data-i18n="override.showButton">Show on overlay</button>
               <button id="clear-btn" class="btn-danger" data-i18n="override.clearButton">Clear</button>
@@ -1103,7 +1103,7 @@
             <iframe
               id="overlay-preview-frame"
               class="overlay-preview-frame"
-              title="Overlay preview"
+              data-i18n-title="a11y.overlayPreview"
               sandbox="allow-scripts"
             ></iframe>
           </div>
@@ -1120,7 +1120,7 @@
           <div class="card glass cell-notes">
             <div class="media-header">
               <div class="card-title" data-i18n="sermonNotes.title">Sermon Notes (AI)</div>
-              <div id="sermon-notes-toggle" class="segmented" role="group" aria-label="AI sermon notes" title="AI sermon notes">
+              <div id="sermon-notes-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.sermonNotes" data-i18n-title="a11y.sermonNotes">
                 <button type="button" data-notes-enabled="off" data-i18n="sermonNotes.off">Off</button>
                 <button type="button" data-notes-enabled="on" data-i18n="sermonNotes.on">On</button>
               </div>
@@ -1150,7 +1150,7 @@
 
           <div id="rundown-builder" class="rundown-builder" style="display: none">
             <label data-i18n="rundown.builder.sceneKindLabel">Scene type</label>
-            <div id="rundown-scene-kind" class="option-list" role="group" aria-label="Scene type">
+            <div id="rundown-scene-kind" class="option-list" role="group" data-i18n-aria-label="a11y.sceneType">
               <button type="button" data-kind="verse" class="active" data-i18n="rundown.builder.kind.verse">Verse</button>
               <button type="button" data-kind="media" data-i18n="rundown.builder.kind.media">Media</button>
               <button type="button" data-kind="announcement" data-i18n="rundown.builder.kind.announcement">Announcement</button>
@@ -1160,7 +1160,7 @@
 
             <div id="rundown-field-verse">
               <label for="rundown-verse-input" data-i18n="rundown.builder.verseLabel">Verse reference</label>
-              <input id="rundown-verse-input" type="text" placeholder="John 3:16" />
+              <input id="rundown-verse-input" type="text" data-i18n-placeholder="placeholder.verseReference" />
             </div>
             <div id="rundown-field-media" style="display: none">
               <label for="rundown-media-select" data-i18n="rundown.builder.mediaLabel">Media cue</label>
@@ -1168,9 +1168,9 @@
             </div>
             <div id="rundown-field-announcement" style="display: none">
               <label for="rundown-announcement-title" data-i18n="rundown.builder.announcementTitleLabel">Title</label>
-              <input id="rundown-announcement-title" type="text" placeholder="Welcome" />
+              <input id="rundown-announcement-title" type="text" data-i18n-placeholder="placeholder.welcome" />
               <label for="rundown-announcement-body" data-i18n="rundown.builder.announcementBodyLabel">Message</label>
-              <input id="rundown-announcement-body" type="text" placeholder="Glad you're here." />
+              <input id="rundown-announcement-body" type="text" data-i18n-placeholder="placeholder.welcomeMessage" />
             </div>
             <!-- ARCHITECTURE.md section 66, Phase 4: the real WYSIWYG
                  canvas editor — drag-position, resize, z-order, and
@@ -1202,7 +1202,7 @@
                       <label for="canvas-layer-text" data-i18n="rundown.canvasEditor.textLabel">Text</label>
                       <input id="canvas-layer-text" type="text" placeholder="Welcome" />
                       <label data-i18n="rundown.canvasEditor.fontLabel">Font</label>
-                      <div id="canvas-layer-font" class="option-list" role="group" aria-label="Font">
+                      <div id="canvas-layer-font" class="option-list" role="group" data-i18n-aria-label="a11y.font">
                         <button type="button" data-font="serif" data-i18n="rundown.canvasEditor.fontSerif">Serif</button>
                         <button type="button" data-font="sans" data-i18n="rundown.canvasEditor.fontSans">Sans</button>
                         <button type="button" data-font="mono" data-i18n="rundown.canvasEditor.fontMono">Mono</button>
@@ -1212,7 +1212,7 @@
                       <label for="canvas-layer-color" data-i18n="rundown.canvasEditor.colorLabel">Color</label>
                       <input id="canvas-layer-color" type="color" />
                       <label data-i18n="rundown.canvasEditor.alignLabel">Alignment</label>
-                      <div id="canvas-layer-align" class="option-list" role="group" aria-label="Text alignment">
+                      <div id="canvas-layer-align" class="option-list" role="group" data-i18n-aria-label="a11y.textAlignment">
                         <button type="button" data-align="left" data-i18n="rundown.canvasEditor.alignLeft">Left</button>
                         <button type="button" data-align="center" data-i18n="rundown.canvasEditor.alignCenter">Center</button>
                         <button type="button" data-align="right" data-i18n="rundown.canvasEditor.alignRight">Right</button>
@@ -1224,7 +1224,7 @@
                     </div>
                     <div id="canvas-field-background" style="display: none">
                       <label data-i18n="rundown.canvasEditor.fillLabel">Fill</label>
-                      <div id="canvas-layer-fill-mode" class="option-list" role="group" aria-label="Background fill">
+                      <div id="canvas-layer-fill-mode" class="option-list" role="group" data-i18n-aria-label="a11y.backgroundFill">
                         <button type="button" data-fill="color" data-i18n="rundown.canvasEditor.fillColor">Solid color</button>
                         <button type="button" data-fill="media" data-i18n="rundown.canvasEditor.fillMedia">Media</button>
                       </div>
@@ -1411,7 +1411,7 @@
           <p class="settings-hint" data-i18n="verseLayout.hint">
             How a shown verse appears on the overlay.
           </p>
-          <div id="verse-layout-toggle" class="segmented" role="group" aria-label="Verse display layout" title="Verse display layout">
+          <div id="verse-layout-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.verseLayout" data-i18n-title="a11y.verseLayout">
             <button type="button" data-layout="fullscreen" class="active" data-i18n="verseLayout.fullscreen">Full Screen</button>
             <button type="button" data-layout="lower-third" data-i18n="verseLayout.lowerThird">Lower Third</button>
           </div>
