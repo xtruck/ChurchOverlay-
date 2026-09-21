@@ -2163,20 +2163,24 @@ changed without modifying [transport]" success criterion extended to a new trans
 
 NDI is a proprietary protocol (Vizrt/NewTek) with no standard-library or pure-JS
 implementation possible — a native dependency is unavoidable, unlike most of this
-codebase's deliberate zero-dependency stance. The candidate is `grandiose`, a Node
-native addon wrapping the official NDI SDK. Before this is implemented, three things
-must actually be verified against grandiose's and NDI's current real terms — not
-assumed or fabricated here:
+codebase's deliberate zero-dependency stance. The original `grandiose` package is
+stale: npm reports version 0.0.4, released in 2018. The current candidate is the
+maintained `@stagetimerio/grandiose` fork (0.2.0, Apache-2.0), whose documentation
+describes Windows/macOS/Linux support, automatic NDI SDK download, Electron rebuild,
+and asar-unpack requirements. Before this is implemented, three things must still be
+verified against the maintained fork and NDI's current real terms — not assumed or
+fabricated here:
 
 1. **Licensing and redistribution.** What NDI's SDK license actually requires of an
    app that bundles/uses it (branding requirements, redistribution terms, whether the
    free tier is sufficient or "NDI Advanced" licensing is needed for this use case).
-2. **Platform/prebuild coverage.** Whether `grandiose` ships prebuilt binaries for
+2. **Platform/prebuild coverage.** Whether the maintained fork ships compatible
+   prebuilt binaries for
    every platform this app targets (Windows/macOS/Linux), or whether some platforms
    would require a native build toolchain at install time — a real
    "might not install cleanly on every machine" risk to know about upfront, not
    discover from a user's failed install.
-3. **Maintenance status.** Whether the specific package is actively maintained against
+3. **Maintenance status.** Whether the maintained fork remains actively maintained against
    current Node/Electron ABI versions, given Electron's own Node version can be newer
    than what a native addon's prebuilds were built against.
 
@@ -2191,9 +2195,11 @@ optional capability that degrades to "unavailable," never a startup failure.
 
 ### 62.5 Open questions this note does not resolve
 
-- **Section 62.3's three verification items** — this note explicitly does not answer
-  them; they must be checked against grandiose's real, current documentation and the
-  real, current NDI SDK license before any code is written, not assumed favorable.
+- **Section 62.3's licensing and packaging gates** — package metadata and the README
+  confirm a maintained fork and document Electron packaging steps, but they do not
+  establish that the NDI SDK runtime license permits every intended redistribution
+  model. A license review and a tested Electron packaging proof on each supported
+  platform are still required before code is written.
 - **Frame rate / send cadence.** The overlay is mostly static text with occasional
   updates, not continuous motion video — whether to send a continuous fixed-rate frame
   stream (what most NDI receivers expect) or something smarter tied to actual
