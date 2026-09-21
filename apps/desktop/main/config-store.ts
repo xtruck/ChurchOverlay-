@@ -58,6 +58,7 @@ export type AppConfig = {
    * lower-third available for when video/media shares the screen.
    */
   readonly verseLayout: VerseLayout
+  readonly ndiEnabled?: boolean
 }
 
 type StoredConfig = {
@@ -76,6 +77,7 @@ type StoredConfig = {
   readonly enableSermonNotes?: boolean
   /** Optional in storage: absent in configs saved before ARCHITECTURE.md section 82 existed. */
   readonly verseLayout?: string
+  readonly ndiEnabled?: boolean
 }
 
 /**
@@ -129,6 +131,7 @@ export class ConfigStore {
       verseConfirmationMode: config.verseConfirmationMode,
       enableSermonNotes: config.enableSermonNotes,
       verseLayout: config.verseLayout,
+      ...(config.ndiEnabled === undefined ? {} : { ndiEnabled: config.ndiEnabled }),
     }
 
     await mkdir(dirname(this.filePath), { recursive: true })
@@ -161,6 +164,7 @@ export class ConfigStore {
       verseConfirmationMode,
       enableSermonNotes,
       verseLayout,
+      ndiEnabled,
     } = stored
 
     if (
@@ -197,6 +201,9 @@ export class ConfigStore {
     if (verseLayout !== undefined && !VERSE_LAYOUTS.includes(verseLayout as VerseLayout)) {
       throw new Error(`ConfigStore: ${this.filePath} has an invalid verseLayout`)
     }
+    if (ndiEnabled !== undefined && typeof ndiEnabled !== "boolean") {
+      throw new Error(`ConfigStore: ${this.filePath} has an invalid ndiEnabled`)
+    }
 
     return {
       groqApiKey: this.codec.decrypt(Buffer.from(groqApiKeyEncrypted, "base64")),
@@ -220,6 +227,7 @@ export class ConfigStore {
       // "fullscreen" — the confirmed default for every existing install
       // upgrading, not just fresh ones.
       verseLayout: (verseLayout as VerseLayout | undefined) ?? "fullscreen",
+      ...(ndiEnabled === undefined ? {} : { ndiEnabled }),
     }
   }
 }

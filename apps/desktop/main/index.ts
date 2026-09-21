@@ -29,6 +29,7 @@ import {
 import type { DisplayMode, MediaCueKind, VerseConfirmationMode, VerseLayout } from "../../../packages/contracts"
 import { inferMediaKind, deriveTitleFromFilename } from "./media-import"
 import { Logger } from "../../../packages/shared/logger"
+import { NDIOutput, type PaintSource } from "./ndi-output"
 
 /**
  * Electron main process entry point (ARCHITECTURE.md section 6.1). Owns
@@ -71,6 +72,8 @@ let currentAllowPhoneRemote = false
 let currentVerseConfirmationMode: VerseConfirmationMode = "auto"
 let currentEnableSermonNotes = false
 let currentVerseLayout: VerseLayout = "fullscreen"
+let ndiWindow: BrowserWindow | null = null
+let ndiOutput: NDIOutput | null = null
 // ARCHITECTURE.md section 74 (production audit): the operator-picked file
 // path, held here between the native file-picker dialog and the
 // renderer's title confirmation step, so the actual import still happens
@@ -126,7 +129,14 @@ function getConfigStore(): ConfigStore {
  */
 async function startServices(
   config: AppConfig
-): Promise<{ port: number; token: string; remoteUrl: string | null; allowPhoneRemote: boolean; overlayUrl: string }> {
+): Promise<{
+  port: number
+  token: string
+  remoteUrl: string | null
+  allowPhoneRemote: boolean
+  overlayUrl: string
+  ndi: ReturnType<NDIOutput["getStatus"]>
+}> {
   currentTokens = { operatorToken: config.operatorToken, viewerToken: config.viewerToken }
   // ARCHITECTURE.md section 77: a live-API outage (the venue's own
   // internet, or the API itself) no longer means the French source stops
@@ -264,6 +274,23 @@ async function startServices(
   currentEnableSermonNotes = config.enableSermonNotes
   currentVerseLayout = config.verseLayout
 
+  ndiOutput = new NDIOutput("ChurchOverlay", undefined, (event, error) => {
+    logger.error({ component: "ndi", event, error })
+  })
+  if (config.ndiEnabled) {
+    ndiWindow = new BrowserWindow({
+      show: false,
+      webPreferences: { offscreen: true, contextIsolation: true, sandbox: true },
+    })
+    await ndiWindow.loadURL(overlayUrl)
+    const status = await ndiOutput.start(ndiWindow.webContents as unknown as PaintSource)
+    if (status.state !== "running") {
+      logger.warn({ component: "ndi", event: "output.unavailable", error: status.reason })
+      ndiWindow.destroy()
+      ndiWindow = null
+    }
+  }
+
   logger.info({
     component: "main",
     event: "services.started",
@@ -280,6 +307,7 @@ async function startServices(
     remoteUrl,
     allowPhoneRemote: config.allowPhoneRemote,
     overlayUrl,
+    ndi: ndiOutput?.getStatus() ?? { state: "disabled" as const },
   }
 }
 
@@ -343,9 +371,10 @@ ipcMain.handle("get-startup-status", async () => {
       verseConfirmationMode: currentVerseConfirmationMode,
       enableSermonNotes: currentEnableSermonNotes,
       verseLayout: currentVerseLayout,
+      ndi: ndiOutput?.getStatus() ?? { state: "disabled" as const },
     }
   }
-  return { ready: false, uiLanguage }
+  return { ready: false, uiLanguage, ndi: { state: "disabled" as const } }
 })
 
 /** ARCHITECTURE.md section 63.2: the live dashboard toggle, via IPC — an operator configuration action, not something that needs to round-trip through the WS server. */
@@ -435,6 +464,41 @@ ipcMain.handle("set-enable-sermon-notes", async (_event, payload: unknown) => {
   return { enableSermonNotes: payload }
 })
 
+ipcMain.handle("set-ndi-enabled", async (_event, payload: unknown) => {
+  if (typeof payload !== "boolean") throw new Error("Invalid ndiEnabled value.")
+  if (!appCoreHandle || !currentOverlayUrl) throw new Error("Services are not started yet.")
+  if (!ndiOutput) {
+    ndiOutput = new NDIOutput("ChurchOverlay", undefined, (event, error) => {
+      logger.error({ component: "ndi", event, error })
+    })
+  }
+
+  if (payload) {
+    if (!ndiWindow) {
+      ndiWindow = new BrowserWindow({
+        show: false,
+        webPreferences: { offscreen: true, contextIsolation: true, sandbox: true },
+      })
+      await ndiWindow.loadURL(currentOverlayUrl)
+    }
+    const status = await ndiOutput.start(ndiWindow.webContents as unknown as PaintSource)
+    if (status.state !== "running") {
+      ndiWindow.destroy()
+      ndiWindow = null
+    }
+    const existing = await getConfigStore().load().catch(() => null)
+    if (existing) await getConfigStore().save({ ...existing, ndiEnabled: status.state === "running" })
+    return status
+  }
+
+  await ndiOutput.stop()
+  ndiWindow?.destroy()
+  ndiWindow = null
+  const existing = await getConfigStore().load().catch(() => null)
+  if (existing) await getConfigStore().save({ ...existing, ndiEnabled: false })
+  return ndiOutput.getStatus()
+})
+
 ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
   const payloadObject = typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {}
 
@@ -500,6 +564,7 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
     displayMode,
     uiLanguage,
     allowPhoneRemote,
+    ndiEnabled: existing?.ndiEnabled ?? false,
   }
   await store.save(config)
 
@@ -733,22 +798,6 @@ ipcMain.handle("export-session", async () => {
     properties: ["openDirectory", "createDirectory"],
   })
 
-  ipcMain.handle("export-diagnostics", async () => {
-    if (!dashboardWindow) throw new Error("dashboard window is not available")
-    if (!appCoreHandle) throw new Error("services are not started yet")
-
-    const result = await dialog.showOpenDialog(dashboardWindow, {
-      title: "Choose a folder to export diagnostics to",
-      properties: ["openDirectory", "createDirectory"],
-    })
-    if (result.canceled || result.filePaths.length === 0) return { canceled: true as const }
-
-    const targetDir = result.filePaths[0] as string
-    const path = join(targetDir, "churchoverlay-diagnostics.json")
-    await writeFile(path, JSON.stringify(appCoreHandle.getDiagnostics(), null, 2), "utf8")
-    logger.info({ component: "main", event: "diagnostics.exported", metadata: { targetDir } })
-    return { canceled: false as const, path }
-  })
   if (result.canceled || result.filePaths.length === 0) {
     return { canceled: true as const }
   }
@@ -772,7 +821,27 @@ ipcMain.handle("export-session", async () => {
   return { canceled: false as const, count: entries.length, targetDir }
 })
 
+ipcMain.handle("export-diagnostics", async () => {
+  if (!dashboardWindow) throw new Error("dashboard window is not available")
+  if (!appCoreHandle) throw new Error("services are not started yet")
+  const result = await dialog.showOpenDialog(dashboardWindow, {
+    title: "Choose a folder to export diagnostics to",
+    properties: ["openDirectory", "createDirectory"],
+  })
+  if (result.canceled || result.filePaths.length === 0) return { canceled: true as const }
+  const targetDir = result.filePaths[0] as string
+  const path = join(targetDir, "churchoverlay-diagnostics.json")
+  await writeFile(path, JSON.stringify(appCoreHandle.getDiagnostics(), null, 2), "utf8")
+  logger.info({ component: "main", event: "diagnostics.exported", metadata: { targetDir } })
+  return { canceled: false as const, path }
+})
+
 async function shutdown(): Promise<void> {
+  await ndiOutput?.stop().catch((err) => {
+    logger.error({ component: "ndi", event: "shutdown.failed", error: String(err) })
+  })
+  ndiWindow?.destroy()
+  ndiWindow = null
   await appCoreHandle?.stop().catch((err) => {
     logger.error({ component: "main", event: "shutdown.app-core-failed", error: String(err) })
   })

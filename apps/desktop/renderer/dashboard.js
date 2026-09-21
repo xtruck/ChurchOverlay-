@@ -21,6 +21,14 @@
       const clamped = Math.max(-1, Math.min(1, samples[i]))
       output[i] = Math.round(clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff)
     }
+
+    function renderNdiStatus(status) {
+      const state = status?.state || "disabled"
+      ndiToggleBtn.disabled = state === "starting"
+      ndiToggleBtn.textContent = t(state === "running" ? "ndi.disable" : "ndi.enable")
+      ndiStatusEl.textContent =
+        state === "running" ? t("ndi.running") : state === "unavailable" ? t("ndi.unavailable") : ""
+    }
     return output
   }
 
@@ -60,6 +68,18 @@
       const centerDistance = Math.abs(index - (bars.length - 1) / 2)
       const barLevel = Math.max(0, micLevelDisplayed - centerDistance * 0.08)
       bar.style.height = Math.max(6, barLevel * 100) + "%"
+    })
+
+    ndiToggleBtn.addEventListener("click", () => {
+      const shouldEnable = ndiToggleBtn.textContent === t("ndi.enable")
+      ndiToggleBtn.disabled = true
+      window.churchOverlay
+        .setNdiEnabled(shouldEnable)
+        .then(renderNdiStatus)
+        .catch((err) => {
+          log(err.message, "error")
+          ndiToggleBtn.disabled = false
+        })
     })
   }
 
@@ -134,6 +154,8 @@
   const remoteCopyBtn = document.getElementById("remote-copy-btn")
   const obsUrlInput = document.getElementById("obs-url")
   const obsCopyBtn = document.getElementById("obs-copy-btn")
+  const ndiToggleBtn = document.getElementById("ndi-toggle-btn")
+  const ndiStatusEl = document.getElementById("ndi-status")
   const exportSessionBtn = document.getElementById("export-session-btn")
   const exportDiagnosticsBtn = document.getElementById("export-diagnostics-btn")
   const sermonNotesToggleEl = document.getElementById("sermon-notes-toggle")
@@ -2005,6 +2027,7 @@
         renderObsPanel(info.overlayUrl)
         renderOverlayPreview(info.overlayUrl)
         setMediaOrigin(info.overlayUrl)
+        renderNdiStatus(info.ndi)
         showAppShell()
         connect(info.port, info.token)
       })
@@ -2035,6 +2058,7 @@
         renderObsPanel(status.overlayUrl)
         renderOverlayPreview(status.overlayUrl)
         setMediaOrigin(status.overlayUrl)
+        renderNdiStatus(status.ndi)
         showAppShell()
         connect(status.port, status.token)
       } else {

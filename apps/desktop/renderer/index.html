@@ -1398,6 +1398,16 @@
               <button id="remote-copy-btn" class="btn-secondary btn-small" data-i18n="remote.copyButton">Copy</button>
             </div>
           </div>
+          <div class="card glass" style="max-width: 640px; margin-top: var(--space-4)">
+            <div class="card-title" data-i18n="ndi.title">NDI Output</div>
+            <p class="settings-hint" data-i18n="ndi.hint">
+              Optional network video output. OBS Browser Source remains available if NDI is unavailable.
+            </p>
+            <div class="btn-row">
+              <button id="ndi-toggle-btn" class="btn-secondary btn-small" data-i18n="ndi.enable">Enable NDI</button>
+              <span id="ndi-status" class="settings-hint"></span>
+            </div>
+          </div>
           <div id="remote-no-lan" style="display: none" data-i18n="remote.noLan">
             Enabled, but no local network address was found on this machine.
           </div>

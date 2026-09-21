@@ -17,10 +17,12 @@
     "test:live-groq": "tsc && cd dist && node --env-file=../.env --test apps/server/asr/groq-provider.live.test.js",
     "dev:preview": "tsc && node --env-file=.env dist/scripts/dev-preview.js",
     "dry-run": "tsc && node dist/scripts/dry-run.js",
-    "package": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder"
+    "rebuild:native": "electron-rebuild -f -w @stagetimerio/grandiose",
+    "package": "npm run build && npm run rebuild:native && electron-builder --dir",
+    "dist": "npm run build && npm run rebuild:native && electron-builder"
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.7.2",
     "@types/express": "^4.17.21",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.1",
@@ -39,6 +41,9 @@
     "directories": {
       "output": "release"
     },
+    "asarUnpack": [
+      "node_modules/@stagetimerio/grandiose/dist/**"
+    ],
     "files": [
       "dist/apps/**/*",
       "dist/packages/**/*",
@@ -63,5 +68,8 @@
       "target": "AppImage",
       "category": "AudioVideo"
     }
+  },
+  "optionalDependencies": {
+    "@stagetimerio/grandiose": "^0.2.0"
   }
 }

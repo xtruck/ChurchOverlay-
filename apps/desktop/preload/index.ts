@@ -66,4 +66,5 @@ contextBridge.exposeInMainWorld("churchOverlay", {
   exportDiagnostics: () => ipcRenderer.invoke("export-diagnostics"),
   getSessionHistory: () => ipcRenderer.invoke("get-session-history"),
   setEnableSermonNotes: (enabled: boolean) => ipcRenderer.invoke("set-enable-sermon-notes", enabled),
+  setNdiEnabled: (enabled: boolean) => ipcRenderer.invoke("set-ndi-enabled", enabled),
 })

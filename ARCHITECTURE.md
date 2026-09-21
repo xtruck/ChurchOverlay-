@@ -2120,13 +2120,10 @@ voice control. This note does not decide media/verse overlay precedence (section
 
 A dedicated architecture note, following the same AGENTS.md section 56 checklist as
 sections 60-61. Raised mid-session as a new capability, not part of the original three
-Phase 2 items in section 59 or media library/voice navigation above — approved for
-Phase 2 (confirmed explicitly: "add it to ROADMAP.md, scope it properly first," not
-build it immediately) but with real open questions this note surfaces rather than
-resolves, because they require verification this note cannot do on its own (SDK
-licensing terms, platform prebuild availability). This is design only — nothing in
-this section is implemented yet, and it must not be implemented until those open
-questions are actually answered.
+Phase 2 items in section 59 or media library/voice navigation above. The optional
+transport is now implemented behind a native-module availability gate; the remaining
+SDK redistribution-license review is a release gate, not a reason to weaken the
+fallback behavior or block development of the adapter.
 
 ### 62.1 What problem this solves, and why it's a real architectural decision
 
@@ -2153,8 +2150,9 @@ each rendered frame via the window's `paint` event. No second rendering engine, 
 screenshot-polling hack: this is the same overlay, the same code, rendered to a pixel
 buffer instead of a visible window.
 
-Each captured frame is handed to the new native dependency (section 62.3) for NDI
-transmission. This keeps `apps/overlay/public/` completely unaware that NDI exists —
+Each captured frame is handed to the optional native dependency (section 62.3) for NDI
+transmission. A bounded one-frame pending slot prevents slow native sends from
+creating an unbounded memory queue. This keeps `apps/overlay/public/` completely unaware that NDI exists —
 it has no idea whether it's being viewed by OBS's Browser Source, the overlay preview
 window, or this offscreen NDI renderer, matching section 57's "the overlay can be
 changed without modifying [transport]" success criterion extended to a new transport.
@@ -2186,7 +2184,7 @@ fabricated here:
 
 ### 62.4 Fail-safe behavior (ARCHITECTURE.md section 4.5)
 
-NDI output must be strictly additive and non-blocking: if the native module fails to
+NDI output is strictly additive and non-blocking: if the native module fails to
 load (missing prebuild, unsupported platform, NDI runtime not installed on the
 machine), the application logs the failure and simply does not offer NDI output —
 Browser Source and the overlay preview window continue working exactly as they do
@@ -2212,11 +2210,10 @@ optional capability that degrades to "unavailable," never a startup failure.
 ### 62.6 Confirms this is approved scope
 
 Confirmed explicitly, mid-session: NDI output is added to `ROADMAP.md`'s Phase 2
-section, scoped via this note before any code, per the same process already applied
-to media library and voice navigation. Unlike those two, this note does not clear
-NDI for implementation yet — section 62.3's three verification items are a real
-precondition, not a formality, given the licensing and native-dependency questions a
-purely architectural note cannot answer on its own.
+section and is implemented as an optional transport. Its native dependency is
+loaded dynamically, startup continues when it is missing, Browser Source remains
+the fallback, and the remaining licensing/package proof is tracked as a release
+gate rather than silently assumed.
 
 ## 63. Phase 2 Feature Note — Bilingual Display & French Localization
 
@@ -4641,8 +4638,9 @@ protocol validation, failure behavior, and relevant tests exist in the repositor
 
 ### 83.3 Remaining deliberate gaps
 
-- NDI remains blocked until SDK licensing, redistribution, platform binary
-  coverage, and maintenance are verified as required by section 62.3.
+- NDI code is implemented as an optional transport with Browser Source fallback.
+  SDK licensing, redistribution, platform binary coverage, and maintenance remain
+  release gates before shipping packaged NDI support.
 - Rundown persistence across restart remains deferred; the current rundown is
   intentionally in-memory only.
 - The broader AI copilot remains unscoped. Sermon-note summarization is the only
