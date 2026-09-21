@@ -66,7 +66,7 @@ let configStore: ConfigStore | null = null
 let mediaLibrary: MediaLibrary | null = null
 let sessionHistoryStore: SessionHistoryStore | null = null
 let localizedVerseSource: LocalizedVerseSource | null = null
-let asrProvider: (GroqProvider | DeepgramProvider) | null = null
+let asrProvider: GroqProvider | null = null
 let currentRemoteUrl: string | null = null
 let currentOverlayUrl: string | null = null
 let currentAllowPhoneRemote = false
@@ -170,13 +170,11 @@ async function startServices(
   // default (section 24) exactly as before this feature existed.
   const wsHost = config.allowPhoneRemote ? "0.0.0.0" : undefined
 
-  asrProvider = config.deepgramApiKey
-    ? new DeepgramProvider({ apiKey: config.deepgramApiKey, language: whisperLanguageFor(config.displayMode) })
-    : new GroqProvider({
-        apiKey: config.groqApiKey,
-        logger,
-        language: whisperLanguageFor(config.displayMode),
-      })
+  asrProvider = new GroqProvider({
+    apiKey: config.groqApiKey,
+    logger,
+    language: whisperLanguageFor(config.displayMode),
+  })
 
   appCoreHandle = await startAppCore({
     asr: asrProvider,
@@ -379,6 +377,7 @@ ipcMain.handle("get-startup-status", async () => {
   }
   return { ready: false, uiLanguage, ndi: { state: "disabled" as const } }
 })
+
 
 /** ARCHITECTURE.md section 63.2: the live dashboard toggle, via IPC — an operator configuration action, not something that needs to round-trip through the WS server. */
 ipcMain.handle("set-display-mode", async (_event, payload: unknown) => {

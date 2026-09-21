@@ -21,6 +21,7 @@ class FakeSecretCodec implements SecretCodec {
 
 const SAMPLE_CONFIG: AppConfig = {
   groqApiKey: "gsk_super_secret_value",
+  deepgramApiKey: "deepgram_secret_value",
   microphoneId: "default-mic",
   operatorToken: "operator-token-value",
   viewerToken: "viewer-token-value",
@@ -154,6 +155,7 @@ test("ConfigStore: a config saved before displayMode/uiLanguage existed loads wi
     assert.equal(loaded?.displayMode, "english")
     assert.equal(loaded?.uiLanguage, "en")
   })
+
 })
 
 test("ConfigStore: load() throws on a present but invalid displayMode or uiLanguage (real corruption, not an old file)", async () => {

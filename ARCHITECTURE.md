@@ -4706,6 +4706,7 @@ otherwise it uses the existing Groq batch provider. Groq remains available as an
 explicit fallback, and sermon-notes AI remains disabled when no Groq key exists.
 Neither key is exposed to renderers or written in plaintext.
 
+
 This reduces local CPU/RAM/GPU usage compared with local inference, but it does
 not provide unlimited free usage: Deepgram remains subject to account pricing,
 credits, and service limits. Streaming reduces request overhead and latency; it

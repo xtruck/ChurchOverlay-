@@ -2,7 +2,7 @@ import { WebSocket } from "ws"
 import type { AsrProvider, AudioFrame, TranscriptResult } from "../../../packages/contracts"
 import { generateUlid } from "../../../packages/shared/ulid"
 
-const DEFAULT_MODEL = "nova-3"
+const DEFAULT_MODEL = "nova-2"
 const DEFAULT_URL = "wss://api.deepgram.com/v1/listen"
 
 export type DeepgramProviderOptions = {
