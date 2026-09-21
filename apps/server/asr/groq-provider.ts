@@ -462,15 +462,7 @@ export class GroqProvider implements AsrProvider {
 
     // If currently throttled from a prior 429 sustained signal
     if (now < this.throttledUntil) {
-      if (bufferedDurationMs >= MAX_THROTTLED_BUFFER_MS) {
-        // Cap reached — send a long chunk rather than lose everything
-        this.throttledUntil = now
-        this.requestsInWindow = 1
-        this.windowStart = now
-        return true
-      }
-      // Still below cap — throttle, keep buffering
-      return false
+      return this.allowFlushAtThrottleCap(now, bufferedDurationMs)
     }
 
     // Budget available: we're within the window and under the limit
@@ -484,16 +476,19 @@ export class GroqProvider implements AsrProvider {
     this.requestsInWindow = 1
     this.windowStart = now
 
-    if (bufferedDurationMs >= MAX_THROTTLED_BUFFER_MS) {
-      // Cap reached — send a long chunk rather than lose everything
-      this.throttledUntil = now
-      this.requestsInWindow = 1
-      this.windowStart = now
-      return true
-    }
+    return this.allowFlushAtThrottleCap(now, bufferedDurationMs)
+  }
 
-    // Still below cap — throttle, keep buffering
-    return false
+  /**
+   * The only place allowed to bypass throttling: once the retained audio
+   * reaches the bounded ceiling, send it rather than buffering indefinitely.
+   */
+  private allowFlushAtThrottleCap(now: number, bufferedDurationMs: number): boolean {
+    if (bufferedDurationMs < MAX_THROTTLED_BUFFER_MS) return false
+    this.throttledUntil = now
+    this.requestsInWindow = 1
+    this.windowStart = now
+    return true
   }
 
   /**
