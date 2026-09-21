@@ -870,6 +870,17 @@ ipcMain.handle("export-session", async () => {
     return `[${time}] ${reference} (${entry.translation})\n${entry.text}\n`
   })
   await writeFile(join(targetDir, "transcript.txt"), transcriptLines.join("\n"), "utf8")
+  const uniqueReferences = new Set(entries.map((entry) =>
+    `${entry.reference.book} ${entry.reference.chapter}:${entry.reference.verse}`))
+  const report = {
+    generatedAt: new Date().toISOString(),
+    shownVerseCount: entries.length,
+    uniqueReferenceCount: uniqueReferences.size,
+    startedAt: entries[0]?.timestamp ?? null,
+    lastShownAt: entries.at(-1)?.timestamp ?? null,
+    references: [...uniqueReferences],
+  }
+  await writeFile(join(targetDir, "service-report.json"), JSON.stringify(report, null, 2), "utf8")
 
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i]
