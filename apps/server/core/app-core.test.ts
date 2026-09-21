@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { WebSocket } from "ws"
-import { startAppCore } from "./app-core"
+import { DEFAULT_VERSE_AUTO_CLEAR_MS, startAppCore } from "./app-core"
 import { RateLimitError } from "../asr/groq-provider"
 import { RegexDetector } from "../detector/regex-detector"
 import { correctTranscription } from "../asr/transcription-corrector"
@@ -3168,6 +3168,10 @@ test("AppCore: a verse shown with no principal poster configured still auto-clea
     port: 0,
     tokens: TOKENS,
     verseAutoClearMs: 40,
+  })
+
+  test("AppCore: the default verse auto-clear ceiling is exactly 2 minutes 30 seconds", () => {
+    assert.equal(DEFAULT_VERSE_AUTO_CLEAR_MS, 2 * 60 * 1000 + 30 * 1000)
   })
   try {
     const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)

@@ -71,6 +71,7 @@ Current status:
 | invalid WS message | `action-registry.test.ts`, `server.test.ts` |
 | diagnostics snapshot contains operational state without secrets | `app-core.test.ts` |
 | optional NDI output degrades without the native addon and bounds pending frames | `ndi-output.test.ts` |
+| default verse display auto-clears after the fixed 2:30 ceiling | `app-core.test.ts` |
 
 Two categories from that list have no dedicated fixture, deliberately: **low-quality
 transcript** has no v1 provider that exposes a usable quality signal (GroqProvider

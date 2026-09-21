@@ -23,6 +23,9 @@ import type {
   WsMessage,
   WsRole,
 } from "../../../packages/contracts"
+
+/** Fixed operator-safe ceiling for every visible verse: 2 minutes 30 seconds. */
+export const DEFAULT_VERSE_AUTO_CLEAR_MS = 150_000
 import type { Server as HttpServer } from "node:http"
 import { generateUlid } from "../../../packages/shared/ulid"
 import type { Logger } from "../../../packages/shared/logger"
@@ -291,7 +294,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   // both; once marked, MediaCueDetector matches route here instead of
   // the normal media:show path, for as long as the app keeps running.
   const posterCueIds = new Set<string>()
-  const verseAutoClearMs = options.verseAutoClearMs ?? 150000 // 2 minutes 30 seconds (section 82.1) — confirmed as a firm ceiling for every shown verse, not just poster-backed ones
+  const verseAutoClearMs = options.verseAutoClearMs ?? DEFAULT_VERSE_AUTO_CLEAR_MS
   let verseAutoClearTimer: ReturnType<typeof setTimeout> | null = null
   // ARCHITECTURE.md section 65.3: "auto" is the confirmed default —
   // unchanged from every existing behavior unless the operator explicitly
