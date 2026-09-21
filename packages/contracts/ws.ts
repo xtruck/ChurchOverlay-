@@ -67,6 +67,13 @@ export type AsrStatusPayload = {
    */
   readonly micCalibrating?: boolean
   readonly micThreshold?: number
+  readonly audioMetrics?: {
+    readonly framesReceived: number
+    readonly framesRejected: number
+    readonly framesForwarded: number
+    readonly averageRms: number
+    readonly maxRms: number
+  }
 }
 
 export type WsMessage<TPayload = unknown> = {

@@ -38,6 +38,7 @@ import { resolveVerse, translationIdFor } from "../verse/resolve-verse"
 import { passesTranscriptGate } from "./transcript-gate"
 import { correctTranscription } from "../asr/transcription-corrector"
 import { postprocessTranscript } from "../asr/postprocess/pipeline"
+import { TranscriptAssembler } from "../asr/transcript-assembler"
 import { RateLimitError } from "../asr/groq-provider"
 import type { MediaLibrary } from "../media/media-library"
 import { MediaCueDetector } from "../media/media-cue-detector"
@@ -273,6 +274,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const mediaPlayback = new MediaPlaybackController()
   let mediaAutoClearTimer: ReturnType<typeof setTimeout> | null = null
   const navigationCommandDetector = new NavigationCommandDetector()
+  const transcriptAssembler = new TranscriptAssembler()
+  let lastAssembledText = ""
   const rundownController = new RundownController()
   const sessionRecorder = new SessionRecorder()
   const sessionHistoryStore = options.sessionHistoryStore
@@ -639,7 +642,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   }
 
   function broadcastAsrStatus(payload: AsrStatusPayload): void {
-    wsServer.broadcast({ id: generateUlid(), type: "status:update", timestamp: Date.now(), payload })
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "status:update",
+      timestamp: Date.now(),
+      payload: { ...payload, audioMetrics: silenceGate.getMetrics() },
+    })
   }
 
   function broadcastAnnouncementClear(correlationId?: string): void {
@@ -1249,9 +1257,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         continue
       }
       if (resolution.kind === "no-op") {
-        logger.warn({
+        const contextless =
+          currentVersePosition === null &&
+          (command.kind === "goto-bare-verse" || command.kind === "goto-bare-chapter-verse")
+        logger[contextless ? "debug" : "warn"]({
           component: "app-core",
-          event: "navigation.no-op",
+          event: contextless ? "navigation.contextless-ignored" : "navigation.no-op",
           correlationId: transcript.correlationId,
           metadata: { command, reason: resolution.reason },
         })
@@ -1379,6 +1390,38 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
           error: err instanceof Error ? err.message : String(err),
         })
       })
+
+    if (transcript.state === "final") {
+      const assembledText = transcriptAssembler.push({
+        text: transcript.text,
+        timestamp: transcript.timestamp,
+      })
+      const currentHasReference = detector.detect(transcript.text).length > 0
+      if (assembledText && assembledText !== transcript.text && assembledText !== lastAssembledText && !currentHasReference) {
+        lastAssembledText = assembledText
+        resolveTranscriptVerses(
+          { ...transcript, text: assembledText },
+          detector,
+          index,
+          source,
+          cache,
+          circuitBreaker,
+          logger,
+        )
+          .then((verses) => {
+            for (const verse of verses) {
+              if (verseConfirmationMode === "review") broadcastPendingVerse(verse, transcript.correlationId)
+              else broadcastVerse(verse, "detected", transcript.correlationId)
+            }
+          })
+          .catch((err) => logger.error({
+            component: "app-core",
+            event: "transcript.assembly-failed",
+            correlationId: transcript.correlationId,
+            error: err instanceof Error ? err.message : String(err),
+          }))
+      }
+    }
 
     // TASK 4: NEAR-MISS LOG — when a transcript contains chapter/verse keywords
     // but produced zero references AND zero commands, log event "detector.near-miss"

@@ -86,6 +86,7 @@
   const statusTextEl = document.getElementById("status-text")
   const logEl = document.getElementById("log")
   const transcriptEl = document.getElementById("transcript")
+  const audioDiagnosticsEl = document.getElementById("audio-diagnostics")
   const referenceInput = document.getElementById("reference")
   const showBtn = document.getElementById("show-btn")
   const clearBtn = document.getElementById("clear-btn")
@@ -393,6 +394,11 @@
   // successful transcript as the recovery signal).
   function handleStatusUpdate(payload) {
     if (!payload) return
+    if (payload.audioMetrics && audioDiagnosticsEl) {
+      const m = payload.audioMetrics
+      audioDiagnosticsEl.textContent =
+        `Audio: ${m.framesForwarded}/${m.framesReceived} forwarded · RMS ${Math.round(m.averageRms)} · peak ${Math.round(m.maxRms)}`
+    }
     asrHealthWarningEl.classList.remove("asr-health-warning-throttled", "asr-health-warning-rate-limited", "asr-health-warning-failover")
     asrReturnPrimaryBtn.style.display = "none"
     if (payload.asrHealth === "error") {
