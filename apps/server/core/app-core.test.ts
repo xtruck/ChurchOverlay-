@@ -572,6 +572,91 @@ test("AppCore: media:select with an unknown id broadcasts nothing", async () => 
       tokens: TOKENS,
       mediaLibrary,
     })
+
+    test("AppCore: an active media cue auto-clears after its persisted duration", async () => {
+      await withMediaLibrary(async (mediaLibrary, dir) => {
+        const source = join(dir, "timed.png")
+        await writeFile(source, "x")
+        const cue = await mediaLibrary.import(source, "Timed Slide", "image")
+        await mediaLibrary.setAutoClearDuration(cue.id, 30)
+
+        const app = await startAppCore({
+          asr: new FakeAsrProvider(),
+          detector: new RegexDetector(),
+          index: new KnownValidVerseIndex(),
+          source: new StubVerseSource({}),
+          logger: silentLogger(),
+          port: 0,
+          tokens: TOKENS,
+          mediaLibrary,
+        })
+        try {
+          const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+          const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+          const messages: WsMessage[] = []
+          viewerSocket.on("message", (data) => {
+            const message = JSON.parse(data.toString()) as WsMessage
+            if (!isAutoSyncNoise(message)) messages.push(message)
+          })
+          operatorSocket.send(JSON.stringify({ id: "01TIMER", type: "media:select", timestamp: Date.now(), payload: { id: cue.id } }))
+          await waitFor(() => messages.some((message) => message.type === "media:show"))
+          await waitFor(() => messages.some((message) => message.type === "media:clear"))
+          assert.equal(messages.filter((message) => message.type === "media:clear").length, 1)
+          operatorSocket.close()
+          viewerSocket.close()
+        } finally {
+          await app.stop()
+        }
+      })
+    })
+
+    test("AppCore: replacing or manually clearing media cancels the previous auto-clear timer", async () => {
+      await withMediaLibrary(async (mediaLibrary, dir) => {
+        const firstSource = join(dir, "first.png")
+        const secondSource = join(dir, "second.png")
+        await writeFile(firstSource, "x")
+        await writeFile(secondSource, "y")
+        const first = await mediaLibrary.import(firstSource, "First Slide", "image")
+        const second = await mediaLibrary.import(secondSource, "Second Slide", "image")
+        await mediaLibrary.setAutoClearDuration(first.id, 40)
+        await mediaLibrary.setAutoClearDuration(second.id, null)
+
+        const app = await startAppCore({
+          asr: new FakeAsrProvider(),
+          detector: new RegexDetector(),
+          index: new KnownValidVerseIndex(),
+          source: new StubVerseSource({}),
+          logger: silentLogger(),
+          port: 0,
+          tokens: TOKENS,
+          mediaLibrary,
+        })
+        try {
+          const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+          const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+          const messages: WsMessage[] = []
+          viewerSocket.on("message", (data) => {
+            const message = JSON.parse(data.toString()) as WsMessage
+            if (!isAutoSyncNoise(message)) messages.push(message)
+          })
+          operatorSocket.send(JSON.stringify({ id: "01FIRST", type: "media:select", timestamp: Date.now(), payload: { id: first.id } }))
+          await waitFor(() => messages.some((message) => message.type === "media:show"))
+          operatorSocket.send(JSON.stringify({ id: "01SECOND", type: "media:select", timestamp: Date.now(), payload: { id: second.id } }))
+          await waitFor(() => messages.filter((message) => message.type === "media:show").length === 2)
+          await new Promise((resolve) => setTimeout(resolve, 70))
+          assert.equal(messages.some((message) => message.type === "media:clear"), false)
+
+          operatorSocket.send(JSON.stringify({ id: "01CLEAR", type: "media:clear", timestamp: Date.now(), payload: null }))
+          await waitFor(() => messages.some((message) => message.type === "media:clear"))
+          await new Promise((resolve) => setTimeout(resolve, 50))
+          assert.equal(messages.filter((message) => message.type === "media:clear").length, 1)
+          operatorSocket.close()
+          viewerSocket.close()
+        } finally {
+          await app.stop()
+        }
+      })
+    })
     try {
       const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
       const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
