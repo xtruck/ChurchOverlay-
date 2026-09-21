@@ -38,8 +38,10 @@ const PHONETIC_CORRECTIONS: CorrectionMap = {
   "versait": "verset",    // verb form confusion
   "versais": "verset",    // verb form confusion
   "verso": "verset",      // observed French ASR confusion in live use
+  "versus": "verset",     // observed English/French phonetic confusion
   "vaissez": "verset",    // observed clipped "verset" output
   "vassier": "verset",    // observed clipped "verset" output
+  "vete": "verset",       // observed clipped "verset" output
   "verset.": "verset",    // with punctuation
 
   // "psaume" confusions
@@ -119,6 +121,10 @@ const PHONETIC_CORRECTIONS: CorrectionMap = {
   "luc.": "luc",            // with punctuation
   "ezaiie": "esaie",        // observed phonetic output for "Ésaïe"
   "ézaiie": "esaie",        // observed accented phonetic output for "Ésaïe"
+  "ezaïkat": "esaie",       // observed phonetic output for "Ésaïe"
+  "ézaïkat": "esaie",      // observed accented phonetic output for "Ésaïe"
+  "azzain": "esaie",       // observed phonetic output for "Ésaïe"
+  "kaple": "chapitre",     // observed phonetic output for "chapitre"
 
   // Number word confusions (French spoken numbers)
   "trois": "3",

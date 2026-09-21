@@ -51,3 +51,8 @@ test("corrector: live French ASR phonetic confusions recover Jean and Ésaïe", 
   assert.equal(result.correctedText, "jean chapitre 3 verset 16 esaie")
   assert.equal(result.corrections.length, 3)
 })
+
+test("corrector: observed split-reference words are normalized conservatively", () => {
+  const result = correctTranscription("azzain kaple vete versus 8 ezaïkat")
+  assert.equal(result.correctedText, "esaie chapitre verset verset 8 esaie")
+})

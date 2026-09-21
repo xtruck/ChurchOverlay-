@@ -124,3 +124,9 @@ test("normalizeBookName: an English name is returned unchanged (still needs no t
   assert.equal(normalizeBookName("John"), "john")
   assert.equal(normalizeBookName("Romans"), "romans")
 })
+
+test("RegexDetector: detects spoken French chapter and verse wording", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("Ésaïe 4, verset 8"), [{ book: "isaiah", chapter: 4, verse: 8 }])
+  assert.deepEqual(detector.detect("Jean 3 chapitre 16"), [{ book: "john", chapter: 3, verse: 16 }])
+})

@@ -423,6 +423,13 @@ export class GroqProvider implements AsrProvider {
 
     try {
       const text = await this.transcribe(samples)
+      if (text.trim().length === 0) {
+        this.logger?.debug({
+          component: "asr",
+          event: "transcript.empty-dropped",
+        })
+        return
+      }
       if (containsNonLatinScript(text)) {
         this.logger?.debug({
           component: "asr",

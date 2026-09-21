@@ -9,7 +9,7 @@ import {
   DEFAULT_RATE_LIMIT_REQUESTS,
   RateLimitError,
 } from "./groq-provider"
-import type { AudioFrame } from "../../../packages/contracts"
+import type { AudioFrame, TranscriptResult } from "../../../packages/contracts"
 import { Logger } from "../../../packages/shared/logger"
 
 function capturingLogger(): { logger: Logger; lines: unknown[] } {
@@ -613,6 +613,7 @@ test("GroqProvider: a 200 response missing the text field reports via onError", 
     chunkDurationMs: 1000,
     fetchImpl: fakeFetch(() => jsonResponse({ x_groq: { id: "req_123" } })),
   })
+
   const errors: Error[] = []
   provider.onError((e) => errors.push(e))
   provider.onTranscript(() => {})
@@ -621,6 +622,18 @@ test("GroqProvider: a 200 response missing the text field reports via onError", 
   await provider.sendAudio(oneSecondFrame(0))
 
   assert.equal(errors.length, 1)
+})
+
+test("GroqProvider: an empty transcript response is dropped without emitting a final result", async () => {
+  const provider = new GroqProvider({
+    apiKey: "test",
+    fetchImpl: async () => new Response(JSON.stringify({ text: "   " }), { status: 200 }),
+  })
+  const results: TranscriptResult[] = []
+  provider.onTranscript((result) => results.push(result))
+  await provider.start()
+  await provider.sendAudio({ samples: new Int16Array(32000), sampleRate: 16000, sequence: 1 })
+  assert.equal(results.length, 0)
 })
 
 test("GroqProvider: a network failure (fetch rejects) reports via onError, without throwing", async () => {

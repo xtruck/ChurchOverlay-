@@ -72,6 +72,8 @@ import type { VerseDetector, VerseReference } from "../../../packages/contracts"
  */
 const REFERENCE_PATTERN =
   /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)\s+(\d{1,3}):(\d{1,3})(?![\p{L}\d])/gu
+const SPOKEN_REFERENCE_PATTERN =
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)\s+(\d{1,3})(?:\s*,?\s*)(?:chapitre|chapter|verset|verse|le\s+verset|the\s+verse)\s+(\d{1,3})(?![\p{L}\d])/giu
 
 // Deliberately small and conservative: only the short function words most
 // likely to coincidentally precede a "N:M"-shaped pattern in ordinary
@@ -89,7 +91,7 @@ export class RegexDetector implements VerseDetector {
   detect(text: string): VerseReference[] {
     const references: VerseReference[] = []
 
-    for (const match of text.matchAll(REFERENCE_PATTERN)) {
+    for (const match of [...text.matchAll(REFERENCE_PATTERN), ...text.matchAll(SPOKEN_REFERENCE_PATTERN)]) {
       const rawBook = match[1]
       const rawChapter = match[2]
       const rawVerse = match[3]
@@ -105,7 +107,13 @@ export class RegexDetector implements VerseDetector {
       })
     }
 
-    return references
+    return references.filter((reference, index) =>
+      references.findIndex((candidate) =>
+        candidate.book === reference.book &&
+        candidate.chapter === reference.chapter &&
+        candidate.verse === reference.verse
+      ) === index
+    )
   }
 }
 
