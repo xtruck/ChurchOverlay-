@@ -45,6 +45,9 @@
     --accent: #b7a6ff;
     --scrim: rgba(6, 7, 10, 0.6);
   }
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
   html, body {
     margin: 0;
     height: 100%;
@@ -78,6 +81,7 @@
     flex-direction: column;
     align-items: center;
     padding: 0 7%;
+    overflow: hidden;
     opacity: 0;
     transform: translateY(18px);
     transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
@@ -97,6 +101,9 @@
     background: linear-gradient(180deg, var(--scrim), rgba(6, 7, 10, 0.46));
     box-shadow: 0 12px 48px rgba(0, 0, 0, 0.35);
     border: 1px solid rgba(255, 255, 255, 0.08);
+    box-sizing: border-box;
+    max-height: 100%;
+    overflow: hidden;
   }
   @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
     /* Progressive enhancement only — see the comment above #status.
@@ -132,12 +139,16 @@
     inset: 0;
     bottom: auto;
     justify-content: center;
-    padding: 0 10%;
+    padding: 4vh 6vw;
+    overflow: hidden;
   }
   #verse.fullscreen #verse-card {
     max-width: none;
     width: 100%;
-    height: 100%;
+    height: auto;
+    max-height: 100%;
+    min-height: 0;
+    padding: clamp(24px, 5vh, 72px) clamp(24px, 5vw, 96px);
     justify-content: center;
     border-radius: 0;
     border: none;

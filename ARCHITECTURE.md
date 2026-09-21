@@ -4518,10 +4518,12 @@ poster again since it was never actually hidden, only covered.
 A real bug found while wiring this: `overlay.js`'s `fitVerseText()` always sets an
 inline `font-size` (an auto-shrink-to-fit algorithm, not a fixed size) — which
 unconditionally overrides any font-size declared in the stylesheet, including a
-`.fullscreen`-scoped override, regardless of CSS specificity. `fitVerseText()` itself
-now branches on the `.fullscreen` class to use a much larger font cap (120px vs. 44px)
-and a bigger available-area fraction, rather than declaring dead CSS that inline styles
-would have silently overridden anyway.
+`.fullscreen`-scoped override, regardless of CSS specificity. The sizing path now
+measures the combined French/English card, recalculates after fonts load and viewport
+resize, uses border-box sizing so fullscreen padding cannot add hidden overflow, and
+scales the complete card as a final bounded fallback when an unusually long bilingual
+passage reaches the minimum readable font size. It therefore never relies on CSS
+clipping to hide verse content offscreen.
 
 **Dashboard control**: a new "Verse Display" settings card (`apps/desktop/renderer/`)
 with a fullscreen/lower-third toggle sending `layout:set` directly over the existing WS

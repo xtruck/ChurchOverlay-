@@ -120,11 +120,11 @@
   // secondary (English) translation can just as easily overflow on its
   // own.
   const MAX_FONT_PX = 44
-  const MIN_FONT_PX = 15
+  const MIN_FONT_PX = 14
   const SECONDARY_FONT_RATIO = 0.55 // matches the visual hierarchy already set in CSS's own clamp() sizing
-  const MIN_SECONDARY_FONT_PX = 12
-  const MAX_HEIGHT_FRACTION = 0.62 // leaves headroom above/below for #verse's own vertical placement
-  const MAX_WIDTH_FRACTION = 0.86 // matches #verse's 7%-each-side padding
+  const MIN_SECONDARY_FONT_PX = 10
+  const MAX_HEIGHT_FRACTION = 0.84
+  const MAX_WIDTH_FRACTION = 0.9
 
   // ARCHITECTURE.md section 82: fitVerseText() sets an inline font-size,
   // which always wins over the CSS clamp()s on #verse.fullscreen — so
@@ -133,31 +133,44 @@
   // point of "seen from across a room." Bigger max, and bigger available
   // area (the card now fills the whole viewport, not a bottom third).
   const FULLSCREEN_MAX_FONT_PX = 120
-  const FULLSCREEN_MIN_FONT_PX = 28
-  const FULLSCREEN_MAX_HEIGHT_FRACTION = 0.72
-  const FULLSCREEN_MAX_WIDTH_FRACTION = 0.8
+  const FULLSCREEN_MIN_FONT_PX = 18
+  const FULLSCREEN_MAX_HEIGHT_FRACTION = 0.9
+  const FULLSCREEN_MAX_WIDTH_FRACTION = 0.9
+
+  function clearVerseSizing() {
+    textEl.style.fontSize = ""
+    secondaryTextEl.style.fontSize = ""
+    verseCardEl.style.transform = ""
+  }
 
   function fitVerseText() {
+    if (!verseEl.classList.contains("visible")) return
     const isFullscreen = verseEl.classList.contains("fullscreen")
     const maxWidth = window.innerWidth * (isFullscreen ? FULLSCREEN_MAX_WIDTH_FRACTION : MAX_WIDTH_FRACTION)
     const maxHeight = window.innerHeight * (isFullscreen ? FULLSCREEN_MAX_HEIGHT_FRACTION : MAX_HEIGHT_FRACTION)
     const maxFontPx = isFullscreen ? FULLSCREEN_MAX_FONT_PX : MAX_FONT_PX
     const minFontPx = isFullscreen ? FULLSCREEN_MIN_FONT_PX : MIN_FONT_PX
+    clearVerseSizing()
     let fontSize = maxFontPx
     textEl.style.fontSize = fontSize + "px"
     if (secondaryTextEl.classList.contains("visible")) {
       secondaryTextEl.style.fontSize = Math.max(MIN_SECONDARY_FONT_PX, fontSize * SECONDARY_FONT_RATIO) + "px"
     }
-    while (
-      (verseCardEl.scrollWidth > maxWidth || verseCardEl.scrollHeight > maxHeight) &&
-      fontSize > minFontPx
-    ) {
+    while ((verseCardEl.scrollWidth > maxWidth || verseCardEl.scrollHeight > maxHeight) && fontSize > minFontPx) {
       fontSize -= 1
       textEl.style.fontSize = fontSize + "px"
       if (secondaryTextEl.classList.contains("visible")) {
         secondaryTextEl.style.fontSize = Math.max(MIN_SECONDARY_FONT_PX, fontSize * SECONDARY_FONT_RATIO) + "px"
       }
     }
+
+    // Extremely long bilingual passages can still exceed the viewport at the
+    // legibility floor. Scale the complete card as a last resort rather than
+    // clipping or allowing it to escape the screen.
+    const overflowWidth = verseCardEl.scrollWidth / maxWidth
+    const overflowHeight = verseCardEl.scrollHeight / maxHeight
+    const scale = Math.min(1, 1 / Math.max(overflowWidth, overflowHeight))
+    if (scale < 1) verseCardEl.style.transform = `scale(${scale})`
   }
 
   function showVerse(verse) {
@@ -173,8 +186,8 @@
       secondaryTextEl.textContent = ""
     }
 
-    fitVerseText()
     verseEl.classList.add("visible")
+    requestAnimationFrame(() => fitVerseText())
   }
 
   function clearVerse() {
@@ -192,8 +205,15 @@
 
   function setVerseLayout(layout) {
     verseEl.classList.toggle("fullscreen", layout === "fullscreen")
-    if (verseEl.classList.contains("visible")) fitVerseText()
+    if (verseEl.classList.contains("visible")) requestAnimationFrame(() => fitVerseText())
   }
+
+  let resizeTimer = 0
+  window.addEventListener("resize", () => {
+    window.clearTimeout(resizeTimer)
+    resizeTimer = window.setTimeout(() => fitVerseText(), 80)
+  })
+  if (document.fonts?.ready) document.fonts.ready.then(() => fitVerseText())
 
   // Media Library (ARCHITECTURE.md section 60) had server/dashboard support
   // fully built but no audience-facing display at all until this. Image/
