@@ -76,6 +76,7 @@ let currentEnableSermonNotes = false
 let currentVerseLayout: VerseLayout = "fullscreen"
 let ndiWindow: BrowserWindow | null = null
 let ndiOutput: NDIOutput | null = null
+let activeConfig: AppConfig | null = null
 // ARCHITECTURE.md section 74 (production audit): the operator-picked file
 // path, held here between the native file-picker dialog and the
 // renderer's title confirmation step, so the actual import still happens
@@ -139,6 +140,16 @@ async function startServices(
   overlayUrl: string
   ndi: ReturnType<NDIOutput["getStatus"]>
 }> {
+  if (appCoreHandle && activeConfig && sameServiceConfig(activeConfig, config) && currentTokens && currentOverlayUrl) {
+    return {
+      port: appCoreHandle.wsServer.port,
+      token: currentTokens.operatorToken,
+      remoteUrl: currentRemoteUrl,
+      allowPhoneRemote: currentAllowPhoneRemote,
+      overlayUrl: currentOverlayUrl,
+      ndi: ndiOutput?.getStatus() ?? { state: "disabled" as const },
+    }
+  }
   // Setup can be submitted again after a partial startup failure. Tear down
   // any previous listeners first so a retry never inherits 8787/8788.
   if (appCoreHandle || staticServer || remoteStaticServer || ndiOutput) {
@@ -317,6 +328,7 @@ async function startServices(
     },
   })
 
+  activeConfig = config
   return {
     port: appCoreHandle.wsServer.port,
     token: currentTokens.operatorToken,
@@ -324,6 +336,18 @@ async function startServices(
     allowPhoneRemote: config.allowPhoneRemote,
     overlayUrl,
     ndi: ndiOutput?.getStatus() ?? { state: "disabled" as const },
+  }
+
+  function sameServiceConfig(left: AppConfig, right: AppConfig): boolean {
+    return left.groqApiKey === right.groqApiKey &&
+      left.deepgramApiKey === right.deepgramApiKey &&
+      left.displayMode === right.displayMode &&
+      left.uiLanguage === right.uiLanguage &&
+      left.allowPhoneRemote === right.allowPhoneRemote &&
+      left.verseConfirmationMode === right.verseConfirmationMode &&
+      left.enableSermonNotes === right.enableSermonNotes &&
+      left.verseLayout === right.verseLayout &&
+      left.ndiEnabled === right.ndiEnabled
   }
 }
 
@@ -889,6 +913,7 @@ async function shutdown(): Promise<void> {
   })
   currentOverlayUrl = null
   currentRemoteUrl = null
+  activeConfig = null
 }
 
 app.whenReady().then(async () => {

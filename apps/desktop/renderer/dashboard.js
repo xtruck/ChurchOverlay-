@@ -22,15 +22,6 @@
       output[i] = Math.round(clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff)
     }
 
-    function renderNdiStatus(status) {
-      currentNdiStatus = status || { state: "disabled" }
-      const state = currentNdiStatus.state || "disabled"
-      ndiEnabled = state === "running" || state === "starting"
-      ndiToggleBtn.disabled = state === "starting"
-      ndiToggleBtn.textContent = t(state === "running" ? "ndi.disable" : "ndi.enable")
-      ndiStatusEl.textContent =
-        state === "running" ? t("ndi.running") : state === "unavailable" ? t("ndi.unavailable") : ""
-    }
     return output
   }
 
@@ -72,17 +63,6 @@
       bar.style.height = Math.max(6, barLevel * 100) + "%"
     })
 
-    ndiToggleBtn.addEventListener("click", () => {
-      const shouldEnable = !ndiEnabled
-      ndiToggleBtn.disabled = true
-      window.churchOverlay
-        .setNdiEnabled(shouldEnable)
-        .then(renderNdiStatus)
-        .catch((err) => {
-          log(err.message, "error")
-          ndiToggleBtn.disabled = false
-        })
-    })
   }
 
   function resetMicLevel() {
@@ -160,6 +140,26 @@
   const obsCopyBtn = document.getElementById("obs-copy-btn")
   const ndiToggleBtn = document.getElementById("ndi-toggle-btn")
   const ndiStatusEl = document.getElementById("ndi-status")
+  function renderNdiStatus(status) {
+    currentNdiStatus = status || { state: "disabled" }
+    const state = currentNdiStatus.state || "disabled"
+    ndiEnabled = state === "running" || state === "starting"
+    ndiToggleBtn.disabled = state === "starting"
+    ndiToggleBtn.textContent = t(state === "running" ? "ndi.disable" : "ndi.enable")
+    ndiStatusEl.textContent =
+      state === "running" ? t("ndi.running") : state === "unavailable" ? t("ndi.unavailable") : ""
+  }
+  ndiToggleBtn.addEventListener("click", () => {
+    const shouldEnable = !ndiEnabled
+    ndiToggleBtn.disabled = true
+    window.churchOverlay
+      .setNdiEnabled(shouldEnable)
+      .then(renderNdiStatus)
+      .catch((err) => {
+        log(err.message, "error")
+        ndiToggleBtn.disabled = false
+      })
+  })
   const exportSessionBtn = document.getElementById("export-session-btn")
   const exportDiagnosticsBtn = document.getElementById("export-diagnostics-btn")
   const sermonNotesToggleEl = document.getElementById("sermon-notes-toggle")
