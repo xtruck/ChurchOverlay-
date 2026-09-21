@@ -37,6 +37,7 @@ import { resolveTranscriptVerses } from "./resolve-transcript-verses"
 import { resolveVerse, translationIdFor } from "../verse/resolve-verse"
 import { passesTranscriptGate } from "./transcript-gate"
 import { correctTranscription } from "../asr/transcription-corrector"
+import { postprocessTranscript } from "../asr/postprocess/pipeline"
 import { RateLimitError } from "../asr/groq-provider"
 import type { MediaLibrary } from "../media/media-library"
 import { MediaCueDetector } from "../media/media-cue-detector"
@@ -1298,7 +1299,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // non-protected tokens); it returns the SAME text unchanged when there
     // is nothing to fix, so transcripts with no known confusion are a
     // no-op and cost a single regex split.
-    const corrected = correctTranscription(transcript.text)
+    const corrected = correctTranscription(postprocessTranscript(transcript.text))
     const correctedText = corrected.correctedText
     // Audit trail at debug so it never drowns the info-level transcript
     // log — but it IS greppable when tracing a "why did it detect X" case.

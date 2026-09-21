@@ -4719,6 +4719,23 @@ allows the failover wrapper to retry a fresh connection when explicitly
 started. A failed handshake also clears connection state; it never leaves the
 secondary provider falsely marked as active.
 
+## 86. ASR Post-processing and Benchmark Utilities
+
+ASR text passes through deterministic normalization, punctuation cleanup, known
+Bible-term casing, and the existing conservative phonetic corrector before the
+detector sees it. These transforms never identify or authorize a verse; the
+existing final-transcript gate, reference validation, known-valid index, and
+Bible-source validation remain authoritative.
+
+`AudioChunker` is a bounded reusable PCM frame accumulator for experimental or
+future providers. It enforces both duration and frame-count limits and drops
+oldest complete frames when full. It is not a local ASR activation switch and
+does not replace Groq's existing request/throttle logic.
+
+The WER benchmark utilities use deterministic in-memory samples and expose no
+network or microphone dependency. They are measurement tools only; benchmark
+results never select a provider automatically.
+
 
 This reduces local CPU/RAM/GPU usage compared with local inference, but it does
 not provide unlimited free usage: Deepgram remains subject to account pricing,
