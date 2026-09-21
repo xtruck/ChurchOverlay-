@@ -65,6 +65,23 @@ class FakeAsrProvider implements AsrProvider {
   }
 }
 
+class FakeFailoverAsrProvider extends FakeAsrProvider {
+    private failoverCallback: (() => void) | null = null
+    returnToPrimaryCalls = 0
+
+    onFailoverActivated(callback: () => void): void {
+      this.failoverCallback = callback
+    }
+
+    async returnToPrimary(): Promise<void> {
+      this.returnToPrimaryCalls += 1
+    }
+
+    emitFailoverActivated(): void {
+      this.failoverCallback?.()
+  }
+}
+
 /** Named per AGENTS.md section 45 — a test double, not a real verse source. */
 class StubVerseSource implements VerseSource {
   constructor(private readonly byBook: Record<string, Verse>) {}
@@ -1775,6 +1792,43 @@ test("AppCore: a transcript with no prior ASR error broadcasts no status:update 
 })
 
 // ARCHITECTURE.md section 65.1: elliptical/continuation references.
+test("AppCore: successful ASR failover is informational and manual return restores ok", async () => {
+ const asr = new FakeFailoverAsrProvider()
+ const app = await startAppCore({
+   asr,
+   detector: new RegexDetector(),
+   index: new KnownValidVerseIndex(),
+   source: new EchoVerseSource(),
+   logger: silentLogger(),
+   port: 0,
+   tokens: TOKENS,
+ })
+ try {
+   const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+   const failoverMessage = waitForMessage(viewerSocket)
+   asr.emitFailoverActivated()
+   assert.deepEqual((await failoverMessage).payload, {
+     asrHealth: "failover",
+     error: "Bascule automatique vers Deepgram active",
+   })
+
+   const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+   const returnMessage = waitForMessage(viewerSocket)
+   operatorSocket.send(JSON.stringify({
+     id: "01RETURNPRIMARY",
+     type: "asr:return-primary",
+     timestamp: Date.now(),
+     payload: null,
+   }))
+   assert.deepEqual((await returnMessage).payload, { asrHealth: "ok" })
+   assert.equal(asr.returnToPrimaryCalls, 1)
+   operatorSocket.close()
+   viewerSocket.close()
+ } finally {
+   await app.stop()
+ }
+})
+
 test("AppCore: a bare 'verse N' spoken after a detected reference continues from its book and chapter", async () => {
   const asr = new FakeAsrProvider()
   const app = await startAppCore({

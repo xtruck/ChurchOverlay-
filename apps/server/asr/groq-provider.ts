@@ -315,6 +315,12 @@ export class GroqProvider implements AsrProvider {
     this.active = false
   }
 
+  /** Used by failover: discard buffered batch audio without issuing another request. */
+  discardBufferedAudio(): void {
+    this.bufferedFrames = []
+    this.bufferedSampleCount = 0
+  }
+
   /**
    * TASK 3: Called when SilenceGate detects end of utterance (hangover expired).
    * Flushes the buffer if minimum duration (700ms) has been reached.

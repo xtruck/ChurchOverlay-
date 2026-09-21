@@ -38,6 +38,7 @@ export class DeepgramProvider implements AsrProvider {
   private correlationId = ""
   private transcriptCallback: ((result: TranscriptResult) => void) | null = null
   private errorCallback: ((error: Error) => void) | null = null
+  private currentVerseRef: string | null = null
 
   constructor(options: DeepgramProviderOptions) {
     if (!options.apiKey.trim()) throw new Error("DeepgramProvider requires an apiKey")
@@ -58,6 +59,10 @@ export class DeepgramProvider implements AsrProvider {
 
   onError(callback: (error: Error) => void): void {
     this.errorCallback = callback
+  }
+
+  setCurrentVerseRef(reference: string | null): void {
+    this.currentVerseRef = reference
   }
 
   async start(): Promise<void> {

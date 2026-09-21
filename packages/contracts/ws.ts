@@ -21,6 +21,7 @@ export type WsCommandType =
   | "poster:clear"
   | "poster:set-duration"
   | "layout:set"
+  | "asr:return-primary"
 
 /** Resulting state or information, consumed by the (read-only) overlay. */
 export type WsEventType =
@@ -53,7 +54,7 @@ export type WsEventType =
  * breaking this one, the same additive philosophy Verse.secondary uses.
  */
 export type AsrStatusPayload = {
-  readonly asrHealth: "ok" | "error" | "throttled" | "rate-limited"
+  readonly asrHealth: "ok" | "error" | "throttled" | "rate-limited" | "failover"
   readonly error?: string
   /**
    * ARCHITECTURE.md section 76 (silence-gate auto-calibration): true for

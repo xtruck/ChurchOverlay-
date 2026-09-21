@@ -13,7 +13,7 @@ export type TranscriptResult = {
   timestamp: number
 }
 
-/** Extension seam — v1 ships one implementation (GroqProvider). See ARCHITECTURE.md §50. */
+/** Extension seam — cloud providers and the failover wrapper implement this surface. */
 export interface AsrProvider {
   start(): Promise<void>
   sendAudio(audio: AudioFrame): Promise<void>

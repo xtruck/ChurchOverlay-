@@ -16,6 +16,7 @@ import { loadOfflineBibleData, OfflineVerseSource } from "../../server/verse/off
 import { OfflineFallbackVerseSource } from "../../server/verse/offline-fallback-verse-source"
 import { GroqProvider } from "../../server/asr/groq-provider"
 import { DeepgramProvider } from "../../server/asr/deepgram-provider"
+import { FailoverAsrProvider } from "../../server/asr/failover-provider"
 import { SermonNotesGenerator } from "../../server/ai/sermon-notes-generator"
 import { MediaLibrary } from "../../server/media/media-library"
 import { SessionHistoryStore } from "../../server/core/session-history-store"
@@ -66,7 +67,7 @@ let configStore: ConfigStore | null = null
 let mediaLibrary: MediaLibrary | null = null
 let sessionHistoryStore: SessionHistoryStore | null = null
 let localizedVerseSource: LocalizedVerseSource | null = null
-let asrProvider: GroqProvider | null = null
+let asrProvider: GroqProvider | FailoverAsrProvider | null = null
 let currentRemoteUrl: string | null = null
 let currentOverlayUrl: string | null = null
 let currentAllowPhoneRemote = false
@@ -170,11 +171,20 @@ async function startServices(
   // default (section 24) exactly as before this feature existed.
   const wsHost = config.allowPhoneRemote ? "0.0.0.0" : undefined
 
-  asrProvider = new GroqProvider({
+  const groqProvider = new GroqProvider({
     apiKey: config.groqApiKey,
     logger,
     language: whisperLanguageFor(config.displayMode),
   })
+  asrProvider = config.deepgramApiKey
+    ? new FailoverAsrProvider({
+        primary: groqProvider,
+        secondary: new DeepgramProvider({
+          apiKey: config.deepgramApiKey,
+          language: whisperLanguageFor(config.displayMode),
+        }),
+      })
+    : groqProvider
 
   appCoreHandle = await startAppCore({
     asr: asrProvider,

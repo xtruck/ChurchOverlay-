@@ -69,6 +69,8 @@ import type { SessionHistoryStore, SessionHistoryEntry } from "./session-history
 type ObservableAsrProvider = AsrProvider & {
   onError?(callback: (error: Error) => void): void
   onRateLimitedSustained?(callback: () => void): void
+  onFailoverActivated?(callback: () => void): void
+  returnToPrimary?(): Promise<void>
 }
 
 /**
@@ -330,8 +332,10 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   let asrHasError = false
   let asrIsThrottled = false
   let asrRateLimitedSustained = false
+  let asrIsFailedOver = false
   const currentAsrHealth = (): AsrStatusPayload["asrHealth"] => {
     if (asrRateLimitedSustained) return "rate-limited"
+    if (asrIsFailedOver) return "failover"
     if (asrHasError) return "error"
     if (asrIsThrottled) return "throttled"
     return "ok"
@@ -1036,6 +1040,15 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         return
       }
 
+      case "asr:return-primary":
+        if (typeof asr.returnToPrimary === "function") {
+          await asr.returnToPrimary()
+          asrIsFailedOver = false
+          asrRateLimitedSustained = false
+          broadcastAsrStatus({ asrHealth: "ok" })
+        }
+        return
+
       case "media:select": {
         if (!mediaLibrary) {
           logger.warn({ component: "app-core", event: "media.not-configured", correlationId: message.correlationId })
@@ -1469,7 +1482,16 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     broadcastAsrStatus({ asrHealth: "error", error: err.message })
   })
 
-  if ("onRateLimitedSustained" in asr && typeof asr.onRateLimitedSustained === "function") {
+  if (typeof asr.onFailoverActivated === "function") {
+    asr.onFailoverActivated(() => {
+      asrIsFailedOver = true
+      asrRateLimitedSustained = false
+      broadcastAsrStatus({
+        asrHealth: "failover",
+        error: "Bascule automatique vers Deepgram active",
+      })
+    })
+  } else if ("onRateLimitedSustained" in asr && typeof asr.onRateLimitedSustained === "function") {
     asr.onRateLimitedSustained(() => {
       asrRateLimitedSustained = true
       broadcastAsrStatus({

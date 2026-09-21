@@ -114,6 +114,7 @@
   const micVisualEl = document.getElementById("mic-visual")
   const asrHealthWarningEl = document.getElementById("asr-health-warning")
   const asrHealthWarningTextEl = document.getElementById("asr-health-warning-text")
+  const asrReturnPrimaryBtn = document.getElementById("asr-return-primary-btn")
   const micCalibratingStatusEl = document.getElementById("mic-calibrating-status")
   const overlayPreviewFrameEl = document.getElementById("overlay-preview-frame")
   const setupScreenEl = document.getElementById("setup-screen")
@@ -392,7 +393,8 @@
   // successful transcript as the recovery signal).
   function handleStatusUpdate(payload) {
     if (!payload) return
-    asrHealthWarningEl.classList.remove("asr-health-warning-throttled", "asr-health-warning-rate-limited")
+    asrHealthWarningEl.classList.remove("asr-health-warning-throttled", "asr-health-warning-rate-limited", "asr-health-warning-failover")
+    asrReturnPrimaryBtn.style.display = "none"
     if (payload.asrHealth === "error") {
       asrHealthWarningTextEl.textContent = t("mic.transcriptionError", { error: payload.error || "" })
       asrHealthWarningEl.style.display = "block"
@@ -404,9 +406,15 @@
       asrHealthWarningEl.classList.add("asr-health-warning-rate-limited")
       asrHealthWarningTextEl.textContent = t("mic.transcriptionRateLimited", { error: payload.error || "" })
       asrHealthWarningEl.style.display = "block"
+    } else if (payload.asrHealth === "failover") {
+      asrHealthWarningEl.classList.add("asr-health-warning-failover")
+      asrHealthWarningTextEl.textContent = payload.error || "Deepgram failover active"
+      asrReturnPrimaryBtn.style.display = "inline-block"
+      asrHealthWarningEl.style.display = "block"
     } else if (payload.asrHealth === "ok") {
       asrHealthWarningEl.style.display = "none"
     }
+
     // ARCHITECTURE.md section 76: the ~1.5s auto-calibration window
     // deliberately forwards nothing yet — without this status line,
     // that looks identical to "the mic doesn't work."
@@ -417,6 +425,10 @@
       if (typeof payload.micThreshold === "number") {
         log(t("log.micCalibrated", { threshold: Math.round(payload.micThreshold) }), "received")
       }
+
+      asrReturnPrimaryBtn.addEventListener("click", () => {
+        sendJson({ id: crypto.randomUUID(), type: "asr:return-primary", timestamp: Date.now(), payload: null })
+      })
     }
   }
 

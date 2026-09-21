@@ -173,7 +173,8 @@ function isStatusUpdatePayload(payload: unknown): payload is AsrStatusPayload {
     (payload.asrHealth === "ok" ||
       payload.asrHealth === "error" ||
       payload.asrHealth === "throttled" ||
-      payload.asrHealth === "rate-limited") &&
+      payload.asrHealth === "rate-limited" ||
+      payload.asrHealth === "failover") &&
     (payload.error === undefined || typeof payload.error === "string") &&
     (payload.micCalibrating === undefined || typeof payload.micCalibrating === "boolean") &&
     (payload.micThreshold === undefined || isFiniteNumber(payload.micThreshold))
@@ -555,6 +556,11 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "command",
     allowedSenders: ["operator"],
     validatePayload: isVerseLayoutPayload,
+  },
+  "asr:return-primary": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isNullPayload,
   },
   "layout:update": {
     kind: "event",

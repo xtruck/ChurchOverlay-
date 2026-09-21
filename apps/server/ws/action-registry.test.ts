@@ -8,6 +8,7 @@ test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 me
     [
       "mic:start",
       "mic:stop",
+      "asr:return-primary",
       "status:update",
       "transcript:partial",
       "transcript:final",
