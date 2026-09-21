@@ -137,7 +137,7 @@ export class GroqProvider implements AsrProvider {
 
   private transcriptCallback: ((result: TranscriptResult) => void) | null = null
   private errorCallback: ((error: Error) => void) | null = null
-  private onRateLimitedSustained: (() => void) | null = null
+  private rateLimitedSustainedCallback: (() => void) | null = null
 
   private active = false
   private bufferedFrames: Int16Array[] = []
@@ -402,22 +402,17 @@ export class GroqProvider implements AsrProvider {
    * Flush a specific sample array (used for flushWithOverlap)
    */
   private async flushSamples(samples: Int16Array): Promise<void> {
-    // TASK 1: check rate limit before sending
-    const rateLimited = !this.checkRateLimit(samples.length)
-    if (rateLimited) {
-      // Budget exhausted: keep buffering, don't send.
-      // If we've hit the absolute cap, send a long chunk anyway.
-      const bufferedDurationMs = (this.bufferedSampleCount / SAMPLE_RATE) * 1000
-      if (bufferedDurationMs < MAX_THROTTLED_BUFFER_MS) {
-        // Still below cap - keep accumulating, don't send
-        // Notify error callback about throttling
-        this.errorCallback?.(new RateLimitError(
-          "Transcription en pause, reprise dans " + Math.round(DEFAULT_RATE_LIMIT_WINDOW_MS / 1000) + "s — débit élevé",
-          undefined,
-          "throttling"
-        ))
-        return
-      }
+    // checkRateLimit() is the single authority for whether throttling may
+    // be bypassed at the bounded-buffer ceiling; requeue denied samples here.
+    if (!this.checkRateLimit(samples.length)) {
+      this.bufferedFrames.unshift(samples)
+      this.bufferedSampleCount += samples.length
+      this.errorCallback?.(new RateLimitError(
+        "Transcription en pause, reprise dans " + Math.round(DEFAULT_RATE_LIMIT_WINDOW_MS / 1000) + "s — débit élevé",
+        undefined,
+        "throttling"
+      ))
+      return
     }
 
     try {
@@ -457,6 +452,7 @@ export class GroqProvider implements AsrProvider {
    */
   private checkRateLimit(sampleCount: number): boolean {
     const now = this.now()
+    const bufferedDurationMs = ((this.bufferedSampleCount + sampleCount) / SAMPLE_RATE) * 1000
 
     // Reset window if it expired
     if (now - this.windowStart >= DEFAULT_RATE_LIMIT_WINDOW_MS) {
@@ -466,7 +462,6 @@ export class GroqProvider implements AsrProvider {
 
     // If currently throttled from a prior 429 sustained signal
     if (now < this.throttledUntil) {
-      const bufferedDurationMs = (this.bufferedSampleCount / SAMPLE_RATE) * 1000
       if (bufferedDurationMs >= MAX_THROTTLED_BUFFER_MS) {
         // Cap reached — send a long chunk rather than lose everything
         this.throttledUntil = now
@@ -489,7 +484,6 @@ export class GroqProvider implements AsrProvider {
     this.requestsInWindow = 1
     this.windowStart = now
 
-    const bufferedDurationMs = (this.bufferedSampleCount / SAMPLE_RATE) * 1000
     if (bufferedDurationMs >= MAX_THROTTLED_BUFFER_MS) {
       // Cap reached — send a long chunk rather than lose everything
       this.throttledUntil = now
@@ -536,6 +530,10 @@ export class GroqProvider implements AsrProvider {
     this.errorCallback = callback
   }
 
+  onRateLimitedSustained(callback: () => void): void {
+    this.rateLimitedSustainedCallback = callback
+  }
+
   private async flush(): Promise<void> {
     const samples = concatenateSamples(this.bufferedFrames, this.bufferedSampleCount)
     this.bufferedFrames = []
@@ -574,8 +572,8 @@ export class GroqProvider implements AsrProvider {
         this.consecutive429s++
         this.last429Time = this.now()
         // Emit sustained event if threshold exceeded
-        if (this.consecutive429s >= SUSTAINED_429_THRESHOLD && this.onRateLimitedSustained) {
-          this.onRateLimitedSustained()
+        if (this.consecutive429s >= SUSTAINED_429_THRESHOLD && this.rateLimitedSustainedCallback) {
+          this.rateLimitedSustainedCallback()
         }
         throw new RateLimitError(
           this.consecutive429s >= SUSTAINED_429_THRESHOLD

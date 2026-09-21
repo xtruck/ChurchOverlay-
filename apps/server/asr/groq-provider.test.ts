@@ -1,6 +1,14 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { GroqProvider, MAX_PROMPT_CHARS, MAX_PROMPT_TOKENS, CONSERVATIVE_CHARS_PER_TOKEN } from "./groq-provider"
+import {
+  GroqProvider,
+  MAX_PROMPT_CHARS,
+  MAX_PROMPT_TOKENS,
+  CONSERVATIVE_CHARS_PER_TOKEN,
+  MAX_THROTTLED_BUFFER_MS,
+  DEFAULT_RATE_LIMIT_REQUESTS,
+  RateLimitError,
+} from "./groq-provider"
 import type { AudioFrame } from "../../../packages/contracts"
 import { Logger } from "../../../packages/shared/logger"
 
@@ -17,6 +25,10 @@ function makeFrame(sampleValues: number[], sequence = 0): AudioFrame {
 // One second of audio at 16kHz.
 function oneSecondFrame(sequence = 0): AudioFrame {
   return makeFrame(new Array(16000).fill(1000), sequence)
+}
+
+function frameForMs(durationMs: number, sequence = 0): AudioFrame {
+  return makeFrame(new Array(Math.round(durationMs * 16)).fill(1000), sequence)
 }
 
 type CapturedRequest = { url: string; init: RequestInit | undefined }
@@ -627,6 +639,108 @@ test("GroqProvider: a network failure (fetch rejects) reports via onError, witho
   await assert.doesNotReject(() => provider.sendAudio(oneSecondFrame(0)))
   assert.equal(errors.length, 1)
   assert.match(errors[0]?.message ?? "", /network down/)
+})
+
+test("GroqProvider: 25 closely spaced utterances make at most DEFAULT_RATE_LIMIT_REQUESTS fetch calls in one 60-second window", async () => {
+  const captured: CapturedRequest[] = []
+  let now = 0
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    now: () => now,
+    fetchImpl: fakeFetch(() => jsonResponse({ text: "x" }), captured),
+  })
+  provider.onTranscript(() => {})
+
+  await provider.start()
+  for (let i = 0; i < DEFAULT_RATE_LIMIT_REQUESTS; i++) {
+    await provider.sendAudio(oneSecondFrame(i))
+    now += 100
+  }
+  for (let i = DEFAULT_RATE_LIMIT_REQUESTS; i < 25; i++) {
+    await provider.sendAudio(frameForMs(100, i))
+    now += 100
+  }
+
+  assert.ok(captured.length <= DEFAULT_RATE_LIMIT_REQUESTS)
+})
+
+test("GroqProvider: once MAX_THROTTLED_BUFFER_MS is buffered, throttling permits one bounded flush", async () => {
+  const captured: CapturedRequest[] = []
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    now: () => 0,
+    fetchImpl: fakeFetch(() => jsonResponse({ text: "x" }), captured),
+  })
+  provider.onTranscript(() => {})
+
+  await provider.start()
+  for (let i = 0; i < DEFAULT_RATE_LIMIT_REQUESTS; i++) {
+    await provider.sendAudio(oneSecondFrame(i))
+  }
+  const requestsBeforeThrottle = captured.length
+
+  const throttledFrames = Math.ceil(MAX_THROTTLED_BUFFER_MS / 1000)
+  for (let i = 0; i < throttledFrames; i++) {
+    await provider.sendAudio(oneSecondFrame(DEFAULT_RATE_LIMIT_REQUESTS + i))
+  }
+
+  assert.equal(requestsBeforeThrottle, DEFAULT_RATE_LIMIT_REQUESTS)
+  assert.ok(captured.length > requestsBeforeThrottle)
+})
+
+test("GroqProvider: a numeric retry_after produces RateLimitError.retryAfterMs in milliseconds", async () => {
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    fetchImpl: fakeFetch(() => jsonResponse({ error: { retry_after: 3, message: "rate limited" } }, 429)),
+  })
+  const errors: Error[] = []
+  provider.onError((error) => errors.push(error))
+
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame())
+
+  assert.equal(errors.length, 1)
+  assert.ok(errors[0] instanceof RateLimitError)
+  assert.equal((errors[0] as RateLimitError).retryAfterMs, 3000)
+})
+
+test("GroqProvider: a textual retry-after message produces the same RateLimitError.retryAfterMs as numeric retry_after", async () => {
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    fetchImpl: fakeFetch(() => jsonResponse({ error: { message: "Please try again in 3s" } }, 429)),
+  })
+  const errors: Error[] = []
+  provider.onError((error) => errors.push(error))
+
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame())
+
+  assert.equal(errors.length, 1)
+  assert.ok(errors[0] instanceof RateLimitError)
+  assert.equal((errors[0] as RateLimitError).retryAfterMs, 3000)
+})
+
+test("GroqProvider: three consecutive 429 responses invoke onRateLimitedSustained once", async () => {
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    fetchImpl: fakeFetch(() => jsonResponse({ error: { message: "rate limited" } }, 429)),
+  })
+  let sustainedCalls = 0
+  provider.onRateLimitedSustained(() => {
+    sustainedCalls += 1
+  })
+
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame(0))
+  await provider.sendAudio(oneSecondFrame(1))
+  await provider.sendAudio(oneSecondFrame(2))
+
+  assert.equal(sustainedCalls, 1)
 })
 
 test("GroqProvider: start() resets state across sessions (new correlationId, sequence restarts)", async () => {
