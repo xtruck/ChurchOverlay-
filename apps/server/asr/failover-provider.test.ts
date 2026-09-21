@@ -22,6 +22,20 @@ class FakeProvider implements AsrProvider {
   emitTranscript(result: TranscriptResult): void { this.transcriptCallback?.(result) }
 }
 
+class DelayedProvider extends FakeProvider {
+  private resolveStart: (() => void) | null = null
+  readonly startGate = new Promise<void>((resolve) => { this.resolveStart = resolve })
+
+  override async start(): Promise<void> {
+    this.startCalls += 1
+    await this.startGate
+  }
+
+  releaseStart(): void {
+    this.resolveStart?.()
+  }
+}
+
 function frame(sequence: number): AudioFrame {
   return { samples: Int16Array.from([sequence]), sampleRate: 16000, sequence }
 }
@@ -71,4 +85,22 @@ test("FailoverAsrProvider: returnToPrimary is manual and restores the current ve
   assert.equal(provider.isFailedOver(), false)
   assert.equal(primary.verseRef, "romans 8:28")
   assert.equal(secondary.stopCalls, 1)
+})
+
+test("FailoverAsrProvider: audio waits for secondary startup instead of leaking to primary", async () => {
+  const primary = new FakeProvider()
+  const secondary = new DelayedProvider()
+  const provider = new FailoverAsrProvider({ primary, secondary })
+  await provider.start()
+
+  primary.triggerSustainedLimit()
+  const sendPromise = provider.sendAudio(frame(2))
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.deepEqual(primary.frames.map((item) => item.sequence), [])
+  assert.deepEqual(secondary.frames.map((item) => item.sequence), [])
+
+  secondary.releaseStart()
+  await sendPromise
+  assert.deepEqual(primary.frames.map((item) => item.sequence), [])
+  assert.deepEqual(secondary.frames.map((item) => item.sequence), [2])
 })

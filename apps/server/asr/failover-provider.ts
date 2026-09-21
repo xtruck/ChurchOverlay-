@@ -24,6 +24,7 @@ export class FailoverAsrProvider implements AsrProvider {
   private activeProvider: ContextAwareProvider
   private currentVerseRef: string | null = null
   private switching = false
+  private activationPromise: Promise<void> | null = null
   private transcriptCallback: ((result: TranscriptResult) => void) | null = null
   private errorCallback: ((error: Error) => void) | null = null
   private failoverCallback: (() => void) | null = null
@@ -86,9 +87,7 @@ export class FailoverAsrProvider implements AsrProvider {
   }
 
   async sendAudio(audio: AudioFrame): Promise<void> {
-    if (this.switching) {
-      await this.activateFailover()
-    }
+    if (this.activationPromise) await this.activationPromise
     await this.activeProvider.sendAudio(audio)
   }
 
@@ -113,7 +112,18 @@ export class FailoverAsrProvider implements AsrProvider {
   }
 
   private async activateFailover(): Promise<void> {
-    if (this.activeProvider === this.secondary || this.switching) return
+    if (this.activeProvider === this.secondary) return
+    if (this.activationPromise) return this.activationPromise
+    this.activationPromise = this.openSecondary()
+    try {
+      await this.activationPromise
+    } finally {
+      this.activationPromise = null
+    }
+  }
+
+  private async openSecondary(): Promise<void> {
+    if (this.activeProvider === this.secondary) return
     this.switching = true
     this.primary.discardBufferedAudio?.()
     try {
