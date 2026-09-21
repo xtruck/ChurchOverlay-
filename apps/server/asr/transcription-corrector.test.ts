@@ -45,3 +45,9 @@ test("corrector: already-correct text passes through unchanged", () => {
   assert.equal(result.correctedText, "Jean chapitre 3 verset 16")
   assert.equal(result.corrections.length, 0)
 })
+
+test("corrector: live French ASR phonetic confusions recover Jean and Ésaïe", () => {
+  const result = correctTranscription("jãum chapitre 3 verso 16 ézaiie")
+  assert.equal(result.correctedText, "jean chapitre 3 verset 16 esaie")
+  assert.equal(result.corrections.length, 3)
+})

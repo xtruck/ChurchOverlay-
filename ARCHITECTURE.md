@@ -4736,6 +4736,12 @@ The WER benchmark utilities use deterministic in-memory samples and expose no
 network or microphone dependency. They are measurement tools only; benchmark
 results never select a provider automatically.
 
+Live French ASR output may contain provider-specific phonetic spellings
+(`jãum`, `verso`, `vaissez`, or `ézaiie`). These are handled by the existing
+conservative correction layer before detection. The correction is lexical and
+auditable; it does not bypass the known-valid reference index or Bible-source
+validation.
+
 
 This reduces local CPU/RAM/GPU usage compared with local inference, but it does
 not provide unlimited free usage: Deepgram remains subject to account pricing,

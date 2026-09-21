@@ -76,6 +76,7 @@ Current status:
 | Manual ASR return closes the secondary path and restores primary health | `failover-provider.test.ts`, `app-core.test.ts` |
 | Successful failover is informational rather than a critical rate-limit error | `app-core.test.ts` |
 | Deterministic transcript post-processing preserves words while normalizing input | `asr/postprocess/postprocess.test.ts` |
+| Live French phonetic ASR spellings recover Jean, verset, and Ésaïe conservatively | `asr/transcription-corrector.test.ts` |
 | Audio chunking remains bounded by duration and frame count | `audio/audio-chunker.test.ts` |
 | WER benchmark reports deterministic substitution/deletion/insertion counts | `asr/benchmark/wer.test.ts` |
 | default verse display auto-clears after the fixed 2:30 ceiling | `app-core.test.ts` |

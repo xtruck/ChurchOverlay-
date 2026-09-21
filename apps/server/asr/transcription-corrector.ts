@@ -37,6 +37,9 @@ const PHONETIC_CORRECTIONS: CorrectionMap = {
   "vèrset": "verset",     // accent variation
   "versait": "verset",    // verb form confusion
   "versais": "verset",    // verb form confusion
+  "verso": "verset",      // observed French ASR confusion in live use
+  "vaissez": "verset",    // observed clipped "verset" output
+  "vassier": "verset",    // observed clipped "verset" output
   "verset.": "verset",    // with punctuation
 
   // "psaume" confusions
@@ -99,6 +102,9 @@ const PHONETIC_CORRECTIONS: CorrectionMap = {
 
   // Book name common phonetic confusions
   "jean": "jean",           // already correct but ensure protected
+  "jaum": "jean",           // observed phonetic output for "Jean"
+  "jãum": "jean",           // observed accented phonetic output for "Jean"
+  "jãun": "jean",           // observed accented phonetic output for "Jean"
   "jhon": "jean",           // common misspelling
   "paul": "paul",           // already correct
   "pierre": "pierre",       // already correct
@@ -111,6 +117,8 @@ const PHONETIC_CORRECTIONS: CorrectionMap = {
   // "marque": "marc" removed — "marque" (brand/mark) is a valid French
   // word; correcting it corrupted correct sentences.
   "luc.": "luc",            // with punctuation
+  "ezaiie": "esaie",        // observed phonetic output for "Ésaïe"
+  "ézaiie": "esaie",        // observed accented phonetic output for "Ésaïe"
 
   // Number word confusions (French spoken numbers)
   "trois": "3",
