@@ -1,9 +1,9 @@
 # ChurchOverlay — Architecture Specification
 
-Version: 1.0
+Version: 1.1
 Status: Architecture Baseline
 Scope: v1
-Last Updated: 2026-09-16
+Last Updated: 2026-09-21
 
 ## 1. Purpose
 
@@ -65,13 +65,13 @@ They must remain documented in `ROADMAP.md` and must not enter the implementatio
 - Vector search.
 - Multiple Bible translations.
 - Offline Bible database.
-- Media library (**approved for Phase 2 — see section 59; not yet implemented**).
-- Songs/lyrics (**approved for Phase 2 — see section 59; not yet implemented**).
-- Scenes (**approved for Phase 2 — see section 59; not yet implemented**).
-- Rundown/service planning (**approved for Phase 2 — see section 59; not yet implemented**).
+- Media library (**implemented; see sections 60 and 74**).
+- Songs/lyrics (**removed from Phase 2; see section 60**).
+- Scenes (**implemented; see sections 64 and 66**).
+- Rundown/service planning (**implemented in memory; persistence remains deferred; see section 64**).
 - Cameras.
 - Branding engine.
-- AI agent (**approved for Phase 2 as a broader AI copilot — see section 59; not yet implemented**).
+- AI agent (**approved for Phase 2 as a broader AI copilot; sermon-notes side channel implemented, broader copilot remains deferred; see sections 59 and 65.7**).
 - MCP server.
 - ProPresenter integration.
 - Planning Center integration.
@@ -1930,8 +1930,8 @@ section 60. This was raised mid-session as an addition to v1's existing explicit
 Bible-reference detection, not part of the original three Phase 2 items in section
 59 — it extends the *existing, already-shipped* verse pipeline rather than
 introducing a new domain, so it is scoped and confirmed here rather than folded
-retroactively into section 59's original approval. This is design only — nothing in
-this section is implemented yet.
+retroactively into section 59's original approval. Implementation status:
+**implemented and tested**.
 
 ### 61.1 What was confirmed, explicitly
 
@@ -2224,7 +2224,11 @@ changes, both confirmed explicitly rather than assumed:
 2. **The app's own interface** (dashboard, setup screen) is translated to French,
    with a language switch — not just the verse content.
 
-This is design only — nothing in this section is implemented yet.
+Implementation status: **implemented**. The source adapters, bilingual composition,
+configuration persistence, live dashboard/voice switching, French UI dictionary, and
+the required test coverage described below are present in the repository. This note
+remains the authoritative design record; section 83 records the current
+implementation-to-architecture audit.
 
 ### 63.1 The French Bible source — verified live, not assumed
 
@@ -2407,9 +2411,10 @@ already tolerates gracefully.
 ## 64. Phase 2 Feature Note — Service Rundown & Scenes
 
 A dedicated architecture note, following the same AGENTS.md section 56 checklist as
-sections 60-63. This is design only — nothing in this section is implemented yet. It
-settles the one open question section 59.4 explicitly deferred: rundown/live-detection
-precedence.
+sections 60-63. Implementation status: **implemented in memory**, with dashboard
+authoring and live stepping wired. Cross-restart rundown persistence remains
+explicitly deferred. This section settles the one open question section 59.4
+explicitly deferred: rundown/live-detection precedence.
 
 ### 64.1 What this feature is
 
@@ -4584,3 +4589,63 @@ auto-clears" (section 82.1's behavior change).
 before section 82 existed defaults it to `"fullscreen"`; a present-but-invalid value
 throws (real corruption, not an old file) — the same three-test pattern every other
 optional `ConfigStore` field already follows.
+
+## 83. Current Implementation Baseline and Architecture Audit
+
+This section closes the documentation gap between the original baseline and the
+implemented Phase 2 work. It is an implementation inventory, not permission to
+expand scope silently. A feature is marked implemented only when its owning code,
+protocol validation, failure behavior, and relevant tests exist in the repository.
+
+### 83.1 Implemented capabilities
+
+| Capability | Owning implementation | Verification status |
+|---|---|---|
+| Groq ASR with bounded rate limiting | `apps/server/asr/groq-provider.ts` | Provider tests cover the 18-request window, bounded flush, retry parsing, and sustained `429` notification |
+| Operator-visible ASR health | `apps/server/core/app-core.ts`, dashboard renderer | Integration tests distinguish `throttled`, `error`, and persistent `rate-limited` states |
+| French source and bilingual composition | `GetBibleVerseSource`, `LocalizedVerseSource` | Source and composition tests cover malformed responses, versification mismatch, secondary-language degradation, and cache identity |
+| Offline French fallback | `OfflineFallbackVerseSource`, bundled `fra_lsg.json` | Unit tests cover primary failure, fallback resolution, and circuit-breaker behavior |
+| French/English operator UI | `apps/desktop/renderer/i18n.js`, `ConfigStore` | UI language is persisted and applied through the existing dependency-free renderer mechanism |
+| Voice navigation and display-mode switching | `NavigationCommandDetector`, `resolveNavigationCommand`, `AppCore` | Detector, resolver, and AppCore integration tests cover final-transcript gating and catalog boundaries |
+| Media, scenes, rundown, canvas, poster, and layout controls | `apps/server/media`, `rundown`, AppCore, dashboard | WS schema tests and end-to-end AppCore tests cover role boundaries and state transitions |
+| Session history and headless Web Server Mode | `SessionHistoryStore`, `apps/web/index.ts` | Persistence and HTTP/WS integration tests cover the documented local deployment path |
+
+### 83.2 Cross-cutting invariants confirmed by the audit
+
+1. Only final transcripts enter verse, media, navigation, glossary, or rundown
+   voice-trigger paths.
+2. Every detected, overridden, navigated, or rundown verse passes through
+   `KnownValidVerseIndex` and validated verse-source resolution before display.
+3. Bilingual mode treats French as primary. A missing or failed French lookup
+   does not silently display English as a substitute; a failed secondary English
+   lookup degrades to French with a structured warning.
+4. Translation mode is part of the verse cache identity, so a live mode switch
+   cannot reuse a verse resolved for another display mode.
+5. ASR throttling is not classified as an operator-facing error unless the
+   provider reports a real failure. Sustained `429` responses are a separate,
+   persistent health state.
+6. Renderer processes receive no provider secrets or arbitrary filesystem access;
+   all operator actions cross the existing preload/WS validation boundaries.
+7. Local fallback data is read-only application data. It is not an operator-
+   editable Bible database and does not introduce a new plugin or translation
+   discovery system.
+
+### 83.3 Remaining deliberate gaps
+
+- NDI remains blocked until SDK licensing, redistribution, platform binary
+  coverage, and maintenance are verified as required by section 62.3.
+- Rundown persistence across restart remains deferred; the current rundown is
+  intentionally in-memory only.
+- The broader AI copilot remains unscoped. Sermon-note summarization is the only
+  approved AI side channel and is isolated from verse detection.
+- Additional translations, semantic detection, local/hybrid ASR, cloud sync,
+  mobile, and automatic OBS control remain outside the locked scope.
+
+### 83.4 Change discipline for the next feature
+
+Future work must update this inventory in the same commit as the feature's
+architecture note or implementation change. Any new external provider must first
+document response validation, failure classification, cache identity, secret
+handling, and deterministic tests. Any new operator-facing state must define its
+wire payload, role permissions, reconnect behavior, and dashboard severity before
+code is added.
