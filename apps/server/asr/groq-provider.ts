@@ -45,6 +45,24 @@ export const MAX_PROMPT_TOKENS = 224
 export const CONSERVATIVE_CHARS_PER_TOKEN = 3.3
 export const MAX_PROMPT_CHARS = 730
 
+export const DEFAULT_RATE_LIMIT_REQUESTS = 18
+export const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000
+export const MAX_THROTTLED_BUFFER_MS = 15_000
+export const SUSTAINED_429_THRESHOLD = 3
+export const RATE_LIMIT_RETRY_BASE_MS = 2000
+
+/** Error thrown by transcribe() when Groq returns 429, carrying the suggested retry delay. */
+export class RateLimitError extends Error {
+  readonly retryAfterMs: number | undefined
+  readonly type: "throttling" | "429" // "throttling" = proactive budget exhaustion, "429" = actual HTTP 429 response
+  constructor(message: string, retryAfterMs?: number, type: "throttling" | "429" = "429") {
+    super(message)
+    this.name = "RateLimitError"
+    this.retryAfterMs = retryAfterMs
+    this.type = type
+  }
+}
+
 export type GroqProviderOptions = {
   readonly apiKey: string
   readonly model?: string
@@ -119,6 +137,7 @@ export class GroqProvider implements AsrProvider {
 
   private transcriptCallback: ((result: TranscriptResult) => void) | null = null
   private errorCallback: ((error: Error) => void) | null = null
+  private onRateLimitedSustained: (() => void) | null = null
 
   private active = false
   private bufferedFrames: Int16Array[] = []
@@ -129,6 +148,15 @@ export class GroqProvider implements AsrProvider {
   // TASK 3: utterance-aligned chunking state
   private lastTranscriptText = ""
   private lastFlushTime = 0
+
+  // TASK 1: rate-limit (leaky-bucket) state
+  private requestsInWindow = 0
+  private windowStart = 0
+  private throttledUntil = 0
+
+  // TASK 2: consecutive 429 tracking
+  private consecutive429s = 0
+  private last429Time = 0
 
   // TASK B: prompt for lexical bias
   private currentVerseRef: string | null = null
@@ -374,6 +402,24 @@ export class GroqProvider implements AsrProvider {
    * Flush a specific sample array (used for flushWithOverlap)
    */
   private async flushSamples(samples: Int16Array): Promise<void> {
+    // TASK 1: check rate limit before sending
+    const rateLimited = !this.checkRateLimit(samples.length)
+    if (rateLimited) {
+      // Budget exhausted: keep buffering, don't send.
+      // If we've hit the absolute cap, send a long chunk anyway.
+      const bufferedDurationMs = (this.bufferedSampleCount / SAMPLE_RATE) * 1000
+      if (bufferedDurationMs < MAX_THROTTLED_BUFFER_MS) {
+        // Still below cap - keep accumulating, don't send
+        // Notify error callback about throttling
+        this.errorCallback?.(new RateLimitError(
+          "Transcription en pause, reprise dans " + Math.round(DEFAULT_RATE_LIMIT_WINDOW_MS / 1000) + "s — débit élevé",
+          undefined,
+          "throttling"
+        ))
+        return
+      }
+    }
+
     try {
       const text = await this.transcribe(samples)
       if (containsNonLatinScript(text)) {
@@ -401,6 +447,59 @@ export class GroqProvider implements AsrProvider {
     } catch (err) {
       this.errorCallback?.(err instanceof Error ? err : new Error(String(err)))
     }
+  }
+
+  /**
+   * TASK 1: leaky-bucket rate limiter for Groq's free-tier 20 RPM ceiling.
+   * Returns true if a request may be sent; false if the budget is exhausted
+   * and the caller should throttle (keep buffering, skip this flush).
+   * If the absolute buffer cap is reached, send a longer chunk anyway.
+   */
+  private checkRateLimit(sampleCount: number): boolean {
+    const now = this.now()
+
+    // Reset window if it expired
+    if (now - this.windowStart >= DEFAULT_RATE_LIMIT_WINDOW_MS) {
+      this.requestsInWindow = 0
+      this.windowStart = now
+    }
+
+    // If currently throttled from a prior 429 sustained signal
+    if (now < this.throttledUntil) {
+      const bufferedDurationMs = (this.bufferedSampleCount / SAMPLE_RATE) * 1000
+      if (bufferedDurationMs >= MAX_THROTTLED_BUFFER_MS) {
+        // Cap reached — send a long chunk rather than lose everything
+        this.throttledUntil = now
+        this.requestsInWindow = 1
+        this.windowStart = now
+        return true
+      }
+      // Still below cap — throttle, keep buffering
+      return false
+    }
+
+    // Budget available: we're within the window and under the limit
+    if (this.requestsInWindow < DEFAULT_RATE_LIMIT_REQUESTS) {
+      this.requestsInWindow++
+      return true
+    }
+
+    // Budget exhausted — enter throttle period
+    this.throttledUntil = now + DEFAULT_RATE_LIMIT_WINDOW_MS
+    this.requestsInWindow = 1
+    this.windowStart = now
+
+    const bufferedDurationMs = (this.bufferedSampleCount / SAMPLE_RATE) * 1000
+    if (bufferedDurationMs >= MAX_THROTTLED_BUFFER_MS) {
+      // Cap reached — send a long chunk rather than lose everything
+      this.throttledUntil = now
+      this.requestsInWindow = 1
+      this.windowStart = now
+      return true
+    }
+
+    // Still below cap — throttle, keep buffering
+    return false
   }
 
   /**
@@ -467,10 +566,30 @@ export class GroqProvider implements AsrProvider {
 
     if (!response.ok) {
       const errorBody = await safeReadJson(response)
-      throw new Error(
-        extractGroqErrorMessage(errorBody) ?? `Groq request failed with status ${response.status}`
-      )
+      const errorMessage = extractGroqErrorMessage(errorBody) ?? `Groq request failed with status ${response.status}`
+      // TASK 2: detect 429 and parse retry-after delay
+      if (response.status === 429) {
+        const retryAfter = extractGroqRetryAfter(errorBody)
+        const retryAfterMs = retryAfter ?? RATE_LIMIT_RETRY_BASE_MS
+        this.consecutive429s++
+        this.last429Time = this.now()
+        // Emit sustained event if threshold exceeded
+        if (this.consecutive429s >= SUSTAINED_429_THRESHOLD && this.onRateLimitedSustained) {
+          this.onRateLimitedSustained()
+        }
+        throw new RateLimitError(
+          this.consecutive429s >= SUSTAINED_429_THRESHOLD
+            ? "Limite de débit Groq atteinte, envisagez une mise à jour du palier"
+            : "Transcription en pause, reprise dans " + Math.round(retryAfterMs / 1000) + "s — débit élevé",
+          retryAfterMs,
+          "429"
+        )
+      }
+      throw new Error(errorMessage)
     }
+
+    // Reset consecutive 429 counter on successful request
+    this.consecutive429s = 0
 
     const body = await safeReadJson(response)
     const text = isPlainObject(body) ? body.text : undefined
@@ -593,4 +712,22 @@ function extractGroqErrorMessage(body: unknown): string | undefined {
   const error = body.error
   if (!isPlainObject(error)) return undefined
   return typeof error.message === "string" ? error.message : undefined
+}
+
+/** Extract the "retry-after" delay from a Groq 429 error body, if present. */
+function extractGroqRetryAfter(body: unknown): number | undefined {
+  if (!isPlainObject(body)) return undefined
+  const error = body.error
+  if (!isPlainObject(error)) return undefined
+  // Groq may include a "retry_after" field in seconds, or a message like
+  // "Please try again in Xs". Check both.
+  if (typeof error.retry_after === "number") {
+    return error.retry_after * 1000 // convert s -> ms
+  }
+  const message = typeof error.message === "string" ? error.message : ""
+  const match = message.match(/Please try again in (\d+)s/i)
+  if (match && match[1]) {
+    return parseInt(match[1], 10) * 1000
+  }
+  return undefined
 }
