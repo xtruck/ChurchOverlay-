@@ -86,9 +86,21 @@ export class DeepgramProvider implements AsrProvider {
     socket.on("message", (data) => this.handleMessage(data.toString()))
     socket.on("error", (error) => this.reportError(error))
     socket.on("close", () => {
-      if (this.active) this.reportError(new Error("Deepgram WebSocket closed unexpectedly"))
+      if (!this.active || this.socket !== socket) return
+      this.socket = null
+      this.active = false
+      this.reportError(new Error("Deepgram WebSocket closed unexpectedly"))
     })
-    await waitForOpen(socket)
+    try {
+      await waitForOpen(socket)
+    } catch (error) {
+      if (this.socket === socket) this.socket = null
+      this.active = false
+      if (socket.readyState === this.WebSocketImpl.OPEN || socket.readyState === this.WebSocketImpl.CONNECTING) {
+        socket.close()
+      }
+      throw error
+    }
   }
 
   async sendAudio(audio: AudioFrame): Promise<void> {

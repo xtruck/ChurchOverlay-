@@ -71,7 +71,7 @@ Current status:
 | invalid WS message | `action-registry.test.ts`, `server.test.ts` |
 | diagnostics snapshot contains operational state without secrets | `app-core.test.ts` |
 | optional NDI output degrades without the native addon and bounds pending frames | `ndi-output.test.ts` |
-| Deepgram provider emits validated partial/final streaming transcripts | `deepgram-provider.test.ts` |
+| Deepgram provider emits validated partial/final streaming transcripts and recovers after WebSocket failure | `deepgram-provider.test.ts` |
 | Deepgram failover starts on demand, routes later frames, and preserves Groq-only startup | `failover-provider.test.ts` |
 | Manual ASR return closes the secondary path and restores primary health | `failover-provider.test.ts`, `app-core.test.ts` |
 | Successful failover is informational rather than a critical rate-limit error | `app-core.test.ts` |

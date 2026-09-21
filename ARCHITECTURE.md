@@ -4713,6 +4713,12 @@ Successful failover is an informational operator state, distinct from the
 critical sustained-rate-limit state. A real Deepgram/network failure remains an
 ASR error and is surfaced as such.
 
+The Deepgram adapter treats an unexpected WebSocket close as a terminal failure
+of that connection: it clears its active state, reports the error once, and
+allows the failover wrapper to retry a fresh connection when explicitly
+started. A failed handshake also clears connection state; it never leaves the
+secondary provider falsely marked as active.
+
 
 This reduces local CPU/RAM/GPU usage compared with local inference, but it does
 not provide unlimited free usage: Deepgram remains subject to account pricing,

@@ -25,6 +25,10 @@ class MockWebSocket extends EventEmitter {
     this.readyState = 3
     this.emit("close")
   }
+
+  fail(error: Error): void {
+    this.emit("error", error)
+  }
 }
 
 test("DeepgramProvider: requires an API key", () => {
@@ -82,5 +86,60 @@ test("DeepgramProvider: opens the documented streaming URL and sends canonical P
   assert.equal(parsed.searchParams.get("encoding"), "linear16")
   assert.equal(parsed.searchParams.get("sample_rate"), "16000")
   assert.deepEqual(socket.sent[0], Buffer.from(frame.samples.buffer))
+  await provider.stop()
+})
+
+test("DeepgramProvider: unexpected close reports once and permits a fresh start", async () => {
+  const sockets: CapturingSocket[] = []
+  class CapturingSocket extends MockWebSocket {
+    constructor(url: string, options: unknown) {
+      super(url, options)
+      this.readyState = MockWebSocket.OPEN
+      sockets.push(this)
+      queueMicrotask(() => this.emit("open"))
+    }
+  }
+
+  const provider = new DeepgramProvider({
+    apiKey: "deepgram-test",
+    WebSocketImpl: CapturingSocket as never,
+  })
+  const errors: Error[] = []
+  provider.onError((error) => errors.push(error))
+
+  await provider.start()
+  const firstSocket = sockets[0]
+  assert.ok(firstSocket)
+  firstSocket.close()
+  assert.equal(errors.length, 1)
+  assert.equal(errors[0]?.message, "Deepgram WebSocket closed unexpectedly")
+
+  await provider.start()
+  assert.equal(sockets.length, 2)
+  await provider.stop()
+})
+
+test("DeepgramProvider: failed connection resets state so a later start can retry", async () => {
+  let attempts = 0
+  class RetrySocket extends MockWebSocket {
+    constructor(url: string, options: unknown) {
+      super(url, options)
+      attempts += 1
+      if (attempts === 1) {
+        queueMicrotask(() => this.fail(new Error("connection refused")))
+      } else {
+        this.readyState = MockWebSocket.OPEN
+        queueMicrotask(() => this.emit("open"))
+      }
+    }
+  }
+
+  const provider = new DeepgramProvider({
+    apiKey: "deepgram-test",
+    WebSocketImpl: RetrySocket as never,
+  })
+  await assert.rejects(provider.start(), /connection refused/)
+  await provider.start()
+  assert.equal(attempts, 2)
   await provider.stop()
 })
