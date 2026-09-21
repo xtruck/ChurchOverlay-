@@ -4676,3 +4676,20 @@ path, preserving the existing Electron boundary.
 cannot invent health values or read internal server state directly. The snapshot is
 safe to collect while ASR is throttled, in error, or recovering, and its shape is
 covered by an AppCore integration test.
+
+## 84. Per-Media Auto-Clear Timers
+
+Each imported `MediaCue` may persist an optional `autoClearMs` duration. The
+`MediaLibrary` owns this metadata and updates it atomically through the operator-only
+`media:set-duration` command; `null` means manual-only playback. The action registry
+rejects zero, negative, non-finite, or malformed durations before AppCore handles them.
+
+AppCore is the timing authority. Activating a cue arms one timer, replacing a cue
+cancels the previous timer, `media:clear` cancels the active timer, and changing the
+active cue's duration re-arms it immediately. When the timer fires, the server clears
+the cue only if it is still active and broadcasts `media:clear`. The overlay never
+owns or infers this timer.
+
+Per-media timing is deliberately separate from the principal-poster timer. Pinning
+remains an image-only poster-layer feature; its existing `poster:set-duration`
+behavior is unchanged.

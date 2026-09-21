@@ -5,6 +5,8 @@ export type MediaCue = {
   readonly id: string
   /** Also the voice-trigger phrase (ARCHITECTURE.md section 60.3) — operator-assigned at import time, unique. */
   readonly title: string
+  /** Optional server-owned auto-clear duration for this cue. */
+  readonly autoClearMs?: number | null
 }
 
 export type MediaPlaybackState = {
@@ -36,5 +38,10 @@ export type PosterShowPayload = {
  * off-by-default convention rather than inventing a sentinel number.
  */
 export type PosterSetDurationPayload = {
+  readonly durationMs: number | null
+}
+
+export type MediaSetDurationPayload = {
+  readonly mediaCueId: string
   readonly durationMs: number | null
 }

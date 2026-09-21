@@ -11,6 +11,7 @@ export type WsCommandType =
   | "media:pause"
   | "media:seek"
   | "media:clear"
+  | "media:set-duration"
   | "rundown:load"
   | "scene:next"
   | "scene:previous"

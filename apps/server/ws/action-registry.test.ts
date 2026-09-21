@@ -21,6 +21,7 @@ test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 me
       "media:pause",
       "media:seek",
       "media:clear",
+      "media:set-duration",
       "media:show",
       "rundown:load",
       "scene:next",
@@ -42,6 +43,22 @@ test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 me
       "layout:update",
     ].sort()
   )
+})
+
+test("validateWsMessage: accepts and validates media:set-duration", () => {
+  const result = validateWsMessage(
+    { id: "01MEDIA", type: "media:set-duration", timestamp: 1700000000000, payload: { mediaCueId: "cue-1", durationMs: 120000 } },
+    "operator"
+  )
+  assert.equal(result.ok, true)
+})
+
+test("validateWsMessage: rejects invalid media:set-duration values", () => {
+  const result = validateWsMessage(
+    { id: "01MEDIA", type: "media:set-duration", timestamp: 1700000000000, payload: { mediaCueId: "cue-1", durationMs: 0 } },
+    "operator"
+  )
+  assert.equal(result.ok, false)
 })
 
 test("validateWsMessage: accepts a valid mic:start command from an operator", () => {

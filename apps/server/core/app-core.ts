@@ -268,6 +268,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const onDisplayModeChanged = options.onDisplayModeChanged
   const mediaCueDetector = mediaLibrary ? new MediaCueDetector(mediaLibrary) : null
   const mediaPlayback = new MediaPlaybackController()
+  let mediaAutoClearTimer: ReturnType<typeof setTimeout> | null = null
   const navigationCommandDetector = new NavigationCommandDetector()
   const rundownController = new RundownController()
   const sessionRecorder = new SessionRecorder()
@@ -596,6 +597,32 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     })
   }
 
+  function armMediaAutoClear(payload: MediaShowPayload, correlationId?: string): void {
+    cancelMediaAutoClear()
+    const durationMs = payload.cue.autoClearMs
+    if (durationMs !== undefined && durationMs !== null) {
+      mediaAutoClearTimer = setTimeout(() => {
+        mediaAutoClearTimer = null
+        if (mediaPlayback.clear()) {
+          wsServer.broadcast({
+            id: generateUlid(),
+            type: "media:clear",
+            timestamp: Date.now(),
+            correlationId,
+            payload: null,
+          })
+        }
+      }, durationMs)
+    }
+  }
+
+  function cancelMediaAutoClear(): void {
+    if (mediaAutoClearTimer) {
+      clearTimeout(mediaAutoClearTimer)
+      mediaAutoClearTimer = null
+    }
+  }
+
   function broadcastAnnouncement(payload: { title: string; body: string }, correlationId?: string): void {
     wsServer.broadcast({
       id: generateUlid(),
@@ -769,7 +796,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         }
         const cue = mediaLibrary.resolve(scene.mediaCueId)
         if (cue) {
-          broadcastMedia(mediaPlayback.activate(cue), correlationId)
+          const payload = mediaPlayback.activate(cue)
+          broadcastMedia(payload, correlationId)
+          armMediaAutoClear(payload, correlationId)
         } else {
           logger.info({
             component: "app-core",
@@ -792,6 +821,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         // under-clearing leaves stale content on screen.
         clearVerse(correlationId)
         mediaPlayback.clear()
+        cancelMediaAutoClear()
         wsServer.broadcast({ id: generateUlid(), type: "media:clear", timestamp: Date.now(), correlationId, payload: null })
         broadcastAnnouncementClear(correlationId)
         broadcastCanvasClear(correlationId)
@@ -1022,7 +1052,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
           })
           return
         }
-        broadcastMedia(mediaPlayback.activate(cue), message.correlationId)
+        const payload = mediaPlayback.activate(cue)
+        broadcastMedia(payload, message.correlationId)
+        armMediaAutoClear(payload, message.correlationId)
         return
       }
 
@@ -1046,6 +1078,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       }
 
       case "media:clear": {
+        cancelMediaAutoClear()
         if (mediaPlayback.clear()) {
           wsServer.broadcast({
             id: generateUlid(),
@@ -1054,6 +1087,21 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
             correlationId: message.correlationId,
             payload: null,
           })
+        }
+        return
+      }
+
+      case "media:set-duration": {
+        if (!mediaLibrary) {
+          logger.warn({ component: "app-core", event: "media.not-configured", correlationId: message.correlationId })
+          return
+        }
+        const { mediaCueId, durationMs } = message.payload as { mediaCueId: string; durationMs: number | null }
+        const cue = await mediaLibrary.setAutoClearDuration(mediaCueId, durationMs)
+        const activePayload = mediaPlayback.currentPayloadForSync()
+        if (activePayload?.cue.id === cue.id) {
+          if (durationMs === null) cancelMediaAutoClear()
+          else armMediaAutoClear({ ...activePayload, cue }, message.correlationId)
         }
         return
       }
@@ -1363,7 +1411,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
           principalPosterCueId = cue.id
           broadcastPoster(cue, transcript.correlationId)
         } else {
-          broadcastMedia(mediaPlayback.activate(cue), transcript.correlationId)
+          const payload = mediaPlayback.activate(cue)
+          broadcastMedia(payload, transcript.correlationId)
+          armMediaAutoClear(payload, transcript.correlationId)
         }
       }
     }
@@ -1469,6 +1519,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       // class of leak for its own new feature.
       if (verseAutoClearTimer) clearTimeout(verseAutoClearTimer)
       if (posterAutoClearTimer) clearTimeout(posterAutoClearTimer)
+      if (mediaAutoClearTimer) clearTimeout(mediaAutoClearTimer)
       await asr.stop().catch(() => {})
       await wsServer.close()
       logger.info({ component: "app-core", event: "stopped" })

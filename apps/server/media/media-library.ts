@@ -19,6 +19,7 @@ type StoredMediaCue = {
   readonly kind: MediaCueKind
   readonly title: string
   readonly storedFilename: string
+  readonly autoClearMs?: number | null
 }
 
 /**
@@ -79,7 +80,12 @@ export class MediaLibrary {
 
     for (const entry of stored) {
       if (!isStoredMediaCue(entry)) continue
-      this.cues.set(entry.id, { kind: entry.kind, id: entry.id, title: entry.title })
+      this.cues.set(entry.id, {
+        kind: entry.kind,
+        id: entry.id,
+        title: entry.title,
+        ...(entry.autoClearMs === undefined ? {} : { autoClearMs: entry.autoClearMs }),
+      })
       this.storedFilenames.set(entry.id, entry.storedFilename)
     }
   }
@@ -144,6 +150,7 @@ export class MediaLibrary {
     if (!existing) {
       throw new Error(`MediaLibrary: no cue with id "${id}"`)
     }
+
     if (normalizeTitle(newTitle).length === 0) {
       throw new Error("MediaLibrary: title must not be empty")
     }
@@ -156,6 +163,18 @@ export class MediaLibrary {
     this.cues.set(id, renamed)
     await this.persist()
     return renamed
+  }
+
+  async setAutoClearDuration(id: string, durationMs: number | null): Promise<MediaCue> {
+    const existing = this.cues.get(id)
+    if (!existing) throw new Error(`MediaLibrary: no cue with id "${id}"`)
+    if (durationMs !== null && (!Number.isFinite(durationMs) || durationMs <= 0)) {
+      throw new Error("MediaLibrary: auto-clear duration must be null or a positive finite number")
+    }
+    const updated: MediaCue = { ...existing, autoClearMs: durationMs }
+    this.cues.set(id, updated)
+    await this.persist()
+    return updated
   }
 
   /**
@@ -217,6 +236,7 @@ export class MediaLibrary {
       kind: cue.kind,
       title: cue.title,
       storedFilename: this.storedFilenames.get(cue.id) as string,
+      ...(cue.autoClearMs === undefined ? {} : { autoClearMs: cue.autoClearMs }),
     }))
 
     await mkdir(this.mediaDir, { recursive: true })
@@ -254,5 +274,8 @@ function isStoredMediaCue(value: unknown): value is StoredMediaCue {
     (candidate.kind === "image" || candidate.kind === "video" || candidate.kind === "audio") &&
     typeof candidate.title === "string" &&
     typeof candidate.storedFilename === "string"
+    && (candidate.autoClearMs === undefined ||
+      candidate.autoClearMs === null ||
+      (typeof candidate.autoClearMs === "number" && Number.isFinite(candidate.autoClearMs) && candidate.autoClearMs > 0))
   )
 }

@@ -530,6 +530,34 @@
         tile.appendChild(posterBtn)
       }
 
+      const timer = document.createElement("div")
+      timer.className = "media-tile-timer"
+      const timerInput = document.createElement("input")
+      timerInput.type = "number"
+      timerInput.min = "1"
+      timerInput.step = "1"
+      timerInput.value = cue.autoClearMs ? String(Math.round(cue.autoClearMs / 60000)) : ""
+      timerInput.placeholder = t("media.timerManual")
+      timerInput.title = t("media.timerTooltip")
+      timerInput.setAttribute("aria-label", t("media.timerTooltip"))
+      const timerButton = document.createElement("button")
+      timerButton.type = "button"
+      timerButton.className = "media-tile-action-btn"
+      timerButton.textContent = t("media.timerApply")
+      timerButton.addEventListener("click", (event) => {
+        event.stopPropagation()
+        const minutes = timerInput.value.trim() === "" ? null : Number(timerInput.value)
+        if (minutes !== null && (!Number.isFinite(minutes) || minutes <= 0)) return
+        sendJson({
+          id: crypto.randomUUID(),
+          type: "media:set-duration",
+          timestamp: Date.now(),
+          payload: { mediaCueId: cue.id, durationMs: minutes === null ? null : minutes * 60000 },
+        })
+      })
+      timer.append(timerInput, timerButton)
+      tile.appendChild(timer)
+
       const tileActions = document.createElement("div")
       tileActions.className = "media-tile-actions"
       const renameBtn = document.createElement("button")

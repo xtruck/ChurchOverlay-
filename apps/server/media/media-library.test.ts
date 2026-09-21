@@ -280,4 +280,22 @@ test("MediaLibrary: remove() with an unknown id is a no-op that returns false, n
     const library = new MediaLibrary({ mediaDir })
     assert.equal(await library.remove("unknown-id"), false)
   })
+
+})
+
+test("MediaLibrary: per-media auto-clear duration persists across restart and can be cleared", async () => {
+  await withTempDirs(async (sourceDir, mediaDir) => {
+    const sourcePath = join(sourceDir, "timer.png")
+    await writeFile(sourcePath, "fake png bytes")
+    const first = new MediaLibrary({ mediaDir })
+    const cue = await first.import(sourcePath, "Timed Slide", "image")
+    const updated = await first.setAutoClearDuration(cue.id, 120000)
+    assert.equal(updated.autoClearMs, 120000)
+
+    const restarted = new MediaLibrary({ mediaDir })
+    await restarted.load()
+    assert.equal(restarted.resolve(cue.id)?.autoClearMs, 120000)
+    const cleared = await restarted.setAutoClearDuration(cue.id, null)
+    assert.equal(cleared.autoClearMs, null)
+  })
 })

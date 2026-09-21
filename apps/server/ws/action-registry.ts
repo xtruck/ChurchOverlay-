@@ -6,6 +6,7 @@ import type {
   DefinitionShowPayload,
   MediaCue,
   MediaShowPayload,
+  MediaSetDurationPayload,
   PosterSetDurationPayload,
   PosterShowPayload,
   Rundown,
@@ -183,6 +184,11 @@ function isMediaSelectPayload(payload: unknown): payload is { id: string } {
   return isPlainObject(payload) && isNonEmptyString(payload.id)
 }
 
+function isMediaSetDurationPayload(payload: unknown): payload is MediaSetDurationPayload {
+  if (!isPlainObject(payload) || !isNonEmptyString(payload.mediaCueId)) return false
+  return payload.durationMs === null || (typeof payload.durationMs === "number" && Number.isFinite(payload.durationMs) && payload.durationMs > 0)
+}
+
 function isMediaSeekPayload(payload: unknown): payload is { positionMs: number } {
   return isPlainObject(payload) && isFiniteNumber(payload.positionMs) && payload.positionMs >= 0
 }
@@ -193,6 +199,9 @@ function isMediaCuePayload(payload: unknown): payload is MediaCue {
     (payload.kind === "image" || payload.kind === "video" || payload.kind === "audio") &&
     isNonEmptyString(payload.id) &&
     isNonEmptyString(payload.title)
+    && (payload.autoClearMs === undefined ||
+      payload.autoClearMs === null ||
+      (typeof payload.autoClearMs === "number" && Number.isFinite(payload.autoClearMs) && payload.autoClearMs > 0))
   )
 }
 
@@ -448,6 +457,11 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "command",
     allowedSenders: ["operator"],
     validatePayload: isNullPayload,
+  },
+  "media:set-duration": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isMediaSetDurationPayload,
   },
   "media:show": {
     kind: "event",
