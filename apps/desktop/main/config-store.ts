@@ -1,6 +1,7 @@
 import { mkdir, open, readFile, rename } from "node:fs/promises"
 import { dirname } from "node:path"
 import type { DisplayMode, VerseConfirmationMode, VerseLayout } from "../../../packages/contracts"
+import type { AudioProfile } from "../../server/audio/audio-profile"
 
 /** Desktop-app-only concern (not part of the WS protocol) — the operator dashboard/setup UI's own language, ARCHITECTURE.md section 63.5. */
 export type UiLanguage = "en" | "fr"
@@ -60,6 +61,7 @@ export type AppConfig = {
    */
   readonly verseLayout: VerseLayout
   readonly ndiEnabled?: boolean
+  readonly audioProfile?: AudioProfile
 }
 
 type StoredConfig = {
@@ -80,6 +82,7 @@ type StoredConfig = {
   /** Optional in storage: absent in configs saved before ARCHITECTURE.md section 82 existed. */
   readonly verseLayout?: string
   readonly ndiEnabled?: boolean
+  readonly audioProfile?: string
 }
 
 /**
@@ -135,6 +138,7 @@ export class ConfigStore {
       enableSermonNotes: config.enableSermonNotes,
       verseLayout: config.verseLayout,
       ...(config.ndiEnabled === undefined ? {} : { ndiEnabled: config.ndiEnabled }),
+      ...(config.audioProfile === undefined ? {} : { audioProfile: config.audioProfile }),
     }
 
     await mkdir(dirname(this.filePath), { recursive: true })
@@ -169,6 +173,7 @@ export class ConfigStore {
       enableSermonNotes,
       verseLayout,
       ndiEnabled,
+      audioProfile,
     } = stored
 
     if (
@@ -208,6 +213,12 @@ export class ConfigStore {
     if (ndiEnabled !== undefined && typeof ndiEnabled !== "boolean") {
       throw new Error(`ConfigStore: ${this.filePath} has an invalid ndiEnabled`)
     }
+    if (
+      audioProfile !== undefined &&
+      (typeof audioProfile !== "string" || !["responsive", "balanced", "robust"].includes(audioProfile))
+    ) {
+      throw new Error(`ConfigStore: ${this.filePath} has an invalid audioProfile`)
+    }
 
     return {
       groqApiKey: this.codec.decrypt(Buffer.from(groqApiKeyEncrypted, "base64")),
@@ -235,6 +246,7 @@ export class ConfigStore {
       // upgrading, not just fresh ones.
       verseLayout: (verseLayout as VerseLayout | undefined) ?? "fullscreen",
       ...(ndiEnabled === undefined ? {} : { ndiEnabled }),
+      ...(audioProfile === undefined ? {} : { audioProfile: audioProfile as AudioProfile }),
     }
   }
 }

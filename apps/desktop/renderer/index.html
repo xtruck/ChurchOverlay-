@@ -993,6 +993,13 @@
         <span data-i18n="setup.allowPhoneRemote">Allow a phone remote on this WiFi network (exposes this app to your local network)</span>
       </label>
 
+      <label for="setup-audio-profile">Audio responsiveness</label>
+      <select id="setup-audio-profile">
+        <option value="responsive">Responsive (lower latency)</option>
+        <option value="balanced" selected>Balanced (recommended)</option>
+        <option value="robust">Robust (noisier rooms)</option>
+      </select>
+
       <div id="setup-error"></div>
       <button id="setup-save-btn" class="btn-primary" style="width: 100%" data-i18n="setup.saveButton">Save and continue</button>
     </div>

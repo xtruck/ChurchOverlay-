@@ -32,6 +32,8 @@ import type { DisplayMode, MediaCueKind, VerseConfirmationMode, VerseLayout } fr
 import { inferMediaKind, deriveTitleFromFilename } from "./media-import"
 import { Logger } from "../../../packages/shared/logger"
 import { NDIOutput, type PaintSource } from "./ndi-output"
+import { getAudioProfileSettings, type AudioProfile } from "../../server/audio/audio-profile"
+import { SilenceGate } from "../../server/audio/silence-gate"
 
 /**
  * Electron main process entry point (ARCHITECTURE.md section 6.1). Owns
@@ -190,6 +192,7 @@ async function startServices(
   const groqProvider = new GroqProvider({
     apiKey: config.groqApiKey,
     logger,
+    chunkDurationMs: getAudioProfileSettings(config.audioProfile).chunkDurationMs,
     language: whisperLanguageFor(config.displayMode),
   })
   asrProvider = config.deepgramApiKey
@@ -208,6 +211,7 @@ async function startServices(
     index: new KnownValidVerseIndex(),
     source: localizedVerseSource,
     logger,
+    silenceGate: new SilenceGate({ threshold: getAudioProfileSettings(config.audioProfile).silenceThreshold }),
     host: wsHost,
     port: WS_PORT,
     tokens: currentTokens,
@@ -348,6 +352,7 @@ async function startServices(
       left.enableSermonNotes === right.enableSermonNotes &&
       left.verseLayout === right.verseLayout &&
       left.ndiEnabled === right.ndiEnabled
+      && left.audioProfile === right.audioProfile
   }
 }
 
@@ -563,6 +568,9 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
   // than a literal boolean true from the renderer is treated as false,
   // never trusted as "the operator meant to enable network exposure."
   const allowPhoneRemote = payloadObject.allowPhoneRemote === true
+  const audioProfile = ["responsive", "balanced", "robust"].includes(String(payloadObject.audioProfile))
+    ? (String(payloadObject.audioProfile) as AudioProfile)
+    : "balanced"
 
   const store = getConfigStore()
   // A corrupt or unreadable existing config must not permanently block
@@ -609,6 +617,7 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
     displayMode,
     uiLanguage,
     allowPhoneRemote,
+    audioProfile: existing?.audioProfile ?? audioProfile,
     ndiEnabled: existing?.ndiEnabled ?? false,
   }
   await store.save(config)

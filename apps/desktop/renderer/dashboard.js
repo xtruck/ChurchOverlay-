@@ -132,6 +132,7 @@
   const setupDisplayModeEl = document.getElementById("setup-display-mode")
   const setupUiLanguageEl = document.getElementById("setup-ui-language")
   const setupAllowPhoneRemoteEl = document.getElementById("setup-allow-phone-remote")
+  const setupAudioProfileEl = document.getElementById("setup-audio-profile")
   const remoteDisabledEl = document.getElementById("remote-disabled")
   const remoteEnabledEl = document.getElementById("remote-enabled")
   const remoteNoLanEl = document.getElementById("remote-no-lan")
@@ -2071,7 +2072,7 @@
     setupSaveBtn.textContent = t("setup.saving")
 
     window.churchOverlay
-      .completeSetup(apiKey, deepgramApiKey, setupSelectedMode, setupSelectedUiLanguage, setupAllowPhoneRemoteEl.checked)
+      .completeSetup(apiKey, deepgramApiKey, setupSelectedMode, setupSelectedUiLanguage, setupAllowPhoneRemoteEl.checked, setupAudioProfileEl.value)
       .then((info) => {
         setActiveOption(displayModeToggleEl, "mode", setupSelectedMode)
         setActiveOption(uiLanguageToggleEl, "lang", setupSelectedUiLanguage)
