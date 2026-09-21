@@ -52,7 +52,7 @@ export type WsEventType =
  * breaking this one, the same additive philosophy Verse.secondary uses.
  */
 export type AsrStatusPayload = {
-  readonly asrHealth: "ok" | "error"
+  readonly asrHealth: "ok" | "error" | "throttled" | "rate-limited"
   readonly error?: string
   /**
    * ARCHITECTURE.md section 76 (silence-gate auto-calibration): true for

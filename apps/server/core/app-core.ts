@@ -34,6 +34,7 @@ import { resolveTranscriptVerses } from "./resolve-transcript-verses"
 import { resolveVerse, translationIdFor } from "../verse/resolve-verse"
 import { passesTranscriptGate } from "./transcript-gate"
 import { correctTranscription } from "../asr/transcription-corrector"
+import { RateLimitError } from "../asr/groq-provider"
 import type { MediaLibrary } from "../media/media-library"
 import { MediaCueDetector } from "../media/media-cue-detector"
 import { MediaPlaybackController } from "../media/media-playback-controller"
@@ -64,6 +65,7 @@ import type { SessionHistoryStore, SessionHistoryEntry } from "./session-history
  */
 type ObservableAsrProvider = AsrProvider & {
   onError?(callback: (error: Error) => void): void
+  onRateLimitedSustained?(callback: () => void): void
 }
 
 /**
@@ -315,6 +317,14 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   // when nothing produced it yet). Tracked so a transcript arriving after
   // an error can broadcast the recovery, not just the failure.
   let asrHasError = false
+  let asrIsThrottled = false
+  let asrRateLimitedSustained = false
+  const currentAsrHealth = (): AsrStatusPayload["asrHealth"] => {
+    if (asrRateLimitedSustained) return "rate-limited"
+    if (asrHasError) return "error"
+    if (asrIsThrottled) return "throttled"
+    return "ok"
+  }
   // ARCHITECTURE.md section 65.7: a rolling buffer of final-transcript text,
   // flushed and summarized on a fixed cadence rather than per-transcript —
   // both to bound Groq API cost and because a summary of one sentence isn't
@@ -842,7 +852,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         metadata: { threshold: silenceGate.getThreshold() },
       })
       broadcastAsrStatus({
-        asrHealth: asrHasError ? "error" : "ok",
+        asrHealth: currentAsrHealth(),
         micCalibrating: false,
         micThreshold: silenceGate.getThreshold(),
       })
@@ -871,7 +881,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         // simply not working, the exact complaint this whole feature
         // exists to prevent a repeat of.
         silenceGate.startCalibration()
-        broadcastAsrStatus({ asrHealth: asrHasError ? "error" : "ok", micCalibrating: true })
+        broadcastAsrStatus({ asrHealth: currentAsrHealth(), micCalibrating: true })
         await asr.start()
         logger.info({ component: "app-core", event: "mic.started" })
         return
@@ -1273,8 +1283,10 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // A transcript arriving at all means the ASR pipeline is working again
     // — the operator-facing recovery signal for whatever error, if any,
     // was last broadcast below.
-    if (asrHasError) {
+    if (asrHasError || asrIsThrottled || asrRateLimitedSustained) {
       asrHasError = false
+      asrIsThrottled = false
+      asrRateLimitedSustained = false
       broadcastAsrStatus({ asrHealth: "ok" })
     }
     resolveTranscriptVerses(transcript, detector, index, source, cache, circuitBreaker, logger)
@@ -1381,6 +1393,11 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
 
   asr.onError?.((err) => {
     logger.error({ component: "asr", event: "transcript.failed", error: err.message })
+    if (err instanceof RateLimitError && err.type === "throttling") {
+      asrIsThrottled = true
+      broadcastAsrStatus({ asrHealth: "throttled", error: err.message })
+      return
+    }
     // A local server-log line alone left the operator no way to know
     // transcription had failed mid-service — a real gap surfaced by web
     // research into how broadcast-captioning tooling treats ASR/network
@@ -1391,6 +1408,16 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     asrHasError = true
     broadcastAsrStatus({ asrHealth: "error", error: err.message })
   })
+
+  if ("onRateLimitedSustained" in asr && typeof asr.onRateLimitedSustained === "function") {
+    asr.onRateLimitedSustained(() => {
+      asrRateLimitedSustained = true
+      broadcastAsrStatus({
+        asrHealth: "rate-limited",
+        error: "Limite de débit Groq atteinte, envisagez une mise à jour du palier",
+      })
+    })
+  }
 
   await wsServer.ready
   logger.info({ component: "app-core", event: "started", metadata: { port: wsServer.port } })

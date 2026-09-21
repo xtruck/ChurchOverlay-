@@ -364,8 +364,17 @@
   // successful transcript as the recovery signal).
   function handleStatusUpdate(payload) {
     if (!payload) return
+    asrHealthWarningEl.classList.remove("asr-health-warning-throttled", "asr-health-warning-rate-limited")
     if (payload.asrHealth === "error") {
       asrHealthWarningTextEl.textContent = t("mic.transcriptionError", { error: payload.error || "" })
+      asrHealthWarningEl.style.display = "block"
+    } else if (payload.asrHealth === "throttled") {
+      asrHealthWarningEl.classList.add("asr-health-warning-throttled")
+      asrHealthWarningTextEl.textContent = t("mic.transcriptionThrottled", { error: payload.error || "" })
+      asrHealthWarningEl.style.display = "block"
+    } else if (payload.asrHealth === "rate-limited") {
+      asrHealthWarningEl.classList.add("asr-health-warning-rate-limited")
+      asrHealthWarningTextEl.textContent = t("mic.transcriptionRateLimited", { error: payload.error || "" })
       asrHealthWarningEl.style.display = "block"
     } else if (payload.asrHealth === "ok") {
       asrHealthWarningEl.style.display = "none"

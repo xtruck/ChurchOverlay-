@@ -146,7 +146,7 @@ function isTranscriptFinalPayload(payload: unknown): payload is TranscriptResult
 }
 
 // status:update now has a real producer: AppCore broadcasts ASR/
-// transcription health (asrHealth: "ok"/"error") when GroqProvider's
+// transcription health (asrHealth: "ok"/"error"/"throttled"/"rate-limited") when GroqProvider's
 // onError fires and again on the next successful transcript (the
 // recovery signal) — previously only ever a server-side log line, with
 // no way for the operator dashboard to know transcription had failed
@@ -169,7 +169,10 @@ function isTranscriptFinalPayload(payload: unknown): payload is TranscriptResult
 function isStatusUpdatePayload(payload: unknown): payload is AsrStatusPayload {
   if (!isPlainObject(payload)) return false
   return (
-    (payload.asrHealth === "ok" || payload.asrHealth === "error") &&
+    (payload.asrHealth === "ok" ||
+      payload.asrHealth === "error" ||
+      payload.asrHealth === "throttled" ||
+      payload.asrHealth === "rate-limited") &&
     (payload.error === undefined || typeof payload.error === "string") &&
     (payload.micCalibrating === undefined || typeof payload.micCalibrating === "boolean") &&
     (payload.micThreshold === undefined || isFiniteNumber(payload.micThreshold))

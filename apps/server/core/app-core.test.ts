@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { WebSocket } from "ws"
 import { startAppCore } from "./app-core"
+import { RateLimitError } from "../asr/groq-provider"
 import { RegexDetector } from "../detector/regex-detector"
 import { correctTranscription } from "../asr/transcription-corrector"
 import { SilenceGate } from "../audio/silence-gate"
@@ -33,6 +34,7 @@ class FakeAsrProvider implements AsrProvider {
   sentFrames: AudioFrame[] = []
   private transcriptCallback: ((result: TranscriptResult) => void) | null = null
   private errorCallback: ((error: Error) => void) | null = null
+  private sustainedCallback: (() => void) | null = null
 
   async start(): Promise<void> {
     this.startCalls += 1
@@ -49,8 +51,14 @@ class FakeAsrProvider implements AsrProvider {
   onError(callback: (error: Error) => void): void {
     this.errorCallback = callback
   }
+  onRateLimitedSustained(callback: () => void): void {
+    this.sustainedCallback = callback
+  }
   emitError(error: Error): void {
     this.errorCallback?.(error)
+  }
+  emitRateLimitedSustained(): void {
+    this.sustainedCallback?.()
   }
   emitTranscript(result: TranscriptResult): void {
     this.transcriptCallback?.(result)
@@ -1542,6 +1550,51 @@ test("AppCore: an ASR error broadcasts status:update, and the next successful tr
     logger: silentLogger(),
     port: 0,
     tokens: TOKENS,
+  })
+
+  test("AppCore: normal ASR throttling is not an error and recovers without error-state semantics", async () => {
+    const asr = new FakeAsrProvider()
+    const app = await startAppCore({
+      asr,
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new EchoVerseSource(),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+    })
+    try {
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+      const throttledMessage = waitForMessage(viewerSocket)
+      asr.emitError(new RateLimitError("Transcription en pause", undefined, "throttling"))
+      assert.deepEqual((await throttledMessage).payload, {
+        asrHealth: "throttled",
+        error: "Transcription en pause",
+      })
+
+      const recoveryMessage = waitForMessage(viewerSocket)
+      asr.emitTranscript({
+        id: "01THROTTLED",
+        correlationId: "01A",
+        sequence: 1,
+        text: "Welcome everyone.",
+        state: "final",
+        timestamp: Date.now(),
+      })
+      assert.deepEqual((await recoveryMessage).payload, { asrHealth: "ok" })
+
+      const sustainedMessage = waitForMessage(viewerSocket)
+      asr.emitRateLimitedSustained()
+      assert.deepEqual((await sustainedMessage).payload, {
+        asrHealth: "rate-limited",
+        error: "Limite de débit Groq atteinte, envisagez une mise à jour du palier",
+      })
+
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
   })
   try {
     const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
