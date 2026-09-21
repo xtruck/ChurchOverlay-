@@ -893,6 +893,45 @@ ipcMain.handle("export-session", async () => {
   return { canceled: false as const, count: entries.length, targetDir }
 })
 
+ipcMain.handle("export-rehearsal", async () => {
+  if (!dashboardWindow) {
+    throw new Error("dashboard window is not available")
+  }
+  if (!appCoreHandle) {
+    throw new Error("services are not started yet")
+  }
+
+  const entries = appCoreHandle.getSessionEntries()
+  if (entries.length === 0) {
+    return { canceled: false as const, error: "Nothing was shown this session yet." }
+  }
+
+  const result = await dialog.showOpenDialog(dashboardWindow, {
+    title: "Choose a folder to export rehearsal report to",
+    properties: ["openDirectory", "createDirectory"],
+  })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true as const }
+  }
+  const targetDir = result.filePaths[0] as string
+
+  const uniqueReferences = new Set(entries.map((entry) =>
+    `${entry.reference.book} ${entry.reference.chapter}:${entry.reference.verse}`))
+  const report = {
+    generatedAt: new Date().toISOString(),
+    shownVerseCount: entries.length,
+    uniqueReferenceCount: uniqueReferences.size,
+    startedAt: entries[0]?.timestamp ?? null,
+    lastShownAt: entries.at(-1)?.timestamp ?? null,
+    references: [...uniqueReferences],
+  }
+  await writeFile(join(targetDir, "rehearsal-report.json"), JSON.stringify(report, null, 2), "utf8")
+
+  logger.info({ component: "main", event: "rehearsal.exported", metadata: { count: entries.length, targetDir } })
+  return { canceled: false as const, count: entries.length, targetDir }
+})
+
 ipcMain.handle("export-diagnostics", async () => {
   if (!dashboardWindow) throw new Error("dashboard window is not available")
   if (!appCoreHandle) throw new Error("services are not started yet")
