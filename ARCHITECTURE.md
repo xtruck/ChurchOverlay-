@@ -4701,10 +4701,17 @@ WebSocket streaming endpoint with canonical PCM16/16 kHz mono audio. It emits
 honest `partial` and `final` transcript states, while AppCore continues to gate
 all verse detection and media detection on final transcripts only.
 
-Desktop startup selects Deepgram when an encrypted `deepgramApiKey` is configured;
-otherwise it uses the existing Groq batch provider. Groq remains available as an
-explicit fallback, and sermon-notes AI remains disabled when no Groq key exists.
+Groq remains the primary provider. When both encrypted credentials are configured,
+desktop startup creates a failover wrapper, but it opens the Deepgram connection
+only after Groq reports sustained 429 responses. Buffered or in-flight Groq batch
+audio is deliberately abandoned at that boundary rather than converted into a
+stream. The operator must explicitly return to Groq; there is no automatic
+oscillation loop. With no Deepgram key, the existing Groq-only path is unchanged.
 Neither key is exposed to renderers or written in plaintext.
+
+Successful failover is an informational operator state, distinct from the
+critical sustained-rate-limit state. A real Deepgram/network failure remains an
+ASR error and is surfaced as such.
 
 
 This reduces local CPU/RAM/GPU usage compared with local inference, but it does

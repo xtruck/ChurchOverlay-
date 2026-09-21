@@ -70,6 +70,22 @@ test("validateWsMessage: accepts a valid mic:start command from an operator", ()
   assert.equal(result.ok, true)
 })
 
+test("validateWsMessage: accepts operator-only asr:return-primary with null payload", () => {
+  const result = validateWsMessage({
+    id: "01RETURNPRIMARY",
+    type: "asr:return-primary",
+    timestamp: Date.now(),
+    payload: null,
+  }, "operator")
+  assert.equal(result.ok, true)
+  assert.equal(validateWsMessage({
+    id: "01RETURNPRIMARY",
+    type: "asr:return-primary",
+    timestamp: Date.now(),
+    payload: null,
+  }, "viewer").ok, false)
+})
+
 test("validateWsMessage: accepts a valid verse:override command with a VerseReference payload", () => {
   const result = validateWsMessage(
     {

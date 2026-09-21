@@ -72,6 +72,9 @@ Current status:
 | diagnostics snapshot contains operational state without secrets | `app-core.test.ts` |
 | optional NDI output degrades without the native addon and bounds pending frames | `ndi-output.test.ts` |
 | Deepgram provider emits validated partial/final streaming transcripts | `deepgram-provider.test.ts` |
+| Deepgram failover starts on demand, routes later frames, and preserves Groq-only startup | `failover-provider.test.ts` |
+| Manual ASR return closes the secondary path and restores primary health | `failover-provider.test.ts`, `app-core.test.ts` |
+| Successful failover is informational rather than a critical rate-limit error | `app-core.test.ts` |
 | default verse display auto-clears after the fixed 2:30 ceiling | `app-core.test.ts` |
 | media cue auto-clear duration persists across restart | `media-library.test.ts` |
 | media:set-duration accepts positive durations and rejects invalid values | `action-registry.test.ts` |
