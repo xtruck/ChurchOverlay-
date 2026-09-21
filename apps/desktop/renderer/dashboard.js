@@ -135,6 +135,7 @@
   const obsUrlInput = document.getElementById("obs-url")
   const obsCopyBtn = document.getElementById("obs-copy-btn")
   const exportSessionBtn = document.getElementById("export-session-btn")
+  const exportDiagnosticsBtn = document.getElementById("export-diagnostics-btn")
   const sermonNotesToggleEl = document.getElementById("sermon-notes-toggle")
   const sidebarEl = document.getElementById("sidebar")
   const viewEls = {
@@ -1895,6 +1896,19 @@
       .finally(() => {
         exportSessionBtn.disabled = false
         exportSessionBtn.textContent = t("session.exportButton")
+      })
+  })
+
+  exportDiagnosticsBtn.addEventListener("click", () => {
+    exportDiagnosticsBtn.disabled = true
+    window.churchOverlay
+      .exportDiagnostics()
+      .then((result) => {
+        if (!result.canceled) log(t("log.diagnosticsExported", { path: result.path }), "received")
+      })
+      .catch((err) => log(err.message, "error"))
+      .finally(() => {
+        exportDiagnosticsBtn.disabled = false
       })
   })
 

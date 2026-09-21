@@ -1635,6 +1635,32 @@ test("AppCore: a transcript with no prior ASR error broadcasts no status:update 
     port: 0,
     tokens: TOKENS,
   })
+
+  test("AppCore: getDiagnostics returns safe operational state without secrets", async () => {
+    const asr = new FakeAsrProvider()
+    const app = await startAppCore({
+      asr,
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new EchoVerseSource(),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+    })
+    try {
+      asr.emitError(new RateLimitError("Transcription en pause", undefined, "throttling"))
+      const diagnostics = app.getDiagnostics()
+      assert.equal(diagnostics.asrHealth, "throttled")
+      assert.equal(typeof diagnostics.generatedAt, "number")
+      assert.equal(typeof diagnostics.silenceGate.framesReceived, "number")
+      assert.equal(diagnostics.sessionEntries, 0)
+      assert.equal(diagnostics.sessionHistoryEntries, 0)
+      assert.equal("groqApiKey" in diagnostics, false)
+      assert.equal("operatorToken" in diagnostics, false)
+    } finally {
+      await app.stop()
+    }
+  })
   try {
     const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
     // ARCHITECTURE.md section 70: a transcript:final echo is expected for

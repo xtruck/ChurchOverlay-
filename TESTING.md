@@ -69,6 +69,7 @@ Current status:
 | malformed API response | `free-api-source.test.ts` |
 | WebSocket disconnect | `server.test.ts`; both real WS clients reconnect with capped backoff (see SECURITY.md) |
 | invalid WS message | `action-registry.test.ts`, `server.test.ts` |
+| diagnostics snapshot contains operational state without secrets | `app-core.test.ts` |
 
 Two categories from that list have no dedicated fixture, deliberately: **low-quality
 transcript** has no v1 provider that exposes a usable quality signal (GroqProvider

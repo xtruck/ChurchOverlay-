@@ -732,6 +732,23 @@ ipcMain.handle("export-session", async () => {
     title: "Choose a folder to export to",
     properties: ["openDirectory", "createDirectory"],
   })
+
+  ipcMain.handle("export-diagnostics", async () => {
+    if (!dashboardWindow) throw new Error("dashboard window is not available")
+    if (!appCoreHandle) throw new Error("services are not started yet")
+
+    const result = await dialog.showOpenDialog(dashboardWindow, {
+      title: "Choose a folder to export diagnostics to",
+      properties: ["openDirectory", "createDirectory"],
+    })
+    if (result.canceled || result.filePaths.length === 0) return { canceled: true as const }
+
+    const targetDir = result.filePaths[0] as string
+    const path = join(targetDir, "churchoverlay-diagnostics.json")
+    await writeFile(path, JSON.stringify(appCoreHandle.getDiagnostics(), null, 2), "utf8")
+    logger.info({ component: "main", event: "diagnostics.exported", metadata: { targetDir } })
+    return { canceled: false as const, path }
+  })
   if (result.canceled || result.filePaths.length === 0) {
     return { canceled: true as const }
   }

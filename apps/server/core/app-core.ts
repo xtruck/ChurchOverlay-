@@ -231,6 +231,13 @@ export type AppCoreHandle = {
    * (e.g. mediaLibrary-less media:select handling).
    */
   getSessionHistory(): readonly SessionHistoryEntry[]
+  getDiagnostics(): {
+    generatedAt: number
+    asrHealth: AsrStatusPayload["asrHealth"]
+    silenceGate: ReturnType<SilenceGate["getMetrics"]>
+    sessionEntries: number
+    sessionHistoryEntries: number
+  }
   stop(): Promise<void>
 }
 
@@ -1436,6 +1443,15 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     },
     getSessionHistory() {
       return sessionHistoryStore?.getEntries() ?? []
+    },
+    getDiagnostics() {
+      return {
+        generatedAt: Date.now(),
+        asrHealth: currentAsrHealth(),
+        silenceGate: silenceGate.getMetrics(),
+        sessionEntries: sessionRecorder.getEntries().length,
+        sessionHistoryEntries: sessionHistoryStore?.getEntries().length ?? 0,
+      }
     },
     async stop() {
       if (definitionClearTimer) clearTimeout(definitionClearTimer)

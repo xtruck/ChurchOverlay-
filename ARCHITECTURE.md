@@ -4649,3 +4649,21 @@ document response validation, failure classification, cache identity, secret
 handling, and deterministic tests. Any new operator-facing state must define its
 wire payload, role permissions, reconnect behavior, and dashboard severity before
 code is added.
+
+## 84. Production Diagnostics Export
+
+The operator dashboard now exposes an explicit diagnostics export action. It writes
+`churchoverlay-diagnostics.json` to an operator-selected folder and contains only
+operational state: generation time, current ASR health, SilenceGate metrics, and
+session/history entry counts.
+
+The export is intentionally **not** a general log or configuration dump. It never
+includes Groq credentials, WebSocket tokens, raw microphone samples, transcript
+content, filesystem paths from configuration, or decrypted secrets. The main process
+owns the native folder picker and file write; the renderer receives only the result
+path, preserving the existing Electron boundary.
+
+`AppCore.getDiagnostics()` is the single source for the snapshot, so the dashboard
+cannot invent health values or read internal server state directly. The snapshot is
+safe to collect while ASR is throttled, in error, or recovering, and its shape is
+covered by an AppCore integration test.
