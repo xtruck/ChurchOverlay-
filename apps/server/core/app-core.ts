@@ -1310,8 +1310,17 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // non-protected tokens); it returns the SAME text unchanged when there
     // is nothing to fix, so transcripts with no known confusion are a
     // no-op and cost a single regex split.
-    const corrected = correctTranscription(postprocessTranscript(transcript.text))
-    const correctedText = corrected.correctedText
+    //
+    // Order matters here: correctTranscription() must run on the RAW text,
+    // before postprocessTranscript(). Its table matches whole whitespace-
+    // delimited tokens (e.g. "v.c." -> "verset"), and
+    // normalizePunctuation() (part of postprocessTranscript) inserts a
+    // space after punctuation like periods — running it first turns
+    // "V.C." into "V. C." and silently breaks the token match, so the
+    // exact hallucination this correction exists to catch would reach
+    // every downstream consumer uncorrected.
+    const corrected = correctTranscription(transcript.text)
+    const correctedText = postprocessTranscript(corrected.correctedText)
     // Audit trail at debug so it never drowns the info-level transcript
     // log — but it IS greppable when tracing a "why did it detect X" case.
     if (corrected.corrections.length > 0) {
@@ -1392,34 +1401,46 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       })
 
     if (transcript.state === "final") {
-      const assembledText = transcriptAssembler.push({
-        text: transcript.text,
-        timestamp: transcript.timestamp,
-      })
       const currentHasReference = detector.detect(transcript.text).length > 0
-      if (assembledText && assembledText !== transcript.text && assembledText !== lastAssembledText && !currentHasReference) {
-        lastAssembledText = assembledText
-        resolveTranscriptVerses(
-          { ...transcript, text: assembledText },
-          detector,
-          index,
-          source,
-          cache,
-          circuitBreaker,
-          logger,
-        )
-          .then((verses) => {
-            for (const verse of verses) {
-              if (verseConfirmationMode === "review") broadcastPendingVerse(verse, transcript.correlationId)
-              else broadcastVerse(verse, "detected", transcript.correlationId)
-            }
-          })
-          .catch((err) => logger.error({
-            component: "app-core",
-            event: "transcript.assembly-failed",
-            correlationId: transcript.correlationId,
-            error: err instanceof Error ? err.message : String(err),
-          }))
+      if (currentHasReference) {
+        // This transcript already contains a complete, standalone
+        // reference — the primary detection path above already handles
+        // it. Reset rather than push: leaving an already-complete
+        // fragment in the assembler's window let a later, unrelated
+        // transcript recombine with it and re-detect the SAME reference
+        // a second time (a real regression — e.g. "next verse" spoken
+        // right after a detected reference recombined with it and
+        // re-showed the OLD verse instead of advancing to the next one).
+        transcriptAssembler.reset()
+      } else {
+        const assembledText = transcriptAssembler.push({
+          text: transcript.text,
+          timestamp: transcript.timestamp,
+        })
+        if (assembledText && assembledText !== transcript.text && assembledText !== lastAssembledText) {
+          lastAssembledText = assembledText
+          resolveTranscriptVerses(
+            { ...transcript, text: assembledText },
+            detector,
+            index,
+            source,
+            cache,
+            circuitBreaker,
+            logger,
+          )
+            .then((verses) => {
+              for (const verse of verses) {
+                if (verseConfirmationMode === "review") broadcastPendingVerse(verse, transcript.correlationId)
+                else broadcastVerse(verse, "detected", transcript.correlationId)
+              }
+            })
+            .catch((err) => logger.error({
+              component: "app-core",
+              event: "transcript.assembly-failed",
+              correlationId: transcript.correlationId,
+              error: err instanceof Error ? err.message : String(err),
+            }))
+        }
       }
     }
 

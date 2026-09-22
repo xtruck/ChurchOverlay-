@@ -127,6 +127,11 @@ function isTranscriptEcho(message: WsMessage): boolean {
   return message.type === "transcript:partial" || message.type === "transcript:final"
 }
 
+// broadcastAsrStatus() always attaches a live SilenceGate metrics snapshot
+// to every status:update now; these tests never send an audio frame first,
+// so it's always this all-zero shape.
+const ZERO_AUDIO_METRICS = { framesReceived: 0, framesRejected: 0, framesForwarded: 0, averageRms: 0, maxRms: 0 }
+
 function isAutoSyncNoise(message: WsMessage): boolean {
   return isTranscriptEcho(message) || message.type === "layout:update"
 }
@@ -229,7 +234,12 @@ test("AppCore: mic:start triggers calibration — nothing is forwarded to ASR un
     operatorSocket.send(JSON.stringify({ id: "01A", type: "mic:start", timestamp: Date.now(), payload: null }))
     const startedMsg = await calibratingStarted
     assert.equal(startedMsg.type, "status:update")
-    assert.deepEqual(startedMsg.payload, { asrHealth: "ok", micCalibrating: true })
+    // ARCHITECTURE.md: broadcastAsrStatus() now always includes a live
+    // audioMetrics snapshot from the SilenceGate alongside asrHealth, so
+    // VAD starvation is diagnosable from the dashboard, not just server
+    // logs. No frame has reached the gate yet at this point, so every
+    // counter is zero.
+    assert.deepEqual(startedMsg.payload, { asrHealth: "ok", micCalibrating: true, audioMetrics: ZERO_AUDIO_METRICS })
 
     // 10ms at 16kHz is a small handful of samples — one loud frame is
     // enough to finish calibration, but it must still be REJECTED (part
@@ -635,7 +645,14 @@ test("AppCore: media:select with an unknown id broadcasts nothing", async () => 
         await writeFile(secondSource, "y")
         const first = await mediaLibrary.import(firstSource, "First Slide", "image")
         const second = await mediaLibrary.import(secondSource, "Second Slide", "image")
-        await mediaLibrary.setAutoClearDuration(first.id, 40)
+        // A generous duration relative to the WS round-trip + waitFor
+        // polling overhead below (a real race, not a mocked clock): under
+        // heavy parallel test-suite load, the time between arming this
+        // timer and the server processing the replacing media:select can
+        // occasionally stretch well past a couple dozen ms, which
+        // previously (40ms) made this test genuinely flaky rather than
+        // actually catching a cancellation bug.
+        await mediaLibrary.setAutoClearDuration(first.id, 300)
         await mediaLibrary.setAutoClearDuration(second.id, null)
 
         const app = await startAppCore({
@@ -660,7 +677,7 @@ test("AppCore: media:select with an unknown id broadcasts nothing", async () => 
           await waitFor(() => messages.some((message) => message.type === "media:show"))
           operatorSocket.send(JSON.stringify({ id: "01SECOND", type: "media:select", timestamp: Date.now(), payload: { id: second.id } }))
           await waitFor(() => messages.filter((message) => message.type === "media:show").length === 2)
-          await new Promise((resolve) => setTimeout(resolve, 70))
+          await new Promise((resolve) => setTimeout(resolve, 150))
           assert.equal(messages.some((message) => message.type === "media:clear"), false)
 
           operatorSocket.send(JSON.stringify({ id: "01CLEAR", type: "media:clear", timestamp: Date.now(), payload: null }))
@@ -1673,6 +1690,7 @@ test("AppCore: an ASR error broadcasts status:update, and the next successful tr
       assert.deepEqual((await throttledMessage).payload, {
         asrHealth: "throttled",
         error: "Transcription en pause",
+        audioMetrics: ZERO_AUDIO_METRICS,
       })
 
       const recoveryMessage = waitForMessage(viewerSocket)
@@ -1684,13 +1702,14 @@ test("AppCore: an ASR error broadcasts status:update, and the next successful tr
         state: "final",
         timestamp: Date.now(),
       })
-      assert.deepEqual((await recoveryMessage).payload, { asrHealth: "ok" })
+      assert.deepEqual((await recoveryMessage).payload, { asrHealth: "ok", audioMetrics: ZERO_AUDIO_METRICS })
 
       const sustainedMessage = waitForMessage(viewerSocket)
       asr.emitRateLimitedSustained()
       assert.deepEqual((await sustainedMessage).payload, {
         asrHealth: "rate-limited",
         error: "Limite de débit Groq atteinte, envisagez une mise à jour du palier",
+        audioMetrics: ZERO_AUDIO_METRICS,
       })
 
       viewerSocket.close()
@@ -1705,7 +1724,7 @@ test("AppCore: an ASR error broadcasts status:update, and the next successful tr
     asr.emitError(new Error("Groq connection lost"))
     const errorStatus = await errorMessage
     assert.equal(errorStatus.type, "status:update")
-    assert.deepEqual(errorStatus.payload, { asrHealth: "error", error: "Groq connection lost" })
+    assert.deepEqual(errorStatus.payload, { asrHealth: "error", error: "Groq connection lost", audioMetrics: ZERO_AUDIO_METRICS })
 
     const recoveryMessage = waitForMessage(viewerSocket)
     asr.emitTranscript({
@@ -1718,7 +1737,7 @@ test("AppCore: an ASR error broadcasts status:update, and the next successful tr
     })
     const recoveryStatus = await recoveryMessage
     assert.equal(recoveryStatus.type, "status:update")
-    assert.deepEqual(recoveryStatus.payload, { asrHealth: "ok" })
+    assert.deepEqual(recoveryStatus.payload, { asrHealth: "ok", audioMetrics: ZERO_AUDIO_METRICS })
 
     viewerSocket.close()
   } finally {
@@ -1810,6 +1829,7 @@ test("AppCore: successful ASR failover is informational and manual return restor
    assert.deepEqual((await failoverMessage).payload, {
      asrHealth: "failover",
      error: "Bascule automatique vers Deepgram active",
+     audioMetrics: ZERO_AUDIO_METRICS,
    })
 
    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
@@ -1820,7 +1840,7 @@ test("AppCore: successful ASR failover is informational and manual return restor
      timestamp: Date.now(),
      payload: null,
    }))
-   assert.deepEqual((await returnMessage).payload, { asrHealth: "ok" })
+   assert.deepEqual((await returnMessage).payload, { asrHealth: "ok", audioMetrics: ZERO_AUDIO_METRICS })
    assert.equal(asr.returnToPrimaryCalls, 1)
    operatorSocket.close()
    viewerSocket.close()
