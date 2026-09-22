@@ -4677,7 +4677,7 @@ cannot invent health values or read internal server state directly. The snapshot
 safe to collect while ASR is throttled, in error, or recovering, and its shape is
 covered by an AppCore integration test.
 
-## 84. Per-Media Auto-Clear Timers
+## 85. Per-Media Auto-Clear Timers
 
 Each imported `MediaCue` may persist an optional `autoClearMs` duration. The
 `MediaLibrary` owns this metadata and updates it atomically through the operator-only
@@ -4694,7 +4694,7 @@ Per-media timing is deliberately separate from the principal-poster timer. Pinni
 remains an image-only poster-layer feature; its existing `poster:set-duration`
 behavior is unchanged.
 
-## 85. Deepgram Streaming ASR Option
+## 86. Deepgram Streaming ASR Option
 
 `DeepgramProvider` is an optional cloud ASR adapter using Deepgram's persistent
 WebSocket streaming endpoint with canonical PCM16/16 kHz mono audio. It emits
@@ -4719,7 +4719,7 @@ allows the failover wrapper to retry a fresh connection when explicitly
 started. A failed handshake also clears connection state; it never leaves the
 secondary provider falsely marked as active.
 
-## 86. ASR Post-processing and Benchmark Utilities
+## 87. ASR Post-processing and Benchmark Utilities
 
 ASR text passes through deterministic normalization, punctuation cleanup, known
 Bible-term casing, and the existing conservative phonetic corrector before the
@@ -4747,3 +4747,61 @@ This reduces local CPU/RAM/GPU usage compared with local inference, but it does
 not provide unlimited free usage: Deepgram remains subject to account pricing,
 credits, and service limits. Streaming reduces request overhead and latency; it
 does not remove the provider's billing boundary.
+
+## 88. Production Audit (2026-09-22) — Punctuation, Assembler, and Correction-Order Regressions
+
+A routine `npm test` run (prompted by an unrelated documentation audit) never
+finished — Node's default test runner applies no timeout, and several
+`app-core.test.ts` cases were hanging indefinitely waiting for a `verse:show`
+that never arrived. All three findings below trace to the same section 87
+post-processing pipeline landing without `app-core.test.ts` being re-run
+against it, and all three are live-pipeline bugs, not test-only artifacts.
+
+### 88.1 Tight chapter:verse references were silently undetectable
+
+`normalizePunctuation()` (`postprocess/punctuation.ts`) added a space after
+every punctuation character, including `:` — turning `"John 3:16"` into
+`"John 3: 16"` before it ever reached `RegexDetector`. `RegexDetector`'s
+reference pattern requires the colon tight against both digits by deliberate,
+documented design (see that file's own CORRECTIF history), so this silently
+zeroed out detection for the single most common spoken-reference shape. Live
+ASR output for a spoken reference is normally already tight, not spaced, so
+this was not a rare edge case.
+
+**Fixed**: the colon is now only space-padded when it is not flanked by a
+digit on both sides. Regression test added in `postprocess.test.ts`.
+
+### 88.2 The fragment assembler could re-broadcast a stale verse
+
+`TranscriptAssembler` (introduced for references split across two ASR
+chunks, section 87) was pushed every final transcript unconditionally, even
+one that already contained a complete, standalone reference. That
+already-resolved fragment then lingered in the assembler's window, so the
+*next* unrelated transcript — e.g. a voice navigation command like "next
+verse" spoken right after a detected reference — could recombine with it,
+re-detect the same old reference, and race the correct navigation broadcast.
+In the reproducing test, the stale re-detection won the race and displayed
+the old verse instead of advancing.
+
+**Fixed**: `app-core.ts`'s transcript handler now resets the assembler
+(instead of pushing into it) whenever the current transcript already stands
+alone with a reference, since there is nothing left to assemble.
+
+### 88.3 Hallucination correction ran after, not before, punctuation normalization
+
+`correctTranscription()`'s phonetic-confusion table (e.g. `"v.c."` →
+`"verset"`, a real, frequently observed Whisper mis-hearing) matches whole
+whitespace-delimited tokens. The transcript handler called it as
+`correctTranscription(postprocessTranscript(text))` — punctuation
+normalization ran first and split `"V.C."` into `"V. C."`, so the token match
+silently missed, defeating the exact correction this module exists for. The
+handler's own comment already stated the intent ("apply ... correction to
+the raw ASR text BEFORE any consumer sees it"); the call order just didn't
+match it.
+
+**Fixed**: swapped the order to `postprocessTranscript(correctTranscription(text).correctedText)`.
+
+No architecture boundary, protocol, or interface changed — all three are
+correctness fixes inside the existing section 23 pipeline, caught by
+re-running the existing `app-core.test.ts` suite rather than trusting the
+prior commit's own (never re-run) test pass.
