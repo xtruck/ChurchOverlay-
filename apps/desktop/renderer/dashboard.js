@@ -163,6 +163,7 @@
       })
   })
   const exportSessionBtn = document.getElementById("export-session-btn")
+  const exportRehearsalBtn = document.getElementById("export-rehearsal-btn")
   const exportDiagnosticsBtn = document.getElementById("export-diagnostics-btn")
   const sermonNotesToggleEl = document.getElementById("sermon-notes-toggle")
   const sidebarEl = document.getElementById("sidebar")
@@ -1972,6 +1973,26 @@
       .finally(() => {
         exportSessionBtn.disabled = false
         exportSessionBtn.textContent = t("session.exportButton")
+      })
+  })
+
+  exportRehearsalBtn.addEventListener("click", () => {
+    exportRehearsalBtn.disabled = true
+    exportRehearsalBtn.textContent = t("session.exporting")
+    window.churchOverlay
+      .exportRehearsal()
+      .then((result) => {
+        if (result.canceled) return
+        if (result.error) {
+          log(result.error, "error")
+        } else {
+          log(t("log.rehearsalExported", { count: result.count, targetDir: result.targetDir }), "received")
+        }
+      })
+      .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
+      .finally(() => {
+        exportRehearsalBtn.disabled = false
+        exportRehearsalBtn.textContent = t("session.exportRehearsalButton")
       })
   })
 
