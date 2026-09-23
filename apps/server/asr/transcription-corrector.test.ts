@@ -23,6 +23,31 @@ test("corrector: 'som' (observed live, 'some' clipped further) is corrected to '
   assert.equal(result.correctedText, "psaume 3")
 })
 
+test("corrector: 'somme' (observed live, 2026-09-23) is corrected to 'psaume'", () => {
+  const result = correctTranscription("somme 3")
+  assert.equal(result.correctedText, "psaume 3")
+})
+
+// Observed live (2026-09-23): "Habakkuk"/"Abacuc" heard as two separate
+// words. RegexDetector's book-name group can only ever match one word, so
+// this has to be collapsed before detection runs, not handled as a
+// multi-word book alias.
+test("corrector: 'Abba Kouk' (observed live, 2026-09-23) is corrected to 'Abacuc'", () => {
+  const result = correctTranscription("Abba Kouk 1, verset 2")
+  assert.equal(result.correctedText, "Abacuc 1, verset 2")
+})
+
+test("corrector: 'passé' before 'suivant' (observed live, 2026-09-23) is corrected to 'verset'", () => {
+  const result = correctTranscription("Le passé suivant.")
+  assert.equal(result.correctedText, "Le verset suivant.")
+})
+
+test("corrector: standalone 'passé' (valid word, 'the past') is left untouched", () => {
+  const result = correctTranscription("dans le passé, Dieu a agi")
+  assert.equal(result.correctedText, "dans le passé, Dieu a agi")
+  assert.equal(result.corrections.length, 0)
+})
+
 test("corrector: the valid word 'est' is NOT corrected to 'et'", () => {
   const result = correctTranscription("il est trois heures")
   assert.equal(result.correctedText, "il est 3 heures")

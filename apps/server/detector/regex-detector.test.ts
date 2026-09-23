@@ -125,6 +125,10 @@ test("normalizeBookName: 'Abacuc' with the initial H dropped still resolves (obs
   assert.equal(normalizeBookName("Abacuc"), "habakkuk")
 })
 
+test("normalizeBookName: 'Abaku' (H and trailing C both dropped, observed live, 2026-09-23) still resolves", () => {
+  assert.equal(normalizeBookName("Abaku"), "habakkuk")
+})
+
 test("normalizeBookName: an English name is returned unchanged (still needs no translation)", () => {
   assert.equal(normalizeBookName("John"), "john")
   assert.equal(normalizeBookName("Romans"), "romans")
@@ -134,4 +138,15 @@ test("RegexDetector: detects spoken French chapter and verse wording", () => {
   const detector = new RegexDetector()
   assert.deepEqual(detector.detect("Ésaïe 4, verset 8"), [{ book: "isaiah", chapter: 4, verse: 8 }])
   assert.deepEqual(detector.detect("Jean 3 chapitre 16"), [{ book: "john", chapter: 3, verse: 16 }])
+})
+
+// CORRECTIF (observed live, 2026-09-23): a real service reading references
+// aloud produced ASR output with a comma after every spoken pause,
+// including right after the book name and right after "verset" — not just
+// between the chapter number and the keyword, which was already handled.
+// This previously fell through to a silent "detector.near-miss" in
+// AppCore instead of a detected reference.
+test("RegexDetector: detects spoken French wording with a comma after the book name and after the keyword (live-observed, 2026-09-23)", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("abacuc, 4, verset, 2"), [{ book: "habakkuk", chapter: 4, verse: 2 }])
 })

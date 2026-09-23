@@ -48,6 +48,7 @@ const PHONETIC_CORRECTIONS: CorrectionMap = {
   // "psaume" confusions
   "some": "psaume",
   "som": "psaume",        // observed live (2026-09): "some" clipped further to "som"
+  "somme": "psaume",      // observed live (2026-09-23): "some" heard with a French double-m ending
   "sam": "psaume",
   "saum": "psaume",
   "psalme": "psaume",     // missing 'u'
@@ -258,6 +259,33 @@ const PHONETIC_CORRECTIONS: CorrectionMap = {
   "freres": "frères",       // plural
 }
 
+// Multi-word phonetic corrections: a fixed, curated list of two-word
+// phrases Whisper produces for a single mis-heard book name. Kept
+// deliberately separate from PHONETIC_CORRECTIONS (which corrects exactly
+// one token at a time, matching RegexDetector's book-name group, which can
+// only ever capture a single word — see its own doc comment on the "Read
+// John" greedy-match regression). A two-word mis-hearing has to be
+// collapsed to one word BEFORE detection ever runs, not handled as a
+// multi-word book alias — this is a narrow, explicit exception, not a
+// general multi-word-name mechanism.
+const MULTI_WORD_PHONETIC_CORRECTIONS: ReadonlyArray<{ readonly pattern: RegExp; readonly replacement: string }> = [
+  // Observed live (2026-09-23), same test-reading session that surfaced
+  // "Abacuc"/"Abaku": "Habakkuk" heard as two separate words, "Abba Kouk".
+  { pattern: /\babba\s+kouk\b/gi, replacement: "Abacuc" },
+]
+
+function applyMultiWordCorrections(text: string): { text: string; corrections: CorrectionResult["corrections"] } {
+  const corrections: CorrectionResult["corrections"] = []
+  let result = text
+  for (const { pattern, replacement } of MULTI_WORD_PHONETIC_CORRECTIONS) {
+    result = result.replace(pattern, (match, offset: number) => {
+      corrections.push({ original: match, corrected: replacement, index: offset })
+      return replacement
+    })
+  }
+  return { text: result, corrections }
+}
+
 // Words that should NEVER be corrected because they are valid as-is
 // (book names, command words, etc.)
 function buildProtectedWords(): ReadonlySet<string> {
@@ -320,8 +348,9 @@ export function correctTranscription(text: string): CorrectionResult {
     return { originalText: text, correctedText: text, corrections: [] }
   }
 
-  const words = text.split(/(\s+)/) // Keep whitespace as separate tokens
-  const corrections: CorrectionResult["corrections"] = []
+  const multiWord = applyMultiWordCorrections(text)
+  const words = multiWord.text.split(/(\s+)/) // Keep whitespace as separate tokens
+  const corrections: CorrectionResult["corrections"] = [...multiWord.corrections]
 
   for (let i = 0; i < words.length; i++) {
     const token = words[i]
@@ -346,6 +375,22 @@ export function correctTranscription(text: string): CorrectionResult {
       }
     }
 
+    // Contextual correction (observed live, 2026-09-23): "passé"/"passe"
+    // is only a misheard "verset" when immediately followed by "suivant"
+    // or "precedent" ("Le passé suivant" instead of "Le verset suivant").
+    // "passé" ("past") is otherwise a common, meaningful French word —
+    // corrected only in this specific two-word navigation context, the
+    // same gating "souvent" above already uses for the same reason.
+    if (lowerToken === "passé" || lowerToken === "passe") {
+      const nextLower = nextNonWhitespaceLower(words, i).replace(/[,.;:!?]+$/, "")
+      const nextResolved = PHONETIC_CORRECTIONS[nextLower] ?? nextLower
+      if (nextResolved === "suivant" || nextResolved === "précédent" || nextResolved === "precedent") {
+        effectiveToken = "passe-nav-context"
+      } else {
+        continue
+      }
+    }
+
     // Trailing-punctuation-tolerant fallback: real ASR output attaches
     // sentence punctuation directly to a word ("v.c.," "verset?"), which
     // would otherwise defeat an exact-token lookup even though the
@@ -361,7 +406,7 @@ export function correctTranscription(text: string): CorrectionResult {
     // trailing (never leading) punctuation is stripped: nothing in this
     // table is ever prefixed.
     let trailingPunct = ""
-    if (effectiveToken !== "souvent" && !(effectiveToken in PHONETIC_CORRECTIONS)) {
+    if (effectiveToken !== "souvent" && effectiveToken !== "passe-nav-context" && !(effectiveToken in PHONETIC_CORRECTIONS)) {
       const stripped = effectiveToken.match(/^(.+)([,.;:!?])$/)
       const core = stripped?.[1]
       const punct = stripped?.[2]
@@ -372,7 +417,10 @@ export function correctTranscription(text: string): CorrectionResult {
     }
 
 // Check for correction
-    const corrected = effectiveToken === "souvent" ? "suivant" : PHONETIC_CORRECTIONS[effectiveToken]
+    const corrected =
+      effectiveToken === "souvent" ? "suivant" :
+      effectiveToken === "passe-nav-context" ? "verset" :
+      PHONETIC_CORRECTIONS[effectiveToken]
     if (corrected && corrected !== effectiveToken) {
       // Use local const with explicit type to satisfy TypeScript control flow
       const corr: string = corrected

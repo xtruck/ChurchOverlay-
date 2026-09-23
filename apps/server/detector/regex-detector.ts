@@ -72,8 +72,19 @@ import type { VerseDetector, VerseReference } from "../../../packages/contracts"
  */
 const REFERENCE_PATTERN =
   /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)\s+(\d{1,3}):(\d{1,3})(?![\p{L}\d])/gu
+// CORRECTIF (observed live, 2026-09-23): a real service reading references
+// aloud produced ASR output with a comma after every spoken pause — not
+// just between the chapter number and "verset" (already tolerated below),
+// but also right after the book name and right after the keyword itself,
+// e.g. "abacuc, 4, verset, 2". The previous pattern required plain
+// whitespace (`\s+`) at those two positions, so a comma there broke the
+// match entirely — a real reference silently lost, not just a stylistic
+// miss. All three separators are now `[\s,]+` (one or more of whitespace
+// or comma, comma optional but never the *only* required character),
+// which still refuses to match a run-together "abacuc4verset2" with no
+// separator at all.
 const SPOKEN_REFERENCE_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)\s+(\d{1,3})(?:\s*,?\s*)(?:chapitre|chapter|verset|verse|le\s+verset|the\s+verse)\s+(\d{1,3})(?![\p{L}\d])/giu
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})[\s,]+(?:chapitre|chapter|verset|verse|le\s+verset|the\s+verse)[\s,]+(\d{1,3})(?![\p{L}\d])/giu
 
 // Deliberately small and conservative: only the short function words most
 // likely to coincidentally precede a "N:M"-shaped pattern in ordinary
@@ -181,6 +192,9 @@ export const FRENCH_BOOK_ALIASES: Readonly<Record<string, string>> = {
   // chapter by chapter — not a one-off, the same drop recurred
   // consistently for this specific word.
   abacuc: "habakkuk",
+  // Observed live (2026-09-23), same test-reading session: also heard as
+  // "Abaku" (trailing "c" dropped as well as the leading "H").
+  abaku: "habakkuk",
   sophonie: "zephaniah",
   aggee: "haggai",
   zacharie: "zechariah",
