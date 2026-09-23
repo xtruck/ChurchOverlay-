@@ -48,6 +48,45 @@ test("corrector: standalone 'passé' (valid word, 'the past') is left untouched"
   assert.equal(result.corrections.length, 0)
 })
 
+test("corrector: 'Abba Bouk' (observed live, 2026-09-23) is corrected to 'Abacuc'", () => {
+  const result = correctTranscription("Abba Bouk 1, verset 2.")
+  assert.equal(result.correctedText, "Abacuc 1, verset 2.")
+})
+
+test("corrector: 'versic' (observed live, 2026-09-23) is corrected to 'verset'", () => {
+  const result = correctTranscription("Esaïe 4, versic 7")
+  assert.equal(result.correctedText, "Esaïe 4, verset 7")
+})
+
+// Observed live (2026-09-23): a distinct failure mode from every other
+// "verset" confusion above — a MISSING separator (the abbreviation glued
+// directly to the following digit), not an extra one, so neither the
+// exact-token lookup nor its trailing-punctuation fallback could catch it.
+test("corrector: an abbreviation glued directly to its digit ('vc2', 'wc4') is split and corrected", () => {
+  assert.equal(correctTranscription("vc2. Zoom, abdias,").correctedText, "verset 2. Zoom, abdias,")
+  assert.equal(correctTranscription("le WC4.").correctedText, "le verset 4.")
+})
+
+test("corrector: 'web' before a number (observed live, 2026-09-23) is corrected to 'verset'", () => {
+  assert.equal(correctTranscription("au web 1 verset 2").correctedText, "au verset 1 verset 2")
+})
+
+test("corrector: standalone 'web' (valid loanword, 'site web') is left untouched", () => {
+  const result = correctTranscription("le site web de l'église")
+  assert.equal(result.correctedText, "le site web de l'église")
+  assert.equal(result.corrections.length, 0)
+})
+
+test("corrector: 'bacille' before 'suivant' (observed live, 2026-09-23) is corrected to 'verset'", () => {
+  assert.equal(correctTranscription("le bacille suivant").correctedText, "le verset suivant")
+})
+
+test("corrector: standalone 'bacille' (valid word, 'bacillus') is left untouched", () => {
+  const result = correctTranscription("un bacille dangereux")
+  assert.equal(result.correctedText, "un bacille dangereux")
+  assert.equal(result.corrections.length, 0)
+})
+
 test("corrector: the valid word 'est' is NOT corrected to 'et'", () => {
   const result = correctTranscription("il est trois heures")
   assert.equal(result.correctedText, "il est 3 heures")

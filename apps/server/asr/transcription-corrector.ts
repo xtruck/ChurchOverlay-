@@ -44,6 +44,7 @@ const PHONETIC_CORRECTIONS: CorrectionMap = {
   "vete": "verset",       // observed clipped "verset" output
   "verset.": "verset",    // with punctuation
   "vestu": "verset",      // observed live (2026-09): "verset suivant" heard as "vestu suivant"
+  "versic": "verset",     // observed live (2026-09-23): "verset" heard as "versic"
 
   // "psaume" confusions
   "some": "psaume",
@@ -272,7 +273,30 @@ const MULTI_WORD_PHONETIC_CORRECTIONS: ReadonlyArray<{ readonly pattern: RegExp;
   // Observed live (2026-09-23), same test-reading session that surfaced
   // "Abacuc"/"Abaku": "Habakkuk" heard as two separate words, "Abba Kouk".
   { pattern: /\babba\s+kouk\b/gi, replacement: "Abacuc" },
+  // Observed live (2026-09-23), a later session: the same "Habakkuk as two
+  // words" confusion with a different second syllable, "Abba Bouk".
+  { pattern: /\babba\s+bouk\b/gi, replacement: "Abacuc" },
 ]
+
+// CORRECTIF (observed live, 2026-09-23): Whisper sometimes glues a known
+// abbreviation directly to the following digit with no space at all
+// ("vc2", "wc4" instead of "vc 2"/"wc 4") — a distinct failure mode from
+// the trailing-punctuation case below (a MISSING separator, not an extra
+// one), so the exact-token lookup and its punctuation-stripping fallback
+// both miss it outright. A dedicated pre-pass, same reasoning as the
+// multi-word corrections above: this has to happen before tokenizing,
+// since "vc2" is one token, not two, until this splits it.
+const GLUED_ABBREVIATION_DIGIT_PATTERN = /\b(v\.?c\.?|w\.?c\.?)(\d{1,3})\b/gi
+
+function applyGluedAbbreviationCorrections(text: string): { text: string; corrections: CorrectionResult["corrections"] } {
+  const corrections: CorrectionResult["corrections"] = []
+  const result = text.replace(GLUED_ABBREVIATION_DIGIT_PATTERN, (match, _abbrev: string, digits: string, offset: number) => {
+    const replacement = `verset ${digits}`
+    corrections.push({ original: match, corrected: replacement, index: offset })
+    return replacement
+  })
+  return { text: result, corrections }
+}
 
 function applyMultiWordCorrections(text: string): { text: string; corrections: CorrectionResult["corrections"] } {
   const corrections: CorrectionResult["corrections"] = []
@@ -349,8 +373,9 @@ export function correctTranscription(text: string): CorrectionResult {
   }
 
   const multiWord = applyMultiWordCorrections(text)
-  const words = multiWord.text.split(/(\s+)/) // Keep whitespace as separate tokens
-  const corrections: CorrectionResult["corrections"] = [...multiWord.corrections]
+  const gluedAbbreviation = applyGluedAbbreviationCorrections(multiWord.text)
+  const words = gluedAbbreviation.text.split(/(\s+)/) // Keep whitespace as separate tokens
+  const corrections: CorrectionResult["corrections"] = [...multiWord.corrections, ...gluedAbbreviation.corrections]
 
   for (let i = 0; i < words.length; i++) {
     const token = words[i]
@@ -391,6 +416,36 @@ export function correctTranscription(text: string): CorrectionResult {
       }
     }
 
+    // Contextual correction (observed live, 2026-09-23, twice in one
+    // session): "web" is only a misheard "verset" when immediately
+    // followed by a number ("au web 1" instead of "au verset 1") — "web"
+    // is an ordinary loanword (site web, web design) that must never be
+    // touched otherwise. Same gating shape as "souvent" above.
+    if (lowerToken === "web") {
+      const nextLower = nextNonWhitespaceLower(words, i)
+      const nextResolved = PHONETIC_CORRECTIONS[nextLower] ?? nextLower
+      if (/^\d+([:-]\d+)?$/.test(nextResolved)) {
+        effectiveToken = "web-nav-context"
+      } else {
+        continue
+      }
+    }
+
+    // Contextual correction (observed live, 2026-09-23): "bacille"
+    // ("bacillus/germ") is only a misheard "verset" when immediately
+    // followed by "suivant" — "le bacille suivant" is not a sentence
+    // French ever produces otherwise, the same reasoning "passé suivant"
+    // above already uses.
+    if (lowerToken === "bacille") {
+      const nextLower = nextNonWhitespaceLower(words, i).replace(/[,.;:!?]+$/, "")
+      const nextResolved = PHONETIC_CORRECTIONS[nextLower] ?? nextLower
+      if (nextResolved === "suivant" || nextResolved === "précédent" || nextResolved === "precedent") {
+        effectiveToken = "bacille-nav-context"
+      } else {
+        continue
+      }
+    }
+
     // Trailing-punctuation-tolerant fallback: real ASR output attaches
     // sentence punctuation directly to a word ("v.c.," "verset?"), which
     // would otherwise defeat an exact-token lookup even though the
@@ -406,7 +461,12 @@ export function correctTranscription(text: string): CorrectionResult {
     // trailing (never leading) punctuation is stripped: nothing in this
     // table is ever prefixed.
     let trailingPunct = ""
-    if (effectiveToken !== "souvent" && effectiveToken !== "passe-nav-context" && !(effectiveToken in PHONETIC_CORRECTIONS)) {
+    const isContextSentinel =
+      effectiveToken === "souvent" ||
+      effectiveToken === "passe-nav-context" ||
+      effectiveToken === "web-nav-context" ||
+      effectiveToken === "bacille-nav-context"
+    if (!isContextSentinel && !(effectiveToken in PHONETIC_CORRECTIONS)) {
       const stripped = effectiveToken.match(/^(.+)([,.;:!?])$/)
       const core = stripped?.[1]
       const punct = stripped?.[2]
@@ -420,6 +480,8 @@ export function correctTranscription(text: string): CorrectionResult {
     const corrected =
       effectiveToken === "souvent" ? "suivant" :
       effectiveToken === "passe-nav-context" ? "verset" :
+      effectiveToken === "web-nav-context" ? "verset" :
+      effectiveToken === "bacille-nav-context" ? "verset" :
       PHONETIC_CORRECTIONS[effectiveToken]
     if (corrected && corrected !== effectiveToken) {
       // Use local const with explicit type to satisfy TypeScript control flow

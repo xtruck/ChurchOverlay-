@@ -111,8 +111,18 @@ const WHOLE_UTTERANCE_RULES: readonly WholeUtteranceRule[] = [
 // to \p{L} (any case) and added catalog validation via normalizeBookName()
 // — this allows lowercase-transcribed real book names ("jean") while still
 // rejecting non-books ("to") via BOOK_CATALOG lookup.
+// CORRECTIF (2026-09-23, live-observed): the same comma-tolerance gap
+// found and fixed in RegexDetector's SPOKEN_REFERENCE_PATTERN also existed
+// here — a real service reading references aloud produces a comma at
+// every spoken pause ("Abacuc, 1, 2, 3,"), and this pattern's plain `\s+`
+// separators rejected that outright. Also widened the trailing
+// verse-exclusion lookahead to recognize "le verset"/"the verse" (not
+// just bare "verset"/"verse"), matching SPOKEN_REFERENCE_PATTERN's own
+// keyword alternation — without it, "chapitre 1, le verset 2" could be
+// misread as a chapter-only goto instead of correctly falling through to
+// the full BOOK_CHAPTER_VERSE_PATTERN.
 const GOTO_CHAPTER_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)\s+(?:[Cc]hapter|[Cc]hapitre)\s+(\d{1,3})(?![\p{L}\d])(?!:\d)(?!\s*,?\s*(?:[Vv]erse|[Vv]erset)\b)/gu
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})(?![\p{L}\d])(?!:\d)(?!\s*,?\s*(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)\b)/gu
 
 // TASK 1 + TASK 2: "<book> chapter|chapitre N[,] verse|verset M" — full
 // prose-form reference with all three components. Unlike goto-chapter (no
@@ -123,8 +133,12 @@ const GOTO_CHAPTER_PATTERN =
 // \p{Lu} (uppercase only) — TASK 2 relaxes the capitalization heuristic
 // and validates against BOOK_CATALOG via normalizeBookName() instead.
 // Accented letters are handled via \p{L}/\p{Lu} and Unicode boundaries.
+// CORRECTIF (2026-09-23, live-observed): comma-tolerant separators
+// (matching SPOKEN_REFERENCE_PATTERN's own fix) plus "le verset"/"the
+// verse" tolerance — "Jean chapitre 1, le verset 2" is exactly as real and
+// common in spoken French as "Jean chapitre 1, verset 2".
 const BOOK_CHAPTER_VERSE_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)\s+(?:[Cc]hapter|[Cc]hapitre)\s+(\d{1,3})[,]?\s+(?:[Vv]erse|[Vv]erset)\s+(\d{1,3})(?![\p{L}\d])/gu
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})[\s,]+(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)[\s,]+(\d{1,3})(?![\p{L}\d])/gu
 
 // ARCHITECTURE.md section 65.1: elliptical/continuation references —
 // "verse 16" or "chapter 9, verse 3" said after a book/chapter was already
@@ -138,16 +152,22 @@ const BOOK_CHAPTER_VERSE_PATTERN =
 // catalog validation, so this lookbehind correctly stays \p{Lu} (uppercase
 // heuristic) — "jean" is caught by the new pattern first, "to" in
 // "Turn to chapter 9" is lowercase and passes through.
+// CORRECTIF (2026-09-23, live-observed): comma-tolerant separators plus
+// "le verset"/"the verse" tolerance, same reasoning as the two patterns
+// above.
 const BARE_CHAPTER_VERSE_PATTERN =
-  /(?<!(?:[123]\s+)?\p{Lu}[\p{L}]+\s)\b(?:[Cc]hapter|[Cc]hapitre)\s+(\d{1,3})[,]?\s+(?:[Vv]erse|[Vv]erset)\s+(\d{1,3})\b/gu
+  /(?<!(?:[123]\s+)?\p{Lu}[\p{L}]+\s)\b(?:[Cc]hapter|[Cc]hapitre)[\s,]+(\d{1,3})[\s,]+(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)[\s,]+(\d{1,3})\b/gu
 
 // The lookbehind here excludes a "verse M"/"verset M" that is really the
 // tail of a "chapter N, verse M" phrase already claimed by the pattern
 // above — without it, one utterance like "chapter 9, verse 3" would
 // produce BOTH a goto-bare-chapter-verse AND a redundant goto-bare-verse
-// command for the same resolved reference.
+// command for the same resolved reference. Comma-tolerant, same reasoning
+// as every pattern above; "le verset"/"the verse" needs no explicit
+// handling here — the keyword match itself has no anchor to the start of
+// the phrase, so "le "/"the " before it was already ignored harmlessly.
 const BARE_VERSE_PATTERN =
-  /(?<!\b(?:[Cc]hapter|[Cc]hapitre)\s+\d{1,3}[,]?\s)\b(?:[Vv]erse|[Vv]erset)\s+(\d{1,3})\b/gu
+  /(?<!\b(?:[Cc]hapter|[Cc]hapitre)[\s,]+\d{1,3}[,]?\s)\b(?:[Vv]erse|[Vv]erset)[\s,]+(\d{1,3})\b/gu
 
 // PROD AUDIT 2026-09: "<Book> N" without any "chapitre"/"chapter" keyword —
 // e.g. the production case "Daniel 8", repeated 3 times and previously
@@ -156,8 +176,11 @@ const BARE_VERSE_PATTERN =
 // (?![\p{L}\d]) guards ensure "Daniel 8:1" is left to RegexDetector. The
 // number alone must not be a bare chapter/verse continuation (a following
 // "verset M" would be claimed by BOOK_CHAPTER_VERSE_PATTERN / BARE_VERSE).
+// CORRECTIF (2026-09-23, live-observed): comma-tolerant book/number
+// separator, plus "le verset"/"the verse" in the trailing exclusion — same
+// reasoning as every pattern above.
 const BOOK_BARE_CHAPTER_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)\s+(\d{1,3})(?!\s*:)(?![\p{L}\d])(?!\s*,?\s*(?:[Vv]erse|[Vv]erset)\b)/gu
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})(?!\s*:)(?![\p{L}\d])(?!\s*,?\s*(?:le\s+|the\s+)?(?:[Vv]erse|[Vv]erset)\b)/gu
 
 // PROD AUDIT 2026-09: near-miss guard helper for AppCore. True if any word
 // in the text normalizes to a catalog book name — lets the near-miss log

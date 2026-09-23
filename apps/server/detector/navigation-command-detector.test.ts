@@ -300,3 +300,29 @@ test("containsCatalogBookName: false for text with no catalog book name", () => 
 test("containsCatalogBookName: does not fire on the English word 'to' (the classic RegexDetector false-positive trap)", () => {
   assert.equal(containsCatalogBookName("Turn to chapter 9"), false)
 })
+
+// CORRECTIF (observed live, 2026-09-23): a real service reading references
+// aloud produced a comma at every spoken pause. Mirrors the identical fix
+// already applied to RegexDetector's own SPOKEN_REFERENCE_PATTERN.
+test("NavigationCommandDetector: comma-separated spoken references (live-observed, 2026-09-23)", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("Abacuc, 1, 2, 3,"), [{ kind: "goto-chapter", book: "habakkuk", chapter: 1 }])
+  assert.deepEqual(detector.detect("Jean, chapitre 1, verset 2"), [
+    { kind: "goto-book-chapter-verse", book: "john", chapter: 1, verse: 2 },
+  ])
+})
+
+// CORRECTIF (observed live, 2026-09-23): "le verset"/"the verse" is at
+// least as natural in spoken French/English as the bare keyword, and was
+// already tolerated by RegexDetector's own SPOKEN_REFERENCE_PATTERN but
+// missing from every pattern here.
+test("NavigationCommandDetector: 'le verset'/'the verse' is tolerated everywhere 'verset'/'verse' is (live-observed, 2026-09-23)", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("Jean chapitre 1, le verset 2"), [
+    { kind: "goto-book-chapter-verse", book: "john", chapter: 1, verse: 2 },
+  ])
+  assert.deepEqual(detector.detect("chapitre 1, le verset 2"), [
+    { kind: "goto-bare-chapter-verse", chapter: 1, verse: 2 },
+  ])
+  assert.deepEqual(detector.detect("Turn to the verse 2"), [{ kind: "goto-bare-verse", verse: 2 }])
+})
