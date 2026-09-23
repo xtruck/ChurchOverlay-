@@ -52,6 +52,23 @@ test("SermonNotesGenerator: summarize() posts to Groq's chat-completions endpoin
   assert.equal(body.messages[1]?.content, "Today we are talking about grace and forgiveness.")
 })
 
+// ARCHITECTURE.md section 93: the post-service service-summary feature
+// reuses this exact class with its own system prompt instead of the
+// default sermon-notes one.
+test("SermonNotesGenerator: summarize() uses a caller-supplied systemPrompt instead of the default when given one", async () => {
+  const captured: CapturedRequest[] = []
+  const generator = new SermonNotesGenerator({
+    apiKey: "test-key",
+    fetchImpl: fakeFetch(() => jsonResponse(chatCompletionBody("A short recap.")), captured),
+  })
+
+  const result = await generator.summarize("verse list + notes text", "Write a short recap.")
+
+  assert.equal(result, "A short recap.")
+  const body = JSON.parse(String(captured[0]?.init?.body)) as { messages: Array<{ role: string; content: string }> }
+  assert.equal(body.messages[0]?.content, "Write a short recap.")
+})
+
 test("SermonNotesGenerator: sends the API key via the Authorization header", async () => {
   const captured: CapturedRequest[] = []
   const generator = new SermonNotesGenerator({

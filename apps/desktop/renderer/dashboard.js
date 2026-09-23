@@ -172,6 +172,8 @@
   const exportSessionBtn = document.getElementById("export-session-btn")
   const exportRehearsalBtn = document.getElementById("export-rehearsal-btn")
   const exportDiagnosticsBtn = document.getElementById("export-diagnostics-btn")
+  const generateServiceSummaryBtn = document.getElementById("generate-service-summary-btn")
+  const serviceSummaryResultEl = document.getElementById("service-summary-result")
   const sermonNotesToggleEl = document.getElementById("sermon-notes-toggle")
   const sidebarEl = document.getElementById("sidebar")
   const viewEls = {
@@ -2054,6 +2056,38 @@
       .catch((err) => log(err.message, "error"))
       .finally(() => {
         exportDiagnosticsBtn.disabled = false
+      })
+  })
+
+  // ARCHITECTURE.md section 93: a strictly one-shot, operator-triggered
+  // digest — reads the already-rendered sermon-notes feed text directly
+  // (oldest first, since the feed itself prepends newest-first) rather
+  // than keeping a second parallel buffer of the same content.
+  function collectSermonNotesText() {
+    return [...sermonNotesFeedEl.querySelectorAll(".sermon-notes-text")]
+      .reverse()
+      .map((el) => el.textContent)
+      .join("\n")
+  }
+
+  generateServiceSummaryBtn.addEventListener("click", () => {
+    generateServiceSummaryBtn.disabled = true
+    generateServiceSummaryBtn.textContent = t("serviceSummary.generating")
+    serviceSummaryResultEl.style.display = "none"
+    window.churchOverlay
+      .generateServiceSummary(collectSermonNotesText())
+      .then((result) => {
+        if (result.error) {
+          log(t("serviceSummary.error", { error: result.error }), "error")
+          return
+        }
+        serviceSummaryResultEl.textContent = result.summary
+        serviceSummaryResultEl.style.display = "block"
+      })
+      .catch((err) => log(t("serviceSummary.error", { error: err.message }), "error"))
+      .finally(() => {
+        generateServiceSummaryBtn.disabled = false
+        generateServiceSummaryBtn.textContent = t("serviceSummary.button")
       })
   })
 

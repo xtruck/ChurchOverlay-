@@ -5007,3 +5007,61 @@ Implemented as two new plain (non-secret) fields, `organizationName` and
   the WS protocol. The overlay (congregation-facing) is intentionally
   untouched by this feature; branding here is the *operator dashboard's*
   own chrome, not the projected verse display.
+
+## 93. Phase 2 Feature Note — Post-Service AI Copilot Summary
+
+ROADMAP.md's "AI copilot" item is explicitly flagged as the highest-risk
+Phase 2 item, deferred "until a separate approval and validation design
+exists." This section is that design, for the one narrow slice actually
+being built — not the general chat/reference/slide copilot the roadmap
+still defers.
+
+**What this is**: a strictly one-shot, operator-triggered, post-service
+digest — a button in the Sermon Notes card ("Generate service summary")
+that produces a short 2-4 sentence recap for the operator/pastor's own
+records. **What this is explicitly NOT**: a live agent, a chat interface,
+anything that runs during the service, anything that proposes or looks up
+a NEW Bible reference, or anything whose output is ever displayed on the
+overlay or treated as verified content.
+
+**Why this doesn't reopen the hallucination-guard boundary (AGENTS.md
+section 14)**: the LLM call's only inputs are data that has *already*
+passed through the full validation pipeline before this feature ever sees
+it —
+
+- **Verses**: `SessionEntry[]` from `AppCore.getSessionEntries()` — the
+  exact same already-verified data `export-session`/`export-rehearsal`
+  already export. Every entry here was already validated by
+  `KnownValidVerseIndex` and actually displayed; this feature performs no
+  Bible lookup of its own and calls no `VerseSource`.
+- **Sermon notes**: the plain text already rendered in the dashboard's own
+  Sermon Notes feed (`sermon-notes-text` elements), i.e. exactly what
+  `SermonNotesGenerator` (section 65.7) already produced and broadcast
+  earlier in the service — not re-summarizing the raw transcript, and not
+  a second, independent AI call over unvalidated ASR text.
+
+`buildServiceSummaryInput()` (`apps/server/ai/service-summary.ts`, pure,
+no network call, fully unit-tested) formats exactly those two inputs into
+one prompt. The system prompt (`SERVICE_SUMMARY_SYSTEM_PROMPT`) explicitly
+instructs the model not to invent any verse/reference/quote beyond what is
+listed. Nothing about this can *add* a Bible reference to what's shown
+anywhere — there is no code path from this feature back into
+`detector`/`resolveVerse`/`verse:show` at all.
+
+**Implementation**: reuses `SermonNotesGenerator` (section 65.7) as-is —
+same Groq API key, same HTTP call, same permanent-model-error circuit
+breaker — with `summarize()` widened to accept an optional `systemPrompt`
+override (default unchanged, so every existing sermon-notes call site and
+test is unaffected) rather than duplicating that class for what is
+otherwise the same "send text to Groq, get text back" operation. A new
+`generate-service-summary` IPC handler (main process only) builds the
+input from `appCoreHandle.getSessionEntries()` plus the notes text the
+renderer sends it, and returns `{ summary }` or `{ error }` — errors are
+returned, never silently swallowed (AGENTS.md section 46): a missing Groq
+key or a failed API call surfaces to the operator exactly like any other
+export failure in this file.
+
+**Cost/scope**: no new credential, no new vendor, no new WS action, no new
+config toggle (it's an explicit one-shot button press, not an
+always-running feature like sermon notes' own on/off toggle) — a single
+API call only when the operator explicitly asks for one.

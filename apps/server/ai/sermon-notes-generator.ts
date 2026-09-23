@@ -61,7 +61,15 @@ export class SermonNotesGenerator {
     this.url = options.url ?? DEFAULT_URL
   }
 
-  async summarize(transcriptText: string): Promise<string> {
+  /**
+   * ARCHITECTURE.md section 93: systemPrompt is optional and defaults to
+   * the sermon-notes framing above — the post-service AI copilot summary
+   * reuses this exact class (same Groq call, same circuit breaker) with
+   * its own system prompt instead, rather than duplicating this HTTP/
+   * error-handling logic in a second class for what is otherwise the same
+   * "send text to Groq, get text back" operation.
+   */
+  async summarize(transcriptText: string, systemPrompt: string = SYSTEM_PROMPT): Promise<string> {
     // PROD AUDIT 2026-09 circuit breaker: the production journal showed 7
     // identical requests in ~9 minutes against an unavailable model — a
     // request storm AGENTS.md section 37 forbids. A model that does not
@@ -82,7 +90,7 @@ export class SermonNotesGenerator {
       body: JSON.stringify({
         model: this.model,
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: systemPrompt },
           { role: "user", content: transcriptText },
         ],
       }),

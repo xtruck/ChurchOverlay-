@@ -820,6 +820,19 @@
     margin-bottom: var(--space-3);
   }
   .sermon-notes-feed { overflow-y: auto; flex: 1; min-height: 60px; display: flex; flex-direction: column; gap: var(--space-3); }
+  /* ARCHITECTURE.md section 93: same disclaimer-adjacent styling reasoning
+     as sermon-notes-disclaimer — AI-generated, so visually distinct from
+     verified verse text everywhere else in this dashboard. */
+  .service-summary-result {
+    margin-top: var(--space-3, 12px);
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    background: rgba(143, 125, 255, 0.08);
+    border: 1px solid rgba(143, 125, 255, 0.3);
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
   .sermon-notes-empty { color: var(--text-tertiary); font-size: 12px; }
   .sermon-notes-entry { padding: var(--space-2) 0; border-bottom: 1px solid var(--glass-border); }
   .sermon-notes-entry:last-child { border-bottom: none; }
@@ -1197,6 +1210,13 @@
             <div id="sermon-notes-feed" class="sermon-notes-feed">
               <div class="sermon-notes-empty" data-i18n="sermonNotes.empty">No notes yet.</div>
             </div>
+            <!-- ARCHITECTURE.md section 93: a strictly one-shot, operator-
+                 triggered digest of already-shown verses and already-
+                 generated notes — never a live agent, never a new Bible
+                 lookup. Lives here (not the Activity card) since it reads
+                 the sermon-notes feed above as its input. -->
+            <button id="generate-service-summary-btn" class="btn-secondary btn-small" data-i18n="serviceSummary.button">Generate service summary</button>
+            <div id="service-summary-result" class="service-summary-result" style="display: none"></div>
           </div>
         </div>
       </div>

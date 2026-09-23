@@ -18,6 +18,7 @@ import { GroqProvider } from "../../server/asr/groq-provider"
 import { DeepgramProvider } from "../../server/asr/deepgram-provider"
 import { FailoverAsrProvider } from "../../server/asr/failover-provider"
 import { SermonNotesGenerator } from "../../server/ai/sermon-notes-generator"
+import { buildServiceSummaryInput, SERVICE_SUMMARY_SYSTEM_PROMPT } from "../../server/ai/service-summary"
 import { MediaLibrary } from "../../server/media/media-library"
 import { SessionHistoryStore } from "../../server/core/session-history-store"
 import {
@@ -968,6 +969,41 @@ ipcMain.handle("export-diagnostics", async () => {
   await writeFile(path, JSON.stringify(appCoreHandle.getDiagnostics(), null, 2), "utf8")
   logger.info({ component: "main", event: "diagnostics.exported", metadata: { targetDir } })
   return { canceled: false as const, path }
+})
+
+/**
+ * ARCHITECTURE.md section 93: the post-service AI copilot summary — a
+ * strictly one-shot, operator-triggered digest of already-validated data
+ * (verses actually shown, plus sermon notes text the dashboard already
+ * accumulated), never a live agent. Requires the same Groq API key
+ * already configured for ASR/sermon notes — no new credential, no new
+ * vendor. Errors are returned, never silently swallowed (AGENTS.md
+ * section 46) — a missing key or a failed Groq call surfaces to the
+ * operator exactly like any other setup/runtime error in this file.
+ */
+ipcMain.handle("generate-service-summary", async (_event, sermonNotesText: unknown) => {
+  if (!appCoreHandle || !activeConfig) {
+    throw new Error("services are not started yet")
+  }
+  const entries = appCoreHandle.getSessionEntries()
+  const notesText = typeof sermonNotesText === "string" ? sermonNotesText : ""
+  if (entries.length === 0 && !notesText.trim()) {
+    return { error: "Nothing was shown or noted this session yet." }
+  }
+  if (!activeConfig.groqApiKey) {
+    return { error: "A Groq API key is required to generate a service summary." }
+  }
+  try {
+    const generator = new SermonNotesGenerator({ apiKey: activeConfig.groqApiKey })
+    const input = buildServiceSummaryInput(entries, notesText)
+    const summary = await generator.summarize(input, SERVICE_SUMMARY_SYSTEM_PROMPT)
+    logger.info({ component: "main", event: "service-summary.generated", metadata: { verseCount: entries.length } })
+    return { summary }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    logger.error({ component: "main", event: "service-summary.failed", error: message })
+    return { error: message }
+  }
 })
 
 async function shutdown(): Promise<void> {
