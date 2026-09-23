@@ -5065,3 +5065,50 @@ export failure in this file.
 config toggle (it's an explicit one-shot button press, not an
 always-running feature like sermon notes' own on/off toggle) — a single
 API call only when the operator explicitly asks for one.
+
+## 94. Phase 2 Feature Note — Branding on the Overlay
+
+Section 92 deliberately scoped generic branding to the operator
+dashboard's own chrome only, stating the congregation-facing overlay was
+"intentionally untouched." Confirmed explicitly with the user afterward:
+the overlay should show it too. This section covers that extension.
+
+**New WS event, `branding:update`** (`packages/contracts/ws.ts`,
+`action-registry.ts`) — server-only, payload
+`{ organizationName?: string; accentColor?: string }`. Sent once per
+viewer connection, the same late-join sync pattern `layout:update` already
+uses (`onViewerConnected` in `app-core.ts`) — a fresh OBS Browser Source
+reload must see current branding immediately, not from whenever the
+session happened to start. Not a live-toggle command: like `verseLayout`
+and every other AppCore-construction-time option, a branding change while
+already running requires a fresh `AppCore` (this is why
+`organizationName`/`accentColor` were added to `sameServiceConfig()`'s
+comparison in `main/index.ts` — otherwise a branding-only change would
+silently keep serving stale values from the cached instance).
+
+**Overlay rendering** (`apps/overlay/public/`):
+
+- **Organization name** → a small, subtle watermark, top-right corner
+  (opposite the existing top-left `#status` debug badge), hidden by
+  `display: none` until `branding:update` actually carries a name. This is
+  a deliberately different default from the dashboard: the dashboard's
+  absence-fallback is the product's own neutral name ("ChurchOverlay",
+  meaningful operator-facing UI chrome); the overlay's absence-fallback is
+  *nothing rendered at all* — the congregation has no reason to see the
+  product's own name, and AGENTS.md section 4's "no church-specific
+  defaults" cuts the other way here too: no default church name is ever
+  shown, blank or configured are the only two states.
+- **Accent color** → overrides this page's own `--accent` CSS custom
+  property (used today for the verse-reference text, its flanking divider
+  lines, the announcement title, and the definition term — all small
+  accent text, never the main verse body). The overlay's existing doc
+  comment already establishes this page deliberately avoids "app-chrome"
+  colors for legibility over live video; a *user-chosen* accent stays
+  compatible with that reasoning as long as it only ever touches these
+  same small accent elements, which this change does not widen.
+
+**Scope boundary respected**: still read-only from the overlay's
+perspective (AGENTS.md section 20) — this is a new *event* the overlay
+receives, not a new command surface it can send. No control capability is
+added; the overlay still cannot start/stop the mic, override a verse, or
+clear server state.

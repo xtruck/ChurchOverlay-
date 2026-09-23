@@ -1,6 +1,7 @@
 import type {
   AnnouncementShowPayload,
   AsrStatusPayload,
+  BrandingUpdatePayload,
   CanvasLayer,
   CanvasShowPayload,
   DefinitionShowPayload,
@@ -375,6 +376,15 @@ function isDetectorNearMissPayload(payload: unknown): payload is DetectorNearMis
   return isPlainObject(payload) && typeof payload.text === "string"
 }
 
+/** ARCHITECTURE.md section 94: both fields optional — absence is valid ("show nothing extra"), not corruption. */
+function isBrandingUpdatePayload(payload: unknown): payload is BrandingUpdatePayload {
+  if (!isPlainObject(payload)) return false
+  return (
+    (payload.organizationName === undefined || typeof payload.organizationName === "string") &&
+    (payload.accentColor === undefined || typeof payload.accentColor === "string")
+  )
+}
+
 /**
  * The v1 action set from ARCHITECTURE.md section 30, plus the Phase 2
  * media actions approved and specified in section 60 (media:select/
@@ -577,6 +587,11 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "event",
     allowedSenders: [],
     validatePayload: isDetectorNearMissPayload,
+  },
+  "branding:update": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isBrandingUpdatePayload,
   },
 }
 

@@ -71,6 +71,34 @@
     backdrop-filter: blur(4px);
   }
 
+  /*
+    ARCHITECTURE.md section 94: an optional, subtle organization-name
+    watermark — hidden by default (display: none), shown only when
+    branding:update actually carries a name. Deliberately small, low-
+    contrast, and positioned opposite #status (top-right vs. top-left) so
+    it never competes with the verse/media/announcement content that is
+    always the real focus of this screen. No app-chrome/product-name
+    default is ever shown here — absence means nothing renders at all.
+  */
+  #brand-watermark {
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    z-index: 3;
+    display: none;
+    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: rgba(255, 255, 255, 0.82);
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+    background: rgba(0, 0, 0, 0.32);
+    padding: 5px 12px;
+    border-radius: 999px;
+    backdrop-filter: blur(4px);
+  }
+  #brand-watermark.visible { display: block; }
+
   #verse {
     position: fixed;
     left: 0;
@@ -407,6 +435,7 @@
 </head>
 <body>
   <div id="status">connecting…</div>
+  <div id="brand-watermark"></div>
   <div id="poster-layer">
     <img id="poster-image" alt="" />
   </div>

@@ -133,7 +133,7 @@ function isTranscriptEcho(message: WsMessage): boolean {
 const ZERO_AUDIO_METRICS = { framesReceived: 0, framesRejected: 0, framesForwarded: 0, averageRms: 0, maxRms: 0 }
 
 function isAutoSyncNoise(message: WsMessage): boolean {
-  return isTranscriptEcho(message) || message.type === "layout:update"
+  return isTranscriptEcho(message) || message.type === "layout:update" || message.type === "branding:update"
 }
 
 function waitForMessage(socket: WebSocket): Promise<WsMessage> {
@@ -3006,6 +3006,76 @@ test("AppCore: a new connection is synced with the current verse layout via layo
     })
     assert.equal(message.type, "layout:update")
     assert.deepEqual(message.payload, { layout: "lower-third" })
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+// ARCHITECTURE.md section 94: the overlay-facing counterpart to section
+// 92's dashboard branding — synced on every viewer connect, same
+// late-join reasoning as layout:update above. isAutoSyncNoise filters out
+// layout:update, so branding:update is the message waitForMessage
+// actually observes here.
+test("AppCore: a new connection is synced with configured branding via branding:update", async () => {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    organizationName: "Grace Community Church",
+    accentColor: "#3b82f6",
+  })
+  try {
+    // Raw WebSocket, listener attached synchronously right after
+    // construction (same pattern the pre-existing layout:update sync test
+    // above uses) — NOT the connect() helper, which awaits "open" first
+    // via a Promise: that extra tick is enough for onViewerConnected's
+    // synchronous sends (layout:update immediately followed by
+    // branding:update) to fire before a listener attached only after
+    // "open" resolves would ever see them, silently losing both.
+    const viewerSocket = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
+    const [first, second] = await new Promise<[WsMessage, WsMessage]>((resolve) => {
+      const collected: WsMessage[] = []
+      viewerSocket.on("message", (data: { toString(): string }) => {
+        collected.push(JSON.parse(data.toString()))
+        if (collected.length === 2) resolve([collected[0]!, collected[1]!])
+      })
+    })
+    assert.equal(first.type, "layout:update")
+    assert.equal(second.type, "branding:update")
+    assert.deepEqual(second.payload, { organizationName: "Grace Community Church", accentColor: "#3b82f6" })
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: with no branding configured, branding:update is still sent with both fields undefined (the overlay shows nothing extra)", async () => {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
+    const second = await new Promise<WsMessage>((resolve) => {
+      const collected: WsMessage[] = []
+      viewerSocket.on("message", (data: { toString(): string }) => {
+        collected.push(JSON.parse(data.toString()))
+        if (collected.length === 2) resolve(collected[1]!)
+      })
+    })
+    assert.equal(second.type, "branding:update")
+    // Over the wire, JSON.stringify drops undefined-valued keys entirely.
+    assert.deepEqual(second.payload, {})
     viewerSocket.close()
   } finally {
     await app.stop()

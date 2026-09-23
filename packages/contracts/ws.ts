@@ -45,6 +45,7 @@ export type WsEventType =
   | "poster:clear"
   | "layout:update"
   | "detector:near-miss"
+  | "branding:update"
 
 /**
  * status:update's first real, concrete payload shape — ASR/transcription
@@ -88,6 +89,21 @@ export type AsrStatusPayload = {
  */
 export type DetectorNearMissPayload = {
   readonly text: string
+}
+
+/**
+ * ARCHITECTURE.md section 94: the overlay-facing counterpart to section
+ * 92's dashboard-only branding — sent once on every viewer connect (the
+ * same "late-join sync" pattern layout:update already uses), never a
+ * live-toggle command. Both fields optional/absent means "show nothing
+ * extra" on the overlay — never a product-name default forced onto the
+ * congregation-facing display (unlike the dashboard's own neutral
+ * "ChurchOverlay" fallback, which is the operator's own UI chrome, not
+ * something the congregation needs to see).
+ */
+export type BrandingUpdatePayload = {
+  readonly organizationName?: string
+  readonly accentColor?: string
 }
 
 export type WsMessage<TPayload = unknown> = {

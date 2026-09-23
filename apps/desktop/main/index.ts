@@ -223,6 +223,8 @@ async function startServices(
     mediaLibrary: mediaLibrary ?? undefined,
     sessionHistoryStore: sessionHistoryStore ?? undefined,
     verseConfirmationMode: config.verseConfirmationMode,
+    organizationName: config.organizationName,
+    accentColor: config.accentColor,
     // ARCHITECTURE.md section 65.7: always constructed (it makes no
     // network call until summarize() is actually invoked, and holding it
     // ready costs nothing) — reuses the same Groq API key already
@@ -360,6 +362,13 @@ async function startServices(
       left.verseLayout === right.verseLayout &&
       left.ndiEnabled === right.ndiEnabled
       && left.audioProfile === right.audioProfile
+      // ARCHITECTURE.md section 94: AppCore now bakes these into its own
+      // branding:update sync-on-connect broadcast, so a branding-only
+      // change must trigger a fresh AppCore (like every other field here),
+      // not silently keep serving stale values from whenever the cached
+      // instance was first constructed.
+      && left.organizationName === right.organizationName
+      && left.accentColor === right.accentColor
   }
 }
 

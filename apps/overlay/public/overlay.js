@@ -16,6 +16,7 @@
   const wsPort = params.get("wsPort") || window.location.port
 
   const statusEl = document.getElementById("status")
+  const brandWatermarkEl = document.getElementById("brand-watermark")
   const posterLayerEl = document.getElementById("poster-layer")
   const posterImageEl = document.getElementById("poster-image")
   const verseEl = document.getElementById("verse")
@@ -206,6 +207,24 @@
   function setVerseLayout(layout) {
     verseEl.classList.toggle("fullscreen", layout === "fullscreen")
     if (verseEl.classList.contains("visible")) requestAnimationFrame(() => fitVerseText())
+  }
+
+  // ARCHITECTURE.md section 94: applies branding:update's late-join sync —
+  // absent/blank organizationName means the watermark simply stays hidden
+  // (no product-name default is ever shown to the congregation), and
+  // absent accentColor leaves this page's own built-in --accent untouched.
+  function applyBranding(payload) {
+    const organizationName = payload && payload.organizationName
+    const accentColor = payload && payload.accentColor
+    if (organizationName) {
+      brandWatermarkEl.textContent = organizationName
+      brandWatermarkEl.classList.add("visible")
+    } else {
+      brandWatermarkEl.classList.remove("visible")
+    }
+    if (accentColor) {
+      document.documentElement.style.setProperty("--accent", accentColor)
+    }
   }
 
   let resizeTimer = 0
@@ -480,6 +499,8 @@
         clearPoster()
       } else if (message.type === "layout:update") {
         setVerseLayout(message.payload.layout)
+      } else if (message.type === "branding:update") {
+        applyBranding(message.payload)
       }
     })
   }

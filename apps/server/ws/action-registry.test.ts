@@ -43,6 +43,7 @@ test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 me
       "layout:set",
       "layout:update",
       "detector:near-miss",
+      "branding:update",
     ].sort()
   )
 })
@@ -808,6 +809,33 @@ test("validateWsMessage: rejects any inbound sender for detector:near-miss — a
   )
   const asViewer = validateWsMessage(
     { id: "01ABC", type: "detector:near-miss", timestamp: 1700000000000, payload: { text: "abacuc 4" } },
+    "viewer"
+  )
+  assert.equal(asOperator.ok, false)
+  assert.equal(asViewer.ok, false)
+})
+
+test("ACTION_REGISTRY['branding:update'].validatePayload: accepts both fields, either field alone, or neither; rejects wrong types", () => {
+  assert.equal(ACTION_REGISTRY["branding:update"].validatePayload({ organizationName: "Grace Church", accentColor: "#3b82f6" }), true)
+  assert.equal(ACTION_REGISTRY["branding:update"].validatePayload({ organizationName: "Grace Church" }), true)
+  assert.equal(ACTION_REGISTRY["branding:update"].validatePayload({ accentColor: "#3b82f6" }), true)
+  assert.equal(ACTION_REGISTRY["branding:update"].validatePayload({}), true)
+  for (const payload of [{ organizationName: 5 }, { accentColor: 5 }, null]) {
+    assert.equal(
+      ACTION_REGISTRY["branding:update"].validatePayload(payload),
+      false,
+      `payload ${JSON.stringify(payload)} must be rejected`
+    )
+  }
+})
+
+test("validateWsMessage: rejects any inbound sender for branding:update — a server-only event", () => {
+  const asOperator = validateWsMessage(
+    { id: "01ABC", type: "branding:update", timestamp: 1700000000000, payload: {} },
+    "operator"
+  )
+  const asViewer = validateWsMessage(
+    { id: "01ABC", type: "branding:update", timestamp: 1700000000000, payload: {} },
     "viewer"
   )
   assert.equal(asOperator.ok, false)

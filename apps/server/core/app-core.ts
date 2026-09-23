@@ -165,6 +165,14 @@ export type StartAppCoreOptions = {
   readonly verseLayout?: VerseLayout
   readonly onVerseLayoutChanged?: (layout: VerseLayout) => void
   /**
+   * ARCHITECTURE.md section 94 — the overlay-facing counterpart to
+   * section 92's dashboard-only branding. Static for the process lifetime
+   * (set once at startup, like most other AppCore options here), synced to
+   * every viewer on connect via branding:update, never a live command.
+   */
+  readonly organizationName?: string
+  readonly accentColor?: string
+  /**
    * Optional (ARCHITECTURE.md section 82.2) — the poster/media auto-clear
    * duration a fresh AppCore starts with; absent or null means "no
    * auto-clear" (manual poster:clear only), matching the option's own
@@ -313,6 +321,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   // ARCHITECTURE.md section 82: purely a presentation choice for the
   // overlay — never consulted by detection/lookup/caching.
   let verseLayout: VerseLayout = options.verseLayout ?? "fullscreen"
+  const organizationName = options.organizationName
+  const accentColor = options.accentColor
   const onVerseLayoutChanged = options.onVerseLayoutChanged
   let pendingVerse: Verse | null = null
   // ARCHITECTURE.md section 61.4: updated by every verse:show, however
@@ -429,6 +439,17 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       // CSS default until the next layout:set happens to be sent, which
       // could be an entire service later.
       send({ id: generateUlid(), type: "layout:update", timestamp: Date.now(), payload: { layout: verseLayout } })
+      // ARCHITECTURE.md section 94: same late-join sync reasoning as
+      // layout:update above — a fresh viewer connection must see any
+      // configured branding immediately, not just from whenever this
+      // session happened to start. Sent even when both fields are
+      // undefined (the overlay then simply shows nothing extra).
+      send({
+        id: generateUlid(),
+        type: "branding:update",
+        timestamp: Date.now(),
+        payload: { organizationName, accentColor },
+      })
       // ARCHITECTURE.md section 67.3: a principal poster is a persistent
       // backdrop, not scene state — synced independently of the
       // media/rundown blocks below, the same "late-join sync" reasoning
