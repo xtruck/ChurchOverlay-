@@ -6,7 +6,7 @@
   "description": "Live Bible-verse detection and overlay for OBS, built as a small deterministic pipeline (see ARCHITECTURE.md).",
   "main": "dist/apps/desktop/main/index.js",
   "engines": {
-    "node": ">=20.12"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "build": "tsc",
@@ -22,7 +22,7 @@
     "dist": "npm run build && npm run rebuild:native && electron-builder"
   },
   "devDependencies": {
-    "@electron/rebuild": "^3.7.2",
+    "@electron/rebuild": "^4.2.0",
     "@types/express": "^4.17.21",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.1",
