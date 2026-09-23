@@ -912,6 +912,18 @@
      isn't necessarily an error — the operator may simply not have meant
      to say a reference), so it borrows the same amber tone as the
      "throttled" ASR-health state rather than the red "danger" one. */
+  .accent-color-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2, 8px);
+  }
+  .accent-color-row input[type="color"] {
+    width: 44px;
+    height: 32px;
+    padding: 2px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
   .near-miss-indicator {
     margin-top: var(--space-3);
     padding: 8px 12px;
@@ -1014,6 +1026,18 @@
         <option value="robust">Robust (noisier rooms)</option>
       </select>
 
+      <!-- ARCHITECTURE.md section 92: optional branding — a generic,
+           brandable audience, not a church-specific default. Blank means
+           "use ChurchOverlay's own neutral defaults" (product name,
+           built-in accent color), never a baked-in specific church. -->
+      <label for="setup-organization-name" data-i18n="setup.organizationNameLabel">Church/organization name (optional)</label>
+      <input id="setup-organization-name" type="text" placeholder="Grace Community Church" autocomplete="off" />
+      <label for="setup-accent-color" data-i18n="setup.accentColorLabel">Accent color (optional)</label>
+      <div class="accent-color-row">
+        <input id="setup-accent-color" type="color" value="#8f7dff" />
+        <button type="button" id="setup-accent-color-reset" class="btn-secondary" data-i18n="setup.accentColorReset">Use default</button>
+      </div>
+
       <div id="setup-error"></div>
       <button id="setup-save-btn" class="btn-primary" style="width: 100%" data-i18n="setup.saveButton">Save and continue</button>
     </div>
@@ -1022,9 +1046,13 @@
   <div id="app-shell" style="display: none">
   <header class="glass">
     <div class="brand">
-      <div class="brand-mark">CO</div>
+      <!-- ARCHITECTURE.md section 92: default text/initials here are the
+           app's own neutral defaults; applyBranding() in dashboard.js
+           overwrites both if the operator set an organization name at
+           setup, and leaves them alone otherwise. -->
+      <div class="brand-mark" id="brand-mark">CO</div>
       <div>
-        <h1>ChurchOverlay</h1>
+        <h1 id="brand-title">ChurchOverlay</h1>
         <div class="sub" data-i18n="header.subtitle">Verse Ops Console</div>
       </div>
     </div>

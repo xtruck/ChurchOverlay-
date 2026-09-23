@@ -141,6 +141,8 @@ async function startServices(
   allowPhoneRemote: boolean
   overlayUrl: string
   ndi: ReturnType<NDIOutput["getStatus"]>
+  organizationName?: string
+  accentColor?: string
 }> {
   if (appCoreHandle && activeConfig && sameServiceConfig(activeConfig, config) && currentTokens && currentOverlayUrl) {
     return {
@@ -150,6 +152,8 @@ async function startServices(
       allowPhoneRemote: currentAllowPhoneRemote,
       overlayUrl: currentOverlayUrl,
       ndi: ndiOutput?.getStatus() ?? { state: "disabled" as const },
+      organizationName: config.organizationName,
+      accentColor: config.accentColor,
     }
   }
   // Setup can be submitted again after a partial startup failure. Tear down
@@ -340,6 +344,8 @@ async function startServices(
     allowPhoneRemote: config.allowPhoneRemote,
     overlayUrl,
     ndi: ndiOutput?.getStatus() ?? { state: "disabled" as const },
+    organizationName: config.organizationName,
+    accentColor: config.accentColor,
   }
 
   function sameServiceConfig(left: AppConfig, right: AppConfig): boolean {
@@ -394,9 +400,15 @@ ipcMain.handle("get-startup-status", async () => {
   // last actually saved — including on a fresh launch, before
   // startServices() has necessarily run at all.
   let uiLanguage: UiLanguage = "en"
+  let organizationName: string | undefined
+  let accentColor: string | undefined
   try {
     const existing = await getConfigStore().load()
-    if (existing) uiLanguage = existing.uiLanguage
+    if (existing) {
+      uiLanguage = existing.uiLanguage
+      organizationName = existing.organizationName
+      accentColor = existing.accentColor
+    }
   } catch {
     // Corrupt/unreadable config: default silently here. complete-setup's
     // own recovery path (section on setup.existing-config-unreadable)
@@ -417,9 +429,11 @@ ipcMain.handle("get-startup-status", async () => {
       enableSermonNotes: currentEnableSermonNotes,
       verseLayout: currentVerseLayout,
       ndi: ndiOutput?.getStatus() ?? { state: "disabled" as const },
+      organizationName,
+      accentColor,
     }
   }
-  return { ready: false, uiLanguage, ndi: { state: "disabled" as const } }
+  return { ready: false, uiLanguage, ndi: { state: "disabled" as const }, organizationName, accentColor }
 })
 
 
@@ -571,6 +585,11 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
   const audioProfile = ["responsive", "balanced", "robust"].includes(String(payloadObject.audioProfile))
     ? (String(payloadObject.audioProfile) as AudioProfile)
     : "balanced"
+  // ARCHITECTURE.md section 92: plain display strings, not secrets. Blank
+  // input clears back to "no override" (the app's own neutral default),
+  // rather than persisting an empty string forever.
+  const organizationName = String(payloadObject.organizationName ?? "").trim()
+  const accentColor = String(payloadObject.accentColor ?? "").trim()
 
   const store = getConfigStore()
   // A corrupt or unreadable existing config must not permanently block
@@ -619,6 +638,10 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
     allowPhoneRemote,
     audioProfile: existing?.audioProfile ?? audioProfile,
     ndiEnabled: existing?.ndiEnabled ?? false,
+    ...(organizationName || existing?.organizationName
+      ? { organizationName: organizationName || existing?.organizationName }
+      : {}),
+    ...(accentColor || existing?.accentColor ? { accentColor: accentColor || existing?.accentColor } : {}),
   }
   await store.save(config)
 

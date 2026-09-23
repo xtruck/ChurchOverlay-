@@ -4972,3 +4972,38 @@ mirroring the navigation detector's own pattern shape, plus adding
 "chapitre"/"chapter"/"verset"/"verse" to `STOPWORDS` so the spurious
 "chapitre-as-book" candidate the original pattern still produces for that
 phrasing is filtered out rather than passed downstream.
+
+## 92. Phase 2 Feature Note — Generic Branding (First-Run Setup)
+
+Section 59's amendment approved "a generic, brandable audience (church
+name/branding in first-run setup, no church-specific defaults)" — still a
+local single-install app, not a hosted product, and explicitly not a
+distinct "branding engine" subsystem (section 3 keeps that out of scope).
+Implemented as two new plain (non-secret) fields, `organizationName` and
+`accentColor`, alongside the existing setup fields:
+
+- **Storage**: two new optional string fields on `AppConfig`/`ConfigStore`
+  (`apps/desktop/main/config-store.ts`), stored in plaintext next to
+  `microphoneId` — not encrypted like the API keys/tokens, since neither
+  is a credential. Absent/blank means "use ChurchOverlay's own neutral
+  default," never a specific church's name or color hard-coded as a
+  fallback — the amendment's own "no church-specific defaults" constraint,
+  taken literally: the *product's* name ("ChurchOverlay") is the neutral
+  default, not any one church's.
+- **Setup screen**: an optional text field (church/organization name) and
+  an optional color picker (accent color, defaulting to the app's own
+  built-in `--accent` value), both under a "Use default" reset. Sent
+  through `complete-setup` (preload/main IPC) alongside the existing setup
+  fields.
+- **Applied where**: `dashboard.js`'s `applyBranding()` sets the header's
+  `<h1>` text and brand-mark initials (derived from up to the first two
+  words of the organization name, e.g. "Grace Community Church" → "GC"),
+  and overrides the `--accent` CSS custom property when a custom color is
+  set. Runs both right after first-run setup completes and on every normal
+  app launch (via `get-startup-status`), so it's not a setup-time-only
+  effect.
+- **Scope boundary respected**: this is purely cosmetic display text and a
+  CSS color — it never touches verse content, detection, validation, or
+  the WS protocol. The overlay (congregation-facing) is intentionally
+  untouched by this feature; branding here is the *operator dashboard's*
+  own chrome, not the projected verse display.

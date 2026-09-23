@@ -51,6 +51,46 @@ test("ConfigStore: save() then load() round-trips the config exactly", async () 
   })
 })
 
+// ARCHITECTURE.md section 92: plain, non-secret display strings — no
+// encryption, unlike the API keys/tokens SAMPLE_CONFIG already covers.
+test("ConfigStore: organizationName and accentColor round-trip when present", async () => {
+  await withTempDir(async (dir) => {
+    const store = new ConfigStore(join(dir, "config.json"), new FakeSecretCodec())
+    await store.save({ ...SAMPLE_CONFIG, organizationName: "Grace Community Church", accentColor: "#3b82f6" })
+    const loaded = await store.load()
+    assert.equal(loaded?.organizationName, "Grace Community Church")
+    assert.equal(loaded?.accentColor, "#3b82f6")
+  })
+})
+
+test("ConfigStore: organizationName and accentColor are absent (not defaulted) when never set — the app's own neutral default applies, not a stored one", async () => {
+  await withTempDir(async (dir) => {
+    const store = new ConfigStore(join(dir, "config.json"), new FakeSecretCodec())
+    await store.save(SAMPLE_CONFIG)
+    const loaded = await store.load()
+    assert.equal(loaded?.organizationName, undefined)
+    assert.equal(loaded?.accentColor, undefined)
+  })
+})
+
+test("ConfigStore: load() throws on a present but invalid organizationName/accentColor (real corruption)", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const codec = new FakeSecretCodec()
+    const baseStored = {
+      groqApiKeyEncrypted: codec.encrypt(SAMPLE_CONFIG.groqApiKey).toString("base64"),
+      microphoneId: SAMPLE_CONFIG.microphoneId,
+      operatorTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.operatorToken).toString("base64"),
+      viewerTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.viewerToken).toString("base64"),
+    }
+    const { writeFile } = await import("node:fs/promises")
+    await writeFile(path, JSON.stringify({ ...baseStored, organizationName: 42 }), "utf8")
+    await assert.rejects(() => new ConfigStore(path, codec).load(), /invalid organizationName/)
+    await writeFile(path, JSON.stringify({ ...baseStored, accentColor: 42 }), "utf8")
+    await assert.rejects(() => new ConfigStore(path, codec).load(), /invalid accentColor/)
+  })
+})
+
 test("ConfigStore: microphoneId round-trips correctly when null", async () => {
   await withTempDir(async (dir) => {
     const store = new ConfigStore(join(dir, "config.json"), new FakeSecretCodec())

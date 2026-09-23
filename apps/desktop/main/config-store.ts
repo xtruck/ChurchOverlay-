@@ -62,6 +62,17 @@ export type AppConfig = {
   readonly verseLayout: VerseLayout
   readonly ndiEnabled?: boolean
   readonly audioProfile?: AudioProfile
+  /**
+   * ARCHITECTURE.md section 92 (AGENTS.md section 4 amendment: "a generic,
+   * brandable audience... no church-specific defaults" — still a local
+   * single-install app, not a hosted product). Both plain, non-secret
+   * display strings, not encrypted like the API keys/tokens above.
+   * Absent/blank means "use the app's own neutral default" (the
+   * "ChurchOverlay" product name and the existing built-in accent color),
+   * never a specific church's name or color baked in as a fallback.
+   */
+  readonly organizationName?: string
+  readonly accentColor?: string
 }
 
 type StoredConfig = {
@@ -83,6 +94,8 @@ type StoredConfig = {
   readonly verseLayout?: string
   readonly ndiEnabled?: boolean
   readonly audioProfile?: string
+  readonly organizationName?: string
+  readonly accentColor?: string
 }
 
 /**
@@ -139,6 +152,8 @@ export class ConfigStore {
       verseLayout: config.verseLayout,
       ...(config.ndiEnabled === undefined ? {} : { ndiEnabled: config.ndiEnabled }),
       ...(config.audioProfile === undefined ? {} : { audioProfile: config.audioProfile }),
+      ...(config.organizationName === undefined ? {} : { organizationName: config.organizationName }),
+      ...(config.accentColor === undefined ? {} : { accentColor: config.accentColor }),
     }
 
     await mkdir(dirname(this.filePath), { recursive: true })
@@ -174,6 +189,8 @@ export class ConfigStore {
       verseLayout,
       ndiEnabled,
       audioProfile,
+      organizationName,
+      accentColor,
     } = stored
 
     if (
@@ -219,6 +236,12 @@ export class ConfigStore {
     ) {
       throw new Error(`ConfigStore: ${this.filePath} has an invalid audioProfile`)
     }
+    if (organizationName !== undefined && typeof organizationName !== "string") {
+      throw new Error(`ConfigStore: ${this.filePath} has an invalid organizationName`)
+    }
+    if (accentColor !== undefined && typeof accentColor !== "string") {
+      throw new Error(`ConfigStore: ${this.filePath} has an invalid accentColor`)
+    }
 
     return {
       groqApiKey: this.codec.decrypt(Buffer.from(groqApiKeyEncrypted, "base64")),
@@ -247,6 +270,8 @@ export class ConfigStore {
       verseLayout: (verseLayout as VerseLayout | undefined) ?? "fullscreen",
       ...(ndiEnabled === undefined ? {} : { ndiEnabled }),
       ...(audioProfile === undefined ? {} : { audioProfile: audioProfile as AudioProfile }),
+      ...(organizationName === undefined ? {} : { organizationName }),
+      ...(accentColor === undefined ? {} : { accentColor }),
     }
   }
 }

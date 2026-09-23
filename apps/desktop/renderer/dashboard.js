@@ -134,6 +134,12 @@
   const setupUiLanguageEl = document.getElementById("setup-ui-language")
   const setupAllowPhoneRemoteEl = document.getElementById("setup-allow-phone-remote")
   const setupAudioProfileEl = document.getElementById("setup-audio-profile")
+  const setupOrganizationNameEl = document.getElementById("setup-organization-name")
+  const setupAccentColorEl = document.getElementById("setup-accent-color")
+  const setupAccentColorResetBtn = document.getElementById("setup-accent-color-reset")
+  const DEFAULT_ACCENT_COLOR = "#8f7dff"
+  const brandMarkEl = document.getElementById("brand-mark")
+  const brandTitleEl = document.getElementById("brand-title")
   const remoteDisabledEl = document.getElementById("remote-disabled")
   const remoteEnabledEl = document.getElementById("remote-enabled")
   const remoteNoLanEl = document.getElementById("remote-no-lan")
@@ -449,6 +455,26 @@
   // near-miss resets (does not queue behind) an earlier one still
   // showing, the same "most recent wins" pattern verseAutoClearTimer
   // already uses server-side.
+  // ARCHITECTURE.md section 92: applies the operator's optional branding —
+  // absent/blank means "leave the app's own neutral defaults alone"
+  // ('ChurchOverlay' / 'CO' / the built-in accent), never a church-
+  // specific fallback baked into the app itself.
+  function applyBranding(organizationName, accentColor) {
+    if (organizationName) {
+      brandTitleEl.textContent = organizationName
+      const initials = organizationName
+        .trim()
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((word) => word.charAt(0).toUpperCase())
+        .join("")
+      brandMarkEl.textContent = initials || "CO"
+    }
+    if (accentColor) {
+      document.documentElement.style.setProperty("--accent", accentColor)
+    }
+  }
+
   let nearMissHideTimer = null
   const NEAR_MISS_DISPLAY_MS = 6000
   function showNearMiss(text) {
@@ -2103,6 +2129,10 @@
     })
   }
 
+  setupAccentColorResetBtn.addEventListener("click", () => {
+    setupAccentColorEl.value = DEFAULT_ACCENT_COLOR
+  })
+
   setupSaveBtn.addEventListener("click", () => {
     const apiKey = setupKeyInput.value.trim()
     const deepgramApiKey = setupDeepgramKeyInput.value.trim()
@@ -2115,7 +2145,16 @@
     setupSaveBtn.textContent = t("setup.saving")
 
     window.churchOverlay
-      .completeSetup(apiKey, deepgramApiKey, setupSelectedMode, setupSelectedUiLanguage, setupAllowPhoneRemoteEl.checked, setupAudioProfileEl.value)
+      .completeSetup(
+        apiKey,
+        deepgramApiKey,
+        setupSelectedMode,
+        setupSelectedUiLanguage,
+        setupAllowPhoneRemoteEl.checked,
+        setupAudioProfileEl.value,
+        setupOrganizationNameEl.value.trim(),
+        setupAccentColorEl.value
+      )
       .then((info) => {
         setActiveOption(displayModeToggleEl, "mode", setupSelectedMode)
         setActiveOption(uiLanguageToggleEl, "lang", setupSelectedUiLanguage)
@@ -2127,6 +2166,7 @@
         renderOverlayPreview(info.overlayUrl)
         setMediaOrigin(info.overlayUrl)
         renderNdiStatus(info.ndi)
+        applyBranding(info.organizationName, info.accentColor)
         showAppShell()
         connect(info.port, info.token)
       })
@@ -2158,9 +2198,12 @@
         renderOverlayPreview(status.overlayUrl)
         setMediaOrigin(status.overlayUrl)
         renderNdiStatus(status.ndi)
+        applyBranding(status.organizationName, status.accentColor)
         showAppShell()
         connect(status.port, status.token)
       } else {
+        if (status.organizationName) setupOrganizationNameEl.value = status.organizationName
+        if (status.accentColor) setupAccentColorEl.value = status.accentColor
         showSetupScreen()
       }
     })

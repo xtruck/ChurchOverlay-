@@ -9,7 +9,7 @@ Core pipeline only: mic → cloud ASR (Groq) → regex verse detection → hallu
 
 ## Phase 2 (approved — scope change recorded in ARCHITECTURE.md section 59)
 
-Audience shift: ChurchOverlay is no longer scoped as one specific church's internal tool — it's meant to be installable by other churches. It stays a local, single-install Electron desktop app (no hosting, no multi-tenant backend); "installable by other churches" means generic branding (a church name/branding step in first-run setup) and no church-specific defaults left in the app, not a hosted product.
+Audience shift: ChurchOverlay is no longer scoped as one specific church's internal tool — it's meant to be installable by other churches. It stays a local, single-install Electron desktop app (no hosting, no multi-tenant backend); "installable by other churches" means generic branding (a church name/branding step in first-run setup) and no church-specific defaults left in the app, not a hosted product. **Implemented** — architecture note in `ARCHITECTURE.md` section 92: an optional organization name and accent color, set at first-run setup, applied to the operator dashboard's own header/branding (never the congregation-facing overlay, and never a church-specific default baked into the app).
 
 Visual refactor of the existing v1 screens (dashboard, overlay, setup screen) is approved as a single full pass first — cosmetic only, no scope or interface changes, no architecture-review requirement of its own (ARCHITECTURE.md section 57 item 4).
 
