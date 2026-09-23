@@ -756,6 +756,95 @@ test("GroqProvider: three consecutive 429 responses invoke onRateLimitedSustaine
   assert.equal(sustainedCalls, 1)
 })
 
+// Production audit (2026-09): the fetch() call had no timeout at all, so a
+// single stalled connection (no response, no rejection — a real network
+// failure mode, not merely slow) would leave that request's promise
+// unresolved forever. A fetchImpl that never settles on its own, but
+// honors AbortSignal like the real fetch/undici implementation does,
+// reproduces exactly that stall so the fix can be verified without
+// actually waiting out a real hang.
+function hangingFetch(): typeof fetch {
+  return (async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    return await new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => {
+        reject(new DOMException("The operation was aborted.", "AbortError"))
+      })
+    })
+  }) as typeof fetch
+}
+
+test("GroqProvider: a request that never resolves is aborted after requestTimeoutMs and reports a clear error", async () => {
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    requestTimeoutMs: 20,
+    fetchImpl: hangingFetch(),
+  })
+  const errors: Error[] = []
+  provider.onError((error) => errors.push(error))
+
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame())
+
+  assert.equal(errors.length, 1)
+  assert.match(errors[0]?.message ?? "", /timed out after 20ms/)
+})
+
+test("GroqProvider: three consecutive timed-out requests invoke onRateLimitedSustained once, same as sustained 429s", async () => {
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    requestTimeoutMs: 20,
+    fetchImpl: hangingFetch(),
+  })
+  let sustainedCalls = 0
+  provider.onRateLimitedSustained(() => {
+    sustainedCalls += 1
+  })
+
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame(0))
+  await provider.sendAudio(oneSecondFrame(1))
+  await provider.sendAudio(oneSecondFrame(2))
+
+  assert.equal(sustainedCalls, 1)
+})
+
+test("GroqProvider: a successful request resets the consecutive-network-error count", async () => {
+  // Timeout, timeout, SUCCESS (must reset the counter), timeout, timeout —
+  // 4 timeouts total, but never 3 *consecutive*, so onRateLimitedSustained
+  // must never fire.
+  const shouldHang = [true, true, false, true, true]
+  let callCount = 0
+  const fetchImpl = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const hang = shouldHang[callCount] ?? false
+    callCount += 1
+    if (hang) return await hangingFetch()(input, init)
+    return jsonResponse({ text: "x" })
+  }) as typeof fetch
+
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    requestTimeoutMs: 20,
+    fetchImpl,
+  })
+  let sustainedCalls = 0
+  provider.onRateLimitedSustained(() => {
+    sustainedCalls += 1
+  })
+  const errors: Error[] = []
+  provider.onError((error) => errors.push(error))
+
+  await provider.start()
+  for (let i = 0; i < shouldHang.length; i++) {
+    await provider.sendAudio(oneSecondFrame(i))
+  }
+
+  assert.equal(errors.length, 4, "4 of the 5 requests time out")
+  assert.equal(sustainedCalls, 0, "the counter reset on the one success, so no 3-in-a-row ever occurs")
+})
+
 test("GroqProvider: start() resets state across sessions (new correlationId, sequence restarts)", async () => {
   const provider = new GroqProvider({
     apiKey: "test-key",

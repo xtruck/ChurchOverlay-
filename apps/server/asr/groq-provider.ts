@@ -50,6 +50,18 @@ export const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000
 export const MAX_THROTTLED_BUFFER_MS = 15_000
 export const SUSTAINED_429_THRESHOLD = 3
 export const RATE_LIMIT_RETRY_BASE_MS = 2000
+// Production audit (2026-09): the fetch() call in transcribe() had no
+// timeout at all. A single stalled connection (rare but real over a
+// multi-hour service — a Wi-Fi hiccup, a mid-response stall with no
+// TCP RST) would leave that request's promise unresolved forever: the
+// chunk's audio is never freed, no error is ever reported, and — because
+// nothing here bounds concurrent in-flight requests — repeated stalls
+// could accumulate silently for the rest of the service. This bounds
+// every request to a hard ceiling so a stall fails fast and recovers
+// through the exact same error/retry path a real 429 or network error
+// already uses, instead of hanging indefinitely.
+export const DEFAULT_REQUEST_TIMEOUT_MS = 15_000
+export const SUSTAINED_NETWORK_ERROR_THRESHOLD = 3
 
 /** Error thrown by transcribe() when Groq returns 429, carrying the suggested retry delay. */
 export class RateLimitError extends Error {
@@ -93,6 +105,8 @@ export type GroqProviderOptions = {
    * against a specific build rather than argued from memory.
    */
   readonly logger?: Logger
+  /** Production audit (2026-09) — see DEFAULT_REQUEST_TIMEOUT_MS above. */
+  readonly requestTimeoutMs?: number
 }
 
 /**
@@ -133,6 +147,7 @@ export class GroqProvider implements AsrProvider {
   private readonly url: string
   private readonly now: () => number
   private readonly logger?: Logger
+  private readonly requestTimeoutMs: number
   private language: string | undefined
 
   private transcriptCallback: ((result: TranscriptResult) => void) | null = null
@@ -158,6 +173,13 @@ export class GroqProvider implements AsrProvider {
   private consecutive429s = 0
   private last429Time = 0
 
+  // Production audit (2026-09): consecutive network/timeout failures,
+  // tracked separately from consecutive429s above — a stalled/unreachable
+  // connection is a different failure class than a documented rate limit,
+  // but should trip the exact same "Groq isn't working right now, fail
+  // over" signal once it happens repeatedly in a row.
+  private consecutiveNetworkErrors = 0
+
   // TASK B: prompt for lexical bias
   private currentVerseRef: string | null = null
 
@@ -173,6 +195,7 @@ export class GroqProvider implements AsrProvider {
     this.now = options.now ?? Date.now
     this.logger = options.logger
     this.language = options.language
+    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
   }
 
   /** Live-updatable (ARCHITECTURE.md section 81) — a display-mode switch mid-service (voice, dashboard, or API) should retarget Whisper immediately, not just at construction. */
@@ -564,11 +587,37 @@ export class GroqProvider implements AsrProvider {
       form.append("prompt", prompt)
     }
 
-    const response = await this.fetchImpl(this.url, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${this.apiKey}` },
-      body: form,
-    })
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), this.requestTimeoutMs)
+    let response: Response
+    try {
+      response = await this.fetchImpl(this.url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${this.apiKey}` },
+        body: form,
+        signal: controller.signal,
+      })
+    } catch (err) {
+      // Network failure or our own abort — either way, fetch() itself
+      // never produced a response, so this is a connectivity failure
+      // class distinct from a documented Groq error response below.
+      const isTimeout = err instanceof Error && err.name === "AbortError"
+      this.consecutiveNetworkErrors++
+      if (this.consecutiveNetworkErrors >= SUSTAINED_NETWORK_ERROR_THRESHOLD && this.rateLimitedSustainedCallback) {
+        this.rateLimitedSustainedCallback()
+      }
+      throw new Error(
+        isTimeout
+          ? `Groq request timed out after ${this.requestTimeoutMs}ms`
+          : `Groq request failed: ${err instanceof Error ? err.message : String(err)}`
+      )
+    } finally {
+      clearTimeout(timeoutId)
+    }
+
+    // A response — even an error one — means the connection itself is
+    // fine; only fetch() rejecting above counts as a network failure.
+    this.consecutiveNetworkErrors = 0
 
     if (!response.ok) {
       const errorBody = await safeReadJson(response)
