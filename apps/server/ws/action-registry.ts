@@ -4,6 +4,7 @@ import type {
   CanvasLayer,
   CanvasShowPayload,
   DefinitionShowPayload,
+  DetectorNearMissPayload,
   MediaCue,
   MediaShowPayload,
   MediaSetDurationPayload,
@@ -369,6 +370,11 @@ function isSermonNotesPayload(payload: unknown): payload is SermonNotesPayload {
   return isPlainObject(payload) && typeof payload.notes === "string"
 }
 
+/** ARCHITECTURE.md section 91: shape-only, same discipline as every other payload here. */
+function isDetectorNearMissPayload(payload: unknown): payload is DetectorNearMissPayload {
+  return isPlainObject(payload) && typeof payload.text === "string"
+}
+
 /**
  * The v1 action set from ARCHITECTURE.md section 30, plus the Phase 2
  * media actions approved and specified in section 60 (media:select/
@@ -566,6 +572,11 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "event",
     allowedSenders: [],
     validatePayload: isVerseLayoutPayload,
+  },
+  "detector:near-miss": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isDetectorNearMissPayload,
   },
 }
 

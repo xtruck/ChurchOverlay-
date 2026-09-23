@@ -42,6 +42,7 @@ test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 me
       "poster:set-duration",
       "layout:set",
       "layout:update",
+      "detector:near-miss",
     ].sort()
   )
 })
@@ -783,6 +784,30 @@ test("validateWsMessage: rejects any inbound sender for layout:update — a serv
   )
   const asViewer = validateWsMessage(
     { id: "01ABC", type: "layout:update", timestamp: 1700000000000, payload: { layout: "fullscreen" } },
+    "viewer"
+  )
+  assert.equal(asOperator.ok, false)
+  assert.equal(asViewer.ok, false)
+})
+
+test("ACTION_REGISTRY['detector:near-miss'].validatePayload: accepts a text string, rejects a malformed one", () => {
+  assert.equal(ACTION_REGISTRY["detector:near-miss"].validatePayload({ text: "abacuc, 4, verset, 2" }), true)
+  for (const payload of [{}, { text: 5 }, { text: null }, null]) {
+    assert.equal(
+      ACTION_REGISTRY["detector:near-miss"].validatePayload(payload),
+      false,
+      `payload ${JSON.stringify(payload)} must be rejected`
+    )
+  }
+})
+
+test("validateWsMessage: rejects any inbound sender for detector:near-miss — a server-only event", () => {
+  const asOperator = validateWsMessage(
+    { id: "01ABC", type: "detector:near-miss", timestamp: 1700000000000, payload: { text: "abacuc 4" } },
+    "operator"
+  )
+  const asViewer = validateWsMessage(
+    { id: "01ABC", type: "detector:near-miss", timestamp: 1700000000000, payload: { text: "abacuc 4" } },
     "viewer"
   )
   assert.equal(asOperator.ok, false)

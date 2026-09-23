@@ -1010,6 +1010,74 @@ test("AppCore: 'next verse' spoken after a detected reference broadcasts the fol
   }
 })
 
+// Investigated per a user question, 2026-09-23: does saying a spoken
+// verse RANGE ("Proverbes chapitre 1, verset 5 à 7" / "Proverbs chapter 1
+// verse 5 to 7") show the first verse, then step through the rest of the
+// range on "next verse"/"suivant"? This detector has no concept of a
+// range at all — it only ever extracts ONE reference (here, correctly the
+// STARTING verse, per the SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN fix
+// above; the trailing "à 7"/"to 7" is simply unconsumed text). The rest of
+// the answer is that "next verse" (already existing, unrelated to ranges)
+// is a general position+1 step that works regardless of how the current
+// position was reached — so a spoken range's remaining verses are covered
+// for free, with no new range concept needed.
+test("AppCore: a spoken verse range shows the starting verse, then 'next verse'/'suivant' steps through the rest of the range", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const firstShow = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Proverbes chapitre 1, verset 5 à 7",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    const firstMessage = await firstShow
+    assert.equal(firstMessage.type, "verse:show")
+    assert.deepEqual((firstMessage.payload as Verse).reference, { book: "proverbs", chapter: 1, verse: 5 })
+
+    const secondShow = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T2",
+      correlationId: "01B",
+      sequence: 2,
+      text: "Suivant.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    const secondMessage = await secondShow
+    assert.deepEqual((secondMessage.payload as Verse).reference, { book: "proverbs", chapter: 1, verse: 6 })
+
+    const thirdShow = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01T3",
+      correlationId: "01C",
+      sequence: 3,
+      text: "Suivant.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    const thirdMessage = await thirdShow
+    assert.deepEqual((thirdMessage.payload as Verse).reference, { book: "proverbs", chapter: 1, verse: 7 })
+
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
 test("AppCore: 'cancel' spoken after a shown verse broadcasts verse:clear", async () => {
   const asr = new FakeAsrProvider()
   const app = await startAppCore({
@@ -3577,6 +3645,137 @@ test("AppCore: near-miss log fires when chapter/verse keywords present but no pa
     assert.equal(nearMissLogs.length, 1, "near-miss should fire when keywords present but no match")
 
     viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+// ARCHITECTURE.md section 91: a near-miss transcript previously produced
+// only a server-side log line — the operator dashboard had no way to know
+// a spoken reference had just failed to resolve versus not being spoken
+// at all. Verifies the same near-miss condition also broadcasts a
+// dashboard-facing detector:near-miss event.
+test("AppCore: a near-miss transcript broadcasts detector:near-miss, ARCHITECTURE.md section 91", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    // isAutoSyncNoise (this file's own WS test helper) filters out the
+    // transcript:final echo, so detector:near-miss is the only message
+    // waitForMessage actually observes here.
+    const received = waitForMessage(viewerSocket)
+
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Ouvrons Frogs chapitre 3 verset 16",
+      state: "final",
+      timestamp: Date.now(),
+    })
+
+    const nearMiss = await received
+    assert.equal(nearMiss.type, "detector:near-miss")
+    assert.deepEqual(nearMiss.payload, { text: "Ouvrons Frogs chapitre 3 verset 16" })
+    assert.equal(nearMiss.correlationId, "01A")
+
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+// ARCHITECTURE.md section 91: a near-miss immediately followed by a
+// successful manual override is real, labeled evidence for a future
+// transcription-corrector table entry — logged for a human to review,
+// never auto-applied.
+test("AppCore: verse:override shortly after a near-miss logs a correction.candidate, ARCHITECTURE.md section 91", async () => {
+  const lines: unknown[] = []
+  const logger = new Logger({ minLevel: "info", write: (line) => lines.push(JSON.parse(line)) })
+  const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({ john: johnVerse }),
+    logger,
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Ouvrons Frogs chapitre 3 verset 16",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    operatorSocket.send(
+      JSON.stringify({
+        id: "01B",
+        type: "verse:override",
+        timestamp: Date.now(),
+        payload: { book: "john", chapter: 3, verse: 16 },
+      })
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    const candidateLogs = lines.filter((l) => (l as { event: string }).event === "correction.candidate")
+    assert.equal(candidateLogs.length, 1)
+    assert.deepEqual((candidateLogs[0] as { metadata: unknown }).metadata, {
+      nearMissText: "Ouvrons Frogs chapitre 3 verset 16",
+      resolvedReference: "john 3:16",
+    })
+
+    operatorSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: verse:override with no recent near-miss does NOT log a correction.candidate", async () => {
+  const lines: unknown[] = []
+  const logger = new Logger({ minLevel: "info", write: (line) => lines.push(JSON.parse(line)) })
+  const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({ john: johnVerse }),
+    logger,
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    operatorSocket.send(
+      JSON.stringify({
+        id: "01A",
+        type: "verse:override",
+        timestamp: Date.now(),
+        payload: { book: "john", chapter: 3, verse: 16 },
+      })
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    const candidateLogs = lines.filter((l) => (l as { event: string }).event === "correction.candidate")
+    assert.equal(candidateLogs.length, 0)
+
+    operatorSocket.close()
   } finally {
     await app.stop()
   }

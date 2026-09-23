@@ -86,6 +86,7 @@
   const statusTextEl = document.getElementById("status-text")
   const logEl = document.getElementById("log")
   const transcriptEl = document.getElementById("transcript")
+  const nearMissIndicatorEl = document.getElementById("near-miss-indicator")
   const audioDiagnosticsEl = document.getElementById("audio-diagnostics")
   const referenceInput = document.getElementById("reference")
   const showBtn = document.getElementById("show-btn")
@@ -440,6 +441,25 @@
         sendJson({ id: crypto.randomUUID(), type: "asr:return-primary", timestamp: Date.now(), payload: null })
       })
     }
+  }
+
+  // ARCHITECTURE.md section 91: detector:near-miss's dashboard surface —
+  // transient, not persistent like the ASR health warning, since it
+  // describes one utterance rather than an ongoing condition. A new
+  // near-miss resets (does not queue behind) an earlier one still
+  // showing, the same "most recent wins" pattern verseAutoClearTimer
+  // already uses server-side.
+  let nearMissHideTimer = null
+  const NEAR_MISS_DISPLAY_MS = 6000
+  function showNearMiss(text) {
+    if (!nearMissIndicatorEl || !text) return
+    nearMissIndicatorEl.textContent = t("mic.nearMiss", { text })
+    nearMissIndicatorEl.style.display = "block"
+    if (nearMissHideTimer) clearTimeout(nearMissHideTimer)
+    nearMissHideTimer = setTimeout(() => {
+      nearMissHideTimer = null
+      nearMissIndicatorEl.style.display = "none"
+    }, NEAR_MISS_DISPLAY_MS)
   }
 
   // One icon per MediaCueKind (apps/server/media's own "kind" discriminant,
@@ -1766,6 +1786,8 @@
         showPendingVerse(message.payload)
       } else if (message.type === "sermonNotes:update") {
         appendSermonNote(message.payload.notes)
+      } else if (message.type === "detector:near-miss") {
+        showNearMiss(message.payload && message.payload.text)
       }
     })
   }

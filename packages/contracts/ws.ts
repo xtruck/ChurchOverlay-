@@ -44,6 +44,7 @@ export type WsEventType =
   | "poster:show"
   | "poster:clear"
   | "layout:update"
+  | "detector:near-miss"
 
 /**
  * status:update's first real, concrete payload shape — ASR/transcription
@@ -74,6 +75,19 @@ export type AsrStatusPayload = {
     readonly averageRms: number
     readonly maxRms: number
   }
+}
+
+/**
+ * ARCHITECTURE.md section 91: the operator-facing surface for
+ * AppCore's existing "detector.near-miss" server log (a final transcript
+ * that contained chapter/verse keywords or a recognized book name but
+ * validated to zero references) — previously invisible outside raw
+ * server logs, so an operator watching the dashboard had no way to know a
+ * spoken reference had just failed to resolve versus simply not being
+ * spoken at all.
+ */
+export type DetectorNearMissPayload = {
+  readonly text: string
 }
 
 export type WsMessage<TPayload = unknown> = {

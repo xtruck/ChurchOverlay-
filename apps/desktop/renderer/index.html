@@ -908,6 +908,20 @@
     border-color: rgba(72, 187, 120, 0.45);
     color: #276749;
   }
+  /* ARCHITECTURE.md section 91: informational, not alarming (a near-miss
+     isn't necessarily an error — the operator may simply not have meant
+     to say a reference), so it borrows the same amber tone as the
+     "throttled" ASR-health state rather than the red "danger" one. */
+  .near-miss-indicator {
+    margin-top: var(--space-3);
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    background: rgba(255, 193, 7, 0.12);
+    border: 1px solid rgba(255, 193, 7, 0.45);
+    color: #b7791f;
+    font-size: 12px;
+    line-height: 1.5;
+  }
   .mic-calibrating-status {
     margin-top: var(--space-3);
     padding: 8px 12px;
@@ -1086,6 +1100,13 @@
             <div id="mic-calibrating-status" class="mic-calibrating-status" style="display: none" data-i18n="mic.calibrating">Calibrating to room noise…</div>
             <label style="margin-top: 16px" data-i18n="mic.lastTranscriptLabel">Last transcript</label>
             <div id="transcript" data-i18n="mic.waitingForSpeech">Waiting for speech…</div>
+            <!-- ARCHITECTURE.md section 91: detector:near-miss's dashboard
+                 surface — a final transcript that contained chapter/verse
+                 keywords or a recognized book name but resolved to no
+                 reference. Transient (auto-hidden), not persistent like
+                 asr-health-warning, since it describes one utterance, not
+                 an ongoing condition. -->
+            <div id="near-miss-indicator" class="near-miss-indicator" role="status" style="display: none"></div>
             <div id="audio-diagnostics" class="mic-diagnostics" aria-live="polite">Audio: waiting for metrics</div>
             <div id="asr-health-warning" class="asr-health-warning" role="alert" style="display: none">
               <span id="asr-health-warning-text"></span>

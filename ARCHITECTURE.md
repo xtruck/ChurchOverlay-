@@ -4907,3 +4907,68 @@ stripped (not a greedy run) specifically so a multi-character key already
 ending in its own period (like `"v.c."`) isn't itself corrupted by the
 fallback — and the stripped punctuation is reattached to the corrected
 output afterward.
+
+## 91. Near-Miss Operator Visibility and Correction-Candidate Logging
+
+`AppCore` has logged a `detector.near-miss` server-side warning since the
+section 68/74 production audits — a final transcript that contained
+chapter/verse keywords or a recognized book name but validated to zero
+references. Until now this was invisible outside raw server logs: an
+operator watching the dashboard during a live service had no way to tell
+"the app didn't hear anything" apart from "the app heard something and
+failed to resolve it" — exactly the ambiguity a real live-testing session
+surfaced (a spoken "Habakkuk 4:2" variant that fell through to a near-miss
+with no operator-visible signal at all).
+
+Two small, additive pieces, both reusing existing mechanisms rather than
+introducing new ones:
+
+- **`detector:near-miss` WS event** (a new, server-only entry in the
+  existing action registry, `{ text: string }` payload) — broadcast
+  alongside the existing `logger.warn` call, not instead of it. The
+  dashboard renders it as a transient (auto-hiding after 6s) informational
+  banner next to the live transcript panel, using the same amber tone as
+  the "throttled" ASR-health state (section 70) — informational, not an
+  alarm, since a near-miss isn't necessarily an error. The overlay ignores
+  the event entirely (it has no handler for it); broadcasting to all
+  connections is safe the same way `transcript:partial`/`transcript:final`
+  already are.
+- **Correction-candidate logging**: a near-miss immediately followed by an
+  operator's manual `verse:override` that resolves successfully is real,
+  labeled evidence — "this exact heard text almost certainly meant that
+  exact reference." AppCore keeps a bounded (20-entry, per AGENTS.md
+  section 36) in-memory ring buffer of recent near-misses; a successful
+  override within 30 seconds of one logs a `correction.candidate` event
+  pairing the near-miss text with the resolved reference. This is a
+  diagnostic aid only — nothing is ever auto-applied to
+  `transcription-corrector.ts`'s curated table. A human still reviews the
+  logs and adds a table entry, the same process every existing phonetic
+  correction in that file already went through.
+
+Both pieces are read-only with respect to the existing detection/
+validation/display pipeline — neither changes what gets displayed or
+when, only what the operator and the logs can see about why something
+didn't.
+
+### 91.1 A related RegexDetector robustness fix (found investigating a verse-range question)
+
+While verifying that a spoken verse *range* ("Proverbes chapitre 1, verset
+5 à 7") correctly shows its starting verse and then steps through the rest
+via the existing "next verse"/"suivant" navigation (it does — this
+detector has no range concept at all; it only needs to extract the
+*starting* verse correctly, and "next verse" already works from any
+position regardless of how that position was reached), a real latent bug
+surfaced: `SPOKEN_REFERENCE_PATTERN` only covered the "BOOK NUMBER KEYWORD
+NUMBER" shape ("Jean 3 chapitre 16"), not the equally natural full prose
+form where BOTH keywords are spoken ("Proverbes chapitre 1, verset 5").
+There, the book-name group greedily matched "chapitre" itself as the book
+name, losing "Proverbes" entirely. In practice this was masked —
+`NavigationCommandDetector`'s own separate `BOOK_CHAPTER_VERSE_PATTERN`
+already handles that exact phrasing correctly and independently — but
+`RegexDetector`'s own output was wrong on its own terms, and a phrasing
+variant not covered by the navigation detector could have silently lost a
+real reference. Fixed with a new `SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN`
+mirroring the navigation detector's own pattern shape, plus adding
+"chapitre"/"chapter"/"verset"/"verse" to `STOPWORDS` so the spurious
+"chapitre-as-book" candidate the original pattern still produces for that
+phrasing is filtered out rather than passed downstream.

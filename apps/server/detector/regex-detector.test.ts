@@ -150,3 +150,26 @@ test("RegexDetector: detects spoken French wording with a comma after the book n
   const detector = new RegexDetector()
   assert.deepEqual(detector.detect("abacuc, 4, verset, 2"), [{ book: "habakkuk", chapter: 4, verse: 2 }])
 })
+
+// CORRECTIF (found investigating a verse-range navigation question,
+// 2026-09-23): the full prose form with BOTH keywords stated ("Proverbes
+// chapitre 1, verset 5") previously made SPOKEN_REFERENCE_PATTERN's book
+// group greedily capture "chapitre" itself as the book name, losing
+// "Proverbes" entirely — only masked in practice because
+// NavigationCommandDetector's own separate pattern happened to handle
+// this exact phrasing correctly. Also covers a trailing range indicator
+// ("... verset 5 à 7"/"verse 5 to 7") being harmlessly ignored — the
+// starting verse of a spoken range is all this detector needs to extract;
+// "next verse" navigation (already existing) steps through the rest.
+test("RegexDetector: detects the full 'book chapitre N, verset M' prose form without losing the book name, including a trailing verse-range indicator", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("Proverbes chapitre 1, verset 5"), [
+    { book: "proverbs", chapter: 1, verse: 5 },
+  ])
+  assert.deepEqual(detector.detect("Proverbes chapitre 1 verset 5 à 7"), [
+    { book: "proverbs", chapter: 1, verse: 5 },
+  ])
+  assert.deepEqual(detector.detect("Proverbs chapter 1 verse 5 to 7"), [
+    { book: "proverbs", chapter: 1, verse: 5 },
+  ])
+})

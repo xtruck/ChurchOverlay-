@@ -333,6 +333,16 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   // status:update — see its own doc comment in action-registry.ts, written
   // when nothing produced it yet). Tracked so a transcript arriving after
   // an error can broadcast the recovery, not just the failure.
+  // ARCHITECTURE.md section 91: bounded, in-memory evidence for real
+  // phonetic-correction gaps — a near-miss followed shortly by a manual
+  // override is a labeled example ("this exact text should have meant
+  // that exact reference"), logged for a human to review and add to
+  // transcription-corrector's curated table, never auto-applied. Bounded
+  // per AGENTS.md section 36 (no unbounded queue/cache): the array is
+  // trimmed to RECENT_NEAR_MISS_LIMIT entries on every push.
+  const RECENT_NEAR_MISS_LIMIT = 20
+  const RECENT_NEAR_MISS_WINDOW_MS = 30_000
+  let recentNearMisses: Array<{ text: string; timestamp: number }> = []
   let asrHasError = false
   let asrIsThrottled = false
   let asrRateLimitedSustained = false
@@ -650,6 +660,51 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     })
   }
 
+  /**
+   * ARCHITECTURE.md section 91: broadcasts the same near-miss AppCore
+   * already logs server-side, and records it (bounded) for the
+   * correction-candidate correlation below. Purely additive — the
+   * existing logger.warn call at the near-miss site is unchanged.
+   */
+  function recordAndBroadcastNearMiss(text: string, correlationId?: string): void {
+    recentNearMisses.push({ text, timestamp: Date.now() })
+    if (recentNearMisses.length > RECENT_NEAR_MISS_LIMIT) {
+      recentNearMisses = recentNearMisses.slice(-RECENT_NEAR_MISS_LIMIT)
+    }
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "detector:near-miss",
+      timestamp: Date.now(),
+      correlationId,
+      payload: { text },
+    })
+  }
+
+  /**
+   * ARCHITECTURE.md section 91: if a near-miss happened shortly before an
+   * operator's manual override resolved successfully, that pairing is
+   * real evidence — the near-miss text almost certainly meant this exact
+   * reference. Logged only (never auto-applied to
+   * transcription-corrector's table — a human still reviews and adds it),
+   * so this stays a diagnostic aid, not a second, uncontrolled correction
+   * path.
+   */
+  function logCorrectionCandidateIfRecentNearMiss(reference: VerseReference, correlationId?: string): void {
+    const now = Date.now()
+    const recent = recentNearMisses.filter((m) => now - m.timestamp <= RECENT_NEAR_MISS_WINDOW_MS)
+    if (recent.length === 0) return
+    const candidate = recent[recent.length - 1]!
+    logger.info({
+      component: "app-core",
+      event: "correction.candidate",
+      correlationId,
+      metadata: {
+        nearMissText: candidate.text,
+        resolvedReference: `${reference.book} ${reference.chapter}:${reference.verse}`,
+      },
+    })
+  }
+
   function broadcastAnnouncementClear(correlationId?: string): void {
     wsServer.broadcast({
       id: generateUlid(),
@@ -964,6 +1019,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         const verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
         if (verse) {
           broadcastVerse(verse, "override", message.correlationId)
+          logCorrectionCandidateIfRecentNearMiss(reference, message.correlationId)
         } else {
           logger.info({
             component: "app-core",
@@ -1495,6 +1551,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         correlationId: transcript.correlationId,
         metadata: { text: transcript.text },
       })
+      recordAndBroadcastNearMiss(transcript.text, transcript.correlationId)
     }
 
     // Voice-triggered media (ARCHITECTURE.md section 60.3), running

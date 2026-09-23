@@ -86,23 +86,51 @@ const REFERENCE_PATTERN =
 const SPOKEN_REFERENCE_PATTERN =
   /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})[\s,]+(?:chapitre|chapter|verset|verse|le\s+verset|the\s+verse)[\s,]+(\d{1,3})(?![\p{L}\d])/giu
 
+// CORRECTIF (found investigating a verse-range navigation question,
+// 2026-09-23): the pattern above only covers "BOOK NUMBER KEYWORD NUMBER"
+// ("Jean 3 chapitre 16"). It does NOT cover the equally natural full
+// French/English prose form where BOTH keywords are spoken — "Proverbes
+// chapitre 1, verset 5" or "Proverbs chapter 1 verse 5". There, the book
+// group above would greedily match "chapitre" itself as the book name
+// (it directly precedes a number), silently losing the real book. In
+// practice NavigationCommandDetector's own BOOK_CHAPTER_VERSE_PATTERN
+// already handles this exact phrasing independently and correctly, so no
+// verse was ever actually lost end-to-end — but this detector's own
+// output was still wrong on its own terms, and a future phrasing variant
+// not covered by the navigation detector could have been silently lost.
+// Mirrors NavigationCommandDetector's own pattern shape.
+const SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN =
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(?:chapitre|chapter)[\s,]+(\d{1,3})[\s,]+(?:verset|verse)[\s,]+(\d{1,3})(?![\p{L}\d])/giu
+
 // Deliberately small and conservative: only the short function words most
 // likely to coincidentally precede a "N:M"-shaped pattern in ordinary
 // transcribed speech (English and French). Not an attempt at a general
 // stopword list, and not book-catalog knowledge — see the CORRECTIF above.
+// CORRECTIF (2026-09-23, alongside SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN
+// above): "chapitre"/"chapter"/"verset"/"verse" added. The double-keyword
+// prose form ("Proverbes chapitre 1, verset 5") makes SPOKEN_REFERENCE_
+// PATTERN's own book group greedily match "chapitre" itself as the book
+// name (it directly precedes a number too) — a spurious extra candidate,
+// harmless once filtered here (no real book is named "chapitre"/"verset"),
+// alongside the correct one the new pattern above produces.
 const STOPWORDS = new Set([
   "at", "is", "in", "on", "to", "the", "a", "an", "and", "or", "but", "of",
   "it", "was", "were", "be", "by", "with", "for", "as", "that", "this",
   "le", "la", "les", "un", "une", "des", "de", "du", "et", "ou", "mais",
   "est", "sont", "etait", "dans", "sur", "pour", "par", "avec", "que",
   "qui", "ce", "cette",
+  "chapitre", "chapter", "verset", "verse",
 ])
 
 export class RegexDetector implements VerseDetector {
   detect(text: string): VerseReference[] {
     const references: VerseReference[] = []
 
-    for (const match of [...text.matchAll(REFERENCE_PATTERN), ...text.matchAll(SPOKEN_REFERENCE_PATTERN)]) {
+    for (const match of [
+      ...text.matchAll(REFERENCE_PATTERN),
+      ...text.matchAll(SPOKEN_REFERENCE_PATTERN),
+      ...text.matchAll(SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN),
+    ]) {
       const rawBook = match[1]
       const rawChapter = match[2]
       const rawVerse = match[3]
