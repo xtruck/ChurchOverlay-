@@ -71,5 +71,8 @@
   },
   "optionalDependencies": {
     "@stagetimerio/grandiose": "^0.2.0"
+  },
+  "allowScripts": {
+    "@stagetimerio/grandiose@0.2.0": true
   }
 }
