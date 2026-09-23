@@ -43,9 +43,11 @@ const PHONETIC_CORRECTIONS: CorrectionMap = {
   "vassier": "verset",    // observed clipped "verset" output
   "vete": "verset",       // observed clipped "verset" output
   "verset.": "verset",    // with punctuation
+  "vestu": "verset",      // observed live (2026-09): "verset suivant" heard as "vestu suivant"
 
   // "psaume" confusions
   "some": "psaume",
+  "som": "psaume",        // observed live (2026-09): "some" clipped further to "som"
   "sam": "psaume",
   "saum": "psaume",
   "psalme": "psaume",     // missing 'u'

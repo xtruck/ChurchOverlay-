@@ -175,6 +175,12 @@ export const FRENCH_BOOK_ALIASES: Readonly<Record<string, string>> = {
   michee: "micah",
   nahum: "nahum",
   habacuc: "habakkuk",
+  // Observed live (2026-09): Whisper repeatedly transcribed this book
+  // name with the initial "H" dropped entirely ("abacuc", not
+  // "habacuc") across a real multi-minute test reading through it
+  // chapter by chapter — not a one-off, the same drop recurred
+  // consistently for this specific word.
+  abacuc: "habakkuk",
   sophonie: "zephaniah",
   aggee: "haggai",
   zacharie: "zechariah",

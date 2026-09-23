@@ -11,6 +11,18 @@ test("corrector: known phonetic confusions are corrected ('wc' → 'verset')", (
   assert.equal(result.correctedText, "au verset 3 de Jean")
 })
 
+// Observed live (2026-09): both from a real multi-minute test reading
+// through a book chapter by chapter — recurring, not one-off garbling.
+test("corrector: 'vestu' (observed live) is corrected to 'verset'", () => {
+  const result = correctTranscription("au vestu suivant")
+  assert.equal(result.correctedText, "au verset suivant")
+})
+
+test("corrector: 'som' (observed live, 'some' clipped further) is corrected to 'psaume'", () => {
+  const result = correctTranscription("som 3")
+  assert.equal(result.correctedText, "psaume 3")
+})
+
 test("corrector: the valid word 'est' is NOT corrected to 'et'", () => {
   const result = correctTranscription("il est trois heures")
   assert.equal(result.correctedText, "il est 3 heures")

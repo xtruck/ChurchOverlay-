@@ -120,6 +120,11 @@ test("normalizeBookName: translates French book names to BOOK_CATALOG's canonica
   assert.equal(normalizeBookName("Apocalypse"), "revelation")
 })
 
+test("normalizeBookName: 'Abacuc' with the initial H dropped still resolves (observed live, 2026-09)", () => {
+  assert.equal(normalizeBookName("Habacuc"), "habakkuk")
+  assert.equal(normalizeBookName("Abacuc"), "habakkuk")
+})
+
 test("normalizeBookName: an English name is returned unchanged (still needs no translation)", () => {
   assert.equal(normalizeBookName("John"), "john")
   assert.equal(normalizeBookName("Romans"), "romans")
