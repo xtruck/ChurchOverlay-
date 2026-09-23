@@ -520,6 +520,50 @@ test("AppCore: a hallucination-guard-rejected transcript reaches the overlay as 
   }
 })
 
+// Production audit (2026-09): distinct from the "hallucination-guard"
+// above (which rejects a syntactically-matched but nonexistent VERSE
+// REFERENCE, e.g. "Frogs 3:16") — this is detectHallucination() rejecting
+// the ASR TEXT ITSELF as almost certainly not real speech (a known Whisper
+// training-data artifact or a degenerate repetition loop). Unlike the
+// verse-reference case above, this drops the transcript BEFORE the
+// transcript:final echo — the operator's activity log should never fill
+// up with "Sous-titres réalisés par la communauté d'Amara.org" noise.
+test("AppCore: an ASR-hallucinated boilerplate transcript never reaches the overlay at all — not even the usual transcript:final echo", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const messages: WsMessage[] = []
+    viewerSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString()) as WsMessage
+      if (!isAutoSyncNoise(message)) messages.push(message)
+    })
+
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01CORR",
+      sequence: 1,
+      text: "Thank you for watching!",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    assert.equal(messages.length, 0, "no transcript:final echo, no verse:show — nothing, as if it were never heard")
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
 test("AppCore: stop() stops the ASR provider and closes the WS server", async () => {
   const asr = new FakeAsrProvider()
   const app = await startAppCore({

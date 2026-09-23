@@ -344,6 +344,31 @@ export function correctTranscription(text: string): CorrectionResult {
       }
     }
 
+    // Trailing-punctuation-tolerant fallback: real ASR output attaches
+    // sentence punctuation directly to a word ("v.c.," "verset?"), which
+    // would otherwise defeat an exact-token lookup even though the
+    // underlying confusion is one this table already knows. Only tried
+    // when the exact token doesn't already match — every existing
+    // punctuation-inclusive key ("verset.", "v.c.", etc.) still matches
+    // exactly first, unchanged. Strips exactly ONE trailing punctuation
+    // mark, not a greedy run: a multi-character key like "v.c." already
+    // ends in its own period, and greedily stripping every trailing
+    // punctuation character would eat into that period too (turning
+    // "v.c.," into core "v.c" instead of the intended "v.c."). One
+    // stripped mark is also all a real sentence ever attaches. Only
+    // trailing (never leading) punctuation is stripped: nothing in this
+    // table is ever prefixed.
+    let trailingPunct = ""
+    if (effectiveToken !== "souvent" && !(effectiveToken in PHONETIC_CORRECTIONS)) {
+      const stripped = effectiveToken.match(/^(.+)([,.;:!?])$/)
+      const core = stripped?.[1]
+      const punct = stripped?.[2]
+      if (core && punct && !PROTECTED_WORDS.has(core) && core in PHONETIC_CORRECTIONS) {
+        effectiveToken = core
+        trailingPunct = punct
+      }
+    }
+
 // Check for correction
     const corrected = effectiveToken === "souvent" ? "suivant" : PHONETIC_CORRECTIONS[effectiveToken]
     if (corrected && corrected !== effectiveToken) {
@@ -361,6 +386,7 @@ export function correctTranscription(text: string): CorrectionResult {
           correctedToken = corr
         }
       }
+      correctedToken += trailingPunct
 
       corrections.push({
         original: token,
@@ -390,6 +416,103 @@ export function hasPhoneticCorrections(text: string): boolean {
     }
   }
   return false
+}
+
+export type HallucinationCheck =
+  | { readonly isHallucination: false }
+  | { readonly isHallucination: true; readonly reason: "boilerplate" | "degenerate-repetition" }
+
+// A well-documented, industry-wide Whisper failure mode, distinct from the
+// phonetic mis-hearings PHONETIC_CORRECTIONS above fixes: on silence or
+// non-speech audio, Whisper (all sizes, including large-v3) frequently
+// hallucinates fixed boilerplate lifted from its training data — almost
+// always YouTube-subtitle credits/outros, since that's the dominant source
+// of "silence + captions" pairs it was trained on. Deliberately an EXACT,
+// curated list rather than a broad heuristic: these specific phrases are
+// near-universally reported across independent Whisper deployments (not
+// something a real spoken sermon would ever produce verbatim), so matching
+// them exactly carries negligible false-positive risk, unlike a fuzzy
+// "sounds like an outro" rule would. Provider-agnostic and applied to every
+// ASR provider's output uniformly (wired into AppCore's shared transcript
+// handler, not any one provider adapter) — Whisper-specific in origin, but
+// a real spoken sentence could never legitimately match one exactly
+// regardless of which provider produced it.
+const KNOWN_HALLUCINATION_PHRASES = [
+  // English YouTube-subtitle-outro hallucinations
+  "thank you for watching",
+  "thanks for watching",
+  "thank you for watching!",
+  "please subscribe to my channel",
+  "don't forget to like and subscribe",
+  "like and subscribe",
+  "see you in the next video",
+  "see you next time",
+  // French equivalents (this app's primary audience)
+  "sous-titres réalisés par la communauté d'amara.org",
+  "sous-titrage st' 501",
+  "sous-titrage société radio-canada",
+  "merci d'avoir regardé cette vidéo",
+  "merci d'avoir regardé",
+  "abonnez-vous à la chaîne",
+  "n'oubliez pas de vous abonner",
+  "à bientôt pour une nouvelle vidéo",
+]
+
+/** Normalizes for exact-boilerplate comparison: lowercase, trim, drop trailing punctuation. */
+function normalizeForBoilerplateMatch(text: string): string {
+  return text.trim().toLowerCase().replace(/[.!?…]+$/u, "")
+}
+
+function looksLikeHallucinatedBoilerplate(text: string): boolean {
+  return KNOWN_HALLUCINATION_PHRASES.includes(normalizeForBoilerplateMatch(text))
+}
+
+// The other well-documented Whisper failure mode on silence/noise: a
+// degenerate loop repeating the same short word or phrase many times
+// ("sous-titres sous-titres sous-titres...") instead of stopping. Real
+// spoken repetition for emphasis ("Amen, amen, amen!") is a genuine,
+// common preaching style and must never be caught by this — so the
+// thresholds below are deliberately set well above anything a real speaker
+// produces in one utterance chunk (a few seconds of audio at most), and
+// only trigger once repetition dominates almost the entire chunk, not just
+// a few words of it.
+const REPETITION_MIN_RUN: Readonly<Record<1 | 2 | 3, number>> = { 1: 8, 2: 5, 3: 5 }
+const REPETITION_MIN_COVERAGE = 0.75
+
+function looksLikeDegenerateRepetition(text: string): boolean {
+  const words = text.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  if (words.length < 8) return false
+
+  for (const ngramSize of [1, 2, 3] as const) {
+    if (words.length < ngramSize * 2) continue
+    let run = 1
+    let bestRun = 1
+    for (let i = ngramSize; i + ngramSize <= words.length; i += ngramSize) {
+      const prev = words.slice(i - ngramSize, i).join(" ")
+      const curr = words.slice(i, i + ngramSize).join(" ")
+      run = prev === curr ? run + 1 : 1
+      bestRun = Math.max(bestRun, run)
+    }
+    const coverage = (bestRun * ngramSize) / words.length
+    if (bestRun >= REPETITION_MIN_RUN[ngramSize] && coverage >= REPETITION_MIN_COVERAGE) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * The central, provider-agnostic authority for "is this text a Whisper
+ * hallucination, not real speech" — distinct from correctTranscription()'s
+ * job of fixing mis-heard-but-real words. Called from AppCore's shared
+ * transcript handler on EVERY provider's output, so a hallucination is
+ * caught the same way regardless of whether Groq, Deepgram, or a future
+ * provider produced it, instead of duplicating this per provider adapter.
+ */
+export function detectHallucination(text: string): HallucinationCheck {
+  if (looksLikeHallucinatedBoilerplate(text)) return { isHallucination: true, reason: "boilerplate" }
+  if (looksLikeDegenerateRepetition(text)) return { isHallucination: true, reason: "degenerate-repetition" }
+  return { isHallucination: false }
 }
 
 /**

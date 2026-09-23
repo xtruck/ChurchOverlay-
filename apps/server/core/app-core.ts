@@ -36,7 +36,7 @@ import { ChurchOverlayWsServer, type ServerTokens } from "../ws/server"
 import { resolveTranscriptVerses } from "./resolve-transcript-verses"
 import { resolveVerse, translationIdFor } from "../verse/resolve-verse"
 import { passesTranscriptGate } from "./transcript-gate"
-import { correctTranscription } from "../asr/transcription-corrector"
+import { correctTranscription, detectHallucination } from "../asr/transcription-corrector"
 import { postprocessTranscript } from "../asr/postprocess/pipeline"
 import { TranscriptAssembler } from "../asr/transcript-assembler"
 import { RateLimitError } from "../asr/groq-provider"
@@ -1357,6 +1357,30 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         silenceGate: silenceGate.getMetrics(),
       },
     })
+    // Production audit (2026-09): a class of Whisper hallucination
+    // correctTranscription() above can't fix, because it isn't a
+    // mis-heard WORD — it's an entire INVENTED sentence (YouTube-subtitle
+    // boilerplate) or a degenerate repeated-word loop, both well-
+    // documented Whisper failure modes on silence/noise. Checked here,
+    // provider-agnostically, on every transcript from any provider —
+    // previously this lived only inside GroqProvider itself, which meant
+    // Deepgram's output (or any future provider's) got no protection at
+    // all. Dropped the same way the (still per-provider,
+    // audio-format-specific) non-Latin-script filter already is: no
+    // broadcast, no detection, as if nothing was heard — but still logged
+    // at debug level first, so it's diagnosable, never silently invisible
+    // (AGENTS.md section 11).
+    const hallucinationCheck = detectHallucination(transcript.text)
+    if (hallucinationCheck.isHallucination) {
+      logger.debug({
+        component: "asr",
+        event: "transcript.hallucination-dropped",
+        correlationId: transcript.correlationId,
+        sequence: transcript.sequence,
+        metadata: { reason: hallucinationCheck.reason, textPreview },
+      })
+      return
+    }
     // ARCHITECTURE.md section 70: a production audit found that every
     // transcript was consumed internally (verse detection, media/glossary/
     // navigation matching) without the raw text ever reaching the
