@@ -4805,3 +4805,105 @@ No architecture boundary, protocol, or interface changed — all three are
 correctness fixes inside the existing section 23 pipeline, caught by
 re-running the existing `app-core.test.ts` suite rather than trusting the
 prior commit's own (never re-run) test pass.
+
+## 89. Groq Request Timeout and Provider Selection for Long (3h) Services
+
+Prompted by a request to make live transcription reliable for a full,
+unattended multi-hour service. Evaluated switching the primary ASR provider
+to Deepgram (already implemented as an on-demand failover, section 86) or to
+a new provider entirely, researching real 2026 pricing, rate limits, and
+session-length constraints for Groq, Deepgram, and AssemblyAI, plus the
+actual RAM/CPU/accuracy cost of self-hosting Whisper. Confirmed with the
+user and decided explicitly against a provider or scope change:
+
+- Groq's batch-per-chunk model has no session-length ceiling at all — every
+  request is independent, so there is nothing to expire or reconnect across
+  a 3-hour service. Deepgram's streaming connection, by contrast, has a hard
+  2-hour maximum session length requiring reconnect-with-state-preservation
+  regardless of the failure it's used for — a real engineering cost, not a
+  simple primary/secondary flip.
+- Self-hosting Whisper was requested and specifically evaluated, then
+  rejected: it does not reduce hallucination (a property of the model
+  itself — Groq already runs the same `large-v3` weights; `large-v3` has a
+  well-documented near-100% hallucination rate on non-speech audio
+  regardless of where it's hosted, which is exactly why `correctTranscription`
+  — already in this pipeline — exists) and does not reduce local resource
+  use (real-time `large-v3` inference needs ~4-5GB RAM and is not real-time
+  on CPU alone without a GPU in the room). It would also require formally
+  reopening the v1 scope lock (AGENTS.md §4: "Do NOT implement: local ASR").
+  Conclusion: harden the existing free, session-length-immune Groq path
+  instead of trading it for a provider or architecture change that doesn't
+  address the actual reliability question.
+
+**Fixed**: `transcribe()`'s `fetch()` call had no timeout at all — a single
+stalled connection (no response, no rejection; rare but real over a
+multi-hour service) would leave that chunk's request unresolved forever,
+silently, with no error ever reported. Added a bounded `AbortController`
+timeout (`DEFAULT_REQUEST_TIMEOUT_MS`, 15s, configurable via
+`requestTimeoutMs`). A new `consecutiveNetworkErrors` counter — separate
+from the existing `consecutive429s` — now also trips the same
+`onRateLimitedSustained` failover signal after
+`SUSTAINED_NETWORK_ERROR_THRESHOLD` (3) consecutive timeouts/network
+failures in a row, resetting on any successful response, so a sustained
+connectivity problem (not just sustained rate-limiting) still fails over to
+Deepgram automatically when one is configured — the same safety net
+already documented in section 86, now triggered by either failure class.
+
+## 90. Sentence- and Pattern-Level Hallucination Detection, Centralized
+
+Requested as a follow-up to section 89: make the transcription pipeline
+"stop hallucinating." `correctTranscription()` (section 12 of this
+document's own vocabulary aside — not to be confused with the
+KnownValidVerseIndex hallucination guard of sections 13-14, which rejects
+an invalid *verse reference*) only ever fixed mis-heard WORDS Whisper
+already tried to transcribe correctly (e.g. `"v.c."` → `"verset"`). It did
+nothing about Whisper's other, well-documented failure mode: inventing
+entire boilerplate sentences on silence/noise (YouTube-subtitle-outro
+training-data leakage, e.g. "Sous-titres réalisés par la communauté
+d'Amara.org") or degenerate word-repetition loops.
+
+An initial version of this landed inside `groq-provider.ts` itself,
+alongside its existing `containsNonLatinScript()` filter. Relocated to
+`transcription-corrector.ts` as a new exported `detectHallucination()`
+function, and wired into `AppCore`'s single shared `asr.onTranscript`
+handler instead — every provider's output (Groq, Deepgram, dry-run, any
+future provider) is now protected uniformly, rather than only Groq's,
+since sentence-level and repetition-pattern hallucination detection is a
+text-level concern with nothing provider- or audio-format-specific about
+it (unlike `containsNonLatinScript()`, which stays in `groq-provider.ts`
+only because it's addressing a Whisper-batch-response-specific symptom).
+`correctTranscription()` and `detectHallucination()` remain two separate,
+single-purpose functions in the same file rather than one merged function:
+one fixes real speech, the other rejects text that isn't real speech at
+all.
+
+Design constraints, both deliberately conservative to avoid the failure
+mode of suppressing genuine speech:
+
+- **Boilerplate detection is exact-match only**, against a small curated
+  list of specific, independently-documented Whisper hallucination
+  phrases (English and French) — never a fuzzy "sounds like an outro"
+  heuristic. A real sentence that happens to mention similar words (e.g.
+  "Thank you for watching over us, Lord...") is never touched.
+- **Repetition-loop thresholds are set well above anything genuine
+  preached repetition produces** in one utterance chunk (a few seconds of
+  audio at most) — a single word must repeat 8+ times consecutively, or a
+  2-3 word phrase 5+ times, AND cover at least 75% of the chunk, before
+  it's treated as degenerate. "Amen, amen, amen! Hallelujah, hallelujad!"
+  is real preaching and is never flagged.
+
+A detected hallucination is dropped the same way `containsNonLatinScript()`
+already drops one: no `transcript:final` echo, no detection, no
+media/glossary/navigation matching — as if nothing was heard — but always
+logged at debug level first with the rejection reason, so it remains
+diagnosable (AGENTS.md section 11), never silently invisible.
+
+Separately, `correctTranscription()` itself gained a trailing-punctuation-
+tolerant fallback: a token like `"v.c.,"` or `"verset?"` previously
+defeated the exact-token lookup purely because of an attached comma or
+question mark, even though the underlying confusion (`"v.c."`, `"verset"`)
+is already a known table entry. Only ONE trailing punctuation mark is
+stripped (not a greedy run) specifically so a multi-character key already
+ending in its own period (like `"v.c."`) isn't itself corrupted by the
+fallback — and the stripped punctuation is reattached to the corrected
+output afterward.
