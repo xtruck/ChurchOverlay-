@@ -6,6 +6,8 @@ import type {
   CanvasShowPayload,
   DefinitionShowPayload,
   DetectorNearMissPayload,
+  MicAutoGainPayload,
+  MicHealthPayload,
   MediaCue,
   MediaShowPayload,
   MediaSetDurationPayload,
@@ -60,6 +62,31 @@ function isFiniteNumber(value: unknown): value is number {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0
+}
+
+const MIC_HEALTH_STATES = new Set(["warming-up", "ok", "listening", "too-quiet", "clipping", "noisy", "no-signal"])
+
+function isNullableNumber(value: unknown): boolean {
+  return value === null || (typeof value === "number" && Number.isFinite(value))
+}
+
+function isMicHealthPayload(payload: unknown): payload is MicHealthPayload {
+  if (!isPlainObject(payload)) return false
+  return (
+    typeof payload.state === "string" &&
+    MIC_HEALTH_STATES.has(payload.state) &&
+    isNullableNumber(payload.speechDbfs) &&
+    isNullableNumber(payload.noiseDbfs) &&
+    isNullableNumber(payload.snrDb) &&
+    isNullableNumber(payload.peakDbfs) &&
+    typeof payload.clippingRatio === "number" &&
+    typeof payload.gainDb === "number" &&
+    typeof payload.autoGain === "boolean"
+  )
+}
+
+function isMicAutoGainPayload(payload: unknown): payload is MicAutoGainPayload {
+  return isPlainObject(payload) && typeof payload.enabled === "boolean" && Object.keys(payload).length === 1
 }
 
 function isNullPayload(payload: unknown): payload is null {
@@ -578,6 +605,11 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     allowedSenders: ["operator"],
     validatePayload: isNullPayload,
   },
+  "mic:auto-gain": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isMicAutoGainPayload,
+  },
   "layout:update": {
     kind: "event",
     allowedSenders: [],
@@ -592,6 +624,11 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "event",
     allowedSenders: [],
     validatePayload: isBrandingUpdatePayload,
+  },
+  "mic:health": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isMicHealthPayload,
   },
 }
 

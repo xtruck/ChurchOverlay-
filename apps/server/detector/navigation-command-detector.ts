@@ -1,5 +1,6 @@
 import type { NavigationCommand, NavigationCommandDetector as INavigationCommandDetector } from "../../../packages/contracts"
-import { normalizeBookName, stripAccents } from "./regex-detector"
+import { normalizeSpokenReferences } from "./spoken-reference-normalizer"
+import { isCatalogBookWord, normalizeBookName, stripAccents } from "./regex-detector"
 import { BOOK_CATALOG } from "../verse/book-catalog"
 
 /**
@@ -209,7 +210,10 @@ function stripTrailingPunctuation(text: string): string {
 }
 
 export class NavigationCommandDetector implements INavigationCommandDetector {
-  detect(text: string): NavigationCommand[] {
+  detect(rawText: string): NavigationCommand[] {
+    // Same spoken-form rewriting as RegexDetector (ordinals, number words,
+    // "v." abbreviation) so both detectors agree on what was said.
+    const text = normalizeSpokenReferences(rawText, isCatalogBookWord)
     const commands: NavigationCommand[] = []
     const normalized = normalizeUtterance(text)
     const normalizedWhole = stripTrailingPunctuation(normalized)

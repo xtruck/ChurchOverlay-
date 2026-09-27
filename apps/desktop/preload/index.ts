@@ -69,4 +69,12 @@ contextBridge.exposeInMainWorld("churchOverlay", {
   getSessionHistory: () => ipcRenderer.invoke("get-session-history"),
   setEnableSermonNotes: (enabled: boolean) => ipcRenderer.invoke("set-enable-sermon-notes", enabled),
   setNdiEnabled: (enabled: boolean) => ipcRenderer.invoke("set-ndi-enabled", enabled),
+  setAsrStrategy: (strategy: string) => ipcRenderer.invoke("set-asr-strategy", strategy),
+  getLocalAsrStatus: (model?: string) => ipcRenderer.invoke("get-local-asr-status", model),
+  installLocalAsr: (model: string) => ipcRenderer.invoke("install-local-asr", model),
+  setLocalAsr: (enabled: boolean, model: string) => ipcRenderer.invoke("set-local-asr", { enabled, model }),
+  onLocalAsrProgress: (callback: (state: unknown) => void) => {
+    ipcRenderer.removeAllListeners("local-asr-progress")
+    ipcRenderer.on("local-asr-progress", (_event, state) => callback(state))
+  },
 })

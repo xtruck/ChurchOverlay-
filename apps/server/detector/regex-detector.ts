@@ -1,4 +1,6 @@
 import type { VerseDetector, VerseReference } from "../../../packages/contracts"
+import { normalizeSpokenReferences } from "./spoken-reference-normalizer"
+import { BOOK_CATALOG } from "../verse/book-catalog"
 
 /**
  * v1 VerseDetector implementation (ARCHITECTURE.md section 12, section 50).
@@ -100,7 +102,16 @@ const SPOKEN_REFERENCE_PATTERN =
 // not covered by the navigation detector could have been silently lost.
 // Mirrors NavigationCommandDetector's own pattern shape.
 const SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(?:chapitre|chapter)[\s,]+(\d{1,3})[\s,]+(?:verset|verse)[\s,]+(\d{1,3})(?![\p{L}\d])/giu
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)(?:[\s,]+(?:au|à|a|dans\s+le|in|at))?[\s,]+(?:chapitre|chapter)[\s,]+(\d{1,3})[\s,]+(?:verset|verse)[\s,]+(\d{1,3})(?![\p{L}\d])/giu
+
+// The written/dictated compact forms ASR actually produces for a pause
+// between chapter and verse: "Jean 3.16", "Romains 8, 28", and the bare
+// spoken "Ésaïe 53 5". Two numbers straight after a word, nothing else.
+// The trailing guard refuses a third number glued on ("3.16.2", "8, 28:3")
+// so a decimal or a time never half-matches. Book existence is, as always,
+// KnownValidVerseIndex's job.
+const COMPACT_REFERENCE_PATTERN =
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)[\s,]+(\d{1,3})(?:\s*[.,]\s*|\s+)(\d{1,3})(?![\p{L}\d]|\s*[.,:]\s*\d)/gu
 
 // Deliberately small and conservative: only the short function words most
 // likely to coincidentally precede a "N:M"-shaped pattern in ordinary
@@ -123,13 +134,15 @@ const STOPWORDS = new Set([
 ])
 
 export class RegexDetector implements VerseDetector {
-  detect(text: string): VerseReference[] {
+  detect(rawText: string): VerseReference[] {
     const references: VerseReference[] = []
+    const text = normalizeSpokenReferences(rawText, isCatalogBookWord)
 
     for (const match of [
       ...text.matchAll(REFERENCE_PATTERN),
       ...text.matchAll(SPOKEN_REFERENCE_PATTERN),
       ...text.matchAll(SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN),
+      ...text.matchAll(COMPACT_REFERENCE_PATTERN),
     ]) {
       const rawBook = match[1]
       const rawChapter = match[2]
@@ -201,6 +214,8 @@ export const FRENCH_BOOK_ALIASES: Readonly<Record<string, string>> = {
   proverbes: "proverbs",
   ecclesiaste: "ecclesiastes",
   "cantique des cantiques": "song of solomon",
+  cantique: "song of solomon",
+  cantiques: "song of solomon",
   esaie: "isaiah",
   jeremie: "jeremiah",
   lamentations: "lamentations",
@@ -267,4 +282,11 @@ export const FRENCH_BOOK_ALIASES: Readonly<Record<string, string>> = {
 export function normalizeBookName(rawBook: string): string {
   const normalized = stripAccents(rawBook.trim().replace(/\s+/g, " ").toLowerCase())
   return FRENCH_BOOK_ALIASES[normalized] ?? normalized
+}
+
+const CATALOG_IDS = new Set(BOOK_CATALOG.map((book: { readonly id: string }) => book.id))
+
+/** True when a single spoken word names a Bible book (French or English, any case/accents). */
+export function isCatalogBookWord(word: string): boolean {
+  return CATALOG_IDS.has(normalizeBookName(word))
 }

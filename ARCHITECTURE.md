@@ -5112,3 +5112,56 @@ perspective (AGENTS.md section 20) — this is a new *event* the overlay
 receives, not a new command surface it can send. No control capability is
 added; the overlay still cannot start/stop the mic, override a verse, or
 clear server state.
+
+## 95. Streaming-First ASR and Bidirectional Failover
+
+**Why.** Real service recordings put the Groq batch round-trip at p50 215 ms but p90 ≈ 3.3 s (bimodal); the batch path waits for a whole chunk before anything is transcribed. Deepgram streaming returns finals within a few hundred ms of the speaker pausing.
+
+**What.**
+- `planAsr()` (`server/asr/asr-strategy.ts`, pure, unit-tested): with both keys the default is *streaming-first* (Deepgram primary, Groq secondary); *batch-first* keeps the previous behavior. Deepgram-only and Groq-only are first-class plans — the Deepgram-only setup the setup screen always accepted used to crash at startup because a `GroqProvider` was constructed unconditionally.
+- `FailoverAsrProvider` gains a `trigger`: `"sustained-rate-limit"` (batch primary, unchanged) or `"primary-error"` (streaming primary: a dropped socket, failed connect or failed send switches, and the failed frame is re-routed). It forwards `onUtteranceEnd` to the live provider — wrapping Groq in a failover previously lost utterance-aligned flushing silently — and forwards failover events from nested chains.
+- `DeepgramProvider`: KeepAlive every 4 s of silence (Deepgram closes idle sockets after ~10 s, and SilenceGate stops forwarding during pauses), `Finalize` on SilenceGate utterance end, `endpointing=300`, and a short boosted biblical vocabulary (`keywords` / nova-3 `keyterm`) that deliberately excludes common names.
+- Bilingual display listens in French on Deepgram (`deepgramLanguageFor`) instead of Deepgram's English default.
+
+**Invariant kept.** Partial transcripts still never trigger detection (§47 invariant 1). The latency gain comes from fast *finals*, not from acting on partials, which would display "Jean 3" before "verset 16" is spoken.
+
+## 96. Adaptive Gain and Live Microphone Health
+
+**Why.** Recorded peaks of 0.0008–0.013 of full scale (speech 40–60 dB under a normal level) were the dominant real-world accuracy problem.
+
+**What.** `AdaptiveGain` (`server/audio/adaptive-gain.ts`) is applied *after* SilenceGate, only to forwarded frames — the gate keeps judging the raw signal against the threshold it calibrated on this room. It learns only from frames the gate classed as speech, never attenuates, is time-smoothed and soft-limited (max +21.6 dB). `MicHealthMonitor` classifies a 4 s window into `ok | listening | too-quiet | clipping | noisy | no-signal | warming-up`. New WS event `mic:health` (cadence: once per second of *processed audio*, so deterministic in tests and silent when nothing flows) and operator command `mic:auto-gain`; the setting persists.
+
+## 97. Spoken-Reference Normalization; Explicit Beats Relative
+
+**Why.** Probing the detector with 20 natural phrasings found 8 misses and 2 wrong verses: "1ère Jean 4:8" displayed John 4:8 instead of 1 John 4:8 — both exist, so the hallucination guard cannot catch it.
+
+**What.** `normalizeSpokenReferences()` (shared by `RegexDetector` and `NavigationCommandDetector`): ordinals only before numbered books ("wait a second John" untouched), French/English number words in reference context (compounds up to 199), the "v." abbreviation, multi-word book names. New compact forms "Jean 3.16", "Romains 8, 28", "Ésaïe 53 5" and filler words ("Matthieu au chapitre 5"). Result: 20/20, zero false positives on 20 trap sentences (both sets are tests).
+
+In the same utterance, a valid explicit reference now supersedes relative navigation parsed from the same words ("Psaume 23 verset 1" no longer also means "verse 1 of the current chapter"), removing a race that displayed a second, wrong verse.
+
+## 98. Verse-by-Quotation Suggestions
+
+**Why.** "Quote without explicit reference" was the most common coverage gap in real services.
+
+**What.** `QuoteMatcher` (`server/detector/quote-matcher.ts`) fingerprints the bundled LSG 1910 text as overlapping 5-word runs (31,170 verses, ~0.5 s lazy build off the startup path, < 0.3 ms per transcript). A candidate needs ≥ 4 distinct runs (8 verbatim words), ≥ 35 % of the verse, and to beat every non-adjacent verse 2:1. Simulated readings with 10 % word errors: 0 wrong verses out of 487, 72 % recall.
+
+**Scope boundary.** This is deterministic text matching, not the deferred semantic detector: it only recognizes wording close to LSG 1910 and cannot produce a non-existent reference. Because a preacher may quote without wanting a display, a match is **always** a pending suggestion (`verse:pending` with `origin: "quote"`), never shown automatically, even in auto mode. Final transcripts only; skipped when an explicit reference was already found; 60 s per-verse cooldown.
+
+## 99. Offline whisper.cpp Backup (moved from ROADMAP "Deferred")
+
+**What.** The last link of the chain: Deepgram → Groq → local Whisper, only when the operator enabled it and it is installed.
+- `LocalAsrInstaller` downloads on demand into userData (never in the installer, never in asar): whisper.cpp **v1.8.0** Windows x64, SHA-256 verified before extraction, only `whisper-server.exe` + 4 DLLs written (minimal central-directory zip reader; files are chosen by exact name, so no zip-slip); model `base` (142 MB) or `small` (466 MB) verified against whisper.cpp's published SHA-1.
+- `WhisperServerProcess` keeps the model loaded, waits for `/health`, restarts with bounded backoff, and is always stopped in `shutdown()`.
+- `LocalWhisperProvider`: utterance-aligned WAV batches with per-request language and a biblical prompt, one request at a time, bounded backlog (drops the oldest rather than falling behind).
+- Groq hands over after sustained network errors (3 consecutive), so a clean outage switches within about three utterances; a hanging network can take up to 3 × 15 s.
+- Rejected alternative: Transformers.js + onnxruntime-node would add ~300 MB of native binaries (plus sharp) to every install.
+
+**Limits.** Windows x64 only. The integration was verified against the real `whisper-server` built from v1.8.0 using whisper.cpp's weightless test model; transcription *quality* with the real models must be validated on the target machine.
+
+## 100. Operator Console Redesign ("Vespers") and Hardening
+
+- Solid, quiet surfaces replace the blurred purple/pink mesh; one signature element, the broadcast **tally** around the congregation-screen preview (red: on screen; amber: waiting for confirmation). State colors are fixed; only action color follows church branding (with contrast-safe ink).
+- Live view: command bar (Enter shows), program preview, "Heard" strip, side column (pending card, mic health), tools drawer. All element ids used by `dashboard.js` kept. Stylesheet in `dashboard.css`.
+- Overlay: one orchestrated reveal per verse; the fullscreen backdrop now truly covers the frame (the padded card left poster/video visible at the edges); French book names for French translations (it showed "John 3:16" to French congregations); the connection pill hides once connected instead of staying in the live stream.
+- Remote: on-screen state and "Clear the screen" (`verse:clear`), language from the phone.
+- Hardening: every webContents refuses cross-origin navigation and `window.open` (the dashboard preload exposes the operator bridge); self-hosted fonts (no render-blocking Google Fonts); `.woff2` served with CORS for the sandboxed preview; CI runs typecheck + tests on every push and gates the installer.

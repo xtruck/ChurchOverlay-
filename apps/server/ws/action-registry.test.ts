@@ -44,6 +44,8 @@ test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 me
       "layout:update",
       "detector:near-miss",
       "branding:update",
+      "mic:auto-gain",
+      "mic:health",
     ].sort()
   )
 })

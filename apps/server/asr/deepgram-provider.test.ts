@@ -143,3 +143,75 @@ test("DeepgramProvider: failed connection resets state so a later start can retr
   assert.equal(attempts, 2)
   await provider.stop()
 })
+
+class OpenSocket extends MockWebSocket {
+  static last: OpenSocket | undefined
+  constructor(url: string, options: unknown) {
+    super(url, options)
+    this.readyState = MockWebSocket.OPEN
+    OpenSocket.last = this
+    queueMicrotask(() => this.emit("open"))
+  }
+}
+
+function jsonMessages(socket: MockWebSocket): { type?: string }[] {
+  return socket.sent.filter((item): item is string => typeof item === "string").map((item) => JSON.parse(item))
+}
+
+test("DeepgramProvider: URL carries endpointing and weighted biblical keywords for nova-2", () => {
+  const provider = new DeepgramProvider({ apiKey: "k", language: "fr" })
+  const url = new URL(provider.buildUrl())
+  assert.equal(url.searchParams.get("endpointing"), "300")
+  const keywords = url.searchParams.getAll("keywords")
+  assert.ok(keywords.includes("Deutéronome:2"))
+  assert.ok(keywords.includes("verset:2"))
+  assert.equal(url.searchParams.getAll("keyterm").length, 0)
+})
+
+test("DeepgramProvider: nova-3 uses keyterm prompting instead of weighted keywords", () => {
+  const url = new URL(new DeepgramProvider({ apiKey: "k", language: "en", model: "nova-3" }).buildUrl())
+  assert.ok(url.searchParams.getAll("keyterm").includes("Deuteronomy"))
+  assert.equal(url.searchParams.getAll("keywords").length, 0)
+})
+
+test("DeepgramProvider: biblical vocabulary can be switched off", () => {
+  const url = new URL(new DeepgramProvider({ apiKey: "k", biblicalVocabulary: false }).buildUrl())
+  assert.equal(url.searchParams.getAll("keywords").length, 0)
+})
+
+test("DeepgramProvider: onUtteranceEnd sends Finalize so the final arrives without waiting for the endpointer", async () => {
+  const provider = new DeepgramProvider({ apiKey: "k", WebSocketImpl: OpenSocket as never, keepAliveIntervalMs: 0 })
+  await provider.start()
+  await provider.onUtteranceEnd()
+  assert.deepEqual(jsonMessages(OpenSocket.last!).map((m) => m.type), ["Finalize"])
+  await provider.stop()
+})
+
+test("DeepgramProvider: onUtteranceEnd is a harmless no-op when not connected", async () => {
+  const provider = new DeepgramProvider({ apiKey: "k" })
+  await provider.onUtteranceEnd()
+})
+
+test("DeepgramProvider: sends KeepAlive during silence so Deepgram does not drop the socket", async () => {
+  const provider = new DeepgramProvider({ apiKey: "k", WebSocketImpl: OpenSocket as never, keepAliveIntervalMs: 20 })
+  await provider.start()
+  await new Promise((resolve) => setTimeout(resolve, 75))
+  const socket = OpenSocket.last!
+  assert.ok(jsonMessages(socket).some((m) => m.type === "KeepAlive"))
+  await provider.stop()
+  const countAfterStop = socket.sent.length
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  assert.equal(socket.sent.length, countAfterStop, "no keepalive after stop()")
+})
+
+test("DeepgramProvider: no KeepAlive while audio is flowing", async () => {
+  const provider = new DeepgramProvider({ apiKey: "k", WebSocketImpl: OpenSocket as never, keepAliveIntervalMs: 40 })
+  await provider.start()
+  const frame: AudioFrame = { samples: Int16Array.from([1]), sampleRate: 16000, sequence: 1 }
+  for (let i = 0; i < 8; i++) {
+    await provider.sendAudio(frame)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  assert.equal(jsonMessages(OpenSocket.last!).some((m) => m.type === "KeepAlive"), false)
+  await provider.stop()
+})

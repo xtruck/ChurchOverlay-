@@ -37,7 +37,8 @@
     as a progressive frosted-glass enhancement, not a replacement for it.
   */
   :root {
-    --accent: #b7a6ff;
+    /* Warm gilt: legible over dark backgrounds and arbitrary video alike. */
+    --accent: #e6c27a;
     --scrim: rgba(6, 7, 10, 0.6);
   }
   *, *::before, *::after {
@@ -93,6 +94,8 @@
     backdrop-filter: blur(4px);
   }
   #brand-watermark.visible { display: block; }
+  #status { transition: opacity 400ms ease; }
+  #status.status-hidden { opacity: 0; }
 
   #verse {
     position: fixed;
@@ -160,7 +163,7 @@
   */
   #verse.fullscreen {
     inset: 0;
-    bottom: auto;
+    bottom: 0;
     justify-content: center;
     padding: 4vh 6vw;
     overflow: hidden;
@@ -175,9 +178,26 @@
     justify-content: center;
     border-radius: 0;
     border: none;
-    background: linear-gradient(180deg, #0b0d12, #06070a);
+    /* Not a flat black: a soft fall of light from above, like a lit
+       window over the nave, fading into deep ink. Opaque, so a poster or
+       video underneath stays fully covered (section 82). */
+    background: transparent;
     box-shadow: none;
   }
+  /* The full-bleed backdrop lives on the fixed #verse container, not the
+     card: overlay.js's fitVerseText() measures the CARD against a fraction
+     of the viewport, so the card must stay content-sized. Painting the
+     container instead truly covers the whole frame (section 82's
+     requirement — the old padded card left the poster/video visible
+     around its edges). A soft fall of light from above, like a lit window
+     over the nave, fading into deep ink. */
+  #verse.fullscreen {
+    background:
+      radial-gradient(120% 70% at 50% -12%, rgba(230, 194, 122, 0.11), transparent 62%),
+      radial-gradient(90% 60% at 50% 125%, rgba(46, 78, 128, 0.28), transparent 70%),
+      linear-gradient(180deg, #0c1320, #070b12);
+  }
+  #verse.fullscreen #verse-text { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); }
   /*
     #verse-text/#verse-secondary-text font-size is NOT set here —
     overlay.js's fitVerseText() always sets it as an inline style (an
@@ -229,11 +249,36 @@
   #verse-reference {
     color: var(--accent);
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.85);
-    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
-    font-size: clamp(13px, 1.5vw, 20px);
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    font-family: "Instrument Serif", Georgia, serif;
+    font-style: italic;
+    font-size: clamp(18px, 2.1vw, 34px);
+    font-weight: 400;
+    letter-spacing: 0.01em;
+  }
+  #verse.fullscreen #verse-ref-row { margin-top: clamp(18px, 3vh, 40px); }
+  #verse.fullscreen #verse-reference { font-size: clamp(22px, 2.5vw, 48px); }
+  #verse.fullscreen #verse-ref-row::before,
+  #verse.fullscreen #verse-ref-row::after { width: clamp(28px, 4vw, 72px); }
+
+  /*
+    One orchestrated reveal per verse (re-triggered by overlay.js on every
+    new verse, even when one is already showing): the words come into
+    focus, then the reference settles in just after — the eye reads the
+    scripture first, its address second.
+  */
+  @keyframes verse-focus-in {
+    from { opacity: 0; filter: blur(8px); transform: translateY(10px); }
+    to { opacity: 1; filter: blur(0); transform: none; }
+  }
+  #verse-card.reveal #verse-text,
+  #verse-card.reveal #verse-secondary-text { animation: verse-focus-in 620ms cubic-bezier(0.2, 0, 0, 1) both; }
+  #verse-card.reveal #verse-secondary-text { animation-delay: 90ms; }
+  #verse-card.reveal #verse-ref-row { animation: verse-focus-in 520ms cubic-bezier(0.2, 0, 0, 1) 180ms both; }
+  @media (prefers-reduced-motion: reduce) {
+    #verse, #announcement { transition: none !important; transform: none !important; }
+    #verse-card.reveal #verse-text,
+    #verse-card.reveal #verse-secondary-text,
+    #verse-card.reveal #verse-ref-row { animation: none; }
   }
 
   /*

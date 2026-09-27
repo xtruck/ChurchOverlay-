@@ -137,7 +137,20 @@
   const setupOrganizationNameEl = document.getElementById("setup-organization-name")
   const setupAccentColorEl = document.getElementById("setup-accent-color")
   const setupAccentColorResetBtn = document.getElementById("setup-accent-color-reset")
-  const DEFAULT_ACCENT_COLOR = "#8f7dff"
+  const DEFAULT_ACCENT_COLOR = "#e0a93b"
+  // New elements from the operator-console redesign.
+  const livePreviewEl = document.getElementById("live-preview")
+  const tallyChipEl = document.getElementById("tally-chip")
+  const versePendingOriginEl = document.getElementById("verse-pending-origin")
+  const micHealthEl = document.getElementById("mic-health")
+  const micHealthTextEl = document.getElementById("mic-health-text")
+  const micStatSpeechEl = document.getElementById("mic-stat-speech")
+  const micStatNoiseEl = document.getElementById("mic-stat-noise")
+  const micStatGainEl = document.getElementById("mic-stat-gain")
+  const autoGainToggleEl = document.getElementById("auto-gain-toggle")
+  const asrProviderLineEl = document.getElementById("asr-provider-line")
+  const asrStrategyToggleEl = document.getElementById("asr-strategy-toggle")
+  const asrStrategyNoteEl = document.getElementById("asr-strategy-note")
   const brandMarkEl = document.getElementById("brand-mark")
   const brandTitleEl = document.getElementById("brand-title")
   const remoteDisabledEl = document.getElementById("remote-disabled")
@@ -364,6 +377,22 @@
     return capitalize(ref.book) + " " + ref.chapter + ":" + ref.verse
   }
 
+  function currentDisplayMode() {
+    const active = displayModeToggleEl.querySelector("button.active")
+    return active ? active.dataset.mode : "english"
+  }
+
+  /** The reference as the congregation will read it: French names in French mode. */
+  function formatDisplayedReference(verse) {
+    const ref = verse.reference
+    if (verse.secondary) return formatBilingualReference(ref)
+    // Same rule as the overlay: the translation says the language.
+    if (["ls1910", "lsg", "segond"].includes(String(verse.translation || "").toLowerCase()) || currentDisplayMode() === "french") {
+      return (FRENCH_BOOK_NAMES[ref.book] || capitalize(ref.book)) + " " + ref.chapter + ":" + ref.verse
+    }
+    return formatReference(ref)
+  }
+
   function formatBilingualReference(ref) {
     const frenchName = FRENCH_BOOK_NAMES[ref.book]
     const frenchRef = (frenchName || capitalize(ref.book)) + " " + ref.chapter + ":" + ref.verse
@@ -386,12 +415,17 @@
   function showPendingVerse(verse) {
     versePendingTextEl.textContent = verse.text
     const ref = verse.reference
-    versePendingRefEl.textContent = verse.secondary ? formatBilingualReference(ref) : formatReference(ref)
+    versePendingRefEl.textContent = formatDisplayedReference(verse)
+    // A verse recognised from a reading (no reference spoken) is always a
+    // suggestion, even in auto mode — say why it is waiting.
+    versePendingOriginEl.style.display = verse.origin === "quote" ? "block" : "none"
     versePendingBannerEl.style.display = "flex"
+    livePreviewEl.classList.add("has-pending")
   }
 
   function clearPendingVerse() {
     versePendingBannerEl.style.display = "none"
+    livePreviewEl.classList.remove("has-pending")
   }
 
   versePendingConfirmBtn.addEventListener("click", () => {
@@ -407,8 +441,7 @@
     if (!payload) return
     if (payload.audioMetrics && audioDiagnosticsEl) {
       const m = payload.audioMetrics
-      audioDiagnosticsEl.textContent =
-        `Audio: ${m.framesForwarded}/${m.framesReceived} forwarded · RMS ${Math.round(m.averageRms)} · peak ${Math.round(m.maxRms)}`
+      audioDiagnosticsEl.textContent = t("mic.framesForwarded", { forwarded: m.framesForwarded, received: m.framesReceived })
     }
     asrHealthWarningEl.classList.remove("asr-health-warning-throttled", "asr-health-warning-rate-limited", "asr-health-warning-failover")
     asrReturnPrimaryBtn.style.display = "none"
@@ -444,12 +477,15 @@
       if (typeof payload.micThreshold === "number") {
         log(t("log.micCalibrated", { threshold: Math.round(payload.micThreshold) }), "received")
       }
-
-      asrReturnPrimaryBtn.addEventListener("click", () => {
-        sendJson({ id: crypto.randomUUID(), type: "asr:return-primary", timestamp: Date.now(), payload: null })
-      })
     }
   }
+
+  // Registered once. It used to be attached inside the calibration branch
+  // above: never attached if no calibration had finished yet (a dead
+  // button), and attached again on every calibration (duplicate commands).
+  asrReturnPrimaryBtn.addEventListener("click", () => {
+    sendJson({ id: crypto.randomUUID(), type: "asr:return-primary", timestamp: Date.now(), payload: null })
+  })
 
   // ARCHITECTURE.md section 91: detector:near-miss's dashboard surface —
   // transient, not persistent like the ASR health warning, since it
@@ -474,8 +510,184 @@
     }
     if (accentColor) {
       document.documentElement.style.setProperty("--accent", accentColor)
+      // Any church colour must stay readable as a button background:
+      // pick dark or light ink from the colour's own relative luminance.
+      document.documentElement.style.setProperty("--accent-ink", relativeLuminance(accentColor) > 0.35 ? "#1c1405" : "#ffffff")
     }
   }
+
+  function relativeLuminance(hex) {
+    const match = /^#?([0-9a-f]{6})$/i.exec(hex || "")
+    if (!match) return 1
+    const value = parseInt(match[1], 16)
+    const channel = (shift) => {
+      const c = ((value >> shift) & 255) / 255
+      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+    }
+    return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
+  }
+
+  // ---- Congregation-screen tally ----------------------------------------
+  // Red frame while anything is on the congregation's screen, amber while a
+  // verse waits for confirmation. The poster is a persistent backdrop under
+  // everything, so it never lights the tally on its own.
+  const onScreen = { verse: null, media: null, announcement: false, canvas: false }
+  function renderTally() {
+    const live = Boolean(onScreen.verse || onScreen.media || onScreen.announcement || onScreen.canvas)
+    livePreviewEl.classList.toggle("on-air", live)
+    let text = t("livePreview.offAir")
+    if (onScreen.verse) text = t("livePreview.onAirVerse", { reference: onScreen.verse })
+    else if (onScreen.media) text = t("livePreview.onAirMedia", { title: onScreen.media })
+    else if (live) text = t("livePreview.onAir")
+    tallyChipEl.textContent = text
+  }
+
+  // ---- Microphone health (mic:health, ~1/s while listening) ---------------
+  function formatDb(value) {
+    return typeof value === "number" ? Math.round(value) + " dB" : "–"
+  }
+  function renderMicHealth(payload) {
+    if (!payload) {
+      micHealthEl.dataset.state = "idle"
+      micHealthTextEl.textContent = t("micHealth.idle")
+      micStatSpeechEl.textContent = "–"
+      micStatNoiseEl.textContent = "–"
+      micStatGainEl.textContent = "–"
+      return
+    }
+    micHealthEl.dataset.state = payload.state
+    micHealthTextEl.textContent = t("micHealth." + payload.state)
+    micStatSpeechEl.textContent = formatDb(payload.speechDbfs)
+    micStatNoiseEl.textContent = formatDb(payload.noiseDbfs)
+    micStatGainEl.textContent = payload.autoGain ? "+" + Math.round(payload.gainDb) + " dB" : t("micHealth.gainOff")
+    autoGainToggleEl.checked = payload.autoGain
+  }
+  autoGainToggleEl.addEventListener("change", () => {
+    sendJson({ id: crypto.randomUUID(), type: "mic:auto-gain", timestamp: Date.now(), payload: { enabled: autoGainToggleEl.checked } })
+    log(t(autoGainToggleEl.checked ? "log.autoGainOn" : "log.autoGainOff"), "sent")
+  })
+
+  // ---- Offline backup (Settings) -----------------------------------------
+  const localAsrModelToggleEl = document.getElementById("local-asr-model-toggle")
+  const localAsrStatusEl = document.getElementById("local-asr-status")
+  const localAsrProgressEl = document.getElementById("local-asr-progress")
+  const localAsrInstallBtn = document.getElementById("local-asr-install-btn")
+  const localAsrEnabledEl = document.getElementById("local-asr-enabled")
+  let localModel = "base"
+  let localInstall = null
+
+  function renderLocalAsr(install, asr) {
+    localInstall = install || localInstall
+    if (asr) {
+      localAsrEnabledEl.checked = Boolean(asr.localEnabled)
+      if (asr.localModel && asr.localModel !== localModel) {
+        localModel = asr.localModel
+        setActiveOption(localAsrModelToggleEl, "localModel", localModel)
+      }
+    }
+    const state = localInstall ? localInstall.state : "not-installed"
+    localAsrProgressEl.style.display = state === "downloading" ? "block" : "none"
+    localAsrInstallBtn.style.display = state === "ready" || state === "unsupported" ? "none" : ""
+    localAsrInstallBtn.disabled = state === "downloading"
+    localAsrEnabledEl.disabled = state !== "ready"
+    if (state === "downloading") {
+      localAsrProgressEl.value = localInstall.progress || 0
+      localAsrStatusEl.textContent = t(localInstall.step === "engine" ? "localAsr.downloadingEngine" : "localAsr.downloadingModel", {
+        percent: Math.round((localInstall.progress || 0) * 100),
+      })
+    } else if (state === "ready") {
+      localAsrStatusEl.textContent = localAsrEnabledEl.checked ? t("localAsr.readyOn") : t("localAsr.readyOff")
+    } else if (state === "unsupported") {
+      localAsrStatusEl.textContent = t("localAsr.unsupported")
+    } else if (state === "error") {
+      localAsrStatusEl.textContent = t("localAsr.error", { error: localInstall.error })
+    } else {
+      localAsrStatusEl.textContent = t("localAsr.notInstalled")
+    }
+  }
+
+  function refreshLocalAsr() {
+    if (!window.churchOverlay.getLocalAsrStatus) return
+    window.churchOverlay
+      .getLocalAsrStatus(localModel)
+      .then((status) => renderLocalAsr(status.install, status.asr))
+      .catch(() => {})
+  }
+
+  if (window.churchOverlay.onLocalAsrProgress) {
+    window.churchOverlay.onLocalAsrProgress((state) => renderLocalAsr(state, null))
+  }
+
+  wireOptionGroup(localAsrModelToggleEl, "localModel", (model) => {
+    localModel = model
+    localInstall = null
+    refreshLocalAsr()
+  })
+
+  localAsrInstallBtn.addEventListener("click", () => {
+    renderLocalAsr({ state: "downloading", step: "engine", progress: 0 }, null)
+    window.churchOverlay
+      .installLocalAsr(localModel)
+      .then((state) => {
+        renderLocalAsr(state, null)
+        log(t(state.state === "ready" ? "log.localAsrInstalled" : "log.localAsrInstallFailed"), state.state === "ready" ? "received" : "error")
+      })
+      .catch((err) => renderLocalAsr({ state: "error", error: err.message }, null))
+  })
+
+  localAsrEnabledEl.addEventListener("change", () => {
+    const enabled = localAsrEnabledEl.checked
+    localAsrEnabledEl.disabled = true
+    localAsrStatusEl.textContent = t("asrSettings.restarting")
+    window.churchOverlay
+      .setLocalAsr(enabled, localModel)
+      .then((status) => {
+        renderAsrStatus(status)
+        renderLocalAsr(null, status)
+        log(t(enabled ? "log.localAsrOn" : "log.localAsrOff"), "sent")
+      })
+      .catch((err) => {
+        localAsrEnabledEl.checked = !enabled
+        renderLocalAsr({ state: "error", error: err.message }, null)
+      })
+  })
+
+  // ---- Transcription strategy (Settings) ---------------------------------
+  let asrStatus = null
+  function renderAsrStatus(status) {
+    asrStatus = status || null
+    if (!asrStatus) return
+    const both = asrStatus.hasGroq && asrStatus.hasDeepgram
+    setActiveOption(asrStrategyToggleEl, "asrStrategy", asrStatus.strategy)
+    asrStrategyToggleEl.querySelectorAll("button").forEach((button) => {
+      button.disabled = !both
+    })
+    asrStrategyNoteEl.textContent = both ? "" : t("asrSettings.needsBothKeys")
+    let provider
+    if (!asrStatus.hasDeepgram) provider = t("asrSettings.providerGroq")
+    else if (!asrStatus.hasGroq) provider = t("asrSettings.providerDeepgram")
+    else provider = asrStatus.strategy === "streaming-first" ? t("asrSettings.providerStreamingFirst") : t("asrSettings.providerBatchFirst")
+    if (asrStatus.localActive) provider += t("asrSettings.plusOffline")
+    asrProviderLineEl.textContent = provider
+  }
+  asrStrategyToggleEl.querySelectorAll("button").forEach((button) => {
+    button.addEventListener("click", () => {
+      const strategy = button.dataset.asrStrategy
+      if (!asrStatus || strategy === asrStatus.strategy) return
+      asrStrategyToggleEl.querySelectorAll("button").forEach((b) => (b.disabled = true))
+      asrStrategyNoteEl.textContent = t("asrSettings.restarting")
+      window.churchOverlay
+        .setAsrStrategy(strategy)
+        .then((status) => {
+          renderAsrStatus(status)
+          log(t("log.asrStrategyChanged", { strategy }), "sent")
+        })
+        .catch((err) => {
+          asrStrategyNoteEl.textContent = err.message
+          renderAsrStatus(asrStatus)
+        })
+    })
+  })
 
   let nearMissHideTimer = null
   const NEAR_MISS_DISPLAY_MS = 6000
@@ -1671,6 +1883,13 @@
     ws.send(JSON.stringify(message))
   }
 
+  referenceInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault()
+      showBtn.click()
+    }
+  })
+
   showBtn.addEventListener("click", () => {
     const reference = parseReference(referenceInput.value)
     if (!reference) {
@@ -1747,6 +1966,7 @@
     micVisualEl.classList.remove("active")
     micCalibratingStatusEl.style.display = "none"
     resetMicLevel()
+    renderMicHealth(null)
     log(t("log.micStopped"), "sent")
   }
 
@@ -1780,7 +2000,10 @@
       // message.type is a wire-protocol identifier (e.g. "verse:show"),
       // not user-facing text — it stays in English regardless of UI
       // language, same as any other protocol/technical identifier.
-      log(t("log.received", { type: message.type }), "received")
+      // High-frequency telemetry would bury real events in the log.
+      if (message.type !== "mic:health" && message.type !== "transcript:partial") {
+        log(t("log.received", { type: message.type }), "received")
+      }
 
       if (message.type === "transcript:partial" || message.type === "transcript:final") {
         // ARCHITECTURE.md section 70: the operator needs to see what was
@@ -1791,14 +2014,32 @@
         if (text) transcriptEl.textContent = text
       } else if (message.type === "verse:show") {
         showLiveVerse()
+        const ref = message.payload && message.payload.reference
+        onScreen.verse = ref ? formatDisplayedReference(message.payload) : "…"
+        renderTally()
+      } else if (message.type === "verse:clear") {
+        onScreen.verse = null
+        renderTally()
+      } else if (message.type === "announcement:show" || message.type === "announcement:clear") {
+        onScreen.announcement = message.type === "announcement:show"
+        renderTally()
+      } else if (message.type === "canvas:show" || message.type === "canvas:clear") {
+        onScreen.canvas = message.type === "canvas:show"
+        renderTally()
+      } else if (message.type === "mic:health") {
+        renderMicHealth(message.payload)
       } else if (message.type === "media:show") {
         activeCueId = message.payload.cue.id
         renderMediaGrid()
         updateNowPlayingBar(message.payload.cue, message.payload.playback)
+        onScreen.media = message.payload.cue.title
+        renderTally()
       } else if (message.type === "media:clear") {
         activeCueId = null
         renderMediaGrid()
         updateNowPlayingBar(null, null)
+        onScreen.media = null
+        renderTally()
       } else if (message.type === "poster:show") {
         principalPosterCueId = message.payload.cue.id
         renderMediaGrid()
@@ -2171,7 +2412,7 @@
     const apiKey = setupKeyInput.value.trim()
     const deepgramApiKey = setupDeepgramKeyInput.value.trim()
     if (!apiKey && !deepgramApiKey) {
-      setSetupError("Enter a Groq or Deepgram API key.")
+      setSetupError(t("setup.enterKeyError"))
       return
     }
     setSetupError("")
@@ -2201,6 +2442,9 @@
         setMediaOrigin(info.overlayUrl)
         renderNdiStatus(info.ndi)
         applyBranding(info.organizationName, info.accentColor)
+        renderTally()
+        renderMicHealth(null)
+        window.churchOverlay.getStartupStatus().then((status) => renderAsrStatus(status.asr)).catch(() => {})
         showAppShell()
         connect(info.port, info.token)
       })
@@ -2233,6 +2477,10 @@
         setMediaOrigin(status.overlayUrl)
         renderNdiStatus(status.ndi)
         applyBranding(status.organizationName, status.accentColor)
+        renderAsrStatus(status.asr)
+        refreshLocalAsr()
+        renderTally()
+        renderMicHealth(null)
         showAppShell()
         connect(status.port, status.token)
       } else {

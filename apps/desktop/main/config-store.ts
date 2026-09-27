@@ -2,6 +2,7 @@ import { mkdir, open, readFile, rename } from "node:fs/promises"
 import { dirname } from "node:path"
 import type { DisplayMode, VerseConfirmationMode, VerseLayout } from "../../../packages/contracts"
 import type { AudioProfile } from "../../server/audio/audio-profile"
+import { ASR_STRATEGIES, type AsrStrategy } from "../../server/asr/asr-strategy"
 
 /** Desktop-app-only concern (not part of the WS protocol) — the operator dashboard/setup UI's own language, ARCHITECTURE.md section 63.5. */
 export type UiLanguage = "en" | "fr"
@@ -73,6 +74,16 @@ export type AppConfig = {
    */
   readonly organizationName?: string
   readonly accentColor?: string
+  /**
+   * Which provider carries live audio when both keys exist (see
+   * server/asr/asr-strategy.ts). Absent → streaming-first.
+   */
+  readonly asrStrategy?: AsrStrategy
+  /** Adaptive gain on audio sent to ASR. Absent → on. */
+  readonly autoGain?: boolean
+  /** Offline whisper.cpp engine as the last fallback. Absent → off (it is a download). */
+  readonly localAsrEnabled?: boolean
+  readonly localAsrModel?: "base" | "small"
 }
 
 type StoredConfig = {
@@ -96,6 +107,10 @@ type StoredConfig = {
   readonly audioProfile?: string
   readonly organizationName?: string
   readonly accentColor?: string
+  readonly asrStrategy?: string
+  readonly autoGain?: boolean
+  readonly localAsrEnabled?: boolean
+  readonly localAsrModel?: string
 }
 
 /**
@@ -154,6 +169,10 @@ export class ConfigStore {
       ...(config.audioProfile === undefined ? {} : { audioProfile: config.audioProfile }),
       ...(config.organizationName === undefined ? {} : { organizationName: config.organizationName }),
       ...(config.accentColor === undefined ? {} : { accentColor: config.accentColor }),
+      ...(config.asrStrategy === undefined ? {} : { asrStrategy: config.asrStrategy }),
+      ...(config.autoGain === undefined ? {} : { autoGain: config.autoGain }),
+      ...(config.localAsrEnabled === undefined ? {} : { localAsrEnabled: config.localAsrEnabled }),
+      ...(config.localAsrModel === undefined ? {} : { localAsrModel: config.localAsrModel }),
     }
 
     await mkdir(dirname(this.filePath), { recursive: true })
@@ -191,6 +210,10 @@ export class ConfigStore {
       audioProfile,
       organizationName,
       accentColor,
+      asrStrategy,
+      autoGain,
+      localAsrEnabled,
+      localAsrModel,
     } = stored
 
     if (
@@ -242,6 +265,18 @@ export class ConfigStore {
     if (accentColor !== undefined && typeof accentColor !== "string") {
       throw new Error(`ConfigStore: ${this.filePath} has an invalid accentColor`)
     }
+    if (localAsrEnabled !== undefined && typeof localAsrEnabled !== "boolean") {
+      throw new Error(`ConfigStore: ${this.filePath} has an invalid localAsrEnabled`)
+    }
+    if (localAsrModel !== undefined && localAsrModel !== "base" && localAsrModel !== "small") {
+      throw new Error(`ConfigStore: ${this.filePath} has an invalid localAsrModel`)
+    }
+    if (autoGain !== undefined && typeof autoGain !== "boolean") {
+      throw new Error(`ConfigStore: ${this.filePath} has an invalid autoGain`)
+    }
+    if (asrStrategy !== undefined && !ASR_STRATEGIES.includes(asrStrategy as AsrStrategy)) {
+      throw new Error(`ConfigStore: ${this.filePath} has an invalid asrStrategy`)
+    }
 
     return {
       groqApiKey: this.codec.decrypt(Buffer.from(groqApiKeyEncrypted, "base64")),
@@ -272,6 +307,10 @@ export class ConfigStore {
       ...(audioProfile === undefined ? {} : { audioProfile: audioProfile as AudioProfile }),
       ...(organizationName === undefined ? {} : { organizationName }),
       ...(accentColor === undefined ? {} : { accentColor }),
+      ...(asrStrategy === undefined ? {} : { asrStrategy: asrStrategy as AsrStrategy }),
+      ...(autoGain === undefined ? {} : { autoGain }),
+      ...(localAsrEnabled === undefined ? {} : { localAsrEnabled }),
+      ...(localAsrModel === undefined ? {} : { localAsrModel: localAsrModel as "base" | "small" }),
     }
   }
 }

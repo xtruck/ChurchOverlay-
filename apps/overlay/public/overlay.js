@@ -36,8 +36,15 @@
   const definitionBodyEl = document.getElementById("definition-body")
   const canvasLayerEl = document.getElementById("canvas-layer")
 
-  function setStatus(text) {
+  // The connection pill is a diagnostic, not content: it used to stay on
+  // the congregation screen (and in the stream) for the whole service.
+  // It now fades once connected and comes back only when something is wrong.
+  let statusHideTimer = null
+  function setStatus(text, healthy) {
     statusEl.textContent = text
+    statusEl.classList.remove("status-hidden")
+    clearTimeout(statusHideTimer)
+    if (healthy) statusHideTimer = setTimeout(() => statusEl.classList.add("status-hidden"), 2500)
   }
 
   // Bounded, backoff-aware reconnect (ARCHITECTURE.md section 48, AGENTS.md
@@ -92,6 +99,19 @@
 
   function formatReference(ref) {
     return capitalize(ref.book) + " " + ref.chapter + ":" + ref.verse
+  }
+
+  // French-only display used to show the ENGLISH book name ("John 3:16")
+  // under a French verse. The verse's own translation id says which
+  // language the congregation is reading — Louis Segond 1910 is "ls1910".
+  const FRENCH_TRANSLATIONS = new Set(["ls1910", "lsg", "segond"])
+  function formatVerseReference(verse) {
+    const ref = verse.reference
+    if (verse.secondary) return formatBilingualReference(ref)
+    if (FRENCH_TRANSLATIONS.has(String(verse.translation || "").toLowerCase())) {
+      return (FRENCH_BOOK_NAMES[ref.book] || capitalize(ref.book)) + " " + ref.chapter + ":" + ref.verse
+    }
+    return formatReference(ref)
   }
 
   // ARCHITECTURE.md section 72: a viewer confirmed both languages must be
@@ -176,8 +196,7 @@
 
   function showVerse(verse) {
     textEl.textContent = verse.text
-    const ref = verse.reference
-    refEl.textContent = verse.secondary ? formatBilingualReference(ref) : formatReference(ref)
+    refEl.textContent = formatVerseReference(verse)
 
     if (verse.secondary) {
       secondaryTextEl.textContent = verse.secondary.text
@@ -188,6 +207,11 @@
     }
 
     verseEl.classList.add("visible")
+    // Restart the reveal even if a verse is already on screen: removing the
+    // class and forcing a reflow lets the same keyframes play again.
+    verseCardEl.classList.remove("reveal")
+    void verseCardEl.offsetWidth
+    verseCardEl.classList.add("reveal")
     requestAnimationFrame(() => fitVerseText())
   }
 
@@ -458,7 +482,7 @@
 
     ws.addEventListener("open", () => {
       reconnectAttempts = 0
-      setStatus("connected")
+      setStatus("connected", true)
     })
     ws.addEventListener("close", () => {
       const delay = nextReconnectDelay()

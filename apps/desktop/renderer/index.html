@@ -37,966 +37,7 @@
 />
 <title>ChurchOverlay — Operator</title>
 <link href="fonts/fonts.css" rel="stylesheet" />
-<style>
-  /*
-    "Verse Ops Console" visual system (Phase 0 — ARCHITECTURE.md section 59):
-    a vibrant mesh-gradient background, a dark-tinted glassmorphism card
-    system (translucent + blurred, NOT the usual light/white glass recipe —
-    this console is used in a dim room during a live service, so legibility
-    wins over brightness), Instrument Serif for display/heading moments,
-    Instrument Sans for UI/body text, and JetBrains Mono for anything
-    data-shaped (timestamps, RMS metrics, the activity log) so figures stay
-    tabular and don't shift layout. Cosmetic only — no IDs, WS actions, or
-    IPC calls change; dashboard.js's DOM contract is untouched.
-  */
-  :root {
-    --mesh-1: #7c6bff;
-    --mesh-2: #ff6fae;
-    --mesh-3: #2fd8b0;
-    --mesh-4: #3fb6ff;
-    --bg-void: #0a0a12;
-
-    --glass-bg: rgba(20, 20, 34, 0.58);
-    --glass-bg-raised: rgba(28, 28, 46, 0.68);
-    --glass-border: rgba(255, 255, 255, 0.12);
-    --glass-border-strong: rgba(255, 255, 255, 0.22);
-    --glass-blur: 20px;
-
-    --text-primary: #f5f5fb;
-    --text-secondary: #b7b7cc;
-    --text-tertiary: #82829c;
-
-    --accent: #8f7dff;
-    --accent-strong: #a996ff;
-    --accent-ink: #17102f;
-    --success: #34d399;
-    --danger: #ff7086;
-    --danger-soft: rgba(255, 112, 134, 0.16);
-
-    --radius-sm: 8px;
-    --radius-md: 14px;
-    --radius-lg: 22px;
-    --space-2: 8px;
-    --space-3: 12px;
-    --space-4: 16px;
-    --space-6: 24px;
-    --space-8: 32px;
-
-    --shadow-card: 0 1px 1px rgba(0, 0, 0, 0.25), 0 24px 48px -16px rgba(0, 0, 0, 0.6);
-    --ease: cubic-bezier(0.4, 0, 0.2, 1);
-
-    --font-display: "Instrument Serif", Georgia, serif;
-    --font-ui: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
-    --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
-  }
-
-  * { box-sizing: border-box; }
-  html, body {
-    margin: 0;
-    height: 100%;
-    color: var(--text-primary);
-    font-family: var(--font-ui);
-  }
-  body {
-    display: flex;
-    flex-direction: column;
-    background-color: var(--bg-void);
-    background-image:
-      radial-gradient(at 12% 18%, color-mix(in srgb, var(--mesh-1) 55%, transparent) 0px, transparent 42%),
-      radial-gradient(at 88% 8%, color-mix(in srgb, var(--mesh-4) 50%, transparent) 0px, transparent 40%),
-      radial-gradient(at 82% 82%, color-mix(in srgb, var(--mesh-2) 45%, transparent) 0px, transparent 45%),
-      radial-gradient(at 15% 92%, color-mix(in srgb, var(--mesh-3) 45%, transparent) 0px, transparent 45%);
-    background-attachment: fixed;
-    background-repeat: no-repeat;
-  }
-  #app-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-
-  @media (prefers-reduced-motion: no-preference) {
-    .status-pill.connected .status-dot { animation: pulse-dot 2s infinite; }
-  }
-
-  /* Glass surface — the one shared recipe every card/panel/header uses. */
-  .glass {
-    background: var(--glass-bg);
-    -webkit-backdrop-filter: blur(var(--glass-blur));
-    backdrop-filter: blur(var(--glass-blur));
-    border: 1px solid var(--glass-border);
-    box-shadow: var(--shadow-card);
-  }
-
-  header.glass {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--space-4) var(--space-6);
-    border-left: none;
-    border-right: none;
-    border-top: none;
-    border-radius: 0;
-  }
-  .brand { display: flex; align-items: center; gap: var(--space-3); }
-  .brand-mark {
-    width: 34px; height: 34px;
-    border-radius: var(--radius-sm);
-    background: linear-gradient(135deg, var(--accent), var(--mesh-2));
-    display: flex; align-items: center; justify-content: center;
-    font-family: var(--font-display);
-    font-weight: 400; color: var(--accent-ink); font-size: 16px;
-  }
-  .brand h1 {
-    font-family: var(--font-display);
-    font-style: italic;
-    font-size: 19px; margin: 0; font-weight: 400; letter-spacing: 0.01em;
-  }
-  .brand .sub { font-size: 11px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.1em; }
-
-  .status-pill {
-    display: flex; align-items: center; gap: var(--space-2);
-    padding: 7px 14px;
-    border-radius: 999px;
-    background: var(--glass-bg-raised);
-    border: 1px solid var(--glass-border);
-    font-size: 12px;
-    font-family: var(--font-mono);
-  }
-  .status-dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--text-tertiary);
-    transition: background 0.2s var(--ease);
-  }
-  .status-pill.connected .status-dot { background: var(--success); }
-  .status-pill.disconnected .status-dot { background: var(--danger); }
-  @keyframes pulse-dot {
-    0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5); }
-    70% { box-shadow: 0 0 0 8px rgba(52, 211, 153, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
-  }
-
-  /*
-    Sidebar app shell (ARCHITECTURE.md section 66, Phase 1): each of Live /
-    Rundown & Scenes / Media Library / Settings gets the ENTIRE content
-    area when active, switched via the sidebar — replacing the old bento
-    grid where every card was squeezed into a fixed-height cell and grew
-    its own internal scrollbar the moment content exceeded it. This is
-    presentation-only: dashboard.js binds every interactive element by ID,
-    never by grid position (section 66.1), so nothing below changes what
-    any button/toggle/input actually does, only where it visually lives.
-  */
-  .shell {
-    flex: 1;
-    display: flex;
-    min-height: 0;
-    overflow: hidden;
-  }
-  .sidebar {
-    width: 220px;
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: var(--space-4);
-    border-radius: 0;
-    border-top: none;
-    border-bottom: none;
-    border-left: none;
-  }
-  .sidebar-nav-item {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    width: 100%;
-    text-align: left;
-    background: transparent;
-    color: var(--text-secondary);
-    padding: 11px 12px;
-    border-radius: var(--radius-sm);
-    font-size: 13px;
-    font-weight: 600;
-  }
-  .sidebar-nav-item:hover:not(.active) { background: rgba(255, 255, 255, 0.05); }
-  .sidebar-nav-item.active { background: rgba(143, 125, 255, 0.14); color: var(--text-primary); }
-  /* ARCHITECTURE.md section 78: deliberately NOT styled like a view
-     switcher (no .active state, an outline instead of a fill) — this
-     opens a modal, not a view, and shouldn't look like a fifth nav item. */
-  .sidebar-voice-commands-btn {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    width: 100%;
-    text-align: left;
-    background: transparent;
-    color: var(--text-tertiary);
-    padding: 9px 12px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--glass-border);
-    font-size: 12px;
-    font-weight: 600;
-  }
-  .sidebar-voice-commands-btn:hover { color: var(--text-primary); border-color: var(--accent); }
-
-  @media (max-width: 900px) {
-    .sidebar { width: 160px; }
-  }
-
-  /* One view fills the entire content area at a time; the WHOLE view
-     scrolls as a page if its content is taller than the window, instead
-     of each card getting its own tiny scroll region. */
-  .shell-content { flex: 1; min-width: 0; position: relative; }
-  .view { display: none; height: 100%; overflow-y: auto; padding: var(--space-6); }
-  .view.active { display: block; }
-
-  .view-live-grid {
-    display: grid;
-    grid-template-columns: minmax(320px, 400px) 1fr;
-    grid-template-rows: auto auto auto 1fr;
-    grid-template-areas:
-      "mic      live"
-      "override live"
-      "log      live"
-      "notes    live";
-    gap: var(--space-4);
-    min-height: 100%;
-  }
-  @media (max-width: 1100px) {
-    .view-live-grid {
-      grid-template-columns: 1fr;
-      grid-template-areas: "mic" "override" "live" "log" "notes";
-      grid-template-rows: none;
-    }
-  }
-  .view-live-grid .cell-mic { grid-area: mic; }
-  .view-live-grid .cell-override { grid-area: override; }
-  .view-live-grid .cell-live { grid-area: live; }
-  .view-live-grid .cell-log { grid-area: log; }
-  .view-live-grid .cell-notes { grid-area: notes; }
-
-  .card {
-    border-radius: var(--radius-lg);
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-  }
-
-  /* Production audit (ARCHITECTURE.md section 74): the app's first
-     in-app modal — no prior precedent to match, styled consistently
-     with the existing glass-card system rather than introducing a new
-     visual language. Fixed/centered overlay, dismissable only via its
-     own buttons (no backdrop-click-to-close: an accidental dismiss here
-     silently discards a real file the operator just picked). */
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(8, 8, 16, 0.65);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-  }
-  .modal-card {
-    width: 100%;
-    max-width: 640px;
-    margin: 0 var(--space-4);
-    padding: var(--space-8);
-    border-radius: var(--radius-lg);
-  }
-  .modal-card .card-title { font-size: 14px; }
-  .modal-card .settings-hint { margin-top: -2px; font-size: 14px; }
-  .modal-card input[type="text"] {
-    width: 100%;
-    margin-top: var(--space-2);
-    padding: var(--space-3);
-    font-size: 16px;
-  }
-  .modal-card .btn-row button { padding-top: var(--space-3); padding-bottom: var(--space-3); font-size: 14px; }
-
-  /* ARCHITECTURE.md section 78 */
-  .voice-commands-modal-card { max-width: 640px; max-height: 80vh; display: flex; flex-direction: column; }
-  .voice-commands-body { overflow-y: auto; margin-top: var(--space-3); }
-  .voice-commands-body section { margin-bottom: var(--space-5); }
-  .voice-commands-body h3 {
-    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
-    color: var(--text-tertiary); margin-bottom: var(--space-2);
-  }
-  .voice-commands-list { display: flex; flex-direction: column; gap: 6px; }
-  .voice-commands-row, .voice-commands-item {
-    display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3);
-    padding: 6px 0; border-bottom: 1px solid var(--glass-border); font-size: 12.5px;
-  }
-  .voice-commands-row span, .voice-commands-item span { color: var(--text-secondary); flex-shrink: 0; }
-  .voice-commands-row code, .voice-commands-item code {
-    font-family: var(--font-mono); font-size: 11.5px; color: var(--accent-strong); text-align: right;
-  }
-  .voice-commands-empty { color: var(--text-tertiary); font-size: 12px; font-style: italic; }
-
-  /* ARCHITECTURE.md section 79 */
-  .history-summary {
-    font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary);
-    margin-bottom: var(--space-5); padding-bottom: var(--space-4); border-bottom: 1px solid var(--glass-border);
-  }
-  .history-summary strong { color: var(--accent-strong); font-weight: 600; }
-  .history-columns { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); }
-  @media (max-width: 900px) { .history-columns { grid-template-columns: 1fr; } }
-  .history-columns h3 {
-    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
-    color: var(--text-tertiary); margin-bottom: var(--space-3);
-  }
-  .history-list { display: flex; flex-direction: column; gap: 6px; }
-  .history-row {
-    display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3);
-    padding: 7px 0; border-bottom: 1px solid var(--glass-border); font-size: 12.5px;
-  }
-  .history-row span:first-child { color: var(--text-primary); }
-  .history-row span:last-child { color: var(--text-tertiary); font-family: var(--font-mono); font-size: 11.5px; flex-shrink: 0; }
-  .history-empty { color: var(--text-tertiary); font-size: 12px; font-style: italic; }
-  .card-title {
-    font-size: 11px; font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.09em;
-    color: var(--text-tertiary);
-    margin-bottom: var(--space-3);
-  }
-
-  .media-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: var(--space-3);
-  }
-  .media-header .card-title { margin-bottom: 0; }
-  .btn-small { padding: 6px 12px; font-size: 12px; }
-
-  /* "Own place, grid form" (like an OBS multiview) for imported media —
-     a scrollable grid of tiles inside the media cell rather than a plain
-     list, so a growing library stays scannable at a glance. */
-  .media-grid {
-    display: grid;
-    /* Production audit follow-up: real thumbnails (not generic icons)
-       need real size to be worth showing — bumped from 92px so an
-       imported photo/video frame is actually recognizable at a glance. */
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: var(--space-3);
-    overflow-y: auto;
-    flex: 1;
-    align-content: start;
-    min-height: 0;
-  }
-  .media-tile {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    aspect-ratio: 1;
-    border-radius: var(--radius-sm);
-    background: rgba(0, 0, 0, 0.22);
-    border: 1px solid var(--glass-border);
-    padding: var(--space-2);
-    cursor: pointer;
-    transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
-    text-align: center;
-  }
-  .media-tile:hover { border-color: var(--glass-border-strong); background: rgba(255, 255, 255, 0.05); }
-  .media-tile.active { border-color: var(--accent); background: rgba(143, 125, 255, 0.14); }
-  .media-tile.poster { border-color: var(--warning, #e0a030); }
-  .media-tile-icon { width: 26px; height: 26px; color: var(--text-secondary); flex-shrink: 0; }
-  /* Production audit finding: a real preview of the imported content
-     (its actual first frame for video), not a generic per-kind icon —
-     fills the space above the title the icon used to occupy. */
-  .media-tile-thumb {
-    width: 100%;
-    flex: 1;
-    min-height: 0;
-    object-fit: cover;
-    border-radius: calc(var(--radius-sm) - 2px);
-    background: rgba(0, 0, 0, 0.35);
-  }
-  .media-tile-title {
-    font-size: 12.5px;
-    color: var(--text-secondary);
-    line-height: 1.3;
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-  }
-  /* Section 67.1: the operator "appoints" one image cue as the day's
-     principal poster from right here in the library, not a separate
-     screen — a small pin toggle in the tile corner. Filled/lit when this
-     cue is the current poster; a ring-only outline otherwise so an empty
-     library doesn't read as "broken buttons everywhere." */
-  .media-tile-poster-btn {
-    position: absolute;
-    top: 4px;
-    right: 4px;
-    width: 20px;
-    height: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    border: 1px solid var(--glass-border-strong);
-    background: rgba(0, 0, 0, 0.45);
-    color: var(--text-tertiary);
-    cursor: pointer;
-    padding: 0;
-  }
-  .media-tile-poster-btn svg { width: 12px; height: 12px; }
-  .media-tile-poster-btn:hover { color: var(--text-primary); border-color: var(--accent); }
-  .media-tile-poster-btn.active {
-    background: var(--warning, #e0a030);
-    border-color: var(--warning, #e0a030);
-    color: #1a1200;
-  }
-  /* Production audit follow-up (ARCHITECTURE.md section 74): rename/
-     delete, always visible (not hover-only) — same "clarity over
-     cleverness" convention the always-visible poster pin already uses.
-     Top-left mirrors the poster pin's top-right placement so the two
-     button groups never collide on any tile. */
-  .media-tile-actions {
-    position: absolute;
-    top: 4px;
-    left: 4px;
-    display: flex;
-    gap: 4px;
-  }
-  .media-tile-timer { display: flex; gap: 4px; align-items: center; padding: 4px; }
-  .media-tile-timer input { width: 4.5rem; }
-  .media-tile-action-btn {
-    width: 20px;
-    height: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    border: 1px solid var(--glass-border-strong);
-    background: rgba(0, 0, 0, 0.45);
-    color: var(--text-tertiary);
-    cursor: pointer;
-    padding: 0;
-  }
-  .media-tile-action-btn svg { width: 11px; height: 11px; }
-  .media-tile-action-btn:hover { color: var(--text-primary); border-color: var(--accent); }
-  .media-tile-action-btn-danger:hover { color: var(--danger); border-color: var(--danger); }
-  .media-empty {
-    grid-column: 1 / -1;
-    color: var(--text-tertiary);
-    font-size: 12px;
-    text-align: center;
-    padding: var(--space-6) 0;
-  }
-
-  /* ARCHITECTURE.md section 64.5's authoring UI: a horizontal strip of
-     scene "chips" for the active rundown (click to jump via scene:goto),
-     and an identical chip style for the builder's draft list below it —
-     one shared scene-summary visual language for both. */
-  .rundown-scene-list {
-    display: flex;
-    gap: var(--space-2);
-    overflow-x: auto;
-    padding-bottom: 4px;
-  }
-  .rundown-scene-chip {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-shrink: 0;
-    padding: 8px 12px;
-    border-radius: 999px;
-    background: rgba(0, 0, 0, 0.22);
-    border: 1px solid var(--glass-border);
-    font-size: 12px;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
-    white-space: nowrap;
-  }
-  .rundown-scene-chip:hover { border-color: var(--glass-border-strong); }
-  .rundown-scene-chip.active { border-color: var(--accent); background: rgba(143, 125, 255, 0.14); color: var(--text-primary); }
-  .rundown-scene-chip.interrupted { border-color: var(--danger); }
-  .rundown-scene-chip .chip-icon { width: 14px; height: 14px; flex-shrink: 0; }
-  .rundown-scene-chip .chip-action {
-    margin-left: 2px;
-    color: var(--text-tertiary);
-    font-size: 13px;
-    line-height: 1;
-    padding: 2px;
-  }
-  .rundown-scene-chip .chip-action:hover { color: var(--text-primary); }
-  .rundown-scene-chip .chip-action.chip-remove:hover { color: var(--danger); }
-  .rundown-empty { color: var(--text-tertiary); font-size: 12px; padding: var(--space-2) 0; }
-
-  .rundown-builder { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--glass-border); }
-
-  /*
-    ARCHITECTURE.md section 66, Phase 4: the WYSIWYG canvas editor. The
-    stage is a fixed 16:9 authoring surface (section 66.2's "one fixed
-    ratio, project-wide" decision) — every layer's x/y/width/height is a
-    percentage of it, so the same numbers mean the same thing here, in
-    this stage's own live preview, and on the real overlay regardless of
-    each surface's actual pixel size.
-  */
-  .canvas-editor-toolbar { display: flex; gap: var(--space-2); margin-bottom: var(--space-3); }
-  .canvas-editor-body { display: flex; gap: var(--space-4); align-items: flex-start; }
-  .canvas-stage {
-    position: relative;
-    width: 100%;
-    max-width: 720px;
-    aspect-ratio: 16 / 9;
-    background: #000;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--glass-border-strong);
-    overflow: hidden;
-    flex-shrink: 0;
-    outline: none;
-  }
-  .canvas-stage:focus-visible { border-color: var(--accent); }
-  .canvas-editor-layer {
-    position: absolute;
-    box-sizing: border-box;
-    cursor: move;
-    user-select: none;
-    border: 1px dashed transparent;
-  }
-  .canvas-editor-layer:hover { border-color: rgba(255, 255, 255, 0.35); }
-  .canvas-editor-layer.selected { border: 1px solid var(--accent); }
-  .canvas-editor-layer .layer-content { width: 100%; height: 100%; overflow: hidden; pointer-events: none; }
-  .canvas-editor-layer .layer-content.layer-text {
-    display: flex;
-    align-items: center;
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
-  }
-  .canvas-editor-layer .layer-content img,
-  .canvas-editor-layer .layer-content video { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .canvas-resize-handle {
-    position: absolute;
-    width: 9px;
-    height: 9px;
-    background: var(--accent);
-    border: 1px solid var(--accent-ink);
-    border-radius: 2px;
-  }
-  .canvas-resize-handle.nw { top: -5px; left: -5px; cursor: nwse-resize; }
-  .canvas-resize-handle.n  { top: -5px; left: calc(50% - 4px); cursor: ns-resize; }
-  .canvas-resize-handle.ne { top: -5px; right: -5px; cursor: nesw-resize; }
-  .canvas-resize-handle.e  { top: calc(50% - 4px); right: -5px; cursor: ew-resize; }
-  .canvas-resize-handle.se { bottom: -5px; right: -5px; cursor: nwse-resize; }
-  .canvas-resize-handle.s  { bottom: -5px; left: calc(50% - 4px); cursor: ns-resize; }
-  .canvas-resize-handle.sw { bottom: -5px; left: -5px; cursor: nesw-resize; }
-  .canvas-resize-handle.w  { top: calc(50% - 4px); left: -5px; cursor: ew-resize; }
-  .canvas-snap-guide {
-    position: absolute;
-    background: var(--accent-strong);
-    pointer-events: none;
-  }
-  .canvas-snap-guide.vertical { width: 1px; top: 0; bottom: 0; }
-  .canvas-snap-guide.horizontal { height: 1px; left: 0; right: 0; }
-
-  .canvas-inspector { flex: 1; min-width: 220px; }
-  .canvas-inspector-row { margin-bottom: var(--space-3); }
-  .canvas-inspector-grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-  .canvas-inspector-grid4 input { margin-bottom: 0; }
-  input[type="color"] {
-    width: 100%;
-    height: 38px;
-    padding: 2px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--glass-border-strong);
-    background: rgba(0, 0, 0, 0.22);
-    margin-bottom: var(--space-3);
-  }
-  input[type="number"] {
-    width: 100%;
-    background: rgba(0, 0, 0, 0.22);
-    border: 1px solid var(--glass-border-strong);
-    color: var(--text-primary);
-    padding: 8px 10px;
-    border-radius: var(--radius-sm);
-    font-family: var(--font-mono);
-    font-size: 12.5px;
-    margin-bottom: var(--space-3);
-  }
-
-  select {
-    width: 100%;
-    background: rgba(0, 0, 0, 0.22);
-    border: 1px solid var(--glass-border-strong);
-    color: var(--text-primary);
-    padding: 10px 12px;
-    border-radius: var(--radius-sm);
-    font-family: var(--font-ui);
-    font-size: 13px;
-    margin-bottom: var(--space-3);
-  }
-
-  /* Transport controls for the currently-active video/audio cue
-     (ARCHITECTURE.md section 60.4's "full transport" — play/pause/stop;
-     seek is a known follow-up, see the comment in dashboard.js). Hidden
-     entirely for an image cue or when nothing is active. */
-  .media-now-playing {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
-    margin-top: var(--space-3);
-    padding-top: var(--space-3);
-    border-top: 1px solid var(--glass-border);
-  }
-  .media-now-playing-title {
-    font-size: 12px;
-    color: var(--text-secondary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-  }
-
-  .live-preview {
-    background: radial-gradient(circle at 30% 15%, rgba(143, 125, 255, 0.16), transparent 60%), var(--glass-bg);
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--glass-border);
-    -webkit-backdrop-filter: blur(var(--glass-blur));
-    backdrop-filter: blur(var(--glass-blur));
-    box-shadow: var(--shadow-card);
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    text-align: center;
-    padding: var(--space-8);
-    position: relative;
-    min-height: 280px;
-  }
-  /* A real element (not ::before content) so i18n.js can translate it — CSS content strings can't be swapped by data-i18n. */
-  .live-preview-label {
-    position: absolute;
-    top: var(--space-4); left: var(--space-4);
-    font-size: 10px; font-weight: 600; font-family: var(--font-mono);
-    letter-spacing: 0.14em;
-    color: var(--text-tertiary);
-  }
-  /* ARCHITECTURE.md section 69: a real 16:9 window onto the actual
-     overlay page, filling the live-preview card rather than floating at
-     a fixed size — the card's own padding/min-height already give it
-     room, so the frame just needs to fill what's left. */
-  .overlay-preview-frame {
-    width: 100%;
-    max-width: 480px;
-    aspect-ratio: 16 / 9;
-    border: 1px solid var(--glass-border);
-    border-radius: var(--radius-md);
-    background: #000;
-  }
-  /* ARCHITECTURE.md section 65.3: review mode's holding prompt — visually
-     distinct from an actually-live verse (an amber/accent-bordered card,
-     not the plain live-preview text), since nothing is on the overlay
-     yet, only awaiting a decision. */
-  .verse-pending-banner {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-    max-width: 520px;
-    padding: var(--space-6);
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--accent);
-    background: rgba(143, 125, 255, 0.1);
-  }
-  .verse-pending-label {
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--accent-strong);
-  }
-  #verse-pending-text {
-    font-family: var(--font-display);
-    font-size: 22px;
-    line-height: 1.4;
-    color: var(--text-primary);
-    text-align: center;
-  }
-  #verse-pending-ref {
-    color: var(--accent-strong);
-    font-family: var(--font-mono);
-    font-weight: 500;
-    font-size: 12px;
-    letter-spacing: 0.06em;
-  }
-  button {
-    font-family: var(--font-ui);
-    font-size: 13px; font-weight: 600;
-    border: none; border-radius: var(--radius-sm);
-    padding: 10px 16px;
-    cursor: pointer;
-    transition: transform 0.1s var(--ease), background 0.15s var(--ease), opacity 0.15s var(--ease);
-  }
-  button:active:not(:disabled) { transform: scale(0.97); }
-  button:disabled { opacity: 0.4; cursor: not-allowed; }
-  button:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
-  /* Media tiles and rundown chips are role="button" divs/spans (keyboard-
-     operable via dashboard.js's makeInteractive()), not real <button>
-     elements, so the rule above doesn't reach them on its own. */
-  [role="button"]:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
-
-  .btn-primary { background: var(--accent); color: var(--accent-ink); }
-  .btn-primary:hover:not(:disabled) { background: var(--accent-strong); }
-  .btn-secondary { background: var(--glass-bg-raised); color: var(--text-primary); border: 1px solid var(--glass-border-strong); }
-  .btn-secondary:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
-  .btn-danger { background: var(--danger-soft); color: var(--danger); border: 1px solid rgba(255, 112, 134, 0.35); }
-  .btn-danger:hover:not(:disabled) { background: rgba(255, 112, 134, 0.24); }
-  .btn-block { flex: 1; }
-  .btn-row { display: flex; gap: var(--space-2); }
-
-  label { display: block; font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: var(--space-2); }
-  input[type="text"], input[type="password"] {
-    width: 100%;
-    background: rgba(0, 0, 0, 0.22);
-    border: 1px solid var(--glass-border-strong);
-    color: var(--text-primary);
-    padding: 10px 12px;
-    border-radius: var(--radius-sm);
-    font-family: var(--font-mono);
-    font-size: 13px;
-    margin-bottom: var(--space-3);
-    transition: border-color 0.15s var(--ease);
-  }
-  input[type="text"]:focus, input[type="password"]:focus { outline: none; border-color: var(--accent); }
-  #remote-url { flex: 1; min-width: 0; margin-bottom: 0; }
-  #remote-disabled, #remote-no-lan { color: var(--text-tertiary); font-size: 12px; }
-  .settings-hint { color: var(--text-tertiary); font-size: 12px; margin: -4px 0 var(--space-3); line-height: 1.5; }
-
-  /*
-    A real level meter (ARCHITECTURE.md production audit finding): bar
-    heights are set directly by dashboard.js from the actual captured
-    audio's RMS, on the same Int16 scale the server's SilenceGate
-    threshold is evaluated against — not a canned animation that ran
-    unconditionally whenever the mic was merely "on." The short height
-    transition smooths frame-to-frame jumps into something that reads as
-    a genuine meter rather than a jittery bar chart.
-  */
-  .mic-visual { display: flex; align-items: flex-end; gap: 3px; height: 32px; margin-bottom: var(--space-3); }
-  .mic-bar { flex: 1; background: var(--glass-border-strong); border-radius: 2px; height: 20%; transition: height 0.08s linear, background 0.2s ease; }
-  .mic-visual.active .mic-bar { background: var(--accent-strong); }
-
-  #transcript {
-    font-family: var(--font-mono);
-    font-size: 12px;
-    color: var(--text-secondary);
-    min-height: 20px;
-    line-height: 1.6;
-    padding: var(--space-3);
-    background: rgba(0, 0, 0, 0.22);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--glass-border);
-  }
-
-  /* ARCHITECTURE.md section 73: the Live grid's rows below the preview
-     are auto-height, so nothing was actually constraining this list —
-     overflow-y:auto had no bounded height to ever overflow against, and
-     a growing log just made the whole page taller instead of scrolling
-     internally. This got materially worse once every transcript started
-     being echoed here too (section 70). A fixed max-height (~5 lines)
-     makes it self-contained regardless of the grid; older entries are
-     still there, just a scroll away, not discarded (see the existing
-     50-entry cap in dashboard.js's log()). */
-  #log { font-family: var(--font-mono); font-size: 11.5px; overflow-y: auto; flex: 1; min-height: 60px; max-height: 160px; }
-  .log-line { padding: 5px 0; border-bottom: 1px solid var(--glass-border); display: flex; gap: var(--space-2); color: var(--text-secondary); }
-  .log-time { color: var(--text-tertiary); flex-shrink: 0; font-variant-numeric: tabular-nums; }
-  .log-line.event-sent .log-text { color: var(--accent-strong); }
-  .log-line.event-received .log-text { color: var(--success); }
-  .log-line.event-error .log-text { color: var(--danger); }
-
-  /* ARCHITECTURE.md section 65.7: explicitly labeled "AI-generated notes",
-     never presented as verified content — a persistent, always-visible
-     disclaimer, not just a one-time tooltip. */
-  .sermon-notes-disclaimer {
-    font-size: 11px;
-    font-style: italic;
-    color: var(--text-tertiary);
-    margin-bottom: var(--space-3);
-  }
-  .sermon-notes-feed { overflow-y: auto; flex: 1; min-height: 60px; display: flex; flex-direction: column; gap: var(--space-3); }
-  /* ARCHITECTURE.md section 93: same disclaimer-adjacent styling reasoning
-     as sermon-notes-disclaimer — AI-generated, so visually distinct from
-     verified verse text everywhere else in this dashboard. */
-  .service-summary-result {
-    margin-top: var(--space-3, 12px);
-    padding: 10px 12px;
-    border-radius: var(--radius-sm);
-    background: rgba(143, 125, 255, 0.08);
-    border: 1px solid rgba(143, 125, 255, 0.3);
-    font-size: 13px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-  }
-  .sermon-notes-empty { color: var(--text-tertiary); font-size: 12px; }
-  .sermon-notes-entry { padding: var(--space-2) 0; border-bottom: 1px solid var(--glass-border); }
-  .sermon-notes-entry:last-child { border-bottom: none; }
-  .sermon-notes-time { color: var(--text-tertiary); font-size: 10.5px; font-variant-numeric: tabular-nums; margin-bottom: 4px; }
-  .sermon-notes-text { color: var(--text-secondary); font-size: 13px; line-height: 1.6; white-space: pre-line; }
-
-  .setup-screen {
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--space-6);
-  }
-  .setup-card {
-    width: 100%;
-    max-width: 440px;
-    border-radius: var(--radius-lg);
-    padding: var(--space-8) var(--space-6);
-    text-align: center;
-  }
-  .setup-card .brand-mark { margin: 0 auto var(--space-4); }
-  .setup-card h2 {
-    font-family: var(--font-display);
-    font-style: italic;
-    font-weight: 400;
-    font-size: 24px; margin: 0 0 8px;
-  }
-  .setup-card p { font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin: 0 0 var(--space-6); }
-  .setup-card label { text-align: left; }
-  .setup-card input { margin-bottom: var(--space-4); }
-  #setup-error {
-    display: none;
-    color: var(--danger);
-    font-size: 12px;
-    margin: -6px 0 var(--space-4);
-    text-align: left;
-  }
-
-  /* ARCHITECTURE.md section 65.6 — opt-in, off by default; the checkbox
-     text itself carries the network-exposure warning rather than hiding
-     it in a tooltip, since this is a real trust-boundary decision. */
-  .checkbox-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    text-align: left;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--text-secondary);
-    margin-bottom: var(--space-4);
-    cursor: pointer;
-  }
-  .checkbox-row input[type="checkbox"] {
-    margin: 2px 0 0;
-    width: 16px;
-    height: 16px;
-    flex-shrink: 0;
-    accent-color: var(--accent);
-  }
-
-  /* ASR/transcription health (status:update, a real producer for the
-     previously-unopinionated event) — a persistent, unmissable warning
-     right next to the mic controls the operator is already watching,
-     rather than only ever a server-side log line an operator has no
-     reason to be looking at mid-service. */
-  .asr-health-warning {
-    margin-top: var(--space-3);
-    padding: 8px 12px;
-    border-radius: var(--radius-sm);
-    background: var(--danger-soft);
-    border: 1px solid rgba(255, 112, 134, 0.35);
-    color: var(--danger);
-    font-size: 12px;
-    line-height: 1.5;
-  }
-  .asr-health-warning-throttled {
-    background: rgba(255, 193, 7, 0.12);
-    border-color: rgba(255, 193, 7, 0.45);
-    color: #b7791f;
-  }
-  .asr-health-warning-rate-limited {
-    border-width: 2px;
-  }
-  .asr-health-warning-failover {
-    background: rgba(72, 187, 120, 0.12);
-    border-color: rgba(72, 187, 120, 0.45);
-    color: #276749;
-  }
-  /* ARCHITECTURE.md section 91: informational, not alarming (a near-miss
-     isn't necessarily an error — the operator may simply not have meant
-     to say a reference), so it borrows the same amber tone as the
-     "throttled" ASR-health state rather than the red "danger" one. */
-  .accent-color-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2, 8px);
-  }
-  .accent-color-row input[type="color"] {
-    width: 44px;
-    height: 32px;
-    padding: 2px;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-  }
-  .near-miss-indicator {
-    margin-top: var(--space-3);
-    padding: 8px 12px;
-    border-radius: var(--radius-sm);
-    background: rgba(255, 193, 7, 0.12);
-    border: 1px solid rgba(255, 193, 7, 0.45);
-    color: #b7791f;
-    font-size: 12px;
-    line-height: 1.5;
-  }
-  .mic-calibrating-status {
-    margin-top: var(--space-3);
-    padding: 8px 12px;
-    border-radius: var(--radius-sm);
-    background: rgba(143, 125, 255, 0.1);
-    border: 1px solid var(--accent);
-    color: var(--accent-strong);
-    font-size: 12px;
-    line-height: 1.5;
-  }
-
-  /* ARCHITECTURE.md section 63.2/63.5: setup-time defaults for verse
-     display mode and UI language, as a vertical list of option buttons
-     (longer descriptive text than the header's compact toggle allows). */
-  .option-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--space-4); }
-  .option-list button {
-    background: rgba(0, 0, 0, 0.22);
-    color: var(--text-secondary);
-    border: 1px solid var(--glass-border-strong);
-    text-align: left;
-    padding: 10px 12px;
-    border-radius: var(--radius-sm);
-    font-size: 13px;
-    font-weight: 500;
-  }
-  .option-list button.active {
-    border-color: var(--accent);
-    background: rgba(143, 125, 255, 0.14);
-    color: var(--text-primary);
-  }
-  .option-list button:hover:not(.active) { background: rgba(255, 255, 255, 0.05); }
-
-  /* The live header toggle — same setting, compact abbreviations (EN/FR/EN+FR
-     read the same regardless of UI language, so these labels are never
-     translated) since it lives in the header alongside the status pill. */
-  .header-controls { display: flex; align-items: center; gap: var(--space-3); }
-  .segmented {
-    display: flex;
-    background: var(--glass-bg-raised);
-    border: 1px solid var(--glass-border);
-    border-radius: 999px;
-    padding: 3px;
-    gap: 2px;
-  }
-  .segmented button {
-    background: transparent;
-    color: var(--text-tertiary);
-    font-size: 11px;
-    font-weight: 600;
-    padding: 5px 11px;
-    border-radius: 999px;
-  }
-  .segmented button.active { background: var(--accent); color: var(--accent-ink); }
-  .segmented button:hover:not(.active) { background: rgba(255, 255, 255, 0.06); color: var(--text-primary); }
-</style>
+<link href="dashboard.css" rel="stylesheet" />
 </head>
 <body>
   <div id="setup-screen" class="setup-screen" style="display: none">
@@ -1006,7 +47,7 @@
       <p data-i18n="setup.description">Enter your Groq API key to start transcribing. It's encrypted and stored locally — this only needs to be done once.</p>
       <label for="setup-groq-key" data-i18n="setup.groqKeyLabel">Groq API key</label>
       <input id="setup-groq-key" type="password" placeholder="gsk_…" autocomplete="off" />
-      <label for="setup-deepgram-key">Deepgram API key (recommended for live streaming)</label>
+      <label for="setup-deepgram-key" data-i18n="setup.deepgramKeyLabel">Deepgram API key (fastest display)</label>
       <input id="setup-deepgram-key" type="password" placeholder="Deepgram key" autocomplete="off" />
 
       <label data-i18n="setup.displayModeLabel">Verse display language</label>
@@ -1027,11 +68,11 @@
         <span data-i18n="setup.allowPhoneRemote">Allow a phone remote on this WiFi network (exposes this app to your local network)</span>
       </label>
 
-      <label for="setup-audio-profile">Audio responsiveness</label>
+      <label for="setup-audio-profile" data-i18n="setup.audioProfileLabel">Audio responsiveness</label>
       <select id="setup-audio-profile">
-        <option value="responsive">Responsive (lower latency)</option>
-        <option value="balanced" selected>Balanced (recommended)</option>
-        <option value="robust">Robust (noisier rooms)</option>
+        <option value="responsive" data-i18n="setup.audioProfile.responsive">Responsive (lower latency)</option>
+        <option value="balanced" selected data-i18n="setup.audioProfile.balanced">Balanced (recommended)</option>
+        <option value="robust" data-i18n="setup.audioProfile.robust">Robust (noisier rooms)</option>
       </select>
 
       <!-- ARCHITECTURE.md section 92: optional branding — a generic,
@@ -1042,7 +83,7 @@
       <input id="setup-organization-name" type="text" placeholder="Grace Community Church" autocomplete="off" />
       <label for="setup-accent-color" data-i18n="setup.accentColorLabel">Accent color (optional)</label>
       <div class="accent-color-row">
-        <input id="setup-accent-color" type="color" value="#8f7dff" />
+        <input id="setup-accent-color" type="color" value="#e0a93b" />
         <button type="button" id="setup-accent-color-reset" class="btn-secondary" data-i18n="setup.accentColorReset">Use default</button>
       </div>
 
@@ -1088,18 +129,23 @@
   <main class="shell">
     <nav id="sidebar" class="sidebar glass" data-i18n-aria-label="a11y.mainNavigation">
       <button type="button" id="nav-live" class="sidebar-nav-item active" data-view="live">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/><circle cx="12" cy="11" r="2.2" fill="currentColor" stroke="none"/></svg>
         <span data-i18n="nav.live">Live</span>
       </button>
       <button type="button" id="nav-rundown" class="sidebar-nav-item" data-view="rundown">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01" stroke-width="3" stroke-linecap="round"/></svg>
         <span data-i18n="nav.rundown">Rundown &amp; Scenes</span>
       </button>
       <button type="button" id="nav-media" class="sidebar-nav-item" data-view="media">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>
         <span data-i18n="nav.media">Media Library</span>
       </button>
       <button type="button" id="nav-history" class="sidebar-nav-item" data-view="history">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>
         <span data-i18n="nav.history">History</span>
       </button>
       <button type="button" id="nav-settings" class="sidebar-nav-item" data-view="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
         <span data-i18n="nav.settings">Settings</span>
       </button>
       <!-- ARCHITECTURE.md section 78: several real bugs this project
@@ -1119,100 +165,116 @@
     <div class="shell-content">
       <div id="view-live" class="view active">
         <div class="view-live-grid">
-          <div class="card glass cell-mic">
-            <div class="card-title" data-i18n="mic.title">Microphone</div>
-            <div id="mic-visual" class="mic-visual">
-              <div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div>
-            </div>
-            <div class="btn-row">
-              <button id="mic-start-btn" class="btn-primary btn-block" data-i18n="mic.start">Start listening</button>
-              <button id="mic-stop-btn" class="btn-secondary btn-block" disabled data-i18n="mic.stop">Stop</button>
-            </div>
-            <!-- ARCHITECTURE.md section 76: the ~1.5s auto-calibration
-                 window after mic:start deliberately forwards nothing yet
-                 — without this, that window looks identical to "the mic
-                 doesn't work," the exact complaint this feature exists
-                 to prevent a repeat of. -->
-            <div id="mic-calibrating-status" class="mic-calibrating-status" style="display: none" data-i18n="mic.calibrating">Calibrating to room noise…</div>
-            <label style="margin-top: 16px" data-i18n="mic.lastTranscriptLabel">Last transcript</label>
-            <div id="transcript" data-i18n="mic.waitingForSpeech">Waiting for speech…</div>
-            <!-- ARCHITECTURE.md section 91: detector:near-miss's dashboard
-                 surface — a final transcript that contained chapter/verse
-                 keywords or a recognized book name but resolved to no
-                 reference. Transient (auto-hidden), not persistent like
-                 asr-health-warning, since it describes one utterance, not
-                 an ongoing condition. -->
-            <div id="near-miss-indicator" class="near-miss-indicator" role="status" style="display: none"></div>
-            <div id="audio-diagnostics" class="mic-diagnostics" aria-live="polite">Audio: waiting for metrics</div>
-            <div id="asr-health-warning" class="asr-health-warning" role="alert" style="display: none">
-              <span id="asr-health-warning-text"></span>
-              <button id="asr-return-primary-btn" type="button" class="btn-secondary" style="display:none">Return to Groq</button>
-            </div>
-          </div>
-
-          <div class="card glass cell-override">
-            <div class="card-title" data-i18n="override.title">Manual Override</div>
+          <div class="card glass cell-override command-bar">
             <label for="reference" data-i18n="override.referenceLabel">Verse reference</label>
-            <input id="reference" type="text" data-i18n-placeholder="placeholder.verseReference" />
+            <input id="reference" type="text" data-i18n-placeholder="placeholder.verseReference" autocomplete="off" />
             <div class="btn-row">
-              <button id="show-btn" class="btn-primary btn-block" data-i18n="override.showButton">Show on overlay</button>
+              <button id="show-btn" class="btn-primary" data-i18n="override.showButton">Show on overlay</button>
               <button id="clear-btn" class="btn-danger" data-i18n="override.clearButton">Clear</button>
             </div>
           </div>
 
-          <div class="live-preview cell-live">
-            <div class="live-preview-label" data-i18n="livePreview.label">LIVE PREVIEW</div>
-            <div id="verse-pending-banner" class="verse-pending-banner" style="display: none">
-              <div class="verse-pending-label" data-i18n="livePreview.pendingLabel">Verse detected — awaiting confirmation</div>
-              <div id="verse-pending-text"></div>
-              <div id="verse-pending-ref"></div>
-              <button id="verse-pending-confirm-btn" class="btn-primary" data-i18n="livePreview.pendingConfirm">Show on overlay</button>
+          <!-- The congregation screen: the REAL overlay page (the same one
+               OBS loads) in an iframe (ARCHITECTURE.md section 69), framed
+               by the broadcast tally — red while something is on screen,
+               amber while a verse waits for confirmation. -->
+          <section id="live-preview" class="live-preview cell-live" aria-labelledby="live-preview-label">
+            <div class="live-preview-head">
+              <h2 id="live-preview-label" class="live-preview-label" data-i18n="livePreview.label">Congregation screen</h2>
+              <span id="tally-chip" class="tally-chip" role="status" data-i18n="livePreview.offAir">Nothing on screen</span>
             </div>
-            <!-- ARCHITECTURE.md section 69: embeds the REAL overlay page —
-                 the exact same page OBS's Browser Source loads, over its
-                 own independent WS connection — instead of a hand-rolled
-                 reimplementation that only ever covered verse/announcement
-                 text and had already drifted out of sync with media,
-                 posters, and canvas scenes. src is set once the app knows
-                 the overlay URL (see renderOverlayPreview in dashboard.js). -->
             <iframe
               id="overlay-preview-frame"
               class="overlay-preview-frame"
               data-i18n-title="a11y.overlayPreview"
               sandbox="allow-scripts"
             ></iframe>
-          </div>
+          </section>
 
-          <div class="card glass cell-log">
-            <div class="media-header">
-              <div class="card-title" data-i18n="activity.title">Activity</div>
-              <button id="export-session-btn" class="btn-secondary btn-small" data-i18n="session.exportButton">Export session</button>
-              <button id="export-rehearsal-btn" class="btn-secondary btn-small" data-i18n="session.exportRehearsalButton">Export rehearsal report</button>
-              <button id="export-diagnostics-btn" class="btn-secondary btn-small" data-i18n="session.exportDiagnosticsButton">Export diagnostics</button>
+          <div class="card glass cell-heard">
+            <div class="heard-row">
+              <span class="heard-label" data-i18n="mic.lastTranscriptLabel">Heard</span>
+              <div id="transcript" aria-live="polite" data-i18n="mic.waitingForSpeech">Waiting for speech…</div>
             </div>
-            <div id="log"></div>
+            <!-- ARCHITECTURE.md section 91: a final transcript with verse
+                 keywords that resolved to no reference. Transient. -->
+            <div id="near-miss-indicator" class="near-miss-indicator" role="status" style="display: none"></div>
           </div>
 
-          <div class="card glass cell-notes">
-            <div class="media-header">
-              <div class="card-title" data-i18n="sermonNotes.title">Sermon Notes (AI)</div>
-              <div id="sermon-notes-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.sermonNotes" data-i18n-title="a11y.sermonNotes">
-                <button type="button" data-notes-enabled="off" data-i18n="sermonNotes.off">Off</button>
-                <button type="button" data-notes-enabled="on" data-i18n="sermonNotes.on">On</button>
+          <aside class="cell-side">
+            <div id="verse-pending-banner" class="verse-pending-banner" style="display: none" role="region" aria-live="assertive">
+              <div class="verse-pending-label" data-i18n="livePreview.pendingLabel">To confirm</div>
+              <div id="verse-pending-origin" class="verse-pending-origin" style="display: none" data-i18n="livePreview.pendingFromQuote">Recognized from a reading — no reference was said.</div>
+              <div id="verse-pending-ref"></div>
+              <div id="verse-pending-text"></div>
+              <button id="verse-pending-confirm-btn" class="btn-primary" data-i18n="livePreview.pendingConfirm">Show on screen</button>
+            </div>
+
+            <div class="card glass cell-mic">
+              <div class="mic-head">
+                <h2 class="card-title" data-i18n="mic.title">Microphone</h2>
+                <div id="mic-visual" class="mic-visual" aria-hidden="true">
+                  <div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div>
+                </div>
+              </div>
+              <div class="btn-row" style="margin-bottom: var(--space-3)">
+                <button id="mic-start-btn" class="btn-primary btn-block" data-i18n="mic.start">Start listening</button>
+                <button id="mic-stop-btn" class="btn-secondary btn-block" disabled data-i18n="mic.stop">Stop</button>
+              </div>
+              <!-- ARCHITECTURE.md section 76: the ~1.5s calibration window. -->
+              <div id="mic-calibrating-status" class="mic-calibrating-status" style="display: none" data-i18n="mic.calibrating">Calibrating to room noise…</div>
+              <div id="mic-health" class="mic-health" data-state="idle" role="status" aria-live="polite">
+                <span class="mic-health-dot"></span>
+                <span id="mic-health-text" data-i18n="micHealth.idle">Microphone off</span>
+              </div>
+              <div class="mic-stats">
+                <div class="mic-stat"><div class="mic-stat-label" data-i18n="micHealth.speech">Voice</div><div id="mic-stat-speech" class="mic-stat-value">–</div></div>
+                <div class="mic-stat"><div class="mic-stat-label" data-i18n="micHealth.noise">Room</div><div id="mic-stat-noise" class="mic-stat-value">–</div></div>
+                <div class="mic-stat"><div class="mic-stat-label" data-i18n="micHealth.gain">Gain</div><div id="mic-stat-gain" class="mic-stat-value">–</div></div>
+              </div>
+              <label class="switch-row" for="auto-gain-toggle">
+                <span data-i18n="micHealth.autoGain">Automatic gain</span>
+                <input id="auto-gain-toggle" type="checkbox" class="switch" checked />
+              </label>
+              <div id="asr-health-warning" class="asr-health-warning" role="alert" style="display: none">
+                <span id="asr-health-warning-text"></span>
+                <button id="asr-return-primary-btn" type="button" class="btn-secondary btn-small" style="display:none">Return to main provider</button>
+              </div>
+              <div id="asr-provider-line" class="asr-provider-line"></div>
+              <div id="audio-diagnostics" class="mic-diagnostics" aria-live="off"></div>
+            </div>
+          </aside>
+
+          <details id="tools-drawer" class="card glass cell-drawer drawer">
+            <summary data-i18n="drawer.title">Activity and sermon notes</summary>
+            <div class="drawer-body">
+              <div class="card cell-log">
+                <div class="media-header">
+                  <h3 class="card-title" data-i18n="activity.title">Activity</h3>
+                  <button id="export-session-btn" class="btn-secondary btn-small" data-i18n="session.exportButton">Export session</button>
+                  <button id="export-rehearsal-btn" class="btn-secondary btn-small" data-i18n="session.exportRehearsalButton">Export rehearsal report</button>
+                  <button id="export-diagnostics-btn" class="btn-secondary btn-small" data-i18n="session.exportDiagnosticsButton">Export diagnostics</button>
+                </div>
+                <div id="log"></div>
+              </div>
+              <div class="card cell-notes">
+                <div class="media-header">
+                  <h3 class="card-title" data-i18n="sermonNotes.title">Sermon Notes (AI)</h3>
+                  <div id="sermon-notes-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.sermonNotes" data-i18n-title="a11y.sermonNotes">
+                    <button type="button" data-notes-enabled="off" data-i18n="sermonNotes.off">Off</button>
+                    <button type="button" data-notes-enabled="on" data-i18n="sermonNotes.on">On</button>
+                  </div>
+                </div>
+                <div class="sermon-notes-disclaimer" data-i18n="sermonNotes.disclaimer">AI-generated summary — not verified content.</div>
+                <div id="sermon-notes-feed" class="sermon-notes-feed">
+                  <div class="sermon-notes-empty" data-i18n="sermonNotes.empty">No notes yet.</div>
+                </div>
+                <!-- ARCHITECTURE.md section 93: one-shot, operator-triggered. -->
+                <button id="generate-service-summary-btn" class="btn-secondary btn-small" style="margin-top: var(--space-3); align-self: flex-start" data-i18n="serviceSummary.button">Generate service summary</button>
+                <div id="service-summary-result" class="service-summary-result" style="display: none"></div>
               </div>
             </div>
-            <div class="sermon-notes-disclaimer" data-i18n="sermonNotes.disclaimer">AI-generated summary — not verified content.</div>
-            <div id="sermon-notes-feed" class="sermon-notes-feed">
-              <div class="sermon-notes-empty" data-i18n="sermonNotes.empty">No notes yet.</div>
-            </div>
-            <!-- ARCHITECTURE.md section 93: a strictly one-shot, operator-
-                 triggered digest of already-shown verses and already-
-                 generated notes — never a live agent, never a new Bible
-                 lookup. Lives here (not the Activity card) since it reads
-                 the sermon-notes feed above as its input. -->
-            <button id="generate-service-summary-btn" class="btn-secondary btn-small" data-i18n="serviceSummary.button">Generate service summary</button>
-            <div id="service-summary-result" class="service-summary-result" style="display: none"></div>
-          </div>
+          </details>
         </div>
       </div>
 
@@ -1452,68 +514,83 @@
       </div>
 
       <div id="view-settings" class="view">
-        <!-- ARCHITECTURE.md production audit finding: this URL already
-             existed for the in-app overlay preview window, but was never
-             shown anywhere for the operator to actually paste into a real
-             OBS Browser Source — there was no way to connect OBS at all
-             short of reading source code for the port and constructing
-             the token-bearing URL by hand. -->
-        <div class="card glass" style="max-width: 640px; margin-bottom: var(--space-4)">
-          <div class="card-title" data-i18n="obs.title">OBS Overlay</div>
-          <p class="settings-hint" data-i18n="obs.hint">
-            Paste this into OBS: Sources → + → Browser Source → URL.
-          </p>
-          <label data-i18n="obs.linkLabel">Overlay URL</label>
-          <div class="btn-row">
-            <input id="obs-url" type="text" readonly />
-            <button id="obs-copy-btn" class="btn-secondary btn-small" data-i18n="obs.copyButton">Copy</button>
+        <div class="settings-grid">
+          <!-- Which provider carries live audio (server/asr/asr-strategy.ts). -->
+          <div class="card glass">
+            <h2 class="card-title" data-i18n="asrSettings.title">Transcription</h2>
+            <p class="settings-hint" data-i18n="asrSettings.hint">Streaming shows a verse the moment the speaker pauses. Batch waits for each chunk of audio. If the first provider fails, the other one takes over automatically.</p>
+            <div id="asr-strategy-toggle" class="segmented" role="group" data-i18n-aria-label="asrSettings.title">
+              <button type="button" data-asr-strategy="streaming-first" data-i18n="asrSettings.streamingFirst">Streaming first</button>
+              <button type="button" data-asr-strategy="batch-first" data-i18n="asrSettings.batchFirst">Batch first</button>
+            </div>
+            <p id="asr-strategy-note" class="settings-hint" style="margin-top: var(--space-3)"></p>
           </div>
-        </div>
-        <div class="card glass" style="max-width: 640px">
-          <div class="card-title" data-i18n="remote.title">Phone Remote</div>
-          <div id="remote-disabled" data-i18n="remote.disabled">
-            Not enabled. Turn on "Allow a phone remote" during setup to use this.
-          </div>
-          <div id="remote-enabled" style="display: none">
-            <label data-i18n="remote.linkLabel">Open this link on a phone connected to the same WiFi</label>
+
+          <!-- Offline last resort: whisper.cpp downloaded on demand (never in the installer). -->
+          <div class="card glass" id="local-asr-card">
+            <h2 class="card-title" data-i18n="localAsr.title">Offline backup</h2>
+            <p class="settings-hint" data-i18n="localAsr.hint">If the internet drops, transcription continues on this computer. Slower and a little less accurate than the cloud, but the service keeps going.</p>
+            <div id="local-asr-model-toggle" class="segmented" role="group" data-i18n-aria-label="localAsr.modelLabel">
+              <button type="button" data-local-model="base" class="active" data-i18n="localAsr.modelBase">Standard (142 MB)</button>
+              <button type="button" data-local-model="small" data-i18n="localAsr.modelSmall">More accurate (466 MB)</button>
+            </div>
+            <p id="local-asr-status" class="settings-hint" style="margin: var(--space-3) 0" role="status"></p>
+            <progress id="local-asr-progress" max="1" value="0" style="display: none; width: 100%; margin-bottom: var(--space-3)"></progress>
             <div class="btn-row">
-              <input id="remote-url" type="text" readonly />
-              <button id="remote-copy-btn" class="btn-secondary btn-small" data-i18n="remote.copyButton">Copy</button>
+              <button id="local-asr-install-btn" class="btn-secondary btn-small" data-i18n="localAsr.install">Download</button>
+            </div>
+            <label class="switch-row" for="local-asr-enabled" style="margin-top: var(--space-3)">
+              <span data-i18n="localAsr.enable">Use as automatic backup</span>
+              <input id="local-asr-enabled" type="checkbox" class="switch" disabled />
+            </label>
+          </div>
+
+          <!-- ARCHITECTURE.md production audit: the token-bearing OBS URL. -->
+          <div class="card glass">
+            <h2 class="card-title" data-i18n="obs.title">OBS Overlay</h2>
+            <p class="settings-hint" data-i18n="obs.hint">Paste this into OBS: Sources → + → Browser Source → URL.</p>
+            <label for="obs-url" data-i18n="obs.linkLabel">Overlay URL</label>
+            <div class="btn-row">
+              <input id="obs-url" type="text" readonly />
+              <button id="obs-copy-btn" class="btn-secondary btn-small" data-i18n="obs.copyButton">Copy</button>
             </div>
           </div>
-          <div class="card glass" style="max-width: 640px; margin-top: var(--space-4)">
-            <div class="card-title" data-i18n="ndi.title">NDI Output</div>
-            <p class="settings-hint" data-i18n="ndi.hint">
-              Optional network video output. OBS Browser Source remains available if NDI is unavailable.
-            </p>
+
+          <!-- ARCHITECTURE.md section 82: how a shown verse appears. -->
+          <div class="card glass">
+            <h2 class="card-title" data-i18n="verseLayout.title">Verse Display</h2>
+            <p class="settings-hint" data-i18n="verseLayout.hint">How a shown verse appears on the overlay.</p>
+            <div id="verse-layout-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.verseLayout" data-i18n-title="a11y.verseLayout">
+              <button type="button" data-layout="fullscreen" class="active" data-i18n="verseLayout.fullscreen">Full Screen</button>
+              <button type="button" data-layout="lower-third" data-i18n="verseLayout.lowerThird">Lower Third</button>
+            </div>
+            <label for="poster-duration-input" data-i18n="verseLayout.posterDurationLabel" style="margin-top: var(--space-4)">Poster/media auto-clear (minutes, blank = manual only)</label>
+            <div class="btn-row">
+              <input id="poster-duration-input" type="number" min="0" step="0.5" placeholder="—" style="max-width: 120px; margin: 0" />
+              <button id="poster-duration-apply-btn" class="btn-secondary btn-small" data-i18n="verseLayout.posterDurationApply">Apply</button>
+            </div>
+          </div>
+
+          <div class="card glass">
+            <h2 class="card-title" data-i18n="remote.title">Phone Remote</h2>
+            <div id="remote-disabled" data-i18n="remote.disabled">Not enabled. Turn on "Allow a phone remote" during setup to use this.</div>
+            <div id="remote-enabled" style="display: none">
+              <label for="remote-url" data-i18n="remote.linkLabel">Open this link on a phone connected to the same WiFi</label>
+              <div class="btn-row">
+                <input id="remote-url" type="text" readonly />
+                <button id="remote-copy-btn" class="btn-secondary btn-small" data-i18n="remote.copyButton">Copy</button>
+              </div>
+            </div>
+            <div id="remote-no-lan" style="display: none" data-i18n="remote.noLan">Enabled, but no local network address was found on this machine.</div>
+          </div>
+
+          <div class="card glass">
+            <h2 class="card-title" data-i18n="ndi.title">NDI Output</h2>
+            <p class="settings-hint" data-i18n="ndi.hint">Optional network video output. OBS Browser Source remains available if NDI is unavailable.</p>
             <div class="btn-row">
               <button id="ndi-toggle-btn" class="btn-secondary btn-small" data-i18n="ndi.enable">Enable NDI</button>
-              <span id="ndi-status" class="settings-hint"></span>
+              <span id="ndi-status" class="settings-hint" style="margin: 0"></span>
             </div>
-          </div>
-          <div id="remote-no-lan" style="display: none" data-i18n="remote.noLan">
-            Enabled, but no local network address was found on this machine.
-          </div>
-        </div>
-        <!-- ARCHITECTURE.md section 82: purely a presentation choice for
-             the overlay — full screen (the default, readable from across
-             a room) vs. lower third (leaves the poster/media backdrop
-             visible around the edges, for when video is also on screen). -->
-        <div class="card glass" style="max-width: 640px; margin-top: var(--space-4)">
-          <div class="card-title" data-i18n="verseLayout.title">Verse Display</div>
-          <p class="settings-hint" data-i18n="verseLayout.hint">
-            How a shown verse appears on the overlay.
-          </p>
-          <div id="verse-layout-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.verseLayout" data-i18n-title="a11y.verseLayout">
-            <button type="button" data-layout="fullscreen" class="active" data-i18n="verseLayout.fullscreen">Full Screen</button>
-            <button type="button" data-layout="lower-third" data-i18n="verseLayout.lowerThird">Lower Third</button>
-          </div>
-          <label for="poster-duration-input" data-i18n="verseLayout.posterDurationLabel" style="margin-top: var(--space-3); display: block">
-            Poster/media auto-clear (minutes, blank = manual only)
-          </label>
-          <div class="btn-row">
-            <input id="poster-duration-input" type="number" min="0" step="0.5" placeholder="—" style="max-width: 120px" />
-            <button id="poster-duration-apply-btn" class="btn-secondary btn-small" data-i18n="verseLayout.posterDurationApply">Apply</button>
           </div>
         </div>
       </div>

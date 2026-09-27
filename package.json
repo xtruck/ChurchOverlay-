@@ -50,6 +50,7 @@
       "apps/desktop/renderer/**/*.html",
       "apps/desktop/renderer/**/*.js",
       "apps/desktop/renderer/fonts/**/*",
+      "apps/desktop/renderer/**/*.css",
       "apps/overlay/public/**/*",
       "apps/remote/public/**/*",
       "apps/server/verse/data/**/*",

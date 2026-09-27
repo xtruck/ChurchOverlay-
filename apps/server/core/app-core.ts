@@ -49,6 +49,9 @@ import { RundownController } from "../rundown/rundown-controller"
 import { GlossaryDetector } from "../glossary/glossary-detector"
 import { SessionRecorder, type SessionEntry } from "./session-recorder"
 import type { SessionHistoryStore, SessionHistoryEntry } from "./session-history-store"
+import { AdaptiveGain } from "../audio/adaptive-gain"
+import { MicHealthMonitor } from "../audio/mic-health"
+import type { QuoteMatcher } from "../detector/quote-matcher"
 
 /**
  * Every provider/seam is injected, never constructed inside this
@@ -71,7 +74,7 @@ import type { SessionHistoryStore, SessionHistoryEntry } from "./session-history
 type ObservableAsrProvider = AsrProvider & {
   onError?(callback: (error: Error) => void): void
   onRateLimitedSustained?(callback: () => void): void
-  onFailoverActivated?(callback: () => void): void
+  onFailoverActivated?(callback: (label?: string) => void): void
   returnToPrimary?(): Promise<void>
 }
 
@@ -107,6 +110,17 @@ export type StartAppCoreOptions = {
   readonly cache?: VerseCache
   readonly circuitBreaker?: CircuitBreaker
   readonly silenceGate?: SilenceGate
+  /** Gain applied to audio sent to ASR (server/audio/adaptive-gain.ts). Default: enabled. */
+  readonly adaptiveGain?: AdaptiveGain
+  /**
+   * Recognizes a verse read aloud without its reference (detector/
+   * quote-matcher.ts). Optional; matches are only ever offered as a
+   * pending suggestion (verse:pending with origin "quote"), never shown
+   * automatically — a preacher quoting is not always asking for a display.
+   */
+  readonly quoteMatcher?: Pick<QuoteMatcher, "match">
+  /** Called when the operator toggles auto-gain, so the host can persist it. */
+  readonly onAutoGainChanged?: (enabled: boolean) => void
   /**
    * Optional (ARCHITECTURE.md section 60) — when absent, media commands
    * are handled gracefully (logged, no-op) rather than crashing or being
@@ -276,6 +290,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const cache = options.cache ?? new VerseCache()
   const circuitBreaker = options.circuitBreaker ?? new CircuitBreaker()
   const silenceGate = options.silenceGate ?? new SilenceGate()
+  const adaptiveGain = options.adaptiveGain ?? new AdaptiveGain()
+  const micHealth = new MicHealthMonitor()
+  // Broadcast cadence measured in *processed audio time*, not wall clock:
+  // deterministic under test, and naturally silent when no audio flows.
+  const MIC_HEALTH_INTERVAL_MS = 1000
+  let micHealthAudioMs = 0
   const mediaLibrary = options.mediaLibrary
   const onDisplayModeChanged = options.onDisplayModeChanged
   const mediaCueDetector = mediaLibrary ? new MediaCueDetector(mediaLibrary) : null
@@ -325,6 +345,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const accentColor = options.accentColor
   const onVerseLayoutChanged = options.onVerseLayoutChanged
   let pendingVerse: Verse | null = null
+  const QUOTE_SUGGESTION_COOLDOWN_MS = 60_000
+  const recentQuoteSuggestions = new Map<string, number>()
   // ARCHITECTURE.md section 61.4: updated by every verse:show, however
   // triggered (detected, manual override, or navigation itself) — "next
   // verse" after an operator's manual override continues from wherever
@@ -962,6 +984,16 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     }
   }
 
+  function broadcastMicHealth(): void {
+    micHealth.setGain(adaptiveGain.currentGain())
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "mic:health",
+      timestamp: Date.now(),
+      payload: { ...micHealth.snapshot(silenceGate.isCalibrating()), autoGain: adaptiveGain.isEnabled() },
+    })
+  }
+
   async function handleAudioFrame(frame: AudioFrame): Promise<void> {
     // ARCHITECTURE.md section 9 / AGENTS.md section 11: reduce unnecessary
     // ASR requests by not forwarding obvious silence. This must never
@@ -970,7 +1002,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // when the mic stops, below — an operator with a "nothing is being
     // detected" complaint can see whether frames were even reaching ASR.
     const wasCalibrating = silenceGate.isCalibrating()
-    const { forwarded, utteranceEnded } = silenceGate.process(frame)
+    const { forwarded, utteranceEnded, rms } = silenceGate.process(frame)
     // ARCHITECTURE.md section 76: the calibration-just-finished transition
     // is only observable here, as a side effect of process() — this is
     // the one place that can see it happen and tell the dashboard.
@@ -986,8 +1018,15 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         micThreshold: silenceGate.getThreshold(),
       })
     }
+    const isSpeech = !silenceGate.isCalibrating() && rms >= silenceGate.getThreshold()
+    micHealth.observe(frame, rms, isSpeech)
+    micHealthAudioMs += (frame.samples.length / frame.sampleRate) * 1000
     if (forwarded) {
-      await asr.sendAudio(frame)
+      await asr.sendAudio(adaptiveGain.process(frame, rms, isSpeech))
+    }
+    if (micHealthAudioMs >= MIC_HEALTH_INTERVAL_MS) {
+      micHealthAudioMs = 0
+      broadcastMicHealth()
     }
     // TASK 3: when SilenceGate signals end of utterance, flush ASR buffer
     if (utteranceEnded) {
@@ -1010,6 +1049,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         // simply not working, the exact complaint this whole feature
         // exists to prevent a repeat of.
         silenceGate.startCalibration()
+        adaptiveGain.reset()
+        micHealth.reset()
+        micHealthAudioMs = 0
         broadcastAsrStatus({ asrHealth: currentAsrHealth(), micCalibrating: true })
         await asr.start()
         logger.info({ component: "app-core", event: "mic.started" })
@@ -1058,7 +1100,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         // trigger kind of its own — confirmation is how review mode
         // delivers a detection, not a different way a verse got there.
         if (pendingVerse) {
-          const verse = pendingVerse
+          const { origin: _origin, ...verse } = pendingVerse as Verse & { origin?: string }
           pendingVerse = null
           broadcastVerse(verse, "detected", message.correlationId)
         } else {
@@ -1123,6 +1165,14 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         verseLayout = layout
         onVerseLayoutChanged?.(layout)
         broadcastLayout(message.correlationId)
+        return
+      }
+
+      case "mic:auto-gain": {
+        const { enabled } = message.payload as { enabled: boolean }
+        adaptiveGain.setEnabled(enabled)
+        options.onAutoGainChanged?.(enabled)
+        broadcastMicHealth()
         return
       }
 
@@ -1306,8 +1356,47 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     return true
   }
 
+  async function suggestQuotedVerse(transcript: TranscriptResult): Promise<void> {
+    const match = options.quoteMatcher?.match(transcript.text)
+    if (!match || !index.exists(match.reference)) return
+    const key = `${match.reference.book} ${match.reference.chapter}:${match.reference.verse}`
+    const now = Date.now()
+    const onScreen =
+      currentVersePosition !== null &&
+      currentVersePosition.book === match.reference.book &&
+      currentVersePosition.chapter === match.reference.chapter &&
+      currentVersePosition.verse === match.reference.verse
+    if (onScreen || now - (recentQuoteSuggestions.get(key) ?? 0) < QUOTE_SUGGESTION_COOLDOWN_MS) return
+    recentQuoteSuggestions.set(key, now)
+    const verse = await resolveVerse(match.reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+    if (!verse) return
+    logger.info({
+      component: "app-core",
+      event: "quote.suggested",
+      correlationId: transcript.correlationId,
+      metadata: { reference: key, matchedRuns: match.matchedRuns, coverage: match.coverage },
+    })
+    broadcastPendingVerse({ ...verse, origin: "quote" } as Verse, transcript.correlationId)
+  }
+
   async function handleNavigationCommands(transcript: TranscriptResult): Promise<void> {
+    // An explicit, valid reference in the same utterance ("Romains 8 v. 28",
+    // "Psaume 23 verset 1") is already being shown by the detection path.
+    // Relative navigation parsed from the same words ("verset 28") would be
+    // resolved against the *previous* position and race it — showing a
+    // second, wrong verse. Explicit wins; cancel and display-mode commands
+    // still apply.
+    const hasExplicitReference = detector.detect(transcript.text).some((reference) => index.exists(reference))
     for (const command of navigationCommandDetector.detect(transcript.text)) {
+      if (hasExplicitReference && command.kind !== "goto-display-mode" && command.kind !== "cancel") {
+        logger.debug({
+          component: "app-core",
+          event: "navigation.superseded-by-explicit-reference",
+          correlationId: transcript.correlationId,
+          metadata: { command },
+        })
+        continue
+      }
       if (command.kind === "goto-display-mode") {
         if (setModeFor(command.mode)) {
           onDisplayModeChanged?.(command.mode)
@@ -1622,6 +1711,17 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       if (definition) broadcastDefinition(definition, transcript.correlationId)
     }
 
+    if (options.quoteMatcher && passesTranscriptGate(transcript) && validatedRefs.length === 0) {
+      suggestQuotedVerse(transcript).catch((err) => {
+        logger.error({
+          component: "app-core",
+          event: "quote.suggest-failed",
+          correlationId: transcript.correlationId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
+    }
+
     // ARCHITECTURE.md section 65.7: a read-only observer of the same
     // final-transcript stream every other detector sees — accumulated
     // text only, never consulted by or fed back into the guarded
@@ -1650,12 +1750,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   })
 
   if (typeof asr.onFailoverActivated === "function") {
-    asr.onFailoverActivated(() => {
+    asr.onFailoverActivated((label?: string) => {
       asrIsFailedOver = true
       asrRateLimitedSustained = false
       broadcastAsrStatus({
         asrHealth: "failover",
-        error: "Bascule automatique vers Deepgram active",
+        error: `Bascule automatique vers ${label ?? "Deepgram"} active`,
       })
     })
   } else if ("onRateLimitedSustained" in asr && typeof asr.onRateLimitedSustained === "function") {

@@ -12,11 +12,16 @@ import { KnownValidVerseIndex } from "../../server/verse/known-valid-verse-index
 import { FreeApiSource } from "../../server/verse/free-api-source"
 import { GetBibleVerseSource } from "../../server/verse/get-bible-verse-source"
 import { LocalizedVerseSource } from "../../server/verse/localized-verse-source"
-import { loadOfflineBibleData, OfflineVerseSource } from "../../server/verse/offline-verse-source"
+import { loadOfflineBibleData, OfflineVerseSource, type OfflineBibleData } from "../../server/verse/offline-verse-source"
+import { QuoteMatcher, type QuoteMatch } from "../../server/detector/quote-matcher"
 import { OfflineFallbackVerseSource } from "../../server/verse/offline-fallback-verse-source"
 import { GroqProvider } from "../../server/asr/groq-provider"
 import { DeepgramProvider } from "../../server/asr/deepgram-provider"
 import { FailoverAsrProvider } from "../../server/asr/failover-provider"
+import { ASR_STRATEGIES, asrChain, deepgramLanguageFor, planAsr, type AsrProviderId, type AsrStrategy } from "../../server/asr/asr-strategy"
+import { LocalWhisperProvider } from "../../server/asr/local-whisper-provider"
+import { WhisperServerProcess } from "../../server/asr/local-whisper-server"
+import { LocalAsrInstaller, LOCAL_MODELS, type LocalAsrInstallState, type LocalModelId } from "./local-asr-installer"
 import { SermonNotesGenerator } from "../../server/ai/sermon-notes-generator"
 import { buildServiceSummaryInput, SERVICE_SUMMARY_SYSTEM_PROMPT } from "../../server/ai/service-summary"
 import { MediaLibrary } from "../../server/media/media-library"
@@ -36,6 +41,7 @@ import { Logger } from "../../../packages/shared/logger"
 import { NDIOutput, type PaintSource } from "./ndi-output"
 import { getAudioProfileSettings, type AudioProfile } from "../../server/audio/audio-profile"
 import { SilenceGate } from "../../server/audio/silence-gate"
+import { AdaptiveGain } from "../../server/audio/adaptive-gain"
 
 /**
  * Electron main process entry point (ARCHITECTURE.md section 6.1). Owns
@@ -71,7 +77,21 @@ let configStore: ConfigStore | null = null
 let mediaLibrary: MediaLibrary | null = null
 let sessionHistoryStore: SessionHistoryStore | null = null
 let localizedVerseSource: LocalizedVerseSource | null = null
-let asrProvider: GroqProvider | FailoverAsrProvider | null = null
+let asrProvider: GroqProvider | DeepgramProvider | LocalWhisperProvider | FailoverAsrProvider | null = null
+// The concrete providers behind asrProvider, kept so each gets the language
+// code its own API expects (Whisper auto-detects when given none; Deepgram
+// does not and would fall back to English).
+let groqAsr: GroqProvider | null = null
+let deepgramAsr: DeepgramProvider | null = null
+let localAsr: LocalWhisperProvider | null = null
+let localWhisperServer: WhisperServerProcess | null = null
+let localAsrInstaller: LocalAsrInstaller | null = null
+
+function setAsrLanguage(mode: DisplayMode): void {
+  groqAsr?.setLanguage(whisperLanguageFor(mode))
+  deepgramAsr?.setLanguage(deepgramLanguageFor(mode))
+  localAsr?.setLanguage(whisperLanguageFor(mode))
+}
 let currentRemoteUrl: string | null = null
 let currentOverlayUrl: string | null = null
 let currentAllowPhoneRemote = false
@@ -120,6 +140,25 @@ function whisperLanguageFor(mode: DisplayMode): string | undefined {
   if (mode === "french") return "fr"
   if (mode === "english") return "en"
   return undefined
+}
+
+/**
+ * Indexing the 31k LSG verses takes ~0.5 s: done off the startup path, on
+ * the next macrotask, so the dashboard appears first. Until it is ready,
+ * match() simply finds nothing — quote suggestions are a bonus, never a
+ * dependency of the live pipeline.
+ */
+function lazyQuoteMatcher(data: OfflineBibleData): { match(text: string): QuoteMatch | null } {
+  let matcher: QuoteMatcher | null = null
+  setTimeout(() => {
+    try {
+      matcher = new QuoteMatcher(data)
+      logger.info({ component: "main", event: "quote-matcher.ready", metadata: { verses: matcher.size } })
+    } catch (err) {
+      logger.error({ component: "main", event: "quote-matcher.failed", error: err instanceof Error ? err.message : String(err) })
+    }
+  }, 0)
+  return { match: (text) => matcher?.match(text) ?? null }
 }
 
 function getConfigStore(): ConfigStore {
@@ -172,8 +211,10 @@ async function startServices(
   // logging loudly, but not worth failing the entire app over — the live
   // source alone is exactly what shipped before this feature existed).
   let frenchSource: GetBibleVerseSource | OfflineFallbackVerseSource = new GetBibleVerseSource()
+  let quoteSource: OfflineBibleData | null = null
   try {
     const offlineData = await loadOfflineBibleData()
+    quoteSource = offlineData
     frenchSource = new OfflineFallbackVerseSource({
       primary: new GetBibleVerseSource(),
       offline: new OfflineVerseSource(offlineData),
@@ -195,29 +236,87 @@ async function startServices(
   // default (section 24) exactly as before this feature existed.
   const wsHost = config.allowPhoneRemote ? "0.0.0.0" : undefined
 
-  const groqProvider = new GroqProvider({
-    apiKey: config.groqApiKey,
-    logger,
-    chunkDurationMs: getAudioProfileSettings(config.audioProfile).chunkDurationMs,
-    language: whisperLanguageFor(config.displayMode),
+  const plan = planAsr({
+    groqApiKey: config.groqApiKey,
+    deepgramApiKey: config.deepgramApiKey,
+    preferred: config.asrStrategy,
   })
-  asrProvider = config.deepgramApiKey
-    ? new FailoverAsrProvider({
-        primary: groqProvider,
-        secondary: new DeepgramProvider({
-          apiKey: config.deepgramApiKey,
-          language: whisperLanguageFor(config.displayMode),
-        }),
+  groqAsr = config.groqApiKey
+    ? new GroqProvider({
+        apiKey: config.groqApiKey,
+        logger,
+        chunkDurationMs: getAudioProfileSettings(config.audioProfile).chunkDurationMs,
+        language: whisperLanguageFor(config.displayMode),
       })
-    : groqProvider
+    : null
+  deepgramAsr = config.deepgramApiKey
+    ? new DeepgramProvider({
+        apiKey: config.deepgramApiKey,
+        language: deepgramLanguageFor(config.displayMode),
+      })
+    : null
+  // Offline last resort, only when the operator enabled it AND the engine
+  // is actually installed — never a surprise download at service start.
+  const localModel: LocalModelId = config.localAsrModel ?? "base"
+  const localStatus = config.localAsrEnabled ? await getLocalAsrInstaller().status(localModel) : null
+  await localWhisperServer?.stop()
+  localWhisperServer = null
+  localAsr = null
+  if (localStatus?.state === "ready") {
+    localWhisperServer = new WhisperServerProcess({ serverPath: localStatus.serverPath, modelPath: localStatus.modelPath, logger })
+    localAsr = new LocalWhisperProvider({ server: localWhisperServer, language: whisperLanguageFor(config.displayMode), logger })
+    // Warm up now, in the background: loading the model takes seconds, and
+    // the moment the internet drops is exactly when there are none to spare.
+    localWhisperServer.ensureStarted().catch((err) => {
+      logger.error({ component: "main", event: "local-whisper.warmup-failed", error: err instanceof Error ? err.message : String(err) })
+    })
+  }
+  const chain = asrChain(plan, localAsr !== null)
+  const providers: Record<AsrProviderId, GroqProvider | DeepgramProvider | LocalWhisperProvider | null> = {
+    groq: groqAsr,
+    deepgram: deepgramAsr,
+    local: localAsr,
+  }
+  const labels: Record<AsrProviderId, string> = { groq: "Groq", deepgram: "Deepgram", local: "Whisper local" }
+  // Build from the end: each link wraps "itself → everything after it".
+  let composed: GroqProvider | DeepgramProvider | LocalWhisperProvider | FailoverAsrProvider = providers[chain[chain.length - 1] as AsrProviderId]!
+  for (let i = chain.length - 2; i >= 0; i--) {
+    const id = chain[i] as AsrProviderId
+    composed = new FailoverAsrProvider({
+      primary: providers[id]!,
+      secondary: composed,
+      // A streaming socket either works or it doesn't: fail over on any
+      // error. A batch provider only after sustained 429s or sustained
+      // network errors (GroqProvider signals both the same way).
+      trigger: id === "deepgram" ? "primary-error" : "sustained-rate-limit",
+      secondaryLabel: labels[chain[i + 1] as AsrProviderId],
+    })
+  }
+  asrProvider = composed
+  logger.info({ component: "main", event: "asr.plan", metadata: { ...plan, chain } })
 
   appCoreHandle = await startAppCore({
-    asr: asrProvider,
+    asr: asrProvider!,
     detector: new RegexDetector(),
     index: new KnownValidVerseIndex(),
     source: localizedVerseSource,
     logger,
+    ...(quoteSource ? { quoteMatcher: lazyQuoteMatcher(quoteSource) } : {}),
     silenceGate: new SilenceGate({ threshold: getAudioProfileSettings(config.audioProfile).silenceThreshold }),
+    adaptiveGain: new AdaptiveGain({ enabled: config.autoGain ?? true }),
+    onAutoGainChanged: (enabled) => {
+      if (activeConfig) activeConfig = { ...activeConfig, autoGain: enabled }
+      getConfigStore()
+        .load()
+        .then((existing) => (existing ? getConfigStore().save({ ...existing, autoGain: enabled }) : undefined))
+        .catch((err) => {
+          logger.error({
+            component: "main",
+            event: "auto-gain-persist-failed",
+            error: err instanceof Error ? err.message : String(err),
+          })
+        })
+    },
     host: wsHost,
     port: WS_PORT,
     tokens: currentTokens,
@@ -238,7 +337,7 @@ async function startServices(
     // persists exactly like the set-display-mode IPC handler below does,
     // so it survives a restart identically to a dashboard-toggled one.
     onDisplayModeChanged: (mode) => {
-      asrProvider?.setLanguage(whisperLanguageFor(mode))
+      setAsrLanguage(mode)
       getConfigStore()
         .load()
         .then((existing) => (existing ? getConfigStore().save({ ...existing, displayMode: mode }) : undefined))
@@ -370,6 +469,9 @@ async function startServices(
       // instance was first constructed.
       && left.organizationName === right.organizationName
       && left.accentColor === right.accentColor
+      && left.asrStrategy === right.asrStrategy
+      && left.localAsrEnabled === right.localAsrEnabled
+      && left.localAsrModel === right.localAsrModel
   }
 }
 
@@ -442,11 +544,91 @@ ipcMain.handle("get-startup-status", async () => {
       ndi: ndiOutput?.getStatus() ?? { state: "disabled" as const },
       organizationName,
       accentColor,
+      asr: currentAsrStatus(),
     }
   }
   return { ready: false, uiLanguage, ndi: { state: "disabled" as const }, organizationName, accentColor }
 })
 
+
+/**
+ * What the dashboard's transcription settings need to render: which keys
+ * exist (so it only offers a strategy choice when both do), the saved
+ * preference, and whether auto-gain is on.
+ */
+function currentAsrStatus(): {
+  hasGroq: boolean
+  hasDeepgram: boolean
+  strategy: AsrStrategy
+  autoGain: boolean
+  localEnabled: boolean
+  localModel: LocalModelId
+  localActive: boolean
+} {
+  return {
+    hasGroq: Boolean(activeConfig?.groqApiKey),
+    hasDeepgram: Boolean(activeConfig?.deepgramApiKey),
+    strategy: activeConfig?.asrStrategy ?? "streaming-first",
+    autoGain: activeConfig?.autoGain ?? true,
+    localEnabled: activeConfig?.localAsrEnabled ?? false,
+    localModel: activeConfig?.localAsrModel ?? "base",
+    localActive: localAsr !== null,
+  }
+}
+
+function getLocalAsrInstaller(): LocalAsrInstaller {
+  if (!localAsrInstaller) localAsrInstaller = new LocalAsrInstaller({ rootDir: join(app.getPath("userData"), "local-asr") })
+  return localAsrInstaller
+}
+
+function toModelId(value: unknown): LocalModelId {
+  return value === "small" ? "small" : "base"
+}
+
+ipcMain.handle("get-local-asr-status", async (_event, model: unknown) => {
+  const id = toModelId(model ?? activeConfig?.localAsrModel)
+  return { install: await getLocalAsrInstaller().status(id), sizeMb: LOCAL_MODELS[id].approxMb, asr: currentAsrStatus() }
+})
+
+/** Downloads the engine + model, streaming progress to the dashboard. */
+ipcMain.handle("install-local-asr", async (event, model: unknown) => {
+  const id = toModelId(model)
+  const sender = event.sender
+  const result: LocalAsrInstallState = await getLocalAsrInstaller().install(id, (state) => {
+    if (!sender.isDestroyed()) sender.send("local-asr-progress", state)
+  })
+  return result
+})
+
+/** Enabling or changing the model rebuilds the provider chain (services restart). */
+ipcMain.handle("set-local-asr", async (_event, payload: unknown) => {
+  const body = typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {}
+  const existing = await getConfigStore().load()
+  if (!existing) throw new Error("Services are not configured yet.")
+  const updated: AppConfig = {
+    ...existing,
+    localAsrEnabled: body.enabled === true,
+    localAsrModel: toModelId(body.model ?? existing.localAsrModel),
+  }
+  await getConfigStore().save(updated)
+  await startServices(updated)
+  return currentAsrStatus()
+})
+
+/**
+ * Switches which provider carries live audio. The provider graph is built
+ * once at service start, so this saves and restarts the services; the
+ * dashboard's WS client reconnects on its own (same token, same port).
+ */
+ipcMain.handle("set-asr-strategy", async (_event, payload: unknown) => {
+  if (!ASR_STRATEGIES.includes(payload as AsrStrategy)) throw new Error("Invalid ASR strategy.")
+  const existing = await getConfigStore().load()
+  if (!existing) throw new Error("Services are not configured yet.")
+  const updated: AppConfig = { ...existing, asrStrategy: payload as AsrStrategy }
+  await getConfigStore().save(updated)
+  await startServices(updated)
+  return currentAsrStatus()
+})
 
 /** ARCHITECTURE.md section 63.2: the live dashboard toggle, via IPC — an operator configuration action, not something that needs to round-trip through the WS server. */
 ipcMain.handle("set-display-mode", async (_event, payload: unknown) => {
@@ -458,7 +640,7 @@ ipcMain.handle("set-display-mode", async (_event, payload: unknown) => {
     throw new Error("Services are not started yet.")
   }
   localizedVerseSource.setMode(mode)
-  asrProvider?.setLanguage(whisperLanguageFor(mode))
+  setAsrLanguage(mode)
 
   const store = getConfigStore()
   const existing = await store.load().catch(() => null)
@@ -601,6 +783,9 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
   // rather than persisting an empty string forever.
   const organizationName = String(payloadObject.organizationName ?? "").trim()
   const accentColor = String(payloadObject.accentColor ?? "").trim()
+  const asrStrategy = ASR_STRATEGIES.includes(payloadObject.asrStrategy as AsrStrategy)
+    ? (payloadObject.asrStrategy as AsrStrategy)
+    : undefined
 
   const store = getConfigStore()
   // A corrupt or unreadable existing config must not permanently block
@@ -653,6 +838,7 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
       ? { organizationName: organizationName || existing?.organizationName }
       : {}),
     ...(accentColor || existing?.accentColor ? { accentColor: accentColor || existing?.accentColor } : {}),
+    ...(asrStrategy || existing?.asrStrategy ? { asrStrategy: asrStrategy ?? existing?.asrStrategy } : {}),
   }
   await store.save(config)
 
@@ -1023,6 +1209,13 @@ ipcMain.handle("generate-service-summary", async (_event, sermonNotesText: unkno
 })
 
 async function shutdown(): Promise<void> {
+  // The offline engine is a separate OS process: always stopped here so it
+  // can never outlive the app and squat a port (this project has been
+  // bitten by zombie child processes before).
+  const whisper = localWhisperServer
+  localWhisperServer = null
+  localAsr = null
+  await whisper?.stop().catch(() => {})
   const output = ndiOutput
   ndiOutput = null
   await output?.stop().catch((err) => {

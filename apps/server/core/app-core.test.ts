@@ -3854,3 +3854,158 @@ test("AppCore: verse:override with no recent near-miss does NOT log a correction
     await app.stop()
   }
 })
+
+test("AppCore: broadcasts mic:health about once per second of processed audio, with auto-gain state", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    silenceGate: new SilenceGate({ calibrationDurationMs: 10 }),
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const health: { state: string; autoGain: boolean; gainDb: number }[] = []
+    viewerSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString()) as WsMessage
+      if (message.type === "mic:health") health.push(message.payload as { state: string; autoGain: boolean; gainDb: number })
+    })
+    operatorSocket.send(JSON.stringify({ id: "01A", type: "mic:start", timestamp: Date.now(), payload: null }))
+    // 50 x 20 ms = 1 s of quiet-but-present speech
+    for (let i = 0; i < 55; i++) {
+      operatorSocket.send(
+        encodeAudioFrame({ samples: Int16Array.from(new Array(320).fill(i === 0 ? 20 : 400)), sampleRate: 16000, sequence: i })
+      )
+    }
+    await waitFor(() => health.length >= 1)
+    assert.equal(health[0]?.autoGain, true)
+    await waitFor(() => asr.sentFrames.length > 10)
+    const last = asr.sentFrames[asr.sentFrames.length - 1]!
+    assert.ok((last.samples[0] as number) > 400, "quiet speech reaches ASR amplified")
+
+    operatorSocket.send(JSON.stringify({ id: "01B", type: "mic:auto-gain", timestamp: Date.now(), payload: { enabled: false } }))
+    await waitFor(() => health.some((h) => h.autoGain === false))
+    assert.equal(health.find((h) => h.autoGain === false)?.gainDb, 0)
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: mic:auto-gain rejects a malformed payload", async () => {
+  const { ACTION_REGISTRY } = await import("../ws/action-registry")
+  const validate = ACTION_REGISTRY["mic:auto-gain"].validatePayload
+  assert.equal(validate({ enabled: true }), true)
+  assert.equal(validate({ enabled: "yes" }), false)
+  assert.equal(validate({ enabled: true, extra: 1 }), false)
+  assert.equal(validate(null), false)
+})
+
+test("AppCore: an explicit reference supersedes relative navigation parsed from the same words", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const shown: VerseReference[] = []
+    viewerSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString()) as WsMessage
+      if (message.type === "verse:show") shown.push((message.payload as Verse).reference)
+    })
+    asr.emitTranscript({ id: "01T", correlationId: "01A", sequence: 1, text: "John 3:15.", state: "final", timestamp: Date.now() })
+    await waitFor(() => shown.length === 1)
+    // "verset 1" alone would mean John 3:1 relative to the current position.
+    asr.emitTranscript({ id: "01T2", correlationId: "01B", sequence: 2, text: "Psaume 23 verset 1", state: "final", timestamp: Date.now() })
+    await waitFor(() => shown.length >= 2)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.deepEqual(shown.slice(1), [{ book: "psalm", chapter: 23, verse: 1 }])
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: a verse read aloud without reference is only SUGGESTED (verse:pending, origin quote), never auto-shown", async () => {
+  const asr = new FakeAsrProvider()
+  const matcher = {
+    match: (text: string) =>
+      text.includes("tant aimé le monde")
+        ? { reference: { book: "john", chapter: 3, verse: 16 }, matchedRuns: 9, coverage: 0.5 }
+        : null,
+  }
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    quoteMatcher: matcher,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const seen: WsMessage[] = []
+    viewerSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString()) as WsMessage
+      if (message.type === "verse:pending" || message.type === "verse:show") seen.push(message)
+    })
+    const quote = "car Dieu a tant aimé le monde qu'il a donné son Fils unique"
+    asr.emitTranscript({ id: "01Q", correlationId: "01A", sequence: 1, text: quote, state: "final", timestamp: Date.now() })
+    await waitFor(() => seen.length === 1)
+    assert.equal(seen[0]?.type, "verse:pending")
+    assert.equal((seen[0]?.payload as { origin?: string }).origin, "quote")
+
+    // Same quote again within the cooldown: not re-suggested.
+    asr.emitTranscript({ id: "01Q2", correlationId: "01B", sequence: 2, text: quote, state: "final", timestamp: Date.now() })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(seen.length, 1)
+
+    // Operator confirms: shown as a normal detected verse, origin stripped.
+    operatorSocket.send(JSON.stringify({ id: "01C", type: "verse:confirm-pending", timestamp: Date.now(), payload: null }))
+    await waitFor(() => seen.length === 2)
+    assert.equal(seen[1]?.type, "verse:show")
+    assert.equal((seen[1]?.payload as { origin?: string }).origin, undefined)
+    assert.deepEqual((seen[1]?.payload as Verse).reference, { book: "john", chapter: 3, verse: 16 })
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: partial transcripts never reach the quote matcher", async () => {
+  const asr = new FakeAsrProvider()
+  let calls = 0
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    quoteMatcher: { match: () => { calls += 1; return null } },
+  })
+  try {
+    asr.emitTranscript({ id: "01P", correlationId: "01A", sequence: 1, text: "car Dieu a tant aimé", state: "partial", timestamp: Date.now() })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    assert.equal(calls, 0)
+  } finally {
+    await app.stop()
+  }
+})

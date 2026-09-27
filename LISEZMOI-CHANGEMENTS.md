@@ -1,0 +1,48 @@
+# Fichiers modifiés et nouveaux — à inspecter avant le push
+
+Base : main actuel sur GitHub (9d390d3). Chaque fichier est complet, avec son chemin dans le dépôt.
+
+- [NOUVEAU] .github/workflows/ci.yml
+- [modifié] .github/workflows/release.yml
+- [modifié] ARCHITECTURE.md
+- [modifié] ROADMAP.md
+- [modifié] apps/desktop/main/config-store.ts
+- [modifié] apps/desktop/main/index.ts
+- [NOUVEAU] apps/desktop/main/local-asr-installer.test.ts
+- [NOUVEAU] apps/desktop/main/local-asr-installer.ts
+- [modifié] apps/desktop/preload/index.ts
+- [NOUVEAU] apps/desktop/renderer/dashboard.css
+- [modifié] apps/desktop/renderer/dashboard.js
+- [modifié] apps/desktop/renderer/i18n.js
+- [modifié] apps/desktop/renderer/index.html
+- [modifié] apps/overlay/public/index.html
+- [modifié] apps/overlay/public/overlay.js
+- [modifié] apps/remote/public/index.html
+- [modifié] apps/remote/public/remote.js
+- [NOUVEAU] apps/server/asr/asr-strategy.test.ts
+- [NOUVEAU] apps/server/asr/asr-strategy.ts
+- [NOUVEAU] apps/server/asr/biblical-vocabulary.ts
+- [modifié] apps/server/asr/deepgram-provider.test.ts
+- [modifié] apps/server/asr/deepgram-provider.ts
+- [modifié] apps/server/asr/failover-provider.test.ts
+- [modifié] apps/server/asr/failover-provider.ts
+- [NOUVEAU] apps/server/asr/local-whisper-provider.test.ts
+- [NOUVEAU] apps/server/asr/local-whisper-provider.ts
+- [NOUVEAU] apps/server/asr/local-whisper-server.ts
+- [NOUVEAU] apps/server/audio/adaptive-gain.test.ts
+- [NOUVEAU] apps/server/audio/adaptive-gain.ts
+- [NOUVEAU] apps/server/audio/mic-health.test.ts
+- [NOUVEAU] apps/server/audio/mic-health.ts
+- [modifié] apps/server/core/app-core.test.ts
+- [modifié] apps/server/core/app-core.ts
+- [modifié] apps/server/detector/navigation-command-detector.ts
+- [NOUVEAU] apps/server/detector/quote-matcher.test.ts
+- [NOUVEAU] apps/server/detector/quote-matcher.ts
+- [modifié] apps/server/detector/regex-detector.ts
+- [NOUVEAU] apps/server/detector/spoken-reference-normalizer.test.ts
+- [NOUVEAU] apps/server/detector/spoken-reference-normalizer.ts
+- [modifié] apps/server/http/static-server.ts
+- [modifié] apps/server/ws/action-registry.test.ts
+- [modifié] apps/server/ws/action-registry.ts
+- [modifié] package.json
+- [modifié] packages/contracts/ws.ts

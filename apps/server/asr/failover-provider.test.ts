@@ -11,14 +11,27 @@ class FakeProvider implements AsrProvider {
   private transcriptCallback: ((result: TranscriptResult) => void) | null = null
   private sustainedCallback: (() => void) | null = null
 
-  async start(): Promise<void> { this.startCalls += 1 }
-  async sendAudio(audio: AudioFrame): Promise<void> { this.frames.push(audio) }
+  async start(): Promise<void> {
+    this.startCalls += 1
+    if (this.failStart) throw new Error("connect failed")
+  }
+  async sendAudio(audio: AudioFrame): Promise<void> {
+    if (this.failSend) throw new Error("not connected")
+    this.frames.push(audio)
+  }
   async stop(): Promise<void> { this.stopCalls += 1 }
   onTranscript(callback: (result: TranscriptResult) => void): void { this.transcriptCallback = callback }
   onRateLimitedSustained(callback: () => void): void { this.sustainedCallback = callback }
   setCurrentVerseRef(reference: string | null): void { this.verseRef = reference }
   discardBufferedAudio(): void {}
   triggerSustainedLimit(): void { this.sustainedCallback?.() }
+  utteranceEnds = 0
+  failStart = false
+  failSend = false
+  private errorCallback: ((error: Error) => void) | null = null
+  onError(callback: (error: Error) => void): void { this.errorCallback = callback }
+  emitError(error: Error): void { this.errorCallback?.(error) }
+  async onUtteranceEnd(): Promise<void> { this.utteranceEnds += 1 }
   emitTranscript(result: TranscriptResult): void { this.transcriptCallback?.(result) }
 }
 
@@ -103,4 +116,99 @@ test("FailoverAsrProvider: audio waits for secondary startup instead of leaking 
   await sendPromise
   assert.deepEqual(primary.frames.map((item) => item.sequence), [])
   assert.deepEqual(secondary.frames.map((item) => item.sequence), [2])
+})
+
+test("FailoverAsrProvider: forwards utterance end to the live provider only", async () => {
+  const primary = new FakeProvider()
+  const secondary = new FakeProvider()
+  const provider = new FailoverAsrProvider({ primary, secondary })
+  await provider.start()
+  await provider.onUtteranceEnd()
+  assert.equal(primary.utteranceEnds, 1)
+  primary.triggerSustainedLimit()
+  await new Promise((resolve) => setImmediate(resolve))
+  await provider.onUtteranceEnd()
+  assert.equal(secondary.utteranceEnds, 1)
+  assert.equal(primary.utteranceEnds, 1)
+})
+
+test("FailoverAsrProvider (streaming-first): a primary socket error fails over silently to the secondary", async () => {
+  const primary = new FakeProvider()
+  const secondary = new FakeProvider()
+  const provider = new FailoverAsrProvider({ primary, secondary, trigger: "primary-error", secondaryLabel: "Groq" })
+  const errors: Error[] = []
+  const labels: string[] = []
+  provider.onError((error) => errors.push(error))
+  provider.onFailoverActivated((label) => labels.push(label))
+  await provider.start()
+  primary.emitError(new Error("Deepgram WebSocket closed unexpectedly"))
+  await provider.sendAudio(frame(1))
+  assert.deepEqual(secondary.frames.map((f) => f.sequence), [1])
+  assert.deepEqual(labels, ["Groq"])
+  assert.equal(errors.length, 0, "a handled failover is not an error for the operator")
+  assert.equal(provider.activeSide(), "secondary")
+  assert.equal(primary.stopCalls, 1, "broken primary is released")
+})
+
+test("FailoverAsrProvider (streaming-first): unreachable primary at mic start starts on the secondary", async () => {
+  const primary = new FakeProvider()
+  primary.failStart = true
+  const secondary = new FakeProvider()
+  const provider = new FailoverAsrProvider({ primary, secondary, trigger: "primary-error" })
+  await provider.start()
+  await provider.sendAudio(frame(7))
+  assert.deepEqual(secondary.frames.map((f) => f.sequence), [7])
+})
+
+test("FailoverAsrProvider (streaming-first): a failed send re-routes that same frame to the secondary", async () => {
+  const primary = new FakeProvider()
+  const secondary = new FakeProvider()
+  const provider = new FailoverAsrProvider({ primary, secondary, trigger: "primary-error" })
+  await provider.start()
+  primary.failSend = true
+  await provider.sendAudio(frame(3))
+  assert.deepEqual(secondary.frames.map((f) => f.sequence), [3])
+})
+
+test("FailoverAsrProvider (batch-first): an ordinary primary error is reported, not a failover", async () => {
+  const primary = new FakeProvider()
+  const secondary = new FakeProvider()
+  const provider = new FailoverAsrProvider({ primary, secondary })
+  const errors: Error[] = []
+  provider.onError((error) => errors.push(error))
+  await provider.start()
+  primary.emitError(new Error("boom"))
+  assert.equal(errors.length, 1)
+  assert.equal(secondary.startCalls, 0)
+})
+
+test("FailoverAsrProvider: errors after stop() never trigger a failover", async () => {
+  const primary = new FakeProvider()
+  const secondary = new FakeProvider()
+  const provider = new FailoverAsrProvider({ primary, secondary, trigger: "primary-error" })
+  provider.onError(() => {})
+  await provider.start()
+  await provider.stop()
+  primary.emitError(new Error("closed"))
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(secondary.startCalls, 0)
+})
+
+test("FailoverAsrProvider: a switch inside a nested chain (Groq → local) reaches the outer status", async () => {
+  const deepgram = new FakeProvider()
+  const groq = new FakeProvider()
+  const local = new FakeProvider()
+  const inner = new FailoverAsrProvider({ primary: groq, secondary: local, secondaryLabel: "local" })
+  const outer = new FailoverAsrProvider({ primary: deepgram, secondary: inner, trigger: "primary-error", secondaryLabel: "Groq" })
+  const labels: string[] = []
+  outer.onFailoverActivated((label) => labels.push(label))
+  outer.onError(() => {})
+  await outer.start()
+  deepgram.emitError(new Error("socket closed"))
+  await outer.sendAudio(frame(1))
+  groq.triggerSustainedLimit()
+  await new Promise((resolve) => setImmediate(resolve))
+  await outer.sendAudio(frame(2))
+  assert.deepEqual(labels, ["Groq", "local"])
+  assert.deepEqual(local.frames.map((f) => f.sequence), [2])
 })

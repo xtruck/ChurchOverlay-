@@ -23,160 +23,94 @@
 <style>
   /*
     ARCHITECTURE.md section 65.6 — a phone-based second-operator remote.
-    Deliberately narrow: rundown scene navigation and media clear only, no
-    mic/import/manual-override — not a security boundary (the token
-    already grants full operator access), a USABILITY one, since a phone
-    screen is a poor fit for those actions. Same visual language as the
-    dashboard (Instrument Serif/Sans, JetBrains Mono, dark glass cards),
-    scaled for a single-column mobile layout.
+    Deliberately narrow: what is on screen, clear it, step the rundown,
+    clear media. Same "Vespers" system as the desktop console, scaled for
+    one thumb: big targets, one column, the tally colour for what is live.
   */
   :root {
-    --mesh-1: #7c6bff;
-    --mesh-2: #ff6fae;
-    --bg-void: #0a0a12;
-    --glass-bg: rgba(20, 20, 34, 0.62);
-    --glass-bg-raised: rgba(28, 28, 46, 0.72);
-    --glass-border: rgba(255, 255, 255, 0.12);
-    --glass-border-strong: rgba(255, 255, 255, 0.22);
-    --text-primary: #f5f5fb;
-    --text-secondary: #b7b7cc;
-    --text-tertiary: #82829c;
-    --accent: #8f7dff;
-    --accent-strong: #a996ff;
-    --accent-ink: #17102f;
-    --success: #34d399;
-    --danger: #ff7086;
-    --danger-soft: rgba(255, 112, 134, 0.16);
-    --radius-md: 14px;
-    --radius-lg: 20px;
+    --nave: #0f1722;
+    --pew: #162130;
+    --stone: #223044;
+    --line: #2b3b52;
+    --line-strong: #3a4e6b;
+    --vellum: #ede6d8;
+    --ash: #a3adbb;
+    --ash-dim: #75839a;
+    --accent: #e0a93b;
+    --accent-ink: #1c1405;
+    --on-air: #ef4a4a;
+    --on-air-soft: rgba(239, 74, 74, 0.14);
+    --cue: #3fcf8e;
+    --warn: #f08a3c;
     --font-display: "Instrument Serif", Georgia, serif;
-    --font-ui: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
-    --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+    --font-ui: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body {
-    margin: 0;
-    min-height: 100%;
-    color: var(--text-primary);
-    font-family: var(--font-ui);
-    background-color: var(--bg-void);
-    background-image:
-      radial-gradient(at 20% 10%, color-mix(in srgb, var(--mesh-1) 50%, transparent) 0px, transparent 45%),
-      radial-gradient(at 85% 90%, color-mix(in srgb, var(--mesh-2) 40%, transparent) 0px, transparent 45%);
-    background-attachment: fixed;
-  }
-  body { padding: 16px; padding-bottom: 40px; }
+  html, body { margin: 0; min-height: 100%; background: var(--nave); color: var(--vellum); font-family: var(--font-ui); font-variant-numeric: tabular-nums; }
+  body { padding: 16px 16px 40px; max-width: 520px; margin: 0 auto; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  h1 { font-family: var(--font-display); font-weight: 400; font-size: 26px; margin: 0; }
+  #status-pill { display: flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); font-size: 12.5px; color: var(--ash); }
+  #status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ash-dim); }
+  #status-pill.connected #status-dot { background: var(--cue); }
+  #status-pill.disconnected #status-dot { background: var(--warn); }
 
-  header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 16px;
-  }
-  h1 {
-    font-family: var(--font-display);
-    font-style: italic;
-    font-weight: 400;
-    font-size: 20px;
-    margin: 0;
-  }
-  #status-pill {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 12px;
-    border-radius: 999px;
-    background: var(--glass-bg-raised);
-    border: 1px solid var(--glass-border);
-    font-size: 11px;
-    font-family: var(--font-mono);
-  }
-  #status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-tertiary); }
-  #status-pill.connected #status-dot { background: var(--success); }
-  #status-pill.disconnected #status-dot { background: var(--danger); }
+  .card { background: var(--pew); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  .card-title { font-family: var(--font-display); font-size: 21px; margin: 0 0 12px; }
 
-  .card {
-    background: var(--glass-bg);
-    -webkit-backdrop-filter: blur(16px);
-    backdrop-filter: blur(16px);
-    border: 1px solid var(--glass-border);
-    border-radius: var(--radius-lg);
-    padding: 16px;
-    margin-bottom: 14px;
-  }
-  .card-title {
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-tertiary);
-    margin-bottom: 10px;
-  }
+  #on-screen { border-width: 2px; transition: border-color 160ms ease, box-shadow 160ms ease; }
+  #on-screen.live { border-color: var(--on-air); box-shadow: 0 0 0 4px var(--on-air-soft); }
+  #on-screen-state { font-size: 13px; font-weight: 600; color: var(--ash); margin-bottom: 6px; }
+  #on-screen.live #on-screen-state { color: #ff8f8f; }
+  #on-screen-ref { font-family: var(--font-display); font-size: 30px; line-height: 1.1; min-height: 1.1em; }
 
   .scene-list { display: flex; flex-direction: column; gap: 8px; }
-  .scene-chip {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 14px 16px;
-    border-radius: var(--radius-md);
-    background: rgba(0, 0, 0, 0.22);
-    border: 1px solid var(--glass-border);
-    font-size: 14px;
-    color: var(--text-secondary);
-  }
-  .scene-chip.active { border-color: var(--accent); background: rgba(143, 125, 255, 0.16); color: var(--text-primary); }
-  .scene-chip.interrupted { border-color: var(--danger); }
-  .scene-empty { color: var(--text-tertiary); font-size: 13px; text-align: center; padding: 12px 0; }
+  .scene-chip { padding: 14px 16px; border-radius: 10px; background: var(--nave); border: 1px solid var(--line); font-size: 15px; color: var(--ash); }
+  .scene-chip.active { border-color: var(--on-air); color: var(--vellum); }
+  .scene-chip.interrupted { border-color: var(--accent); }
+  .scene-empty { color: var(--ash-dim); font-size: 14px; padding: 8px 0; }
 
-  button {
-    font-family: var(--font-ui);
-    font-size: 15px;
-    font-weight: 600;
-    border: none;
-    border-radius: var(--radius-md);
-    padding: 16px;
-    cursor: pointer;
-  }
+  button { font: inherit; font-size: 16px; font-weight: 600; border-radius: 12px; padding: 16px; border: 1px solid transparent; cursor: pointer; min-height: 52px; }
   button:disabled { opacity: 0.4; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button:active:not(:disabled) { transform: translateY(1px); }
   .btn-row { display: flex; gap: 10px; }
-  .btn-primary { background: var(--accent); color: var(--accent-ink); flex: 1; }
-  .btn-secondary { background: var(--glass-bg-raised); color: var(--text-primary); border: 1px solid var(--glass-border-strong); flex: 1; }
-  .btn-danger { background: var(--danger-soft); color: var(--danger); border: 1px solid rgba(255, 112, 134, 0.35); width: 100%; }
+  .btn-secondary { background: var(--stone); color: var(--vellum); border-color: var(--line-strong); flex: 1; }
+  .btn-danger { background: transparent; color: #ff8f8f; border-color: var(--on-air); width: 100%; }
+  .btn-clear { background: var(--on-air); color: #fff; width: 100%; margin-top: 14px; font-size: 17px; }
 
-  #no-token {
-    display: none;
-    text-align: center;
-    color: var(--text-secondary);
-    padding: 40px 20px;
-  }
+  #no-token { display: none; text-align: center; color: var(--ash); padding: 40px 20px; }
 </style>
-</head>
 <body>
   <header>
-    <h1>ChurchOverlay Remote</h1>
-    <div id="status-pill" class="disconnected"><span id="status-dot"></span><span id="status-text">connecting…</span></div>
+    <h1 data-t="title">Remote</h1>
+    <div id="status-pill" class="disconnected"><span id="status-dot"></span><span id="status-text">…</span></div>
   </header>
 
-  <div id="no-token">
-    No operator token in the link. Scan the QR code from the desktop dashboard's Remote panel again.
-  </div>
+  <div id="no-token" data-t="noToken">No operator token in the link. Copy the remote link from the desktop console's Settings again.</div>
 
   <div id="app">
+    <section id="on-screen" class="card" aria-live="polite">
+      <div id="on-screen-state" data-t="offAir">Nothing on screen</div>
+      <div id="on-screen-ref"></div>
+      <button id="clear-verse-btn" class="btn-clear" data-t="clearScreen">Clear the screen</button>
+    </section>
+
     <div class="card">
-      <div class="card-title">Rundown</div>
+      <h2 class="card-title" data-t="rundown">Rundown</h2>
       <div id="scene-list" class="scene-list">
-        <div class="scene-empty">No rundown loaded.</div>
+        <div class="scene-empty" data-t="noRundown">No rundown loaded.</div>
       </div>
       <div class="btn-row" style="margin-top: 12px">
-        <button id="prev-btn" class="btn-secondary" disabled>◀ Previous</button>
-        <button id="next-btn" class="btn-secondary" disabled>Next ▶</button>
+        <button id="prev-btn" class="btn-secondary" disabled data-t="previous">Previous</button>
+        <button id="next-btn" class="btn-secondary" disabled data-t="next">Next</button>
       </div>
     </div>
 
     <div class="card">
-      <div class="card-title">Media</div>
-      <button id="clear-media-btn" class="btn-danger">Clear media</button>
+      <h2 class="card-title" data-t="media">Media</h2>
+      <button id="clear-media-btn" class="btn-danger" data-t="clearMedia">Stop media</button>
     </div>
   </div>
 

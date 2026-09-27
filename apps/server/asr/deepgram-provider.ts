@@ -1,9 +1,26 @@
 import { WebSocket } from "ws"
 import type { AsrProvider, AudioFrame, TranscriptResult } from "../../../packages/contracts"
 import { generateUlid } from "../../../packages/shared/ulid"
+import { biblicalVocabularyFor } from "./biblical-vocabulary"
 
 const DEFAULT_MODEL = "nova-2"
 const DEFAULT_URL = "wss://api.deepgram.com/v1/listen"
+/**
+ * Deepgram closes a streaming socket that receives neither audio nor a
+ * KeepAlive for ~10 s (its NET-0001 close). SilenceGate deliberately stops
+ * forwarding frames during silence, so without a keepalive every pause
+ * longer than ~10 s (a prayer, a song, the preacher walking to the pulpit)
+ * killed the connection and surfaced as "closed unexpectedly". 4 s leaves
+ * comfortable margin for timer jitter on a busy machine.
+ */
+const DEFAULT_KEEPALIVE_MS = 4000
+/**
+ * How long a pause Deepgram's own endpointer waits before marking a result
+ * final. Its default (10 ms) finalizes mid-phrase on the smallest breath;
+ * 300 ms tolerates the pause between "Jean chapitre 3" and "verset 16" in
+ * real preaching without noticeably delaying the final.
+ */
+const DEFAULT_ENDPOINTING_MS = 300
 
 export type DeepgramProviderOptions = {
   readonly apiKey: string
@@ -11,6 +28,10 @@ export type DeepgramProviderOptions = {
   readonly language?: string
   readonly url?: string
   readonly WebSocketImpl?: typeof WebSocket
+  readonly keepAliveIntervalMs?: number
+  readonly endpointingMs?: number
+  /** Boosts Bible book names and "chapitre/verset" (see biblical-vocabulary.ts). Default true. */
+  readonly biblicalVocabulary?: boolean
 }
 
 type DeepgramMessage = {
@@ -31,8 +52,13 @@ export class DeepgramProvider implements AsrProvider {
   private readonly model: string
   private readonly url: string
   private readonly WebSocketImpl: typeof WebSocket
+  private readonly keepAliveIntervalMs: number
+  private readonly endpointingMs: number
+  private readonly biblicalVocabulary: boolean
   private language: string | undefined
   private socket: WebSocket | null = null
+  private keepAliveTimer: ReturnType<typeof setInterval> | null = null
+  private lastSendAt = 0
   private active = false
   private sequence = 0
   private correlationId = ""
@@ -47,8 +73,12 @@ export class DeepgramProvider implements AsrProvider {
     this.language = options.language
     this.url = options.url ?? DEFAULT_URL
     this.WebSocketImpl = options.WebSocketImpl ?? WebSocket
+    this.keepAliveIntervalMs = options.keepAliveIntervalMs ?? DEFAULT_KEEPALIVE_MS
+    this.endpointingMs = options.endpointingMs ?? DEFAULT_ENDPOINTING_MS
+    this.biblicalVocabulary = options.biblicalVocabulary ?? true
   }
 
+  /** Takes effect on the next start() — Deepgram fixes language per connection. */
   setLanguage(language: string | undefined): void {
     this.language = language
   }
@@ -65,11 +95,8 @@ export class DeepgramProvider implements AsrProvider {
     this.currentVerseRef = reference
   }
 
-  async start(): Promise<void> {
-    if (this.active) return
-    this.active = true
-    this.sequence = 0
-    this.correlationId = generateUlid()
+  /** The exact streaming URL start() opens. Contains no secret — the key travels in a header. */
+  buildUrl(): string {
     const query = new URLSearchParams({
       model: this.model,
       encoding: "linear16",
@@ -77,16 +104,35 @@ export class DeepgramProvider implements AsrProvider {
       channels: "1",
       interim_results: "true",
       smart_format: "true",
+      endpointing: String(this.endpointingMs),
     })
     if (this.language) query.set("language", this.language)
-    const socket = new this.WebSocketImpl(`${this.url}?${query.toString()}`, {
+    if (this.biblicalVocabulary) {
+      // nova-3 replaced weighted `keywords` with plain `keyterm` prompting.
+      const nova3 = this.model.startsWith("nova-3")
+      for (const term of biblicalVocabularyFor(this.language)) {
+        if (nova3) query.append("keyterm", term)
+        else query.append("keywords", `${term}:2`)
+      }
+    }
+    return `${this.url}?${query.toString()}`
+  }
+
+  async start(): Promise<void> {
+    if (this.active) return
+    this.active = true
+    this.sequence = 0
+    this.correlationId = generateUlid()
+    const socket = new this.WebSocketImpl(this.buildUrl(), {
       headers: { Authorization: `Token ${this.apiKey}` },
     })
     this.socket = socket
     socket.on("message", (data) => this.handleMessage(data.toString()))
     socket.on("error", (error) => this.reportError(error))
     socket.on("close", () => {
-      if (!this.active || this.socket !== socket) return
+      if (this.socket !== socket) return
+      this.clearKeepAlive()
+      if (!this.active) return
       this.socket = null
       this.active = false
       this.reportError(new Error("Deepgram WebSocket closed unexpectedly"))
@@ -101,17 +147,33 @@ export class DeepgramProvider implements AsrProvider {
       }
       throw error
     }
+    this.lastSendAt = Date.now()
+    this.armKeepAlive(socket)
   }
 
   async sendAudio(audio: AudioFrame): Promise<void> {
-    if (!this.active || !this.socket || this.socket.readyState !== this.WebSocketImpl.OPEN) {
-      throw new Error("DeepgramProvider is not connected")
-    }
-    this.socket.send(Buffer.from(audio.samples.buffer, audio.samples.byteOffset, audio.samples.byteLength))
+    const socket = this.openSocket()
+    if (!socket) throw new Error("DeepgramProvider is not connected")
+    socket.send(Buffer.from(audio.samples.buffer, audio.samples.byteOffset, audio.samples.byteLength))
+    this.lastSendAt = Date.now()
+  }
+
+  /**
+   * Called by AppCore when SilenceGate reports the end of an utterance.
+   * Deepgram's Finalize flushes whatever it has buffered as a final result
+   * immediately instead of waiting for its own endpointer — the speaker
+   * has already stopped, so any further wait is pure display delay.
+   */
+  async onUtteranceEnd(): Promise<void> {
+    const socket = this.openSocket()
+    if (!socket) return
+    socket.send(JSON.stringify({ type: "Finalize" }))
+    this.lastSendAt = Date.now()
   }
 
   async stop(): Promise<void> {
     this.active = false
+    this.clearKeepAlive()
     const socket = this.socket
     this.socket = null
     if (!socket) return
@@ -119,6 +181,29 @@ export class DeepgramProvider implements AsrProvider {
       socket.send(JSON.stringify({ type: "CloseStream" }))
       socket.close()
     }
+  }
+
+  private openSocket(): WebSocket | null {
+    if (!this.active || !this.socket || this.socket.readyState !== this.WebSocketImpl.OPEN) return null
+    return this.socket
+  }
+
+  private armKeepAlive(socket: WebSocket): void {
+    this.clearKeepAlive()
+    if (this.keepAliveIntervalMs <= 0) return
+    const timer = setInterval(() => {
+      if (this.socket !== socket || socket.readyState !== this.WebSocketImpl.OPEN) return
+      if (Date.now() - this.lastSendAt < this.keepAliveIntervalMs) return
+      socket.send(JSON.stringify({ type: "KeepAlive" }))
+      this.lastSendAt = Date.now()
+    }, this.keepAliveIntervalMs)
+    timer.unref?.()
+    this.keepAliveTimer = timer
+  }
+
+  private clearKeepAlive(): void {
+    if (this.keepAliveTimer) clearInterval(this.keepAliveTimer)
+    this.keepAliveTimer = null
   }
 
   private handleMessage(raw: string): void {

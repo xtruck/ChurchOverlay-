@@ -22,6 +22,7 @@ export type WsCommandType =
   | "poster:set-duration"
   | "layout:set"
   | "asr:return-primary"
+  | "mic:auto-gain"
 
 /** Resulting state or information, consumed by the (read-only) overlay. */
 export type WsEventType =
@@ -46,6 +47,7 @@ export type WsEventType =
   | "layout:update"
   | "detector:near-miss"
   | "branding:update"
+  | "mic:health"
 
 /**
  * status:update's first real, concrete payload shape — ASR/transcription
@@ -104,6 +106,27 @@ export type DetectorNearMissPayload = {
 export type BrandingUpdatePayload = {
   readonly organizationName?: string
   readonly accentColor?: string
+}
+
+/**
+ * Live microphone diagnosis (server/audio/mic-health.ts), broadcast about
+ * once per second of processed audio while the mic is on. Levels are dBFS
+ * (0 = full scale); null until there is something to measure.
+ */
+export type MicHealthPayload = {
+  readonly state: "warming-up" | "ok" | "listening" | "too-quiet" | "clipping" | "noisy" | "no-signal"
+  readonly speechDbfs: number | null
+  readonly noiseDbfs: number | null
+  readonly snrDb: number | null
+  readonly peakDbfs: number | null
+  readonly clippingRatio: number
+  readonly gainDb: number
+  readonly autoGain: boolean
+}
+
+/** mic:auto-gain — operator toggles the adaptive gain applied to audio sent to ASR. */
+export type MicAutoGainPayload = {
+  readonly enabled: boolean
 }
 
 export type WsMessage<TPayload = unknown> = {

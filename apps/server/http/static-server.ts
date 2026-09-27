@@ -141,7 +141,12 @@ export class StaticServer {
     }
 
     const contentType = CONTENT_TYPES[extname(resolvedPath)] ?? "application/octet-stream"
-    res.writeHead(200, { "Content-Type": contentType })
+    // The dashboard embeds this overlay in a sandboxed iframe (origin
+    // "null"), and browsers fetch web fonts in CORS mode: without this
+    // header the preview silently fell back to system fonts. Fonts are
+    // public, static assets — nothing sensitive is exposed by allowing it.
+    const corsHeaders = extname(resolvedPath) === ".woff2" ? { "Access-Control-Allow-Origin": "*" } : {}
+    res.writeHead(200, { "Content-Type": contentType, ...corsHeaders })
     res.end(content)
   }
 
