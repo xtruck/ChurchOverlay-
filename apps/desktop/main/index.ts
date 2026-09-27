@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, safeStorage } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from "electron"
 import { randomBytes } from "node:crypto"
 import { networkInterfaces } from "node:os"
 import { join } from "node:path"
@@ -31,6 +31,7 @@ import {
 } from "./config-store"
 import type { DisplayMode, MediaCueKind, VerseConfirmationMode, VerseLayout } from "../../../packages/contracts"
 import { inferMediaKind, deriveTitleFromFilename } from "./media-import"
+import { isAllowedNavigation, isExternalHttpsUrl } from "./navigation-guard"
 import { Logger } from "../../../packages/shared/logger"
 import { NDIOutput, type PaintSource } from "./ndi-output"
 import { getAudioProfileSettings, type AudioProfile } from "../../server/audio/audio-profile"
@@ -847,7 +848,13 @@ async function renderQuoteCardPng(entry: SessionEntry): Promise<Buffer> {
   </div>
 </body></html>`
 
-  const win = new BrowserWindow({ width: 1920, height: 1080, show: false, webPreferences: { offscreen: true } })
+  // Renders already-escaped static HTML only: no script needed, so none allowed.
+  const win = new BrowserWindow({
+    width: 1920,
+    height: 1080,
+    show: false,
+    webPreferences: { offscreen: true, sandbox: true, contextIsolation: true, javascript: false },
+  })
   try {
     await win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html))
     const image = await win.webContents.capturePage()
@@ -1042,6 +1049,24 @@ async function shutdown(): Promise<void> {
   currentRemoteUrl = null
   activeConfig = null
 }
+
+/**
+ * Defense in depth for every window/webContents this app creates (dashboard,
+ * NDI offscreen renderer, quote-card renderer). The dashboard's preload
+ * exposes the operator IPC bridge: if any link, redirect or injected markup
+ * ever navigated that window to an external page, that page would inherit
+ * the bridge. So: no cross-origin navigation, and window.open never creates
+ * an Electron window — https links go to the system browser instead.
+ */
+app.on("web-contents-created", (_event, contents) => {
+  contents.setWindowOpenHandler(({ url }) => {
+    if (isExternalHttpsUrl(url)) void shell.openExternal(url)
+    return { action: "deny" }
+  })
+  contents.on("will-navigate", (event, url) => {
+    if (!isAllowedNavigation(contents.getURL(), url)) event.preventDefault()
+  })
+})
 
 app.whenReady().then(async () => {
   if (!safeStorage.isEncryptionAvailable()) {

@@ -644,97 +644,6 @@ test("AppCore: media:select with an unknown id broadcasts nothing", async () => 
       mediaLibrary,
     })
 
-    test("AppCore: an active media cue auto-clears after its persisted duration", async () => {
-      await withMediaLibrary(async (mediaLibrary, dir) => {
-        const source = join(dir, "timed.png")
-        await writeFile(source, "x")
-        const cue = await mediaLibrary.import(source, "Timed Slide", "image")
-        await mediaLibrary.setAutoClearDuration(cue.id, 30)
-
-        const app = await startAppCore({
-          asr: new FakeAsrProvider(),
-          detector: new RegexDetector(),
-          index: new KnownValidVerseIndex(),
-          source: new StubVerseSource({}),
-          logger: silentLogger(),
-          port: 0,
-          tokens: TOKENS,
-          mediaLibrary,
-        })
-        try {
-          const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
-          const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
-          const messages: WsMessage[] = []
-          viewerSocket.on("message", (data) => {
-            const message = JSON.parse(data.toString()) as WsMessage
-            if (!isAutoSyncNoise(message)) messages.push(message)
-          })
-          operatorSocket.send(JSON.stringify({ id: "01TIMER", type: "media:select", timestamp: Date.now(), payload: { id: cue.id } }))
-          await waitFor(() => messages.some((message) => message.type === "media:show"))
-          await waitFor(() => messages.some((message) => message.type === "media:clear"))
-          assert.equal(messages.filter((message) => message.type === "media:clear").length, 1)
-          operatorSocket.close()
-          viewerSocket.close()
-        } finally {
-          await app.stop()
-        }
-      })
-    })
-
-    test("AppCore: replacing or manually clearing media cancels the previous auto-clear timer", async () => {
-      await withMediaLibrary(async (mediaLibrary, dir) => {
-        const firstSource = join(dir, "first.png")
-        const secondSource = join(dir, "second.png")
-        await writeFile(firstSource, "x")
-        await writeFile(secondSource, "y")
-        const first = await mediaLibrary.import(firstSource, "First Slide", "image")
-        const second = await mediaLibrary.import(secondSource, "Second Slide", "image")
-        // A generous duration relative to the WS round-trip + waitFor
-        // polling overhead below (a real race, not a mocked clock): under
-        // heavy parallel test-suite load, the time between arming this
-        // timer and the server processing the replacing media:select can
-        // occasionally stretch well past a couple dozen ms, which
-        // previously (40ms) made this test genuinely flaky rather than
-        // actually catching a cancellation bug.
-        await mediaLibrary.setAutoClearDuration(first.id, 300)
-        await mediaLibrary.setAutoClearDuration(second.id, null)
-
-        const app = await startAppCore({
-          asr: new FakeAsrProvider(),
-          detector: new RegexDetector(),
-          index: new KnownValidVerseIndex(),
-          source: new StubVerseSource({}),
-          logger: silentLogger(),
-          port: 0,
-          tokens: TOKENS,
-          mediaLibrary,
-        })
-        try {
-          const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
-          const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
-          const messages: WsMessage[] = []
-          viewerSocket.on("message", (data) => {
-            const message = JSON.parse(data.toString()) as WsMessage
-            if (!isAutoSyncNoise(message)) messages.push(message)
-          })
-          operatorSocket.send(JSON.stringify({ id: "01FIRST", type: "media:select", timestamp: Date.now(), payload: { id: first.id } }))
-          await waitFor(() => messages.some((message) => message.type === "media:show"))
-          operatorSocket.send(JSON.stringify({ id: "01SECOND", type: "media:select", timestamp: Date.now(), payload: { id: second.id } }))
-          await waitFor(() => messages.filter((message) => message.type === "media:show").length === 2)
-          await new Promise((resolve) => setTimeout(resolve, 150))
-          assert.equal(messages.some((message) => message.type === "media:clear"), false)
-
-          operatorSocket.send(JSON.stringify({ id: "01CLEAR", type: "media:clear", timestamp: Date.now(), payload: null }))
-          await waitFor(() => messages.some((message) => message.type === "media:clear"))
-          await new Promise((resolve) => setTimeout(resolve, 50))
-          assert.equal(messages.filter((message) => message.type === "media:clear").length, 1)
-          operatorSocket.close()
-          viewerSocket.close()
-        } finally {
-          await app.stop()
-        }
-      })
-    })
     try {
       const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
       const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
@@ -753,6 +662,98 @@ test("AppCore: media:select with an unknown id broadcasts nothing", async () => 
       await new Promise((resolve) => setTimeout(resolve, 50))
 
       assert.equal(received, false)
+      operatorSocket.close()
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+test("AppCore: replacing or manually clearing media cancels the previous auto-clear timer", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const firstSource = join(dir, "first.png")
+    const secondSource = join(dir, "second.png")
+    await writeFile(firstSource, "x")
+    await writeFile(secondSource, "y")
+    const first = await mediaLibrary.import(firstSource, "First Slide", "image")
+    const second = await mediaLibrary.import(secondSource, "Second Slide", "image")
+    // A generous duration relative to the WS round-trip + waitFor
+    // polling overhead below (a real race, not a mocked clock): under
+    // heavy parallel test-suite load, the time between arming this
+    // timer and the server processing the replacing media:select can
+    // occasionally stretch well past a couple dozen ms, which
+    // previously (40ms) made this test genuinely flaky rather than
+    // actually catching a cancellation bug.
+    await mediaLibrary.setAutoClearDuration(first.id, 300)
+    await mediaLibrary.setAutoClearDuration(second.id, null)
+
+    const app = await startAppCore({
+      asr: new FakeAsrProvider(),
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new StubVerseSource({}),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+    })
+    try {
+      const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+      const messages: WsMessage[] = []
+      viewerSocket.on("message", (data) => {
+        const message = JSON.parse(data.toString()) as WsMessage
+        if (!isAutoSyncNoise(message)) messages.push(message)
+      })
+      operatorSocket.send(JSON.stringify({ id: "01FIRST", type: "media:select", timestamp: Date.now(), payload: { id: first.id } }))
+      await waitFor(() => messages.some((message) => message.type === "media:show"))
+      operatorSocket.send(JSON.stringify({ id: "01SECOND", type: "media:select", timestamp: Date.now(), payload: { id: second.id } }))
+      await waitFor(() => messages.filter((message) => message.type === "media:show").length === 2)
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      assert.equal(messages.some((message) => message.type === "media:clear"), false)
+
+      operatorSocket.send(JSON.stringify({ id: "01CLEAR", type: "media:clear", timestamp: Date.now(), payload: null }))
+      await waitFor(() => messages.some((message) => message.type === "media:clear"))
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      assert.equal(messages.filter((message) => message.type === "media:clear").length, 1)
+      operatorSocket.close()
+      viewerSocket.close()
+    } finally {
+      await app.stop()
+    }
+  })
+})
+
+test("AppCore: an active media cue auto-clears after its persisted duration", async () => {
+  await withMediaLibrary(async (mediaLibrary, dir) => {
+    const source = join(dir, "timed.png")
+    await writeFile(source, "x")
+    const cue = await mediaLibrary.import(source, "Timed Slide", "image")
+    await mediaLibrary.setAutoClearDuration(cue.id, 30)
+
+    const app = await startAppCore({
+      asr: new FakeAsrProvider(),
+      detector: new RegexDetector(),
+      index: new KnownValidVerseIndex(),
+      source: new StubVerseSource({}),
+      logger: silentLogger(),
+      port: 0,
+      tokens: TOKENS,
+      mediaLibrary,
+    })
+    try {
+      const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+      const messages: WsMessage[] = []
+      viewerSocket.on("message", (data) => {
+        const message = JSON.parse(data.toString()) as WsMessage
+        if (!isAutoSyncNoise(message)) messages.push(message)
+      })
+      operatorSocket.send(JSON.stringify({ id: "01TIMER", type: "media:select", timestamp: Date.now(), payload: { id: cue.id } }))
+      await waitFor(() => messages.some((message) => message.type === "media:show"))
+      await waitFor(() => messages.some((message) => message.type === "media:clear"))
+      assert.equal(messages.filter((message) => message.type === "media:clear").length, 1)
       operatorSocket.close()
       viewerSocket.close()
     } finally {
@@ -1783,52 +1784,6 @@ test("AppCore: an ASR error broadcasts status:update, and the next successful tr
     tokens: TOKENS,
   })
 
-  test("AppCore: normal ASR throttling is not an error and recovers without error-state semantics", async () => {
-    const asr = new FakeAsrProvider()
-    const app = await startAppCore({
-      asr,
-      detector: new RegexDetector(),
-      index: new KnownValidVerseIndex(),
-      source: new EchoVerseSource(),
-      logger: silentLogger(),
-      port: 0,
-      tokens: TOKENS,
-    })
-    try {
-      const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
-
-      const throttledMessage = waitForMessage(viewerSocket)
-      asr.emitError(new RateLimitError("Transcription en pause", undefined, "throttling"))
-      assert.deepEqual((await throttledMessage).payload, {
-        asrHealth: "throttled",
-        error: "Transcription en pause",
-        audioMetrics: ZERO_AUDIO_METRICS,
-      })
-
-      const recoveryMessage = waitForMessage(viewerSocket)
-      asr.emitTranscript({
-        id: "01THROTTLED",
-        correlationId: "01A",
-        sequence: 1,
-        text: "Welcome everyone.",
-        state: "final",
-        timestamp: Date.now(),
-      })
-      assert.deepEqual((await recoveryMessage).payload, { asrHealth: "ok", audioMetrics: ZERO_AUDIO_METRICS })
-
-      const sustainedMessage = waitForMessage(viewerSocket)
-      asr.emitRateLimitedSustained()
-      assert.deepEqual((await sustainedMessage).payload, {
-        asrHealth: "rate-limited",
-        error: "Limite de débit Groq atteinte, envisagez une mise à jour du palier",
-        audioMetrics: ZERO_AUDIO_METRICS,
-      })
-
-      viewerSocket.close()
-    } finally {
-      await app.stop()
-    }
-  })
   try {
     const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
 
@@ -1857,6 +1812,53 @@ test("AppCore: an ASR error broadcasts status:update, and the next successful tr
   }
 })
 
+test("AppCore: normal ASR throttling is not an error and recovers without error-state semantics", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    const throttledMessage = waitForMessage(viewerSocket)
+    asr.emitError(new RateLimitError("Transcription en pause", undefined, "throttling"))
+    assert.deepEqual((await throttledMessage).payload, {
+      asrHealth: "throttled",
+      error: "Transcription en pause",
+      audioMetrics: ZERO_AUDIO_METRICS,
+    })
+
+    const recoveryMessage = waitForMessage(viewerSocket)
+    asr.emitTranscript({
+      id: "01THROTTLED",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Welcome everyone.",
+      state: "final",
+      timestamp: Date.now(),
+    })
+    assert.deepEqual((await recoveryMessage).payload, { asrHealth: "ok", audioMetrics: ZERO_AUDIO_METRICS })
+
+    const sustainedMessage = waitForMessage(viewerSocket)
+    asr.emitRateLimitedSustained()
+    assert.deepEqual((await sustainedMessage).payload, {
+      asrHealth: "rate-limited",
+      error: "Limite de débit Groq atteinte, envisagez une mise à jour du palier",
+      audioMetrics: ZERO_AUDIO_METRICS,
+    })
+
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
 test("AppCore: a transcript with no prior ASR error broadcasts no status:update at all", async () => {
   const asr = new FakeAsrProvider()
   const app = await startAppCore({
@@ -1869,31 +1871,6 @@ test("AppCore: a transcript with no prior ASR error broadcasts no status:update 
     tokens: TOKENS,
   })
 
-  test("AppCore: getDiagnostics returns safe operational state without secrets", async () => {
-    const asr = new FakeAsrProvider()
-    const app = await startAppCore({
-      asr,
-      detector: new RegexDetector(),
-      index: new KnownValidVerseIndex(),
-      source: new EchoVerseSource(),
-      logger: silentLogger(),
-      port: 0,
-      tokens: TOKENS,
-    })
-    try {
-      asr.emitError(new RateLimitError("Transcription en pause", undefined, "throttling"))
-      const diagnostics = app.getDiagnostics()
-      assert.equal(diagnostics.asrHealth, "throttled")
-      assert.equal(typeof diagnostics.generatedAt, "number")
-      assert.equal(typeof diagnostics.silenceGate.framesReceived, "number")
-      assert.equal(diagnostics.sessionEntries, 0)
-      assert.equal(diagnostics.sessionHistoryEntries, 0)
-      assert.equal("groqApiKey" in diagnostics, false)
-      assert.equal("operatorToken" in diagnostics, false)
-    } finally {
-      await app.stop()
-    }
-  })
   try {
     const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
     // ARCHITECTURE.md section 70: a transcript:final echo is expected for
@@ -1917,6 +1894,32 @@ test("AppCore: a transcript with no prior ASR error broadcasts no status:update 
 
     assert.equal(statusUpdateReceived, false)
     viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: getDiagnostics returns safe operational state without secrets", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    asr.emitError(new RateLimitError("Transcription en pause", undefined, "throttling"))
+    const diagnostics = app.getDiagnostics()
+    assert.equal(diagnostics.asrHealth, "throttled")
+    assert.equal(typeof diagnostics.generatedAt, "number")
+    assert.equal(typeof diagnostics.silenceGate.framesReceived, "number")
+    assert.equal(diagnostics.sessionEntries, 0)
+    assert.equal(diagnostics.sessionHistoryEntries, 0)
+    assert.equal("groqApiKey" in diagnostics, false)
+    assert.equal("operatorToken" in diagnostics, false)
   } finally {
     await app.stop()
   }
@@ -3511,9 +3514,6 @@ test("AppCore: a verse shown with no principal poster configured still auto-clea
     verseAutoClearMs: 40,
   })
 
-  test("AppCore: the default verse auto-clear ceiling is exactly 2 minutes 30 seconds", () => {
-    assert.equal(DEFAULT_VERSE_AUTO_CLEAR_MS, 2 * 60 * 1000 + 30 * 1000)
-  })
   try {
     const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
     const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
@@ -3537,6 +3537,10 @@ test("AppCore: a verse shown with no principal poster configured still auto-clea
   } finally {
     await app.stop()
   }
+})
+
+test("AppCore: the default verse auto-clear ceiling is exactly 2 minutes 30 seconds", () => {
+  assert.equal(DEFAULT_VERSE_AUTO_CLEAR_MS, 2 * 60 * 1000 + 30 * 1000)
 })
 
 test("AppCore: speaking a poster-marked cue's title re-shows it as poster:show, not media:show", async () => {
