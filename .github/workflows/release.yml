@@ -45,13 +45,40 @@ jobs:
       - name: Compile TypeScript
         run: npm run build
 
+      # Never ship an installer from a commit whose test suite is red.
+      # Runs on Windows on purpose: it's the operator's real platform, so
+      # path/port quirks surface here rather than during a service.
+      - name: Run the test suite
+        run: npm test
+
+      # electron-builder downloads Electron, NSIS and its resources from
+      # GitHub at build time. A dropped connection there (ECONNRESET on
+      # nsis-resources, seen on run #3) failed an otherwise complete build.
+      # Cache those downloads between runs, and retry the step.
+      - name: Cache Electron and electron-builder downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: electron-dl-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-dl-${{ runner.os }}-
+
       - name: Build the installer
         # electron-builder auto-detects a "vX.Y.Z" tag and tries to publish
         # a GitHub Release itself, which needs GH_TOKEN and fails the build
         # if that isn't set at this step. --publish=never disables that —
         # the upload-artifact and softprops/action-gh-release steps below
         # handle publishing explicitly and predictably instead.
-        run: npx electron-builder --win nsis --publish=never
+        shell: pwsh
+        run: |
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            npx electron-builder --win nsis --publish=never
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            Write-Host "electron-builder failed (attempt $attempt of 3), retrying in 20 s..."
+            Start-Sleep -Seconds 20
+          }
+          exit 1
 
       - name: Upload the installer as a workflow artifact
         uses: actions/upload-artifact@v4

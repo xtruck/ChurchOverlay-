@@ -1,0 +1,52 @@
+name: CI
+
+# Runs the full typecheck + test suite on every push and pull request.
+#
+# Before this workflow existed, nothing ran the tests automatically: the only
+# workflow (release.yml) built the Windows installer straight from a tag, so a
+# broken main could ship. It also let 5 tests in app-core.test.ts sit nested
+# inside other tests' bodies (never really executed, 2 reported as cancelled)
+# without anyone noticing.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # --ignore-scripts: the tests need neither the Electron binary download
+      # nor the optional NDI native module build (grandiose), which pulls the
+      # NDI SDK and compiles with node-gyp — slow and irrelevant here.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Dependency audit (production deps)
+        run: npm audit --omit=dev --audit-level=high
