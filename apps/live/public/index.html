@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Live Congregation Companion — ChurchOverlay</title>
+  <link rel="stylesheet" href="live.css" />
+</head>
+<body>
+  <div class="live-app">
+    <!-- Header with Live Status & Translation Selector -->
+    <header class="live-header">
+      <div class="church-brand">
+        <span class="live-pulse"></span>
+        <span class="brand-title">SANCTUARY LIVE</span>
+      </div>
+      <div class="translation-control">
+        <label for="translation-select">Bible:</label>
+        <select id="translation-select">
+          <option value="lsg">LSG (Français)</option>
+          <option value="kjv" selected>KJV (English)</option>
+          <option value="web">WEB (Modern En)</option>
+          <option value="darby">Darby</option>
+        </select>
+      </div>
+    </header>
+
+    <!-- Main Live Verse Card -->
+    <main class="live-content">
+      <section id="live-verse-card" class="verse-hero empty">
+        <div class="verse-header">
+          <span class="badge-live">NOW PREACHING</span>
+          <h1 id="live-reference" class="verse-ref">Welcome to Service</h1>
+        </div>
+        <div class="verse-body">
+          <p id="live-text" class="verse-words">Verses spoken during the sermon will appear here in real-time.</p>
+        </div>
+        <div class="verse-actions">
+          <button id="btn-save-verse" class="btn-action">
+            <span class="icon">⭐</span> Save to My Notes
+          </button>
+          <button id="btn-copy-verse" class="btn-action secondary">
+            <span class="icon">📋</span> Copy
+          </button>
+        </div>
+      </section>
+
+      <!-- Saved Verses / Personal Notebook Section -->
+      <section class="notes-section">
+        <div class="section-title-row">
+          <h2>My Saved Verses (<span id="saved-count">0</span>)</h2>
+          <button id="btn-export-notes" class="btn-text">Export All</button>
+        </div>
+        <div id="saved-verses-list" class="saved-list empty">
+          <p class="empty-hint">Tap "Save to My Notes" on any verse above to bookmark it for later study.</p>
+        </div>
+      </section>
+    </main>
+
+    <!-- Toast Notification -->
+    <div id="live-toast" class="toast hidden"></div>
+  </div>
+
+  <script src="live.js"></script>
+</body>
+</html>

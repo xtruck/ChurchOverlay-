@@ -11,12 +11,16 @@ import type {
   MediaCue,
   MediaShowPayload,
   MediaSetDurationPayload,
+  OutlineShowPayload,
   PosterSetDurationPayload,
   PosterShowPayload,
   Rundown,
   RundownScene,
   RundownStatePayload,
   SermonNotesPayload,
+  StageAlertPayload,
+  TimerStartPayload,
+  TimerStatePayload,
   TranscriptResult,
   VerseLayoutPayload,
   VerseShowPayload,
@@ -277,6 +281,39 @@ function isPosterSetDurationPayload(payload: unknown): payload is PosterSetDurat
 /** ARCHITECTURE.md section 82 — same shape validates both layout:set and layout:update. */
 function isVerseLayoutPayload(payload: unknown): payload is VerseLayoutPayload {
   return isPlainObject(payload) && (payload.layout === "fullscreen" || payload.layout === "lower-third")
+}
+
+function isTimerStartPayload(payload: unknown): payload is TimerStartPayload {
+  if (!isPlainObject(payload)) return false
+  if (!isFiniteNumber(payload.durationMinutes) || payload.durationMinutes <= 0) return false
+  return payload.title === undefined || typeof payload.title === "string"
+}
+
+function isTimerStatePayload(payload: unknown): payload is TimerStatePayload {
+  if (!isPlainObject(payload)) return false
+  return (
+    typeof payload.running === "boolean" &&
+    isFiniteNumber(payload.remainingSeconds) &&
+    isFiniteNumber(payload.totalSeconds) &&
+    typeof payload.isOvertime === "boolean" &&
+    (payload.title === undefined || typeof payload.title === "string")
+  )
+}
+
+function isStageAlertPayload(payload: unknown): payload is StageAlertPayload {
+  if (!isPlainObject(payload)) return false
+  if (!isNonEmptyString(payload.message)) return false
+  return (
+    payload.durationSeconds === undefined ||
+    (isFiniteNumber(payload.durationSeconds) && payload.durationSeconds > 0)
+  )
+}
+
+function isOutlineShowPayload(payload: unknown): payload is OutlineShowPayload {
+  if (!isPlainObject(payload)) return false
+  if (!isFiniteNumber(payload.pointNumber) || payload.pointNumber < 1) return false
+  if (!isNonEmptyString(payload.title)) return false
+  return payload.text === undefined || typeof payload.text === "string"
 }
 
 // ARCHITECTURE.md section 64: Service Rundown & Scenes.
@@ -629,6 +666,46 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "event",
     allowedSenders: [],
     validatePayload: isMicHealthPayload,
+  },
+  "timer:start": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isTimerStartPayload,
+  },
+  "timer:stop": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isNullPayload,
+  },
+  "timer:reset": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isNullPayload,
+  },
+  "timer:state": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isTimerStatePayload,
+  },
+  "stage:alert": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isStageAlertPayload,
+  },
+  "stage:clear-alert": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isNullPayload,
+  },
+  "outline:show": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isOutlineShowPayload,
+  },
+  "outline:clear": {
+    kind: "command",
+    allowedSenders: ["operator"],
+    validatePayload: isNullPayload,
   },
 }
 

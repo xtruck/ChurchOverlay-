@@ -23,6 +23,13 @@ export type WsCommandType =
   | "layout:set"
   | "asr:return-primary"
   | "mic:auto-gain"
+  | "timer:start"
+  | "timer:stop"
+  | "timer:reset"
+  | "stage:alert"
+  | "stage:clear-alert"
+  | "outline:show"
+  | "outline:clear"
 
 /** Resulting state or information, consumed by the (read-only) overlay. */
 export type WsEventType =
@@ -48,6 +55,10 @@ export type WsEventType =
   | "detector:near-miss"
   | "branding:update"
   | "mic:health"
+  | "timer:state"
+  | "stage:alert"
+  | "outline:show"
+  | "outline:clear"
 
 /**
  * status:update's first real, concrete payload shape — ASR/transcription
@@ -127,6 +138,30 @@ export type MicHealthPayload = {
 /** mic:auto-gain — operator toggles the adaptive gain applied to audio sent to ASR. */
 export type MicAutoGainPayload = {
   readonly enabled: boolean
+}
+
+export type TimerStartPayload = {
+  readonly durationMinutes: number
+  readonly title?: string
+}
+
+export type TimerStatePayload = {
+  readonly running: boolean
+  readonly remainingSeconds: number
+  readonly totalSeconds: number
+  readonly title?: string
+  readonly isOvertime: boolean
+}
+
+export type StageAlertPayload = {
+  readonly message: string
+  readonly durationSeconds?: number
+}
+
+export type OutlineShowPayload = {
+  readonly pointNumber: number
+  readonly title: string
+  readonly text?: string
 }
 
 export type WsMessage<TPayload = unknown> = {

@@ -16,6 +16,11 @@ import { KnownValidVerseIndex } from "../server/verse/known-valid-verse-index"
 import { MediaLibrary } from "../server/media/media-library"
 import { SessionHistoryStore } from "../server/core/session-history-store"
 import { SermonNotesGenerator } from "../server/ai/sermon-notes-generator"
+import {
+  buildYouTubeDescription,
+  generatePreachingAnalytics,
+  generateSocialQuoteCardSvg,
+} from "../server/ai/service-summary"
 import { Logger } from "../../packages/shared/logger"
 import { HybridAsrProvider } from "../server/asr/hybrid-provider"
 import { GLOSSARY } from "../server/glossary/glossary"
@@ -344,6 +349,26 @@ async function main() {
     res.json({ entries })
   })
 
+  // Post-Service AI Pack: YouTube Timestamps, Analytics, and Social Quote Cards
+  app.get("/api/service-pack", (_req: Request, res: Response) => {
+    const entries = appCoreHandle?.getSessionEntries() || []
+    const youtubeDescription = buildYouTubeDescription(entries)
+    const analytics = generatePreachingAnalytics(entries)
+    const topVerse = entries[0]
+    const quoteCardSvg = topVerse
+      ? generateSocialQuoteCardSvg(
+          topVerse.text,
+          `${topVerse.reference.book} ${topVerse.reference.chapter}:${topVerse.reference.verse}`
+        )
+      : null
+    res.json({
+      youtubeDescription,
+      analytics,
+      quoteCardSvg,
+      entriesCount: entries.length,
+    })
+  })
+
   // Quick scripture passage lookup / preview endpoint
   app.get("/api/verse/lookup", async (req: Request, res: Response) => {
     try {
@@ -389,6 +414,14 @@ async function main() {
   // Overlay static files
   const overlayStaticDir = join(REPO_ROOT, "apps", "overlay", "public")
   app.use("/overlay", express.static(overlayStaticDir))
+
+  // Stage Display static files (/stage)
+  const stageStaticDir = join(REPO_ROOT, "apps", "stage", "public")
+  app.use("/stage", express.static(stageStaticDir))
+
+  // Live Congregation Companion static files (/live)
+  const liveStaticDir = join(REPO_ROOT, "apps", "live", "public")
+  app.use("/live", express.static(liveStaticDir))
 
   // Remote static files
   const remoteStaticDir = join(REPO_ROOT, "apps", "remote", "public")

@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { validateWsMessage, ACTION_REGISTRY } from "./action-registry"
 
-test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 media, rundown, glossary, verse-confirmation, sermon-notes, canvas, poster, layout, and transcript-final actions (ARCHITECTURE.md sections 30, 60, 64, 65.3, 65.5, 65.7, 66, 67, 70, 82)", () => {
+test("ACTION_REGISTRY: contains all registered actions including Phase 2 and innovative extensions", () => {
   assert.deepEqual(
     Object.keys(ACTION_REGISTRY).sort(),
     [
@@ -46,6 +46,14 @@ test("ACTION_REGISTRY: contains exactly the seven v1 actions plus the Phase 2 me
       "branding:update",
       "mic:auto-gain",
       "mic:health",
+      "timer:start",
+      "timer:stop",
+      "timer:reset",
+      "timer:state",
+      "stage:alert",
+      "stage:clear-alert",
+      "outline:show",
+      "outline:clear",
     ].sort()
   )
 })
@@ -881,3 +889,76 @@ test("validateWsMessage: rejects any inbound sender for transcript:final — a s
   assert.equal(asOperator.ok, false)
   assert.equal(asViewer.ok, false)
 })
+
+test("validateWsMessage: accepts and validates timer:start from operator, rejects from viewer or invalid duration", () => {
+  const valid = validateWsMessage(
+    { id: "01ABC", type: "timer:start", timestamp: 1700000000000, payload: { durationMinutes: 30, title: "Sermon" } },
+    "operator"
+  )
+  assert.equal(valid.ok, true)
+
+  const viewer = validateWsMessage(
+    { id: "01ABC", type: "timer:start", timestamp: 1700000000000, payload: { durationMinutes: 30 } },
+    "viewer"
+  )
+  assert.equal(viewer.ok, false)
+
+  const invalidDuration = validateWsMessage(
+    { id: "01ABC", type: "timer:start", timestamp: 1700000000000, payload: { durationMinutes: -10 } },
+    "operator"
+  )
+  assert.equal(invalidDuration.ok, false)
+})
+
+test("validateWsMessage: accepts timer:stop and timer:reset from operator", () => {
+  assert.equal(
+    validateWsMessage({ id: "01ABC", type: "timer:stop", timestamp: 1700000000000, payload: null }, "operator").ok,
+    true
+  )
+  assert.equal(
+    validateWsMessage({ id: "01ABC", type: "timer:reset", timestamp: 1700000000000, payload: null }, "operator").ok,
+    true
+  )
+})
+
+test("validateWsMessage: accepts and validates stage:alert from operator, rejects from viewer", () => {
+  const valid = validateWsMessage(
+    { id: "01ABC", type: "stage:alert", timestamp: 1700000000000, payload: { message: "Wrap up in 2 mins" } },
+    "operator"
+  )
+  assert.equal(valid.ok, true)
+
+  const viewer = validateWsMessage(
+    { id: "01ABC", type: "stage:alert", timestamp: 1700000000000, payload: { message: "Wrap up" } },
+    "viewer"
+  )
+  assert.equal(viewer.ok, false)
+
+  const invalid = validateWsMessage(
+    { id: "01ABC", type: "stage:alert", timestamp: 1700000000000, payload: { message: "" } },
+    "operator"
+  )
+  assert.equal(invalid.ok, false)
+})
+
+test("validateWsMessage: accepts outline:show and outline:clear from operator, rejects from viewer", () => {
+  const asOp = validateWsMessage(
+    { id: "01ABC", type: "outline:show", timestamp: 1700000000000, payload: { pointNumber: 1, title: "Love", text: "Point 1: Love" } },
+    "operator"
+  )
+  assert.equal(asOp.ok, true)
+
+  const asViewer = validateWsMessage(
+    { id: "01ABC", type: "outline:clear", timestamp: 1700000000000, payload: null },
+    "viewer"
+  )
+  assert.equal(asViewer.ok, false)
+
+  const asViewerShow = validateWsMessage(
+    { id: "01ABC", type: "outline:show", timestamp: 1700000000000, payload: { pointNumber: 1, title: "Love" } },
+    "viewer"
+  )
+  assert.equal(asViewerShow.ok, false)
+})
+
+
