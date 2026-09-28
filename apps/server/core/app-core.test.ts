@@ -3932,6 +3932,14 @@ test("AppCore: an explicit reference supersedes relative navigation parsed from 
     await waitFor(() => shown.length >= 2)
     await new Promise((resolve) => setTimeout(resolve, 100))
     assert.deepEqual(shown.slice(1), [{ book: "psalm", chapter: 23, verse: 1 }])
+    // ARCHITECTURE.md section 101: the French "au verset" form used to be
+    // invisible to RegexDetector, so only the relative "verset 16" survived —
+    // resolved against the CURRENT position (Psalm 23) instead of the stated
+    // John 4:16. Explicit must win here too, or a wrong verse is displayed.
+    asr.emitTranscript({ id: "01T3", correlationId: "01C", sequence: 3, text: "Jean 4 au verset 16", state: "final", timestamp: Date.now() })
+    await waitFor(() => shown.length >= 3)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.deepEqual(shown.slice(2), [{ book: "john", chapter: 4, verse: 16 }])
     viewerSocket.close()
   } finally {
     await app.stop()

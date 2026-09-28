@@ -1,6 +1,6 @@
 import type { NavigationCommand, NavigationCommandDetector as INavigationCommandDetector } from "../../../packages/contracts"
 import { normalizeSpokenReferences } from "./spoken-reference-normalizer"
-import { isCatalogBookWord, normalizeBookName, stripAccents } from "./regex-detector"
+import { CATALOG_IDS, isCatalogBookWord, normalizeBookName, stripAccents } from "./regex-detector"
 import { BOOK_CATALOG } from "../verse/book-catalog"
 
 /**
@@ -49,6 +49,16 @@ const SUBSTRING_RULES: readonly SubstringRule[] = [
   { phrase: "prochain chapitre", command: { kind: "next-chapter" } },
   { phrase: "previous chapter", command: { kind: "previous-chapter" } },
   { phrase: "chapitre precedent", command: { kind: "previous-chapter" } },
+  // ARCHITECTURE.md section 101: French also says "after/before" instead of
+  // "next/previous" ("le chapitre d'après", "le verset d'avant"), and both
+  // forms were unrecognized. Same fixed-synonym-list discipline as every
+  // other rule here — no conjugated verb, so one entry covers every way a
+  // speaker introduces it ("le chapitre d'après", "on passe au chapitre
+  // d'après", "le verset d'avant").
+  { phrase: "chapitre d'apres", command: { kind: "next-chapter" } },
+  { phrase: "verset d'apres", command: { kind: "next-verse" } },
+  { phrase: "chapitre d'avant", command: { kind: "previous-chapter" } },
+  { phrase: "verset d'avant", command: { kind: "previous-verse" } },
   { phrase: "clear the screen", command: { kind: "cancel" } },
   { phrase: "effacer l'ecran", command: { kind: "cancel" } },
   { phrase: "efface l'ecran", command: { kind: "cancel" } },
@@ -190,14 +200,18 @@ const BOOK_BARE_CHAPTER_PATTERN =
 // so all book-name knowledge stays inside the detector module.
 export function containsCatalogBookName(text: string): boolean {
   const words = text.split(/[^\p{L}\d]+/u).filter(Boolean)
-  return words.some((w) => {
-    const book = normalizeBookName(w)
-    return BOOK_CATALOG.some((b: { readonly id: string }) => b.id === book)
-  })
+  return words.some((w) => CATALOG_IDS.has(normalizeBookName(w)))
 }
 
+// ASR output and text pasted from a slide or a document disagree about the
+// apostrophe: "l'écran" (U+0027) or "l’écran" (U+2019). Every French phrase
+// rule below is written with the straight one, so the typographic variants
+// are folded onto it here — the same reasoning as stripping accents, since
+// ASR output may or may not preserve either. ARCHITECTURE.md section 101.
+const APOSTROPHE_VARIANTS = /[\u2018\u2019\u02BC\u00B4`]/g
+
 function normalizeUtterance(text: string): string {
-  return stripAccents(text.trim().replace(/\s+/g, " ").toLowerCase())
+  return stripAccents(text.trim().replace(/\s+/g, " ").replace(APOSTROPHE_VARIANTS, "'").toLowerCase())
 }
 
 // Real ASR transcripts punctuate short spoken commands ("Cancel.", "Next!"),
@@ -235,7 +249,7 @@ export class NavigationCommandDetector implements INavigationCommandDetector {
       // normalizeBookName("jean") -> "john" which is in BOOK_CATALOG; "to" fails
       // because "to" is not a book. STOPWORDS from RegexDetector are NOT reused
       // here because the catalog itself is the authority.
-      if (!BOOK_CATALOG.some((b: { readonly id: string }) => b.id === book)) continue
+      if (!CATALOG_IDS.has(book)) continue
       commands.push({
         kind: "goto-chapter",
         book,
@@ -267,7 +281,7 @@ export class NavigationCommandDetector implements INavigationCommandDetector {
       // normalizeBookName("jean") -> "john" which is in BOOK_CATALOG; "to" fails
       // because "to" is not a book. STOPWORDS from RegexDetector are NOT reused
       // here because the catalog itself is the authority.
-      if (!BOOK_CATALOG.some((b: { readonly id: string }) => b.id === book)) continue
+      if (!CATALOG_IDS.has(book)) continue
       const span: MatchSpan = { start: match.index!, end: match.index! + match[0].length }
       if (spanOverlaps(span, usedSpans)) continue
       usedSpans.push(span)
@@ -318,7 +332,7 @@ export class NavigationCommandDetector implements INavigationCommandDetector {
       const rawChapter = match[2]
       if (!rawBook || !rawChapter) continue
       const book = normalizeBookName(rawBook)
-      if (!BOOK_CATALOG.some((b: { readonly id: string }) => b.id === book)) continue
+      if (!CATALOG_IDS.has(book)) continue
       const span: MatchSpan = { start: match.index!, end: match.index! + match[0].length }
       if (spanOverlaps(span, usedSpans)) continue
       usedSpans.push(span)

@@ -7,8 +7,10 @@ import { correctTranscription, detectHallucination } from "./transcription-corre
 // "marque" → "marc", "souvent" → "suivant"), corrupting correct sentences.
 
 test("corrector: known phonetic confusions are corrected ('wc' → 'verset')", () => {
+  // Section 102: spoken numbers are no longer rewritten here ("trois" stays
+  // a word) — number-to-digit rewriting is normalizeSpokenReferences()' job.
   const result = correctTranscription("au wc trois de Jean")
-  assert.equal(result.correctedText, "au verset 3 de Jean")
+  assert.equal(result.correctedText, "au verset trois de Jean")
 })
 
 // Observed live (2026-09): both from a real multi-minute test reading
@@ -89,8 +91,8 @@ test("corrector: standalone 'bacille' (valid word, 'bacillus') is left untouched
 
 test("corrector: the valid word 'est' is NOT corrected to 'et'", () => {
   const result = correctTranscription("il est trois heures")
-  assert.equal(result.correctedText, "il est 3 heures")
-  assert.equal(result.corrections.length, 1) // only "trois" -> 3
+  assert.equal(result.correctedText, "il est trois heures")
+  assert.equal(result.corrections.length, 0) // section 102: "trois" stays a word
 })
 
 test("corrector: the valid word 'marque' is NOT corrected to 'marc'", () => {
@@ -113,7 +115,7 @@ test("corrector: 'souvent' before a number is corrected to 'suivant'", () => {
 
 test("corrector: capitalization is preserved on a corrected token", () => {
   const result = correctTranscription("Wc trois")
-  assert.equal(result.correctedText, "Verset 3")
+  assert.equal(result.correctedText, "Verset trois")
 })
 
 test("corrector: already-correct text passes through unchanged", () => {
@@ -138,17 +140,17 @@ test("corrector: observed split-reference words are normalized conservatively", 
 // even though the underlying confusion ("v.c." alone) is already known.
 test("corrector: a known confusion with trailing punctuation attached is still corrected ('v.c.,' -> 'verset,')", () => {
   const result = correctTranscription("au v.c., trois de Jean")
-  assert.equal(result.correctedText, "au verset, 3 de Jean")
+  assert.equal(result.correctedText, "au verset, trois de Jean")
 })
 
 test("corrector: a known confusion with a trailing question mark is still corrected", () => {
   const result = correctTranscription("wc? trois")
-  assert.equal(result.correctedText, "verset? 3")
+  assert.equal(result.correctedText, "verset? trois")
 })
 
 test("corrector: a protected word with trailing punctuation is still left alone (not miscorrected)", () => {
   const result = correctTranscription("verset? trois")
-  assert.equal(result.correctedText, "verset? 3")
+  assert.equal(result.correctedText, "verset? trois")
   assert.ok(!result.corrections.some((c) => c.original === "verset?"))
 })
 

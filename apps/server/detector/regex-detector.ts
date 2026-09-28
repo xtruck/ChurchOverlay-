@@ -101,8 +101,18 @@ const SPOKEN_REFERENCE_PATTERN =
 // output was still wrong on its own terms, and a future phrasing variant
 // not covered by the navigation detector could have been silently lost.
 // Mirrors NavigationCommandDetector's own pattern shape.
+// CORRECTIF (ARCHITECTURE.md section 101, found by probing natural French):
+// the second keyword gained the same optional "le/the" tolerance the first
+// keyword's own alternation and NavigationCommandDetector's
+// BOOK_CHAPTER_VERSE_PATTERN already had. "Jean chapitre 3, verset 16"
+// matched but "Jean chapitre 3, le verset 16" — the exact same sentence
+// with French's article — silently produced nothing here. No verse was lost
+// end-to-end (the navigation detector resolved it), but this detector's own
+// output was wrong on its own terms, the same reasoning as the CORRECTIF
+// above.
+
 const SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN =
-  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)(?:[\s,]+(?:au|à|a|dans\s+le|in|at))?[\s,]+(?:chapitre|chapter)[\s,]+(\d{1,3})[\s,]+(?:verset|verse)[\s,]+(\d{1,3})(?![\p{L}\d])/giu
+  /(?<![\p{L}\d])((?:[123]\s+)?\p{L}[\p{L}]+)(?:[\s,]+(?:au|à|a|dans\s+le|in|at))?[\s,]+(?:chapitre|chapter)[\s,]+(\d{1,3})[\s,]+(?:le\s+|the\s+)?(?:verset|verse)[\s,]+(\d{1,3})(?![\p{L}\d])/giu
 
 // The written/dictated compact forms ASR actually produces for a pause
 // between chapter and verse: "Jean 3.16", "Romains 8, 28", and the bare
@@ -138,34 +148,39 @@ export class RegexDetector implements VerseDetector {
     const references: VerseReference[] = []
     const text = normalizeSpokenReferences(rawText, isCatalogBookWord)
 
-    for (const match of [
-      ...text.matchAll(REFERENCE_PATTERN),
-      ...text.matchAll(SPOKEN_REFERENCE_PATTERN),
-      ...text.matchAll(SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN),
-      ...text.matchAll(COMPACT_REFERENCE_PATTERN),
+    for (const pattern of [
+      REFERENCE_PATTERN,
+      SPOKEN_REFERENCE_PATTERN,
+      SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN,
+      COMPACT_REFERENCE_PATTERN,
     ]) {
-      const rawBook = match[1]
-      const rawChapter = match[2]
-      const rawVerse = match[3]
-      if (!rawBook || !rawChapter || !rawVerse) continue
+      for (const match of text.matchAll(pattern)) {
+        const rawBook = match[1]
+        const rawChapter = match[2]
+        const rawVerse = match[3]
+        if (!rawBook || !rawChapter || !rawVerse) continue
 
-      const book = normalizeBookName(rawBook)
-      if (STOPWORDS.has(book)) continue
+        const book = normalizeBookName(rawBook)
+        if (STOPWORDS.has(book)) continue
 
-      references.push({
-        book,
-        chapter: Number.parseInt(rawChapter, 10),
-        verse: Number.parseInt(rawVerse, 10),
-      })
+        references.push({
+          book,
+          chapter: Number.parseInt(rawChapter, 10),
+          verse: Number.parseInt(rawVerse, 10),
+        })
+      }
     }
 
-    return references.filter((reference, index) =>
-      references.findIndex((candidate) =>
-        candidate.book === reference.book &&
-        candidate.chapter === reference.chapter &&
-        candidate.verse === reference.verse
-      ) === index
-    )
+    const seen = new Set<string>()
+    const unique: VerseReference[] = []
+    for (const ref of references) {
+      const key = `${ref.book}:${ref.chapter}:${ref.verse}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        unique.push(ref)
+      }
+    }
+    return unique
   }
 }
 
@@ -177,6 +192,14 @@ export class RegexDetector implements VerseDetector {
  * French phrase matching (ARCHITECTURE.md section 65 French support).
  */
 export function stripAccents(text: string): string {
+  let hasNonAscii = false
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) >= 128) {
+      hasNonAscii = true
+      break
+    }
+  }
+  if (!hasNonAscii) return text
   return text.normalize("NFD").replace(/[̀-ͯ]/g, "")
 }
 
@@ -217,6 +240,14 @@ export const FRENCH_BOOK_ALIASES: Readonly<Record<string, string>> = {
   cantique: "song of solomon",
   cantiques: "song of solomon",
   esaie: "isaiah",
+  // ARCHITECTURE.md section 102 (found by probing the real detector with
+  // French book names): French uses TWO names for this book, and only one
+  // was known. "Ésaïe" is the Louis Segond title, but "Isaïe" is the form
+  // most French speakers actually say (and how several French translations
+  // print it) — "Isaïe 53 verset 5" and "isaie 53 5" detected nothing at
+  // all before this entry. Unambiguous: no other book name or French word
+  // collides with it.
+  isaie: "isaiah",
   jeremie: "jeremiah",
   lamentations: "lamentations",
   ezechiel: "ezekiel",
@@ -284,7 +315,7 @@ export function normalizeBookName(rawBook: string): string {
   return FRENCH_BOOK_ALIASES[normalized] ?? normalized
 }
 
-const CATALOG_IDS = new Set(BOOK_CATALOG.map((book: { readonly id: string }) => book.id))
+export const CATALOG_IDS = new Set(BOOK_CATALOG.map((book: { readonly id: string }) => book.id))
 
 /** True when a single spoken word names a Bible book (French or English, any case/accents). */
 export function isCatalogBookWord(word: string): boolean {

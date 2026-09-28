@@ -14,9 +14,34 @@
  * Approach: Fixed phonetic mapping table (no ML), conservative application.
  * Only corrects when the token is NOT a valid book name or command word
  * in its original form (to avoid false corrections on already-correct text).
+ *
+ * Hardened (ARCHITECTURE.md section 102) after measuring the corrector
+ * against all 31,170 bundled Louis Segond verses — the text a preacher
+ * reads aloud and QuoteMatcher fingerprints word-for-word. 3,290 verses
+ * (10.6%) were being rewritten, almost all of it damage rather than
+ * correction: spoken numbers were turned into digits ("quatre-vingts" →
+ * "80", so the verse's own 5-word runs no longer matched what was read),
+ * accents were stripped ("Où es-tu?" → "Ou es-tu?"), and 48 verses had a
+ * real French word replaced by a reference word ("son sang sera versé" →
+ * "… sera verset", "si son mari les annule" → "… les annuler", "la somme"
+ * → "la psaume"). Two rules now keep this module off ordinary and quoted
+ * speech:
+ *
+ * 1. This module never rewrites spoken numbers (their French/English word
+ *    forms are the verse's own wording) and never strips accents. Rewriting
+ *    a *spoken reference* into the compact written shape belongs to
+ *    normalizeSpokenReferences() — the detector's own context-gated,
+ *    compound-aware pre-pass (section 97), which both detectors already run
+ *    and which strips accents itself. Same single-owner reasoning as
+ *    FRENCH_BOOK_ALIASES below.
+ * 2. A table entry whose key is itself a real word in one of the app's two
+ *    spoken languages is applied ONLY in a reference context — the same
+ *    gating shape "souvent"/"web"/"passé"/"bacille" already used, now
+ *    applied to the whole ambiguous set (see AMBIGUOUS_ENTRIES below).
  */
 import { BOOK_CATALOG } from "../verse/book-catalog"
 import { FRENCH_BOOK_ALIASES } from "../detector/regex-detector"
+import { parseNumberWords } from "../detector/spoken-reference-normalizer"
 
 type CorrectionMap = Readonly<Record<string, string>>
 
@@ -130,111 +155,26 @@ const PHONETIC_CORRECTIONS: CorrectionMap = {
   "azzain": "esaie",       // observed phonetic output for "Ésaïe"
   "kaple": "chapitre",     // observed phonetic output for "chapitre"
 
-  // Number word confusions (French spoken numbers)
-  "trois": "3",
-  "quatre": "4",
-  "cinq": "5",
-  "six": "6",
-  "sept": "7",
-  "huit": "8",
-  "neuf": "9",
-  "dix": "10",
-  "onze": "11",
-  "douze": "12",
-  "treize": "13",
-  "quatorze": "14",
-  "quinze": "15",
-  "seize": "16",
-  "dix-sept": "17",
-  "dix-huit": "18",
-  "dix-neuf": "19",
-  "vingt": "20",
-  "vingt-et-un": "21",
-  "vingt-deux": "22",
-  "vingt-trois": "23",
-  "vingt-quatre": "24",
-  "vingt-cinq": "25",
-  "vingt-six": "26",
-  "vingt-sept": "27",
-  "vingt-huit": "28",
-  "vingt-neuf": "29",
-  "trente": "30",
-  "trente-et-un": "31",
-  "trente-deux": "32",
-  "trente-trois": "33",
-  "trente-quatre": "34",
-  "trente-cinq": "35",
-  "trente-six": "36",
-  "trente-sept": "37",
-  "trente-huit": "38",
-  "trente-neuf": "39",
-  "quarante": "40",
-  "quarante-et-un": "41",
-  "quarante-deux": "42",
-  "quarante-trois": "43",
-  "quarante-quatre": "44",
-  "quarante-cinq": "45",
-  "quarante-six": "46",
-  "quarante-sept": "47",
-  "quarante-huit": "48",
-  "quarante-neuf": "49",
-  "cinquante": "50",
-  "cinquante-et-un": "51",
-  "cinquante-deux": "52",
-  "cinquante-trois": "53",
-  "cinquante-quatre": "54",
-  "cinquante-cinq": "55",
-  "cinquante-six": "56",
-  "cinquante-sept": "57",
-  "cinquante-huit": "58",
-  "cinquante-neuf": "59",
-  "soixante": "60",
-  "soixante-et-un": "61",
-  "soixante-deux": "62",
-  "soixante-trois": "63",
-  "soixante-quatre": "64",
-  "soixante-cinq": "65",
-  "soixante-six": "66",
-  "soixante-sept": "67",
-  "soixante-huit": "68",
-  "soixante-neuf": "69",
-  "soixante-dix": "70",
-  "soixante-et-onze": "71",
-  "soixante-douze": "72",
-  "soixante-treize": "73",
-  "soixante-quatorze": "74",
-  "soixante-quinze": "75",
-  "soixante-seize": "76",
-  "soixante-dix-sept": "77",
-  "soixante-dix-huit": "78",
-  "soixante-dix-neuf": "79",
-  "quatre-vingts": "80",
-  "quatre-vingt": "80",
-  "quatre-vingt-un": "81",
-  "quatre-vingt-deux": "82",
-  "quatre-vingt-trois": "83",
-  "quatre-vingt-quatre": "84",
-  "quatre-vingt-cinq": "85",
-  "quatre-vingt-six": "86",
-  "quatre-vingt-sept": "87",
-  "quatre-vingt-huit": "88",
-  "quatre-vingt-neuf": "89",
-  "quatre-vingt-dix": "90",
-  "quatre-vingt-onze": "91",
-  "quatre-vingt-douze": "92",
-  "quatre-vingt-treize": "93",
-  "quatre-vingt-quatorze": "94",
-  "quatre-vingt-quinze": "95",
-  "quatre-vingt-seize": "96",
-  "quatre-vingt-dix-sept": "97",
-  "quatre-vingt-dix-huit": "98",
-  "quatre-vingt-dix-neuf": "99",
-  "cent": "100",
+  // Spoken numbers are deliberately NOT in this table (ARCHITECTURE.md
+  // section 102). "trois" -> "3" and ~100 relatives used to be rewritten
+  // here unconditionally, which is why every verse of Scripture containing a
+  // number word stopped matching the wording read aloud (3,653 occurrences
+  // across the bundled Louis Segond text): QuoteMatcher fingerprints
+  // verbatim 5-word runs, and a digit is not the verse's own word. Reference
+  // detection never needed it either - both detectors already run
+  // normalizeSpokenReferences()' own context-gated, compound-aware
+  // number-word rewrite (section 97: "Jean chapitre trois verset seize" ->
+  // "... 3 ... 16"), which reads "quatre-vingt-dix-neuf" as 99 where this
+  // flat table produced "90 9".
 
-  // Common French prepositions/articles that might be confused
-  "à": "a",                 // accent confusion
-  "â": "a",
-  "où": "ou",               // accent confusion
+  // Accents are deliberately NOT stripped here either (ARCHITECTURE.md
+  // section 102). "où" -> "ou" and "à"/"â" -> "a" used to be rewritten
+  // unconditionally, which changed what Scripture says: the bundled text's
+  // "Où es-tu?" (Genesis 3:9) reached the operator's transcript as "Ou
+  // es-tu?", and 1,054 verses in total lost an accent. No detector needs
+  // this: RegexDetector, NavigationCommandDetector and QuoteMatcher each
+  // fold accents for comparison themselves (stripAccents(), normalizeUtterance(),
+  // quoteTokens()), so the transcript is now left as spoken.
   // "et": "et" and "est": "et" were removed — "est" (is) and "et" (and)
   // are both valid French words and blanket-correcting "est"→"et"
   // corrupted correct sentences (real wrong-spelling bug).
@@ -258,6 +198,104 @@ const PHONETIC_CORRECTIONS: CorrectionMap = {
   // "frère" confusions
   "frere": "frère",         // missing accent
   "freres": "frères",       // plural
+}
+
+// ARCHITECTURE.md section 102. Every key below is also a real word — or a
+// person's name — in one of the app's two spoken languages, and every one of
+// them was measured corrupting the bundled Louis Segond text (48 verses in
+// total, e.g. Psalm 55:24's "son sang sera versé" becoming "sera verset",
+// Proverbs 15:22's "la somme" becoming "la psaume") plus ordinary sermon
+// sentences ("en somme", "il a versé son sang pour nous", "les versets sont
+// nombreux"). Those entries are therefore only applied where the surrounding
+// words make the reference reading the only plausible one — the same
+// gating shape "souvent"/"web"/"passé"/"bacille" already use for exactly
+// this reason, now covering the whole ambiguous set instead of leaving most
+// of it unchecked.
+//
+// Deliberately NOT in this set, because they are not real words in either
+// language and so cannot corrupt ordinary speech: "w.c."/"wc"/"v.c."/"vc"/
+// "v.c"/"versic"/"vestu"/"vaissez"/"vassier"/"vete" (verset), "som"/"saum"/
+// "psalme"/"psalmes" (psaume), "capitre"/"chapit"/"chapitr" (chapitre),
+// "capitulo(s)"/"versiculo(s)"/"salmo(s)" (Spanish/Portuguese leakage).
+const AMBIGUOUS_ENTRIES: ReadonlySet<string> = new Set([
+  // "psaume": "somme" (a sum) is a common French noun; "some" is an English
+  // word; "sam" is a name.
+  "somme",
+  "some",
+  "sam",
+  // "verset": these are all real French verb/noun forms of "verser" (to
+  // pour) and of "verset" itself in the plural; "verso" is a page's back
+  // and "versus" is borrowed Latin.
+  "versé",
+  "versée",
+  "verser",
+  "versait",
+  "versais",
+  "versets",
+  "verso",
+  "versus",
+  // "chapitre"/"psaume" plurals: valid French, and the detectors' own
+  // patterns already accept the plurals where a reference follows.
+  "chapitres",
+  "psaumes",
+])
+
+// A genuine voice command, not the ordinary verb: "annule" is the only
+// ambiguous entry kept working OUTSIDE a reference context, because a
+// whole utterance that is just that word is how the cancel command is
+// spoken (NavigationCommandDetector's own rule: short synonyms must be the
+// transcript's entire text). Measured cost of the exception: 2 verses in
+// the whole Bible use "annule" as a verb (e.g. "si son mari les annule"),
+// against the command being lost entirely for every speaker who says it.
+const WHOLE_UTTERANCE_ENTRIES: ReadonlySet<string> = new Set(["annule"])
+
+// Words that, sitting next to a token, make a reference reading the only
+// plausible one: the keywords both detectors' patterns are built around.
+const REFERENCE_KEYWORDS: ReadonlySet<string> = new Set([
+  "chapitre", "chapitres", "chapter", "chapters",
+  "verset", "versets", "verse", "verses", "v", "v.",
+  "psaume", "psaumes", "psalm", "psalms",
+])
+
+/**
+ * True when `token` is a number as a reference states it — digits ("3",
+ * "3:16") or a spoken number word ("trois", "vingt-huit", "twenty-one").
+ * Number-word knowledge is deliberately borrowed from
+ * normalizeSpokenReferences()' own parser rather than duplicated here: a
+ * second, simpler table is exactly what let this module treat
+ * "quatre-vingt-dix-neuf" as "90 9".
+ */
+function isReferenceNumber(token: string): boolean {
+  const bare = token.replace(/[,.;:!?]+$/, "")
+  if (/^\d{1,3}(?:[:-]\d{1,3})?$/.test(bare)) return true
+  return parseNumberWords([bare], 0) !== null
+}
+
+/**
+ * The shared reference-context gate: true when the token at `index` is
+ * immediately followed by a number or a reference keyword ("au verser 3 de
+ * Jean", "somme chapitre 3", "Jean chapitre 3 versets 16"). Only the next
+ * token is consulted — the same "a number follows" shape the existing
+ * single-purpose gates use — because that is what a spoken reference always
+ * puts there, and anything wider starts matching ordinary sentences.
+ */
+function isFollowedByReferenceMarker(words: readonly string[], index: number): boolean {
+  const next = nextNonWhitespaceLower(words, index)
+  if (next === "") return false
+  const stripped = next.replace(/[,.;:!?]+$/, "")
+  return isReferenceNumber(stripped) || REFERENCE_KEYWORDS.has(stripped)
+}
+
+/** True when the transcript is a single spoken word — the shape a voice command takes. */
+function isWholeUtterance(words: readonly string[]): boolean {
+  return words.filter((word) => !/^\s*$/.test(word)).length === 1
+}
+
+/** Applies the ambiguity gate above. */
+function passesAmbiguityGate(effectiveToken: string, words: readonly string[], index: number): boolean {
+  if (!AMBIGUOUS_ENTRIES.has(effectiveToken) && !WHOLE_UTTERANCE_ENTRIES.has(effectiveToken)) return true
+  if (isFollowedByReferenceMarker(words, index)) return true
+  return WHOLE_UTTERANCE_ENTRIES.has(effectiveToken) && isWholeUtterance(words)
 }
 
 // Multi-word phonetic corrections: a fixed, curated list of two-word
@@ -391,9 +429,7 @@ export function correctTranscription(text: string): CorrectionResult {
     // valid French word "often" and must be left untouched.
     let effectiveToken = lowerToken
     if (lowerToken === "souvent") {
-      const nextLower = nextNonWhitespaceLower(words, i)
-      const nextResolved = PHONETIC_CORRECTIONS[nextLower] ?? nextLower
-      if (/^\d+([:-]\d+)?$/.test(nextResolved)) {
+      if (isFollowedByReferenceMarker(words, i)) {
         effectiveToken = "souvent"
       } else {
         continue
@@ -422,9 +458,7 @@ export function correctTranscription(text: string): CorrectionResult {
     // is an ordinary loanword (site web, web design) that must never be
     // touched otherwise. Same gating shape as "souvent" above.
     if (lowerToken === "web") {
-      const nextLower = nextNonWhitespaceLower(words, i)
-      const nextResolved = PHONETIC_CORRECTIONS[nextLower] ?? nextLower
-      if (/^\d+([:-]\d+)?$/.test(nextResolved)) {
+      if (isFollowedByReferenceMarker(words, i)) {
         effectiveToken = "web-nav-context"
       } else {
         continue
@@ -475,6 +509,12 @@ export function correctTranscription(text: string): CorrectionResult {
         trailingPunct = punct
       }
     }
+
+    // The ambiguity gate (ARCHITECTURE.md section 102): entries whose key is
+    // also a real word are only applied where a reference is actually being
+    // stated. Applied last, so the punctuation fallback above has already
+    // resolved "versé," to "versé" before the decision is made.
+    if (!passesAmbiguityGate(effectiveToken, words, i)) continue
 
 // Check for correction
     const corrected =

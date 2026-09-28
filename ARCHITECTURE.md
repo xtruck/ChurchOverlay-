@@ -5165,3 +5165,107 @@ In the same utterance, a valid explicit reference now supersedes relative naviga
 - Overlay: one orchestrated reveal per verse; the fullscreen backdrop now truly covers the frame (the padded card left poster/video visible at the edges); French book names for French translations (it showed "John 3:16" to French congregations); the connection pill hides once connected instead of staying in the live stream.
 - Remote: on-screen state and "Clear the screen" (`verse:clear`), language from the phone.
 - Hardening: every webContents refuses cross-origin navigation and `window.open` (the dashboard preload exposes the operator bridge); self-hosted fonts (no render-blocking Google Fonts); `.woff2` served with CORS for the sandboxed preview; CI runs typecheck + tests on every push and gates the installer.
+
+## 101. French Speech Coverage — Second Probing Round (Prepositions, Ordinals, Titles)
+
+**Why.** Re-running section 97's method — probe the real detectors with natural phrasing, fix
+only what the probe proves — over ~70 more French sentences found four shapes a French-speaking
+church says constantly, and one wrong-verse bug:
+
+- `"Jean 3 au verset 16"`, `"Jean chapitre 3, au verset 16"`, `"lisons Jean au chapitre 3 au
+  verset 16"`: missed entirely. French puts a preposition in front of the keyword ("au verset"),
+  and every pattern expected the number to be followed by the keyword directly. The second one
+  was worse than a miss: `NavigationCommandDetector` parsed it as **two** commands (goto-chapter
+  John 3 plus bare verse 16 of the *current* chapter) — a race that can display a second, wrong
+  verse, exactly the failure section 97 removed for "Psaume 23 verset 1".
+- `"Jean chapitre premier"` / `"au premier verset"` / `"Jean verset premier"`: missed. No pattern
+  accepted a word in a number slot, so French ordinals — the natural way to say "chapter/verse
+  one" — were invisible.
+- `"l'Apocalypse de Jean chapitre 21 verset 4"` displayed **John 21:4**. The full French title of
+  Revelation collapsed onto its last word, and John 21:4 exists, so the hallucination guard could
+  not catch it: section 97's "1ère Jean" failure class, again.
+- `"Actes des apôtres chapitre 2 verset 4"`: missed (multi-word book group — section 97's
+  "Cantique des cantiques" limitation, still applicable elsewhere).
+- `"le chapitre d'après"` / `"le verset d'avant"`: no command at all.
+
+**What.**
+- `normalizeSpokenReferences()` (still the shared pre-pass for both detectors): a French/English
+  preposition directly in front of the *verse* keyword is dropped (`"au verset 16"` →
+  `"verset 16"`); positional ordinals are rewritten into the `"<keyword> <number>"` order every
+  pattern expects, in both word orders ("premier verset" and "verset premier") and repeatedly,
+  since one phrase can carry two; the two remaining multi-word French titles (`"Actes des
+  apôtres"`, `"l'Apocalypse de (saint) Jean"`) collapse to a single word, as `"Cantique des
+  cantiques"` already did.
+- `RegexDetector`: `SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN` gained the same optional
+  `"le/the"` before its second keyword that its own first-keyword alternation and the navigation
+  detector already had — `"Jean chapitre 3, verset 16"` matched while `"…, le verset 16"`,
+  the same sentence with French's article, silently produced nothing.
+- `NavigationCommandDetector`: four French relative phrases (`"chapitre d'après"`,
+  `"verset d'après"`, `"chapitre d'avant"`, `"verset d'avant"`), and typographic apostrophes
+  (U+2019, U+02BC, U+00B4, backtick) fold onto the straight one before phrase matching, so
+  `"l’écran"` and `"l'écran"` are one phrase.
+- The in-app Voice Commands reference (section 78) lists the new phrases.
+
+**Deliberately not done, and why.**
+- The preposition is *not* stripped in front of `"chapitre"`. The chapter side is already accepted
+  by `SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN`'s own `au|à|a|dans le|in|at` link, while removing
+  it would blind `BARE_CHAPTER_VERSE_PATTERN`, whose lookbehind needs the lowercase word sitting
+  in front of `"chapitre"`: `"Allons au chapitre 9, verset 3"` matched only because "au" was
+  there. The existing test caught this during development — the reason this note records it.
+- Positional ordinals are French-only. English `"second"` is also a unit of time and `"a second
+  verse"` means `"another verse"`, so `"give me a second verse"` must never become verse 2 (the
+  same reasoning as section 97's `"wait a second John"` guard). English `"the first chapter"`
+  therefore behaves exactly as it did before.
+- A positional ordinal is **not** rewritten when a chapter is stated later in the same sentence:
+  `"dans le premier verset du chapitre trois"` means chapter 3 verse 1, and the bare-verse
+  rewrite would resolve against the *current* chapter — a valid but wrong verse, the one thing
+  the hallucination guard cannot catch. Such an utterance produces no command, as before.
+- `"chapitre premier"` with no stated book produces no command: `NavigationCommand` has no
+  bare-chapter kind, so nothing is invented to serve it.
+- No new clear synonyms (`"enlève l'écran"`, `"vide l'écran"`): section 65's fixed-synonym-list
+  discipline, and clearing is already covered by `cancel`/`annuler`/`effacer`.
+
+**Boundary check.** No new command kinds, no new WS actions, no interface or contract change, no
+new provider or dataset, and no bypass of `KnownValidVerseIndex` — this is the same detector
+surface with better spelling coverage. Both wrong-verse regressions are pinned by test
+(`"l'Apocalypse de Jean"` must never appear as `john`), the guard is asserted in both the
+normalizer and the navigation detector (the latter asserts an *empty* command list), and the
+detector's own probe list is now 29 recognized phrasings against 25 trap sentences.
+
+## 102. Transcription Corrector Hardening — 31,170-Verse Ground-Truth Audit
+
+**Why.** The section 101 probe only ran the corrector over ~70 reference
+phrasings, never over the text the app actually reads: the 31,170 bundled
+Louis Segond verses, which QuoteMatcher fingerprints word-for-word. Running
+`correctTranscription()` over every verse found **3,290 verses (10.6%)**
+rewritten — almost all of it damage, not repair:
+- Spoken numbers were rewritten into digits ("quatre-vingts" to "80"),
+  so the verse's own 5-word runs no longer matched what a preacher reads.
+- Accents were stripped ("Ou es-tu?" for "Où es-tu?").
+- 48 verses had a real French word replaced by a reference word ("son sang
+  sera versé" to "… sera verset", "si son mari les annule" to "… les
+  annuler", "la somme" to "la psaume").
+
+**What.** Two rules now keep the corrector off ordinary and quoted speech:
+1. The corrector never rewrites spoken numbers and never strips accents.
+   Rewriting a *spoken reference* into the compact written shape belongs to
+   `normalizeSpokenReferences()` — the detector's own context-gated,
+   compound-aware pre-pass (section 97), which both detectors already run.
+   Same single-owner reasoning as the FRENCH_BOOK_ALIASES discipline.
+2. A correction-table key that is itself a real word (or person's name) in
+   one of the app's two spoken languages is applied ONLY in a reference
+   context — the same gating shape "souvent"/"web"/"passé"/"bacille" already
+   used, now applied to the whole ambiguous set (see AMBIGUOUS_ENTRIES in
+   `transcription-corrector.ts`). "annule" is the one exception kept working
+   as a whole utterance, because that is exactly how the cancel voice command
+   is spoken; its measured cost is 2 verses in the whole Bible.
+
+After the change the full-Bible probe reports **0 changed verses**, and the
+name-like entries ("Lucas", "Mathieu") still only fire where a reference is
+being stated — ordinary sentences ("Lucas est venu nous voir") are audited in
+the probe's ordinary-speech section, not left to assumption.
+
+**Boundary check.** No new provider, no new WS action, no interface change,
+no bypass of `KnownValidVerseIndex`; partial transcripts still never enter
+the pipeline. The probe script is temporary (`scripts/__probe-corrector.ts`,
+deleted before commit); what stays is the regression test set and this note.

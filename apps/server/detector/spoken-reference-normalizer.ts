@@ -17,6 +17,22 @@
  *   book group is a single word).
  * - "Jean 3 v 16" / "Jean 3 v. 16" were missed ("v" is the written
  *   abbreviation of verset/verse).
+ *
+ * Found by probing both detectors again with natural French phrasing
+ * (ARCHITECTURE.md section 101):
+ * - "Jean 3 au verset 16" / "Jean chapitre 3, au verset 16" were missed
+ *   entirely — French puts a preposition in front of the keyword ("au
+ *   verset"), and every pattern expects the keyword to follow the number
+ *   directly. Worse, NavigationCommandDetector turned the second one into
+ *   TWO commands (goto-chapter John 3 plus bare verse 16 of the CURRENT
+ *   chapter), a race that can display a second, wrong verse.
+ * - "Jean chapitre premier" / "au premier verset" / "Jean verset premier"
+ *   were missed: no pattern accepts a word where it expects a number.
+ * - "l'Apocalypse de Jean chapitre 21 verset 4" displayed John 21:4 — the
+ *   full French title of Revelation collapsed onto its last word, and John
+ *   21:4 exists, so the hallucination guard could not catch it.
+ * - "Actes des apôtres chapitre 2 verset 4" was missed (same multi-word
+ *   book-group limitation as "Cantique des cantiques").
  */
 
 const ORDINALS: ReadonlyArray<readonly [RegExp, string]> = [
@@ -32,6 +48,22 @@ const LINK_WORDS = "(?:de|du|des|d'|aux|au|a|to|of|the|la|le|l')"
 const MULTI_WORD_BOOKS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\bcantique\s+des\s+cantiques\b/giu, "Cantique"],
   [/\bsong\s+of\s+(?:solomon|songs)\b/giu, "Cantique"],
+  // Probing round three (ARCHITECTURE.md section 102): French also names this
+  // book by its author, and "le psaume de David 23 verset 1" was a miss for
+  // the same structural reason as the two titles below — the single-word book
+  // group captured the word sitting right before the number ("David") and
+  // rejected it, losing "Psaume" entirely. Collapsing the title to "Psaume"
+  // before any pattern runs is the same fix, not a new mechanism.
+  [/\b(?:psaume|psaumes)\s+de\s+david\b/giu, "Psaume"],
+  // The same single-word book group limitation as "Cantique des cantiques",
+  // for the two other French titles that are really phrases: "Actes des
+  // apôtres" (Acts) and "l'Apocalypse de (saint) Jean" (Revelation).
+  // The second one is a correctness fix, not just coverage: collapsing it
+  // onto "Jean" made "l'Apocalypse de Jean chapitre 21 verset 4" display
+  // John 21:4 — an existing verse, so nothing downstream could catch it.
+  // Matched on the raw (accented) text, hence the explicit [oô].
+  [/\bactes\s+des\s+ap[oô]tres\b/giu, "Actes"],
+  [/\bapocalypse\s+de\s+(?:saint\s+|st\.?\s+)?jean\b/giu, "Apocalypse"],
 ]
 
 const UNITS: Readonly<Record<string, number>> = {
@@ -114,15 +146,16 @@ export function parseNumberWords(tokens: readonly string[], start: number): { va
 function rewriteNumberWords(text: string, isBookWord?: (word: string) => boolean): string {
   const tokens = text.split(/(\s+)/)
   const words = tokens.filter((_, i) => i % 2 === 0)
+  const cleanWords = words.map((x) => x.replace(/[.,;:!?]+$/, ""))
   const out: string[] = []
   let previousWord = ""
   for (let w = 0; w < words.length; w++) {
     const word = words[w] as string
-    const bare = strip(word).replace(/[.,;:!?]+$/, "")
+    const bare = strip(cleanWords[w] as string)
     const previousBare = strip(previousWord).replace(/[.,;:!?]+$/, "")
     const context = NUMBER_CONTEXT.test(previousBare) || /\d$/.test(previousWord) || (isBookWord?.(previousBare) ?? false)
     if (context && (bare in UNITS || bare in TENS || bare.includes("-"))) {
-      const parsed = parseNumberWords(words.map((x) => x.replace(/[.,;:!?]+$/, "")), w)
+      const parsed = parseNumberWords(cleanWords, w)
       if (parsed) {
         const lastToken = words[w + parsed.length - 1] as string
         const trailing = lastToken.match(/[.,;:!?]+$/)?.[0] ?? ""
@@ -145,17 +178,18 @@ function rewriteNumberWords(text: string, isBookWord?: (word: string) => boolean
 const NUMBERED_BOOKS =
   "(?:samuel|rois|kings|chroniques|chronicles|corinthiens|corinthians|thessaloniciens|thessalonians|timothee|timothy|pierre|peter|jean|john)"
 
+const ORDINALS_PATTERN = new RegExp(
+  `(?<![\\p{L}\\d])([\\p{L}\\d]+)\\s+(?:${EPISTLE_WORDS}\\s+(?:${LINK_WORDS}\\s*)?)?(?=${NUMBERED_BOOKS}(?![\\p{L}]))`,
+  "giu"
+)
+
 function rewriteOrdinals(text: string): string {
   // Matched on an accent-stripped copy (same length: NFD+strip only removes
   // combining marks, so we map indices through a per-character strip instead).
-  const pattern = new RegExp(
-    `(?<![\\p{L}\\d])([\\p{L}\\d]+)\\s+(?:${EPISTLE_WORDS}\\s+(?:${LINK_WORDS}\\s*)?)?(?=${NUMBERED_BOOKS}(?![\\p{L}]))`,
-    "giu"
-  )
   const folded = foldPreservingLength(text)
   let result = ""
   let last = 0
-  for (const match of folded.matchAll(pattern)) {
+  for (const match of folded.matchAll(ORDINALS_PATTERN)) {
     const index = match.index ?? 0
     const candidate = text.slice(index, index + (match[1] as string).length)
     const key = strip(candidate)
@@ -170,14 +204,188 @@ function rewriteOrdinals(text: string): string {
   return result + text.slice(last)
 }
 
+/**
+ * A numbered volume said with a CARDINAL rather than an ordinal word:
+ * "deux Corinthiens" (2 Corinthians), "trois Jean" (3 John, which was
+ * already fine because "trois Jean" happens to collide with nothing),
+ * "two Corinthians". Found by probing the real detector (ARCHITECTURE.md
+ * section 102): "deux Corinthiens 5 verset 17" and "two Corinthians 5:17"
+ * detected nothing, while the ordinal phrasing "deuxième Corinthiens"
+ * already worked. Restricted to NUMBERED_BOOKS so the rewrite can never
+ * manufacture a volume that does not exist, and deliberately limited to
+ * two/three: "un Corinthiens" is a real French way to say 1 Corinthians,
+ * but "un" is also the indefinite article ("un Jean", a pair of jeans),
+ * so it is left alone rather than guessed at.
+ */
+const CARDINAL_VOLUMES: Readonly<Record<string, string>> = {
+  deux: "2",
+  two: "2",
+  trois: "3",
+  three: "3",
+}
+
+const CARDINAL_VOLUME_PATTERN = new RegExp(
+  `(?<![\\p{L}\\d])(deux|two|trois|three)\\s+(?=${NUMBERED_BOOKS}(?![\\p{L}]))`,
+  "giu"
+)
+
+function rewriteCardinalVolumes(text: string): string {
+  const folded = foldPreservingLength(text)
+  let result = ""
+  let last = 0
+  for (const match of folded.matchAll(CARDINAL_VOLUME_PATTERN)) {
+    const index = match.index ?? 0
+    const digit = CARDINAL_VOLUMES[match[1] as string]
+    if (!digit) continue
+    result += text.slice(last, index) + `${digit} `
+    last = index + match[0].length
+  }
+  return result + text.slice(last)
+}
+
 /** Lower-cases and strips accents character by character, keeping every index aligned with the original. */
 function foldPreservingLength(text: string): string {
   let out = ""
-  for (const char of text) {
-    const folded = strip(char)
-    out += folded.length === char.length ? folded : char.toLowerCase()
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i)
+    if (code < 128) {
+      out += code >= 65 && code <= 90 ? String.fromCharCode(code + 32) : text[i]
+    } else {
+      const char = text[i] as string
+      const folded = strip(char)
+      out += folded.length === 1 ? folded : char.toLowerCase()
+    }
   }
   return out
+}
+
+/**
+ * A preposition sitting immediately in front of the *verse* keyword: French
+ * "au verset 16", English "at verse 16". The keyword alone is what every
+ * pattern keys off, and each of them expects it to follow the number
+ * directly — so the preposition is dropped here rather than every pattern
+ * gaining one more optional branch. Only this exact shape is touched:
+ * "deuxième épître aux Corinthiens" keeps its "aux". "a" is included because
+ * accent-free ASR output writes French "à" that way (and as an English
+ * article it is harmless: a verse keyword must follow it for this to match
+ * at all).
+ *
+ * Deliberately NOT applied to "chapitre"/"chapter", and that is not an
+ * oversight: the chapter side is already accepted by
+ * SPOKEN_REFERENCE_DOUBLE_KEYWORD_PATTERN's own `au|à|a|dans le|in|at`
+ * link, while STRIMMING it would blind NavigationCommandDetector's
+ * BARE_CHAPTER_VERSE_PATTERN — whose lookbehind relies on the word in front
+ * of "chapitre" not being a capitalized book-like word. "Allons au chapitre
+ * 9, verset 3" matched only because "au" (lowercase) sat there; removing it
+ * would have exposed "Allons" and silently rejected a real command (caught
+ * by that test before it shipped).
+ */
+const VERSE_KEYWORD_PREPOSITION = /(?<!\p{L})(?:au|aux|à|a|at|in)\s+(?=(?:versets?|verses?)(?!\p{L}))/giu
+
+/**
+ * Ordinals that name a chapter/verse *position* ("Jean chapitre premier",
+ * "au premier verset", "Jean verset premier") instead of a book number.
+ * Probing found every one of those missed: a number slot only ever accepted
+ * digits or number words.
+ *
+ * Deliberately French-only, though the spellings come from the shared
+ * ORDINALS table so the two lists cannot drift apart. The English spellings
+ * in that table are correct before a *book* number ("First Corinthians")
+ * but not here: English "second" is also a unit of time and "a second
+ * verse" means "another verse", so "give me a second verse" must never
+ * become verse 2 — the same reasoning as the existing "wait a second John"
+ * guard. English "the first chapter" is therefore left exactly as it was.
+ */
+const ENGLISH_ONLY_POSITION_ORDINALS = new Set([
+  "first", "1st", "i", "second", "2nd", "ii", "third", "3rd", "iii",
+])
+
+const POSITION_KEYWORDS = "(?:chapitres?|versets?)"
+
+/** "<ordinal> chapitre|verset" — "au premier verset", "Jean premier chapitre". */
+const ORDINAL_BEFORE_POSITION = new RegExp(
+  `(?<![\\p{L}\\d])([\\p{L}\\d]+)\\s+(${POSITION_KEYWORDS})(?![\\p{L}])`,
+  "giu"
+)
+
+/** "chapitre|verset <ordinal>" — "Jean chapitre premier", "le verset premier". */
+const POSITION_BEFORE_ORDINAL = new RegExp(
+  `(?<![\\p{L}\\d])(${POSITION_KEYWORDS})\\s+([\\p{L}\\d]+)(?![\\p{L}])`,
+  "giu"
+)
+
+const SENTENCE_BREAK = /[.!?;\n]/
+const FOLLOWING_CHAPTER = /(?:chapitre|chapter)(?!\p{L})/iu
+
+/**
+ * True when a stated chapter follows in the same sentence. Used to skip one
+ * rewrite: "dans le premier verset du chapitre trois" means chapter 3 verse
+ * 1, and rewriting it to a bare "verset 1" would resolve against the
+ * CURRENT chapter instead — a valid but wrong verse, the one failure mode
+ * the hallucination guard cannot catch. Left alone it produces no command,
+ * exactly as before this change.
+ */
+function chapterStatedAfter(text: string, from: number): boolean {
+  const rest = text.slice(from)
+  const end = rest.search(SENTENCE_BREAK)
+  return FOLLOWING_CHAPTER.test(end === -1 ? rest : rest.slice(0, end))
+}
+
+function positionOrdinalDigit(word: string): string | null {
+  const key = strip(word)
+  if (ENGLISH_ONLY_POSITION_ORDINALS.has(key)) return null
+  return ORDINALS.find(([ordinal]) => ordinal.test(key))?.[1] ?? null
+}
+
+/**
+ * One positional-ordinal pass. Whichever order the speaker used, the match
+ * is replaced by "<keyword> <digit>" — the order every pattern expects.
+ * Indices are mapped through the accent-preserving fold, so the ordinal
+ * itself is read back from the original text (an accented "deuxième" must
+ * still normalize).
+ */
+function rewritePositionPass(text: string, pattern: RegExp, keywordGroup: number, ordinalGroup: number): string {
+  const folded = foldPreservingLength(text)
+  let result = ""
+  let last = 0
+  for (const match of folded.matchAll(pattern)) {
+    const index = match.index ?? 0
+    const keyword = match[keywordGroup]
+    const ordinal = match[ordinalGroup]
+    if (!keyword || !ordinal) continue
+    const ordinalIndex = ordinalGroup === 1 ? index : index + match[0].length - ordinal.length
+    const keywordEnd = keywordGroup === 1 ? index + keyword.length : index + match[0].length
+    if (chapterStatedAfter(text, keywordEnd)) continue
+    const digit = positionOrdinalDigit(text.slice(ordinalIndex, ordinalIndex + ordinal.length))
+    if (!digit) continue
+    result += text.slice(last, index) + `${keyword} ${digit}`
+    last = index + match[0].length
+  }
+  return result + text.slice(last)
+}
+
+/**
+ * Noun-first ("chapitre premier", "verset premier") before adjective-first
+ * ("premier chapitre"): running the other way round would rewrite the
+ * "premier" of "Jean chapitre premier verset premier" into a stray
+ * "verset 1" and mangle the rest of the phrase. That phrase also shows why
+ * the two passes repeat: rewriting a position ordinal can expose the next
+ * one. Every rewrite replaces an ordinal word with a digit, so the loop
+ * settles long before its bound.
+ */
+function rewritePositionOrdinals(text: string): string {
+  let current = text
+  for (let round = 0; round < 4; round++) {
+    const next = rewritePositionPass(
+      rewritePositionPass(current, POSITION_BEFORE_ORDINAL, 1, 2),
+      ORDINAL_BEFORE_POSITION,
+      2,
+      1
+    )
+    if (next === current) return next
+    current = next
+  }
+  return current
 }
 
 /**
@@ -189,6 +397,9 @@ export function normalizeSpokenReferences(text: string, isBookWord?: (word: stri
   let result = text
   for (const [pattern, replacement] of MULTI_WORD_BOOKS) result = result.replace(pattern, replacement)
   result = rewriteOrdinals(result)
+  result = rewriteCardinalVolumes(result)
+  result = rewritePositionOrdinals(result)
+  result = result.replace(VERSE_KEYWORD_PREPOSITION, "")
   // "v." / "v" between two numbers is the written abbreviation of verset/verse.
   result = result.replace(/(\d)\s*[,]?\s+v\.?\s*(?=\d)/giu, "$1 verset ")
   result = rewriteNumberWords(result, isBookWord)

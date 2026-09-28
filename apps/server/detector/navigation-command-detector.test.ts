@@ -208,6 +208,60 @@ test("NavigationCommandDetector: a French 'chapitre N verset M' with a stated bo
   ])
 })
 
+// ARCHITECTURE.md section 101 (second probing round): French says "after"/
+// "before" as well as "next"/"previous", and a positional ordinal is a real
+// command ("au premier verset" = verse 1).
+test("NavigationCommandDetector: French 'd'après'/'d'avant' relative navigation", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("On passe au chapitre d'après."), [{ kind: "next-chapter" }])
+  assert.deepEqual(detector.detect("Passons au verset d'après."), [{ kind: "next-verse" }])
+  assert.deepEqual(detector.detect("Revenons au chapitre d'avant."), [{ kind: "previous-chapter" }])
+  assert.deepEqual(detector.detect("Revenons au verset d'avant."), [{ kind: "previous-verse" }])
+})
+
+test("NavigationCommandDetector: a positional ordinal names a chapter or a verse", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("Jean chapitre premier"), [{ kind: "goto-chapter", book: "john", chapter: 1 }])
+  assert.deepEqual(detector.detect("Jean chapitre 1er"), [{ kind: "goto-chapter", book: "john", chapter: 1 }])
+  assert.deepEqual(detector.detect("Jean verset premier"), [{ kind: "goto-bare-verse", verse: 1 }])
+  assert.deepEqual(detector.detect("Passons au premier verset."), [{ kind: "goto-bare-verse", verse: 1 }])
+  assert.deepEqual(detector.detect("Passons à Jean deuxième chapitre."), [
+    { kind: "goto-chapter", book: "john", chapter: 2 },
+  ])
+})
+
+test("NavigationCommandDetector: a positional ordinal with the chapter stated later produces NO command", () => {
+  const detector = new NavigationCommandDetector()
+  // "chapter 3 verse 1", not "verse 1 of the current chapter" — a bare-verse
+  // command here would display a valid but WRONG verse, so nothing fires.
+  assert.deepEqual(detector.detect("Dans le premier verset du chapitre trois."), [])
+  assert.deepEqual(detector.detect("Dans le verset premier du chapitre trois."), [])
+})
+
+test("NavigationCommandDetector: 'au verset' is the same command as 'verset'", () => {
+  const detector = new NavigationCommandDetector()
+  assert.deepEqual(detector.detect("Regardons au verset 16."), [{ kind: "goto-bare-verse", verse: 16 }])
+  // With a book and chapter stated, it is a full reference, not a race
+  // between a chapter jump and a bare verse.
+  assert.deepEqual(detector.detect("Jean 3 au verset 16"), [
+    { kind: "goto-bare-verse", verse: 16 },
+  ])
+  assert.deepEqual(detector.detect("Jean chapitre 3, au verset 16"), [
+    { kind: "goto-book-chapter-verse", book: "john", chapter: 3, verse: 16 },
+  ])
+  assert.deepEqual(detector.detect("Allons au chapitre 9, verset 3."), [
+    { kind: "goto-bare-chapter-verse", chapter: 9, verse: 3 },
+  ])
+})
+
+test("NavigationCommandDetector: a typographic apostrophe matches the same phrases", () => {
+  const detector = new NavigationCommandDetector()
+  // ASR output and pasted text disagree about the apostrophe; both forms are
+  // the same phrase to an operator (ARCHITECTURE.md section 101).
+  assert.deepEqual(detector.detect("Il faut effacer l\u2019écran maintenant."), [{ kind: "cancel" }])
+  assert.deepEqual(detector.detect("On passe au chapitre d\u2019après."), [{ kind: "next-chapter" }])
+})
+
 test("NavigationCommandDetector: French voice commands to switch display mode, independent of verb conjugation", () => {
   const detector = new NavigationCommandDetector()
   // "en français"/"en anglais" deliberately avoids depending on a specific
