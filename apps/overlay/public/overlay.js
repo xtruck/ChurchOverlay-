@@ -35,6 +35,10 @@
   const definitionTermEl = document.getElementById("definition-term")
   const definitionBodyEl = document.getElementById("definition-body")
   const canvasLayerEl = document.getElementById("canvas-layer")
+  const outlineLayerEl = document.getElementById("outline-layer")
+  const outlineBadgeEl = document.getElementById("outline-badge")
+  const outlineTitleEl = document.getElementById("outline-title")
+  const outlineTextEl = document.getElementById("outline-text")
 
   // The connection pill is a diagnostic, not content: it used to stay on
   // the congregation screen (and in the stream) for the whole service.
@@ -375,6 +379,28 @@
     definitionEl.classList.remove("visible")
   }
 
+  let outlineAutoClearTimer = null
+  function showOutline(payload) {
+    if (!outlineLayerEl) return
+    clearTimeout(outlineAutoClearTimer)
+    outlineBadgeEl.textContent = `POINT ${payload.pointNumber || 1}`
+    outlineTitleEl.textContent = payload.title || ""
+    if (payload.text) {
+      outlineTextEl.textContent = payload.text
+      outlineTextEl.style.display = "block"
+    } else {
+      outlineTextEl.style.display = "none"
+    }
+    outlineLayerEl.classList.add("visible")
+    // Auto-fade outline point after 14s unless dismissed
+    outlineAutoClearTimer = setTimeout(clearOutline, 14000)
+  }
+
+  function clearOutline() {
+    clearTimeout(outlineAutoClearTimer)
+    if (outlineLayerEl) outlineLayerEl.classList.remove("visible")
+  }
+
   // Canvas scene (ARCHITECTURE.md section 66) — the first content type
   // rendered from a whole list of positioned layers rather than one fixed
   // template's fields. Every layer is a real DOM node, absolutely
@@ -525,6 +551,10 @@
         setVerseLayout(message.payload.layout)
       } else if (message.type === "branding:update") {
         applyBranding(message.payload)
+      } else if (message.type === "outline:show") {
+        showOutline(message.payload)
+      } else if (message.type === "outline:clear") {
+        clearOutline()
       }
     })
   }
@@ -541,6 +571,7 @@
       clearMedia()
       clearAnnouncement()
       clearDefinition()
+      clearOutline()
       clearCanvas()
     }
   })

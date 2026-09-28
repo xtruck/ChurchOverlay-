@@ -2,116 +2,446 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-<!--
-  Electron Security Warning fix (docs/tutorial/security.md) — same
-  reasoning as the dashboard/overlay pages' own CSP comments, with one
-  difference: connect-src allows the bare "ws:" scheme rather than a pinned
-  ws://127.0.0.1:* host, because this page (ARCHITECTURE.md section 65.6)
-  is opened from whatever LAN IP the operator's machine reports at the
-  time — 'self' can't be used for the WS connection (different port than
-  this page's own HTTP port) and the exact host isn't knowable in advance.
-  The operator token remains the real access control here, not this policy
-  (section 65.6 already documents this isn't a security boundary).
--->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <meta
   http-equiv="Content-Security-Policy"
   content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self' ws:; base-uri 'none'; form-action 'none';"
 />
-<title>ChurchOverlay — Remote</title>
+<title>ChurchOverlay — Pro Studio Remote</title>
 <link href="fonts/fonts.css" rel="stylesheet" />
 <style>
-  /*
-    ARCHITECTURE.md section 65.6 — a phone-based second-operator remote.
-    Deliberately narrow: what is on screen, clear it, step the rundown,
-    clear media. Same "Vespers" system as the desktop console, scaled for
-    one thumb: big targets, one column, the tally colour for what is live.
-  */
   :root {
-    --nave: #0f1722;
-    --pew: #162130;
-    --stone: #223044;
-    --line: #2b3b52;
-    --line-strong: #3a4e6b;
-    --vellum: #ede6d8;
-    --ash: #a3adbb;
-    --ash-dim: #75839a;
+    --nave: #0b1017;
+    --pew: #131b26;
+    --pew-card: rgba(19, 27, 38, 0.75);
+    --stone: #1f2c3d;
+    --line: #29384c;
+    --line-strong: #3b4e68;
+    --vellum: #f3efe6;
+    --ash: #9eabbc;
+    --ash-dim: #6d7b8e;
     --accent: #e0a93b;
-    --accent-ink: #1c1405;
+    --accent-soft: rgba(224, 169, 59, 0.15);
     --on-air: #ef4a4a;
-    --on-air-soft: rgba(239, 74, 74, 0.14);
+    --on-air-soft: rgba(239, 74, 74, 0.16);
     --cue: #3fcf8e;
+    --cue-soft: rgba(63, 207, 142, 0.15);
     --warn: #f08a3c;
+    --blue: #3b82f6;
+    --blue-soft: rgba(59, 130, 246, 0.15);
     --font-display: "Instrument Serif", Georgia, serif;
-    --font-ui: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+    --font-ui: "Instrument Sans", -apple-system, system-ui, sans-serif;
     color-scheme: dark;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; min-height: 100%; background: var(--nave); color: var(--vellum); font-family: var(--font-ui); font-variant-numeric: tabular-nums; }
-  body { padding: 16px 16px 40px; max-width: 520px; margin: 0 auto; }
-  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
-  h1 { font-family: var(--font-display); font-weight: 400; font-size: 26px; margin: 0; }
-  #status-pill { display: flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); font-size: 12.5px; color: var(--ash); }
-  #status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ash-dim); }
-  #status-pill.connected #status-dot { background: var(--cue); }
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background: var(--nave);
+    color: var(--vellum);
+    font-family: var(--font-ui);
+    font-variant-numeric: tabular-nums;
+  }
+  body {
+    padding: 12px 14px 48px;
+    max-width: 560px;
+    margin: 0 auto;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand-title {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 24px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .brand-badge {
+    font-family: var(--font-ui);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    text-transform: uppercase;
+  }
+  #status-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    font-size: 12px;
+    color: var(--ash);
+    background: var(--pew);
+  }
+  #status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ash-dim);
+  }
+  #status-pill.connected #status-dot { background: var(--cue); box-shadow: 0 0 8px var(--cue); }
   #status-pill.disconnected #status-dot { background: var(--warn); }
 
-  .card { background: var(--pew); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
-  .card-title { font-family: var(--font-display); font-size: 21px; margin: 0 0 12px; }
+  /* Navigation Tabs */
+  .nav-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-bottom: 14px;
+    background: var(--pew);
+    padding: 4px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+  }
+  .tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--ash);
+    padding: 8px 4px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    min-height: 48px;
+    transition: background 150ms, color 150ms;
+  }
+  .tab-btn.active {
+    background: var(--stone);
+    color: var(--vellum);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  }
+  .tab-icon { font-size: 15px; }
 
-  #on-screen { border-width: 2px; transition: border-color 160ms ease, box-shadow 160ms ease; }
-  #on-screen.live { border-color: var(--on-air); box-shadow: 0 0 0 4px var(--on-air-soft); }
-  #on-screen-state { font-size: 13px; font-weight: 600; color: var(--ash); margin-bottom: 6px; }
-  #on-screen.live #on-screen-state { color: #ff8f8f; }
-  #on-screen-ref { font-family: var(--font-display); font-size: 30px; line-height: 1.1; min-height: 1.1em; }
+  /* Card and Panels */
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  .card {
+    background: var(--pew-card);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .card-title {
+    font-family: var(--font-display);
+    font-size: 20px;
+    margin: 0 0 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
 
-  .scene-list { display: flex; flex-direction: column; gap: 8px; }
-  .scene-chip { padding: 14px 16px; border-radius: 10px; background: var(--nave); border: 1px solid var(--line); font-size: 15px; color: var(--ash); }
-  .scene-chip.active { border-color: var(--on-air); color: var(--vellum); }
-  .scene-chip.interrupted { border-color: var(--accent); }
-  .scene-empty { color: var(--ash-dim); font-size: 14px; padding: 8px 0; }
+  /* On-Screen Tally */
+  #on-screen {
+    border-width: 2px;
+    transition: border-color 160ms ease, box-shadow 160ms ease;
+  }
+  #on-screen.live {
+    border-color: var(--on-air);
+    box-shadow: 0 0 0 4px var(--on-air-soft);
+  }
+  #on-screen-state {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ash);
+    margin-bottom: 4px;
+  }
+  #on-screen.live #on-screen-state { color: #ff7d7d; }
+  #on-screen-ref {
+    font-family: var(--font-display);
+    font-size: 26px;
+    line-height: 1.15;
+    min-height: 1.2em;
+    color: var(--vellum);
+    margin-bottom: 10px;
+  }
 
-  button { font: inherit; font-size: 16px; font-weight: 600; border-radius: 12px; padding: 16px; border: 1px solid transparent; cursor: pointer; min-height: 52px; }
-  button:disabled { opacity: 0.4; }
-  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  button:active:not(:disabled) { transform: translateY(1px); }
-  .btn-row { display: flex; gap: 10px; }
+  /* Buttons */
+  button {
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    border-radius: 10px;
+    padding: 12px 14px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: transform 80ms, opacity 150ms;
+  }
+  button:active:not(:disabled) { transform: scale(0.97); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  .btn-row { display: flex; gap: 8px; }
+  .btn-primary { background: var(--accent); color: #151004; font-weight: 700; }
   .btn-secondary { background: var(--stone); color: var(--vellum); border-color: var(--line-strong); flex: 1; }
-  .btn-danger { background: transparent; color: #ff8f8f; border-color: var(--on-air); width: 100%; }
-  .btn-clear { background: var(--on-air); color: #fff; width: 100%; margin-top: 14px; font-size: 17px; }
+  .btn-danger { background: transparent; color: #ff8f8f; border-color: var(--on-air); }
+  .btn-clear { background: var(--on-air); color: #fff; width: 100%; font-size: 16px; padding: 14px; }
+  .btn-cue { background: var(--cue-soft); color: var(--cue); border-color: var(--cue); }
+
+  /* Grid Layouts for Pad */
+  .grid-presets {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .preset-btn {
+    padding: 12px;
+    background: var(--stone);
+    color: var(--vellum);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    font-size: 13.5px;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .preset-btn small { font-size: 11px; color: var(--ash); }
+
+  /* Input fields */
+  input[type="text"], input[type="number"], select {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: var(--nave);
+    border: 1px solid var(--line);
+    color: var(--vellum);
+    font: inherit;
+    font-size: 15px;
+    margin-bottom: 8px;
+  }
+  input:focus, select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+
+  /* Timer Display */
+  .timer-box {
+    text-align: center;
+    padding: 18px;
+    background: var(--nave);
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    margin-bottom: 12px;
+  }
+  .timer-clock {
+    font-family: var(--font-display);
+    font-size: 48px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--cue);
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .timer-clock.overtime { color: var(--on-air); animation: pulse 1s infinite alternate; }
+  @keyframes pulse { from { opacity: 0.7; } to { opacity: 1; } }
+
+  .pill-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .pill-btn {
+    padding: 7px 12px;
+    font-size: 12.5px;
+    border-radius: 999px;
+    background: var(--stone);
+    border: 1px solid var(--line);
+    color: var(--vellum);
+  }
 
   #no-token { display: none; text-align: center; color: var(--ash); padding: 40px 20px; }
 </style>
+</head>
 <body>
   <header>
-    <h1 data-t="title">Remote</h1>
+    <div class="brand-title">
+      <span data-t="title">Remote</span>
+      <span class="brand-badge">Studio 2.0</span>
+    </div>
     <div id="status-pill" class="disconnected"><span id="status-dot"></span><span id="status-text">…</span></div>
   </header>
 
-  <div id="no-token" data-t="noToken">No operator token in the link. Copy the remote link from the desktop console's Settings again.</div>
+  <div id="no-token" data-t="noToken">No operator token in the link. Copy the remote link from the desktop console's Settings.</div>
 
   <div id="app">
-    <section id="on-screen" class="card" aria-live="polite">
-      <div id="on-screen-state" data-t="offAir">Nothing on screen</div>
-      <div id="on-screen-ref"></div>
-      <button id="clear-verse-btn" class="btn-clear" data-t="clearScreen">Clear the screen</button>
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs" role="tablist">
+      <button type="button" class="tab-btn active" data-tab="live">
+        <span class="tab-icon">🔴</span>
+        <span data-t="tabLive">On-Air</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="stage">
+        <span class="tab-icon">⏱️</span>
+        <span data-t="tabStage">Stage</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="pad">
+        <span class="tab-icon">⚡</span>
+        <span data-t="tabPad">Scripture</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="analytics">
+        <span class="tab-icon">📊</span>
+        <span data-t="tabSummary">Pack</span>
+      </button>
+    </nav>
+
+    <!-- Tab 1: On-Air & Rundown -->
+    <section id="panel-live" class="tab-panel active">
+      <div id="on-screen" class="card" aria-live="polite">
+        <div id="on-screen-state" data-t="offAir">Nothing on screen</div>
+        <div id="on-screen-ref"></div>
+        <button id="clear-verse-btn" class="btn-clear" data-t="clearScreen">Clear the screen</button>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title" data-t="rundown">Rundown Stepper</h2>
+        <div id="scene-list" class="scene-list">
+          <div class="scene-empty" data-t="noRundown">No rundown loaded.</div>
+        </div>
+        <div class="btn-row" style="margin-top: 12px">
+          <button id="prev-btn" class="btn-secondary" disabled data-t="previous">Previous</button>
+          <button id="next-btn" class="btn-secondary" disabled data-t="next">Next</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">Layout &amp; Media</h2>
+        <div class="btn-row" style="margin-bottom: 10px">
+          <button id="layout-fullscreen-btn" class="btn-secondary" style="font-size:13px">Fullscreen View</button>
+          <button id="layout-lowerthird-btn" class="btn-secondary" style="font-size:13px">Lower-Third</button>
+        </div>
+        <button id="clear-media-btn" class="btn-danger" style="width:100%" data-t="clearMedia">Stop Media Cue</button>
+      </div>
     </section>
 
-    <div class="card">
-      <h2 class="card-title" data-t="rundown">Rundown</h2>
-      <div id="scene-list" class="scene-list">
-        <div class="scene-empty" data-t="noRundown">No rundown loaded.</div>
+    <!-- Tab 2: Stage Display & Preacher Timer -->
+    <section id="panel-stage" class="tab-panel">
+      <div class="card">
+        <h2 class="card-title">Preacher Sermon Timer</h2>
+        <div class="timer-box">
+          <div id="remote-timer-clock" class="timer-clock">30:00</div>
+          <small id="remote-timer-label" style="color:var(--ash)">Sermon Countdown</small>
+        </div>
+        <div class="pill-group">
+          <button type="button" class="pill-btn timer-preset-btn" data-min="15">15 Min</button>
+          <button type="button" class="pill-btn timer-preset-btn" data-min="30">30 Min</button>
+          <button type="button" class="pill-btn timer-preset-btn" data-min="45">45 Min</button>
+          <button type="button" class="pill-btn timer-preset-btn" data-min="60">60 Min</button>
+        </div>
+        <div class="btn-row">
+          <button id="timer-stop-btn" class="btn-secondary">Pause / Stop</button>
+          <button id="timer-reset-btn" class="btn-secondary">Reset</button>
+        </div>
       </div>
-      <div class="btn-row" style="margin-top: 12px">
-        <button id="prev-btn" class="btn-secondary" disabled data-t="previous">Previous</button>
-        <button id="next-btn" class="btn-secondary" disabled data-t="next">Next</button>
-      </div>
-    </div>
 
-    <div class="card">
-      <h2 class="card-title" data-t="media">Media</h2>
-      <button id="clear-media-btn" class="btn-danger" data-t="clearMedia">Stop media</button>
-    </div>
+      <div class="card">
+        <h2 class="card-title">Flash Alert to Stage</h2>
+        <div class="pill-group">
+          <button type="button" class="pill-btn alert-quick-btn" data-msg="⏳ 2 Minutes Remaining">⏳ 2 Mins</button>
+          <button type="button" class="pill-btn alert-quick-btn" data-msg="⚠️ Wrap Up Now">⚠️ Wrap Up</button>
+          <button type="button" class="pill-btn alert-quick-btn" data-msg="👶 Nursery #104 Needed">👶 Nursery</button>
+          <button type="button" class="pill-btn alert-quick-btn" data-msg="🎤 Check Mic Level">🎤 Mic Check</button>
+        </div>
+        <div style="display:flex; gap:8px">
+          <input id="stage-alert-input" type="text" placeholder="Custom stage message..." style="margin-bottom:0" />
+          <button id="send-alert-btn" class="btn-primary" style="flex-shrink:0">Send</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 3: Quick Scripture & Intelligence Pad -->
+    <section id="panel-pad" class="tab-panel">
+      <div class="card">
+        <h2 class="card-title">Quick Verse Fire</h2>
+        <div style="display:flex; gap:8px; margin-bottom:8px">
+          <input id="quick-verse-input" type="text" placeholder="e.g. John 3:16 or Rom 8:28" style="margin-bottom:0" />
+          <button id="quick-verse-btn" class="btn-primary" style="flex-shrink:0">Project</button>
+        </div>
+        <div class="grid-presets">
+          <button type="button" class="preset-btn verse-preset-btn" data-ref="John 3:16">
+            <strong>John 3:16</strong>
+            <small>God so loved the world</small>
+          </button>
+          <button type="button" class="preset-btn verse-preset-btn" data-ref="Psalm 23:1">
+            <strong>Psalm 23:1</strong>
+            <small>The Lord is my shepherd</small>
+          </button>
+          <button type="button" class="preset-btn verse-preset-btn" data-ref="Romans 8:28">
+            <strong>Romans 8:28</strong>
+            <small>All things work together</small>
+          </button>
+          <button type="button" class="preset-btn verse-preset-btn" data-ref="Philippians 4:13">
+            <strong>Philippians 4:13</strong>
+            <small>I can do all things</small>
+          </button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">Spoken Outline Point Triggers</h2>
+        <div class="grid-presets">
+          <button type="button" class="preset-btn outline-preset-btn" data-num="1" data-title="Foundational Faith" data-text="Point 1: Walking by Faith">
+            <strong>Point 1</strong>
+            <small>Foundational Faith</small>
+          </button>
+          <button type="button" class="preset-btn outline-preset-btn" data-num="2" data-title="God's Unfailing Love" data-text="Point 2: Unconditional Grace">
+            <strong>Point 2</strong>
+            <small>Unconditional Love</small>
+          </button>
+          <button type="button" class="preset-btn outline-preset-btn" data-num="3" data-title="Walking in Victory" data-text="Point 3: Overcoming in Christ">
+            <strong>Point 3</strong>
+            <small>Walking in Victory</small>
+          </button>
+          <button type="button" class="preset-btn outline-preset-btn" data-num="4" data-title="Conclusion &amp; Ministry" data-text="Final Exhortation &amp; Prayer">
+            <strong>Conclusion</strong>
+            <small>Call to Prayer</small>
+          </button>
+        </div>
+        <button id="clear-outline-btn" class="btn-danger" style="width:100%; margin-top:8px">Clear Outline Banner</button>
+      </div>
+    </section>
+
+    <!-- Tab 4: Post-Service Pack & Insights -->
+    <section id="panel-analytics" class="tab-panel">
+      <div class="card">
+        <h2 class="card-title">Post-Service AI Pack</h2>
+        <p style="color:var(--ash); font-size:13.5px; line-height:1.4">Generate timestamped YouTube chapters, bulletin summaries, and social media quotes from this service.</p>
+        <button id="download-service-pack-btn" class="btn-primary" style="width:100%">📦 Generate Service Summary Pack</button>
+        <div id="service-pack-result" style="margin-top:12px; display:none">
+          <textarea id="service-pack-text" style="width:100%; height:140px; background:var(--nave); color:var(--vellum); border:1px solid var(--line); border-radius:8px; padding:10px; font-family:monospace; font-size:12px;" readonly></textarea>
+        </div>
+      </div>
+    </section>
   </div>
 
   <script src="/remote.js"></script>

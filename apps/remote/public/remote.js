@@ -1,16 +1,9 @@
-// Plain browser JS, no build step — matches dashboard.js/overlay.js's own
-// convention. ARCHITECTURE.md section 65.6: reuses the existing operator
-// token/role (no new WsRole) — this page authenticates exactly like the
-// desktop dashboard does, just scoped by its OWN UI to a narrower set of
-// actions (what is on screen and clearing it, rundown navigation, media
-// clear) than the dashboard exposes.
+// Plain browser JS, no build step — Pro Studio Remote 2.0
 ;(function () {
   const params = new URLSearchParams(window.location.search)
   const token = params.get("token")
   const wsPort = params.get("wsPort")
 
-  // The phone's own language, French or English — no settings screen on a
-  // phone remote, so it simply follows the device.
   const STRINGS = {
     en: {
       title: "Remote",
@@ -18,7 +11,7 @@
       offAir: "Nothing on screen",
       onAir: "On screen",
       clearScreen: "Clear the screen",
-      rundown: "Rundown",
+      rundown: "Rundown Stepper",
       noRundown: "No rundown loaded.",
       previous: "Previous",
       next: "Next",
@@ -31,10 +24,14 @@
       mediaScene: "Media",
       blankScene: "Blank screen",
       scene: "Scene",
+      tabLive: "On-Air",
+      tabStage: "Stage",
+      tabPad: "Scripture",
+      tabSummary: "Pack",
     },
     fr: {
       title: "Télécommande",
-      noToken: "Aucun jeton opérateur dans le lien. Copiez à nouveau le lien depuis les Paramètres de la console.",
+      noToken: "Aucun jeton opérateur dans le lien. Copiez à nouveau le lien depuis les Paramètres.",
       offAir: "Rien à l'écran",
       onAir: "À l'écran",
       clearScreen: "Effacer l'écran",
@@ -51,11 +48,15 @@
       mediaScene: "Média",
       blankScene: "Écran vide",
       scene: "Scène",
+      tabLive: "Direct",
+      tabStage: "Scène",
+      tabPad: "Écritures",
+      tabSummary: "Pack",
     },
   }
   const lang = (navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en"
   const t = (key, vars) => {
-    let value = STRINGS[lang][key] ?? STRINGS.en[key] ?? key
+    let value = STRINGS[lang]?.[key] ?? STRINGS.en[key] ?? key
     for (const [name, v] of Object.entries(vars || {})) value = value.split("{" + name + "}").join(String(v))
     return value
   }
@@ -63,9 +64,8 @@
   document.querySelectorAll("[data-t]").forEach((el) => {
     el.textContent = t(el.getAttribute("data-t"))
   })
-  document.title = t("title")
+  document.title = "ChurchOverlay — " + t("title")
 
-  // Same table as overlay.js / dashboard.js (duplicated, no build step).
   const FRENCH_BOOK_NAMES = {
     genesis: "Genèse", exodus: "Exode", leviticus: "Lévitique", numbers: "Nombres",
     deuteronomy: "Deutéronome", joshua: "Josué", judges: "Juges", ruth: "Ruth",
@@ -94,6 +94,26 @@
     return name + " " + reference.chapter + ":" + reference.verse
   }
 
+  function parseVerseString(str) {
+    const match = str.trim().match(/^([\d\s\w]+?)\s+(\d+)[:\s]+(\d+)$/i)
+    if (!match) return null
+    return {
+      book: match[1].trim().toLowerCase(),
+      chapter: parseInt(match[2], 10),
+      verse: parseInt(match[3], 10),
+    }
+  }
+
+  function triggerHaptic() {
+    try {
+      if (typeof navigator !== "undefined" && navigator.vibrate) {
+        navigator.vibrate(12)
+      }
+    } catch {
+      // Ignored if restricted
+    }
+  }
+
   const noTokenEl = document.getElementById("no-token")
   const appEl = document.getElementById("app")
   const statusPillEl = document.getElementById("status-pill")
@@ -106,6 +126,31 @@
   const prevBtn = document.getElementById("prev-btn")
   const nextBtn = document.getElementById("next-btn")
   const clearMediaBtn = document.getElementById("clear-media-btn")
+  const layoutFullscreenBtn = document.getElementById("layout-fullscreen-btn")
+  const layoutLowerThirdBtn = document.getElementById("layout-lowerthird-btn")
+  const remoteTimerClockEl = document.getElementById("remote-timer-clock")
+  const timerStopBtn = document.getElementById("timer-stop-btn")
+  const timerResetBtn = document.getElementById("timer-reset-btn")
+  const stageAlertInput = document.getElementById("stage-alert-input")
+  const sendAlertBtn = document.getElementById("send-alert-btn")
+  const quickVerseInput = document.getElementById("quick-verse-input")
+  const quickVerseBtn = document.getElementById("quick-verse-btn")
+  const downloadServicePackBtn = document.getElementById("download-service-pack-btn")
+  const servicePackResult = document.getElementById("service-pack-result")
+  const servicePackText = document.getElementById("service-pack-text")
+
+  // Tab switching
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      triggerHaptic()
+      document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"))
+      document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"))
+      btn.classList.add("active")
+      const targetId = "panel-" + btn.getAttribute("data-tab")
+      const panel = document.getElementById(targetId)
+      if (panel) panel.classList.add("active")
+    })
+  })
 
   if (!token || !wsPort) {
     noTokenEl.style.display = "block"
@@ -113,7 +158,8 @@
     return
   }
 
-  let currentRundownState = null // last rundown:state payload, or null
+  let currentRundownState = null
+  let activeWs = null
 
   function setStatus(text, state) {
     statusTextEl.textContent = text
@@ -155,9 +201,6 @@
     prevBtn.disabled = false
     nextBtn.disabled = false
 
-    // rundown:state only ever carries the CURRENT scene (ARCHITECTURE.md
-    // section 64.4), not the whole list — this page only shows what is
-    // active right now; authoring stays the desktop dashboard's job.
     const chip = document.createElement("div")
     chip.className = "scene-chip active" + (currentRundownState.interrupted ? " interrupted" : "")
     chip.textContent = sceneSummary(currentRundownState.scene)
@@ -166,6 +209,7 @@
 
   function sendJson(ws, message) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return
+    triggerHaptic()
     ws.send(JSON.stringify(message))
   }
 
@@ -179,12 +223,16 @@
     return delay
   }
 
+  function formatTime(seconds) {
+    const m = Math.floor(Math.abs(seconds) / 60)
+    const s = Math.abs(seconds) % 60
+    return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`
+  }
+
   function connect() {
     setStatus(t("connecting"), "disconnected")
-    // The phone reached this page via the machine's LAN address already
-    // (window.location.hostname) — the WS server runs on the same
-    // machine, a different port, so no separate host param is needed.
     const ws = new WebSocket("ws://" + window.location.hostname + ":" + wsPort, [token])
+    activeWs = ws
 
     ws.addEventListener("open", () => {
       reconnectAttempts = 0
@@ -206,18 +254,104 @@
       if (message.type === "rundown:state") {
         currentRundownState = message.payload
         renderSceneList()
-      } else if (message.type === "verse:show" && message.payload && message.payload.reference) {
+      } else if (message.type === "verse:show" && message.payload?.reference) {
         renderOnScreen(referenceText(message.payload.reference, message.payload.translation))
       } else if (message.type === "verse:clear") {
         renderOnScreen(null)
+      } else if (message.type === "timer:state" && message.payload) {
+        if (remoteTimerClockEl) {
+          remoteTimerClockEl.textContent = (message.payload.isOvertime ? "+ " : "") + formatTime(message.payload.remainingSeconds)
+          remoteTimerClockEl.classList.toggle("overtime", Boolean(message.payload.isOvertime))
+        }
       }
     })
 
-    const command = (type) => () => sendJson(ws, { id: crypto.randomUUID(), type, timestamp: Date.now(), payload: null })
-    clearVerseBtn.onclick = command("verse:clear")
-    prevBtn.onclick = command("scene:previous")
-    nextBtn.onclick = command("scene:next")
-    clearMediaBtn.onclick = command("media:clear")
+    const sendCmd = (type, payload = null) => () => {
+      sendJson(ws, { id: crypto.randomUUID(), type, timestamp: Date.now(), payload })
+    }
+
+    clearVerseBtn.onclick = sendCmd("verse:clear")
+    prevBtn.onclick = sendCmd("scene:previous")
+    nextBtn.onclick = sendCmd("scene:next")
+    clearMediaBtn.onclick = sendCmd("media:clear")
+
+    layoutFullscreenBtn.onclick = () => sendJson(ws, { id: crypto.randomUUID(), type: "layout:set", timestamp: Date.now(), payload: { layout: "fullscreen" } })
+    layoutLowerThirdBtn.onclick = () => sendJson(ws, { id: crypto.randomUUID(), type: "layout:set", timestamp: Date.now(), payload: { layout: "lower-third" } })
+
+    timerStopBtn.onclick = sendCmd("timer:stop")
+    timerResetBtn.onclick = sendCmd("timer:reset")
+
+    document.querySelectorAll(".timer-preset-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const min = parseInt(btn.getAttribute("data-min"), 10) || 30
+        sendJson(ws, { id: crypto.randomUUID(), type: "timer:start", timestamp: Date.now(), payload: { durationMinutes: min, title: "Sermon" } })
+      })
+    })
+
+    document.querySelectorAll(".alert-quick-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const msg = btn.getAttribute("data-msg")
+        sendJson(ws, { id: crypto.randomUUID(), type: "stage:alert", timestamp: Date.now(), payload: { message: msg } })
+      })
+    })
+
+    sendAlertBtn.onclick = () => {
+      const msg = stageAlertInput.value.trim()
+      if (!msg) return
+      sendJson(ws, { id: crypto.randomUUID(), type: "stage:alert", timestamp: Date.now(), payload: { message: msg } })
+      stageAlertInput.value = ""
+    }
+
+    const fireVerse = (refStr) => {
+      const ref = parseVerseString(refStr)
+      if (ref) {
+        sendJson(ws, { id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: ref })
+      }
+    }
+
+    quickVerseBtn.onclick = () => {
+      const val = quickVerseInput.value.trim()
+      if (val) fireVerse(val)
+    }
+
+    document.querySelectorAll(".verse-preset-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const refStr = btn.getAttribute("data-ref")
+        if (refStr) fireVerse(refStr)
+      })
+    })
+
+    document.querySelectorAll(".outline-preset-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const pointNumber = parseInt(btn.getAttribute("data-num"), 10) || 1
+        const title = btn.getAttribute("data-title") || ""
+        const text = btn.getAttribute("data-text") || undefined
+        sendJson(ws, { id: crypto.randomUUID(), type: "outline:show", timestamp: Date.now(), payload: { pointNumber, title, text } })
+      })
+    })
+
+    const clearOutlineBtn = document.getElementById("clear-outline-btn")
+    if (clearOutlineBtn) {
+      clearOutlineBtn.onclick = () => {
+        sendJson(ws, { id: crypto.randomUUID(), type: "outline:clear", timestamp: Date.now(), payload: null })
+      }
+    }
+
+    downloadServicePackBtn.onclick = async () => {
+      try {
+        downloadServicePackBtn.textContent = "⏳ Generating Pack..."
+        const res = await fetch("/api/service-pack")
+        if (res.ok) {
+          const data = await res.json()
+          servicePackResult.style.display = "block"
+          servicePackText.value = `# YouTube Description:\n${data.youtubeDescription}\n\n# Service Analytics:\nDuration: ${data.analytics?.serviceDurationMinutes}m | WPM: ${data.analytics?.speechRateWpm}\nVerses Quoted: ${data.analytics?.uniqueVersesCount}`
+        }
+      } catch (err) {
+        servicePackText.value = "Failed to load service pack."
+      } finally {
+        downloadServicePackBtn.textContent = "📦 Generate Service Summary Pack"
+      }
+    }
   }
 
   renderOnScreen(null)

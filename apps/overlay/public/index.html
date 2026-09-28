@@ -471,6 +471,74 @@
     height: 100%;
     object-fit: cover;
   }
+  /*
+    Sermon Outline Point Lower-Third Presentation Layer
+  */
+  #outline-layer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 8%;
+    z-index: 2;
+    display: flex;
+    justify-content: center;
+    padding: 0 6%;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(16px);
+    transition: opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1), transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  #outline-layer.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  #outline-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 950px;
+    padding: 22px 38px;
+    border-radius: 18px;
+    background: linear-gradient(180deg, var(--scrim), rgba(6, 7, 10, 0.52));
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(230, 194, 122, 0.25);
+  }
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    #outline-card {
+      -webkit-backdrop-filter: blur(16px) saturate(120%);
+      backdrop-filter: blur(16px) saturate(120%);
+    }
+  }
+  #outline-badge {
+    display: inline-block;
+    padding: 4px 14px;
+    border-radius: 999px;
+    background: rgba(230, 194, 122, 0.16);
+    border: 1px solid rgba(230, 194, 122, 0.4);
+    color: var(--accent);
+    font-family: "Instrument Sans", -apple-system, sans-serif;
+    font-size: clamp(11px, 1.2vw, 15px);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  #outline-title {
+    color: #ffffff;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.85);
+    font-family: "Instrument Serif", Georgia, serif;
+    font-size: clamp(24px, 3.2vw, 42px);
+    font-weight: 400;
+    line-height: 1.2;
+    text-align: center;
+  }
+  #outline-text {
+    color: rgba(255, 255, 255, 0.85);
+    font-family: "Instrument Sans", -apple-system, sans-serif;
+    font-size: clamp(14px, 1.6vw, 20px);
+    margin-top: 6px;
+    text-align: center;
+  }
 </style>
 </head>
 <body>
@@ -491,6 +559,13 @@
       <div id="verse-ref-row">
         <div id="verse-reference"></div>
       </div>
+    </div>
+  </div>
+  <div id="outline-layer">
+    <div id="outline-card">
+      <div id="outline-badge"></div>
+      <div id="outline-title"></div>
+      <div id="outline-text"></div>
     </div>
   </div>
   <div id="announcement">
