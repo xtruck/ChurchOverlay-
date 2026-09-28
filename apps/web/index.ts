@@ -162,7 +162,8 @@ async function main() {
 
   // Static serving for Media
   app.get("/media/:id", (req: Request, res: Response) => {
-    const filePath = req.params.id ? mediaLibrary.resolveFilePath(req.params.id) : null
+    const id = typeof req.params.id === "string" ? req.params.id : Array.isArray(req.params.id) ? req.params.id[0] : ""
+    const filePath = id ? mediaLibrary.resolveFilePath(id) : null
     if (!filePath) {
       res.status(404).send("Media not found")
       return
@@ -318,11 +319,12 @@ async function main() {
 
   app.delete("/api/media/:id", async (req: Request, res: Response) => {
     try {
-      if (!req.params.id) {
+      const id = typeof req.params.id === "string" ? req.params.id : Array.isArray(req.params.id) ? req.params.id[0] : ""
+      if (!id) {
         res.status(400).json({ error: "Missing id" })
         return
       }
-      await mediaLibrary.remove(req.params.id)
+      await mediaLibrary.remove(id)
       res.json({ success: true })
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) })

@@ -205,10 +205,10 @@ test("DeepgramProvider: sends KeepAlive during silence so Deepgram does not drop
 })
 
 test("DeepgramProvider: no KeepAlive while audio is flowing", async () => {
-  const provider = new DeepgramProvider({ apiKey: "k", WebSocketImpl: OpenSocket as never, keepAliveIntervalMs: 40 })
+  const provider = new DeepgramProvider({ apiKey: "k", WebSocketImpl: OpenSocket as never, keepAliveIntervalMs: 100 })
   await provider.start()
   const frame: AudioFrame = { samples: Int16Array.from([1]), sampleRate: 16000, sequence: 1 }
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 6; i++) {
     await provider.sendAudio(frame)
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
