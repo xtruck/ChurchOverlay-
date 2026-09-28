@@ -53,6 +53,8 @@
       "apps/desktop/renderer/**/*.css",
       "apps/overlay/public/**/*",
       "apps/remote/public/**/*",
+      "apps/stage/public/**/*",
+      "apps/live/public/**/*",
       "apps/server/verse/data/**/*",
       "package.json",
       "!**/*.test.js",

@@ -24,6 +24,8 @@ import {
 import { Logger } from "../../packages/shared/logger"
 import { HybridAsrProvider } from "../server/asr/hybrid-provider"
 import { GLOSSARY } from "../server/glossary/glossary"
+import { getCrossReferences, prefetchCrossReferences } from "../server/verse/cross-reference-engine"
+import { analyzeSermonFlow } from "../server/ai/sermon-flow-analyzer"
 import type { DisplayMode, VerseConfirmationMode, MediaCueKind } from "../../packages/contracts"
 
 export type UiLanguage = "en" | "fr"
@@ -349,11 +351,16 @@ async function main() {
     res.json({ entries })
   })
 
-  // Post-Service AI Pack: YouTube Timestamps, Analytics, and Social Quote Cards
+  // Post-Service AI Pack: YouTube Timestamps, Analytics, Homiletic Flow, and Social Quote Cards
   app.get("/api/service-pack", (_req: Request, res: Response) => {
     const entries = appCoreHandle?.getSessionEntries() || []
     const youtubeDescription = buildYouTubeDescription(entries)
     const analytics = generatePreachingAnalytics(entries)
+    const sermonSegments = entries.map((e, idx) => ({
+      timestampMs: e.timestamp,
+      text: `${e.reference.book} ${e.reference.chapter}:${e.reference.verse} ${e.text}`,
+    }))
+    const sermonFlow = analyzeSermonFlow(sermonSegments)
     const topVerse = entries[0]
     const quoteCardSvg = topVerse
       ? generateSocialQuoteCardSvg(
@@ -364,6 +371,7 @@ async function main() {
     res.json({
       youtubeDescription,
       analytics,
+      sermonFlow,
       quoteCardSvg,
       entriesCount: entries.length,
     })
@@ -394,7 +402,31 @@ async function main() {
         res.status(404).json({ error: "Verse text not found in current translation" })
         return
       }
+      // Predictively warm the cache with parallel scriptures
+      prefetchCrossReferences(ref, localizedVerseSource).catch(() => {})
       res.json({ reference: ref, verse })
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  // Thematic cross-reference suggestions
+  app.get("/api/verse/cross-references", async (req: Request, res: Response) => {
+    try {
+      const q = typeof req.query.q === "string" ? req.query.q.trim() : ""
+      if (!q) {
+        res.status(400).json({ error: "Missing query parameter 'q'" })
+        return
+      }
+      const detector = new RegexDetector()
+      const refs = detector.detect(q)
+      const ref = refs[0]
+      if (!ref) {
+        res.status(404).json({ error: "No recognizable verse reference" })
+        return
+      }
+      const crossRefs = getCrossReferences(ref)
+      res.json({ reference: ref, crossReferences: crossRefs })
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
     }
