@@ -210,6 +210,7 @@ export class FailoverAsrProvider implements AsrProvider {
       this.activeProvider = this.secondary
       this.failoverCallback?.(this.secondaryLabel)
     } catch (error) {
+      this.activeProvider = this.primary
       this.switching = false
       this.errorCallback?.(error instanceof Error ? error : new Error(String(error)))
       throw error

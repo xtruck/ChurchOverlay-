@@ -4017,3 +4017,78 @@ test("AppCore: partial transcripts never reach the quote matcher", async () => {
     await app.stop()
   }
 })
+
+test("AppCore: isolated bare book name without numbers does NOT fire near-miss warning", async () => {
+  const lines: unknown[] = []
+  const logger = new Logger({ minLevel: "warn", write: (line) => lines.push(JSON.parse(line)) })
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger,
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+
+    // A single bare book name without any number or chapter/verse keyword
+    // is common preaching vocabulary and must NOT flood near-miss logs.
+    asr.emitTranscript({
+      id: "01T",
+      correlationId: "01A",
+      sequence: 1,
+      text: "Psaume",
+      state: "final",
+      timestamp: Date.now(),
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const nearMissLogs = lines.filter((l) => (l as { event: string }).event === "detector.near-miss")
+    assert.equal(nearMissLogs.length, 0, "bare book name without numbers must not log near-miss")
+
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: audio frame error logging is throttled across rapid consecutive failures", async () => {
+  const lines: unknown[] = []
+  const logger = new Logger({ minLevel: "error", write: (line) => lines.push(JSON.parse(line)) })
+  class FailingAsrProvider extends FakeAsrProvider {
+    override async sendAudio(): Promise<void> {
+      throw new Error("Provider simulated offline error")
+    }
+  }
+  const asr = new FailingAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger,
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    // Send 30 audio frames in rapid succession
+    for (let i = 0; i < 30; i++) {
+      operatorSocket.send(
+        encodeAudioFrame({ samples: Int16Array.from(new Array(160).fill(5000)), sampleRate: 16000, sequence: i })
+      )
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    const errorLogs = lines.filter((l) => (l as { event: string }).event === "audio-frame.failed")
+    // Throttled: must be logged at most once in this short time window, not 30 times
+    assert.equal(errorLogs.length, 1, "audio frame error logs must be throttled to prevent spam")
+
+    operatorSocket.close()
+  } finally {
+    await app.stop()
+  }
+})

@@ -375,6 +375,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const RECENT_NEAR_MISS_LIMIT = 20
   const RECENT_NEAR_MISS_WINDOW_MS = 30_000
   let recentNearMisses: Array<{ text: string; timestamp: number }> = []
+  let lastNearMissText = ""
+  let lastNearMissTime = 0
   let asrHasError = false
   let asrIsThrottled = false
   let asrRateLimitedSustained = false
@@ -423,6 +425,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       }, sermonNotesIntervalMs)
     : null
 
+  let lastAudioFrameErrorLogTime = 0
+  let suppressedAudioFrameErrors = 0
+
   const wsServer = new ChurchOverlayWsServer({
     host: options.host,
     port: options.port,
@@ -439,13 +444,21 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       )
     },
     onAudioFrame: (frame) => {
-      handleAudioFrame(frame).catch((err) =>
-        logger.error({
-          component: "app-core",
-          event: "audio-frame.failed",
-          error: err instanceof Error ? err.message : String(err),
-        })
-      )
+      handleAudioFrame(frame).catch((err) => {
+        const now = Date.now()
+        suppressedAudioFrameErrors++
+        if (now - lastAudioFrameErrorLogTime >= 3000) {
+          lastAudioFrameErrorLogTime = now
+          const count = suppressedAudioFrameErrors
+          suppressedAudioFrameErrors = 0
+          logger.error({
+            component: "app-core",
+            event: "audio-frame.failed",
+            error: err instanceof Error ? err.message : String(err),
+            ...(count > 1 ? { metadata: { suppressedOccurrences: count - 1 } } : {}),
+          })
+        }
+      })
     },
     onRejected: (reason, role) => {
       logger.warn({ component: "ws", event: "message.rejected", metadata: { reason, role } })
@@ -1647,14 +1660,20 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // unchanged, so a successfully detected utterance still does NOT log a
     // near-miss.
     const hasChapterVerseKeywords = /chapitre|chapter|verset|verse/i.test(transcript.text)
+    const hasReferenceNumbers = /\d+|premier|première|deuxième|troisième|quatrième|cinquième|one|two|three|four|five|six|seven|eight|nine|ten/i.test(transcript.text)
+    const isNearMissCandidate = hasChapterVerseKeywords || (containsCatalogBookName(transcript.text) && hasReferenceNumbers)
     const detectorRefs = detector.detect(transcript.text)
     const validatedRefs = detectorRefs.filter((r) => index.exists(r))
     const navCommands = navigationCommandDetector.detect(transcript.text)
+    const now = Date.now()
     if (
-      (hasChapterVerseKeywords || containsCatalogBookName(transcript.text)) &&
+      isNearMissCandidate &&
       validatedRefs.length === 0 &&
-      navCommands.length === 0
+      navCommands.length === 0 &&
+      (transcript.text !== lastNearMissText || now - lastNearMissTime > 5000)
     ) {
+      lastNearMissText = transcript.text
+      lastNearMissTime = now
       logger.warn({
         component: "app-core",
         event: "detector.near-miss",

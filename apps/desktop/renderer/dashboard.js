@@ -1941,9 +1941,10 @@
       ws.send(encodeAudioFrame(pcm16, sequence))
     }
 
+    // Send mic:start command so the backend ASR and calibration initialize before first audio frame
+    sendJson({ id: crypto.randomUUID(), type: "mic:start", timestamp: Date.now(), payload: null })
     source.connect(workletNode)
 
-    sendJson({ id: crypto.randomUUID(), type: "mic:start", timestamp: Date.now(), payload: null })
     micStartBtn.disabled = true
     micStopBtn.disabled = false
     micVisualEl.classList.add("active")
@@ -1951,16 +1952,16 @@
   }
 
   async function stopMic() {
-    sendJson({ id: crypto.randomUUID(), type: "mic:stop", timestamp: Date.now(), payload: null })
-
     if (mediaStream) {
       mediaStream.getTracks().forEach((track) => track.stop())
       mediaStream = null
     }
     if (audioContext) {
-      await audioContext.close()
+      await audioContext.close().catch(() => {})
       audioContext = null
     }
+    sendJson({ id: crypto.randomUUID(), type: "mic:stop", timestamp: Date.now(), payload: null })
+
     micStartBtn.disabled = false
     micStopBtn.disabled = true
     micVisualEl.classList.remove("active")
