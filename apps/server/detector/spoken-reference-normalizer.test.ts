@@ -17,6 +17,8 @@ test("parseNumberWords: French and English compounds, back-to-back numbers stay 
   assert.equal(value("soixante-dix-sept"), 77)
   assert.equal(value("soixante et onze"), 71)
   assert.equal(value("quatre-vingt-dix-neuf"), 99)
+  assert.equal(value("nonante et un"), 91)
+  assert.equal(value("septante-cinq"), 75)
   assert.equal(value("cent soixante-seize"), 176)
   assert.equal(value("twenty one"), 21)
   assert.equal(value("one hundred and nineteen"), 119)

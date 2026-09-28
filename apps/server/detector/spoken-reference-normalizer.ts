@@ -75,6 +75,7 @@ const UNITS: Readonly<Record<string, number>> = {
 }
 const TENS: Readonly<Record<string, number>> = {
   vingt: 20, trente: 30, quarante: 40, cinquante: 50, soixante: 60,
+  septante: 70, octante: 80, huitante: 80, nonante: 90,
   twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90,
 }
 const HUNDRED = new Set(["cent", "cents", "hundred"])
