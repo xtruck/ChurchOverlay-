@@ -10,3 +10,8 @@ release/
 data/
 test-results/
 live-tests/
+
+# Local AI-assistant settings
+.claude/
+.windsurf/
+.github/copilot-instructions.md
