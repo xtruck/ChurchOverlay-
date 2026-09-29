@@ -940,6 +940,20 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
    * so a long rundown never causes a request burst (AGENTS.md sections 36-37);
    * a newer rundown:load abandons an older prefetch.
    */
+  /**
+   * ARCHITECTURE.md section 104: biases the ASR toward exactly the books
+   * this rundown's verse scenes reference — a lexical-bias hint only
+   * (identical guarantee to setCurrentVerseRef, AGENTS.md section 9: never
+   * invents a confidence, never influences detection/validation). A no-op
+   * when the active provider does not implement setPlannedBooks (e.g. Groq,
+   * whose static prompt already names every book).
+   */
+  function applyPlannedBooks(rundown: Rundown): void {
+    if (!("setPlannedBooks" in asr) || typeof asr.setPlannedBooks !== "function") return
+    const bookIds = [...new Set(rundown.scenes.flatMap((scene) => (scene.kind === "verse" ? [scene.reference.book] : [])))]
+    asr.setPlannedBooks(bookIds)
+  }
+
   function prefetchRundownVerses(rundown: Rundown, correlationId?: string): void {
     const generation = ++rundownPrefetchGeneration
     const references = rundown.scenes
@@ -1352,6 +1366,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         if (state) {
           await activateScene(state, message.correlationId)
           prefetchRundownVerses(rundown, message.correlationId)
+          applyPlannedBooks(rundown)
         } else {
           logger.info({
             component: "app-core",

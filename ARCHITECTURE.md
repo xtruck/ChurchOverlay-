@@ -5314,3 +5314,34 @@ makes the model insert them where they were never said.
 **Boundary check.** No new WS command or event, no provider change, no bypass
 of `KnownValidVerseIndex`; partial transcripts still never reach detection
 (covered by a test that a partial records no latency).
+
+## 104. Planned-Book ASR Bias for a Loaded Service Rundown
+
+**Why.** A loaded Service Rundown is the operator's own confirmed plan for the
+service — unlike blind global vocabulary boosting, it is safe to bias
+recognition toward exactly the books it names, common ones included.
+
+**What.** `AsrProvider.setPlannedBooks?(bookIds)` — an optional method,
+identical guarantee to `setCurrentVerseRef`: a lexical-bias hint only, never
+influences detection, validation, or the hallucination guard (AGENTS.md
+sections 8-9, 13-14).
+- `plannedBookTerms()` (`server/asr/biblical-vocabulary.ts`) maps canonical
+  book ids to a display name (French where `FRENCH_BOOK_ALIASES` has one,
+  English name from `BOOK_CATALOG` otherwise), deduplicated.
+- `DeepgramProvider.setPlannedBooks()` stores the ids and adds their terms as
+  extra `keyterm`/`keywords` query parameters — capped at 15 — the next time
+  `buildUrl()` runs, i.e. the next `start()`. It never forces a live
+  reconnect, so audio already streaming mid-service is never interrupted.
+- `FailoverAsrProvider` forwards it to both sides immediately (both already
+  exist as objects; each provider applies it at its own next connect).
+- `GroqProvider` does not implement it: its static prompt already names all
+  66 books (`buildPrompt()`), so a planned-book addition would be redundant
+  and would only spend the prompt's tight 224-token budget for nothing.
+- `AppCore.applyPlannedBooks()` calls it on `rundown:load`, deduplicated,
+  extracted from the rundown's own `"verse"` scenes; a harmless no-op when
+  the active provider (e.g. Groq-only) doesn't implement it.
+
+**Boundary check.** No new WS command or event, no bypass of
+`KnownValidVerseIndex`, no change to what gets detected or displayed —
+exercised by a dedicated regression test that a plain provider without the
+method is unaffected.

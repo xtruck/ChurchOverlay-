@@ -2,6 +2,7 @@ import type { AsrProvider, AudioFrame, TranscriptResult } from "../../../package
 
 type ContextAwareProvider = AsrProvider & {
   setCurrentVerseRef?(reference: string | null): void
+  setPlannedBooks?(bookIds: readonly string[]): void
   setLanguage?(language: string | undefined): void
   onError?(callback: (error: Error) => void): void
   onRateLimitedSustained?(callback: () => void): void
@@ -41,6 +42,7 @@ export class FailoverAsrProvider implements AsrProvider {
   readonly secondaryLabel: string
   private activeProvider: ContextAwareProvider
   private currentVerseRef: string | null = null
+  private plannedBookIds: readonly string[] = []
   private switching = false
   private running = false
   private activationPromise: Promise<void> | null = null
@@ -106,6 +108,13 @@ export class FailoverAsrProvider implements AsrProvider {
   setCurrentVerseRef(reference: string | null): void {
     this.currentVerseRef = reference
     this.activeProvider.setCurrentVerseRef?.(reference)
+  }
+
+  /** Stored and forwarded to both sides (matching setLanguage below) — whichever provider is active when a connection is next opened applies it. */
+  setPlannedBooks(bookIds: readonly string[]): void {
+    this.plannedBookIds = bookIds
+    this.primary.setPlannedBooks?.(bookIds)
+    this.secondary.setPlannedBooks?.(bookIds)
   }
 
   setLanguage(language: string | undefined): void {

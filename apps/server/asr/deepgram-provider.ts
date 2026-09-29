@@ -1,7 +1,7 @@
 import { WebSocket } from "ws"
 import type { AsrProvider, AudioFrame, TranscriptResult } from "../../../packages/contracts"
 import { generateUlid } from "../../../packages/shared/ulid"
-import { biblicalVocabularyFor } from "./biblical-vocabulary"
+import { biblicalVocabularyFor, plannedBookTerms } from "./biblical-vocabulary"
 
 const DEFAULT_MODEL = "nova-2"
 const DEFAULT_URL = "wss://api.deepgram.com/v1/listen"
@@ -21,6 +21,13 @@ const DEFAULT_KEEPALIVE_MS = 4000
  * real preaching without noticeably delaying the final.
  */
 const DEFAULT_ENDPOINTING_MS = 300
+/**
+ * ARCHITECTURE.md section 104: upper bound on planned-book keyterms added
+ * per connection — a real rundown rarely names more than a handful of
+ * distinct books, and biblical-vocabulary.ts documents why a long boost
+ * list degrades general accuracy.
+ */
+const MAX_PLANNED_BOOK_TERMS = 15
 
 export type DeepgramProviderOptions = {
   readonly apiKey: string
@@ -65,6 +72,7 @@ export class DeepgramProvider implements AsrProvider {
   private transcriptCallback: ((result: TranscriptResult) => void) | null = null
   private errorCallback: ((error: Error) => void) | null = null
   private currentVerseRef: string | null = null
+  private plannedBookIds: readonly string[] = []
 
   constructor(options: DeepgramProviderOptions) {
     if (!options.apiKey.trim()) throw new Error("DeepgramProvider requires an apiKey")
@@ -95,6 +103,18 @@ export class DeepgramProvider implements AsrProvider {
     this.currentVerseRef = reference
   }
 
+  /**
+   * ARCHITECTURE.md section 104: book ids from a loaded Service Rundown.
+   * A rundown entry is an explicit, operator-confirmed signal, so unlike
+   * the module-level biblicalVocabulary list, common book names are
+   * included here too. Deepgram fixes keyterms per connection — this takes
+   * effect on the NEXT start(), never as a live reconnect, so it never
+   * interrupts audio already streaming mid-service.
+   */
+  setPlannedBooks(bookIds: readonly string[]): void {
+    this.plannedBookIds = bookIds
+  }
+
   /** The exact streaming URL start() opens. Contains no secret — the key travels in a header. */
   buildUrl(): string {
     const query = new URLSearchParams({
@@ -107,13 +127,18 @@ export class DeepgramProvider implements AsrProvider {
       endpointing: String(this.endpointingMs),
     })
     if (this.language) query.set("language", this.language)
+    // nova-3 replaced weighted `keywords` with plain `keyterm` prompting.
+    const nova3 = this.model.startsWith("nova-3")
+    const appendTerm = (term: string) => query.append(nova3 ? "keyterm" : "keywords", nova3 ? term : `${term}:2`)
     if (this.biblicalVocabulary) {
-      // nova-3 replaced weighted `keywords` with plain `keyterm` prompting.
-      const nova3 = this.model.startsWith("nova-3")
-      for (const term of biblicalVocabularyFor(this.language)) {
-        if (nova3) query.append("keyterm", term)
-        else query.append("keywords", `${term}:2`)
-      }
+      for (const term of biblicalVocabularyFor(this.language)) appendTerm(term)
+    }
+    const planned = new Set(plannedBookTerms(this.plannedBookIds, this.language))
+    let count = 0
+    for (const term of planned) {
+      if (count >= MAX_PLANNED_BOOK_TERMS) break
+      appendTerm(term)
+      count++
     }
     return `${this.url}?${query.toString()}`
   }

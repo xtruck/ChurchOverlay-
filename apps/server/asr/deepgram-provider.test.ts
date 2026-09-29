@@ -179,6 +179,32 @@ test("DeepgramProvider: biblical vocabulary can be switched off", () => {
   assert.equal(url.searchParams.getAll("keywords").length, 0)
 })
 
+test("DeepgramProvider: setPlannedBooks boosts a rundown's own books, including common ones the static list excludes", () => {
+  const provider = new DeepgramProvider({ apiKey: "k", language: "fr", model: "nova-3" })
+  provider.setPlannedBooks(["john", "romans"])
+  const keyterms = new URL(provider.buildUrl()).searchParams.getAll("keyterm")
+  assert.ok(keyterms.includes("Jean"), "planned books include common names, unlike the static list")
+  assert.ok(keyterms.includes("Romains"))
+})
+
+test("DeepgramProvider: setPlannedBooks takes effect on the NEXT buildUrl(), never mid-connection", () => {
+  const provider = new DeepgramProvider({ apiKey: "k", language: "fr", model: "nova-3" })
+  const before = new URL(provider.buildUrl()).searchParams.getAll("keyterm")
+  assert.ok(!before.includes("Jean"))
+  provider.setPlannedBooks(["john"])
+  assert.ok(new URL(provider.buildUrl()).searchParams.getAll("keyterm").includes("Jean"))
+})
+
+test("DeepgramProvider: setPlannedBooks caps the number of added keyterms", () => {
+  const provider = new DeepgramProvider({ apiKey: "k", language: "fr", model: "nova-3" })
+  const manyBooks = ["genesis", "exodus", "leviticus", "numbers", "deuteronomy", "joshua", "judges", "ruth", "1 samuel", "2 samuel", "1 kings", "2 kings", "1 chronicles", "2 chronicles", "ezra", "nehemiah", "esther"]
+  provider.setPlannedBooks(manyBooks)
+  const before = new URL(provider.buildUrl()).searchParams.getAll("keyterm").length
+  provider.setPlannedBooks([])
+  const after = new URL(provider.buildUrl()).searchParams.getAll("keyterm").length
+  assert.ok(before - after <= 15, "planned-book terms are bounded per connection")
+})
+
 test("DeepgramProvider: onUtteranceEnd sends Finalize so the final arrives without waiting for the endpointer", async () => {
   const provider = new DeepgramProvider({ apiKey: "k", WebSocketImpl: OpenSocket as never, keepAliveIntervalMs: 0 })
   await provider.start()

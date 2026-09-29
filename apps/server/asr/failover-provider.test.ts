@@ -8,6 +8,7 @@ class FakeProvider implements AsrProvider {
   startCalls = 0
   stopCalls = 0
   verseRef: string | null = null
+  plannedBooks: readonly string[] = []
   private transcriptCallback: ((result: TranscriptResult) => void) | null = null
   private sustainedCallback: (() => void) | null = null
 
@@ -23,6 +24,7 @@ class FakeProvider implements AsrProvider {
   onTranscript(callback: (result: TranscriptResult) => void): void { this.transcriptCallback = callback }
   onRateLimitedSustained(callback: () => void): void { this.sustainedCallback = callback }
   setCurrentVerseRef(reference: string | null): void { this.verseRef = reference }
+  setPlannedBooks(bookIds: readonly string[]): void { this.plannedBooks = bookIds }
   discardBufferedAudio(): void {}
   triggerSustainedLimit(): void { this.sustainedCallback?.() }
   utteranceEnds = 0
@@ -211,4 +213,13 @@ test("FailoverAsrProvider: a switch inside a nested chain (Groq → local) reach
   await outer.sendAudio(frame(2))
   assert.deepEqual(labels, ["Groq", "local"])
   assert.deepEqual(local.frames.map((f) => f.sequence), [2])
+})
+
+test("FailoverAsrProvider: setPlannedBooks reaches both providers immediately, whichever is active", () => {
+  const primary = new FakeProvider()
+  const secondary = new FakeProvider()
+  const wrapper = new FailoverAsrProvider({ primary, secondary, trigger: "primary-error" })
+  wrapper.setPlannedBooks(["john", "romans"])
+  assert.deepEqual(primary.plannedBooks, ["john", "romans"])
+  assert.deepEqual(secondary.plannedBooks, ["john", "romans"])
 })

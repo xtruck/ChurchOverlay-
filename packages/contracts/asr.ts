@@ -19,4 +19,11 @@ export interface AsrProvider {
   sendAudio(audio: AudioFrame): Promise<void>
   stop(): Promise<void>
   onTranscript(callback: (result: TranscriptResult) => void): void
+  /**
+   * ARCHITECTURE.md section 104: canonical book ids from a loaded Service
+   * Rundown's verse scenes — a lexical-bias hint only, exactly like
+   * setCurrentVerseRef. Optional: not every provider implements it, and no
+   * caller may assume it changes what gets detected or displayed.
+   */
+  setPlannedBooks?(bookIds: readonly string[]): void
 }

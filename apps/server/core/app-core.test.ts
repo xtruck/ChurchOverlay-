@@ -32,6 +32,7 @@ class FakeAsrProvider implements AsrProvider {
   startCalls = 0
   stopCalls = 0
   sentFrames: AudioFrame[] = []
+  plannedBooks: readonly string[] | null = null
   private transcriptCallback: ((result: TranscriptResult) => void) | null = null
   private errorCallback: ((error: Error) => void) | null = null
   private sustainedCallback: (() => void) | null = null
@@ -62,6 +63,9 @@ class FakeAsrProvider implements AsrProvider {
   }
   emitTranscript(result: TranscriptResult): void {
     this.transcriptCallback?.(result)
+  }
+  setPlannedBooks(bookIds: readonly string[]): void {
+    this.plannedBooks = bookIds
   }
 }
 
@@ -4194,6 +4198,74 @@ test("AppCore: rundown:load prefetches every verse scene so stepping to one need
     assert.equal(verseShow?.type, "verse:show")
     assert.equal(source.requested.length, 2, "served from the warmed cache")
 
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: rundown:load biases the ASR toward exactly this rundown's own books (a lexical hint, never a display bypass)", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    assert.equal(asr.plannedBooks, null)
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const rundown: Rundown = {
+      id: "01RUNDOWN",
+      title: "Sunday Service",
+      scenes: [
+        { kind: "announcement", title: "Welcome", body: "Glad you're here." },
+        { kind: "verse", reference: { book: "john", chapter: 3, verse: 16 } },
+        { kind: "verse", reference: { book: "romans", chapter: 8, verse: 28 } },
+        { kind: "verse", reference: { book: "john", chapter: 1, verse: 1 } },
+      ],
+    }
+    operatorSocket.send(JSON.stringify({ id: "01A", type: "rundown:load", timestamp: Date.now(), payload: { rundown } }))
+    await waitFor(() => asr.plannedBooks !== null)
+    assert.deepEqual(asr.plannedBooks, ["john", "romans"], "deduplicated, non-verse scenes excluded")
+    operatorSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: rundown:load is a harmless no-op for an ASR provider that does not implement setPlannedBooks", async () => {
+  class PlainAsrProvider {
+    async start(): Promise<void> {}
+    async sendAudio(): Promise<void> {}
+    async stop(): Promise<void> {}
+    onTranscript(): void {}
+  }
+  const app = await startAppCore({
+    asr: new PlainAsrProvider() as unknown as AsrProvider,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const rundown: Rundown = {
+      id: "01RUNDOWN",
+      title: "Sunday Service",
+      scenes: [{ kind: "verse", reference: { book: "john", chapter: 3, verse: 16 } }],
+    }
+    const shown = waitForMessages(viewerSocket, 2)
+    operatorSocket.send(JSON.stringify({ id: "01A", type: "rundown:load", timestamp: Date.now(), payload: { rundown } }))
+    const [, content] = await shown
+    assert.equal(content?.type, "verse:show", "rundown load still activates the scene normally")
     operatorSocket.close()
     viewerSocket.close()
   } finally {
