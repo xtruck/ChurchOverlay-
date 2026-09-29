@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { RegexDetector, normalizeBookName } from "./regex-detector"
+import { RegexDetector, normalizeBookName, FRENCH_BOOK_ALIASES, PHONETIC_BOOK_ALIASES, CATALOG_IDS } from "./regex-detector"
 
 test("RegexDetector: detects a single valid 'Book Chapter:Verse' reference", () => {
   const detector = new RegexDetector()
@@ -178,4 +178,60 @@ test("RegexDetector: detects two further live-observed Habakkuk mishearings (202
   const detector = new RegexDetector()
   assert.deepEqual(detector.detect("Bakouk 5 verset 6"), [{ book: "habakkuk", chapter: 5, verse: 6 }])
   assert.deepEqual(detector.detect("Babouct 5 verset 6"), [{ book: "habakkuk", chapter: 5, verse: 6 }])
+})
+
+// ARCHITECTURE.md section 105: comprehensive, proactive phonetic and
+// grammatical-number tolerance for all 66 books, across both languages —
+// requested directly (not waiting for each individual live miss).
+test("normalizeBookName: grammatical singular/plural mismatches resolve in both languages", () => {
+  assert.equal(normalizeBookName("Psalms"), "psalm")
+  assert.equal(normalizeBookName("Proverb"), "proverbs")
+  assert.equal(normalizeBookName("Proverbe"), "proverbs")
+  assert.equal(normalizeBookName("Revelations"), "revelation")
+  assert.equal(normalizeBookName("Lamentation"), "lamentations")
+  assert.equal(normalizeBookName("1 Chronicle"), "1 chronicles")
+  assert.equal(normalizeBookName("1 Chronique"), "1 chronicles")
+  assert.equal(normalizeBookName("2 Corinthian"), "2 corinthians")
+  assert.equal(normalizeBookName("Ephesian"), "ephesians")
+  assert.equal(normalizeBookName("Philippien"), "philippians")
+  assert.equal(normalizeBookName("Colossian"), "colossians")
+  assert.equal(normalizeBookName("1 Thessalonian"), "1 thessalonians")
+})
+
+test("normalizeBookName: further live-observed mishearings from this session's log (2026-09-29)", () => {
+  assert.equal(normalizeBookName("Théorème"), "deuteronomy")
+  assert.equal(normalizeBookName("Théonome"), "deuteronomy")
+  assert.equal(normalizeBookName("Écrisage"), "ecclesiastes")
+  assert.equal(normalizeBookName("Phélemone"), "philemon")
+  assert.equal(normalizeBookName("1 Saloniciens"), "1 thessalonians")
+})
+
+test("normalizeBookName: common French 'H'-drop and phonetic-equivalent mishearings", () => {
+  assert.equal(normalizeBookName("Neemie"), "nehemiah") // Néhémie, H dropped
+  assert.equal(normalizeBookName("Ester"), "esther") // H dropped
+  assert.equal(normalizeBookName("Esdra"), "ezra") // trailing consonant dropped
+  assert.equal(normalizeBookName("Sofonie"), "zephaniah") // Sophonie, "ph" = "f"
+  assert.equal(normalizeBookName("Agee"), "haggai") // Aggée, single g
+  assert.equal(normalizeBookName("Mathieu"), "matthew") // the common given-name spelling
+})
+
+test("normalizeBookName: FRENCH_BOOK_ALIASES and PHONETIC_BOOK_ALIASES never disagree on a shared key", () => {
+  for (const [key, id] of Object.entries(PHONETIC_BOOK_ALIASES)) {
+    if (key in FRENCH_BOOK_ALIASES) {
+      assert.equal(FRENCH_BOOK_ALIASES[key], id, `"${key}" maps differently in each table`)
+    }
+    assert.ok(CATALOG_IDS.has(id), `PHONETIC_BOOK_ALIASES["${key}"] = "${id}" is not a real book id`)
+  }
+})
+
+test("normalizeBookName: every FRENCH_BOOK_ALIASES and PHONETIC_BOOK_ALIASES entry round-trips through normalizeBookName", () => {
+  for (const [key, id] of Object.entries({ ...FRENCH_BOOK_ALIASES, ...PHONETIC_BOOK_ALIASES })) {
+    assert.equal(normalizeBookName(key), id, `normalizeBookName("${key}") should be "${id}"`)
+  }
+})
+
+test("RegexDetector: a phonetic book-name alias still produces a full detected reference, not just a normalized name", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("Psalms 23:1"), [{ book: "psalm", chapter: 23, verse: 1 }])
+  assert.deepEqual(detector.detect("Écrisage 2 le verset 3"), [{ book: "ecclesiastes", chapter: 2, verse: 3 }])
 })

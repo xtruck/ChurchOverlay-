@@ -5345,3 +5345,60 @@ sections 8-9, 13-14).
 `KnownValidVerseIndex`, no change to what gets detected or displayed —
 exercised by a dedicated regression test that a plain provider without the
 method is unaffected.
+
+## 105. Comprehensive Phonetic and Grammatical-Number Book-Name Tolerance
+
+**Why.** Requested directly: rather than waiting for each book's own mishearing
+to surface one at a time in a live log (the pattern sections 102/149 and the
+two Habakkuk fixes earlier this session followed), proactively cover common
+mishearings and singular/plural mismatches across all 66 books, in French and
+English, before they cause a missed detection in a real service.
+
+**What.** `PHONETIC_BOOK_ALIASES` (`server/detector/regex-detector.ts`) — a
+second alias tier, deliberately separate from `FRENCH_BOOK_ALIASES` (each
+book's one correct French name). Two evidence classes, cited per entry:
+- **Observed live** — an exact mishearing from a real session's log (this
+  session's: "Théorème"/"Théonome" for Deutéronome, "Écrisage" for
+  Ecclésiaste, "Phélemone" for Philémon, "saloniciens" for Thessaloniciens).
+- **Grammatical** — the canonical id's number (singular/plural) doesn't match
+  the near-universal spoken form: English "Psalms" (plural) vs. the id's own
+  singular "psalm"; "Revelations" (a very common everyday English
+  mis-pluralization) vs. the actually-singular "Revelation"; "1 Chronicle" /
+  "1 Chronique" (singular) vs. the always-plural id; the same singular
+  pattern for Corinthians/Ephesians/Philippians/Colossians/Thessalonians in
+  both languages.
+
+`normalizeBookName()` now checks `FRENCH_BOOK_ALIASES`, then
+`PHONETIC_BOOK_ALIASES`, before falling through to the identity/English-id
+case — unchanged shape, one more tier.
+
+**Deliberately excluded.**
+- Short, already-common-word books (Job, Ruth, Acts, Judges, Kings, Numbers,
+  Hebrew) — `FRENCH_BOOK_ALIASES` already accepts real-word collisions there
+  (jean/marc/luc/actes/romains/jacques/pierre/hebreux), gated only by the
+  surrounding "BOOK N:M" pattern; a second common-word alias for the same
+  book only compounds that risk for no demonstrated gap.
+- "Esther" -> "Easter": the French "H"-drop pattern (`ester`) was added, but
+  the equivalent English alias was not — "Easter" is a real, unrelated word
+  one edit away, and that specific collision is worth avoiding even at this
+  pattern's low overall risk.
+- "Song of Solomon": out of scope for an alias table. The detector's book
+  group only ever captures one (optionally numeral-prefixed) word (this
+  file's class doc comment); no alias, single-word or not, can make a
+  three-word title match — that needs a regex change, a separate concern.
+
+**Verified before committing** (temporary probe scripts, deleted after use,
+matching section 102's own precedent): every `PHONETIC_BOOK_ALIASES` entry
+resolves to a real `BOOK_CATALOG` id and never disagrees with
+`FRENCH_BOOK_ALIASES` on a shared key; a battery of ordinary French/English
+words that could plausibly precede "N:M" in ordinary speech (chapitre,
+section, titre, hebrew, job, king, act, easter, …) does not accidentally
+resolve to a book. What stays: the regression test set in
+`regex-detector.test.ts`, including a round-trip check over every entry in
+both alias tables.
+
+**Boundary check.** No new WS command/event, no bypass of
+`KnownValidVerseIndex` — an alias only changes which `book` string a
+detected reference carries; the chapter/verse combination is still
+validated downstream exactly as before, so a wrong or absent alias still
+never produces displayed content on its own.

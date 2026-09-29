@@ -310,16 +310,147 @@ export const FRENCH_BOOK_ALIASES: Readonly<Record<string, string>> = {
 }
 
 /**
+ * ARCHITECTURE.md section 105: a second, deliberately separate tier from
+ * FRENCH_BOOK_ALIASES above. That table holds each book's ONE correct
+ * French name; this one holds known-common MISHEARINGS and grammatical-
+ * number mismatches (singular spoken where the id is plural, or vice
+ * versa) in either language — kept apart so the "this is the correct
+ * French name" table stays exactly that, and so each entry here can be
+ * reasoned about and reviewed on its own terms.
+ *
+ * Two evidence sources, both cited per entry:
+ *   - "Observed live" — an exact mishearing seen in a real session's log
+ *     (the same standard section 102/section 149's habakkuk aliases used).
+ *   - "Grammatical" — the canonical id is singular/plural in a way a
+ *     natural spoken sentence routinely isn't (e.g. English "Psalms" is
+ *     the near-universal spoken plural, but BOOK_CATALOG's id is the
+ *     singular "psalm"; "1 Chronicle" is a plausible singular mishearing
+ *     of the always-plural "1 Chronicles"). Not a guess about mishearing
+ *     patterns — a fact about the two ordinary word forms in question.
+ *
+ * Short, high-collision-risk books (Job, Ruth, Acts, Judges, Kings, Numbers,
+ * Hebrew) are deliberately left alone: FRENCH_BOOK_ALIASES already accepts
+ * real-word collisions gated only by the surrounding "BOOK N:M" pattern
+ * (jean/marc/luc/actes/romains/jacques/pierre/hebreux), and adding a SECOND
+ * common-word alias for the same book only compounds that risk for no
+ * proven gap. "Song of Solomon" is out of scope here: the detector's own
+ * book-name group only ever captures one (optionally numeral-prefixed)
+ * word (see the class doc comment above), so no alias — one word or
+ * several — can make a three-word title match; that needs a regex change,
+ * not an alias.
+ */
+export const PHONETIC_BOOK_ALIASES: Readonly<Record<string, string>> = {
+  // Genesis — English vowel-shift mishearing.
+  genisis: "genesis",
+  // Exodus — English vowel-shift mishearing.
+  exidus: "exodus",
+  // Leviticus — English ending mishearing.
+  leviticous: "leviticus",
+  // Deuteronomy — Observed live (2026-09-29): "Théorème" and "Théonome"
+  // (a real French word and a near-word respectively) for "Deutéronome".
+  theoreme: "deuteronomy",
+  theonome: "deuteronomy",
+  // Deuteronomy — English dropped-vowel mishearing.
+  duteronomy: "deuteronomy",
+  // Joshua — English mishearing.
+  joshuah: "joshua",
+  // 1/2 Chronicles — Grammatical: the id is always plural; "chronique"
+  // (French) / "chronicle" (English) is the equally natural singular a
+  // preacher might actually say.
+  "1 chronique": "1 chronicles",
+  "2 chronique": "2 chronicles",
+  "1 chronicle": "1 chronicles",
+  "2 chronicle": "2 chronicles",
+  // Ezra — French trailing-consonant-drop mishearing ("Esdras" -> "Esdra").
+  esdra: "ezra",
+  // Nehemiah — French "H"-drop mishearing (same pattern as Habakkuk's
+  // "abacuc"/"abaku"), plus a dropped-final-vowel and an English
+  // dropped-"H" mishearing.
+  neemie: "nehemiah",
+  nehemi: "nehemiah",
+  nehemia: "nehemiah",
+  // Esther — French "H"-drop mishearing. No English alias added: "Easter"
+  // is a real, unrelated English word one "H"-drop away from "Esther",
+  // and the collision is worth avoiding even at this pattern's low risk.
+  ester: "esther",
+  // Psalm — Grammatical: "Psalms" is the near-universal spoken English
+  // plural; BOOK_CATALOG's id, matching its own singular chapter-heading
+  // convention, is "psalm".
+  psalms: "psalm",
+  // Proverbs — Grammatical: the singular a preacher might say in either language.
+  proverbe: "proverbs",
+  proverb: "proverbs",
+  // Ecclesiastes — Observed live (2026-09-29): "Écrisage" for "Ecclésiaste".
+  ecrisage: "ecclesiastes",
+  // Ecclesiastes — French single-c and dropped-final-e mishearings.
+  eclesiaste: "ecclesiastes",
+  eclesiastes: "ecclesiastes",
+  // Isaiah — English dropped-"H" mishearing (mirrors "Ésaïe"/"Isaïe"
+  // already being two full French names for this book).
+  isaia: "isaiah",
+  // Jeremiah — English dropped-"H" mishearing, and the common English
+  // first name "Jeremy" (same accepted-risk shape as "Jonas"/"Joel"/
+  // "Amos"/"Jean"/"Marc" above — gated by the surrounding "N:M" pattern).
+  jeremia: "jeremiah",
+  jeremy: "jeremiah",
+  // Lamentations — Grammatical singular (same spelling in both languages).
+  lamentation: "lamentations",
+  // Zephaniah — French "ph"/"f" are pronounced identically ("Sophonie" -> "Sofonie").
+  sofonie: "zephaniah",
+  // Haggai — French single-g mishearing ("Aggée" -> "Agée").
+  agee: "haggai",
+  // Matthew — "Mathieu" (one "t") is the standard spelling of the common
+  // French GIVEN NAME, and the far more common written form than the
+  // Gospel's own "Matthieu" — same accepted-risk shape as "Jean"/"Marc"
+  // above. Also the common English misspelling "Mathew".
+  mathieu: "matthew",
+  mathew: "matthew",
+  // 1/2 Corinthians, Ephesians, Philippians, Colossians — Grammatical
+  // singular, both languages, the same reasoning as Proverbs/Chronicles
+  // above: a preacher saying "in Corinthians" as often says "in
+  // Corinthian" without the natural plural cue a bare book name lacks.
+  "1 corinthien": "1 corinthians",
+  "2 corinthien": "2 corinthians",
+  "1 corinthian": "1 corinthians",
+  "2 corinthian": "2 corinthians",
+  ephesien: "ephesians",
+  ephesian: "ephesians",
+  philippien: "philippians",
+  philippian: "philippians",
+  colossien: "colossians",
+  colossian: "colossians",
+  // 1/2 Thessalonians — Observed live (2026-09-29): "saloniciens" for
+  // "Thessaloniciens" (the leading "Thes" dropped entirely), plus the
+  // same singular-mishearing reasoning as the group above.
+  "1 saloniciens": "1 thessalonians",
+  "2 saloniciens": "2 thessalonians",
+  "1 thessalonicien": "1 thessalonians",
+  "2 thessalonicien": "2 thessalonians",
+  "1 thessalonian": "1 thessalonians",
+  "2 thessalonian": "2 thessalonians",
+  // 1/2 Timothy — French dropped-final-vowel mishearing ("Timothée" -> "Timothe").
+  "1 timothe": "1 timothy",
+  "2 timothe": "2 timothy",
+  // Philemon — Observed live (2026-09-29): "Phélemone" for "Philémon".
+  phelemone: "philemon",
+  // Revelation — Grammatical: "Revelations" (with a final "s") is a very
+  // common everyday English mis-pluralization of this book's actual,
+  // singular title.
+  revelations: "revelation",
+}
+
+/**
  * Normalizes captured book text to a stable lookup key: trimmed, internal
  * whitespace collapsed to a single space, lowercased, accents stripped,
- * then translated through FRENCH_BOOK_ALIASES if it names a book in
- * French — otherwise returned as-is (already the correct id for an
- * English name, e.g. "john" needs no translation). This is the same key
- * shape the Known-Valid Verse Index expects (see book-catalog.ts).
+ * then translated through FRENCH_BOOK_ALIASES (the correct French name)
+ * or PHONETIC_BOOK_ALIASES (a known mishearing/grammatical variant) if it
+ * names a book that way — otherwise returned as-is (already the correct
+ * id for an English name, e.g. "john" needs no translation). This is the
+ * same key shape the Known-Valid Verse Index expects (see book-catalog.ts).
  */
 export function normalizeBookName(rawBook: string): string {
   const normalized = stripAccents(rawBook.trim().replace(/\s+/g, " ").toLowerCase())
-  return FRENCH_BOOK_ALIASES[normalized] ?? normalized
+  return FRENCH_BOOK_ALIASES[normalized] ?? PHONETIC_BOOK_ALIASES[normalized] ?? normalized
 }
 
 export const CATALOG_IDS = new Set(BOOK_CATALOG.map((book: { readonly id: string }) => book.id))
