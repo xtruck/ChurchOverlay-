@@ -149,16 +149,47 @@ function whisperLanguageFor(mode: DisplayMode): string | undefined {
  * dependency of the live pipeline.
  */
 function lazyQuoteMatcher(data: OfflineBibleData): { match(text: string): QuoteMatch | null } {
-  let matcher: QuoteMatcher | null = null
-  setTimeout(() => {
-    try {
-      matcher = new QuoteMatcher(data)
-      logger.info({ component: "main", event: "quote-matcher.ready", metadata: { verses: matcher.size } })
-    } catch (err) {
-      logger.error({ component: "main", event: "quote-matcher.failed", error: err instanceof Error ? err.message : String(err) })
-    }
-  }, 0)
-  return { match: (text) => matcher?.match(text) ?? null }
+  // The index is built once per process and reused across service restarts
+  // (ASR strategy, local ASR, branding): each rebuild blocked the main
+  // process for ~0.65 s, stalling audio, WS and the dashboard mid-service.
+  if (sharedQuoteMatcher?.data !== data && !quoteMatcherBuildPending) {
+    quoteMatcherBuildPending = true
+    setTimeout(() => {
+      quoteMatcherBuildPending = false
+      try {
+        const startedAt = performance.now()
+        sharedQuoteMatcher = { data, matcher: new QuoteMatcher(data) }
+        logger.info({
+          component: "main",
+          event: "quote-matcher.ready",
+          durationMs: Math.round(performance.now() - startedAt),
+          metadata: { verses: sharedQuoteMatcher.matcher.size },
+        })
+      } catch (err) {
+        logger.error({ component: "main", event: "quote-matcher.failed", error: err instanceof Error ? err.message : String(err) })
+      }
+    }, 0)
+  }
+  return { match: (text) => (sharedQuoteMatcher?.data === data ? sharedQuoteMatcher.matcher.match(text) : null) }
+}
+
+let sharedQuoteMatcher: { readonly data: OfflineBibleData; readonly matcher: QuoteMatcher } | null = null
+let quoteMatcherBuildPending = false
+
+/**
+ * The bundled Bible is immutable for the life of the process: parse it once
+ * and share it across service restarts. A failed load is not cached, so the
+ * next restart retries.
+ */
+let offlineBibleDataPromise: Promise<OfflineBibleData> | null = null
+function getOfflineBibleData(): Promise<OfflineBibleData> {
+  if (!offlineBibleDataPromise) {
+    offlineBibleDataPromise = loadOfflineBibleData().catch((err: unknown) => {
+      offlineBibleDataPromise = null
+      throw err
+    })
+  }
+  return offlineBibleDataPromise
 }
 
 function getConfigStore(): ConfigStore {
@@ -213,7 +244,7 @@ async function startServices(
   let frenchSource: GetBibleVerseSource | OfflineFallbackVerseSource = new GetBibleVerseSource()
   let quoteSource: OfflineBibleData | null = null
   try {
-    const offlineData = await loadOfflineBibleData()
+    const offlineData = await getOfflineBibleData()
     quoteSource = offlineData
     frenchSource = new OfflineFallbackVerseSource({
       primary: new GetBibleVerseSource(),
