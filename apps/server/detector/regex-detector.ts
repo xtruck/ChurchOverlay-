@@ -269,6 +269,13 @@ export const FRENCH_BOOK_ALIASES: Readonly<Record<string, string>> = {
   // Observed live (2026-09-23), same test-reading session: also heard as
   // "Abaku" (trailing "c" dropped as well as the leading "H").
   abaku: "habakkuk",
+  // Observed live (2026-09-29): two further Whisper misses on the same
+  // book, neither an "H"-drop of the above — "Bakouk" (also missing the
+  // leading vowel) and "Babouct" (the middle consonant swapped, trailing
+  // "c" heard as "ct"). Both attempts failed to detect at all in that
+  // session's log (near-miss "À Babouct un le verset" never resolved).
+  bakouk: "habakkuk",
+  babouct: "habakkuk",
   sophonie: "zephaniah",
   aggee: "haggai",
   zacharie: "zechariah",

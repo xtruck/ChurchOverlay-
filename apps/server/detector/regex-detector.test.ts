@@ -173,3 +173,9 @@ test("RegexDetector: detects the full 'book chapitre N, verset M' prose form wit
     { book: "proverbs", chapter: 1, verse: 5 },
   ])
 })
+
+test("RegexDetector: detects two further live-observed Habakkuk mishearings (2026-09-29): 'Bakouk' and 'Babouct'", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("Bakouk 5 verset 6"), [{ book: "habakkuk", chapter: 5, verse: 6 }])
+  assert.deepEqual(detector.detect("Babouct 5 verset 6"), [{ book: "habakkuk", chapter: 5, verse: 6 }])
+})
