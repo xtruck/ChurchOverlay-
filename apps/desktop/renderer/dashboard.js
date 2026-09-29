@@ -567,6 +567,29 @@
     log(t(autoGainToggleEl.checked ? "log.autoGainOn" : "log.autoGainOff"), "sent")
   })
 
+  // ---- Pipeline latency (final transcript -> verse:show / verse:pending) ---
+  // Read over IPC, not WS: operator diagnostics, not part of the overlay
+  // protocol. Polled slowly — the numbers only move when a verse is shown.
+  const latencyLastEl = document.getElementById("latency-last")
+  const latencyMedianEl = document.getElementById("latency-median")
+  const latencyP95El = document.getElementById("latency-p95")
+  function formatLatency(ms) {
+    if (typeof ms !== "number") return "–"
+    return ms < 1000 ? Math.round(ms) + " ms" : (ms / 1000).toFixed(1) + " s"
+  }
+  function refreshLatency() {
+    if (!window.churchOverlay || !window.churchOverlay.getPipelineLatency) return
+    window.churchOverlay
+      .getPipelineLatency()
+      .then((snapshot) => {
+        latencyLastEl.textContent = formatLatency(snapshot && snapshot.lastMs)
+        latencyMedianEl.textContent = formatLatency(snapshot && snapshot.p50Ms)
+        latencyP95El.textContent = formatLatency(snapshot && snapshot.p95Ms)
+      })
+      .catch((err) => console.error("pipeline latency unavailable", err))
+  }
+  setInterval(refreshLatency, 5000)
+
   // ---- Offline backup (Settings) -----------------------------------------
   const localAsrModelToggleEl = document.getElementById("local-asr-model-toggle")
   const localAsrStatusEl = document.getElementById("local-asr-status")

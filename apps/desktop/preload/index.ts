@@ -67,6 +67,7 @@ contextBridge.exposeInMainWorld("churchOverlay", {
   exportDiagnostics: () => ipcRenderer.invoke("export-diagnostics"),
   generateServiceSummary: (sermonNotesText: string) => ipcRenderer.invoke("generate-service-summary", sermonNotesText),
   getSessionHistory: () => ipcRenderer.invoke("get-session-history"),
+  getPipelineLatency: () => ipcRenderer.invoke("get-pipeline-latency"),
   setEnableSermonNotes: (enabled: boolean) => ipcRenderer.invoke("set-enable-sermon-notes", enabled),
   setNdiEnabled: (enabled: boolean) => ipcRenderer.invoke("set-ndi-enabled", enabled),
   setAsrStrategy: (strategy: string) => ipcRenderer.invoke("set-asr-strategy", strategy),

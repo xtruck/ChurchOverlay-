@@ -1094,6 +1094,10 @@ async function renderQuoteCardPng(entry: SessionEntry): Promise<Buffer> {
  * grouping) — main.ts stays a thin passthrough, same division of
  * responsibility as list-media-cues.
  */
+ipcMain.handle("get-pipeline-latency", () => {
+  return appCoreHandle?.getPipelineLatency() ?? null
+})
+
 ipcMain.handle("get-session-history", () => {
   return appCoreHandle?.getSessionHistory() ?? []
 })

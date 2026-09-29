@@ -5269,3 +5269,48 @@ the probe's ordinary-speech section, not left to assumption.
 no bypass of `KnownValidVerseIndex`; partial transcripts still never enter
 the pipeline. The probe script is temporary (`scripts/__probe-corrector.ts`,
 deleted before commit); what stays is the regression test set and this note.
+
+## 103. Pipeline Latency Readout and Rundown Verse Prefetch
+
+**Why.** Competing products advertise "sermon to screen in under 2 seconds";
+the operator had no measured number, and no way to tell whether a slow verse
+was the app or the venue's internet. Separately, a loaded Service Rundown is
+the service plan, yet each of its verse scenes was only looked up when the
+operator stepped to it — a network round-trip at the worst moment, and a
+failure if the internet dropped mid-service.
+
+**Measured first (AGENTS.md section 34).** Per final transcript, the app's own
+processing is sub-millisecond (corrector 0.007 ms, spoken-reference
+normalizer 0.03 ms, RegexDetector 0.04 ms, quote match 0.008 ms at p50). The
+variable part is the Bible lookup, so that is what the readout exposes.
+
+**What.**
+- `LatencyTracker` (`server/core/latency-tracker.ts`): the last 100 samples,
+  nearest-rank p50/p95, max, last. Nulls when empty — never an invented
+  number.
+- AppCore times every DETECTED verse from `TranscriptResult.timestamp` to its
+  hand-off (`verse:show` in auto mode, `verse:pending` in review mode) in one
+  place, `deliverDetectedVerses()`, logs `verse.latency` with `durationMs` and
+  the chain's `correlationId`, and includes the snapshot in `getDiagnostics()`
+  (so the diagnostics export carries it).
+- Exposed to the dashboard over Electron IPC (`get-pipeline-latency`), polled
+  every 5 s — **not** a WS event: the public protocol and the read-only
+  overlay are unchanged. Web mode (section 80) has no readout.
+- The ASR provider's own delay is not included: providers do not report it
+  comparably, and it is not estimated (same rule as confidence, AGENTS.md
+  section 9). The dashboard label says so.
+- `rundown:load` now prefetches every verse scene (after activating the first
+  scene) through the same `resolveVerse()` path scene activation uses — cache,
+  circuit breaker, validated response — and displays nothing. Sequential,
+  capped at 50 references, abandoned by a newer `rundown:load` or `stop()`,
+  logged as `rundown.prefetch-complete` / `rundown.prefetch-failed`. The
+  positive cache (500 entries, 24 h) keeps them for the service.
+
+**Rejected.** Adding the rundown's book names to Deepgram key terms per
+service: the rare books are already boosted, and
+`biblical-vocabulary.ts` documents that boosting common names (Jean, Marc)
+makes the model insert them where they were never said.
+
+**Boundary check.** No new WS command or event, no provider change, no bypass
+of `KnownValidVerseIndex`; partial transcripts still never reach detection
+(covered by a test that a partial records no latency).

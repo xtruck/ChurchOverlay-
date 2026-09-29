@@ -26,6 +26,8 @@ import type {
 
 /** Fixed operator-safe ceiling for every visible verse: 2 minutes 30 seconds. */
 export const DEFAULT_VERSE_AUTO_CLEAR_MS = 150_000
+/** Upper bound on verse scenes prefetched per rundown:load (sequential requests). */
+const MAX_RUNDOWN_PREFETCH = 50
 import type { Server as HttpServer } from "node:http"
 import { generateUlid } from "../../../packages/shared/ulid"
 import type { Logger } from "../../../packages/shared/logger"
@@ -36,6 +38,7 @@ import { ChurchOverlayWsServer, type ServerTokens } from "../ws/server"
 import { resolveTranscriptVerses } from "./resolve-transcript-verses"
 import { resolveVerse, translationIdFor } from "../verse/resolve-verse"
 import { passesTranscriptGate } from "./transcript-gate"
+import { LatencyTracker, type LatencySnapshot } from "./latency-tracker"
 import { correctTranscription, detectHallucination } from "../asr/transcription-corrector"
 import { postprocessTranscript } from "../asr/postprocess/pipeline"
 import { TranscriptAssembler } from "../asr/transcript-assembler"
@@ -266,7 +269,14 @@ export type AppCoreHandle = {
     silenceGate: ReturnType<SilenceGate["getMetrics"]>
     sessionEntries: number
     sessionHistoryEntries: number
+    pipelineLatency: LatencySnapshot
   }
+  /**
+   * Final transcript -> verse handed to viewers or to the operator, over the
+   * most recent detections. Read by the dashboard through Electron IPC; not
+   * a WS event, so the public protocol and the read-only overlay are unchanged.
+   */
+  getPipelineLatency(): LatencySnapshot
   stop(): Promise<void>
 }
 
@@ -292,6 +302,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const silenceGate = options.silenceGate ?? new SilenceGate()
   const adaptiveGain = options.adaptiveGain ?? new AdaptiveGain()
   const micHealth = new MicHealthMonitor()
+  const pipelineLatency = new LatencyTracker()
+  let rundownPrefetchGeneration = 0
+  let stopped = false
   // Broadcast cadence measured in *processed audio time*, not wall clock:
   // deterministic under test, and naturally silent when no audio flows.
   const MIC_HEALTH_INTERVAL_MS = 1000
@@ -635,6 +648,29 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
    * suggestion for a verse spoken two sentences ago is almost never still
    * wanted once a newer one exists.
    */
+  /**
+   * The single hand-off for DETECTED verses (review mode holds them as
+   * pending, auto mode shows them), timing each one from the final
+   * transcript's arrival so a slow Sunday can be traced to the Bible lookup
+   * or ruled out as the app's own processing.
+   */
+  function deliverDetectedVerses(verses: readonly Verse[], transcript: TranscriptResult): void {
+    for (const verse of verses) {
+      const delivery = verseConfirmationMode === "review" ? "pending" : "screen"
+      if (delivery === "pending") broadcastPendingVerse(verse, transcript.correlationId)
+      else broadcastVerse(verse, "detected", transcript.correlationId)
+      const durationMs = Date.now() - transcript.timestamp
+      pipelineLatency.record(durationMs)
+      logger.info({
+        component: "app-core",
+        event: "verse.latency",
+        correlationId: transcript.correlationId,
+        durationMs,
+        metadata: { delivery },
+      })
+    }
+  }
+
   function broadcastPendingVerse(verse: Verse, correlationId?: string): void {
     pendingVerse = verse
     wsServer.broadcast({ id: generateUlid(), type: "verse:pending", timestamp: Date.now(), correlationId, payload: verse })
@@ -895,6 +931,48 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
    * to position 0 via mediaPlayback.activate(), which is correct here (a
    * genuine new activation) but wrong for the viewer-resync path below.
    */
+  /**
+   * The rundown is the service plan: warm the verse cache for every verse
+   * scene in the background so stepping to one later is instant, and still
+   * works if the venue's internet drops mid-service. Uses the same
+   * resolveVerse() path activateScene() uses (cache -> circuit breaker ->
+   * source, response validated) and displays nothing. Sequential and capped
+   * so a long rundown never causes a request burst (AGENTS.md sections 36-37);
+   * a newer rundown:load abandons an older prefetch.
+   */
+  function prefetchRundownVerses(rundown: Rundown, correlationId?: string): void {
+    const generation = ++rundownPrefetchGeneration
+    const references = rundown.scenes
+      .flatMap((scene) => (scene.kind === "verse" ? [scene.reference] : []))
+      .slice(0, MAX_RUNDOWN_PREFETCH)
+    if (references.length === 0) return
+    const startedAt = Date.now()
+    void (async () => {
+      let resolved = 0
+      for (const reference of references) {
+        if (generation !== rundownPrefetchGeneration || stopped) return
+        try {
+          if (await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)) resolved++
+        } catch (err) {
+          logger.warn({
+            component: "app-core",
+            event: "rundown.prefetch-failed",
+            correlationId,
+            error: err instanceof Error ? err.message : String(err),
+            metadata: { reference },
+          })
+        }
+      }
+      logger.info({
+        component: "app-core",
+        event: "rundown.prefetch-complete",
+        correlationId,
+        durationMs: Date.now() - startedAt,
+        metadata: { requested: references.length, resolved },
+      })
+    })()
+  }
+
   async function activateScene(state: RundownStatePayload, correlationId?: string): Promise<void> {
     broadcastRundownState(state, correlationId)
     const scene = state.scene
@@ -1273,6 +1351,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         const state = rundownController.load(rundown)
         if (state) {
           await activateScene(state, message.correlationId)
+          prefetchRundownVerses(rundown, message.correlationId)
         } else {
           logger.info({
             component: "app-core",
@@ -1585,15 +1664,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       broadcastAsrStatus({ asrHealth: "ok" })
     }
     resolveTranscriptVerses(transcript, detector, index, source, cache, circuitBreaker, logger)
-      .then((verses) => {
-        for (const verse of verses) {
-          if (verseConfirmationMode === "review") {
-            broadcastPendingVerse(verse, transcript.correlationId)
-          } else {
-            broadcastVerse(verse, "detected", transcript.correlationId)
-          }
-        }
-      })
+      .then((verses) => deliverDetectedVerses(verses, transcript))
       .catch((err) => {
         logger.error({
           component: "app-core",
@@ -1631,12 +1702,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
             circuitBreaker,
             logger,
           )
-            .then((verses) => {
-              for (const verse of verses) {
-                if (verseConfirmationMode === "review") broadcastPendingVerse(verse, transcript.correlationId)
-                else broadcastVerse(verse, "detected", transcript.correlationId)
-              }
-            })
+            .then((verses) => deliverDetectedVerses(verses, transcript))
             .catch((err) => logger.error({
               component: "app-core",
               event: "transcript.assembly-failed",
@@ -1812,9 +1878,14 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         silenceGate: silenceGate.getMetrics(),
         sessionEntries: sessionRecorder.getEntries().length,
         sessionHistoryEntries: sessionHistoryStore?.getEntries().length ?? 0,
+        pipelineLatency: pipelineLatency.snapshot(),
       }
     },
+    getPipelineLatency() {
+      return pipelineLatency.snapshot()
+    },
     async stop() {
+      stopped = true
       if (definitionClearTimer) clearTimeout(definitionClearTimer)
       if (sermonNotesTimer) clearInterval(sermonNotesTimer)
       // ARCHITECTURE.md section 82.1: verseAutoClearMs went from a

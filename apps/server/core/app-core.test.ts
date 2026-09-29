@@ -4092,3 +4092,111 @@ test("AppCore: audio frame error logging is throttled across rapid consecutive f
     await app.stop()
   }
 })
+
+/** Named per AGENTS.md section 45 — a test double that counts real lookups. */
+class CountingVerseSource extends EchoVerseSource {
+  readonly requested: string[] = []
+  override async getVerse(reference: VerseReference): Promise<Verse | null> {
+    this.requested.push(`${reference.book} ${reference.chapter}:${reference.verse}`)
+    return super.getVerse(reference)
+  }
+}
+
+test("AppCore: a detected verse records final-transcript-to-screen latency in diagnostics and the log", async () => {
+  const lines: Array<{ event: string; correlationId?: string; durationMs?: number; metadata?: { delivery?: string } }> = []
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: new Logger({ write: (line) => lines.push(JSON.parse(line)) }),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    assert.equal(app.getPipelineLatency().count, 0)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const shown = waitForMessage(viewerSocket)
+    asr.emitTranscript({ id: "01T", correlationId: "01LAT", sequence: 1, text: "Turn to John 3:16.", state: "final", timestamp: Date.now() - 40 })
+    assert.equal((await shown).type, "verse:show")
+
+    const latency = app.getPipelineLatency()
+    assert.equal(latency.count, 1)
+    assert.ok((latency.lastMs ?? 0) >= 40, "measured from the transcript's own timestamp")
+    assert.deepEqual(app.getDiagnostics().pipelineLatency, latency)
+    const logged = lines.find((l) => l.event === "verse.latency")
+    assert.equal(logged?.correlationId, "01LAT")
+    assert.equal(logged?.metadata?.delivery, "screen")
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: a partial transcript never records latency (it never reaches detection)", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    asr.emitTranscript({ id: "01T", correlationId: "01P", sequence: 1, text: "Turn to John 3:16.", state: "partial", timestamp: Date.now() })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    assert.equal(app.getPipelineLatency().count, 0)
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: rundown:load prefetches every verse scene so stepping to one needs no new lookup", async () => {
+  const lines: Array<{ event: string; metadata?: { requested?: number; resolved?: number } }> = []
+  const source = new CountingVerseSource()
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source,
+    logger: new Logger({ write: (line) => lines.push(JSON.parse(line)) }),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const rundown: Rundown = {
+      id: "01RUNDOWN",
+      title: "Sunday Service",
+      scenes: [
+        { kind: "announcement", title: "Welcome", body: "Glad you're here." },
+        { kind: "verse", reference: { book: "john", chapter: 3, verse: 16 } },
+        { kind: "verse", reference: { book: "romans", chapter: 8, verse: 28 } },
+      ],
+    }
+    const loaded = waitForMessages(viewerSocket, 2)
+    operatorSocket.send(JSON.stringify({ id: "01A", type: "rundown:load", timestamp: Date.now(), payload: { rundown } }))
+    const [, content] = await loaded
+    assert.equal(content?.type, "announcement:show", "prefetch displays nothing")
+
+    await waitFor(() => lines.some((l) => l.event === "rundown.prefetch-complete"))
+    assert.deepEqual(source.requested, ["john 3:16", "romans 8:28"])
+    const done = lines.find((l) => l.event === "rundown.prefetch-complete")
+    assert.deepEqual(done?.metadata, { requested: 2, resolved: 2 })
+
+    const stepped = waitForMessages(viewerSocket, 2)
+    operatorSocket.send(JSON.stringify({ id: "01B", type: "scene:next", timestamp: Date.now(), payload: null }))
+    const [, verseShow] = await stepped
+    assert.equal(verseShow?.type, "verse:show")
+    assert.equal(source.requested.length, 2, "served from the warmed cache")
+
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})

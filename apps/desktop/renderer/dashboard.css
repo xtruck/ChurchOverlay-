@@ -337,6 +337,7 @@ header.glass {
 .mic-stat { background: var(--nave); border: 1px solid var(--line); border-radius: var(--radius-control); padding: 8px 10px; }
 .mic-stat-label { color: var(--ash-dim); font-size: 11.5px; }
 .mic-stat-value { font-size: 15px; font-weight: 600; }
+.latency-title { color: var(--ash-dim); font-size: 11.5px; margin-bottom: var(--space-1, 4px); }
 .switch-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); font-size: 13.5px; color: var(--ash); margin-bottom: var(--space-3); cursor: pointer; }
 .switch {
   appearance: none;
