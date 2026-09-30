@@ -20,6 +20,8 @@ async function startServer(
     onAudioFrame: (frame: AudioFrame) => void
     onRejected: (reason: string, role: WsRole | null) => void
     onViewerConnected: (send: (message: WsMessage) => void) => void
+    heartbeatIntervalMs: number
+    maxBufferedBytes: number
   }> = {}
 ): Promise<ChurchOverlayWsServer> {
   const server = new ChurchOverlayWsServer({ port: 0, tokens: TOKENS, ...overrides })
@@ -351,6 +353,125 @@ test("ChurchOverlayWsServer: a normal-sized audio frame is still accepted under 
     await new Promise((resolve) => setTimeout(resolve, 100))
     assert.equal(frames.length, 1)
     socket.close()
+  } finally {
+    await server.close()
+  }
+})
+
+/** A client that never answers pings — models a phone that went to sleep or a dead network path. */
+function connectWithoutPong(port: number, token: string): Promise<WebSocket> {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(`ws://127.0.0.1:${port}`, [token], { autoPong: false })
+    socket.once("open", () => resolve(socket))
+    socket.once("error", reject)
+  })
+}
+
+function whenClosed(socket: WebSocket): Promise<void> {
+  return new Promise((resolve) => {
+    if (socket.readyState === WebSocket.CLOSED) resolve()
+    else socket.once("close", () => resolve())
+  })
+}
+
+test("ChurchOverlayWsServer: heartbeat terminates a client that stops answering pings, and reports it", async () => {
+  const rejections: { reason: string; role: WsRole | null }[] = []
+  const server = await startServer({
+    heartbeatIntervalMs: 40,
+    onRejected: (reason, role) => rejections.push({ reason, role }),
+  })
+  try {
+    const socket = await connectWithoutPong(server.port, TOKENS.viewerToken)
+    await Promise.race([
+      whenClosed(socket),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("silent client was never dropped")), 1500)),
+    ])
+
+    const timeout = rejections.find((entry) => entry.reason.startsWith("connection timed out"))
+    assert.ok(timeout, "the drop must be observable through onRejected")
+    assert.equal(timeout?.role, "viewer")
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer: heartbeat leaves a healthy client connected across many intervals", async () => {
+  const rejections: string[] = []
+  const server = await startServer({ heartbeatIntervalMs: 30, onRejected: (reason) => rejections.push(reason) })
+  try {
+    const socket = await connect(server.port, TOKENS.operatorToken)
+    await new Promise((resolve) => setTimeout(resolve, 350)) // ~10 heartbeat ticks
+    assert.equal(socket.readyState, WebSocket.OPEN)
+    assert.deepEqual(rejections, [])
+    socket.close()
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer: inbound messages count as liveness, so a busy client is never dropped for a late pong", async () => {
+  const rejections: string[] = []
+  const server = await startServer({ heartbeatIntervalMs: 40, onRejected: (reason) => rejections.push(reason) })
+  try {
+    const socket = await connectWithoutPong(server.port, TOKENS.operatorToken)
+    const message: WsMessage = { id: "01LIVE", type: "mic:start", timestamp: Date.now(), payload: null }
+    const chatter = setInterval(() => socket.send(JSON.stringify(message)), 10)
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 350))
+    } finally {
+      clearInterval(chatter)
+    }
+    assert.equal(socket.readyState, WebSocket.OPEN)
+    assert.equal(rejections.filter((reason) => reason.startsWith("connection timed out")).length, 0)
+    socket.close()
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer: a disabled heartbeat (0) never drops a silent client", async () => {
+  const rejections: string[] = []
+  const server = await startServer({ heartbeatIntervalMs: 0, onRejected: (reason) => rejections.push(reason) })
+  try {
+    const socket = await connectWithoutPong(server.port, TOKENS.viewerToken)
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    assert.equal(socket.readyState, WebSocket.OPEN)
+    assert.deepEqual(rejections, [])
+    socket.close()
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer: a consumer that stops reading is dropped once its queue passes the bound, and the server stays usable", async () => {
+  const rejections: { reason: string; role: WsRole | null }[] = []
+  const server = await startServer({
+    heartbeatIntervalMs: 0, // isolate the backpressure guard from the heartbeat
+    maxBufferedBytes: 256 * 1024,
+    onRejected: (reason, role) => rejections.push({ reason, role }),
+  })
+  try {
+    const stalled = await connect(server.port, TOKENS.viewerToken)
+    // Stop the client's socket from reading: the kernel buffers fill, then ws
+    // starts queueing in the server process — exactly a stalled consumer.
+    ;(stalled as unknown as { _socket: { pause(): void } })._socket.pause()
+
+    const bigPayload = "x".repeat(1024 * 1024)
+    for (let i = 0; i < 200 && !rejections.some((entry) => entry.reason.startsWith("slow consumer dropped")); i++) {
+      server.broadcast({ id: `01BIG${i}`, type: "status:update", timestamp: Date.now(), payload: bigPayload })
+    }
+
+    const dropped = rejections.find((entry) => entry.reason.startsWith("slow consumer dropped"))
+    assert.ok(dropped, "a stalled consumer must be dropped instead of buffered without bound")
+    assert.equal(dropped?.role, "viewer")
+
+    // A fresh client still connects and still receives broadcasts.
+    const fresh = await connect(server.port, TOKENS.viewerToken)
+    const received = waitForMessage(fresh)
+    server.broadcast({ id: "01OK", type: "status:update", timestamp: Date.now(), payload: { ok: true } })
+    assert.match(await received, /"01OK"/)
+    fresh.close()
+    stalled.terminate()
   } finally {
     await server.close()
   }

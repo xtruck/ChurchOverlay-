@@ -49,9 +49,29 @@ export type ChurchOverlayWsServerOptions = {
    * connection.
    */
   readonly onViewerConnected?: (send: (message: WsMessage) => void) => void
+  /**
+   * How often to ping every connected client and drop the ones that did not
+   * answer the previous ping. Defaults to 30 s. `0` disables the heartbeat.
+   * Without it a client that vanished without a TCP close (a phone that went
+   * to sleep, a pulled network cable, a crashed OBS) stays "connected" for
+   * minutes to hours and keeps receiving — and buffering — every broadcast.
+   * Browsers and `ws` clients answer pings automatically, so no client-side
+   * change is needed.
+   */
+  readonly heartbeatIntervalMs?: number
+  /**
+   * Upper bound on bytes queued for ONE client before it is dropped instead
+   * of buffered further (AGENTS.md section 36: no unbounded queues). Defaults
+   * to 4 MiB — far above anything a healthy client accumulates between
+   * events, since broadcast messages are a few hundred bytes. A dropped
+   * client simply reconnects and is re-synced the normal way.
+   */
+  readonly maxBufferedBytes?: number
 }
 
 const DEFAULT_HOST = "127.0.0.1"
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000
+const DEFAULT_MAX_BUFFERED_BYTES = 4 * 1024 * 1024
 
 /**
  * Hard cap on a single inbound WebSocket message. `ws` defaults to 100 MiB,
@@ -94,6 +114,10 @@ export class ChurchOverlayWsServer {
   private readonly onRejected: ChurchOverlayWsServerOptions["onRejected"]
   private readonly onViewerConnected: ChurchOverlayWsServerOptions["onViewerConnected"]
   private readonly clientRoles = new WeakMap<WebSocket, WsRole>()
+  /** Clients that have shown a sign of life (pong or any message) since the last heartbeat sweep. */
+  private readonly aliveClients = new WeakSet<WebSocket>()
+  private readonly maxBufferedBytes: number
+  private heartbeatTimer: ReturnType<typeof setInterval> | undefined
 
   /** Resolves once the server is actually listening. */
   readonly ready: Promise<void>
@@ -104,6 +128,7 @@ export class ChurchOverlayWsServer {
     this.onAudioFrame = options.onAudioFrame
     this.onRejected = options.onRejected
     this.onViewerConnected = options.onViewerConnected
+    this.maxBufferedBytes = options.maxBufferedBytes ?? DEFAULT_MAX_BUFFERED_BYTES
 
     this.wss = options.server
       ? new WebSocketServer({
@@ -133,6 +158,13 @@ export class ChurchOverlayWsServer {
           })
 
     this.wss.on("connection", (socket) => this.handleConnection(socket))
+
+    const heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS
+    if (heartbeatIntervalMs > 0) {
+      this.heartbeatTimer = setInterval(() => this.sweepDeadConnections(), heartbeatIntervalMs)
+      // The heartbeat must never be the thing keeping the process alive.
+      this.heartbeatTimer.unref()
+    }
   }
 
   /** The actual bound port — useful when constructed with port: 0. */
@@ -148,13 +180,29 @@ export class ChurchOverlayWsServer {
   broadcast(message: WsMessage): void {
     const payload = JSON.stringify(message)
     for (const client of this.wss.clients) {
-      if (client.readyState === client.OPEN) {
-        client.send(payload)
+      if (client.readyState !== client.OPEN) continue
+
+      // A client that stopped reading (stalled network, suspended tab) makes
+      // ws queue every further send in memory. Past the bound, drop the
+      // connection — observably, via onRejected — rather than grow forever.
+      if (client.bufferedAmount > this.maxBufferedBytes) {
+        this.onRejected?.(
+          `slow consumer dropped: ${client.bufferedAmount} bytes queued and unsent`,
+          this.clientRoles.get(client) ?? null
+        )
+        client.terminate()
+        continue
       }
+
+      client.send(payload)
     }
   }
 
   close(): Promise<void> {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = undefined
+    }
     return new Promise((resolve, reject) => {
       // wss.close() only stops accepting NEW connections and then waits for
       // every EXISTING client socket to close on its own. Any client that
@@ -173,6 +221,30 @@ export class ChurchOverlayWsServer {
     if (protocols.has(this.tokens.operatorToken)) return this.tokens.operatorToken
     if (protocols.has(this.tokens.viewerToken)) return this.tokens.viewerToken
     return false
+  }
+
+  /**
+   * One heartbeat tick: a client that showed no sign of life since the
+   * previous tick is terminated (reported through onRejected, never silent);
+   * every other client is marked "not yet heard from" and pinged, and stays
+   * alive by answering with a pong or sending any message. Only fully
+   * admitted connections (those with a role) are considered — a socket
+   * refused for a bad token is already being torn down.
+   */
+  private sweepDeadConnections(): void {
+    for (const client of this.wss.clients) {
+      const role = this.clientRoles.get(client)
+      if (role === undefined) continue
+
+      if (!this.aliveClients.has(client)) {
+        this.onRejected?.("connection timed out: no pong since the previous heartbeat", role)
+        client.terminate()
+        continue
+      }
+
+      this.aliveClients.delete(client)
+      if (client.readyState === client.OPEN) client.ping()
+    }
   }
 
   private handleConnection(socket: WebSocket): void {
@@ -197,8 +269,15 @@ export class ChurchOverlayWsServer {
 
     const role: WsRole = socket.protocol === this.tokens.operatorToken ? "operator" : "viewer"
     this.clientRoles.set(socket, role)
+    this.aliveClients.add(socket)
 
-    socket.on("message", (data, isBinary) => this.handleMessage(role, data, isBinary))
+    socket.on("pong", () => this.aliveClients.add(socket))
+    socket.on("message", (data, isBinary) => {
+      // Any inbound traffic proves the connection is alive, so a busy
+      // operator streaming audio can never be dropped for a late pong.
+      this.aliveClients.add(socket)
+      this.handleMessage(role, data, isBinary)
+    })
     socket.on("close", () => this.clientRoles.delete(socket))
 
     if (role === "viewer") {
