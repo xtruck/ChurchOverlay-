@@ -333,6 +333,19 @@ test("StaticServer: fonts are cacheable for a day and stay readable from the das
   })
 })
 
+test("StaticServer: serves the favicon and touch icon with image types (a generic type makes browsers ignore them)", async () => {
+  await withServer({ "favicon.svg": "<svg/>", "apple-touch-icon.png": "png-bytes" }, async (baseUrl) => {
+    const svg = await rawRequest(baseUrl, { path: "/favicon.svg" })
+    assert.equal(svg.status, 200)
+    assert.equal(svg.headers["content-type"], "image/svg+xml")
+    assert.equal(svg.headers["x-content-type-options"], "nosniff")
+
+    const png = await rawRequest(baseUrl, { path: "/apple-touch-icon.png" })
+    assert.equal(png.status, 200)
+    assert.equal(png.headers["content-type"], "image/png")
+  })
+})
+
 test("StaticServer: HEAD on a page returns headers and Content-Length but no body", async () => {
   await withServer({ "index.html": "<h1>hi</h1>" }, async (baseUrl) => {
     const response = await rawRequest(baseUrl, { method: "HEAD", path: "/" })

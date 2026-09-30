@@ -11,6 +11,12 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".woff2": "font/woff2",
+  // Favicons and the phone home-screen icon. SVG is safe here only because
+  // this table serves the app's own bundled pages; operator-imported media
+  // goes through MEDIA_CONTENT_TYPES, which deliberately has no SVG (an
+  // imported SVG can carry script).
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
 }
 
 const MEDIA_CONTENT_TYPES: Readonly<Record<string, string>> = {

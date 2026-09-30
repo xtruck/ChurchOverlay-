@@ -94,6 +94,7 @@ Current status:
 | media is streamed with HTTP Range (206, 416), HEAD carries no body, and a vanished file is a 404 | `http/static-server.test.ts` |
 | static responses carry nosniff/no-referrer, revalidate with ETag/304, and fonts stay CORS-readable | `http/static-server.test.ts` |
 | malformed %-escapes and NUL bytes are 400, non-GET/HEAD methods are 405, directories are 404 | `http/static-server.test.ts` |
+| the favicon (`image/svg+xml`) and touch icon (`image/png`) are served with image types, not a generic one | `http/static-server.test.ts` |
 
 Two categories from that list have no dedicated fixture, deliberately: **low-quality
 transcript** has no v1 provider that exposes a usable quality signal (GroqProvider
