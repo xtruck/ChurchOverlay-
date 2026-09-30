@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>ChurchOverlay</title>
+  <!--
+    ChurchOverlay mark, detailed version (use at 64 px and above).
+    A gold cross over a lower-third caption pill carrying the red on-air dot:
+    the cross is the subject, the pill is what the app puts on screen, and the
+    dot is the same tally signal the operator console uses. Palette is the
+    console's own "Vespers" tokens (dashboard.css). Below 64 px use
+    logo-small.svg, which drops the fine detail.
+  -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#22324a"/>
+      <stop offset="1" stop-color="#0c131d"/>
+    </linearGradient>
+    <radialGradient id="halo" gradientUnits="userSpaceOnUse" cx="512" cy="320" r="420">
+      <stop offset="0" stop-color="#e0a93b" stop-opacity=".30"/>
+      <stop offset="1" stop-color="#e0a93b" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="gold" gradientUnits="userSpaceOnUse" x1="0" y1="120" x2="0" y2="628">
+      <stop offset="0" stop-color="#f7d27a"/>
+      <stop offset="1" stop-color="#dc9b22"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="232" fill="url(#bg)"/>
+  <rect width="1024" height="1024" rx="232" fill="url(#halo)"/>
+  <rect id="edge" x="3" y="3" width="1018" height="1018" rx="229" fill="none" stroke="#ffffff" stroke-opacity=".10" stroke-width="6"/>
+  <g fill="url(#gold)">
+    <rect x="444" y="120" width="136" height="508" rx="34"/>
+    <rect x="290" y="240" width="444" height="136" rx="34"/>
+  </g>
+  <rect x="136" y="680" width="752" height="168" rx="84" fill="#ede6d8"/>
+  <circle cx="240" cy="764" r="52" fill="#ef4a4a" fill-opacity=".22"/>
+  <circle cx="240" cy="764" r="34" fill="#ef4a4a"/>
+  <rect x="320" y="728" width="480" height="28" rx="14" fill="#0f1722"/>
+  <rect x="320" y="774" width="320" height="28" rx="14" fill="#0f1722" fill-opacity=".45"/>
+</svg>

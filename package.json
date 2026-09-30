@@ -56,20 +56,24 @@
       "apps/stage/public/**/*",
       "apps/live/public/**/*",
       "apps/server/verse/data/**/*",
+      "assets/icons/icon.png",
       "package.json",
       "!**/*.test.js",
       "!**/*.test.js.map",
       "!**/*.map"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "assets/icons/icon.ico"
     },
     "mac": {
       "target": "dmg",
+      "icon": "assets/icons/icon.icns",
       "category": "public.app-category.utilities"
     },
     "linux": {
       "target": "AppImage",
+      "icon": "assets/icons/icon.png",
       "category": "AudioVideo"
     }
   },

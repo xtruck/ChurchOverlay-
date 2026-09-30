@@ -152,6 +152,14 @@ as a bug.
     browser asked for the whole file or one kilobyte of it. Directory traversal
     handling is unchanged (403) and still covered by its original tests.
 
+18. **SVG is served only as the app's own bundled artwork, never as imported media.**
+    The logo files (`favicon.svg` in the remote/stage/live pages) are served as
+    `image/svg+xml` from the bundled-files table. The operator-imported media table
+    deliberately has no SVG entry, because an imported SVG can carry script and is
+    served from the same loopback origin as the pages. The phone remote's CSP gained
+    `img-src 'self'` (and nothing broader) so its icon is not blocked by
+    `default-src 'none'`.
+
 ## Known, deliberate trade-offs
 
 - Every served page URL carries its token as a query parameter (see item 3 above). This

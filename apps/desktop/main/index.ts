@@ -572,6 +572,9 @@ function createDashboardWindow(): void {
     // grid this size was originally tuned for.
     width: 1440,
     height: 900,
+    // Window/taskbar icon on Windows and Linux (macOS takes the Dock icon
+    // from the packaged .icns). Without it, `npm start` shows Electron's own.
+    icon: join(REPO_ROOT, "assets", "icons", "icon.png"),
     webPreferences: {
       // ARCHITECTURE.md section 7 / AGENTS.md section 27: never enable
       // nodeIntegration merely to simplify implementation.

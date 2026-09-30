@@ -42,7 +42,16 @@
 <body>
   <div id="setup-screen" class="setup-screen" style="display: none">
     <div class="setup-card glass">
-      <div class="brand-mark" style="width: 44px; height: 44px; font-size: 19px;">CO</div>
+      <div class="brand-mark" style="width: 44px; height: 44px; font-size: 19px;">
+        <svg viewBox="0 0 1024 1024" aria-hidden="true" focusable="false">
+          <rect x="8" y="8" width="1008" height="1008" rx="228" fill="#16222f" stroke="#3a4e6b" stroke-width="16"/>
+          <rect x="436" y="104" width="152" height="560" rx="36" fill="#e9b13f"/>
+          <rect x="272" y="236" width="480" height="152" rx="36" fill="#e9b13f"/>
+          <rect x="128" y="712" width="768" height="184" rx="92" fill="#ede6d8"/>
+          <circle cx="252" cy="804" r="50" fill="#ef4a4a"/>
+          <rect x="348" y="786" width="420" height="36" rx="18" fill="#0f1722"/>
+        </svg>
+      </div>
       <h2 data-i18n="setup.title">Set up ChurchOverlay</h2>
       <p data-i18n="setup.description">Enter your Groq API key to start transcribing. It's encrypted and stored locally — this only needs to be done once.</p>
       <label for="setup-groq-key" data-i18n="setup.groqKeyLabel">Groq API key</label>
@@ -95,11 +104,22 @@
   <div id="app-shell" style="display: none">
   <header class="glass">
     <div class="brand">
-      <!-- ARCHITECTURE.md section 92: default text/initials here are the
-           app's own neutral defaults; applyBranding() in dashboard.js
+      <!-- ARCHITECTURE.md section 92: the default mark and title here are
+           the app's own neutral defaults (the ChurchOverlay logo; same art
+           as assets/icons/logo-small.svg). applyBranding() in dashboard.js
            overwrites both if the operator set an organization name at
-           setup, and leaves them alone otherwise. -->
-      <div class="brand-mark" id="brand-mark">CO</div>
+           setup (initials replace the logo, see .brand-mark:has(svg) in
+           dashboard.css), and leaves them alone otherwise. -->
+      <div class="brand-mark" id="brand-mark">
+        <svg viewBox="0 0 1024 1024" aria-hidden="true" focusable="false">
+          <rect x="8" y="8" width="1008" height="1008" rx="228" fill="#16222f" stroke="#3a4e6b" stroke-width="16"/>
+          <rect x="436" y="104" width="152" height="560" rx="36" fill="#e9b13f"/>
+          <rect x="272" y="236" width="480" height="152" rx="36" fill="#e9b13f"/>
+          <rect x="128" y="712" width="768" height="184" rx="92" fill="#ede6d8"/>
+          <circle cx="252" cy="804" r="50" fill="#ef4a4a"/>
+          <rect x="348" y="786" width="420" height="36" rx="18" fill="#0f1722"/>
+        </svg>
+      </div>
       <div>
         <h1 id="brand-title">ChurchOverlay</h1>
         <div class="sub" data-i18n="header.subtitle">Verse Ops Console</div>

@@ -127,6 +127,12 @@ header.glass {
   font-size: 14px;
   flex-shrink: 0;
 }
+/* The app's own logo is the default mark. It carries its own tile, so the
+   accent badge behind the church-initials fallback must not show through. As
+   soon as applyBranding() swaps in a church's initials (textContent removes
+   the svg) this stops matching and the accent-coloured badge returns. */
+.brand-mark:has(svg) { background: transparent; }
+.brand-mark svg { display: block; width: 100%; height: 100%; }
 .brand h1 { font-family: var(--font-display); font-weight: 400; font-size: 22px; line-height: 1; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .brand .sub { font-size: 12.5px; margin-top: 2px; }
 .header-controls { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; justify-content: flex-end; }
