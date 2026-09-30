@@ -4,7 +4,11 @@
   const wsPort = params.get("wsPort") || window.location.port || "8787";
   const wsHost = window.location.hostname || "127.0.0.1";
   const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = `${wsProtocol}//${wsHost}:${wsPort}/?token=${encodeURIComponent(token)}`;
+  // Same as the stage page: the token goes in the WebSocket subprotocol
+  // header, never in the connection URL (AGENTS.md section 18, SECURITY.md
+  // item 3). It still arrives on the page URL, which is the only credential
+  // channel a browser tab has — it just isn't repeated on the socket.
+  const wsUrl = `${wsProtocol}//${wsHost}:${wsPort}`;
 
   const referenceEl = document.getElementById("live-reference");
   const textEl = document.getElementById("live-text");
@@ -117,7 +121,14 @@
   if (btnExport) btnExport.addEventListener("click", exportAllNotes);
 
   function connectWs() {
-    const ws = new WebSocket(wsUrl);
+    // The server terminates a connection that presents no subprotocol, so
+    // reconnecting without a token would just spin forever behind a page that
+    // looks live. Say what's actually missing instead.
+    if (!token) {
+      console.warn("[live] no viewer token in the page URL — copy the companion link from the app");
+      return;
+    }
+    const ws = new WebSocket(wsUrl, [token]);
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);

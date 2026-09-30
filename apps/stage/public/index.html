@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stage Display — ChurchOverlay</title>
+  <link rel="stylesheet" href="stage.css" />
+</head>
+<body class="stage-body">
+  <div class="stage-container">
+    <!-- Clock + countdown timer, facing the preacher (never the congregation) -->
+    <header class="stage-header">
+      <div class="header-left">
+        <div id="current-clock" class="clock-display">--:--:--</div>
+        <div class="service-title">CHURCHOVERLAY</div>
+      </div>
+      <div id="timer-badge" class="timer-badge">
+        <span class="timer-label">SERVICE</span>
+        <span id="timer-display" class="timer-time">00:00</span>
+      </div>
+    </header>
+
+    <!-- Operator alert (stage:alert / stage:clear-alert from the phone remote) -->
+    <div id="stage-alert-banner" class="stage-alert-banner hidden">
+      <span class="alert-icon">&#9888;</span>
+      <div>
+        <div class="alert-title">MESSAGE FROM THE DESK</div>
+        <div id="alert-text" class="alert-text"></div>
+      </div>
+    </div>
+
+    <!-- Currently displayed verse -->
+    <main class="stage-main">
+      <section id="stage-verse-card" class="stage-verse-card empty">
+        <div class="stage-meta">
+          <span class="stage-badge">SCRIPTURE</span>
+          <h1 id="stage-reference" class="stage-reference">No verse displayed</h1>
+        </div>
+        <div class="stage-text-container">
+          <p id="stage-verse-text" class="stage-verse-text">Awaiting scripture detection from pulpit speech...</p>
+        </div>
+      </section>
+    </main>
+
+    <!-- Connection + microphone health -->
+    <footer class="stage-footer">
+      <div class="status-indicator">
+        <span id="ws-indicator" class="dot disconnected"></span>
+        <span id="ws-status-text">DISCONNECTED</span>
+      </div>
+      <div class="status-indicator">
+        <span>MIC</span>
+        <span id="audio-status-text" class="audio-status-val">—</span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="stage.js"></script>
+</body>
+</html>

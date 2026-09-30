@@ -27,8 +27,9 @@ import { GLOSSARY } from "../server/glossary/glossary"
 import { getCrossReferences, prefetchCrossReferences } from "../server/verse/cross-reference-engine"
 import { analyzeSermonFlow } from "../server/ai/sermon-flow-analyzer"
 import type { DisplayMode, VerseConfirmationMode, MediaCueKind } from "../../packages/contracts"
+import { buildPageUrls, buildStatusPayload, type UiLanguage } from "./status-payload"
 
-export type UiLanguage = "en" | "fr"
+export type { UiLanguage } from "./status-payload"
 
 const PORT = 3000
 const HOST = "0.0.0.0"
@@ -65,6 +66,12 @@ async function main() {
     operatorToken: process.env.OPERATOR_TOKEN || randomBytes(16).toString("hex"),
     viewerToken: process.env.VIEWER_TOKEN || randomBytes(16).toString("hex"),
   }
+
+  // Every page URL this server advertises, built in one place
+  // (SECURITY.md item 13, ARCHITECTURE.md section 106). Read-only pages —
+  // overlay, Stage Display, Live Companion — carry the viewer token; only
+  // the phone remote carries the operator token.
+  const pageUrls = buildPageUrls({ port: PORT, ...tokens })
 
   // Configuration state
   let groqApiKey = process.env.GROQ_API_KEY || ""
@@ -140,8 +147,10 @@ async function main() {
         event: "server.listening",
       })
       console.log(`ChurchOverlay Server listening at http://${HOST}:${PORT}`)
-      console.log(`Overlay URL: http://${HOST}:${PORT}/overlay/index.html?token=${tokens.viewerToken}&wsPort=${PORT}`)
-      console.log(`Remote URL: http://${HOST}:${PORT}/remote/index.html?token=${tokens.operatorToken}&wsPort=${PORT}`)
+      console.log(`Overlay URL: http://${HOST}:${PORT}${pageUrls.overlay}`)
+      console.log(`Remote URL: http://${HOST}:${PORT}${pageUrls.remote}`)
+      console.log(`Stage Display URL: http://${HOST}:${PORT}${pageUrls.stage}`)
+      console.log(`Live Companion URL: http://${HOST}:${PORT}${pageUrls.live}`)
       resolve()
     })
   })
@@ -179,21 +188,24 @@ async function main() {
   })
 
   // API Endpoints
-  app.get("/api/status", (_req: Request, res: Response) => {
-    res.json({
-      ready: true,
-      hasGroqKey: Boolean(groqApiKey),
+
+  // Both endpoints below return this exact body — one source of truth, in
+  // status-payload.ts, so the URL/token contract is unit-testable without
+  // booting this server.
+  const currentStatusPayload = () =>
+    buildStatusPayload({
       port: PORT,
-      token: tokens.operatorToken,
-      viewerToken: tokens.viewerToken,
+      ...tokens,
+      hasGroqKey: Boolean(groqApiKey),
       displayMode,
       uiLanguage,
       verseConfirmationMode,
       enableSermonNotes,
       allowPhoneRemote,
-      overlayUrl: `/overlay/index.html?token=${tokens.viewerToken}&wsPort=${PORT}`,
-      remoteUrl: `/remote/index.html?token=${tokens.operatorToken}&wsPort=${PORT}`,
     })
+
+  app.get("/api/status", (_req: Request, res: Response) => {
+    res.json(currentStatusPayload())
   })
 
   app.post("/api/setup", async (req: Request, res: Response) => {
@@ -215,20 +227,7 @@ async function main() {
         allowPhoneRemote = body.allowPhoneRemote
       }
 
-      res.json({
-        ready: true,
-        hasGroqKey: Boolean(groqApiKey),
-        port: PORT,
-        token: tokens.operatorToken,
-        viewerToken: tokens.viewerToken,
-        displayMode,
-        uiLanguage,
-        verseConfirmationMode,
-        enableSermonNotes,
-        allowPhoneRemote,
-        overlayUrl: `/overlay/index.html?token=${tokens.viewerToken}&wsPort=${PORT}`,
-        remoteUrl: `/remote/index.html?token=${tokens.operatorToken}&wsPort=${PORT}`,
-      })
+      res.json(currentStatusPayload())
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
     }

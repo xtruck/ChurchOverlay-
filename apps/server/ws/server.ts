@@ -60,8 +60,13 @@ const DEFAULT_HOST = "127.0.0.1"
  * Role assignment (operator vs viewer) happens via the token presented in
  * the Sec-WebSocket-Protocol header — never a URL query parameter
  * (section 26, AGENTS.md section 18). A connection presenting neither
- * registered token is refused at the handshake itself; the "connection"
- * event never fires for it.
+ * registered token never becomes a usable client: handleProtocols()
+ * rejects a bogus token during negotiation, and handleConnection()
+ * re-checks the negotiated protocol so a connection that negotiated NO
+ * protocol at all (`ws` only invokes handleProtocols when at least one
+ * protocol is offered, and completes the handshake without one when the
+ * hook returns false) is terminated before it is ever assigned a role or
+ * can receive a broadcast. See SECURITY.md item 13.
  *
  * Every inbound message is run through validateWsMessage() (the action
  * registry built earlier) before onCommand() is ever invoked. This class
@@ -160,6 +165,18 @@ export class ChurchOverlayWsServer {
   }
 
   private handleConnection(socket: WebSocket): void {
+    // Server-side token check, independent of handleProtocols above: `ws`
+    // only calls handleProtocols when the client OFFERS at least one
+    // protocol, and it still completes the 101 handshake WITHOUT selecting
+    // a protocol when that hook returns false. Such a socket arrives here
+    // with protocol === "" and must never be silently classified as a
+    // viewer (AGENTS.md section 18, SECURITY.md item 13).
+    if (socket.protocol !== this.tokens.operatorToken && socket.protocol !== this.tokens.viewerToken) {
+      this.onRejected?.("connection presented no registered token", null)
+      socket.terminate()
+      return
+    }
+
     const role: WsRole = socket.protocol === this.tokens.operatorToken ? "operator" : "viewer"
     this.clientRoles.set(socket, role)
 

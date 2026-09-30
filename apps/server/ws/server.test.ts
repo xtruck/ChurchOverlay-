@@ -58,9 +58,55 @@ test("ChurchOverlayWsServer: defaults to binding 127.0.0.1", async () => {
 })
 
 test("ChurchOverlayWsServer: an unrecognized token is rejected at the handshake, before any message is possible", async () => {
-  const server = await startServer()
+  const viewers: number[] = []
+  const server = await startServer({ onViewerConnected: () => viewers.push(1) })
   try {
     await expectConnectionRejected(server.port, "not-a-real-token")
+    // The ws CLIENT aborts by itself when the server's 101 response doesn't
+    // echo a subprotocol, which previously masked that the server had
+    // accepted the socket and registered it as a viewer. Give the server's
+    // connection handler a tick, then assert it never did.
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.deepEqual(viewers, [], "the server admitted an unrecognized token as a viewer")
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer: a connection offering NO subprotocol at all is refused, never admitted as a viewer", async () => {
+  const viewers: number[] = []
+  const commands: unknown[] = []
+  const server = await startServer({
+    onCommand: (message, role) => commands.push({ message, role }),
+    onViewerConnected: () => viewers.push(1),
+  })
+  try {
+    // Deliberately no protocols argument: `ws` only calls handleProtocols
+    // when at least one protocol is offered, so this socket used to reach
+    // handleConnection with protocol === "" and be assigned the viewer
+    // role — receiving broadcast verse text plus the layout/branding
+    // late-join state without presenting any token. It must be terminated
+    // on arrival instead.
+    const socket = new WebSocket(`ws://127.0.0.1:${server.port}`)
+    let closeTimer: ReturnType<typeof setTimeout> | undefined
+    const outcome = await new Promise<string>((resolve) => {
+      socket.once("error", () => {
+        if (closeTimer) clearTimeout(closeTimer)
+        resolve("error")
+      })
+      socket.once("close", () => {
+        if (closeTimer) clearTimeout(closeTimer)
+        resolve("close")
+      })
+      closeTimer = setTimeout(
+        () => resolve(socket.readyState === WebSocket.OPEN ? "still-open" : "closed"),
+        500
+      )
+    })
+
+    assert.notEqual(outcome, "still-open", "the server left an unauthenticated socket open")
+    assert.deepEqual(viewers, [], "the server admitted an unauthenticated connection as a viewer")
+    assert.deepEqual(commands, [], "the server processed a command from an unauthenticated connection")
   } finally {
     await server.close()
   }
