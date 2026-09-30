@@ -54,6 +54,15 @@ export type ChurchOverlayWsServerOptions = {
 const DEFAULT_HOST = "127.0.0.1"
 
 /**
+ * Hard cap on a single inbound WebSocket message. `ws` defaults to 100 MiB,
+ * which any token holder — including the read-only viewer role — could make
+ * the server buffer and JSON-parse. The largest legitimate message is an
+ * audio frame (16 kHz PCM16 = 32 KB/s), so 1 MiB is ~30 s of audio in one
+ * frame; ws closes an oversized connection with code 1009 before buffering it.
+ */
+const MAX_MESSAGE_BYTES = 1024 * 1024
+
+/**
  * The v1 local WebSocket server (ARCHITECTURE.md sections 24-28, section
  * 49 Security Model).
  *
@@ -99,11 +108,13 @@ export class ChurchOverlayWsServer {
     this.wss = options.server
       ? new WebSocketServer({
           server: options.server,
+          maxPayload: MAX_MESSAGE_BYTES,
           handleProtocols: (protocols) => this.resolveProtocol(protocols),
         })
       : new WebSocketServer({
           host: options.host ?? DEFAULT_HOST,
           port: options.port,
+          maxPayload: MAX_MESSAGE_BYTES,
           handleProtocols: (protocols) => this.resolveProtocol(protocols),
         })
 
@@ -165,6 +176,13 @@ export class ChurchOverlayWsServer {
   }
 
   private handleConnection(socket: WebSocket): void {
+    // `ws` emits protocol violations (oversized or malformed frames, invalid
+    // UTF-8) as an 'error' event on the socket. With no listener, Node throws
+    // it as an uncaughtException and the whole server process dies — so any
+    // client, even the read-only viewer, could crash the app mid-service.
+    // ws closes the connection itself after emitting; this only reports it.
+    socket.on("error", (error) => this.onRejected?.(`socket error: ${error.message}`, this.clientRoles.get(socket) ?? null))
+
     // Server-side token check, independent of handleProtocols above: `ws`
     // only calls handleProtocols when the client OFFERS at least one
     // protocol, and it still completes the 101 handshake WITHOUT selecting

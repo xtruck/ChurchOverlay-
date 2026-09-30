@@ -317,3 +317,41 @@ async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void
     await new Promise((resolve) => setTimeout(resolve, 5))
   }
 }
+
+test("ChurchOverlayWsServer: a message over the payload limit closes the connection instead of being buffered (viewer and operator alike)", async () => {
+  let received = 0
+  const rejections: string[] = []
+  const server = await startServer({ onCommand: () => received++, onRejected: (reason) => rejections.push(reason) })
+  try {
+    for (const token of [TOKENS.viewerToken, TOKENS.operatorToken]) {
+      const socket = await connect(server.port, token)
+      const closed = new Promise<number>((resolve) => socket.once("close", (code) => resolve(code)))
+      const timedOut = new Promise<number>((resolve) => setTimeout(() => resolve(-1), 3000))
+      socket.send(Buffer.alloc(2 * 1024 * 1024, 0x20))
+      // 1009 = "message too big", raised by ws itself once maxPayload is exceeded.
+      const code = await Promise.race([closed, timedOut])
+      if (code === -1) socket.terminate()
+      assert.equal(code, 1009)
+    }
+    assert.equal(received, 0)
+    // The oversized frame is reported through onRejected, not thrown as an uncaught exception.
+    assert.equal(rejections.filter((reason) => reason.startsWith("socket error:")).length, 2)
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer: a normal-sized audio frame is still accepted under the payload limit", async () => {
+  const frames: AudioFrame[] = []
+  const server = await startServer({ onAudioFrame: (frame) => frames.push(frame) })
+  try {
+    const socket = await connect(server.port, TOKENS.operatorToken)
+    // 10 seconds of 16 kHz audio (320 KB) — far larger than any real frame.
+    socket.send(encodeAudioFrame({ samples: new Int16Array(160000), sampleRate: 16000, sequence: 1 }))
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(frames.length, 1)
+    socket.close()
+  } finally {
+    await server.close()
+  }
+})
