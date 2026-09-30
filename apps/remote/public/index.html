@@ -347,10 +347,10 @@
       </div>
 
       <div class="card">
-        <h2 class="card-title">Layout &amp; Media</h2>
+        <h2 class="card-title" data-t="layoutMedia">Layout &amp; Media</h2>
         <div class="btn-row" style="margin-bottom: 10px">
-          <button id="layout-fullscreen-btn" class="btn-secondary" style="font-size:13px">Fullscreen View</button>
-          <button id="layout-lowerthird-btn" class="btn-secondary" style="font-size:13px">Lower-Third</button>
+          <button id="layout-fullscreen-btn" class="btn-secondary" style="font-size:13px" data-t="layoutFullscreen">Fullscreen View</button>
+          <button id="layout-lowerthird-btn" class="btn-secondary" style="font-size:13px" data-t="layoutLowerThird">Lower-Third</button>
         </div>
         <button id="clear-media-btn" class="btn-danger" style="width:100%" data-t="clearMedia">Stop Media Cue</button>
       </div>
@@ -394,10 +394,10 @@
     <!-- Tab 3: Quick Scripture & Intelligence Pad -->
     <section id="panel-pad" class="tab-panel">
       <div class="card">
-        <h2 class="card-title">Quick Verse Fire</h2>
+        <h2 class="card-title" data-t="quickVerse">Quick Verse Fire</h2>
         <div style="display:flex; gap:8px; margin-bottom:8px">
           <input id="quick-verse-input" type="text" placeholder="e.g. John 3:16 or Rom 8:28" style="margin-bottom:0" />
-          <button id="quick-verse-btn" class="btn-primary" style="flex-shrink:0">Project</button>
+          <button id="quick-verse-btn" class="btn-primary" style="flex-shrink:0" data-t="quickVerseProject">Project</button>
         </div>
         <div class="grid-presets">
           <button type="button" class="preset-btn verse-preset-btn" data-ref="John 3:16">
@@ -429,7 +429,7 @@
       </div>
 
       <div class="card">
-        <h2 class="card-title">Spoken Outline Point Triggers</h2>
+        <h2 class="card-title" data-t="outlineTitle">Spoken Outline Point Triggers</h2>
         <div class="grid-presets">
           <button type="button" class="preset-btn outline-preset-btn" data-num="1" data-title="Foundational Faith" data-text="Point 1: Walking by Faith">
             <strong>Point 1</strong>
@@ -448,7 +448,7 @@
             <small>Call to Prayer</small>
           </button>
         </div>
-        <button id="clear-outline-btn" class="btn-danger" style="width:100%; margin-top:8px">Clear Outline Banner</button>
+        <button id="clear-outline-btn" class="btn-danger" style="width:100%; margin-top:8px" data-t="outlineClear">Clear Outline Banner</button>
       </div>
     </section>
 
@@ -465,6 +465,6 @@
     </section>
   </div>
 
-  <script src="/remote.js"></script>
+  <script src="remote.js"></script>
 </body>
 </html>
