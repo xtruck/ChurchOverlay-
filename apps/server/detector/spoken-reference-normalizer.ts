@@ -155,7 +155,9 @@ function rewriteNumberWords(text: string, isBookWord?: (word: string) => boolean
     const bare = strip(cleanWords[w] as string)
     const previousBare = strip(previousWord).replace(/[.,;:!?]+$/, "")
     const context = NUMBER_CONTEXT.test(previousBare) || /\d$/.test(previousWord) || (isBookWord?.(previousBare) ?? false)
-    if (context && (bare in UNITS || bare in TENS || bare.includes("-"))) {
+    // "cent" opens a number too ("Psaume cent dix-neuf"); English needs no case
+    // for it because "one hundred nineteen" already starts with a unit word.
+    if (context && (bare in UNITS || bare in TENS || bare === "cent" || bare.includes("-"))) {
       const parsed = parseNumberWords(cleanWords, w)
       if (parsed) {
         const lastToken = words[w + parsed.length - 1] as string

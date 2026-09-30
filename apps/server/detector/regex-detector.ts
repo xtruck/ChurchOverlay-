@@ -463,7 +463,13 @@ export function normalizeBookName(rawBook: string): string {
 
 export const CATALOG_IDS = new Set(BOOK_CATALOG.map((book: { readonly id: string }) => book.id))
 
-/** True when a single spoken word names a Bible book (French or English, any case/accents). */
+/**
+ * True when a single spoken word names a Bible book (French or English, any case/accents).
+ * A numbered book's bare name counts too ("Corinthiens", "Timothy"): the catalog
+ * only holds "1 corinthians", so without this a spelled-out chapter and verse
+ * after "première Corinthiens" were never converted to digits.
+ */
 export function isCatalogBookWord(word: string): boolean {
-  return CATALOG_IDS.has(normalizeBookName(word))
+  if (CATALOG_IDS.has(normalizeBookName(word))) return true
+  return [1, 2, 3].some((n) => CATALOG_IDS.has(normalizeBookName(`${n} ${word}`)))
 }

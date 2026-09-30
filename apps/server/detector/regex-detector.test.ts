@@ -241,3 +241,39 @@ test("RegexDetector: a phonetic book-name alias still produces a full detected r
   assert.deepEqual(detector.detect("Psalms 23:1"), [{ book: "psalm", chapter: 23, verse: 1 }])
   assert.deepEqual(detector.detect("Écrisage 2 le verset 3"), [{ book: "ecclesiastes", chapter: 2, verse: 3 }])
 })
+
+// Found by probing spoken forms: number words after a NUMBERED book were
+// never converted, because isCatalogBookWord("corinthiens") was false (the
+// catalog id is "1 corinthians"), so digits worked but spoken numbers did not.
+test("RegexDetector: spelled-out chapter and verse after a numbered book (French ordinal forms)", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("première Corinthiens treize quatre"), [{ book: "1 corinthians", chapter: 13, verse: 4 }])
+  assert.deepEqual(detector.detect("première épître aux Corinthiens treize quatre"), [{ book: "1 corinthians", chapter: 13, verse: 4 }])
+  assert.deepEqual(detector.detect("deuxième Timothée trois seize"), [{ book: "2 timothy", chapter: 3, verse: 16 }])
+  assert.deepEqual(detector.detect("1 Corinthiens treize quatre"), [{ book: "1 corinthians", chapter: 13, verse: 4 }])
+})
+
+test("RegexDetector: spelled-out chapter and verse after a numbered book (English ordinal forms)", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("first Corinthians thirteen four"), [{ book: "1 corinthians", chapter: 13, verse: 4 }])
+  assert.deepEqual(detector.detect("turn to Second Timothy three sixteen"), [{ book: "2 timothy", chapter: 3, verse: 16 }])
+  assert.deepEqual(detector.detect("2 Timothy three sixteen"), [{ book: "2 timothy", chapter: 3, verse: 16 }])
+})
+
+test("RegexDetector: French 'cent' starts a number (Psalm 119 and the other chapters above 99)", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("Psaume cent dix-neuf verset cinq"), [{ book: "psalm", chapter: 119, verse: 5 }])
+  assert.deepEqual(detector.detect("Psaume cent dix-neuf verset cent cinq"), [{ book: "psalm", chapter: 119, verse: 105 }])
+  assert.deepEqual(detector.detect("Psaume cent dix-neuf cent cinq"), [{ book: "psalm", chapter: 119, verse: 105 }])
+  assert.deepEqual(detector.detect("Psaume cent trente-six un"), [{ book: "psalm", chapter: 136, verse: 1 }])
+  assert.deepEqual(detector.detect("Psaume cent un un"), [{ book: "psalm", chapter: 101, verse: 1 }])
+})
+
+test("RegexDetector: the same fixes do not make ordinary sentences produce a reference", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("nous étions cent cinquante personnes"), [])
+  assert.deepEqual(detector.detect("Pierre a dit cent fois non"), [])
+  assert.deepEqual(detector.detect("à trois heures quinze minutes"), [])
+  assert.deepEqual(detector.detect("the meeting starts at three sixteen"), [])
+  assert.deepEqual(detector.detect("Timothy came at three sixteen"), [])
+})
