@@ -50,7 +50,12 @@ itself is genuine.
 
 **Not automated in this repository**: real microphone capture, the real Electron GUI,
 and OBS Browser Source rendering. These require an actual desktop session; `npm run
-package` builds a real installable app for manual verification.
+package` builds a real installable app for manual verification. Because the browser
+pages themselves can't be driven here, their one non-negotiable invariant — authenticate
+the WebSocket with `Sec-WebSocket-Protocol`, never a URL parameter — is asserted directly
+against their source by `apps/server/ws/client-handshake.test.ts` (deterministic, no
+browser, no network). That guard also fails if the set of shipped pages that open a
+WebSocket changes, so a new or renamed page has to be acknowledged deliberately.
 
 ## Fixture coverage
 
@@ -82,6 +87,8 @@ Current status:
 | default verse display auto-clears after the fixed 2:30 ceiling | `app-core.test.ts` |
 | media cue auto-clear duration persists across restart | `media-library.test.ts` |
 | media:set-duration accepts positive durations and rejects invalid values | `action-registry.test.ts` |
+| every shipped browser page authenticates its WebSocket with a subprotocol and keeps the token out of the connection URL | `client-handshake.test.ts` |
+| Web Server Mode advertises token-bearing page URLs, viewer token for read-only pages and operator token only for the remote | `status-payload.test.ts` |
 
 Two categories from that list have no dedicated fixture, deliberately: **low-quality
 transcript** has no v1 provider that exposes a usable quality signal (GroqProvider

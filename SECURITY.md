@@ -17,11 +17,12 @@ as a bug.
 3. **Tokens are not URL parameters** (for the WebSocket handshake itself).
    `ChurchOverlayWsServer` reads the token from `Sec-WebSocket-Protocol`
    (`apps/server/ws/server.ts`'s `resolveProtocol()`), never from the connection URL's
-   query string. The one deliberate, documented exception: the *page* URL that OBS's
-   Browser Source loads (`apps/overlay/public/index.html?token=...`) does carry the
-   viewer token as a query parameter, because Browser Source has no other channel to
-   receive credentials. The WS connection that page's JS opens still uses
-   `Sec-WebSocket-Protocol`, not the page URL, to authenticate.
+   query string. The one deliberate, documented exception is the *page* URL, not the
+   socket URL: every served page — the OBS overlay, the Stage Display, the Live
+   Companion, and the phone remote — receives its token as a query parameter, because
+   OBS Browser Source and a plain browser tab have no other channel to receive
+   credentials. The WS connection each page's JS opens still authenticates with
+   `Sec-WebSocket-Protocol`, never with the page URL.
 
 4. **Tokens are encrypted at rest.**
    `ConfigStore` (`apps/desktop/main/config-store.ts`) encrypts the Groq API key and
@@ -81,11 +82,35 @@ as a bug.
     surface for OBS) rejects any resolved path outside its fixed `rootDir` before
     reading a file.
 
+13. **A WebSocket connection that presents no token at all is never admitted.**
+    `ChurchOverlayWsServer` (`apps/server/ws/server.ts`) enforces the token twice:
+    `resolveProtocol()` refuses a non-matching offered protocol during negotiation, and
+    `handleConnection()` re-checks the *negotiated* `socket.protocol` and terminates the
+    socket before any role is assigned. The second check is not redundant: `ws` only
+    invokes `handleProtocols` when the client offers at least one protocol, and it still
+    completes the 101 handshake (with no protocol selected) when that hook returns false
+    — so a client offering nothing used to reach the connection handler with
+    `protocol === ""` and was classified as a **viewer**, receiving `verse:show`
+    broadcasts and the late-join layout/branding state without presenting any token.
+    All five shipped pages that open a WebSocket
+    (`apps/overlay/public/overlay.js`, `apps/remote/public/remote.js`,
+    `apps/stage/public/stage.js`, `apps/live/public/live.js`,
+    `apps/desktop/renderer/dashboard.js`) present their token via
+    `Sec-WebSocket-Protocol` and never in the connection URL;
+    `apps/server/ws/client-handshake.test.ts` fails if a shipped page regresses to
+    either mistake. Web Server Mode publishes the matching token-bearing page URLs
+    (`/api/status`, `/api/setup`, and the startup banner, all from
+    `apps/web/status-payload.ts`): the read-only pages (overlay, Stage Display, Live
+    Companion) get the viewer token, and only the phone remote gets the operator token.
+    The dev-only overlay dashboard (`apps/overlay/dev-preview/`) is excluded from that
+    test because it is never packaged or served (item 7).
+
 ## Known, deliberate trade-offs
 
-- The overlay page URL carries a viewer token as a query parameter (see item 3 above).
-  This is a documented compromise forced by OBS Browser Source's lack of a credential
-  channel, not an oversight.
+- Every served page URL carries its token as a query parameter (see item 3 above). This
+  is a documented compromise forced by OBS Browser Source and plain browser tabs having
+  no credential channel of their own, not an oversight — the socket each page then opens
+  authenticates with `Sec-WebSocket-Protocol`, so the token is never repeated there.
 - Both WS clients (`apps/overlay/public/overlay.js`,
   `apps/desktop/renderer/dashboard.js`) reconnect indefinitely on disconnect, using
   capped exponential backoff (1s doubling up to a 30s ceiling) rather than ever giving

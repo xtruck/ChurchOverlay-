@@ -21,7 +21,7 @@ for the full design, module boundaries, and numbered decision log.
 
 ## Requirements
 
-- Node.js >= 20.12
+- Node.js >= 22.12 (matches `engines` in package.json; CI runs Node 22)
 - A [Groq](https://console.groq.com/) API key (real-time transcription runs
   through Groq's Whisper endpoint)
 

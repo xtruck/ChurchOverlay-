@@ -5402,3 +5402,72 @@ both alias tables.
 detected reference carries; the chapter/verse combination is still
 validated downstream exactly as before, so a wrong or absent alias still
 never produces displayed content on its own.
+
+## 106. Viewer Authentication for the Stage Display and Live Companion Pages
+
+**Why.** Found while auditing the uncommitted WebSocket hardening recorded in
+SECURITY.md item 13. That hardening is correct — `handleConnection()` now
+re-checks the *negotiated* `socket.protocol` instead of trusting
+`handleProtocols()` to have run — but it surfaced two things at once.
+
+First, two shipped viewers were connecting with **no subprotocol at all**:
+`apps/stage/public/stage.js` and `apps/live/public/live.js` each built
+`ws://host:port/?token=…` and then opened `new WebSocket(url)`. Because `ws`
+only calls `handleProtocols` when a client offers at least one protocol, those
+sockets arrived with `protocol === ""`, and the role assignment
+(`protocol === operatorToken ? "operator" : "viewer"`) silently classified
+them as viewers — the token appended to their query string was read by
+nothing. Committing the hardening as-is would therefore have turned a real
+security fix into a silent outage of both pages: terminated on arrival,
+reconnecting forever behind a DISCONNECTED indicator, with no test covering
+page-to-server handshakes.
+
+Second, neither page was documented here at all: the commit that introduced
+`apps/stage`, `apps/live`, `stage:alert`, `stage:clear-alert`, `timer:state`,
+outline detection and the glossary/service-summary work added no section for
+them. In the same audit, `apps/stage/public/` turned out to ship `stage.css`
+and `stage.js` with **no HTML page**, so `/stage` had nothing to serve.
+
+**What.**
+- `stage.js` and `live.js` now authenticate exactly like `overlay.js` and
+  `remote.js` already did: the WS URL carries no token, and the token is
+  presented as the `Sec-WebSocket-Protocol` subprotocol
+  (`new WebSocket(wsUrl, [token])`). Both also handle the empty-token case by
+  reporting it rather than opening a socket the server is guaranteed to
+  terminate (the overlay's own `if (!token)` precedent) — otherwise the
+  browser throws on an empty protocol and the page silently never retries.
+- `apps/stage/public/index.html` — the missing page, built from the element
+  ids `stage.js` already queried and the classes `stage.css` already styled
+  (clock, countdown badge, operator alert banner, verse card, status footer).
+  No new behavior: it is the markup those two files were already written
+  against.
+- `apps/web/status-payload.ts` — `buildPageUrls()`/`buildStatusPayload()` are
+  now the single source of truth for every advertised page URL, replacing the
+  literal duplicated between `/api/status` and `/api/setup`. Read-only pages
+  (overlay, Stage Display, Live Companion) get the viewer token; only the
+  phone remote gets the operator token, since a viewer page holding the
+  operator token would be exactly the escalation AGENTS.md section 20
+  forbids. Web Server Mode's startup banner now prints all four URLs instead
+  of two.
+
+**Boundary check.** No new WS command or event, no change to the action
+registry, no change to role semantics (both pages stay viewers, exactly as
+before), and no bypass of validation: this only makes the *existing* viewer
+role the only way those pages can connect. `/stage/index.html` joins
+`/overlay/index.html`, `/live/index.html` and `/remote/index.html` as a
+token-bearing page URL — the compromise SECURITY.md item 3 already records
+for pages whose host (OBS Browser Source, a browser tab) has no other
+credential channel.
+
+**Tests.** `apps/server/ws/client-handshake.test.ts` asserts that every
+shipped page opening a WebSocket presents a protocols array and keeps the
+token out of its connection URL, and that the set of such pages is exactly
+the five expected ones — so renaming or adding a page fails loudly instead of
+silently voiding the guard. Verified fail-closed by reintroducing both
+mistakes: each produces a named violation. `apps/web/status-payload.test.ts`
+pins the URL/token mapping, including that no viewer page URL ever contains
+the operator token. The server half of the contract (a viewer token is
+accepted, an unknown token is refused at the handshake, a tokenless
+connection is terminated and never registered as a viewer) remains covered
+against a real socket by `apps/server/ws/server.test.ts`.
+
