@@ -23,13 +23,23 @@
 
   --vellum: #ede6d8;
   --ash: #a3adbb;
-  --ash-dim: #75839a;
+  /* Lightened from #75839a: that failed WCAG AA 4.5:1 on panel surfaces
+     (4.23:1 on --pew, 3.88:1 on --pew-raised). #8a97ad is >= 4.5:1 on every
+     surface this colour is drawn on. */
+  --ash-dim: #8a97ad;
 
   --accent: #e0a93b;
   --accent-ink: #1c1405;
 
   --on-air: #ef4a4a;
   --on-air-soft: rgba(239, 74, 74, 0.14);
+  /* Filled red behind white text. --on-air itself is for borders and glows;
+     white on #ef4a4a is only 3.65:1 (fails AA for small text), white on this
+     is 4.63:1. */
+  --on-air-strong: #d93636;
+  /* Form-field boundary: --line-strong is only 2.13:1 against the page
+     background; WCAG 1.4.11 asks for 3:1 on UI component boundaries. */
+  --field-border: #56698a;
   --pending: #e0a93b;
   --pending-soft: rgba(224, 169, 59, 0.14);
   --cue: #3fcf8e;
@@ -242,7 +252,7 @@ header.glass {
 }
 .tally-chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: 0.7; }
 .live-preview.on-air { border-color: var(--on-air); box-shadow: 0 0 0 4px var(--on-air-soft); }
-.live-preview.on-air .tally-chip { background: var(--on-air); color: #fff; }
+.live-preview.on-air .tally-chip { background: var(--on-air-strong); color: #fff; }
 .live-preview.on-air .tally-chip::before { opacity: 1; background: #fff; }
 .live-preview.has-pending:not(.on-air) { border-color: var(--pending); box-shadow: 0 0 0 4px var(--pending-soft); }
 .overlay-preview-frame {
@@ -441,7 +451,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]
 .btn-secondary { background: var(--stone); color: var(--vellum); border-color: var(--line-strong); }
 .btn-secondary:hover:not(:disabled) { background: #2a3a52; }
 .btn-danger { background: transparent; color: #ff8f8f; border-color: var(--on-air); }
-.btn-danger:hover:not(:disabled) { background: var(--on-air); color: #fff; }
+.btn-danger:hover:not(:disabled) { background: var(--on-air-strong); color: #fff; }
 .btn-small { padding: 6px 11px; font-size: 12.5px; }
 .btn-block { flex: 1; }
 .btn-row { display: flex; gap: var(--space-2); align-items: center; }
@@ -450,7 +460,7 @@ label { display: block; color: var(--ash); font-size: 13px; margin-bottom: 6px; 
 input[type="text"], input[type="password"], input[type="number"], select {
   width: 100%;
   background: var(--nave);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--field-border);
   color: var(--vellum);
   padding: 10px 12px;
   border-radius: var(--radius-control);
@@ -460,7 +470,10 @@ input[type="text"], input[type="password"], input[type="number"], select {
 }
 input[type="number"] { font-variant-numeric: tabular-nums; }
 input::placeholder { color: var(--ash-dim); }
-input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:focus, select:focus { border-color: var(--accent); outline: none; }
+/* No `outline: none` here: it outranked the :focus-visible ring above
+   (higher specificity), so keyboard users lost the focus indicator on every
+   text field (WCAG 2.4.7). The border tint is additive, not a replacement. */
+input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:focus, select:focus { border-color: var(--accent); }
 input[type="color"] {
   width: 100%;
   height: 38px;
@@ -680,4 +693,30 @@ progress { accent-color: var(--accent); height: 8px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; }
+}
+
+/* ---------- Contrast preferences ---------- */
+/* Operators in very bright or very dim rooms (or with low vision) can opt
+   into stronger separation at the OS level; honour it instead of ignoring it. */
+@media (prefers-contrast: more) {
+  :root {
+    --line: #5d7194;
+    --line-strong: #8296b8;
+    --field-border: #8296b8;
+    --ash: #c4ccd8;
+    --ash-dim: #b2bccb;
+  }
+  .sidebar-nav-item.active { border-color: var(--line-strong); }
+}
+
+/* Windows High Contrast / forced colors: state must not rely on background
+   or box-shadow alone, which the UA strips. Keep borders and the focus ring
+   on system colours so the tally, pending card and focus remain visible. */
+@media (forced-colors: active) {
+  .live-preview.on-air { border-color: Highlight; border-width: 4px; }
+  .live-preview.has-pending:not(.on-air) { border-color: Mark; border-style: dashed; border-width: 4px; }
+  .tally-chip, .status-pill { border: 1px solid CanvasText; }
+  button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
+    outline: 3px solid Highlight;
+  }
 }

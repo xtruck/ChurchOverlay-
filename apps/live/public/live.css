@@ -89,6 +89,13 @@ body {
   outline: none;
 }
 
+/* The default outline is removed above for the pointer look; restore a
+   visible indicator for keyboard focus (WCAG 2.4.7). */
+.translation-control select:focus-visible {
+  outline: 2px solid var(--accent-gold);
+  outline-offset: 2px;
+}
+
 .verse-hero {
   background: var(--bg-card);
   border-radius: 16px;

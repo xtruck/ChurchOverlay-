@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta
   http-equiv="Content-Security-Policy"
   content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self' ws:; base-uri 'none'; form-action 'none';"
@@ -19,7 +19,7 @@
     --line-strong: #3b4e68;
     --vellum: #f3efe6;
     --ash: #9eabbc;
-    --ash-dim: #6d7b8e;
+    --ash-dim: #8a97ad;
     --accent: #e0a93b;
     --accent-soft: rgba(224, 169, 59, 0.15);
     --on-air: #ef4a4a;
@@ -251,7 +251,8 @@
     margin-bottom: 8px;
   }
   input:focus, select:focus {
-    outline: none;
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
     border-color: var(--accent);
     box-shadow: 0 0 0 2px var(--accent-soft);
   }
