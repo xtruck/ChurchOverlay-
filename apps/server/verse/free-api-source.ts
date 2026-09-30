@@ -1,4 +1,5 @@
 import type { Verse, VerseReference, VerseSource } from "../../../packages/contracts"
+import { isPlainObject } from "../../../packages/shared/type-guards"
 
 /**
  * v1 VerseSource implementation (ARCHITECTURE.md section 16, section 50
@@ -89,10 +90,6 @@ export class FreeApiSource implements VerseSource {
 function buildRequestUrl(baseUrl: string, reference: VerseReference): string {
   const book = encodeURIComponent(reference.book.trim())
   return `${baseUrl}/${book}+${reference.chapter}:${reference.verse}?translation=${V1_TRANSLATION}`
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function parseVerseResponse(body: unknown, reference: VerseReference): Verse | null {

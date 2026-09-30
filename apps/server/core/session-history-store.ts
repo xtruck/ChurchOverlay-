@@ -1,6 +1,7 @@
 import { mkdir, open, readFile, rename } from "node:fs/promises"
 import { join } from "node:path"
 import type { Verse } from "../../../packages/contracts"
+import { isNotFoundError } from "../../../packages/shared/type-guards"
 
 export type SessionHistoryEntry = {
   readonly reference: Verse["reference"]
@@ -89,12 +90,6 @@ export class SessionHistoryStore {
     }
     await rename(tempPath, this.filePath)
   }
-}
-
-function isNotFoundError(err: unknown): boolean {
-  return (
-    typeof err === "object" && err !== null && "code" in err && (err as { code: unknown }).code === "ENOENT"
-  )
 }
 
 function isSessionHistoryEntry(value: unknown): value is SessionHistoryEntry {

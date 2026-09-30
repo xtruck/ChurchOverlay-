@@ -1,5 +1,6 @@
 import type { Verse, VerseReference, VerseSource } from "../../../packages/contracts"
 import { BOOK_CATALOG } from "./book-catalog"
+import { isPlainObject } from "../../../packages/shared/type-guards"
 
 /**
  * French VerseSource (ARCHITECTURE.md section 63.1, section 50 third
@@ -97,10 +98,6 @@ export class GetBibleVerseSource implements VerseSource {
 function bookNumberFor(bookId: string): number | null {
   const index = BOOK_CATALOG.findIndex((entry) => entry.id === bookId)
   return index === -1 ? null : index + 1
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function parseChapterResponse(body: unknown, reference: VerseReference, translation: string): Verse | null {

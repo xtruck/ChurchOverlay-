@@ -3,6 +3,7 @@ import { dirname } from "node:path"
 import type { DisplayMode, VerseConfirmationMode, VerseLayout } from "../../../packages/contracts"
 import type { AudioProfile } from "../../server/audio/audio-profile"
 import { ASR_STRATEGIES, type AsrStrategy } from "../../server/asr/asr-strategy"
+import { isNotFoundError, isPlainObject } from "../../../packages/shared/type-guards"
 
 /** Desktop-app-only concern (not part of the WS protocol) — the operator dashboard/setup UI's own language, ARCHITECTURE.md section 63.5. */
 export type UiLanguage = "en" | "fr"
@@ -362,15 +363,3 @@ export class ConfigStore {
   }
 }
 
-function isNotFoundError(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "code" in err &&
-    (err as { code: unknown }).code === "ENOENT"
-  )
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}

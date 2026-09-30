@@ -2,6 +2,7 @@ import { copyFile, mkdir, open, readFile, rename, unlink } from "node:fs/promise
 import { extname, join } from "node:path"
 import type { MediaCue, MediaCueKind } from "../../../packages/contracts"
 import { generateUlid } from "../../../packages/shared/ulid"
+import { isNotFoundError } from "../../../packages/shared/type-guards"
 
 const ALLOWED_EXTENSIONS: Readonly<Record<MediaCueKind, readonly string[]>> = {
   image: [".jpg", ".jpeg", ".png", ".webp"],
@@ -255,15 +256,6 @@ export class MediaLibrary {
 /** Shared with MediaCueDetector — both must agree on what "the same title" means. */
 export function normalizeTitle(title: string): string {
   return title.trim().replace(/\s+/g, " ").toLowerCase()
-}
-
-function isNotFoundError(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "code" in err &&
-    (err as { code: unknown }).code === "ENOENT"
-  )
 }
 
 function isStoredMediaCue(value: unknown): value is StoredMediaCue {

@@ -30,6 +30,7 @@ import type {
   WsMessage,
   WsRole,
 } from "../../../packages/contracts"
+import { isPlainObject } from "../../../packages/shared/type-guards"
 
 /**
  * v1 WS Action Registry (ARCHITECTURE.md section 30, section 50 fourth
@@ -54,10 +55,6 @@ export type ActionDefinition<TPayload = unknown> = {
    * "server-originated only" — no client may ever send it inbound. */
   readonly allowedSenders: readonly WsRole[]
   readonly validatePayload: (payload: unknown) => payload is TPayload
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function isFiniteNumber(value: unknown): value is number {

@@ -1,3 +1,5 @@
+import { isPlainObject } from "./type-guards"
+
 export type LogLevel = "error" | "warn" | "info" | "debug" | "trace"
 
 export type LogFields = {
@@ -107,6 +109,3 @@ function redactSecrets(metadata: Record<string, unknown>): Record<string, unknow
   return result
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}

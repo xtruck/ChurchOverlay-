@@ -2,6 +2,7 @@ import type { AsrProvider, AudioFrame, TranscriptResult } from "../../../package
 import { generateUlid } from "../../../packages/shared/ulid"
 import type { Logger } from "../../../packages/shared/logger"
 import { FRENCH_BOOK_ALIASES } from "../detector/regex-detector"
+import { isPlainObject } from "../../../packages/shared/type-guards"
 
 const DEFAULT_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 const DEFAULT_MODEL = "whisper-large-v3-turbo"
@@ -756,10 +757,6 @@ async function safeReadJson(response: Response): Promise<unknown> {
   } catch {
     return null
   }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function extractGroqErrorMessage(body: unknown): string | undefined {

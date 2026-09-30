@@ -1,3 +1,5 @@
+import { isPlainObject } from "../../../packages/shared/type-guards"
+
 const DEFAULT_URL = "https://api.groq.com/openai/v1/chat/completions"
 // AUDIT CORRECTION 2026-09: the earlier claim that llama-3.1-8b-instant was
 // "decommissioned 2026-08-16" is FALSE and has been removed. Verified
@@ -121,10 +123,6 @@ async function safeReadJson(response: Response): Promise<unknown> {
   } catch {
     return null
   }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function extractGroqErrorMessage(body: unknown): string | undefined {
