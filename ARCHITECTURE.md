@@ -5470,4 +5470,3 @@ the operator token. The server half of the contract (a viewer token is
 accepted, an unknown token is refused at the handshake, a tokenless
 connection is terminated and never registered as a viewer) remains covered
 against a real socket by `apps/server/ws/server.test.ts`.
-
