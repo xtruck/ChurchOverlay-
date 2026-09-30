@@ -276,6 +276,14 @@ export const FRENCH_BOOK_ALIASES: Readonly<Record<string, string>> = {
   // session's log (near-miss "À Babouct un le verset" never resolved).
   bakouk: "habakkuk",
   babouct: "habakkuk",
+  // Observed live (2026-09-30, same production run as the "Bakouk"/
+  // "Babouct" session above, on the very next read-through of the same
+  // book): "Abououct" (extra vowel run, trailing "ct") and "Bakouct" (a
+  // blend of "Bakouk" and "Babouct" — leading vowel dropped like "Bakouk",
+  // trailing "ct" like "Babouct"). Both near-missed in that run's log
+  // ("Abououct un le verset", "À Bakouct un le verset") and never resolved.
+  abououct: "habakkuk",
+  bakouct: "habakkuk",
   sophonie: "zephaniah",
   aggee: "haggai",
   zacharie: "zechariah",

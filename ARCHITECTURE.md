@@ -5403,6 +5403,15 @@ detected reference carries; the chapter/verse combination is still
 validated downstream exactly as before, so a wrong or absent alias still
 never produces displayed content on its own.
 
+**Amendment (2026-09-30).** The very next production run's log, reading
+through Habakkuk again, produced two more mishearings of the same book
+neither already-added alias covered: "Abououct" and "Bakouct" (a blend of
+the two 2026-09-29 entries — leading vowel dropped like "Bakouk", trailing
+"ct" like "Babouct"). Both near-missed and were added to
+`PHONETIC_BOOK_ALIASES` the same way, with regression tests; the pattern
+this section describes — proactive coverage doesn't close off finding more
+live mishearings later — holds as expected.
+
 ## 106. Viewer Authentication for the Stage Display and Live Companion Pages
 
 **Why.** Found while auditing the uncommitted WebSocket hardening recorded in

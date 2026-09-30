@@ -180,6 +180,12 @@ test("RegexDetector: detects two further live-observed Habakkuk mishearings (202
   assert.deepEqual(detector.detect("Babouct 5 verset 6"), [{ book: "habakkuk", chapter: 5, verse: 6 }])
 })
 
+test("RegexDetector: detects two more live-observed Habakkuk mishearings (2026-09-30): 'Abououct' and 'Bakouct'", () => {
+  const detector = new RegexDetector()
+  assert.deepEqual(detector.detect("Abououct 5 verset 6"), [{ book: "habakkuk", chapter: 5, verse: 6 }])
+  assert.deepEqual(detector.detect("Bakouct 5 verset 6"), [{ book: "habakkuk", chapter: 5, verse: 6 }])
+})
+
 // ARCHITECTURE.md section 105: comprehensive, proactive phonetic and
 // grammatical-number tolerance for all 66 books, across both languages —
 // requested directly (not waiting for each individual live miss).
