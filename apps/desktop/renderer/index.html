@@ -577,6 +577,33 @@
             </div>
           </div>
 
+          <!-- ARCHITECTURE.md section 107: which French Bible translation
+               verse lookups use. Live toggle, no restart (setFrenchSource()
+               hot-swaps the underlying source). -->
+          <div class="card glass">
+            <h2 class="card-title" data-i18n="frenchTranslation.title">French Translation</h2>
+            <p class="settings-hint" data-i18n="frenchTranslation.hint">Which French Bible translation verse lookups use. Both are public domain.</p>
+            <div id="french-translation-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.frenchTranslation" data-i18n-title="a11y.frenchTranslation">
+              <button type="button" data-translation="ls1910" class="active" data-i18n="frenchTranslation.ls1910">Louis Segond (1910)</button>
+              <button type="button" data-translation="darby" data-i18n="frenchTranslation.darby">Darby</button>
+            </div>
+          </div>
+
+          <!-- ARCHITECTURE.md section 108: which preset visual template the
+               overlay renders a verse with. Restarts services on change
+               (baked into branding:update, same as organizationName/accentColor) —
+               confirmed with the operator first, same pattern as the phone-remote toggle. -->
+          <div class="card glass">
+            <h2 class="card-title" data-i18n="overlayTemplate.title">Verse Card Style</h2>
+            <p class="settings-hint" data-i18n="overlayTemplate.hint">How the verse card looks on the overlay. Changing this briefly restarts services.</p>
+            <div id="overlay-template-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.overlayTemplate" data-i18n-title="a11y.overlayTemplate">
+              <button type="button" data-template="classic" class="active" data-i18n="overlayTemplate.classic">Classic</button>
+              <button type="button" data-template="banner" data-i18n="overlayTemplate.banner">Banner</button>
+              <button type="button" data-template="minimal" data-i18n="overlayTemplate.minimal">Minimal</button>
+              <button type="button" data-template="elegant" data-i18n="overlayTemplate.elegant">Elegant</button>
+            </div>
+          </div>
+
           <div class="card glass">
             <h2 class="card-title" data-i18n="remote.title">Phone Remote</h2>
             <div id="remote-disabled" data-i18n="remote.disabled">Not enabled. Turn on "Allow a phone remote" during setup to use this.</div>

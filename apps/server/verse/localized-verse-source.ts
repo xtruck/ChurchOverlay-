@@ -16,14 +16,23 @@ import type { Logger } from "../../../packages/shared/logger"
  */
 export class LocalizedVerseSource implements VerseSource {
   private mode: DisplayMode
+  private french: VerseSource
 
   constructor(
     private readonly english: VerseSource,
-    private readonly french: VerseSource,
+    french: VerseSource,
     initialMode: DisplayMode,
-    private readonly logger?: Logger
+    private readonly logger?: Logger,
+    // ARCHITECTURE.md section 107: which actual French translation `french`
+    // currently is (e.g. "ls1910", "darby") — a label the caller supplies
+    // alongside the source itself, since VerseSource has no way to ask a
+    // source what it is. Defaults to "ls1910" so every existing call site
+    // (this class predates French translation choice existing at all)
+    // keeps its previous getTranslationId() behavior unless it opts in.
+    private frenchTranslationId: string = "ls1910"
   ) {
     this.mode = initialMode
+    this.french = french
   }
 
   setMode(mode: DisplayMode): void {
@@ -32,6 +41,23 @@ export class LocalizedVerseSource implements VerseSource {
 
   getMode(): DisplayMode {
     return this.mode
+  }
+
+  /**
+   * ARCHITECTURE.md section 107: lets a live French-translation switch
+   * (the dashboard's own toggle, via a new set-french-translation IPC
+   * handler) swap which underlying VerseSource French/bilingual lookups
+   * use, without tearing down and reconstructing AppCore the way
+   * allowPhoneRemote's own switch must (that one's forced by the WS
+   * server's listen host being fixed at construction; this class's
+   * `french` field has no such constraint). `translationId` must be
+   * supplied alongside the new source itself — see getTranslationId()
+   * below for why silently reusing the previous label would be a real
+   * cache-correctness bug, not a cosmetic one.
+   */
+  setFrenchSource(source: VerseSource, translationId: string): void {
+    this.french = source
+    this.frenchTranslationId = translationId
   }
 
   /**
@@ -44,9 +70,19 @@ export class LocalizedVerseSource implements VerseSource {
    * (ARCHITECTURE.md section 16's "include translation identity in the
    * cache key" — the mode IS the translation identity here, since it's
    * what actually determines the shape/language of the returned Verse).
+   *
+   * CORRECTIF (ARCHITECTURE.md section 107): mode alone stopped being a
+   * complete translation identity once a mode could map to more than one
+   * underlying French VerseSource (ls1910 vs darby) — two different
+   * French texts for the same reference would otherwise share one cache
+   * key ("french"), so a switch from ls1910 to darby would silently serve
+   * back the stale ls1910 text already cached under that key. English has
+   * only ever had one translation (kjv), so its own branch is unaffected.
    */
   getTranslationId(): string {
-    return this.mode
+    if (this.mode === "english") return "english"
+    if (this.mode === "french") return `french:${this.frenchTranslationId}`
+    return `bilingual:${this.frenchTranslationId}`
   }
 
   async getVerse(reference: VerseReference): Promise<Verse | null> {

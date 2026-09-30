@@ -108,7 +108,10 @@
   // French-only display used to show the ENGLISH book name ("John 3:16")
   // under a French verse. The verse's own translation id says which
   // language the congregation is reading — Louis Segond 1910 is "ls1910".
-  const FRENCH_TRANSLATIONS = new Set(["ls1910", "lsg", "segond"])
+  // ARCHITECTURE.md section 107: "darby" (J.N. Darby, French, public
+  // domain) added alongside the existing Louis Segond aliases — both name
+  // a French-language translation, so both should render French book names.
+  const FRENCH_TRANSLATIONS = new Set(["ls1910", "lsg", "segond", "darby"])
   function formatVerseReference(verse) {
     const ref = verse.reference
     if (verse.secondary) return formatBilingualReference(ref)
@@ -237,13 +240,17 @@
     if (verseEl.classList.contains("visible")) requestAnimationFrame(() => fitVerseText())
   }
 
-  // ARCHITECTURE.md section 94: applies branding:update's late-join sync —
-  // absent/blank organizationName means the watermark simply stays hidden
-  // (no product-name default is ever shown to the congregation), and
-  // absent accentColor leaves this page's own built-in --accent untouched.
+  // ARCHITECTURE.md sections 94/108: applies branding:update's late-join
+  // sync — absent/blank organizationName means the watermark simply stays
+  // hidden (no product-name default is ever shown to the congregation),
+  // absent accentColor leaves this page's own built-in --accent untouched,
+  // and absent/"classic" overlayTemplate leaves #verse-card with no extra
+  // template-* class (its existing, unmodified default appearance).
+  const OVERLAY_TEMPLATE_CLASSES = ["tpl-banner", "tpl-minimal", "tpl-elegant"]
   function applyBranding(payload) {
     const organizationName = payload && payload.organizationName
     const accentColor = payload && payload.accentColor
+    const overlayTemplate = payload && payload.overlayTemplate
     if (organizationName) {
       brandWatermarkEl.textContent = organizationName
       brandWatermarkEl.classList.add("visible")
@@ -252,6 +259,10 @@
     }
     if (accentColor) {
       document.documentElement.style.setProperty("--accent", accentColor)
+    }
+    verseCardEl.classList.remove(...OVERLAY_TEMPLATE_CLASSES)
+    if (overlayTemplate && overlayTemplate !== "classic") {
+      verseCardEl.classList.add("tpl-" + overlayTemplate)
     }
   }
 

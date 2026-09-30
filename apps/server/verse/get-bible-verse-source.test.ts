@@ -63,6 +63,22 @@ test("GetBibleVerseSource: requests book_nr computed from BOOK_CATALOG's own ord
   assert.equal(requestedUrl, "https://api.getbible.net/v2/ls1910/43/3.json")
 })
 
+test("GetBibleVerseSource: a non-default translation selects both the request path and the returned Verse.translation (ARCHITECTURE.md section 107)", async () => {
+  let requestedUrl = ""
+  const source = new GetBibleVerseSource(
+    fakeFetch((url) => {
+      requestedUrl = url
+      return chapterResponse([{ verse: 16, text: "Car Dieu a tant aimé le monde..." }])
+    }),
+    "darby"
+  )
+  const verse = await source.getVerse(JOHN_3_16)
+  // Verified directly against the live API (ARCHITECTURE.md section 107): getbible.net
+  // serves every translation, including Darby, from the same /v2/{translation}/... path.
+  assert.equal(requestedUrl, "https://api.getbible.net/v2/darby/43/3.json")
+  assert.equal(verse?.translation, "darby")
+})
+
 test("GetBibleVerseSource: a verse number absent from the chapter resolves null — the versification-mismatch case (section 63.1)", async () => {
   const source = new GetBibleVerseSource(
     fakeFetch(() => chapterResponse([{ verse: 1, text: "x" }, { verse: 2, text: "y" }]))

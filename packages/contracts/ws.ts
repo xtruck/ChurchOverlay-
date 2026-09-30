@@ -117,6 +117,14 @@ export type DetectorNearMissPayload = {
 export type BrandingUpdatePayload = {
   readonly organizationName?: string
   readonly accentColor?: string
+  /**
+   * ARCHITECTURE.md section 108 — which preset visual template the overlay
+   * renders a verse with ("classic", "banner", "minimal", "elegant").
+   * Absent means "classic" (the overlay's one and only look before this
+   * existed), same optional/backward-compatible shape as
+   * organizationName/accentColor above.
+   */
+  readonly overlayTemplate?: string
 }
 
 /**

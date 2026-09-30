@@ -31,10 +31,12 @@ import {
   DISPLAY_MODES,
   UI_LANGUAGES,
   VERSE_CONFIRMATION_MODES,
+  FRENCH_TRANSLATIONS,
+  OVERLAY_TEMPLATES,
   type AppConfig,
   type UiLanguage,
 } from "./config-store"
-import type { DisplayMode, MediaCueKind, VerseConfirmationMode, VerseLayout } from "../../../packages/contracts"
+import type { DisplayMode, MediaCueKind, VerseConfirmationMode, VerseLayout, VerseSource } from "../../../packages/contracts"
 import { inferMediaKind, deriveTitleFromFilename } from "./media-import"
 import { isAllowedNavigation, isExternalHttpsUrl } from "./navigation-guard"
 import { Logger } from "../../../packages/shared/logger"
@@ -98,6 +100,8 @@ let currentAllowPhoneRemote = false
 let currentVerseConfirmationMode: VerseConfirmationMode = "auto"
 let currentEnableSermonNotes = false
 let currentVerseLayout: VerseLayout = "fullscreen"
+let currentFrenchTranslation = "ls1910"
+let currentOverlayTemplate = "classic"
 let ndiWindow: BrowserWindow | null = null
 let ndiOutput: NDIOutput | null = null
 let activeConfig: AppConfig | null = null
@@ -192,6 +196,36 @@ function getOfflineBibleData(): Promise<OfflineBibleData> {
   return offlineBibleDataPromise
 }
 
+/**
+ * ARCHITECTURE.md section 107 — shared by startServices() (at launch/setup)
+ * and set-french-translation (a live switch) so the two never drift: the
+ * bundled offline fallback (ARCHITECTURE.md section 77) is Louis Segond
+ * 1910-specific data, so it only ever wraps the "ls1910" source. Any other
+ * translation (currently just "darby") is live-API-only — a real,
+ * documented limitation (AGENTS.md section 46: an honest gap, not a silent
+ * one), surfaced the same way section 77's own "degrades to the plain live
+ * source" comment already documents for when the bundle itself fails to
+ * load.
+ */
+async function buildFrenchSource(translation: string): Promise<VerseSource> {
+  if (translation !== "ls1910") return new GetBibleVerseSource(undefined, translation)
+  try {
+    const offlineData = await getOfflineBibleData()
+    return new OfflineFallbackVerseSource({
+      primary: new GetBibleVerseSource(undefined, "ls1910"),
+      offline: new OfflineVerseSource(offlineData),
+      logger,
+    })
+  } catch (err) {
+    logger.error({
+      component: "main",
+      event: "offline-bible-data.load-failed",
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return new GetBibleVerseSource(undefined, "ls1910")
+  }
+}
+
 function getConfigStore(): ConfigStore {
   if (!configStore) {
     throw new Error("configStore accessed before initialization")
@@ -215,6 +249,8 @@ async function startServices(
   ndi: ReturnType<NDIOutput["getStatus"]>
   organizationName?: string
   accentColor?: string
+  frenchTranslation: string
+  overlayTemplate: string
 }> {
   if (appCoreHandle && activeConfig && sameServiceConfig(activeConfig, config) && currentTokens && currentOverlayUrl) {
     return {
@@ -226,6 +262,8 @@ async function startServices(
       ndi: ndiOutput?.getStatus() ?? { state: "disabled" as const },
       organizationName: config.organizationName,
       accentColor: config.accentColor,
+      frenchTranslation: currentFrenchTranslation,
+      overlayTemplate: currentOverlayTemplate,
     }
   }
   // Setup can be submitted again after a partial startup failure. Tear down
@@ -241,24 +279,29 @@ async function startServices(
   // bundled data somehow fails to load (a real packaging bug worth
   // logging loudly, but not worth failing the entire app over — the live
   // source alone is exactly what shipped before this feature existed).
-  let frenchSource: GetBibleVerseSource | OfflineFallbackVerseSource = new GetBibleVerseSource()
+  // quoteSource (post-service quote-matching, ARCHITECTURE.md section 65.8)
+  // always wants the bundled LSG data regardless of which French
+  // translation is actively displayed — a separate, unrelated consumer of
+  // the same file buildFrenchSource() also reads for its own offline
+  // fallback.
   let quoteSource: OfflineBibleData | null = null
   try {
-    const offlineData = await getOfflineBibleData()
-    quoteSource = offlineData
-    frenchSource = new OfflineFallbackVerseSource({
-      primary: new GetBibleVerseSource(),
-      offline: new OfflineVerseSource(offlineData),
-      logger,
-    })
-  } catch (err) {
-    logger.error({
-      component: "main",
-      event: "offline-bible-data.load-failed",
-      error: err instanceof Error ? err.message : String(err),
-    })
+    quoteSource = await getOfflineBibleData()
+  } catch {
+    // Already logged inside buildFrenchSource()/getOfflineBibleData()'s own
+    // error path if this same load is attempted there too; nothing further
+    // to do here beyond quoteSource staying null (section 65.8 already
+    // treats a missing quoteMatcher as an optional capability).
   }
-  localizedVerseSource = new LocalizedVerseSource(new FreeApiSource(), frenchSource, config.displayMode, logger)
+  const frenchTranslation = config.frenchTranslation ?? "ls1910"
+  const frenchSource = await buildFrenchSource(frenchTranslation)
+  localizedVerseSource = new LocalizedVerseSource(
+    new FreeApiSource(),
+    frenchSource,
+    config.displayMode,
+    logger,
+    frenchTranslation
+  )
 
   // ARCHITECTURE.md section 65.6: opt-in, off by default — binding to
   // 0.0.0.0 (reachable from the local network) only ever happens when the
@@ -356,6 +399,7 @@ async function startServices(
     verseConfirmationMode: config.verseConfirmationMode,
     organizationName: config.organizationName,
     accentColor: config.accentColor,
+    overlayTemplate: config.overlayTemplate,
     // ARCHITECTURE.md section 65.7: always constructed (it makes no
     // network call until summarize() is actually invoked, and holding it
     // ready costs nothing) — reuses the same Groq API key already
@@ -442,6 +486,8 @@ async function startServices(
   currentVerseConfirmationMode = config.verseConfirmationMode
   currentEnableSermonNotes = config.enableSermonNotes
   currentVerseLayout = config.verseLayout
+  currentFrenchTranslation = frenchTranslation
+  currentOverlayTemplate = config.overlayTemplate ?? "classic"
 
   ndiOutput = new NDIOutput("ChurchOverlay", undefined, (event, error) => {
     logger.error({ component: "ndi", event, error })
@@ -480,6 +526,8 @@ async function startServices(
     ndi: ndiOutput?.getStatus() ?? { state: "disabled" as const },
     organizationName: config.organizationName,
     accentColor: config.accentColor,
+    frenchTranslation,
+    overlayTemplate: currentOverlayTemplate,
   }
 
   function sameServiceConfig(left: AppConfig, right: AppConfig): boolean {
@@ -503,6 +551,17 @@ async function startServices(
       && left.asrStrategy === right.asrStrategy
       && left.localAsrEnabled === right.localAsrEnabled
       && left.localAsrModel === right.localAsrModel
+      // ARCHITECTURE.md section 108: overlayTemplate is baked into
+      // AppCore's own branding:update sync-on-connect broadcast exactly
+      // like organizationName/accentColor above, so it needs the same
+      // fresh-AppCore treatment on change.
+      && left.overlayTemplate === right.overlayTemplate
+      // frenchTranslation deliberately NOT compared here: unlike every
+      // field above, it hot-swaps live (setFrenchSource()) without
+      // requiring a new AppCore, so a difference must NOT force the
+      // restart this function exists to avoid — see
+      // set-french-translation, the only thing that ever changes it
+      // outside of this function.
   }
 }
 
@@ -572,6 +631,8 @@ ipcMain.handle("get-startup-status", async () => {
       verseConfirmationMode: currentVerseConfirmationMode,
       enableSermonNotes: currentEnableSermonNotes,
       verseLayout: currentVerseLayout,
+      frenchTranslation: currentFrenchTranslation,
+      overlayTemplate: currentOverlayTemplate,
       ndi: ndiOutput?.getStatus() ?? { state: "disabled" as const },
       organizationName,
       accentColor,
@@ -748,6 +809,64 @@ ipcMain.handle("set-enable-sermon-notes", async (_event, payload: unknown) => {
   return { enableSermonNotes: payload }
 })
 
+/**
+ * ARCHITECTURE.md section 107: the live-toggle half of French translation
+ * choice — no setup-screen control (same reasoning as
+ * set-verse-confirmation-mode above). Unlike allowPhoneRemote (which must
+ * tear down and rebuild AppCore because the WS server's listen host is
+ * fixed at construction), this swaps LocalizedVerseSource's underlying
+ * French VerseSource directly — no restart, no dropped connections.
+ */
+ipcMain.handle("set-french-translation", async (_event, payload: unknown) => {
+  if (!FRENCH_TRANSLATIONS.includes(payload as string)) {
+    throw new Error("Invalid French translation.")
+  }
+  const translation = payload as string
+  if (!localizedVerseSource) {
+    throw new Error("Services are not started yet.")
+  }
+  const source = await buildFrenchSource(translation)
+  localizedVerseSource.setFrenchSource(source, translation)
+  currentFrenchTranslation = translation
+  if (activeConfig) activeConfig = { ...activeConfig, frenchTranslation: translation }
+
+  const store = getConfigStore()
+  const existing = await store.load().catch(() => null)
+  if (existing) {
+    await store.save({ ...existing, frenchTranslation: translation })
+  }
+  return { frenchTranslation: translation }
+})
+
+/**
+ * ARCHITECTURE.md section 108: which preset visual template the overlay
+ * renders a verse with. Baked into AppCore's own branding:update
+ * sync-on-connect broadcast exactly like organizationName/accentColor
+ * (ARCHITECTURE.md section 94) — those are "static for the process
+ * lifetime," so changing this, like them, means tearing down and
+ * rebuilding AppCore (sameServiceConfig() now compares it for exactly this
+ * reason). Same shutdown()-then-startServices() shape as
+ * set-allow-phone-remote, and the same real, visible interruption
+ * (mic/ASR/all WS clients briefly disconnect) — the dashboard confirms
+ * with the operator before calling this, same as that handler.
+ */
+ipcMain.handle("set-overlay-template", async (_event, payload: unknown) => {
+  if (!OVERLAY_TEMPLATES.includes(payload as string)) {
+    throw new Error("Invalid overlay template.")
+  }
+  const store = getConfigStore()
+  const existing = await store.load().catch(() => null)
+  if (!existing) throw new Error("Services are not started yet.")
+  const config: AppConfig = { ...existing, overlayTemplate: payload as string }
+  await store.save(config)
+  try {
+    return await startServices(config)
+  } catch (error) {
+    await shutdown()
+    throw error
+  }
+})
+
 ipcMain.handle("set-ndi-enabled", async (_event, payload: unknown) => {
   if (typeof payload !== "boolean") throw new Error("Invalid ndiEnabled value.")
   if (!appCoreHandle || !currentOverlayUrl) throw new Error("Services are not started yet.")
@@ -888,6 +1007,15 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
     // confirmed default for every fresh install; changeable afterward
     // only via the live dashboard toggle (layout:set).
     verseLayout: existing?.verseLayout ?? "fullscreen",
+    // ARCHITECTURE.md section 107: not a setup-screen control (same
+    // reasoning as verseConfirmationMode above) — "ls1910" is the
+    // confirmed default for every fresh install; changeable afterward via
+    // the live dashboard toggle (set-french-translation).
+    frenchTranslation: existing?.frenchTranslation ?? "ls1910",
+    // ARCHITECTURE.md section 108: same reasoning — "classic" is the
+    // confirmed default; changeable afterward via the live dashboard
+    // toggle (set-overlay-template).
+    overlayTemplate: existing?.overlayTemplate ?? "classic",
     viewerToken: existing?.viewerToken ?? generateToken(),
     displayMode,
     uiLanguage,

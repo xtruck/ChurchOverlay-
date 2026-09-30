@@ -129,7 +129,29 @@ test("LocalizedVerseSource: getTranslationId() reports the current mode, for res
   const source = new LocalizedVerseSource(new StubVerseSource(ENGLISH_VERSE), new StubVerseSource(FRENCH_VERSE), "english")
   assert.equal(source.getTranslationId(), "english")
   source.setMode("bilingual")
-  assert.equal(source.getTranslationId(), "bilingual")
+  // ARCHITECTURE.md section 107: bilingual/french ids now include the active
+  // French translation ("ls1910" here, the constructor's own default), not
+  // just the bare mode name — see the two tests below for why.
+  assert.equal(source.getTranslationId(), "bilingual:ls1910")
+})
+
+test("LocalizedVerseSource: getTranslationId() reflects the active French translation after setFrenchSource (ARCHITECTURE.md section 107)", () => {
+  const source = new LocalizedVerseSource(new StubVerseSource(ENGLISH_VERSE), new StubVerseSource(FRENCH_VERSE), "french")
+  assert.equal(source.getTranslationId(), "french:ls1910")
+  const darby = makeVerse("Mais il y avait un homme...", "darby", "getbible.net")
+  source.setFrenchSource(new StubVerseSource(darby), "darby")
+  assert.equal(source.getTranslationId(), "french:darby")
+})
+
+test("LocalizedVerseSource: setFrenchSource() actually changes which source french/bilingual lookups call", async () => {
+  const source = new LocalizedVerseSource(new StubVerseSource(ENGLISH_VERSE), new StubVerseSource(FRENCH_VERSE), "french")
+  const darbyVerse = makeVerse("Mais il y avait un homme...", "darby", "getbible.net")
+  const darbySource = new StubVerseSource(darbyVerse)
+  source.setFrenchSource(darbySource, "darby")
+
+  const result = await source.getVerse(JOHN_3_16)
+  assert.deepEqual(result, darbyVerse)
+  assert.equal(darbySource.callCount, 1)
 })
 
 // Regression coverage for the audit finding: Promise.all previously meant a

@@ -261,6 +261,79 @@
   #verse.fullscreen #verse-ref-row::after { width: clamp(28px, 4vw, 72px); }
 
   /*
+    ARCHITECTURE.md section 108: preset visual templates for how the verse
+    card itself looks, independent of verseLayout (fullscreen/lower-third
+    is WHERE it sits on screen; these are what it looks like there). Class
+    applied to #verse-card by overlay.js's applyBranding(), from the same
+    branding:update payload organizationName/accentColor already arrive on
+    (ARCHITECTURE.md section 94's precedent: static for the process
+    lifetime, synced on connect). "classic" is the default look above —
+    no extra class, zero risk of regressing every existing install's
+    appearance. font-size is deliberately untouched by every rule below:
+    overlay.js's fitVerseText() always sets it as an inline style (see the
+    comment above #verse-secondary-text), which would silently override
+    anything declared here regardless of specificity.
+
+    Each template also gets a fullscreen-scoped override
+    (#verse.fullscreen #verse-card.tpl-*), matching fullscreen's own higher
+    specificity (#verse.fullscreen #verse-card) — without it, fullscreen's
+    existing "no card chrome" rule would silently erase every template's
+    own distinguishing chrome, making all four look identical in fullscreen
+    mode (the app's own confirmed default layout, ARCHITECTURE.md section
+    82) — the one case this feature would most need to actually work in.
+  */
+  #verse-card.tpl-banner {
+    background: rgba(8, 10, 14, 0.92);
+    border-radius: 6px;
+    border: none;
+    border-top: 6px solid var(--accent);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  }
+  #verse-card.tpl-banner #verse-text,
+  #verse-card.tpl-banner #verse-reference {
+    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-style: normal;
+    font-weight: 600;
+  }
+  #verse-card.tpl-banner #verse-ref-row::before,
+  #verse-card.tpl-banner #verse-ref-row::after { display: none; }
+  #verse.fullscreen #verse-card.tpl-banner {
+    border-top: 10px solid var(--accent);
+    background: linear-gradient(180deg, rgba(8, 10, 14, 0.35), rgba(8, 10, 14, 0.7));
+  }
+
+  #verse-card.tpl-minimal {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    padding: 12px 24px;
+  }
+  #verse-card.tpl-minimal #verse-text {
+    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-weight: 500;
+    text-shadow: 0 3px 14px rgba(0, 0, 0, 0.9);
+  }
+  #verse-card.tpl-minimal #verse-ref-row::before,
+  #verse-card.tpl-minimal #verse-ref-row::after { display: none; }
+  #verse.fullscreen #verse-card.tpl-minimal { background: transparent; }
+
+  #verse-card.tpl-elegant {
+    border: 1px solid var(--accent);
+    border-radius: 28px;
+    box-shadow: 0 0 60px rgba(224, 169, 59, 0.12), 0 12px 48px rgba(0, 0, 0, 0.35);
+    padding: 36px 56px;
+  }
+  #verse-card.tpl-elegant #verse-reference {
+    letter-spacing: 0.06em;
+  }
+  #verse.fullscreen #verse-card.tpl-elegant {
+    border: 1px solid var(--accent);
+    box-shadow: 0 0 90px rgba(224, 169, 59, 0.1);
+  }
+
+  /*
     One orchestrated reveal per verse (re-triggered by overlay.js on every
     new verse, even when one is already showing): the words come into
     focus, then the reference settles in just after — the eye reads the

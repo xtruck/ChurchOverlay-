@@ -29,16 +29,35 @@ import { BOOK_CATALOG } from "./book-catalog"
  * indistinguishable from an ordinary out-of-range request here, and both
  * are handled identically (null), which is the correct, safe behavior
  * either way.
+ *
+ * CORRECTIF (ARCHITECTURE.md section 107 — French translation choice):
+ * `translation` was originally baked into `DEFAULT_BASE_URL` itself
+ * ("https://api.getbible.net/v2/ls1910"), making this class permanently
+ * Louis Segond 1910-only. getbible.net serves every translation from the
+ * same host under `/v2/{translation}/{book_nr}/{chapter}.json` — verified
+ * directly against the live API for a second, public-domain French
+ * translation (J.N. Darby, abbreviation `darby`) before adding this
+ * parameter: same JSON shape, same book_nr numbering, confirmed with a
+ * real request (Jean 3:16 under `darby`) before this class was changed to
+ * trust it. `translation` now selects both the request path and the
+ * `Verse.translation` field on the result, so a Darby-sourced verse is
+ * never mislabeled as `ls1910` downstream.
  */
-const DEFAULT_BASE_URL = "https://api.getbible.net/v2/ls1910"
-const TRANSLATION = "ls1910"
+const DEFAULT_BASE_URL = "https://api.getbible.net/v2"
+const DEFAULT_TRANSLATION = "ls1910"
 
 export class GetBibleVerseSource implements VerseSource {
   private readonly fetchImpl: typeof fetch
+  private readonly translation: string
   private readonly baseUrl: string
 
-  constructor(fetchImpl: typeof fetch = fetch, baseUrl: string = DEFAULT_BASE_URL) {
+  constructor(
+    fetchImpl: typeof fetch = fetch,
+    translation: string = DEFAULT_TRANSLATION,
+    baseUrl: string = DEFAULT_BASE_URL
+  ) {
     this.fetchImpl = fetchImpl
+    this.translation = translation
     this.baseUrl = baseUrl
   }
 
@@ -46,7 +65,7 @@ export class GetBibleVerseSource implements VerseSource {
     const bookNr = bookNumberFor(reference.book)
     if (bookNr === null) return null // not a book this catalog knows — same as any other "not found"
 
-    const url = `${this.baseUrl}/${bookNr}/${reference.chapter}.json`
+    const url = `${this.baseUrl}/${this.translation}/${bookNr}/${reference.chapter}.json`
 
     let response: Response
     try {
@@ -71,7 +90,7 @@ export class GetBibleVerseSource implements VerseSource {
       throw new Error("GetBibleVerseSource: response body was not valid JSON")
     }
 
-    return parseChapterResponse(body, reference)
+    return parseChapterResponse(body, reference, this.translation)
   }
 }
 
@@ -84,7 +103,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-function parseChapterResponse(body: unknown, reference: VerseReference): Verse | null {
+function parseChapterResponse(body: unknown, reference: VerseReference, translation: string): Verse | null {
   if (!isPlainObject(body)) {
     throw new Error("GetBibleVerseSource: response was not a JSON object")
   }
@@ -107,7 +126,7 @@ function parseChapterResponse(body: unknown, reference: VerseReference): Verse |
   return {
     reference,
     text: text.trim(),
-    translation: TRANSLATION,
+    translation,
     source: "getbible.net",
   }
 }

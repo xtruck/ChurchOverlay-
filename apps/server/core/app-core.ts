@@ -190,6 +190,13 @@ export type StartAppCoreOptions = {
   readonly organizationName?: string
   readonly accentColor?: string
   /**
+   * ARCHITECTURE.md section 108 — same "static for the process lifetime,
+   * synced via branding:update" shape as organizationName/accentColor
+   * above: which preset visual template the overlay renders a verse with.
+   * Absent means "classic".
+   */
+  readonly overlayTemplate?: string
+  /**
    * Optional (ARCHITECTURE.md section 82.2) — the poster/media auto-clear
    * duration a fresh AppCore starts with; absent or null means "no
    * auto-clear" (manual poster:clear only), matching the option's own
@@ -356,6 +363,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   let verseLayout: VerseLayout = options.verseLayout ?? "fullscreen"
   const organizationName = options.organizationName
   const accentColor = options.accentColor
+  const overlayTemplate = options.overlayTemplate
   const onVerseLayoutChanged = options.onVerseLayoutChanged
   let pendingVerse: Verse | null = null
   const QUOTE_SUGGESTION_COOLDOWN_MS = 60_000
@@ -496,7 +504,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         id: generateUlid(),
         type: "branding:update",
         timestamp: Date.now(),
-        payload: { organizationName, accentColor },
+        payload: { organizationName, accentColor, overlayTemplate },
       })
       // ARCHITECTURE.md section 67.3: a principal poster is a persistent
       // backdrop, not scene state — synced independently of the

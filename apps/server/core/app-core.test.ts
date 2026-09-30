@@ -3061,6 +3061,40 @@ test("AppCore: a new connection is synced with configured branding via branding:
   }
 })
 
+// ARCHITECTURE.md section 108: overlayTemplate joins organizationName/
+// accentColor in the same branding:update sync-on-connect broadcast —
+// same "static for the process lifetime, synced via branding:update, a
+// change needs a fresh AppCore" shape (see sameServiceConfig in
+// apps/desktop/main/index.ts, which now compares it for exactly this
+// reason).
+test("AppCore: a new connection is synced with a configured overlayTemplate via branding:update", async () => {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    overlayTemplate: "banner",
+  })
+  try {
+    const viewerSocket = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
+    const second = await new Promise<WsMessage>((resolve) => {
+      const collected: WsMessage[] = []
+      viewerSocket.on("message", (data: { toString(): string }) => {
+        collected.push(JSON.parse(data.toString()))
+        if (collected.length === 2) resolve(collected[1]!)
+      })
+    })
+    assert.equal(second.type, "branding:update")
+    assert.deepEqual(second.payload, { overlayTemplate: "banner" })
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
 test("AppCore: with no branding configured, branding:update is still sent with both fields undefined (the overlay shows nothing extra)", async () => {
   const app = await startAppCore({
     asr: new FakeAsrProvider(),

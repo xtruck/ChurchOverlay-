@@ -11,6 +11,20 @@ export const DISPLAY_MODES: readonly DisplayMode[] = ["english", "french", "bili
 export const UI_LANGUAGES: readonly UiLanguage[] = ["en", "fr"]
 export const VERSE_CONFIRMATION_MODES: readonly VerseConfirmationMode[] = ["auto", "review"]
 export const VERSE_LAYOUTS: readonly VerseLayout[] = ["fullscreen", "lower-third"]
+/**
+ * ARCHITECTURE.md section 107 — public-domain only (confirmed explicitly:
+ * NIV/Segond 21 are copyrighted and excluded until a licensed API is
+ * wired in). "ls1910" (Louis Segond 1910) was the only French translation
+ * before this existed and stays the default; "darby" (J.N. Darby, French,
+ * public domain) is the new second option.
+ */
+export const FRENCH_TRANSLATIONS: readonly string[] = ["ls1910", "darby"]
+/**
+ * ARCHITECTURE.md section 108 — preset visual styles for how a verse
+ * appears on the overlay, independent of verseLayout (fullscreen/
+ * lower-third is WHERE it sits; this is what it looks like there).
+ */
+export const OVERLAY_TEMPLATES: readonly string[] = ["classic", "banner", "minimal", "elegant"]
 
 /**
  * Matches Electron's `safeStorage` API shape exactly
@@ -84,6 +98,20 @@ export type AppConfig = {
   /** Offline whisper.cpp engine as the last fallback. Absent → off (it is a download). */
   readonly localAsrEnabled?: boolean
   readonly localAsrModel?: "base" | "small"
+  /**
+   * ARCHITECTURE.md section 107 — always present after decode() (defaults
+   * to "ls1910", the sole French translation before this existed, same
+   * required-with-a-default shape as verseLayout above), even though it's
+   * optional in storage for backward compatibility with configs saved
+   * before this field existed.
+   */
+  readonly frenchTranslation: string
+  /**
+   * ARCHITECTURE.md section 108 — always present after decode() (defaults
+   * to "classic", the overlay's one and only look before this existed),
+   * same shape as frenchTranslation above.
+   */
+  readonly overlayTemplate: string
 }
 
 type StoredConfig = {
@@ -111,6 +139,8 @@ type StoredConfig = {
   readonly autoGain?: boolean
   readonly localAsrEnabled?: boolean
   readonly localAsrModel?: string
+  readonly frenchTranslation?: string
+  readonly overlayTemplate?: string
 }
 
 /**
@@ -173,6 +203,8 @@ export class ConfigStore {
       ...(config.autoGain === undefined ? {} : { autoGain: config.autoGain }),
       ...(config.localAsrEnabled === undefined ? {} : { localAsrEnabled: config.localAsrEnabled }),
       ...(config.localAsrModel === undefined ? {} : { localAsrModel: config.localAsrModel }),
+      ...(config.frenchTranslation === undefined ? {} : { frenchTranslation: config.frenchTranslation }),
+      ...(config.overlayTemplate === undefined ? {} : { overlayTemplate: config.overlayTemplate }),
     }
 
     await mkdir(dirname(this.filePath), { recursive: true })
@@ -214,6 +246,8 @@ export class ConfigStore {
       autoGain,
       localAsrEnabled,
       localAsrModel,
+      frenchTranslation,
+      overlayTemplate,
     } = stored
 
     if (
@@ -277,6 +311,12 @@ export class ConfigStore {
     if (asrStrategy !== undefined && !ASR_STRATEGIES.includes(asrStrategy as AsrStrategy)) {
       throw new Error(`ConfigStore: ${this.filePath} has an invalid asrStrategy`)
     }
+    if (frenchTranslation !== undefined && !FRENCH_TRANSLATIONS.includes(frenchTranslation as string)) {
+      throw new Error(`ConfigStore: ${this.filePath} has an invalid frenchTranslation`)
+    }
+    if (overlayTemplate !== undefined && !OVERLAY_TEMPLATES.includes(overlayTemplate as string)) {
+      throw new Error(`ConfigStore: ${this.filePath} has an invalid overlayTemplate`)
+    }
 
     return {
       groqApiKey: this.codec.decrypt(Buffer.from(groqApiKeyEncrypted, "base64")),
@@ -311,6 +351,13 @@ export class ConfigStore {
       ...(autoGain === undefined ? {} : { autoGain }),
       ...(localAsrEnabled === undefined ? {} : { localAsrEnabled }),
       ...(localAsrModel === undefined ? {} : { localAsrModel: localAsrModel as "base" | "small" }),
+      // Absent (a config saved before section 107 existed) defaults to
+      // "ls1910" — the confirmed unchanged-behavior default, same shape as
+      // verseLayout/verseConfirmationMode above.
+      frenchTranslation: (frenchTranslation as string | undefined) ?? "ls1910",
+      // Absent (a config saved before section 108 existed) defaults to
+      // "classic" — the overlay's existing appearance, unchanged.
+      overlayTemplate: (overlayTemplate as string | undefined) ?? "classic",
     }
   }
 }

@@ -5532,3 +5532,151 @@ the operator token. The server half of the contract (a viewer token is
 accepted, an unknown token is refused at the handshake, a tokenless
 connection is terminated and never registered as a viewer) remains covered
 against a real socket by `apps/server/ws/server.test.ts`.
+
+## 107. A Second French Bible Translation (Darby), Selectable Live
+
+**Why.** Requested directly: French support previously meant exactly one
+translation, Louis Segond 1910, with no way to choose otherwise. This is
+explicitly a scope change against AGENTS.md section 4's v1 lock
+("multiple translations," "offline Bible database" are both listed as
+NOT v1) — confirmed with the user before any code was written, and scoped
+down from the original ask (which also named NIV and, ambiguously, a
+second French translation) to **public-domain translations only**: NIV is
+copyrighted by Biblica/Zondervan and was excluded outright; among French
+options, J.N. Darby's translation is public domain and was added, while
+Segond 21 (also copyrighted) was not.
+
+**What.** `GetBibleVerseSource` (`apps/server/verse/get-bible-verse-source.ts`)
+took its translation ("ls1910") baked into `DEFAULT_BASE_URL` itself,
+permanently locking it to Louis Segond. Verified directly against the live
+getbible.net API before writing any code (this class's own established
+discipline — see its class doc comment): the same host serves every
+translation under `/v2/{translation}/{book_nr}/{chapter}.json`, confirmed
+concretely for a second, public-domain French translation, abbreviation
+`darby` ("Bible J.N. Darby (2024) in French with Strong's numbers") — same
+JSON response shape, same book_nr numbering as ls1910's own (both
+independently verified against a real request, not assumed identical).
+`translation` is now a constructor parameter selecting both the request
+path and the `Verse.translation` field on the result.
+
+**Live switching, not a restart.** `LocalizedVerseSource`'s `french` field
+was `readonly`, fixed for the process lifetime. It now accepts
+`setFrenchSource(source, translationId)`, letting a live translation switch
+swap the underlying `VerseSource` directly — no AppCore teardown, no
+dropped WS connections, unlike `allowPhoneRemote`'s own live-toggle (whose
+restart is forced by the WS server's listen host being fixed at
+construction, a constraint this class's `french` field never had). A new
+`set-french-translation` IPC handler (`apps/desktop/main/index.ts`) does
+exactly this: builds the right source via a new shared `buildFrenchSource()`
+helper, calls `setFrenchSource()`, persists to `ConfigStore`, returns.
+
+**Cache-key correctness — the real bug this surfaced.** `getTranslationId()`
+previously returned just the display mode ("english"/"french"/"bilingual")
+for `resolveVerse()`'s cache key (ARCHITECTURE.md section 16's "include
+translation identity in the cache key," originally satisfied because mode
+and translation were a 1:1 mapping). Once one mode ("french") could map to
+two different underlying translations, that stopped being true: switching
+from Segond to Darby without changing `getTranslationId()` would have
+served back a stale Segond-cached verse under the same "french" cache key —
+a real, silent wrong-translation-displayed bug, not cosmetic. Fixed by
+folding the active French translation into the id itself
+(`french:ls1910` / `bilingual:darby`, etc.); English is unaffected (one
+translation, always has been). Covered by
+`localized-verse-source.test.ts`'s new tests for both the id format and
+`setFrenchSource()` actually changing which source is called.
+
+**Offline fallback stays Segond-specific.** The bundled offline Bible
+(section 77) is Louis Segond 1910 text — it only ever backs the `ls1910`
+source. Selecting Darby means a live-API-only lookup, no offline fallback;
+if getbible.net is unreachable, a Darby lookup simply fails loudly (AGENTS.md
+section 46 — an honest, documented gap, not a silent one), the same
+"degrades to the plain live source" honesty section 77's own comment
+already established for when the bundle itself fails to load.
+
+**Config.** `ConfigStore.frenchTranslation` (`"ls1910" | "darby"`, validated
+against a new `FRENCH_TRANSLATIONS` list), absent-defaults-to-`"ls1910"`
+for every existing install, same backward-compatible shape as
+`verseLayout`/`verseConfirmationMode`. Not a setup-screen control — live
+dashboard toggle only (a new "French Translation" segmented control),
+matching `verseConfirmationMode`'s own "ongoing choice, not a one-time
+install decision" reasoning.
+
+**Renderer book-name rendering.** `apps/overlay/public/overlay.js` and
+`apps/remote/public/remote.js` each independently decide whether to render
+a French book name via a small `FRENCH_TRANSLATIONS` set keyed on
+`verse.translation`. Both updated to include `"darby"` alongside the
+existing Segond aliases — missed, both book names would have silently
+fallen back to English for a Darby-sourced verse.
+
+**Boundary check.** No change to `KnownValidVerseIndex` or the
+detection/validation pipeline — a translation choice only changes which
+`VerseSource` a validated reference is looked up against, exactly the same
+seam `FreeApiSource`/`GetBibleVerseSource` already occupied. No new WS
+command; `set-french-translation` is Electron IPC only, like
+`set-verse-confirmation-mode`.
+
+## 108. Preset Overlay Visual Templates ("Verse Card Style")
+
+**Why.** Requested alongside section 107, as a distinct ask: a handful of
+ready-made visual looks for how the verse card itself appears — "Classic,"
+"Banner," "Minimal," "Elegant" — the operator picks from, independent of
+`verseLayout` (fullscreen/lower-third is *where* the card sits; this is
+*what it looks like* there). Not a v1 scope-lock item — no AGENTS.md
+override needed, unlike section 107.
+
+**What.** Four CSS classes on `#verse-card` (`apps/overlay/public/index.html`):
+`classic` (no extra class — the overlay's existing, unmodified appearance,
+zero regression risk for every current install), `tpl-banner` (solid
+high-contrast card, thick accent-colored top border, sans-serif),
+`tpl-minimal` (no card chrome at all — transparent, border/shadow/blur all
+removed, text-only), `tpl-elegant` (thin accent-colored border, generous
+padding, soft accent glow, increased reference letter-spacing). Each
+template also gets a `#verse.fullscreen`-scoped override: fullscreen's own
+existing rule (`#verse.fullscreen #verse-card`) has higher CSS specificity
+than a bare `#verse-card.tpl-*` rule and would otherwise silently erase
+every template's chrome back to fullscreen's plain transparent default —
+the one layout mode the app actually defaults to (section 82), and so the
+one case this feature would most need to keep working in. Deliberately
+does not touch `#verse-text`/`#verse-secondary-text`/`#verse-reference`
+`font-size` anywhere: `overlay.js`'s `fitVerseText()` always sets it as an
+inline style, which silently overrides any stylesheet declaration
+regardless of specificity (the same constraint `#verse-secondary-text`'s
+own comment already documents).
+
+**Wiring — reuses the branding:update precedent, not a new mechanism.**
+`organizationName`/`accentColor` (section 94) were already "static for the
+process lifetime, synced to every viewer on connect via branding:update,
+never a live command" — `overlayTemplate` joins them exactly, on the same
+`AppCoreOptions` and the same `branding:update` payload
+(`packages/contracts/ws.ts`'s `BrandingUpdatePayload` gained the field).
+`apps/overlay/public/overlay.js`'s existing `applyBranding()` now also
+toggles the right `tpl-*` class on `#verse-card` from the same payload.
+
+**A restart, deliberately, like branding.** Because it rides the same
+"static, synced on connect" mechanism as organizationName/accentColor,
+changing it costs the same as changing those: a torn-down and rebuilt
+AppCore (`sameServiceConfig` in `apps/desktop/main/index.ts` now compares
+`overlayTemplate` for exactly this reason, mirroring the comment already
+there for organizationName/accentColor). The new `set-overlay-template` IPC
+handler is therefore shaped exactly like `set-allow-phone-remote`
+(persist, then `shutdown()`-then-`startServices()`), and the dashboard
+confirms with the operator first, naming the same consequence (mic/ASR/all
+WS clients briefly disconnect) that toggle's own confirmation dialog
+already names.
+
+**Config.** `ConfigStore.overlayTemplate` (validated against a new
+`OVERLAY_TEMPLATES` list), absent-defaults-to-`"classic"`. Not a
+setup-screen control — a live dashboard toggle (a new "Verse Card Style"
+segmented control of four buttons), same non-setup-screen reasoning as
+section 107's translation toggle, just with a restart-and-confirm cost
+instead of a free hot-swap.
+
+**Tests.** `app-core.test.ts` gained a dedicated
+`branding:update`-includes-`overlayTemplate` test, mirroring the existing
+organizationName/accentColor sync test exactly.
+
+**Boundary check.** Purely a rendering hint — AppCore's detection/
+validation/WS-command pipeline is entirely unaware `overlayTemplate`
+exists; it flows straight from config to the branding broadcast and
+nowhere else. No new WS command (reuses the existing `branding:update`
+event), no security-boundary change.

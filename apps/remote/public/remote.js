@@ -92,7 +92,10 @@
     "1 peter": "1 Pierre", "2 peter": "2 Pierre", "1 john": "1 Jean", "2 john": "2 Jean",
     "3 john": "3 Jean", jude: "Jude", revelation: "Apocalypse",
   }
-  const FRENCH_TRANSLATIONS = new Set(["ls1910", "lsg", "segond"])
+  // ARCHITECTURE.md section 107: "darby" (J.N. Darby, French, public
+  // domain) added alongside the existing Louis Segond aliases — both name
+  // a French-language translation, so both should render French book names.
+  const FRENCH_TRANSLATIONS = new Set(["ls1910", "lsg", "segond", "darby"])
   const capitalize = (book) => book.replace(/\b\w/g, (c) => c.toUpperCase())
   function referenceText(reference, translation) {
     const french = FRENCH_TRANSLATIONS.has(String(translation || "").toLowerCase())
