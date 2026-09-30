@@ -158,6 +158,7 @@
   const remoteNoLanEl = document.getElementById("remote-no-lan")
   const remoteUrlInput = document.getElementById("remote-url")
   const remoteCopyBtn = document.getElementById("remote-copy-btn")
+  const remoteToggleBtn = document.getElementById("remote-toggle-btn")
   const obsUrlInput = document.getElementById("obs-url")
   const obsCopyBtn = document.getElementById("obs-copy-btn")
   const ndiToggleBtn = document.getElementById("ndi-toggle-btn")
@@ -266,6 +267,7 @@
   let setupSelectedUiLanguage = "en"
   let ndiEnabled = false
   let currentNdiStatus = { state: "disabled" }
+  let allowPhoneRemoteEnabled = false
 
   // ARCHITECTURE.md section 64.5's authoring UI. `rundown:state` broadcasts
   // only the CURRENT scene (ARCHITECTURE.md section 64.4), not the whole
@@ -2210,7 +2212,8 @@
   // ARCHITECTURE.md section 65.6: the phone remote's own panel — one of
   // three states (disabled / enabled with a link / enabled but no LAN
   // address was found), never all three at once.
-  function renderRemotePanel(remoteUrl, allowPhoneRemoteEnabled) {
+  function renderRemotePanel(remoteUrl, enabled) {
+    allowPhoneRemoteEnabled = Boolean(enabled)
     if (remoteUrl) {
       remoteDisabledEl.style.display = "none"
       remoteNoLanEl.style.display = "none"
@@ -2225,7 +2228,28 @@
       remoteNoLanEl.style.display = "none"
       remoteDisabledEl.style.display = "block"
     }
+    remoteToggleBtn.disabled = false
+    remoteToggleBtn.textContent = t(allowPhoneRemoteEnabled ? "remote.disable" : "remote.enable")
   }
+
+  // ARCHITECTURE.md section 65.6's amendment: unlike NDI/sermon-notes,
+  // flipping this requires tearing down and rebuilding AppCore (the WS
+  // server's listen host is fixed at construction), a real interruption —
+  // so unlike those toggles, this one confirms with the operator first,
+  // and warns specifically about the network-exposure consequence when
+  // turning it ON (nothing new when turning it off).
+  remoteToggleBtn.addEventListener("click", () => {
+    const enabling = !allowPhoneRemoteEnabled
+    if (!window.confirm(t(enabling ? "remote.confirmEnable" : "remote.confirmDisable"))) return
+    remoteToggleBtn.disabled = true
+    window.churchOverlay
+      .setAllowPhoneRemote(enabling)
+      .then((info) => renderRemotePanel(info.remoteUrl, info.allowPhoneRemote))
+      .catch((err) => {
+        log(err.message, "error")
+        remoteToggleBtn.disabled = false
+      })
+  })
 
   remoteCopyBtn.addEventListener("click", () => {
     navigator.clipboard

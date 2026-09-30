@@ -28,6 +28,9 @@
       tabStage: "Stage",
       tabPad: "Scripture",
       tabSummary: "Pack",
+      "prepared.empty": "No verses prepared yet. Add one above.",
+      "prepared.invalid": "Could not recognize that reference (e.g. \"John 3:16\").",
+      "prepared.remove": "Remove",
     },
     fr: {
       title: "Télécommande",
@@ -52,6 +55,9 @@
       tabStage: "Scène",
       tabPad: "Écritures",
       tabSummary: "Pack",
+      "prepared.empty": "Aucun verset préparé pour l'instant. Ajoutez-en un ci-dessus.",
+      "prepared.invalid": "Référence non reconnue (ex. « Jean 3:16 »).",
+      "prepared.remove": "Retirer",
     },
   }
   const lang = (navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en"
@@ -135,6 +141,9 @@
   const sendAlertBtn = document.getElementById("send-alert-btn")
   const quickVerseInput = document.getElementById("quick-verse-input")
   const quickVerseBtn = document.getElementById("quick-verse-btn")
+  const preparedVerseInput = document.getElementById("prepared-verse-input")
+  const preparedVerseAddBtn = document.getElementById("prepared-verse-add-btn")
+  const preparedVerseListEl = document.getElementById("prepared-verse-list")
   const downloadServicePackBtn = document.getElementById("download-service-pack-btn")
   const servicePackResult = document.getElementById("service-pack-result")
   const servicePackText = document.getElementById("service-pack-text")
@@ -212,6 +221,118 @@
     triggerHaptic()
     ws.send(JSON.stringify(message))
   }
+
+  // Sends a spoken-style reference string ("Jean 3:16") the exact same way
+  // a quick-fire or preset button already does: through verse:override,
+  // which the server validates against KnownValidVerseIndex identically to
+  // any other reference (ARCHITECTURE.md section 50, AGENTS.md section 12
+  // "Manual override is still subject to validation" — no admin bypass).
+  // Uses `activeWs` (kept current by connect()/reconnect below) rather than
+  // a closed-over socket, so this one function works for quick-fire,
+  // presets, and the prepared list alike.
+  function fireVerse(refStr) {
+    const ref = parseVerseString(refStr)
+    if (!ref) return false
+    sendJson(activeWs, { id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: ref })
+    return true
+  }
+
+  // A pastor's own prepared verse list ("prepare these ahead of time, tap
+  // to show whenever ready during the service") — deliberately just a
+  // client-side convenience on top of the existing, fully-validated
+  // verse:override path above: no new WS command, no server-side storage,
+  // no new hallucination-guard surface. Persisted in this phone's own
+  // localStorage (survives closing the page; never synced anywhere, never
+  // read by the server or by Claude — see the module's own storage
+  // guidance) so a pastor's prepared list is still there next Sunday.
+  // Bounded (AGENTS.md section 36: no unbounded queue/cache), same
+  // reasoning as the server's own bounded near-miss/cache limits.
+  const PREPARED_VERSES_STORAGE_KEY = "churchoverlay.remote.preparedVerses"
+  const PREPARED_VERSES_LIMIT = 30
+
+  function loadPreparedVerses() {
+    try {
+      const raw = window.localStorage.getItem(PREPARED_VERSES_STORAGE_KEY)
+      const parsed = raw ? JSON.parse(raw) : []
+      return Array.isArray(parsed) ? parsed.filter((v) => typeof v === "string") : []
+    } catch {
+      return []
+    }
+  }
+
+  function savePreparedVerses(list) {
+    try {
+      window.localStorage.setItem(PREPARED_VERSES_STORAGE_KEY, JSON.stringify(list))
+    } catch {
+      // Private-browsing/quota failure: the list simply won't survive a
+      // reload this time. Not worth surfacing as an error for a
+      // convenience feature with no server-side counterpart.
+    }
+  }
+
+  let preparedVerses = loadPreparedVerses()
+
+  function renderPreparedVerses() {
+    preparedVerseListEl.innerHTML = ""
+    if (preparedVerses.length === 0) {
+      const empty = document.createElement("div")
+      empty.className = "prepared-verse-empty"
+      empty.textContent = t("prepared.empty")
+      preparedVerseListEl.appendChild(empty)
+      return
+    }
+    preparedVerses.forEach((refStr, index) => {
+      const row = document.createElement("div")
+      row.className = "prepared-verse-row"
+
+      const fireBtn = document.createElement("button")
+      fireBtn.type = "button"
+      fireBtn.className = "preset-btn"
+      const strong = document.createElement("strong")
+      strong.textContent = refStr
+      fireBtn.appendChild(strong)
+      fireBtn.addEventListener("click", () => fireVerse(refStr))
+      row.appendChild(fireBtn)
+
+      const removeBtn = document.createElement("button")
+      removeBtn.type = "button"
+      removeBtn.className = "prepared-remove-btn"
+      removeBtn.textContent = "×"
+      removeBtn.setAttribute("aria-label", t("prepared.remove"))
+      removeBtn.addEventListener("click", (event) => {
+        event.stopPropagation()
+        preparedVerses.splice(index, 1)
+        savePreparedVerses(preparedVerses)
+        renderPreparedVerses()
+      })
+      row.appendChild(removeBtn)
+
+      preparedVerseListEl.appendChild(row)
+    })
+  }
+
+  function addPreparedVerse(refStr) {
+    const trimmed = refStr.trim()
+    if (!trimmed) return
+    if (!parseVerseString(trimmed)) {
+      preparedVerseInput.setCustomValidity(t("prepared.invalid"))
+      preparedVerseInput.reportValidity()
+      return
+    }
+    preparedVerseInput.setCustomValidity("")
+    if (preparedVerses.length >= PREPARED_VERSES_LIMIT) preparedVerses.shift()
+    preparedVerses.push(trimmed)
+    savePreparedVerses(preparedVerses)
+    renderPreparedVerses()
+    preparedVerseInput.value = ""
+  }
+
+  preparedVerseAddBtn.addEventListener("click", () => addPreparedVerse(preparedVerseInput.value))
+  preparedVerseInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") addPreparedVerse(preparedVerseInput.value)
+  })
+  preparedVerseInput.addEventListener("input", () => preparedVerseInput.setCustomValidity(""))
+  renderPreparedVerses()
 
   const BASE_RECONNECT_DELAY_MS = 1000
   const MAX_RECONNECT_DELAY_MS = 30000

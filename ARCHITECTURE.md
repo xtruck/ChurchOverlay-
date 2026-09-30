@@ -2800,14 +2800,67 @@ implementation risked a link that LOOKS right but doesn't scan — worse than th
 honest, simpler alternative. A future revisit can add a real QR code once it can
 actually be verified against a physical device.
 
-**Simplified to a setup-time-only setting, not a live dashboard toggle**: unlike
-`displayMode`/`uiLanguage`, `allowPhoneRemote` is not exposed as a live toggle after
-setup. Changing network binding for an already-running WS server would mean tearing
-down and rebinding it mid-service, disconnecting every already-connected client
-(dashboard, overlay, any existing remote) to do so — a real behavior change for a
-setting that is rarely revisited, not worth the complexity it would add. Changing it
-later means re-running setup (or editing the config file directly) and restarting the
-app — a real, documented limitation, not a silent gap.
+**Amendment (2026-09-30) — now also a live dashboard toggle.** The paragraph above
+("setup-time-only, not a live toggle") is superseded. Requested directly: an operator
+who completed setup without enabling the phone remote had no way to turn it on later
+short of hand-editing `config.json` — a real, hit-in-practice gap, not a hypothetical
+one. A new `set-allow-phone-remote` IPC handler (`apps/desktop/main/index.ts`) now
+exists alongside `set-ndi-enabled`/`set-enable-sermon-notes`, but unlike those it
+cannot simply flip a running flag: the WS server's listen host and the remote page's
+`StaticServer` are both fixed at construction (this section, section 24), so the
+handler saves the new `allowPhoneRemote` value and runs the exact same
+shutdown()-then-`startServices()` cycle `complete-setup` already runs on any other
+service-affecting change — the "tearing down and rebinding" cost this section
+originally called "not worth it" is now accepted explicitly, because the gap it
+avoided turned out to matter more. What breaks: every connected client (dashboard,
+overlay, OBS Browser Source, any existing remote) disconnects and auto-reconnects
+during the brief restart, and the mic pipeline restarts (a momentary gap in live ASR).
+The dashboard's Remote panel gained a single toggle button that calls this handler
+after an explicit operator confirmation dialog naming both consequences (network
+exposure when turning ON, the restart either way) — never silent, matching AGENTS.md
+section 46 ("No Silent Fallbacks") applied here to a deliberate operator action rather
+than a failure. No WS protocol change, no new command/event, no change to the
+trust-boundary decision at the top of this section. Covered by the existing test
+suite's `ConfigStore`/`AppCore` startup-path tests; no new automated test was added
+for the IPC handler itself (it is a thin, three-line wrapper around already-tested
+`ConfigStore.save` and `startServices`, the same shape as `complete-setup`'s own
+untested wrapper around the same two calls).
+
+### 65.6.1 Phone remote: prepared verse list (pastor-side, client-only)
+
+**Requested directly**: let the person holding the phone (a pastor, not necessarily
+the operator at the dashboard) prepare a personal list of references ahead of a
+service and tap through them whenever ready during it, rather than typing each
+reference fresh in the moment. This sits on top of the remote's existing manual
+verse-fire capability (`apps/remote/public/remote.js`'s `quickVerseInput`/
+`verse-preset-btn`, `verse:override` — added after this section was first written;
+the "does NOT expose... manual verse override" claim earlier in this section is
+itself now stale and should be read as describing the remote's original v1 scope,
+not its current one).
+
+**What.** A new "My Prepared Verses" card on the remote's Scripture tab: an input to
+add a reference, a rendered list of what's been added, tap-to-fire, and a per-item
+remove control. Deliberately client-side only:
+
+- No new WS command or event — tapping a prepared entry calls the exact same
+  `fireVerse()` → `verse:override` path as the pre-existing quick-fire input and
+  preset buttons, which the server validates against `KnownValidVerseIndex`
+  identically to any other reference (AGENTS.md section 50 — manual override is
+  still subject to validation, no admin bypass).
+- No server-side storage, no new schema. The list lives in the phone's own
+  `localStorage` (key `churchoverlay.remote.preparedVerses`), bounded to 30 entries
+  (AGENTS.md section 36 — no unbounded cache) — a per-device convenience, not
+  authoritative state; it is never read by the server, never synced across devices,
+  and survives only as long as that phone's browser storage does.
+- Every `localStorage` read/write is wrapped in try/catch (private browsing, quota,
+  or a disabled-storage setting all fail silently back to an empty list rather than
+  breaking the remote page).
+
+**Boundary check.** No change to the trust boundary (still the operator token), no
+change to what a prepared entry can display (still full `KnownValidVerseIndex`
+validation downstream, same as section 50), no new attack surface — the prepared
+list is exactly as trusted, and exactly as limited, as manually typing the same
+reference into the pre-existing quick-fire input already was.
 
 ### 65.7 AI sermon-notes copilot (strictly separate side channel)
 

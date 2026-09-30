@@ -70,6 +70,7 @@ contextBridge.exposeInMainWorld("churchOverlay", {
   getPipelineLatency: () => ipcRenderer.invoke("get-pipeline-latency"),
   setEnableSermonNotes: (enabled: boolean) => ipcRenderer.invoke("set-enable-sermon-notes", enabled),
   setNdiEnabled: (enabled: boolean) => ipcRenderer.invoke("set-ndi-enabled", enabled),
+  setAllowPhoneRemote: (enabled: boolean) => ipcRenderer.invoke("set-allow-phone-remote", enabled),
   setAsrStrategy: (strategy: string) => ipcRenderer.invoke("set-asr-strategy", strategy),
   getLocalAsrStatus: (model?: string) => ipcRenderer.invoke("get-local-asr-status", model),
   installLocalAsr: (model: string) => ipcRenderer.invoke("install-local-asr", model),

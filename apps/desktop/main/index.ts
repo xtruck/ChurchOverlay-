@@ -783,6 +783,35 @@ ipcMain.handle("set-ndi-enabled", async (_event, payload: unknown) => {
   return ndiOutput.getStatus()
 })
 
+// ARCHITECTURE.md section 65.6's original toggle only ever existed on the
+// first-run setup screen — no way to turn it on/off afterward short of
+// hand-editing config.json. Unlike set-ndi-enabled/set-enable-sermon-notes
+// above, this can't just flip a running service's own flag: the WS server's
+// listen host (127.0.0.1 vs 0.0.0.0) and the remote page's own StaticServer
+// are both fixed at construction time (ARCHITECTURE.md section 24/65.6), so
+// changing this genuinely requires tearing down and restarting AppCore —
+// the same shutdown()-then-startServices() cycle complete-setup already
+// runs on any other service-affecting config change. This is a real,
+// visible interruption (mic/ASR/all WS clients briefly disconnect), which
+// the dashboard confirms with the operator before calling this.
+ipcMain.handle("set-allow-phone-remote", async (_event, payload: unknown) => {
+  if (typeof payload !== "boolean") throw new Error("Invalid allowPhoneRemote value.")
+  const store = getConfigStore()
+  const existing = await store.load().catch(() => null)
+  if (!existing) throw new Error("Services are not started yet.")
+  const config: AppConfig = { ...existing, allowPhoneRemote: payload }
+  await store.save(config)
+  try {
+    return await startServices(config)
+  } catch (error) {
+    // Mirrors complete-setup's own recovery path: startServices opens
+    // resources in stages, so a later listener failing must not leave
+    // earlier ones (e.g. the old WS server) still bound.
+    await shutdown()
+    throw error
+  }
+})
+
 ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
   const payloadObject = typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {}
 
