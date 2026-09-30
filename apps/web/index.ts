@@ -28,11 +28,13 @@ import { getCrossReferences, prefetchCrossReferences } from "../server/verse/cro
 import { analyzeSermonFlow } from "../server/ai/sermon-flow-analyzer"
 import type { DisplayMode, VerseConfirmationMode, MediaCueKind } from "../../packages/contracts"
 import { buildPageUrls, buildStatusPayload, type UiLanguage } from "./status-payload"
+import { installApiGuard, isLoopbackHost, resolveWebHost } from "./api-auth"
 
 export type { UiLanguage } from "./status-payload"
 
 const PORT = 3000
-const HOST = "0.0.0.0"
+// Loopback unless WEB_HOST is set on purpose (ARCHITECTURE.md sections 24 and 49).
+const HOST = resolveWebHost(process.env.WEB_HOST)
 
 // Compiled to dist/apps/web/index.js — three levels up reaches the repo
 // root, matching apps/desktop/main/index.ts's own REPO_ROOT pattern
@@ -57,7 +59,6 @@ const logger = new Logger({ minLevel: "info" })
 
 async function main() {
   const app = express()
-  app.use(express.json({ limit: "50mb" }))
 
   const httpServer = createServer(app)
 
@@ -66,6 +67,10 @@ async function main() {
     operatorToken: process.env.OPERATOR_TOKEN || randomBytes(16).toString("hex"),
     viewerToken: process.env.VIEWER_TOKEN || randomBytes(16).toString("hex"),
   }
+
+  // Every /api route requires the operator token, and is checked before the
+  // 50 MB media-upload body is parsed. Registered before any /api route.
+  installApiGuard(app, tokens.operatorToken, "50mb")
 
   // Every page URL this server advertises, built in one place
   // (SECURITY.md item 13, ARCHITECTURE.md section 106). Read-only pages —
@@ -147,6 +152,9 @@ async function main() {
         event: "server.listening",
       })
       console.log(`ChurchOverlay Server listening at http://${HOST}:${PORT}`)
+      if (!isLoopbackHost(HOST)) {
+        console.log(`WARNING: bound to ${HOST}, reachable from the network. Anyone with the page URLs below holds those tokens; use a trusted network.`)
+      }
       console.log(`Overlay URL: http://${HOST}:${PORT}${pageUrls.overlay}`)
       console.log(`Remote URL: http://${HOST}:${PORT}${pageUrls.remote}`)
       console.log(`Stage Display URL: http://${HOST}:${PORT}${pageUrls.stage}`)

@@ -464,7 +464,7 @@
     downloadServicePackBtn.onclick = async () => {
       try {
         downloadServicePackBtn.textContent = "⏳ Generating Pack..."
-        const res = await fetch("/api/service-pack")
+        const res = await fetch("/api/service-pack", { headers: { Authorization: "Bearer " + token } })
         if (res.ok) {
           const data = await res.json()
           servicePackResult.style.display = "block"

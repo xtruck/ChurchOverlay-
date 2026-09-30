@@ -4440,6 +4440,17 @@ real `ws` client connects and completes the token handshake on the *same* port E
 listening on, and exercised the full media lifecycle end to end — `POST /api/media/upload`,
 `POST /api/media/rename`, `DELETE /api/media/:id` — against the running process.
 
+### 80.4 Authentication and bind address (security fix)
+
+The first version of Web Server Mode bound `0.0.0.0` unconditionally and put no
+authentication on `/api/*`, so `GET /api/status` handed the operator token to any host
+that could reach the port — and with it full operator control. That contradicted sections
+24 and 49 and was not covered by SECURITY.md. Now: every `/api/*` route requires the
+operator token as `Authorization: Bearer` (`apps/web/api-auth.ts`, checked before body
+parsing), and the server binds `127.0.0.1` unless `WEB_HOST` is set. Reaching it from a
+phone or another machine is therefore an explicit opt-in (`WEB_HOST=0.0.0.0`), on a
+trusted network. Tests: `apps/web/api-auth.test.ts`. See SECURITY.md items 14 and 15.
+
 ## 81. Transcription Responsiveness & French-Priority Accuracy
 
 Live-testing feedback, verbatim in substance: the operator had to speak loudly and

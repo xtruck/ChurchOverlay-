@@ -105,6 +105,31 @@ as a bug.
     The dev-only overlay dashboard (`apps/overlay/dev-preview/`) is excluded from that
     test because it is never packaged or served (item 7).
 
+14. **Web Server Mode's REST API requires the operator token, and binds to loopback
+    by default.**
+    Every `/api/*` route in `apps/web/index.ts` sits behind `installApiGuard()`
+    (`apps/web/api-auth.ts`): the operator token must arrive as
+    `Authorization: Bearer <token>` (never in the URL), is compared in constant time,
+    and is checked *before* the JSON body is parsed, so an unauthenticated caller
+    cannot make the server buffer a 50 MB upload. `/api/status` and `/api/setup`
+    return the page URLs and tokens, so they are protected the same way — before
+    this, any host that could reach the port could read the operator token from
+    `/api/status` and take full operator control. The server listens on `127.0.0.1`
+    unless `WEB_HOST` is set (ARCHITECTURE.md sections 24 and 49), and prints a
+    warning when it is bound to a non-loopback address. The phone remote
+    (`apps/remote/public/remote.js`) sends its own token for `/api/service-pack`.
+    `/media/<id>` and the static pages stay open by design: media ids are
+    unguessable ULIDs and the pages carry no secrets of their own.
+
+15. **A single WebSocket message is capped at 1 MiB, and a socket error cannot crash
+    the process.**
+    `ChurchOverlayWsServer` sets `maxPayload` (`ws` defaults to 100 MiB, which any
+    token holder, including the read-only viewer, could make the server buffer).
+    `ws` reports an oversized or malformed frame as an `'error'` event on the
+    socket; with no listener that became an uncaught exception that killed the whole
+    server mid-service, so `handleConnection()` now listens for it and reports it
+    through `onRejected` while `ws` closes the connection (code 1009 for size).
+
 ## Known, deliberate trade-offs
 
 - Every served page URL carries its token as a query parameter (see item 3 above). This
