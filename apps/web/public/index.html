@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ChurchOverlay — Web Server Mode</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0b1220; color: #e6ebf5; font: 16px/1.55 system-ui, sans-serif; }
+    main { max-width: 34rem; padding: 2rem 1.5rem; }
+    h1 { font: 600 1.6rem/1.2 Georgia, serif; margin: 0 0 1.2rem; }
+    p { margin: 0 0 1rem; color: #b8c2d6; }
+    h2 { font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; color: #8b97ae; margin: 1.6rem 0 .5rem; }
+    ul { margin: 0; padding: 0; list-style: none; }
+    li { padding: .35rem 0; border-bottom: 1px solid #1c2740; display: flex; justify-content: space-between; gap: 1rem; }
+    code { color: #e3b23c; }
+    .note { margin-top: 1.6rem; font-size: .9rem; color: #8b97ae; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>ChurchOverlay</h1>
+
+    <p>The operator dashboard runs in the ChurchOverlay desktop app. In Web Server Mode, open the pages below using the links printed in this server's console. Each link carries its own access token.</p>
+    <p lang="fr">Le tableau de bord opérateur fonctionne dans l'application de bureau ChurchOverlay. En mode serveur web, ouvrez les pages ci-dessous avec les liens affichés dans la console du serveur. Chaque lien contient son propre jeton d'accès.</p>
+
+    <h2>Pages</h2>
+    <ul>
+      <li><span>Overlay (OBS Browser Source)</span> <code>/overlay/</code></li>
+      <li><span>Phone remote / Télécommande</span> <code>/remote/</code></li>
+      <li><span>Stage display / Retour scène</span> <code>/stage/</code></li>
+      <li><span>Live companion / Suivi en direct</span> <code>/live/</code></li>
+    </ul>
+
+    <p class="note">These addresses only work with the full link from the console, which includes the token.<br /><span lang="fr">Ces adresses ne fonctionnent qu'avec le lien complet de la console, qui inclut le jeton.</span></p>
+  </main>
+</body>
+</html>

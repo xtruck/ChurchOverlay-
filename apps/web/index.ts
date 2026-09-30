@@ -466,11 +466,12 @@ async function main() {
   const remoteStaticDir = join(REPO_ROOT, "apps", "remote", "public")
   app.use("/remote", express.static(remoteStaticDir))
 
-  // Operator Dashboard static files & index
-  const rendererDir = join(REPO_ROOT, "apps", "desktop", "renderer")
-  app.use(express.static(rendererDir))
+  // "/" explains where the operator dashboard lives. The dashboard in
+  // apps/desktop/renderer is built on Electron's preload bridge and renders
+  // as a blank page in a browser (ARCHITECTURE.md section 80.2), so it is no
+  // longer served here.
   app.get("/", (_req: Request, res: Response) => {
-    res.sendFile(join(rendererDir, "index.html"))
+    res.sendFile(join(REPO_ROOT, "apps", "web", "public", "index.html"))
   })
 
   const shutdown = async () => {

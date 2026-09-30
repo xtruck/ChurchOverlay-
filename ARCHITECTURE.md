@@ -4420,6 +4420,14 @@ overlay (`/overlay`) and phone remote (`/remote`) pages are unaffected — both 
 already plain, IPC-free static pages before this section, and both are fully functional
 in Web Server Mode.
 
+**Update:** `/` no longer serves that dashboard. In a browser it rendered as a blank
+page (its script throws on the missing bridge and retries a token-less WebSocket in a
+loop), which is worse than an explanation. `apps/web/public/index.html` now answers `/`
+with a short English/French page saying where the dashboard lives and which four pages
+this mode serves. It carries no script and no token (`apps/web/landing-page.test.ts`),
+since `/` is reachable without one. The overlay, remote, stage and live pages are
+unchanged, and a browser-native dashboard is still separate, future work.
+
 ### 80.3 Tests added
 
 `hybrid-provider.test.ts`: no-`apiKey` construction leaves `sendAudio()`/`start()`/
