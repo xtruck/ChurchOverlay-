@@ -1,0 +1,27 @@
+# Keeps dependencies and CI actions current without anyone having to remember.
+#
+# CI already fails a PR on a high-severity production advisory
+# (`npm audit --omit=dev --audit-level=high` in ci.yml); this is the other
+# half — getting the fix proposed as a PR in the first place. Every update
+# arrives as a normal pull request and goes through the same typecheck + test
+# gate as any other change. Minor/patch updates are grouped to keep the noise
+# down; a major bump (Electron, electron-builder, TypeScript) stays its own PR
+# so it can be reviewed and tested on its own.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3

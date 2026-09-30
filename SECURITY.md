@@ -130,6 +130,28 @@ as a bug.
     server mid-service, so `handleConnection()` now listens for it and reports it
     through `onRejected` while `ws` closes the connection (code 1009 for size).
 
+16. **A dead or stalled WebSocket client cannot hold the server's memory hostage.**
+    `ChurchOverlayWsServer` pings every admitted client on a 30 s heartbeat
+    (`heartbeatIntervalMs`, `0` disables) and terminates any that neither answered
+    the previous ping nor sent a message since; browsers and `ws` clients pong
+    automatically, and any inbound message counts as liveness so a busy operator
+    streaming audio is never dropped for a late pong. Separately, `broadcast()`
+    drops a client whose unsent queue passes `maxBufferedBytes` (4 MiB) instead of
+    letting `ws` buffer for it without bound (AGENTS.md section 36). Both drops are
+    reported through `onRejected`, never silent, and the heartbeat timer is
+    `unref()`'d and cleared in `close()`. A dropped client reconnects through the
+    clients' existing capped-backoff loop.
+
+17. **The static/media server is read-only, strict about its input, and streams.**
+    `StaticServer` answers only `GET` and `HEAD` (405 otherwise); a malformed
+    `%`-escape or a NUL byte in the path is a 400 rather than a 500; every response
+    carries `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`
+    (the loopback URL can carry a token). Imported media is streamed from disk with
+    HTTP Range support (206/416) instead of being read whole into memory: a 300 MB
+    video previously cost ~346 MB of resident memory per request, whether the
+    browser asked for the whole file or one kilobyte of it. Directory traversal
+    handling is unchanged (403) and still covered by its original tests.
+
 ## Known, deliberate trade-offs
 
 - Every served page URL carries its token as a query parameter (see item 3 above). This
