@@ -5837,3 +5837,35 @@ Palette contrast gate; normalization (clamps, enums, hex-only, length, unknown k
 on change and on viewer connect; registry validation; ConfigStore round-trip + corrupt-field recovery;
 logo validation (magic bytes, SVG refused, oversize refused); `/brand/logo` route (200/304/404/HEAD,
 headers); NDI `unpremultiply`, cadence, failure/backoff, generation-token teardown.
+
+### 110.9 Implementation status and deviations (recorded after the build)
+
+Implemented: contracts, palette catalog (24 palettes, six groups, contrast-gated), normalization,
+`overlay:style` event with late-join sync, `AppCore.setOverlayStyle()`, `ConfigStore.overlayStyle`,
+`OverlayStyleController` (debounced atomic persist, logo ownership), logo import and `/brand/logo`,
+the overlay page's CSS-variable refactor plus `glass` and `ribbon` designs, `?designPreview=1`, the
+dashboard Overlay view (palette picker, custom colours with live contrast, card design, name and logo
+editors, drag/wheel/arrow/anchor placement, reset) in English and French, and the NDI panel moved into
+that view.
+
+Deviations from the design above, and why:
+
+- **Default palette.** Reproducing today's overlay *exactly* fails the contrast gate at the legacy
+  scrim opacity over white video, so `gilt-night` uses card opacity 0.62 and a slightly brighter
+  second-language colour (`#f2f4f7` instead of 75% white). Dark translucent palettes use 0.74.
+- **Legacy inputs seed the style once.** `overlayTemplate` seeds the card design, `organizationName`
+  seeds a visible church name, and `accentColor` becomes a custom palette that is the default plus that
+  accent, so an existing install looks the same until the operator edits it.
+- **`set-overlay-template` is kept** as a compatibility IPC but now applies live; the restart and
+  confirmation are gone. The old Settings card was removed.
+- **One outbound message from the overlay.** In `?designPreview=1` only, the page posts where its
+  brand items are (percent of frame) to its parent so the editor's handles fit. The page never
+  listens for messages, so this is not a control channel (section 20).
+- **Corruption logging.** `ConfigStore.decode()` repairs a corrupt `overlayStyle` silently because it
+  has no logger; the repaired value is what gets used and later persisted.
+- **Contrast helper duplicated** in the renderer (about 15 lines) because the renderer has no build
+  step; the catalog itself is fetched over IPC (`get-overlay-style-meta`), so there is one source of
+  palettes.
+
+Not proven: the native logo dialog, `nativeImage` decoding and real Electron IPC were not run (no
+desktop session); delivery of the styled frame to a real NDI receiver (section 109).

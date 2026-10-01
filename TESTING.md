@@ -50,6 +50,8 @@ itself is genuine.
 
 **Real-Electron NDI probe** — `npm run build && xvfb-run -a electron --no-sandbox dist/scripts/ndi-window-probe.js` builds the real `createNdiWindow()` factory and asserts the emitted frame is 1920x1080 with a transparent background and an opaque box (ARCHITECTURE.md section 109). Manual, not part of `npm test`; it proves the offscreen window, not delivery to an NDI receiver.
 
+**Overlay style, manual rendering check** — the overlay page and the dashboard Overlay view are not part of `npm test`. They were verified by driving the real pages in Chromium (Playwright): the overlay with injected `overlay:style` messages for six palette/design combinations, and the dashboard view against a real `AppCore` and `OverlayStyleController` through an HTTP stand-in for Electron IPC (palette and design pick, name entry, logo import, pointer drag, keyboard nudge, anchors, custom palette, persisted result). The Electron-only parts (native file dialog, `nativeImage` decoding, real IPC) were not exercised.
+
 **Not automated in this repository**: real microphone capture, the real Electron GUI,
 and OBS Browser Source rendering. These require an actual desktop session; `npm run
 package` builds a real installable app for manual verification. Because the browser
@@ -98,6 +100,13 @@ Current status:
 | static responses carry nosniff/no-referrer, revalidate with ETag/304, and fonts stay CORS-readable | `http/static-server.test.ts` |
 | malformed %-escapes and NUL bytes are 400, non-GET/HEAD methods are 405, directories are 404 | `http/static-server.test.ts` |
 | the favicon (`image/svg+xml`) and touch icon (`image/png`) are served with image types, not a generic one | `http/static-server.test.ts` |
+| every built-in overlay palette meets the WCAG contrast gate (text 4.5:1, 7:1 high-contrast, accent 3:1; translucent cards over black and white) | `overlay/palettes.test.ts` |
+| overlay style input is clamped, enum-checked, hex-only, length-capped; garbage never throws; defaults equal the legacy look | `overlay/overlay-style.test.ts` |
+| `overlay:style` is synced on connect, broadcast live with an increasing revision, and is server-only in the registry | `app-core.test.ts`, `action-registry.test.ts` |
+| a stored overlay style round-trips, and a corrupt one degrades field-by-field | `config-store.test.ts` |
+| logos are accepted only by magic bytes (SVG refused), size/pixel bounded, written atomically, previous logo kept on rejection | `brand-logo.test.ts` |
+| operator edits are normalized, broadcast live, persisted debounced, cannot forge the logo version, and fail loudly with no core | `overlay-style-controller.test.ts` |
+| `/brand/logo` serves a PNG with nosniff, ETag/304, HEAD, and 404 when absent | `http/static-server.test.ts` |
 
 Two categories from that list have no dedicated fixture, deliberately: **low-quality
 transcript** has no v1 provider that exposes a usable quality signal (GroqProvider

@@ -160,6 +160,19 @@ as a bug.
     `img-src 'self'` (and nothing broader) so its icon is not blocked by
     `default-src 'none'`.
 
+19. **Overlay style input is normalized, never trusted, and cannot inject CSS or markup.**
+    `normalizeOverlayStyleSettings()` drops unknown keys, checks enums against closed lists,
+    clamps numbers, caps and sanitizes text, and accepts colours only as `#rrggbb`. The overlay
+    page writes text with `textContent` and values through CSS custom properties, never
+    `innerHTML`. `overlay:style` is a server-only event no WebSocket client may send.
+    (ARCHITECTURE.md section 110.5.)
+20. **The church logo is validated and re-encoded, never served as uploaded.** At most 5 MB,
+    format decided by magic bytes (PNG/JPEG/WebP; SVG is refused because it can carry script),
+    decoded, bounded to 4096 px, re-encoded as a PNG under 1024 px wide and written
+    atomically. `/brand/logo` serves only that stored file (no request data is used as a
+    path), with `nosniff` and `no-referrer`. The overlay never receives a file path or bytes
+    over the WebSocket. (Section 110.6.)
+
 ## Known, deliberate trade-offs
 
 - Every served page URL carries its token as a query parameter (see item 3 above). This

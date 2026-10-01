@@ -220,29 +220,41 @@
   }
 
   // ---------- drag handles over the preview ----------
+  // Handles are updated IN PLACE: replacing them on every server answer would
+  // drop keyboard focus and break an in-progress pointer drag.
+  const handleEls = {}
+  function makeHandle(key) {
+    const h = document.createElement("div")
+    h.className = "ov-handle"
+    h.dataset.item = key
+    h.tabIndex = 0
+    h.setAttribute("role", "button")
+    h.addEventListener("pointerdown", (e) => startDrag(e, key, h))
+    h.addEventListener("keydown", (e) => nudge(e, key))
+    h.addEventListener("focus", () => { if (selected !== key) { selected = key; render(false) } })
+    h.addEventListener("wheel", (e) => {
+      e.preventDefault()
+      edit((s) => { s.brand[key].scale = clamp(+(s.brand[key].scale * (e.deltaY < 0 ? 1.05 : 1 / 1.05)).toFixed(3), meta.limits.scale.min, meta.limits.scale.max) })
+    }, { passive: false })
+    return h
+  }
   function drawHandles() {
-    els.handles.textContent = ""
     for (const key of ["name", "logo"]) {
       const item = style && style.brand[key]
       const r = rects[key]
-      if (!item || !item.visible || !r) continue
-      const h = document.createElement("div")
-      h.className = "ov-handle" + (key === selected ? " selected" : "")
-      h.dataset.item = key
-      h.tabIndex = 0
-      h.setAttribute("role", "button")
+      const show = !!(item && item.visible && r)
+      let h = handleEls[key]
+      if (!show) {
+        if (h && !(drag && drag.key === key)) { h.remove(); delete handleEls[key] }
+        continue
+      }
+      if (!h) { h = handleEls[key] = makeHandle(key); els.handles.appendChild(h) }
+      h.classList.toggle("selected", key === selected)
       h.setAttribute("aria-label", t("overlay.handle." + key))
       h.style.left = r.left + "%"
       h.style.top = r.top + "%"
       h.style.width = r.width + "%"
       h.style.height = r.height + "%"
-      h.addEventListener("pointerdown", (e) => startDrag(e, key, h))
-      h.addEventListener("keydown", (e) => nudge(e, key))
-      h.addEventListener("wheel", (e) => {
-        e.preventDefault()
-        edit((s) => { s.brand[key].scale = clamp(+(s.brand[key].scale * (e.deltaY < 0 ? 1.05 : 1 / 1.05)).toFixed(3), meta.limits.scale.min, meta.limits.scale.max) })
-      }, { passive: false })
-      els.handles.appendChild(h)
     }
   }
   let drag = null
@@ -325,7 +337,13 @@
     }
     els.anchors.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
       const [ax, ay] = b.dataset.anchor.split(",").map(Number)
-      edit((s) => { s.brand[selected].x = ax; s.brand[selected].y = ay })
+      // Anchors place the item's EDGE (not its centre) near the frame edge, so a wide name never spills off.
+      const r = rects[selected]
+      const hw = r ? r.width / 2 : 0
+      const hh = r ? r.height / 2 : 0
+      const x = ax < 50 ? hw + 2 : ax > 50 ? 100 - hw - 2 : 50
+      const y = ay < 50 ? hh + 3 : ay > 50 ? 100 - hh - 3 : 50
+      edit((s) => { s.brand[selected].x = clamp(+x.toFixed(2), 0, 100); s.brand[selected].y = clamp(+y.toFixed(2), 0, 100) })
     }))
     els.reset.addEventListener("click", () => {
       api.getOverlayStyleMeta && edit((s) => {
