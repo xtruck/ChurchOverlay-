@@ -1,3 +1,4 @@
+import { normalizeOverlayStyleSettings } from "../../server/overlay/overlay-style"
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises"
@@ -466,5 +467,42 @@ test("ConfigStore: load() throws on a present but non-boolean enableSermonNotes 
     const { writeFile } = await import("node:fs/promises")
     await writeFile(path, JSON.stringify({ ...baseStored, enableSermonNotes: "yes" }), "utf8")
     await assert.rejects(() => new ConfigStore(path, codec).load(), /invalid enableSermonNotes/)
+  })
+})
+
+// ARCHITECTURE.md section 110: overlayStyle is optional and self-healing.
+test("ConfigStore: overlayStyle round-trips normalized, and a pre-section-110 file loads without one", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const store = new ConfigStore(path, new FakeSecretCodec())
+    const style = normalizeOverlayStyleSettings({ paletteId: "ocean", card: "glass", brand: { name: { text: "Grace", visible: true, x: 40 } } })
+    await store.save({ ...SAMPLE_CONFIG, overlayStyle: style })
+    assert.deepEqual((await store.load())?.overlayStyle, style)
+    await store.save(SAMPLE_CONFIG)
+    assert.equal((await store.load())?.overlayStyle, undefined)
+  })
+})
+
+test("ConfigStore: a corrupt stored overlayStyle degrades field-by-field instead of failing the load", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const codec = new FakeSecretCodec()
+    const stored = {
+      groqApiKeyEncrypted: codec.encrypt(SAMPLE_CONFIG.groqApiKey).toString("base64"),
+      microphoneId: null,
+      operatorTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.operatorToken).toString("base64"),
+      viewerTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.viewerToken).toString("base64"),
+      overlayStyle: { paletteId: "gone", card: "elegant", brand: { name: { text: "Kept", size: "huge", x: 25 }, logo: 9 } },
+    }
+    const { writeFile } = await import("node:fs/promises")
+    await writeFile(path, JSON.stringify(stored), "utf8")
+    const loaded = await new ConfigStore(path, codec).load()
+    const s = loaded?.overlayStyle
+    assert.equal(s?.paletteId, "gilt-night") // bad field -> default
+    assert.equal(s?.card, "elegant") // good field kept
+    assert.equal(s?.brand.name.text, "Kept")
+    assert.equal(s?.brand.name.x, 25)
+    assert.equal(s?.brand.name.size, 28) // bad type -> default
+    assert.equal(s?.brand.logo.version, 0)
   })
 })

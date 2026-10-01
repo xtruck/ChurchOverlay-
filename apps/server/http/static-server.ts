@@ -32,6 +32,8 @@ const MEDIA_CONTENT_TYPES: Readonly<Record<string, string>> = {
 }
 
 const MEDIA_PATH_PATTERN = /^\/media\/([^/]+)$/
+/** ARCHITECTURE.md section 110.6: the one operator-imported church logo, always a normalized PNG. */
+const BRAND_LOGO_PATH = "/brand/logo"
 
 /**
  * Sent on every response. `nosniff` stops a browser from second-guessing the
@@ -61,6 +63,13 @@ export type StaticServerOptions = {
   readonly rootDir: string
   /** Optional — when provided, serves imported media under /media/<id> (ARCHITECTURE.md section 60.4). */
   readonly mediaResolver?: MediaFileResolver
+  /**
+   * Optional (ARCHITECTURE.md section 110.6): returns the absolute path of the
+   * stored, already-validated logo PNG, or null when none is set. Called per
+   * request so replacing the logo needs no server restart. No part of the
+   * request is used as a path.
+   */
+  readonly brandLogoPath?: () => string | null
 }
 
 const DEFAULT_HOST = "127.0.0.1"
@@ -163,11 +172,13 @@ function plain(res: ServerResponse, status: number, body: string, extraHeaders: 
 export class StaticServer {
   private readonly server: Server
   private readonly mediaResolver?: MediaFileResolver
+  private readonly brandLogoPath?: () => string | null
   readonly ready: Promise<void>
 
   constructor(options: StaticServerOptions) {
     const rootDir = normalize(options.rootDir)
     this.mediaResolver = options.mediaResolver
+    this.brandLogoPath = options.brandLogoPath
     this.server = createServer((req, res) => {
       this.handleRequest(req, res, rootDir).catch(() => {
         if (!res.headersSent) res.writeHead(500, SECURITY_HEADERS)
@@ -209,6 +220,11 @@ export class StaticServer {
     const requestedPath = decodeRequestPath(req.url)
     if (requestedPath === null) {
       plain(res, 400, "Bad Request")
+      return
+    }
+
+    if (requestedPath === BRAND_LOGO_PATH) {
+      await this.handleBrandLogoRequest(req, res)
       return
     }
 
@@ -266,6 +282,42 @@ export class StaticServer {
       return
     }
 
+    headers["Content-Length"] = String(content.length)
+    res.writeHead(200, headers)
+    res.end(req.method === "HEAD" ? undefined : content)
+  }
+
+  /** ARCHITECTURE.md section 110.6. Revalidates (ETag/304); the overlay adds ?v=<version> to bust its own cache. */
+  private async handleBrandLogoRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const filePath = this.brandLogoPath?.() ?? null
+    if (!filePath) {
+      plain(res, 404, "Not Found")
+      return
+    }
+    let info
+    let content: Buffer
+    try {
+      info = await stat(filePath)
+      content = await readFile(filePath)
+    } catch {
+      plain(res, 404, "Not Found")
+      return
+    }
+    if (!info.isFile()) {
+      plain(res, 404, "Not Found")
+      return
+    }
+    const etag = `W/"${content.length.toString(16)}-${Math.floor(info.mtimeMs).toString(16)}"`
+    const headers: Record<string, string> = {
+      "Content-Type": "image/png",
+      "Cache-Control": REVALIDATE_CACHE_CONTROL,
+      ETag: etag,
+      ...SECURITY_HEADERS,
+    }
+    if (req.headers["if-none-match"] === etag) {
+      res.writeHead(304, headers).end()
+      return
+    }
     headers["Content-Length"] = String(content.length)
     res.writeHead(200, headers)
     res.end(req.method === "HEAD" ? undefined : content)
