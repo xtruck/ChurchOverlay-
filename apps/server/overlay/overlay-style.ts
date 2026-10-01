@@ -169,9 +169,17 @@ function sortKeys(v: unknown): unknown {
  * seeded from the pre-section-110 inputs (section 108 template, section 94
  * organization name) so an existing install renders the same as before.
  */
-export function seedOverlayStyle(stored: unknown, legacyTemplate: string | undefined, organizationName: string | undefined): OverlayStyleSettings {
+export function seedOverlayStyle(
+  stored: unknown,
+  legacyTemplate: string | undefined,
+  organizationName: string | undefined,
+  legacyAccentColor?: string,
+): OverlayStyleSettings {
   if (stored !== undefined && stored !== null) return normalizeOverlayStyleSettings(stored)
-  const seeded = defaultOverlayStyleSettings()
+  let seeded = defaultOverlayStyleSettings()
+  // Section 92's accent colour: keep the look by carrying it into a custom palette.
+  const accent = hex(legacyAccentColor, undefined)
+  if (accent) seeded = { ...seeded, paletteId: CUSTOM_PALETTE_ID, customColors: { ...DEFAULT_COLORS, accent } }
   const card = oneOf<OverlayCardDesign>(legacyTemplate, OVERLAY_CARD_DESIGNS, seeded.card)
   const text = cleanText(organizationName)
   if (text) return normalizeOverlayStyleSettings({ ...seeded, card, brand: { ...seeded.brand, name: { ...seeded.brand.name, text, visible: true } } })

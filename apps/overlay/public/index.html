@@ -37,9 +37,25 @@
     as a progressive frosted-glass enhancement, not a replacement for it.
   */
   :root {
-    /* Warm gilt: legible over dark backgrounds and arbitrary video alike. */
+    /*
+      ARCHITECTURE.md section 110: every colour/brand value below is a CSS
+      custom property that overlay.js sets from the server's overlay:style
+      event (only ever validated #rrggbb or clamped numbers, never markup).
+      The defaults here are the gilt-night palette = the look from before
+      the style system existed, so a page that never receives a style
+      renders as it always did.
+    */
     --accent: #e6c27a;
-    --scrim: rgba(6, 7, 10, 0.6);
+    --accent-rgb: 230, 194, 122;
+    --ov-card-rgb: 6, 7, 10;
+    --ov-card-a: 0.6;
+    --scrim: rgba(var(--ov-card-rgb), var(--ov-card-a));
+    --ov-text: #ffffff;
+    --ov-text2: #f2f4f7;
+    --ov-border: rgba(255, 255, 255, 0.08);
+    --ov-backdrop: #0c1320;
+    --ov-backdrop-2: #070b12;
+    --ov-shadow: 0 2px 10px rgba(0, 0, 0, 0.85);
   }
   *, *::before, *::after {
     box-sizing: border-box;
@@ -68,32 +84,43 @@
   }
 
   /*
-    ARCHITECTURE.md section 94: an optional, subtle organization-name
-    watermark — hidden by default (display: none), shown only when
-    branding:update actually carries a name. Deliberately small, low-
-    contrast, and positioned opposite #status (top-right vs. top-left) so
-    it never competes with the verse/media/announcement content that is
-    always the real focus of this screen. No app-chrome/product-name
-    default is ever shown here — absence means nothing renders at all.
+    ARCHITECTURE.md section 110.2: the church name and logo are free-placed
+    brand items. x/y are the item CENTRE in percent of the frame; the text
+    size is "px at 1080p" turned into vh so it scales with the frame (OBS
+    source size, NDI 1920x1080 and the dashboard preview all agree).
+    Hidden until overlay:style says otherwise: no product name is ever shown.
   */
-  #brand-watermark {
+  .brand-item {
     position: fixed;
-    top: 14px;
-    right: 14px;
     z-index: 3;
     display: none;
-    font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
-    font-size: 12px;
-    font-weight: 600;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    transform-origin: center;
+    pointer-events: none;
+    user-select: none;
+  }
+  .brand-item.visible { display: block; }
+  #brand-name {
+    white-space: nowrap;
+    font-size: calc(var(--brand-size, 28) * 0.0925926vh);
     letter-spacing: 0.02em;
-    color: rgba(255, 255, 255, 0.82);
+    color: var(--brand-color, var(--ov-text));
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
-    background: rgba(0, 0, 0, 0.32);
-    padding: 5px 12px;
+  }
+  #brand-name.plate {
+    background: rgba(var(--ov-card-rgb), 0.55);
+    padding: 0.4em 1em;
     border-radius: 999px;
     backdrop-filter: blur(4px);
   }
-  #brand-watermark.visible { display: block; }
+  #brand-logo {
+    height: 12vh;
+    width: auto;
+    max-width: 40vw;
+    object-fit: contain;
+  }
   #status { transition: opacity 400ms ease; }
   #status.status-hidden { opacity: 0; }
 
@@ -124,9 +151,9 @@
     max-width: 1150px;
     padding: 28px 48px;
     border-radius: 20px;
-    background: linear-gradient(180deg, var(--scrim), rgba(6, 7, 10, 0.46));
+    background: linear-gradient(180deg, var(--scrim), rgba(var(--ov-card-rgb), calc(var(--ov-card-a) * 0.77)));
     box-shadow: 0 12px 48px rgba(0, 0, 0, 0.35);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--ov-border);
     box-sizing: border-box;
     max-height: 100%;
     overflow: hidden;
@@ -141,8 +168,8 @@
   }
 
   #verse-text {
-    color: #ffffff;
-    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.85);
+    color: var(--ov-text);
+    text-shadow: var(--ov-shadow);
     font-family: "Instrument Serif", Georgia, "Times New Roman", serif;
     font-size: clamp(22px, 3.2vw, 44px);
     line-height: 1.4;
@@ -193,9 +220,9 @@
      over the nave, fading into deep ink. */
   #verse.fullscreen {
     background:
-      radial-gradient(120% 70% at 50% -12%, rgba(230, 194, 122, 0.11), transparent 62%),
+      radial-gradient(120% 70% at 50% -12%, rgba(var(--accent-rgb), 0.11), transparent 62%),
       radial-gradient(90% 60% at 50% 125%, rgba(46, 78, 128, 0.28), transparent 70%),
-      linear-gradient(180deg, #0c1320, #070b12);
+      linear-gradient(180deg, var(--ov-backdrop), var(--ov-backdrop-2));
   }
   #verse.fullscreen #verse-text { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); }
   /*
@@ -218,7 +245,7 @@
   */
   #verse-secondary-text {
     display: none;
-    color: rgba(255, 255, 255, 0.75);
+    color: var(--ov-text2);
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
     font-style: italic;
@@ -248,7 +275,7 @@
   }
   #verse-reference {
     color: var(--accent);
-    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.85);
+    text-shadow: var(--ov-shadow);
     font-family: "Instrument Serif", Georgia, serif;
     font-style: italic;
     font-size: clamp(18px, 2.1vw, 34px);
@@ -283,7 +310,7 @@
     82) — the one case this feature would most need to actually work in.
   */
   #verse-card.tpl-banner {
-    background: rgba(8, 10, 14, 0.92);
+    background: rgba(var(--ov-card-rgb), calc(0.4 + var(--ov-card-a) * 0.5));
     border-radius: 6px;
     border: none;
     border-top: 6px solid var(--accent);
@@ -299,7 +326,7 @@
   #verse-card.tpl-banner #verse-ref-row::after { display: none; }
   #verse.fullscreen #verse-card.tpl-banner {
     border-top: 10px solid var(--accent);
-    background: linear-gradient(180deg, rgba(8, 10, 14, 0.35), rgba(8, 10, 14, 0.7));
+    background: linear-gradient(180deg, rgba(var(--ov-card-rgb), 0.35), rgba(var(--ov-card-rgb), 0.7));
   }
 
   #verse-card.tpl-minimal {
@@ -322,7 +349,7 @@
   #verse-card.tpl-elegant {
     border: 1px solid var(--accent);
     border-radius: 28px;
-    box-shadow: 0 0 60px rgba(224, 169, 59, 0.12), 0 12px 48px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 0 60px rgba(var(--accent-rgb), 0.12), 0 12px 48px rgba(0, 0, 0, 0.35);
     padding: 36px 56px;
   }
   #verse-card.tpl-elegant #verse-reference {
@@ -330,7 +357,71 @@
   }
   #verse.fullscreen #verse-card.tpl-elegant {
     border: 1px solid var(--accent);
-    box-shadow: 0 0 90px rgba(224, 169, 59, 0.1);
+    box-shadow: 0 0 90px rgba(var(--accent-rgb), 0.1);
+  }
+
+  /*
+    ARCHITECTURE.md section 110: two new card designs.
+    glass: a frosted pane, strong blur, hairline light border.
+    ribbon: an accent bar down the left edge, text set left-aligned.
+    Each has a fullscreen override for the same reason the four above do
+    (fullscreen's "no card chrome" rule would otherwise erase them).
+  */
+  #verse-card.tpl-glass {
+    background: linear-gradient(135deg, rgba(var(--ov-card-rgb), calc(var(--ov-card-a) * 0.8)), rgba(var(--ov-card-rgb), calc(var(--ov-card-a) * 0.55)));
+    border: 1px solid var(--ov-border);
+    border-radius: 32px;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    -webkit-backdrop-filter: blur(28px) saturate(140%);
+    backdrop-filter: blur(28px) saturate(140%);
+  }
+  #verse-card.tpl-glass #verse-ref-row::before,
+  #verse-card.tpl-glass #verse-ref-row::after { display: none; }
+  #verse.fullscreen #verse-card.tpl-glass {
+    background: rgba(var(--ov-card-rgb), calc(var(--ov-card-a) * 0.35));
+    border-radius: 40px;
+    width: auto;
+    max-width: 92%;
+    padding: clamp(24px, 5vh, 64px) clamp(28px, 5vw, 88px);
+    border: 1px solid var(--ov-border);
+  }
+
+  #verse-card.tpl-ribbon {
+    align-items: flex-start;
+    border-radius: 4px 22px 22px 4px;
+    border: none;
+    border-left: 12px solid var(--accent);
+    padding: 28px 48px 28px 40px;
+  }
+  #verse-card.tpl-ribbon #verse-text,
+  #verse-card.tpl-ribbon #verse-secondary-text { text-align: left; }
+  #verse-card.tpl-ribbon #verse-ref-row::before { display: none; }
+  #verse-card.tpl-ribbon #verse-ref-row::after { width: 56px; }
+  #verse.fullscreen #verse-card.tpl-ribbon {
+    width: auto;
+    max-width: 92%;
+    align-self: center;
+    border-left: 16px solid var(--accent);
+    border-radius: 6px 36px 36px 6px;
+    background: rgba(var(--ov-card-rgb), calc(var(--ov-card-a) * 0.5));
+  }
+
+  /*
+    Clear-text palettes (card opacity 0): no card at all, so legibility rests
+    on the text shadow alone. Set by overlay.js; wins over every design.
+  */
+  #verse-card.no-card,
+  #verse.fullscreen #verse-card.no-card {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  #verse-card.no-card #verse-text,
+  #verse-card.no-card #verse-reference,
+  #verse-card.no-card #verse-secondary-text {
+    text-shadow: 0 2px 3px rgba(0, 0, 0, 0.9), 0 0 18px rgba(0, 0, 0, 0.75);
   }
 
   /*
@@ -616,7 +707,8 @@
 </head>
 <body>
   <div id="status">connecting…</div>
-  <div id="brand-watermark"></div>
+  <div id="brand-name" class="brand-item"></div>
+  <img id="brand-logo" class="brand-item" alt="" />
   <div id="poster-layer">
     <img id="poster-image" alt="" />
   </div>

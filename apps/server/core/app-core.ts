@@ -383,7 +383,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const overlayTemplate = options.overlayTemplate
   const onVerseLayoutChanged = options.onVerseLayoutChanged
   // ARCHITECTURE.md section 110: revision orders updates for viewers (section 22).
-  let overlayStyleSettings = seedOverlayStyle(options.overlayStyle, options.overlayTemplate, organizationName)
+  let overlayStyleSettings = seedOverlayStyle(options.overlayStyle, options.overlayTemplate, organizationName, options.accentColor)
   let overlayStyleRevision = 1
   const currentOverlayStyle = (): OverlayStyle => resolveOverlayStyle(overlayStyleSettings, overlayStyleRevision)
   let pendingVerse: Verse | null = null

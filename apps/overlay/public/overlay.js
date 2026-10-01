@@ -16,7 +16,8 @@
   const wsPort = params.get("wsPort") || window.location.port
 
   const statusEl = document.getElementById("status")
-  const brandWatermarkEl = document.getElementById("brand-watermark")
+  const brandNameEl = document.getElementById("brand-name")
+  const brandLogoEl = document.getElementById("brand-logo")
   const posterLayerEl = document.getElementById("poster-layer")
   const posterImageEl = document.getElementById("poster-image")
   const verseEl = document.getElementById("verse")
@@ -240,30 +241,109 @@
     if (verseEl.classList.contains("visible")) requestAnimationFrame(() => fitVerseText())
   }
 
-  // ARCHITECTURE.md sections 94/108: applies branding:update's late-join
-  // sync — absent/blank organizationName means the watermark simply stays
-  // hidden (no product-name default is ever shown to the congregation),
-  // absent accentColor leaves this page's own built-in --accent untouched,
-  // and absent/"classic" overlayTemplate leaves #verse-card with no extra
-  // template-* class (its existing, unmodified default appearance).
-  const OVERLAY_TEMPLATE_CLASSES = ["tpl-banner", "tpl-minimal", "tpl-elegant"]
-  function applyBranding(payload) {
-    const organizationName = payload && payload.organizationName
-    const accentColor = payload && payload.accentColor
-    const overlayTemplate = payload && payload.overlayTemplate
-    if (organizationName) {
-      brandWatermarkEl.textContent = organizationName
-      brandWatermarkEl.classList.add("visible")
+  // ARCHITECTURE.md section 110: the whole look (palette, card design, church
+  // name and logo) arrives as ONE server-validated `overlay:style` event, sent
+  // on connect and on every operator edit. This page only ever READS it
+  // (section 20: the overlay is a viewer, never a control client) and writes
+  // it into CSS custom properties / textContent, never innerHTML.
+  // branding:update is still received for older servers but no longer drives
+  // anything visual: organization name and accent now live in the style.
+  const CARD_CLASSES = ["tpl-banner", "tpl-minimal", "tpl-elegant", "tpl-glass", "tpl-ribbon"]
+  const BRAND_FONTS = {
+    serif: '"Instrument Serif", Georgia, "Times New Roman", serif',
+    sans: '"Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif',
+    mono: '"JetBrains Mono", "SF Mono", Consolas, monospace',
+  }
+  const HEX = /^#[0-9a-fA-F]{6}$/
+  // Revisions order updates (section 22). Reset on every (re)connect so a
+  // restarted server, whose counter starts again, never looks "stale".
+  let lastStyleRevision = -1
+
+  function rgbTriple(hex) {
+    return parseInt(hex.slice(1, 3), 16) + ", " + parseInt(hex.slice(3, 5), 16) + ", " + parseInt(hex.slice(5, 7), 16)
+  }
+  // 40% toward black: the bottom of the fullscreen backdrop gradient.
+  function darken(hex) {
+    const part = (i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * 0.6).toString(16).padStart(2, "0")
+    return "#" + part(1) + part(3) + part(5)
+  }
+  function isDark(hex) {
+    const lum = (0.2126 * parseInt(hex.slice(1, 3), 16) + 0.7152 * parseInt(hex.slice(3, 5), 16) + 0.0722 * parseInt(hex.slice(5, 7), 16)) / 255
+    return lum < 0.45
+  }
+  function setVar(name, value) {
+    document.documentElement.style.setProperty(name, value)
+  }
+  function placeBrandItem(el, item) {
+    el.style.left = item.x + "%"
+    el.style.top = item.y + "%"
+    el.style.opacity = String(item.opacity)
+    el.style.transform = "translate(-50%, -50%) rotate(" + item.rotation + "deg) scale(" + item.scale + ")"
+  }
+
+  function applyOverlayStyle(style) {
+    if (!style || typeof style.revision !== "number" || style.revision <= lastStyleRevision) return
+    const c = style.colors
+    if (!c || ![c.backdrop, c.card, c.text, c.textSecondary, c.accent, c.border].every((v) => typeof v === "string" && HEX.test(v))) return
+    lastStyleRevision = style.revision
+
+    setVar("--accent", c.accent)
+    setVar("--accent-rgb", rgbTriple(c.accent))
+    setVar("--ov-card-rgb", rgbTriple(c.card))
+    setVar("--ov-card-a", String(c.cardOpacity))
+    setVar("--ov-text", c.text)
+    setVar("--ov-text2", c.textSecondary)
+    setVar("--ov-border", c.border)
+    setVar("--ov-backdrop", c.backdrop)
+    setVar("--ov-backdrop-2", darken(c.backdrop))
+    // Dark text sits on a light card: the heavy black halo made it look smudged,
+    // so it gets a faint light edge instead. Light text keeps the legibility halo.
+    setVar("--ov-shadow", isDark(c.text) ? "0 1px 1px rgba(255, 255, 255, 0.35)" : "0 2px 10px rgba(0, 0, 0, 0.85)")
+
+    verseCardEl.classList.remove(...CARD_CLASSES)
+    if (style.card && style.card !== "classic") verseCardEl.classList.add("tpl-" + style.card)
+    verseCardEl.classList.toggle("no-card", c.cardOpacity === 0)
+
+    const name = style.brand && style.brand.name
+    if (name && name.visible && name.text) {
+      brandNameEl.textContent = name.text
+      brandNameEl.style.fontFamily = BRAND_FONTS[name.font] || BRAND_FONTS.sans
+      brandNameEl.style.fontWeight = String(name.weight)
+      brandNameEl.style.setProperty("--brand-size", String(name.size))
+      if (name.color && HEX.test(name.color)) brandNameEl.style.setProperty("--brand-color", name.color)
+      else brandNameEl.style.removeProperty("--brand-color")
+      brandNameEl.classList.toggle("plate", !!name.plate)
+      placeBrandItem(brandNameEl, name)
+      brandNameEl.classList.add("visible")
     } else {
-      brandWatermarkEl.classList.remove("visible")
+      brandNameEl.classList.remove("visible")
     }
-    if (accentColor) {
-      document.documentElement.style.setProperty("--accent", accentColor)
+
+    const logo = style.brand && style.brand.logo
+    if (logo && logo.visible && logo.version > 0) {
+      const src = "/brand/logo?v=" + logo.version
+      if (brandLogoEl.getAttribute("src") !== src) brandLogoEl.setAttribute("src", src)
+      placeBrandItem(brandLogoEl, logo)
+      brandLogoEl.classList.add("visible")
+    } else {
+      brandLogoEl.classList.remove("visible")
+      brandLogoEl.removeAttribute("src")
     }
-    verseCardEl.classList.remove(...OVERLAY_TEMPLATE_CLASSES)
-    if (overlayTemplate && overlayTemplate !== "classic") {
-      verseCardEl.classList.add("tpl-" + overlayTemplate)
-    }
+
+    // Colours and card chrome change the card's box: refit the verse text.
+    if (verseEl.classList.contains("visible")) requestAnimationFrame(() => fitVerseText())
+  }
+
+  // The dashboard's design preview (section 110.7): a clearly-placeholder
+  // card, shown only in that preview. It carries no Bible text, so nothing
+  // here can display an unverified verse (sections 13-14).
+  const designPreview = params.get("designPreview") === "1"
+  function showDesignSample() {
+    textEl.textContent = "This is how your verse will look."
+    refEl.textContent = "Reference 1:1"
+    secondaryTextEl.classList.remove("visible")
+    verseEl.classList.add("visible")
+    requestAnimationFrame(() => fitVerseText())
   }
 
   let resizeTimer = 0
@@ -518,6 +598,7 @@
     const ws = new WebSocket("ws://" + window.location.hostname + ":" + wsPort, [token])
 
     ws.addEventListener("open", () => {
+      lastStyleRevision = -1
       reconnectAttempts = 0
       setStatus("connected", true)
     })
@@ -534,6 +615,8 @@
       } catch {
         return
       }
+      // The design preview shows only its placeholder, never live content.
+      if (designPreview && (message.type === "verse:show" || message.type === "verse:clear")) return
       if (message.type === "verse:show") {
         showVerse(message.payload)
       } else if (message.type === "verse:clear") {
@@ -560,8 +643,8 @@
         clearPoster()
       } else if (message.type === "layout:update") {
         setVerseLayout(message.payload.layout)
-      } else if (message.type === "branding:update") {
-        applyBranding(message.payload)
+      } else if (message.type === "overlay:style") {
+        applyOverlayStyle(message.payload)
       } else if (message.type === "outline:show") {
         showOutline(message.payload)
       } else if (message.type === "outline:clear") {
@@ -577,7 +660,7 @@
   // an operator hitting Escape in an emergency needs everything gone, not
   // just whichever content type happened to be on screen.
   window.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
+    if (event.key === "Escape" && !designPreview) {
       clearVerse()
       clearMedia()
       clearAnnouncement()
@@ -594,5 +677,6 @@
     if (verseEl.classList.contains("visible")) fitVerseText()
   })
 
+  if (designPreview) showDesignSample()
   connect()
 })()
