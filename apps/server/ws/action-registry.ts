@@ -1,3 +1,4 @@
+import { isOverlayStylePayload } from "../overlay/overlay-style"
 import type {
   AnnouncementShowPayload,
   AsrStatusPayload,
@@ -658,6 +659,13 @@ export const ACTION_REGISTRY: Readonly<Record<WsCommandType | WsEventType, Actio
     kind: "event",
     allowedSenders: [],
     validatePayload: isBrandingUpdatePayload,
+  },
+  // ARCHITECTURE.md section 110.4: a server-only EVENT (no sender may emit it),
+  // so the public command registry does not grow.
+  "overlay:style": {
+    kind: "event",
+    allowedSenders: [],
+    validatePayload: isOverlayStylePayload,
   },
   "mic:health": {
     kind: "event",

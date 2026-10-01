@@ -55,6 +55,8 @@ import type { SessionHistoryStore, SessionHistoryEntry } from "./session-history
 import { AdaptiveGain } from "../audio/adaptive-gain"
 import { MicHealthMonitor } from "../audio/mic-health"
 import type { QuoteMatcher } from "../detector/quote-matcher"
+import type { OverlayStyle, OverlayStyleSettings } from "../../../packages/contracts/overlay-style"
+import { normalizeOverlayStyleSettings, resolveOverlayStyle, seedOverlayStyle } from "../overlay/overlay-style"
 
 /**
  * Every provider/seam is injected, never constructed inside this
@@ -197,6 +199,13 @@ export type StartAppCoreOptions = {
    */
   readonly overlayTemplate?: string
   /**
+   * ARCHITECTURE.md section 110: the stored overlay style. Normalized again
+   * here (untrusted input). Absent means defaults, seeded from the legacy
+   * overlayTemplate / organizationName above so an existing install looks
+   * the same until the operator opens the Overlay settings.
+   */
+  readonly overlayStyle?: OverlayStyleSettings
+  /**
    * Optional (ARCHITECTURE.md section 82.2) — the poster/media auto-clear
    * duration a fresh AppCore starts with; absent or null means "no
    * auto-clear" (manual poster:clear only), matching the option's own
@@ -246,6 +255,14 @@ export type AppCoreHandle = {
    * handler, which also persists the change to ConfigStore.
    */
   setVerseConfirmationMode(mode: VerseConfirmationMode): void
+  /**
+   * ARCHITECTURE.md section 110.4: live apply of the overlay style. The input
+   * is normalized, revision-bumped and broadcast as the server-only
+   * `overlay:style` event; returns what viewers received so the caller can
+   * persist the normalized settings (never the raw input).
+   */
+  setOverlayStyle(settings: unknown): OverlayStyle
+  getOverlayStyle(): OverlayStyle
   /**
    * ARCHITECTURE.md section 65.7: the live-toggle half of "held ready,
    * gated by a flag" — called by the Electron main process's own IPC
@@ -365,6 +382,10 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const accentColor = options.accentColor
   const overlayTemplate = options.overlayTemplate
   const onVerseLayoutChanged = options.onVerseLayoutChanged
+  // ARCHITECTURE.md section 110: revision orders updates for viewers (section 22).
+  let overlayStyleSettings = seedOverlayStyle(options.overlayStyle, options.overlayTemplate, organizationName)
+  let overlayStyleRevision = 1
+  const currentOverlayStyle = (): OverlayStyle => resolveOverlayStyle(overlayStyleSettings, overlayStyleRevision)
   let pendingVerse: Verse | null = null
   const QUOTE_SUGGESTION_COOLDOWN_MS = 60_000
   const recentQuoteSuggestions = new Map<string, number>()
@@ -506,6 +527,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         timestamp: Date.now(),
         payload: { organizationName, accentColor, overlayTemplate },
       })
+      // ARCHITECTURE.md section 110.4: same late-join sync, so an OBS reload or
+      // the NDI window is never stale about the style.
+      send({ id: generateUlid(), type: "overlay:style", timestamp: Date.now(), payload: currentOverlayStyle() })
       // ARCHITECTURE.md section 67.3: a principal poster is a persistent
       // backdrop, not scene state — synced independently of the
       // media/rundown blocks below, the same "late-join sync" reasoning
@@ -1884,6 +1908,14 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     setVerseConfirmationMode(mode: VerseConfirmationMode) {
       verseConfirmationMode = mode
     },
+    setOverlayStyle(settings: unknown) {
+      overlayStyleSettings = normalizeOverlayStyleSettings(settings)
+      overlayStyleRevision++
+      const style = currentOverlayStyle()
+      wsServer.broadcast({ id: generateUlid(), type: "overlay:style", timestamp: Date.now(), payload: style })
+      return style
+    },
+    getOverlayStyle: currentOverlayStyle,
     setSermonNotesEnabled(enabled: boolean) {
       sermonNotesEnabled = enabled
       if (!enabled) sermonNotesBuffer = ""

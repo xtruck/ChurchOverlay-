@@ -163,3 +163,17 @@ function sortKeys(v: unknown): unknown {
   if (!isRecord(v)) return v
   return Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortKeys(v[k])]))
 }
+
+/**
+ * Initial settings for AppCore: stored style when present, otherwise defaults
+ * seeded from the pre-section-110 inputs (section 108 template, section 94
+ * organization name) so an existing install renders the same as before.
+ */
+export function seedOverlayStyle(stored: unknown, legacyTemplate: string | undefined, organizationName: string | undefined): OverlayStyleSettings {
+  if (stored !== undefined && stored !== null) return normalizeOverlayStyleSettings(stored)
+  const seeded = defaultOverlayStyleSettings()
+  const card = oneOf<OverlayCardDesign>(legacyTemplate, OVERLAY_CARD_DESIGNS, seeded.card)
+  const text = cleanText(organizationName)
+  if (text) return normalizeOverlayStyleSettings({ ...seeded, card, brand: { ...seeded.brand, name: { ...seeded.brand.name, text, visible: true } } })
+  return { ...seeded, card }
+}

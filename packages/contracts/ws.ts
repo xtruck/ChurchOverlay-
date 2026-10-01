@@ -54,6 +54,7 @@ export type WsEventType =
   | "layout:update"
   | "detector:near-miss"
   | "branding:update"
+  | "overlay:style"
   | "mic:health"
   | "timer:state"
   | "stage:alert"
