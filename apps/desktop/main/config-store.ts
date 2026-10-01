@@ -3,6 +3,8 @@ import { dirname } from "node:path"
 import type { DisplayMode, VerseConfirmationMode, VerseLayout } from "../../../packages/contracts"
 import type { AudioProfile } from "../../server/audio/audio-profile"
 import { ASR_STRATEGIES, type AsrStrategy } from "../../server/asr/asr-strategy"
+import type { OverlayStyleSettings } from "../../../packages/contracts/overlay-style"
+import { normalizeOverlayStyleSettings } from "../../server/overlay/overlay-style"
 import { isNotFoundError, isPlainObject } from "../../../packages/shared/type-guards"
 
 /** Desktop-app-only concern (not part of the WS protocol) — the operator dashboard/setup UI's own language, ARCHITECTURE.md section 63.5. */
@@ -113,6 +115,13 @@ export type AppConfig = {
    * same shape as frenchTranslation above.
    */
   readonly overlayTemplate: string
+  /**
+   * ARCHITECTURE.md section 110: the overlay style. Optional (absent on every
+   * pre-section-110 file; AppCore then seeds it from overlayTemplate and
+   * organizationName). Normalized on decode(), so a corrupt stored value
+   * degrades field-by-field to defaults instead of failing the whole load.
+   */
+  readonly overlayStyle?: OverlayStyleSettings
 }
 
 type StoredConfig = {
@@ -142,6 +151,7 @@ type StoredConfig = {
   readonly localAsrModel?: string
   readonly frenchTranslation?: string
   readonly overlayTemplate?: string
+  readonly overlayStyle?: unknown
 }
 
 /**
@@ -206,6 +216,7 @@ export class ConfigStore {
       ...(config.localAsrModel === undefined ? {} : { localAsrModel: config.localAsrModel }),
       ...(config.frenchTranslation === undefined ? {} : { frenchTranslation: config.frenchTranslation }),
       ...(config.overlayTemplate === undefined ? {} : { overlayTemplate: config.overlayTemplate }),
+      ...(config.overlayStyle === undefined ? {} : { overlayStyle: normalizeOverlayStyleSettings(config.overlayStyle) }),
     }
 
     await mkdir(dirname(this.filePath), { recursive: true })
@@ -249,6 +260,7 @@ export class ConfigStore {
       localAsrModel,
       frenchTranslation,
       overlayTemplate,
+      overlayStyle,
     } = stored
 
     if (
@@ -359,6 +371,7 @@ export class ConfigStore {
       // Absent (a config saved before section 108 existed) defaults to
       // "classic" — the overlay's existing appearance, unchanged.
       overlayTemplate: (overlayTemplate as string | undefined) ?? "classic",
+      ...(overlayStyle === undefined ? {} : { overlayStyle: normalizeOverlayStyleSettings(overlayStyle) }),
     }
   }
 }

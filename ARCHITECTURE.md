@@ -5699,3 +5699,173 @@ validation/WS-command pipeline is entirely unaware `overlayTemplate`
 exists; it flows straight from config to the branding broadcast and
 nowhere else. No new WS command (reuses the existing `branding:update`
 event), no security-boundary change.
+
+## 109. NDI Output Hardening (Measured Defects, Not Guesses)
+
+**Why.** Section 62 shipped NDI as an optional transport and listed frame cadence and the
+real-world proof as open. Running the *current* offscreen-window setup in real Electron (Xvfb,
+the `scripts/ndi-window-probe.ts` probe) found four defects, each reproduced before any change:
+
+| # | Observed with the shipped code | Consequence in a receiver |
+|---|---|---|
+| 1 | Offscreen window created with no size: frames were **800×600** | Wrong resolution and aspect for any production switcher |
+| 2 | No `transparent`: background pixel `[255,255,255,255]` | Overlay arrives on **opaque white**, not as an alpha overlay |
+| 3 | Electron paints **premultiplied** BGRA (50 % red → `[0,0,128,128]`); NDI documents BGRA as *"not pre-multiplied"* | Translucent cards, shadows and anti-aliased text edges arrive too dark |
+| 4 | `paint` fires only when Chromium repaints: **2 paints in 2 s** on an idle overlay | A source that sends nothing for minutes looks frozen or "no signal" |
+
+**What changes** (all inside `apps/desktop/main/`, section 62's ownership unchanged):
+
+- **One window factory** (`createNdiWindow`) replaces two copy-pasted constructors: `transparent: true`,
+  `frame: false`, `backgroundColor: "#00000000"`, `backgroundThrottling: false`, then
+  `setContentSize(1920, 1080)` immediately after creation. Measured: `enableLargerThanScreen` *breaks*
+  transparency and a bare `width/height` is clamped to the display, so a 1366×768 laptop would otherwise
+  emit a 1366×768 source; `setContentSize` after creation gives an exact 1920×1080 with alpha intact.
+- **Straight alpha.** `unpremultiplyBGRA()` (pure, unit-tested) converts before sending. Opaque and
+  fully transparent pixels are skipped, so the cost is paid only by edge pixels, and only on frames that
+  actually changed (the converted buffer is cached for repeats).
+- **Steady cadence.** A single self-rescheduling, `unref()`'d timer re-sends the latest frame: 30 fps while
+  the overlay changed in the last 2 s, 10 fps when idle. Never more than one send in flight and one pending
+  frame (section 62.2's bound is kept); a repeat never queues behind a real change.
+- **Bounded failure policy** (AGENTS.md sections 36–38). Consecutive send failures are counted, not logged per
+  frame; at 5 the output enters `error` and recovers with capped exponential backoff (1 s → 30 s, at most
+  5 attempts) by recreating the sender. After the attempts it stays in `error`, observable, and never spins.
+- **Races and teardown.** `start()`/`stop()` carry a generation token so a `stop()` during an in-flight
+  `send()` cannot leak a sender; a rejecting `destroy()` is logged, not thrown.
+- **Renderer crash recovery.** `render-process-gone` on the offscreen window reloads it (bounded), because
+  a dead renderer otherwise leaves the NDI source silently frozen.
+- **Observability.** `NDIOutputStatus` gains `stats` (frames sent / repeated / superseded, failures,
+  resolution, measured fps over a bounded window), surfaced in the dashboard's NDI status line.
+
+**Unchanged.** NDI stays optional and additive (section 62.4): a missing native module is `unavailable`,
+Browser Source keeps working. The overlay page is unaware of NDI.
+
+**What is still not proven.** The probe exercises the real Electron offscreen path, and the sender is unit-
+tested against a fake `NDIModule`. No NDI receiver and no NDI runtime were available in the development
+environment, so the final hop (grandiose → network → a receiver) is **unverified here**; section 62.5's
+licensing and per-platform packaging gates are unchanged and still release gates.
+
+## 110. Phase 2 Feature Note — Overlay Style System (Palettes, Brand Items, Overlay Settings)
+
+**Scope change, recorded.** `ROADMAP.md` lists *"Branding engine (as a distinct subsystem)"* as Deferred
+and AGENTS.md section 4 lists *branding engine* in the locked set. The owner explicitly requested a
+church logo and name that can be positioned freely, grouped colour palettes with several design models,
+and a dedicated Overlay settings area with live editing. This section is that approval's architecture
+note (section 59.3), and `ROADMAP.md` moves the item out of Deferred accordingly. It stays a *bounded
+slice*: styling of the existing overlay, not a general design tool, not a plugin or theme marketplace, not
+per-service scheduling of looks. Sections 92, 94 and 108 are subsumed: their inputs seed the defaults below.
+
+### 110.1 Ownership and boundaries (AGENTS.md section 5 kept)
+
+- **Contracts**: `packages/contracts/overlay-style.ts` — types and the closed enum lists only.
+- **Pure domain**: `apps/server/overlay/` — `palettes.ts` (the catalog and WCAG contrast helpers) and
+  `overlay-style.ts` (defaults, `normalizeOverlayStyleSettings()`, `resolveOverlayStyle()`). No I/O,
+  deterministic, unit-tested. The detector, ASR and verse source know nothing of it.
+- **AppCore** holds the current resolved style and broadcasts it; it does not interpret colours.
+- **Overlay page** is still a read-only viewer (section 20): it *receives* style, it never sends commands.
+- **Renderer** never touches the filesystem or secrets: it calls narrow preload methods.
+
+### 110.2 Data model
+
+`OverlayStyleSettings` (what is stored): `paletteId` (a catalog id or `"custom"`), optional `customColors`,
+`card` (one of `classic | banner | minimal | elegant | glass | ribbon`), and `brand.name` / `brand.logo`.
+Each brand item has `visible` plus a **placement**: `x`, `y` (percent of the frame, item centre), `scale`
+(0.25–4), `rotation` (−180–180°), `opacity` (0–1). The name adds `text` (≤ 60 chars), `font`
+(`serif | sans | mono`, the faces already bundled), `size` (12–160 px at 1080p), `weight`, optional `color`
+(absent = palette text) and `plate` (the translucent pill the old watermark had). The logo adds `version`
+(0 = none; bumps cache-bust the image).
+
+`OverlayStyle` (what viewers receive, event `overlay:style`) = settings + `revision` + the **resolved**
+colours, so the overlay never needs the catalog. Seven colour roles: `backdrop`, `card`, `cardOpacity`,
+`text`, `textSecondary`, `accent`, `border`.
+
+### 110.3 Palettes
+
+A catalog of ~24 built-in palettes in six groups — **Classic**, **Light**, **Liturgical** (Advent, Christmas,
+Lent, Easter, Pentecost, Ordinary Time), **Bold**, **High contrast**, **Clear text** — each with English and
+French labels, plus **Custom** (the operator picks every role). *The default palette reproduces today's
+overlay exactly*, so an existing install changes nothing until the operator chooses.
+
+Every built-in palette is gated by a test: body text ≥ 4.5:1 (≥ 7:1 in High contrast) against its
+backdrop, secondary text ≥ 4.5:1, accent ≥ 3:1 (the reference line is large text), and translucent cards
+are checked composited over both black and white (worst-case video). Clear-text palettes have no card by
+design and are tested against the fullscreen backdrop only. Custom colours are not blocked (the operator's
+choice); the dashboard shows the live ratio and a warning below 4.5:1.
+
+### 110.4 Live apply path (no restart, no new WS command)
+
+`renderer → IPC set-overlay-style → main validates → AppCore.setOverlayStyle() → broadcast overlay:style`,
+then the config is persisted (debounced, atomic temp-file + rename per AGENTS.md section 29). Section 108's
+restart-and-confirm cost for `overlayTemplate` goes away: it was a consequence of constructing branding at
+AppCore build time, not a requirement. The public WS *command* registry does not grow (AGENTS.md
+section 19): `overlay:style` is a server-only **event**, validated in `ACTION_REGISTRY`, synced to every
+viewer on connect (the section 94 late-join pattern) so an OBS reload or the NDI window is never stale.
+`branding:update` is still sent unchanged for older viewers. Ordering (section 22): `revision` increases
+on every change and the overlay resets its high-water mark on each (re)connect, so a restart cannot make
+fresh state look stale.
+
+### 110.5 Validation and security (AGENTS.md sections 15, 17, 28)
+
+`normalizeOverlayStyleSettings()` treats its input as untrusted: unknown keys dropped, enums checked
+against the closed lists, numbers clamped, text length-capped and control characters stripped, colours
+accepted **only** as `#rrggbb` (so a value can never inject CSS into a `style` property). The overlay
+writes text with `textContent` and colours/geometry through CSS custom properties — never `innerHTML`.
+A corrupt stored style degrades to defaults field-by-field (recoverable state is preserved) and is logged.
+
+### 110.6 Logo
+
+Picked through a native dialog in the main process, then **validated, not trusted**: ≤ 5 MB input; the
+format is decided by magic bytes (PNG/JPEG/WebP; **never SVG**, which can carry script and would be served
+same-origin); decoded with `nativeImage`, bounded to 4096 px and downscaled to ≤ 1024 px wide, then stored
+as a normalized PNG in the user-data directory (atomic write). It is served by `StaticServer` at
+`/brand/logo` (GET/HEAD, ETag/304, `nosniff`, `no-referrer`, the existing hardening) so the overlay's CSP
+(`img-src 'self'`) is unchanged. No remote URLs, no base64 blobs over the WebSocket.
+
+### 110.7 Dashboard and preview
+
+A new **Overlay** view (sidebar) contains: palette picker (grouped swatches + custom), card design, church
+name, logo, per-item placement (drag on the live preview, arrow-key nudge, sliders, nine anchor presets,
+reset), and the NDI status/toggle (section 109). Both English and French strings. The preview is the *real*
+overlay in the existing preview iframe plus an interaction layer, so what the operator sees is what
+OBS/NDI render. A design-sample mode (`?designPreview=1`) shows a clearly-placeholder card ("Your verse
+will appear here") in that preview only; it contains no Bible text, so the hallucination guard
+(sections 13–14) is untouched: nothing here displays an unverified verse.
+
+### 110.8 Tests required
+
+Palette contrast gate; normalization (clamps, enums, hex-only, length, unknown keys, corrupt input);
+`resolveOverlayStyle` (custom vs catalog, defaults identical to legacy); AppCore broadcasts `overlay:style`
+on change and on viewer connect; registry validation; ConfigStore round-trip + corrupt-field recovery;
+logo validation (magic bytes, SVG refused, oversize refused); `/brand/logo` route (200/304/404/HEAD,
+headers); NDI `unpremultiply`, cadence, failure/backoff, generation-token teardown.
+
+### 110.9 Implementation status and deviations (recorded after the build)
+
+Implemented: contracts, palette catalog (24 palettes, six groups, contrast-gated), normalization,
+`overlay:style` event with late-join sync, `AppCore.setOverlayStyle()`, `ConfigStore.overlayStyle`,
+`OverlayStyleController` (debounced atomic persist, logo ownership), logo import and `/brand/logo`,
+the overlay page's CSS-variable refactor plus `glass` and `ribbon` designs, `?designPreview=1`, the
+dashboard Overlay view (palette picker, custom colours with live contrast, card design, name and logo
+editors, drag/wheel/arrow/anchor placement, reset) in English and French, and the NDI panel moved into
+that view.
+
+Deviations from the design above, and why:
+
+- **Default palette.** Reproducing today's overlay *exactly* fails the contrast gate at the legacy
+  scrim opacity over white video, so `gilt-night` uses card opacity 0.62 and a slightly brighter
+  second-language colour (`#f2f4f7` instead of 75% white). Dark translucent palettes use 0.74.
+- **Legacy inputs seed the style once.** `overlayTemplate` seeds the card design, `organizationName`
+  seeds a visible church name, and `accentColor` becomes a custom palette that is the default plus that
+  accent, so an existing install looks the same until the operator edits it.
+- **`set-overlay-template` is kept** as a compatibility IPC but now applies live; the restart and
+  confirmation are gone. The old Settings card was removed.
+- **One outbound message from the overlay.** In `?designPreview=1` only, the page posts where its
+  brand items are (percent of frame) to its parent so the editor's handles fit. The page never
+  listens for messages, so this is not a control channel (section 20).
+- **Corruption logging.** `ConfigStore.decode()` repairs a corrupt `overlayStyle` silently because it
+  has no logger; the repaired value is what gets used and later persisted.
+- **Contrast helper duplicated** in the renderer (about 15 lines) because the renderer has no build
+  step; the catalog itself is fetched over IPC (`get-overlay-style-meta`), so there is one source of
+  palettes.
+
+Not proven: the native logo dialog, `nativeImage` decoding and real Electron IPC were not run (no
+desktop session); delivery of the styled frame to a real NDI receiver (section 109).

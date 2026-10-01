@@ -160,6 +160,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>
         <span data-i18n="nav.media">Media Library</span>
       </button>
+      <button type="button" id="nav-overlay" class="sidebar-nav-item" data-view="overlay">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M7 13h6M7 10h10"/><circle cx="18" cy="19" r="2"/><path d="M4 20h10"/></svg>
+        <span data-i18n="nav.overlay">Overlay</span>
+      </button>
       <button type="button" id="nav-history" class="sidebar-nav-item" data-view="history">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>
         <span data-i18n="nav.history">History</span>
@@ -539,6 +543,93 @@
         </div>
       </div>
 
+      <!-- ARCHITECTURE.md section 110.7: the Overlay view. The preview is the REAL
+           overlay page (?designPreview=1 shows a placeholder card, never Bible text). -->
+      <div id="view-overlay" class="view">
+        <div class="ov-layout">
+          <div class="ov-preview-col">
+            <section class="card glass ov-preview-card" aria-labelledby="ov-preview-title">
+              <h2 id="ov-preview-title" class="card-title" data-i18n="overlay.previewTitle">Live preview</h2>
+              <p class="settings-hint" data-i18n="overlay.previewHint">This is exactly what OBS and NDI show. Drag the name or logo to move it; scroll over it to resize; arrow keys nudge it.</p>
+              <div id="ov-stage" class="ov-stage">
+                <iframe id="ov-preview-frame" class="ov-frame" sandbox="allow-scripts" data-i18n-title="a11y.overlayPreview"></iframe>
+                <div id="ov-handles" class="ov-handles"></div>
+              </div>
+            </section>
+            <div class="card glass">
+            <h2 class="card-title" data-i18n="ndi.title">NDI Output</h2>
+            <p class="settings-hint" data-i18n="ndi.hint">Optional network video output. OBS Browser Source remains available if NDI is unavailable.</p>
+            <div class="btn-row">
+              <button id="ndi-toggle-btn" class="btn-secondary btn-small" data-i18n="ndi.enable">Enable NDI</button>
+              <span id="ndi-status" class="settings-hint" style="margin: 0"></span>
+            </div>
+          
+            </div>
+          </div>
+          <div class="ov-controls">
+            <div class="card glass">
+              <h2 class="card-title" data-i18n="overlay.paletteTitle">Colour palette</h2>
+              <p class="settings-hint" data-i18n="overlay.paletteHint">Every built-in palette is checked for readability over any video. Choose Custom to set every colour yourself.</p>
+              <div id="ov-palettes" class="ov-palettes"></div>
+              <div id="ov-custom" class="ov-custom" hidden>
+                <div id="ov-custom-grid" class="ov-custom-grid"></div>
+                <label class="ov-slider"><span data-i18n="overlay.color.cardOpacity">Card opacity</span><input id="ov-custom-opacity" type="range" min="0" max="1" step="0.01" /></label>
+              </div>
+              <div id="ov-contrast" class="ov-contrast" role="status"></div>
+            </div>
+            <div class="card glass">
+              <h2 class="card-title" data-i18n="overlay.cardTitle">Verse card design</h2>
+              <p class="settings-hint" data-i18n="overlay.cardHint">How the verse card looks. Changes apply instantly, with no restart.</p>
+              <div id="ov-cards" class="segmented ov-cards" role="group" data-i18n-aria-label="a11y.overlayTemplate"></div>
+            </div>
+            <div class="card glass">
+              <h2 class="card-title" data-i18n="overlay.nameTitle">Church name</h2>
+              <label class="ov-check"><input id="ov-name-visible" type="checkbox" /><span data-i18n="overlay.show">Show</span></label>
+              <input id="ov-name-text" type="text" maxlength="60" data-i18n-placeholder="overlay.namePlaceholder" autocomplete="off" />
+              <div class="ov-row">
+                <label class="ov-field"><span data-i18n="overlay.font">Font</span><select id="ov-name-font"></select></label>
+                <label class="ov-field"><span data-i18n="overlay.weight">Weight</span>
+                  <select id="ov-name-weight"><option value="300">300</option><option value="400">400</option><option value="500">500</option><option value="600">600</option><option value="700">700</option><option value="800">800</option></select></label>
+              </div>
+              <label class="ov-slider"><span data-i18n="overlay.size">Size</span><input id="ov-name-size" type="range" min="12" max="160" step="1" /></label>
+              <div class="ov-row">
+                <label class="ov-check"><input id="ov-name-plate" type="checkbox" /><span data-i18n="overlay.plate">Background pill</span></label>
+                <label class="ov-check"><input id="ov-name-usecolor" type="checkbox" /><span data-i18n="overlay.ownColor">Own colour</span></label>
+                <input id="ov-name-color" type="color" />
+              </div>
+            </div>
+            <div class="card glass">
+              <h2 class="card-title" data-i18n="overlay.logoTitle">Church logo</h2>
+              <p class="settings-hint" data-i18n="overlay.logoHint">PNG, JPEG or WebP up to 5 MB. It is checked, resized and stored on this computer.</p>
+              <div class="btn-row">
+                <button id="ov-logo-pick" type="button" class="btn-secondary btn-small" data-i18n="overlay.logoChoose">Choose logo…</button>
+                <button id="ov-logo-clear" type="button" class="btn-secondary btn-small" data-i18n="overlay.logoRemove">Remove</button>
+                <label class="ov-check"><input id="ov-logo-visible" type="checkbox" /><span data-i18n="overlay.show">Show</span></label>
+              </div>
+              <div id="ov-logo-msg" class="ov-contrast warn" role="alert"></div>
+            </div>
+            <div class="card glass">
+              <h2 class="card-title" data-i18n="overlay.placeTitle">Position and look</h2>
+              <div id="ov-target" class="segmented" role="group">
+                <button type="button" data-target="name" data-i18n="overlay.target.name">Name</button>
+                <button type="button" data-target="logo" data-i18n="overlay.target.logo">Logo</button>
+              </div>
+              <div class="ov-place">
+                <div id="ov-anchors" class="ov-anchors" role="group" data-i18n-aria-label="overlay.anchors"><button type="button" data-anchor="6,8" aria-label="6,8"></button><button type="button" data-anchor="50,8" aria-label="50,8"></button><button type="button" data-anchor="94,8" aria-label="94,8"></button><button type="button" data-anchor="6,50" aria-label="6,50"></button><button type="button" data-anchor="50,50" aria-label="50,50"></button><button type="button" data-anchor="94,50" aria-label="94,50"></button><button type="button" data-anchor="6,92" aria-label="6,92"></button><button type="button" data-anchor="50,92" aria-label="50,92"></button><button type="button" data-anchor="94,92" aria-label="94,92"></button></div>
+                <div class="ov-sliders">
+                  <label class="ov-slider"><span data-i18n="overlay.place.x">x</span><input id="ov-x" type="range" min="0" max="100" step="0.5" /></label>
+                  <label class="ov-slider"><span data-i18n="overlay.place.y">y</span><input id="ov-y" type="range" min="0" max="100" step="0.5" /></label>
+                  <label class="ov-slider"><span data-i18n="overlay.place.scale">scale</span><input id="ov-scale" type="range" min="0.25" max="4" step="0.01" /></label>
+                  <label class="ov-slider"><span data-i18n="overlay.place.rotation">rotation</span><input id="ov-rotation" type="range" min="-180" max="180" step="1" /></label>
+                  <label class="ov-slider"><span data-i18n="overlay.place.opacity">opacity</span><input id="ov-opacity" type="range" min="0" max="1" step="0.01" /></label>
+                </div>
+              </div>
+              <button id="ov-reset" type="button" class="btn-secondary btn-small" data-i18n="overlay.reset">Reset position</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div id="view-settings" class="view">
         <div class="settings-grid">
           <!-- Which provider carries live audio (server/asr/asr-strategy.ts). -->
@@ -609,21 +700,6 @@
             </div>
           </div>
 
-          <!-- ARCHITECTURE.md section 108: which preset visual template the
-               overlay renders a verse with. Restarts services on change
-               (baked into branding:update, same as organizationName/accentColor) —
-               confirmed with the operator first, same pattern as the phone-remote toggle. -->
-          <div class="card glass">
-            <h2 class="card-title" data-i18n="overlayTemplate.title">Verse Card Style</h2>
-            <p class="settings-hint" data-i18n="overlayTemplate.hint">How the verse card looks on the overlay. Changing this briefly restarts services.</p>
-            <div id="overlay-template-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.overlayTemplate" data-i18n-title="a11y.overlayTemplate">
-              <button type="button" data-template="classic" class="active" data-i18n="overlayTemplate.classic">Classic</button>
-              <button type="button" data-template="banner" data-i18n="overlayTemplate.banner">Banner</button>
-              <button type="button" data-template="minimal" data-i18n="overlayTemplate.minimal">Minimal</button>
-              <button type="button" data-template="elegant" data-i18n="overlayTemplate.elegant">Elegant</button>
-            </div>
-          </div>
-
           <div class="card glass">
             <h2 class="card-title" data-i18n="remote.title">Phone Remote</h2>
             <div id="remote-disabled" data-i18n="remote.disabled">Not enabled. Turn on "Allow a phone remote" during setup to use this.</div>
@@ -638,14 +714,6 @@
             <button id="remote-toggle-btn" class="btn-secondary btn-small" data-i18n="remote.enable">Enable</button>
           </div>
 
-          <div class="card glass">
-            <h2 class="card-title" data-i18n="ndi.title">NDI Output</h2>
-            <p class="settings-hint" data-i18n="ndi.hint">Optional network video output. OBS Browser Source remains available if NDI is unavailable.</p>
-            <div class="btn-row">
-              <button id="ndi-toggle-btn" class="btn-secondary btn-small" data-i18n="ndi.enable">Enable NDI</button>
-              <span id="ndi-status" class="settings-hint" style="margin: 0"></span>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -654,5 +722,6 @@
 
   <script src="./i18n.js"></script>
   <script src="./dashboard.js"></script>
+  <script src="./overlay-settings.js"></script>
 </body>
 </html>

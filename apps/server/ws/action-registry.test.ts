@@ -1,3 +1,4 @@
+import { defaultOverlayStyleSettings, resolveOverlayStyle } from "../overlay/overlay-style"
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { validateWsMessage, ACTION_REGISTRY } from "./action-registry"
@@ -44,6 +45,7 @@ test("ACTION_REGISTRY: contains all registered actions including Phase 2 and inn
       "layout:update",
       "detector:near-miss",
       "branding:update",
+      "overlay:style",
       "mic:auto-gain",
       "mic:health",
       "timer:start",
@@ -962,3 +964,14 @@ test("validateWsMessage: accepts outline:show and outline:clear from operator, r
 })
 
 
+
+test("overlay:style is a server-only event: no inbound sender, and only a fully-valid resolved style passes its schema", () => {
+  const style = resolveOverlayStyle(defaultOverlayStyleSettings(), 1)
+  for (const role of ["operator", "viewer"] as const) {
+    const r = validateWsMessage({ id: "01ABC", type: "overlay:style", timestamp: 1700000000000, payload: style }, role)
+    assert.equal(r.ok, false, role)
+  }
+  assert.equal(ACTION_REGISTRY["overlay:style"].kind, "event")
+  assert.equal(ACTION_REGISTRY["overlay:style"].validatePayload(style), true)
+  assert.equal(ACTION_REGISTRY["overlay:style"].validatePayload({ ...style, card: "nope" }), false)
+})

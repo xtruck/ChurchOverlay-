@@ -125,7 +125,6 @@
   const verseConfirmationToggleEl = document.getElementById("verse-confirmation-toggle")
   const verseLayoutToggleEl = document.getElementById("verse-layout-toggle")
   const frenchTranslationToggleEl = document.getElementById("french-translation-toggle")
-  const overlayTemplateToggleEl = document.getElementById("overlay-template-toggle")
   const posterDurationInputEl = document.getElementById("poster-duration-input")
   const posterDurationApplyBtn = document.getElementById("poster-duration-apply-btn")
   const versePendingBannerEl = document.getElementById("verse-pending-banner")
@@ -165,14 +164,35 @@
   const obsCopyBtn = document.getElementById("obs-copy-btn")
   const ndiToggleBtn = document.getElementById("ndi-toggle-btn")
   const ndiStatusEl = document.getElementById("ndi-status")
+  // ARCHITECTURE.md section 109: the output reports stats and an error/retry state, so the operator
+  // can see it is really streaming (size, measured fps) instead of trusting a one-time "running".
+  let ndiPollTimer = null
   function renderNdiStatus(status) {
     currentNdiStatus = status || { state: "disabled" }
     const state = currentNdiStatus.state || "disabled"
-    ndiEnabled = state === "running" || state === "starting"
+    // "error" while still attached means the output is retrying: offer Disable (stop retrying), not Enable.
+    ndiEnabled = state === "running" || state === "starting" || (state === "error" && currentNdiStatus.active === true)
     ndiToggleBtn.disabled = state === "starting"
-    ndiToggleBtn.textContent = t(state === "running" ? "ndi.disable" : "ndi.enable")
-    ndiStatusEl.textContent =
-      state === "running" ? t("ndi.running") : state === "unavailable" ? t("ndi.unavailable") : ""
+    ndiToggleBtn.textContent = t(ndiEnabled ? "ndi.disable" : "ndi.enable")
+    const stats = currentNdiStatus.stats
+    if (state === "running") {
+      ndiStatusEl.textContent = stats && stats.width
+        ? t("ndi.runningStats", { size: stats.width + "×" + stats.height, fps: stats.fps, sent: stats.framesSent })
+        : t("ndi.running")
+    } else if (state === "error") {
+      ndiStatusEl.textContent = t("ndi.error", { reason: currentNdiStatus.reason || "" })
+    } else {
+      ndiStatusEl.textContent = state === "unavailable" ? t("ndi.unavailable") : ""
+    }
+    // Poll cheaply only while there is something live to show; stop as soon as NDI is off.
+    if (ndiEnabled && !ndiPollTimer) {
+      ndiPollTimer = setInterval(() => {
+        window.churchOverlay.getNdiStatus().then(renderNdiStatus).catch(() => {})
+      }, 2000)
+    } else if (!ndiEnabled && ndiPollTimer) {
+      clearInterval(ndiPollTimer)
+      ndiPollTimer = null
+    }
   }
   ndiToggleBtn.addEventListener("click", () => {
     const shouldEnable = !ndiEnabled
@@ -197,6 +217,7 @@
     rundown: document.getElementById("view-rundown"),
     media: document.getElementById("view-media"),
     history: document.getElementById("view-history"),
+    overlay: document.getElementById("view-overlay"),
     settings: document.getElementById("view-settings"),
   }
   const sermonNotesFeedEl = document.getElementById("sermon-notes-feed")
@@ -802,6 +823,7 @@
       const tile = document.createElement("div")
       tile.className = "media-tile" + (cue.id === activeCueId ? " active" : "") + (isPoster ? " poster" : "")
       tile.title = cue.title
+      tile.dataset.cueId = cue.id
       tile.innerHTML = mediaThumbnailHtml(cue) + '<div class="media-tile-title"></div>'
       tile.querySelector(".media-tile-title").textContent = cue.title
       tile.setAttribute("aria-label", cue.title)
@@ -824,7 +846,10 @@
         posterBtn.setAttribute("aria-label", posterBtn.title)
         posterBtn.addEventListener("click", (event) => {
           event.stopPropagation()
-          if (isPoster) {
+          // Read at click time: updateMediaGridState() flips the poster in
+          // place without rebuilding tiles, so a value captured at render
+          // time would be stale.
+          if (cue.id === principalPosterCueId) {
             sendJson({ id: crypto.randomUUID(), type: "poster:clear", timestamp: Date.now(), payload: null })
             log(t("log.sentPosterClear"), "sent")
           } else {
@@ -894,6 +919,28 @@
       tile.appendChild(tileActions)
 
       mediaGridEl.appendChild(tile)
+    }
+  }
+
+  /**
+   * Active/poster changes arrive on every verse-adjacent media event. They only
+   * flip a class and a tooltip, so they must not tear down and rebuild every
+   * tile (thumbnails, inputs with half-typed values, focus). The full
+   * renderMediaGrid() stays for changes to the cue list itself.
+   */
+  function updateMediaGridState() {
+    for (const tile of mediaGridEl.querySelectorAll(".media-tile")) {
+      const id = tile.dataset.cueId
+      const isPoster = id === principalPosterCueId
+      tile.classList.toggle("active", id === activeCueId)
+      tile.classList.toggle("poster", isPoster)
+      const btn = tile.querySelector(".media-tile-poster-btn")
+      if (!btn) continue
+      const cue = knownCues.find((c) => c.id === id)
+      if (!cue) continue
+      btn.classList.toggle("active", isPoster)
+      btn.title = isPoster ? t("media.posterUnsetTooltip", { title: cue.title }) : t("media.posterSetTooltip", { title: cue.title })
+      btn.setAttribute("aria-label", btn.title)
     }
   }
 
@@ -2058,22 +2105,22 @@
         renderMicHealth(message.payload)
       } else if (message.type === "media:show") {
         activeCueId = message.payload.cue.id
-        renderMediaGrid()
+        updateMediaGridState()
         updateNowPlayingBar(message.payload.cue, message.payload.playback)
         onScreen.media = message.payload.cue.title
         renderTally()
       } else if (message.type === "media:clear") {
         activeCueId = null
-        renderMediaGrid()
+        updateMediaGridState()
         updateNowPlayingBar(null, null)
         onScreen.media = null
         renderTally()
       } else if (message.type === "poster:show") {
         principalPosterCueId = message.payload.cue.id
-        renderMediaGrid()
+        updateMediaGridState()
       } else if (message.type === "poster:clear") {
         principalPosterCueId = null
-        renderMediaGrid()
+        updateMediaGridState()
       } else if (message.type === "rundown:state") {
         currentRundownState = message.payload
         renderRundownSceneList()
@@ -2440,23 +2487,6 @@
       .setFrenchTranslation(translation)
       .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
   })
-  overlayTemplateToggleEl.querySelectorAll("button").forEach((button) => {
-    button.addEventListener("click", () => {
-      const template = button.dataset.template
-      if (button.classList.contains("active")) return
-      if (!window.confirm(t("overlayTemplate.confirmChange"))) return
-      overlayTemplateToggleEl.querySelectorAll("button").forEach((b) => (b.disabled = true))
-      window.churchOverlay
-        .setOverlayTemplate(template)
-        .then(() => {
-          setActiveOption(overlayTemplateToggleEl, "template", template)
-        })
-        .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
-        .finally(() => {
-          overlayTemplateToggleEl.querySelectorAll("button").forEach((b) => (b.disabled = false))
-        })
-    })
-  })
   posterDurationApplyBtn.addEventListener("click", () => {
     const raw = posterDurationInputEl.value.trim()
     const minutes = raw === "" ? null : Number(raw)
@@ -2509,7 +2539,6 @@
         setActiveOption(sermonNotesToggleEl, "notesEnabled", info.enableSermonNotes ? "on" : "off")
         setActiveOption(verseLayoutToggleEl, "layout", info.verseLayout || "fullscreen")
         setActiveOption(frenchTranslationToggleEl, "translation", info.frenchTranslation || "ls1910")
-        setActiveOption(overlayTemplateToggleEl, "template", info.overlayTemplate || "classic")
         renderRemotePanel(info.remoteUrl, info.allowPhoneRemote)
         renderObsPanel(info.overlayUrl)
         renderOverlayPreview(info.overlayUrl)
@@ -2546,7 +2575,6 @@
         setActiveOption(sermonNotesToggleEl, "notesEnabled", status.enableSermonNotes ? "on" : "off")
         setActiveOption(verseLayoutToggleEl, "layout", status.verseLayout || "fullscreen")
         setActiveOption(frenchTranslationToggleEl, "translation", status.frenchTranslation || "ls1910")
-        setActiveOption(overlayTemplateToggleEl, "template", status.overlayTemplate || "classic")
         renderRemotePanel(status.remoteUrl, status.allowPhoneRemote)
         renderObsPanel(status.overlayUrl)
         renderOverlayPreview(status.overlayUrl)

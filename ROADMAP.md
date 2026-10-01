@@ -31,6 +31,9 @@ Build order below, by risk, dependency, and real-world urgency — each still ne
 12. **Offline whisper.cpp backup** — implemented (`ARCHITECTURE.md` section 99), moved out of "Deferred": downloaded on demand, verified, last link of the fallback chain. Windows x64 only.
 13. **Operator console redesign** — implemented (`ARCHITECTURE.md` section 100).
 
+14. **NDI output hardening** — implemented and unit-tested; real-Electron frame probe passes (`ARCHITECTURE.md` section 109). Four defects reproduced in real Electron before any change: 800×600 frames, opaque-white background, premultiplied alpha sent as straight, and no frames while the overlay is idle. Fixes: forced transparent 1920×1080 window, un-premultiply, steady keep-alive cadence, bounded retry with stats. The final hop to a real NDI receiver is not verifiable in the development environment and the section 62.5 licensing/packaging gates remain, so delivery to a receiver is still unproven.
+15. **Overlay style system** — implemented (verified in Chromium and against a real AppCore; not yet exercised in the packaged Electron app); **scope change approved by the owner** (`ARCHITECTURE.md` section 110). A bounded slice of the formerly Deferred "branding engine": church logo and name as freely placeable items, grouped colour palettes (plus custom), additional card designs, and a dedicated Overlay settings view applying changes live with no service restart. Still not a general design tool, theme marketplace or plugin system.
+
 ## Deferred — not v1, do not implement without an explicit architecture review
 
 Each item below is a candidate future milestone, added as a new implementation behind an existing extension seam (`AsrProvider`, `VerseDetector`, `VerseSource`) wherever possible — not a rewrite.
@@ -39,7 +42,7 @@ Each item below is a candidate future milestone, added as a new implementation b
 - **Semantic / paraphrase-aware verse detection** — new `VerseDetector` implementation
 - **Multiple Bible translations, a general offline-first Bible database, vector search** — new `VerseSource` implementations. (A narrow, single-language offline fallback used only for live-API outage resilience — not a general offline database or a new translation — is already implemented; see item 1 above and `ARCHITECTURE.md` section 77.)
 - Cameras
-- Branding engine (as a distinct subsystem — Phase 2's generic-branding first-run step above is a much smaller, already-approved slice of this)
+- ~~Branding engine~~ — a bounded slice (logo, name, palettes, overlay settings) was approved and moved to Phase 2 item 15 above. A *general* theming/branding platform (themes beyond that slice, per-service look scheduling, template marketplace) stays deferred.
 - MCP server
 - ProPresenter integration
 - Planning Center integration

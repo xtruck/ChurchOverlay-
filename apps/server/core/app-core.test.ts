@@ -137,7 +137,7 @@ function isTranscriptEcho(message: WsMessage): boolean {
 const ZERO_AUDIO_METRICS = { framesReceived: 0, framesRejected: 0, framesForwarded: 0, averageRms: 0, maxRms: 0 }
 
 function isAutoSyncNoise(message: WsMessage): boolean {
-  return isTranscriptEcho(message) || message.type === "layout:update" || message.type === "branding:update"
+  return isTranscriptEcho(message) || message.type === "layout:update" || message.type === "branding:update" || message.type === "overlay:style"
 }
 
 function waitForMessage(socket: WebSocket): Promise<WsMessage> {
@@ -4302,6 +4302,55 @@ test("AppCore: rundown:load is a harmless no-op for an ASR provider that does no
     assert.equal(content?.type, "verse:show", "rundown load still activates the scene normally")
     operatorSocket.close()
     viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+// ARCHITECTURE.md section 110.4: overlay:style is a server-only event, synced on
+// connect (late join) and broadcast live from setOverlayStyle().
+function collectOverlayStyles(socket: WebSocket, count: number): Promise<WsMessage[]> {
+  return new Promise((resolve) => {
+    const collected: WsMessage[] = []
+    socket.on("message", (data: { toString(): string }) => {
+      const message = JSON.parse(data.toString()) as WsMessage
+      if (message.type !== "overlay:style") return
+      collected.push(message)
+      if (collected.length === count) resolve(collected)
+    })
+  })
+}
+
+test("AppCore: overlay:style is synced on connect and broadcast live with an increasing revision", async () => {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    organizationName: "Grace Community Church",
+    overlayTemplate: "banner",
+  })
+  try {
+    const viewer = new WebSocket(`ws://127.0.0.1:${app.wsServer.port}`, [TOKENS.viewerToken])
+    const pending = collectOverlayStyles(viewer, 2)
+    const initial = app.getOverlayStyle()
+    assert.equal(initial.card, "banner") // seeded from the legacy template
+    assert.equal(initial.brand.name.text, "Grace Community Church")
+    assert.equal(initial.brand.name.visible, true)
+    await new Promise<void>((resolve) => viewer.once("open", () => resolve()))
+    const applied = app.setOverlayStyle({ paletteId: "ocean", card: "glass", evil: 1, brand: { name: { text: "Hi", x: 500 } } })
+    const [synced, live] = await pending
+    assert.equal((synced!.payload as { revision: number }).revision, initial.revision)
+    assert.deepEqual(live!.payload, applied)
+    assert.equal(applied.revision, initial.revision + 1)
+    assert.equal(applied.card, "glass")
+    assert.equal(applied.brand.name.x, 100) // clamped, not trusted
+    assert.equal(applied.colors.accent, "#5fe0d0")
+    assert.ok(!("evil" in applied))
+    viewer.close()
   } finally {
     await app.stop()
   }

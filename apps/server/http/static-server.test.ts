@@ -354,3 +354,51 @@ test("StaticServer: HEAD on a page returns headers and Content-Length but no bod
     assert.equal(response.body, "")
   })
 })
+
+// ARCHITECTURE.md section 110.6: /brand/logo serves the one stored, validated logo.
+async function withLogoServer(logoPath: () => string | null, fn: (baseUrl: string) => Promise<void>): Promise<void> {
+  const rootDir = await mkdtemp(join(tmpdir(), "churchoverlay-logo-test-"))
+  const server = new StaticServer({ port: 0, rootDir, brandLogoPath: logoPath })
+  await server.ready
+  try {
+    await fn(`http://127.0.0.1:${server.port}`)
+  } finally {
+    await server.close()
+    await rm(rootDir, { recursive: true, force: true })
+  }
+}
+
+test("StaticServer: /brand/logo serves a PNG with nosniff, revalidates with ETag/304, and supports HEAD", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "churchoverlay-logo-file-"))
+  const file = join(dir, "logo.png")
+  await writeFile(file, "png-bytes", "utf8")
+  try {
+    await withLogoServer(() => file, async (baseUrl) => {
+      const ok = await rawRequest(baseUrl, { path: "/brand/logo?v=3" })
+      assert.equal(ok.status, 200)
+      assert.equal(ok.headers["content-type"], "image/png")
+      assert.equal(ok.headers["x-content-type-options"], "nosniff")
+      assert.equal(ok.headers["referrer-policy"], "no-referrer")
+      assert.equal(ok.headers["cache-control"], "no-cache")
+      assert.equal(ok.body, "png-bytes")
+      const etag = ok.headers.etag as string
+      assert.equal((await rawRequest(baseUrl, { path: "/brand/logo", headers: { "If-None-Match": etag } })).status, 304)
+      const head = await rawRequest(baseUrl, { method: "HEAD", path: "/brand/logo" })
+      assert.equal(head.status, 200)
+      assert.equal(head.body, "")
+      assert.equal(head.headers["content-length"], String("png-bytes".length))
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test("StaticServer: /brand/logo is 404 when no logo is set or the stored file vanished, and rejects non-GET methods", async () => {
+  await withLogoServer(() => null, async (baseUrl) => {
+    assert.equal((await rawRequest(baseUrl, { path: "/brand/logo" })).status, 404)
+    assert.equal((await rawRequest(baseUrl, { method: "POST", path: "/brand/logo" })).status, 405)
+  })
+  await withLogoServer(() => join(tmpdir(), "churchoverlay-no-such-logo.png"), async (baseUrl) => {
+    assert.equal((await rawRequest(baseUrl, { path: "/brand/logo" })).status, 404)
+  })
+})
