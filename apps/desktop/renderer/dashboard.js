@@ -125,7 +125,6 @@
   const verseConfirmationToggleEl = document.getElementById("verse-confirmation-toggle")
   const verseLayoutToggleEl = document.getElementById("verse-layout-toggle")
   const frenchTranslationToggleEl = document.getElementById("french-translation-toggle")
-  const overlayTemplateToggleEl = document.getElementById("overlay-template-toggle")
   const posterDurationInputEl = document.getElementById("poster-duration-input")
   const posterDurationApplyBtn = document.getElementById("poster-duration-apply-btn")
   const versePendingBannerEl = document.getElementById("verse-pending-banner")
@@ -218,6 +217,7 @@
     rundown: document.getElementById("view-rundown"),
     media: document.getElementById("view-media"),
     history: document.getElementById("view-history"),
+    overlay: document.getElementById("view-overlay"),
     settings: document.getElementById("view-settings"),
   }
   const sermonNotesFeedEl = document.getElementById("sermon-notes-feed")
@@ -2461,23 +2461,6 @@
       .setFrenchTranslation(translation)
       .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
   })
-  overlayTemplateToggleEl.querySelectorAll("button").forEach((button) => {
-    button.addEventListener("click", () => {
-      const template = button.dataset.template
-      if (button.classList.contains("active")) return
-      if (!window.confirm(t("overlayTemplate.confirmChange"))) return
-      overlayTemplateToggleEl.querySelectorAll("button").forEach((b) => (b.disabled = true))
-      window.churchOverlay
-        .setOverlayTemplate(template)
-        .then(() => {
-          setActiveOption(overlayTemplateToggleEl, "template", template)
-        })
-        .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
-        .finally(() => {
-          overlayTemplateToggleEl.querySelectorAll("button").forEach((b) => (b.disabled = false))
-        })
-    })
-  })
   posterDurationApplyBtn.addEventListener("click", () => {
     const raw = posterDurationInputEl.value.trim()
     const minutes = raw === "" ? null : Number(raw)
@@ -2530,7 +2513,6 @@
         setActiveOption(sermonNotesToggleEl, "notesEnabled", info.enableSermonNotes ? "on" : "off")
         setActiveOption(verseLayoutToggleEl, "layout", info.verseLayout || "fullscreen")
         setActiveOption(frenchTranslationToggleEl, "translation", info.frenchTranslation || "ls1910")
-        setActiveOption(overlayTemplateToggleEl, "template", info.overlayTemplate || "classic")
         renderRemotePanel(info.remoteUrl, info.allowPhoneRemote)
         renderObsPanel(info.overlayUrl)
         renderOverlayPreview(info.overlayUrl)
@@ -2567,7 +2549,6 @@
         setActiveOption(sermonNotesToggleEl, "notesEnabled", status.enableSermonNotes ? "on" : "off")
         setActiveOption(verseLayoutToggleEl, "layout", status.verseLayout || "fullscreen")
         setActiveOption(frenchTranslationToggleEl, "translation", status.frenchTranslation || "ls1910")
-        setActiveOption(overlayTemplateToggleEl, "template", status.overlayTemplate || "classic")
         renderRemotePanel(status.remoteUrl, status.allowPhoneRemote)
         renderObsPanel(status.overlayUrl)
         renderOverlayPreview(status.overlayUrl)

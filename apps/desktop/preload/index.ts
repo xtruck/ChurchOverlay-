@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld("churchOverlay", {
   getNdiStatus: () => ipcRenderer.invoke("get-ndi-status"),
   setAllowPhoneRemote: (enabled: boolean) => ipcRenderer.invoke("set-allow-phone-remote", enabled),
   setFrenchTranslation: (translation: string) => ipcRenderer.invoke("set-french-translation", translation),
+  getOverlayStyleMeta: () => ipcRenderer.invoke("get-overlay-style-meta"),
   getOverlayStyle: () => ipcRenderer.invoke("get-overlay-style"),
   setOverlayStyle: (style: unknown) => ipcRenderer.invoke("set-overlay-style", style),
   pickBrandLogo: () => ipcRenderer.invoke("pick-brand-logo"),

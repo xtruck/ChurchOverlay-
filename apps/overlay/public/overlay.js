@@ -330,6 +330,8 @@
       brandLogoEl.removeAttribute("src")
     }
 
+    if (designPreview) requestAnimationFrame(reportBrandRects)
+
     // Colours and card chrome change the card's box: refit the verse text.
     if (verseEl.classList.contains("visible")) requestAnimationFrame(() => fitVerseText())
   }
@@ -338,6 +340,23 @@
   // card, shown only in that preview. It carries no Bible text, so nothing
   // here can display an unverified verse (sections 13-14).
   const designPreview = params.get("designPreview") === "1"
+  // Outbound only, and only inside the dashboard's design preview: tells the
+  // editor where each brand item really is (percent of the frame) so its drag
+  // handles fit. The page never listens for messages, so this is not a
+  // control channel (section 20).
+  function rectPercent(el) {
+    if (!el.classList.contains("visible")) return null
+    const r = el.getBoundingClientRect()
+    return { left: (r.left / window.innerWidth) * 100, top: (r.top / window.innerHeight) * 100, width: (r.width / window.innerWidth) * 100, height: (r.height / window.innerHeight) * 100 }
+  }
+  function reportBrandRects() {
+    if (window.parent === window) return
+    window.parent.postMessage({ type: "churchoverlay:brand-rects", name: rectPercent(brandNameEl), logo: rectPercent(brandLogoEl) }, "*")
+  }
+  if (designPreview) {
+    brandLogoEl.addEventListener("load", reportBrandRects)
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(reportBrandRects)
+  }
   function showDesignSample() {
     textEl.textContent = "This is how your verse will look."
     refEl.textContent = "Reference 1:1"

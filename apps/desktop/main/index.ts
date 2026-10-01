@@ -42,6 +42,9 @@ import { isAllowedNavigation, isExternalHttpsUrl } from "./navigation-guard"
 import { Logger } from "../../../packages/shared/logger"
 import { NDIOutput, type PaintSource } from "./ndi-output"
 import { createNdiWindow } from "./ndi-window"
+import { PALETTES } from "../../server/overlay/palettes"
+import { BRAND_NAME_SIZE, BRAND_SCALE, BRAND_TEXT_MAX } from "../../server/overlay/overlay-style"
+import { OVERLAY_BRAND_FONTS, OVERLAY_CARD_DESIGNS, OVERLAY_PALETTE_GROUPS } from "../../../packages/contracts/overlay-style"
 import { OverlayStyleController } from "./overlay-style-controller"
 import { LogoRejectedError, type DecodedLogo } from "./brand-logo"
 import { getAudioProfileSettings, type AudioProfile } from "../../server/audio/audio-profile"
@@ -899,6 +902,14 @@ ipcMain.handle("set-overlay-template", async (_event, payload: unknown) => {
 
 /** ARCHITECTURE.md section 110.4: dashboard-only IPC; the overlay itself never calls these (section 20). */
 ipcMain.handle("get-overlay-style", () => getOverlayStyleController().get())
+/** The renderer cannot import the TypeScript catalog, so it asks once for it (single source of truth). */
+ipcMain.handle("get-overlay-style-meta", () => ({
+  palettes: PALETTES,
+  groups: OVERLAY_PALETTE_GROUPS,
+  cards: OVERLAY_CARD_DESIGNS,
+  fonts: OVERLAY_BRAND_FONTS,
+  limits: { textMax: BRAND_TEXT_MAX, size: BRAND_NAME_SIZE, scale: BRAND_SCALE },
+}))
 ipcMain.handle("set-overlay-style", (_event, payload: unknown) => getOverlayStyleController().apply(payload))
 ipcMain.handle("pick-brand-logo", async () => {
   if (!dashboardWindow) throw new Error("Dashboard window is not available.")
