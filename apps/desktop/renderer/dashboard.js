@@ -823,6 +823,7 @@
       const tile = document.createElement("div")
       tile.className = "media-tile" + (cue.id === activeCueId ? " active" : "") + (isPoster ? " poster" : "")
       tile.title = cue.title
+      tile.dataset.cueId = cue.id
       tile.innerHTML = mediaThumbnailHtml(cue) + '<div class="media-tile-title"></div>'
       tile.querySelector(".media-tile-title").textContent = cue.title
       tile.setAttribute("aria-label", cue.title)
@@ -845,7 +846,10 @@
         posterBtn.setAttribute("aria-label", posterBtn.title)
         posterBtn.addEventListener("click", (event) => {
           event.stopPropagation()
-          if (isPoster) {
+          // Read at click time: updateMediaGridState() flips the poster in
+          // place without rebuilding tiles, so a value captured at render
+          // time would be stale.
+          if (cue.id === principalPosterCueId) {
             sendJson({ id: crypto.randomUUID(), type: "poster:clear", timestamp: Date.now(), payload: null })
             log(t("log.sentPosterClear"), "sent")
           } else {
@@ -915,6 +919,28 @@
       tile.appendChild(tileActions)
 
       mediaGridEl.appendChild(tile)
+    }
+  }
+
+  /**
+   * Active/poster changes arrive on every verse-adjacent media event. They only
+   * flip a class and a tooltip, so they must not tear down and rebuild every
+   * tile (thumbnails, inputs with half-typed values, focus). The full
+   * renderMediaGrid() stays for changes to the cue list itself.
+   */
+  function updateMediaGridState() {
+    for (const tile of mediaGridEl.querySelectorAll(".media-tile")) {
+      const id = tile.dataset.cueId
+      const isPoster = id === principalPosterCueId
+      tile.classList.toggle("active", id === activeCueId)
+      tile.classList.toggle("poster", isPoster)
+      const btn = tile.querySelector(".media-tile-poster-btn")
+      if (!btn) continue
+      const cue = knownCues.find((c) => c.id === id)
+      if (!cue) continue
+      btn.classList.toggle("active", isPoster)
+      btn.title = isPoster ? t("media.posterUnsetTooltip", { title: cue.title }) : t("media.posterSetTooltip", { title: cue.title })
+      btn.setAttribute("aria-label", btn.title)
     }
   }
 
@@ -2079,22 +2105,22 @@
         renderMicHealth(message.payload)
       } else if (message.type === "media:show") {
         activeCueId = message.payload.cue.id
-        renderMediaGrid()
+        updateMediaGridState()
         updateNowPlayingBar(message.payload.cue, message.payload.playback)
         onScreen.media = message.payload.cue.title
         renderTally()
       } else if (message.type === "media:clear") {
         activeCueId = null
-        renderMediaGrid()
+        updateMediaGridState()
         updateNowPlayingBar(null, null)
         onScreen.media = null
         renderTally()
       } else if (message.type === "poster:show") {
         principalPosterCueId = message.payload.cue.id
-        renderMediaGrid()
+        updateMediaGridState()
       } else if (message.type === "poster:clear") {
         principalPosterCueId = null
-        renderMediaGrid()
+        updateMediaGridState()
       } else if (message.type === "rundown:state") {
         currentRundownState = message.payload
         renderRundownSceneList()
