@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, safeStorage, shell } from "electron"
 import { randomBytes } from "node:crypto"
 import { networkInterfaces } from "node:os"
 import { join } from "node:path"
@@ -42,6 +42,8 @@ import { isAllowedNavigation, isExternalHttpsUrl } from "./navigation-guard"
 import { Logger } from "../../../packages/shared/logger"
 import { NDIOutput, type PaintSource } from "./ndi-output"
 import { createNdiWindow } from "./ndi-window"
+import { OverlayStyleController } from "./overlay-style-controller"
+import { LogoRejectedError, type DecodedLogo } from "./brand-logo"
 import { getAudioProfileSettings, type AudioProfile } from "../../server/audio/audio-profile"
 import { SilenceGate } from "../../server/audio/silence-gate"
 import { AdaptiveGain } from "../../server/audio/adaptive-gain"
@@ -108,6 +110,40 @@ let ndiOutput: NDIOutput | null = null
 const logNdi = (event: string, error?: string): void => logger.error({ component: "ndi", event, error })
 
 let activeConfig: AppConfig | null = null
+
+/**
+ * ARCHITECTURE.md section 110: live overlay style. Constructed lazily (needs
+ * app.getPath, which is only valid after ready) and reads the CURRENT AppCore
+ * on every call, so it survives a services restart without being rebuilt.
+ */
+let overlayStyleController: OverlayStyleController | null = null
+function getOverlayStyleController(): OverlayStyleController {
+  if (!overlayStyleController) {
+    overlayStyleController = new OverlayStyleController({
+      getCore: () => appCoreHandle,
+      logoPath: join(app.getPath("userData"), "brand", "logo.png"),
+      decodeLogo: (bytes) => {
+        const image = nativeImage.createFromBuffer(bytes)
+        if (image.isEmpty()) return null
+        const { width, height } = image.getSize()
+        const decoded: DecodedLogo = {
+          width,
+          height,
+          toPng: (maxWidth) =>
+            (width > maxWidth ? image.resize({ width: maxWidth, quality: "best" }) : image).toPNG(),
+        }
+        return decoded
+      },
+      persist: async (overlayStyle) => {
+        const store = getConfigStore()
+        const existing = await store.load()
+        if (existing) await store.save({ ...existing, overlayStyle })
+      },
+      log: (event, error) => logger.error({ component: "overlay-style", event, error }),
+    })
+  }
+  return overlayStyleController
+}
 // ARCHITECTURE.md section 74 (production audit): the operator-picked file
 // path, held here between the native file-picker dialog and the
 // renderer's title confirmation step, so the actual import still happens
@@ -403,6 +439,7 @@ async function startServices(
     organizationName: config.organizationName,
     accentColor: config.accentColor,
     overlayTemplate: config.overlayTemplate,
+    ...(config.overlayStyle ? { overlayStyle: config.overlayStyle } : {}),
     // ARCHITECTURE.md section 65.7: always constructed (it makes no
     // network call until summarize() is actually invoked, and holding it
     // ready costs nothing) — reuses the same Groq API key already
@@ -452,6 +489,8 @@ async function startServices(
     // overlay never having any media-rendering code to call it in the
     // first place (both fixed together).
     mediaResolver: mediaLibrary ?? undefined,
+    // ARCHITECTURE.md section 110.6: the church logo, served at /brand/logo.
+    brandLogoPath: () => getOverlayStyleController().currentLogoPath(),
   })
   await staticServer.ready
 
@@ -841,33 +880,44 @@ ipcMain.handle("set-french-translation", async (_event, payload: unknown) => {
 })
 
 /**
- * ARCHITECTURE.md section 108: which preset visual template the overlay
- * renders a verse with. Baked into AppCore's own branding:update
- * sync-on-connect broadcast exactly like organizationName/accentColor
- * (ARCHITECTURE.md section 94) — those are "static for the process
- * lifetime," so changing this, like them, means tearing down and
- * rebuilding AppCore (sameServiceConfig() now compares it for exactly this
- * reason). Same shutdown()-then-startServices() shape as
- * set-allow-phone-remote, and the same real, visible interruption
- * (mic/ASR/all WS clients briefly disconnect) — the dashboard confirms
- * with the operator before calling this, same as that handler.
+ * ARCHITECTURE.md section 108 (superseded by section 110.4): the verse card
+ * design now applies LIVE through the overlay style path, so the restart and
+ * operator confirmation this used to need are gone. The channel and its
+ * four-name validation are kept so existing renderers keep working.
  */
 ipcMain.handle("set-overlay-template", async (_event, payload: unknown) => {
   if (!OVERLAY_TEMPLATES.includes(payload as string)) {
     throw new Error("Invalid overlay template.")
   }
+  const controller = getOverlayStyleController()
+  const style = controller.apply({ ...controller.get(), card: payload })
   const store = getConfigStore()
   const existing = await store.load().catch(() => null)
-  if (!existing) throw new Error("Services are not started yet.")
-  const config: AppConfig = { ...existing, overlayTemplate: payload as string }
-  await store.save(config)
+  if (existing) await store.save({ ...existing, overlayTemplate: payload as string })
+  return { overlayTemplate: style.card }
+})
+
+/** ARCHITECTURE.md section 110.4: dashboard-only IPC; the overlay itself never calls these (section 20). */
+ipcMain.handle("get-overlay-style", () => getOverlayStyleController().get())
+ipcMain.handle("set-overlay-style", (_event, payload: unknown) => getOverlayStyleController().apply(payload))
+ipcMain.handle("pick-brand-logo", async () => {
+  if (!dashboardWindow) throw new Error("Dashboard window is not available.")
+  const result = await dialog.showOpenDialog(dashboardWindow, {
+    title: "Choose your church logo",
+    properties: ["openFile"],
+    filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] }],
+  })
+  const picked = result.filePaths[0]
+  if (result.canceled || !picked) return { canceled: true as const }
   try {
-    return await startServices(config)
+    return { canceled: false as const, style: await getOverlayStyleController().setLogo(picked) }
   } catch (error) {
-    await shutdown()
+    // A bad file is the operator's input problem, not an app fault: return the reason for the UI.
+    if (error instanceof LogoRejectedError) return { canceled: false as const, error: { reason: error.reason, message: error.message } }
     throw error
   }
 })
+ipcMain.handle("clear-brand-logo", () => getOverlayStyleController().clearLogo())
 
 /** Cheap read for the dashboard's NDI status line (no config load, unlike get-startup-status). */
 ipcMain.handle("get-ndi-status", () => ndiOutput?.getStatus() ?? { state: "disabled" as const })
@@ -1406,6 +1456,8 @@ ipcMain.handle("generate-service-summary", async (_event, sermonNotesText: unkno
 })
 
 async function shutdown(): Promise<void> {
+  // The last overlay edit must reach disk before AppCore (and its state) goes away.
+  await overlayStyleController?.flush()
   // The offline engine is a separate OS process: always stopped here so it
   // can never outlive the app and squat a port (this project has been
   // bitten by zombie child processes before).
