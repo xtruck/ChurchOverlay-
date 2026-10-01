@@ -165,14 +165,35 @@
   const obsCopyBtn = document.getElementById("obs-copy-btn")
   const ndiToggleBtn = document.getElementById("ndi-toggle-btn")
   const ndiStatusEl = document.getElementById("ndi-status")
+  // ARCHITECTURE.md section 109: the output reports stats and an error/retry state, so the operator
+  // can see it is really streaming (size, measured fps) instead of trusting a one-time "running".
+  let ndiPollTimer = null
   function renderNdiStatus(status) {
     currentNdiStatus = status || { state: "disabled" }
     const state = currentNdiStatus.state || "disabled"
-    ndiEnabled = state === "running" || state === "starting"
+    // "error" while still attached means the output is retrying: offer Disable (stop retrying), not Enable.
+    ndiEnabled = state === "running" || state === "starting" || (state === "error" && currentNdiStatus.active === true)
     ndiToggleBtn.disabled = state === "starting"
-    ndiToggleBtn.textContent = t(state === "running" ? "ndi.disable" : "ndi.enable")
-    ndiStatusEl.textContent =
-      state === "running" ? t("ndi.running") : state === "unavailable" ? t("ndi.unavailable") : ""
+    ndiToggleBtn.textContent = t(ndiEnabled ? "ndi.disable" : "ndi.enable")
+    const stats = currentNdiStatus.stats
+    if (state === "running") {
+      ndiStatusEl.textContent = stats && stats.width
+        ? t("ndi.runningStats", { size: stats.width + "×" + stats.height, fps: stats.fps, sent: stats.framesSent })
+        : t("ndi.running")
+    } else if (state === "error") {
+      ndiStatusEl.textContent = t("ndi.error", { reason: currentNdiStatus.reason || "" })
+    } else {
+      ndiStatusEl.textContent = state === "unavailable" ? t("ndi.unavailable") : ""
+    }
+    // Poll cheaply only while there is something live to show; stop as soon as NDI is off.
+    if (ndiEnabled && !ndiPollTimer) {
+      ndiPollTimer = setInterval(() => {
+        window.churchOverlay.getNdiStatus().then(renderNdiStatus).catch(() => {})
+      }, 2000)
+    } else if (!ndiEnabled && ndiPollTimer) {
+      clearInterval(ndiPollTimer)
+      ndiPollTimer = null
+    }
   }
   ndiToggleBtn.addEventListener("click", () => {
     const shouldEnable = !ndiEnabled

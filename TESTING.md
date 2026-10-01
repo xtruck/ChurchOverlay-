@@ -48,6 +48,8 @@ pipeline (detection → hallucination-guard validation → real bible-api.com lo
 WS broadcast) and displays the result on the real overlay page. Everything except ASR
 itself is genuine.
 
+**Real-Electron NDI probe** — `npm run build && xvfb-run -a electron --no-sandbox dist/scripts/ndi-window-probe.js` builds the real `createNdiWindow()` factory and asserts the emitted frame is 1920x1080 with a transparent background and an opaque box (ARCHITECTURE.md section 109). Manual, not part of `npm test`; it proves the offscreen window, not delivery to an NDI receiver.
+
 **Not automated in this repository**: real microphone capture, the real Electron GUI,
 and OBS Browser Source rendering. These require an actual desktop session; `npm run
 package` builds a real installable app for manual verification. Because the browser
@@ -76,6 +78,7 @@ Current status:
 | invalid WS message | `action-registry.test.ts`, `server.test.ts` |
 | diagnostics snapshot contains operational state without secrets | `app-core.test.ts` |
 | optional NDI output degrades without the native addon and bounds pending frames | `ndi-output.test.ts` |
+| NDI sends straight (non-premultiplied) alpha, keeps a 30/10 fps keep-alive cadence, recovers with bounded backoff, gives up after 5 failures and tears down race-safely | `ndi-output.test.ts` |
 | Deepgram provider emits validated partial/final streaming transcripts and recovers after WebSocket failure | `deepgram-provider.test.ts` |
 | Deepgram failover starts on demand, routes later frames, and preserves Groq-only startup | `failover-provider.test.ts` |
 | Manual ASR return closes the secondary path and restores primary health | `failover-provider.test.ts`, `app-core.test.ts` |

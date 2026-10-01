@@ -41,6 +41,7 @@ import { inferMediaKind, deriveTitleFromFilename } from "./media-import"
 import { isAllowedNavigation, isExternalHttpsUrl } from "./navigation-guard"
 import { Logger } from "../../../packages/shared/logger"
 import { NDIOutput, type PaintSource } from "./ndi-output"
+import { createNdiWindow } from "./ndi-window"
 import { getAudioProfileSettings, type AudioProfile } from "../../server/audio/audio-profile"
 import { SilenceGate } from "../../server/audio/silence-gate"
 import { AdaptiveGain } from "../../server/audio/adaptive-gain"
@@ -104,6 +105,8 @@ let currentFrenchTranslation = "ls1910"
 let currentOverlayTemplate = "classic"
 let ndiWindow: BrowserWindow | null = null
 let ndiOutput: NDIOutput | null = null
+const logNdi = (event: string, error?: string): void => logger.error({ component: "ndi", event, error })
+
 let activeConfig: AppConfig | null = null
 // ARCHITECTURE.md section 74 (production audit): the operator-picked file
 // path, held here between the native file-picker dialog and the
@@ -493,11 +496,7 @@ async function startServices(
     logger.error({ component: "ndi", event, error })
   })
   if (config.ndiEnabled) {
-    ndiWindow = new BrowserWindow({
-      show: false,
-      webPreferences: { offscreen: true, contextIsolation: true, sandbox: true },
-    })
-    await ndiWindow.loadURL(overlayUrl)
+    ndiWindow = await createNdiWindow(overlayUrl, logNdi)
     const status = await ndiOutput.start(ndiWindow.webContents as unknown as PaintSource)
     if (status.state !== "running") {
       logger.warn({ component: "ndi", event: "output.unavailable", error: status.reason })
@@ -870,6 +869,9 @@ ipcMain.handle("set-overlay-template", async (_event, payload: unknown) => {
   }
 })
 
+/** Cheap read for the dashboard's NDI status line (no config load, unlike get-startup-status). */
+ipcMain.handle("get-ndi-status", () => ndiOutput?.getStatus() ?? { state: "disabled" as const })
+
 ipcMain.handle("set-ndi-enabled", async (_event, payload: unknown) => {
   if (typeof payload !== "boolean") throw new Error("Invalid ndiEnabled value.")
   if (!appCoreHandle || !currentOverlayUrl) throw new Error("Services are not started yet.")
@@ -880,13 +882,13 @@ ipcMain.handle("set-ndi-enabled", async (_event, payload: unknown) => {
   }
 
   if (payload) {
-    if (!ndiWindow) {
-      ndiWindow = new BrowserWindow({
-        show: false,
-        webPreferences: { offscreen: true, contextIsolation: true, sandbox: true },
-      })
-      await ndiWindow.loadURL(currentOverlayUrl)
+    // A retry from the error state must tear the old attempt down first: start() is a no-op while attached.
+    if (ndiOutput.getStatus().state === "error") {
+      await ndiOutput.stop()
+      ndiWindow?.destroy()
+      ndiWindow = null
     }
+    if (!ndiWindow) ndiWindow = await createNdiWindow(currentOverlayUrl, logNdi)
     const status = await ndiOutput.start(ndiWindow.webContents as unknown as PaintSource)
     if (status.state !== "running") {
       ndiWindow.destroy()
