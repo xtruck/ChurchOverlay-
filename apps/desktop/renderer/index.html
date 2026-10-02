@@ -126,19 +126,36 @@
       </div>
     </div>
     <div class="header-controls">
-      <div id="display-mode-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.verseDisplayLanguage" data-i18n-title="a11y.verseDisplayLanguage">
-        <button type="button" data-mode="english">EN</button>
-        <button type="button" data-mode="french">FR</button>
-        <button type="button" data-mode="bilingual">EN+FR</button>
+      <!-- Each header toggle carries a visible caption: two of them used to
+           read "EN | FR" side by side with nothing saying which one changed
+           the verses and which one changed the interface. -->
+      <div class="header-group">
+        <span class="header-group-label" data-i18n="header.group.verses">Verses</span>
+        <div id="display-mode-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.verseDisplayLanguage" data-i18n-title="a11y.verseDisplayLanguage">
+          <button type="button" data-mode="english">EN</button>
+          <button type="button" data-mode="french">FR</button>
+          <button type="button" data-mode="bilingual">EN+FR</button>
+        </div>
       </div>
-      <div id="ui-language-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.interfaceLanguage" data-i18n-title="a11y.interfaceLanguage">
-        <button type="button" data-lang="en">EN</button>
-        <button type="button" data-lang="fr">FR</button>
+      <div class="header-group">
+        <span class="header-group-label" data-i18n="header.group.detection">Detection</span>
+        <div id="verse-confirmation-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.confirmationMode" data-i18n-title="a11y.confirmationMode">
+          <button type="button" data-confirmation-mode="auto" data-i18n="header.confirmationMode.auto">Auto</button>
+          <button type="button" data-confirmation-mode="review" data-i18n="header.confirmationMode.review">Review</button>
+        </div>
       </div>
-      <div id="verse-confirmation-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.confirmationMode" data-i18n-title="a11y.confirmationMode">
-        <button type="button" data-confirmation-mode="auto" data-i18n="header.confirmationMode.auto">Auto</button>
-        <button type="button" data-confirmation-mode="review" data-i18n="header.confirmationMode.review">Review</button>
+      <div class="header-group">
+        <span class="header-group-label" data-i18n="header.group.interface">Interface</span>
+        <div id="ui-language-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.interfaceLanguage" data-i18n-title="a11y.interfaceLanguage">
+          <button type="button" data-lang="en">EN</button>
+          <button type="button" data-lang="fr">FR</button>
+        </div>
       </div>
+      <div class="header-divider" aria-hidden="true"></div>
+      <div id="header-clock" class="header-clock" aria-hidden="true">--:--</div>
+      <button type="button" id="shortcuts-btn" class="icon-btn" data-i18n-title="shortcuts.open" data-i18n-aria-label="shortcuts.open">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
+      </button>
       <div id="status-pill" class="status-pill disconnected">
         <span class="status-dot"></span>
         <span id="status-text" data-i18n="status.connecting">connecting…</span>
@@ -189,12 +206,27 @@
     <div class="shell-content">
       <div id="view-live" class="view active">
         <div class="view-live-grid">
-          <div class="card glass cell-override command-bar">
-            <label for="reference" data-i18n="override.referenceLabel">Verse reference</label>
-            <input id="reference" type="text" data-i18n-placeholder="placeholder.verseReference" autocomplete="off" />
-            <div class="btn-row">
-              <button id="show-btn" class="btn-primary" data-i18n="override.showButton">Show on overlay</button>
-              <button id="clear-btn" class="btn-danger" data-i18n="override.clearButton">Clear</button>
+          <div class="cell-override">
+            <div class="card glass command-bar">
+              <label for="reference" data-i18n="override.referenceLabel">Verse reference</label>
+              <div id="reference-field" class="command-field">
+                <svg class="command-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <input id="reference" type="text" data-i18n-placeholder="placeholder.verseReference" autocomplete="off" />
+                <kbd class="command-kbd" aria-hidden="true">Ctrl K</kbd>
+              </div>
+              <div class="btn-row">
+                <button id="show-btn" class="btn-primary" data-i18n="override.showButton">Show on overlay</button>
+                <button id="clear-btn" class="btn-danger" data-i18n="override.clearButton">Clear</button>
+              </div>
+            </div>
+            <!-- Session-only quick recall: each chip re-sends the reference
+                 through the ordinary verse:override path, so it is validated
+                 and looked up exactly like a typed reference (AGENTS.md 50). -->
+            <div class="recent-strip">
+              <span class="recent-label" data-i18n="recent.label">Recent</span>
+              <div id="recent-verses" class="recent-verses" role="list">
+                <span class="recent-empty" data-i18n="recent.empty">Verses shown this session appear here for one-click recall.</span>
+              </div>
             </div>
           </div>
 
@@ -204,7 +236,9 @@
                amber while a verse waits for confirmation. -->
           <section id="live-preview" class="live-preview cell-live" aria-labelledby="live-preview-label">
             <div class="live-preview-head">
+              <span class="pgm-badge" aria-hidden="true">PGM</span>
               <h2 id="live-preview-label" class="live-preview-label" data-i18n="livePreview.label">Congregation screen</h2>
+              <span id="on-air-timer" class="on-air-timer" aria-hidden="true"></span>
               <span id="tally-chip" class="tally-chip" role="status" data-i18n="livePreview.offAir">Nothing on screen</span>
             </div>
             <iframe
@@ -227,7 +261,7 @@
 
           <aside class="cell-side">
             <div id="verse-pending-banner" class="verse-pending-banner" style="display: none" role="region" aria-live="assertive">
-              <div class="verse-pending-label" data-i18n="livePreview.pendingLabel">To confirm</div>
+              <div class="verse-pending-label"><span data-i18n="livePreview.pendingLabel">To confirm</span> <kbd class="inline-kbd" aria-hidden="true">Ctrl ↵</kbd></div>
               <div id="verse-pending-origin" class="verse-pending-origin" style="display: none" data-i18n="livePreview.pendingFromQuote">Recognized from a reading — no reference was said.</div>
               <div id="verse-pending-ref"></div>
               <div id="verse-pending-text"></div>
@@ -309,21 +343,54 @@
       </div>
 
       <div id="view-rundown" class="view">
-        <div class="card glass" style="height: 100%">
-          <div class="media-header">
-            <div class="card-title" data-i18n="rundown.title">Service Rundown</div>
-            <button id="rundown-builder-toggle-btn" class="btn-secondary btn-small" data-i18n="rundown.buildButton">+ Build</button>
+        <div class="view-head">
+          <div>
+            <span class="eyebrow" data-i18n="rundown.eyebrow">Service</span>
+            <h2 class="view-title" data-i18n="rundown.title">Service Rundown</h2>
+            <p id="rundown-progress-text" class="view-sub" data-i18n="rundown.empty">No rundown loaded.</p>
           </div>
+          <button id="rundown-builder-toggle-btn" class="btn-pill" data-i18n="rundown.buildButton">+ Build</button>
+        </div>
 
-          <div id="rundown-scene-list" class="rundown-scene-list">
-            <div class="rundown-empty" data-i18n="rundown.empty">No rundown loaded.</div>
-          </div>
-          <div class="btn-row" style="margin-top: var(--space-3)">
-            <button id="rundown-prev-btn" class="btn-secondary btn-block" disabled data-i18n="rundown.previous">◀ Previous</button>
-            <button id="rundown-next-btn" class="btn-secondary btn-block" disabled data-i18n="rundown.next">Next ▶</button>
-          </div>
+        <div class="rundown-layout">
+          <!-- Now / Next: what the congregation sees, and what the next
+               press will put there. Read from rundown:state only. -->
+          <section class="rundown-stage" aria-labelledby="rundown-now-label">
+            <div class="bezel">
+              <div id="rundown-now" class="bezel-core rundown-now">
+                <div class="rundown-slot-head">
+                  <span id="rundown-now-label" class="slot-tag slot-tag-now" data-i18n="rundown.nowLabel">Now</span>
+                  <span id="rundown-now-index" class="slot-index"></span>
+                </div>
+                <div id="rundown-now-title" class="rundown-now-title" data-i18n="rundown.nothingLive">—</div>
+                <div id="rundown-now-kind" class="rundown-slot-kind"></div>
+              </div>
+            </div>
+            <div id="rundown-next" class="rundown-next">
+              <span class="slot-tag" data-i18n="rundown.nextLabel">Next</span>
+              <div id="rundown-next-title" class="rundown-next-title">—</div>
+              <div id="rundown-next-kind" class="rundown-slot-kind"></div>
+            </div>
+            <div class="rundown-progress" aria-hidden="true"><div id="rundown-progress-bar" class="rundown-progress-bar"></div></div>
+            <div class="rundown-transport">
+              <button id="rundown-prev-btn" class="btn-secondary transport-btn" disabled data-i18n="rundown.previous">◀ Previous</button>
+              <button id="rundown-next-btn" class="btn-primary transport-btn transport-go" disabled data-i18n="rundown.next">Next ▶</button>
+            </div>
+            <p class="rundown-clicker-hint"><kbd>PgDn</kbd> <kbd>PgUp</kbd> <span data-i18n="rundown.clickerHint">A presentation clicker works too.</span></p>
+          </section>
 
-          <div id="rundown-builder" class="rundown-builder" style="display: none">
+          <section class="card glass rundown-timeline-card" aria-labelledby="rundown-timeline-title">
+            <h3 id="rundown-timeline-title" class="section-title" data-i18n="rundown.timelineTitle">Running order</h3>
+            <div id="rundown-scene-list" class="rundown-timeline" role="list">
+              <div class="rundown-empty" data-i18n="rundown.empty">No rundown loaded.</div>
+            </div>
+          </section>
+        </div>
+
+        <div id="rundown-builder" class="card glass rundown-builder" style="display: none">
+          <h3 class="section-title" data-i18n="rundown.builder.title">Build a rundown</h3>
+          <div class="rundown-builder-grid">
+          <div class="rundown-builder-form">
             <label data-i18n="rundown.builder.sceneKindLabel">Scene type</label>
             <div id="rundown-scene-kind" class="option-list" role="group" data-i18n-aria-label="a11y.sceneType">
               <button type="button" data-kind="verse" class="active" data-i18n="rundown.builder.kind.verse">Verse</button>
@@ -426,31 +493,74 @@
 
             <button id="rundown-add-scene-btn" class="btn-secondary" style="width: 100%; margin-bottom: var(--space-3)" data-i18n="rundown.builder.addButton">+ Add scene</button>
 
-            <div id="rundown-draft-list" class="rundown-scene-list">
+            <!-- One-click: drop a verse shown this session into the draft. -->
+            <div class="rundown-quick-add">
+              <span class="recent-label" data-i18n="rundown.builder.fromRecent">From recent verses</span>
+              <div id="rundown-recent-chips" class="recent-verses"></div>
+            </div>
+          </div>
+
+          <div class="rundown-draft-col">
+            <div class="rundown-draft-head">
+              <span class="recent-label" data-i18n="rundown.builder.draftTitle">Draft running order</span>
+              <span id="rundown-draft-count" class="slot-index"></span>
+            </div>
+            <div id="rundown-draft-list" class="rundown-timeline rundown-draft" role="list">
               <div class="rundown-empty" data-i18n="rundown.builder.draftEmpty">No scenes added yet.</div>
             </div>
-
+            <p class="rundown-clicker-hint" data-i18n="rundown.builder.dragHint">Drag scenes to reorder them.</p>
             <button id="rundown-load-btn" class="btn-primary" style="width: 100%; margin-top: var(--space-3)" data-i18n="rundown.builder.loadButton">Load rundown</button>
+          </div>
           </div>
         </div>
       </div>
 
       <div id="view-media" class="view">
-        <div class="card glass" style="height: 100%">
-          <div class="media-header">
-            <div class="card-title" data-i18n="media.title">Media Library</div>
-            <button id="media-import-btn" class="btn-secondary btn-small" data-i18n="media.importButton">+ Import</button>
+        <div class="view-head">
+          <div>
+            <span class="eyebrow" data-i18n="media.eyebrow">Library</span>
+            <h2 class="view-title" data-i18n="media.title">Media Library</h2>
+            <p id="media-count" class="view-sub"></p>
           </div>
-          <p class="settings-hint" data-i18n="media.posterHint">
-            Pin an image as the day's principal poster — it stays on screen for the whole
-            service, under everything else, and can be spoken back on screen anytime by
-            saying its name.
-          </p>
+          <button id="media-import-btn" class="btn-pill" data-i18n="media.importButton">+ Import</button>
+        </div>
+
+        <div class="media-toolbar">
+          <div class="command-field media-search-field">
+            <svg class="command-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="media-search" type="search" data-i18n-placeholder="media.searchPlaceholder" data-i18n-aria-label="media.searchPlaceholder" autocomplete="off" />
+          </div>
+          <div id="media-kind-filter" class="segmented" role="group" data-i18n-aria-label="media.filterLabel">
+            <button type="button" data-filter="all" class="active"><span data-i18n="media.filter.all">All</span> <span class="seg-count" data-count="all"></span></button>
+            <button type="button" data-filter="image"><span data-i18n="media.filter.image">Images</span> <span class="seg-count" data-count="image"></span></button>
+            <button type="button" data-filter="video"><span data-i18n="media.filter.video">Videos</span> <span class="seg-count" data-count="video"></span></button>
+            <button type="button" data-filter="audio"><span data-i18n="media.filter.audio">Audio</span> <span class="seg-count" data-count="audio"></span></button>
+          </div>
+          <select id="media-sort" class="media-sort" data-i18n-aria-label="media.sortLabel">
+            <option value="library" data-i18n="media.sort.library">Library order</option>
+            <option value="name" data-i18n="media.sort.name">Name A–Z</option>
+            <option value="kind" data-i18n="media.sort.kind">Type</option>
+          </select>
+          <label class="media-density" data-i18n-title="media.densityLabel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+            <input id="media-density" type="range" min="150" max="320" step="10" value="210" data-i18n-aria-label="media.densityLabel" />
+          </label>
+        </div>
+        <p class="settings-hint media-hint" data-i18n="media.posterHint">
+          Pin an image as the day's principal poster — it stays on screen for the whole
+          service, under everything else, and can be spoken back on screen anytime by
+          saying its name.
+        </p>
+        <div class="media-view-body">
           <div id="media-grid" class="media-grid">
             <div class="media-empty" data-i18n="media.empty">No media imported yet.</div>
           </div>
           <div id="media-now-playing" class="media-now-playing" style="display: none">
-            <span id="media-now-playing-title" class="media-now-playing-title"></span>
+            <span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+            <div class="media-now-playing-text">
+              <span class="slot-tag slot-tag-now" data-i18n="media.nowPlaying">On screen</span>
+              <span id="media-now-playing-title" class="media-now-playing-title"></span>
+            </div>
             <div class="btn-row">
               <button id="media-play-pause-btn" class="btn-secondary btn-small" data-i18n="media.pause">Pause</button>
               <button id="media-stop-btn" class="btn-danger btn-small" data-i18n="media.stop">Stop</button>
@@ -539,6 +649,26 @@
               <h3 data-i18n="voiceCommands.glossaryHeading">Glossary — say the exact phrase shown</h3>
               <div id="voice-commands-glossary-list" class="voice-commands-list"></div>
             </section>
+          </div>
+        </div>
+      </div>
+
+      <!-- Keyboard reference. Like the voice-commands modal, read-only. -->
+      <div id="shortcuts-modal" class="modal-overlay" style="display: none" role="dialog" aria-modal="true" aria-labelledby="shortcuts-heading">
+        <div class="modal-card glass shortcuts-modal-card">
+          <div class="media-header">
+            <div id="shortcuts-heading" class="card-title" data-i18n="shortcuts.heading">Keyboard shortcuts</div>
+            <button type="button" id="shortcuts-close-btn" class="btn-secondary btn-small" data-i18n="voiceCommands.closeButton">Close</button>
+          </div>
+          <div class="shortcuts-list">
+            <div class="shortcuts-row"><span data-i18n="shortcuts.focusReference">Type a verse reference</span><span><kbd>Ctrl</kbd> <kbd>K</kbd> · <kbd>/</kbd></span></div>
+            <div class="shortcuts-row"><span data-i18n="shortcuts.confirmPending">Show the verse waiting for confirmation</span><span><kbd>Ctrl</kbd> <kbd>Enter</kbd></span></div>
+            <div class="shortcuts-row"><span data-i18n="shortcuts.clear">Clear the congregation screen</span><span><kbd>Shift</kbd> <kbd>Esc</kbd></span></div>
+            <div class="shortcuts-row"><span data-i18n="shortcuts.toggleMic">Start / stop listening</span><span><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>M</kbd></span></div>
+            <div class="shortcuts-row"><span data-i18n="shortcuts.recall">Re-show a recent verse</span><span><kbd>Alt</kbd> <kbd>1</kbd>–<kbd>9</kbd></span></div>
+            <div class="shortcuts-row"><span data-i18n="shortcuts.rundown">Next / previous rundown scene (clicker)</span><span><kbd>PgDn</kbd> · <kbd>PgUp</kbd></span></div>
+            <div class="shortcuts-row"><span data-i18n="shortcuts.views">Switch view</span><span><kbd>Ctrl</kbd> <kbd>1</kbd>–<kbd>6</kbd></span></div>
+            <div class="shortcuts-row"><span data-i18n="shortcuts.help">Show this list</span><span><kbd>?</kbd></span></div>
           </div>
         </div>
       </div>
@@ -718,6 +848,19 @@
       </div>
     </div>
   </main>
+  </div>
+
+  <!-- Transient notices. Errors used to land only in the Activity log,
+       which is inside a collapsed drawer for most of a service. -->
+  <div id="toast-region" class="toast-region" role="status" aria-live="polite"></div>
+
+  <!-- Drag-and-drop import target (ARCHITECTURE.md section 112). -->
+  <div id="drop-overlay" class="drop-overlay" aria-hidden="true">
+    <div class="drop-overlay-card">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M12 15V3m0 0-4.5 4.5M12 3l4.5 4.5"/><path d="M4 14v4a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-4"/></svg>
+      <div class="drop-overlay-title" data-i18n="media.drop.title">Drop to add to the Media Library</div>
+      <div class="drop-overlay-sub" data-i18n="media.drop.sub">Images, videos and audio · up to 20 files at once</div>
+    </div>
   </div>
 
   <script src="./i18n.js"></script>

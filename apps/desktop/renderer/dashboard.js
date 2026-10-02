@@ -329,7 +329,13 @@
     return delay
   }
 
-  function log(text, kind) {
+  // Errors also surface as a toast: the Activity log lives in a drawer that
+  // is collapsed for most of a service. Pass { toast: false } for errors
+  // the UI already shows elsewhere (the reconnect cycle drives the status
+  // pill), so a dropped connection does not stack a toast every retry.
+  function log(text, kind, options) {
+    const wantsToast = options && typeof options.toast === "boolean" ? options.toast : kind === "error"
+    if (wantsToast) showToast(text, kind === "error" ? "error" : "info")
     const line = document.createElement("div")
     line.className = "log-line" + (kind ? " event-" + kind : "")
     const time = document.createElement("span")
@@ -341,6 +347,27 @@
     line.append(time, body)
     logEl.prepend(line)
     while (logEl.children.length > 50) logEl.removeChild(logEl.lastChild)
+  }
+
+  // Bounded (AGENTS.md section 36): at most MAX_TOASTS on screen, and an
+  // identical message already showing is refreshed instead of duplicated.
+  const toastRegionEl = document.getElementById("toast-region")
+  const MAX_TOASTS = 3
+  const TOAST_LIFETIME_MS = 4500
+  function showToast(text, kind) {
+    if (!toastRegionEl || !text) return
+    const existing = Array.from(toastRegionEl.children).find((el) => el.dataset.text === text)
+    if (existing) existing.remove()
+    const toast = document.createElement("div")
+    toast.className = "toast toast-" + (kind || "info")
+    toast.dataset.text = text
+    toast.textContent = text
+    toastRegionEl.appendChild(toast)
+    while (toastRegionEl.children.length > MAX_TOASTS) toastRegionEl.firstElementChild.remove()
+    setTimeout(() => {
+      toast.classList.add("leaving")
+      setTimeout(() => toast.remove(), 200)
+    }, TOAST_LIFETIME_MS)
   }
 
   // ARCHITECTURE.md section 65.7: dashboard-only feed of AI-generated
@@ -557,9 +584,20 @@
   // verse waits for confirmation. The poster is a persistent backdrop under
   // everything, so it never lights the tally on its own.
   const onScreen = { verse: null, media: null, announcement: false, canvas: false }
+  // When the current item went live, for the on-air timer. Restarts
+  // whenever what is on screen changes, not only when it first goes live.
+  let onAirSince = null
+  let onAirKey = null
   function renderTally() {
     const live = Boolean(onScreen.verse || onScreen.media || onScreen.announcement || onScreen.canvas)
     livePreviewEl.classList.toggle("on-air", live)
+    const key = live ? [onScreen.verse, onScreen.media, onScreen.announcement, onScreen.canvas].join("|") : null
+    if (key !== onAirKey) {
+      onAirKey = key
+      onAirSince = live ? Date.now() : null
+    }
+    renderClocks()
+    renderRecentVerses()
     let text = t("livePreview.offAir")
     if (onScreen.verse) text = t("livePreview.onAirVerse", { reference: onScreen.verse })
     else if (onScreen.media) text = t("livePreview.onAirMedia", { title: onScreen.media })
@@ -809,24 +847,98 @@
     '<path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6"/>' +
     "</svg>"
 
+  // Library browsing state: per-view, in memory. Density alone is
+  // remembered (a per-viewer convenience, same as the active view).
+  let mediaFilterKind = "all"
+  let mediaSearchQuery = ""
+  let mediaSortMode = "library"
+  const mediaSearchEl = document.getElementById("media-search")
+  const mediaKindFilterEl = document.getElementById("media-kind-filter")
+  const mediaSortEl = document.getElementById("media-sort")
+  const mediaDensityEl = document.getElementById("media-density")
+  const mediaCountEl = document.getElementById("media-count")
+
+  function normalizeForSearch(text) {
+    return String(text).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+  }
+
+  function visibleCues() {
+    const query = normalizeForSearch(mediaSearchQuery.trim())
+    const cues = knownCues.filter(
+      (cue) => (mediaFilterKind === "all" || cue.kind === mediaFilterKind) && (!query || normalizeForSearch(cue.title).includes(query))
+    )
+    if (mediaSortMode === "name") cues.sort((a, b) => a.title.localeCompare(b.title))
+    else if (mediaSortMode === "kind") cues.sort((a, b) => a.kind.localeCompare(b.kind) || a.title.localeCompare(b.title))
+    return cues
+  }
+
+  function renderMediaCounts() {
+    const counts = { all: knownCues.length, image: 0, video: 0, audio: 0 }
+    for (const cue of knownCues) counts[cue.kind] = (counts[cue.kind] || 0) + 1
+    mediaKindFilterEl.querySelectorAll(".seg-count").forEach((el) => {
+      el.textContent = String(counts[el.dataset.count] || 0)
+    })
+    mediaCountEl.textContent = t(knownCues.length === 1 ? "media.countOne" : "media.countMany", { count: knownCues.length })
+  }
+
   function renderMediaGrid() {
     mediaGridEl.innerHTML = ""
+    renderMediaCounts()
     if (knownCues.length === 0) {
       const empty = document.createElement("div")
       empty.className = "media-empty"
-      empty.textContent = t("media.empty")
+      empty.innerHTML = mediaIconSvg("image")
+      const text = document.createElement("div")
+      text.textContent = t("media.empty")
+      const cta = document.createElement("button")
+      cta.type = "button"
+      cta.className = "btn-pill"
+      cta.textContent = t("media.importButton")
+      cta.addEventListener("click", () => mediaImportBtn.click())
+      const dropHint = document.createElement("div")
+      dropHint.className = "media-empty-hint"
+      dropHint.textContent = t("media.dropHint")
+      empty.append(text, cta, dropHint)
       mediaGridEl.appendChild(empty)
       return
     }
-    for (const cue of knownCues) {
+    const cues = visibleCues()
+    if (cues.length === 0) {
+      const empty = document.createElement("div")
+      empty.className = "media-empty"
+      empty.textContent = t("media.noMatches")
+      mediaGridEl.appendChild(empty)
+      return
+    }
+    cues.forEach((cue, order) => {
       const isPoster = cue.id === principalPosterCueId
       const tile = document.createElement("div")
-      tile.className = "media-tile" + (cue.id === activeCueId ? " active" : "") + (isPoster ? " poster" : "")
+      tile.className = "media-tile kind-" + cue.kind + (cue.id === activeCueId ? " active" : "") + (isPoster ? " poster" : "")
+      tile.style.setProperty("--stagger", String(Math.min(order, 12)))
       tile.title = cue.title
       tile.dataset.cueId = cue.id
-      tile.innerHTML = mediaThumbnailHtml(cue) + '<div class="media-tile-title"></div>'
+      tile.innerHTML =
+        '<div class="media-tile-frame">' + mediaThumbnailHtml(cue) + '<span class="media-kind-badge"></span></div>' +
+        '<div class="media-tile-meta"><div class="media-tile-title"></div><div class="media-tile-sub"></div></div>'
+      const frame = tile.querySelector(".media-tile-frame")
+      frame.dataset.liveLabel = t("media.badge.live")
+      frame.dataset.posterLabel = t("media.badge.poster")
+      tile.querySelector(".media-kind-badge").textContent = t("media.kind." + cue.kind)
       tile.querySelector(".media-tile-title").textContent = cue.title
+      tile.querySelector(".media-tile-sub").textContent = cue.autoClearMs
+        ? t("media.autoClearsAfter", { minutes: Math.round(cue.autoClearMs / 60000) })
+        : t("media.clickToShow")
       tile.setAttribute("aria-label", cue.title)
+      // Muted, local hover preview of a video's motion. It plays only in
+      // this tile; nothing is sent until the tile is clicked.
+      const video = tile.querySelector("video")
+      if (video) {
+        tile.addEventListener("mouseenter", () => video.play().catch(() => {}))
+        tile.addEventListener("mouseleave", () => {
+          video.pause()
+          video.currentTime = 0
+        })
+      }
       makeInteractive(tile, () => {
         sendJson({ id: crypto.randomUUID(), type: "media:select", timestamp: Date.now(), payload: { id: cue.id } })
         log(t("log.sentMediaSelect", { title: cue.title }), "sent")
@@ -916,11 +1028,45 @@
         deleteMediaCue(cue)
       })
       tileActions.append(renameBtn, deleteBtn)
-      tile.appendChild(tileActions)
+      tile.querySelector(".media-tile-frame").appendChild(tileActions)
+      const posterBtnEl = tile.querySelector(".media-tile-poster-btn")
+      if (posterBtnEl) tile.querySelector(".media-tile-frame").appendChild(posterBtnEl)
+      tile.querySelector(".media-tile-meta").appendChild(timer)
 
       mediaGridEl.appendChild(tile)
-    }
+    })
   }
+
+  mediaSearchEl.addEventListener("input", () => {
+    mediaSearchQuery = mediaSearchEl.value
+    renderMediaGrid()
+  })
+  wireOptionGroup(mediaKindFilterEl, "filter", (kind) => {
+    mediaFilterKind = kind
+    renderMediaGrid()
+  })
+  mediaSortEl.addEventListener("change", () => {
+    mediaSortMode = mediaSortEl.value
+    renderMediaGrid()
+  })
+  function applyMediaDensity(value) {
+    mediaGridEl.style.setProperty("--tile-min", value + "px")
+  }
+  mediaDensityEl.addEventListener("input", () => {
+    applyMediaDensity(mediaDensityEl.value)
+    try {
+      localStorage.setItem("churchOverlay.mediaDensity", mediaDensityEl.value)
+    } catch {
+      // Blocked storage: density still applies for this session.
+    }
+  })
+  try {
+    const saved = localStorage.getItem("churchOverlay.mediaDensity")
+    if (saved) mediaDensityEl.value = saved
+  } catch {
+    // Blocked storage: keep the default density.
+  }
+  applyMediaDensity(mediaDensityEl.value)
 
   /**
    * Active/poster changes arrive on every verse-adjacent media event. They only
@@ -1025,8 +1171,47 @@
   // The currently-active rundown (this dashboard's own scene list, click-
   // to-jump via scene:goto). Rendered separately from the builder's draft
   // list below, even though both use the same .rundown-scene-chip look.
+  // One timeline row: number, kind icon, summary, kind label. Shared by the
+  // live running order and the builder's draft so both read the same way.
+  function buildSceneRow(scene, index) {
+    const row = document.createElement("div")
+    row.className = "scene-row"
+    row.setAttribute("role", "listitem")
+    const num = document.createElement("span")
+    num.className = "scene-num"
+    num.textContent = String(index + 1).padStart(2, "0")
+    const icon = document.createElement("span")
+    icon.className = "scene-icon scene-icon-" + scene.kind
+    icon.innerHTML = sceneIconSvg(scene.kind)
+    const text = document.createElement("span")
+    text.className = "scene-text"
+    const title = document.createElement("span")
+    title.className = "scene-title"
+    title.textContent = sceneSummary(scene)
+    const kind = document.createElement("span")
+    kind.className = "scene-kind"
+    kind.textContent = t("rundown.builder.kind." + scene.kind)
+    text.append(title, kind)
+    row.append(num, icon, text)
+    return row
+  }
+
+  function renderSlot(titleEl, kindEl, scene) {
+    titleEl.textContent = scene ? sceneSummary(scene) : "—"
+    kindEl.innerHTML = ""
+    if (!scene) return
+    kindEl.innerHTML = sceneIconSvg(scene.kind)
+    const label = document.createElement("span")
+    label.textContent = t("rundown.builder.kind." + scene.kind)
+    kindEl.appendChild(label)
+  }
+
+  // The currently-active rundown: Now/Next slots, progress, and the
+  // running order (click-to-jump via scene:goto). Everything here is
+  // derived from the last rundown:state; nothing is predicted locally.
   function renderRundownSceneList() {
     rundownSceneListEl.innerHTML = ""
+    const nowEl = document.getElementById("rundown-now")
     if (!currentRundownState) {
       const empty = document.createElement("div")
       empty.className = "rundown-empty"
@@ -1034,6 +1219,12 @@
       rundownSceneListEl.appendChild(empty)
       rundownPrevBtn.disabled = true
       rundownNextBtn.disabled = true
+      renderSlot(document.getElementById("rundown-now-title"), document.getElementById("rundown-now-kind"), null)
+      renderSlot(document.getElementById("rundown-next-title"), document.getElementById("rundown-next-kind"), null)
+      document.getElementById("rundown-now-index").textContent = ""
+      document.getElementById("rundown-progress-text").textContent = t("rundown.empty")
+      document.getElementById("rundown-progress-bar").style.transform = "scaleX(0)"
+      nowEl.classList.remove("live", "interrupted")
       return
     }
     rundownPrevBtn.disabled = false
@@ -1042,26 +1233,82 @@
     const knowsFullList = loadedRundownId === currentRundownState.rundownId && loadedRundownScenes.length > 0
     const scenes = knowsFullList ? loadedRundownScenes : [currentRundownState.scene]
     const activeIndex = knowsFullList ? currentRundownState.cursor : 0
+    const interrupted = currentRundownState.interrupted
+
+    renderSlot(document.getElementById("rundown-now-title"), document.getElementById("rundown-now-kind"), currentRundownState.scene)
+    renderSlot(
+      document.getElementById("rundown-next-title"),
+      document.getElementById("rundown-next-kind"),
+      knowsFullList ? scenes[activeIndex + 1] || null : null
+    )
+    nowEl.classList.toggle("live", !interrupted)
+    nowEl.classList.toggle("interrupted", interrupted)
+    nowEl.title = interrupted ? t("rundown.interruptedHint") : ""
+    if (knowsFullList) {
+      document.getElementById("rundown-now-index").textContent = activeIndex + 1 + " / " + scenes.length
+      document.getElementById("rundown-progress-text").textContent = t("rundown.progress", {
+        current: activeIndex + 1,
+        total: scenes.length,
+      })
+      document.getElementById("rundown-progress-bar").style.transform = "scaleX(" + (activeIndex + 1) / scenes.length + ")"
+    } else {
+      // Loaded elsewhere (another dashboard, or before this one connected):
+      // the position is known, the length is not, so say only that.
+      document.getElementById("rundown-now-index").textContent = "#" + (currentRundownState.cursor + 1)
+      document.getElementById("rundown-progress-text").textContent = t("rundown.progressUnknown", {
+        current: currentRundownState.cursor + 1,
+      })
+      document.getElementById("rundown-progress-bar").style.transform = "scaleX(0)"
+    }
 
     scenes.forEach((scene, index) => {
+      const row = buildSceneRow(scene, knowsFullList ? index : currentRundownState.cursor)
       const isActive = index === activeIndex
-      const chip = document.createElement("div")
-      chip.className =
-        "rundown-scene-chip" + (isActive ? " active" : "") + (isActive && currentRundownState.interrupted ? " interrupted" : "")
-      if (isActive && currentRundownState.interrupted) chip.title = t("rundown.interruptedHint")
-      chip.innerHTML = sceneIconSvg(scene.kind) + "<span></span>"
-      chip.querySelector("span").textContent = sceneSummary(scene)
-      chip.setAttribute("aria-label", sceneSummary(scene))
-      makeInteractive(chip, () => {
-        sendJson({ id: crypto.randomUUID(), type: "scene:goto", timestamp: Date.now(), payload: { index } })
-        log(t("log.sentSceneGoto", { index }), "sent")
+      if (index < activeIndex) row.classList.add("done")
+      if (isActive) row.classList.add(interrupted ? "interrupted" : "active")
+      if (index === activeIndex + 1) row.classList.add("next")
+      if (isActive && interrupted) row.title = t("rundown.interruptedHint")
+      row.setAttribute("aria-label", sceneSummary(scene))
+      if (isActive) row.setAttribute("aria-current", "step")
+      makeInteractive(row, () => {
+        const target = knowsFullList ? index : currentRundownState.cursor
+        sendJson({ id: crypto.randomUUID(), type: "scene:goto", timestamp: Date.now(), payload: { index: target } })
+        log(t("log.sentSceneGoto", { index: target }), "sent")
       })
-      rundownSceneListEl.appendChild(chip)
+      rundownSceneListEl.appendChild(row)
     })
+    const activeRow = rundownSceneListEl.querySelector(".active, .interrupted")
+    if (activeRow && viewEls.rundown.classList.contains("active")) activeRow.scrollIntoView({ block: "nearest" })
   }
 
+  function moveDraftScene(from, to) {
+    if (to < 0 || to >= draftScenes.length || from === to) return
+    const [scene] = draftScenes.splice(from, 1)
+    draftScenes.splice(to, 0, scene)
+    renderDraftSceneList()
+  }
+
+  function draftActionButton(label, text, onClick, extraClass) {
+    const btn = document.createElement("button")
+    btn.type = "button"
+    btn.className = "scene-action" + (extraClass ? " " + extraClass : "")
+    btn.textContent = text
+    btn.title = label
+    btn.setAttribute("aria-label", label)
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation()
+      onClick()
+    })
+    return btn
+  }
+
+  // Draft rows reorder by drag and drop, with the arrow buttons kept for
+  // keyboard users. The draft is dashboard-only until "Load rundown".
+  let draggedDraftIndex = null
   function renderDraftSceneList() {
     rundownDraftListEl.innerHTML = ""
+    const countEl = document.getElementById("rundown-draft-count")
+    countEl.textContent = draftScenes.length ? String(draftScenes.length) : ""
     if (draftScenes.length === 0) {
       const empty = document.createElement("div")
       empty.className = "rundown-empty"
@@ -1070,53 +1317,96 @@
       return
     }
     draftScenes.forEach((scene, index) => {
-      const chip = document.createElement("div")
-      chip.className = "rundown-scene-chip"
-      chip.innerHTML = sceneIconSvg(scene.kind) + "<span></span>"
-      chip.querySelector("span").textContent = sceneSummary(scene)
-
-      const up = document.createElement("span")
-      up.className = "chip-action"
-      up.textContent = "↑"
-      up.title = t("rundown.builder.moveUp")
-      up.setAttribute("aria-label", t("rundown.builder.moveUp"))
-      makeInteractive(up, (event) => {
-        event.stopPropagation()
-        if (index === 0) return
-        ;[draftScenes[index - 1], draftScenes[index]] = [draftScenes[index], draftScenes[index - 1]]
-        renderDraftSceneList()
+      const row = buildSceneRow(scene, index)
+      row.classList.add("draft")
+      row.draggable = true
+      row.addEventListener("dragstart", (event) => {
+        draggedDraftIndex = index
+        row.classList.add("dragging")
+        event.dataTransfer.effectAllowed = "move"
+        event.dataTransfer.setData("text/plain", String(index))
+      })
+      row.addEventListener("dragend", () => {
+        draggedDraftIndex = null
+        row.classList.remove("dragging")
+        rundownDraftListEl.querySelectorAll(".drop-before, .drop-after").forEach((el) => el.classList.remove("drop-before", "drop-after"))
+      })
+      row.addEventListener("dragover", (event) => {
+        if (draggedDraftIndex === null) return
+        event.preventDefault()
+        const rect = row.getBoundingClientRect()
+        const after = event.clientY > rect.top + rect.height / 2
+        row.classList.toggle("drop-after", after)
+        row.classList.toggle("drop-before", !after)
+      })
+      row.addEventListener("dragleave", () => row.classList.remove("drop-before", "drop-after"))
+      row.addEventListener("drop", (event) => {
+        event.preventDefault()
+        if (draggedDraftIndex === null) return
+        const after = row.classList.contains("drop-after")
+        let to = index + (after ? 1 : 0)
+        if (draggedDraftIndex < to) to -= 1
+        moveDraftScene(draggedDraftIndex, to)
       })
 
-      const down = document.createElement("span")
-      down.className = "chip-action"
-      down.textContent = "↓"
-      down.title = t("rundown.builder.moveDown")
-      down.setAttribute("aria-label", t("rundown.builder.moveDown"))
-      makeInteractive(down, (event) => {
-        event.stopPropagation()
-        if (index === draftScenes.length - 1) return
-        ;[draftScenes[index], draftScenes[index + 1]] = [draftScenes[index + 1], draftScenes[index]]
-        renderDraftSceneList()
-      })
-
-      const remove = document.createElement("span")
-      remove.className = "chip-action chip-remove"
-      remove.textContent = "×"
-      remove.setAttribute("aria-label", t("rundown.builder.removeScene"))
-      makeInteractive(remove, (event) => {
-        event.stopPropagation()
-        draftScenes.splice(index, 1)
-        renderDraftSceneList()
-      })
-
-      chip.append(up, down, remove)
-      rundownDraftListEl.appendChild(chip)
+      const actions = document.createElement("span")
+      actions.className = "scene-actions"
+      actions.append(
+        draftActionButton(t("rundown.builder.moveUp"), "↑", () => moveDraftScene(index, index - 1)),
+        draftActionButton(t("rundown.builder.moveDown"), "↓", () => moveDraftScene(index, index + 1)),
+        draftActionButton(t("rundown.builder.duplicateScene"), "⧉", () => {
+          draftScenes.splice(index + 1, 0, JSON.parse(JSON.stringify(scene)))
+          renderDraftSceneList()
+        }),
+        draftActionButton(t("rundown.builder.removeScene"), "×", () => {
+          draftScenes.splice(index, 1)
+          renderDraftSceneList()
+        }, "scene-action-danger")
+      )
+      row.appendChild(actions)
+      rundownDraftListEl.appendChild(row)
     })
+  }
+
+  // "From recent verses": the same session list the Live view recalls from.
+  // Adding one only puts its reference into the draft; the verse is looked
+  // up and validated by the server when the scene actually goes live.
+  function renderRundownRecentChips() {
+    const el = document.getElementById("rundown-recent-chips")
+    el.innerHTML = ""
+    if (recentVerses.length === 0) {
+      const empty = document.createElement("span")
+      empty.className = "recent-empty"
+      empty.textContent = t("rundown.builder.noRecent")
+      el.appendChild(empty)
+      return
+    }
+    for (const entry of recentVerses) {
+      const chip = document.createElement("button")
+      chip.type = "button"
+      chip.className = "recent-chip"
+      const plus = document.createElement("span")
+      plus.className = "recent-chip-key"
+      plus.textContent = "+"
+      const label = document.createElement("span")
+      label.textContent = entry.label
+      chip.append(plus, label)
+      chip.addEventListener("click", () => {
+        draftScenes.push({ kind: "verse", reference: { ...entry.reference } })
+        renderDraftSceneList()
+      })
+      el.appendChild(chip)
+    }
   }
 
   rundownBuilderToggleBtn.addEventListener("click", () => {
     const isHidden = rundownBuilderEl.style.display === "none"
     rundownBuilderEl.style.display = isHidden ? "block" : "none"
+    if (isHidden) {
+      renderRundownRecentChips()
+      renderDraftSceneList()
+      rundownBuilderEl.scrollIntoView({ behavior: "smooth", block: "start" })
+    }
     rundownBuilderToggleBtn.textContent = isHidden ? t("rundown.buildButtonClose") : t("rundown.buildButton")
   })
 
@@ -1126,6 +1416,13 @@
     rundownFieldAnnouncementEl.style.display = draftSelectedKind === "announcement" ? "block" : "none"
     rundownFieldCanvasEl.style.display = draftSelectedKind === "canvas" ? "block" : "none"
   }
+
+  rundownVerseInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault()
+      rundownAddSceneBtn.click()
+    }
+  })
 
   wireOptionGroup(rundownSceneKindEl, "kind", (kind) => {
     draftSelectedKind = kind
@@ -1710,7 +2007,96 @@
 
   function hideMediaTitleModal() {
     mediaTitleModalEl.style.display = "none"
+    // A drop of several files is named one at a time: closing the dialog
+    // (confirmed or cancelled) moves on to the next queued file.
+    if (dropQueue.length > 0) setTimeout(processNextDroppedFile, 120)
+    else dropQueueTotal = 0
   }
+
+  // ---- Drag-and-drop import (ARCHITECTURE.md section 112) ------------------
+  // The renderer never reads a dropped file's path or bytes: each File goes
+  // to the preload, which resolves the path and hands it to the main
+  // process. From there it is the same pending-import -> title -> copy flow
+  // as the Import button. Bounded queue (AGENTS.md section 36).
+  const MAX_DROPPED_FILES = 20
+  const dropOverlayEl = document.getElementById("drop-overlay")
+  let dropQueue = []
+  let dropQueueTotal = 0
+  let dragDepth = 0
+
+  function dragHasFiles(event) {
+    return Boolean(event.dataTransfer) && Array.from(event.dataTransfer.types || []).includes("Files")
+  }
+
+  function processNextDroppedFile() {
+    const file = dropQueue.shift()
+    if (!file) {
+      dropQueueTotal = 0
+      return
+    }
+    const position = dropQueueTotal - dropQueue.length
+    window.churchOverlay
+      .importDroppedMedia(file)
+      .then((result) => {
+        if (result.error) {
+          log(t("log.importFailed", { error: file.name + " — " + result.error }), "error")
+          processNextDroppedFile()
+          return
+        }
+        showMediaTitleModal("import", result.suggestedTitle)
+        if (dropQueueTotal > 1) {
+          mediaTitleModalHeadingEl.textContent =
+            t("media.titleModal.heading") + " " + t("media.drop.progress", { current: position, total: dropQueueTotal })
+        }
+      })
+      .catch((err) => {
+        log(t("log.importFailed", { error: err.message }), "error")
+        processNextDroppedFile()
+      })
+  }
+
+  function setDropOverlay(visible) {
+    dropOverlayEl.classList.toggle("visible", visible)
+  }
+
+  // Always cancel the browser default for file drags: an unhandled drop
+  // would navigate the whole dashboard to the file.
+  document.addEventListener("dragenter", (event) => {
+    if (!dragHasFiles(event) || appShellEl.style.display === "none") return
+    event.preventDefault()
+    dragDepth += 1
+    setDropOverlay(true)
+  })
+  document.addEventListener("dragover", (event) => {
+    if (!dragHasFiles(event)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = appShellEl.style.display === "none" ? "none" : "copy"
+  })
+  document.addEventListener("dragleave", (event) => {
+    if (!dragHasFiles(event)) return
+    dragDepth = Math.max(0, dragDepth - 1)
+    if (dragDepth === 0) setDropOverlay(false)
+  })
+  document.addEventListener("drop", (event) => {
+    if (!dragHasFiles(event)) return
+    event.preventDefault()
+    dragDepth = 0
+    setDropOverlay(false)
+    if (appShellEl.style.display === "none") return
+    const files = Array.from(event.dataTransfer.files || [])
+    if (files.length === 0) return
+    if (mediaTitleModalEl.style.display !== "none" || dropQueue.length > 0) {
+      log(t("media.drop.busy"), "error")
+      return
+    }
+    if (files.length > MAX_DROPPED_FILES) {
+      log(t("media.drop.tooMany", { max: MAX_DROPPED_FILES, count: files.length }), "error")
+    }
+    showView("media")
+    dropQueue = files.slice(0, MAX_DROPPED_FILES)
+    dropQueueTotal = dropQueue.length
+    processNextDroppedFile()
+  })
 
   function confirmMediaTitleModal() {
     const title = mediaTitleInput.value.trim()
@@ -1967,6 +2353,7 @@
   showBtn.addEventListener("click", () => {
     const reference = parseReference(referenceInput.value)
     if (!reference) {
+      document.getElementById("reference-field").classList.add("invalid")
       log(t("log.parseError", { text: referenceInput.value }), "error")
       return
     }
@@ -2061,10 +2448,10 @@
       const delay = nextReconnectDelay()
       const delaySeconds = Math.round(delay / 1000)
       setStatus(t("status.disconnectedRetrying", { seconds: delaySeconds }), "disconnected")
-      log(t("log.disconnectedRetrying", { seconds: delaySeconds }), "error")
+      log(t("log.disconnectedRetrying", { seconds: delaySeconds }), "error", { toast: false })
       setTimeout(() => connect(port, token), delay)
     })
-    ws.addEventListener("error", () => log(t("log.connectionError"), "error"))
+    ws.addEventListener("error", () => log(t("log.connectionError"), "error", { toast: false }))
     ws.addEventListener("message", (event) => {
       let message
       try {
@@ -2091,6 +2478,7 @@
         showLiveVerse()
         const ref = message.payload && message.payload.reference
         onScreen.verse = ref ? formatDisplayedReference(message.payload) : "…"
+        if (ref) rememberRecentVerse(message.payload)
         renderTally()
       } else if (message.type === "verse:clear") {
         onScreen.verse = null
@@ -2135,6 +2523,176 @@
       }
     })
   }
+
+  // ---- Recent verses (session-only quick recall) --------------------------
+  // In-memory, this dashboard session only; the persistent cross-restart
+  // record is the History view. Recalling sends an ordinary verse:override,
+  // so the server validates and looks it up like a typed reference — this
+  // never re-displays cached text on its own (AGENTS.md sections 14, 50).
+  const MAX_RECENT_VERSES = 9
+  const recentVersesEl = document.getElementById("recent-verses")
+  let recentVerses = [] // [{ key, label, reference: { book, chapter, verse } }], newest first
+
+  function rememberRecentVerse(verse) {
+    const ref = verse.reference
+    const reference = { book: ref.book, chapter: ref.chapter, verse: ref.verse }
+    const key = referenceKey(reference)
+    recentVerses = [{ key, label: formatDisplayedReference(verse), reference }]
+      .concat(recentVerses.filter((entry) => entry.key !== key))
+      .slice(0, MAX_RECENT_VERSES)
+  }
+
+  function recallRecentVerse(index) {
+    const entry = recentVerses[index]
+    if (!entry) return
+    sendJson({ id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: entry.reference })
+    log(t("log.sentVerseOverride", { reference: JSON.stringify(entry.reference) }), "sent")
+  }
+
+  function renderRecentVerses() {
+    if (!recentVersesEl) return
+    recentVersesEl.innerHTML = ""
+    if (recentVerses.length === 0) {
+      const empty = document.createElement("span")
+      empty.className = "recent-empty"
+      empty.textContent = t("recent.empty")
+      recentVersesEl.appendChild(empty)
+      return
+    }
+    recentVerses.forEach((entry, index) => {
+      const chip = document.createElement("button")
+      chip.type = "button"
+      chip.className = "recent-chip" + (onScreen.verse === entry.label ? " live" : "")
+      chip.setAttribute("role", "listitem")
+      chip.title = t("recent.recallHint", { reference: entry.label, key: String(index + 1) })
+      const num = document.createElement("span")
+      num.className = "recent-chip-key"
+      num.textContent = String(index + 1)
+      const label = document.createElement("span")
+      label.textContent = entry.label
+      chip.append(num, label)
+      chip.addEventListener("click", () => recallRecentVerse(index))
+      recentVersesEl.appendChild(chip)
+    })
+  }
+
+  // ---- Header clock and on-air timer ---------------------------------------
+  const headerClockEl = document.getElementById("header-clock")
+  const onAirTimerEl = document.getElementById("on-air-timer")
+  function formatElapsed(ms) {
+    const total = Math.max(0, Math.floor(ms / 1000))
+    const minutes = Math.floor(total / 60)
+    const seconds = total % 60
+    return String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0")
+  }
+  function renderClocks() {
+    const now = new Date()
+    headerClockEl.textContent = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    onAirTimerEl.textContent = onAirSince === null ? "" : formatElapsed(now.getTime() - onAirSince)
+  }
+  setInterval(renderClocks, 1000)
+
+  // ---- Keyboard shortcuts ---------------------------------------------------
+  // Every shortcut triggers the same button/handler a click would, so no
+  // shortcut is a second command path. Ctrl+M is avoided on purpose: the
+  // default Electron menu binds it to Minimize.
+  const shortcutsModalEl = document.getElementById("shortcuts-modal")
+  const shortcutsBtn = document.getElementById("shortcuts-btn")
+  const shortcutsCloseBtn = document.getElementById("shortcuts-close-btn")
+  const VIEW_ORDER = ["live", "rundown", "media", "overlay", "history", "settings"]
+
+  function openShortcuts() {
+    shortcutsModalEl.style.display = "flex"
+    shortcutsCloseBtn.focus()
+  }
+  function closeShortcuts() {
+    shortcutsModalEl.style.display = "none"
+  }
+  shortcutsBtn.addEventListener("click", openShortcuts)
+  shortcutsCloseBtn.addEventListener("click", closeShortcuts)
+  shortcutsModalEl.addEventListener("click", (event) => {
+    if (event.target === shortcutsModalEl) closeShortcuts()
+  })
+
+  function isTypingTarget(el) {
+    if (!el) return false
+    const tag = el.tagName
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable
+  }
+
+  function anyModalOpen() {
+    return Array.from(document.querySelectorAll(".modal-overlay")).some((el) => el.style.display !== "none")
+  }
+
+  function focusReferenceInput() {
+    showView("live")
+    referenceInput.focus()
+    referenceInput.select()
+  }
+
+  document.addEventListener("keydown", (event) => {
+    if (appShellEl.style.display === "none") return
+    const typing = isTypingTarget(event.target)
+    const ctrl = event.ctrlKey || event.metaKey
+    const key = event.key
+
+    if (key === "Escape" && shortcutsModalEl.style.display !== "none") {
+      event.preventDefault()
+      closeShortcuts()
+      return
+    }
+    if (anyModalOpen()) return
+
+    if (ctrl && !event.shiftKey && key.toLowerCase() === "k") {
+      event.preventDefault()
+      focusReferenceInput()
+    } else if (!typing && !ctrl && key === "/") {
+      event.preventDefault()
+      focusReferenceInput()
+    } else if (ctrl && key === "Enter" && versePendingBannerEl.style.display !== "none") {
+      event.preventDefault()
+      versePendingConfirmBtn.click()
+    } else if (event.shiftKey && key === "Escape") {
+      event.preventDefault()
+      clearBtn.click()
+    } else if (ctrl && event.shiftKey && key.toLowerCase() === "m") {
+      event.preventDefault()
+      if (!micStartBtn.disabled) micStartBtn.click()
+      else if (!micStopBtn.disabled) micStopBtn.click()
+    } else if (event.altKey && !ctrl && /^Digit[1-9]$/.test(event.code)) {
+      event.preventDefault()
+      recallRecentVerse(Number(event.code.slice(5)) - 1)
+    } else if (ctrl && !event.shiftKey && !event.altKey && /^[1-6]$/.test(key)) {
+      event.preventDefault()
+      const view = VIEW_ORDER[Number(key) - 1]
+      showView(view)
+      if (view === "history") renderHistoryView()
+    } else if (!typing && !ctrl && !event.altKey && (key === "PageDown" || key === "PageUp")) {
+      // Presentation clickers send PageDown/PageUp. Only meaningful while a
+      // rundown is loaded; the transport buttons are disabled otherwise.
+      const btn = key === "PageDown" ? rundownNextBtn : rundownPrevBtn
+      if (!btn.disabled) {
+        event.preventDefault()
+        btn.click()
+      }
+    } else if (!typing && key === "?") {
+      event.preventDefault()
+      openShortcuts()
+    } else if (typing && key === "Escape" && event.target === referenceInput) {
+      referenceInput.blur()
+    }
+  })
+
+  // Live validity hint on the reference field, using the same parser the
+  // Show button uses — the server remains the authority on whether it exists.
+  const referenceFieldEl = document.getElementById("reference-field")
+  referenceInput.addEventListener("input", () => {
+    const value = referenceInput.value.trim()
+    referenceFieldEl.classList.toggle("valid", value !== "" && parseReference(value) !== null)
+    referenceFieldEl.classList.remove("invalid")
+  })
+
+  window.addEventListener("churchoverlay:languagechange", () => renderRecentVerses())
 
   function showAppShell() {
     setupScreenEl.style.display = "none"
@@ -2303,7 +2861,7 @@
   remoteCopyBtn.addEventListener("click", () => {
     navigator.clipboard
       .writeText(remoteUrlInput.value)
-      .then(() => log(t("log.remoteLinkCopied"), "sent"))
+      .then(() => log(t("log.remoteLinkCopied"), "sent", { toast: true }))
       .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
   })
 
@@ -2337,7 +2895,7 @@
   obsCopyBtn.addEventListener("click", () => {
     navigator.clipboard
       .writeText(obsUrlInput.value)
-      .then(() => log(t("log.obsLinkCopied"), "sent"))
+      .then(() => log(t("log.obsLinkCopied"), "sent", { toast: true }))
       .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
   })
 
@@ -2354,7 +2912,7 @@
         if (result.error) {
           log(result.error, "error")
         } else {
-          log(t("log.sessionExported", { count: result.count, targetDir: result.targetDir }), "received")
+          log(t("log.sessionExported", { count: result.count, targetDir: result.targetDir }), "received", { toast: true })
         }
       })
       .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
@@ -2374,7 +2932,7 @@
         if (result.error) {
           log(result.error, "error")
         } else {
-          log(t("log.rehearsalExported", { count: result.count, targetDir: result.targetDir }), "received")
+          log(t("log.rehearsalExported", { count: result.count, targetDir: result.targetDir }), "received", { toast: true })
         }
       })
       .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
@@ -2389,7 +2947,7 @@
     window.churchOverlay
       .exportDiagnostics()
       .then((result) => {
-        if (!result.canceled) log(t("log.diagnosticsExported", { path: result.path }), "received")
+        if (!result.canceled) log(t("log.diagnosticsExported", { path: result.path }), "received", { toast: true })
       })
       .catch((err) => log(err.message, "error"))
       .finally(() => {

@@ -5869,3 +5869,128 @@ Deviations from the design above, and why:
 
 Not proven: the native logo dialog, `nativeImage` decoding and real Electron IPC were not run (no
 desktop session); delivery of the styled frame to a real NDI receiver (section 109).
+
+## 111. Operator Console Finish Pass (Recent Verses, Shortcuts, Toasts, Rundown, Media, Glass)
+
+Renderer-only (`apps/desktop/renderer/`). No WS message, IPC channel, config field or server code
+changed.
+
+- **Recent verses.** The Live view keeps the last 9 references seen in `verse:show` this session,
+  in memory only (the History view stays the persistent record). Clicking a chip, or `Alt+1`–`9`,
+  sends an ordinary `verse:override` with `{ book, chapter, verse }`, so a recall is validated and
+  looked up exactly like a typed reference (section 14, AGENTS.md section 50). Cached verse text is
+  never re-displayed on its own.
+- **Keyboard shortcuts.** Every shortcut clicks the existing button for that action (Show pending,
+  Clear, Start/Stop listening, view switch), so there is no second command path. `Ctrl+M` is avoided
+  because the default Electron menu binds it to Minimize; the mic toggle is `Ctrl+Shift+M`. A
+  read-only reference opens with `?` or the header keyboard button.
+- **Toasts.** `log(…, "error")` also shows a toast (bounded to 3, identical messages refreshed, not
+  stacked). The reconnect cycle opts out because the status pill already reports it.
+- **Header.** Each toggle has a visible caption (Verses / Detection / Interface): two of them used
+  to read "EN | FR" with nothing saying which was which. A wall clock and an on-air timer (time
+  since the current item went live) were added.
+- **Reference field.** Turns green when the text parses as `Book C:V` with the same client-side
+  parser the Show button uses; the server remains the authority on whether the verse exists.
+
+### 111.1 Rundown and Media Library redesign, glass surfaces
+
+Still renderer-only; same commands (`scene:next`/`previous`/`goto`, `rundown:load`, `media:select`,
+`poster:set`/`clear`, `media:set-duration`), no new ones.
+
+- **Rundown.** A Now / Next pair, a progress bar and large transport buttons, beside a vertical
+  running order (done / live / next states). All of it is derived from the last `rundown:state`;
+  when the rundown was loaded by another console the length is unknown and the UI says so instead
+  of guessing. `PageDown`/`PageUp` drive Next/Previous when not typing, so a presentation clicker
+  works; they do nothing while no rundown is loaded.
+- **Rundown builder.** Draft rows reorder by drag and drop (arrow buttons kept for keyboard users),
+  can be duplicated, and verses shown this session can be added in one click. Enter in the verse
+  field adds the scene. Adding a recent verse stores only its reference; the server validates and
+  looks it up when the scene goes live.
+- **Media library.** Title search (accent-insensitive), type filter with counts, sort (library
+  order, name, type) and a tile-size slider (remembered in `localStorage` as a per-viewer
+  convenience). Tiles are 16:9 with type, on-screen and poster badges; a video tile plays a muted
+  preview on hover, locally only — nothing is sent until it is clicked. The now-playing bar floats
+  at the bottom of the view.
+- **Glass.** Panels are translucent over a fixed lit backdrop. Real `backdrop-filter` blur is
+  applied only to non-scrolling surfaces (header, rail, modals, now-playing bar, toasts) because
+  blurring scrolling content repaints every frame. Panel opacity is high enough to keep the text
+  contrast of the previous solid surfaces; `prefers-contrast: more` makes panels nearly opaque.
+
+Not proven: verified in a browser harness with a stubbed preload and a fake WebSocket, not in a
+running Electron window. GPU cost of the blurred surfaces was not measured on a low-end laptop.
+
+## 112. Backend Hardening: Media Import, Drag-and-Drop, Persistent Stores
+
+Found by reading the code paths and writing a failing test for each defect first. No WS message or
+public contract changed. One new renderer-to-main IPC (`import-media-drop`) and one preload method
+(`importDroppedMedia`), described below.
+
+**Defects fixed**
+
+- **Lost or duplicated imports.** `MediaLibrary` checked title uniqueness, then did async file work
+  before recording the cue, so two simultaneous imports of the same title could both pass. All
+  mutations (`import`, `rename`, `setAutoClearDuration`, `remove`) now run one at a time.
+- **Half-failed writes.** A failed metadata write left a cue in memory with no file on disk (or a
+  copied orphan file). `import` now rolls back the cue and deletes the copy; `rename` and
+  `setAutoClearDuration` restore the old value; `remove` persists metadata before deleting the file,
+  so a failure leaves a fully usable cue instead of a listed cue whose file is gone.
+- **Temp-file collision.** `MediaLibrary`, `SessionHistoryStore` and `ConfigStore` named temp files
+  `pid.Date.now().tmp`, so two saves in the same millisecond shared a name and raced the rename.
+  Writes are now serialized per store, temp names carry a counter, and a failed write removes its
+  temp file. `ConfigStore` is serialized per save, but callers that load, change one field, and save
+  can still overwrite each other's field. That read-modify-write pattern is not fixed here.
+- **Corrupt metadata silently overwritten.** An unparseable `media-cues.json` or
+  `session-history.json` was treated as empty, and the next write replaced it, destroying the history.
+  It is now renamed to `<file>.corrupt-<time>` first, and `load()` returns a report (loaded, skipped,
+  quarantined path) that both entry points log.
+- **Tampered stored filenames.** `/media/<id>` serves `join(mediaDir, storedFilename)` and the
+  filename was read back from JSON unchecked, so an edited entry like `..\..\x.png` could make the
+  static server read outside the media directory. `load()` now accepts only `<ulid><allowed
+  extension>` and drops duplicates and malformed entries.
+- **Wrong files accepted.** Only the extension was checked. Import now also requires a regular,
+  non-empty file within a per-kind size limit (image 50 MB, audio 500 MB, video 4 GB) whose first
+  bytes match the format its extension names (`media-signature.ts`). This is a signature check, not
+  a decoder: it proves the file is the claimed container, not that it plays. Titles are trimmed and
+  limited to 120 characters.
+- **Duplicate title forced re-picking the file.** `confirm-media-import` cleared the pending file
+  before importing, so a title error meant starting over. A title error now keeps the pending file so
+  the operator edits the title in the open dialog.
+- **Web upload route** answered operator mistakes with HTTP 500 and trusted body field types. Now 400
+  for `MediaImportError` and a type check on the body.
+
+**Drag and drop.** Dropping files on the dashboard shows a drop overlay and queues up to 20 files,
+named one at a time through the existing title dialog. The renderer never reads a path or file bytes:
+the preload resolves the path with `webUtils.getPathForFile()` and sends it to `import-media-drop`,
+which runs `checkDroppedPath()` before any filesystem access. It accepts only a local drive-letter
+path with a supported extension; UNC and `\?\` paths are refused because merely stat-ing a network
+path makes Windows contact that server. The same `MediaLibrary.import()` validation then applies as
+for the file picker.
+
+**Second pass: concurrency, WebSocket server, Deepgram**
+
+- **Config lost updates.** Handlers that did `load()` then `save({ ...existing, x })` could overwrite
+  each other's field when two interleaved. `ConfigStore.update(mutate)` does load, change and write as
+  one step on the same queue; every such handler now uses it (through `persistConfig()` in main, which
+  logs a failed write instead of refusing a toggle that already took effect). `set-asr-strategy` and
+  `set-local-asr` use it directly.
+- **WebSocket server crash paths.** `onCommand`, `onAudioFrame`, `onViewerConnected` and
+  `broadcast()`'s `send` ran unguarded inside `ws` listeners, so any throw became an uncaught
+  exception and ended the process mid-service. They now go through `guarded()`, which reports through
+  `onRejected` and keeps the connection up. New bounds (AGENTS.md section 36): at most 64 connections
+  and 100 JSON commands per second per connection, excess dropped and reported once per window. Audio
+  frames are not counted against the command limit.
+- **Deepgram.** Valid JSON that is not an object (`null`, a number) threw inside the socket listener;
+  external messages are now shape-checked. A throwing transcript consumer is reported via `onError`.
+  `start()` had no connect timeout, so a blackholed connection left the microphone starting forever
+  and `active` set; it now fails after `connectTimeoutMs` (10 s) and can be retried.
+- **Checked and found sound:** the Groq provider (request timeout, bounded buffers, rate-limit
+  backoff, consecutive-failure handling) and the failover/hybrid wiring were read; no change made.
+
+**Tests added.** 38 in total (25 for the media and history work above, then config `update`, WS, Deepgram): signature check, content mismatch, empty file, directory, missing file, title
+limits, concurrent same-title imports, 12 concurrent imports, rollback on write failure (import and
+remove), corrupt-file quarantine for media and history, tampered-filename load, retryable-title
+classification, dropped-path checks, history and config concurrency.
+
+Not proven: the real Electron drop (`webUtils.getPathForFile`, IPC) was not run; the renderer flow was
+exercised in a browser harness with a stubbed bridge. Files over 4 GB and real disk-full conditions
+were not exercised.
