@@ -67,11 +67,27 @@ export type ChurchOverlayWsServerOptions = {
    * client simply reconnects and is re-synced the normal way.
    */
   readonly maxBufferedBytes?: number
+
+  /**
+   * Most simultaneous connections accepted; further ones are refused and
+   * reported (AGENTS.md section 36). Defaults to 64: one operator, the
+   * overlay, NDI, stage, live and a handful of phones is well under that.
+   */
+  readonly maxConnections?: number
+
+  /**
+   * Most JSON commands one connection may send per second before the
+   * excess is dropped and reported. Binary audio frames are not counted.
+   * Defaults to 100. `0` disables the limit.
+   */
+  readonly maxCommandsPerSecond?: number
 }
 
 const DEFAULT_HOST = "127.0.0.1"
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000
 const DEFAULT_MAX_BUFFERED_BYTES = 4 * 1024 * 1024
+const DEFAULT_MAX_CONNECTIONS = 64
+const DEFAULT_MAX_COMMANDS_PER_SECOND = 100
 
 /**
  * Hard cap on a single inbound WebSocket message. `ws` defaults to 100 MiB,
@@ -117,6 +133,10 @@ export class ChurchOverlayWsServer {
   /** Clients that have shown a sign of life (pong or any message) since the last heartbeat sweep. */
   private readonly aliveClients = new WeakSet<WebSocket>()
   private readonly maxBufferedBytes: number
+  private readonly maxConnections: number
+  private readonly maxCommandsPerSecond: number
+  /** Per-connection one-second command window. */
+  private readonly commandWindows = new WeakMap<WebSocket, { start: number; count: number }>()
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined
 
   /** Resolves once the server is actually listening. */
@@ -129,6 +149,8 @@ export class ChurchOverlayWsServer {
     this.onRejected = options.onRejected
     this.onViewerConnected = options.onViewerConnected
     this.maxBufferedBytes = options.maxBufferedBytes ?? DEFAULT_MAX_BUFFERED_BYTES
+    this.maxConnections = options.maxConnections ?? DEFAULT_MAX_CONNECTIONS
+    this.maxCommandsPerSecond = options.maxCommandsPerSecond ?? DEFAULT_MAX_COMMANDS_PER_SECOND
 
     this.wss = options.server
       ? new WebSocketServer({
@@ -194,7 +216,15 @@ export class ChurchOverlayWsServer {
         continue
       }
 
-      client.send(payload)
+      try {
+        client.send(payload)
+      } catch (err) {
+        this.onRejected?.(
+          `broadcast send failed: ${err instanceof Error ? err.message : String(err)}`,
+          this.clientRoles.get(client) ?? null
+        )
+        client.terminate()
+      }
     }
   }
 
@@ -267,6 +297,12 @@ export class ChurchOverlayWsServer {
       return
     }
 
+    if (this.wss.clients.size > this.maxConnections) {
+      this.onRejected?.(`connection refused: more than ${this.maxConnections} clients connected`, null)
+      socket.terminate()
+      return
+    }
+
     const role: WsRole = socket.protocol === this.tokens.operatorToken ? "operator" : "viewer"
     this.clientRoles.set(socket, role)
     this.aliveClients.add(socket)
@@ -276,20 +312,56 @@ export class ChurchOverlayWsServer {
       // Any inbound traffic proves the connection is alive, so a busy
       // operator streaming audio can never be dropped for a late pong.
       this.aliveClients.add(socket)
-      this.handleMessage(role, data, isBinary)
+      this.handleMessage(socket, role, data, isBinary)
     })
     socket.on("close", () => this.clientRoles.delete(socket))
 
     if (role === "viewer") {
-      this.onViewerConnected?.((message) => {
-        if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message))
-      })
+      this.guarded("onViewerConnected", role, () =>
+        this.onViewerConnected?.((message) => {
+          if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message))
+        })
+      )
     }
   }
 
-  private handleMessage(role: WsRole, data: unknown, isBinary: boolean): void {
+  /**
+   * A handler that throws inside a ws event listener becomes an uncaught
+   * exception and takes the whole process down mid-service. Every call out
+   * to an injected callback goes through here: the failure is reported and
+   * the connection stays up.
+   */
+  private guarded(what: string, role: WsRole | null, run: () => void): void {
+    try {
+      run()
+    } catch (err) {
+      this.onRejected?.(`${what} threw: ${err instanceof Error ? err.message : String(err)}`, role)
+    }
+  }
+
+  private commandAllowed(socket: WebSocket): boolean {
+    if (this.maxCommandsPerSecond <= 0) return true
+    const now = Date.now()
+    const window = this.commandWindows.get(socket)
+    if (!window || now - window.start >= 1000) {
+      this.commandWindows.set(socket, { start: now, count: 1 })
+      return true
+    }
+    window.count += 1
+    return window.count <= this.maxCommandsPerSecond
+  }
+
+  private handleMessage(socket: WebSocket, role: WsRole, data: unknown, isBinary: boolean): void {
     if (isBinary) {
       this.handleBinaryMessage(role, data)
+      return
+    }
+    if (!this.commandAllowed(socket)) {
+      // Reported once per window, not once per dropped message, so a flood
+      // cannot also flood the log.
+      if (this.commandWindows.get(socket)?.count === this.maxCommandsPerSecond + 1) {
+        this.onRejected?.(`command rate limit exceeded (${this.maxCommandsPerSecond}/s); excess dropped`, role)
+      }
       return
     }
 
@@ -307,7 +379,7 @@ export class ChurchOverlayWsServer {
       return
     }
 
-    this.onCommand?.(result.message, role)
+    this.guarded("onCommand", role, () => this.onCommand?.(result.message, role))
   }
 
   private handleBinaryMessage(role: WsRole, data: unknown): void {
@@ -331,7 +403,7 @@ export class ChurchOverlayWsServer {
       return
     }
 
-    this.onAudioFrame?.(frame)
+    this.guarded("onAudioFrame", role, () => this.onAudioFrame?.(frame))
   }
 }
 

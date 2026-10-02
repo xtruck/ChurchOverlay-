@@ -1,3 +1,4 @@
+import { isPlainObject } from "../../../packages/shared/type-guards"
 import { WebSocket } from "ws"
 import type { AsrProvider, AudioFrame, TranscriptResult } from "../../../packages/contracts"
 import { generateUlid } from "../../../packages/shared/ulid"
@@ -28,6 +29,7 @@ const DEFAULT_ENDPOINTING_MS = 300
  * list degrades general accuracy.
  */
 const MAX_PLANNED_BOOK_TERMS = 15
+const DEFAULT_CONNECT_TIMEOUT_MS = 10_000
 
 export type DeepgramProviderOptions = {
   readonly apiKey: string
@@ -36,6 +38,8 @@ export type DeepgramProviderOptions = {
   readonly url?: string
   readonly WebSocketImpl?: typeof WebSocket
   readonly keepAliveIntervalMs?: number
+  /** Longest wait for the WebSocket to open before start() fails. Default 10 s. */
+  readonly connectTimeoutMs?: number
   readonly endpointingMs?: number
   /** Boosts Bible book names and "chapitre/verset" (see biblical-vocabulary.ts). Default true. */
   readonly biblicalVocabulary?: boolean
@@ -61,6 +65,7 @@ export class DeepgramProvider implements AsrProvider {
   private readonly WebSocketImpl: typeof WebSocket
   private readonly keepAliveIntervalMs: number
   private readonly endpointingMs: number
+  private readonly connectTimeoutMs: number
   private readonly biblicalVocabulary: boolean
   private language: string | undefined
   private socket: WebSocket | null = null
@@ -83,6 +88,7 @@ export class DeepgramProvider implements AsrProvider {
     this.WebSocketImpl = options.WebSocketImpl ?? WebSocket
     this.keepAliveIntervalMs = options.keepAliveIntervalMs ?? DEFAULT_KEEPALIVE_MS
     this.endpointingMs = options.endpointingMs ?? DEFAULT_ENDPOINTING_MS
+    this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS
     this.biblicalVocabulary = options.biblicalVocabulary ?? true
   }
 
@@ -163,7 +169,7 @@ export class DeepgramProvider implements AsrProvider {
       this.reportError(new Error("Deepgram WebSocket closed unexpectedly"))
     })
     try {
-      await waitForOpen(socket)
+      await waitForOpen(socket, this.connectTimeoutMs)
     } catch (error) {
       if (this.socket === socket) this.socket = null
       this.active = false
@@ -232,19 +238,25 @@ export class DeepgramProvider implements AsrProvider {
   }
 
   private handleMessage(raw: string): void {
-    let message: DeepgramMessage
+    let parsed: unknown
     try {
-      message = JSON.parse(raw) as DeepgramMessage
+      parsed = JSON.parse(raw)
     } catch {
       this.reportError(new Error("Deepgram returned malformed JSON"))
       return
     }
-    const alternative = message.channel?.alternatives?.[0]
-    const text = alternative?.transcript?.trim() ?? ""
+    // External data is never trusted (AGENTS.md section 15): valid JSON that
+    // is not an object (null, a number) used to throw a TypeError here,
+    // inside a socket listener, which is an uncaught exception.
+    if (!isPlainObject(parsed)) return
+    const message = parsed as DeepgramMessage
+    const alternatives = isPlainObject(message.channel) ? message.channel.alternatives : undefined
+    const alternative = Array.isArray(alternatives) && isPlainObject(alternatives[0]) ? alternatives[0] : undefined
+    const text = typeof alternative?.transcript === "string" ? alternative.transcript.trim() : ""
     if (!text) return
     const state = message.is_final ? "final" : "partial"
     this.sequence += 1
-    this.transcriptCallback?.({
+    this.deliverTranscript({
       id: generateUlid(),
       correlationId: this.correlationId,
       sequence: this.sequence,
@@ -255,13 +267,28 @@ export class DeepgramProvider implements AsrProvider {
     })
   }
 
+  /** A consumer that throws must not escape into the socket's message listener. */
+  private deliverTranscript(result: TranscriptResult): void {
+    try {
+      this.transcriptCallback?.(result)
+    } catch (err) {
+      this.reportError(err)
+    }
+  }
+
   private reportError(error: unknown): void {
     this.errorCallback?.(error instanceof Error ? error : new Error(String(error)))
   }
 }
 
-function waitForOpen(socket: WebSocket): Promise<void> {
+function waitForOpen(socket: WebSocket, timeoutMs: number): Promise<void> {
   return new Promise((resolve, reject) => {
+    // A connection that neither opens nor errors (blackholed network) would
+    // otherwise leave start() pending forever with the microphone "starting".
+    const timer = setTimeout(() => {
+      cleanup()
+      reject(new Error(`Deepgram connection timed out after ${timeoutMs} ms`))
+    }, timeoutMs)
     const onOpen = () => {
       cleanup()
       resolve()
@@ -271,6 +298,7 @@ function waitForOpen(socket: WebSocket): Promise<void> {
       reject(error)
     }
     const cleanup = () => {
+      clearTimeout(timer)
       socket.off("open", onOpen)
       socket.off("error", onError)
     }

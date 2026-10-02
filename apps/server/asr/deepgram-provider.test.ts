@@ -241,3 +241,51 @@ test("DeepgramProvider: no KeepAlive while audio is flowing", async () => {
   assert.equal(jsonMessages(OpenSocket.last!).some((m) => m.type === "KeepAlive"), false)
   await provider.stop()
 })
+
+// ---- Hardening (ARCHITECTURE.md section 112) ------------------------------
+
+test("DeepgramProvider: non-object JSON from the server (null, number, array) is ignored, never thrown", () => {
+  const provider = new DeepgramProvider({ apiKey: "test" })
+  const results: unknown[] = []
+  provider.onTranscript((result) => results.push(result))
+  const handle = (raw: string) => (provider as unknown as { handleMessage(raw: string): void }).handleMessage(raw)
+  for (const raw of ["null", "42", '"text"', "[]", "true", '{"channel":null}', '{"channel":{"alternatives":"x"}}', '{"channel":{"alternatives":[null]}}', '{"channel":{"alternatives":[{"transcript":7}]}}']) {
+    assert.doesNotThrow(() => handle(raw), raw)
+  }
+  assert.deepEqual(results, [])
+})
+
+test("DeepgramProvider: a throwing transcript callback is reported through onError, not thrown into the socket listener", () => {
+  const provider = new DeepgramProvider({ apiKey: "test" })
+  const errors: Error[] = []
+  provider.onError((error) => errors.push(error))
+  provider.onTranscript(() => {
+    throw new Error("consumer boom")
+  })
+  assert.doesNotThrow(() =>
+    (provider as unknown as { handleMessage(raw: string): void }).handleMessage(
+      JSON.stringify({ is_final: true, channel: { alternatives: [{ transcript: "John 3:16" }] } })
+    )
+  )
+  assert.equal(errors.length, 1)
+  assert.match(errors[0]!.message, /consumer boom/)
+})
+
+test("DeepgramProvider: start() fails after the connect timeout instead of hanging, and can be retried", async () => {
+  const sockets: MockWebSocket[] = []
+  class NeverOpens extends MockWebSocket {
+    constructor(url: string, options: unknown) {
+      super(url, options)
+      sockets.push(this)
+    }
+  }
+  const provider = new DeepgramProvider({
+    apiKey: "test",
+    connectTimeoutMs: 30,
+    WebSocketImpl: NeverOpens as never,
+  })
+  await assert.rejects(() => provider.start(), /timed out/)
+  // active was reset, so a second attempt is allowed rather than silently ignored.
+  await assert.rejects(() => provider.start(), /timed out/)
+  assert.equal(sockets.length, 2)
+})

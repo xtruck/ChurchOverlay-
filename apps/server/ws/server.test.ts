@@ -22,6 +22,8 @@ async function startServer(
     onViewerConnected: (send: (message: WsMessage) => void) => void
     heartbeatIntervalMs: number
     maxBufferedBytes: number
+    maxConnections: number
+    maxCommandsPerSecond: number
   }> = {}
 ): Promise<ChurchOverlayWsServer> {
   const server = new ChurchOverlayWsServer({ port: 0, tokens: TOKENS, ...overrides })
@@ -472,6 +474,101 @@ test("ChurchOverlayWsServer: a consumer that stops reading is dropped once its q
     assert.match(await received, /"01OK"/)
     fresh.close()
     stalled.terminate()
+  } finally {
+    await server.close()
+  }
+})
+
+// ---- Hardening (ARCHITECTURE.md section 112) ------------------------------
+
+const MIC_START = (id: string): string => JSON.stringify({ id, type: "mic:start", timestamp: Date.now(), payload: null })
+const audioFrame = (sequence: number): Uint8Array => encodeAudioFrame({ samples: new Int16Array(160), sampleRate: 16000, sequence })
+
+test("ChurchOverlayWsServer: a throwing onCommand is reported and the connection and server stay up", async () => {
+  const rejected: string[] = []
+  let calls = 0
+  const server = await startServer({
+    onCommand: () => {
+      calls += 1
+      if (calls === 1) throw new Error("boom")
+    },
+    onRejected: (reason) => rejected.push(reason),
+  })
+  try {
+    const socket = await connect(server.port, TOKENS.operatorToken)
+    socket.send(MIC_START("01A"))
+    socket.send(MIC_START("01B"))
+    await waitFor(() => calls === 2)
+    assert.ok(rejected.some((r) => r.includes("onCommand threw: boom")))
+    assert.equal(socket.readyState, WebSocket.OPEN)
+    socket.close()
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer: a throwing onAudioFrame or onViewerConnected does not crash the process", async () => {
+  const rejected: string[] = []
+  const server = await startServer({
+    onAudioFrame: () => {
+      throw new Error("audio boom")
+    },
+    onViewerConnected: () => {
+      throw new Error("viewer boom")
+    },
+    onRejected: (reason) => rejected.push(reason),
+  })
+  try {
+    const viewer = await connect(server.port, TOKENS.viewerToken)
+    const operator = await connect(server.port, TOKENS.operatorToken)
+    operator.send(audioFrame(1))
+    await waitFor(() => rejected.some((r) => r.includes("onAudioFrame threw")))
+    assert.ok(rejected.some((r) => r.includes("onViewerConnected threw")))
+    assert.equal(viewer.readyState, WebSocket.OPEN)
+    viewer.close()
+    operator.close()
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer: commands past the per-second limit are dropped and reported once; audio is not limited", async () => {
+  const received: string[] = []
+  const rejected: string[] = []
+  const frames: number[] = []
+  const server = await startServer({
+    maxCommandsPerSecond: 5,
+    onCommand: (message) => received.push(message.id),
+    onAudioFrame: (frame) => frames.push(frame.sequence),
+    onRejected: (reason) => rejected.push(reason),
+  })
+  try {
+    const socket = await connect(server.port, TOKENS.operatorToken)
+    for (let i = 0; i < 30; i++) socket.send(MIC_START(`id-${i}`))
+    for (let i = 0; i < 30; i++) socket.send(audioFrame(i))
+    await waitFor(() => frames.length === 30)
+    assert.equal(received.length, 5)
+    assert.equal(rejected.filter((r) => r.includes("rate limit")).length, 1)
+    socket.close()
+  } finally {
+    await server.close()
+  }
+})
+
+test("ChurchOverlayWsServer: connections beyond the cap are refused and reported; earlier ones keep working", async () => {
+  const rejected: string[] = []
+  const server = await startServer({ maxConnections: 2, onRejected: (reason) => rejected.push(reason) })
+  try {
+    const a = await connect(server.port, TOKENS.viewerToken)
+    const b = await connect(server.port, TOKENS.viewerToken)
+    const c = new WebSocket(`ws://127.0.0.1:${server.port}`, [TOKENS.viewerToken])
+    c.on("error", () => undefined)
+    await waitFor(() => c.readyState === WebSocket.CLOSED)
+    assert.ok(rejected.some((r) => r.includes("connection refused")))
+    assert.equal(a.readyState, WebSocket.OPEN)
+    assert.equal(b.readyState, WebSocket.OPEN)
+    a.close()
+    b.close()
   } finally {
     await server.close()
   }
