@@ -1,3 +1,4 @@
+import { fakeMediaBytes } from "../media/media-test-fixtures"
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
@@ -599,7 +600,7 @@ async function withMediaLibrary(fn: (library: MediaLibrary, sourceDir: string) =
 test("AppCore: media:select with a real imported id broadcasts media:show playing at position 0", async () => {
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const source = join(dir, "clip.mp4")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await mediaLibrary.import(source, "Intro Clip", "video")
 
     const app = await startAppCore({
@@ -678,8 +679,8 @@ test("AppCore: replacing or manually clearing media cancels the previous auto-cl
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const firstSource = join(dir, "first.png")
     const secondSource = join(dir, "second.png")
-    await writeFile(firstSource, "x")
-    await writeFile(secondSource, "y")
+    await writeFile(firstSource, fakeMediaBytes(firstSource))
+    await writeFile(secondSource, fakeMediaBytes(secondSource))
     const first = await mediaLibrary.import(firstSource, "First Slide", "image")
     const second = await mediaLibrary.import(secondSource, "Second Slide", "image")
     // A generous duration relative to the WS round-trip + waitFor
@@ -732,7 +733,7 @@ test("AppCore: replacing or manually clearing media cancels the previous auto-cl
 test("AppCore: an active media cue auto-clears after its persisted duration", async () => {
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const source = join(dir, "timed.png")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await mediaLibrary.import(source, "Timed Slide", "image")
     await mediaLibrary.setAutoClearDuration(cue.id, 30)
 
@@ -769,7 +770,7 @@ test("AppCore: an active media cue auto-clears after its persisted duration", as
 test("AppCore: media:pause after media:select broadcasts an updated media:show with state paused", async () => {
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const source = join(dir, "clip.mp4")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await mediaLibrary.import(source, "Intro Clip", "video")
 
     const app = await startAppCore({
@@ -809,7 +810,7 @@ test("AppCore: media:pause after media:select broadcasts an updated media:show w
 test("AppCore: a viewer connecting while a media cue is already active immediately receives a sync media:show", async () => {
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const source = join(dir, "welcome.png")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await mediaLibrary.import(source, "Welcome Slide", "image")
 
     const app = await startAppCore({
@@ -848,7 +849,7 @@ test("AppCore: a viewer connecting while a media cue is already active immediate
 test("AppCore: a spoken cue title in a final transcript automatically broadcasts media:show", async () => {
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const source = join(dir, "welcome.png")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await mediaLibrary.import(source, "Welcome Slide", "image")
 
     const asr = new FakeAsrProvider()
@@ -888,7 +889,7 @@ test("AppCore: a spoken cue title in a final transcript automatically broadcasts
 test("AppCore: a spoken cue title in a partial transcript never triggers media:show", async () => {
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const source = join(dir, "welcome.png")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     await mediaLibrary.import(source, "Welcome Slide", "image")
 
     const asr = new FakeAsrProvider()
@@ -1259,7 +1260,7 @@ test("AppCore: rundown:load activates the first scene, broadcasting rundown:stat
 test("AppCore: a detected verse while a rundown's media scene is active immediately overlays the verse, then clearing it resumes the media scene", async () => {
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const source = join(dir, "welcome.png")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await mediaLibrary.import(source, "Welcome Slide", "image")
 
     const asr = new FakeAsrProvider()
@@ -1325,7 +1326,7 @@ test("AppCore: a detected verse while a rundown's media scene is active immediat
 test("AppCore: an explicit scene:next during a verse interrupt switches scenes immediately and discards the paused scene instead of resuming it later", async () => {
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const source = join(dir, "welcome.png")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await mediaLibrary.import(source, "Welcome Slide", "image")
 
     const asr = new FakeAsrProvider()
@@ -1631,7 +1632,7 @@ test("AppCore: a rundown verse scene that fails to resolve logs a diagnostic ins
 test("AppCore: a viewer connecting during a verse-interrupt is resynced with the live verse, not the rundown's paused scene", async () => {
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const source = join(dir, "welcome.png")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await mediaLibrary.import(source, "Welcome Slide", "image")
 
     const asr = new FakeAsrProvider()
@@ -2836,7 +2837,7 @@ test("AppCore: setSermonNotesEnabled() is a live toggle — turning it on starts
 test("AppCore: poster:set with a real imported image cue broadcasts poster:show", async () => {
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const source = join(dir, "poster.png")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await mediaLibrary.import(source, "Sunday Service Poster", "image")
 
     const app = await startAppCore({
@@ -2872,7 +2873,7 @@ test("AppCore: poster:set with a real imported image cue broadcasts poster:show"
 test("AppCore: poster:set with a non-image cue id is rejected — no broadcast", async () => {
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const source = join(dir, "clip.mp4")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await mediaLibrary.import(source, "Intro Clip", "video")
 
     const app = await startAppCore({
@@ -2957,7 +2958,7 @@ test("AppCore: poster:set with an unknown id is rejected — no broadcast", asyn
 test("AppCore: poster:clear broadcasts poster:clear", async () => {
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const source = join(dir, "poster.png")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await mediaLibrary.import(source, "Sunday Service Poster", "image")
 
     const app = await startAppCore({
@@ -3161,7 +3162,7 @@ test("AppCore: layout:set from the operator broadcasts layout:update and calls o
 test("AppCore: poster:set-duration auto-clears the poster after the configured delay, and a new poster:set resets the countdown", async () => {
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const source = join(dir, "poster.png")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await mediaLibrary.import(source, "Sunday Service Poster", "image")
 
     const app = await startAppCore({
@@ -3207,7 +3208,7 @@ test("AppCore: poster:set-duration auto-clears the poster after the configured d
 test("AppCore: with no poster:set-duration configured, a poster never auto-clears (manual-only default)", async () => {
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const source = join(dir, "poster.png")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await mediaLibrary.import(source, "Sunday Service Poster", "image")
 
     const app = await startAppCore({
@@ -3251,7 +3252,7 @@ test("AppCore: with no poster:set-duration configured, a poster never auto-clear
 test("AppCore: a viewer connecting while a principal poster is active immediately receives a sync poster:show", async () => {
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const source = join(dir, "poster.png")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await mediaLibrary.import(source, "Sunday Service Poster", "image")
 
     const app = await startAppCore({
@@ -3297,7 +3298,7 @@ test("AppCore: a viewer connecting while a principal poster is active immediatel
 test("AppCore: a verse shown while a principal poster is active auto-clears after the configured delay", async () => {
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const source = join(dir, "poster.png")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await mediaLibrary.import(source, "Sunday Service Poster", "image")
     const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
 
@@ -3350,7 +3351,7 @@ test("AppCore: a verse shown while a principal poster is active auto-clears afte
 test("AppCore: a second verse shown before the auto-clear timer fires resets the countdown rather than stacking", async () => {
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const source = join(dir, "poster.png")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await mediaLibrary.import(source, "Sunday Service Poster", "image")
 
     const app = await startAppCore({
@@ -3479,7 +3480,7 @@ test("AppCore: correctTranscription is wired into the transcript pipeline — 'V
 test("AppCore: a manual verse:clear before the auto-clear timer fires cancels it — no later spurious clear", async () => {
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const source = join(dir, "poster.png")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await mediaLibrary.import(source, "Sunday Service Poster", "image")
 
     const app = await startAppCore({
@@ -3584,7 +3585,7 @@ test("AppCore: the default verse auto-clear ceiling is exactly 2 minutes 30 seco
 test("AppCore: speaking a poster-marked cue's title re-shows it as poster:show, not media:show", async () => {
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const source = join(dir, "poster.png")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await mediaLibrary.import(source, "Sunday Service Poster", "image")
     const asr = new FakeAsrProvider()
 
@@ -3636,7 +3637,7 @@ test("AppCore: speaking a poster-marked cue's title re-shows it as poster:show, 
 test("AppCore: speaking a cue's title that was never appointed as a poster still triggers ordinary media:show", async () => {
   await withMediaLibrary(async (mediaLibrary, dir) => {
     const source = join(dir, "clip.mp4")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await mediaLibrary.import(source, "Welcome Video", "video")
     const asr = new FakeAsrProvider()
 

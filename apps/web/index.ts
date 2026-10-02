@@ -13,7 +13,7 @@ import { loadOfflineBibleData, OfflineVerseSource } from "../server/verse/offlin
 import { OfflineFallbackVerseSource } from "../server/verse/offline-fallback-verse-source"
 import { RegexDetector } from "../server/detector/regex-detector"
 import { KnownValidVerseIndex } from "../server/verse/known-valid-verse-index"
-import { MediaLibrary } from "../server/media/media-library"
+import { MediaImportError, MediaLibrary } from "../server/media/media-library"
 import { SessionHistoryStore } from "../server/core/session-history-store"
 import { SermonNotesGenerator } from "../server/ai/sermon-notes-generator"
 import {
@@ -94,10 +94,24 @@ async function main() {
   await mkdir(tempDir, { recursive: true })
 
   const mediaLibrary = new MediaLibrary({ mediaDir })
-  await mediaLibrary.load()
+  const mediaLoadReport = await mediaLibrary.load()
+  if (mediaLoadReport.quarantinedPath || mediaLoadReport.skipped > 0) {
+    logger.warn({
+      component: "server",
+      event: "media-library.load-recovered",
+      metadata: { loaded: mediaLoadReport.loaded, skipped: mediaLoadReport.skipped, quarantined: mediaLoadReport.quarantinedPath !== null },
+    })
+  }
 
   const sessionHistoryStore = new SessionHistoryStore({ historyDir: dataDir })
-  await sessionHistoryStore.load()
+  const historyLoadReport = await sessionHistoryStore.load()
+  if (historyLoadReport.quarantinedPath || historyLoadReport.skipped > 0) {
+    logger.warn({
+      component: "server",
+      event: "session-history.load-recovered",
+      metadata: { loaded: historyLoadReport.loaded, skipped: historyLoadReport.skipped, quarantined: historyLoadReport.quarantinedPath !== null },
+    })
+  }
 
   // Bible Sources
   let frenchSource: GetBibleVerseSource | OfflineFallbackVerseSource = new GetBibleVerseSource()
@@ -237,7 +251,7 @@ async function main() {
 
       res.json(currentStatusPayload())
     } catch (err) {
-      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+      res.status(err instanceof MediaImportError ? 400 : 500).json({ error: err instanceof Error ? err.message : String(err) })
     }
   })
 
@@ -288,7 +302,7 @@ async function main() {
   app.post("/api/media/upload", async (req: Request, res: Response) => {
     try {
       const { title, filename, data } = req.body || {}
-      if (!title || !filename || !data) {
+      if (typeof title !== "string" || typeof filename !== "string" || typeof data !== "string" || !title || !filename || !data) {
         res.status(400).json({ error: "Missing title, filename, or data" })
         return
       }
@@ -313,21 +327,21 @@ async function main() {
         await unlink(tempFilePath).catch(() => {})
       }
     } catch (err) {
-      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+      res.status(err instanceof MediaImportError ? 400 : 500).json({ error: err instanceof Error ? err.message : String(err) })
     }
   })
 
   app.post("/api/media/rename", async (req: Request, res: Response) => {
     try {
       const { id, newTitle } = req.body || {}
-      if (!id || !newTitle) {
+      if (typeof id !== "string" || typeof newTitle !== "string" || !id || !newTitle) {
         res.status(400).json({ error: "Missing id or newTitle" })
         return
       }
       const cue = await mediaLibrary.rename(id, newTitle)
       res.json(cue)
     } catch (err) {
-      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+      res.status(err instanceof MediaImportError ? 400 : 500).json({ error: err instanceof Error ? err.message : String(err) })
     }
   })
 
@@ -341,7 +355,7 @@ async function main() {
       await mediaLibrary.remove(id)
       res.json({ success: true })
     } catch (err) {
-      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+      res.status(err instanceof MediaImportError ? 400 : 500).json({ error: err instanceof Error ? err.message : String(err) })
     }
   })
 
@@ -413,7 +427,7 @@ async function main() {
       prefetchCrossReferences(ref, localizedVerseSource).catch(() => {})
       res.json({ reference: ref, verse })
     } catch (err) {
-      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+      res.status(err instanceof MediaImportError ? 400 : 500).json({ error: err instanceof Error ? err.message : String(err) })
     }
   })
 
@@ -435,7 +449,7 @@ async function main() {
       const crossRefs = getCrossReferences(ref)
       res.json({ reference: ref, crossReferences: crossRefs })
     } catch (err) {
-      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+      res.status(err instanceof MediaImportError ? 400 : 500).json({ error: err instanceof Error ? err.message : String(err) })
     }
   })
 

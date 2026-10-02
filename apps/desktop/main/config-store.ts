@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, rename } from "node:fs/promises"
+import { mkdir, open, readFile, rename, unlink } from "node:fs/promises"
 import { dirname } from "node:path"
 import type { DisplayMode, VerseConfirmationMode, VerseLayout } from "../../../packages/contracts"
 import type { AudioProfile } from "../../server/audio/audio-profile"
@@ -169,6 +169,12 @@ type StoredConfig = {
  * and a rename either fully happens or fully doesn't.
  */
 export class ConfigStore {
+  // Saves run one at a time (ARCHITECTURE.md section 112): several
+  // handlers save in response to independent events, and two saves in the
+  // same millisecond used to share a temp-file name and race each other.
+  private saveChain: Promise<unknown> = Promise.resolve()
+  private tempCounter = 0
+
   constructor(
     private readonly filePath: string,
     private readonly codec: SecretCodec
@@ -193,7 +199,35 @@ export class ConfigStore {
     return this.decode(stored)
   }
 
-  async save(config: AppConfig): Promise<void> {
+  save(config: AppConfig): Promise<void> {
+    const run = this.saveChain.then(
+      () => this.write(config),
+      () => this.write(config)
+    )
+    this.saveChain = run.catch(() => undefined)
+    return run
+  }
+
+  /**
+   * Load, change, save as one step on the same queue as save(). Callers
+   * that load() and then save() separately can overwrite each other's
+   * field when two handlers interleave; this cannot. Returns the saved
+   * config, or null when no config exists yet (nothing is created).
+   */
+  update(mutate: (current: AppConfig) => AppConfig): Promise<AppConfig | null> {
+    const step = async (): Promise<AppConfig | null> => {
+      const current = await this.load()
+      if (!current) return null
+      const next = mutate(current)
+      await this.write(next)
+      return next
+    }
+    const run = this.saveChain.then(step, step)
+    this.saveChain = run.catch(() => undefined)
+    return run
+  }
+
+  private async write(config: AppConfig): Promise<void> {
     const stored: StoredConfig = {
       groqApiKeyEncrypted: this.codec.encrypt(config.groqApiKey).toString("base64"),
       ...(config.deepgramApiKey ? { deepgramApiKeyEncrypted: this.codec.encrypt(config.deepgramApiKey).toString("base64") } : {}),
@@ -221,16 +255,21 @@ export class ConfigStore {
 
     await mkdir(dirname(this.filePath), { recursive: true })
 
-    const tempPath = `${this.filePath}.${process.pid}.${Date.now()}.tmp`
-    const handle = await open(tempPath, "w")
+    this.tempCounter += 1
+    const tempPath = `${this.filePath}.${process.pid}.${Date.now()}.${this.tempCounter}.tmp`
     try {
-      await handle.writeFile(JSON.stringify(stored, null, 2))
-      await handle.sync()
-    } finally {
-      await handle.close()
+      const handle = await open(tempPath, "w")
+      try {
+        await handle.writeFile(JSON.stringify(stored, null, 2))
+        await handle.sync()
+      } finally {
+        await handle.close()
+      }
+      await rename(tempPath, this.filePath)
+    } catch (err) {
+      await unlink(tempPath).catch(() => undefined)
+      throw err
     }
-
-    await rename(tempPath, this.filePath)
   }
 
   private decode(stored: unknown): AppConfig {

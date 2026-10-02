@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, rename } from "node:fs/promises"
+import { mkdir, open, readFile, rename, unlink } from "node:fs/promises"
 import { join } from "node:path"
 import type { Verse } from "../../../packages/contracts"
 import { isNotFoundError } from "../../../packages/shared/type-guards"
@@ -33,20 +33,38 @@ const MAX_ENTRIES = 5000
  * starts as empty history, the same recoverable-over-blocking philosophy
  * those two already use.
  */
+export type SessionHistoryLoadReport = {
+  readonly loaded: number
+  readonly skipped: number
+  /** Where an unparseable history file was moved, so the next record() cannot overwrite it. */
+  readonly quarantinedPath: string | null
+}
+
 export class SessionHistoryStore {
   private readonly filePath: string
   private entries: SessionHistoryEntry[] = []
+  // Writes run one at a time (ARCHITECTURE.md section 112). Two verses
+  // shown in the same millisecond used to share one temp-file name and
+  // race each other's rename.
+  private writeChain: Promise<unknown> = Promise.resolve()
+  private tempCounter = 0
 
   constructor(options: { readonly historyDir: string }) {
     this.filePath = join(options.historyDir, "session-history.json")
   }
 
-  async load(): Promise<void> {
+  /**
+   * A missing file is a first run. An unparseable one is moved aside to
+   * `session-history.json.corrupt-<time>` instead of being treated as empty:
+   * otherwise the next verse shown would overwrite years of history with
+   * one entry (AGENTS.md section 29).
+   */
+  async load(): Promise<SessionHistoryLoadReport> {
     let raw: string
     try {
       raw = await readFile(this.filePath, "utf8")
     } catch (err) {
-      if (isNotFoundError(err)) return
+      if (isNotFoundError(err)) return { loaded: 0, skipped: 0, quarantinedPath: null }
       throw err
     }
 
@@ -54,13 +72,18 @@ export class SessionHistoryStore {
     try {
       parsed = JSON.parse(raw)
     } catch {
-      return
+      parsed = undefined
     }
-    if (!Array.isArray(parsed)) return
-    this.entries = parsed.filter(isSessionHistoryEntry)
+    if (!Array.isArray(parsed)) {
+      const quarantinedPath = `${this.filePath}.corrupt-${Date.now()}`
+      await rename(this.filePath, quarantinedPath)
+      return { loaded: 0, skipped: 0, quarantinedPath }
+    }
+    this.entries = parsed.filter(isSessionHistoryEntry).slice(-MAX_ENTRIES)
+    return { loaded: this.entries.length, skipped: parsed.length - parsed.filter(isSessionHistoryEntry).length, quarantinedPath: null }
   }
 
-  async record(verse: Verse, timestamp: number): Promise<void> {
+  record(verse: Verse, timestamp: number): Promise<void> {
     this.entries.push({
       reference: verse.reference,
       text: verse.text,
@@ -70,7 +93,16 @@ export class SessionHistoryStore {
     if (this.entries.length > MAX_ENTRIES) {
       this.entries = this.entries.slice(this.entries.length - MAX_ENTRIES)
     }
-    await this.persist()
+    // Each write snapshots the entries at the moment it runs, so a later
+    // write always carries everything recorded before it. A failed write
+    // rejects this call only; the entry stays in memory and the next
+    // successful write persists it.
+    const run = this.writeChain.then(
+      () => this.persist(),
+      () => this.persist()
+    )
+    this.writeChain = run.catch(() => undefined)
+    return run
   }
 
   /** A fresh copy each call — same "caller unaffected by a later record()" guarantee SessionRecorder's own getEntries() gives. */
@@ -80,15 +112,21 @@ export class SessionHistoryStore {
 
   private async persist(): Promise<void> {
     await mkdir(join(this.filePath, ".."), { recursive: true })
-    const tempPath = `${this.filePath}.${process.pid}.${Date.now()}.tmp`
-    const handle = await open(tempPath, "w")
+    this.tempCounter += 1
+    const tempPath = `${this.filePath}.${process.pid}.${Date.now()}.${this.tempCounter}.tmp`
     try {
-      await handle.writeFile(JSON.stringify(this.entries))
-      await handle.sync()
-    } finally {
-      await handle.close()
+      const handle = await open(tempPath, "w")
+      try {
+        await handle.writeFile(JSON.stringify(this.entries))
+        await handle.sync()
+      } finally {
+        await handle.close()
+      }
+      await rename(tempPath, this.filePath)
+    } catch (err) {
+      await unlink(tempPath).catch(() => undefined)
+      throw err
     }
-    await rename(tempPath, this.filePath)
   }
 }
 
@@ -100,10 +138,10 @@ function isSessionHistoryEntry(value: unknown): value is SessionHistoryEntry {
     typeof reference === "object" &&
     reference !== null &&
     typeof reference.book === "string" &&
-    typeof reference.chapter === "number" &&
-    typeof reference.verse === "number" &&
+    Number.isFinite(reference.chapter) &&
+    Number.isFinite(reference.verse) &&
     typeof candidate.text === "string" &&
     typeof candidate.translation === "string" &&
-    typeof candidate.timestamp === "number"
+    Number.isFinite(candidate.timestamp)
   )
 }

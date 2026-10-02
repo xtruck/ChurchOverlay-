@@ -1,8 +1,9 @@
-import { copyFile, mkdir, open, readFile, rename, unlink } from "node:fs/promises"
+import { copyFile, mkdir, open, readFile, rename, stat, unlink } from "node:fs/promises"
 import { extname, join } from "node:path"
 import type { MediaCue, MediaCueKind } from "../../../packages/contracts"
-import { generateUlid } from "../../../packages/shared/ulid"
+import { generateUlid, isValidUlid } from "../../../packages/shared/ulid"
 import { isNotFoundError } from "../../../packages/shared/type-guards"
+import { MAX_MEDIA_BYTES, SIGNATURE_PROBE_BYTES, matchesSignature } from "./media-signature"
 
 const ALLOWED_EXTENSIONS: Readonly<Record<MediaCueKind, readonly string[]>> = {
   image: [".jpg", ".jpeg", ".png", ".webp"],
@@ -10,9 +11,51 @@ const ALLOWED_EXTENSIONS: Readonly<Record<MediaCueKind, readonly string[]>> = {
   audio: [".mp3", ".wav", ".m4a"],
 }
 
+/** Titles are spoken triggers; anything this long is a paste accident, not a phrase. */
+export const MAX_TITLE_LENGTH = 120
+
+export type MediaImportErrorCode =
+  | "unsupported-type"
+  | "not-a-file"
+  | "empty-file"
+  | "too-large"
+  | "content-mismatch"
+  | "empty-title"
+  | "title-too-long"
+  | "duplicate-title"
+  | "unknown-cue"
+
+/**
+ * An operator mistake (wrong file, bad title), as opposed to an I/O fault.
+ * Callers map it to a user-facing message or an HTTP 4xx; anything else
+ * thrown by MediaLibrary is a real failure (disk full, permissions).
+ */
+export class MediaImportError extends Error {
+  readonly code: MediaImportErrorCode
+  constructor(code: MediaImportErrorCode, message: string) {
+    super(message)
+    this.name = "MediaImportError"
+    this.code = code
+  }
+}
+
+/** Errors the operator fixes by editing the title, not by picking another file. */
+export function isTitleErrorCode(code: MediaImportErrorCode): boolean {
+  return code === "empty-title" || code === "title-too-long" || code === "duplicate-title"
+}
+
 export type MediaLibraryOptions = {
   /** The app-owned directory imported files are copied into (ARCHITECTURE.md section 60.4). */
   readonly mediaDir: string
+}
+
+/** What load() found, so the caller can log it (MediaLibrary has no logger of its own). */
+export type MediaLibraryLoadReport = {
+  readonly loaded: number
+  /** Entries dropped because they were malformed or pointed outside the media directory. */
+  readonly skipped: number
+  /** Where an unparseable metadata file was moved, so it is kept rather than overwritten. */
+  readonly quarantinedPath: string | null
 }
 
 type StoredMediaCue = {
@@ -36,18 +79,23 @@ type StoredMediaCue = {
  * step").
  *
  * Persists imported cues' metadata to a JSON file alongside the copied
- * media files (found necessary post-launch: this class was originally
- * in-memory only, so every imported cue was silently lost on every app
- * restart even though the copied file itself remained on disk — a real
- * production bug, not a theoretical gap). `load()` must be called once at
- * startup, mirroring `ConfigStore`'s own explicit load step, before any
- * `resolve()`/`list()` call is expected to reflect prior imports.
+ * media files. `load()` must be called once at startup, mirroring
+ * `ConfigStore`'s own explicit load step, before any `resolve()`/`list()`
+ * call is expected to reflect prior imports.
+ *
+ * Hardening (ARCHITECTURE.md section 112): every mutation runs one at a
+ * time, so two imports racing on the same title cannot both pass the
+ * uniqueness check; a failed import leaves no copied file and no cue
+ * behind; file content must match its extension; and a stored filename
+ * read back from disk can never point outside the media directory.
  */
 export class MediaLibrary {
   private readonly mediaDir: string
   private readonly metadataFilePath: string
   private readonly cues = new Map<string, MediaCue>()
   private readonly storedFilenames = new Map<string, string>()
+  private mutationChain: Promise<unknown> = Promise.resolve()
+  private tempCounter = 0
 
   constructor(options: MediaLibraryOptions) {
     this.mediaDir = options.mediaDir
@@ -56,18 +104,18 @@ export class MediaLibrary {
 
   /**
    * Loads previously-imported cues back into memory. A missing metadata
-   * file (first run, or an install predating this fix) is not an error —
-   * starts as an empty library, exactly like before. A present-but-
-   * corrupt file also does not prevent startup: the operator can always
-   * re-import, and refusing to launch over recoverable media metadata
-   * would be a worse failure mode than losing that history.
+   * file (first run) is not an error. A present-but-corrupt file does not
+   * prevent startup either, but it is moved aside to
+   * `media-cues.json.corrupt-<time>` before anything else happens: the next
+   * import would otherwise overwrite it and lose every entry in it for good
+   * (AGENTS.md section 29, preserve recoverable state).
    */
-  async load(): Promise<void> {
+  async load(): Promise<MediaLibraryLoadReport> {
     let raw: string
     try {
       raw = await readFile(this.metadataFilePath, "utf8")
     } catch (err) {
-      if (isNotFoundError(err)) return
+      if (isNotFoundError(err)) return { loaded: 0, skipped: 0, quarantinedPath: null }
       throw err
     }
 
@@ -75,12 +123,21 @@ export class MediaLibrary {
     try {
       stored = JSON.parse(raw)
     } catch {
-      return
+      stored = undefined
     }
-    if (!Array.isArray(stored)) return
+    if (!Array.isArray(stored)) {
+      const quarantinedPath = `${this.metadataFilePath}.corrupt-${Date.now()}`
+      await rename(this.metadataFilePath, quarantinedPath)
+      return { loaded: 0, skipped: 0, quarantinedPath }
+    }
 
+    let loaded = 0
+    let skipped = 0
     for (const entry of stored) {
-      if (!isStoredMediaCue(entry)) continue
+      if (!isStoredMediaCue(entry) || !isSafeStoredFilename(entry) || this.cues.has(entry.id)) {
+        skipped += 1
+        continue
+      }
       this.cues.set(entry.id, {
         kind: entry.kind,
         id: entry.id,
@@ -88,117 +145,129 @@ export class MediaLibrary {
         ...(entry.autoClearMs === undefined ? {} : { autoClearMs: entry.autoClearMs }),
       })
       this.storedFilenames.set(entry.id, entry.storedFilename)
+      loaded += 1
     }
+    return { loaded, skipped, quarantinedPath: null }
   }
 
   /**
    * Copies `sourcePath` into the app-owned media directory under a fresh
-   * ULID-based filename and records it. Throws on a disallowed extension
-   * or a duplicate title (ARCHITECTURE.md section 60.3: titles must be
-   * unique so voice-triggered matching never has to choose between two
-   * equally-valid cues) — these are operator mistakes to surface
-   * immediately, not failures to swallow.
+   * ULID-based filename and records it. Rejects with a MediaImportError for
+   * an operator mistake: disallowed extension, not a regular file, empty or
+   * oversized file, content that does not match the extension, or an empty,
+   * overlong or duplicate title (section 60.3: titles must be unique so
+   * voice-triggered matching never has to choose between two cues).
    */
-  async import(sourcePath: string, title: string, kind: MediaCueKind): Promise<MediaCue> {
-    const extension = extname(sourcePath).toLowerCase()
-    if (!ALLOWED_EXTENSIONS[kind].includes(extension)) {
-      throw new Error(
-        `MediaLibrary: "${extension}" is not an allowed extension for kind "${kind}"`
-      )
-    }
-    // An empty/whitespace-only title normalizes to "", and "".includes("")
-    // (MediaCueDetector's substring check) is always true — that cue would
-    // fire on every single transcript for the rest of the service. Reject
-    // it here, the same operator-mistake-to-surface-immediately treatment
-    // duplicate-title already gets below, since a blank title is just as
-    // unusable for voice-triggered matching.
-    if (normalizeTitle(title).length === 0) {
-      throw new Error("MediaLibrary: title must not be empty")
-    }
-    if (this.findByTitle(title)) {
-      throw new Error(`MediaLibrary: a cue titled "${title}" already exists`)
-    }
+  import(sourcePath: string, title: string, kind: MediaCueKind): Promise<MediaCue> {
+    return this.serialize(async () => {
+      const extension = extname(sourcePath).toLowerCase()
+      if (!ALLOWED_EXTENSIONS[kind]?.includes(extension)) {
+        throw new MediaImportError(
+          "unsupported-type",
+          `"${extension}" is not an allowed extension for kind "${kind}"`
+        )
+      }
+      // An empty title normalizes to "", and "".includes("") (the
+      // detector's substring check) is always true: that cue would fire on
+      // every transcript for the rest of the service.
+      this.assertUsableTitle(title, null)
+      await this.assertImportableFile(sourcePath, extension, kind)
 
-    const id = generateUlid()
-    const storedFilename = id + extension
+      const id = generateUlid()
+      const storedFilename = id + extension
+      const storedPath = join(this.mediaDir, storedFilename)
 
-    await mkdir(this.mediaDir, { recursive: true })
-    await copyFile(sourcePath, join(this.mediaDir, storedFilename))
+      await mkdir(this.mediaDir, { recursive: true })
+      await copyFile(sourcePath, storedPath)
 
-    const cue: MediaCue = { kind, id, title }
-    this.cues.set(id, cue)
-    this.storedFilenames.set(id, storedFilename)
-    await this.persist()
-    return cue
+      const cue: MediaCue = { kind, id, title: title.trim() }
+      this.cues.set(id, cue)
+      this.storedFilenames.set(id, storedFilename)
+      try {
+        await this.persist()
+      } catch (err) {
+        // Roll back: a cue that exists in memory but not on disk would
+        // vanish on restart, and the copied file would be an orphan.
+        this.cues.delete(id)
+        this.storedFilenames.delete(id)
+        await unlink(storedPath).catch(() => undefined)
+        throw err
+      }
+      return cue
+    })
   }
 
   /**
-   * ARCHITECTURE.md production audit follow-up: an operator who imported
-   * the wrong file (or picked a title with a typo) previously had no way
-   * to fix it short of restarting the app and hoping the stale metadata
-   * file didn't still list it — remove/rename let a mistake be corrected
-   * directly, not just prevented at import time.
-   *
-   * Same duplicate-title/empty-title checks as import() — a rename is
-   * really "the same cue with a different title," so it must satisfy the
-   * same section 60.3 uniqueness invariant, not a weaker one. The cue's
-   * own current title is excluded from the collision check: renaming
-   * "X" to "X" (a no-op edit) must not spuriously reject as a duplicate
-   * of itself.
+   * Same title rules as import() — a rename is "the same cue with a
+   * different title." The cue's own current title is excluded from the
+   * collision check, so renaming "X" to "x" is allowed.
    */
-  async rename(id: string, newTitle: string): Promise<MediaCue> {
-    const existing = this.cues.get(id)
-    if (!existing) {
-      throw new Error(`MediaLibrary: no cue with id "${id}"`)
-    }
+  rename(id: string, newTitle: string): Promise<MediaCue> {
+    return this.serialize(async () => {
+      const existing = this.cues.get(id)
+      if (!existing) throw new MediaImportError("unknown-cue", `No cue with id "${id}"`)
+      this.assertUsableTitle(newTitle, id)
 
-    if (normalizeTitle(newTitle).length === 0) {
-      throw new Error("MediaLibrary: title must not be empty")
-    }
-    const collision = this.findByTitle(newTitle)
-    if (collision && collision.id !== id) {
-      throw new Error(`MediaLibrary: a cue titled "${newTitle}" already exists`)
-    }
-
-    const renamed: MediaCue = { ...existing, title: newTitle }
-    this.cues.set(id, renamed)
-    await this.persist()
-    return renamed
+      const renamed: MediaCue = { ...existing, title: newTitle.trim() }
+      this.cues.set(id, renamed)
+      try {
+        await this.persist()
+      } catch (err) {
+        this.cues.set(id, existing)
+        throw err
+      }
+      return renamed
+    })
   }
 
-  async setAutoClearDuration(id: string, durationMs: number | null): Promise<MediaCue> {
-    const existing = this.cues.get(id)
-    if (!existing) throw new Error(`MediaLibrary: no cue with id "${id}"`)
-    if (durationMs !== null && (!Number.isFinite(durationMs) || durationMs <= 0)) {
-      throw new Error("MediaLibrary: auto-clear duration must be null or a positive finite number")
-    }
-    const updated: MediaCue = { ...existing, autoClearMs: durationMs }
-    this.cues.set(id, updated)
-    await this.persist()
-    return updated
+  setAutoClearDuration(id: string, durationMs: number | null): Promise<MediaCue> {
+    return this.serialize(async () => {
+      const existing = this.cues.get(id)
+      if (!existing) throw new MediaImportError("unknown-cue", `No cue with id "${id}"`)
+      if (durationMs !== null && (!Number.isFinite(durationMs) || durationMs <= 0)) {
+        throw new Error("MediaLibrary: auto-clear duration must be null or a positive finite number")
+      }
+      const updated: MediaCue = { ...existing, autoClearMs: durationMs }
+      this.cues.set(id, updated)
+      try {
+        await this.persist()
+      } catch (err) {
+        this.cues.set(id, existing)
+        throw err
+      }
+      return updated
+    })
   }
 
   /**
-   * Removes a cue's metadata and deletes its copied file from disk.
-   * Unknown id is a no-op (returns false), not an error — matches
-   * resolve()'s own "never throws for an unknown id" convention, since
-   * the operator-facing action ("remove this tile") has nothing left to
-   * do if it's already gone.
+   * Removes a cue's metadata and deletes its copied file. Unknown id is a
+   * no-op (returns false). The metadata is persisted before the file is
+   * deleted: if the write fails the cue is still fully usable, instead of
+   * listed but pointing at a deleted file.
    */
-  async remove(id: string): Promise<boolean> {
-    const storedFilename = this.storedFilenames.get(id)
-    if (!storedFilename) return false
+  remove(id: string): Promise<boolean> {
+    return this.serialize(async () => {
+      const storedFilename = this.storedFilenames.get(id)
+      const existing = this.cues.get(id)
+      if (!storedFilename || !existing) return false
 
-    try {
-      await unlink(join(this.mediaDir, storedFilename))
-    } catch (err) {
-      if (!isNotFoundError(err)) throw err
-    }
+      this.cues.delete(id)
+      this.storedFilenames.delete(id)
+      try {
+        await this.persist()
+      } catch (err) {
+        this.cues.set(id, existing)
+        this.storedFilenames.set(id, storedFilename)
+        throw err
+      }
 
-    this.cues.delete(id)
-    this.storedFilenames.delete(id)
-    await this.persist()
-    return true
+      try {
+        await unlink(join(this.mediaDir, storedFilename))
+      } catch (err) {
+        if (!isNotFoundError(err)) throw err
+      }
+      return true
+    })
   }
 
   resolve(id: string): MediaCue | null {
@@ -224,12 +293,66 @@ export class MediaLibrary {
     return Array.from(this.cues.values())
   }
 
+  /** Runs mutations strictly one after another; a failure does not block the next one. */
+  private serialize<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.mutationChain.then(task, task)
+    this.mutationChain = run.catch(() => undefined)
+    return run
+  }
+
+  private assertUsableTitle(title: string, ownId: string | null): void {
+    if (typeof title !== "string" || normalizeTitle(title).length === 0) {
+      throw new MediaImportError("empty-title", "Title must not be empty")
+    }
+    if (title.trim().length > MAX_TITLE_LENGTH) {
+      throw new MediaImportError("title-too-long", `Title must be at most ${MAX_TITLE_LENGTH} characters`)
+    }
+    const collision = this.findByTitle(title)
+    if (collision && collision.id !== ownId) {
+      throw new MediaImportError("duplicate-title", `A cue titled "${title.trim()}" already exists`)
+    }
+  }
+
+  private async assertImportableFile(sourcePath: string, extension: string, kind: MediaCueKind): Promise<void> {
+    let info
+    try {
+      info = await stat(sourcePath)
+    } catch (err) {
+      if (isNotFoundError(err)) throw new MediaImportError("not-a-file", "The file no longer exists")
+      throw err
+    }
+    if (!info.isFile()) throw new MediaImportError("not-a-file", "Only regular files can be imported")
+    if (info.size === 0) throw new MediaImportError("empty-file", "The file is empty")
+    const limit = MAX_MEDIA_BYTES[kind]
+    if (info.size > limit) {
+      throw new MediaImportError(
+        "too-large",
+        `The file is ${formatMegabytes(info.size)}, over the ${formatMegabytes(limit)} limit for ${kind}`
+      )
+    }
+
+    const handle = await open(sourcePath, "r")
+    let leading: Uint8Array
+    try {
+      const buffer = Buffer.alloc(SIGNATURE_PROBE_BYTES)
+      const { bytesRead } = await handle.read(buffer, 0, SIGNATURE_PROBE_BYTES, 0)
+      leading = buffer.subarray(0, bytesRead)
+    } finally {
+      await handle.close()
+    }
+    if (!matchesSignature(extension, leading)) {
+      throw new MediaImportError(
+        "content-mismatch",
+        `The file's content is not a valid ${extension} file`
+      )
+    }
+  }
+
   /**
-   * Atomic write, the exact same durability discipline `ConfigStore`
-   * already established (ARCHITECTURE.md section 37): write to a
-   * uniquely-named temp file in the same directory, fsync it, close it,
-   * then rename over the real path — a crash mid-write can never leave a
-   * corrupted or partial metadata file behind.
+   * Atomic write, the same discipline `ConfigStore` established
+   * (ARCHITECTURE.md section 37): unique temp file in the same directory,
+   * fsync, close, rename over the real path. The temp file is removed if
+   * any step fails, so a full disk does not leave debris behind.
    */
   private async persist(): Promise<void> {
     const stored: StoredMediaCue[] = Array.from(this.cues.values()).map((cue) => ({
@@ -241,21 +364,31 @@ export class MediaLibrary {
     }))
 
     await mkdir(this.mediaDir, { recursive: true })
-    const tempPath = `${this.metadataFilePath}.${process.pid}.${Date.now()}.tmp`
-    const handle = await open(tempPath, "w")
+    this.tempCounter += 1
+    const tempPath = `${this.metadataFilePath}.${process.pid}.${Date.now()}.${this.tempCounter}.tmp`
     try {
-      await handle.writeFile(JSON.stringify(stored, null, 2))
-      await handle.sync()
-    } finally {
-      await handle.close()
+      const handle = await open(tempPath, "w")
+      try {
+        await handle.writeFile(JSON.stringify(stored, null, 2))
+        await handle.sync()
+      } finally {
+        await handle.close()
+      }
+      await rename(tempPath, this.metadataFilePath)
+    } catch (err) {
+      await unlink(tempPath).catch(() => undefined)
+      throw err
     }
-    await rename(tempPath, this.metadataFilePath)
   }
 }
 
 /** Shared with MediaCueDetector — both must agree on what "the same title" means. */
 export function normalizeTitle(title: string): string {
   return title.trim().replace(/\s+/g, " ").toLowerCase()
+}
+
+function formatMegabytes(bytes: number): string {
+  return Math.round(bytes / (1024 * 1024)) + " MB"
 }
 
 function isStoredMediaCue(value: unknown): value is StoredMediaCue {
@@ -265,9 +398,22 @@ function isStoredMediaCue(value: unknown): value is StoredMediaCue {
     typeof candidate.id === "string" &&
     (candidate.kind === "image" || candidate.kind === "video" || candidate.kind === "audio") &&
     typeof candidate.title === "string" &&
-    typeof candidate.storedFilename === "string"
-    && (candidate.autoClearMs === undefined ||
+    normalizeTitle(candidate.title).length > 0 &&
+    typeof candidate.storedFilename === "string" &&
+    (candidate.autoClearMs === undefined ||
       candidate.autoClearMs === null ||
       (typeof candidate.autoClearMs === "number" && Number.isFinite(candidate.autoClearMs) && candidate.autoClearMs > 0))
   )
+}
+
+/**
+ * The stored filename is read back from a JSON file on disk and later
+ * served by `/media/<id>`. It must be exactly "<id><allowed extension>":
+ * a hand-edited or tampered entry like "..\\..\\secrets.txt" would
+ * otherwise let the static server read any file the app can reach.
+ */
+function isSafeStoredFilename(entry: StoredMediaCue): boolean {
+  if (!isValidUlid(entry.id)) return false
+  const extension = extname(entry.storedFilename).toLowerCase()
+  return entry.storedFilename === entry.id + extension && ALLOWED_EXTENSIONS[entry.kind].includes(extension)
 }

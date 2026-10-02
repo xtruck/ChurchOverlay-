@@ -5,7 +5,7 @@
 // path module Node would otherwise auto-select for the host platform.
 // Forcing win32 semantics removes that implicit, easy-to-break
 // dependency rather than relying on it holding by coincidence.
-import { basename, extname } from "node:path/win32"
+import { basename, extname, isAbsolute, normalize } from "node:path/win32"
 import type { MediaCueKind } from "../../../packages/contracts"
 
 const EXTENSION_KINDS: Readonly<Record<string, MediaCueKind>> = {
@@ -45,4 +45,39 @@ export function inferMediaKind(filePath: string): MediaCueKind | null {
 export function deriveTitleFromFilename(filePath: string): string {
   const withoutExtension = basename(filePath, extname(filePath))
   return withoutExtension.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim()
+}
+
+/** Most files one drop may queue; the rest are refused with a message. */
+export const MAX_DROPPED_FILES = 20
+
+export type DroppedPathCheck =
+  | { readonly ok: true; readonly filePath: string; readonly kind: MediaCueKind }
+  | { readonly ok: false; readonly error: string }
+
+/**
+ * ARCHITECTURE.md section 112: a path dropped onto the dashboard arrives
+ * from the renderer, so it is checked like any other renderer input before
+ * the main process touches the filesystem with it. Only a local, absolute,
+ * drive-letter path with a supported extension passes. UNC paths
+ * (\\server\share\...) are refused on purpose: merely stat-ing one makes
+ * Windows contact that server and offer the user's credentials, so a
+ * crafted path must never reach fs. Content and size are checked later by
+ * MediaLibrary.import(), the same as for the file picker.
+ */
+export function checkDroppedPath(value: unknown): DroppedPathCheck {
+  if (typeof value !== "string" || value.length === 0 || value.length > 1024 || value.includes("\0")) {
+    return { ok: false, error: "That item is not a file." }
+  }
+  if (value.startsWith("\\\\") || value.startsWith("//")) {
+    return { ok: false, error: "Files on a network share can't be imported. Copy the file to this computer first." }
+  }
+  const filePath = normalize(value)
+  if (!/^[A-Za-z]:\\/.test(filePath) || !isAbsolute(filePath)) {
+    return { ok: false, error: "That item is not a file on this computer." }
+  }
+  const kind = inferMediaKind(filePath)
+  if (!kind) {
+    return { ok: false, error: "That file type isn't supported. Use JPG, PNG, WebP, MP4, WebM, MP3, WAV or M4A." }
+  }
+  return { ok: true, filePath, kind }
 }

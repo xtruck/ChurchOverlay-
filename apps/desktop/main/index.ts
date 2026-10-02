@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, nativeImage, safeStorage, shell } 
 import { randomBytes } from "node:crypto"
 import { networkInterfaces } from "node:os"
 import { join } from "node:path"
-import { writeFile } from "node:fs/promises"
+import { stat, writeFile } from "node:fs/promises"
 import { startAppCore, type AppCoreHandle } from "../../server/core/app-core"
 import type { SessionEntry } from "../../server/core/session-recorder"
 import { StaticServer } from "../../server/http/static-server"
@@ -24,7 +24,7 @@ import { WhisperServerProcess } from "../../server/asr/local-whisper-server"
 import { LocalAsrInstaller, LOCAL_MODELS, type LocalAsrInstallState, type LocalModelId } from "./local-asr-installer"
 import { SermonNotesGenerator } from "../../server/ai/sermon-notes-generator"
 import { buildServiceSummaryInput, SERVICE_SUMMARY_SYSTEM_PROMPT } from "../../server/ai/service-summary"
-import { MediaLibrary } from "../../server/media/media-library"
+import { MediaImportError, MediaLibrary, isTitleErrorCode } from "../../server/media/media-library"
 import { SessionHistoryStore } from "../../server/core/session-history-store"
 import {
   ConfigStore,
@@ -37,7 +37,7 @@ import {
   type UiLanguage,
 } from "./config-store"
 import type { DisplayMode, MediaCueKind, VerseConfirmationMode, VerseLayout, VerseSource } from "../../../packages/contracts"
-import { inferMediaKind, deriveTitleFromFilename } from "./media-import"
+import { checkDroppedPath, inferMediaKind, deriveTitleFromFilename } from "./media-import"
 import { isAllowedNavigation, isExternalHttpsUrl } from "./navigation-guard"
 import { Logger } from "../../../packages/shared/logger"
 import { NDIOutput, type PaintSource } from "./ndi-output"
@@ -138,9 +138,7 @@ function getOverlayStyleController(): OverlayStyleController {
         return decoded
       },
       persist: async (overlayStyle) => {
-        const store = getConfigStore()
-        const existing = await store.load()
-        if (existing) await store.save({ ...existing, overlayStyle })
+        await persistConfig((existing) => ({ ...existing, overlayStyle }))
       },
       log: (event, error) => logger.error({ component: "overlay-style", event, error }),
     })
@@ -423,8 +421,7 @@ async function startServices(
     onAutoGainChanged: (enabled) => {
       if (activeConfig) activeConfig = { ...activeConfig, autoGain: enabled }
       getConfigStore()
-        .load()
-        .then((existing) => (existing ? getConfigStore().save({ ...existing, autoGain: enabled }) : undefined))
+        .update((existing) => ({ ...existing, autoGain: enabled }))
         .catch((err) => {
           logger.error({
             component: "main",
@@ -457,8 +454,7 @@ async function startServices(
     onDisplayModeChanged: (mode) => {
       setAsrLanguage(mode)
       getConfigStore()
-        .load()
-        .then((existing) => (existing ? getConfigStore().save({ ...existing, displayMode: mode }) : undefined))
+        .update((existing) => ({ ...existing, displayMode: mode }))
         .catch((err) => {
           logger.error({
             component: "main",
@@ -471,8 +467,7 @@ async function startServices(
     onVerseLayoutChanged: (layout) => {
       currentVerseLayout = layout
       getConfigStore()
-        .load()
-        .then((existing) => (existing ? getConfigStore().save({ ...existing, verseLayout: layout }) : undefined))
+        .update((existing) => ({ ...existing, verseLayout: layout }))
         .catch((err) => {
           logger.error({
             component: "main",
@@ -739,14 +734,12 @@ ipcMain.handle("install-local-asr", async (event, model: unknown) => {
 /** Enabling or changing the model rebuilds the provider chain (services restart). */
 ipcMain.handle("set-local-asr", async (_event, payload: unknown) => {
   const body = typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {}
-  const existing = await getConfigStore().load()
-  if (!existing) throw new Error("Services are not configured yet.")
-  const updated: AppConfig = {
+  const updated = await getConfigStore().update((existing) => ({
     ...existing,
     localAsrEnabled: body.enabled === true,
     localAsrModel: toModelId(body.model ?? existing.localAsrModel),
-  }
-  await getConfigStore().save(updated)
+  }))
+  if (!updated) throw new Error("Services are not configured yet.")
   await startServices(updated)
   return currentAsrStatus()
 })
@@ -758,10 +751,8 @@ ipcMain.handle("set-local-asr", async (_event, payload: unknown) => {
  */
 ipcMain.handle("set-asr-strategy", async (_event, payload: unknown) => {
   if (!ASR_STRATEGIES.includes(payload as AsrStrategy)) throw new Error("Invalid ASR strategy.")
-  const existing = await getConfigStore().load()
-  if (!existing) throw new Error("Services are not configured yet.")
-  const updated: AppConfig = { ...existing, asrStrategy: payload as AsrStrategy }
-  await getConfigStore().save(updated)
+  const updated = await getConfigStore().update((existing) => ({ ...existing, asrStrategy: payload as AsrStrategy }))
+  if (!updated) throw new Error("Services are not configured yet.")
   await startServices(updated)
   return currentAsrStatus()
 })
@@ -778,11 +769,7 @@ ipcMain.handle("set-display-mode", async (_event, payload: unknown) => {
   localizedVerseSource.setMode(mode)
   setAsrLanguage(mode)
 
-  const store = getConfigStore()
-  const existing = await store.load().catch(() => null)
-  if (existing) {
-    await store.save({ ...existing, displayMode: mode })
-  }
+  await persistConfig((existing) => ({ ...existing, displayMode: mode }))
   return { displayMode: mode }
 })
 
@@ -793,11 +780,7 @@ ipcMain.handle("set-ui-language", async (_event, payload: unknown) => {
     throw new Error("Invalid UI language.")
   }
 
-  const store = getConfigStore()
-  const existing = await store.load().catch(() => null)
-  if (existing) {
-    await store.save({ ...existing, uiLanguage })
-  }
+  await persistConfig((existing) => ({ ...existing, uiLanguage }))
   return { uiLanguage }
 })
 
@@ -820,11 +803,7 @@ ipcMain.handle("set-verse-confirmation-mode", async (_event, payload: unknown) =
   appCoreHandle.setVerseConfirmationMode(mode)
   currentVerseConfirmationMode = mode
 
-  const store = getConfigStore()
-  const existing = await store.load().catch(() => null)
-  if (existing) {
-    await store.save({ ...existing, verseConfirmationMode: mode })
-  }
+  await persistConfig((existing) => ({ ...existing, verseConfirmationMode: mode }))
   return { verseConfirmationMode: mode }
 })
 
@@ -845,11 +824,7 @@ ipcMain.handle("set-enable-sermon-notes", async (_event, payload: unknown) => {
   appCoreHandle.setSermonNotesEnabled(payload)
   currentEnableSermonNotes = payload
 
-  const store = getConfigStore()
-  const existing = await store.load().catch(() => null)
-  if (existing) {
-    await store.save({ ...existing, enableSermonNotes: payload })
-  }
+  await persistConfig((existing) => ({ ...existing, enableSermonNotes: payload }))
   return { enableSermonNotes: payload }
 })
 
@@ -874,11 +849,7 @@ ipcMain.handle("set-french-translation", async (_event, payload: unknown) => {
   currentFrenchTranslation = translation
   if (activeConfig) activeConfig = { ...activeConfig, frenchTranslation: translation }
 
-  const store = getConfigStore()
-  const existing = await store.load().catch(() => null)
-  if (existing) {
-    await store.save({ ...existing, frenchTranslation: translation })
-  }
+  await persistConfig((existing) => ({ ...existing, frenchTranslation: translation }))
   return { frenchTranslation: translation }
 })
 
@@ -894,9 +865,7 @@ ipcMain.handle("set-overlay-template", async (_event, payload: unknown) => {
   }
   const controller = getOverlayStyleController()
   const style = controller.apply({ ...controller.get(), card: payload })
-  const store = getConfigStore()
-  const existing = await store.load().catch(() => null)
-  if (existing) await store.save({ ...existing, overlayTemplate: payload as string })
+  await persistConfig((existing) => ({ ...existing, overlayTemplate: payload as string }))
   return { overlayTemplate: style.card }
 })
 
@@ -955,16 +924,14 @@ ipcMain.handle("set-ndi-enabled", async (_event, payload: unknown) => {
       ndiWindow.destroy()
       ndiWindow = null
     }
-    const existing = await getConfigStore().load().catch(() => null)
-    if (existing) await getConfigStore().save({ ...existing, ndiEnabled: status.state === "running" })
+    await persistConfig((existing) => ({ ...existing, ndiEnabled: status.state === "running" }))
     return status
   }
 
   await ndiOutput.stop()
   ndiWindow?.destroy()
   ndiWindow = null
-  const existing = await getConfigStore().load().catch(() => null)
-  if (existing) await getConfigStore().save({ ...existing, ndiEnabled: false })
+  await persistConfig((existing) => ({ ...existing, ndiEnabled: false }))
   return ndiOutput.getStatus()
 })
 
@@ -1106,6 +1073,20 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
   }
 })
 
+/**
+ * Persists one config change without clobbering concurrent ones
+ * (ConfigStore.update is serialized). A failure is logged, not thrown:
+ * the live setting already applied, and refusing the toggle because the
+ * file could not be written would be worse than losing persistence once.
+ */
+async function persistConfig(mutate: (current: AppConfig) => AppConfig): Promise<void> {
+  try {
+    await getConfigStore().update(mutate)
+  } catch (err) {
+    logger.error({ component: "main", event: "config.persist-failed", error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
 ipcMain.handle("get-operator-connection-info", () => {
   if (!appCoreHandle || !currentTokens) {
     throw new Error("services are not started yet")
@@ -1156,6 +1137,36 @@ ipcMain.handle("import-media-file", async () => {
 })
 
 /**
+ * ARCHITECTURE.md section 112: a file dragged from Windows Explorer onto
+ * the dashboard. The preload turns the dropped File into its path with
+ * webUtils.getPathForFile() (the renderer itself never sees it) and sends
+ * it here, where it is checked before any filesystem access, then joins
+ * the exact same pending-import -> title confirmation -> copy flow as the
+ * file picker. Content, size and title are validated by MediaLibrary.
+ */
+ipcMain.handle("import-media-drop", async (_event, droppedPath: unknown) => {
+  if (!mediaLibrary) {
+    throw new Error("media library is not initialized yet")
+  }
+  const check = checkDroppedPath(droppedPath)
+  if (!check.ok) {
+    logger.info({ component: "main", event: "media.drop-rejected", metadata: { reason: check.error } })
+    return { canceled: false as const, error: check.error }
+  }
+  let isFile = false
+  try {
+    isFile = (await stat(check.filePath)).isFile()
+  } catch {
+    isFile = false
+  }
+  if (!isFile) {
+    return { canceled: false as const, error: "That item is not a file (folders can't be imported)." }
+  }
+  pendingMediaImport = { filePath: check.filePath, kind: check.kind }
+  return { canceled: false as const, needsTitle: true as const, suggestedTitle: deriveTitleFromFilename(check.filePath) }
+})
+
+/**
  * ARCHITECTURE.md section 74: completes the import started by
  * import-media-file above, once the operator has confirmed or edited
  * the suggested title in the renderer's own dialog. Still the only place
@@ -1170,18 +1181,29 @@ ipcMain.handle("confirm-media-import", async (_event, title: string) => {
   if (!pending) {
     return { error: "No import is pending — pick a file again." }
   }
-  pendingMediaImport = null
 
-  const trimmedTitle = title.trim()
+  // A title problem keeps the file pending so the operator can fix the
+  // title in the still-open dialog and confirm again. It used to clear the
+  // pending file first, so a duplicate title forced re-picking the file.
+  const trimmedTitle = typeof title === "string" ? title.trim() : ""
   if (!trimmedTitle) {
     return { error: "Title cannot be empty." }
   }
 
   try {
     const cue = await mediaLibrary.import(pending.filePath, trimmedTitle, pending.kind)
+    pendingMediaImport = null
     logger.info({ component: "main", event: "media.imported", metadata: { id: cue.id, kind: cue.kind } })
     return { cue }
   } catch (err) {
+    const retryable = err instanceof MediaImportError && isTitleErrorCode(err.code)
+    if (!retryable) pendingMediaImport = null
+    logger.warn({
+      component: "main",
+      event: "media.import-failed",
+      metadata: { code: err instanceof MediaImportError ? err.code : "io", retryable },
+      error: err instanceof Error ? err.message : String(err),
+    })
     return { error: err instanceof Error ? err.message : String(err) }
   }
 })
@@ -1544,7 +1566,14 @@ app.whenReady().then(async () => {
   })
   mediaLibrary = new MediaLibrary({ mediaDir: join(app.getPath("userData"), "media") })
   try {
-    await mediaLibrary.load()
+    const report = await mediaLibrary.load()
+    if (report.quarantinedPath || report.skipped > 0) {
+      logger.warn({
+        component: "main",
+        event: "media-library.load-recovered",
+        metadata: { loaded: report.loaded, skipped: report.skipped, quarantined: report.quarantinedPath !== null },
+      })
+    }
   } catch (err) {
     // A corrupt/unreadable metadata file must not block startup — the
     // operator can always re-import (same reasoning as the setup-time
@@ -1563,7 +1592,14 @@ app.whenReady().then(async () => {
   // depends on it).
   sessionHistoryStore = new SessionHistoryStore({ historyDir: app.getPath("userData") })
   try {
-    await sessionHistoryStore.load()
+    const report = await sessionHistoryStore.load()
+    if (report.quarantinedPath || report.skipped > 0) {
+      logger.warn({
+        component: "main",
+        event: "session-history.load-recovered",
+        metadata: { loaded: report.loaded, skipped: report.skipped, quarantined: report.quarantinedPath !== null },
+      })
+    }
   } catch (err) {
     logger.warn({
       component: "main",

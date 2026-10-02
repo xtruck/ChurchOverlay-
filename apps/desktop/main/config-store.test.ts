@@ -506,3 +506,41 @@ test("ConfigStore: a corrupt stored overlayStyle degrades field-by-field instead
     assert.equal(s?.brand.logo.version, 0)
   })
 })
+
+test("ConfigStore: concurrent saves in the same millisecond all succeed and the last one wins", async () => {
+  await withTempDir(async (dir) => {
+    const store = new ConfigStore(join(dir, "config.json"), new FakeSecretCodec())
+    const saves = []
+    for (let i = 0; i < 20; i++) saves.push(store.save({ ...SAMPLE_CONFIG, organizationName: `Church ${i}` }))
+    await Promise.all(saves)
+
+    assert.equal((await store.load())?.organizationName, "Church 19")
+    assert.deepEqual(await readdir(dir), ["config.json"])
+  })
+})
+
+test("ConfigStore: update() calls in parallel each keep their own field (no lost update)", async () => {
+  await withTempDir(async (dir) => {
+    const store = new ConfigStore(join(dir, "config.json"), new FakeSecretCodec())
+    await store.save(SAMPLE_CONFIG)
+    await Promise.all([
+      store.update((c) => ({ ...c, displayMode: "french" })),
+      store.update((c) => ({ ...c, uiLanguage: "fr" })),
+      store.update((c) => ({ ...c, verseConfirmationMode: "review" })),
+      store.update((c) => ({ ...c, organizationName: "Grace" })),
+    ])
+    const loaded = await store.load()
+    assert.equal(loaded?.displayMode, "french")
+    assert.equal(loaded?.uiLanguage, "fr")
+    assert.equal(loaded?.verseConfirmationMode, "review")
+    assert.equal(loaded?.organizationName, "Grace")
+  })
+})
+
+test("ConfigStore: update() on a missing config returns null and creates nothing", async () => {
+  await withTempDir(async (dir) => {
+    const store = new ConfigStore(join(dir, "config.json"), new FakeSecretCodec())
+    assert.equal(await store.update((c) => c), null)
+    assert.deepEqual(await readdir(dir), [])
+  })
+})

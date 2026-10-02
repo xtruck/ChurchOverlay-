@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron"
+import { contextBridge, ipcRenderer, webUtils } from "electron"
 
 /**
  * The one bridge between the fully-sandboxed dashboard renderer and the
@@ -55,6 +55,18 @@ contextBridge.exposeInMainWorld("churchOverlay", {
   importMediaFile: () => ipcRenderer.invoke("import-media-file"),
   confirmMediaImport: (title: string) => ipcRenderer.invoke("confirm-media-import", title),
   cancelMediaImport: () => ipcRenderer.invoke("cancel-media-import"),
+  // ARCHITECTURE.md section 112: drag-and-drop import. The File's path is
+  // resolved here, in the preload, and goes straight to the main process;
+  // the renderer only ever gets back the suggested title, as with the picker.
+  importDroppedMedia: (file: File) => {
+    let droppedPath = ""
+    try {
+      droppedPath = webUtils.getPathForFile(file)
+    } catch {
+      droppedPath = ""
+    }
+    return ipcRenderer.invoke("import-media-drop", droppedPath)
+  },
   listMediaCues: () => ipcRenderer.invoke("list-media-cues"),
   listGlossaryTerms: () => ipcRenderer.invoke("list-glossary-terms"),
   renameMediaCue: (id: string, newTitle: string) => ipcRenderer.invoke("rename-media-cue", id, newTitle),

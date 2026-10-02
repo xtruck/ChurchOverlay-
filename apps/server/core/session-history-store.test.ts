@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { SessionHistoryStore } from "./session-history-store"
@@ -83,5 +83,66 @@ test("SessionHistoryStore: is bounded — recording past the cap rolls off the o
     assert.equal(entries.length, 50)
     assert.equal(entries[0]?.timestamp, 0)
     assert.equal(entries[49]?.timestamp, 49)
+  })
+})
+
+// ---- Hardening (ARCHITECTURE.md section 112) ------------------------------
+
+test("SessionHistoryStore: concurrent record() calls in the same millisecond lose nothing", async () => {
+  await withTempDir(async (historyDir) => {
+    const store = new SessionHistoryStore({ historyDir })
+    const writes = []
+    for (let i = 1; i <= 25; i++) {
+      writes.push(store.record(makeVerse({ reference: { book: "psalm", chapter: 119, verse: i } }), 1_000))
+    }
+    await Promise.all(writes)
+
+    const reloaded = new SessionHistoryStore({ historyDir })
+    await reloaded.load()
+    assert.equal(reloaded.getEntries().length, 25)
+    const debris = (await readdir(historyDir)).filter((f) => f.endsWith(".tmp"))
+    assert.deepEqual(debris, [])
+  })
+})
+
+test("SessionHistoryStore: a corrupt file is quarantined, not overwritten by the next record()", async () => {
+  await withTempDir(async (historyDir) => {
+    await writeFile(join(historyDir, "session-history.json"), "[{ truncated", "utf8")
+
+    const store = new SessionHistoryStore({ historyDir })
+    const report = await store.load()
+    assert.ok(report.quarantinedPath)
+    await store.record(makeVerse(), 1)
+    assert.equal(await readFile(report.quarantinedPath as string, "utf8"), "[{ truncated")
+    assert.equal(store.getEntries().length, 1)
+  })
+})
+
+test("SessionHistoryStore: load() keeps valid entries, counts and drops malformed ones", async () => {
+  await withTempDir(async (historyDir) => {
+    const good = { reference: { book: "john", chapter: 3, verse: 16 }, text: "t", translation: "kjv", timestamp: 5 }
+    const entries = [good, { nope: true }, { ...good, timestamp: "yesterday" }, { ...good, reference: { book: "john", chapter: Infinity, verse: 1 } }]
+    await writeFile(join(historyDir, "session-history.json"), JSON.stringify(entries).replace("Infinity", "1e999"), "utf8")
+
+    const store = new SessionHistoryStore({ historyDir })
+    const report = await store.load()
+    assert.deepEqual(report, { loaded: 1, skipped: 3, quarantinedPath: null })
+  })
+})
+
+test("SessionHistoryStore: a failed write rejects but keeps later records working", async () => {
+  await withTempDir(async (historyDir) => {
+    const store = new SessionHistoryStore({ historyDir })
+    await mkdir(join(historyDir, "session-history.json"))
+    await writeFile(join(historyDir, "session-history.json", "blocker"), "x")
+    await assert.rejects(() => store.record(makeVerse(), 1))
+
+    await rm(join(historyDir, "session-history.json"), { recursive: true })
+    await store.record(makeVerse(), 2)
+    const reloaded = new SessionHistoryStore({ historyDir })
+    await reloaded.load()
+    assert.equal(reloaded.getEntries().length, 2)
+    const debris = (await readdir(historyDir)).filter((f) => f.endsWith(".tmp"))
+    assert.deepEqual(debris, [])
   })
 })

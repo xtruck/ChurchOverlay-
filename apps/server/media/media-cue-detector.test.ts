@@ -1,3 +1,4 @@
+import { fakeMediaBytes } from "./media-test-fixtures"
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
@@ -19,7 +20,7 @@ async function withLibrary(fn: (library: MediaLibrary, sourceDir: string) => Pro
 test("MediaCueDetector: matches a spoken exact title, case-insensitively", async () => {
   await withLibrary(async (library, dir) => {
     const source = join(dir, "welcome.png")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await library.import(source, "Welcome Slide", "image")
 
     const detector = new MediaCueDetector(library)
@@ -31,7 +32,7 @@ test("MediaCueDetector: matches a spoken exact title, case-insensitively", async
 test("MediaCueDetector: a close-but-not-exact phrase does not trigger", async () => {
   await withLibrary(async (library, dir) => {
     const source = join(dir, "welcome.png")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     await library.import(source, "Welcome Slide", "image")
 
     const detector = new MediaCueDetector(library)
@@ -42,7 +43,7 @@ test("MediaCueDetector: a close-but-not-exact phrase does not trigger", async ()
 test("MediaCueDetector: matches multiple whitespace-normalized correctly", async () => {
   await withLibrary(async (library, dir) => {
     const source = join(dir, "welcome.png")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await library.import(source, "Welcome   Slide", "image")
 
     const detector = new MediaCueDetector(library)
@@ -61,8 +62,8 @@ test("MediaCueDetector: matches every cue whose title appears in the transcript"
   await withLibrary(async (library, dir) => {
     const sourceA = join(dir, "a.png")
     const sourceB = join(dir, "b.mp3")
-    await writeFile(sourceA, "a")
-    await writeFile(sourceB, "b")
+    await writeFile(sourceA, fakeMediaBytes(sourceA))
+    await writeFile(sourceB, fakeMediaBytes(sourceB))
     const cueA = await library.import(sourceA, "Offering Slide", "image")
     const cueB = await library.import(sourceB, "Closing Song", "audio")
 
@@ -81,7 +82,7 @@ test("MediaCueDetector: reflects newly-imported cues on the next detect() call (
     assert.deepEqual(detector.detect("Show the baptism video."), [])
 
     const source = join(dir, "baptism.mp4")
-    await writeFile(source, "x")
+    await writeFile(source, fakeMediaBytes(source))
     const cue = await library.import(source, "Baptism Video", "video")
 
     assert.deepEqual(detector.detect("Show the baptism video."), [cue])
