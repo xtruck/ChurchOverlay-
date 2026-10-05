@@ -195,6 +195,11 @@ as a bug.
   up. For a live, always-on broadcast overlay, giving up permanently after N attempts
   would be worse than a bounded-but-endless retry.
 
+- The CI dependency audit (`scripts/audit-gate.mjs`) allowlists two high-severity advisories
+  with no patched release: `braces` (GHSA-vfj7-8cjw-p6xm, via the optional NDI module's
+  build-time globbing) and `http-cache-semantics` (GHSA-ch52-4w7c-c8xp, via `got` downloads).
+  Every other high/critical advisory still fails the build. Remove an entry when a fix ships.
+
 ## Reporting a problem
 
 This is a small, single-operator application with no network-facing attack surface
