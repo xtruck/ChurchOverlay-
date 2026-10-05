@@ -575,8 +575,14 @@
            ever" instead of just today's. Read-only, nothing here is
            editable. -->
       <div id="view-history" class="view">
-        <div class="card glass" style="height: 100%">
-          <div class="card-title" data-i18n="history.title">History</div>
+        <div class="view-head">
+          <div>
+            <span class="eyebrow" data-i18n="history.eyebrow">Archive</span>
+            <h2 class="view-title" data-i18n="history.title">History</h2>
+            <p class="view-sub" data-i18n="history.sub">Every verse shown, across every service.</p>
+          </div>
+        </div>
+        <div class="card glass history-card">
           <div id="history-summary" class="history-summary"></div>
           <div class="history-columns">
             <section>
@@ -598,7 +604,7 @@
            offer an editable text field, hence this in-app one — pre-filled
            with the suggested title, shown after the file picker returns
            and before the file is actually copied into the library. -->
-      <div id="media-title-modal" class="modal-overlay" style="display: none">
+      <div id="media-title-modal" class="modal-overlay" style="display: none" role="dialog" aria-modal="true" aria-labelledby="media-title-modal-heading">
         <div class="modal-card glass">
           <div id="media-title-modal-heading" class="card-title" data-i18n="media.titleModal.heading">Name this media</div>
           <p class="settings-hint" data-i18n="media.titleModal.hint">
@@ -620,10 +626,10 @@
            vs. only "verset suivant" being recognized, section 72.2).
            This is a reference, not a settings screen — nothing here is
            editable, it just answers "what can I say?" on demand. -->
-      <div id="voice-commands-modal" class="modal-overlay" style="display: none">
+      <div id="voice-commands-modal" class="modal-overlay" style="display: none" role="dialog" aria-modal="true" aria-labelledby="voice-commands-heading">
         <div class="modal-card glass voice-commands-modal-card">
           <div class="media-header">
-            <div class="card-title" data-i18n="voiceCommands.heading">Voice Commands</div>
+            <div id="voice-commands-heading" class="card-title" data-i18n="voiceCommands.heading">Voice Commands</div>
             <button type="button" id="voice-commands-close-btn" class="btn-secondary btn-small" data-i18n="voiceCommands.closeButton">Close</button>
           </div>
           <div class="voice-commands-body">
@@ -653,6 +659,15 @@
         </div>
       </div>
 
+      <!-- Command palette: every operator action reachable from the keyboard. -->
+      <div id="palette-modal" class="modal-overlay palette-overlay" style="display: none" role="dialog" aria-modal="true" data-i18n-aria-label="palette.title">
+        <div class="palette-card glass">
+          <input id="palette-input" type="text" role="combobox" aria-expanded="true" aria-controls="palette-list" aria-autocomplete="list" autocomplete="off" spellcheck="false" data-i18n-placeholder="palette.placeholder" data-i18n-aria-label="palette.title" />
+          <ul id="palette-list" class="palette-list" role="listbox"></ul>
+          <div class="palette-foot" data-i18n="palette.footer">↑↓ navigate · Enter run · Esc close</div>
+        </div>
+      </div>
+
       <!-- Keyboard reference. Like the voice-commands modal, read-only. -->
       <div id="shortcuts-modal" class="modal-overlay" style="display: none" role="dialog" aria-modal="true" aria-labelledby="shortcuts-heading">
         <div class="modal-card glass shortcuts-modal-card">
@@ -668,6 +683,7 @@
             <div class="shortcuts-row"><span data-i18n="shortcuts.recall">Re-show a recent verse</span><span><kbd>Alt</kbd> <kbd>1</kbd>–<kbd>9</kbd></span></div>
             <div class="shortcuts-row"><span data-i18n="shortcuts.rundown">Next / previous rundown scene (clicker)</span><span><kbd>PgDn</kbd> · <kbd>PgUp</kbd></span></div>
             <div class="shortcuts-row"><span data-i18n="shortcuts.views">Switch view</span><span><kbd>Ctrl</kbd> <kbd>1</kbd>–<kbd>6</kbd></span></div>
+            <div class="shortcuts-row"><span data-i18n="palette.title">Command palette</span><span><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>P</kbd></span></div>
             <div class="shortcuts-row"><span data-i18n="shortcuts.help">Show this list</span><span><kbd>?</kbd></span></div>
           </div>
         </div>
@@ -761,6 +777,13 @@
       </div>
 
       <div id="view-settings" class="view">
+        <div class="view-head">
+          <div>
+            <span class="eyebrow" data-i18n="settings.eyebrow">Preferences</span>
+            <h2 class="view-title" data-i18n="settings.title">Settings</h2>
+            <p class="view-sub" data-i18n="settings.sub">Transcription, offline backup, display and remote access.</p>
+          </div>
+        </div>
         <div class="settings-grid">
           <!-- Which provider carries live audio (server/asr/asr-strategy.ts). -->
           <div class="card glass">
@@ -777,9 +800,14 @@
           <div class="card glass" id="local-asr-card">
             <h2 class="card-title" data-i18n="localAsr.title">Offline backup</h2>
             <p class="settings-hint" data-i18n="localAsr.hint">If the internet drops, transcription continues on this computer. Slower and a little less accurate than the cloud, but the service keeps going.</p>
+            <div id="local-asr-engine-toggle" class="segmented" role="group" data-i18n-aria-label="localAsr.engineLabel">
+              <button type="button" data-local-engine="whisper.cpp" class="active" data-i18n="localAsr.engineCpp">Lightweight (whisper.cpp)</button>
+              <button type="button" data-local-engine="faster-whisper" data-i18n="localAsr.engineFw">Accurate (faster-whisper)</button>
+            </div>
+            <p id="local-asr-engine-hint" class="settings-hint" style="margin: var(--space-2) 0 var(--space-3)" data-i18n="localAsr.engineHintCpp"></p>
             <div id="local-asr-model-toggle" class="segmented" role="group" data-i18n-aria-label="localAsr.modelLabel">
-              <button type="button" data-local-model="base" class="active" data-i18n="localAsr.modelBase">Standard (142 MB)</button>
-              <button type="button" data-local-model="small" data-i18n="localAsr.modelSmall">More accurate (466 MB)</button>
+              <button type="button" data-local-model="base" class="active" data-i18n="localAsr.modelBase">Standard</button>
+              <button type="button" data-local-model="small" data-i18n="localAsr.modelSmall">More accurate</button>
             </div>
             <p id="local-asr-status" class="settings-hint" style="margin: var(--space-3) 0" role="status"></p>
             <progress id="local-asr-progress" max="1" value="0" style="display: none; width: 100%; margin-bottom: var(--space-3)"></progress>

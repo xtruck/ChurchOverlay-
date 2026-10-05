@@ -22,6 +22,7 @@ import { ASR_STRATEGIES, asrChain, deepgramLanguageFor, planAsr, type AsrProvide
 import { LocalWhisperProvider } from "../../server/asr/local-whisper-provider"
 import { WhisperServerProcess } from "../../server/asr/local-whisper-server"
 import { LocalAsrInstaller, LOCAL_MODELS, type LocalAsrInstallState, type LocalModelId } from "./local-asr-installer"
+import { FasterWhisperInstaller, type FasterWhisperInstallState } from "./faster-whisper-installer"
 import { SermonNotesGenerator } from "../../server/ai/sermon-notes-generator"
 import { buildServiceSummaryInput, SERVICE_SUMMARY_SYSTEM_PROMPT } from "../../server/ai/service-summary"
 import { MediaImportError, MediaLibrary, isTitleErrorCode } from "../../server/media/media-library"
@@ -94,6 +95,9 @@ let deepgramAsr: DeepgramProvider | null = null
 let localAsr: LocalWhisperProvider | null = null
 let localWhisperServer: WhisperServerProcess | null = null
 let localAsrInstaller: LocalAsrInstaller | null = null
+let fasterWhisperInstaller: FasterWhisperInstaller | null = null
+
+type LocalEngine = "whisper.cpp" | "faster-whisper"
 
 function setAsrLanguage(mode: DisplayMode): void {
   groqAsr?.setLanguage(whisperLanguageFor(mode))
@@ -372,12 +376,23 @@ async function startServices(
   // Offline last resort, only when the operator enabled it AND the engine
   // is actually installed — never a surprise download at service start.
   const localModel: LocalModelId = config.localAsrModel ?? "base"
-  const localStatus = config.localAsrEnabled ? await getLocalAsrInstaller().status(localModel) : null
+  const localEngine: LocalEngine = config.localAsrEngine ?? "whisper.cpp"
+  const localStatus = config.localAsrEnabled ? await getLocalEngineStatus(localEngine, localModel) : null
   await localWhisperServer?.stop()
   localWhisperServer = null
   localAsr = null
   if (localStatus?.state === "ready") {
-    localWhisperServer = new WhisperServerProcess({ serverPath: localStatus.serverPath, modelPath: localStatus.modelPath, logger })
+    localWhisperServer =
+      "pythonPath" in localStatus
+        ? new WhisperServerProcess({
+            serverPath: localStatus.pythonPath,
+            modelPath: localStatus.modelDir,
+            buildArgs: (port, threads) => [localStatus.sidecarPath, "--model-dir", localStatus.modelDir, "--port", String(port), "--threads", String(threads)],
+            // First start imports numpy/ctranslate2 and runs a warm-up inference; antivirus scans make it slower.
+            readyTimeoutMs: 180_000,
+            logger,
+          })
+        : new WhisperServerProcess({ serverPath: localStatus.serverPath, modelPath: localStatus.modelPath, logger })
     localAsr = new LocalWhisperProvider({ server: localWhisperServer, language: whisperLanguageFor(config.displayMode), logger })
     // Warm up now, in the background: loading the model takes seconds, and
     // the moment the internet drops is exactly when there are none to spare.
@@ -587,6 +602,7 @@ async function startServices(
       && left.asrStrategy === right.asrStrategy
       && left.localAsrEnabled === right.localAsrEnabled
       && left.localAsrModel === right.localAsrModel
+      && left.localAsrEngine === right.localAsrEngine
       // ARCHITECTURE.md section 108: overlayTemplate is baked into
       // AppCore's own branding:update sync-on-connect broadcast exactly
       // like organizationName/accentColor above, so it needs the same
@@ -694,6 +710,7 @@ function currentAsrStatus(): {
   autoGain: boolean
   localEnabled: boolean
   localModel: LocalModelId
+  localEngine: LocalEngine
   localActive: boolean
 } {
   return {
@@ -703,6 +720,7 @@ function currentAsrStatus(): {
     autoGain: activeConfig?.autoGain ?? true,
     localEnabled: activeConfig?.localAsrEnabled ?? false,
     localModel: activeConfig?.localAsrModel ?? "base",
+    localEngine: activeConfig?.localAsrEngine ?? "whisper.cpp",
     localActive: localAsr !== null,
   }
 }
@@ -712,22 +730,53 @@ function getLocalAsrInstaller(): LocalAsrInstaller {
   return localAsrInstaller
 }
 
+function getFasterWhisperInstaller(): FasterWhisperInstaller {
+  if (!fasterWhisperInstaller) {
+    fasterWhisperInstaller = new FasterWhisperInstaller({
+      rootDir: join(app.getPath("userData"), "faster-whisper"),
+      // dist/apps/desktop/main -> app root; packaged builds ship the script via electron-builder "files".
+      sidecarSource: join(__dirname, "..", "..", "..", "..", "apps", "server", "asr", "faster-whisper-sidecar", "server.py"),
+    })
+  }
+  return fasterWhisperInstaller
+}
+
 function toModelId(value: unknown): LocalModelId {
   return value === "small" ? "small" : "base"
 }
 
-ipcMain.handle("get-local-asr-status", async (_event, model: unknown) => {
+function toEngine(value: unknown): LocalEngine {
+  return value === "faster-whisper" ? "faster-whisper" : "whisper.cpp"
+}
+
+type LocalEngineState = LocalAsrInstallState | FasterWhisperInstallState
+
+function getLocalEngineStatus(engine: LocalEngine, model: LocalModelId): Promise<LocalEngineState> {
+  return engine === "faster-whisper" ? getFasterWhisperInstaller().status(model) : getLocalAsrInstaller().status(model)
+}
+
+/** Approximate download size shown before the operator commits (engine + model). */
+const LOCAL_DOWNLOAD_MB: Readonly<Record<LocalEngine, Readonly<Record<LocalModelId, number>>>> = {
+  "whisper.cpp": { base: LOCAL_MODELS.base.approxMb, small: LOCAL_MODELS.small.approxMb },
+  "faster-whisper": { base: 330, small: 640 },
+}
+
+ipcMain.handle("get-local-asr-status", async (_event, model: unknown, engine: unknown) => {
   const id = toModelId(model ?? activeConfig?.localAsrModel)
-  return { install: await getLocalAsrInstaller().status(id), sizeMb: LOCAL_MODELS[id].approxMb, asr: currentAsrStatus() }
+  const kind = toEngine(engine ?? activeConfig?.localAsrEngine)
+  return { install: await getLocalEngineStatus(kind, id), sizeMb: LOCAL_DOWNLOAD_MB[kind][id], engine: kind, asr: currentAsrStatus() }
 })
 
 /** Downloads the engine + model, streaming progress to the dashboard. */
-ipcMain.handle("install-local-asr", async (event, model: unknown) => {
+ipcMain.handle("install-local-asr", async (event, model: unknown, engine: unknown) => {
   const id = toModelId(model)
+  const kind = toEngine(engine)
   const sender = event.sender
-  const result: LocalAsrInstallState = await getLocalAsrInstaller().install(id, (state) => {
+  const onProgress = (state: LocalEngineState) => {
     if (!sender.isDestroyed()) sender.send("local-asr-progress", state)
-  })
+  }
+  const result: LocalEngineState =
+    kind === "faster-whisper" ? await getFasterWhisperInstaller().install(id, onProgress) : await getLocalAsrInstaller().install(id, onProgress)
   return result
 })
 
@@ -738,6 +787,7 @@ ipcMain.handle("set-local-asr", async (_event, payload: unknown) => {
     ...existing,
     localAsrEnabled: body.enabled === true,
     localAsrModel: toModelId(body.model ?? existing.localAsrModel),
+    localAsrEngine: toEngine(body.engine ?? existing.localAsrEngine),
   }))
   if (!updated) throw new Error("Services are not configured yet.")
   await startServices(updated)

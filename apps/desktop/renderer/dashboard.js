@@ -354,20 +354,52 @@
   const toastRegionEl = document.getElementById("toast-region")
   const MAX_TOASTS = 3
   const TOAST_LIFETIME_MS = 4500
+  // Errors stay long enough to be read and announce assertively; hovering or
+  // focusing a toast pauses its timer; every toast can be dismissed.
+  const TOAST_ERROR_LIFETIME_MS = 9000
   function showToast(text, kind) {
     if (!toastRegionEl || !text) return
     const existing = Array.from(toastRegionEl.children).find((el) => el.dataset.text === text)
-    if (existing) existing.remove()
+    if (existing) {
+      clearTimeout(existing._timer)
+      existing.remove()
+    }
     const toast = document.createElement("div")
+    const isError = kind === "error"
     toast.className = "toast toast-" + (kind || "info")
     toast.dataset.text = text
-    toast.textContent = text
+    toast.setAttribute("role", isError ? "alert" : "status")
+    const message = document.createElement("span")
+    message.className = "toast-message"
+    message.textContent = text
+    const close = document.createElement("button")
+    close.type = "button"
+    close.className = "toast-close"
+    close.textContent = "\u00d7"
+    close.setAttribute("aria-label", t("toast.dismiss"))
+    toast.append(message, close)
     toastRegionEl.appendChild(toast)
-    while (toastRegionEl.children.length > MAX_TOASTS) toastRegionEl.firstElementChild.remove()
-    setTimeout(() => {
+    while (toastRegionEl.children.length > MAX_TOASTS) {
+      const oldest = toastRegionEl.firstElementChild
+      clearTimeout(oldest._timer)
+      oldest.remove()
+    }
+    const lifetime = isError ? TOAST_ERROR_LIFETIME_MS : TOAST_LIFETIME_MS
+    const dismiss = () => {
+      clearTimeout(toast._timer)
       toast.classList.add("leaving")
       setTimeout(() => toast.remove(), 200)
-    }, TOAST_LIFETIME_MS)
+    }
+    const arm = () => {
+      clearTimeout(toast._timer)
+      toast._timer = setTimeout(dismiss, lifetime)
+    }
+    close.addEventListener("click", dismiss)
+    toast.addEventListener("mouseenter", () => clearTimeout(toast._timer))
+    toast.addEventListener("mouseleave", arm)
+    toast.addEventListener("focusin", () => clearTimeout(toast._timer))
+    toast.addEventListener("focusout", arm)
+    arm()
   }
 
   // ARCHITECTURE.md section 65.7: dashboard-only feed of AI-generated
@@ -655,12 +687,22 @@
 
   // ---- Offline backup (Settings) -----------------------------------------
   const localAsrModelToggleEl = document.getElementById("local-asr-model-toggle")
+  const localAsrEngineToggleEl = document.getElementById("local-asr-engine-toggle")
+  const localAsrEngineHintEl = document.getElementById("local-asr-engine-hint")
   const localAsrStatusEl = document.getElementById("local-asr-status")
   const localAsrProgressEl = document.getElementById("local-asr-progress")
   const localAsrInstallBtn = document.getElementById("local-asr-install-btn")
   const localAsrEnabledEl = document.getElementById("local-asr-enabled")
   let localModel = "base"
+  let localEngine = "whisper.cpp"
   let localInstall = null
+  let localSizeMb = 0
+
+  function renderLocalEngineHint() {
+    const key = localEngine === "faster-whisper" ? "localAsr.engineHintFw" : "localAsr.engineHintCpp"
+    localAsrEngineHintEl.dataset.i18n = key // keeps the hint right when the UI language changes
+    localAsrEngineHintEl.textContent = t(key)
+  }
 
   function renderLocalAsr(install, asr) {
     localInstall = install || localInstall
@@ -670,11 +712,17 @@
         localModel = asr.localModel
         setActiveOption(localAsrModelToggleEl, "localModel", localModel)
       }
+      if (asr.localEngine && asr.localEngine !== localEngine) {
+        localEngine = asr.localEngine
+        setActiveOption(localAsrEngineToggleEl, "localEngine", localEngine)
+        renderLocalEngineHint()
+      }
     }
     const state = localInstall ? localInstall.state : "not-installed"
     localAsrProgressEl.style.display = state === "downloading" ? "block" : "none"
     localAsrInstallBtn.style.display = state === "ready" || state === "unsupported" ? "none" : ""
     localAsrInstallBtn.disabled = state === "downloading"
+    localAsrInstallBtn.textContent = localSizeMb ? t("localAsr.installSize", { size: localSizeMb }) : t("localAsr.install")
     localAsrEnabledEl.disabled = state !== "ready"
     if (state === "downloading") {
       localAsrProgressEl.value = localInstall.progress || 0
@@ -695,8 +743,11 @@
   function refreshLocalAsr() {
     if (!window.churchOverlay.getLocalAsrStatus) return
     window.churchOverlay
-      .getLocalAsrStatus(localModel)
-      .then((status) => renderLocalAsr(status.install, status.asr))
+      .getLocalAsrStatus(localModel, localEngine)
+      .then((status) => {
+        localSizeMb = status.sizeMb || 0
+        renderLocalAsr(status.install, status.asr)
+      })
       .catch(() => {})
   }
 
@@ -710,10 +761,18 @@
     refreshLocalAsr()
   })
 
+  wireOptionGroup(localAsrEngineToggleEl, "localEngine", (engine) => {
+    localEngine = engine
+    localInstall = null
+    renderLocalEngineHint()
+    refreshLocalAsr()
+  })
+  renderLocalEngineHint()
+
   localAsrInstallBtn.addEventListener("click", () => {
     renderLocalAsr({ state: "downloading", step: "engine", progress: 0 }, null)
     window.churchOverlay
-      .installLocalAsr(localModel)
+      .installLocalAsr(localModel, localEngine)
       .then((state) => {
         renderLocalAsr(state, null)
         log(t(state.state === "ready" ? "log.localAsrInstalled" : "log.localAsrInstallFailed"), state.state === "ready" ? "received" : "error")
@@ -726,7 +785,7 @@
     localAsrEnabledEl.disabled = true
     localAsrStatusEl.textContent = t("asrSettings.restarting")
     window.churchOverlay
-      .setLocalAsr(enabled, localModel)
+      .setLocalAsr(enabled, localModel, localEngine)
       .then((status) => {
         renderAsrStatus(status)
         renderLocalAsr(null, status)
@@ -2308,7 +2367,8 @@
   // doesn't require the book name to start with a capital letter), since
   // rejecting a typo-free field here isn't a security boundary.
   function parseReference(text) {
-    const match = /^\s*((?:[123]\s+)?[A-Za-z]+)\s+(\d{1,3}):(\d{1,3})\s*$/.exec(text)
+    // Unicode letters so "Gen\u00e8se 1:1" and multi-word names ("Song of Solomon 2:1") parse; the server re-validates.
+    const match = /^\s*((?:[123]\s*)?\p{L}[\p{L}.'\u2019 ]*?)\s+(\d{1,3}):(\d{1,3})\s*$/u.exec(text)
     if (!match) return null
     return {
       book: match[1].trim().replace(/\s+/g, " ").toLowerCase(),
@@ -2366,7 +2426,21 @@
     log(t("log.sentVerseClear"), "sent")
   })
 
+  function releaseMic() {
+    if (mediaStream) {
+      mediaStream.getTracks().forEach((track) => track.stop())
+      mediaStream = null
+    }
+    if (audioContext) {
+      audioContext.close().catch(() => {})
+      audioContext = null
+    }
+  }
+
   async function startMic() {
+    // Disable at once: a double click used to open two streams.
+    if (micStartBtn.disabled) return
+    micStartBtn.disabled = true
     try {
       // ARCHITECTURE.md section 8.3's recommended baseline.
       mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -2374,17 +2448,28 @@
       })
     } catch (err) {
       log(t("log.micPermissionDenied", { error: err.message }), "error")
+      micStartBtn.disabled = false
       return
     }
 
-    // Requesting the canonical sample rate directly lets the browser
-    // handle resampling from the device's native rate (ARCHITECTURE.md
-    // section 8.1) — this codebase does not implement its own resampler.
-    audioContext = new AudioContext({ sampleRate: CANONICAL_SAMPLE_RATE })
-    await audioContext.audioWorklet.addModule("./pcm-worklet-processor.js")
-
-    const source = audioContext.createMediaStreamSource(mediaStream)
-    const workletNode = new AudioWorkletNode(audioContext, "pcm-capture-processor")
+    let source
+    let workletNode
+    try {
+      // Requesting the canonical sample rate directly lets the browser
+      // handle resampling from the device's native rate (ARCHITECTURE.md
+      // section 8.1) — this codebase does not implement its own resampler.
+      audioContext = new AudioContext({ sampleRate: CANONICAL_SAMPLE_RATE })
+      await audioContext.audioWorklet.addModule("./pcm-worklet-processor.js")
+      source = audioContext.createMediaStreamSource(mediaStream)
+      workletNode = new AudioWorkletNode(audioContext, "pcm-capture-processor")
+    } catch (err) {
+      // Any failure after getUserMedia used to leave the microphone open and
+      // the start button dead; release everything and let the operator retry.
+      releaseMic()
+      micStartBtn.disabled = false
+      log(t("log.micPermissionDenied", { error: err.message }), "error")
+      return
+    }
 
     workletNode.port.onmessage = (event) => {
       const { samples, sequence } = event.data
@@ -2624,6 +2709,194 @@
     return Array.from(document.querySelectorAll(".modal-overlay")).some((el) => el.style.display !== "none")
   }
 
+  // Modal accessibility, shared by every .modal-overlay: focus moves into the
+  // dialog when it opens and returns to the opener when it closes, Tab stays
+  // inside it, and Escape triggers its own cancel/close button (so each
+  // dialog's own cleanup still runs).
+  const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  const modalOpeners = new WeakMap()
+  function openModalEl() {
+    return Array.from(document.querySelectorAll(".modal-overlay")).find((el) => el.style.display !== "none") || null
+  }
+  const modalObserver = new MutationObserver((records) => {
+    for (const record of records) {
+      const el = record.target
+      const open = el.style.display !== "none"
+      if (open && !modalOpeners.has(el)) {
+        modalOpeners.set(el, document.activeElement)
+        const first = el.querySelector("[autofocus], input, " + FOCUSABLE)
+        if (first && !el.contains(document.activeElement)) first.focus()
+      } else if (!open && modalOpeners.has(el)) {
+        const opener = modalOpeners.get(el)
+        modalOpeners.delete(el)
+        if (opener && typeof opener.focus === "function" && document.contains(opener)) opener.focus()
+      }
+    }
+  })
+  document.querySelectorAll(".modal-overlay").forEach((el) => modalObserver.observe(el, { attributes: true, attributeFilter: ["style"] }))
+  document.addEventListener(
+    "keydown",
+    (event) => {
+      const modal = openModalEl()
+      if (!modal) return
+      if (event.key === "Escape") {
+        const cancel = modal.querySelector('[id$="cancel-btn"], [id$="close-btn"]')
+        if (cancel) {
+          event.preventDefault()
+          event.stopPropagation()
+          cancel.click()
+        }
+      } else if (event.key === "Tab") {
+        const items = Array.from(modal.querySelectorAll(FOCUSABLE)).filter((el) => el.offsetParent !== null)
+        if (items.length === 0) return
+        const firstItem = items[0]
+        const lastItem = items[items.length - 1]
+        if (event.shiftKey && document.activeElement === firstItem) {
+          event.preventDefault()
+          lastItem.focus()
+        } else if (!event.shiftKey && (document.activeElement === lastItem || !modal.contains(document.activeElement))) {
+          event.preventDefault()
+          firstItem.focus()
+        }
+      }
+    },
+    true,
+  )
+
+  // ---- Command palette (Ctrl+Shift+P) -------------------------------------
+  // Every action here just activates the control the operator could click, so
+  // the palette can never do something the UI would not (same validation, same
+  // disabled states). Matching ignores case and accents ("francais" finds
+  // "français").
+  const paletteModalEl = document.getElementById("palette-modal")
+  const paletteInputEl = document.getElementById("palette-input")
+  const paletteListEl = document.getElementById("palette-list")
+  let paletteItems = []
+  let paletteIndex = 0
+
+  function foldText(text) {
+    return String(text).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+  }
+
+  function clickIf(el) {
+    if (el && !el.disabled) el.click()
+  }
+
+  function buildPaletteActions() {
+    const actions = []
+    for (const view of VIEW_ORDER) {
+      const label = document.querySelector("#nav-" + view + " span")
+      actions.push({
+        label: t("palette.goto", { view: label ? label.textContent.trim() : view }),
+        hint: "Ctrl+" + (VIEW_ORDER.indexOf(view) + 1),
+        run: () => showView(view),
+      })
+    }
+    actions.push(
+      { label: t("palette.micStart"), hint: "Ctrl+Shift+M", run: () => clickIf(micStartBtn) },
+      { label: t("palette.micStop"), hint: "Ctrl+Shift+M", run: () => clickIf(micStopBtn) },
+      { label: t("palette.clear"), hint: "Shift+Esc", run: () => clickIf(clearBtn) },
+      { label: t("palette.nextScene"), hint: "PgDn", run: () => clickIf(rundownNextBtn) },
+      { label: t("palette.prevScene"), hint: "PgUp", run: () => clickIf(rundownPrevBtn) },
+      { label: t("palette.modeEnglish"), run: () => clickIf(displayModeToggleEl.querySelector('[data-mode="english"]')) },
+      { label: t("palette.modeFrench"), run: () => clickIf(displayModeToggleEl.querySelector('[data-mode="french"]')) },
+      { label: t("palette.modeBilingual"), run: () => clickIf(displayModeToggleEl.querySelector('[data-mode="bilingual"]')) },
+      { label: t("palette.confirmAuto"), run: () => clickIf(verseConfirmationToggleEl.querySelector('[data-confirmation-mode="auto"]')) },
+      { label: t("palette.confirmReview"), run: () => clickIf(verseConfirmationToggleEl.querySelector('[data-confirmation-mode="review"]')) },
+      { label: t("palette.shortcuts"), hint: "?", run: () => openShortcuts() },
+      { label: t("palette.voiceCommands"), run: () => clickIf(voiceCommandsBtn) },
+    )
+    return actions
+  }
+
+  function renderPalette() {
+    const query = foldText(paletteInputEl.value.trim())
+    const all = buildPaletteActions()
+    paletteItems = query ? all.filter((a) => foldText(a.label).includes(query)) : all
+    paletteIndex = Math.min(paletteIndex, Math.max(0, paletteItems.length - 1))
+    paletteListEl.textContent = ""
+    if (paletteItems.length === 0) {
+      const empty = document.createElement("li")
+      empty.className = "palette-empty"
+      empty.textContent = t("palette.empty")
+      paletteListEl.appendChild(empty)
+      paletteInputEl.removeAttribute("aria-activedescendant")
+      return
+    }
+    paletteItems.forEach((item, i) => {
+      const li = document.createElement("li")
+      li.id = "palette-item-" + i
+      li.setAttribute("role", "option")
+      li.setAttribute("aria-selected", String(i === paletteIndex))
+      li.className = "palette-item" + (i === paletteIndex ? " active" : "")
+      const text = document.createElement("span")
+      text.textContent = item.label
+      li.appendChild(text)
+      if (item.hint) {
+        const kbd = document.createElement("kbd")
+        kbd.textContent = item.hint
+        li.appendChild(kbd)
+      }
+      li.addEventListener("mousemove", () => {
+        if (paletteIndex !== i) {
+          paletteIndex = i
+          renderPalette()
+        }
+      })
+      li.addEventListener("click", () => runPaletteItem(i))
+      paletteListEl.appendChild(li)
+    })
+    paletteInputEl.setAttribute("aria-activedescendant", "palette-item-" + paletteIndex)
+    const active = document.getElementById("palette-item-" + paletteIndex)
+    if (active && active.scrollIntoView) active.scrollIntoView({ block: "nearest" })
+  }
+
+  function openPalette() {
+    paletteInputEl.value = ""
+    paletteIndex = 0
+    paletteModalEl.style.display = "flex"
+    renderPalette()
+    paletteInputEl.focus()
+  }
+
+  function closePalette() {
+    paletteModalEl.style.display = "none"
+  }
+
+  function runPaletteItem(index) {
+    const item = paletteItems[index]
+    if (!item) return
+    closePalette()
+    // After the modal closes so focus restoration cannot steal focus from the action.
+    setTimeout(item.run, 0)
+  }
+
+  paletteInputEl.addEventListener("input", () => {
+    paletteIndex = 0
+    renderPalette()
+  })
+  paletteInputEl.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault()
+      if (paletteItems.length === 0) return
+      const step = event.key === "ArrowDown" ? 1 : -1
+      paletteIndex = (paletteIndex + step + paletteItems.length) % paletteItems.length
+      renderPalette()
+    } else if (event.key === "Enter") {
+      event.preventDefault()
+      runPaletteItem(paletteIndex)
+    } else if (event.key === "Escape") {
+      event.preventDefault()
+      closePalette()
+    }
+  })
+  paletteModalEl.addEventListener("click", (event) => {
+    if (event.target === paletteModalEl) closePalette()
+  })
+  window.addEventListener("churchoverlay:languagechange", () => {
+    if (paletteModalEl.style.display !== "none") renderPalette()
+  })
+
   function focusReferenceInput() {
     showView("live")
     referenceInput.focus()
@@ -2642,8 +2915,12 @@
       return
     }
     if (anyModalOpen()) return
+    const inRundownView = viewEls.rundown.classList.contains("active")
 
-    if (ctrl && !event.shiftKey && key.toLowerCase() === "k") {
+    if (ctrl && event.shiftKey && key.toLowerCase() === "p") {
+      event.preventDefault()
+      openPalette()
+    } else if (ctrl && !event.shiftKey && key.toLowerCase() === "k") {
       event.preventDefault()
       focusReferenceInput()
     } else if (!typing && !ctrl && key === "/") {
@@ -2662,14 +2939,15 @@
     } else if (event.altKey && !ctrl && /^Digit[1-9]$/.test(event.code)) {
       event.preventDefault()
       recallRecentVerse(Number(event.code.slice(5)) - 1)
-    } else if (ctrl && !event.shiftKey && !event.altKey && /^[1-6]$/.test(key)) {
+    } else if (ctrl && !event.shiftKey && !event.altKey && /^(Digit|Numpad)[1-6]$/.test(event.code)) {
+      // event.code, not key: on a French AZERTY keyboard the digit row types
+      // "&", "\u00e9", ... unless Shift is held, so key never matched there.
       event.preventDefault()
-      const view = VIEW_ORDER[Number(key) - 1]
-      showView(view)
-      if (view === "history") renderHistoryView()
-    } else if (!typing && !ctrl && !event.altKey && (key === "PageDown" || key === "PageUp")) {
-      // Presentation clickers send PageDown/PageUp. Only meaningful while a
-      // rundown is loaded; the transport buttons are disabled otherwise.
+      showView(VIEW_ORDER[Number(event.code.slice(-1)) - 1])
+    } else if (inRundownView && !typing && !ctrl && !event.altKey && (key === "PageDown" || key === "PageUp")) {
+      // Presentation clickers send PageDown/PageUp. Only while the Rundown
+      // view is showing: scrolling Settings or History with PageDown must
+      // never put the next scene on the congregation screen.
       const btn = key === "PageDown" ? rundownNextBtn : rundownPrevBtn
       if (!btn.disabled) {
         event.preventDefault()
@@ -2723,8 +3001,14 @@
       el.classList.toggle("active", name === target)
     }
     sidebarEl.querySelectorAll(".sidebar-nav-item").forEach((button) => {
-      button.classList.toggle("active", button.dataset.view === target)
+      const on = button.dataset.view === target
+      button.classList.toggle("active", on)
+      if (on) button.setAttribute("aria-current", "page")
+      else button.removeAttribute("aria-current")
     })
+    // Lazy views (Overlay, History) initialise from this, whichever way the
+    // operator got here: sidebar, Ctrl+digit, or the view restored at launch.
+    window.dispatchEvent(new CustomEvent("churchoverlay:viewchange", { detail: { view: target } }))
     try {
       localStorage.setItem("churchOverlay.activeView", target)
     } catch {
@@ -2753,7 +3037,10 @@
     return ref.book + " " + ref.chapter + ":" + ref.verse
   }
 
+  let historyRenderToken = 0
   function renderHistoryView() {
+    // A fast double open used to append every row twice when both fetches resolved.
+    const token = ++historyRenderToken
     historySummaryEl.textContent = t("history.loading")
     historyMostShownEl.innerHTML = ""
     historyRecentServicesEl.innerHTML = ""
@@ -2761,8 +3048,15 @@
     window.churchOverlay
       .getSessionHistory()
       .then((entries) => {
+        if (token !== historyRenderToken) return
         if (entries.length === 0) {
           historySummaryEl.textContent = t("history.empty")
+          for (const list of [historyMostShownEl, historyRecentServicesEl]) {
+            const empty = document.createElement("p")
+            empty.className = "history-empty"
+            empty.textContent = t("history.emptyColumn")
+            list.appendChild(empty)
+          }
           return
         }
 
@@ -2809,7 +3103,9 @@
       })
   }
 
-  document.getElementById("nav-history").addEventListener("click", renderHistoryView)
+  window.addEventListener("churchoverlay:viewchange", (event) => {
+    if (event.detail.view === "history") renderHistoryView()
+  })
 
   function showSetupScreen() {
     appShellEl.style.display = "none"
@@ -2998,8 +3294,12 @@
   function wireOptionGroup(groupEl, datasetKey, onSelect) {
     groupEl.querySelectorAll("button").forEach((button) => {
       button.addEventListener("click", () => {
-        groupEl.querySelectorAll("button").forEach((b) => b.classList.remove("active"))
+        groupEl.querySelectorAll("button").forEach((b) => {
+          b.classList.remove("active")
+          b.setAttribute("aria-pressed", "false")
+        })
         button.classList.add("active")
+        button.setAttribute("aria-pressed", "true")
         onSelect(button.dataset[datasetKey])
       })
     })
@@ -3060,7 +3360,9 @@
 
   function setActiveOption(groupEl, datasetKey, value) {
     groupEl.querySelectorAll("button").forEach((button) => {
-      button.classList.toggle("active", button.dataset[datasetKey] === value)
+      const on = button.dataset[datasetKey] === value
+      button.classList.toggle("active", on)
+      button.setAttribute("aria-pressed", String(on))
     })
   }
 

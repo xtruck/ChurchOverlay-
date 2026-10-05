@@ -375,7 +375,9 @@
 
   // Lazy: nothing is loaded until the operator opens the view (which also
   // means the second preview WebSocket exists only while it is in use).
-  document.querySelector('[data-view="overlay"]').addEventListener("click", start)
+  window.addEventListener("churchoverlay:viewchange", (event) => {
+    if (event.detail.view === "overlay") start()
+  })
   if (view.classList.contains("active")) start()
   window.addEventListener("churchoverlay:languagechange", () => meta && render(true))
 })()

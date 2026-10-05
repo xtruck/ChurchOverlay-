@@ -56,6 +56,7 @@
       "apps/stage/public/**/*",
       "apps/live/public/**/*",
       "apps/server/verse/data/**/*",
+      "apps/server/asr/faster-whisper-sidecar/*.py",
       "assets/icons/icon.png",
       "package.json",
       "!**/*.test.js",

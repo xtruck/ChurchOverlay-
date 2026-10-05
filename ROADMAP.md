@@ -34,6 +34,9 @@ Build order below, by risk, dependency, and real-world urgency — each still ne
 14. **NDI output hardening** — implemented and unit-tested; real-Electron frame probe passes (`ARCHITECTURE.md` section 109). Four defects reproduced in real Electron before any change: 800×600 frames, opaque-white background, premultiplied alpha sent as straight, and no frames while the overlay is idle. Fixes: forced transparent 1920×1080 window, un-premultiply, steady keep-alive cadence, bounded retry with stats. The final hop to a real NDI receiver is not verifiable in the development environment and the section 62.5 licensing/packaging gates remain, so delivery to a receiver is still unproven.
 15. **Overlay style system** — implemented (verified in Chromium and against a real AppCore; not yet exercised in the packaged Electron app); **scope change approved by the owner** (`ARCHITECTURE.md` section 110). A bounded slice of the formerly Deferred "branding engine": church logo and name as freely placeable items, grouped colour palettes (plus custom), additional card designs, and a dedicated Overlay settings view applying changes live with no service restart. Still not a general design tool, theme marketplace or plugin system.
 
+16. **Offline faster-whisper backend** — implemented (`ARCHITECTURE.md` section 113): a second, selectable offline engine behind the section 99 chain (cloud stays primary). Windows x64, CPU only; CUDA and real-service accuracy comparison remain open.
+
+
 ## Deferred — not v1, do not implement without an explicit architecture review
 
 Each item below is a candidate future milestone, added as a new implementation behind an existing extension seam (`AsrProvider`, `VerseDetector`, `VerseSource`) wherever possible — not a rewrite.

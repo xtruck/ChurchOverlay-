@@ -1,7 +1,7 @@
 import { normalizeOverlayStyleSettings } from "../../server/overlay/overlay-style"
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises"
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { ConfigStore, type SecretCodec } from "./config-store"
@@ -542,5 +542,27 @@ test("ConfigStore: update() on a missing config returns null and creates nothing
     const store = new ConfigStore(join(dir, "config.json"), new FakeSecretCodec())
     assert.equal(await store.update((c) => c), null)
     assert.deepEqual(await readdir(dir), [])
+  })
+})
+
+// ARCHITECTURE.md section 113: which offline engine backs the chain.
+test("ConfigStore: local ASR engine, model and enabled flag round-trip", async () => {
+  await withTempDir(async (dir) => {
+    const store = new ConfigStore(join(dir, "config.json"), new FakeSecretCodec())
+    const config: AppConfig = { ...SAMPLE_CONFIG, localAsrEnabled: true, localAsrModel: "small", localAsrEngine: "faster-whisper" }
+    await store.save(config)
+    assert.deepEqual(await store.load(), config)
+  })
+})
+
+test("ConfigStore: an unknown localAsrEngine is rejected on load, not silently defaulted", async () => {
+  await withTempDir(async (dir) => {
+    const file = join(dir, "config.json")
+    const store = new ConfigStore(file, new FakeSecretCodec())
+    await store.save({ ...SAMPLE_CONFIG, localAsrEngine: "faster-whisper" })
+    const raw = JSON.parse(await readFile(file, "utf8"))
+    raw.localAsrEngine = "mystery"
+    await writeFile(file, JSON.stringify(raw))
+    await assert.rejects(store.load(), /invalid localAsrEngine/)
   })
 })

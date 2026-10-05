@@ -92,9 +92,9 @@ contextBridge.exposeInMainWorld("churchOverlay", {
   clearBrandLogo: () => ipcRenderer.invoke("clear-brand-logo"),
   setOverlayTemplate: (template: string) => ipcRenderer.invoke("set-overlay-template", template),
   setAsrStrategy: (strategy: string) => ipcRenderer.invoke("set-asr-strategy", strategy),
-  getLocalAsrStatus: (model?: string) => ipcRenderer.invoke("get-local-asr-status", model),
-  installLocalAsr: (model: string) => ipcRenderer.invoke("install-local-asr", model),
-  setLocalAsr: (enabled: boolean, model: string) => ipcRenderer.invoke("set-local-asr", { enabled, model }),
+  getLocalAsrStatus: (model?: string, engine?: string) => ipcRenderer.invoke("get-local-asr-status", model, engine),
+  installLocalAsr: (model: string, engine?: string) => ipcRenderer.invoke("install-local-asr", model, engine),
+  setLocalAsr: (enabled: boolean, model: string, engine?: string) => ipcRenderer.invoke("set-local-asr", { enabled, model, engine }),
   onLocalAsrProgress: (callback: (state: unknown) => void) => {
     ipcRenderer.removeAllListeners("local-asr-progress")
     ipcRenderer.on("local-asr-progress", (_event, state) => callback(state))

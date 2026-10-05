@@ -101,6 +101,7 @@ export type AppConfig = {
   /** Offline whisper.cpp engine as the last fallback. Absent → off (it is a download). */
   readonly localAsrEnabled?: boolean
   readonly localAsrModel?: "base" | "small"
+  readonly localAsrEngine?: "whisper.cpp" | "faster-whisper"
   /**
    * ARCHITECTURE.md section 107 — always present after decode() (defaults
    * to "ls1910", the sole French translation before this existed, same
@@ -149,6 +150,7 @@ type StoredConfig = {
   readonly autoGain?: boolean
   readonly localAsrEnabled?: boolean
   readonly localAsrModel?: string
+  readonly localAsrEngine?: string
   readonly frenchTranslation?: string
   readonly overlayTemplate?: string
   readonly overlayStyle?: unknown
@@ -248,6 +250,7 @@ export class ConfigStore {
       ...(config.autoGain === undefined ? {} : { autoGain: config.autoGain }),
       ...(config.localAsrEnabled === undefined ? {} : { localAsrEnabled: config.localAsrEnabled }),
       ...(config.localAsrModel === undefined ? {} : { localAsrModel: config.localAsrModel }),
+      ...(config.localAsrEngine === undefined ? {} : { localAsrEngine: config.localAsrEngine }),
       ...(config.frenchTranslation === undefined ? {} : { frenchTranslation: config.frenchTranslation }),
       ...(config.overlayTemplate === undefined ? {} : { overlayTemplate: config.overlayTemplate }),
       ...(config.overlayStyle === undefined ? {} : { overlayStyle: normalizeOverlayStyleSettings(config.overlayStyle) }),
@@ -297,6 +300,7 @@ export class ConfigStore {
       autoGain,
       localAsrEnabled,
       localAsrModel,
+      localAsrEngine,
       frenchTranslation,
       overlayTemplate,
       overlayStyle,
@@ -354,6 +358,9 @@ export class ConfigStore {
     if (localAsrEnabled !== undefined && typeof localAsrEnabled !== "boolean") {
       throw new Error(`ConfigStore: ${this.filePath} has an invalid localAsrEnabled`)
     }
+    if (localAsrEngine !== undefined && localAsrEngine !== "whisper.cpp" && localAsrEngine !== "faster-whisper") {
+      throw new Error(`ConfigStore: ${this.filePath} has an invalid localAsrEngine`)
+    }
     if (localAsrModel !== undefined && localAsrModel !== "base" && localAsrModel !== "small") {
       throw new Error(`ConfigStore: ${this.filePath} has an invalid localAsrModel`)
     }
@@ -403,6 +410,7 @@ export class ConfigStore {
       ...(autoGain === undefined ? {} : { autoGain }),
       ...(localAsrEnabled === undefined ? {} : { localAsrEnabled }),
       ...(localAsrModel === undefined ? {} : { localAsrModel: localAsrModel as "base" | "small" }),
+      ...(localAsrEngine === undefined ? {} : { localAsrEngine: localAsrEngine as "whisper.cpp" | "faster-whisper" }),
       // Absent (a config saved before section 107 existed) defaults to
       // "ls1910" — the confirmed unchanged-behavior default, same shape as
       // verseLayout/verseConfirmationMode above.

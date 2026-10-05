@@ -162,33 +162,38 @@ export class LocalAsrInstaller {
     }
   }
 
-  private async download(url: string, onProgress: (fraction: number) => void): Promise<Buffer> {
-    const response = await this.fetchImpl(url, { redirect: "follow" })
-    if (!response.ok || !response.body) throw new Error(`Download failed (${response.status}) for ${url}`)
-    const total = Number(response.headers.get("content-length") ?? 0)
-    const chunks: Buffer[] = []
-    let received = 0
-    let lastReported = -1
-    const reader = response.body.getReader()
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      chunks.push(Buffer.from(value))
-      received += value.byteLength
-      if (total > 0) {
-        const fraction = Math.min(1, received / total)
-        const percent = Math.floor(fraction * 100)
-        if (percent !== lastReported) {
-          lastReported = percent
-          onProgress(fraction)
-        }
-      }
-    }
-    return Buffer.concat(chunks)
+  private download(url: string, onProgress: (fraction: number) => void): Promise<Buffer> {
+    return downloadWithProgress(this.fetchImpl, url, onProgress)
   }
 }
 
-async function exists(path: string): Promise<boolean> {
+/** Downloads a URL fully into memory, reporting 0..1 progress when the server sends a length. */
+export async function downloadWithProgress(fetchImpl: typeof fetch, url: string, onProgress: (fraction: number) => void): Promise<Buffer> {
+  const response = await fetchImpl(url, { redirect: "follow" })
+  if (!response.ok || !response.body) throw new Error(`Download failed (${response.status}) for ${url}`)
+  const total = Number(response.headers.get("content-length") ?? 0)
+  const chunks: Buffer[] = []
+  let received = 0
+  let lastReported = -1
+  const reader = response.body.getReader()
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(Buffer.from(value))
+    received += value.byteLength
+    if (total > 0) {
+      const fraction = Math.min(1, received / total)
+      const percent = Math.floor(fraction * 100)
+      if (percent !== lastReported) {
+        lastReported = percent
+        onProgress(fraction)
+      }
+    }
+  }
+  return Buffer.concat(chunks)
+}
+
+export async function exists(path: string): Promise<boolean> {
   try {
     await stat(path)
     return true
@@ -198,7 +203,7 @@ async function exists(path: string): Promise<boolean> {
 }
 
 /** Write to a temp name then rename, so a crash mid-write never leaves a half file that status() would call "ready". */
-async function atomicWrite(path: string, data: Buffer): Promise<void> {
+export async function atomicWrite(path: string, data: Buffer): Promise<void> {
   const temp = `${path}.${process.pid}.partial`
   await writeFile(temp, data)
   await rm(path, { force: true })

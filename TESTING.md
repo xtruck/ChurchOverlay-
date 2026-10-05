@@ -115,3 +115,15 @@ so there is nothing to gate on yet; **stale sequence** has no reordering scenari
 guard against in the current design (a single WebSocket connection preserves order by
 construction, and a reconnect starts a fresh connection with no carried-over state), so
 a dedicated test would exercise nothing real.
+
+### Offline faster-whisper backend (ARCHITECTURE.md section 113)
+
+| Behavior | Covered by |
+|---|---|
+| Unsupported platform is reported, never downloaded | `faster-whisper-installer.test.ts` |
+| Pinned download, verification, extraction, `._pth`, progress, ready | `faster-whisper-installer.test.ts` (local fixture HTTP server) |
+| Tampered wheel refused; no `engine.json` written | `faster-whisper-installer.test.ts` |
+| Wheel entry escaping site-packages refused (zip-slip) | `faster-whisper-installer.test.ts` |
+| Updated sidecar script replaces the installed copy | `faster-whisper-installer.test.ts` |
+| Real engine end to end (manual, Windows x64): install, `/health`, `/inference` with French/English speech | Run once per release; see section 113 for the measured result |
+| Dashboard EN/FR key parity, placeholder parity, every `data-i18n` and `t("…")` key defined | `apps/desktop/renderer/i18n.test.ts` |

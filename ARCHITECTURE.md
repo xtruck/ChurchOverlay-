@@ -5994,3 +5994,48 @@ classification, dropped-path checks, history and config concurrency.
 Not proven: the real Electron drop (`webUtils.getPathForFile`, IPC) was not run; the renderer flow was
 exercised in a browser harness with a stubbed bridge. Files over 4 GB and real disk-full conditions
 were not exercised.
+
+## 113. Offline faster-whisper Backend (second local engine behind the same chain)
+
+**What.** The operator can now choose which engine is the offline last resort: whisper.cpp
+(section 99, unchanged, still the default) or faster-whisper (CTranslate2), the engine of the
+open-whisper project (MIT). The chain order does not change: Deepgram → Groq → local. Cloud
+stays primary; this is not a local-first mode.
+
+- **Same contract, new backend.** `apps/server/asr/faster-whisper-sidecar/server.py` is a small
+  stdlib HTTP server around faster-whisper that speaks whisper.cpp's `/health` + `/inference`
+  contract, so `LocalWhisperProvider` and `WhisperServerProcess` are reused. The only change to
+  them is an optional `buildArgs` hook. The `AsrProvider` boundary is untouched; no new provider
+  class, no new WS action, no contract change.
+- **Engine logic adapted from open-whisper** (`whisper_client.py`): CPU `int8` by default, a
+  warm-up inference before `/health` reports ready (CUDA failures only surface on a real run),
+  segment filters (compression ratio, average log-prob, no-speech probability), a back-to-back
+  n-gram repetition guard, VAD filtering. Attribution: THIRD_PARTY_NOTICES.md. The rest of
+  open-whisper (Tauri shell, SQLite, ChromaDB search, LLM summaries) is deliberately not used.
+- **Installer, on demand, never shipped** (`faster-whisper-installer.ts`): an embeddable CPython
+  3.12.10, the 24 wheels faster-whisper needs, and a Systran CTranslate2 model (`base` or
+  `small`), all pinned to exact URL + SHA-256 in `faster-whisper-manifest.ts` and verified before
+  anything is written. **pip is never run**: wheels are zip files and are extracted with the
+  existing minimal reader into a staging folder (every entry name is checked to stay inside
+  site-packages), then swapped into place; `engine.json` is written last, so a crash never leaves a
+  half engine that looks installed. The embeddable Python ignores `PYTHONPATH`, so the installer
+  writes `python312._pth`. The sidecar script is re-copied from the app on every `status()`.
+- **Config/UI.** `localAsrEngine` ("whisper.cpp" | "faster-whisper") in the config store, an engine
+  selector in Settings (EN/FR), the download size shown before installing, engine change restarts
+  services like the model change already does.
+
+**Measured** (real install, CPU, no GPU; Windows SAPI speech, `base` model): sidecar ready in
+~9 s; "Lisons Jean chapitre trois, verset seize." → "Lisons Jean chapitre 3 verset 16." in ~1.7 s
+with the biblical prompt and `language=fr`; without the prompt it produced "Jean-chapitre III vers
+ses seises", the same prompt-dependence section 73/99 describe. Auto language detection misfired on
+English speech; the app always passes the language.
+
+**Limits.** Windows x64 only (same as 99). CPU only: CUDA needs cuBLAS/cuDNN DLLs that are not
+downloaded (deferred). Synthetic speech, not a real service recording: accuracy against whisper.cpp
+on real preaching is **not** measured. The embeddable Python needs the Microsoft VC++ runtime on the
+machine. Models are downloaded fully into memory before hashing (as in 99), which is why only
+`base`/`small` are offered.
+
+**Rejected.** Bundling Python in the installer (hundreds of MB for churches that never enable it);
+running open-whisper's full FastAPI/WebSocket backend (SQLite, ChromaDB, LLM features out of scope, a
+second WebSocket protocol next to ours); asking the user to install Python.

@@ -173,6 +173,16 @@ as a bug.
     path), with `nosniff` and `no-referrer`. The overlay never receives a file path or bytes
     over the WebSocket. (Section 110.6.)
 
+21. **The faster-whisper engine is downloaded, not trusted.** Embeddable Python, every wheel and every
+    model file are pinned to an exact URL and SHA-256 in `faster-whisper-manifest.ts` and verified
+    before any byte is written; pip is never run (no install-time code from sdists, no dependency
+    resolution at the user's machine). Archive entry names are checked to stay inside the target folder.
+    The sidecar binds `127.0.0.1` only, on a free port chosen per start, caps the request body
+    (16 MiB), and accepts only 16 kHz mono PCM WAV. It receives audio only; no keys or tokens.
+    Residual risk: the pinned packages themselves, and that localhost ports are reachable by other
+    local users/processes on the same machine. (Section 113.)
+
+
 ## Known, deliberate trade-offs
 
 - Every served page URL carries its token as a query parameter (see item 3 above). This

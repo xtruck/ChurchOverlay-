@@ -12,8 +12,11 @@ import type { Logger } from "../../../packages/shared/logger"
  * point of using the server instead of spawning a CLI per utterance.
  */
 export type WhisperServerOptions = {
+  /** The executable to spawn: whisper-server.exe, or python.exe for the faster-whisper sidecar. */
   readonly serverPath: string
   readonly modelPath: string
+  /** Overrides the whisper.cpp command line (the faster-whisper sidecar takes different flags). */
+  readonly buildArgs?: (port: number, threads: number) => string[]
   readonly logger?: Logger
   readonly threads?: number
   /** Injected in tests. */
@@ -67,7 +70,7 @@ export class WhisperServerProcess {
   private async launch(): Promise<void> {
     const port = await freePort()
     const threads = this.options.threads ?? Math.max(2, Math.min(8, cpus().length - 1))
-    const args = [
+    const args = this.options.buildArgs ? this.options.buildArgs(port, threads) : [
       "-m", this.options.modelPath,
       "--host", "127.0.0.1",
       "--port", String(port),
