@@ -127,3 +127,7 @@ a dedicated test would exercise nothing real.
 | Updated sidecar script replaces the installed copy | `faster-whisper-installer.test.ts` |
 | Real engine end to end (manual, Windows x64): install, `/health`, `/inference` with French/English speech | Run once per release; see section 113 for the measured result |
 | Dashboard EN/FR key parity, placeholder parity, every `data-i18n` and `t("…")` key defined | `apps/desktop/renderer/i18n.test.ts` |
+
+| Reference split across finals up to 25 s apart; chatter in between; bare trailing number; stale/complete/unrelated fragments never join | `transcript-assembler.test.ts` |
+| "un/une Corinthiens" is volume 1; "un Jean" untouched; live mishearings need a volume | `spoken-reference-normalizer.test.ts` |
+| Rolling window of finals; a verse read across two finals is matched | `rolling-transcript-window.test.ts` |

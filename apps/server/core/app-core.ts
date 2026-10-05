@@ -42,11 +42,13 @@ import { LatencyTracker, type LatencySnapshot } from "./latency-tracker"
 import { correctTranscription, detectHallucination } from "../asr/transcription-corrector"
 import { postprocessTranscript } from "../asr/postprocess/pipeline"
 import { TranscriptAssembler } from "../asr/transcript-assembler"
+import { RollingTranscriptWindow } from "../asr/rolling-transcript-window"
 import { RateLimitError } from "../asr/groq-provider"
 import type { MediaLibrary } from "../media/media-library"
 import { MediaCueDetector } from "../media/media-cue-detector"
 import { MediaPlaybackController } from "../media/media-playback-controller"
 import { NavigationCommandDetector, containsCatalogBookName } from "../detector/navigation-command-detector"
+import { isCatalogBookWord } from "../detector/regex-detector"
 import { resolveNavigationCommand } from "../verse/resolve-navigation-command"
 import { RundownController } from "../rundown/rundown-controller"
 import { GlossaryDetector } from "../glossary/glossary-detector"
@@ -339,7 +341,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const mediaPlayback = new MediaPlaybackController()
   let mediaAutoClearTimer: ReturnType<typeof setTimeout> | null = null
   const navigationCommandDetector = new NavigationCommandDetector()
-  const transcriptAssembler = new TranscriptAssembler()
+  // isBookWord turns on the long window: a preacher says "Genesis 5", talks on,
+  // then "verse 2" (or the ASR cut the sentence there). See TranscriptAssembler.
+  const transcriptAssembler = new TranscriptAssembler({ isBookWord: isCatalogBookWord })
+  // The last ~30 s of finals as one run of words, so a verse READ ALOUD across
+  // a breath (a cut between two finals) is still recognised as a quotation.
+  const quoteWindow = new RollingTranscriptWindow()
   let lastAssembledText = ""
   const rundownController = new RundownController()
   const sessionRecorder = new SessionRecorder()
@@ -1495,8 +1502,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     return true
   }
 
-  async function suggestQuotedVerse(transcript: TranscriptResult): Promise<void> {
-    const match = options.quoteMatcher?.match(transcript.text)
+  async function suggestQuotedVerse(transcript: TranscriptResult, windowText: string): Promise<void> {
+    const match = options.quoteMatcher?.match(windowText)
     if (!match || !index.exists(match.reference)) return
     const key = `${match.reference.book} ${match.reference.chapter}:${match.reference.verse}`
     const now = Date.now()
@@ -1657,6 +1664,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       sequence: transcript.sequence,
       metadata: {
         text: textPreview,
+        // partial vs final: without it a log cannot tell which lines could ever trigger detection.
+        state: transcript.state,
         textLength: transcript.text.length,
         // TASK 4: include SilenceGate metrics so VAD starvation is diagnosable from one session
         silenceGate: silenceGate.getMetrics(),
@@ -1843,15 +1852,21 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       if (definition) broadcastDefinition(definition, transcript.correlationId)
     }
 
-    if (options.quoteMatcher && passesTranscriptGate(transcript) && validatedRefs.length === 0) {
-      suggestQuotedVerse(transcript).catch((err) => {
-        logger.error({
-          component: "app-core",
-          event: "quote.suggest-failed",
-          correlationId: transcript.correlationId,
-          error: err instanceof Error ? err.message : String(err),
+    if (options.quoteMatcher && passesTranscriptGate(transcript)) {
+      // Every final feeds the window (even one that carried a reference), so the
+      // words either side of it still join up; only a final with no explicit
+      // reference is allowed to trigger a suggestion.
+      const windowText = quoteWindow.push(transcript.text, transcript.timestamp)
+      if (validatedRefs.length === 0) {
+        suggestQuotedVerse(transcript, windowText).catch((err) => {
+          logger.error({
+            component: "app-core",
+            event: "quote.suggest-failed",
+            correlationId: transcript.correlationId,
+            error: err instanceof Error ? err.message : String(err),
+          })
         })
-      })
+      }
     }
 
     // ARCHITECTURE.md section 65.7: a read-only observer of the same

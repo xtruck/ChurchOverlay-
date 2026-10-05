@@ -179,7 +179,7 @@ function rewriteNumberWords(text: string, isBookWord?: (word: string) => boolean
  * "wait a second, John 3:16" is never read as 2 John.
  */
 const NUMBERED_BOOKS =
-  "(?:samuel|rois|kings|chroniques|chronicles|corinthiens|corinthians|thessaloniciens|thessalonians|timothee|timothy|pierre|peter|jean|john)"
+  "(?:samuel|rois|kings|chroniques|chronicles|corinthiens|corinthians|corentin|corentien|corretien|corretine|corintien|thessaloniciens|thessalonians|timothee|timothy|pierre|peter|jean|john)"
 
 const ORDINALS_PATTERN = new RegExp(
   `(?<![\\p{L}\\d])([\\p{L}\\d]+)\\s+(?:${EPISTLE_WORDS}\\s+(?:${LINK_WORDS}\\s*)?)?(?=${NUMBERED_BOOKS}(?![\\p{L}]))`,
@@ -216,19 +216,30 @@ function rewriteOrdinals(text: string): string {
  * detected nothing, while the ordinal phrasing "deuxième Corinthiens"
  * already worked. Restricted to NUMBERED_BOOKS so the rewrite can never
  * manufacture a volume that does not exist, and deliberately limited to
- * two/three: "un Corinthiens" is a real French way to say 1 Corinthians,
- * but "un" is also the indefinite article ("un Jean", a pair of jeans),
- * so it is left alone rather than guessed at.
+ * two/three for books whose bare name is also a single-volume book or an
+ * ordinary word ("un Jean", a pair of jeans; "un Pierre"). BUT a real service
+ * log (2026-10-05) showed a French preacher saying "Un Corinthiens 5 le verset
+ * 2" over and over, which was detected as the non-existent book "corinthiens"
+ * and rejected. For the books that exist ONLY in numbered volumes and have no
+ * other meaning (Samuel, Rois, Chroniques, Corinthiens, Thessaloniciens,
+ * Timothée) "un/une/one" is read as volume 1; Jean and Pierre stay excluded.
  */
 const CARDINAL_VOLUMES: Readonly<Record<string, string>> = {
   deux: "2",
   two: "2",
   trois: "3",
   three: "3",
+  un: "1",
+  une: "1",
+  one: "1",
 }
 
+/** Books that only exist in numbered volumes, so "un <book>" can only mean volume 1. */
+const VOLUME_ONLY_BOOKS =
+  "(?:samuel|rois|kings|chroniques|chronicles|corinthiens|corinthians|corentin|corentien|corretien|corretine|corintien|thessaloniciens|thessalonians|timothee|timothy)"
+
 const CARDINAL_VOLUME_PATTERN = new RegExp(
-  `(?<![\\p{L}\\d])(deux|two|trois|three)\\s+(?=${NUMBERED_BOOKS}(?![\\p{L}]))`,
+  `(?<![\\p{L}\\d])(?:(deux|two|trois|three)\\s+(?=${NUMBERED_BOOKS}(?![\\p{L}]))|(un|une|one)\\s+(?=${VOLUME_ONLY_BOOKS}(?![\\p{L}])))`,
   "giu"
 )
 
@@ -238,7 +249,7 @@ function rewriteCardinalVolumes(text: string): string {
   let last = 0
   for (const match of folded.matchAll(CARDINAL_VOLUME_PATTERN)) {
     const index = match.index ?? 0
-    const digit = CARDINAL_VOLUMES[match[1] as string]
+    const digit = CARDINAL_VOLUMES[(match[1] ?? match[2]) as string]
     if (!digit) continue
     result += text.slice(last, index) + `${digit} `
     last = index + match[0].length

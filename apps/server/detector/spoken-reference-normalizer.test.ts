@@ -194,3 +194,26 @@ const NEGATIVES: readonly string[] = [
 test("RegexDetector: zero false positives on everyday sentences with names and numbers", () => {
   for (const sentence of NEGATIVES) assert.deepEqual(detect(sentence), [], sentence)
 })
+
+// Real service log (2026-10-05): a French preacher saying "un Corinthiens" for
+// 1 Corinthians. Detected as the non-existent book "corinthiens" before, so the
+// guard rejected a reference that was spoken and heard correctly.
+test("RegexDetector: 'un/une Corinthiens' is 1 Corinthians (volume-only books)", () => {
+  assert.deepEqual(detect("Un corinthiens 5 le verset 2."), ["1 corinthians 5:2"])
+  assert.deepEqual(detect("un Corinthiens 5 verset 2"), ["1 corinthians 5:2"])
+  assert.deepEqual(detect("lisons une Thessaloniciens 4 verset 16"), ["1 thessalonians 4:16"])
+  assert.deepEqual(detect("deux Corinthiens 5 verset 17"), ["2 corinthians 5:17"])
+})
+
+test("RegexDetector: 'un' before a book that also exists unnumbered is left alone", () => {
+  // Never rewritten to 1 John: it keeps reading as the Gospel, exactly as before.
+  assert.deepEqual(detect("un Jean 3 verset 16"), ["john 3:16"])
+  assert.deepEqual(detect("c'est un Pierre 2 verset 3 de moins"), [])
+})
+
+test("RegexDetector: live mishearings of Corinthiens resolve when a volume is spoken", () => {
+  assert.deepEqual(detect("1 Corentin 5 verset 2"), ["1 corinthians 5:2"])
+  assert.deepEqual(detect("deux Corretien 5 verset 17"), ["2 corinthians 5:17"])
+  assert.deepEqual(detect("Corentin 5 verset 2"), [], "bare Corentin is ambiguous and never guessed")
+})
+

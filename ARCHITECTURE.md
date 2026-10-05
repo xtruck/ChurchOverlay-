@@ -6039,3 +6039,42 @@ machine. Models are downloaded fully into memory before hashing (as in 99), whic
 **Rejected.** Bundling Python in the installer (hundreds of MB for churches that never enable it);
 running open-whisper's full FastAPI/WebSocket backend (SQLite, ChromaDB, LLM features out of scope, a
 second WebSocket protocol next to ours); asking the user to install Python.
+
+## 114. References Split Across Speech: Long-Window Assembly, "un Corinthiens", Rolling Quotation Window
+
+**Why (measured, not guessed).** A real service log (2026-10-05, French, Deepgram streaming) showed
+only two verses reaching the screen in ~3 minutes although a reference was spoken in the same
+sentence over a dozen times. Replaying the log's phrases through the real detectors found:
+- **"Un corinthiens 5 le verset 2"** was detected as the non-existent book "corinthiens" and rejected
+  by the known-valid index. A French preacher says "un" for 1; section 102 had left "un" alone because
+  of "un Jean". That is only a problem for books that also exist unnumbered.
+- **A reference split across finals more than 4 s apart** ("Corentin 5" ... 8 s ... "2."): the
+  assembler window was 4 s, shorter than a preacher's pause plus ASR latency. The same applied to the
+  user's own example ("Genesis 5" then "verse 2").
+- **Mishearings of Corinthiens** ("Corentin", "Corretien", "Corretine").
+- **A verse read aloud across a cut** was invisible to the quotation matcher, which only ever saw
+  one final at a time.
+
+**What.**
+- `TranscriptAssembler` gets a second, longer window (25 s, up to 8 fragments) that is only used for
+  an OPEN reference: an older fragment that ends on a book name, with or without a chapter and no
+  verse ("Genesis 5", "dans le livre de Romains"), plus a new fragment that opens with the missing part
+  ("au verset 7", "chapitre 8 verset 28", or a bare "2." alone, only within 12 s of a book+chapter). Only
+  those two fragments are joined, never the chatter in between. It runs before the old loose 4 s rule,
+  which otherwise returned "chatter + verse 7" (no book) and hid the real book. Without a book test
+  (`isBookWord`) the long window stays off, so existing behaviour is unchanged.
+- `normalizeSpokenReferences`: "un/une/one" before a book that only exists in numbered volumes
+  (Samuel, Rois, Chroniques, Corinthiens, Thessaloniciens, Timothée) reads as volume 1. Jean and Pierre
+  are still excluded.
+- Numbered-only aliases for the live mishearings; a bare "Corentin 5" stays unresolved, never guessed.
+- `RollingTranscriptWindow`: the last 30 s / 80 words of finals as one run, fed to `QuoteMatcher`
+  so a verse read across a breath is recognised. Still a pending suggestion, never an automatic display.
+- The `transcript.received` log line now records `state` (partial or final).
+
+**Boundary check.** No new WS action, contract or provider. Every assembled text still goes through the
+same detector, `KnownValidVerseIndex` and Bible source; nothing is shown on a guess. A bare book
+("Corinthiens 5 verset 2") is still ambiguous between the two epistles and shows nothing.
+
+**Not solved.** A book the ASR drops entirely ("un chapitre 3, le verset 2"), a wrong number heard by
+the ASR ("Éphésiens 8" for 5), and a bare "Corinthiens" with no volume. Those need either a better
+transcript or an operator choice; the next candidate is offering both epistles as pending suggestions.
