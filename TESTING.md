@@ -131,3 +131,6 @@ a dedicated test would exercise nothing real.
 | Reference split across finals up to 25 s apart; chatter in between; bare trailing number; stale/complete/unrelated fragments never join | `transcript-assembler.test.ts` |
 | "un/une Corinthiens" is volume 1; "un Jean" untouched; live mishearings need a volume | `spoken-reference-normalizer.test.ts` |
 | Rolling window of finals; a verse read across two finals is matched | `rolling-transcript-window.test.ts` |
+
+| Volume hints (book on screen over rundown plan, ambiguous plan = no hint), bare vs qualified books | `volume-inference.test.ts` |
+| A bare volume is a PENDING `inferred` suggestion in auto mode and the relative verse does not also show | `app-core.test.ts` |

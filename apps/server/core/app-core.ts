@@ -43,6 +43,7 @@ import { correctTranscription, detectHallucination } from "../asr/transcription-
 import { postprocessTranscript } from "../asr/postprocess/pipeline"
 import { TranscriptAssembler } from "../asr/transcript-assembler"
 import { RollingTranscriptWindow } from "../asr/rolling-transcript-window"
+import { applyVolumeHints, buildVolumeHints } from "../detector/volume-inference"
 import { RateLimitError } from "../asr/groq-provider"
 import type { MediaLibrary } from "../media/media-library"
 import { MediaCueDetector } from "../media/media-cue-detector"
@@ -693,6 +694,37 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
    * transcript's arrival so a slow Sunday can be traced to the Bible lookup
    * or ruled out as the app's own processing.
    */
+  let plannedBookIds: readonly string[] = []
+
+  /**
+   * "Corinthiens 5 verset 2" names no volume, so detection yields nothing. When the
+   * book on screen or the rundown plan names exactly one volume of that family, try
+   * the text with that volume filled in. Always a PENDING suggestion, in auto mode
+   * too: the volume is a guess (ARCHITECTURE.md section 115).
+   */
+  async function inferVolumeVerses(text: string, transcript: TranscriptResult): Promise<void> {
+    if (transcript.state !== "final") return
+    const hints = buildVolumeHints(plannedBookIds, currentVersePosition?.book ?? null)
+    const inferred = applyVolumeHints(text, hints)
+    if (!inferred) return
+    const verses = await resolveTranscriptVerses({ ...transcript, text: inferred }, detector, index, source, cache, circuitBreaker, logger)
+    for (const verse of verses) {
+      const onScreen =
+        currentVersePosition !== null &&
+        currentVersePosition.book === verse.reference.book &&
+        currentVersePosition.chapter === verse.reference.chapter &&
+        currentVersePosition.verse === verse.reference.verse
+      if (onScreen) continue
+      logger.info({
+        component: "app-core",
+        event: "volume.inferred",
+        correlationId: transcript.correlationId,
+        metadata: { heard: text, inferred, reference: verse.reference },
+      })
+      broadcastPendingVerse({ ...verse, origin: "inferred" } as Verse, transcript.correlationId)
+    }
+  }
+
   function deliverDetectedVerses(verses: readonly Verse[], transcript: TranscriptResult): void {
     for (const verse of verses) {
       const delivery = verseConfirmationMode === "review" ? "pending" : "screen"
@@ -988,8 +1020,11 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
    * whose static prompt already names every book).
    */
   function applyPlannedBooks(rundown: Rundown): void {
-    if (!("setPlannedBooks" in asr) || typeof asr.setPlannedBooks !== "function") return
     const bookIds = [...new Set(rundown.scenes.flatMap((scene) => (scene.kind === "verse" ? [scene.reference.book] : [])))]
+    // Kept for volume inference (a planned "1 Corinthians" says what a bare "Corinthiens" means),
+    // whether or not the active ASR provider can use the list itself.
+    plannedBookIds = bookIds
+    if (!("setPlannedBooks" in asr) || typeof asr.setPlannedBooks !== "function") return
     asr.setPlannedBooks(bookIds)
   }
 
@@ -1532,7 +1567,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // resolved against the *previous* position and race it — showing a
     // second, wrong verse. Explicit wins; cancel and display-mode commands
     // still apply.
-    const hasExplicitReference = detector.detect(transcript.text).some((reference) => index.exists(reference))
+    // A bare volume ("Corinthiens 5 verset 2") is explicit too once context names the volume:
+    // the relative "verset 2" must not race it and show verse 2 of whatever is on screen.
+    const volumeHinted = applyVolumeHints(transcript.text, buildVolumeHints(plannedBookIds, currentVersePosition?.book ?? null))
+    const hasExplicitReference =
+      detector.detect(transcript.text).some((reference) => index.exists(reference)) ||
+      (volumeHinted !== null && detector.detect(volumeHinted).some((reference) => index.exists(reference)))
     for (const command of navigationCommandDetector.detect(transcript.text)) {
       if (hasExplicitReference && command.kind !== "goto-display-mode" && command.kind !== "cancel") {
         logger.debug({
@@ -1720,7 +1760,10 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       broadcastAsrStatus({ asrHealth: "ok" })
     }
     resolveTranscriptVerses(transcript, detector, index, source, cache, circuitBreaker, logger)
-      .then((verses) => deliverDetectedVerses(verses, transcript))
+      .then(async (verses) => {
+        deliverDetectedVerses(verses, transcript)
+        if (verses.length === 0) await inferVolumeVerses(transcript.text, transcript)
+      })
       .catch((err) => {
         logger.error({
           component: "app-core",
@@ -1758,7 +1801,10 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
             circuitBreaker,
             logger,
           )
-            .then((verses) => deliverDetectedVerses(verses, transcript))
+            .then(async (verses) => {
+              deliverDetectedVerses(verses, transcript)
+              if (verses.length === 0) await inferVolumeVerses(assembledText, transcript)
+            })
             .catch((err) => logger.error({
               component: "app-core",
               event: "transcript.assembly-failed",

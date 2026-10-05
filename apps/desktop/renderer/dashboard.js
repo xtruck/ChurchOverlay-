@@ -502,7 +502,12 @@
     versePendingRefEl.textContent = formatDisplayedReference(verse)
     // A verse recognised from a reading (no reference spoken) is always a
     // suggestion, even in auto mode — say why it is waiting.
-    versePendingOriginEl.style.display = verse.origin === "quote" ? "block" : "none"
+    const originKey = verse.origin === "quote" ? "livePreview.pendingFromQuote" : verse.origin === "inferred" ? "livePreview.pendingFromVolume" : null
+    versePendingOriginEl.style.display = originKey ? "block" : "none"
+    if (originKey) {
+      versePendingOriginEl.dataset.i18n = originKey // stays right if the UI language changes
+      versePendingOriginEl.textContent = t(originKey)
+    }
     versePendingBannerEl.style.display = "flex"
     livePreviewEl.classList.add("has-pending")
   }

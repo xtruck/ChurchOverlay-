@@ -4356,3 +4356,44 @@ test("AppCore: overlay:style is synced on connect and broadcast live with an inc
     await app.stop()
   }
 })
+
+// ARCHITECTURE.md section 115: a bare volume is inferred from context, but only ever SUGGESTED.
+test("AppCore: 'Corinthiens 5 verset 2' after 1 Corinthians 13 is a pending suggestion of 1 Corinthians 5:2, never auto-shown", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const seen: WsMessage[] = []
+    viewerSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString()) as WsMessage
+      if (message.type === "verse:pending" || message.type === "verse:show") seen.push(message)
+    })
+    // No context yet: a bare volume shows nothing at all.
+    asr.emitTranscript({ id: "01V0", correlationId: "01A", sequence: 1, text: "Corinthiens 5 verset 2", state: "final", timestamp: Date.now() })
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.equal(seen.length, 0)
+
+    asr.emitTranscript({ id: "01V1", correlationId: "01B", sequence: 2, text: "1 Corinthiens 13 verset 4", state: "final", timestamp: Date.now() })
+    await waitFor(() => seen.length === 1)
+    assert.equal(seen[0]?.type, "verse:show")
+
+    asr.emitTranscript({ id: "01V2", correlationId: "01C", sequence: 3, text: "Corinthiens 5 verset 2", state: "final", timestamp: Date.now() })
+    await waitFor(() => seen.length === 2)
+    assert.equal(seen[1]?.type, "verse:pending", "an inferred volume is a guess: pending even in auto mode")
+    assert.equal((seen[1]?.payload as { origin?: string }).origin, "inferred")
+    assert.deepEqual((seen[1]?.payload as Verse).reference, { book: "1 corinthians", chapter: 5, verse: 2 })
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.equal(seen.length, 2, "the relative 'verset 2' must not also show verse 2 of the chapter on screen")
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})

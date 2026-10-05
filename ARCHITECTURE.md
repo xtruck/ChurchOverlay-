@@ -6078,3 +6078,27 @@ same detector, `KnownValidVerseIndex` and Bible source; nothing is shown on a gu
 **Not solved.** A book the ASR drops entirely ("un chapitre 3, le verset 2"), a wrong number heard by
 the ASR ("Éphésiens 8" for 5), and a bare "Corinthiens" with no volume. Those need either a better
 transcript or an operator choice; the next candidate is offering both epistles as pending suggestions.
+
+## 115. Volume Inference: "Corinthiens 5 verset 2" Means the Epistle on Screen
+
+**Why.** Preachers drop the volume ("Corinthiens", "Samuel", "Rois") and section 114's log showed it
+constantly. The detector must not guess between 1 and 2, so a bare numbered book showed nothing at all,
+and the relative "verset 2" could even show verse 2 of whatever chapter was on screen.
+
+**What.** `volume-inference.ts` supplies what a human listener uses: context.
+- Hints: the volume of the book currently on screen, else the volume planned in the loaded rundown, and only
+  when that names exactly one volume of that family (a rundown with 1 and 2 Corinthians gives no hint).
+  Books that exist only in numbered volumes take part; Jean and Pierre do not (a bare "Jean" is the Gospel).
+- `applyVolumeHints` rewrites only a BARE book ("Corinthiens 5 verset 2" to "1 Corinthiens 5 verset 2"),
+  never one the preacher qualified (`deux`, `deuxième épître aux`, `2`), and never a family with no hint.
+- AppCore runs it only when the normal pipeline found nothing, then sends the rewritten text through the
+  SAME detector, `KnownValidVerseIndex` and Bible source. The result is delivered as `verse:pending` with
+  `origin: "inferred"` in **every** mode, because the volume is a guess: the dashboard says so and the
+  operator confirms. It never auto-shows.
+- A hinted bare volume counts as an explicit reference for the navigation path, so the relative "verset 2"
+  no longer races it and shows the wrong verse.
+
+**Boundary check.** No new WS action or contract change. Nothing is displayed on inference alone.
+
+**Not done.** With no context at all (nothing on screen, nothing planned) a bare volume still shows nothing;
+offering both epistles as two suggestions needs a multi-candidate banner.
