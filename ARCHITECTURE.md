@@ -6104,3 +6104,27 @@ and the relative "verset 2" could even show verse 2 of whatever chapter was on s
 ("Corinthiens 15 verset 3" exists only in 1 Corinthians), which often leaves exactly one. When both fit, the
 pending suggestion carries the other as `alternatives` and the dashboard shows one "Show X instead" button per
 alternative; choosing it is an ordinary `verse:override`, so it takes the validated manual path. No new WS action.
+
+## 116. Local Transcription Pipeline: Context Prompt, Cuts at Pauses, Speed Metrics
+
+Applies to both offline engines (whisper.cpp and faster-whisper) because both sit behind `LocalWhisperProvider`.
+
+**Context prompt.** Whisper treats its prompt as the text spoken just before the audio. The prompt used to be a fixed
+sentence. `buildPrompt()` now carries (1) the biblical base prompt, (2) the books of the loaded rundown plus the book on
+screen (the same `setPlannedBooks` / `setCurrentVerseRef` signals Deepgram already receives, forwarded by
+`FailoverAsrProvider`), and (3) the tail of the previous sentence, the continuity trick open-whisper uses. Bounded to
+700 characters, trimmed from the front because Whisper weights the newest words. It is context only: output still goes
+through the corrector, detector, index and Bible source.
+
+**Cuts at pauses.** The hard cap (8 s) used to cut at an arbitrary sample, splitting a word or a reference ("Genesis 5 |
+verse 2"). `findQuietCut` looks for the quietest 80 ms in the last 1.5 s; if it is clearly below the surrounding speech
+the batch is cut there and the remainder starts the next batch. Continuous speech with no dip is sent whole, exactly as
+before. Section 114's assembler then has fewer artificial cuts to repair.
+
+**Speed is measured.** Every batch logs audio length, time taken and real-time factor (`local-whisper.batch`, debug); one
+slower than 1.2x its own audio logs `local-whisper.slow` (warn), so "the backup cannot keep up on this machine" is a
+grep, not a guess. Backlog dropping (oldest first) is unchanged.
+
+**Limits.** Prompt conditioning can make Whisper echo a prompt word into silence; the existing hallucination and
+silence checks still apply, but no accuracy gain is claimed until measured on real preaching. The quiet-cut threshold
+(below half the median) was chosen on synthetic speech.

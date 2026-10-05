@@ -162,3 +162,75 @@ test("WhisperServerProcess + LocalWhisperProvider against the real whisper.cpp s
     await server.stop()
   }
 })
+
+// ---- Local pipeline improvements (ARCHITECTURE.md section 116) ----
+import { findQuietCut } from "./local-whisper-provider"
+
+function speechWithPause(totalMs: number, pauseAtMs: number, pauseMs = 200): Int16Array {
+  const samples = new Int16Array((16000 * totalMs) / 1000).fill(3000)
+  const from = (16000 * pauseAtMs) / 1000
+  samples.fill(0, from, from + (16000 * pauseMs) / 1000)
+  return samples
+}
+
+test("findQuietCut: lands inside a pause in the trailing speech, not at an arbitrary sample", () => {
+  const samples = speechWithPause(8000, 7000)
+  const cut = findQuietCut(samples) as number
+  assert.ok(cut >= 16000 * 7.0 && cut <= 16000 * 7.2, `cut at ${cut / 16000}s should be inside the 7.0-7.2s pause`)
+})
+
+test("findQuietCut: continuous speech has no pause to cut at", () => {
+  assert.equal(findQuietCut(new Int16Array(16000 * 8).fill(3000)), null)
+})
+
+test("LocalWhisperProvider: the prompt carries planned books, the book on screen and the previous sentence", async () => {
+  const replies = ["Lisons Éphésiens chapitre 5", "verset 2"]
+  const fake = await fakeWhisperServer(() => ({ json: { text: replies.shift() ?? "" } }))
+  try {
+    const provider = new LocalWhisperProvider({ server: fake.endpoint, language: "fr" })
+    provider.setPlannedBooks(["1 corinthians"])
+    provider.setCurrentVerseRef("ephesians 5:1")
+    const results: TranscriptResult[] = []
+    provider.onTranscript((r) => results.push(r))
+    await provider.start()
+    await provider.sendAudio(frame(1000))
+    await provider.onUtteranceEnd()
+    for (let i = 0; i < 50 && results.length < 1; i++) await new Promise((r) => setTimeout(r, 10))
+    await provider.sendAudio(frame(1000))
+    await provider.onUtteranceEnd()
+    for (let i = 0; i < 50 && results.length < 2; i++) await new Promise((r) => setTimeout(r, 10))
+    const first = fake.requests[0]!.toString("utf8")
+    const second = fake.requests[1]!.toString("utf8")
+    assert.match(first, /Corinthiens/)
+    assert.match(first, /ph[eé]siens/i)
+    assert.doesNotMatch(first, /Lisons Éphésiens chapitre 5/, "nothing to carry before the first sentence")
+    assert.match(second, /Lisons Éphésiens chapitre 5/, "the previous sentence continues into the next prompt")
+  } finally {
+    await fake.close()
+  }
+})
+
+test("LocalWhisperProvider: a forced cut after 8 s lands at the pause and the rest starts the next batch", async () => {
+  const sizes: number[] = []
+  const fake = await fakeWhisperServer((body) => {
+    sizes.push(body.length)
+    return { json: { text: "ok" } }
+  })
+  try {
+    const provider = new LocalWhisperProvider({ server: fake.endpoint })
+    provider.onTranscript(() => {})
+    await provider.start()
+    const samples = speechWithPause(8100, 7000)
+    // Feed in 100 ms frames, like the real pipeline.
+    for (let i = 0; i < samples.length; i += 1600) {
+      await provider.sendAudio({ samples: samples.slice(i, i + 1600), sampleRate: 16000, sequence: i })
+    }
+    for (let i = 0; i < 50 && sizes.length < 1; i++) await new Promise((r) => setTimeout(r, 10))
+    const wavBytes = sizes[0] as number
+    // The WAV body is the cut audio plus multipart framing; a hard cut would carry ~8.0 s (256 KB).
+    assert.ok(wavBytes < 16000 * 2 * 7.4 + 4000, `first batch (${wavBytes} bytes) should stop at the pause near 7.1 s, not run to 8 s`)
+    assert.ok(wavBytes > 16000 * 2 * 6.9, "and it must still carry the speech before the pause")
+  } finally {
+    await fake.close()
+  }
+})

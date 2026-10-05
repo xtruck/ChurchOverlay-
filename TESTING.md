@@ -134,3 +134,5 @@ a dedicated test would exercise nothing real.
 
 | Volume hints (book on screen over rundown plan, ambiguous plan = no hint), bare vs qualified books | `volume-inference.test.ts` |
 | A bare volume is a PENDING `inferred` suggestion in auto mode and the relative verse does not also show | `app-core.test.ts` |
+
+| Quiet-point cut, continuous speech not cut, context prompt (planned books, book on screen, previous sentence), forced cut lands at the pause | `local-whisper-provider.test.ts` |

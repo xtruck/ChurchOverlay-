@@ -1,6 +1,8 @@
 import type { AsrProvider, AudioFrame, TranscriptResult } from "../../../packages/contracts"
 import type { Logger } from "../../../packages/shared/logger"
 import { generateUlid } from "../../../packages/shared/ulid"
+import { plannedBookTerms } from "./biblical-vocabulary"
+import { normalizeBookName } from "../detector/regex-detector"
 
 /**
  * Offline transcription through a local whisper.cpp server — the last link
@@ -41,6 +43,44 @@ const MAX_BACKLOG = 2
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_PROMPT_FR = "Lecture biblique : Jean chapitre 3 verset 16, Psaume 23, Romains 8, Deutéronome, Philippiens."
 const DEFAULT_PROMPT_EN = "Bible reading: John chapter 3 verse 16, Psalm 23, Romans 8, Deuteronomy, Philippians."
+/** Whisper only reads the last ~220 tokens of a prompt; this keeps ours well inside that. */
+const MAX_PROMPT_CHARS = 700
+/** How much of the previous sentence is carried into the next prompt. */
+const PROMPT_TAIL_CHARS = 180
+/** A forced cut (MAX_BATCH_MS) looks for a pause inside this much trailing audio. */
+const QUIET_SEARCH_MS = 1500
+const QUIET_WINDOW_MS = 80
+/** A batch slower than this multiple of its own audio length means the machine cannot keep up. */
+const SLOW_RTF = 1.2
+
+/**
+ * Where to cut a long run of speech that has to be sent now. Cutting at an
+ * arbitrary sample splits a word ("Gen|esis") or a reference ("Genesis 5 | verse
+ * 2"); cutting at the quietest 80 ms in the last 1.5 s lands in a breath
+ * instead. Returns the sample index to cut at, or null when there is no real
+ * dip (continuous speech), in which case the caller sends everything.
+ */
+export function findQuietCut(samples: Int16Array): number | null {
+  const window = Math.round((SAMPLE_RATE * QUIET_WINDOW_MS) / 1000)
+  const searchFrom = Math.max(0, samples.length - Math.round((SAMPLE_RATE * QUIET_SEARCH_MS) / 1000))
+  const rms: number[] = []
+  const starts: number[] = []
+  for (let start = searchFrom; start + window <= samples.length; start += window) {
+    let sum = 0
+    for (let i = start; i < start + window; i++) sum += (samples[i] as number) * (samples[i] as number)
+    rms.push(Math.sqrt(sum / window))
+    starts.push(start)
+  }
+  if (rms.length < 4) return null
+  const sorted = [...rms].sort((a, b) => a - b)
+  const median = sorted[Math.floor(sorted.length / 2)] as number
+  const quietest = sorted[0] as number
+  // A real pause: clearly below the surrounding speech, and not the very last window
+  // (cutting there gains nothing).
+  const index = rms.indexOf(quietest)
+  if (index >= rms.length - 1 || median <= 0 || quietest > median * 0.5) return null
+  return (starts[index] as number) + Math.floor(window / 2)
+}
 
 export class LocalWhisperProvider implements AsrProvider {
   private readonly server: LocalWhisperEndpoint
@@ -51,6 +91,9 @@ export class LocalWhisperProvider implements AsrProvider {
   private readonly requestTimeoutMs: number
   private language: string | undefined
   private active = false
+  private plannedBookIds: readonly string[] = []
+  private currentBook: string | null = null
+  private previousTail = ""
   private frames: Int16Array[] = []
   private bufferedSamples = 0
   private queue: Int16Array[] = []
@@ -74,8 +117,38 @@ export class LocalWhisperProvider implements AsrProvider {
     this.language = language
   }
 
+  /** Context for the next prompt: the book on screen biases "Corinthiens"-style names toward the right book. */
+  setCurrentVerseRef(reference: string | null): void {
+    // "1 corinthians 13:4" -> the book part, display-named in the active language.
+    const book = reference ? reference.replace(/\s+\d+:\d+\s*$/, "").trim() : ""
+    this.currentBook = book ? normalizeBookName(book) : null
+  }
+
+  /** Books of the loaded rundown; same signal Deepgram gets as keyterms. */
+  setPlannedBooks(bookIds: readonly string[]): void {
+    this.plannedBookIds = bookIds
+  }
+
   onTranscript(callback: (result: TranscriptResult) => void): void {
     this.transcriptCallback = callback
+  }
+
+  /**
+   * Whisper treats the prompt as the text that came just before the audio. So
+   * it carries (1) the app's biblical base prompt, (2) the books this service
+   * plans to read and the one on screen, (3) the tail of the previous sentence
+   * (continuity, the same trick open-whisper uses). Context only: the output
+   * still goes through detection, the index and the Bible source like any other.
+   */
+  buildPrompt(): string {
+    const base = this.promptOverride ?? (this.language === "en" ? DEFAULT_PROMPT_EN : DEFAULT_PROMPT_FR)
+    const books = plannedBookTerms([...this.plannedBookIds, ...(this.currentBook ? [this.currentBook] : [])], this.language)
+    const parts = [base]
+    if (books.length > 0) parts.push(books.join(", ") + ".")
+    if (this.previousTail) parts.push(this.previousTail)
+    const prompt = parts.join(" ")
+    // Trim from the FRONT: the newest words matter most to Whisper.
+    return prompt.length > MAX_PROMPT_CHARS ? prompt.slice(prompt.length - MAX_PROMPT_CHARS) : prompt
   }
 
   onError(callback: (error: Error) => void): void {
@@ -93,7 +166,7 @@ export class LocalWhisperProvider implements AsrProvider {
     if (!this.active) throw new Error("LocalWhisperProvider.sendAudio() called before start()")
     this.frames.push(audio.samples)
     this.bufferedSamples += audio.samples.length
-    if (msOf(this.bufferedSamples) >= MAX_BATCH_MS) this.enqueueBuffered()
+    if (msOf(this.bufferedSamples) >= MAX_BATCH_MS) this.enqueueAtQuietPoint()
   }
 
   async onUtteranceEnd(): Promise<void> {
@@ -109,6 +182,27 @@ export class LocalWhisperProvider implements AsrProvider {
   async stop(): Promise<void> {
     if (this.active && msOf(this.bufferedSamples) >= MIN_BATCH_MS) this.enqueueBuffered()
     this.active = false
+  }
+
+  /** The hard cap hit mid-speech: send up to the last pause and keep the rest for the next batch. */
+  private enqueueAtQuietPoint(): void {
+    const all = new Int16Array(this.bufferedSamples)
+    let offset = 0
+    for (const frame of this.frames) {
+      all.set(frame, offset)
+      offset += frame.length
+    }
+    const cut = findQuietCut(all)
+    if (cut === null || cut < (SAMPLE_RATE * MIN_BATCH_MS) / 1000) {
+      this.enqueueBuffered()
+      return
+    }
+    const rest = all.slice(cut)
+    this.frames = [all.slice(0, cut)]
+    this.bufferedSamples = cut
+    this.enqueueBuffered()
+    this.frames = [rest]
+    this.bufferedSamples = rest.length
   }
 
   private enqueueBuffered(): void {
@@ -134,8 +228,19 @@ export class LocalWhisperProvider implements AsrProvider {
       while (this.queue.length > 0) {
         const batch = this.queue.shift() as Int16Array
         try {
+          const startedAt = this.now()
           const text = (await this.transcribe(batch)).trim()
+          const tookMs = this.now() - startedAt
+          const audioMs = msOf(batch.length)
+          const rtf = audioMs > 0 ? tookMs / audioMs : 0
+          this.logger?.[rtf > SLOW_RTF ? "warn" : "debug"]({
+            component: "asr",
+            event: rtf > SLOW_RTF ? "local-whisper.slow" : "local-whisper.batch",
+            durationMs: tookMs,
+            metadata: { audioMs: Math.round(audioMs), rtf: Number(rtf.toFixed(2)) },
+          })
           if (!text) continue
+          this.previousTail = text.slice(-PROMPT_TAIL_CHARS)
           this.sequence += 1
           this.transcriptCallback?.({
             id: generateUlid(this.now()),
@@ -163,7 +268,7 @@ export class LocalWhisperProvider implements AsrProvider {
     form.append("response_format", "json")
     form.append("temperature", "0.0")
     form.append("language", this.language ?? "auto")
-    form.append("prompt", this.promptOverride ?? (this.language === "en" ? DEFAULT_PROMPT_EN : DEFAULT_PROMPT_FR))
+    form.append("prompt", this.buildPrompt())
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs)
     try {
