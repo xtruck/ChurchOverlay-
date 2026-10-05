@@ -508,8 +508,30 @@
       versePendingOriginEl.dataset.i18n = originKey // stays right if the UI language changes
       versePendingOriginEl.textContent = t(originKey)
     }
+    renderPendingAlternatives(verse)
     versePendingBannerEl.style.display = "flex"
     livePreviewEl.classList.add("has-pending")
+  }
+
+  // The server found the same words fit more than one verse (e.g. 1 and 2 Corinthians
+  // when no volume was said and no context names one). One button per alternative;
+  // choosing one is a normal manual override, so it takes the same validated path.
+  const versePendingAlternativesEl = document.getElementById("verse-pending-alternatives")
+  function renderPendingAlternatives(verse) {
+    versePendingAlternativesEl.textContent = ""
+    const alternatives = Array.isArray(verse.alternatives) ? verse.alternatives : []
+    for (const alternative of alternatives) {
+      const label = formatDisplayedReference(alternative)
+      const button = document.createElement("button")
+      button.type = "button"
+      button.className = "btn-secondary"
+      button.textContent = t("livePreview.pendingAlternative", { reference: label })
+      button.addEventListener("click", () => {
+        sendJson({ id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: alternative.reference })
+        log(t("log.sentVerseOverride", { reference: JSON.stringify(alternative.reference) }), "sent")
+      })
+      versePendingAlternativesEl.appendChild(button)
+    }
   }
 
   function clearPendingVerse() {

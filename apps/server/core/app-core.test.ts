@@ -4376,22 +4376,33 @@ test("AppCore: 'Corinthiens 5 verset 2' after 1 Corinthians 13 is a pending sugg
       const message = JSON.parse(data.toString()) as WsMessage
       if (message.type === "verse:pending" || message.type === "verse:show") seen.push(message)
     })
-    // No context yet: a bare volume shows nothing at all.
+    // No context at all: both volumes fit, so BOTH are offered (never shown): 1 Corinthians first.
     asr.emitTranscript({ id: "01V0", correlationId: "01A", sequence: 1, text: "Corinthiens 5 verset 2", state: "final", timestamp: Date.now() })
-    await new Promise((resolve) => setTimeout(resolve, 150))
-    assert.equal(seen.length, 0)
-
-    asr.emitTranscript({ id: "01V1", correlationId: "01B", sequence: 2, text: "1 Corinthiens 13 verset 4", state: "final", timestamp: Date.now() })
     await waitFor(() => seen.length === 1)
-    assert.equal(seen[0]?.type, "verse:show")
+    assert.equal(seen[0]?.type, "verse:pending")
+    const both = seen[0]?.payload as Verse & { alternatives?: Verse[] }
+    assert.deepEqual(both.reference, { book: "1 corinthians", chapter: 5, verse: 2 })
+    assert.deepEqual(both.alternatives?.map((verse) => verse.reference), [{ book: "2 corinthians", chapter: 5, verse: 2 }])
 
-    asr.emitTranscript({ id: "01V2", correlationId: "01C", sequence: 3, text: "Corinthiens 5 verset 2", state: "final", timestamp: Date.now() })
+    // A chapter that exists in only one volume needs no choice: 2 Corinthians stops at 13.
+    asr.emitTranscript({ id: "01V3", correlationId: "01D", sequence: 2, text: "Corinthiens 15 verset 3", state: "final", timestamp: Date.now() })
     await waitFor(() => seen.length === 2)
-    assert.equal(seen[1]?.type, "verse:pending", "an inferred volume is a guess: pending even in auto mode")
-    assert.equal((seen[1]?.payload as { origin?: string }).origin, "inferred")
-    assert.deepEqual((seen[1]?.payload as Verse).reference, { book: "1 corinthians", chapter: 5, verse: 2 })
+    const only = seen[1]?.payload as Verse & { alternatives?: Verse[] }
+    assert.deepEqual(only.reference, { book: "1 corinthians", chapter: 15, verse: 3 })
+    assert.equal(only.alternatives, undefined)
+
+    asr.emitTranscript({ id: "01V1", correlationId: "01B", sequence: 3, text: "1 Corinthiens 13 verset 4", state: "final", timestamp: Date.now() })
+    await waitFor(() => seen.length === 3)
+    assert.equal(seen[2]?.type, "verse:show")
+
+    asr.emitTranscript({ id: "01V2", correlationId: "01C", sequence: 4, text: "Corinthiens 5 verset 2", state: "final", timestamp: Date.now() })
+    await waitFor(() => seen.length === 4)
+    assert.equal(seen[3]?.type, "verse:pending", "an inferred volume is a guess: pending even in auto mode")
+    assert.equal((seen[3]?.payload as { origin?: string }).origin, "inferred")
+    assert.deepEqual((seen[3]?.payload as Verse).reference, { book: "1 corinthians", chapter: 5, verse: 2 })
+    assert.equal((seen[3]?.payload as { alternatives?: unknown }).alternatives, undefined, "context names the volume, so no alternatives")
     await new Promise((resolve) => setTimeout(resolve, 150))
-    assert.equal(seen.length, 2, "the relative 'verset 2' must not also show verse 2 of the chapter on screen")
+    assert.equal(seen.length, 4, "the relative 'verset 2' must not also show verse 2 of the chapter on screen")
     viewerSocket.close()
   } finally {
     await app.stop()

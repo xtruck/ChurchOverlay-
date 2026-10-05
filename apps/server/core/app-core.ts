@@ -43,7 +43,7 @@ import { correctTranscription, detectHallucination } from "../asr/transcription-
 import { postprocessTranscript } from "../asr/postprocess/pipeline"
 import { TranscriptAssembler } from "../asr/transcript-assembler"
 import { RollingTranscriptWindow } from "../asr/rolling-transcript-window"
-import { applyVolumeHints, buildVolumeHints } from "../detector/volume-inference"
+import { allFamiliesAtVolume, applyVolumeHints, buildVolumeHints } from "../detector/volume-inference"
 import { RateLimitError } from "../asr/groq-provider"
 import type { MediaLibrary } from "../media/media-library"
 import { MediaCueDetector } from "../media/media-cue-detector"
@@ -706,23 +706,46 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     if (transcript.state !== "final") return
     const hints = buildVolumeHints(plannedBookIds, currentVersePosition?.book ?? null)
     const inferred = applyVolumeHints(text, hints)
-    if (!inferred) return
-    const verses = await resolveTranscriptVerses({ ...transcript, text: inferred }, detector, index, source, cache, circuitBreaker, logger)
-    for (const verse of verses) {
-      const onScreen =
-        currentVersePosition !== null &&
-        currentVersePosition.book === verse.reference.book &&
-        currentVersePosition.chapter === verse.reference.chapter &&
-        currentVersePosition.verse === verse.reference.verse
-      if (onScreen) continue
-      logger.info({
-        component: "app-core",
-        event: "volume.inferred",
-        correlationId: transcript.correlationId,
-        metadata: { heard: text, inferred, reference: verse.reference },
-      })
-      broadcastPendingVerse({ ...verse, origin: "inferred" } as Verse, transcript.correlationId)
+    const isOnScreen = (verse: Verse): boolean =>
+      currentVersePosition !== null &&
+      currentVersePosition.book === verse.reference.book &&
+      currentVersePosition.chapter === verse.reference.chapter &&
+      currentVersePosition.verse === verse.reference.verse
+
+    if (inferred) {
+      const verses = await resolveTranscriptVerses({ ...transcript, text: inferred }, detector, index, source, cache, circuitBreaker, logger)
+      for (const verse of verses) {
+        if (isOnScreen(verse)) continue
+        logger.info({
+          component: "app-core",
+          event: "volume.inferred",
+          correlationId: transcript.correlationId,
+          metadata: { heard: text, inferred, reference: verse.reference },
+        })
+        broadcastPendingVerse({ ...verse, origin: "inferred" } as Verse, transcript.correlationId)
+      }
+      return
     }
+
+    // No context at all: try every volume. A volume that does not have that chapter/verse drops out on
+    // its own ("Corinthiens 15 verset 3" only exists in 1 Corinthians), so often exactly one is left;
+    // when both exist, the operator is offered both and picks.
+    const candidates: Verse[] = []
+    for (const volume of ["1", "2"] as const) {
+      const candidateText = applyVolumeHints(text, allFamiliesAtVolume(volume))
+      if (!candidateText) return // no bare numbered book in this text
+      const verses = await resolveTranscriptVerses({ ...transcript, text: candidateText }, detector, index, source, cache, circuitBreaker, logger)
+      candidates.push(...verses.filter((verse) => !isOnScreen(verse)))
+    }
+    const [first, ...others] = candidates
+    if (!first) return
+    logger.info({
+      component: "app-core",
+      event: "volume.candidates",
+      correlationId: transcript.correlationId,
+      metadata: { heard: text, references: candidates.map((verse) => verse.reference) },
+    })
+    broadcastPendingVerse({ ...first, origin: "inferred", ...(others.length > 0 ? { alternatives: others } : {}) } as Verse, transcript.correlationId)
   }
 
   function deliverDetectedVerses(verses: readonly Verse[], transcript: TranscriptResult): void {
@@ -1279,7 +1302,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         // trigger kind of its own — confirmation is how review mode
         // delivers a detection, not a different way a verse got there.
         if (pendingVerse) {
-          const { origin: _origin, ...verse } = pendingVerse as Verse & { origin?: string }
+          const { origin: _origin, alternatives: _alternatives, ...verse } = pendingVerse as Verse & { origin?: string; alternatives?: unknown }
           pendingVerse = null
           broadcastVerse(verse, "detected", message.correlationId)
         } else {
@@ -1569,10 +1592,15 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // still apply.
     // A bare volume ("Corinthiens 5 verset 2") is explicit too once context names the volume:
     // the relative "verset 2" must not race it and show verse 2 of whatever is on screen.
-    const volumeHinted = applyVolumeHints(transcript.text, buildVolumeHints(plannedBookIds, currentVersePosition?.book ?? null))
+    // With no context at all, either volume fitting is enough to know a book WAS named.
+    const volumeTexts = [
+      applyVolumeHints(transcript.text, buildVolumeHints(plannedBookIds, currentVersePosition?.book ?? null)),
+      applyVolumeHints(transcript.text, allFamiliesAtVolume("1")),
+      applyVolumeHints(transcript.text, allFamiliesAtVolume("2")),
+    ]
     const hasExplicitReference =
       detector.detect(transcript.text).some((reference) => index.exists(reference)) ||
-      (volumeHinted !== null && detector.detect(volumeHinted).some((reference) => index.exists(reference)))
+      volumeTexts.some((text) => text !== null && detector.detect(text).some((reference) => index.exists(reference)))
     for (const command of navigationCommandDetector.detect(transcript.text)) {
       if (hasExplicitReference && command.kind !== "goto-display-mode" && command.kind !== "cancel") {
         logger.debug({

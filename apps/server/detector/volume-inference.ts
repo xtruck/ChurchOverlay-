@@ -42,6 +42,11 @@ const VOLUME_WORDS = new Set([
 
 export type VolumeHints = ReadonlyMap<string, string>
 
+/** Every family at one volume: the candidates to try when no context says which volume was meant. */
+export function allFamiliesAtVolume(volume: "1" | "2"): VolumeHints {
+  return new Map(Object.keys(FAMILY_WORDS).map((family) => [family, volume] as const))
+}
+
 /** "1 corinthians" -> { family: "corinthians", volume: "1" }; null for any other book id. */
 export function volumeOfBookId(bookId: string): { family: string; volume: string } | null {
   const match = /^([123]) (\w+)$/.exec(bookId)

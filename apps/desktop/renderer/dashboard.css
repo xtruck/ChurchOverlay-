@@ -1623,3 +1623,8 @@ input[type="text"]:focus, input[type="search"]:focus, input[type="password"]:foc
   .palette-item.active { outline: 2px solid Highlight; }
   .segmented button[aria-pressed="true"] { outline: 2px solid Highlight; }
 }
+
+/* Pending suggestion with several candidate verses: one quiet button each under the primary action. */
+.verse-pending-alternatives { display: flex; flex-direction: column; gap: var(--space-2); }
+.verse-pending-alternatives:empty { display: none; }
+.verse-pending-alternatives .btn-secondary { width: 100%; }

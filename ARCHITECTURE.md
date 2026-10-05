@@ -6100,5 +6100,7 @@ and the relative "verset 2" could even show verse 2 of whatever chapter was on s
 
 **Boundary check.** No new WS action or contract change. Nothing is displayed on inference alone.
 
-**Not done.** With no context at all (nothing on screen, nothing planned) a bare volume still shows nothing;
-offering both epistles as two suggestions needs a multi-candidate banner.
+**No context at all.** Every volume is tried. A volume that lacks that chapter/verse drops out on its own
+("Corinthiens 15 verset 3" exists only in 1 Corinthians), which often leaves exactly one. When both fit, the
+pending suggestion carries the other as `alternatives` and the dashboard shows one "Show X instead" button per
+alternative; choosing it is an ordinary `verse:override`, so it takes the validated manual path. No new WS action.
