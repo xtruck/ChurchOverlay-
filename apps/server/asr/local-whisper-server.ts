@@ -23,9 +23,56 @@ export type WhisperServerOptions = {
   readonly spawnImpl?: typeof spawn
   readonly fetchImpl?: typeof fetch
   readonly readyTimeoutMs?: number
+  /** How long the post-wake /health check may take before the engine counts as hung. */
+  readonly resumeHealthTimeoutMs?: number
 }
 
 const MAX_RESTART_DELAY_MS = 30_000
+const RESUME_HEALTH_TIMEOUT_MS = 3_000
+/** Drivers and the network stack settle for a moment after wake (OpenWhispr waits too before re-warming). */
+export const RESUME_SETTLE_DELAY_MS = 2_000
+
+/** The one event the core needs from Electron's powerMonitor; injected so this module never imports Electron. */
+export type ResumeSource = {
+  on(event: "resume", listener: () => void): unknown
+  removeListener(event: "resume", listener: () => void): unknown
+}
+
+/**
+ * Calls `target().onSystemResume()` once the system has settled after a
+ * wake. Repeated resume events inside the settle window collapse into one
+ * check. `target` is read at fire time, so a service restart between sleep
+ * and wake checks whichever engine is current (or nothing). Returns an
+ * unsubscribe function.
+ */
+export function watchSystemResume(
+  source: ResumeSource,
+  target: () => Pick<WhisperServerProcess, "onSystemResume"> | null,
+  options: { readonly settleMs?: number; readonly logger?: Logger } = {},
+): () => void {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  const listener = () => {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => {
+      timer = null
+      const engine = target()
+      if (!engine) return
+      engine.onSystemResume().catch((error: unknown) => {
+        options.logger?.error({
+          component: "asr",
+          event: "local-whisper.resume-check-failed",
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
+    }, options.settleMs ?? RESUME_SETTLE_DELAY_MS)
+  }
+  source.on("resume", listener)
+  return () => {
+    if (timer) clearTimeout(timer)
+    timer = null
+    source.removeListener("resume", listener)
+  }
+}
 
 export class WhisperServerProcess {
   private readonly options: WhisperServerOptions
@@ -65,6 +112,57 @@ export class WhisperServerProcess {
     this.child = null
     this.port = 0
     if (child && child.exitCode === null) child.kill()
+  }
+
+  /**
+   * Called after the machine wakes from sleep. A sleeping laptop can leave the
+   * engine hung (GPU/driver state lost, socket wedged) while the process still
+   * exists, so the exit handler never fires. Re-check /health with a short,
+   * bounded timeout; restart once if it does not answer. No-op when stopped
+   * or mid-start. Never throws for an unhealthy engine (restart failures are logged).
+   */
+  async onSystemResume(): Promise<void> {
+    if (this.stopped || this.starting) return
+    const child = this.child
+    if (!child || !this.port) {
+      this.options.logger?.info({ component: "asr", event: "local-whisper.resume-restart", metadata: { reason: "not-running" } })
+      await this.restartAfterResume()
+      return
+    }
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), this.options.resumeHealthTimeoutMs ?? RESUME_HEALTH_TIMEOUT_MS)
+    let healthy = false
+    try {
+      const response = await this.fetchImpl(`http://127.0.0.1:${this.port}/health`, { signal: controller.signal })
+      healthy = response.ok
+    } catch {
+      healthy = false // unreachable or timed out: handled below by a restart
+    } finally {
+      clearTimeout(timer)
+    }
+    if (this.child !== child || this.stopped) return // stopped or replaced while we waited
+    if (healthy) {
+      this.options.logger?.debug({ component: "asr", event: "local-whisper.resume-healthy" })
+      return
+    }
+    this.options.logger?.warn({ component: "asr", event: "local-whisper.resume-restart", metadata: { reason: "health-failed" } })
+    // Detach first so the exit handler does not schedule a second restart.
+    this.child = null
+    this.port = 0
+    if (child.exitCode === null) child.kill()
+    await this.restartAfterResume()
+  }
+
+  private async restartAfterResume(): Promise<void> {
+    try {
+      await this.ensureStarted()
+    } catch (error) {
+      this.options.logger?.error({
+        component: "asr",
+        event: "local-whisper.resume-restart-failed",
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 
   private async launch(): Promise<void> {
@@ -123,10 +221,13 @@ export class WhisperServerProcess {
         throw new Error(`Local transcription engine exited during startup: ${stderr().slice(-300)}`)
       }
       try {
-        const response = await this.fetchImpl(`http://127.0.0.1:${this.port}/health`)
+        // Each poll is bounded too: a wedged socket must not outlive the deadline.
+        const response = await this.fetchImpl(`http://127.0.0.1:${this.port}/health`, {
+          signal: AbortSignal.timeout(this.options.resumeHealthTimeoutMs ?? RESUME_HEALTH_TIMEOUT_MS),
+        })
         if (response.ok) return
       } catch {
-        // not listening yet
+        // not listening yet (or that poll timed out)
       }
       await new Promise((resolve) => setTimeout(resolve, 250))
     }

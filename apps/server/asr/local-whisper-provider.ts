@@ -3,6 +3,8 @@ import type { Logger } from "../../../packages/shared/logger"
 import { generateUlid } from "../../../packages/shared/ulid"
 import { plannedBookTerms } from "./biblical-vocabulary"
 import { normalizeBookName } from "../detector/regex-detector"
+import { echoWords, isPromptEcho } from "./prompt-echo"
+import { filterSegments, parseScoredSegments } from "./segment-quality"
 
 /**
  * Offline transcription through a local whisper.cpp server — the last link
@@ -33,14 +35,35 @@ export type LocalWhisperProviderOptions = {
   readonly now?: () => number
   /** Whisper initial prompt: vocabulary the model should expect. */
   readonly prompt?: string
-  readonly requestTimeoutMs?: number
+  /**
+   * Per-request timeout. Default: scales with the batch's audio length
+   * (computeLocalTranscriptionTimeoutMs). A number pins it (tests); a function
+   * receives the batch's audio milliseconds.
+   */
+  readonly requestTimeoutMs?: number | ((audioMs: number) => number)
 }
 
 const SAMPLE_RATE = 16000
 const MIN_BATCH_MS = 700
 const MAX_BATCH_MS = 8000
 const MAX_BACKLOG = 2
-const DEFAULT_TIMEOUT_MS = 30_000
+/** Never below the old fixed budget: a cold first request on a weak CPU must still fit. */
+export const LOCAL_TIMEOUT_FLOOR_MS = 30_000
+/**
+ * Budget per second of audio. OpenWhispr (transcriptionTimeout.js, MIT) uses
+ * 10x real time for dictation; a live service drops stale batches instead of
+ * waiting (MAX_BACKLOG), so half that is enough here.
+ */
+export const LOCAL_TIMEOUT_PER_AUDIO_SECOND_MS = 5_000
+/** Hard ceiling: a hung engine must always fail, and the queue behind it must move. */
+export const LOCAL_TIMEOUT_CEILING_MS = 120_000
+
+/** Request timeout for a batch of `audioMs` audio: floor, then linear, then capped. Never infinite. */
+export function computeLocalTranscriptionTimeoutMs(audioMs: number): number {
+  if (!Number.isFinite(audioMs) || audioMs <= 0) return LOCAL_TIMEOUT_CEILING_MS
+  const scaled = Math.ceil((audioMs / 1000) * LOCAL_TIMEOUT_PER_AUDIO_SECOND_MS)
+  return Math.min(LOCAL_TIMEOUT_CEILING_MS, Math.max(LOCAL_TIMEOUT_FLOOR_MS, scaled))
+}
 const DEFAULT_PROMPT_FR = "Lecture biblique : Jean chapitre 3 verset 16, Psaume 23, Romains 8, Deutéronome, Philippiens."
 const DEFAULT_PROMPT_EN = "Bible reading: John chapter 3 verse 16, Psalm 23, Romans 8, Deuteronomy, Philippians."
 /** Whisper only reads the last ~220 tokens of a prompt; this keeps ours well inside that. */
@@ -52,6 +75,18 @@ const QUIET_SEARCH_MS = 1500
 const QUIET_WINDOW_MS = 80
 /** A batch slower than this multiple of its own audio length means the machine cannot keep up. */
 const SLOW_RTF = 1.2
+/**
+ * whisper.cpp decoder thresholds sent with every /inference request. The
+ * server defaults (entropy 2.4, logprob -1.0) let a mostly-silent window
+ * through as outro boilerplate ("Merci d'avoir regardé"). Values from
+ * OpenWhispr's whisperServer.js (MIT), measured there over ~4.8k real
+ * dictations. The faster-whisper sidecar ignores these fields and applies
+ * its own equivalents (server.py).
+ */
+export const INFERENCE_DECODER_FIELDS: Readonly<Record<string, string>> = Object.freeze({
+  entropy_thold: "2.8",
+  logprob_thold: "-1.25",
+})
 
 /**
  * Where to cut a long run of speech that has to be sent now. Cutting at an
@@ -88,7 +123,7 @@ export class LocalWhisperProvider implements AsrProvider {
   private readonly fetchImpl: typeof fetch
   private readonly now: () => number
   private readonly promptOverride?: string
-  private readonly requestTimeoutMs: number
+  private readonly timeoutFor: (audioMs: number) => number
   private language: string | undefined
   private active = false
   private plannedBookIds: readonly string[] = []
@@ -110,7 +145,8 @@ export class LocalWhisperProvider implements AsrProvider {
     this.fetchImpl = options.fetchImpl ?? fetch
     this.now = options.now ?? Date.now
     this.promptOverride = options.prompt
-    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS
+    const timeout = options.requestTimeoutMs ?? computeLocalTranscriptionTimeoutMs
+    this.timeoutFor = typeof timeout === "number" ? () => timeout : timeout
   }
 
   setLanguage(language: string | undefined): void {
@@ -229,7 +265,7 @@ export class LocalWhisperProvider implements AsrProvider {
         const batch = this.queue.shift() as Int16Array
         try {
           const startedAt = this.now()
-          const text = (await this.transcribe(batch)).trim()
+          const text = await this.transcribeGuarded(batch)
           const tookMs = this.now() - startedAt
           const audioMs = msOf(batch.length)
           const rtf = audioMs > 0 ? tookMs / audioMs : 0
@@ -259,28 +295,95 @@ export class LocalWhisperProvider implements AsrProvider {
     }
   }
 
-  private async transcribe(samples: Int16Array): Promise<string> {
+  /**
+   * One batch, with the prompt-echo guard: a transcript that is merely the
+   * prompt read back is dropped and the same audio is sent ONCE more with no
+   * prompt. The retry's result is used as-is — with no prompt there is
+   * nothing to echo, so real speech that happened to match is not lost.
+   */
+  private async transcribeGuarded(samples: Int16Array): Promise<string> {
+    const prompt = this.buildPrompt()
+    const first = (await this.transcribe(samples, prompt)).trim()
+    if (!isPromptEcho(first, prompt)) return first
+    this.logger?.warn({
+      component: "asr",
+      event: "local-whisper.prompt-echo",
+      correlationId: this.correlationId,
+      metadata: { words: echoWords(first).length, action: "retry-without-prompt" },
+    })
+    const retry = (await this.transcribe(samples, null)).trim()
+    this.logger?.info({
+      component: "asr",
+      event: "local-whisper.prompt-echo-retry",
+      correlationId: this.correlationId,
+      metadata: { words: echoWords(retry).length, empty: retry.length === 0 },
+    })
+    return retry
+  }
+
+  /**
+   * Segment-quality filter: when the engine returned scored segments, drop the
+   * ones that are very likely invented (segment-quality.ts) and rebuild the
+   * text from the rest. No usable segments, or nothing dropped: the engine's
+   * own `text`, unchanged.
+   */
+  private dropUnlikelySegments(body: unknown, text: string): string {
+    const segments = parseScoredSegments(body)
+    if (!segments) return text
+    const { kept, dropped } = filterSegments(segments)
+    if (dropped.length === 0) return text
+    for (const segment of dropped) {
+      this.logger?.info({
+        component: "asr",
+        event: "local-whisper.segment-dropped",
+        correlationId: this.correlationId,
+        metadata: {
+          reason: segment.reason,
+          words: segment.words,
+          noSpeechProb: round(segment.noSpeechProb),
+          avgLogprob: round(segment.avgLogprob),
+          compressionRatio: round(segment.compressionRatio),
+        },
+      })
+    }
+    return kept.map((segment) => segment.text.trim()).filter(Boolean).join(" ")
+  }
+
+  private async transcribe(samples: Int16Array, prompt: string | null): Promise<string> {
     await this.server.ensureStarted()
     const baseUrl = this.server.baseUrl
     if (!baseUrl) throw new Error("Local transcription engine is not running")
     const form = new FormData()
     form.append("file", new Blob([encodeWav(samples)], { type: "audio/wav" }), "audio.wav")
-    form.append("response_format", "json")
+    // verbose_json adds per-segment scores for the hallucination filter; `text` is still there.
+    form.append("response_format", "verbose_json")
     form.append("temperature", "0.0")
     form.append("language", this.language ?? "auto")
-    form.append("prompt", this.buildPrompt())
+    for (const [name, value] of Object.entries(INFERENCE_DECODER_FIELDS)) form.append(name, value)
+    if (prompt) form.append("prompt", prompt)
+    const timeoutMs = this.timeoutFor(msOf(samples.length))
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs)
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
     try {
       const response = await this.fetchImpl(`${baseUrl}/inference`, { method: "POST", body: form, signal: controller.signal })
       if (!response.ok) throw new Error(`Local transcription failed (${response.status})`)
       const body = (await response.json()) as { text?: unknown; error?: unknown }
       if (typeof body.text !== "string") throw new Error(`Local transcription returned no text${body.error ? `: ${String(body.error)}` : ""}`)
-      return body.text.replace(/\s+/g, " ")
+      return this.dropUnlikelySegments(body, body.text).replace(/\s+/g, " ")
+    } catch (error) {
+      if (controller.signal.aborted) {
+        this.logger?.warn({ component: "asr", event: "local-whisper.timeout", correlationId: this.correlationId, metadata: { timeoutMs } })
+        throw new Error(`Local transcription timed out after ${timeoutMs}ms`)
+      }
+      throw error
     } finally {
       clearTimeout(timer)
     }
   }
+}
+
+function round(value: number | undefined): number | null {
+  return value === undefined ? null : Number(value.toFixed(3))
 }
 
 function msOf(samples: number): number {

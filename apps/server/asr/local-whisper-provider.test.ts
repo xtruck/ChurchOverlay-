@@ -65,7 +65,7 @@ test("LocalWhisperProvider: utterance end posts a WAV with language, prompt and 
     assert.match(body, /name="file"; filename="audio.wav"/)
     assert.match(body, /RIFF/)
     assert.match(body, /name="language"\r\n\r\nfr/)
-    assert.match(body, /name="response_format"\r\n\r\njson/)
+    assert.match(body, /name="response_format"\r\n\r\nverbose_json/)
     assert.match(body, /name="prompt"\r\n\r\nLecture biblique/)
   } finally {
     await fake.close()
@@ -161,6 +161,174 @@ test("WhisperServerProcess + LocalWhisperProvider against the real whisper.cpp s
   } finally {
     await server.stop()
   }
+})
+
+// ---- Local pipeline hardening (ARCHITECTURE.md section 117) ----
+import { Logger } from "../../../packages/shared/logger"
+
+type Captured = { readonly fields: Map<string, string>; readonly hasPrompt: boolean }
+
+/** An injected fetch that records each /inference form and answers from a script. */
+function scriptedFetch(replies: ReadonlyArray<unknown>) {
+  const calls: Captured[] = []
+  const queue = [...replies]
+  const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+    const form = init?.body as FormData
+    const fields = new Map<string, string>()
+    form.forEach((value, key) => {
+      if (typeof value === "string") fields.set(key, value)
+    })
+    calls.push({ fields, hasPrompt: form.has("prompt") })
+    return new Response(JSON.stringify(queue.shift() ?? { text: "" }), { status: 200, headers: { "content-type": "application/json" } })
+  }) as typeof fetch
+  return { calls, fetchImpl }
+}
+
+const endpoint = { baseUrl: "http://127.0.0.1:1", ensureStarted: async () => {}, stop: async () => {} }
+
+function capturingLogger() {
+  const lines: Array<Record<string, unknown>> = []
+  return { lines, logger: new Logger({ minLevel: "debug", write: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) }) }
+}
+
+async function runOneBatch(provider: LocalWhisperProvider, results: TranscriptResult[], expectedCalls: () => number, wanted: number) {
+  await provider.start()
+  await provider.sendAudio(frame(1000))
+  await provider.onUtteranceEnd()
+  for (let i = 0; i < 100 && expectedCalls() < wanted; i++) await new Promise((r) => setTimeout(r, 5))
+  await new Promise((r) => setTimeout(r, 10))
+  return results
+}
+
+test("LocalWhisperProvider: sends the OpenWhispr decoder thresholds to /inference", async () => {
+  const fake = scriptedFetch([{ text: "Romains 8" }])
+  const provider = new LocalWhisperProvider({ server: endpoint, language: "fr", fetchImpl: fake.fetchImpl })
+  const results: TranscriptResult[] = []
+  provider.onTranscript((r) => results.push(r))
+  await runOneBatch(provider, results, () => fake.calls.length, 1)
+  assert.equal(fake.calls[0]?.fields.get("entropy_thold"), "2.8")
+  assert.equal(fake.calls[0]?.fields.get("logprob_thold"), "-1.25")
+})
+
+test("LocalWhisperProvider: a transcript that echoes the prompt is dropped and retried once without the prompt", async () => {
+  const echo = "Lecture biblique : Jean chapitre 3 verset 16, Psaume 23, Romains 8."
+  const fake = scriptedFetch([{ text: echo }, { text: "Amen" }])
+  const { lines, logger } = capturingLogger()
+  const provider = new LocalWhisperProvider({ server: endpoint, language: "fr", fetchImpl: fake.fetchImpl, logger })
+  const results: TranscriptResult[] = []
+  provider.onTranscript((r) => results.push(r))
+  await runOneBatch(provider, results, () => fake.calls.length, 2)
+  assert.equal(fake.calls.length, 2, "exactly one retry")
+  assert.equal(fake.calls[0]?.hasPrompt, true)
+  assert.equal(fake.calls[1]?.hasPrompt, false, "the retry carries no prompt")
+  assert.deepEqual(results.map((r) => r.text), ["Amen"], "the echo never reaches the pipeline")
+  const echoLog = lines.find((l) => l.event === "local-whisper.prompt-echo")
+  const retryLog = lines.find((l) => l.event === "local-whisper.prompt-echo-retry")
+  assert.ok(echoLog && retryLog, "both events are logged")
+  assert.equal(echoLog.correlationId, results[0]?.correlationId)
+  assert.equal(retryLog.correlationId, results[0]?.correlationId)
+  assert.doesNotMatch(JSON.stringify(echoLog), /Lecture biblique/, "the transcript text itself is not logged")
+})
+
+test("LocalWhisperProvider: a retry that returns the same words is accepted (no prompt, so it is real speech)", async () => {
+  const spoken = "Lecture biblique Jean chapitre 3 verset 16 Psaume 23"
+  const fake = scriptedFetch([{ text: spoken }, { text: spoken }])
+  const provider = new LocalWhisperProvider({ server: endpoint, language: "fr", fetchImpl: fake.fetchImpl })
+  const results: TranscriptResult[] = []
+  provider.onTranscript((r) => results.push(r))
+  await runOneBatch(provider, results, () => fake.calls.length, 2)
+  assert.equal(fake.calls.length, 2, "never more than one retry")
+  assert.deepEqual(results.map((r) => r.text), [spoken])
+})
+
+test("LocalWhisperProvider: an ordinary transcript is not retried", async () => {
+  const fake = scriptedFetch([{ text: "Jean chapitre 3 verset 16" }])
+  const provider = new LocalWhisperProvider({ server: endpoint, language: "fr", fetchImpl: fake.fetchImpl })
+  const results: TranscriptResult[] = []
+  provider.onTranscript((r) => results.push(r))
+  await runOneBatch(provider, results, () => fake.calls.length, 1)
+  assert.equal(fake.calls.length, 1)
+  assert.deepEqual(results.map((r) => r.text), ["Jean chapitre 3 verset 16"])
+})
+
+test("LocalWhisperProvider: a hallucinated segment in a verbose_json reply is dropped and logged; the rest is kept", async () => {
+  // Shape of whisper.cpp v1.8.0's verbose_json (no compression_ratio).
+  const fake = scriptedFetch([
+    {
+      text: " Lisons Romains 8 verset 28. Merci d'avoir regardé.",
+      segments: [
+        { id: 0, text: " Lisons Romains 8 verset 28.", avg_logprob: -0.25, no_speech_prob: 0.02 },
+        { id: 1, text: " Merci d'avoir regardé.", avg_logprob: -1.6, no_speech_prob: 0.91 },
+      ],
+    },
+  ])
+  const { lines, logger } = capturingLogger()
+  const provider = new LocalWhisperProvider({ server: endpoint, language: "fr", fetchImpl: fake.fetchImpl, logger })
+  const results: TranscriptResult[] = []
+  provider.onTranscript((r) => results.push(r))
+  await runOneBatch(provider, results, () => fake.calls.length, 1)
+  assert.equal(fake.calls[0]?.fields.get("response_format"), "verbose_json")
+  assert.deepEqual(results.map((r) => r.text), ["Lisons Romains 8 verset 28."])
+  const dropLog = lines.find((l) => l.event === "local-whisper.segment-dropped")
+  assert.ok(dropLog, "the drop is logged")
+  assert.equal(dropLog.correlationId, results[0]?.correlationId)
+  assert.equal((dropLog.metadata as { reason: string }).reason, "no-speech")
+})
+
+test("LocalWhisperProvider: a reply without segment scores passes through unchanged (filter is a no-op)", async () => {
+  const fake = scriptedFetch([{ text: " Psaume 23 " }, { text: "Amen", segments: "garbage" }])
+  const provider = new LocalWhisperProvider({ server: endpoint, language: "fr", fetchImpl: fake.fetchImpl })
+  const results: TranscriptResult[] = []
+  const errors: Error[] = []
+  provider.onTranscript((r) => results.push(r))
+  provider.onError((e) => errors.push(e))
+  await runOneBatch(provider, results, () => fake.calls.length, 1)
+  await provider.sendAudio(frame(1000))
+  await provider.onUtteranceEnd()
+  for (let i = 0; i < 100 && results.length < 2; i++) await new Promise((r) => setTimeout(r, 5))
+  assert.deepEqual(results.map((r) => r.text), ["Psaume 23", "Amen"])
+  assert.deepEqual(errors, [])
+})
+
+import { computeLocalTranscriptionTimeoutMs, LOCAL_TIMEOUT_CEILING_MS, LOCAL_TIMEOUT_FLOOR_MS } from "./local-whisper-provider"
+
+test("computeLocalTranscriptionTimeoutMs: floor, then scales with audio, capped, never infinite", () => {
+  assert.equal(computeLocalTranscriptionTimeoutMs(1000), LOCAL_TIMEOUT_FLOOR_MS)
+  assert.equal(computeLocalTranscriptionTimeoutMs(8000), 40_000)
+  assert.ok(computeLocalTranscriptionTimeoutMs(8000) > computeLocalTranscriptionTimeoutMs(4000))
+  assert.equal(computeLocalTranscriptionTimeoutMs(10 * 60_000), LOCAL_TIMEOUT_CEILING_MS)
+  for (const bad of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.equal(computeLocalTranscriptionTimeoutMs(bad), LOCAL_TIMEOUT_CEILING_MS)
+  }
+})
+
+test("LocalWhisperProvider: the request timeout follows the batch's audio length and a hung engine is aborted with a clear error", async () => {
+  const seenAudioMs: number[] = []
+  let aborted = false
+  const fetchImpl = ((_url: string | URL | Request, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => {
+        aborted = true
+        reject(new DOMException("aborted", "AbortError"))
+      })
+    })) as typeof fetch
+  const provider = new LocalWhisperProvider({
+    server: endpoint,
+    fetchImpl,
+    requestTimeoutMs: (audioMs) => {
+      seenAudioMs.push(audioMs)
+      return 20
+    },
+  })
+  const errors: Error[] = []
+  provider.onError((e) => errors.push(e))
+  await provider.start()
+  await provider.sendAudio(frame(1500))
+  await provider.onUtteranceEnd()
+  for (let i = 0; i < 100 && errors.length === 0; i++) await new Promise((r) => setTimeout(r, 5))
+  assert.deepEqual(seenAudioMs, [1500])
+  assert.equal(aborted, true)
+  assert.match(errors[0]?.message ?? "", /timed out after 20ms/)
 })
 
 // ---- Local pipeline improvements (ARCHITECTURE.md section 116) ----

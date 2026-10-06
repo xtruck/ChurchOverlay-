@@ -136,3 +136,9 @@ a dedicated test would exercise nothing real.
 | A bare volume is a PENDING `inferred` suggestion in auto mode and the relative verse does not also show | `app-core.test.ts` |
 
 | Quiet-point cut, continuous speech not cut, context prompt (planned books, book on screen, previous sentence), forced cut lands at the pause | `local-whisper-provider.test.ts` |
+| Decoder thresholds sent to `/inference`; a prompt echo is dropped and retried once without the prompt (both logged with the correlationId); a short reference found in the prompt is not an echo | `local-whisper-provider.test.ts`, `prompt-echo.test.ts` (injected `fetchImpl`) |
+| Request timeout: floor, scales with audio, capped, never infinite; a hung engine is aborted with a clear error | `local-whisper-provider.test.ts` |
+| After wake: healthy engine left alone, hung engine killed and restarted exactly once, nothing when stopped; resume events debounced to the current engine | `local-whisper-server.test.ts` (fake child process, injected `fetchImpl`) |
+| Model download: Range resume, Range ignored (rewrite from zero), cut connection kept for resume then completed, free-space refusal, hash mismatch deletes the partial, oversized body refused | `local-asr-installer.test.ts` (injected `fetchImpl` and `freeBytes`, real temp dir) |
+| Segment filter: no-speech AND low-logprob dropped, either alone kept, extreme compression dropped, missing fields / unreadable `segments` are a no-op; provider requests `verbose_json`, rebuilds text without the dropped segment and logs it | `segment-quality.test.ts`, `local-whisper-provider.test.ts` |
+| Sidecar thresholds and `verbose_json` segments against the real faster-whisper 1.2.1 + `base` model (manual) | Not automated (needs the downloaded runtime); see section 117 |

@@ -6128,3 +6128,60 @@ grep, not a guess. Backlog dropping (oldest first) is unchanged.
 **Limits.** Prompt conditioning can make Whisper echo a prompt word into silence; the existing hallucination and
 silence checks still apply, but no accuracy gain is claimed until measured on real preaching. The quiet-cut threshold
 (below half the median) was chosen on synthetic speech.
+
+## 117. Local Transcription Hardening (ideas from OpenWhispr, MIT)
+
+Applies to both offline engines behind `LocalWhisperProvider`. Ideas were studied in OpenWhispr and reimplemented;
+no code was copied. No WS action, provider interface (`AsrProvider`) or detection path changes.
+
+**Decoder thresholds.** Every whisper.cpp `/inference` request now carries `entropy_thold=2.8` and
+`logprob_thold=-1.25` (OpenWhispr's tuned values; whisper.cpp v1.8.0's server parses both form fields). The
+faster-whisper sidecar ignores those fields and passes its equivalents to `WhisperModel.transcribe`
+(`log_prob_threshold=-1.25`, `compression_ratio_threshold=2.4`, `no_speech_threshold=0.6`, names checked against
+faster-whisper 1.2.1, the pinned version).
+
+**Prompt-echo guard** (`prompt-echo.ts`). Prompt conditioning (section 116) can make Whisper read the prompt back
+into silence. A transcript sharing one contiguous run of at least 8 words with the prompt, that run being at least 80%
+of the transcript (accents, case, punctuation ignored), is dropped and the same audio is sent once more with no prompt. The retry's result is
+used as-is: with no prompt there is nothing to echo, so a sentence the preacher really said is never lost to a
+coincidental match. Both events are logged (`local-whisper.prompt-echo`, `local-whisper.prompt-echo-retry`) with the
+session `correlationId`; the transcript text is not logged. At most one retry per batch. The 8-word floor is
+measured, not guessed: with a 6-word floor the real faster-whisper engine flagged a genuine "Lisons Jean chapitre 3
+verset 16" (5 words shared with the reference-shaped prompt), and the prompt-less retry transcribed it worse.
+
+**Request timeout scales with audio.** The fixed 30 s timeout is replaced by `computeLocalTranscriptionTimeoutMs`:
+30 s floor (the old budget), 5 s per second of audio (half OpenWhispr's 10x real-time budget, because the live
+backlog drops stale batches anyway), 120 s ceiling, and the ceiling for an invalid duration — never infinite. An
+expired request is aborted (`AbortController`), logged as `local-whisper.timeout`, and reported as
+"Local transcription timed out after N ms", which `FailoverAsrProvider` sees like any other provider error.
+
+**Wake from sleep.** A machine that sleeps mid-service can leave the engine process alive but hung, so its exit
+handler never fires. `WhisperServerProcess.onSystemResume()` re-checks `/health` with a 3 s bound and, if it does not
+answer, kills the process (detached first, so its exit does not schedule a second restart) and starts a new one.
+`watchSystemResume(source, target)` debounces resume events (2 s settle) and calls the engine that is current at
+fire time; the desktop main process passes Electron's `powerMonitor` as the `source`, so `apps/server` still imports
+nothing from Electron. Each startup `/health` poll is now bounded by the same 3 s, so a wedged socket cannot outlive
+the readiness deadline.
+
+**Model download (whisper.cpp engine, `LocalAsrInstaller`).** The model (142-466 MB) now streams to a stable
+`<model>.partial` instead of memory. A later attempt resumes it with `Range: bytes=N-`; a server that ignores the
+range (200) rewrites the file from zero, and a 206 starting anywhere else is refused. Before downloading, free space
+on the models volume must cover 1.2x the model size minus what is already on disk (OpenWhispr's margin); if the
+platform cannot report free space the check is skipped and an out-of-space write still fails the install. The
+received size must equal the size the server declared (a cut connection stays an error and keeps its partial for
+resume) and may never exceed 1.5x the expected size. Integrity is unchanged in strength: the SHA-1 is computed over
+the complete file before the rename, and a mismatch deletes the partial so corrupt bytes are never resumed. The
+engine zip and the faster-whisper installer keep the previous whole-file download.
+
+**Segment-quality filter** (`segment-quality.ts`). Provider contract change, local engines only: `/inference` is now
+called with `response_format=verbose_json` instead of `json`; `text` is still read exactly as before. whisper.cpp
+v1.8.0's server returns per-segment `avg_logprob` and `no_speech_prob` in that format (and no `compression_ratio`,
+marked not implemented in its source); the sidecar now returns `segments` with `text`, `start`, `end`,
+`avg_logprob`, `no_speech_prob` and `compression_ratio` for the segments it kept (its own stricter filter from
+section 113 is unchanged; with plain `json` it still returns only `text`). A segment is dropped when
+`no_speech_prob >= 0.8` AND `avg_logprob <= -1.0`, or when `compression_ratio > 3.0` — deliberately past Whisper's
+own 0.6 / -1.0 / 2.4, because a dropped real reference costs more than noise the detector will reject anyway. Each
+drop logs `local-whisper.segment-dropped` (reason and scores, not the text) with the `correlationId`. When nothing is
+dropped the engine's `text` is used unchanged; when something is, the text is rebuilt from the kept segments. A
+response without a readable `segments` array, or a segment missing a score, disables that rule: a clean no-op, never
+an error.
