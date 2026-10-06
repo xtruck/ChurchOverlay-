@@ -22,49 +22,118 @@
   const translationSelect = document.getElementById("translation-select");
 
   let currentVerse = null;
+  const liveStatusEl = document.getElementById("live-status");
   const savedVerses = JSON.parse(localStorage.getItem("churchoverlay_saved_verses") || "[]");
 
+  // Connection state for the header dot + text (data-conn drives the colour
+  // in live.css; the text says the same thing in words).
+  function setConnection(state, text) {
+    document.body.dataset.conn = state;
+    if (liveStatusEl) liveStatusEl.textContent = text;
+  }
+
+  let toastTimer = null;
   function showToast(message) {
     if (!toastEl) return;
     toastEl.textContent = message;
     toastEl.className = "toast";
-    setTimeout(() => {
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
       toastEl.className = "toast hidden";
     }, 2500);
+  }
+
+  // verse:show carries reference as { book, chapter, verse } (packages/
+  // contracts/verse.ts); it used to be stored and shown as-is, which printed
+  // "[object Object]". Format it; plain strings (and notes saved by older
+  // versions of this page) pass through.
+  function formatReference(ref) {
+    if (!ref) return "Scripture";
+    if (typeof ref === "string") return ref;
+    if (typeof ref.book !== "string") return "Scripture";
+    const book = ref.book.replace(/\b\w/g, (c) => c.toUpperCase());
+    return book + " " + ref.chapter + ":" + ref.verse;
+  }
+
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  function closeIcon() {
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("class", "icon");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", "M18 6L6 18M6 6l12 12");
+    svg.appendChild(path);
+    return svg;
+  }
+
+  // Saved notes hold server-provided verse text (and, for older entries,
+  // whatever was in localStorage): build every node with createElement and
+  // textContent only — never innerHTML with data — so nothing in a note can
+  // become markup or script.
+  function buildSavedCard(v, i) {
+    const reference = formatReference(v && v.reference);
+    const card = document.createElement("li");
+    card.className = "saved-card";
+
+    const header = document.createElement("div");
+    header.className = "saved-card-header";
+
+    const meta = document.createElement("div");
+    const ref = document.createElement("span");
+    ref.className = "saved-card-ref";
+    ref.textContent = reference;
+    meta.appendChild(ref);
+    if (v && typeof v.timestamp === "string" && v.timestamp) {
+      const time = document.createElement("span");
+      time.className = "saved-card-time";
+      time.textContent = v.timestamp;
+      meta.appendChild(time);
+    }
+    header.appendChild(meta);
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "btn-remove-saved";
+    remove.dataset.index = String(i);
+    remove.setAttribute("aria-label", "Remove " + reference);
+    remove.appendChild(closeIcon());
+    remove.addEventListener("click", (e) => {
+      const idx = Number(e.currentTarget.dataset.index);
+      savedVerses.splice(idx, 1);
+      localStorage.setItem("churchoverlay_saved_verses", JSON.stringify(savedVerses));
+      renderSavedList();
+    });
+    header.appendChild(remove);
+    card.appendChild(header);
+
+    const text = document.createElement("p");
+    text.className = "saved-card-text";
+    text.textContent = v && typeof v.text === "string" ? v.text : "";
+    card.appendChild(text);
+    return card;
   }
 
   function renderSavedList() {
     if (!savedList || !savedCount) return;
     savedCount.textContent = String(savedVerses.length);
+    savedList.replaceChildren();
 
     if (savedVerses.length === 0) {
-      savedList.innerHTML =
-        '<p class="empty-hint">Tap "Save to My Notes" on any verse above to bookmark it for later study.</p>';
+      savedList.classList.add("empty");
+      const hint = document.createElement("p");
+      hint.className = "empty-hint";
+      hint.textContent = 'Tap "Save to My Notes" on any verse above to bookmark it for later study.';
+      savedList.appendChild(hint);
       return;
     }
 
-    savedList.innerHTML = savedVerses
-      .map(
-        (v, i) => `
-      <div class="saved-card">
-        <div class="saved-card-header">
-          <span class="saved-card-ref">${v.reference}</span>
-          <button class="btn-remove-saved" data-index="${i}">✕</button>
-        </div>
-        <p class="saved-card-text">${v.text}</p>
-      </div>
-    `
-      )
-      .join("");
-
-    savedList.querySelectorAll(".btn-remove-saved").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        const idx = Number(e.currentTarget.dataset.index);
-        savedVerses.splice(idx, 1);
-        localStorage.setItem("churchoverlay_saved_verses", JSON.stringify(savedVerses));
-        renderSavedList();
-      });
-    });
+    savedList.classList.remove("empty");
+    const list = document.createElement("ul");
+    list.className = "saved-list";
+    savedVerses.forEach((v, i) => list.appendChild(buildSavedCard(v, i)));
+    savedList.appendChild(list);
   }
 
   function saveCurrentVerse() {
@@ -81,9 +150,9 @@
       });
       localStorage.setItem("churchoverlay_saved_verses", JSON.stringify(savedVerses));
       renderSavedList();
-      showToast(`Saved ${currentVerse.reference}! ⭐`);
+      showToast(`Saved ${currentVerse.reference}`);
     } else {
-      showToast("Already in your notes!");
+      showToast("Already in your notes");
     }
   }
 
@@ -92,7 +161,7 @@
     const textToCopy = `${currentVerse.reference}\n"${currentVerse.text}"`;
     navigator.clipboard
       .writeText(textToCopy)
-      .then(() => showToast("Copied to clipboard! 📋"))
+      .then(() => showToast("Copied to clipboard"))
       .catch(() => showToast("Copy failed"));
   }
 
@@ -102,7 +171,7 @@
       return;
     }
     const formatted = savedVerses
-      .map((v) => `${v.reference}\n"${v.text}"\n`)
+      .map((v) => `${formatReference(v.reference)}\n"${v.text}"\n`)
       .join("\n---\n\n");
     const blob = new Blob([`SERMON NOTES — ${new Date().toLocaleDateString()}\n\n${formatted}`], {
       type: "text/plain",
@@ -113,7 +182,7 @@
     a.download = `Sermon-Notes-${new Date().toISOString().slice(0, 10)}.txt`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast("Notes exported! 📥");
+    showToast("Notes exported");
   }
 
   if (btnSave) btnSave.addEventListener("click", saveCurrentVerse);
@@ -126,20 +195,28 @@
     // looks live. Say what's actually missing instead.
     if (!token) {
       console.warn("[live] no viewer token in the page URL — copy the companion link from the app");
+      setConnection("offline", "No access link");
       return;
     }
     const ws = new WebSocket(wsUrl, [token]);
+    ws.onopen = () => setConnection("connected", "Connected");
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === "verse:show" && msg.payload) {
           currentVerse = {
-            reference: msg.payload.reference || "Scripture",
+            reference: formatReference(msg.payload.reference),
             text: msg.payload.text || "",
           };
           if (heroCard) heroCard.className = "verse-hero";
           if (referenceEl) referenceEl.textContent = currentVerse.reference;
-          if (textEl) textEl.textContent = currentVerse.text;
+          if (textEl) {
+            textEl.textContent = currentVerse.text;
+            // Replay the gentle fade-in for each new verse.
+            textEl.style.animation = "none";
+            void textEl.offsetWidth;
+            textEl.style.animation = "";
+          }
         } else if (msg.type === "verse:clear") {
           currentVerse = null;
           if (heroCard) heroCard.className = "verse-hero empty";
@@ -152,9 +229,13 @@
         console.warn("Malformed WS message:", err);
       }
     };
-    ws.onclose = () => setTimeout(connectWs, 2500);
+    ws.onclose = () => {
+      setConnection("offline", "Reconnecting…");
+      setTimeout(connectWs, 2500);
+    };
   }
 
+  setConnection("connecting", "Connecting…");
   renderSavedList();
   connectWs();
 })();

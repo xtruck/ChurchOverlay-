@@ -2,21 +2,36 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <!--
+    Conservative CSP: only this page's own script, stylesheet, fonts and
+    favicon; the WebSocket goes back to the serving host (ws:/wss:, any
+    port, since wsPort comes from the link). Saved notes are built with
+    createElement/textContent (live.js), never innerHTML, and no inline
+    script/style attributes are used, so 'unsafe-inline' is not needed.
+  -->
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self' ws: wss:; base-uri 'none'; form-action 'none'; object-src 'none'"
+  />
+  <meta name="theme-color" content="#0b0e13" />
+  <meta name="color-scheme" content="dark" />
   <title>Live Congregation Companion — ChurchOverlay</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="stylesheet" href="fonts/fonts.css" />
   <link rel="stylesheet" href="live.css" />
 </head>
 <body>
   <div class="live-app">
-    <!-- Header with Live Status & Translation Selector -->
+    <!-- Header with connection state & translation selector -->
     <header class="live-header">
       <div class="church-brand">
-        <span class="live-pulse"></span>
-        <span class="brand-title">SANCTUARY LIVE</span>
+        <span class="live-pulse" aria-hidden="true"></span>
+        <span class="brand-title">Live</span>
+        <span id="live-status" class="live-status" role="status">Connecting…</span>
       </div>
       <div class="translation-control">
-        <label for="translation-select">Bible:</label>
+        <label for="translation-select">Bible</label>
         <select id="translation-select">
           <option value="lsg">LSG (Français)</option>
           <option value="kjv" selected>KJV (English)</option>
@@ -26,31 +41,36 @@
       </div>
     </header>
 
-    <!-- Main Live Verse Card -->
+    <!-- Main live verse -->
     <main class="live-content">
-      <section id="live-verse-card" class="verse-hero empty">
+      <section id="live-verse-card" class="verse-hero empty" aria-live="polite" aria-labelledby="live-reference">
         <div class="verse-header">
-          <span class="badge-live">NOW PREACHING</span>
+          <span class="badge-live">Now reading</span>
           <h1 id="live-reference" class="verse-ref">Welcome to Service</h1>
         </div>
         <div class="verse-body">
           <p id="live-text" class="verse-words">Verses spoken during the sermon will appear here in real-time.</p>
         </div>
         <div class="verse-actions">
-          <button id="btn-save-verse" class="btn-action">
-            <span class="icon">⭐</span> Save to My Notes
+          <button type="button" id="btn-save-verse" class="btn-action">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
+            Save to My Notes
           </button>
-          <button id="btn-copy-verse" class="btn-action secondary">
-            <span class="icon">📋</span> Copy
+          <button type="button" id="btn-copy-verse" class="btn-action secondary">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" /></svg>
+            Copy
           </button>
         </div>
       </section>
 
-      <!-- Saved Verses / Personal Notebook Section -->
-      <section class="notes-section">
+      <!-- Saved verses / personal notebook -->
+      <section class="notes-section" aria-labelledby="notes-heading">
         <div class="section-title-row">
-          <h2>My Saved Verses (<span id="saved-count">0</span>)</h2>
-          <button id="btn-export-notes" class="btn-text">Export All</button>
+          <h2 id="notes-heading">My Saved Verses <span class="count-pill" id="saved-count">0</span></h2>
+          <button type="button" id="btn-export-notes" class="btn-text">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3v12M7 10l5 5 5-5M5 21h14" /></svg>
+            Export All
+          </button>
         </div>
         <div id="saved-verses-list" class="saved-list empty">
           <p class="empty-hint">Tap "Save to My Notes" on any verse above to bookmark it for later study.</p>
@@ -58,8 +78,8 @@
       </section>
     </main>
 
-    <!-- Toast Notification -->
-    <div id="live-toast" class="toast hidden"></div>
+    <!-- Toast notification -->
+    <div id="live-toast" class="toast hidden" role="status" aria-live="polite"></div>
   </div>
 
   <script src="live.js"></script>

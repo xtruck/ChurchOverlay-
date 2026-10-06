@@ -3,8 +3,21 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!--
+    Conservative CSP: only this page's own script, stylesheet, fonts and
+    favicon; the WebSocket goes to the host that served the page (ws:/wss:,
+    any port, since wsPort comes from the link). No inline script or style
+    attributes are used by this page (stage.js only sets styles through the
+    CSSOM, which style-src does not restrict).
+  -->
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self' ws: wss:; base-uri 'none'; form-action 'none'; object-src 'none'"
+  />
+  <meta name="color-scheme" content="dark" />
   <title>Stage Display — ChurchOverlay</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="stylesheet" href="fonts/fonts.css" />
   <link rel="stylesheet" href="stage.css" />
 </head>
 <body class="stage-body">
@@ -12,29 +25,32 @@
     <!-- Clock + countdown timer, facing the preacher (never the congregation) -->
     <header class="stage-header">
       <div class="header-left">
-        <div id="current-clock" class="clock-display">--:--:--</div>
-        <div class="service-title">CHURCHOVERLAY</div>
+        <div id="current-clock" class="clock-display" aria-label="Time of day">--:--:--</div>
+        <div class="service-title">Stage</div>
       </div>
-      <div id="timer-badge" class="timer-badge">
-        <span class="timer-label">SERVICE</span>
+      <div id="timer-badge" class="timer-badge" role="timer" aria-live="off">
+        <span class="timer-label">Timer</span>
         <span id="timer-display" class="timer-time">00:00</span>
       </div>
     </header>
 
     <!-- Operator alert (stage:alert / stage:clear-alert from the phone remote) -->
-    <div id="stage-alert-banner" class="stage-alert-banner hidden">
-      <span class="alert-icon">&#9888;</span>
+    <div id="stage-alert-banner" class="stage-alert-banner hidden" role="alert">
+      <svg class="alert-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+        <path d="M12 9v4M12 17h.01" />
+      </svg>
       <div>
-        <div class="alert-title">MESSAGE FROM THE DESK</div>
+        <div class="alert-title">Message from the desk</div>
         <div id="alert-text" class="alert-text"></div>
       </div>
     </div>
 
     <!-- Currently displayed verse -->
     <main class="stage-main">
-      <section id="stage-verse-card" class="stage-verse-card empty">
+      <section id="stage-verse-card" class="stage-verse-card empty" aria-live="polite">
         <div class="stage-meta">
-          <span class="stage-badge">SCRIPTURE</span>
+          <span class="stage-badge">Scripture</span>
           <h1 id="stage-reference" class="stage-reference">No verse displayed</h1>
         </div>
         <div class="stage-text-container">
@@ -46,10 +62,14 @@
     <!-- Connection + microphone health -->
     <footer class="stage-footer">
       <div class="status-indicator">
-        <span id="ws-indicator" class="dot disconnected"></span>
+        <span id="ws-indicator" class="dot disconnected" aria-hidden="true"></span>
         <span id="ws-status-text">DISCONNECTED</span>
       </div>
       <div class="status-indicator">
+        <svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <rect x="9" y="2" width="6" height="12" rx="3" />
+          <path d="M19 10a7 7 0 0 1-14 0M12 17v5" />
+        </svg>
         <span>MIC</span>
         <span id="audio-status-text" class="audio-status-val">—</span>
       </div>

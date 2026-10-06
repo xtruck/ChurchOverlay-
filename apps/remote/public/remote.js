@@ -40,6 +40,26 @@
       "prepared.empty": "No verses prepared yet. Add one above.",
       "prepared.invalid": "Could not recognize that reference (e.g. \"John 3:16\").",
       "prepared.remove": "Remove",
+      onAirTag: "On air",
+      tabsLabel: "Sections",
+      timerTitle: "Sermon timer",
+      timerLabel: "Sermon countdown",
+      timerStop: "Pause / Stop",
+      timerReset: "Reset",
+      alertTitle: "Message to the stage",
+      alert2min: "2 minutes",
+      alertWrap: "Wrap up",
+      alertNursery: "Nursery",
+      alertMic: "Mic check",
+      alertPlaceholder: "Custom stage message…",
+      send: "Send",
+      quickVersePlaceholder: "e.g. John 3:16 or Rom 8:28",
+      preparedPlaceholder: "e.g. John 3:16",
+      packTitle: "Post-service pack",
+      packBody: "Generate timestamped YouTube chapters, bulletin summaries, and social media quotes from this service.",
+      packGenerate: "Generate service summary pack",
+      packGenerating: "Generating…",
+      packFailed: "Failed to load service pack.",
     },
     fr: {
       title: "Télécommande",
@@ -76,6 +96,26 @@
       "prepared.empty": "Aucun verset préparé pour l'instant. Ajoutez-en un ci-dessus.",
       "prepared.invalid": "Référence non reconnue (ex. « Jean 3:16 »).",
       "prepared.remove": "Retirer",
+      onAirTag: "À l'antenne",
+      tabsLabel: "Sections",
+      timerTitle: "Minuteur de prédication",
+      timerLabel: "Compte à rebours",
+      timerStop: "Pause / Arrêt",
+      timerReset: "Réinitialiser",
+      alertTitle: "Message à la scène",
+      alert2min: "2 minutes",
+      alertWrap: "Conclure",
+      alertNursery: "Garderie",
+      alertMic: "Vérifier le micro",
+      alertPlaceholder: "Message personnalisé…",
+      send: "Envoyer",
+      quickVersePlaceholder: "ex. Jean 3:16 ou Rom 8:28",
+      preparedPlaceholder: "ex. Jean 3:16",
+      packTitle: "Pack après le culte",
+      packBody: "Générez des chapitres YouTube horodatés, des résumés pour le bulletin et des citations pour les réseaux sociaux à partir de ce culte.",
+      packGenerate: "Générer le pack de résumé",
+      packGenerating: "Génération…",
+      packFailed: "Impossible de charger le pack.",
     },
   }
   const lang = (navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en"
@@ -87,6 +127,12 @@
   document.documentElement.lang = lang
   document.querySelectorAll("[data-t]").forEach((el) => {
     el.textContent = t(el.getAttribute("data-t"))
+  })
+  document.querySelectorAll("[data-t-placeholder]").forEach((el) => {
+    el.setAttribute("placeholder", t(el.getAttribute("data-t-placeholder")))
+  })
+  document.querySelectorAll("[data-t-label]").forEach((el) => {
+    el.setAttribute("aria-label", t(el.getAttribute("data-t-label")))
   })
   document.title = "ChurchOverlay — " + t("title")
 
@@ -169,16 +215,48 @@
   const servicePackResult = document.getElementById("service-pack-result")
   const servicePackText = document.getElementById("service-pack-text")
 
-  // Tab switching
-  document.querySelectorAll(".tab-btn").forEach((btn) => {
+  // Small inline SVG icon (same 24-unit grid / currentColor stroke as the
+  // page's sprite), built with DOM APIs — never innerHTML.
+  const SVG_NS = "http://www.w3.org/2000/svg"
+  function iconEl(symbolId) {
+    const svg = document.createElementNS(SVG_NS, "svg")
+    svg.setAttribute("class", "icon")
+    svg.setAttribute("aria-hidden", "true")
+    const use = document.createElementNS(SVG_NS, "use")
+    use.setAttribute("href", "#" + symbolId)
+    svg.appendChild(use)
+    return svg
+  }
+
+  // Tab switching (WAI-ARIA tabs: roving tabindex, arrow keys move between tabs)
+  const tabButtons = Array.from(document.querySelectorAll(".tab-btn"))
+  function selectTab(btn) {
+    tabButtons.forEach((b) => {
+      const selected = b === btn
+      b.classList.toggle("active", selected)
+      b.setAttribute("aria-selected", String(selected))
+      b.tabIndex = selected ? 0 : -1
+    })
+    document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"))
+    const targetId = "panel-" + btn.getAttribute("data-tab")
+    const panel = document.getElementById(targetId)
+    if (panel) panel.classList.add("active")
+  }
+  tabButtons.forEach((btn, index) => {
     btn.addEventListener("click", () => {
       triggerHaptic()
-      document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"))
-      document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"))
-      btn.classList.add("active")
-      const targetId = "panel-" + btn.getAttribute("data-tab")
-      const panel = document.getElementById(targetId)
-      if (panel) panel.classList.add("active")
+      selectTab(btn)
+    })
+    btn.addEventListener("keydown", (event) => {
+      let next = null
+      if (event.key === "ArrowRight") next = tabButtons[(index + 1) % tabButtons.length]
+      else if (event.key === "ArrowLeft") next = tabButtons[(index - 1 + tabButtons.length) % tabButtons.length]
+      else if (event.key === "Home") next = tabButtons[0]
+      else if (event.key === "End") next = tabButtons[tabButtons.length - 1]
+      if (!next) return
+      event.preventDefault()
+      selectTab(next)
+      next.focus()
     })
   })
 
@@ -198,6 +276,7 @@
 
   function renderOnScreen(label) {
     onScreenEl.classList.toggle("live", Boolean(label))
+    document.body.classList.toggle("is-live", Boolean(label))
     onScreenStateEl.textContent = label ? t("onAir") : t("offAir")
     onScreenRefEl.textContent = label || ""
   }
@@ -318,8 +397,8 @@
       const removeBtn = document.createElement("button")
       removeBtn.type = "button"
       removeBtn.className = "prepared-remove-btn"
-      removeBtn.textContent = "×"
-      removeBtn.setAttribute("aria-label", t("prepared.remove"))
+      removeBtn.appendChild(iconEl("i-x"))
+      removeBtn.setAttribute("aria-label", t("prepared.remove") + " " + refStr)
       removeBtn.addEventListener("click", (event) => {
         event.stopPropagation()
         preparedVerses.splice(index, 1)
@@ -353,6 +432,13 @@
     if (event.key === "Enter") addPreparedVerse(preparedVerseInput.value)
   })
   preparedVerseInput.addEventListener("input", () => preparedVerseInput.setCustomValidity(""))
+  // Enter / the keyboard's Go/Send key does what the button next to the field does.
+  quickVerseInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") quickVerseBtn.click()
+  })
+  stageAlertInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") sendAlertBtn.click()
+  })
   renderPreparedVerses()
 
   const BASE_RECONNECT_DELAY_MS = 1000
@@ -479,9 +565,11 @@
       }
     }
 
+    const servicePackLabel = downloadServicePackBtn.querySelector(".btn-label") || downloadServicePackBtn
     downloadServicePackBtn.onclick = async () => {
       try {
-        downloadServicePackBtn.textContent = "⏳ Generating Pack..."
+        servicePackLabel.textContent = t("packGenerating")
+        downloadServicePackBtn.disabled = true
         const res = await fetch("/api/service-pack", { headers: { Authorization: "Bearer " + token } })
         if (res.ok) {
           const data = await res.json()
@@ -489,9 +577,11 @@
           servicePackText.value = `# YouTube Description:\n${data.youtubeDescription}\n\n# Service Analytics:\nDuration: ${data.analytics?.serviceDurationMinutes}m | WPM: ${data.analytics?.speechRateWpm}\nVerses Quoted: ${data.analytics?.uniqueVersesCount}`
         }
       } catch (err) {
-        servicePackText.value = "Failed to load service pack."
+        servicePackResult.style.display = "block"
+        servicePackText.value = t("packFailed")
       } finally {
-        downloadServicePackBtn.textContent = "📦 Generate Service Summary Pack"
+        servicePackLabel.textContent = t("packGenerate")
+        downloadServicePackBtn.disabled = false
       }
     }
   }

@@ -43,6 +43,47 @@
     return `${sign}${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
   }
 
+  // verse:show carries reference as { book, chapter, verse } (packages/
+  // contracts/verse.ts). Setting the object as textContent printed
+  // "[object Object]"; format it. A plain string is still accepted.
+  function formatReference(ref) {
+    if (!ref) return "Scripture";
+    if (typeof ref === "string") return ref;
+    if (typeof ref.book !== "string") return "Scripture";
+    const book = ref.book.replace(/\b\w/g, (c) => c.toUpperCase());
+    return book + " " + ref.chapter + ":" + ref.verse;
+  }
+
+  // The preacher cannot scroll a stage monitor: shrink the verse until it
+  // fits its box (bounded loop, legibility floor), largest size first.
+  const MIN_VERSE_PX = 28;
+  function fitVerseText() {
+    if (!verseTextEl || !verseCard || verseCard.classList.contains("empty")) {
+      if (verseTextEl) verseTextEl.style.fontSize = "";
+      return;
+    }
+    const box = verseTextEl.parentElement;
+    verseTextEl.style.fontSize = "";
+    let size = parseFloat(getComputedStyle(verseTextEl).fontSize) || 64;
+    while (box && verseTextEl.scrollHeight > box.clientHeight + 1 && size > MIN_VERSE_PX) {
+      size -= 2;
+      verseTextEl.style.fontSize = size + "px";
+    }
+  }
+  let resizeTimer = 0;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(fitVerseText, 80);
+  });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitVerseText);
+
+  function restartVerseAnimation() {
+    if (!verseTextEl) return;
+    verseTextEl.style.animation = "none";
+    void verseTextEl.offsetWidth;
+    verseTextEl.style.animation = "";
+  }
+
   function connectWs() {
     // Same guard overlay.js applies: with no token the server terminates the
     // socket as unauthenticated, so opening one would only produce an endless
@@ -77,13 +118,16 @@
 
     if (msg.type === "verse:show" && msg.payload) {
       if (verseCard) verseCard.className = "stage-verse-card";
-      if (referenceEl) referenceEl.textContent = msg.payload.reference || "Scripture";
+      if (referenceEl) referenceEl.textContent = formatReference(msg.payload.reference);
       if (verseTextEl) verseTextEl.textContent = msg.payload.text || "";
+      restartVerseAnimation();
+      fitVerseText();
     } else if (msg.type === "verse:clear") {
       if (verseCard) verseCard.className = "stage-verse-card empty";
       if (referenceEl) referenceEl.textContent = "No verse displayed";
       if (verseTextEl)
         verseTextEl.textContent = "Awaiting scripture detection from pulpit speech...";
+      fitVerseText();
     } else if (msg.type === "timer:state" && msg.payload) {
       const p = msg.payload;
       if (timerDisplay) timerDisplay.textContent = formatTime(p.remainingSeconds);
