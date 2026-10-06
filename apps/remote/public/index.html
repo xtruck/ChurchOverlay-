@@ -2,405 +2,659 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta
   http-equiv="Content-Security-Policy"
   content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; connect-src 'self' ws:; base-uri 'none'; form-action 'none';"
 />
-<title>ChurchOverlay — Pro Studio Remote</title>
+<meta name="theme-color" content="#0b0e13" />
+<meta name="color-scheme" content="dark" />
+<title>ChurchOverlay — Remote</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <link href="fonts/fonts.css" rel="stylesheet" />
 <style>
+  /*
+    Vespers 2 (design-system/ChurchOverlay/MASTER.md): dark, cinematic,
+    restrained. Phone remote = one thumb, comfortable density, 44px+
+    targets, the on-air state readable at a glance (red + "ON AIR" text,
+    never colour alone). Semantic tokens only below this block.
+  */
   :root {
-    --nave: #0b1017;
-    --pew: #131b26;
-    --pew-card: rgba(19, 27, 38, 0.75);
-    --stone: #1f2c3d;
-    --line: #29384c;
-    --line-strong: #3b4e68;
-    --vellum: #f3efe6;
-    --ash: #9eabbc;
-    --ash-dim: #8a97ad;
-    --accent: #e0a93b;
-    --accent-soft: rgba(224, 169, 59, 0.15);
+    --bg: #0b0e13;
+    --surface-1: #12161d;
+    --surface-2: #181d26;
+    --surface-3: #202734;
+    --border: #262e3b;
+    --field-border: #5a6b86;
+    --text: #ece7dc;
+    --text-muted: #a7b0bf;
+    --text-faint: #8893a6;
+    --accent: #e3ad45;
+    --accent-ink: #1a1304;
+    --accent-soft: rgba(227, 173, 69, 0.14);
     --on-air: #ef4a4a;
-    --on-air-soft: rgba(239, 74, 74, 0.16);
-    --cue: #3fcf8e;
-    --cue-soft: rgba(63, 207, 142, 0.15);
+    --on-air-fill: #c22f2f;
+    --on-air-soft: rgba(239, 74, 74, 0.14);
+    --on-air-ink: #ff8a8a;
+    --live-ok: #3fcf8e;
     --warn: #f08a3c;
-    --blue: #3b82f6;
-    --blue-soft: rgba(59, 130, 246, 0.15);
     --font-display: "Instrument Serif", Georgia, serif;
-    --font-ui: "Instrument Sans", -apple-system, system-ui, sans-serif;
+    --font-ui: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+    --ease: cubic-bezier(0.2, 0, 0, 1);
+    --r-control: 8px;
+    --r-panel: 14px;
+    --nav-h: 64px;
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-l: env(safe-area-inset-left, 0px);
+    --safe-r: env(safe-area-inset-right, 0px);
     color-scheme: dark;
   }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body {
-    margin: 0;
-    min-height: 100%;
-    background: var(--nave);
-    color: var(--vellum);
-    font-family: var(--font-ui);
-    font-variant-numeric: tabular-nums;
-  }
+  *, *::before, *::after { box-sizing: border-box; }
+  * { -webkit-tap-highlight-color: transparent; }
+  html { background: var(--bg); -webkit-text-size-adjust: 100%; }
   body {
-    padding: 12px 14px 48px;
-    max-width: 560px;
     margin: 0 auto;
+    max-width: 560px;
+    min-height: 100vh;
+    min-height: 100dvh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 16px;
+    line-height: 1.5;
+    padding:
+      0
+      calc(16px + var(--safe-r))
+      calc(var(--nav-h) + 24px + var(--safe-b))
+      calc(16px + var(--safe-l));
+  }
+  svg.icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.75;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
-  header {
+  /* ---------- Top bar ---------- */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    margin-bottom: 12px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--line);
+    margin: 0 calc(-16px - var(--safe-r)) 0 calc(-16px - var(--safe-l));
+    padding: calc(10px + var(--safe-t)) calc(16px + var(--safe-r)) 10px calc(16px + var(--safe-l));
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+  }
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    .topbar {
+      background: rgba(11, 14, 19, 0.86);
+      -webkit-backdrop-filter: blur(14px);
+      backdrop-filter: blur(14px);
+    }
   }
   .brand-title {
-    font-family: var(--font-display);
-    font-weight: 400;
-    font-size: 24px;
-    margin: 0;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
+    min-width: 0;
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 400;
+    line-height: 1.2;
   }
-  .brand-badge {
-    font-family: var(--font-ui);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    padding: 3px 8px;
-    border-radius: 999px;
-    background: var(--accent-soft);
-    color: var(--accent);
-    border: 1px solid var(--accent);
-    text-transform: uppercase;
-  }
-  #status-pill {
-    display: flex;
+  /* Header ON AIR tag: mirrors #on-screen so the state stays visible while
+     scrolled down the page. Hidden from assistive tech: #on-screen-state
+     (aria-live) already announces the same change in words. */
+  .hdr-onair {
+    display: none;
     align-items: center;
     gap: 6px;
-    padding: 5px 12px;
+    padding: 2px 10px;
     border-radius: 999px;
-    border: 1px solid var(--line);
+    background: var(--on-air-fill);
+    color: #fff;
+    font-family: var(--font-ui);
     font-size: 12px;
-    color: var(--ash);
-    background: var(--pew);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    line-height: 20px;
+    white-space: nowrap;
   }
+  body.is-live .hdr-onair { display: inline-flex; }
+  #status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 32px;
+    max-width: 55%;
+    padding: 4px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface-1);
+    color: var(--text-muted);
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  #status-text { overflow: hidden; text-overflow: ellipsis; }
   #status-dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--ash-dim);
+    flex-shrink: 0;
+    background: var(--text-faint);
   }
-  #status-pill.connected #status-dot { background: var(--cue); box-shadow: 0 0 8px var(--cue); }
+  #status-pill.connected #status-dot { background: var(--live-ok); }
+  #status-pill.disconnected { color: var(--warn); border-color: rgba(240, 138, 60, 0.4); }
   #status-pill.disconnected #status-dot { background: var(--warn); }
 
-  /* Navigation Tabs */
-  .nav-tabs {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
-    margin-bottom: 14px;
-    background: var(--pew);
-    padding: 4px;
-    border-radius: 12px;
-    border: 1px solid var(--line);
-  }
-  .tab-btn {
-    background: transparent;
-    border: none;
-    color: var(--ash);
-    padding: 8px 4px;
-    font-size: 12px;
-    font-weight: 600;
-    border-radius: 8px;
-    cursor: pointer;
-    text-align: center;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 3px;
-    min-height: 48px;
-    transition: background 150ms, color 150ms;
-  }
-  .tab-btn.active {
-    background: var(--stone);
-    color: var(--vellum);
-    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-  }
-  .tab-icon { font-size: 15px; }
-
-  /* Card and Panels */
-  .tab-panel { display: none; }
-  .tab-panel.active { display: block; }
-  .card {
-    background: var(--pew-card);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 16px;
-    margin-bottom: 12px;
-  }
-  .card-title {
-    font-family: var(--font-display);
-    font-size: 20px;
-    margin: 0 0 10px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  /* On-Screen Tally */
+  /* ---------- On-air tally (always visible, above every tab) ---------- */
   #on-screen {
-    border-width: 2px;
-    transition: border-color 160ms ease, box-shadow 160ms ease;
+    margin: 16px 0;
+    padding: 16px;
+    border-radius: var(--r-panel);
+    border: 1px solid var(--border);
+    background: var(--surface-1);
+    transition: border-color 200ms var(--ease), background-color 200ms var(--ease), box-shadow 200ms var(--ease);
   }
   #on-screen.live {
     border-color: var(--on-air);
-    box-shadow: 0 0 0 4px var(--on-air-soft);
+    background: linear-gradient(180deg, rgba(239, 74, 74, 0.10), rgba(239, 74, 74, 0.03)), var(--surface-1);
+    box-shadow: 0 0 0 3px var(--on-air-soft);
+  }
+  .tally-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 24px;
   }
   #on-screen-state {
-    font-size: 12px;
-    font-weight: 700;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--ash);
-    margin-bottom: 4px;
+    color: var(--text-muted);
   }
-  #on-screen.live #on-screen-state { color: #ff7d7d; }
+  #on-screen.live #on-screen-state { color: var(--on-air-ink); }
+  .on-air-badge {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 10px 2px 8px;
+    border-radius: 999px;
+    background: var(--on-air-fill);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    line-height: 20px;
+    text-transform: uppercase;
+  }
+  #on-screen.live .on-air-badge { display: inline-flex; }
+  .on-air-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #fff;
+    animation: tally 2.4s ease-in-out infinite;
+  }
+  @keyframes tally { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
   #on-screen-ref {
-    font-family: var(--font-display);
-    font-size: 26px;
-    line-height: 1.15;
     min-height: 1.2em;
-    color: var(--vellum);
-    margin-bottom: 10px;
+    margin: 4px 0 14px;
+    font-family: var(--font-display);
+    font-size: 28px;
+    line-height: 1.2;
+    color: var(--text);
+    overflow-wrap: anywhere;
+  }
+  #on-screen:not(.live) #on-screen-ref:empty::before {
+    content: "—";
+    color: var(--text-faint);
   }
 
-  /* Buttons */
+  /* ---------- Panels / cards ---------- */
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  .card {
+    margin-bottom: 16px;
+    padding: 16px;
+    border-radius: var(--r-panel);
+    border: 1px solid var(--border);
+    background: var(--surface-1);
+  }
+  .card-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 12px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .card-title .icon { width: 16px; height: 16px; color: var(--text-faint); }
+  .card-hint { margin: 0 0 12px; font-size: 14px; color: var(--text-muted); }
+
+  /* ---------- Buttons ---------- */
   button {
     font: inherit;
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 600;
-    border-radius: 10px;
-    padding: 12px 14px;
+    line-height: 1.2;
+    min-height: 48px;
+    padding: 12px 16px;
+    border-radius: var(--r-control);
     border: 1px solid transparent;
+    color: var(--text);
+    background: var(--surface-2);
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    transition: transform 80ms, opacity 150ms;
+    gap: 8px;
+    touch-action: manipulation;
+    transition: transform 120ms var(--ease), background-color 120ms var(--ease), border-color 120ms var(--ease), opacity 120ms var(--ease);
   }
   button:active:not(:disabled) { transform: scale(0.97); }
-  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (hover: hover) {
+    button:hover:not(:disabled) { background-color: var(--surface-3); }
+    .btn-primary:hover:not(:disabled) { background-color: #ecbb5c; }
+    #on-screen.live .btn-clear:hover:not(:disabled) { background-color: #d23737; }
+  }
   .btn-row { display: flex; gap: 8px; }
-  .btn-primary { background: var(--accent); color: #151004; font-weight: 700; }
-  .btn-secondary { background: var(--stone); color: var(--vellum); border-color: var(--line-strong); flex: 1; }
-  .btn-danger { background: transparent; color: #ff8f8f; border-color: var(--on-air); }
-  .btn-clear { background: var(--on-air); color: #fff; width: 100%; font-size: 16px; padding: 14px; }
-  .btn-cue { background: var(--cue-soft); color: var(--cue); border-color: var(--cue); }
+  .btn-row > button { flex: 1; min-width: 0; }
+  .btn-block { width: 100%; }
+  .btn-primary { background: var(--accent); color: var(--accent-ink); }
+  .btn-secondary { background: var(--surface-2); border-color: var(--border); flex: 1; }
+  .btn-danger {
+    background: transparent;
+    color: var(--on-air-ink);
+    border-color: rgba(239, 74, 74, 0.55);
+  }
+  /* The one action that matters most during a service. Outline while
+     nothing is on screen, solid red the moment something is. */
+  .btn-clear {
+    width: 100%;
+    min-height: 56px;
+    font-size: 17px;
+    background: transparent;
+    color: var(--text);
+    border-color: var(--field-border);
+  }
+  #on-screen.live .btn-clear {
+    background: var(--on-air-fill);
+    border-color: var(--on-air-fill);
+    color: #fff;
+  }
 
-  /* Grid Layouts for Pad */
+  /* ---------- Rundown ---------- */
+  .scene-list { margin-bottom: 12px; }
+  .scene-empty { font-size: 14px; color: var(--text-faint); padding: 4px 0; }
+  .scene-chip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 48px;
+    padding: 12px 14px;
+    border-radius: var(--r-control);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    font-size: 16px;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+  .scene-chip::before {
+    content: "";
+    width: 3px;
+    align-self: stretch;
+    border-radius: 2px;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+  .scene-chip.interrupted::before { background: var(--warn); }
+
+  /* ---------- Inputs ---------- */
+  .field-row { display: flex; gap: 8px; margin-bottom: 12px; }
+  .field-row > input { flex: 1; min-width: 0; }
+  .field-row > button { flex-shrink: 0; }
+  input[type="text"], input[type="number"], select, textarea {
+    width: 100%;
+    min-height: 48px;
+    padding: 12px 14px;
+    border-radius: var(--r-control);
+    border: 1px solid var(--field-border);
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+    font-size: 16px; /* >= 16px: iOS does not zoom on focus */
+  }
+  input::placeholder { color: var(--text-faint); opacity: 1; }
+  input:focus-visible, select:focus-visible, textarea:focus-visible { border-color: var(--accent); }
+
+  /* ---------- Verse / outline presets ---------- */
   .grid-presets {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
-    margin-top: 8px;
   }
   .preset-btn {
-    padding: 12px;
-    background: var(--stone);
-    color: var(--vellum);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    font-size: 13.5px;
-    text-align: left;
-    display: flex;
     flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
     gap: 2px;
+    min-height: 64px;
+    padding: 12px 14px;
+    text-align: left;
+    background: var(--surface-2);
+    border-color: var(--border);
   }
-  .preset-btn small { font-size: 11px; color: var(--ash); }
-  .prepared-verse-row { display: flex; align-items: stretch; gap: 6px; grid-column: 1 / -1; }
-  .prepared-verse-row .preset-btn { flex: 1; }
+  .preset-btn strong { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+  .preset-btn small { font-size: 13px; font-weight: 400; color: var(--text-muted); }
+  .prepared-verse-row { display: flex; align-items: stretch; gap: 8px; grid-column: 1 / -1; }
+  .prepared-verse-row .preset-btn { flex: 1; min-height: 52px; }
   .prepared-remove-btn {
     flex-shrink: 0;
-    width: 36px;
+    width: 52px;
+    min-height: 52px;
+    padding: 0;
     background: transparent;
-    color: #ff8f8f;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    font-size: 16px;
+    color: var(--on-air-ink);
+    border-color: var(--border);
   }
-  .prepared-verse-empty { color: var(--ash-dim); font-size: 13px; padding: 4px 0; grid-column: 1 / -1; }
+  .prepared-verse-empty { grid-column: 1 / -1; padding: 4px 0; font-size: 14px; color: var(--text-faint); }
 
-  /* Input fields */
-  input[type="text"], input[type="number"], select {
-    width: 100%;
-    padding: 12px 14px;
-    border-radius: 10px;
-    background: var(--nave);
-    border: 1px solid var(--line);
-    color: var(--vellum);
-    font: inherit;
-    font-size: 15px;
-    margin-bottom: 8px;
-  }
-  input:focus, select:focus {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px var(--accent-soft);
-  }
-
-  /* Timer Display */
+  /* ---------- Timer ---------- */
   .timer-box {
-    text-align: center;
-    padding: 18px;
-    background: var(--nave);
-    border-radius: 12px;
-    border: 1px solid var(--line);
     margin-bottom: 12px;
+    padding: 20px 16px 16px;
+    border-radius: var(--r-control);
+    border: 1px solid var(--border);
+    background: var(--bg);
+    text-align: center;
   }
   .timer-clock {
-    font-family: var(--font-display);
-    font-size: 48px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    color: var(--cue);
+    font-family: var(--font-mono);
+    font-size: 56px;
+    font-weight: 600;
     line-height: 1;
-    margin-bottom: 4px;
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--live-ok);
   }
-  .timer-clock.overtime { color: var(--on-air); animation: pulse 1s infinite alternate; }
-  @keyframes pulse { from { opacity: 0.7; } to { opacity: 1; } }
+  .timer-clock.overtime { color: var(--on-air); animation: tally 2.4s ease-in-out infinite; }
+  #remote-timer-label { display: block; margin-top: 8px; font-size: 13px; color: var(--text-muted); }
 
-  .pill-group {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-bottom: 10px;
-  }
+  .pill-group { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .pill-group.wrap { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pill-btn {
-    padding: 7px 12px;
-    font-size: 12.5px;
+    min-height: 48px;
+    padding: 10px 8px;
     border-radius: 999px;
-    background: var(--stone);
-    border: 1px solid var(--line);
-    color: var(--vellum);
+    background: var(--surface-2);
+    border-color: var(--border);
+    font-size: 15px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .pill-group.wrap .pill-btn { border-radius: var(--r-control); justify-content: flex-start; padding: 10px 12px; }
+  .pill-btn .icon { width: 18px; height: 18px; color: var(--text-faint); }
+
+  /* ---------- Service pack ---------- */
+  #service-pack-result { margin-top: 12px; display: none; }
+  #service-pack-text {
+    min-height: 160px;
+    resize: vertical;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.5;
   }
 
-  #no-token { display: none; text-align: center; color: var(--ash); padding: 40px 20px; }
+  /* ---------- Bottom tab bar (thumb zone) ---------- */
+  .nav-tabs {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 6;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 6px calc(8px + var(--safe-r)) calc(6px + var(--safe-b)) calc(8px + var(--safe-l));
+    background: var(--surface-1);
+    border-top: 1px solid var(--border);
+  }
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    .nav-tabs {
+      background: rgba(18, 22, 29, 0.9);
+      -webkit-backdrop-filter: blur(16px);
+      backdrop-filter: blur(16px);
+    }
+  }
+  .tab-btn {
+    position: relative;
+    flex-direction: column;
+    gap: 4px;
+    min-height: 52px;
+    padding: 6px 4px;
+    background: transparent;
+    border: none;
+    border-radius: var(--r-control);
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+  }
+  .tab-btn .icon { width: 22px; height: 22px; }
+  .tab-btn.active { color: var(--text); }
+  .tab-btn.active .icon { color: var(--accent); }
+  .tab-btn.active::before {
+    content: "";
+    position: absolute;
+    top: -6px;
+    left: 30%;
+    right: 30%;
+    height: 2px;
+    border-radius: 0 0 2px 2px;
+    background: var(--accent);
+  }
+  @media (hover: hover) { .tab-btn:hover:not(:disabled) { background: var(--surface-2); } }
+  /* Live dot on the On-Air tab, visible from any tab. */
+  .tab-live-dot {
+    position: absolute;
+    top: 6px;
+    left: calc(50% + 8px);
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--on-air);
+    box-shadow: 0 0 0 2px var(--surface-1);
+    display: none;
+  }
+  body.is-live .tab-live-dot { display: block; }
+
+  #no-token {
+    display: none;
+    margin: 48px 0;
+    padding: 24px;
+    border-radius: var(--r-panel);
+    border: 1px solid var(--border);
+    background: var(--surface-1);
+    color: var(--text-muted);
+    text-align: center;
+  }
+
+  @media (min-width: 600px) {
+    body { padding-top: 8px; }
+    .topbar { margin: 0; padding-left: 0; padding-right: 0; }
+    .nav-tabs { border-left: 1px solid var(--border); border-right: 1px solid var(--border); border-radius: 14px 14px 0 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition-duration: 0ms !important; animation: none !important; }
+    button:active:not(:disabled) { transform: none; }
+  }
 </style>
 </head>
 <body>
-  <header>
-    <div class="brand-title">
+  <!-- Inline SVG sprite (no external request; icons use currentColor). -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="i-broadcast" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/></symbol>
+    <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M10 2h4M12 2v3"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z"/><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M9 7h6"/></symbol>
+    <symbol id="i-pack" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8M12 13v8"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+    <symbol id="i-prev" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></symbol>
+    <symbol id="i-full" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h10v6H7z"/></symbol>
+    <symbol id="i-lower" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M6 14h12v2.5H6z"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 2l10 6-10 6L2 8l10-6z"/><path d="M2 16l10 6 10-6"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></symbol>
+    <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></symbol>
+    <symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M6 2h12M6 22h12M7 2v4l5 6-5 6v4M17 2v4l-5 6 5 6v4"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
+    <symbol id="i-child" viewBox="0 0 24 24"><circle cx="12" cy="6" r="3"/><path d="M6 21v-2a6 6 0 0 1 12 0v2"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10a7 7 0 0 1-14 0M12 17v5"/></symbol>
+  </svg>
+
+  <header class="topbar">
+    <h1 class="brand-title">
       <span data-t="title">Remote</span>
-      <span class="brand-badge">Studio 2.0</span>
-    </div>
-    <div id="status-pill" class="disconnected"><span id="status-dot"></span><span id="status-text">…</span></div>
+      <span class="hdr-onair" aria-hidden="true" data-t="onAirTag">On air</span>
+    </h1>
+    <div id="status-pill" class="disconnected" role="status"><span id="status-dot"></span><span id="status-text">…</span></div>
   </header>
 
   <div id="no-token" data-t="noToken">No operator token in the link. Copy the remote link from the desktop console's Settings.</div>
 
-  <div id="app">
-    <!-- Navigation Tabs -->
-    <nav class="nav-tabs" role="tablist">
-      <button type="button" class="tab-btn active" data-tab="live">
-        <span class="tab-icon">🔴</span>
-        <span data-t="tabLive">On-Air</span>
+  <main id="app">
+    <!-- On-air tally: above every tab, so the operator never loses sight of it. -->
+    <section id="on-screen" aria-live="polite">
+      <div class="tally-row">
+        <div id="on-screen-state" data-t="offAir">Nothing on screen</div>
+        <span class="on-air-badge" aria-hidden="true"><span class="on-air-dot"></span><span data-t="onAirTag">On air</span></span>
+      </div>
+      <div id="on-screen-ref"></div>
+      <button type="button" id="clear-verse-btn" class="btn-clear">
+        <svg class="icon" aria-hidden="true"><use href="#i-x"/></svg>
+        <span data-t="clearScreen">Clear the screen</span>
       </button>
-      <button type="button" class="tab-btn" data-tab="stage">
-        <span class="tab-icon">⏱️</span>
-        <span data-t="tabStage">Stage</span>
-      </button>
-      <button type="button" class="tab-btn" data-tab="pad">
-        <span class="tab-icon">⚡</span>
-        <span data-t="tabPad">Scripture</span>
-      </button>
-      <button type="button" class="tab-btn" data-tab="analytics">
-        <span class="tab-icon">📊</span>
-        <span data-t="tabSummary">Pack</span>
-      </button>
-    </nav>
+    </section>
 
     <!-- Tab 1: On-Air & Rundown -->
-    <section id="panel-live" class="tab-panel active">
-      <div id="on-screen" class="card" aria-live="polite">
-        <div id="on-screen-state" data-t="offAir">Nothing on screen</div>
-        <div id="on-screen-ref"></div>
-        <button id="clear-verse-btn" class="btn-clear" data-t="clearScreen">Clear the screen</button>
-      </div>
-
+    <section id="panel-live" class="tab-panel active" role="tabpanel" aria-labelledby="tab-live">
       <div class="card">
-        <h2 class="card-title" data-t="rundown">Rundown Stepper</h2>
+        <h2 class="card-title"><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg><span data-t="rundown">Rundown Stepper</span></h2>
         <div id="scene-list" class="scene-list">
           <div class="scene-empty" data-t="noRundown">No rundown loaded.</div>
         </div>
-        <div class="btn-row" style="margin-top: 12px">
-          <button id="prev-btn" class="btn-secondary" disabled data-t="previous">Previous</button>
-          <button id="next-btn" class="btn-secondary" disabled data-t="next">Next</button>
+        <div class="btn-row">
+          <button type="button" id="prev-btn" class="btn-secondary" disabled>
+            <svg class="icon" aria-hidden="true"><use href="#i-prev"/></svg><span data-t="previous">Previous</span>
+          </button>
+          <button type="button" id="next-btn" class="btn-secondary" disabled>
+            <span data-t="next">Next</span><svg class="icon" aria-hidden="true"><use href="#i-next"/></svg>
+          </button>
         </div>
       </div>
 
       <div class="card">
-        <h2 class="card-title" data-t="layoutMedia">Layout &amp; Media</h2>
-        <div class="btn-row" style="margin-bottom: 10px">
-          <button id="layout-fullscreen-btn" class="btn-secondary" style="font-size:13px" data-t="layoutFullscreen">Fullscreen View</button>
-          <button id="layout-lowerthird-btn" class="btn-secondary" style="font-size:13px" data-t="layoutLowerThird">Lower-Third</button>
+        <h2 class="card-title"><svg class="icon" aria-hidden="true"><use href="#i-layers"/></svg><span data-t="layoutMedia">Layout &amp; Media</span></h2>
+        <div class="btn-row" style="margin-bottom: 8px">
+          <button type="button" id="layout-fullscreen-btn" class="btn-secondary">
+            <svg class="icon" aria-hidden="true"><use href="#i-full"/></svg><span data-t="layoutFullscreen">Fullscreen View</span>
+          </button>
+          <button type="button" id="layout-lowerthird-btn" class="btn-secondary">
+            <svg class="icon" aria-hidden="true"><use href="#i-lower"/></svg><span data-t="layoutLowerThird">Lower-Third</span>
+          </button>
         </div>
-        <button id="clear-media-btn" class="btn-danger" style="width:100%" data-t="clearMedia">Stop Media Cue</button>
+        <button type="button" id="clear-media-btn" class="btn-danger btn-block">
+          <svg class="icon" aria-hidden="true"><use href="#i-stop"/></svg><span data-t="clearMedia">Stop Media Cue</span>
+        </button>
       </div>
     </section>
 
     <!-- Tab 2: Stage Display & Preacher Timer -->
-    <section id="panel-stage" class="tab-panel">
+    <section id="panel-stage" class="tab-panel" role="tabpanel" aria-labelledby="tab-stage">
       <div class="card">
-        <h2 class="card-title">Preacher Sermon Timer</h2>
+        <h2 class="card-title"><svg class="icon" aria-hidden="true"><use href="#i-timer"/></svg><span data-t="timerTitle">Sermon timer</span></h2>
         <div class="timer-box">
-          <div id="remote-timer-clock" class="timer-clock">30:00</div>
-          <small id="remote-timer-label" style="color:var(--ash)">Sermon Countdown</small>
+          <div id="remote-timer-clock" class="timer-clock" role="timer">30:00</div>
+          <small id="remote-timer-label" data-t="timerLabel">Sermon countdown</small>
         </div>
         <div class="pill-group">
-          <button type="button" class="pill-btn timer-preset-btn" data-min="15">15 Min</button>
-          <button type="button" class="pill-btn timer-preset-btn" data-min="30">30 Min</button>
-          <button type="button" class="pill-btn timer-preset-btn" data-min="45">45 Min</button>
-          <button type="button" class="pill-btn timer-preset-btn" data-min="60">60 Min</button>
+          <button type="button" class="pill-btn timer-preset-btn" data-min="15">15 min</button>
+          <button type="button" class="pill-btn timer-preset-btn" data-min="30">30 min</button>
+          <button type="button" class="pill-btn timer-preset-btn" data-min="45">45 min</button>
+          <button type="button" class="pill-btn timer-preset-btn" data-min="60">60 min</button>
         </div>
         <div class="btn-row">
-          <button id="timer-stop-btn" class="btn-secondary">Pause / Stop</button>
-          <button id="timer-reset-btn" class="btn-secondary">Reset</button>
+          <button type="button" id="timer-stop-btn" class="btn-secondary">
+            <svg class="icon" aria-hidden="true"><use href="#i-pause"/></svg><span data-t="timerStop">Pause / Stop</span>
+          </button>
+          <button type="button" id="timer-reset-btn" class="btn-secondary">
+            <svg class="icon" aria-hidden="true"><use href="#i-reset"/></svg><span data-t="timerReset">Reset</span>
+          </button>
         </div>
       </div>
 
       <div class="card">
-        <h2 class="card-title">Flash Alert to Stage</h2>
-        <div class="pill-group">
-          <button type="button" class="pill-btn alert-quick-btn" data-msg="⏳ 2 Minutes Remaining">⏳ 2 Mins</button>
-          <button type="button" class="pill-btn alert-quick-btn" data-msg="⚠️ Wrap Up Now">⚠️ Wrap Up</button>
-          <button type="button" class="pill-btn alert-quick-btn" data-msg="👶 Nursery #104 Needed">👶 Nursery</button>
-          <button type="button" class="pill-btn alert-quick-btn" data-msg="🎤 Check Mic Level">🎤 Mic Check</button>
+        <h2 class="card-title"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span data-t="alertTitle">Message to the stage</span></h2>
+        <div class="pill-group wrap">
+          <button type="button" class="pill-btn alert-quick-btn" data-msg="2 Minutes Remaining">
+            <svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span data-t="alert2min">2 minutes</span>
+          </button>
+          <button type="button" class="pill-btn alert-quick-btn" data-msg="Wrap Up Now">
+            <svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg><span data-t="alertWrap">Wrap up</span>
+          </button>
+          <button type="button" class="pill-btn alert-quick-btn" data-msg="Nursery #104 Needed">
+            <svg class="icon" aria-hidden="true"><use href="#i-child"/></svg><span data-t="alertNursery">Nursery</span>
+          </button>
+          <button type="button" class="pill-btn alert-quick-btn" data-msg="Check Mic Level">
+            <svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg><span data-t="alertMic">Mic check</span>
+          </button>
         </div>
-        <div style="display:flex; gap:8px">
-          <input id="stage-alert-input" type="text" placeholder="Custom stage message..." style="margin-bottom:0" />
-          <button id="send-alert-btn" class="btn-primary" style="flex-shrink:0">Send</button>
+        <div class="field-row" style="margin-bottom: 0">
+          <input id="stage-alert-input" type="text" enterkeyhint="send" autocomplete="off" data-t-placeholder="alertPlaceholder" data-t-label="alertPlaceholder" placeholder="Custom stage message…" aria-label="Custom stage message" />
+          <button type="button" id="send-alert-btn" class="btn-primary">
+            <svg class="icon" aria-hidden="true"><use href="#i-send"/></svg><span data-t="send">Send</span>
+          </button>
         </div>
       </div>
     </section>
 
     <!-- Tab 3: Quick Scripture & Intelligence Pad -->
-    <section id="panel-pad" class="tab-panel">
+    <section id="panel-pad" class="tab-panel" role="tabpanel" aria-labelledby="tab-pad">
       <div class="card">
-        <h2 class="card-title" data-t="quickVerse">Quick Verse Fire</h2>
-        <div style="display:flex; gap:8px; margin-bottom:8px">
-          <input id="quick-verse-input" type="text" placeholder="e.g. John 3:16 or Rom 8:28" style="margin-bottom:0" />
-          <button id="quick-verse-btn" class="btn-primary" style="flex-shrink:0" data-t="quickVerseProject">Project</button>
+        <h2 class="card-title"><svg class="icon" aria-hidden="true"><use href="#i-bolt"/></svg><span data-t="quickVerse">Quick Verse Fire</span></h2>
+        <div class="field-row">
+          <input id="quick-verse-input" type="text" enterkeyhint="go" autocomplete="off" autocapitalize="words" data-t-placeholder="quickVersePlaceholder" data-t-label="quickVerse" placeholder="e.g. John 3:16 or Rom 8:28" aria-label="Quick Verse Fire" />
+          <button type="button" id="quick-verse-btn" class="btn-primary" data-t="quickVerseProject">Project</button>
         </div>
         <div class="grid-presets">
           <button type="button" class="preset-btn verse-preset-btn" data-ref="John 3:16">
@@ -423,17 +677,19 @@
       </div>
 
       <div class="card">
-        <h2 class="card-title" data-t="prepared.title">My Prepared Verses</h2>
-        <div style="display:flex; gap:8px; margin-bottom:8px">
-          <input id="prepared-verse-input" type="text" placeholder="e.g. John 3:16" style="margin-bottom:0" />
-          <button id="prepared-verse-add-btn" class="btn-secondary" style="flex-shrink:0" data-t="prepared.add">Add</button>
+        <h2 class="card-title"><svg class="icon" aria-hidden="true"><use href="#i-bookmark"/></svg><span data-t="prepared.title">My Prepared Verses</span></h2>
+        <div class="field-row">
+          <input id="prepared-verse-input" type="text" enterkeyhint="done" autocomplete="off" autocapitalize="words" data-t-placeholder="preparedPlaceholder" data-t-label="prepared.title" placeholder="e.g. John 3:16" aria-label="My Prepared Verses" />
+          <button type="button" id="prepared-verse-add-btn" class="btn-secondary">
+            <svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span data-t="prepared.add">Add</span>
+          </button>
         </div>
         <div id="prepared-verse-list" class="grid-presets"></div>
       </div>
 
       <div class="card">
-        <h2 class="card-title" data-t="outlineTitle">Spoken Outline Point Triggers</h2>
-        <div class="grid-presets">
+        <h2 class="card-title"><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg><span data-t="outlineTitle">Spoken Outline Point Triggers</span></h2>
+        <div class="grid-presets" style="margin-bottom: 8px">
           <button type="button" class="preset-btn outline-preset-btn" data-num="1" data-title="Foundational Faith" data-text="Point 1: Walking by Faith">
             <strong>Point 1</strong>
             <small>Foundational Faith</small>
@@ -451,22 +707,47 @@
             <small>Call to Prayer</small>
           </button>
         </div>
-        <button id="clear-outline-btn" class="btn-danger" style="width:100%; margin-top:8px" data-t="outlineClear">Clear Outline Banner</button>
+        <button type="button" id="clear-outline-btn" class="btn-danger btn-block">
+          <svg class="icon" aria-hidden="true"><use href="#i-x"/></svg><span data-t="outlineClear">Clear Outline Banner</span>
+        </button>
       </div>
     </section>
 
     <!-- Tab 4: Post-Service Pack & Insights -->
-    <section id="panel-analytics" class="tab-panel">
+    <section id="panel-analytics" class="tab-panel" role="tabpanel" aria-labelledby="tab-analytics">
       <div class="card">
-        <h2 class="card-title">Post-Service AI Pack</h2>
-        <p style="color:var(--ash); font-size:13.5px; line-height:1.4">Generate timestamped YouTube chapters, bulletin summaries, and social media quotes from this service.</p>
-        <button id="download-service-pack-btn" class="btn-primary" style="width:100%">📦 Generate Service Summary Pack</button>
-        <div id="service-pack-result" style="margin-top:12px; display:none">
-          <textarea id="service-pack-text" style="width:100%; height:140px; background:var(--nave); color:var(--vellum); border:1px solid var(--line); border-radius:8px; padding:10px; font-family:monospace; font-size:12px;" readonly></textarea>
+        <h2 class="card-title"><svg class="icon" aria-hidden="true"><use href="#i-pack"/></svg><span data-t="packTitle">Post-service pack</span></h2>
+        <p class="card-hint" data-t="packBody">Generate timestamped YouTube chapters, bulletin summaries, and social media quotes from this service.</p>
+        <button type="button" id="download-service-pack-btn" class="btn-primary btn-block">
+          <svg class="icon" aria-hidden="true"><use href="#i-pack"/></svg><span class="btn-label" data-t="packGenerate">Generate service summary pack</span>
+        </button>
+        <div id="service-pack-result">
+          <textarea id="service-pack-text" readonly data-t-label="packTitle" aria-label="Post-service pack"></textarea>
         </div>
       </div>
     </section>
-  </div>
+
+    <!-- Bottom tab bar: in the thumb zone, safe-area aware. -->
+    <nav class="nav-tabs" role="tablist" data-t-label="tabsLabel" aria-label="Sections">
+      <button type="button" id="tab-live" class="tab-btn active" data-tab="live" role="tab" aria-selected="true" aria-controls="panel-live">
+        <svg class="icon" aria-hidden="true"><use href="#i-broadcast"/></svg>
+        <span class="tab-live-dot" aria-hidden="true"></span>
+        <span data-t="tabLive">On-Air</span>
+      </button>
+      <button type="button" id="tab-stage" class="tab-btn" data-tab="stage" role="tab" aria-selected="false" aria-controls="panel-stage" tabindex="-1">
+        <svg class="icon" aria-hidden="true"><use href="#i-timer"/></svg>
+        <span data-t="tabStage">Stage</span>
+      </button>
+      <button type="button" id="tab-pad" class="tab-btn" data-tab="pad" role="tab" aria-selected="false" aria-controls="panel-pad" tabindex="-1">
+        <svg class="icon" aria-hidden="true"><use href="#i-book"/></svg>
+        <span data-t="tabPad">Scripture</span>
+      </button>
+      <button type="button" id="tab-analytics" class="tab-btn" data-tab="analytics" role="tab" aria-selected="false" aria-controls="panel-analytics" tabindex="-1">
+        <svg class="icon" aria-hidden="true"><use href="#i-pack"/></svg>
+        <span data-t="tabSummary">Pack</span>
+      </button>
+    </nav>
+  </main>
 
   <script src="remote.js"></script>
 </body>
