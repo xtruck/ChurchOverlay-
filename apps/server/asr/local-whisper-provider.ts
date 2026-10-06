@@ -3,6 +3,7 @@ import type { Logger } from "../../../packages/shared/logger"
 import { generateUlid } from "../../../packages/shared/ulid"
 import { plannedBookTerms } from "./biblical-vocabulary"
 import { normalizeBookName } from "../detector/regex-detector"
+import { echoWords, isPromptEcho } from "./prompt-echo"
 
 /**
  * Offline transcription through a local whisper.cpp server — the last link
@@ -52,6 +53,18 @@ const QUIET_SEARCH_MS = 1500
 const QUIET_WINDOW_MS = 80
 /** A batch slower than this multiple of its own audio length means the machine cannot keep up. */
 const SLOW_RTF = 1.2
+/**
+ * whisper.cpp decoder thresholds sent with every /inference request. The
+ * server defaults (entropy 2.4, logprob -1.0) let a mostly-silent window
+ * through as outro boilerplate ("Merci d'avoir regardé"). Values from
+ * OpenWhispr's whisperServer.js (MIT), measured there over ~4.8k real
+ * dictations. The faster-whisper sidecar ignores these fields and applies
+ * its own equivalents (server.py).
+ */
+export const INFERENCE_DECODER_FIELDS: Readonly<Record<string, string>> = Object.freeze({
+  entropy_thold: "2.8",
+  logprob_thold: "-1.25",
+})
 
 /**
  * Where to cut a long run of speech that has to be sent now. Cutting at an
@@ -229,7 +242,7 @@ export class LocalWhisperProvider implements AsrProvider {
         const batch = this.queue.shift() as Int16Array
         try {
           const startedAt = this.now()
-          const text = (await this.transcribe(batch)).trim()
+          const text = await this.transcribeGuarded(batch)
           const tookMs = this.now() - startedAt
           const audioMs = msOf(batch.length)
           const rtf = audioMs > 0 ? tookMs / audioMs : 0
@@ -259,7 +272,33 @@ export class LocalWhisperProvider implements AsrProvider {
     }
   }
 
-  private async transcribe(samples: Int16Array): Promise<string> {
+  /**
+   * One batch, with the prompt-echo guard: a transcript that is merely the
+   * prompt read back is dropped and the same audio is sent ONCE more with no
+   * prompt. The retry's result is used as-is — with no prompt there is
+   * nothing to echo, so real speech that happened to match is not lost.
+   */
+  private async transcribeGuarded(samples: Int16Array): Promise<string> {
+    const prompt = this.buildPrompt()
+    const first = (await this.transcribe(samples, prompt)).trim()
+    if (!isPromptEcho(first, prompt)) return first
+    this.logger?.warn({
+      component: "asr",
+      event: "local-whisper.prompt-echo",
+      correlationId: this.correlationId,
+      metadata: { words: echoWords(first).length, action: "retry-without-prompt" },
+    })
+    const retry = (await this.transcribe(samples, null)).trim()
+    this.logger?.info({
+      component: "asr",
+      event: "local-whisper.prompt-echo-retry",
+      correlationId: this.correlationId,
+      metadata: { words: echoWords(retry).length, empty: retry.length === 0 },
+    })
+    return retry
+  }
+
+  private async transcribe(samples: Int16Array, prompt: string | null): Promise<string> {
     await this.server.ensureStarted()
     const baseUrl = this.server.baseUrl
     if (!baseUrl) throw new Error("Local transcription engine is not running")
@@ -268,7 +307,8 @@ export class LocalWhisperProvider implements AsrProvider {
     form.append("response_format", "json")
     form.append("temperature", "0.0")
     form.append("language", this.language ?? "auto")
-    form.append("prompt", this.buildPrompt())
+    for (const [name, value] of Object.entries(INFERENCE_DECODER_FIELDS)) form.append(name, value)
+    if (prompt) form.append("prompt", prompt)
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs)
     try {

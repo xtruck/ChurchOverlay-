@@ -28,6 +28,14 @@ MAX_BODY_BYTES = 16 * 1024 * 1024  # ~8 min of 16 kHz mono 16-bit audio
 COMPRESSION_RATIO_MAX = 2.4
 AVG_LOGPROB_MIN = -1.0
 NO_SPEECH_PROB_MAX = 0.6
+# Decoder thresholds, the faster-whisper equivalents of the entropy_thold /
+# logprob_thold fields the provider sends to whisper.cpp (faster-whisper
+# ignores those form fields). -1.25 is OpenWhispr's tuned logprob threshold
+# (whisperServer.js, MIT); 2.4 is faster-whisper's own compression default,
+# made explicit. With one fixed temperature there is no fallback re-decode:
+# they decide when a window counts as silence (no_speech AND low logprob).
+DECODER_LOG_PROB_THRESHOLD = -1.25
+DECODER_COMPRESSION_RATIO_THRESHOLD = COMPRESSION_RATIO_MAX
 
 
 def is_hallucinated(text: str, max_repeats: int = 3) -> bool:
@@ -112,6 +120,8 @@ class Engine:
                 condition_on_previous_text=False,
                 suppress_blank=True,
                 no_speech_threshold=NO_SPEECH_PROB_MAX,
+                log_prob_threshold=DECODER_LOG_PROB_THRESHOLD,
+                compression_ratio_threshold=DECODER_COMPRESSION_RATIO_THRESHOLD,
             )
             kept: list[str] = []
             for segment in segments:

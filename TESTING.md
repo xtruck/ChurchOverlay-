@@ -136,3 +136,4 @@ a dedicated test would exercise nothing real.
 | A bare volume is a PENDING `inferred` suggestion in auto mode and the relative verse does not also show | `app-core.test.ts` |
 
 | Quiet-point cut, continuous speech not cut, context prompt (planned books, book on screen, previous sentence), forced cut lands at the pause | `local-whisper-provider.test.ts` |
+| Decoder thresholds sent to `/inference`; a prompt echo is dropped and retried once without the prompt (both logged with the correlationId); a short reference found in the prompt is not an echo | `local-whisper-provider.test.ts`, `prompt-echo.test.ts` (injected `fetchImpl`) |

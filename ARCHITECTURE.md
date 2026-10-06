@@ -6128,3 +6128,21 @@ grep, not a guess. Backlog dropping (oldest first) is unchanged.
 **Limits.** Prompt conditioning can make Whisper echo a prompt word into silence; the existing hallucination and
 silence checks still apply, but no accuracy gain is claimed until measured on real preaching. The quiet-cut threshold
 (below half the median) was chosen on synthetic speech.
+
+## 117. Local Transcription Hardening (ideas from OpenWhispr, MIT)
+
+Applies to both offline engines behind `LocalWhisperProvider`. Ideas were studied in OpenWhispr and reimplemented;
+no code was copied. No WS action, provider interface (`AsrProvider`) or detection path changes.
+
+**Decoder thresholds.** Every whisper.cpp `/inference` request now carries `entropy_thold=2.8` and
+`logprob_thold=-1.25` (OpenWhispr's tuned values; whisper.cpp v1.8.0's server parses both form fields). The
+faster-whisper sidecar ignores those fields and passes its equivalents to `WhisperModel.transcribe`
+(`log_prob_threshold=-1.25`, `compression_ratio_threshold=2.4`, `no_speech_threshold=0.6`, names checked against
+faster-whisper 1.2.1, the pinned version).
+
+**Prompt-echo guard** (`prompt-echo.ts`). Prompt conditioning (section 116) can make Whisper read the prompt back
+into silence. A transcript of at least 6 words, 80% of which form one contiguous run of the prompt's words (accents,
+case, punctuation ignored), is dropped and the same audio is sent once more with no prompt. The retry's result is
+used as-is: with no prompt there is nothing to echo, so a sentence the preacher really said is never lost to a
+coincidental match. Both events are logged (`local-whisper.prompt-echo`, `local-whisper.prompt-echo-retry`) with the
+session `correlationId`; the transcript text is not logged. At most one retry per batch.
