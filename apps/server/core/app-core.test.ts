@@ -511,6 +511,104 @@ test("AppCore: verse:override normalizes the typed book name (case, spacing) bef
   }
 })
 
+/** A verse source whose lookups for the given books stay pending until release() is called. */
+class GatedVerseSource implements VerseSource {
+  private release: () => void = () => {}
+  private readonly gate = new Promise<void>((resolve) => { this.release = resolve })
+  constructor(private readonly byBook: Record<string, Verse>, private readonly gatedBooks: readonly string[]) {}
+  releaseGate(): void {
+    this.release()
+  }
+  async getVerse(reference: VerseReference): Promise<Verse | null> {
+    if (this.gatedBooks.includes(reference.book)) await this.gate
+    return this.byBook[reference.book] ?? null
+  }
+}
+
+async function startRaceApp(source: VerseSource) {
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source,
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  const viewer = await connect(app.wsServer.port, TOKENS.viewerToken)
+  const operator = await connect(app.wsServer.port, TOKENS.operatorToken)
+  const shown: string[] = []
+  viewer.on("message", (data) => {
+    const message = JSON.parse(data.toString())
+    if (message.type === "verse:show") shown.push(message.payload.reference.book)
+  })
+  const send = (type: string, payload: unknown) =>
+    operator.send(JSON.stringify({ id: "01A", type, timestamp: Date.now(), payload }))
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 80))
+  return { app, viewer, operator, shown, send, settle }
+}
+
+test("AppCore: an operator Clear pressed while a verse lookup is in flight stays cleared — the late verse is dropped", async () => {
+  const source = new GatedVerseSource({ john: makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved...") }, ["john"])
+  const { app, viewer, operator, shown, send, settle } = await startRaceApp(source)
+  try {
+    send("verse:override", { book: "john", chapter: 3, verse: 16 }) // lookup hangs
+    await settle()
+    send("verse:clear", null) // operator hits the emergency clear
+    await settle()
+    source.releaseGate() // the slow lookup finally returns
+    await settle()
+
+    assert.deepEqual(shown, [])
+    operator.close()
+    viewer.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: when an older lookup finishes after a newer one has already been shown, the older verse does not overwrite it", async () => {
+  const source = new GatedVerseSource(
+    {
+      john: makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved..."),
+      romans: makeVerse({ book: "romans", chapter: 8, verse: 28 }, "And we know..."),
+    },
+    ["john"]
+  )
+  const { app, viewer, operator, shown, send, settle } = await startRaceApp(source)
+  try {
+    send("verse:override", { book: "john", chapter: 3, verse: 16 }) // older, slow
+    await settle()
+    send("verse:override", { book: "romans", chapter: 8, verse: 28 }) // newer, fast
+    await settle()
+    source.releaseGate()
+    await settle()
+
+    assert.deepEqual(shown, ["romans"])
+    operator.close()
+    viewer.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: a lookup that was NOT superseded still shows after a slow resolve (no false drops)", async () => {
+  const source = new GatedVerseSource({ john: makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved...") }, ["john"])
+  const { app, viewer, operator, shown, send, settle } = await startRaceApp(source)
+  try {
+    send("verse:override", { book: "john", chapter: 3, verse: 16 })
+    await settle()
+    source.releaseGate()
+    await settle()
+
+    assert.deepEqual(shown, ["john"])
+    operator.close()
+    viewer.close()
+  } finally {
+    await app.stop()
+  }
+})
+
 test("AppCore: a real spoken reference in an ASR transcript automatically reaches the overlay as verse:show — the actual end-to-end value proposition", async () => {
   const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
   const asr = new FakeAsrProvider()

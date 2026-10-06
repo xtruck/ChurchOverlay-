@@ -411,6 +411,27 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   // section 60.5), since it would show something visibly wrong rather than
   // just nothing.
   let lastShownVerse: VerseShowPayload | null = null
+
+  // Ordering for verse lookups that finish after the world moved on. Every
+  // path that fetches a verse and then puts it on screen takes a ticket
+  // BEFORE awaiting; when the lookup returns it is dropped if something
+  // started later has already been applied (newer lookup wins), or if the
+  // operator cleared the screen after the lookup began (emergency clear
+  // must stay cleared). The auto-clear timer deliberately does NOT
+  // supersede lookups — a fresh detection in flight should still show.
+  let displayIntentSeq = 0
+  let displayAppliedSeq = 0
+  const beginDisplayIntent = (): number => ++displayIntentSeq
+  const isSupersededIntent = (ticket: number): boolean => ticket < displayAppliedSeq
+  const markIntentApplied = (ticket: number): void => {
+    if (ticket > displayAppliedSeq) displayAppliedSeq = ticket
+  }
+  const supersedeInFlightDisplay = (): void => {
+    displayAppliedSeq = ++displayIntentSeq
+  }
+  const dropStaleLookup = (path: string, correlationId?: string): void => {
+    logger.info({ component: "app-core", event: "verse.stale-lookup-dropped", correlationId, metadata: { path } })
+  }
   // Surfaces ASR health to the operator dashboard (a real, concrete use of
   // status:update — see its own doc comment in action-registry.ts, written
   // when nothing produced it yet). Tracked so a transcript arriving after
@@ -1089,8 +1110,14 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     const scene = state.scene
     switch (scene.kind) {
       case "verse": {
+        const ticket = beginDisplayIntent()
         const verse = await resolveVerse(scene.reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+        if (verse && isSupersededIntent(ticket)) {
+          dropStaleLookup("rundown", correlationId)
+          return
+        }
         if (verse) {
+          markIntentApplied(ticket)
           showVerse(verse, "rundown", correlationId)
         } else {
           logger.info({
@@ -1132,6 +1159,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         // Invariant 22/24: always clear every content channel, regardless
         // of whether each one had anything active — over-clearing is safe,
         // under-clearing leaves stale content on screen.
+        supersedeInFlightDisplay()
         clearVerse(correlationId)
         mediaPlayback.clear()
         cancelMediaAutoClear()
@@ -1269,6 +1297,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         return
 
       case "verse:clear":
+        supersedeInFlightDisplay()
         broadcastVerseClear(message.correlationId)
         return
 
@@ -1298,8 +1327,14 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
           })
           return
         }
+        const ticket = beginDisplayIntent()
         const verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+        if (verse && isSupersededIntent(ticket)) {
+          dropStaleLookup("override", message.correlationId)
+          return
+        }
         if (verse) {
+          markIntentApplied(ticket)
           broadcastVerse(verse, "override", message.correlationId)
           logCorrectionCandidateIfRecentNearMiss(reference, message.correlationId)
         } else {
@@ -1650,6 +1685,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       const resolution = resolveNavigationCommand(command, currentVersePosition, index)
 
       if (resolution.kind === "cancel") {
+        supersedeInFlightDisplay()
         broadcastVerseClear(transcript.correlationId)
         continue
       }
@@ -1682,8 +1718,14 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       // source), not just the index.exists() check resolveNavigationCommand
       // already did — existence isn't the same as having real verse text
       // to display (invariant 17).
+      const ticket = beginDisplayIntent()
       const verse = await resolveVerse(resolution.reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+      if (verse && isSupersededIntent(ticket)) {
+        dropStaleLookup("navigation", transcript.correlationId)
+        continue
+      }
       if (verse) {
+        markIntentApplied(ticket)
         broadcastVerse(verse, "navigation", transcript.correlationId)
       }
     }
@@ -1804,8 +1846,14 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       asrRateLimitedSustained = false
       broadcastAsrStatus({ asrHealth: "ok" })
     }
+    const detectionTicket = beginDisplayIntent()
     resolveTranscriptVerses(transcript, detector, index, source, cache, circuitBreaker, logger)
       .then(async (verses) => {
+        if (verses.length > 0 && isSupersededIntent(detectionTicket)) {
+          dropStaleLookup("detection", transcript.correlationId)
+          return
+        }
+        if (verses.length > 0) markIntentApplied(detectionTicket)
         deliverDetectedVerses(verses, transcript)
         if (verses.length === 0) await inferVolumeVerses(transcript.text, transcript)
       })
