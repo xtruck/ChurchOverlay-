@@ -6141,11 +6141,13 @@ faster-whisper sidecar ignores those fields and passes its equivalents to `Whisp
 faster-whisper 1.2.1, the pinned version).
 
 **Prompt-echo guard** (`prompt-echo.ts`). Prompt conditioning (section 116) can make Whisper read the prompt back
-into silence. A transcript of at least 6 words, 80% of which form one contiguous run of the prompt's words (accents,
-case, punctuation ignored), is dropped and the same audio is sent once more with no prompt. The retry's result is
+into silence. A transcript sharing one contiguous run of at least 8 words with the prompt, that run being at least 80%
+of the transcript (accents, case, punctuation ignored), is dropped and the same audio is sent once more with no prompt. The retry's result is
 used as-is: with no prompt there is nothing to echo, so a sentence the preacher really said is never lost to a
 coincidental match. Both events are logged (`local-whisper.prompt-echo`, `local-whisper.prompt-echo-retry`) with the
-session `correlationId`; the transcript text is not logged. At most one retry per batch.
+session `correlationId`; the transcript text is not logged. At most one retry per batch. The 8-word floor is
+measured, not guessed: with a 6-word floor the real faster-whisper engine flagged a genuine "Lisons Jean chapitre 3
+verset 16" (5 words shared with the reference-shaped prompt), and the prompt-less retry transcribed it worse.
 
 **Request timeout scales with audio.** The fixed 30 s timeout is replaced by `computeLocalTranscriptionTimeoutMs`:
 30 s floor (the old budget), 5 s per second of audio (half OpenWhispr's 10x real-time budget, because the live

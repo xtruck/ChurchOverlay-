@@ -14,6 +14,13 @@ test("isPromptEcho: a short reference that also appears in the prompt is real sp
   assert.equal(isPromptEcho("Psaume 23", PROMPT), false)
 })
 
+test("isPromptEcho: regression from the real faster-whisper engine - a spoken reference sentence is not an echo", () => {
+  // Observed: this real sentence (6 words, 5 shared with the prompt) was flagged, and the
+  // prompt-less retry heard "vers ses seises". It must pass through untouched.
+  assert.equal(isPromptEcho("Lisons Jean chapitre 3 verset 16.", PROMPT), false)
+  assert.equal(isPromptEcho("Lisons Jean chapitre 3 verset 16, Psaume 23", PROMPT), false)
+})
+
 test("isPromptEcho: a sentence that merely shares a few prompt words is not an echo", () => {
   assert.equal(isPromptEcho("Ouvrons nos Bibles dans Jean chapitre 3 verset 16 ce matin", PROMPT), false)
   assert.equal(isPromptEcho("Le Seigneur est mon berger, je ne manquerai de rien", PROMPT), false)

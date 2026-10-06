@@ -231,7 +231,7 @@ test("LocalWhisperProvider: a transcript that echoes the prompt is dropped and r
 })
 
 test("LocalWhisperProvider: a retry that returns the same words is accepted (no prompt, so it is real speech)", async () => {
-  const spoken = "Lecture biblique Jean chapitre 3 verset 16"
+  const spoken = "Lecture biblique Jean chapitre 3 verset 16 Psaume 23"
   const fake = scriptedFetch([{ text: spoken }, { text: spoken }])
   const provider = new LocalWhisperProvider({ server: endpoint, language: "fr", fetchImpl: fake.fetchImpl })
   const results: TranscriptResult[] = []

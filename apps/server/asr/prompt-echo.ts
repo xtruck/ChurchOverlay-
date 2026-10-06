@@ -11,8 +11,14 @@
  * preacher genuinely spoke is never lost to a coincidental match).
  */
 
-/** Shorter transcripts are never called an echo: "Jean chapitre 3 verset 16" is real speech far more often. */
-export const PROMPT_ECHO_MIN_WORDS = 6
+/**
+ * The shared run must be at least this long. The prompt deliberately holds
+ * reference-shaped text, so a preacher's "Lisons Jean chapitre 3 verset 16"
+ * shares 5 words with it; with a 6-word floor the real faster-whisper engine
+ * flagged exactly that sentence and the prompt-less retry heard it worse.
+ * Eight words is longer than any plausible spoken reference.
+ */
+export const PROMPT_ECHO_MIN_WORDS = 8
 /** Share of the transcript's words that must form one contiguous run of the prompt. */
 export const PROMPT_ECHO_MIN_SHARE = 0.8
 
@@ -44,13 +50,15 @@ function longestCommonRun(a: readonly string[], b: readonly string[]): number {
 
 /**
  * True when the transcript is (mostly) a verbatim stretch of the prompt:
- * at least PROMPT_ECHO_MIN_WORDS words, and at least 80% of them form one
- * contiguous run of the prompt's words. Accents, case and punctuation are ignored.
+ * one contiguous run of at least PROMPT_ECHO_MIN_WORDS of the prompt's words
+ * that also makes up at least 80% of the transcript. Accents, case and
+ * punctuation are ignored.
  */
 export function isPromptEcho(transcript: string, prompt: string): boolean {
   const spoken = echoWords(transcript)
   if (spoken.length < PROMPT_ECHO_MIN_WORDS) return false
   const prompted = echoWords(prompt)
   if (prompted.length === 0) return false
-  return longestCommonRun(spoken, prompted) >= Math.ceil(spoken.length * PROMPT_ECHO_MIN_SHARE)
+  const run = longestCommonRun(spoken, prompted)
+  return run >= PROMPT_ECHO_MIN_WORDS && run >= Math.ceil(spoken.length * PROMPT_ECHO_MIN_SHARE)
 }
