@@ -1,14 +1,29 @@
+/*
+  Stage display — Vespers 2 (design-system/ChurchOverlay/MASTER.md).
+  A confidence monitor for the preacher: read from several metres away,
+  under stage light, at a glance. Very large verse, quiet chrome, dark.
+  Every text/background pair below is >= 7:1 except the small muted
+  footer labels (>= 4.5:1).
+*/
 :root {
-  --bg-primary: #05070a;
-  --bg-card: #0e121a;
-  --text-primary: #ffffff;
-  --text-muted: #8e9bb0;
-  --accent-gold: #f59e0b;
-  --accent-green: #10b981;
-  --accent-yellow: #eab308;
-  --accent-red: #ef4444;
-  --font-main: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'JetBrains Mono', Consolas, monospace;
+  --bg: #0b0e13;
+  --surface-1: #12161d;
+  --surface-2: #181d26;
+  --border: #262e3b;
+  --text: #ece7dc;
+  --text-strong: #f6f3ec;
+  --text-muted: #a7b0bf;
+  --text-faint: #8893a6;
+  --accent: #e3ad45;
+  --accent-ink: #1a1304;
+  --live-ok: #3fcf8e;
+  --warn: #f08a3c;
+  --on-air: #ef4a4a;
+  --font-display: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --font-ui: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  color-scheme: dark;
 }
 
 * {
@@ -17,192 +32,250 @@
   padding: 0;
 }
 
+html {
+  background: var(--bg);
+}
+
 body.stage-body {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: var(--font-main);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
   height: 100vh;
   width: 100vw;
   overflow: hidden;
   user-select: none;
+  font-kerning: normal;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 .stage-container {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  padding: 24px 36px;
-  justify-content: space-between;
+  padding: clamp(16px, 2.6vh, 32px) clamp(20px, 3vw, 56px);
+  gap: clamp(12px, 2vh, 24px);
 }
 
+/* ---------- Header: clock + timer ---------- */
 .stage-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
-  padding-bottom: 16px;
+  gap: 24px;
+  padding-bottom: clamp(10px, 1.6vh, 18px);
+  border-bottom: 1px solid var(--border);
 }
 
 .header-left {
   display: flex;
-  align-items: center;
-  gap: 24px;
+  align-items: baseline;
+  gap: 20px;
+  min-width: 0;
 }
 
 .clock-display {
   font-family: var(--font-mono);
-  font-size: 2.4rem;
-  font-weight: 700;
-  color: #94a3b8;
-  letter-spacing: 2px;
+  font-size: clamp(28px, 3.4vw, 56px);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  line-height: 1;
 }
 
 .service-title {
-  background: rgba(255, 255, 255, 0.08);
-  padding: 6px 14px;
-  border-radius: 6px;
-  font-size: 0.95rem;
-  font-weight: 700;
-  letter-spacing: 1.5px;
-  color: #cbd5e1;
+  font-size: clamp(12px, 1vw, 16px);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
 }
 
 .timer-badge {
   display: flex;
   align-items: center;
-  gap: 16px;
-  background: var(--bg-card);
-  padding: 8px 24px;
-  border-radius: 12px;
-  border: 2px solid rgba(255, 255, 255, 0.15);
-}
-
-.timer-badge.running {
-  border-color: var(--accent-green);
-  background: rgba(16, 185, 129, 0.12);
-}
-
-.timer-badge.warning {
-  border-color: var(--accent-yellow);
-  background: rgba(234, 179, 8, 0.15);
-}
-
-.timer-badge.overtime {
-  border-color: var(--accent-red);
-  background: rgba(239, 68, 68, 0.2);
+  gap: clamp(10px, 1.2vw, 20px);
+  padding: clamp(6px, 1vh, 12px) clamp(14px, 1.6vw, 28px);
+  border-radius: 14px;
+  border: 2px solid var(--border);
+  background: var(--surface-1);
+  transition: border-color 200ms var(--ease), background-color 200ms var(--ease);
 }
 
 .timer-label {
-  font-size: 0.85rem;
-  font-weight: 800;
-  letter-spacing: 1.5px;
+  font-size: clamp(12px, 1vw, 16px);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--text-muted);
 }
 
 .timer-time {
   font-family: var(--font-mono);
-  font-size: 3rem;
-  font-weight: 800;
-  color: #ffffff;
+  font-size: clamp(36px, 4.6vw, 80px);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--text-strong);
 }
 
+/* State is never colour-only: the label text changes too. */
+.timer-badge.running { border-color: var(--live-ok); }
+.timer-badge.running .timer-time { color: var(--live-ok); }
+
+.timer-badge.warning { border-color: var(--warn); background: rgba(240, 138, 60, 0.1); }
+.timer-badge.warning .timer-time { color: var(--warn); }
+.timer-badge.warning .timer-label { font-size: 0; }
+.timer-badge.warning .timer-label::before { content: "Wrap up"; font-size: clamp(12px, 1vw, 16px); color: var(--warn); }
+
+.timer-badge.overtime { border-color: var(--on-air); background: rgba(239, 74, 74, 0.14); }
+.timer-badge.overtime .timer-time { color: #ff8a8a; }
+.timer-badge.overtime .timer-label { font-size: 0; }
+.timer-badge.overtime .timer-label::before { content: "Overtime"; font-size: clamp(12px, 1vw, 16px); color: #ff8a8a; }
+
+/* ---------- Alert from the desk ---------- */
 .stage-alert-banner {
   display: flex;
   align-items: center;
-  gap: 20px;
-  background: #b91c1c;
-  color: #ffffff;
-  padding: 20px 28px;
-  border-radius: 12px;
-  margin: 16px 0;
-  box-shadow: 0 12px 36px rgba(185, 28, 28, 0.4);
+  gap: clamp(14px, 1.6vw, 28px);
+  padding: clamp(14px, 2vh, 24px) clamp(18px, 2vw, 32px);
+  border-radius: 14px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  animation: alert-in 320ms var(--ease) both;
 }
 
 .stage-alert-banner.hidden {
   display: none;
 }
 
+@keyframes alert-in {
+  from { opacity: 0; transform: translate3d(0, -8px, 0); }
+  to { opacity: 1; transform: none; }
+}
+
 .alert-icon {
-  font-size: 2.8rem;
+  width: clamp(36px, 3.4vw, 56px);
+  height: clamp(36px, 3.4vw, 56px);
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .alert-title {
-  font-size: 0.85rem;
-  font-weight: 800;
-  letter-spacing: 2px;
-  opacity: 0.9;
+  font-size: clamp(12px, 1vw, 16px);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
 .alert-text {
-  font-size: 1.8rem;
-  font-weight: 700;
+  font-size: clamp(28px, 3.4vw, 60px);
+  font-weight: 600;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
 }
 
+/* ---------- Verse ---------- */
 .stage-main {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 24px 0;
 }
 
 .stage-verse-card {
-  background: var(--bg-card);
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  padding: 40px 48px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  min-height: 380px;
-  justify-content: center;
+  gap: clamp(12px, 2.4vh, 28px);
+  max-height: 100%;
+  min-height: 0;
+  padding: 0 0 0 clamp(16px, 2vw, 32px);
+  border-left: 4px solid var(--accent);
 }
 
 .stage-verse-card.empty {
-  opacity: 0.6;
-  border-style: dashed;
+  border-left-color: var(--border);
 }
 
 .stage-meta {
   display: flex;
-  align-items: center;
-  gap: 20px;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .stage-badge {
-  background: var(--accent-gold);
-  color: #000;
-  padding: 6px 14px;
-  border-radius: 6px;
-  font-weight: 800;
-  font-size: 0.85rem;
+  font-size: clamp(12px, 1vw, 16px);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
 }
 
 .stage-reference {
-  font-size: 2.2rem;
-  font-weight: 800;
-  color: #fff;
+  font-family: var(--font-ui);
+  font-size: clamp(28px, 3.2vw, 60px);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.005em;
+  color: var(--accent);
 }
 
+.stage-verse-card.empty .stage-reference {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* No scrolling (a preacher cannot scroll): stage.js shrinks the verse
+   font until it fits this box, from --stage-verse-max down to a floor. */
 .stage-text-container {
-  overflow-y: auto;
-  max-height: 50vh;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .stage-verse-text {
-  font-size: 2.6rem;
-  line-height: 1.35;
-  font-weight: 500;
-  color: #f8fafc;
+  font-family: var(--font-display);
+  font-size: clamp(40px, 5.6vw, 120px);
+  line-height: 1.22;
+  font-weight: 400;
+  color: var(--text-strong);
+  max-width: 30em;
+  text-wrap: pretty;
+  overflow-wrap: break-word;
+  hanging-punctuation: first;
+  animation: verse-in 320ms var(--ease) both;
 }
 
+.stage-verse-card.empty .stage-verse-text {
+  font-family: var(--font-ui);
+  font-size: clamp(20px, 2vw, 32px);
+  color: var(--text-faint);
+  animation: none;
+}
+
+@keyframes verse-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ---------- Footer: connection + mic ---------- */
 .stage-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  padding-top: 14px;
-  font-size: 1rem;
+  gap: 24px;
+  padding-top: clamp(8px, 1.4vh, 14px);
+  border-top: 1px solid var(--border);
+  font-size: clamp(13px, 1vw, 16px);
+  font-weight: 500;
+  letter-spacing: 0.08em;
   color: var(--text-muted);
 }
 
@@ -210,23 +283,46 @@ body.stage-body {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+}
+
+.mic-icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .dot {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .dot.connected {
-  background-color: var(--accent-green);
+  background-color: var(--live-ok);
 }
 
 .dot.disconnected {
-  background-color: var(--accent-red);
+  background-color: var(--warn);
 }
 
 .audio-status-val {
-  font-weight: 700;
-  color: #e2e8f0;
+  font-weight: 600;
+  color: var(--text);
+}
+
+@media (max-width: 700px) {
+  .header-left .service-title { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }
