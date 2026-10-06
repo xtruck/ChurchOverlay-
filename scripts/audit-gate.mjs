@@ -16,11 +16,6 @@ const ALLOWED = {
     reason:
       "braces <=3.0.3 stack exhaustion on deeply nested patterns; 3.0.3 is the latest release. Reached only through the OPTIONAL NDI module (@stagetimerio/grandiose -> shelljs -> fast-glob -> micromatch) globbing local build files, never untrusted input.",
   },
-  "GHSA-ch52-4w7c-c8xp": {
-    package: "http-cache-semantics",
-    reason:
-      "http-cache-semantics <=4.2.0 max-stale handling can disclose cross-user cached responses; 4.2.0 is the latest release. Reached only through got (installer/electron-builder and NDI module downloads); the app has no shared, multi-user HTTP cache.",
-  },
 }
 
 const result = spawnSync("npm", ["audit", "--omit=dev", "--json"], { encoding: "utf8", shell: process.platform === "win32", maxBuffer: 64 * 1024 * 1024 })
