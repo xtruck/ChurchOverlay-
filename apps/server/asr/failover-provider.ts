@@ -172,7 +172,24 @@ export class FailoverAsrProvider implements AsrProvider {
     if (this.activeProvider === this.primary && !this.switching) return
     this.switching = true
     await this.secondary.stop()
-    await this.primary.start()
+    try {
+      await this.primary.start()
+    } catch (error) {
+      // The primary is still unreachable. Without this rollback the secondary
+      // stays stopped while activeProvider still points at it, so every later
+      // sendAudio() throws "called before start()" and transcription is dead
+      // until the operator cycles the mic. Put the secondary back on air and
+      // surface the primary's failure to the caller.
+      try {
+        await this.secondary.start()
+        this.secondary.setCurrentVerseRef?.(this.currentVerseRef)
+      } catch (restartError) {
+        this.errorCallback?.(restartError instanceof Error ? restartError : new Error(String(restartError)))
+      }
+      this.activeProvider = this.secondary
+      this.switching = false
+      throw error
+    }
     this.primary.setCurrentVerseRef?.(this.currentVerseRef)
     this.activeProvider = this.primary
     this.switching = false

@@ -223,3 +223,27 @@ test("FailoverAsrProvider: setPlannedBooks reaches both providers immediately, w
   assert.deepEqual(primary.plannedBooks, ["john", "romans"])
   assert.deepEqual(secondary.plannedBooks, ["john", "romans"])
 })
+
+test("FailoverAsrProvider: a failed returnToPrimary puts the secondary back on air instead of leaving transcription dead", async () => {
+  const primary = new FakeProvider()
+  const secondary = new FakeProvider()
+  const provider = new FailoverAsrProvider({ primary, secondary })
+  provider.setCurrentVerseRef("romans 8:28")
+  await provider.start()
+  primary.triggerSustainedLimit()
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(provider.isFailedOver(), true)
+
+  primary.failStart = true // the primary is still down
+  await assert.rejects(() => provider.returnToPrimary(), /connect failed/)
+
+  assert.equal(provider.isFailedOver(), true) // still failed over, not stuck "switching"
+  assert.equal(secondary.startCalls, 2) // opened once for the failover, restarted by the rollback
+  assert.equal(secondary.verseRef, "romans 8:28")
+  await provider.sendAudio(frame(7)) // must not throw
+  assert.deepEqual(secondary.frames.map((item) => item.sequence), [7])
+
+  primary.failStart = false // the primary recovers; a later manual return works
+  await provider.returnToPrimary()
+  assert.equal(provider.isFailedOver(), false)
+})
