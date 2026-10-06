@@ -867,3 +867,60 @@ test("GroqProvider: start() resets state across sessions (new correlationId, seq
   assert.equal(results[1]?.sequence, 1) // sequence restarted for the new session
   assert.notEqual(results[0]?.correlationId, results[1]?.correlationId)
 })
+
+// Regression: flushWithOverlap() used to reassign the buffer AFTER awaiting the
+// request, wiping every frame sendAudio() pushed while the request was in flight.
+function samplesInRequest(request: CapturedRequest | undefined): number {
+  const file = (request?.init?.body as FormData).get("file") as Blob
+  return (file.size - 44) / 2 // 44-byte WAV header, 16-bit samples
+}
+
+test("GroqProvider: audio that arrives while an 8s max-cap flush is in flight is kept for the next request, not discarded", async () => {
+  const captured: CapturedRequest[] = []
+  let releaseFirst: () => void = () => {}
+  const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve })
+  const fetchImpl = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    captured.push({ url: String(input), init })
+    if (captured.length === 1) await firstGate
+    return jsonResponse({ text: `chunk ${captured.length}` })
+  }) as typeof fetch
+  const provider = new GroqProvider({ apiKey: "test-key", chunkDurationMs: 20000, fetchImpl })
+  provider.onTranscript(() => {})
+
+  await provider.start()
+  for (let i = 0; i < 7; i++) await provider.sendAudio(oneSecondFrame(i))
+  assert.equal(captured.length, 0)
+
+  const capFlush = provider.sendAudio(oneSecondFrame(7)) // 8s reached -> request #1 hangs
+  await provider.sendAudio(oneSecondFrame(8)) // speech during the in-flight request
+  releaseFirst()
+  await capFlush
+  await provider.stop() // flushes whatever is still buffered
+
+  assert.equal(captured.length, 2)
+  assert.equal(samplesInRequest(captured[0]), 8 * 16000 - 8000) // 8s minus the 500ms retained tail
+  assert.equal(samplesInRequest(captured[1]), 8000 + 16000) // retained tail + the second that arrived meanwhile
+})
+
+test("GroqProvider: a throttled 8s max-cap flush keeps all its audio buffered instead of wiping it", async () => {
+  const captured: CapturedRequest[] = []
+  const errors: Error[] = []
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    now: () => 0,
+    fetchImpl: fakeFetch(() => jsonResponse({ text: "x" }), captured),
+  })
+  provider.onTranscript(() => {})
+  provider.onError((err) => errors.push(err))
+
+  await provider.start()
+  for (let i = 0; i < DEFAULT_RATE_LIMIT_REQUESTS; i++) await provider.sendAudio(oneSecondFrame(i)) // use up the budget
+  const before = captured.length
+
+  await provider.sendAudio(frameForMs(8000, 99)) // 8s in one frame -> max-cap flush, denied by the limiter
+
+  assert.equal(captured.length, before) // no request went out
+  assert.ok(errors.some((e) => e instanceof RateLimitError))
+  assert.equal((provider as unknown as { bufferedSampleCount: number }).bufferedSampleCount, 8 * 16000)
+})

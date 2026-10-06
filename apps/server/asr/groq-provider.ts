@@ -385,13 +385,17 @@ export class GroqProvider implements AsrProvider {
     // Retain the overlap samples for the next chunk
     const overlapFrames = this.extractFrames(this.bufferedFrames, overlapSamples, totalSamples)
 
-    // Flush the main portion
-    await this.flushSamples(samplesToFlush)
-
-    // Retain overlap frames as the start of the next buffer
+    // Detach the buffer BEFORE awaiting, exactly like flush() does. Doing it
+    // after the await overwrote every frame sendAudio() pushed while the
+    // request was in flight (and, when throttled, the samples flushSamples()
+    // had just re-queued) — that speech never reached ASR.
     this.bufferedFrames = overlapFrames
     this.bufferedSampleCount = overlapSamples
     this.lastFlushTime = this.now()
+
+    // Flush the main portion. If throttled, flushSamples() re-queues it in
+    // front of the retained overlap and any audio that arrived meanwhile.
+    await this.flushSamples(samplesToFlush)
   }
 
   /**
