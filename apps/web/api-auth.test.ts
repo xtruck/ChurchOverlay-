@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import express from "express"
-import { installApiGuard, isLoopbackHost, resolveWebHost } from "./api-auth"
+import { installApiGuard, isLoopbackHost, resolveWebHost, validateConfiguredTokens, MIN_CONFIGURED_TOKEN_LENGTH } from "./api-auth"
 
 const OPERATOR_TOKEN = "operator-secret-token-0123456789"
 
@@ -105,4 +105,23 @@ test("isLoopbackHost: recognizes only loopback addresses", () => {
   assert.equal(isLoopbackHost("::1"), true)
   assert.equal(isLoopbackHost("0.0.0.0"), false)
   assert.equal(isLoopbackHost("192.168.1.20"), false)
+})
+
+test("validateConfiguredTokens: unset tokens are fine (random ones are generated)", () => {
+  assert.equal(validateConfiguredTokens(undefined, undefined), null)
+  assert.equal(validateConfiguredTokens("", ""), null)
+})
+
+test("validateConfiguredTokens: two distinct long tokens are accepted", () => {
+  assert.equal(validateConfiguredTokens("a".repeat(MIN_CONFIGURED_TOKEN_LENGTH), "b".repeat(MIN_CONFIGURED_TOKEN_LENGTH)), null)
+})
+
+test("validateConfiguredTokens: a short token is rejected, naming the variable", () => {
+  assert.match(validateConfiguredTokens("church123", undefined) ?? "", /OPERATOR_TOKEN must be at least/)
+  assert.match(validateConfiguredTokens(undefined, "short") ?? "", /VIEWER_TOKEN must be at least/)
+})
+
+test("validateConfiguredTokens: identical operator and viewer tokens are rejected (viewer pages would get operator rights)", () => {
+  const same = "x".repeat(32)
+  assert.match(validateConfiguredTokens(same, same) ?? "", /must differ/)
 })

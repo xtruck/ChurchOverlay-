@@ -27,8 +27,8 @@ import { GLOSSARY } from "../server/glossary/glossary"
 import { getCrossReferences, prefetchCrossReferences } from "../server/verse/cross-reference-engine"
 import { analyzeSermonFlow } from "../server/ai/sermon-flow-analyzer"
 import type { DisplayMode, VerseConfirmationMode, MediaCueKind } from "../../packages/contracts"
-import { buildPageUrls, buildStatusPayload, type UiLanguage } from "./status-payload"
-import { installApiGuard, isLoopbackHost, resolveWebHost } from "./api-auth"
+import { buildPageUrls, buildStatusPayload, isDisplayMode, isUiLanguage, type UiLanguage } from "./status-payload"
+import { installApiGuard, isLoopbackHost, resolveWebHost, validateConfiguredTokens } from "./api-auth"
 
 export type { UiLanguage } from "./status-payload"
 
@@ -63,6 +63,12 @@ async function main() {
   const httpServer = createServer(app)
 
   // Tokens
+  const tokenError = validateConfiguredTokens(process.env.OPERATOR_TOKEN, process.env.VIEWER_TOKEN)
+  if (tokenError) {
+    logger.error({ component: "server", event: "server.invalid-tokens", error: tokenError })
+    console.error(`ChurchOverlay Server not started: ${tokenError}`)
+    process.exit(1)
+  }
   const tokens = {
     operatorToken: process.env.OPERATOR_TOKEN || randomBytes(16).toString("hex"),
     viewerToken: process.env.VIEWER_TOKEN || randomBytes(16).toString("hex"),
@@ -233,17 +239,29 @@ async function main() {
   app.post("/api/setup", async (req: Request, res: Response) => {
     try {
       const body = req.body || {}
+      // Validate everything BEFORE applying any of it, with the same value
+      // sets /api/mode and /api/language accept. The old `as` casts let an
+      // arbitrary string reach LocalizedVerseSource (which fell into its
+      // bilingual branch) and be echoed back through /api/status.
+      if (body.displayMode !== undefined && body.displayMode !== "" && !isDisplayMode(body.displayMode)) {
+        res.status(400).json({ error: "Invalid displayMode" })
+        return
+      }
+      if (body.uiLanguage !== undefined && body.uiLanguage !== "" && !isUiLanguage(body.uiLanguage)) {
+        res.status(400).json({ error: "Invalid uiLanguage" })
+        return
+      }
       if (typeof body.groqApiKey === "string") {
         groqApiKey = body.groqApiKey.trim()
         hybridAsr.setApiKey(groqApiKey)
       }
-      if (body.displayMode) {
-        displayMode = body.displayMode as DisplayMode
+      if (isDisplayMode(body.displayMode)) {
+        displayMode = body.displayMode
         localizedVerseSource.setMode(displayMode)
         hybridAsr.setLanguage(whisperLanguageFor(displayMode))
       }
-      if (body.uiLanguage) {
-        uiLanguage = body.uiLanguage as UiLanguage
+      if (isUiLanguage(body.uiLanguage)) {
+        uiLanguage = body.uiLanguage
       }
       if (typeof body.allowPhoneRemote === "boolean") {
         allowPhoneRemote = body.allowPhoneRemote

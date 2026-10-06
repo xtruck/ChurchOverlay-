@@ -10,6 +10,15 @@ import type { DisplayMode, VerseConfirmationMode } from "../../packages/contract
  */
 export type UiLanguage = "en" | "fr"
 
+/** Runtime guards for values arriving over HTTP — the same sets /api/mode and /api/language accept. */
+export function isDisplayMode(value: unknown): value is DisplayMode {
+  return value === "english" || value === "french" || value === "bilingual"
+}
+
+export function isUiLanguage(value: unknown): value is UiLanguage {
+  return value === "en" || value === "fr"
+}
+
 /**
  * The one place the page URLs Web Server Mode advertises are built
  * (ARCHITECTURE.md section 106, SECURITY.md item 13).

@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { buildPageUrls, buildStatusPayload } from "./status-payload"
+import { buildPageUrls, buildStatusPayload, isDisplayMode, isUiLanguage } from "./status-payload"
 
 const TOKENS = {
   port: 3000,
@@ -75,4 +75,11 @@ test("buildStatusPayload: passes the live settings through unchanged and still r
   assert.equal(payload.verseConfirmationMode, "auto")
   assert.equal(payload.enableSermonNotes, false)
   assert.equal(payload.allowPhoneRemote, true)
+})
+
+test("isDisplayMode / isUiLanguage accept exactly the values /api/mode and /api/language accept", () => {
+  for (const ok of ["english", "french", "bilingual"]) assert.equal(isDisplayMode(ok), true)
+  for (const bad of ["klingon", "", "English", null, undefined, 3, {}, ["english"]]) assert.equal(isDisplayMode(bad), false)
+  for (const ok of ["en", "fr"]) assert.equal(isUiLanguage(ok), true)
+  for (const bad of ["de", "", "EN", null, undefined, {}, ["en"]]) assert.equal(isUiLanguage(bad), false)
 })

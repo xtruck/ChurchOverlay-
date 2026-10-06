@@ -17,6 +17,30 @@ export function isLoopbackHost(host: string): boolean {
   return host === LOOPBACK_HOST || host === "localhost" || host === "::1"
 }
 
+/** Shortest operator-supplied (OPERATOR_TOKEN / VIEWER_TOKEN) token accepted. Generated ones are 32 hex chars. */
+export const MIN_CONFIGURED_TOKEN_LENGTH = 16
+
+/**
+ * Web Server Mode lets the operator pin the tokens through the environment.
+ * Reject the two mistakes that silently defeat the role boundary: a short
+ * guessable token (there is no lockout on /api or the WS handshake), and the
+ * SAME value for both — the WS server checks the operator token first, so
+ * every viewer page (overlay, stage, live; handed to the congregation) would
+ * then hold operator rights. Returns an error message, or null when fine.
+ * Unset values are fine: random ones are generated instead.
+ */
+export function validateConfiguredTokens(operatorToken: string | undefined, viewerToken: string | undefined): string | null {
+  for (const [name, value] of [["OPERATOR_TOKEN", operatorToken], ["VIEWER_TOKEN", viewerToken]] as const) {
+    if (value !== undefined && value !== "" && value.length < MIN_CONFIGURED_TOKEN_LENGTH) {
+      return `${name} must be at least ${MIN_CONFIGURED_TOKEN_LENGTH} characters (or leave it unset to generate a random one)`
+    }
+  }
+  if (operatorToken && viewerToken && operatorToken === viewerToken) {
+    return "OPERATOR_TOKEN and VIEWER_TOKEN must differ: equal tokens would give every viewer page operator rights"
+  }
+  return null
+}
+
 function digest(value: string): Buffer {
   return createHash("sha256").update(value).digest()
 }
