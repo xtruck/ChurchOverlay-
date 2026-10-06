@@ -40,69 +40,85 @@
 <link href="dashboard.css" rel="stylesheet" />
 </head>
 <body>
+  <!--
+    Icons (Vespers 2): one inline-SVG set on a 24px grid, 1.75 stroke,
+    currentColor. Stroke/fill/caps come from the .icon class in
+    dashboard.css, so every icon here and the ones dashboard.js builds read
+    as one family. Decorative icons are aria-hidden; icon-only buttons
+    carry an aria-label.
+  -->
   <div id="setup-screen" class="setup-screen" style="display: none">
     <div class="setup-card glass">
-      <div class="brand-mark" style="width: 44px; height: 44px; font-size: 19px;">
-        <svg viewBox="0 0 1024 1024" aria-hidden="true" focusable="false">
-          <rect x="8" y="8" width="1008" height="1008" rx="228" fill="#16222f" stroke="#3a4e6b" stroke-width="16"/>
-          <rect x="436" y="104" width="152" height="560" rx="36" fill="#e9b13f"/>
-          <rect x="272" y="236" width="480" height="152" rx="36" fill="#e9b13f"/>
-          <rect x="128" y="712" width="768" height="184" rx="92" fill="#ede6d8"/>
-          <circle cx="252" cy="804" r="50" fill="#ef4a4a"/>
-          <rect x="348" y="786" width="420" height="36" rx="18" fill="#0f1722"/>
-        </svg>
+      <div class="setup-brand">
+        <div class="brand-mark brand-mark-lg">
+          <svg viewBox="0 0 1024 1024" aria-hidden="true" focusable="false">
+            <rect x="8" y="8" width="1008" height="1008" rx="228" fill="#16222f" stroke="#3a4e6b" stroke-width="16"/>
+            <rect x="436" y="104" width="152" height="560" rx="36" fill="#e9b13f"/>
+            <rect x="272" y="236" width="480" height="152" rx="36" fill="#e9b13f"/>
+            <rect x="128" y="712" width="768" height="184" rx="92" fill="#ede6d8"/>
+            <circle cx="252" cy="804" r="50" fill="#ef4a4a"/>
+            <rect x="348" y="786" width="420" height="36" rx="18" fill="#0f1722"/>
+          </svg>
+        </div>
       </div>
       <h2 data-i18n="setup.title">Set up ChurchOverlay</h2>
       <p data-i18n="setup.description">Enter your Groq API key to start transcribing. It's encrypted and stored locally — this only needs to be done once.</p>
-      <label for="setup-groq-key" data-i18n="setup.groqKeyLabel">Groq API key</label>
-      <input id="setup-groq-key" type="password" placeholder="gsk_…" autocomplete="off" />
-      <label for="setup-deepgram-key" data-i18n="setup.deepgramKeyLabel">Deepgram API key (fastest display)</label>
-      <input id="setup-deepgram-key" type="password" placeholder="Deepgram key" autocomplete="off" />
 
-      <label data-i18n="setup.displayModeLabel">Verse display language</label>
-      <div id="setup-display-mode" class="option-list" role="group" data-i18n-aria-label="a11y.verseDisplayLanguage">
-        <button type="button" data-mode="english" class="active" data-i18n="setup.displayMode.english">English only</button>
-        <button type="button" data-mode="french" data-i18n="setup.displayMode.french">French only</button>
-        <button type="button" data-mode="bilingual" data-i18n="setup.displayMode.bilingual">Bilingual (French + English)</button>
+      <div class="setup-section">
+        <label for="setup-groq-key" data-i18n="setup.groqKeyLabel">Groq API key</label>
+        <input id="setup-groq-key" type="password" placeholder="gsk_…" autocomplete="off" />
+        <label for="setup-deepgram-key" data-i18n="setup.deepgramKeyLabel">Deepgram API key (fastest display)</label>
+        <input id="setup-deepgram-key" type="password" placeholder="Deepgram key" autocomplete="off" />
       </div>
 
-      <label data-i18n="setup.uiLanguageLabel">Interface language</label>
-      <div id="setup-ui-language" class="option-list" role="group" data-i18n-aria-label="a11y.interfaceLanguage">
-        <button type="button" data-lang="en" class="active" data-i18n="setup.uiLanguage.en">English</button>
-        <button type="button" data-lang="fr" data-i18n="setup.uiLanguage.fr">French</button>
+      <div class="setup-section">
+        <label data-i18n="setup.displayModeLabel">Verse display language</label>
+        <div id="setup-display-mode" class="option-list" role="group" data-i18n-aria-label="a11y.verseDisplayLanguage">
+          <button type="button" data-mode="english" class="active" data-i18n="setup.displayMode.english">English only</button>
+          <button type="button" data-mode="french" data-i18n="setup.displayMode.french">French only</button>
+          <button type="button" data-mode="bilingual" data-i18n="setup.displayMode.bilingual">Bilingual (French + English)</button>
+        </div>
+
+        <label data-i18n="setup.uiLanguageLabel">Interface language</label>
+        <div id="setup-ui-language" class="option-list" role="group" data-i18n-aria-label="a11y.interfaceLanguage">
+          <button type="button" data-lang="en" class="active" data-i18n="setup.uiLanguage.en">English</button>
+          <button type="button" data-lang="fr" data-i18n="setup.uiLanguage.fr">French</button>
+        </div>
+
+        <label for="setup-audio-profile" data-i18n="setup.audioProfileLabel">Audio responsiveness</label>
+        <select id="setup-audio-profile">
+          <option value="responsive" data-i18n="setup.audioProfile.responsive">Responsive (lower latency)</option>
+          <option value="balanced" selected data-i18n="setup.audioProfile.balanced">Balanced (recommended)</option>
+          <option value="robust" data-i18n="setup.audioProfile.robust">Robust (noisier rooms)</option>
+        </select>
+
+        <label class="checkbox-row" for="setup-allow-phone-remote">
+          <input type="checkbox" id="setup-allow-phone-remote" />
+          <span data-i18n="setup.allowPhoneRemote">Allow a phone remote on this WiFi network (exposes this app to your local network)</span>
+        </label>
       </div>
-
-      <label class="checkbox-row" for="setup-allow-phone-remote">
-        <input type="checkbox" id="setup-allow-phone-remote" />
-        <span data-i18n="setup.allowPhoneRemote">Allow a phone remote on this WiFi network (exposes this app to your local network)</span>
-      </label>
-
-      <label for="setup-audio-profile" data-i18n="setup.audioProfileLabel">Audio responsiveness</label>
-      <select id="setup-audio-profile">
-        <option value="responsive" data-i18n="setup.audioProfile.responsive">Responsive (lower latency)</option>
-        <option value="balanced" selected data-i18n="setup.audioProfile.balanced">Balanced (recommended)</option>
-        <option value="robust" data-i18n="setup.audioProfile.robust">Robust (noisier rooms)</option>
-      </select>
 
       <!-- ARCHITECTURE.md section 92: optional branding — a generic,
            brandable audience, not a church-specific default. Blank means
            "use ChurchOverlay's own neutral defaults" (product name,
            built-in accent color), never a baked-in specific church. -->
-      <label for="setup-organization-name" data-i18n="setup.organizationNameLabel">Church/organization name (optional)</label>
-      <input id="setup-organization-name" type="text" placeholder="Grace Community Church" autocomplete="off" />
-      <label for="setup-accent-color" data-i18n="setup.accentColorLabel">Accent color (optional)</label>
-      <div class="accent-color-row">
-        <input id="setup-accent-color" type="color" value="#e0a93b" />
-        <button type="button" id="setup-accent-color-reset" class="btn-secondary" data-i18n="setup.accentColorReset">Use default</button>
+      <div class="setup-section">
+        <label for="setup-organization-name" data-i18n="setup.organizationNameLabel">Church/organization name (optional)</label>
+        <input id="setup-organization-name" type="text" placeholder="Grace Community Church" autocomplete="off" />
+        <label for="setup-accent-color" data-i18n="setup.accentColorLabel">Accent color (optional)</label>
+        <div class="accent-color-row">
+          <input id="setup-accent-color" type="color" value="#e0a93b" />
+          <button type="button" id="setup-accent-color-reset" class="btn-secondary" data-i18n="setup.accentColorReset">Use default</button>
+        </div>
       </div>
 
-      <div id="setup-error"></div>
-      <button id="setup-save-btn" class="btn-primary" style="width: 100%" data-i18n="setup.saveButton">Save and continue</button>
+      <div id="setup-error" role="alert"></div>
+      <button id="setup-save-btn" class="btn-primary btn-lg" style="width: 100%" data-i18n="setup.saveButton">Save and continue</button>
     </div>
   </div>
 
   <div id="app-shell" style="display: none">
-  <header class="glass">
+  <header class="glass topbar">
     <div class="brand">
       <!-- ARCHITECTURE.md section 92: the default mark and title here are
            the app's own neutral defaults (the ChurchOverlay logo; same art
@@ -120,11 +136,27 @@
           <rect x="348" y="786" width="420" height="36" rx="18" fill="#0f1722"/>
         </svg>
       </div>
-      <div>
+      <div class="brand-text">
         <h1 id="brand-title">ChurchOverlay</h1>
         <div class="sub" data-i18n="header.subtitle">Verse Ops Console</div>
       </div>
     </div>
+
+    <!-- Global tally: visible from every view, so an operator browsing the
+         Media Library still knows something is on the congregation screen.
+         Red + the words "On air" (never colour alone). Driven by the same
+         renderTally() as the program monitor. -->
+    <div class="tally-group">
+      <div id="global-tally" class="global-tally" data-state="off" role="status">
+        <span class="global-tally-dot" aria-hidden="true"></span>
+        <span id="global-tally-label" data-i18n="tally.offAir">Off air</span>
+      </div>
+      <button type="button" id="global-pending" class="global-pending" style="display: none" data-i18n-title="tally.pendingHint">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v4l2.5 2.5"/><circle cx="12" cy="12" r="8.5"/></svg>
+        <span data-i18n="tally.pending">Verse waiting</span>
+      </button>
+    </div>
+
     <div class="header-controls">
       <!-- Each header toggle carries a visible caption: two of them used to
            read "EN | FR" side by side with nothing saying which one changed
@@ -152,53 +184,48 @@
         </div>
       </div>
       <div class="header-divider" aria-hidden="true"></div>
-      <div id="header-clock" class="header-clock" aria-hidden="true">--:--</div>
-      <button type="button" id="shortcuts-btn" class="icon-btn" data-i18n-title="shortcuts.open" data-i18n-aria-label="shortcuts.open">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
+      <button type="button" id="palette-btn" class="icon-btn" data-i18n-title="palette.open" data-i18n-aria-label="palette.open">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="m8 10 2.5 2L8 14M13 14h3"/></svg>
       </button>
-      <div id="status-pill" class="status-pill disconnected">
-        <span class="status-dot"></span>
-        <span id="status-text" data-i18n="status.connecting">connecting…</span>
-      </div>
+      <button type="button" id="shortcuts-btn" class="icon-btn" data-i18n-title="shortcuts.open" data-i18n-aria-label="shortcuts.open">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M7.5 14h9"/></svg>
+      </button>
     </div>
   </header>
 
   <main class="shell">
     <nav id="sidebar" class="sidebar glass" data-i18n-aria-label="a11y.mainNavigation">
-      <button type="button" id="nav-live" class="sidebar-nav-item active" data-view="live">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/><circle cx="12" cy="11" r="2.2" fill="currentColor" stroke="none"/></svg>
+      <button type="button" id="nav-live" class="sidebar-nav-item active" data-view="live" data-i18n-title="nav.live">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="12.5" rx="2.5"/><path d="M8.5 20.5h7M12 17v3.5"/><circle cx="12" cy="10.75" r="2"/></svg>
         <span data-i18n="nav.live">Live</span>
       </button>
-      <button type="button" id="nav-rundown" class="sidebar-nav-item" data-view="rundown">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01" stroke-width="3" stroke-linecap="round"/></svg>
+      <button type="button" id="nav-rundown" class="sidebar-nav-item" data-view="rundown" data-i18n-title="nav.rundown">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.75" cy="6.5" r="1.25"/><circle cx="4.75" cy="12" r="1.25"/><circle cx="4.75" cy="17.5" r="1.25"/></svg>
         <span data-i18n="nav.rundown">Rundown &amp; Scenes</span>
       </button>
-      <button type="button" id="nav-media" class="sidebar-nav-item" data-view="media">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>
+      <button type="button" id="nav-media" class="sidebar-nav-item" data-view="media" data-i18n-title="nav.media">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="9.5" r="1.75"/><path d="m21 15.5-4.5-4.5L7 20"/></svg>
         <span data-i18n="nav.media">Media Library</span>
       </button>
-      <button type="button" id="nav-overlay" class="sidebar-nav-item" data-view="overlay">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M7 13h6M7 10h10"/><circle cx="18" cy="19" r="2"/><path d="M4 20h10"/></svg>
+      <button type="button" id="nav-overlay" class="sidebar-nav-item" data-view="overlay" data-i18n-title="nav.overlay">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3.5 8.5 4.5-8.5 4.5L3.5 8z"/><path d="m3.5 12 8.5 4.5 8.5-4.5"/><path d="m3.5 16 8.5 4.5 8.5-4.5"/></svg>
         <span data-i18n="nav.overlay">Overlay</span>
       </button>
-      <button type="button" id="nav-history" class="sidebar-nav-item" data-view="history">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>
+      <button type="button" id="nav-history" class="sidebar-nav-item" data-view="history" data-i18n-title="nav.history">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3.5 8.5"/><path d="M3.5 4v4.5H8M12 7.5V12l3 2"/></svg>
         <span data-i18n="nav.history">History</span>
       </button>
-      <button type="button" id="nav-settings" class="sidebar-nav-item" data-view="settings">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+      <button type="button" id="nav-settings" class="sidebar-nav-item" data-view="settings" data-i18n-title="nav.settings">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
         <span data-i18n="nav.settings">Settings</span>
       </button>
       <!-- ARCHITECTURE.md section 78: several real bugs this project
            found came down to an operator not knowing the exact phrase a
-           voice command needed. margin-top: auto pins this below the
-           view switchers without needing a separate sidebar region —
-           it opens a modal, not a view, so it's deliberately styled
-           distinctly (outline, not a nav-item look-alike). -->
-      <button type="button" id="voice-commands-btn" class="sidebar-voice-commands-btn" style="margin-top: auto">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="width: 15px; height: 15px; flex-shrink: 0;">
-          <rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v4"/><path d="M8 21h8"/>
-        </svg>
+           voice command needed. Pinned below the view switchers; it opens
+           a modal, not a view, so it's deliberately styled distinctly
+           (outline, not a nav-item look-alike). -->
+      <button type="button" id="voice-commands-btn" class="sidebar-voice-commands-btn" data-i18n-title="voiceCommands.button">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/></svg>
         <span data-i18n="voiceCommands.button">Voice Commands</span>
       </button>
     </nav>
@@ -210,9 +237,9 @@
             <div class="card glass command-bar">
               <label for="reference" data-i18n="override.referenceLabel">Verse reference</label>
               <div id="reference-field" class="command-field">
-                <svg class="command-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <svg class="icon command-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/></svg>
                 <input id="reference" type="text" data-i18n-placeholder="placeholder.verseReference" autocomplete="off" />
-                <kbd class="command-kbd" aria-hidden="true">Ctrl K</kbd>
+                <span class="command-kbd" aria-hidden="true"><kbd>Ctrl</kbd><kbd>K</kbd></span>
               </div>
               <div class="btn-row">
                 <button id="show-btn" class="btn-primary" data-i18n="override.showButton">Show on overlay</button>
@@ -238,20 +265,26 @@
             <div class="live-preview-head">
               <span class="pgm-badge" aria-hidden="true">PGM</span>
               <h2 id="live-preview-label" class="live-preview-label" data-i18n="livePreview.label">Congregation screen</h2>
+              <span class="onair-label" aria-hidden="true"><span class="onair-dot"></span><span data-i18n="tally.onAir">On air</span></span>
               <span id="on-air-timer" class="on-air-timer" aria-hidden="true"></span>
               <span id="tally-chip" class="tally-chip" role="status" data-i18n="livePreview.offAir">Nothing on screen</span>
             </div>
-            <iframe
-              id="overlay-preview-frame"
-              class="overlay-preview-frame"
-              data-i18n-title="a11y.overlayPreview"
-              sandbox="allow-scripts"
-            ></iframe>
+            <div class="program-screen">
+              <iframe
+                id="overlay-preview-frame"
+                class="overlay-preview-frame"
+                data-i18n-title="a11y.overlayPreview"
+                sandbox="allow-scripts"
+              ></iframe>
+            </div>
           </section>
 
           <div class="card glass cell-heard">
             <div class="heard-row">
-              <span class="heard-label" data-i18n="mic.lastTranscriptLabel">Heard</span>
+              <span class="heard-label">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h1.5M7.5 8v8M11 5v14M14.5 8.5v7M18 10.5v3M20 12h.5"/></svg>
+                <span data-i18n="mic.lastTranscriptLabel">Heard</span>
+              </span>
               <div id="transcript" aria-live="polite" data-i18n="mic.waitingForSpeech">Waiting for speech…</div>
             </div>
             <!-- ARCHITECTURE.md section 91: a final transcript with verse
@@ -260,31 +293,47 @@
           </div>
 
           <aside class="cell-side">
-            <div id="verse-pending-banner" class="verse-pending-banner" style="display: none" role="region" aria-live="assertive">
-              <div class="verse-pending-label"><span data-i18n="livePreview.pendingLabel">To confirm</span> <kbd class="inline-kbd" aria-hidden="true">Ctrl ↵</kbd></div>
-              <div id="verse-pending-origin" class="verse-pending-origin" style="display: none" data-i18n="livePreview.pendingFromQuote">Recognized from a reading — no reference was said.</div>
-              <div id="verse-pending-ref"></div>
-              <div id="verse-pending-text"></div>
-              <button id="verse-pending-confirm-btn" class="btn-primary" data-i18n="livePreview.pendingConfirm">Show on screen</button>
-              <div id="verse-pending-alternatives" class="verse-pending-alternatives"></div>
-            </div>
+            <!-- The verse queue: one stable region whether or not something
+                 waits, so the side column never jumps when a verse arrives.
+                 The empty state shows while the pending card is hidden. -->
+            <section class="card glass queue-card" aria-labelledby="queue-title">
+              <div class="panel-head">
+                <svg class="icon panel-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h11.5A2.5 2.5 0 0 1 19 7v12.5H7.5A2.5 2.5 0 0 1 5 17z"/><path d="M5 17a2.5 2.5 0 0 1 2.5-2.5H19M9 8.5h6"/></svg>
+                <h2 id="queue-title" class="card-title" data-i18n="queue.title">Verse queue</h2>
+                <span class="panel-kbd" aria-hidden="true"><kbd>Ctrl</kbd><kbd>Enter</kbd></span>
+              </div>
+              <div id="verse-pending-banner" class="verse-pending-banner" style="display: none" role="region" aria-live="assertive">
+                <div class="verse-pending-label"><span data-i18n="livePreview.pendingLabel">To confirm</span></div>
+                <div id="verse-pending-origin" class="verse-pending-origin" style="display: none" data-i18n="livePreview.pendingFromQuote">Recognized from a reading — no reference was said.</div>
+                <div id="verse-pending-ref"></div>
+                <div id="verse-pending-text"></div>
+                <button id="verse-pending-confirm-btn" class="btn-primary btn-lg" data-i18n="livePreview.pendingConfirm">Show on screen</button>
+                <div id="verse-pending-alternatives" class="verse-pending-alternatives"></div>
+              </div>
+              <div class="queue-empty empty-state">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h11.5A2.5 2.5 0 0 1 19 7v12.5H7.5A2.5 2.5 0 0 1 5 17z"/><path d="M5 17a2.5 2.5 0 0 1 2.5-2.5H19"/></svg>
+                <div class="empty-title" data-i18n="queue.emptyTitle">No verse waiting</div>
+                <div class="empty-hint" data-i18n="queue.emptyHint">In Review mode, detected verses wait here until you show them.</div>
+              </div>
+            </section>
 
-            <div class="card glass cell-mic">
-              <div class="mic-head">
-                <h2 class="card-title" data-i18n="mic.title">Microphone</h2>
+            <section class="card glass cell-mic" aria-labelledby="mic-title">
+              <div class="mic-head panel-head">
+                <svg class="icon panel-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
+                <h2 id="mic-title" class="card-title" data-i18n="mic.title">Microphone</h2>
                 <div id="mic-visual" class="mic-visual" aria-hidden="true">
                   <div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div>
                 </div>
               </div>
-              <div class="btn-row" style="margin-bottom: var(--space-3)">
-                <button id="mic-start-btn" class="btn-primary btn-block" data-i18n="mic.start">Start listening</button>
-                <button id="mic-stop-btn" class="btn-secondary btn-block" disabled data-i18n="mic.stop">Stop</button>
-              </div>
-              <!-- ARCHITECTURE.md section 76: the ~1.5s calibration window. -->
-              <div id="mic-calibrating-status" class="mic-calibrating-status" style="display: none" data-i18n="mic.calibrating">Calibrating to room noise…</div>
               <div id="mic-health" class="mic-health" data-state="idle" role="status" aria-live="polite">
                 <span class="mic-health-dot"></span>
                 <span id="mic-health-text" data-i18n="micHealth.idle">Microphone off</span>
+              </div>
+              <!-- ARCHITECTURE.md section 76: the ~1.5s calibration window. -->
+              <div id="mic-calibrating-status" class="mic-calibrating-status" style="display: none" data-i18n="mic.calibrating">Calibrating to room noise…</div>
+              <div class="btn-row mic-actions">
+                <button id="mic-start-btn" class="btn-primary btn-block" data-i18n="mic.start">Start listening</button>
+                <button id="mic-stop-btn" class="btn-secondary btn-block" disabled data-i18n="mic.stop">Stop</button>
               </div>
               <div class="mic-stats">
                 <div class="mic-stat"><div class="mic-stat-label" data-i18n="micHealth.speech">Voice</div><div id="mic-stat-speech" class="mic-stat-value">–</div></div>
@@ -302,16 +351,22 @@
                 <input id="auto-gain-toggle" type="checkbox" class="switch" checked />
               </label>
               <div id="asr-health-warning" class="asr-health-warning" role="alert" style="display: none">
-                <span id="asr-health-warning-text"></span>
-                <button id="asr-return-primary-btn" type="button" class="btn-secondary btn-small" style="display:none">Return to main provider</button>
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 2.8 19.5h18.4z"/><path d="M12 10v4M12 17h.01"/></svg>
+                <div class="asr-health-warning-body">
+                  <span id="asr-health-warning-text"></span>
+                  <button id="asr-return-primary-btn" type="button" class="btn-secondary btn-small" style="display:none">Return to main provider</button>
+                </div>
               </div>
               <div id="asr-provider-line" class="asr-provider-line"></div>
               <div id="audio-diagnostics" class="mic-diagnostics" aria-live="off"></div>
-            </div>
+            </section>
           </aside>
 
           <details id="tools-drawer" class="card glass cell-drawer drawer">
-            <summary data-i18n="drawer.title">Activity and sermon notes</summary>
+            <summary>
+              <svg class="icon drawer-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+              <span data-i18n="drawer.title">Activity and sermon notes</span>
+            </summary>
             <div class="drawer-body">
               <div class="card cell-log">
                 <div class="media-header">
@@ -335,7 +390,7 @@
                   <div class="sermon-notes-empty" data-i18n="sermonNotes.empty">No notes yet.</div>
                 </div>
                 <!-- ARCHITECTURE.md section 93: one-shot, operator-triggered. -->
-                <button id="generate-service-summary-btn" class="btn-secondary btn-small" style="margin-top: var(--space-3); align-self: flex-start" data-i18n="serviceSummary.button">Generate service summary</button>
+                <button id="generate-service-summary-btn" class="btn-secondary btn-small notes-summary-btn" data-i18n="serviceSummary.button">Generate service summary</button>
                 <div id="service-summary-result" class="service-summary-result" style="display: none"></div>
               </div>
             </div>
@@ -350,7 +405,10 @@
             <h2 class="view-title" data-i18n="rundown.title">Service Rundown</h2>
             <p id="rundown-progress-text" class="view-sub" data-i18n="rundown.empty">No rundown loaded.</p>
           </div>
-          <button id="rundown-builder-toggle-btn" class="btn-pill" data-i18n="rundown.buildButton">+ Build</button>
+          <button id="rundown-builder-toggle-btn" class="btn-pill">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            <span id="rundown-builder-toggle-label" data-i18n="rundown.buildButton">Build</span>
+          </button>
         </div>
 
         <div class="rundown-layout">
@@ -374,8 +432,14 @@
             </div>
             <div class="rundown-progress" aria-hidden="true"><div id="rundown-progress-bar" class="rundown-progress-bar"></div></div>
             <div class="rundown-transport">
-              <button id="rundown-prev-btn" class="btn-secondary transport-btn" disabled data-i18n="rundown.previous">◀ Previous</button>
-              <button id="rundown-next-btn" class="btn-primary transport-btn transport-go" disabled data-i18n="rundown.next">Next ▶</button>
+              <button id="rundown-prev-btn" class="btn-secondary transport-btn" disabled>
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>
+                <span data-i18n="rundown.previous">Previous</span>
+              </button>
+              <button id="rundown-next-btn" class="btn-primary transport-btn transport-go" disabled>
+                <span data-i18n="rundown.next">Next</span>
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+              </button>
             </div>
             <p class="rundown-clicker-hint"><kbd>PgDn</kbd> <kbd>PgUp</kbd> <span data-i18n="rundown.clickerHint">A presentation clicker works too.</span></p>
           </section>
@@ -421,9 +485,18 @@
                  dependency, section 66.2). -->
             <div id="rundown-field-canvas" style="display: none">
               <div class="canvas-editor-toolbar">
-                <button type="button" id="canvas-add-text-btn" class="btn-secondary btn-small" data-i18n="rundown.canvasEditor.addText">+ Text</button>
-                <button type="button" id="canvas-add-image-btn" class="btn-secondary btn-small" data-i18n="rundown.canvasEditor.addImage">+ Image</button>
-                <button type="button" id="canvas-add-background-btn" class="btn-secondary btn-small" data-i18n="rundown.canvasEditor.addBackground">+ Background</button>
+                <button type="button" id="canvas-add-text-btn" class="btn-secondary btn-small">
+                  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                  <span data-i18n="rundown.canvasEditor.addText">Text</span>
+                </button>
+                <button type="button" id="canvas-add-image-btn" class="btn-secondary btn-small">
+                  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                  <span data-i18n="rundown.canvasEditor.addImage">Image</span>
+                </button>
+                <button type="button" id="canvas-add-background-btn" class="btn-secondary btn-small">
+                  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                  <span data-i18n="rundown.canvasEditor.addBackground">Background</span>
+                </button>
               </div>
               <div class="canvas-editor-body">
                 <div id="canvas-stage" class="canvas-stage" tabindex="0"></div>
@@ -435,10 +508,10 @@
                     <div class="canvas-inspector-row">
                       <label data-i18n="rundown.canvasEditor.position">Position &amp; size (%)</label>
                       <div class="canvas-inspector-grid4">
-                        <input id="canvas-layer-x" type="number" min="0" max="100" placeholder="X" />
-                        <input id="canvas-layer-y" type="number" min="0" max="100" placeholder="Y" />
-                        <input id="canvas-layer-width" type="number" min="1" max="100" placeholder="W" />
-                        <input id="canvas-layer-height" type="number" min="1" max="100" placeholder="H" />
+                        <input id="canvas-layer-x" type="number" min="0" max="100" placeholder="X" aria-label="X" />
+                        <input id="canvas-layer-y" type="number" min="0" max="100" placeholder="Y" aria-label="Y" />
+                        <input id="canvas-layer-width" type="number" min="1" max="100" placeholder="W" aria-label="W" />
+                        <input id="canvas-layer-height" type="number" min="1" max="100" placeholder="H" aria-label="H" />
                       </div>
                     </div>
                     <div id="canvas-field-text">
@@ -492,7 +565,10 @@
               </div>
             </div>
 
-            <button id="rundown-add-scene-btn" class="btn-secondary" style="width: 100%; margin-bottom: var(--space-3)" data-i18n="rundown.builder.addButton">+ Add scene</button>
+            <button id="rundown-add-scene-btn" class="btn-secondary rundown-add-btn">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+              <span data-i18n="rundown.builder.addButton">Add scene</span>
+            </button>
 
             <!-- One-click: drop a verse shown this session into the draft. -->
             <div class="rundown-quick-add">
@@ -510,7 +586,7 @@
               <div class="rundown-empty" data-i18n="rundown.builder.draftEmpty">No scenes added yet.</div>
             </div>
             <p class="rundown-clicker-hint" data-i18n="rundown.builder.dragHint">Drag scenes to reorder them.</p>
-            <button id="rundown-load-btn" class="btn-primary" style="width: 100%; margin-top: var(--space-3)" data-i18n="rundown.builder.loadButton">Load rundown</button>
+            <button id="rundown-load-btn" class="btn-primary rundown-load-btn" data-i18n="rundown.builder.loadButton">Load rundown</button>
           </div>
           </div>
         </div>
@@ -523,12 +599,15 @@
             <h2 class="view-title" data-i18n="media.title">Media Library</h2>
             <p id="media-count" class="view-sub"></p>
           </div>
-          <button id="media-import-btn" class="btn-pill" data-i18n="media.importButton">+ Import</button>
+          <button id="media-import-btn" class="btn-pill">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0-4 4m4-4 4 4"/><path d="M4.5 14.5V18a2.5 2.5 0 0 0 2.5 2.5h10a2.5 2.5 0 0 0 2.5-2.5v-3.5"/></svg>
+            <span data-i18n="media.importButton">Import</span>
+          </button>
         </div>
 
         <div class="media-toolbar">
           <div class="command-field media-search-field">
-            <svg class="command-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <svg class="icon command-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/></svg>
             <input id="media-search" type="search" data-i18n-placeholder="media.searchPlaceholder" data-i18n-aria-label="media.searchPlaceholder" autocomplete="off" />
           </div>
           <div id="media-kind-filter" class="segmented" role="group" data-i18n-aria-label="media.filterLabel">
@@ -543,7 +622,7 @@
             <option value="kind" data-i18n="media.sort.kind">Type</option>
           </select>
           <label class="media-density" data-i18n-title="media.densityLabel">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>
             <input id="media-density" type="range" min="150" max="320" step="10" value="210" data-i18n-aria-label="media.densityLabel" />
           </label>
         </div>
@@ -553,8 +632,13 @@
           saying its name.
         </p>
         <div class="media-view-body">
-          <div id="media-grid" class="media-grid">
-            <div class="media-empty" data-i18n="media.empty">No media imported yet.</div>
+          <!-- Skeleton tiles until the library's first IPC answer replaces
+               them (renderMediaGrid() empties this container). -->
+          <div id="media-grid" class="media-grid" aria-busy="true">
+            <div class="media-tile skeleton-tile" aria-hidden="true"><div class="skeleton skeleton-frame"></div><div class="skeleton skeleton-line"></div></div>
+            <div class="media-tile skeleton-tile" aria-hidden="true"><div class="skeleton skeleton-frame"></div><div class="skeleton skeleton-line"></div></div>
+            <div class="media-tile skeleton-tile" aria-hidden="true"><div class="skeleton skeleton-frame"></div><div class="skeleton skeleton-line"></div></div>
+            <div class="media-tile skeleton-tile" aria-hidden="true"><div class="skeleton skeleton-frame"></div><div class="skeleton skeleton-line"></div></div>
           </div>
           <div id="media-now-playing" class="media-now-playing" style="display: none">
             <span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
@@ -587,11 +671,11 @@
           <div id="history-summary" class="history-summary"></div>
           <div class="history-columns">
             <section>
-              <h3 data-i18n="history.mostShownHeading">Most-shown verses</h3>
+              <h3 class="section-title" data-i18n="history.mostShownHeading">Most-shown verses</h3>
               <div id="history-most-shown" class="history-list"></div>
             </section>
             <section>
-              <h3 data-i18n="history.recentServicesHeading">Recent services</h3>
+              <h3 class="section-title" data-i18n="history.recentServicesHeading">Recent services</h3>
               <div id="history-recent-services" class="history-list"></div>
             </section>
           </div>
@@ -614,7 +698,7 @@
           </p>
           <label for="media-title-input" data-i18n="media.titleModal.label">Title</label>
           <input id="media-title-input" type="text" />
-          <div class="btn-row" style="margin-top: var(--space-4)">
+          <div class="btn-row modal-actions">
             <button id="media-title-cancel-btn" class="btn-secondary" data-i18n="media.titleModal.cancelButton">Cancel</button>
             <button id="media-title-confirm-btn" class="btn-primary" data-i18n="media.titleModal.confirmButton">Import</button>
           </div>
@@ -629,13 +713,13 @@
            editable, it just answers "what can I say?" on demand. -->
       <div id="voice-commands-modal" class="modal-overlay" style="display: none" role="dialog" aria-modal="true" aria-labelledby="voice-commands-heading">
         <div class="modal-card glass voice-commands-modal-card">
-          <div class="media-header">
+          <div class="media-header modal-head">
             <div id="voice-commands-heading" class="card-title" data-i18n="voiceCommands.heading">Voice Commands</div>
             <button type="button" id="voice-commands-close-btn" class="btn-secondary btn-small" data-i18n="voiceCommands.closeButton">Close</button>
           </div>
           <div class="voice-commands-body">
             <section>
-              <h3 data-i18n="voiceCommands.navigationHeading">Navigation</h3>
+              <h3 class="section-title" data-i18n="voiceCommands.navigationHeading">Navigation</h3>
               <div class="voice-commands-list">
                 <div class="voice-commands-row"><span data-i18n="voiceCommands.action.nextVerse">Next verse</span><code>"next verse" / "verset suivant" / "prochain verset"</code></div>
                 <div class="voice-commands-row"><span data-i18n="voiceCommands.action.previousVerse">Previous verse</span><code>"previous verse" / "go back" / "verset précédent"</code></div>
@@ -649,11 +733,11 @@
               </div>
             </section>
             <section>
-              <h3 data-i18n="voiceCommands.mediaHeading">Media &amp; posters — say the exact title</h3>
+              <h3 class="section-title" data-i18n="voiceCommands.mediaHeading">Media &amp; posters — say the exact title</h3>
               <div id="voice-commands-media-list" class="voice-commands-list"></div>
             </section>
             <section>
-              <h3 data-i18n="voiceCommands.glossaryHeading">Glossary — say the exact phrase shown</h3>
+              <h3 class="section-title" data-i18n="voiceCommands.glossaryHeading">Glossary — say the exact phrase shown</h3>
               <div id="voice-commands-glossary-list" class="voice-commands-list"></div>
             </section>
           </div>
@@ -663,16 +747,23 @@
       <!-- Command palette: every operator action reachable from the keyboard. -->
       <div id="palette-modal" class="modal-overlay palette-overlay" style="display: none" role="dialog" aria-modal="true" data-i18n-aria-label="palette.title">
         <div class="palette-card glass">
-          <input id="palette-input" type="text" role="combobox" aria-expanded="true" aria-controls="palette-list" aria-autocomplete="list" autocomplete="off" spellcheck="false" data-i18n-placeholder="palette.placeholder" data-i18n-aria-label="palette.title" />
+          <div class="palette-input-row">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/></svg>
+            <input id="palette-input" type="text" role="combobox" aria-expanded="true" aria-controls="palette-list" aria-autocomplete="list" autocomplete="off" spellcheck="false" data-i18n-placeholder="palette.placeholder" data-i18n-aria-label="palette.title" />
+          </div>
           <ul id="palette-list" class="palette-list" role="listbox"></ul>
-          <div class="palette-foot" data-i18n="palette.footer">↑↓ navigate · Enter run · Esc close</div>
+          <div class="palette-foot" aria-hidden="true">
+            <span><kbd>↑</kbd><kbd>↓</kbd> <span data-i18n="palette.footNavigate">navigate</span></span>
+            <span><kbd>Enter</kbd> <span data-i18n="palette.footRun">run</span></span>
+            <span><kbd>Esc</kbd> <span data-i18n="palette.footClose">close</span></span>
+          </div>
         </div>
       </div>
 
       <!-- Keyboard reference. Like the voice-commands modal, read-only. -->
       <div id="shortcuts-modal" class="modal-overlay" style="display: none" role="dialog" aria-modal="true" aria-labelledby="shortcuts-heading">
         <div class="modal-card glass shortcuts-modal-card">
-          <div class="media-header">
+          <div class="media-header modal-head">
             <div id="shortcuts-heading" class="card-title" data-i18n="shortcuts.heading">Keyboard shortcuts</div>
             <button type="button" id="shortcuts-close-btn" class="btn-secondary btn-small" data-i18n="voiceCommands.closeButton">Close</button>
           </div>
@@ -693,6 +784,13 @@
       <!-- ARCHITECTURE.md section 110.7: the Overlay view. The preview is the REAL
            overlay page (?designPreview=1 shows a placeholder card, never Bible text). -->
       <div id="view-overlay" class="view">
+        <div class="view-head">
+          <div>
+            <span class="eyebrow" data-i18n="overlay.eyebrow">Output</span>
+            <h2 class="view-title" data-i18n="nav.overlay">Overlay</h2>
+            <p class="view-sub" data-i18n="overlay.sub">How the verse card and your branding look on OBS and NDI.</p>
+          </div>
+        </div>
         <div class="ov-layout">
           <div class="ov-preview-col">
             <section class="card glass ov-preview-card" aria-labelledby="ov-preview-title">
@@ -704,13 +802,12 @@
               </div>
             </section>
             <div class="card glass">
-            <h2 class="card-title" data-i18n="ndi.title">NDI Output</h2>
-            <p class="settings-hint" data-i18n="ndi.hint">Optional network video output. OBS Browser Source remains available if NDI is unavailable.</p>
-            <div class="btn-row">
-              <button id="ndi-toggle-btn" class="btn-secondary btn-small" data-i18n="ndi.enable">Enable NDI</button>
-              <span id="ndi-status" class="settings-hint" style="margin: 0"></span>
-            </div>
-          
+              <h2 class="card-title" data-i18n="ndi.title">NDI Output</h2>
+              <p class="settings-hint" data-i18n="ndi.hint">Optional network video output. OBS Browser Source remains available if NDI is unavailable.</p>
+              <div class="btn-row">
+                <button id="ndi-toggle-btn" class="btn-secondary btn-small" data-i18n="ndi.enable">Enable NDI</button>
+                <span id="ndi-status" class="settings-hint ndi-status"></span>
+              </div>
             </div>
           </div>
           <div class="ov-controls">
@@ -732,7 +829,7 @@
             <div class="card glass">
               <h2 class="card-title" data-i18n="overlay.nameTitle">Church name</h2>
               <label class="ov-check"><input id="ov-name-visible" type="checkbox" /><span data-i18n="overlay.show">Show</span></label>
-              <input id="ov-name-text" type="text" maxlength="60" data-i18n-placeholder="overlay.namePlaceholder" autocomplete="off" />
+              <input id="ov-name-text" type="text" maxlength="60" data-i18n-placeholder="overlay.namePlaceholder" data-i18n-aria-label="overlay.nameTitle" autocomplete="off" />
               <div class="ov-row">
                 <label class="ov-field"><span data-i18n="overlay.font">Font</span><select id="ov-name-font"></select></label>
                 <label class="ov-field"><span data-i18n="overlay.weight">Weight</span>
@@ -742,7 +839,7 @@
               <div class="ov-row">
                 <label class="ov-check"><input id="ov-name-plate" type="checkbox" /><span data-i18n="overlay.plate">Background pill</span></label>
                 <label class="ov-check"><input id="ov-name-usecolor" type="checkbox" /><span data-i18n="overlay.ownColor">Own colour</span></label>
-                <input id="ov-name-color" type="color" />
+                <input id="ov-name-color" type="color" data-i18n-aria-label="overlay.ownColor" />
               </div>
             </div>
             <div class="card glass">
@@ -788,34 +885,40 @@
         <div class="settings-grid">
           <!-- Which provider carries live audio (server/asr/asr-strategy.ts). -->
           <div class="card glass">
-            <h2 class="card-title" data-i18n="asrSettings.title">Transcription</h2>
+            <div class="panel-head">
+              <svg class="icon panel-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h1.5M7.5 8v8M11 5v14M14.5 8.5v7M18 10.5v3M20 12h.5"/></svg>
+              <h2 class="card-title" data-i18n="asrSettings.title">Transcription</h2>
+            </div>
             <p class="settings-hint" data-i18n="asrSettings.hint">Streaming shows a verse the moment the speaker pauses. Batch waits for each chunk of audio. If the first provider fails, the other one takes over automatically.</p>
             <div id="asr-strategy-toggle" class="segmented" role="group" data-i18n-aria-label="asrSettings.title">
               <button type="button" data-asr-strategy="streaming-first" data-i18n="asrSettings.streamingFirst">Streaming first</button>
               <button type="button" data-asr-strategy="batch-first" data-i18n="asrSettings.batchFirst">Batch first</button>
             </div>
-            <p id="asr-strategy-note" class="settings-hint" style="margin-top: var(--space-3)"></p>
+            <p id="asr-strategy-note" class="settings-hint settings-note"></p>
           </div>
 
           <!-- Offline last resort: whisper.cpp downloaded on demand (never in the installer). -->
           <div class="card glass" id="local-asr-card">
-            <h2 class="card-title" data-i18n="localAsr.title">Offline backup</h2>
+            <div class="panel-head">
+              <svg class="icon panel-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="11" rx="2"/><path d="M8 19.5h8M12 15.5v4M9 10h6"/></svg>
+              <h2 class="card-title" data-i18n="localAsr.title">Offline backup</h2>
+            </div>
             <p class="settings-hint" data-i18n="localAsr.hint">If the internet drops, transcription continues on this computer. Slower and a little less accurate than the cloud, but the service keeps going.</p>
             <div id="local-asr-engine-toggle" class="segmented" role="group" data-i18n-aria-label="localAsr.engineLabel">
               <button type="button" data-local-engine="whisper.cpp" class="active" data-i18n="localAsr.engineCpp">Lightweight (whisper.cpp)</button>
               <button type="button" data-local-engine="faster-whisper" data-i18n="localAsr.engineFw">Accurate (faster-whisper)</button>
             </div>
-            <p id="local-asr-engine-hint" class="settings-hint" style="margin: var(--space-2) 0 var(--space-3)" data-i18n="localAsr.engineHintCpp"></p>
+            <p id="local-asr-engine-hint" class="settings-hint settings-note" data-i18n="localAsr.engineHintCpp"></p>
             <div id="local-asr-model-toggle" class="segmented" role="group" data-i18n-aria-label="localAsr.modelLabel">
               <button type="button" data-local-model="base" class="active" data-i18n="localAsr.modelBase">Standard</button>
               <button type="button" data-local-model="small" data-i18n="localAsr.modelSmall">More accurate</button>
             </div>
-            <p id="local-asr-status" class="settings-hint" style="margin: var(--space-3) 0" role="status"></p>
-            <progress id="local-asr-progress" max="1" value="0" style="display: none; width: 100%; margin-bottom: var(--space-3)"></progress>
+            <p id="local-asr-status" class="settings-hint settings-note" role="status"></p>
+            <progress id="local-asr-progress" max="1" value="0" style="display: none"></progress>
             <div class="btn-row">
               <button id="local-asr-install-btn" class="btn-secondary btn-small" data-i18n="localAsr.install">Download</button>
             </div>
-            <label class="switch-row" for="local-asr-enabled" style="margin-top: var(--space-3)">
+            <label class="switch-row switch-row-spaced" for="local-asr-enabled">
               <span data-i18n="localAsr.enable">Use as automatic backup</span>
               <input id="local-asr-enabled" type="checkbox" class="switch" disabled />
             </label>
@@ -823,10 +926,13 @@
 
           <!-- ARCHITECTURE.md production audit: the token-bearing OBS URL. -->
           <div class="card glass">
-            <h2 class="card-title" data-i18n="obs.title">OBS Overlay</h2>
+            <div class="panel-head">
+              <svg class="icon panel-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="12.5" rx="2.5"/><path d="M8.5 20.5h7M12 17v3.5"/></svg>
+              <h2 class="card-title" data-i18n="obs.title">OBS Overlay</h2>
+            </div>
             <p class="settings-hint" data-i18n="obs.hint">Paste this into OBS: Sources → + → Browser Source → URL.</p>
             <label for="obs-url" data-i18n="obs.linkLabel">Overlay URL</label>
-            <div class="btn-row">
+            <div class="btn-row field-row">
               <input id="obs-url" type="text" readonly />
               <button id="obs-copy-btn" class="btn-secondary btn-small" data-i18n="obs.copyButton">Copy</button>
             </div>
@@ -834,15 +940,18 @@
 
           <!-- ARCHITECTURE.md section 82: how a shown verse appears. -->
           <div class="card glass">
-            <h2 class="card-title" data-i18n="verseLayout.title">Verse Display</h2>
+            <div class="panel-head">
+              <svg class="icon panel-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M6.5 15h11M6.5 12h7"/></svg>
+              <h2 class="card-title" data-i18n="verseLayout.title">Verse Display</h2>
+            </div>
             <p class="settings-hint" data-i18n="verseLayout.hint">How a shown verse appears on the overlay.</p>
             <div id="verse-layout-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.verseLayout" data-i18n-title="a11y.verseLayout">
               <button type="button" data-layout="fullscreen" class="active" data-i18n="verseLayout.fullscreen">Full Screen</button>
               <button type="button" data-layout="lower-third" data-i18n="verseLayout.lowerThird">Lower Third</button>
             </div>
-            <label for="poster-duration-input" data-i18n="verseLayout.posterDurationLabel" style="margin-top: var(--space-4)">Poster/media auto-clear (minutes, blank = manual only)</label>
-            <div class="btn-row">
-              <input id="poster-duration-input" type="number" min="0" step="0.5" placeholder="—" style="max-width: 120px; margin: 0" />
+            <label for="poster-duration-input" class="label-spaced" data-i18n="verseLayout.posterDurationLabel">Poster/media auto-clear (minutes, blank = manual only)</label>
+            <div class="btn-row field-row">
+              <input id="poster-duration-input" class="input-narrow" type="number" min="0" step="0.5" placeholder="—" />
               <button id="poster-duration-apply-btn" class="btn-secondary btn-small" data-i18n="verseLayout.posterDurationApply">Apply</button>
             </div>
           </div>
@@ -851,7 +960,10 @@
                verse lookups use. Live toggle, no restart (setFrenchSource()
                hot-swaps the underlying source). -->
           <div class="card glass">
-            <h2 class="card-title" data-i18n="frenchTranslation.title">French Translation</h2>
+            <div class="panel-head">
+              <svg class="icon panel-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h11.5A2.5 2.5 0 0 1 19 7v12.5H7.5A2.5 2.5 0 0 1 5 17z"/><path d="M5 17a2.5 2.5 0 0 1 2.5-2.5H19"/></svg>
+              <h2 class="card-title" data-i18n="frenchTranslation.title">French Translation</h2>
+            </div>
             <p class="settings-hint" data-i18n="frenchTranslation.hint">Which French Bible translation verse lookups use. Both are public domain.</p>
             <div id="french-translation-toggle" class="segmented" role="group" data-i18n-aria-label="a11y.frenchTranslation" data-i18n-title="a11y.frenchTranslation">
               <button type="button" data-translation="ls1910" class="active" data-i18n="frenchTranslation.ls1910">Louis Segond (1910)</button>
@@ -860,23 +972,52 @@
           </div>
 
           <div class="card glass">
-            <h2 class="card-title" data-i18n="remote.title">Phone Remote</h2>
-            <div id="remote-disabled" data-i18n="remote.disabled">Not enabled. Turn on "Allow a phone remote" during setup to use this.</div>
+            <div class="panel-head">
+              <svg class="icon panel-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>
+              <h2 class="card-title" data-i18n="remote.title">Phone Remote</h2>
+            </div>
+            <div id="remote-disabled" class="settings-hint" data-i18n="remote.disabled">Not enabled. Turn on "Allow a phone remote" during setup to use this.</div>
             <div id="remote-enabled" style="display: none">
               <label for="remote-url" data-i18n="remote.linkLabel">Open this link on a phone connected to the same WiFi</label>
-              <div class="btn-row">
+              <div class="btn-row field-row">
                 <input id="remote-url" type="text" readonly />
                 <button id="remote-copy-btn" class="btn-secondary btn-small" data-i18n="remote.copyButton">Copy</button>
               </div>
             </div>
-            <div id="remote-no-lan" style="display: none" data-i18n="remote.noLan">Enabled, but no local network address was found on this machine.</div>
-            <button id="remote-toggle-btn" class="btn-secondary btn-small" data-i18n="remote.enable">Enable</button>
+            <div id="remote-no-lan" class="settings-hint" style="display: none" data-i18n="remote.noLan">Enabled, but no local network address was found on this machine.</div>
+            <div class="btn-row">
+              <button id="remote-toggle-btn" class="btn-secondary btn-small" data-i18n="remote.enable">Enable</button>
+            </div>
           </div>
 
         </div>
       </div>
     </div>
   </main>
+
+  <!-- Status bar: connection, microphone and transcription health at a
+       glance from every view. The connection pill and clock keep their ids
+       (dashboard.js drives them); the mic and ASR items mirror the Live
+       view's own mic card in short form. -->
+  <footer class="statusbar">
+    <div id="status-pill" class="status-pill disconnected">
+      <span class="status-dot"></span>
+      <span id="status-text" data-i18n="status.connecting">connecting…</span>
+    </div>
+    <span class="statusbar-sep" aria-hidden="true"></span>
+    <div id="statusbar-mic" class="statusbar-item" data-state="idle">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
+      <span id="statusbar-mic-text" data-i18n="statusbar.mic.idle">Mic off</span>
+    </div>
+    <span class="statusbar-sep" aria-hidden="true"></span>
+    <div id="statusbar-asr" class="statusbar-item" data-health="ok">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h1.5M7.5 8v8M11 5v14M14.5 8.5v7M18 10.5v3M20 12h.5"/></svg>
+      <span id="statusbar-asr-text"></span>
+    </div>
+    <span class="statusbar-spacer"></span>
+    <span class="statusbar-hint" aria-hidden="true"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>P</kbd> <span data-i18n="palette.title">Command palette</span></span>
+    <div id="header-clock" class="header-clock" aria-hidden="true">--:--</div>
+  </footer>
   </div>
 
   <!-- Transient notices. Errors used to land only in the Activity log,
@@ -886,7 +1027,7 @@
   <!-- Drag-and-drop import target (ARCHITECTURE.md section 112). -->
   <div id="drop-overlay" class="drop-overlay" aria-hidden="true">
     <div class="drop-overlay-card">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M12 15V3m0 0-4.5 4.5M12 3l4.5 4.5"/><path d="M4 14v4a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-4"/></svg>
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0-4 4m4-4 4 4"/><path d="M4.5 14.5V18a2.5 2.5 0 0 0 2.5 2.5h10a2.5 2.5 0 0 0 2.5-2.5v-3.5"/></svg>
       <div class="drop-overlay-title" data-i18n="media.drop.title">Drop to add to the Media Library</div>
       <div class="drop-overlay-sub" data-i18n="media.drop.sub">Images, videos and audio · up to 20 files at once</div>
     </div>
