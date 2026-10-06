@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, safeStorage, shell } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, powerMonitor, safeStorage, shell } from "electron"
 import { randomBytes } from "node:crypto"
 import { networkInterfaces } from "node:os"
 import { join } from "node:path"
@@ -20,7 +20,7 @@ import { DeepgramProvider } from "../../server/asr/deepgram-provider"
 import { FailoverAsrProvider } from "../../server/asr/failover-provider"
 import { ASR_STRATEGIES, asrChain, deepgramLanguageFor, planAsr, type AsrProviderId, type AsrStrategy } from "../../server/asr/asr-strategy"
 import { LocalWhisperProvider } from "../../server/asr/local-whisper-provider"
-import { WhisperServerProcess } from "../../server/asr/local-whisper-server"
+import { WhisperServerProcess, watchSystemResume } from "../../server/asr/local-whisper-server"
 import { LocalAsrInstaller, LOCAL_MODELS, type LocalAsrInstallState, type LocalModelId } from "./local-asr-installer"
 import { FasterWhisperInstaller, type FasterWhisperInstallState } from "./faster-whisper-installer"
 import { SermonNotesGenerator } from "../../server/ai/sermon-notes-generator"
@@ -1665,6 +1665,11 @@ app.whenReady().then(async () => {
   // line if no key was configured — unusable for anyone without an
   // environment variable already set).
   createDashboardWindow()
+
+  // After sleep/wake the offline engine can be alive but hung: re-check its
+  // /health and restart it if needed (ARCHITECTURE.md section 117). Reads the
+  // current engine at fire time, so service restarts need no re-wiring.
+  watchSystemResume(powerMonitor, () => localWhisperServer, { logger })
 
   try {
     const existing = await configStore.load()

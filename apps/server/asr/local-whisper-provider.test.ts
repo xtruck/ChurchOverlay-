@@ -251,6 +251,47 @@ test("LocalWhisperProvider: an ordinary transcript is not retried", async () => 
   assert.deepEqual(results.map((r) => r.text), ["Jean chapitre 3 verset 16"])
 })
 
+import { computeLocalTranscriptionTimeoutMs, LOCAL_TIMEOUT_CEILING_MS, LOCAL_TIMEOUT_FLOOR_MS } from "./local-whisper-provider"
+
+test("computeLocalTranscriptionTimeoutMs: floor, then scales with audio, capped, never infinite", () => {
+  assert.equal(computeLocalTranscriptionTimeoutMs(1000), LOCAL_TIMEOUT_FLOOR_MS)
+  assert.equal(computeLocalTranscriptionTimeoutMs(8000), 40_000)
+  assert.ok(computeLocalTranscriptionTimeoutMs(8000) > computeLocalTranscriptionTimeoutMs(4000))
+  assert.equal(computeLocalTranscriptionTimeoutMs(10 * 60_000), LOCAL_TIMEOUT_CEILING_MS)
+  for (const bad of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.equal(computeLocalTranscriptionTimeoutMs(bad), LOCAL_TIMEOUT_CEILING_MS)
+  }
+})
+
+test("LocalWhisperProvider: the request timeout follows the batch's audio length and a hung engine is aborted with a clear error", async () => {
+  const seenAudioMs: number[] = []
+  let aborted = false
+  const fetchImpl = ((_url: string | URL | Request, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => {
+        aborted = true
+        reject(new DOMException("aborted", "AbortError"))
+      })
+    })) as typeof fetch
+  const provider = new LocalWhisperProvider({
+    server: endpoint,
+    fetchImpl,
+    requestTimeoutMs: (audioMs) => {
+      seenAudioMs.push(audioMs)
+      return 20
+    },
+  })
+  const errors: Error[] = []
+  provider.onError((e) => errors.push(e))
+  await provider.start()
+  await provider.sendAudio(frame(1500))
+  await provider.onUtteranceEnd()
+  for (let i = 0; i < 100 && errors.length === 0; i++) await new Promise((r) => setTimeout(r, 5))
+  assert.deepEqual(seenAudioMs, [1500])
+  assert.equal(aborted, true)
+  assert.match(errors[0]?.message ?? "", /timed out after 20ms/)
+})
+
 // ---- Local pipeline improvements (ARCHITECTURE.md section 116) ----
 import { findQuietCut } from "./local-whisper-provider"
 

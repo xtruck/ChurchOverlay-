@@ -6146,3 +6146,17 @@ case, punctuation ignored), is dropped and the same audio is sent once more with
 used as-is: with no prompt there is nothing to echo, so a sentence the preacher really said is never lost to a
 coincidental match. Both events are logged (`local-whisper.prompt-echo`, `local-whisper.prompt-echo-retry`) with the
 session `correlationId`; the transcript text is not logged. At most one retry per batch.
+
+**Request timeout scales with audio.** The fixed 30 s timeout is replaced by `computeLocalTranscriptionTimeoutMs`:
+30 s floor (the old budget), 5 s per second of audio (half OpenWhispr's 10x real-time budget, because the live
+backlog drops stale batches anyway), 120 s ceiling, and the ceiling for an invalid duration — never infinite. An
+expired request is aborted (`AbortController`), logged as `local-whisper.timeout`, and reported as
+"Local transcription timed out after N ms", which `FailoverAsrProvider` sees like any other provider error.
+
+**Wake from sleep.** A machine that sleeps mid-service can leave the engine process alive but hung, so its exit
+handler never fires. `WhisperServerProcess.onSystemResume()` re-checks `/health` with a 3 s bound and, if it does not
+answer, kills the process (detached first, so its exit does not schedule a second restart) and starts a new one.
+`watchSystemResume(source, target)` debounces resume events (2 s settle) and calls the engine that is current at
+fire time; the desktop main process passes Electron's `powerMonitor` as the `source`, so `apps/server` still imports
+nothing from Electron. Each startup `/health` poll is now bounded by the same 3 s, so a wedged socket cannot outlive
+the readiness deadline.

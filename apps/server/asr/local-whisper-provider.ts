@@ -34,14 +34,35 @@ export type LocalWhisperProviderOptions = {
   readonly now?: () => number
   /** Whisper initial prompt: vocabulary the model should expect. */
   readonly prompt?: string
-  readonly requestTimeoutMs?: number
+  /**
+   * Per-request timeout. Default: scales with the batch's audio length
+   * (computeLocalTranscriptionTimeoutMs). A number pins it (tests); a function
+   * receives the batch's audio milliseconds.
+   */
+  readonly requestTimeoutMs?: number | ((audioMs: number) => number)
 }
 
 const SAMPLE_RATE = 16000
 const MIN_BATCH_MS = 700
 const MAX_BATCH_MS = 8000
 const MAX_BACKLOG = 2
-const DEFAULT_TIMEOUT_MS = 30_000
+/** Never below the old fixed budget: a cold first request on a weak CPU must still fit. */
+export const LOCAL_TIMEOUT_FLOOR_MS = 30_000
+/**
+ * Budget per second of audio. OpenWhispr (transcriptionTimeout.js, MIT) uses
+ * 10x real time for dictation; a live service drops stale batches instead of
+ * waiting (MAX_BACKLOG), so half that is enough here.
+ */
+export const LOCAL_TIMEOUT_PER_AUDIO_SECOND_MS = 5_000
+/** Hard ceiling: a hung engine must always fail, and the queue behind it must move. */
+export const LOCAL_TIMEOUT_CEILING_MS = 120_000
+
+/** Request timeout for a batch of `audioMs` audio: floor, then linear, then capped. Never infinite. */
+export function computeLocalTranscriptionTimeoutMs(audioMs: number): number {
+  if (!Number.isFinite(audioMs) || audioMs <= 0) return LOCAL_TIMEOUT_CEILING_MS
+  const scaled = Math.ceil((audioMs / 1000) * LOCAL_TIMEOUT_PER_AUDIO_SECOND_MS)
+  return Math.min(LOCAL_TIMEOUT_CEILING_MS, Math.max(LOCAL_TIMEOUT_FLOOR_MS, scaled))
+}
 const DEFAULT_PROMPT_FR = "Lecture biblique : Jean chapitre 3 verset 16, Psaume 23, Romains 8, Deutéronome, Philippiens."
 const DEFAULT_PROMPT_EN = "Bible reading: John chapter 3 verse 16, Psalm 23, Romans 8, Deuteronomy, Philippians."
 /** Whisper only reads the last ~220 tokens of a prompt; this keeps ours well inside that. */
@@ -101,7 +122,7 @@ export class LocalWhisperProvider implements AsrProvider {
   private readonly fetchImpl: typeof fetch
   private readonly now: () => number
   private readonly promptOverride?: string
-  private readonly requestTimeoutMs: number
+  private readonly timeoutFor: (audioMs: number) => number
   private language: string | undefined
   private active = false
   private plannedBookIds: readonly string[] = []
@@ -123,7 +144,8 @@ export class LocalWhisperProvider implements AsrProvider {
     this.fetchImpl = options.fetchImpl ?? fetch
     this.now = options.now ?? Date.now
     this.promptOverride = options.prompt
-    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS
+    const timeout = options.requestTimeoutMs ?? computeLocalTranscriptionTimeoutMs
+    this.timeoutFor = typeof timeout === "number" ? () => timeout : timeout
   }
 
   setLanguage(language: string | undefined): void {
@@ -309,14 +331,21 @@ export class LocalWhisperProvider implements AsrProvider {
     form.append("language", this.language ?? "auto")
     for (const [name, value] of Object.entries(INFERENCE_DECODER_FIELDS)) form.append(name, value)
     if (prompt) form.append("prompt", prompt)
+    const timeoutMs = this.timeoutFor(msOf(samples.length))
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs)
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
     try {
       const response = await this.fetchImpl(`${baseUrl}/inference`, { method: "POST", body: form, signal: controller.signal })
       if (!response.ok) throw new Error(`Local transcription failed (${response.status})`)
       const body = (await response.json()) as { text?: unknown; error?: unknown }
       if (typeof body.text !== "string") throw new Error(`Local transcription returned no text${body.error ? `: ${String(body.error)}` : ""}`)
       return body.text.replace(/\s+/g, " ")
+    } catch (error) {
+      if (controller.signal.aborted) {
+        this.logger?.warn({ component: "asr", event: "local-whisper.timeout", correlationId: this.correlationId, metadata: { timeoutMs } })
+        throw new Error(`Local transcription timed out after ${timeoutMs}ms`)
+      }
+      throw error
     } finally {
       clearTimeout(timer)
     }
