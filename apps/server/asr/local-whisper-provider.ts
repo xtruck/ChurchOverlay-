@@ -4,6 +4,7 @@ import { generateUlid } from "../../../packages/shared/ulid"
 import { plannedBookTerms } from "./biblical-vocabulary"
 import { normalizeBookName } from "../detector/regex-detector"
 import { echoWords, isPromptEcho } from "./prompt-echo"
+import { filterSegments, parseScoredSegments } from "./segment-quality"
 
 /**
  * Offline transcription through a local whisper.cpp server — the last link
@@ -320,13 +321,42 @@ export class LocalWhisperProvider implements AsrProvider {
     return retry
   }
 
+  /**
+   * Segment-quality filter: when the engine returned scored segments, drop the
+   * ones that are very likely invented (segment-quality.ts) and rebuild the
+   * text from the rest. No usable segments, or nothing dropped: the engine's
+   * own `text`, unchanged.
+   */
+  private dropUnlikelySegments(body: unknown, text: string): string {
+    const segments = parseScoredSegments(body)
+    if (!segments) return text
+    const { kept, dropped } = filterSegments(segments)
+    if (dropped.length === 0) return text
+    for (const segment of dropped) {
+      this.logger?.info({
+        component: "asr",
+        event: "local-whisper.segment-dropped",
+        correlationId: this.correlationId,
+        metadata: {
+          reason: segment.reason,
+          words: segment.words,
+          noSpeechProb: round(segment.noSpeechProb),
+          avgLogprob: round(segment.avgLogprob),
+          compressionRatio: round(segment.compressionRatio),
+        },
+      })
+    }
+    return kept.map((segment) => segment.text.trim()).filter(Boolean).join(" ")
+  }
+
   private async transcribe(samples: Int16Array, prompt: string | null): Promise<string> {
     await this.server.ensureStarted()
     const baseUrl = this.server.baseUrl
     if (!baseUrl) throw new Error("Local transcription engine is not running")
     const form = new FormData()
     form.append("file", new Blob([encodeWav(samples)], { type: "audio/wav" }), "audio.wav")
-    form.append("response_format", "json")
+    // verbose_json adds per-segment scores for the hallucination filter; `text` is still there.
+    form.append("response_format", "verbose_json")
     form.append("temperature", "0.0")
     form.append("language", this.language ?? "auto")
     for (const [name, value] of Object.entries(INFERENCE_DECODER_FIELDS)) form.append(name, value)
@@ -339,7 +369,7 @@ export class LocalWhisperProvider implements AsrProvider {
       if (!response.ok) throw new Error(`Local transcription failed (${response.status})`)
       const body = (await response.json()) as { text?: unknown; error?: unknown }
       if (typeof body.text !== "string") throw new Error(`Local transcription returned no text${body.error ? `: ${String(body.error)}` : ""}`)
-      return body.text.replace(/\s+/g, " ")
+      return this.dropUnlikelySegments(body, body.text).replace(/\s+/g, " ")
     } catch (error) {
       if (controller.signal.aborted) {
         this.logger?.warn({ component: "asr", event: "local-whisper.timeout", correlationId: this.correlationId, metadata: { timeoutMs } })
@@ -350,6 +380,10 @@ export class LocalWhisperProvider implements AsrProvider {
       clearTimeout(timer)
     }
   }
+}
+
+function round(value: number | undefined): number | null {
+  return value === undefined ? null : Number(value.toFixed(3))
 }
 
 function msOf(samples: number): number {

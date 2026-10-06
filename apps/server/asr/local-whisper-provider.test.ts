@@ -65,7 +65,7 @@ test("LocalWhisperProvider: utterance end posts a WAV with language, prompt and 
     assert.match(body, /name="file"; filename="audio.wav"/)
     assert.match(body, /RIFF/)
     assert.match(body, /name="language"\r\n\r\nfr/)
-    assert.match(body, /name="response_format"\r\n\r\njson/)
+    assert.match(body, /name="response_format"\r\n\r\nverbose_json/)
     assert.match(body, /name="prompt"\r\n\r\nLecture biblique/)
   } finally {
     await fake.close()
@@ -249,6 +249,45 @@ test("LocalWhisperProvider: an ordinary transcript is not retried", async () => 
   await runOneBatch(provider, results, () => fake.calls.length, 1)
   assert.equal(fake.calls.length, 1)
   assert.deepEqual(results.map((r) => r.text), ["Jean chapitre 3 verset 16"])
+})
+
+test("LocalWhisperProvider: a hallucinated segment in a verbose_json reply is dropped and logged; the rest is kept", async () => {
+  // Shape of whisper.cpp v1.8.0's verbose_json (no compression_ratio).
+  const fake = scriptedFetch([
+    {
+      text: " Lisons Romains 8 verset 28. Merci d'avoir regardé.",
+      segments: [
+        { id: 0, text: " Lisons Romains 8 verset 28.", avg_logprob: -0.25, no_speech_prob: 0.02 },
+        { id: 1, text: " Merci d'avoir regardé.", avg_logprob: -1.6, no_speech_prob: 0.91 },
+      ],
+    },
+  ])
+  const { lines, logger } = capturingLogger()
+  const provider = new LocalWhisperProvider({ server: endpoint, language: "fr", fetchImpl: fake.fetchImpl, logger })
+  const results: TranscriptResult[] = []
+  provider.onTranscript((r) => results.push(r))
+  await runOneBatch(provider, results, () => fake.calls.length, 1)
+  assert.equal(fake.calls[0]?.fields.get("response_format"), "verbose_json")
+  assert.deepEqual(results.map((r) => r.text), ["Lisons Romains 8 verset 28."])
+  const dropLog = lines.find((l) => l.event === "local-whisper.segment-dropped")
+  assert.ok(dropLog, "the drop is logged")
+  assert.equal(dropLog.correlationId, results[0]?.correlationId)
+  assert.equal((dropLog.metadata as { reason: string }).reason, "no-speech")
+})
+
+test("LocalWhisperProvider: a reply without segment scores passes through unchanged (filter is a no-op)", async () => {
+  const fake = scriptedFetch([{ text: " Psaume 23 " }, { text: "Amen", segments: "garbage" }])
+  const provider = new LocalWhisperProvider({ server: endpoint, language: "fr", fetchImpl: fake.fetchImpl })
+  const results: TranscriptResult[] = []
+  const errors: Error[] = []
+  provider.onTranscript((r) => results.push(r))
+  provider.onError((e) => errors.push(e))
+  await runOneBatch(provider, results, () => fake.calls.length, 1)
+  await provider.sendAudio(frame(1000))
+  await provider.onUtteranceEnd()
+  for (let i = 0; i < 100 && results.length < 2; i++) await new Promise((r) => setTimeout(r, 5))
+  assert.deepEqual(results.map((r) => r.text), ["Psaume 23", "Amen"])
+  assert.deepEqual(errors, [])
 })
 
 import { computeLocalTranscriptionTimeoutMs, LOCAL_TIMEOUT_CEILING_MS, LOCAL_TIMEOUT_FLOOR_MS } from "./local-whisper-provider"

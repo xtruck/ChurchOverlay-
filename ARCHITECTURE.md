@@ -6170,3 +6170,16 @@ received size must equal the size the server declared (a cut connection stays an
 resume) and may never exceed 1.5x the expected size. Integrity is unchanged in strength: the SHA-1 is computed over
 the complete file before the rename, and a mismatch deletes the partial so corrupt bytes are never resumed. The
 engine zip and the faster-whisper installer keep the previous whole-file download.
+
+**Segment-quality filter** (`segment-quality.ts`). Provider contract change, local engines only: `/inference` is now
+called with `response_format=verbose_json` instead of `json`; `text` is still read exactly as before. whisper.cpp
+v1.8.0's server returns per-segment `avg_logprob` and `no_speech_prob` in that format (and no `compression_ratio`,
+marked not implemented in its source); the sidecar now returns `segments` with `text`, `start`, `end`,
+`avg_logprob`, `no_speech_prob` and `compression_ratio` for the segments it kept (its own stricter filter from
+section 113 is unchanged; with plain `json` it still returns only `text`). A segment is dropped when
+`no_speech_prob >= 0.8` AND `avg_logprob <= -1.0`, or when `compression_ratio > 3.0` — deliberately past Whisper's
+own 0.6 / -1.0 / 2.4, because a dropped real reference costs more than noise the detector will reject anyway. Each
+drop logs `local-whisper.segment-dropped` (reason and scores, not the text) with the `correlationId`. When nothing is
+dropped the engine's `text` is used unchanged; when something is, the text is rebuilt from the kept segments. A
+response without a readable `segments` array, or a segment missing a score, disables that rule: a clean no-op, never
+an error.

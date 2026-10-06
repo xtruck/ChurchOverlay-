@@ -5,7 +5,9 @@ app's LocalWhisperProvider talks to either engine unchanged:
 
     GET  /health     -> 200 once the model is loaded
     POST /inference  -> multipart: file (16 kHz mono WAV), language, prompt,
-                        temperature  ->  {"text": "..."}
+                        temperature, response_format  ->  {"text": "..."}
+                        (verbose_json adds "segments": text, start, end,
+                        avg_logprob, no_speech_prob, compression_ratio)
 
 Only the standard library plus faster-whisper's own dependencies are used.
 Binds to 127.0.0.1 only. Engine logic (CPU/CUDA selection with a dummy-run
@@ -51,6 +53,18 @@ def is_hallucinated(text: str, max_repeats: int = 3) -> bool:
             else:
                 run = 1
     return False
+
+
+def segment_json(segment) -> dict:
+    """The verbose_json fields the provider's segment filter reads (OpenAI/whisper.cpp names)."""
+    return {
+        "text": segment.text.strip(),
+        "start": round(float(segment.start), 3),
+        "end": round(float(segment.end), 3),
+        "avg_logprob": float(segment.avg_logprob),
+        "no_speech_prob": float(segment.no_speech_prob),
+        "compression_ratio": float(segment.compression_ratio),
+    }
 
 
 def parse_multipart(content_type: str, body: bytes) -> dict[str, bytes]:
@@ -107,7 +121,8 @@ class Engine:
         list(self.model.transcribe(np.zeros(16000, dtype=np.float32), beam_size=1)[0])
         self.ready = True
 
-    def transcribe(self, audio, language: str | None, prompt: str | None, temperature: float) -> str:
+    def transcribe(self, audio, language: str | None, prompt: str | None, temperature: float) -> dict:
+        """Returns {"text": ..., "segments": [...]} for the segments kept; segments carry their scores."""
         with self.lock:
             segments, _info = self.model.transcribe(
                 audio,
@@ -123,7 +138,7 @@ class Engine:
                 log_prob_threshold=DECODER_LOG_PROB_THRESHOLD,
                 compression_ratio_threshold=DECODER_COMPRESSION_RATIO_THRESHOLD,
             )
-            kept: list[str] = []
+            kept: list[dict] = []
             for segment in segments:
                 if segment.compression_ratio > COMPRESSION_RATIO_MAX:
                     continue
@@ -131,9 +146,11 @@ class Engine:
                     continue
                 if segment.no_speech_prob > NO_SPEECH_PROB_MAX:
                     continue
-                kept.append(segment.text.strip())
-        text = " ".join(part for part in kept if part)
-        return "" if is_hallucinated(text) else text
+                kept.append(segment_json(segment))
+        text = " ".join(part["text"] for part in kept if part["text"])
+        if is_hallucinated(text):
+            return {"text": "", "segments": []}
+        return {"text": text, "segments": kept}
 
 
 def make_handler(engine: Engine):
@@ -181,8 +198,9 @@ def make_handler(engine: Engine):
                 except ValueError:
                     temperature = 0.0
                 audio = wav_to_float32(fields["file"])
-                text = engine.transcribe(audio, language, prompt, temperature)
-                self._json(200, {"text": text})
+                result = engine.transcribe(audio, language, prompt, temperature)
+                verbose = fields.get("response_format", b"json").decode("utf-8", "replace").strip() == "verbose_json"
+                self._json(200, result if verbose else {"text": result["text"]})
             except ValueError as error:
                 self._json(400, {"error": str(error)})
             except Exception as error:  # report to the provider, which surfaces it as an ASR error
