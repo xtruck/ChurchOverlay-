@@ -444,6 +444,73 @@ test("AppCore: verse:override with a reference the source can't resolve broadcas
   }
 })
 
+test("AppCore: verse:override with a reference that does not exist in the known-valid index broadcasts nothing, even though the source would resolve it", async () => {
+  const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({ john: johnVerse }), // resolves ANY john reference
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    let shown = false
+    viewerSocket.on("message", (data) => {
+      if (JSON.parse(data.toString()).type === "verse:show") shown = true
+    })
+
+    for (const payload of [
+      { book: "john", chapter: 99, verse: 1 }, // no such chapter
+      { book: "john", chapter: 3, verse: 99 }, // no such verse
+      { book: "john 3:16-30", chapter: 1, verse: 1 }, // not a book id
+      { book: "john", chapter: 3.5, verse: 1 }, // not an integer
+    ]) {
+      operatorSocket.send(JSON.stringify({ id: "01A", type: "verse:override", timestamp: Date.now(), payload }))
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    assert.equal(shown, false)
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: verse:override normalizes the typed book name (case, spacing) before it reaches the source", async () => {
+  const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
+  const app = await startAppCore({
+    asr: new FakeAsrProvider(),
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({ john: johnVerse }),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const operatorSocket = await connect(app.wsServer.port, TOKENS.operatorToken)
+    const viewerReceived = waitForMessage(viewerSocket)
+
+    operatorSocket.send(
+      JSON.stringify({ id: "01A", type: "verse:override", timestamp: Date.now(), payload: { book: "  John ", chapter: 3, verse: 16 } })
+    )
+
+    const message = await viewerReceived
+    assert.equal(message.type, "verse:show")
+    assert.equal((message.payload as { reference: { book: string } }).reference.book, "john")
+    operatorSocket.close()
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
 test("AppCore: a real spoken reference in an ASR transcript automatically reaches the overlay as verse:show — the actual end-to-end value proposition", async () => {
   const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
   const asr = new FakeAsrProvider()

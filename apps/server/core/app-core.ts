@@ -1280,7 +1280,24 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         // validateWsMessage (book/chapter/verse types are correct), but
         // shape isn't existence: it still goes through resolveVerse()
         // exactly like a detected reference would.
-        const reference = message.payload as VerseReference
+        const payload = message.payload as VerseReference
+        // Same book-id normalization the detector applies (trim, collapse
+        // whitespace, lowercase): a typed "John" must reach the source as
+        // "john", or the exact-match French source returns null and
+        // currentVersePosition.book becomes a non-catalog id.
+        const reference: VerseReference = { ...payload, book: payload.book.trim().replace(/\s+/g, " ").toLowerCase() }
+        // The known-valid index is the hallucination guard for EVERY path to
+        // the screen. Without it a typed "john 3:16-30" or chapter 3.5 went
+        // straight to the Bible API.
+        if (!index.exists(reference)) {
+          logger.info({
+            component: "app-core",
+            event: "override.rejected",
+            correlationId: message.correlationId,
+            metadata: { reference: payload, reason: "unknown-reference" },
+          })
+          return
+        }
         const verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
         if (verse) {
           broadcastVerse(verse, "override", message.correlationId)
