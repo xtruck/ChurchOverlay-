@@ -56,6 +56,12 @@
     --ov-backdrop: #0c1320;
     --ov-backdrop-2: #070b12;
     --ov-shadow: 0 2px 10px rgba(0, 0, 0, 0.85);
+    /* Vespers 2 motion (MASTER.md): enter 320ms, exit faster (200ms),
+       transform/opacity only. */
+    --ov-ease: cubic-bezier(0.2, 0, 0, 1);
+    --ov-ease-out: cubic-bezier(0.4, 0, 1, 1);
+    --ov-enter: 320ms;
+    --ov-exit: 200ms;
   }
   *, *::before, *::after {
     box-sizing: border-box;
@@ -66,21 +72,46 @@
     background: transparent;
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
     overflow: hidden;
+    /* Broadcast type: real kerning + ligatures, optical sizes where the
+       face has them, grayscale AA (CEF composites onto video). */
+    font-kerning: normal;
+    font-optical-sizing: auto;
+    font-feature-settings: "kern" 1, "liga" 1;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
   }
 
+  /*
+    Connection chrome: a diagnostic, never content. It starts hidden (no
+    flash on load), stays hidden while connected, and appears only when
+    something has been wrong for longer than a short grace period (see
+    overlay.js setStatus). Small, low-contrast, top-left, out of the
+    title-safe verse area.
+  */
   #status {
     position: fixed;
     top: 14px;
     left: 14px;
     z-index: 3;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
     font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
-    font-size: 11px;
-    letter-spacing: 0.04em;
-    color: #b6bcc7;
-    background: rgba(0, 0, 0, 0.45);
-    padding: 5px 10px;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: #c7ccd6;
+    background: rgba(11, 14, 19, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 4px 10px;
     border-radius: 999px;
-    backdrop-filter: blur(4px);
+    pointer-events: none;
+  }
+  #status::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #f08a3c;
   }
 
   /*
@@ -121,9 +152,14 @@
     max-width: 40vw;
     object-fit: contain;
   }
-  #status { transition: opacity 400ms ease; }
-  #status.status-hidden { opacity: 0; }
+  #status { transition: opacity var(--ov-exit) var(--ov-ease); }
+  #status.status-hidden { opacity: 0; visibility: hidden; transition: opacity var(--ov-exit) var(--ov-ease), visibility 0s linear var(--ov-exit); }
 
+  /*
+    Lower-third base: bottom-anchored inside a ~7% title-safe margin.
+    Exit (200ms, accelerate) is faster than enter (320ms, decelerate);
+    only opacity/transform animate, so nothing reflows on air.
+  */
   #verse {
     position: fixed;
     left: 0;
@@ -136,12 +172,13 @@
     padding: 0 7%;
     overflow: hidden;
     opacity: 0;
-    transform: translateY(18px);
-    transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    transform: translate3d(0, 12px, 0);
+    transition: opacity var(--ov-exit) var(--ov-ease-out), transform var(--ov-exit) var(--ov-ease-out);
   }
   #verse.visible {
     opacity: 1;
-    transform: translateY(0);
+    transform: none;
+    transition: opacity var(--ov-enter) var(--ov-ease), transform var(--ov-enter) var(--ov-ease);
   }
 
   #verse-card {
@@ -149,10 +186,10 @@
     flex-direction: column;
     align-items: center;
     max-width: 1150px;
-    padding: 28px 48px;
-    border-radius: 20px;
-    background: linear-gradient(180deg, var(--scrim), rgba(var(--ov-card-rgb), calc(var(--ov-card-a) * 0.77)));
-    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.35);
+    padding: 28px 52px 26px;
+    border-radius: 18px;
+    background: linear-gradient(180deg, var(--scrim), rgba(var(--ov-card-rgb), calc(var(--ov-card-a) * 0.8)));
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.05);
     border: 1px solid var(--ov-border);
     box-sizing: border-box;
     max-height: 100%;
@@ -172,9 +209,19 @@
     text-shadow: var(--ov-shadow);
     font-family: "Instrument Serif", Georgia, "Times New Roman", serif;
     font-size: clamp(22px, 3.2vw, 44px);
-    line-height: 1.4;
+    line-height: 1.34;
+    letter-spacing: 0.003em;
     text-align: center;
     font-weight: 400;
+    /* ~60-character measure for a lower-third; em-based so it tracks the
+       size fitVerseText() picks. Balanced wrapping avoids a lone last
+       word ("pretty" fallback for engines without balance). */
+    max-width: 32em;
+    text-wrap: pretty;
+    text-wrap: balance;
+    hanging-punctuation: first last;
+    font-variant-numeric: lining-nums;
+    overflow-wrap: break-word;
   }
 
   /*
@@ -224,7 +271,12 @@
       radial-gradient(90% 60% at 50% 125%, rgba(46, 78, 128, 0.28), transparent 70%),
       linear-gradient(180deg, var(--ov-backdrop), var(--ov-backdrop-2));
   }
-  #verse.fullscreen #verse-text { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); }
+  #verse.fullscreen #verse-text { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); line-height: 1.28; max-width: 26em; }
+  /* The full-bleed backdrop never slides: it only fades, so the frame edge
+     never shows video through a moving gap. The words inside still settle
+     (see .reveal below). */
+  #verse.fullscreen,
+  #verse.fullscreen.visible { transform: none; }
   /*
     #verse-text/#verse-secondary-text font-size is NOT set here —
     overlay.js's fitVerseText() always sets it as an inline style (an
@@ -256,22 +308,25 @@
     margin-top: 12px;
     padding-top: 12px;
     border-top: 1px solid rgba(255, 255, 255, 0.14);
+    max-width: 40em;
+    text-wrap: pretty;
+    text-wrap: balance;
   }
   #verse-secondary-text.visible { display: block; }
 
   #verse-ref-row {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-top: 16px;
+    gap: 14px;
+    margin-top: 18px;
   }
   #verse-ref-row::before,
   #verse-ref-row::after {
     content: "";
-    width: 22px;
+    width: 28px;
     height: 1px;
     background: var(--accent);
-    opacity: 0.7;
+    opacity: 0.6;
   }
   #verse-reference {
     color: var(--accent);
@@ -280,7 +335,9 @@
     font-style: italic;
     font-size: clamp(18px, 2.1vw, 34px);
     font-weight: 400;
-    letter-spacing: 0.01em;
+    letter-spacing: 0.02em;
+    font-variant-numeric: lining-nums;
+    white-space: nowrap;
   }
   #verse.fullscreen #verse-ref-row { margin-top: clamp(18px, 3vh, 40px); }
   #verse.fullscreen #verse-reference { font-size: clamp(22px, 2.5vw, 48px); }
@@ -322,6 +379,13 @@
     font-style: normal;
     font-weight: 600;
   }
+  /* Sans at display sizes wants tighter tracking and leading than the serif. */
+  #verse-card.tpl-banner #verse-text { letter-spacing: -0.005em; line-height: 1.3; }
+  #verse-card.tpl-banner #verse-reference {
+    font-size: clamp(14px, 1.5vw, 24px);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
   #verse-card.tpl-banner #verse-ref-row::before,
   #verse-card.tpl-banner #verse-ref-row::after { display: none; }
   #verse.fullscreen #verse-card.tpl-banner {
@@ -340,7 +404,14 @@
   #verse-card.tpl-minimal #verse-text {
     font-family: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
     font-weight: 500;
-    text-shadow: 0 3px 14px rgba(0, 0, 0, 0.9);
+    letter-spacing: -0.005em;
+    line-height: 1.3;
+    /* No card: a tight edge shadow for crispness plus a wide soft halo for
+       legibility over bright video. */
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 3px 18px rgba(0, 0, 0, 0.75);
+  }
+  #verse-card.tpl-minimal #verse-reference {
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 2px 12px rgba(0, 0, 0, 0.7);
   }
   #verse-card.tpl-minimal #verse-ref-row::before,
   #verse-card.tpl-minimal #verse-ref-row::after { display: none; }
@@ -355,6 +426,9 @@
   #verse-card.tpl-elegant #verse-reference {
     letter-spacing: 0.06em;
   }
+  #verse-card.tpl-elegant #verse-text { line-height: 1.4; }
+  #verse-card.tpl-elegant #verse-ref-row::before,
+  #verse-card.tpl-elegant #verse-ref-row::after { width: 44px; opacity: 0.8; }
   #verse.fullscreen #verse-card.tpl-elegant {
     border: 1px solid var(--accent);
     box-shadow: 0 0 90px rgba(var(--accent-rgb), 0.1);
@@ -395,6 +469,10 @@
   }
   #verse-card.tpl-ribbon #verse-text,
   #verse-card.tpl-ribbon #verse-secondary-text { text-align: left; }
+  /* Balanced lines read as a ragged block when set left; keep the full
+     measure and only avoid orphans. */
+  #verse-card.tpl-ribbon #verse-text,
+  #verse-card.tpl-ribbon #verse-secondary-text { text-wrap: pretty; }
   #verse-card.tpl-ribbon #verse-ref-row::before { display: none; }
   #verse-card.tpl-ribbon #verse-ref-row::after { width: 56px; }
   #verse.fullscreen #verse-card.tpl-ribbon {
@@ -430,16 +508,22 @@
     focus, then the reference settles in just after — the eye reads the
     scripture first, its address second.
   */
+  /* opacity + transform only (no blur filter: cheaper in OBS's CEF and it
+     never smears glyph edges mid-frame). Whole sequence ends by ~320ms. */
   @keyframes verse-focus-in {
-    from { opacity: 0; filter: blur(8px); transform: translateY(10px); }
-    to { opacity: 1; filter: blur(0); transform: none; }
+    from { opacity: 0; transform: translate3d(0, 8px, 0); }
+    to { opacity: 1; transform: none; }
   }
   #verse-card.reveal #verse-text,
-  #verse-card.reveal #verse-secondary-text { animation: verse-focus-in 620ms cubic-bezier(0.2, 0, 0, 1) both; }
-  #verse-card.reveal #verse-secondary-text { animation-delay: 90ms; }
-  #verse-card.reveal #verse-ref-row { animation: verse-focus-in 520ms cubic-bezier(0.2, 0, 0, 1) 180ms both; }
+  #verse-card.reveal #verse-secondary-text { animation: verse-focus-in 280ms var(--ov-ease) both; }
+  #verse-card.reveal #verse-secondary-text { animation-delay: 40ms; }
+  #verse-card.reveal #verse-ref-row { animation: verse-focus-in 240ms var(--ov-ease) 80ms both; }
   @media (prefers-reduced-motion: reduce) {
-    #verse, #announcement { transition: none !important; transform: none !important; }
+    #verse, #verse.visible, #announcement, #announcement.visible, #definition, #definition.visible,
+    #outline-layer, #outline-layer.visible, #status {
+      transition: none !important;
+      transform: none !important;
+    }
     #verse-card.reveal #verse-text,
     #verse-card.reveal #verse-secondary-text,
     #verse-card.reveal #verse-ref-row { animation: none; }
@@ -510,10 +594,10 @@
     padding: 0 7%;
     opacity: 0;
     pointer-events: none;
-    transform: translateY(18px);
-    transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    transform: translate3d(0, 12px, 0);
+    transition: opacity var(--ov-exit) var(--ov-ease-out), transform var(--ov-exit) var(--ov-ease-out);
   }
-  #announcement.visible { opacity: 1; transform: translateY(0); }
+  #announcement.visible { opacity: 1; transform: none; transition: opacity var(--ov-enter) var(--ov-ease), transform var(--ov-enter) var(--ov-ease); }
   #announcement-card {
     display: flex;
     flex-direction: column;
@@ -565,10 +649,10 @@
     max-width: 440px;
     opacity: 0;
     pointer-events: none;
-    transform: translateY(12px);
-    transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    transform: translate3d(0, 10px, 0);
+    transition: opacity var(--ov-exit) var(--ov-ease-out), transform var(--ov-exit) var(--ov-ease-out);
   }
-  #definition.visible { opacity: 1; transform: translateY(0); }
+  #definition.visible { opacity: 1; transform: none; transition: opacity var(--ov-enter) var(--ov-ease), transform var(--ov-enter) var(--ov-ease); }
   #definition-card {
     display: flex;
     flex-direction: column;
@@ -649,12 +733,13 @@
     padding: 0 6%;
     opacity: 0;
     pointer-events: none;
-    transform: translateY(16px);
-    transition: opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1), transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+    transform: translate3d(0, 12px, 0);
+    transition: opacity var(--ov-exit) var(--ov-ease-out), transform var(--ov-exit) var(--ov-ease-out);
   }
   #outline-layer.visible {
     opacity: 1;
-    transform: translateY(0);
+    transform: none;
+    transition: opacity var(--ov-enter) var(--ov-ease), transform var(--ov-enter) var(--ov-ease);
   }
   #outline-card {
     display: flex;
@@ -665,7 +750,7 @@
     border-radius: 18px;
     background: linear-gradient(180deg, var(--scrim), rgba(6, 7, 10, 0.52));
     box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
-    border: 1px solid rgba(230, 194, 122, 0.25);
+    border: 1px solid rgba(var(--accent-rgb), 0.25);
   }
   @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
     #outline-card {
@@ -677,8 +762,8 @@
     display: inline-block;
     padding: 4px 14px;
     border-radius: 999px;
-    background: rgba(230, 194, 122, 0.16);
-    border: 1px solid rgba(230, 194, 122, 0.4);
+    background: rgba(var(--accent-rgb), 0.16);
+    border: 1px solid rgba(var(--accent-rgb), 0.4);
     color: var(--accent);
     font-family: "Instrument Sans", -apple-system, sans-serif;
     font-size: clamp(11px, 1.2vw, 15px);
@@ -706,7 +791,7 @@
 </style>
 </head>
 <body>
-  <div id="status">connecting…</div>
+  <div id="status" class="status-hidden" role="status">connecting…</div>
   <div id="brand-name" class="brand-item"></div>
   <img id="brand-logo" class="brand-item" alt="" />
   <div id="poster-layer">

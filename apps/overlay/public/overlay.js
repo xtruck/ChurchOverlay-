@@ -43,13 +43,27 @@
 
   // The connection pill is a diagnostic, not content: it used to stay on
   // the congregation screen (and in the stream) for the whole service.
-  // It now fades once connected and comes back only when something is wrong.
-  let statusHideTimer = null
-  function setStatus(text, healthy) {
+  // It starts hidden (index.html), is hidden the moment the socket is
+  // connected, and appears only when a problem outlasts a short grace period
+  // — so a normal page load or a sub-second reconnect never puts diagnostic
+  // chrome on the stream. `immediate` is for states no retry will fix
+  // (missing token), which should be visible straight away.
+  const STATUS_GRACE_MS = 1500
+  let statusShowTimer = null
+  function setStatus(text, healthy, immediate) {
     statusEl.textContent = text
-    statusEl.classList.remove("status-hidden")
-    clearTimeout(statusHideTimer)
-    if (healthy) statusHideTimer = setTimeout(() => statusEl.classList.add("status-hidden"), 2500)
+    clearTimeout(statusShowTimer)
+    if (healthy) {
+      statusEl.classList.add("status-hidden")
+      return
+    }
+    if (immediate) {
+      statusEl.classList.remove("status-hidden")
+      return
+    }
+    if (statusEl.classList.contains("status-hidden")) {
+      statusShowTimer = setTimeout(() => statusEl.classList.remove("status-hidden"), STATUS_GRACE_MS)
+    }
   }
 
   // Bounded, backoff-aware reconnect (ARCHITECTURE.md section 48, AGENTS.md
@@ -600,7 +614,7 @@
 
   function connect() {
     if (!token) {
-      setStatus("no viewer token in URL (add ?token=...)")
+      setStatus("no viewer token in URL (add ?token=...)", false, true)
       return
     }
     setStatus("connecting…")
