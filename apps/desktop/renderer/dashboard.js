@@ -82,6 +82,18 @@
     return buffer
   }
 
+  // Vespers 2 icon set: the same 24px / 1.75-stroke family as the inline
+  // SVGs in index.html (stroke, fill and caps come from the .icon class).
+  // Static strings only — never built from data.
+  const svgIcon = (paths) => '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' + paths + "</svg>"
+  const ICONS = {
+    close: svgIcon('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>'),
+    plus: svgIcon('<path d="M12 5v14M5 12h14"/>'),
+    arrowUp: svgIcon('<path d="M12 19V5m0 0-5.5 5.5M12 5l5.5 5.5"/>'),
+    arrowDown: svgIcon('<path d="M12 5v14m0 0-5.5-5.5M12 19l5.5-5.5"/>'),
+    duplicate: svgIcon('<rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/>'),
+  }
+
   const statusPillEl = document.getElementById("status-pill")
   const statusTextEl = document.getElementById("status-text")
   const logEl = document.getElementById("log")
@@ -375,7 +387,7 @@
     const close = document.createElement("button")
     close.type = "button"
     close.className = "toast-close"
-    close.textContent = "\u00d7"
+    close.innerHTML = ICONS.close
     close.setAttribute("aria-label", t("toast.dismiss"))
     toast.append(message, close)
     toastRegionEl.appendChild(toast)
@@ -511,7 +523,16 @@
     renderPendingAlternatives(verse)
     versePendingBannerEl.style.display = "flex"
     livePreviewEl.classList.add("has-pending")
+    globalPendingBtn.style.display = ""
   }
+
+  // Header shortcut to a waiting verse, so it is noticed from any view.
+  // It only navigates: confirming stays the Live view's own button.
+  const globalPendingBtn = document.getElementById("global-pending")
+  globalPendingBtn.addEventListener("click", () => {
+    showView("live")
+    versePendingConfirmBtn.focus()
+  })
 
   // The server found the same words fit more than one verse (e.g. 1 and 2 Corinthians
   // when no volume was said and no context names one). One button per alternative;
@@ -537,6 +558,7 @@
   function clearPendingVerse() {
     versePendingBannerEl.style.display = "none"
     livePreviewEl.classList.remove("has-pending")
+    globalPendingBtn.style.display = "none"
   }
 
   versePendingConfirmBtn.addEventListener("click", () => {
@@ -556,6 +578,7 @@
     }
     asrHealthWarningEl.classList.remove("asr-health-warning-throttled", "asr-health-warning-rate-limited", "asr-health-warning-failover")
     asrReturnPrimaryBtn.style.display = "none"
+    if (typeof payload.asrHealth === "string") statusbarAsrEl.dataset.health = payload.asrHealth
     if (payload.asrHealth === "error") {
       asrHealthWarningTextEl.textContent = t("mic.transcriptionError", { error: payload.error || "" })
       asrHealthWarningEl.style.display = "block"
@@ -647,6 +670,8 @@
   // whenever what is on screen changes, not only when it first goes live.
   let onAirSince = null
   let onAirKey = null
+  const globalTallyEl = document.getElementById("global-tally")
+  const globalTallyLabelEl = document.getElementById("global-tally-label")
   function renderTally() {
     const live = Boolean(onScreen.verse || onScreen.media || onScreen.announcement || onScreen.canvas)
     livePreviewEl.classList.toggle("on-air", live)
@@ -662,13 +687,31 @@
     else if (onScreen.media) text = t("livePreview.onAirMedia", { title: onScreen.media })
     else if (live) text = t("livePreview.onAir")
     tallyChipEl.textContent = text
+    // The header tally mirrors the program monitor's state from every view.
+    const tallyKey = live ? "tally.onAir" : "tally.offAir"
+    globalTallyEl.dataset.state = live ? "on" : "off"
+    globalTallyLabelEl.dataset.i18n = tallyKey // stays right if the UI language changes
+    globalTallyLabelEl.textContent = t(tallyKey)
+    globalTallyEl.title = text
   }
 
   // ---- Microphone health (mic:health, ~1/s while listening) ---------------
   function formatDb(value) {
     return typeof value === "number" ? Math.round(value) + " dB" : "–"
   }
+  // Status bar: a short mirror of the mic card's state, readable from any view.
+  const statusbarMicEl = document.getElementById("statusbar-mic")
+  const statusbarMicTextEl = document.getElementById("statusbar-mic-text")
+  const statusbarAsrEl = document.getElementById("statusbar-asr")
+  const statusbarAsrTextEl = document.getElementById("statusbar-asr-text")
+  function renderStatusbarMic(state) {
+    statusbarMicEl.dataset.state = state
+    statusbarMicTextEl.dataset.i18n = "statusbar.mic." + state
+    statusbarMicTextEl.textContent = t("statusbar.mic." + state)
+  }
+
   function renderMicHealth(payload) {
+    renderStatusbarMic(payload ? payload.state : "idle")
     if (!payload) {
       micHealthEl.dataset.state = "idle"
       micHealthTextEl.textContent = t("micHealth.idle")
@@ -841,6 +884,7 @@
     else provider = asrStatus.strategy === "streaming-first" ? t("asrSettings.providerStreamingFirst") : t("asrSettings.providerBatchFirst")
     if (asrStatus.localActive) provider += t("asrSettings.plusOffline")
     asrProviderLineEl.textContent = provider
+    statusbarAsrTextEl.textContent = provider
   }
   asrStrategyToggleEl.querySelectorAll("button").forEach((button) => {
     button.addEventListener("click", () => {
@@ -888,7 +932,7 @@
   function mediaIconSvg(kind) {
     const paths = MEDIA_ICONS[kind] || MEDIA_ICONS.image
     return (
-      '<svg class="media-tile-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">' +
+      '<svg class="icon media-tile-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
       paths +
       "</svg>"
     )
@@ -916,7 +960,7 @@
   // current principal poster — same convention as MEDIA_ICONS/SCENE_ICONS
   // above (inline SVG, no emoji).
   const POSTER_PIN_ICON =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">' +
+    '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
     '<path d="M12 2v6.5M12 2 8 8.5h8L12 2Z"/><path d="M8.5 8.5 6 21l6-4 6 4-2.5-12.5"/>' +
     "</svg>"
 
@@ -924,11 +968,11 @@
   // imported the wrong file, or named it wrong, needs a way to fix it
   // directly — not just prevented from repeating the mistake next time.
   const RENAME_ICON =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">' +
+    '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
     '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>' +
     "</svg>"
   const DELETE_ICON =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">' +
+    '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
     '<path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/>' +
     '<path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6"/>' +
     "</svg>"
@@ -969,6 +1013,7 @@
 
   function renderMediaGrid() {
     mediaGridEl.innerHTML = ""
+    mediaGridEl.removeAttribute("aria-busy")
     renderMediaCounts()
     if (knownCues.length === 0) {
       const empty = document.createElement("div")
@@ -1204,7 +1249,7 @@
   function sceneIconSvg(kind) {
     const paths = SCENE_ICONS[kind] || SCENE_ICONS.blank
     return (
-      '<svg class="chip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">' +
+      '<svg class="icon chip-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
       paths +
       "</svg>"
     )
@@ -1374,11 +1419,11 @@
     renderDraftSceneList()
   }
 
-  function draftActionButton(label, text, onClick, extraClass) {
+  function draftActionButton(label, iconSvg, onClick, extraClass) {
     const btn = document.createElement("button")
     btn.type = "button"
     btn.className = "scene-action" + (extraClass ? " " + extraClass : "")
-    btn.textContent = text
+    btn.innerHTML = iconSvg
     btn.title = label
     btn.setAttribute("aria-label", label)
     btn.addEventListener("click", (event) => {
@@ -1438,13 +1483,13 @@
       const actions = document.createElement("span")
       actions.className = "scene-actions"
       actions.append(
-        draftActionButton(t("rundown.builder.moveUp"), "↑", () => moveDraftScene(index, index - 1)),
-        draftActionButton(t("rundown.builder.moveDown"), "↓", () => moveDraftScene(index, index + 1)),
-        draftActionButton(t("rundown.builder.duplicateScene"), "⧉", () => {
+        draftActionButton(t("rundown.builder.moveUp"), ICONS.arrowUp, () => moveDraftScene(index, index - 1)),
+        draftActionButton(t("rundown.builder.moveDown"), ICONS.arrowDown, () => moveDraftScene(index, index + 1)),
+        draftActionButton(t("rundown.builder.duplicateScene"), ICONS.duplicate, () => {
           draftScenes.splice(index + 1, 0, JSON.parse(JSON.stringify(scene)))
           renderDraftSceneList()
         }),
-        draftActionButton(t("rundown.builder.removeScene"), "×", () => {
+        draftActionButton(t("rundown.builder.removeScene"), ICONS.close, () => {
           draftScenes.splice(index, 1)
           renderDraftSceneList()
         }, "scene-action-danger")
@@ -1473,7 +1518,7 @@
       chip.className = "recent-chip"
       const plus = document.createElement("span")
       plus.className = "recent-chip-key"
-      plus.textContent = "+"
+      plus.innerHTML = ICONS.plus
       const label = document.createElement("span")
       label.textContent = entry.label
       chip.append(plus, label)
@@ -1493,8 +1538,17 @@
       renderDraftSceneList()
       rundownBuilderEl.scrollIntoView({ behavior: "smooth", block: "start" })
     }
-    rundownBuilderToggleBtn.textContent = isHidden ? t("rundown.buildButtonClose") : t("rundown.buildButton")
+    setBuilderToggleLabel(isHidden ? "rundown.buildButtonClose" : "rundown.buildButton")
   })
+
+  // The toggle carries an icon, so only its label span changes; the
+  // data-i18n key moves with it so a language switch keeps the right text.
+  function setBuilderToggleLabel(key) {
+    const label = document.getElementById("rundown-builder-toggle-label")
+    label.dataset.i18n = key
+    label.textContent = t(key)
+    rundownBuilderToggleBtn.classList.toggle("is-open", key === "rundown.buildButtonClose")
+  }
 
   function updateRundownBuilderFieldsVisibility() {
     rundownFieldVerseEl.style.display = draftSelectedKind === "verse" ? "block" : "none"
@@ -2052,7 +2106,7 @@
     // Collapse the builder after loading — attention should go back to the
     // now-active scene list, not stay on the builder form.
     rundownBuilderEl.style.display = "none"
-    rundownBuilderToggleBtn.textContent = t("rundown.buildButton")
+    setBuilderToggleLabel("rundown.buildButton")
   })
 
   rundownPrevBtn.addEventListener("click", () => {
@@ -2920,6 +2974,7 @@
   paletteModalEl.addEventListener("click", (event) => {
     if (event.target === paletteModalEl) closePalette()
   })
+  document.getElementById("palette-btn").addEventListener("click", openPalette)
   window.addEventListener("churchoverlay:languagechange", () => {
     if (paletteModalEl.style.display !== "none") renderPalette()
   })
@@ -2997,7 +3052,9 @@
     referenceFieldEl.classList.remove("invalid")
   })
 
-  window.addEventListener("churchoverlay:languagechange", () => renderRecentVerses())
+  // renderTally() also re-renders the recent-verse chips, and re-applies the
+  // tally texts that applyTranslations() would otherwise reset to "off air".
+  window.addEventListener("churchoverlay:languagechange", () => renderTally())
 
   function showAppShell() {
     setupScreenEl.style.display = "none"
@@ -3071,11 +3128,22 @@
     historySummaryEl.textContent = t("history.loading")
     historyMostShownEl.innerHTML = ""
     historyRecentServicesEl.innerHTML = ""
+    // Loading placeholders, replaced as soon as the history arrives.
+    for (const list of [historyMostShownEl, historyRecentServicesEl]) {
+      for (let i = 0; i < 4; i++) {
+        const placeholder = document.createElement("div")
+        placeholder.className = "skeleton skeleton-row"
+        placeholder.setAttribute("aria-hidden", "true")
+        list.appendChild(placeholder)
+      }
+    }
 
     window.churchOverlay
       .getSessionHistory()
       .then((entries) => {
         if (token !== historyRenderToken) return
+        historyMostShownEl.innerHTML = ""
+        historyRecentServicesEl.innerHTML = ""
         if (entries.length === 0) {
           historySummaryEl.textContent = t("history.empty")
           for (const list of [historyMostShownEl, historyRecentServicesEl]) {
@@ -3126,6 +3194,10 @@
       })
       .catch((err) => {
         historySummaryEl.textContent = ""
+        if (token === historyRenderToken) {
+          historyMostShownEl.innerHTML = ""
+          historyRecentServicesEl.innerHTML = ""
+        }
         log(t("log.historyLoadFailed", { error: err.message }), "error")
       })
   }
