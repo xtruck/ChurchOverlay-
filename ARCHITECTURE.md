@@ -6160,3 +6160,13 @@ answer, kills the process (detached first, so its exit does not schedule a secon
 fire time; the desktop main process passes Electron's `powerMonitor` as the `source`, so `apps/server` still imports
 nothing from Electron. Each startup `/health` poll is now bounded by the same 3 s, so a wedged socket cannot outlive
 the readiness deadline.
+
+**Model download (whisper.cpp engine, `LocalAsrInstaller`).** The model (142-466 MB) now streams to a stable
+`<model>.partial` instead of memory. A later attempt resumes it with `Range: bytes=N-`; a server that ignores the
+range (200) rewrites the file from zero, and a 206 starting anywhere else is refused. Before downloading, free space
+on the models volume must cover 1.2x the model size minus what is already on disk (OpenWhispr's margin); if the
+platform cannot report free space the check is skipped and an out-of-space write still fails the install. The
+received size must equal the size the server declared (a cut connection stays an error and keeps its partial for
+resume) and may never exceed 1.5x the expected size. Integrity is unchanged in strength: the SHA-1 is computed over
+the complete file before the rename, and a mismatch deletes the partial so corrupt bytes are never resumed. The
+engine zip and the faster-whisper installer keep the previous whole-file download.
