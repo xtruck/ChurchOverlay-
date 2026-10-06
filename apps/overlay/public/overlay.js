@@ -617,6 +617,18 @@
     const ws = new WebSocket("ws://" + window.location.hostname + ":" + wsPort, [token])
 
     ws.addEventListener("open", () => {
+      // While this socket was down the operator may have cleared the screen,
+      // and a clear sent to nobody is lost. The server's connect-time resync
+      // re-sends verse/media/poster only if one is active, and never sends a
+      // clear — so without this, a verse cleared during a Wi-Fi blip stays on
+      // the stream. Reset exactly the channels the server resyncs; the open
+      // event fires before any message of this connection, so a still-active
+      // item is simply shown again a moment later.
+      if (!designPreview) {
+        clearVerse()
+        clearMedia()
+        clearPoster()
+      }
       lastStyleRevision = -1
       reconnectAttempts = 0
       setStatus("connected", true)
