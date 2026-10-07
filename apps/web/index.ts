@@ -336,9 +336,9 @@ async function main() {
 
       const tempFilePath = join(tempDir, `upload-${Date.now()}-${randomBytes(4).toString("hex")}${extension}`)
       const buffer = Buffer.from(data, "base64")
-      await writeFile(tempFilePath, buffer)
 
       try {
+        await writeFile(tempFilePath, buffer)
         const cue = await mediaLibrary.import(tempFilePath, title, kind)
         res.json(cue)
       } finally {
@@ -506,14 +506,34 @@ async function main() {
     res.sendFile(join(REPO_ROOT, "apps", "web", "public", "index.html"))
   })
 
+  // Final error handler: body-parser failures (bad JSON, oversized body) would
+  // otherwise render Express's default HTML page, which the dashboard cannot
+  // parse and which exposes stack traces when NODE_ENV is unset.
+  app.use((err: unknown, _req: Request, res: Response, next: (e?: unknown) => void) => {
+    if (res.headersSent) {
+      next(err)
+      return
+    }
+    const status = typeof (err as { status?: unknown })?.status === "number" ? (err as { status: number }).status : 500
+    const clientError = status >= 400 && status < 500
+    res.status(clientError ? status : 500).json({ error: clientError ? "Invalid or oversized request" : "Internal server error" })
+  })
+
+  let shuttingDown = false
   const shutdown = async () => {
+    if (shuttingDown) return
+    shuttingDown = true
     logger.info({ component: "server", event: "server.stopping" })
+    // Keep-alive connections (OBS browser sources, phones) would otherwise hold
+    // httpServer.close() open indefinitely and leave the port bound.
+    setTimeout(() => process.exit(0), 3000).unref()
     if (appCoreHandle) {
       await appCoreHandle.stop().catch(() => {})
     }
     httpServer.close(() => {
       process.exit(0)
     })
+    httpServer.closeAllConnections?.()
   }
   process.on("SIGTERM", shutdown)
   process.on("SIGINT", shutdown)

@@ -190,6 +190,20 @@ export class WhisperServerProcess {
     })
     this.child = child
     this.port = port
+    // spawn() failures (ENOENT, EACCES) surface as an 'error' event; without a
+    // listener Node would raise an uncaughtException and kill the whole server.
+    // Clearing this.child makes waitUntilReady fail fast instead of polling.
+    child.once("error", (err) => {
+      stderrTail = (stderrTail + String(err.message)).slice(-2000)
+      this.options.logger?.warn({
+        component: "asr",
+        event: "local-whisper.spawn-error",
+        metadata: { message: err.message },
+      })
+      if (this.child !== child) return
+      this.child = null
+      this.port = 0
+    })
     child.once("exit", (code) => {
       if (this.child !== child) return
       this.child = null

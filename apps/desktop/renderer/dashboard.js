@@ -2469,6 +2469,8 @@
     el.setAttribute("tabindex", "0")
     el.addEventListener("click", onActivate)
     el.addEventListener("keydown", (event) => {
+      // Ignore keys bubbling up from nested controls (inputs, buttons).
+      if (event.target !== el) return
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault()
         onActivate(event)
@@ -2611,6 +2613,13 @@
       log(t("log.connected"), "received")
     })
     ws.addEventListener("close", () => {
+      // The server resends active items on reconnect but never a clear, so
+      // drop the stale ON AIR state instead of showing it while disconnected.
+      onScreen.verse = null
+      onScreen.media = null
+      onScreen.announcement = false
+      onScreen.canvas = false
+      renderTally()
       const delay = nextReconnectDelay()
       const delaySeconds = Math.round(delay / 1000)
       setStatus(t("status.disconnectedRetrying", { seconds: delaySeconds }), "disconnected")

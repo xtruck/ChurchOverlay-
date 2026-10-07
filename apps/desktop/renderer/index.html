@@ -285,7 +285,7 @@
                 <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h1.5M7.5 8v8M11 5v14M14.5 8.5v7M18 10.5v3M20 12h.5"/></svg>
                 <span data-i18n="mic.lastTranscriptLabel">Heard</span>
               </span>
-              <div id="transcript" aria-live="polite" data-i18n="mic.waitingForSpeech">Waiting for speech…</div>
+              <div id="transcript" aria-live="off" data-i18n="mic.waitingForSpeech">Waiting for speech…</div>
             </div>
             <!-- ARCHITECTURE.md section 91: a final transcript with verse
                  keywords that resolved to no reference. Transient. -->
@@ -1002,7 +1002,7 @@
   <footer class="statusbar">
     <div id="status-pill" class="status-pill disconnected">
       <span class="status-dot"></span>
-      <span id="status-text" data-i18n="status.connecting">connecting…</span>
+      <span id="status-text" role="status" aria-live="polite" data-i18n="status.connecting">connecting…</span>
     </div>
     <span class="statusbar-sep" aria-hidden="true"></span>
     <div id="statusbar-mic" class="statusbar-item" data-state="idle">
