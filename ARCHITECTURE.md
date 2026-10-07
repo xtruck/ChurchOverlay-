@@ -6252,3 +6252,15 @@ accuracy were **not measured** (no local engine installed on the development mac
 **Language badges.** `transcript:partial|final` payloads carry a display-only `language` (`en`/`fr`/`unknown`, same vote as the guard); the "Heard" strip shows an EN/FR badge so the operator sees whose voice was transcribed. Nothing downstream reads it.
 
 **Ideas not built (need their own scope decision).** Two-microphone or stereo lanes (preacher vs interpreter) for true speaker separation; an LLM-assisted near-miss interpreter that only ever proposes a pending suggestion through the existing guard.
+
+## 121. Optional AI Helpers (Anthropic Claude): Reference Repair, Bilingual Notes, Translation
+
+**Scope.** Approved by the owner in chat as the first, deliberately narrow slice of the "AI copilot" (section 59 / ROADMAP item 8). Everything is **optional and inert without an Anthropic API key** (setup screen, stored encrypted like the other keys). The model is only ever a helper behind the small `TextCompleter` interface (`server/ai/claude-client.ts`, a thin fetch adapter to the Messages API, default `claude-haiku-4-5`, 6–20 s timeouts, `CallBudget` per-minute caps, errors scrubbed by `scrubSecrets`). It is never a live agent, never receives audio, and never gets a new Bible lookup path.
+
+- **Reference repair.** For a sentence the deterministic detector flagged as a near-miss (section 91), `ReferenceRepairer` asks the model which single reference the speaker announced. The answer is only a **candidate**: it goes back through `RegexDetector`, `KnownValidVerseIndex` and `VerseSource` like any spoken reference (section 15: an LLM-proposed reference is never trusted) and always lands as a **pending suggestion** (`origin: "ai"`), never on screen by itself, with the same cooldown as quotation suggestions. 6 calls/min.
+- **Bilingual notes.** `ClaudeSermonNotes` implements the existing `summarize()` surface of the section 65.7 notes channel and replaces the Groq generator when a key is set: French first, English after, cited verses listed. Still a read-only observer of final transcripts.
+- **Translation.** Each sufficiently long final transcript whose language is known (section 120 vote) is translated FR<->EN and broadcast as the display-only `translation:final` event (`{id, from, to, text}`, server-only sender). The operator's "Heard" strip shows it under the heard text; nothing downstream reads it and it never reaches the congregation overlay. 20 calls/min.
+
+**Privacy/cost.** With a key set, transcript text (not audio) is sent to Anthropic; the setup screen says so. Calls are capped per minute and fail soft: a timeout or 429 simply means no suggestion/translation for that sentence.
+
+**Not done / open.** Only the operator dashboard displays translations (stage/live pages do not yet). Not exercised against the live API in this session (tests use a fake completer): validate the prompts on a recorded service. A congregation-facing subtitle overlay stays out of scope.

@@ -4707,3 +4707,128 @@ test("AppCore: transcript broadcasts carry a language hint for the operator badg
     await app.stop()
   }
 })
+
+function fakeClaude(answer: (system: string, user: string) => string) {
+  const calls: Array<{ system: string; user: string }> = []
+  return {
+    calls,
+    complete: async (request: { system: string; user: string }) => {
+      calls.push(request)
+      return answer(request.system, request.user)
+    },
+  }
+}
+
+test("AppCore (AI): a near-miss sentence repaired by the model becomes a PENDING suggestion through the normal guard, never shown directly", async () => {
+  const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
+  const claude = fakeClaude((system) => (system.includes("repair") ? '{"book":"John","chapter":3,"verse":16}' : ""))
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({ john: johnVerse }),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    claudeClient: claude,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const seen: WsMessage[] = []
+    viewerSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString()) as WsMessage
+      if (message.type === "verse:pending" || message.type === "verse:show") seen.push(message)
+    })
+    asr.emitTranscript({ id: "01A", correlationId: "C1", sequence: 1, text: "Open your bibles to the chapter we talked about", state: "final", timestamp: Date.now() })
+    await waitFor(() => seen.length === 1)
+    assert.equal(seen[0]?.type, "verse:pending")
+    assert.equal((seen[0]?.payload as { origin?: string }).origin, "ai")
+    assert.ok(!seen.some((m) => m.type === "verse:show"))
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore (AI): a model proposal that is not a real verse is rejected and nothing is shown", async () => {
+  const claude = fakeClaude(() => '{"book":"John","chapter":99,"verse":99}')
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({ john: makeVerse({ book: "john", chapter: 3, verse: 16 }, "x") }),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    claudeClient: claude,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const seen: WsMessage[] = []
+    viewerSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString()) as WsMessage
+      if (message.type === "verse:pending" || message.type === "verse:show") seen.push(message)
+    })
+    asr.emitTranscript({ id: "01A", correlationId: "C1", sequence: 1, text: "Open your bibles to the chapter we talked about", state: "final", timestamp: Date.now() })
+    await waitFor(() => claude.calls.length > 0)
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    assert.equal(seen.length, 0)
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore (AI): a final English sentence is translated to French for the operator; no Claude client means no AI traffic at all", async () => {
+  const claude = fakeClaude(() => "Lisons la parole de Dieu aujourd'hui")
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    claudeClient: claude,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const translations: WsMessage[] = []
+    viewerSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString()) as WsMessage
+      if (message.type === "translation:final") translations.push(message)
+    })
+    asr.emitTranscript({ id: "01A", correlationId: "C1", sequence: 1, text: "Let us read the word of God today", state: "final", timestamp: Date.now() })
+    await waitFor(() => translations.length === 1)
+    assert.deepEqual(translations[0]?.payload, { id: "01A", from: "en", to: "fr", text: "Lisons la parole de Dieu aujourd'hui" })
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+
+  // Without a client the helpers are fully inert.
+  const plainAsr = new FakeAsrProvider()
+  const plain = await startAppCore({
+    asr: plainAsr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(plain.wsServer.port, TOKENS.viewerToken)
+    const types: string[] = []
+    viewerSocket.on("message", (data) => types.push((JSON.parse(data.toString()) as WsMessage).type))
+    plainAsr.emitTranscript({ id: "01B", correlationId: "C2", sequence: 1, text: "Let us read the word of God today", state: "final", timestamp: Date.now() })
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    assert.ok(!types.includes("translation:final"))
+    viewerSocket.close()
+  } finally {
+    await plain.stop()
+  }
+})

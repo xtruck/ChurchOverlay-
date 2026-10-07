@@ -33,6 +33,10 @@ import { generateUlid } from "../../../packages/shared/ulid"
 import type { Logger } from "../../../packages/shared/logger"
 import { scrubSecrets } from "../../../packages/shared/logger"
 import { InterpreterEchoGuard, guessSpokenLanguage } from "./interpreter-echo-guard"
+import { CallBudget, type TextCompleter } from "../ai/claude-client"
+import { ReferenceRepairer } from "../ai/reference-repairer"
+import { LiveTranslator } from "../ai/live-translator"
+import { ClaudeSermonNotes } from "../ai/claude-sermon-notes"
 import { VerseCache } from "../verse/verse-cache"
 import { CircuitBreaker } from "../verse/circuit-breaker"
 import { SilenceGate } from "../audio/silence-gate"
@@ -232,6 +236,12 @@ export type StartAppCoreOptions = {
    * AppCore.
    */
   readonly sermonNotesGenerator?: SermonNotesSummarizer
+  /**
+   * ARCHITECTURE.md section 121: optional Anthropic-backed helpers (reference
+   * repair, bilingual notes, FR<->EN translation). Absent = the app behaves
+   * exactly as before. Every helper is rate-capped and fails soft.
+   */
+  readonly claudeClient?: TextCompleter
   readonly sermonNotesEnabled?: boolean
   /**
    * Defaults to 60 seconds (ARCHITECTURE.md section 65.7: "every ~60
@@ -467,7 +477,14 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   // flushed and summarized on a fixed cadence rather than per-transcript —
   // both to bound Groq API cost and because a summary of one sentence isn't
   // a useful summary.
-  const sermonNotesGenerator = options.sermonNotesGenerator
+  // With an Anthropic key the bilingual notes replace the Groq generator.
+  const sermonNotesGenerator: SermonNotesSummarizer | undefined = options.claudeClient
+    ? new ClaudeSermonNotes(options.claudeClient)
+    : options.sermonNotesGenerator
+  const referenceRepairer = options.claudeClient ? new ReferenceRepairer(options.claudeClient) : null
+  const liveTranslator = options.claudeClient ? new LiveTranslator(options.claudeClient) : null
+  const repairBudget = new CallBudget(6)
+  const translateBudget = new CallBudget(20)
   const sermonNotesIntervalMs = options.sermonNotesIntervalMs ?? 60000
   let sermonNotesEnabled = options.sermonNotesEnabled ?? false
   let sermonNotesBuffer = ""
@@ -1654,6 +1671,55 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     return true
   }
 
+  /**
+   * ARCHITECTURE.md section 121: the model proposes a reference for a
+   * near-miss sentence. The proposal is only a candidate: it goes back through
+   * the same detector, the known-valid index and the verse source, and lands as
+   * a pending suggestion (origin "ai"), never on screen by itself.
+   */
+  async function suggestRepairedVerse(transcript: TranscriptResult): Promise<void> {
+    if (!referenceRepairer || transcript.state !== "final" || !repairBudget.tryTake()) return
+    const repaired = await referenceRepairer.repair(transcript.text, currentVersePosition?.book ?? null)
+    if (!repaired) return
+    const reference = detector
+      .detect(`${repaired.book} ${repaired.chapter}:${repaired.verse}`)
+      .find((candidate) => index.exists(candidate))
+    if (!reference) {
+      logger.info({ component: "app-core", event: "ai.repair-rejected", correlationId: transcript.correlationId, metadata: { proposed: repaired } })
+      return
+    }
+    const key = `${reference.book} ${reference.chapter}:${reference.verse}`
+    const now = Date.now()
+    const onScreen =
+      currentVersePosition !== null &&
+      currentVersePosition.book === reference.book &&
+      currentVersePosition.chapter === reference.chapter &&
+      currentVersePosition.verse === reference.verse
+    if (onScreen || now - (recentQuoteSuggestions.get(key) ?? 0) < QUOTE_SUGGESTION_COOLDOWN_MS) return
+    recentQuoteSuggestions.set(key, now)
+    const verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+    if (!verse) return
+    logger.info({ component: "app-core", event: "ai.repair-suggested", correlationId: transcript.correlationId, metadata: { reference: key } })
+    broadcastPendingVerse({ ...verse, origin: "ai" } as Verse, transcript.correlationId)
+  }
+
+  /** Display-only FR<->EN translation for the operator (section 121); never read by detection. */
+  async function translateForOperator(transcript: TranscriptResult): Promise<void> {
+    if (!liveTranslator || transcript.state !== "final" || transcript.text.length < 25) return
+    const from = guessSpokenLanguage(transcript.text)
+    if (from === "unknown" || !translateBudget.tryTake()) return
+    const to = from === "fr" ? "en" : "fr"
+    const text = await liveTranslator.translate(transcript.text, from, to)
+    if (!text) return
+    wsServer.broadcast({
+      id: generateUlid(),
+      type: "translation:final",
+      timestamp: Date.now(),
+      correlationId: transcript.correlationId,
+      payload: { id: transcript.id, from, to, text },
+    })
+  }
+
   async function suggestQuotedVerse(transcript: TranscriptResult, windowText: string): Promise<void> {
     const match = options.quoteMatcher?.match(windowText)
     if (!match || !index.exists(match.reference)) return
@@ -1881,6 +1947,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       // (ARCHITECTURE.md section 120); nothing downstream reads it.
       payload: { ...transcript, language: guessSpokenLanguage(transcript.text) },
     })
+    translateForOperator(transcript).catch((err) => logger.debug({
+      component: "app-core",
+      event: "ai.translate-failed",
+      correlationId: transcript.correlationId,
+      error: err instanceof Error ? err.message : String(err),
+    }))
     // A transcript arriving at all means the ASR pipeline is working again
     // — the operator-facing recovery signal for whatever error, if any,
     // was last broadcast below.
@@ -1986,6 +2058,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         metadata: { text: transcript.text },
       })
       recordAndBroadcastNearMiss(transcript.text, transcript.correlationId)
+      suggestRepairedVerse(transcript).catch((err) => logger.debug({
+        component: "app-core",
+        event: "ai.repair-failed",
+        correlationId: transcript.correlationId,
+        error: err instanceof Error ? err.message : String(err),
+      }))
     }
 
     // Voice-triggered media (ARCHITECTURE.md section 60.3), running

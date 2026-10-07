@@ -23,6 +23,7 @@ class FakeSecretCodec implements SecretCodec {
 const SAMPLE_CONFIG: AppConfig = {
   groqApiKey: "gsk_super_secret_value",
   deepgramApiKey: "deepgram_secret_value",
+  anthropicApiKey: "sk-ant-secret-value",
   microphoneId: "default-mic",
   operatorToken: "operator-token-value",
   viewerToken: "viewer-token-value",
@@ -130,6 +131,25 @@ test("ConfigStore: leaves no temp file behind after a successful save", async ()
 
 // The actual security property this class exists for: secrets must not
 // be recoverable by just reading the file on disk.
+test("ConfigStore: the optional anthropicApiKey round-trips, is encrypted at rest, and is absent when never set", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const store = new ConfigStore(path, new FakeSecretCodec())
+    await store.save(SAMPLE_CONFIG)
+    assert.equal((await store.load())?.anthropicApiKey, SAMPLE_CONFIG.anthropicApiKey)
+    const raw = await readFile(path, "utf8")
+    assert.equal(raw.includes(SAMPLE_CONFIG.anthropicApiKey as string), false)
+    assert.equal(raw.includes("anthropicApiKeyEncrypted"), true)
+
+    const { anthropicApiKey: _omit, ...withoutKey } = SAMPLE_CONFIG
+    await store.save(withoutKey)
+    const reloaded = await store.load()
+    assert.equal(reloaded?.anthropicApiKey, undefined)
+    assert.equal("anthropicApiKey" in (reloaded ?? {}), false)
+    assert.equal((await readFile(path, "utf8")).includes("anthropicApiKeyEncrypted"), false)
+  })
+})
+
 test("ConfigStore: secrets are genuinely encrypted at rest — the raw file never contains the plaintext", async () => {
   await withTempDir(async (dir) => {
     const path = join(dir, "config.json")

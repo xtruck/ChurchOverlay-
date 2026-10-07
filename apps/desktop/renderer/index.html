@@ -69,6 +69,9 @@
         <input id="setup-groq-key" type="password" placeholder="gsk_…" autocomplete="off" />
         <label for="setup-deepgram-key" data-i18n="setup.deepgramKeyLabel">Deepgram API key (fastest display)</label>
         <input id="setup-deepgram-key" type="password" placeholder="Deepgram key" autocomplete="off" />
+        <label for="setup-anthropic-key" data-i18n="setup.anthropicKeyLabel">Anthropic API key (AI helpers: reference repair, bilingual notes, translation)</label>
+        <input id="setup-anthropic-key" type="password" placeholder="sk-ant-… (optional)" autocomplete="off" />
+        <p class="settings-hint" data-i18n="setup.anthropicKeyHint">Optional. When set, transcript text is sent to Anthropic to power these helpers.</p>
       </div>
 
       <div class="setup-section">
@@ -287,6 +290,7 @@
               </span>
               <span id="transcript-lang" class="lang-badge" hidden></span>
               <div id="transcript" aria-live="polite" data-i18n="mic.waitingForSpeech">Waiting for speech…</div>
+              <div id="transcript-translation" class="transcript-translation" hidden></div>
             </div>
             <!-- ARCHITECTURE.md section 91: a final transcript with verse
                  keywords that resolved to no reference. Transient. -->

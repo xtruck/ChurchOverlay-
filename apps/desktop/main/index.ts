@@ -17,6 +17,7 @@ import { QuoteMatcher, type QuoteMatch } from "../../server/detector/quote-match
 import { OfflineFallbackVerseSource } from "../../server/verse/offline-fallback-verse-source"
 import { GroqProvider } from "../../server/asr/groq-provider"
 import { DeepgramProvider } from "../../server/asr/deepgram-provider"
+import { ClaudeClient } from "../../server/ai/claude-client"
 import { FailoverAsrProvider } from "../../server/asr/failover-provider"
 import { ASR_STRATEGIES, asrChain, deepgramLanguageFor, planAsr, type AsrProviderId, type AsrStrategy } from "../../server/asr/asr-strategy"
 import { LocalWhisperProvider } from "../../server/asr/local-whisper-provider"
@@ -477,6 +478,8 @@ async function startServices(
     // sermonNotesEnabled below, so a live dashboard toggle can turn it on
     // mid-service without reconstructing AppCore.
     ...(config.groqApiKey ? { sermonNotesGenerator: new SermonNotesGenerator({ apiKey: config.groqApiKey }) } : {}),
+    // Optional Anthropic key: the AI helpers stay off (undefined) without it.
+    claudeClient: config.anthropicApiKey ? new ClaudeClient({ apiKey: config.anthropicApiKey }) : undefined,
     sermonNotesEnabled: config.enableSermonNotes,
     // ARCHITECTURE.md section 65.4: a voice-triggered display-mode switch
     // persists exactly like the set-display-mode IPC handler below does,
@@ -599,6 +602,7 @@ async function startServices(
   function sameServiceConfig(left: AppConfig, right: AppConfig): boolean {
     return left.groqApiKey === right.groqApiKey &&
       left.deepgramApiKey === right.deepgramApiKey &&
+      left.anthropicApiKey === right.anthropicApiKey &&
       left.displayMode === right.displayMode &&
       left.uiLanguage === right.uiLanguage &&
       left.allowPhoneRemote === right.allowPhoneRemote &&
@@ -721,6 +725,7 @@ ipcMain.handle("get-startup-status", async () => {
 function currentAsrStatus(): {
   hasGroq: boolean
   hasDeepgram: boolean
+  hasAnthropic: boolean
   strategy: AsrStrategy
   autoGain: boolean
   localEnabled: boolean
@@ -731,6 +736,7 @@ function currentAsrStatus(): {
   return {
     hasGroq: Boolean(activeConfig?.groqApiKey),
     hasDeepgram: Boolean(activeConfig?.deepgramApiKey),
+    hasAnthropic: Boolean(activeConfig?.anthropicApiKey),
     strategy: activeConfig?.asrStrategy ?? "streaming-first",
     autoGain: activeConfig?.autoGain ?? true,
     localEnabled: activeConfig?.localAsrEnabled ?? false,
@@ -1034,6 +1040,7 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
 
   const groqApiKey = String(payloadObject.groqApiKey ?? "").trim()
   const deepgramApiKey = String(payloadObject.deepgramApiKey ?? "").trim()
+  const anthropicApiKey = String(payloadObject.anthropicApiKey ?? "").trim()
   if (!groqApiKey && !deepgramApiKey) {
     throw new Error("A Groq or Deepgram API key is required.")
   }
@@ -1087,6 +1094,9 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
     groqApiKey,
     ...(deepgramApiKey || existing?.deepgramApiKey
       ? { deepgramApiKey: deepgramApiKey || existing?.deepgramApiKey }
+      : {}),
+    ...(anthropicApiKey || existing?.anthropicApiKey
+      ? { anthropicApiKey: anthropicApiKey || existing?.anthropicApiKey }
       : {}),
     microphoneId: existing?.microphoneId ?? null,
     operatorToken: existing?.operatorToken ?? generateToken(),

@@ -45,6 +45,8 @@ export interface SecretCodec {
 export type AppConfig = {
   readonly groqApiKey: string
   readonly deepgramApiKey?: string
+  /** Optional Anthropic key for the AI helpers; absent means the helpers stay off. */
+  readonly anthropicApiKey?: string
   readonly microphoneId: string | null
   readonly operatorToken: string
   readonly viewerToken: string
@@ -128,6 +130,7 @@ export type AppConfig = {
 type StoredConfig = {
   readonly groqApiKeyEncrypted: string
   readonly deepgramApiKeyEncrypted?: string
+  readonly anthropicApiKeyEncrypted?: string
   readonly microphoneId: string | null
   readonly operatorTokenEncrypted: string
   readonly viewerTokenEncrypted: string
@@ -233,6 +236,7 @@ export class ConfigStore {
     const stored: StoredConfig = {
       groqApiKeyEncrypted: this.codec.encrypt(config.groqApiKey).toString("base64"),
       ...(config.deepgramApiKey ? { deepgramApiKeyEncrypted: this.codec.encrypt(config.deepgramApiKey).toString("base64") } : {}),
+      ...(config.anthropicApiKey ? { anthropicApiKeyEncrypted: this.codec.encrypt(config.anthropicApiKey).toString("base64") } : {}),
       microphoneId: config.microphoneId,
       operatorTokenEncrypted: this.codec.encrypt(config.operatorToken).toString("base64"),
       viewerTokenEncrypted: this.codec.encrypt(config.viewerToken).toString("base64"),
@@ -283,6 +287,7 @@ export class ConfigStore {
     const {
       groqApiKeyEncrypted,
       deepgramApiKeyEncrypted,
+      anthropicApiKeyEncrypted,
       microphoneId,
       operatorTokenEncrypted,
       viewerTokenEncrypted,
@@ -381,6 +386,9 @@ export class ConfigStore {
       groqApiKey: this.codec.decrypt(Buffer.from(groqApiKeyEncrypted, "base64")),
       ...(typeof deepgramApiKeyEncrypted === "string"
         ? { deepgramApiKey: this.codec.decrypt(Buffer.from(deepgramApiKeyEncrypted, "base64")) }
+        : {}),
+      ...(typeof anthropicApiKeyEncrypted === "string"
+        ? { anthropicApiKey: this.codec.decrypt(Buffer.from(anthropicApiKeyEncrypted, "base64")) }
         : {}),
       microphoneId,
       operatorToken: this.codec.decrypt(Buffer.from(operatorTokenEncrypted, "base64")),

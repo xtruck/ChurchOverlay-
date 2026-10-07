@@ -44,6 +44,7 @@ test("ACTION_REGISTRY: contains all registered actions including Phase 2 and inn
       "layout:set",
       "layout:update",
       "detector:near-miss",
+      "translation:final",
       "branding:update",
       "overlay:style",
       "mic:auto-gain",

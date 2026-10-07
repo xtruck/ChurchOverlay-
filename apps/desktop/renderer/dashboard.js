@@ -99,6 +99,8 @@
   const logEl = document.getElementById("log")
   const transcriptEl = document.getElementById("transcript")
   const transcriptLangEl = document.getElementById("transcript-lang")
+  const transcriptTranslationEl = document.getElementById("transcript-translation")
+  let lastFinalTranscriptId = null
   const nearMissIndicatorEl = document.getElementById("near-miss-indicator")
   const audioDiagnosticsEl = document.getElementById("audio-diagnostics")
   const referenceInput = document.getElementById("reference")
@@ -116,6 +118,7 @@
   const appShellEl = document.getElementById("app-shell")
   const setupKeyInput = document.getElementById("setup-groq-key")
   const setupDeepgramKeyInput = document.getElementById("setup-deepgram-key")
+  const setupAnthropicKeyInput = document.getElementById("setup-anthropic-key")
   const setupErrorEl = document.getElementById("setup-error")
   const setupSaveBtn = document.getElementById("setup-save-btn")
   const mediaGridEl = document.getElementById("media-grid")
@@ -517,7 +520,7 @@
     // suggestion, even in auto mode — say why it is waiting.
     const originKey = verse.corroboratedBy === "interpreter"
       ? "livePreview.pendingCorroborated"
-      : verse.origin === "quote" ? "livePreview.pendingFromQuote" : verse.origin === "inferred" ? "livePreview.pendingFromVolume" : null
+      : verse.origin === "ai" ? "livePreview.pendingFromAi" : verse.origin === "quote" ? "livePreview.pendingFromQuote" : verse.origin === "inferred" ? "livePreview.pendingFromVolume" : null
     versePendingOriginEl.style.display = originKey ? "block" : "none"
     if (originKey) {
       versePendingOriginEl.dataset.i18n = originKey // stays right if the UI language changes
@@ -2644,6 +2647,11 @@
         const text = message.payload && message.payload.text
         if (text) {
           transcriptEl.textContent = text
+          // A new final sentence invalidates the previous translation until its own arrives.
+          if (message.type === "transcript:final") {
+            lastFinalTranscriptId = message.payload.id
+            transcriptTranslationEl.hidden = true
+          }
           // Language badge (EN/FR) so the operator sees which voice was heard,
           // e.g. an English preacher and a French interpreter. Hidden when unsure.
           const lang = message.payload.language
@@ -2690,6 +2698,13 @@
         renderRundownSceneList()
       } else if (message.type === "status:update") {
         handleStatusUpdate(message.payload)
+      } else if (message.type === "translation:final") {
+        // Display-only FR<->EN translation (optional Anthropic helper); ignore stale ones.
+        const p = message.payload
+        if (p && p.id === lastFinalTranscriptId && typeof p.text === "string") {
+          transcriptTranslationEl.textContent = p.to.toUpperCase() + " · " + p.text
+          transcriptTranslationEl.hidden = false
+        }
       } else if (message.type === "verse:pending") {
         showPendingVerse(message.payload)
       } else if (message.type === "sermonNotes:update") {
@@ -3499,7 +3514,8 @@
         setupAllowPhoneRemoteEl.checked,
         setupAudioProfileEl.value,
         setupOrganizationNameEl.value.trim(),
-        setupAccentColorEl.value
+        setupAccentColorEl.value,
+        setupAnthropicKeyInput.value.trim()
       )
       .then((info) => {
         setActiveOption(displayModeToggleEl, "mode", setupSelectedMode)

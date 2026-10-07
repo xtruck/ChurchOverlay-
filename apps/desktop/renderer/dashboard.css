@@ -832,7 +832,7 @@ header.topbar {
 
 /* Heard: what the ASR is hearing, continuously. */
 .cell-heard { padding: var(--space-3) var(--space-4); }
-.heard-row { display: flex; align-items: baseline; gap: var(--space-3); min-width: 0; }
+.heard-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-3); min-width: 0; }
 .heard-label {
   display: inline-flex;
   align-items: center;
@@ -858,6 +858,8 @@ header.topbar {
   color: var(--text-muted, #8a8f98);
 }
 .lang-badge[hidden] { display: none; }
+.transcript-translation { flex-basis: 100%; font-size: 13px; font-style: italic; color: var(--text-muted, #8a8f98); }
+.transcript-translation[hidden] { display: none; }
 #transcript {
   font-size: var(--fs-16);
   line-height: 1.45;
