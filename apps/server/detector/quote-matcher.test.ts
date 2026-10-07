@@ -62,3 +62,16 @@ test("QuoteMatcher: real LSG 1910 — famous verses found, sermon talk and ubiqu
   assert.equal(ref("et l'Éternel dit à Moïse"), null)
   assert.equal(ref("mes frères aujourd'hui nous allons parler de la foi et de la grâce de Dieu dans nos vies"), null)
 })
+
+test("QuoteMatcher.buildAsync: yields to the event loop and indexes exactly like the constructor", async () => {
+  const data = await loadOfflineBibleData()
+  let ticks = 0
+  const timer = setInterval(() => ticks++, 1)
+  const asyncMatcher = await QuoteMatcher.buildAsync(data, {}, 5)
+  clearInterval(timer)
+  const syncMatcher = new QuoteMatcher(data)
+  assert.equal(asyncMatcher.size, syncMatcher.size)
+  assert.ok(ticks > 5, `the event loop must keep running during the build (ticks=${ticks})`)
+  const line = "car Dieu a tant aimé le monde qu'il a donné son Fils unique afin que quiconque croit en lui ne périsse point"
+  assert.deepEqual(asyncMatcher.match(line), syncMatcher.match(line))
+})

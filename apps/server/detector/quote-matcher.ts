@@ -88,20 +88,46 @@ export class QuoteMatcher {
   private readonly references: VerseReference[] = []
   private readonly runCounts: number[] = []
 
-  constructor(data: OfflineBibleData, options: QuoteMatcherOptions = {}) {
+  /**
+   * `populate: false` leaves the index empty so QuoteMatcher.buildAsync() can
+   * fill it in time slices instead of one ~0.7 s synchronous block.
+   */
+  constructor(data: OfflineBibleData, options: QuoteMatcherOptions = {}, populate = true) {
     this.shingle = options.shingle ?? DEFAULT_SHINGLE
     this.minRuns = options.minRuns ?? DEFAULT_MIN_RUNS
     this.minCoverage = options.minCoverage ?? DEFAULT_MIN_COVERAGE
     this.dominance = options.dominance ?? DEFAULT_DOMINANCE
+    if (populate) for (const [reference, text] of QuoteMatcher.versesOf(data)) this.addVerse(reference, text)
+  }
+
+  private static *versesOf(data: OfflineBibleData): Generator<[VerseReference, string]> {
     for (const [offlineKey, chapters] of Object.entries(data)) {
       const book = CATALOG_ID_BY_OFFLINE_KEY[offlineKey]
       if (!book) continue
       for (const [chapter, verses] of Object.entries(chapters)) {
         for (const [verse, text] of Object.entries(verses)) {
-          this.addVerse({ book, chapter: Number(chapter), verse: Number(verse) }, text)
+          yield [{ book, chapter: Number(chapter), verse: Number(verse) }, text]
         }
       }
     }
+  }
+
+  /**
+   * Same index as the constructor, but yields to the event loop every
+   * `sliceMs` so a ~0.7 s build never stalls audio, WS or the dashboard
+   * (AGENTS.md section 35). Identical result; only the scheduling differs.
+   */
+  static async buildAsync(data: OfflineBibleData, options: QuoteMatcherOptions = {}, sliceMs = 15): Promise<QuoteMatcher> {
+    const matcher = new QuoteMatcher(data, options, false)
+    let sliceStart = performance.now()
+    for (const [reference, text] of QuoteMatcher.versesOf(data)) {
+      matcher.addVerse(reference, text)
+      if (performance.now() - sliceStart >= sliceMs) {
+        await new Promise<void>((resolve) => setImmediate(resolve))
+        sliceStart = performance.now()
+      }
+    }
+    return matcher
   }
 
   /** Number of indexed verses (diagnostics). */
