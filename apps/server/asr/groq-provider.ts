@@ -164,6 +164,8 @@ export class GroqProvider implements AsrProvider {
   // TASK 3: utterance-aligned chunking state
   private lastTranscriptText = ""
   private lastFlushTime = 0
+  private transcribeChain: Promise<void> = Promise.resolve()
+  private pendingTranscriptions = 0
 
   // TASK 1: rate-limit (leaky-bucket) state
   private requestsInWindow = 0
@@ -449,6 +451,24 @@ export class GroqProvider implements AsrProvider {
       return
     }
 
+    // Requests run strictly one at a time, in the order they were detached
+    // from the buffer. Without this a slow response (retry, 429 backoff) let
+    // the next chunk fire in parallel, so transcripts could reach the
+    // detector out of order and the seam dedup compared against the wrong
+    // previous text. Queue depth stays bounded by the rate limiter above.
+    // When nothing is in flight the request is dispatched synchronously.
+    const run = this.pendingTranscriptions === 0
+      ? this.transcribeAndEmit(samples)
+      : this.transcribeChain.then(() => this.transcribeAndEmit(samples))
+    this.pendingTranscriptions += 1
+    const tracked = run.finally(() => {
+      this.pendingTranscriptions -= 1
+    })
+    this.transcribeChain = tracked.catch(() => {})
+    await tracked
+  }
+
+  private async transcribeAndEmit(samples: Int16Array): Promise<void> {
     try {
       const text = await this.transcribe(samples)
       if (text.trim().length === 0) {

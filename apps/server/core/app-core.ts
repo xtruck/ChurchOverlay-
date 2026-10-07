@@ -31,6 +31,7 @@ const MAX_RUNDOWN_PREFETCH = 50
 import type { Server as HttpServer } from "node:http"
 import { generateUlid } from "../../../packages/shared/ulid"
 import type { Logger } from "../../../packages/shared/logger"
+import { scrubSecrets } from "../../../packages/shared/logger"
 import { VerseCache } from "../verse/verse-cache"
 import { CircuitBreaker } from "../verse/circuit-breaker"
 import { SilenceGate } from "../audio/silence-gate"
@@ -2019,9 +2020,13 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
 
   asr.onError?.((err) => {
     logger.error({ component: "asr", event: "transcript.failed", error: err.message })
+    // status:update also reaches viewer pages (overlay, stage, live), so the
+    // provider's raw text must never carry a credential echoed by an
+    // upstream error or proxy.
+    const safeMessage = scrubSecrets(err.message)
     if (err instanceof RateLimitError && err.type === "throttling") {
       asrIsThrottled = true
-      broadcastAsrStatus({ asrHealth: "throttled", error: err.message })
+      broadcastAsrStatus({ asrHealth: "throttled", error: safeMessage })
       return
     }
     // A local server-log line alone left the operator no way to know
@@ -2032,7 +2037,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // a policy for WHAT the operator should do about it (that stays a
     // human decision, per AGENTS.md section 39 — this only reports state).
     asrHasError = true
-    broadcastAsrStatus({ asrHealth: "error", error: err.message })
+    broadcastAsrStatus({ asrHealth: "error", error: safeMessage })
   })
 
   if (typeof asr.onFailoverActivated === "function") {

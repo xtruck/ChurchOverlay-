@@ -924,3 +924,35 @@ test("GroqProvider: a throttled 8s max-cap flush keeps all its audio buffered in
   assert.ok(errors.some((e) => e instanceof RateLimitError))
   assert.equal((provider as unknown as { bufferedSampleCount: number }).bufferedSampleCount, 8 * 16000)
 })
+
+test("GroqProvider: transcription requests never overlap and transcripts keep their order", async () => {
+  let inFlight = 0
+  let maxInFlight = 0
+  let call = 0
+  const slowFetch = (async () => {
+    call += 1
+    const label = `chunk ${call}`
+    inFlight += 1
+    maxInFlight = Math.max(maxInFlight, inFlight)
+    // The first response is the slowest: without serialization it would be overtaken.
+    await new Promise((resolve) => setTimeout(resolve, call === 1 ? 40 : 5))
+    inFlight -= 1
+    return jsonResponse({ text: label })
+  }) as typeof fetch
+
+  const provider = new GroqProvider({ apiKey: "test-key", chunkDurationMs: 1000, fetchImpl: slowFetch })
+  const results: Array<{ text: string; sequence: number }> = []
+  provider.onTranscript((r) => results.push(r as { text: string; sequence: number }))
+
+  await provider.start()
+  // Three chunks arrive while the first request is still in flight.
+  await Promise.all([
+    provider.sendAudio(oneSecondFrame(0)),
+    provider.sendAudio(oneSecondFrame(1)),
+    provider.sendAudio(oneSecondFrame(2)),
+  ])
+
+  assert.equal(maxInFlight, 1)
+  assert.deepEqual(results.map((r) => r.text), ["chunk 1", "chunk 2", "chunk 3"])
+  assert.deepEqual(results.map((r) => r.sequence), [1, 2, 3])
+})
