@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process"
 import { createServer } from "node:net"
-import { cpus } from "node:os"
+import { constants as osConstants, cpus, setPriority } from "node:os"
 import { dirname } from "node:path"
 import type { Logger } from "../../../packages/shared/logger"
 
@@ -22,6 +22,8 @@ export type WhisperServerOptions = {
   /** Injected in tests. */
   readonly spawnImpl?: typeof spawn
   readonly fetchImpl?: typeof fetch
+  /** Injected in tests; defaults to os.setPriority. */
+  readonly setPriorityImpl?: (pid: number, priority: number) => void
   readonly readyTimeoutMs?: number
   /** How long the post-wake /health check may take before the engine counts as hung. */
   readonly resumeHealthTimeoutMs?: number
@@ -188,6 +190,7 @@ export class WhisperServerProcess {
     child.stderr?.on("data", (chunk: Buffer) => {
       stderrTail = (stderrTail + chunk.toString()).slice(-2000)
     })
+    this.lowerPriority(child)
     this.child = child
     this.port = port
     child.once("exit", (code) => {
@@ -204,6 +207,27 @@ export class WhisperServerProcess {
     await this.waitUntilReady(child, () => stderrTail)
     this.restartAttempts = 0
     this.options.logger?.info({ component: "asr", event: "local-whisper.ready", metadata: { port, threads } })
+  }
+
+  /**
+   * Run the engine below normal priority. It is a CPU-bound background
+   * safety net sharing the machine with OBS/NDI and Electron; if the two
+   * ever compete, the stream wins. Threads inherit the process class, so
+   * speed is unchanged on an idle machine. os.setPriority maps
+   * PRIORITY_BELOW_NORMAL to BELOW_NORMAL_PRIORITY_CLASS on Windows (Node
+   * docs). Best effort: a failure is logged, never fatal.
+   */
+  private lowerPriority(child: ChildProcess): void {
+    if (child.pid === undefined) return
+    try {
+      ;(this.options.setPriorityImpl ?? setPriority)(child.pid, osConstants.priority.PRIORITY_BELOW_NORMAL)
+    } catch (error) {
+      this.options.logger?.warn({
+        component: "asr",
+        event: "local-whisper.priority-failed",
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 
   private scheduleRestart(): void {

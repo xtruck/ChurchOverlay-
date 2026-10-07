@@ -73,6 +73,15 @@ class FakeAsrProvider implements AsrProvider {
 class FakeFailoverAsrProvider extends FakeAsrProvider {
     private failoverCallback: (() => void) | null = null
     returnToPrimaryCalls = 0
+    private autoReturnedCallback: (() => void) | null = null
+
+    onAutoReturned(callback: () => void): void {
+      this.autoReturnedCallback = callback
+    }
+
+    emitAutoReturned(): void {
+      this.autoReturnedCallback?.()
+    }
 
     onFailoverActivated(callback: () => void): void {
       this.failoverCallback = callback
@@ -2132,6 +2141,31 @@ test("AppCore: successful ASR failover is informational and manual return restor
  } finally {
    await app.stop()
  }
+})
+
+test("AppCore: an automatic return to the primary clears the failover status", async () => {
+  const asr = new FakeFailoverAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new EchoVerseSource(),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const failoverMessage = waitForMessage(viewerSocket)
+    asr.emitFailoverActivated()
+    assert.equal(((await failoverMessage).payload as { asrHealth: string }).asrHealth, "failover")
+    const okMessage = waitForMessage(viewerSocket)
+    asr.emitAutoReturned()
+    assert.deepEqual((await okMessage).payload, { asrHealth: "ok", audioMetrics: ZERO_AUDIO_METRICS })
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
 })
 
 test("AppCore: a bare 'verse N' spoken after a detected reference continues from its book and chapter", async () => {
@@ -4568,6 +4602,40 @@ test("AppCore: 'Corinthiens 5 verset 2' after 1 Corinthians 13 is a pending sugg
     assert.equal((seen[3]?.payload as { alternatives?: unknown }).alternatives, undefined, "context names the volume, so no alternatives")
     await new Promise((resolve) => setTimeout(resolve, 150))
     assert.equal(seen.length, 4, "the relative 'verset 2' must not also show verse 2 of the chapter on screen")
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: an interpreter's French repeat of a verse the English preacher just gave is not shown a second time", async () => {
+  const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({ john: johnVerse }),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const shown: WsMessage[] = []
+    viewerSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString()) as WsMessage
+      if (message.type === "verse:show") shown.push(message)
+    })
+
+    asr.emitTranscript({ id: "01A", correlationId: "C1", sequence: 1, text: "Please turn to John 3:16 tonight.", state: "final", timestamp: Date.now() })
+    await waitFor(() => shown.length === 1)
+
+    // The interpreter repeats it in French a few seconds later.
+    asr.emitTranscript({ id: "01B", correlationId: "C2", sequence: 2, text: "Tournons-nous vers Jean 3:16 ce soir.", state: "final", timestamp: Date.now() })
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    assert.equal(shown.length, 1, "the French echo must not re-show the verse")
     viewerSocket.close()
   } finally {
     await app.stop()

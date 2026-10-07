@@ -289,3 +289,22 @@ test("DeepgramProvider: start() fails after the connect timeout instead of hangi
   await assert.rejects(() => provider.start(), /timed out/)
   assert.equal(sockets.length, 2)
 })
+
+test("DeepgramProvider: language=multi switches Nova-2 to Nova-3, endpointing=100 and sends both languages' vocabulary", () => {
+  const provider = new DeepgramProvider({ apiKey: "k", language: "multi" }) // default model is nova-2
+  provider.setPlannedBooks(["john"])
+  const url = new URL(provider.buildUrl())
+  assert.equal(url.searchParams.get("language"), "multi")
+  assert.equal(url.searchParams.get("model"), "nova-3")
+  assert.equal(url.searchParams.get("endpointing"), "100")
+  const keyterms = url.searchParams.getAll("keyterm")
+  assert.ok(keyterms.includes("Jean") && keyterms.includes("John"), "planned book is boosted in both languages")
+})
+
+test("DeepgramProvider: an explicit endpointing wins over the multi default, and single-language URLs are unchanged", () => {
+  const multi = new URL(new DeepgramProvider({ apiKey: "k", language: "multi", endpointingMs: 500 }).buildUrl())
+  assert.equal(multi.searchParams.get("endpointing"), "500")
+  const french = new URL(new DeepgramProvider({ apiKey: "k", language: "fr" }).buildUrl())
+  assert.equal(french.searchParams.get("model"), "nova-2")
+  assert.equal(french.searchParams.get("endpointing"), "300")
+})

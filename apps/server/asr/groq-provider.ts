@@ -50,6 +50,8 @@ export const DEFAULT_RATE_LIMIT_REQUESTS = 18
 export const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000
 export const MAX_THROTTLED_BUFFER_MS = 15_000
 export const SUSTAINED_429_THRESHOLD = 3
+/** Longest pause a Retry-After hint may impose (one rate-limit window). */
+export const MAX_RETRY_AFTER_MS = 60_000
 export const RATE_LIMIT_RETRY_BASE_MS = 2000
 // Production audit (2026-09): the fetch() call in transcribe() had no
 // timeout at all. A single stalled connection (rare but real over a
@@ -649,10 +651,17 @@ export class GroqProvider implements AsrProvider {
       const errorMessage = extractGroqErrorMessage(errorBody) ?? `Groq request failed with status ${response.status}`
       // TASK 2: detect 429 and parse retry-after delay
       if (response.status === 429) {
-        const retryAfter = extractGroqRetryAfter(errorBody)
+        // The standard Retry-After header (seconds) wins over the body hint.
+        const retryAfter = parseRetryAfterHeader(response.headers.get("retry-after")) ?? extractGroqRetryAfter(errorBody)
         const retryAfterMs = retryAfter ?? RATE_LIMIT_RETRY_BASE_MS
         this.consecutive429s++
         this.last429Time = this.now()
+        // Honor an explicit server hint: stop sending (audio keeps buffering,
+        // bounded by MAX_THROTTLED_BUFFER_MS) until it elapses instead of
+        // hammering a provider that just said when to come back.
+        if (retryAfter !== undefined) {
+          this.throttledUntil = Math.max(this.throttledUntil, this.now() + Math.min(retryAfter, MAX_RETRY_AFTER_MS))
+        }
         // Emit sustained event if threshold exceeded
         if (this.consecutive429s >= SUSTAINED_429_THRESHOLD && this.rateLimitedSustainedCallback) {
           this.rateLimitedSustainedCallback()
@@ -788,6 +797,13 @@ function extractGroqErrorMessage(body: unknown): string | undefined {
   const error = body.error
   if (!isPlainObject(error)) return undefined
   return typeof error.message === "string" ? error.message : undefined
+}
+
+/** Retry-After in whole/fractional seconds; HTTP-date form and junk are ignored. */
+function parseRetryAfterHeader(value: string | null): number | undefined {
+  if (value === null || !/^\d+(\.\d+)?$/.test(value.trim())) return undefined
+  const seconds = Number(value)
+  return seconds > 0 ? Math.round(seconds * 1000) : undefined
 }
 
 /** Extract the "retry-after" delay from a Groq 429 error body, if present. */

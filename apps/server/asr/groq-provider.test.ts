@@ -737,6 +737,78 @@ test("GroqProvider: a textual retry-after message produces the same RateLimitErr
   assert.equal((errors[0] as RateLimitError).retryAfterMs, 3000)
 })
 
+function retryAfterResponse(seconds: string | null, body: unknown = { error: { message: "rate limited" } }): Response {
+  return new Response(JSON.stringify(body), { status: 429, headers: seconds === null ? {} : { "retry-after": seconds } })
+}
+
+test("GroqProvider: a Retry-After header on 429 pauses requests until it elapses, then resumes", async () => {
+  const captured: CapturedRequest[] = []
+  const clock = { t: 1_000_000 }
+  let calls = 0
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    now: () => clock.t,
+    fetchImpl: fakeFetch(() => (++calls === 1 ? retryAfterResponse("20") : jsonResponse({ text: "ok" })), captured),
+  })
+  const errors: Error[] = []
+  provider.onError((error) => errors.push(error))
+  await provider.start()
+
+  await provider.sendAudio(oneSecondFrame(0))
+  assert.equal(captured.length, 1)
+  assert.equal((errors[0] as RateLimitError).retryAfterMs, 20_000)
+
+  clock.t += 5_000
+  await provider.sendAudio(oneSecondFrame(1))
+  assert.equal(captured.length, 1, "no request while Retry-After is pending")
+
+  clock.t += 16_000
+  await provider.sendAudio(oneSecondFrame(2))
+  assert.equal(captured.length, 2, "resumes after Retry-After; the audio buffered meanwhile is sent")
+})
+
+test("GroqProvider: the Retry-After header wins over the body hint, and is capped at the rate-limit window", async () => {
+  const clock = { t: 1_000_000 }
+  const provider = new GroqProvider({
+    apiKey: "test-key",
+    chunkDurationMs: 1000,
+    now: () => clock.t,
+    fetchImpl: fakeFetch(() => retryAfterResponse("5", { error: { retry_after: 3, message: "x" } })),
+  })
+  const errors: Error[] = []
+  provider.onError((error) => errors.push(error))
+  await provider.start()
+  await provider.sendAudio(oneSecondFrame(0))
+  assert.equal((errors[0] as RateLimitError).retryAfterMs, 5000)
+
+  let requests = 0
+  const cappedFetch = fakeFetch(() => { requests += 1; return retryAfterResponse("86400") })
+  const cappedProvider = new GroqProvider({ apiKey: "k", chunkDurationMs: 1000, now: () => clock.t, fetchImpl: cappedFetch })
+  cappedProvider.onError(() => {})
+  await cappedProvider.start()
+  await cappedProvider.sendAudio(oneSecondFrame(0))
+  clock.t += 61_000
+  await cappedProvider.sendAudio(oneSecondFrame(1))
+  assert.equal(requests, 2, "an absurd Retry-After never silences ASR for more than a minute")
+})
+
+test("GroqProvider: a malformed or absent Retry-After header does not pause requests", async () => {
+  for (const header of [null, "soon", "-4", "0", ""]) {
+    let requests = 0
+    const provider = new GroqProvider({
+      apiKey: "test-key",
+      chunkDurationMs: 1000,
+      fetchImpl: fakeFetch(() => { requests += 1; return retryAfterResponse(header) }),
+    })
+    provider.onError(() => {})
+    await provider.start()
+    await provider.sendAudio(oneSecondFrame(0))
+    await provider.sendAudio(oneSecondFrame(1))
+    assert.equal(requests, 2, `header ${JSON.stringify(header)}`)
+  }
+})
+
 test("GroqProvider: three consecutive 429 responses invoke onRateLimitedSustained once", async () => {
   const provider = new GroqProvider({
     apiKey: "test-key",

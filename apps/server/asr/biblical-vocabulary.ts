@@ -93,6 +93,21 @@ function capitalize(text: string): string {
   return text.replace(/\b\p{L}/gu, (letter) => letter.toUpperCase())
 }
 
+/** Bilingual/auto mode: French AND English display name of each book. */
+export function plannedBookTermsBilingual(bookIds: readonly string[]): readonly string[] {
+  // Both display names per book ("Jean, John"), deduplicated: a bilingual preacher may say either.
+  const seen = new Set<string>()
+  const terms: string[] = []
+  for (const id of bookIds) {
+    for (const name of [FRENCH_NAME_BY_ID.get(id), ENGLISH_NAME_BY_ID.get(id)]) {
+      if (!name || seen.has(name)) continue
+      seen.add(name)
+      terms.push(name)
+    }
+  }
+  return terms
+}
+
 /**
  * Display names (deduplicated, order preserved) for a set of canonical book
  * ids, in the given language — French where available, English name as the
@@ -100,6 +115,8 @@ function capitalize(text: string): string {
  * planned books, never for global vocabulary boosting.
  */
 export function plannedBookTerms(bookIds: readonly string[], language: string | undefined): readonly string[] {
+  // Code-switching: the preacher may name a book in either language.
+  if (language === "multi") return plannedBookTermsBilingual(bookIds)
   const byId = language === "en" ? ENGLISH_NAME_BY_ID : FRENCH_NAME_BY_ID
   const seen = new Set<string>()
   const terms: string[] = []

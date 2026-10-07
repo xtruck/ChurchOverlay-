@@ -6185,3 +6185,66 @@ drop logs `local-whisper.segment-dropped` (reason and scores, not the text) with
 dropped the engine's `text` is used unchanged; when something is, the text is rebuilt from the kept segments. A
 response without a readable `segments` array, or a segment missing a score, disables that rule: a clean no-op, never
 an error.
+
+## 119. Cloud ASR Durability and Bilingual Streaming
+
+**Auto-return to the streaming primary.** With Deepgram primary (`trigger: "primary-error"`), `FailoverAsrProvider` now retries the primary on its own after a failover (`autoReturn` option, wired in `apps/desktop/main/index.ts`). Attempts happen only inside `onUtteranceEnd`, after the utterance end was forwarded to (and flushed by) the live secondary, so no speech is cut; there are no timers, and `stop()` cancels by settling any in-flight attempt and refusing new ones. The attempt is the existing `returnToPrimary()` with its rollback: a failure leaves the secondary running, is not an operator error, is reported through `onAttempt` (logged as `asr.auto-return.ok|failed`), and doubles the wait (30 s, 60 s, 120 s, 240 s, cap 300 s). A primary that dies again within one cap-window of a return keeps doubling instead of flapping; after a longer stable period the wait resets to 30 s. While a return is mid-flight `sendAudio` waits rather than writing into the stopped secondary. `onAutoReturned` lets AppCore clear the "failover" status (the manual `asr:return-primary` path already did).
+The `"sustained-rate-limit"` trigger (Groq primary) is deliberately **not** auto-returned: section 86 states the operator must return explicitly with no automatic oscillation, and a 429 storm is exactly when bouncing back would worsen it.
+
+**Groq 429.** `Retry-After` (seconds; the HTTP-date form and junk are ignored) now takes precedence over the body hint and pauses sending for that long (capped at 60 s); audio keeps buffering under the existing `MAX_THROTTLED_BUFFER_MS` bound. Previously the hint was only attached to the error and the next flush re-sent immediately.
+
+**Bilingual streaming (verified against developers.deepgram.com).** Nova-3 `language=multi` code-switches English, Spanish, French, German, Hindi, Russian, Portuguese, Japanese, Italian and Dutch (Nova-2 only Spanish + English); Deepgram recommends `endpointing=100` for it, and `keyterm` works with multilingual streaming (500-token cap, already respected). `deepgramLanguageFor("bilingual")` is therefore `"multi"`; `DeepgramProvider` upgrades Nova-2 to Nova-3 for a multi connection and uses `endpointing=100` unless an explicit value was given; planned books are boosted under both their French and English names. Single-language modes are unchanged. Not measured on real audio: French quality under `multi` versus `fr` should be compared on a recording of the target church.
+
+**Groq limits (verified against console.groq.com).** whisper-large-v3(-turbo): 20 RPM, 2,000 RPD, 7,200 audio-seconds/hour, 28,800/day; a request is billed at least 10 s. If the hourly limit counts billed seconds, the 18 requests/min bucket with short utterance-aligned requests could reach 10,800 s/hour while Groq is the active provider. The docs do not say whether billed or actual seconds are counted, so no audio-seconds counter was added: the limit only matters while Groq carries the audio (batch-first or after a Deepgram failover), where a 429 already degrades to buffering plus `Retry-After`. Open item if Groq becomes a long-running primary.
+
+
+## 118. Local Engine: Bilingual Language Lock and Cost-Neutral Speedups
+
+(Numbered 118 because 116 and 117 are taken. Applies to both offline engines behind `LocalWhisperProvider`; the chain
+stays Deepgram -> Groq -> local, no `AsrProvider`, WS or detection change.)
+
+**Bilingual prompt.** In auto/bilingual mode (`language` undefined or `"auto"`) `buildPrompt()` used the French base
+prompt, biasing Whisper away from English. It now carries the French and English base prompts and each planned book
+under both display names ("Jean, John"), inside the same 700-character, trim-from-the-front rule. Once a language is
+locked (below) the prompt is that language's own. Explicit `fr`/`en` modes are unchanged.
+
+**Language lock** (`language-lock.ts`). Section 113 recorded that auto-detection misfired on English. In bilingual mode
+the clip is sent with `language=auto` only when a detection is due; the choice is then restricted to French/English by
+the engine's own probabilities (never a third language) and kept: later clips are sent with the explicit language.
+Detection repeats after `LANGUAGE_REDETECT_EVERY_CLIPS` (2) clips, when the last decoded clip's mean `avg_logprob` is
+below -0.8, when the pick's share of fr+en was below 0.7 or unknown, never on a clip under 2 s (it reuses the lock), and
+always on the first clip. If the engine decoded the detection clip in another language than the pick, that clip is
+decoded once more explicitly (logged `local-whisper.language-locked` on a change). Unlike a sidecar-only design, the
+lock lives in the provider so one implementation serves both engines; the only engine-side parts are
+(a) faster-whisper sidecar: when `language` is auto it calls `WhisperModel.detect_language(audio=...)` (signature
+`-> (language, probability, [(code, probability), ...])`, read from the pinned faster-whisper 1.2.1 wheel), keeps fr/en,
+and returns `language` and `language_probabilities`; any failure falls back to the previous behaviour. (b)
+whisper.cpp v1.8.0 has no restricted-language option (checked in `examples/server/server.cpp`); its `verbose_json` reply
+carries `language` (full name) and `language_probabilities`, which the provider uses.
+
+**Cost-neutral speedups.** (1) whisper.cpp v1.8.0 runs an extra `whisper_lang_auto_detect` (one more encoder pass) for
+every `verbose_json` reply unless the request says `no_language_probabilities=true`; section 117 switched to
+`verbose_json`, so this pass was being paid on every clip. Now only detection clips omit the field (reasoned from
+source, not measured). Auto-detect clips are also rarer than before (one in five, not all). (2) The engine child runs at
+`PRIORITY_BELOW_NORMAL` via `os.setPriority` (maps to BELOW_NORMAL_PRIORITY_CLASS on Windows) so it can never starve OBS
+or NDI; best effort, a refusal is logged (`local-whisper.priority-failed`). Flash attention is already the v1.8.0
+server default.
+
+**Not changed, on purpose.** Thread count (`cpus-1`, 2..8): physical-core count is not available from Node and no engine
+was installed to measure; `beam_size=1`, VAD parameters and the temperature fallback (a quality guard section 117's
+thresholds feed) are kept; no extra "empty clip" skip, because the silence gate owns that (AGENTS.md 11). Known: the
+postprocess term table rewrites "Jesus" to "Jésus" in transcript text even for English; detection is unaffected.
+
+**Limits.** Sticky locking trades CPU for responsiveness: a preacher alternating languages every sentence (consecutive
+interpretation) can lose the first clip after each switch until the low-confidence rule fires. Real-time factor and
+accuracy were **not measured** (no local engine installed on the development machine).
+
+## 120. Interpreter Echo Guard (English preacher, French interpreter)
+
+**Why.** With consecutive interpretation the same verse is detected twice, in two languages: the preacher says "John 3:16", the interpreter repeats "Jean 3:16" seconds later. The second detection re-showed the verse and restarted its auto-clear timer.
+
+**What.** `InterpreterEchoGuard` (`server/core/interpreter-echo-guard.ts`, pure, clock-injectable) is consulted in `AppCore.deliverDetectedVerses()` for **live detection only**; manual overrides, voice navigation and rundown scenes never pass through it. The first (fast) detection always wins. A repeat of the same book/chapter/verse is suppressed when (a) the transcript language (small stopword and book-name vote, `guessSpokenLanguage`) differs from the first one and arrives inside the echo window (initially 30 s, then twice the slowest of the last five observed interpreter delays, clamped to 15–45 s; a gap above 30 s is a deliberate return and is never learned), or (b) it arrives within 8 s in the same language (overlapping chunks). The language vote counts book names double, ignores words shared by both languages ("a", "on", "in") and needs a lead of at least two votes; anything weaker is "unknown", which never counts as an echo: ambiguity can only show a verse, never hide one. The guard forgets everything when the operator takes control (manual show, manual clear, navigation, rundown), so an intentional return to a verse is never hidden. A suppressed echo is logged (`verse.echo-suppressed`) and does not refresh the original record. Review-mode pending verses are covered by the same check.
+
+**Limits.** A preacher who deliberately returns to the same verse within the window after clearing it will not see it re-detected (use the manual override). The language vote is heuristic and has no audio-level speaker separation.
+
+**Ideas not built (need their own scope decision).** Two-microphone or stereo lanes (preacher vs interpreter) for true speaker separation; corroboration, where the interpreter's French echo auto-confirms a pending verse in review mode; per-lane language badges in the "Heard" strip.

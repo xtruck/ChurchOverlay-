@@ -40,7 +40,7 @@ import {
 import type { DisplayMode, MediaCueKind, VerseConfirmationMode, VerseLayout, VerseSource } from "../../../packages/contracts"
 import { checkDroppedPath, inferMediaKind, deriveTitleFromFilename } from "./media-import"
 import { isAllowedNavigation, isExternalHttpsUrl } from "./navigation-guard"
-import { Logger } from "../../../packages/shared/logger"
+import { Logger, scrubSecrets } from "../../../packages/shared/logger"
 import { NDIOutput, type PaintSource } from "./ndi-output"
 import { createNdiWindow } from "./ndi-window"
 import { PALETTES } from "../../server/overlay/palettes"
@@ -419,6 +419,21 @@ async function startServices(
       // network errors (GroqProvider signals both the same way).
       trigger: id === "deepgram" ? "primary-error" : "sustained-rate-limit",
       secondaryLabel: labels[chain[i + 1] as AsrProviderId],
+      // Streaming primary only: come back to Deepgram on our own after a
+      // hiccup (ARCHITECTURE.md section 115). Groq's sustained-429 failover
+      // stays operator-controlled (section 86).
+      ...(id === "deepgram"
+        ? {
+            autoReturn: {
+              onAttempt: (result) =>
+                logger.info({
+                  component: "main",
+                  event: result.ok ? "asr.auto-return.ok" : "asr.auto-return.failed",
+                  metadata: { nextDelayMs: result.nextDelayMs, reason: result.error ? scrubSecrets(result.error.message) : undefined },
+                }),
+            },
+          }
+        : {}),
     })
   }
   asrProvider = composed

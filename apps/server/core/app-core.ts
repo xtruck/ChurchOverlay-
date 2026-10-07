@@ -32,6 +32,7 @@ import type { Server as HttpServer } from "node:http"
 import { generateUlid } from "../../../packages/shared/ulid"
 import type { Logger } from "../../../packages/shared/logger"
 import { scrubSecrets } from "../../../packages/shared/logger"
+import { InterpreterEchoGuard } from "./interpreter-echo-guard"
 import { VerseCache } from "../verse/verse-cache"
 import { CircuitBreaker } from "../verse/circuit-breaker"
 import { SilenceGate } from "../audio/silence-gate"
@@ -85,6 +86,8 @@ type ObservableAsrProvider = AsrProvider & {
   onRateLimitedSustained?(callback: () => void): void
   onFailoverActivated?(callback: (label?: string) => void): void
   returnToPrimary?(): Promise<void>
+  /** Fired when the failover wrapper returned to its primary on its own (not via asr:return-primary). */
+  onAutoReturned?(callback: () => void): void
 }
 
 /**
@@ -620,6 +623,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   })
 
   function showVerse(verse: Verse, trigger: VerseTrigger, correlationId?: string): void {
+    // The operator (override, navigation, rundown) took control: whatever is
+    // detected next is intentional, never an interpreter's echo.
+    if (trigger !== "detected") interpreterEchoGuard.forget()
     currentVersePosition = verse.reference
     // TASK B: Update ASR prompt with current verse reference for dynamic context
     const refStr = `${verse.reference.book} ${verse.reference.chapter}:${verse.reference.verse}`
@@ -770,8 +776,24 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     broadcastPendingVerse({ ...first, origin: "inferred", ...(others.length > 0 ? { alternatives: others } : {}) } as Verse, transcript.correlationId)
   }
 
+  // ARCHITECTURE.md section 120: with an English preacher and a French
+  // interpreter the same verse is detected twice; only the first (fast)
+  // detection is displayed. Applies to live detection only — manual
+  // overrides, voice navigation and rundown scenes never pass through here.
+  const interpreterEchoGuard = new InterpreterEchoGuard()
+
   function deliverDetectedVerses(verses: readonly Verse[], transcript: TranscriptResult): void {
     for (const verse of verses) {
+      const echo = interpreterEchoGuard.check(verse.reference, transcript.text)
+      if (echo.suppress) {
+        logger.info({
+          component: "app-core",
+          event: "verse.echo-suppressed",
+          correlationId: transcript.correlationId,
+          metadata: { reason: echo.reason, ageMs: echo.ageMs, echoWindowMs: interpreterEchoGuard.currentEchoWindowMs() },
+        })
+        continue
+      }
       const delivery = verseConfirmationMode === "review" ? "pending" : "screen"
       if (delivery === "pending") broadcastPendingVerse(verse, transcript.correlationId)
       else broadcastVerse(verse, "detected", transcript.correlationId)
@@ -1298,6 +1320,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         return
 
       case "verse:clear":
+        interpreterEchoGuard.forget()
         supersedeInFlightDisplay()
         broadcastVerseClear(message.correlationId)
         return
@@ -2049,6 +2072,15 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         error: `Bascule automatique vers ${label ?? "Deepgram"} active`,
       })
     })
+    // Without this the dashboard kept saying "failover" after the wrapper
+    // had quietly gone back to the streaming primary.
+    if (typeof asr.onAutoReturned === "function") {
+      asr.onAutoReturned(() => {
+        asrIsFailedOver = false
+        asrRateLimitedSustained = false
+        broadcastAsrStatus({ asrHealth: "ok" })
+      })
+    }
   } else if ("onRateLimitedSustained" in asr && typeof asr.onRateLimitedSustained === "function") {
     asr.onRateLimitedSustained(() => {
       asrRateLimitedSustained = true

@@ -64,6 +64,10 @@ export function asrChain(plan: AsrPlan, localAvailable: boolean): AsrProviderId[
  * as English. Bilingual display is French-primary (ARCHITECTURE.md
  * section 63), so bilingual listens in French.
  */
-export function deepgramLanguageFor(mode: "english" | "french" | "bilingual"): "en" | "fr" {
+export function deepgramLanguageFor(mode: "english" | "french" | "bilingual"): "en" | "fr" | "multi" {
+  // The room is genuinely mixed (an English preacher with a French
+  // interpreter): Nova-3 code-switching (`language=multi`, English + French
+  // verified) instead of forcing French onto English speech.
+  if (mode === "bilingual") return "multi"
   return mode === "english" ? "en" : "fr"
 }
