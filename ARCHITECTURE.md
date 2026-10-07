@@ -6247,4 +6247,8 @@ accuracy were **not measured** (no local engine installed on the development mac
 
 **Limits.** A preacher who deliberately returns to the same verse within the window after clearing it will not see it re-detected (use the manual override). The language vote is heuristic and has no audio-level speaker separation.
 
-**Ideas not built (need their own scope decision).** Two-microphone or stereo lanes (preacher vs interpreter) for true speaker separation; corroboration, where the interpreter's French echo auto-confirms a pending verse in review mode; per-lane language badges in the "Heard" strip.
+**Corroboration (review mode).** When the interpreter independently says the reference that is waiting for approval, the server re-sends `verse:pending` with `corroboratedBy: "interpreter"` and the dashboard says two voices agree. It never confirms by itself: approving stays the operator's decision, and the field is not part of the later `verse:show`.
+
+**Language badges.** `transcript:partial|final` payloads carry a display-only `language` (`en`/`fr`/`unknown`, same vote as the guard); the "Heard" strip shows an EN/FR badge so the operator sees whose voice was transcribed. Nothing downstream reads it.
+
+**Ideas not built (need their own scope decision).** Two-microphone or stereo lanes (preacher vs interpreter) for true speaker separation; an LLM-assisted near-miss interpreter that only ever proposes a pending suggestion through the existing guard.

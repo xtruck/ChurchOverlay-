@@ -32,7 +32,7 @@ import type { Server as HttpServer } from "node:http"
 import { generateUlid } from "../../../packages/shared/ulid"
 import type { Logger } from "../../../packages/shared/logger"
 import { scrubSecrets } from "../../../packages/shared/logger"
-import { InterpreterEchoGuard } from "./interpreter-echo-guard"
+import { InterpreterEchoGuard, guessSpokenLanguage } from "./interpreter-echo-guard"
 import { VerseCache } from "../verse/verse-cache"
 import { CircuitBreaker } from "../verse/circuit-breaker"
 import { SilenceGate } from "../audio/silence-gate"
@@ -786,6 +786,24 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     for (const verse of verses) {
       const echo = interpreterEchoGuard.check(verse.reference, transcript.text)
       if (echo.suppress) {
+        // Review mode: the interpreter independently said the same reference
+        // that is waiting for approval. Say so on the pending prompt (never
+        // auto-confirm: approving stays the operator's decision).
+        if (
+          echo.reason === "interpreter-echo" &&
+          pendingVerse &&
+          pendingVerse.reference.book === verse.reference.book &&
+          pendingVerse.reference.chapter === verse.reference.chapter &&
+          pendingVerse.reference.verse === verse.reference.verse
+        ) {
+          wsServer.broadcast({
+            id: generateUlid(),
+            type: "verse:pending",
+            timestamp: Date.now(),
+            correlationId: transcript.correlationId,
+            payload: { ...pendingVerse, corroboratedBy: "interpreter" },
+          })
+        }
         logger.info({
           component: "app-core",
           event: "verse.echo-suppressed",
@@ -1859,7 +1877,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       type: transcript.state === "partial" ? "transcript:partial" : "transcript:final",
       timestamp: Date.now(),
       correlationId: transcript.correlationId,
-      payload: transcript,
+      // `language` is a display hint for the operator's "Heard" badge only
+      // (ARCHITECTURE.md section 120); nothing downstream reads it.
+      payload: { ...transcript, language: guessSpokenLanguage(transcript.text) },
     })
     // A transcript arriving at all means the ASR pipeline is working again
     // — the operator-facing recovery signal for whatever error, if any,

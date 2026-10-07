@@ -4641,3 +4641,69 @@ test("AppCore: an interpreter's French repeat of a verse the English preacher ju
     await app.stop()
   }
 })
+
+test("AppCore: in review mode the interpreter's repeat marks the waiting verse as corroborated, without confirming it", async () => {
+  const johnVerse = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({ john: johnVerse }),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    verseConfirmationMode: "review",
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const seen: WsMessage[] = []
+    viewerSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString()) as WsMessage
+      if (message.type === "verse:pending" || message.type === "verse:show") seen.push(message)
+    })
+
+    asr.emitTranscript({ id: "01A", correlationId: "C1", sequence: 1, text: "Please turn to John 3:16 tonight.", state: "final", timestamp: Date.now() })
+    await waitFor(() => seen.length === 1)
+    assert.equal(seen[0]?.type, "verse:pending")
+    assert.equal((seen[0]?.payload as { corroboratedBy?: string }).corroboratedBy, undefined)
+
+    asr.emitTranscript({ id: "01B", correlationId: "C2", sequence: 2, text: "Tournons-nous vers Jean 3:16 ce soir.", state: "final", timestamp: Date.now() })
+    await waitFor(() => seen.length === 2)
+    assert.equal(seen[1]?.type, "verse:pending")
+    assert.equal((seen[1]?.payload as { corroboratedBy?: string }).corroboratedBy, "interpreter")
+    assert.ok(!seen.some((m) => m.type === "verse:show"), "corroboration never shows the verse by itself")
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})
+
+test("AppCore: transcript broadcasts carry a language hint for the operator badge", async () => {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({}),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+  })
+  try {
+    const viewerSocket = await connect(app.wsServer.port, TOKENS.viewerToken)
+    const finals: WsMessage[] = []
+    viewerSocket.on("message", (data) => {
+      const message = JSON.parse(data.toString()) as WsMessage
+      if (message.type === "transcript:final") finals.push(message)
+    })
+    asr.emitTranscript({ id: "01A", correlationId: "C1", sequence: 1, text: "Let us read the word of God today", state: "final", timestamp: Date.now() })
+    asr.emitTranscript({ id: "01B", correlationId: "C2", sequence: 2, text: "Lisons la parole de Dieu aujourd'hui", state: "final", timestamp: Date.now() })
+    await waitFor(() => finals.length === 2)
+    assert.equal((finals[0]?.payload as { language?: string }).language, "en")
+    assert.equal((finals[1]?.payload as { language?: string }).language, "fr")
+    viewerSocket.close()
+  } finally {
+    await app.stop()
+  }
+})

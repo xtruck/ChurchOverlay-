@@ -98,6 +98,7 @@
   const statusTextEl = document.getElementById("status-text")
   const logEl = document.getElementById("log")
   const transcriptEl = document.getElementById("transcript")
+  const transcriptLangEl = document.getElementById("transcript-lang")
   const nearMissIndicatorEl = document.getElementById("near-miss-indicator")
   const audioDiagnosticsEl = document.getElementById("audio-diagnostics")
   const referenceInput = document.getElementById("reference")
@@ -514,7 +515,9 @@
     versePendingRefEl.textContent = formatDisplayedReference(verse)
     // A verse recognised from a reading (no reference spoken) is always a
     // suggestion, even in auto mode — say why it is waiting.
-    const originKey = verse.origin === "quote" ? "livePreview.pendingFromQuote" : verse.origin === "inferred" ? "livePreview.pendingFromVolume" : null
+    const originKey = verse.corroboratedBy === "interpreter"
+      ? "livePreview.pendingCorroborated"
+      : verse.origin === "quote" ? "livePreview.pendingFromQuote" : verse.origin === "inferred" ? "livePreview.pendingFromVolume" : null
     versePendingOriginEl.style.display = originKey ? "block" : "none"
     if (originKey) {
       versePendingOriginEl.dataset.i18n = originKey // stays right if the UI language changes
@@ -2639,7 +2642,14 @@
         // and latency — this field always reflects the raw ASR output,
         // never something else (like verse text) overwriting it.
         const text = message.payload && message.payload.text
-        if (text) transcriptEl.textContent = text
+        if (text) {
+          transcriptEl.textContent = text
+          // Language badge (EN/FR) so the operator sees which voice was heard,
+          // e.g. an English preacher and a French interpreter. Hidden when unsure.
+          const lang = message.payload.language
+          transcriptLangEl.hidden = lang !== "en" && lang !== "fr"
+          if (!transcriptLangEl.hidden) transcriptLangEl.textContent = lang.toUpperCase()
+        }
       } else if (message.type === "verse:show") {
         showLiveVerse()
         const ref = message.payload && message.payload.reference
