@@ -43,12 +43,17 @@ export function parseRepairedReference(answer: string): RepairedReference | null
   try {
     const parsed = JSON.parse(match[0]) as Record<string, unknown>
     if (parsed.none === true) return null
-    const { book, chapter, verse } = parsed
-    if (typeof book !== "string" || !book.trim() || book.length > 40) return null
-    if (!Number.isInteger(chapter) || !Number.isInteger(verse)) return null
-    if ((chapter as number) < 1 || (chapter as number) > 150 || (verse as number) < 1 || (verse as number) > 176) return null
-    return { book: book.trim(), chapter: chapter as number, verse: verse as number }
+    return coerceReference(parsed)
   } catch {
     return null
   }
+}
+
+/** Shared by every AI proposer (sections 121, 124, 125): plausible shape only, the real check is KnownValidVerseIndex. */
+export function coerceReference(parsed: Record<string, unknown>): RepairedReference | null {
+  const { book, chapter, verse } = parsed
+  if (typeof book !== "string" || !book.trim() || book.length > 40) return null
+  if (!Number.isInteger(chapter) || !Number.isInteger(verse)) return null
+  if ((chapter as number) < 1 || (chapter as number) > 150 || (verse as number) < 1 || (verse as number) > 176) return null
+  return { book: book.trim(), chapter: chapter as number, verse: verse as number }
 }

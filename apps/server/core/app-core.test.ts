@@ -4832,3 +4832,495 @@ test("AppCore (AI): a final English sentence is translated to French for the ope
     await plain.stop()
   }
 })
+
+// ---------------------------------------------------------------------------
+// ARCHITECTURE.md section 123: AI transcript cleanup
+// ---------------------------------------------------------------------------
+
+const CLEANUP_MARK = "correct speech-to-text"
+const GARBLED = "Ouvrez vos Bibles à Jonn 3 verset 16"
+const FIXED = "Ouvrez vos Bibles à Jean 3 verset 16"
+
+type AiTestOptions = Partial<Parameters<typeof startAppCore>[0]>
+type AiTestClaude = { calls: Array<{ system: string; user: string }>; complete: (request: { system: string; user: string }) => Promise<string> }
+
+async function startAiApp(claude: AiTestClaude, extra: AiTestOptions = {}) {
+  const asr = new FakeAsrProvider()
+  const app = await startAppCore({
+    asr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({
+      john: makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world..."),
+      romans: makeVerse({ book: "romans", chapter: 8, verse: 28 }, "All things work together..."),
+    }),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    claudeClient: claude,
+    ...extra,
+  })
+  const viewer = await connect(app.wsServer.port, TOKENS.viewerToken)
+  const seen: WsMessage[] = []
+  viewer.on("message", (data) => seen.push(JSON.parse(data.toString()) as WsMessage))
+  const verses = () => seen.filter((m) => m.type === "verse:pending" || m.type === "verse:show")
+  return { asr, app, viewer, seen, verses }
+}
+
+function final(id: string, text: string): TranscriptResult {
+  return { id, correlationId: `C-${id}`, sequence: 1, text, state: "final", timestamp: Date.now() }
+}
+
+test("AppCore (AI cleanup): a garbled book name fixed by the model becomes a PENDING 'ai' suggestion, validated and fetched, never shown", async () => {
+  const claude = fakeClaude((system) => (system.includes(CLEANUP_MARK) ? FIXED : system.includes("repair") ? '{"none":true}' : ""))
+  const { asr, app, viewer, verses } = await startAiApp(claude, { aiFeatures: { transcriptCleanup: true } })
+  try {
+    asr.emitTranscript(final("01A", GARBLED))
+    await waitFor(() => verses().length === 1)
+    const message = verses()[0] as WsMessage
+    assert.equal(message.type, "verse:pending")
+    const payload = message.payload as { origin?: string; suggestedBy?: string; reference: VerseReference; text: string }
+    assert.equal(payload.origin, "ai")
+    assert.equal(payload.suggestedBy, "cleanup")
+    assert.deepEqual([payload.reference.book, payload.reference.chapter, payload.reference.verse], ["john", 3, 16])
+    assert.equal(payload.text, "For God so loved the world...")
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.ok(!verses().some((m) => m.type === "verse:show"))
+  } finally {
+    viewer.close()
+    await app.stop()
+  }
+})
+
+test("AppCore (AI cleanup): the broadcast transcript stays the ORIGINAL text, the corrected text is never sent to viewers", async () => {
+  const claude = fakeClaude((system) => (system.includes(CLEANUP_MARK) ? FIXED : ""))
+  const { asr, app, viewer, seen } = await startAiApp(claude, { aiFeatures: { transcriptCleanup: true } })
+  try {
+    asr.emitTranscript(final("01A", GARBLED))
+    await waitFor(() => claude.calls.some((c) => c.system.includes(CLEANUP_MARK)))
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const finals = seen.filter((m) => m.type === "transcript:final")
+    assert.equal(finals.length, 1)
+    assert.equal((finals[0]?.payload as { text: string }).text, GARBLED)
+    assert.ok(!JSON.stringify(seen).includes(FIXED))
+  } finally {
+    viewer.close()
+    await app.stop()
+  }
+})
+
+test("AppCore (AI cleanup): a corrected reference that does not exist is rejected by the known-valid index", async () => {
+  const claude = fakeClaude((system) => (system.includes(CLEANUP_MARK) ? "Ouvrez vos Bibles à Jean 99 verset 99" : ""))
+  const { asr, app, viewer, verses } = await startAiApp(claude, { aiFeatures: { transcriptCleanup: true } })
+  try {
+    asr.emitTranscript(final("01A", GARBLED))
+    await waitFor(() => claude.calls.some((c) => c.system.includes(CLEANUP_MARK)))
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.equal(verses().length, 0)
+  } finally {
+    viewer.close()
+    await app.stop()
+  }
+})
+
+test("AppCore (AI cleanup): OFF by default, partials never call, the toggle works live", async () => {
+  const claude = fakeClaude((system) => (system.includes(CLEANUP_MARK) ? FIXED : ""))
+  const { asr, app, viewer, verses } = await startAiApp(claude)
+  try {
+    asr.emitTranscript(final("01A", GARBLED))
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.equal(claude.calls.filter((c) => c.system.includes(CLEANUP_MARK)).length, 0)
+    assert.equal(verses().length, 0)
+
+    app.setAiFeature("transcriptCleanup", true)
+    asr.emitTranscript({ ...final("01B", GARBLED), state: "partial" })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(claude.calls.filter((c) => c.system.includes(CLEANUP_MARK)).length, 0)
+
+    asr.emitTranscript(final("01C", GARBLED))
+    await waitFor(() => verses().length === 1)
+  } finally {
+    viewer.close()
+    await app.stop()
+  }
+})
+
+test("AppCore (AI cleanup): without a claudeClient the flag does nothing at all", async () => {
+  const plainAsr = new FakeAsrProvider()
+  const plain = await startAppCore({
+    asr: plainAsr,
+    detector: new RegexDetector(),
+    index: new KnownValidVerseIndex(),
+    source: new StubVerseSource({ john: makeVerse({ book: "john", chapter: 3, verse: 16 }, "x") }),
+    logger: silentLogger(),
+    port: 0,
+    tokens: TOKENS,
+    aiFeatures: { transcriptCleanup: true, semanticDetection: true, sermonCopilot: true },
+  })
+  try {
+    const viewer = await connect(plain.wsServer.port, TOKENS.viewerToken)
+    const types: string[] = []
+    viewer.on("message", (data) => types.push((JSON.parse(data.toString()) as WsMessage).type))
+    plainAsr.emitTranscript(final("01D", GARBLED))
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.ok(!types.includes("verse:pending") && !types.includes("verse:show"))
+    viewer.close()
+  } finally {
+    await plain.stop()
+  }
+})
+
+test("AppCore (AI cleanup): a hanging model costs nothing: the raw reference is shown at once and the cleanup falls back after its timeout", async () => {
+  const claude: AiTestClaude = {
+    calls: [],
+    complete: async (request) => {
+      claude.calls.push(request)
+      if (request.system.includes(CLEANUP_MARK)) return new Promise<string>(() => {})
+      return ""
+    },
+  }
+  const { asr, app, viewer, verses } = await startAiApp(claude, { aiFeatures: { transcriptCleanup: true }, aiCleanupTimeoutMs: 60 })
+  try {
+    const startedAt = Date.now()
+    asr.emitTranscript(final("01A", "Lisons Jean 3 verset 16"))
+    await waitFor(() => verses().some((m) => m.type === "verse:show"))
+    assert.ok(Date.now() - startedAt < 500)
+    await waitFor(() => claude.calls.some((c) => c.system.includes(CLEANUP_MARK)))
+    // after the timeout the in-flight slot is free again and nothing was suggested
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    asr.emitTranscript(final("01B", GARBLED))
+    await waitFor(() => claude.calls.filter((c) => c.system.includes(CLEANUP_MARK)).length === 2)
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.equal(verses().filter((m) => m.type === "verse:pending").length, 0)
+  } finally {
+    viewer.close()
+    await app.stop()
+  }
+})
+
+test("AppCore (AI cleanup): a reference the raw text already carried is not suggested again", async () => {
+  const claude = fakeClaude((system) => (system.includes(CLEANUP_MARK) ? "Lisons Jean 3 verset 16 ensemble" : ""))
+  const { asr, app, viewer, verses } = await startAiApp(claude, { aiFeatures: { transcriptCleanup: true } })
+  try {
+    asr.emitTranscript(final("01A", "Lisons Jean 3 verset 16 ensemble!"))
+    await waitFor(() => verses().length >= 1)
+    await waitFor(() => claude.calls.some((c) => c.system.includes(CLEANUP_MARK)))
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.equal(verses().length, 1)
+    assert.equal(verses()[0]?.type, "verse:show")
+  } finally {
+    viewer.close()
+    await app.stop()
+  }
+})
+
+test("AppCore (AI cleanup): a detected verse waiting for approval in review mode is not replaced by an AI guess", async () => {
+  const claude = fakeClaude((system, user) => (system.includes(CLEANUP_MARK) && user.includes("Rhomins") ? "Ouvrez vos Bibles à Romains 8 verset 28" : ""))
+  const { asr, app, viewer, verses } = await startAiApp(claude, { aiFeatures: { transcriptCleanup: true }, verseConfirmationMode: "review" })
+  try {
+    asr.emitTranscript(final("01A", "Lisons Jean 3 verset 16"))
+    await waitFor(() => verses().length === 1)
+    assert.equal(verses()[0]?.type, "verse:pending")
+    asr.emitTranscript(final("01B", "Ouvrez vos Bibles à Rhomins 8 verset 28"))
+    await waitFor(() => claude.calls.some((c) => c.system.includes(CLEANUP_MARK) && c.user.includes("Rhomins")))
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.equal(verses().length, 1)
+  } finally {
+    viewer.close()
+    await app.stop()
+  }
+})
+
+// ---------------------------------------------------------------------------
+// ARCHITECTURE.md section 124: AI semantic verse suggestions
+// ---------------------------------------------------------------------------
+
+const SEMANTIC_MARK = "quoting or closely paraphrasing"
+const PARAPHRASE = "God loved the world so much that he gave his only son for us"
+const semanticAnswer = (system: string): string =>
+  system.includes(SEMANTIC_MARK) ? '{"book":"John","chapter":3,"verse":16,"confidence":"high"}' : ""
+const semanticCalls = (claude: AiTestClaude): number => claude.calls.filter((c) => c.system.includes(SEMANTIC_MARK)).length
+
+test("AppCore (AI semantic): a paraphrase becomes a PENDING suggestion (origin ai / semantic), validated and fetched, never shown, even in auto mode", async () => {
+  const claude = fakeClaude(semanticAnswer)
+  const { asr, app, viewer, verses } = await startAiApp(claude, { aiFeatures: { semanticDetection: true } })
+  try {
+    asr.emitTranscript(final("01A", PARAPHRASE))
+    await waitFor(() => verses().length === 1)
+    const message = verses()[0] as WsMessage
+    assert.equal(message.type, "verse:pending")
+    const payload = message.payload as { origin?: string; suggestedBy?: string; reference: VerseReference; text: string }
+    assert.equal(payload.origin, "ai")
+    assert.equal(payload.suggestedBy, "semantic")
+    assert.deepEqual([payload.reference.book, payload.reference.chapter, payload.reference.verse], ["john", 3, 16])
+    assert.equal(payload.text, "For God so loved the world...")
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.ok(!verses().some((m) => m.type === "verse:show"))
+  } finally {
+    viewer.close()
+    await app.stop()
+  }
+})
+
+test("AppCore (AI semantic): a proposal that is not a real verse is rejected and nothing is offered", async () => {
+  const claude = fakeClaude((system) => (system.includes(SEMANTIC_MARK) ? '{"book":"John","chapter":99,"verse":99,"confidence":"high"}' : ""))
+  const { asr, app, viewer, verses } = await startAiApp(claude, { aiFeatures: { semanticDetection: true } })
+  try {
+    asr.emitTranscript(final("01A", PARAPHRASE))
+    await waitFor(() => semanticCalls(claude) === 1)
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.equal(verses().length, 0)
+  } finally {
+    viewer.close()
+    await app.stop()
+  }
+})
+
+test("AppCore (AI semantic): a medium-confidence answer, or 'none', offers nothing", async () => {
+  for (const answer of ['{"book":"John","chapter":3,"verse":16,"confidence":"medium"}', '{"none":true}']) {
+    const claude = fakeClaude((system) => (system.includes(SEMANTIC_MARK) ? answer : ""))
+    const { asr, app, viewer, verses } = await startAiApp(claude, { aiFeatures: { semanticDetection: true } })
+    try {
+      asr.emitTranscript(final("01A", PARAPHRASE))
+      await waitFor(() => semanticCalls(claude) === 1)
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      assert.equal(verses().length, 0)
+    } finally {
+      viewer.close()
+      await app.stop()
+    }
+  }
+})
+
+test("AppCore (AI semantic): a sentence with an explicit reference, a voice command, or a verbatim quotation never calls the model", async () => {
+  const claude = fakeClaude(semanticAnswer)
+  const quoteMatcher = { match: (text: string) => (text.includes("verbatim") ? { reference: { book: "john", chapter: 3, verse: 16 }, matchedRuns: 5, coverage: 0.9 } : null) }
+  const { asr, app, viewer } = await startAiApp(claude, { aiFeatures: { semanticDetection: true }, quoteMatcher: quoteMatcher as never, aiSemanticMinIntervalMs: 0 })
+  try {
+    asr.emitTranscript(final("01A", "Lisons Jean 3 verset 16 avec toute la congregation ce matin"))
+    asr.emitTranscript(final("01B", "now the verbatim words of the passage as written in the book"))
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    assert.equal(semanticCalls(claude), 0)
+  } finally {
+    viewer.close()
+    await app.stop()
+  }
+})
+
+test("AppCore (AI semantic): off by default, partials and short sentences never call, and the live toggle turns it on", async () => {
+  const claude = fakeClaude(semanticAnswer)
+  const { asr, app, viewer, verses } = await startAiApp(claude, { aiSemanticMinIntervalMs: 0 })
+  try {
+    asr.emitTranscript(final("01A", PARAPHRASE))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    assert.equal(semanticCalls(claude), 0)
+
+    app.setAiFeature("semanticDetection", true)
+    asr.emitTranscript({ ...final("01B", PARAPHRASE), state: "partial" })
+    asr.emitTranscript(final("01C", "God loved the world"))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    assert.equal(semanticCalls(claude), 0)
+
+    asr.emitTranscript(final("01D", PARAPHRASE))
+    await waitFor(() => verses().length === 1)
+    assert.equal(semanticCalls(claude), 1)
+  } finally {
+    viewer.close()
+    await app.stop()
+  }
+})
+
+test("AppCore (AI semantic): the minimum interval, the per-minute budget and the per-verse cooldown all hold", async () => {
+  // interval: two paraphrases back to back make one call
+  const spaced = fakeClaude(semanticAnswer)
+  const first = await startAiApp(spaced, { aiFeatures: { semanticDetection: true } })
+  try {
+    first.asr.emitTranscript(final("01A", PARAPHRASE))
+    await waitFor(() => semanticCalls(spaced) === 1)
+    first.asr.emitTranscript(final("01B", PARAPHRASE + " again today"))
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.equal(semanticCalls(spaced), 1)
+  } finally {
+    first.viewer.close()
+    await first.app.stop()
+  }
+
+  // budget: 4 per minute, then stops; cooldown: the same verse is offered once
+  const busy = fakeClaude(semanticAnswer)
+  const second = await startAiApp(busy, { aiFeatures: { semanticDetection: true }, aiSemanticMinIntervalMs: 0 })
+  try {
+    for (let i = 0; i < 6; i++) {
+      second.asr.emitTranscript(final(`02${i}`, `${PARAPHRASE} number ${i}`))
+      await new Promise((resolve) => setTimeout(resolve, 60))
+    }
+    assert.equal(semanticCalls(busy), 4)
+    assert.equal(second.verses().filter((m) => m.type === "verse:pending").length, 1)
+  } finally {
+    second.viewer.close()
+    await second.app.stop()
+  }
+})
+
+test("AppCore (AI semantic): a detected verse waiting in review mode is not replaced by a semantic guess", async () => {
+  const claude = fakeClaude((system) => (system.includes(SEMANTIC_MARK) ? '{"book":"Romans","chapter":8,"verse":28,"confidence":"high"}' : ""))
+  const { asr, app, viewer, verses } = await startAiApp(claude, { aiFeatures: { semanticDetection: true }, verseConfirmationMode: "review", aiSemanticMinIntervalMs: 0 })
+  try {
+    asr.emitTranscript(final("01A", "Lisons Jean 3 verset 16"))
+    await waitFor(() => verses().length === 1)
+    asr.emitTranscript(final("01B", "all things work together for good for those who love God"))
+    await waitFor(() => semanticCalls(claude) === 1)
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.equal(verses().length, 1)
+    assert.equal((verses()[0]?.payload as { reference: VerseReference }).reference.book, "john")
+  } finally {
+    viewer.close()
+    await app.stop()
+  }
+})
+
+// ---------------------------------------------------------------------------
+// ARCHITECTURE.md section 125: live sermon copilot (operator-only)
+// ---------------------------------------------------------------------------
+
+const COPILOT_MARK = "assist the operator of a church service"
+const SERMON_FILLER =
+  "Frères et soeurs, la grâce de Dieu nous soutient chaque jour et sa fidélité ne change jamais, même quand nous traversons des moments difficiles dans nos familles et dans notre travail, car il agit pour notre bien."
+const copilotCalls = (claude: AiTestClaude): number => claude.calls.filter((c) => c.system.includes(COPILOT_MARK)).length
+const COPILOT_ANSWER = JSON.stringify({
+  relatedVerses: [
+    { book: "Romains", chapter: 8, verse: 28 },
+    { book: "Jean", chapter: 99, verse: 99 },
+    { book: "Jean", chapter: 3, verse: 16 },
+  ],
+  keyPoint: { caption: "Dieu agit pour notre bien", slide: ["Sa grâce suffit", "Sa fidélité demeure"] },
+})
+
+async function startCopilotApp(claude: AiTestClaude, extra: AiTestOptions = {}) {
+  const base = await startAiApp(claude, { aiCopilotIntervalMs: 30, ...extra })
+  const operator = await connect(base.app.wsServer.port, TOKENS.operatorToken)
+  const operatorSeen: WsMessage[] = []
+  operator.on("message", (data) => operatorSeen.push(JSON.parse(data.toString()) as WsMessage))
+  const suggestions = () => operatorSeen.filter((m) => m.type === "copilot:suggestions")
+  return { ...base, operator, operatorSeen, suggestions }
+}
+
+test("AppCore (AI copilot): operator-only suggestions: validated related verses (unknown and already-shown dropped), a key point, nothing shown", async () => {
+  const claude = fakeClaude((system) => (system.includes(COPILOT_MARK) ? COPILOT_ANSWER : ""))
+  const { asr, app, viewer, operator, seen, operatorSeen, suggestions } = await startCopilotApp(claude, { aiFeatures: { sermonCopilot: true } })
+  try {
+    asr.emitTranscript(final("01A", "Lisons Jean 3 verset 16"))
+    await waitFor(() => operatorSeen.some((m) => m.type === "verse:show"))
+    asr.emitTranscript(final("01B", SERMON_FILLER))
+    await waitFor(() => suggestions().length === 1)
+    const payload = suggestions()[0]?.payload as { id: string; relatedVerses: Array<{ reference: VerseReference; text: string }>; keyPoint: { caption: string; slide: string[] } }
+    assert.deepEqual(payload.relatedVerses.map((v) => `${v.reference.book} ${v.reference.chapter}:${v.reference.verse}`), ["romans 8:28"])
+    assert.equal(payload.relatedVerses[0]?.text, "All things work together...")
+    assert.deepEqual(payload.keyPoint, { caption: "Dieu agit pour notre bien", slide: ["Sa grâce suffit", "Sa fidélité demeure"] })
+    // the copilot's own prompt saw the shown reference and the recent sermon text, in the original wording
+    const call = claude.calls.find((c) => c.system.includes(COPILOT_MARK))
+    assert.ok(call?.user.includes("john 3:16") && call.user.includes("fidélité"))
+    // never reaches a viewer-role client; never turns into a displayed or pending verse
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.ok(!seen.some((m) => m.type === "copilot:suggestions"))
+    assert.equal(operatorSeen.filter((m) => m.type === "verse:show").length, 1)
+    assert.ok(!operatorSeen.some((m) => m.type === "verse:pending"))
+  } finally {
+    viewer.close()
+    operator.close()
+    await app.stop()
+  }
+})
+
+test("AppCore (AI copilot): off by default, nothing without enough new text, and the live toggle turns it on", async () => {
+  const claude = fakeClaude((system) => (system.includes(COPILOT_MARK) ? COPILOT_ANSWER : ""))
+  const { asr, app, viewer, operator, suggestions } = await startCopilotApp(claude)
+  try {
+    asr.emitTranscript(final("01A", SERMON_FILLER))
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.equal(copilotCalls(claude), 0)
+
+    app.setAiFeature("sermonCopilot", true)
+    asr.emitTranscript({ ...final("01B", SERMON_FILLER), state: "partial" })
+    asr.emitTranscript(final("01C", "Amen, merci."))
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.equal(copilotCalls(claude), 0)
+
+    asr.emitTranscript(final("01D", SERMON_FILLER))
+    await waitFor(() => suggestions().length === 1)
+    assert.equal(copilotCalls(claude), 1)
+
+    // turning it off forgets the buffered text: more silence, no more calls
+    app.setAiFeature("sermonCopilot", false)
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    assert.equal(copilotCalls(claude), 1)
+  } finally {
+    viewer.close()
+    operator.close()
+    await app.stop()
+  }
+})
+
+test("AppCore (AI copilot): one cycle at a time and at most 3 calls per minute", async () => {
+  let release: (answer: string) => void = () => {}
+  let slow = true
+  const claude: AiTestClaude = {
+    calls: [],
+    complete: (request) => {
+      claude.calls.push(request)
+      if (!request.system.includes(COPILOT_MARK)) return Promise.resolve("")
+      if (!slow) return Promise.resolve(COPILOT_ANSWER)
+      return new Promise<string>((resolve) => { release = resolve })
+    },
+  }
+  const { asr, app, viewer, operator, suggestions } = await startCopilotApp(claude, { aiFeatures: { sermonCopilot: true } })
+  try {
+    asr.emitTranscript(final("01A", SERMON_FILLER))
+    await waitFor(() => copilotCalls(claude) === 1)
+    // a slow model: further timer ticks while it is outstanding must not start a second call
+    asr.emitTranscript(final("01B", SERMON_FILLER))
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.equal(copilotCalls(claude), 1)
+    slow = false
+    release(COPILOT_ANSWER)
+    await waitFor(() => suggestions().length >= 1)
+
+    // now unblocked: the budget (3/min) caps the total
+    for (let i = 0; i < 6; i++) {
+      asr.emitTranscript(final(`02${i}`, SERMON_FILLER))
+      await new Promise((resolve) => setTimeout(resolve, 70))
+    }
+    assert.equal(copilotCalls(claude), 3)
+  } finally {
+    viewer.close()
+    operator.close()
+    await app.stop()
+  }
+})
+
+test("AppCore (AI copilot): a failing or unusable model answer is dropped silently and the next cycle works", async () => {
+  let attempt = 0
+  const claude: AiTestClaude = {
+    calls: [],
+    complete: async (request) => {
+      claude.calls.push(request)
+      if (!request.system.includes(COPILOT_MARK)) return ""
+      attempt += 1
+      if (attempt === 1) throw new Error("Claude request failed (529)")
+      if (attempt === 2) return "I am sorry, I cannot do that"
+      return COPILOT_ANSWER
+    },
+  }
+  const { asr, app, viewer, operator, suggestions } = await startCopilotApp(claude, { aiFeatures: { sermonCopilot: true } })
+  try {
+    for (let i = 0; i < 3; i++) {
+      asr.emitTranscript(final(`03${i}`, SERMON_FILLER))
+      await waitFor(() => copilotCalls(claude) === i + 1)
+      await new Promise((resolve) => setTimeout(resolve, 40))
+    }
+    await waitFor(() => suggestions().length === 1)
+  } finally {
+    viewer.close()
+    operator.close()
+    await app.stop()
+  }
+})

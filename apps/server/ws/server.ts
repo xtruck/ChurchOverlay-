@@ -200,9 +200,23 @@ export class ChurchOverlayWsServer {
 
   /** Sends an event to every currently-connected client (operator and viewer alike). */
   broadcast(message: WsMessage): void {
+    this.broadcastWhere(message, () => true)
+  }
+
+  /**
+   * Sends an event to operator-role clients only (ARCHITECTURE.md section 125):
+   * content meant for the person running the service, never for the overlay,
+   * stage or live pages, which hold the less privileged viewer token.
+   */
+  broadcastToOperators(message: WsMessage): void {
+    this.broadcastWhere(message, (role) => role === "operator")
+  }
+
+  private broadcastWhere(message: WsMessage, wants: (role: WsRole | undefined) => boolean): void {
     const payload = JSON.stringify(message)
     for (const client of this.wss.clients) {
       if (client.readyState !== client.OPEN) continue
+      if (!wants(this.clientRoles.get(client))) continue
 
       // A client that stopped reading (stalled network, suspended tab) makes
       // ws queue every further send in memory. Past the bound, drop the

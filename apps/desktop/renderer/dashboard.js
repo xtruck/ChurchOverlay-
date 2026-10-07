@@ -520,7 +520,7 @@
     // suggestion, even in auto mode — say why it is waiting.
     const originKey = verse.corroboratedBy === "interpreter"
       ? "livePreview.pendingCorroborated"
-      : verse.origin === "ai" ? "livePreview.pendingFromAi" : verse.origin === "quote" ? "livePreview.pendingFromQuote" : verse.origin === "inferred" ? "livePreview.pendingFromVolume" : null
+      : verse.origin === "ai" ? (verse.suggestedBy === "cleanup" ? "livePreview.pendingFromAiCleanup" : verse.suggestedBy === "semantic" ? "livePreview.pendingFromAiSemantic" : "livePreview.pendingFromAi") : verse.origin === "quote" ? "livePreview.pendingFromQuote" : verse.origin === "inferred" ? "livePreview.pendingFromVolume" : null
     versePendingOriginEl.style.display = originKey ? "block" : "none"
     if (originKey) {
       versePendingOriginEl.dataset.i18n = originKey // stays right if the UI language changes
@@ -875,9 +875,105 @@
 
   // ---- Transcription strategy (Settings) ---------------------------------
   let asrStatus = null
+  // ARCHITECTURE.md sections 123-126: the optional AI features. The server is the source of
+  // truth; this only mirrors it. Disabled (not hidden) without an Anthropic key.
+  const aiNoKeyHintEl = document.getElementById("ai-no-key-hint")
+  const aiFeatureToggleEls = [...document.querySelectorAll(".ai-feature-toggle")]
+  function renderAiFeatures(flags) {
+    aiFeatureToggleEls.forEach((groupEl) => {
+      setActiveOption(groupEl, "aiEnabled", flags && flags[groupEl.dataset.aiFeature] ? "on" : "off")
+    })
+    setCopilotFeatureOn(Boolean(flags && flags.sermonCopilot))
+  }
+
+  // ARCHITECTURE.md section 125: the copilot card. Suggestions are operator-only text; everything
+  // is rendered with textContent, and "Show" is an ordinary verse:override (validated again).
+  const copilotEmptyEl = document.getElementById("copilot-empty")
+  const copilotBodyEl = document.getElementById("copilot-body")
+  const copilotVersesSectionEl = document.getElementById("copilot-verses-section")
+  const copilotVersesEl = document.getElementById("copilot-verses")
+  const copilotPointSectionEl = document.getElementById("copilot-point-section")
+  const copilotCaptionEl = document.getElementById("copilot-caption")
+  const copilotSlideEl = document.getElementById("copilot-slide")
+  const copilotCopyBtn = document.getElementById("copilot-copy-btn")
+  let copilotFeatureOn = false
+  let copilotCopyText = ""
+
+  function setCopilotEmpty() {
+    copilotBodyEl.hidden = true
+    copilotEmptyEl.hidden = false
+    const key = copilotFeatureOn ? "copilot.emptyOn" : "copilot.emptyOff"
+    copilotEmptyEl.dataset.i18n = key // stays right if the UI language changes
+    copilotEmptyEl.textContent = t(key)
+  }
+
+  function setCopilotFeatureOn(on) {
+    copilotFeatureOn = on
+    setCopilotEmpty()
+  }
+
+  function renderCopilotSuggestions(payload) {
+    if (!copilotFeatureOn || !payload) return
+    const verses = Array.isArray(payload.relatedVerses) ? payload.relatedVerses : []
+    copilotVersesEl.textContent = ""
+    verses.forEach((verse) => {
+      const row = document.createElement("div")
+      row.className = "copilot-verse"
+      const ref = document.createElement("div")
+      ref.className = "copilot-verse-ref"
+      ref.textContent = formatDisplayedReference(verse)
+      const text = document.createElement("div")
+      text.className = "copilot-verse-text"
+      text.textContent = verse.text
+      const show = document.createElement("button")
+      show.type = "button"
+      show.className = "btn-secondary btn-small"
+      show.textContent = t("copilot.show")
+      show.addEventListener("click", () => {
+        const r = verse.reference
+        sendJson({ id: crypto.randomUUID(), type: "verse:override", timestamp: Date.now(), payload: { book: r.book, chapter: r.chapter, verse: r.verse } })
+      })
+      row.append(ref, text, show)
+      copilotVersesEl.appendChild(row)
+    })
+    copilotVersesSectionEl.hidden = verses.length === 0
+    const point = payload.keyPoint
+    copilotSlideEl.textContent = ""
+    if (point) {
+      copilotCaptionEl.textContent = point.caption
+      point.slide.forEach((line) => {
+        const li = document.createElement("li")
+        li.textContent = line
+        copilotSlideEl.appendChild(li)
+      })
+      copilotCopyText = [point.caption].concat(point.slide).join("\n")
+    } else {
+      copilotCopyText = ""
+    }
+    copilotPointSectionEl.hidden = !point
+    copilotEmptyEl.hidden = true
+    copilotBodyEl.hidden = false
+  }
+
+  copilotCopyBtn.addEventListener("click", () => {
+    navigator.clipboard
+      .writeText(copilotCopyText)
+      .then(() => log(t("copilot.copied"), "sent", { toast: true }))
+      .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
+  })
+  function renderAiAvailability(hasKey) {
+    aiNoKeyHintEl.hidden = Boolean(hasKey)
+    aiFeatureToggleEls.forEach((groupEl) => {
+      groupEl.querySelectorAll("button").forEach((button) => {
+        button.disabled = !hasKey
+      })
+    })
+  }
+
   function renderAsrStatus(status) {
     asrStatus = status || null
     if (!asrStatus) return
+    renderAiAvailability(asrStatus.hasAnthropic)
     const both = asrStatus.hasGroq && asrStatus.hasDeepgram
     setActiveOption(asrStrategyToggleEl, "asrStrategy", asrStatus.strategy)
     asrStrategyToggleEl.querySelectorAll("button").forEach((button) => {
@@ -2707,6 +2803,8 @@
         }
       } else if (message.type === "verse:pending") {
         showPendingVerse(message.payload)
+      } else if (message.type === "copilot:suggestions") {
+        renderCopilotSuggestions(message.payload)
       } else if (message.type === "sermonNotes:update") {
         appendSermonNote(message.payload.notes)
       } else if (message.type === "detector:near-miss") {
@@ -3407,6 +3505,70 @@
       })
   })
 
+  // ARCHITECTURE.md section 126: recap (FR + EN), AI-selected quote cards, notes export. All AI text
+  // goes through textContent; the export itself is a main-process folder dialog.
+  const generateServiceExtrasBtn = document.getElementById("generate-service-extras-btn")
+  const serviceExtrasResultEl = document.getElementById("service-extras-result")
+  const serviceExtrasFrEl = document.getElementById("service-extras-fr")
+  const serviceExtrasEnEl = document.getElementById("service-extras-en")
+  const serviceExtrasCardsEl = document.getElementById("service-extras-cards")
+  const exportServiceExtrasBtn = document.getElementById("export-service-extras-btn")
+
+  function renderServiceExtras(extras) {
+    serviceExtrasFrEl.textContent = extras.recap.fr
+    serviceExtrasEnEl.textContent = extras.recap.en
+    serviceExtrasCardsEl.textContent = ""
+    if (extras.cards.length === 0) {
+      const li = document.createElement("li")
+      li.textContent = t("serviceExtras.noCards")
+      serviceExtrasCardsEl.appendChild(li)
+    }
+    extras.cards.forEach((card) => {
+      const li = document.createElement("li")
+      li.textContent = (card.kind === "note" ? t("serviceExtras.noteLabel") : card.label) + ": " + card.text
+      serviceExtrasCardsEl.appendChild(li)
+    })
+    serviceExtrasResultEl.style.display = "block"
+  }
+
+  generateServiceExtrasBtn.addEventListener("click", () => {
+    generateServiceExtrasBtn.disabled = true
+    generateServiceExtrasBtn.textContent = t("serviceExtras.generating")
+    serviceExtrasResultEl.style.display = "none"
+    window.churchOverlay
+      .generateServiceExtras(collectSermonNotesText())
+      .then((result) => {
+        if (result.error) {
+          log(t("serviceExtras.error", { error: result.error }), "error")
+          return
+        }
+        renderServiceExtras(result.extras)
+      })
+      .catch((err) => log(t("serviceExtras.error", { error: err.message }), "error"))
+      .finally(() => {
+        generateServiceExtrasBtn.disabled = false
+        generateServiceExtrasBtn.textContent = t("serviceExtras.button")
+      })
+  })
+
+  exportServiceExtrasBtn.addEventListener("click", () => {
+    exportServiceExtrasBtn.disabled = true
+    window.churchOverlay
+      .exportServiceExtras()
+      .then((result) => {
+        if (result.canceled) return
+        if (result.error) {
+          log(t("serviceExtras.exportFailed", { error: result.error }), "error")
+          return
+        }
+        log(t("serviceExtras.exported", { count: result.count, dir: result.targetDir }), "sent", { toast: true })
+      })
+      .catch((err) => log(t("serviceExtras.exportFailed", { error: err.message }), "error"))
+      .finally(() => {
+        exportServiceExtrasBtn.disabled = false
+      })
+  })
+
   function setSetupError(text) {
     setupErrorEl.textContent = text
     setupErrorEl.style.display = text ? "block" : "none"
@@ -3454,6 +3616,14 @@
     window.churchOverlay
       .setEnableSermonNotes(value === "on")
       .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
+  })
+  aiFeatureToggleEls.forEach((groupEl) => {
+    wireOptionGroup(groupEl, "aiEnabled", (value) => {
+      if (groupEl.dataset.aiFeature === "sermonCopilot") setCopilotFeatureOn(value === "on")
+      window.churchOverlay
+        .setAiFeature(groupEl.dataset.aiFeature, value === "on")
+        .catch((err) => log(t("ai.toggleFailed", { error: err.message }), "error"))
+    })
   })
   // ARCHITECTURE.md section 82: a pure WS round trip like poster:set
   // above — this is a viewer-facing broadcast setting, not a
@@ -3532,7 +3702,10 @@
         applyBranding(info.organizationName, info.accentColor)
         renderTally()
         renderMicHealth(null)
-        window.churchOverlay.getStartupStatus().then((status) => renderAsrStatus(status.asr)).catch(() => {})
+        window.churchOverlay.getStartupStatus().then((status) => {
+          renderAsrStatus(status.asr)
+          renderAiFeatures(status.aiFeatures)
+        }).catch(() => {})
         showAppShell()
         connect(info.port, info.token)
       })
@@ -3567,6 +3740,7 @@
         renderNdiStatus(status.ndi)
         applyBranding(status.organizationName, status.accentColor)
         renderAsrStatus(status.asr)
+        renderAiFeatures(status.aiFeatures)
         refreshLocalAsr()
         renderTally()
         renderMicHealth(null)

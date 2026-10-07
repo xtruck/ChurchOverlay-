@@ -397,6 +397,38 @@
                 <!-- ARCHITECTURE.md section 93: one-shot, operator-triggered. -->
                 <button id="generate-service-summary-btn" class="btn-secondary btn-small notes-summary-btn" data-i18n="serviceSummary.button">Generate service summary</button>
                 <div id="service-summary-result" class="service-summary-result" style="display: none"></div>
+                <!-- ARCHITECTURE.md section 126: one-shot, needs the Anthropic key. -->
+                <button id="generate-service-extras-btn" class="btn-secondary btn-small notes-summary-btn" data-i18n="serviceExtras.button">Recap (FR + EN), quote cards and notes export</button>
+                <div id="service-extras-result" class="service-summary-result" style="display: none">
+                  <div class="copilot-section-title" data-i18n="serviceExtras.disclaimer">AI-generated from the verses shown and the notes. Not verified content.</div>
+                  <div class="copilot-section-title" data-i18n="serviceExtras.recapFr">Recap (French)</div>
+                  <div id="service-extras-fr"></div>
+                  <div class="copilot-section-title" data-i18n="serviceExtras.recapEn">Recap (English)</div>
+                  <div id="service-extras-en"></div>
+                  <div class="copilot-section-title" data-i18n="serviceExtras.cards">Quote cards</div>
+                  <ul id="service-extras-cards" class="copilot-slide"></ul>
+                  <button id="export-service-extras-btn" class="btn-secondary btn-small" data-i18n="serviceExtras.export">Export notes and cards…</button>
+                </div>
+              </div>
+              <!-- ARCHITECTURE.md section 125: operator-only suggestions, never shown by themselves. -->
+              <div class="card cell-copilot">
+                <div class="media-header">
+                  <h3 class="card-title" data-i18n="copilot.title">Sermon copilot (AI)</h3>
+                </div>
+                <div class="sermon-notes-disclaimer" data-i18n="copilot.disclaimer">AI suggestions for you only. Nothing reaches the congregation unless you choose to show a verse.</div>
+                <div id="copilot-empty" class="sermon-notes-empty" data-i18n="copilot.emptyOff">The copilot is off. Turn it on in Settings, under AI assistants.</div>
+                <div id="copilot-body" class="copilot-body" hidden>
+                  <div id="copilot-verses-section">
+                    <div class="copilot-section-title" data-i18n="copilot.related">Related verses</div>
+                    <div id="copilot-verses" class="copilot-verses"></div>
+                  </div>
+                  <div id="copilot-point-section">
+                    <div class="copilot-section-title" data-i18n="copilot.keyPoint">Key point</div>
+                    <div id="copilot-caption" class="copilot-caption"></div>
+                    <ul id="copilot-slide" class="copilot-slide"></ul>
+                    <button id="copilot-copy-btn" class="btn-secondary btn-small" data-i18n="copilot.copy">Copy caption and slide</button>
+                  </div>
+                </div>
               </div>
             </div>
           </details>
@@ -958,6 +990,47 @@
             <div class="btn-row field-row">
               <input id="poster-duration-input" class="input-narrow" type="number" min="0" step="0.5" placeholder="—" />
               <button id="poster-duration-apply-btn" class="btn-secondary btn-small" data-i18n="verseLayout.posterDurationApply">Apply</button>
+            </div>
+          </div>
+
+          <!-- ARCHITECTURE.md sections 123-126: optional Anthropic features, each
+               a live toggle, all OFF by default. Disabled without an Anthropic key. -->
+          <div class="card glass" id="ai-assistants-card">
+            <div class="panel-head">
+              <svg class="icon panel-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z"/></svg>
+              <h2 class="card-title" data-i18n="ai.title">AI assistants</h2>
+            </div>
+            <p class="settings-hint" data-i18n="ai.hint">Optional helpers powered by Anthropic. Only transcript text (never audio) is sent. Everything they propose is checked like any other verse, and nothing is ever shown to the congregation without you.</p>
+            <p id="ai-no-key-hint" class="settings-hint" data-i18n="ai.noKey" hidden>Add an Anthropic API key in setup to use these helpers.</p>
+            <div class="ai-feature-row">
+              <div class="ai-feature-text">
+                <div class="ai-feature-name" data-i18n="ai.cleanup.title">Smarter transcript cleanup</div>
+                <p class="settings-hint" data-i18n="ai.cleanup.hint">Corrects book names, numbers and accents in what was heard, then checks the result like any other reference. A reference found only this way waits for your approval.</p>
+              </div>
+              <div class="segmented ai-feature-toggle" data-ai-feature="transcriptCleanup" role="group" data-i18n-aria-label="ai.cleanup.title" data-i18n-title="ai.cleanup.title">
+                <button type="button" data-ai-enabled="off" class="active" data-i18n="sermonNotes.off">Off</button>
+                <button type="button" data-ai-enabled="on" data-i18n="sermonNotes.on">On</button>
+              </div>
+            </div>
+            <div class="ai-feature-row">
+              <div class="ai-feature-text">
+                <div class="ai-feature-name" data-i18n="ai.semantic.title">Verse suggestions from meaning</div>
+                <p class="settings-hint" data-i18n="ai.semantic.hint">When the preacher paraphrases a passage without naming it, proposes the verse. Always a suggestion waiting for your approval, never shown by itself.</p>
+              </div>
+              <div class="segmented ai-feature-toggle" data-ai-feature="semanticDetection" role="group" data-i18n-aria-label="ai.semantic.title" data-i18n-title="ai.semantic.title">
+                <button type="button" data-ai-enabled="off" class="active" data-i18n="sermonNotes.off">Off</button>
+                <button type="button" data-ai-enabled="on" data-i18n="sermonNotes.on">On</button>
+              </div>
+            </div>
+            <div class="ai-feature-row">
+              <div class="ai-feature-text">
+                <div class="ai-feature-name" data-i18n="ai.copilot.title">Live sermon copilot</div>
+                <p class="settings-hint" data-i18n="ai.copilot.hint">Every minute or so, suggests related verses and a key-point caption for you only, in the Activity and notes drawer. Nothing is ever shown to the congregation by itself.</p>
+              </div>
+              <div class="segmented ai-feature-toggle" data-ai-feature="sermonCopilot" role="group" data-i18n-aria-label="ai.copilot.title" data-i18n-title="ai.copilot.title">
+                <button type="button" data-ai-enabled="off" class="active" data-i18n="sermonNotes.off">Off</button>
+                <button type="button" data-ai-enabled="on" data-i18n="sermonNotes.on">On</button>
+              </div>
             </div>
           </div>
 

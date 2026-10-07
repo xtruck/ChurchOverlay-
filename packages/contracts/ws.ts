@@ -54,6 +54,7 @@ export type WsEventType =
   | "layout:update"
   | "detector:near-miss"
   | "translation:final"
+  | "copilot:suggestions"
   | "branding:update"
   | "overlay:style"
   | "mic:health"

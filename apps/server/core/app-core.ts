@@ -37,6 +37,10 @@ import { CallBudget, type TextCompleter } from "../ai/claude-client"
 import { ReferenceRepairer } from "../ai/reference-repairer"
 import { LiveTranslator } from "../ai/live-translator"
 import { ClaudeSermonNotes } from "../ai/claude-sermon-notes"
+import { TranscriptCleaner, looksReferenceRelated } from "../ai/transcript-cleaner"
+import { SemanticVerseProposer } from "../ai/semantic-verse-proposer"
+import { SermonCopilot } from "../ai/sermon-copilot"
+import { DEFAULT_AI_FEATURES, type AiFeature, type AiFeatureFlags } from "../ai/ai-features"
 import { VerseCache } from "../verse/verse-cache"
 import { CircuitBreaker } from "../verse/circuit-breaker"
 import { SilenceGate } from "../audio/silence-gate"
@@ -242,6 +246,18 @@ export type StartAppCoreOptions = {
    * exactly as before. Every helper is rate-capped and fails soft.
    */
   readonly claudeClient?: TextCompleter
+  /**
+   * ARCHITECTURE.md sections 123-125: initial state of the live AI feature
+   * toggles. Every flag defaults to false; without claudeClient none of them
+   * can do anything. Changed at runtime through AppCoreHandle.setAiFeature().
+   */
+  readonly aiFeatures?: Partial<AiFeatureFlags>
+  /** How often the live sermon copilot (section 125) considers a new cycle; default 45 s, tests shorten it. */
+  readonly aiCopilotIntervalMs?: number
+  /** Minimum gap between two semantic-suggestion model calls (section 124); tests shorten it. */
+  readonly aiSemanticMinIntervalMs?: number
+  /** Hard bound of one transcript-cleanup call (section 123); exposed so tests need not wait out the 3 s default. */
+  readonly aiCleanupTimeoutMs?: number
   readonly sermonNotesEnabled?: boolean
   /**
    * Defaults to 60 seconds (ARCHITECTURE.md section 65.7: "every ~60
@@ -289,6 +305,11 @@ export type AppCoreHandle = {
    * while it was off.
    */
   setSermonNotesEnabled(enabled: boolean): void
+  /**
+   * ARCHITECTURE.md sections 123-125: live toggle of one optional AI feature
+   * (the main process persists it). A no-op in effect without an Anthropic key.
+   */
+  setAiFeature(feature: AiFeature, enabled: boolean): void
   /**
    * ARCHITECTURE.md section 65.8: the Electron main process's own
    * export-session IPC handler reads this to build the plain-text
@@ -409,6 +430,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   let overlayStyleRevision = 1
   const currentOverlayStyle = (): OverlayStyle => resolveOverlayStyle(overlayStyleSettings, overlayStyleRevision)
   let pendingVerse: Verse | null = null
+  // When a DETECTED (not AI-suggested) verse last started waiting for approval; 0 = none waiting.
+  let detectedPendingAt = 0
   const QUOTE_SUGGESTION_COOLDOWN_MS = 60_000
   const recentQuoteSuggestions = new Map<string, number>()
   // ARCHITECTURE.md section 61.4: updated by every verse:show, however
@@ -484,8 +507,34 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const referenceRepairer = options.claudeClient ? new ReferenceRepairer(options.claudeClient) : null
   const liveTranslator = options.claudeClient ? new LiveTranslator(options.claudeClient) : null
   const repairBudget = new CallBudget(6)
+  // ARCHITECTURE.md sections 123-125: live flags (default OFF) and the shared AI helpers.
+  const aiFlags: Record<AiFeature, boolean> = { ...DEFAULT_AI_FEATURES, ...options.aiFeatures }
+  const transcriptCleaner = options.claudeClient ? new TranscriptCleaner(options.claudeClient, options.aiCleanupTimeoutMs) : null
+  const cleanupBudget = new CallBudget(20)
+  const MAX_CLEANUPS_IN_FLIGHT = 2
+  let cleanupsInFlight = 0
+  // Section 124: paraphrase -> pending suggestion. Rolling window, 4 calls/min, one at a time, >= 10 s apart.
+  const semanticProposer = options.claudeClient ? new SemanticVerseProposer(options.claudeClient) : null
+  const semanticWindow = new RollingTranscriptWindow({ maxAgeMs: 45_000, maxWords: 120 })
+  const semanticBudget = new CallBudget(4)
+  const SEMANTIC_MIN_INTERVAL_MS = options.aiSemanticMinIntervalMs ?? 10_000
+  const SEMANTIC_MIN_WORDS = 6
+  let semanticInFlight = false
+  let lastSemanticCallAt = 0
+  // Section 125: operator-only copilot. Last ~2 min of validated finals, one cycle at a time, 3 calls/min.
+  const sermonCopilot = options.claudeClient ? new SermonCopilot(options.claudeClient) : null
+  const copilotWindow = new RollingTranscriptWindow({ maxAgeMs: 120_000, maxWords: 450 })
+  const copilotBudget = new CallBudget(3)
+  const COPILOT_MIN_NEW_CHARS = 200
+  let copilotNewChars = 0
+  let copilotInFlight = false
   const translateBudget = new CallBudget(20)
   const sermonNotesIntervalMs = options.sermonNotesIntervalMs ?? 60000
+  const copilotTimer: ReturnType<typeof setInterval> | null = sermonCopilot
+    ? setInterval(() => {
+        runCopilotCycle().catch((err) => logger.debug({ component: "app-core", event: "ai.copilot-failed", error: scrubSecrets(err instanceof Error ? err.message : String(err)) }))
+      }, options.aiCopilotIntervalMs ?? 45_000)
+    : null
   let sermonNotesEnabled = options.sermonNotesEnabled ?? false
   let sermonNotesBuffer = ""
   const sermonNotesTimer: ReturnType<typeof setInterval> | null = sermonNotesGenerator
@@ -723,6 +772,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   function broadcastVerse(verse: Verse, trigger: VerseTrigger, correlationId?: string): void {
     const rundownState = rundownController.interrupt()
     if (rundownState) broadcastRundownState(rundownState, correlationId)
+    detectedPendingAt = 0
     showVerse(verse, trigger, correlationId)
   }
 
@@ -830,8 +880,10 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         continue
       }
       const delivery = verseConfirmationMode === "review" ? "pending" : "screen"
-      if (delivery === "pending") broadcastPendingVerse(verse, transcript.correlationId)
-      else broadcastVerse(verse, "detected", transcript.correlationId)
+      if (delivery === "pending") {
+        detectedPendingAt = Date.now()
+        broadcastPendingVerse(verse, transcript.correlationId)
+      } else broadcastVerse(verse, "detected", transcript.correlationId)
       const durationMs = Date.now() - transcript.timestamp
       pipelineLatency.record(durationMs)
       logger.info({
@@ -1413,7 +1465,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         // trigger kind of its own — confirmation is how review mode
         // delivers a detection, not a different way a verse got there.
         if (pendingVerse) {
-          const { origin: _origin, alternatives: _alternatives, ...verse } = pendingVerse as Verse & { origin?: string; alternatives?: unknown }
+          const { origin: _origin, suggestedBy: _suggestedBy, alternatives: _alternatives, ...verse } = pendingVerse as Verse & { origin?: string; suggestedBy?: string; alternatives?: unknown }
           pendingVerse = null
           broadcastVerse(verse, "detected", message.correlationId)
         } else {
@@ -1703,6 +1755,176 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     broadcastPendingVerse({ ...verse, origin: "ai" } as Verse, transcript.correlationId)
   }
 
+  /**
+   * Shared by the AI suggestion paths (sections 123, 124): per-verse cooldown
+   * (the same 60 s and the same map as quotation suggestions, so a verse is not
+   * suggested twice by two different helpers) and "already on screen". The map
+   * is pruned so it cannot grow without bound.
+   */
+  function claimAiSuggestion(reference: VerseReference): boolean {
+    const onScreen =
+      currentVersePosition !== null &&
+      currentVersePosition.book === reference.book &&
+      currentVersePosition.chapter === reference.chapter &&
+      currentVersePosition.verse === reference.verse
+    const key = `${reference.book} ${reference.chapter}:${reference.verse}`
+    const now = Date.now()
+    if (onScreen || now - (recentQuoteSuggestions.get(key) ?? 0) < QUOTE_SUGGESTION_COOLDOWN_MS) return false
+    if (recentQuoteSuggestions.size > 200) {
+      for (const [oldKey, at] of recentQuoteSuggestions) {
+        if (now - at >= QUOTE_SUGGESTION_COOLDOWN_MS) recentQuoteSuggestions.delete(oldKey)
+      }
+    }
+    recentQuoteSuggestions.set(key, now)
+    return true
+  }
+
+  /**
+   * A detected verse waiting for approval (review mode) must not be replaced by
+   * an AI guess that arrives a moment later; an AI suggestion is skipped while
+   * a detection is waiting (20 s), and the flag is cleared on show/confirm.
+   */
+  function aiMayReplacePending(): boolean {
+    return Date.now() - detectedPendingAt > 20_000
+  }
+
+  /**
+   * ARCHITECTURE.md section 123: ask the model to correct the transcript, then run
+   * the CANDIDATE through the same detector, known-valid index and verse source.
+   * Runs beside the raw-text path (never in front of it). A reference found only
+   * thanks to the correction is a pending suggestion (origin "ai"), never shown.
+   */
+  async function suggestFromCleanedTranscript(transcript: TranscriptResult): Promise<void> {
+    if (!transcriptCleaner || !aiFlags.transcriptCleanup || !passesTranscriptGate(transcript)) return
+    if (!looksReferenceRelated(transcript.text, containsCatalogBookName)) return
+    if (cleanupsInFlight >= MAX_CLEANUPS_IN_FLIGHT || !cleanupBudget.tryTake()) return
+    const rawKeys = new Set(
+      detector.detect(transcript.text).filter((ref) => index.exists(ref)).map((ref) => `${ref.book} ${ref.chapter}:${ref.verse}`),
+    )
+    cleanupsInFlight += 1
+    let cleaned: string | null
+    try {
+      cleaned = await transcriptCleaner.clean(transcript.text)
+    } catch (err) {
+      logger.info({
+        component: "app-core",
+        event: "ai.cleanup-fallback-raw",
+        correlationId: transcript.correlationId,
+        error: scrubSecrets(err instanceof Error ? err.message : String(err)),
+      })
+      return
+    } finally {
+      cleanupsInFlight -= 1
+    }
+    if (!cleaned || !aiFlags.transcriptCleanup) return
+    const candidates = detector
+      .detect(cleaned)
+      .filter((ref) => index.exists(ref))
+      .filter((ref) => !rawKeys.has(`${ref.book} ${ref.chapter}:${ref.verse}`))
+    const reference = candidates[0]
+    if (!reference) return
+    if (!aiMayReplacePending() || !claimAiSuggestion(reference)) return
+    const verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+    // Re-checked after the await: a detection may have started waiting meanwhile.
+    if (!verse || !aiMayReplacePending()) return
+    logger.info({
+      component: "app-core",
+      event: "ai.cleanup-suggested",
+      correlationId: transcript.correlationId,
+      metadata: { reference: `${reference.book} ${reference.chapter}:${reference.verse}` },
+    })
+    broadcastPendingVerse({ ...verse, origin: "ai", suggestedBy: "cleanup" } as Verse, transcript.correlationId)
+  }
+
+  /**
+   * ARCHITECTURE.md section 124: the model proposes the verse a paraphrase or loose
+   * quotation refers to. Same path as every proposal (RegexDetector, known-valid
+   * index, verse source) and ALWAYS a pending suggestion, never shown by itself.
+   */
+  async function suggestSemanticVerse(transcript: TranscriptResult, windowText: string): Promise<void> {
+    if (!semanticProposer || !aiFlags.semanticDetection || !passesTranscriptGate(transcript)) return
+    if (transcript.text.trim().split(/\s+/).length < SEMANTIC_MIN_WORDS) return
+    // A verbatim quotation is the deterministic matcher's job; its suggestion wins.
+    if (options.quoteMatcher?.match(windowText)) return
+    const now = Date.now()
+    if (semanticInFlight || now - lastSemanticCallAt < SEMANTIC_MIN_INTERVAL_MS || !semanticBudget.tryTake()) return
+    semanticInFlight = true
+    lastSemanticCallAt = now
+    let proposal: Awaited<ReturnType<SemanticVerseProposer["propose"]>>
+    try {
+      proposal = await semanticProposer.propose(windowText, currentVersePosition?.book ?? null)
+    } finally {
+      semanticInFlight = false
+    }
+    if (!proposal || !aiFlags.semanticDetection) return
+    const reference = detector
+      .detect(`${proposal.book} ${proposal.chapter}:${proposal.verse}`)
+      .find((candidate) => index.exists(candidate))
+    if (!reference) {
+      logger.info({ component: "app-core", event: "ai.semantic-rejected", correlationId: transcript.correlationId, metadata: { proposed: { book: proposal.book, chapter: proposal.chapter, verse: proposal.verse } } })
+      return
+    }
+    if (!aiMayReplacePending() || !claimAiSuggestion(reference)) return
+    const verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+    if (!verse || !aiFlags.semanticDetection || !aiMayReplacePending()) return
+    logger.info({
+      component: "app-core",
+      event: "ai.semantic-suggested",
+      correlationId: transcript.correlationId,
+      metadata: { reference: `${reference.book} ${reference.chapter}:${reference.verse}` },
+    })
+    broadcastPendingVerse({ ...verse, origin: "ai", suggestedBy: "semantic" } as Verse, transcript.correlationId)
+  }
+
+  /**
+   * ARCHITECTURE.md section 125: one copilot cycle. Related verses are candidates
+   * (detector, known-valid index, verse source); the result goes to operator-role
+   * clients only and is never displayed anywhere without an operator action.
+   */
+  async function runCopilotCycle(): Promise<void> {
+    if (!sermonCopilot || !aiFlags.sermonCopilot || copilotInFlight || stopped) return
+    if (copilotNewChars < COPILOT_MIN_NEW_CHARS || !copilotBudget.tryTake()) return
+    copilotInFlight = true
+    copilotNewChars = 0
+    try {
+      // push("") adds nothing; it only expires old entries and returns the current window.
+      const recentText = copilotWindow.push("", Date.now())
+      const shownEntries = sessionRecorder.getEntries()
+      const shownKeys = new Set(shownEntries.map((entry) => `${entry.reference.book} ${entry.reference.chapter}:${entry.reference.verse}`))
+      const draft = await sermonCopilot.suggest(recentText, [...shownKeys].slice(-8))
+      if (!draft || !aiFlags.sermonCopilot || stopped) return
+      const relatedVerses: Verse[] = []
+      const offered = new Set<string>()
+      for (const proposed of draft.relatedVerses) {
+        const reference = detector
+          .detect(`${proposed.book} ${proposed.chapter}:${proposed.verse}`)
+          .find((candidate) => index.exists(candidate))
+        if (!reference) {
+          logger.info({ component: "app-core", event: "ai.copilot-verse-rejected", metadata: { proposed } })
+          continue
+        }
+        const key = `${reference.book} ${reference.chapter}:${reference.verse}`
+        if (shownKeys.has(key) || offered.has(key)) continue
+        offered.add(key)
+        const verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
+        if (verse) relatedVerses.push(verse)
+      }
+      if (relatedVerses.length === 0 && draft.keyPoint === null) return
+      if (!aiFlags.sermonCopilot || stopped) return
+      wsServer.broadcastToOperators({
+        id: generateUlid(),
+        type: "copilot:suggestions",
+        timestamp: Date.now(),
+        payload: { id: generateUlid(), relatedVerses, keyPoint: draft.keyPoint },
+      })
+      logger.info({ component: "app-core", event: "ai.copilot-suggested", metadata: { verses: relatedVerses.length, keyPoint: draft.keyPoint !== null } })
+    } catch (err) {
+      logger.debug({ component: "app-core", event: "ai.copilot-failed", error: scrubSecrets(err instanceof Error ? err.message : String(err)) })
+    } finally {
+      copilotInFlight = false
+    }
+  }
+
   /** Display-only FR<->EN translation for the operator (section 121); never read by detection. */
   async function translateForOperator(transcript: TranscriptResult): Promise<void> {
     if (!liveTranslator || transcript.state !== "final" || transcript.text.length < 25) return
@@ -1953,6 +2175,12 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       correlationId: transcript.correlationId,
       error: err instanceof Error ? err.message : String(err),
     }))
+    suggestFromCleanedTranscript(transcript).catch((err) => logger.debug({
+      component: "app-core",
+      event: "ai.cleanup-failed",
+      correlationId: transcript.correlationId,
+      error: scrubSecrets(err instanceof Error ? err.message : String(err)),
+    }))
     // A transcript arriving at all means the ASR pipeline is working again
     // — the operator-facing recovery signal for whatever error, if any,
     // was last broadcast below.
@@ -2113,6 +2341,25 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       if (definition) broadcastDefinition(definition, transcript.correlationId)
     }
 
+    // ARCHITECTURE.md section 125: the copilot only ever sees validated finals, and only while it is on.
+    if (sermonCopilot && aiFlags.sermonCopilot && passesTranscriptGate(transcript)) {
+      copilotWindow.push(transcript.text, transcript.timestamp)
+      copilotNewChars += transcript.text.length
+    }
+
+    // ARCHITECTURE.md section 124: only while the feature is on is text kept in the window.
+    if (semanticProposer && aiFlags.semanticDetection && passesTranscriptGate(transcript)) {
+      const semanticText = semanticWindow.push(transcript.text, transcript.timestamp)
+      if (validatedRefs.length === 0 && navCommands.length === 0) {
+        suggestSemanticVerse(transcript, semanticText).catch((err) => logger.debug({
+          component: "app-core",
+          event: "ai.semantic-failed",
+          correlationId: transcript.correlationId,
+          error: scrubSecrets(err instanceof Error ? err.message : String(err)),
+        }))
+      }
+    }
+
     if (options.quoteMatcher && passesTranscriptGate(transcript)) {
       // Every final feeds the window (even one that carried a reference), so the
       // words either side of it still join up; only a final with no explicit
@@ -2209,6 +2456,15 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       sermonNotesEnabled = enabled
       if (!enabled) sermonNotesBuffer = ""
     },
+    setAiFeature(feature: AiFeature, enabled: boolean) {
+      aiFlags[feature] = enabled
+      // Nothing recorded while a feature is off: turning it off forgets what was buffered for it.
+      if (!enabled && feature === "semanticDetection") semanticWindow.reset()
+      if (!enabled && feature === "sermonCopilot") {
+        copilotWindow.reset()
+        copilotNewChars = 0
+      }
+    },
     getSessionEntries() {
       return sessionRecorder.getEntries()
     },
@@ -2232,6 +2488,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       stopped = true
       if (definitionClearTimer) clearTimeout(definitionClearTimer)
       if (sermonNotesTimer) clearInterval(sermonNotesTimer)
+      if (copilotTimer) clearInterval(copilotTimer)
       // ARCHITECTURE.md section 82.1: verseAutoClearMs went from a
       // narrow, poster-gated condition (rarely armed in tests) to firing
       // on EVERY verse:show — a real, pre-existing gap (stop() never

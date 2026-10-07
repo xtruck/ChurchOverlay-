@@ -586,3 +586,42 @@ test("ConfigStore: an unknown localAsrEngine is rejected on load, not silently d
     await assert.rejects(store.load(), /invalid localAsrEngine/)
   })
 })
+
+// ARCHITECTURE.md sections 123-125: the three AI feature toggles are optional,
+// off when absent (old files), preserved when present, and corruption is loud.
+test("ConfigStore: AI feature toggles round-trip, and an older file loads with none of them set (= off)", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const codec = new FakeSecretCodec()
+    const store = new ConfigStore(path, codec)
+    await store.save({ ...SAMPLE_CONFIG, aiTranscriptCleanup: true, aiSemanticDetection: false, aiSermonCopilot: true })
+    const loaded = await store.load()
+    assert.equal(loaded?.aiTranscriptCleanup, true)
+    assert.equal(loaded?.aiSemanticDetection, false)
+    assert.equal(loaded?.aiSermonCopilot, true)
+
+    await store.save(SAMPLE_CONFIG)
+    const older = await store.load()
+    assert.equal(older?.aiTranscriptCleanup, undefined)
+    assert.equal(older?.aiSemanticDetection, undefined)
+    assert.equal(older?.aiSermonCopilot, undefined)
+  })
+})
+
+test("ConfigStore: load() throws on a non-boolean AI feature toggle", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const codec = new FakeSecretCodec()
+    const baseStored = {
+      groqApiKeyEncrypted: codec.encrypt(SAMPLE_CONFIG.groqApiKey).toString("base64"),
+      microphoneId: SAMPLE_CONFIG.microphoneId,
+      operatorTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.operatorToken).toString("base64"),
+      viewerTokenEncrypted: codec.encrypt(SAMPLE_CONFIG.viewerToken).toString("base64"),
+    }
+    const { writeFile } = await import("node:fs/promises")
+    for (const name of ["aiTranscriptCleanup", "aiSemanticDetection", "aiSermonCopilot"]) {
+      await writeFile(path, JSON.stringify({ ...baseStored, [name]: "yes" }), "utf8")
+      await assert.rejects(() => new ConfigStore(path, codec).load(), new RegExp(`invalid ${name}`))
+    }
+  })
+})

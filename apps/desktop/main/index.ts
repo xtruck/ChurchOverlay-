@@ -17,7 +17,9 @@ import { QuoteMatcher, type QuoteMatch } from "../../server/detector/quote-match
 import { OfflineFallbackVerseSource } from "../../server/verse/offline-fallback-verse-source"
 import { GroqProvider } from "../../server/asr/groq-provider"
 import { DeepgramProvider } from "../../server/asr/deepgram-provider"
-import { ClaudeClient } from "../../server/ai/claude-client"
+import { CallBudget, ClaudeClient } from "../../server/ai/claude-client"
+import { ServiceExtrasGenerator, buildServiceNotesMarkdown, type ServiceExtras } from "../../server/ai/service-extras"
+import { isAiFeature, type AiFeature, type AiFeatureFlags } from "../../server/ai/ai-features"
 import { FailoverAsrProvider } from "../../server/asr/failover-provider"
 import { ASR_STRATEGIES, asrChain, deepgramLanguageFor, planAsr, type AsrProviderId, type AsrStrategy } from "../../server/asr/asr-strategy"
 import { LocalWhisperProvider } from "../../server/asr/local-whisper-provider"
@@ -110,6 +112,20 @@ let currentOverlayUrl: string | null = null
 let currentAllowPhoneRemote = false
 let currentVerseConfirmationMode: VerseConfirmationMode = "auto"
 let currentEnableSermonNotes = false
+// ARCHITECTURE.md sections 123-125: live state of the optional AI features (default OFF).
+let currentAiFeatures: AiFeatureFlags = { transcriptCleanup: false, semanticDetection: false, sermonCopilot: false }
+const AI_CONFIG_KEY = {
+  transcriptCleanup: "aiTranscriptCleanup",
+  semanticDetection: "aiSemanticDetection",
+  sermonCopilot: "aiSermonCopilot",
+} as const satisfies Record<AiFeature, keyof AppConfig>
+function aiFeaturesFromConfig(config: AppConfig): AiFeatureFlags {
+  return {
+    transcriptCleanup: config.aiTranscriptCleanup ?? false,
+    semanticDetection: config.aiSemanticDetection ?? false,
+    sermonCopilot: config.aiSermonCopilot ?? false,
+  }
+}
 let currentVerseLayout: VerseLayout = "fullscreen"
 let currentFrenchTranslation = "ls1910"
 let currentOverlayTemplate = "classic"
@@ -193,7 +209,8 @@ function whisperLanguageFor(mode: DisplayMode): string | undefined {
 
 /**
  * Indexing the 31k LSG verses takes ~0.5 s: done off the startup path, on
- * the next macrotask, so the dashboard appears first. Until it is ready,
+ * the next macrotask, in ~15 ms time slices (QuoteMatcher.buildAsync), so the
+ * dashboard appears first and audio/WS are never stalled. Until it is ready,
  * match() simply finds nothing — quote suggestions are a bonus, never a
  * dependency of the live pipeline.
  */
@@ -204,19 +221,23 @@ function lazyQuoteMatcher(data: OfflineBibleData): { match(text: string): QuoteM
   if (sharedQuoteMatcher?.data !== data && !quoteMatcherBuildPending) {
     quoteMatcherBuildPending = true
     setTimeout(() => {
-      quoteMatcherBuildPending = false
-      try {
-        const startedAt = performance.now()
-        sharedQuoteMatcher = { data, matcher: new QuoteMatcher(data) }
-        logger.info({
-          component: "main",
-          event: "quote-matcher.ready",
-          durationMs: Math.round(performance.now() - startedAt),
-          metadata: { verses: sharedQuoteMatcher.matcher.size },
+      const startedAt = performance.now()
+      QuoteMatcher.buildAsync(data)
+        .then((matcher) => {
+          sharedQuoteMatcher = { data, matcher }
+          logger.info({
+            component: "main",
+            event: "quote-matcher.ready",
+            durationMs: Math.round(performance.now() - startedAt),
+            metadata: { verses: matcher.size },
+          })
         })
-      } catch (err) {
-        logger.error({ component: "main", event: "quote-matcher.failed", error: err instanceof Error ? err.message : String(err) })
-      }
+        .catch((err: unknown) => {
+          logger.error({ component: "main", event: "quote-matcher.failed", error: err instanceof Error ? err.message : String(err) })
+        })
+        .finally(() => {
+          quoteMatcherBuildPending = false
+        })
     }, 0)
   }
   return { match: (text) => (sharedQuoteMatcher?.data === data ? sharedQuoteMatcher.matcher.match(text) : null) }
@@ -481,6 +502,7 @@ async function startServices(
     // Optional Anthropic key: the AI helpers stay off (undefined) without it.
     claudeClient: config.anthropicApiKey ? new ClaudeClient({ apiKey: config.anthropicApiKey }) : undefined,
     sermonNotesEnabled: config.enableSermonNotes,
+    aiFeatures: aiFeaturesFromConfig(config),
     // ARCHITECTURE.md section 65.4: a voice-triggered display-mode switch
     // persists exactly like the set-display-mode IPC handler below does,
     // so it survives a restart identically to a dashboard-toggled one.
@@ -558,6 +580,7 @@ async function startServices(
   currentAllowPhoneRemote = config.allowPhoneRemote
   currentVerseConfirmationMode = config.verseConfirmationMode
   currentEnableSermonNotes = config.enableSermonNotes
+  currentAiFeatures = aiFeaturesFromConfig(config)
   currentVerseLayout = config.verseLayout
   currentFrenchTranslation = frenchTranslation
   currentOverlayTemplate = config.overlayTemplate ?? "classic"
@@ -608,6 +631,9 @@ async function startServices(
       left.allowPhoneRemote === right.allowPhoneRemote &&
       left.verseConfirmationMode === right.verseConfirmationMode &&
       left.enableSermonNotes === right.enableSermonNotes &&
+      left.aiTranscriptCleanup === right.aiTranscriptCleanup &&
+      left.aiSemanticDetection === right.aiSemanticDetection &&
+      left.aiSermonCopilot === right.aiSermonCopilot &&
       left.verseLayout === right.verseLayout &&
       left.ndiEnabled === right.ndiEnabled
       && left.audioProfile === right.audioProfile
@@ -704,6 +730,7 @@ ipcMain.handle("get-startup-status", async () => {
       allowPhoneRemote: currentAllowPhoneRemote,
       verseConfirmationMode: currentVerseConfirmationMode,
       enableSermonNotes: currentEnableSermonNotes,
+      aiFeatures: currentAiFeatures,
       verseLayout: currentVerseLayout,
       frenchTranslation: currentFrenchTranslation,
       overlayTemplate: currentOverlayTemplate,
@@ -897,6 +924,28 @@ ipcMain.handle("set-enable-sermon-notes", async (_event, payload: unknown) => {
 
   await persistConfig((existing) => ({ ...existing, enableSermonNotes: payload }))
   return { enableSermonNotes: payload }
+})
+
+/**
+ * ARCHITECTURE.md sections 123-125: live toggle of one optional Anthropic
+ * feature (transcript cleanup, semantic suggestions, sermon copilot). Both
+ * arguments are validated; the setting is persisted and applied to the running
+ * AppCore. Without an Anthropic key it is stored but does nothing.
+ */
+ipcMain.handle("set-ai-feature", async (_event, payload: unknown) => {
+  const { feature, enabled } = (payload ?? {}) as { feature?: unknown; enabled?: unknown }
+  if (!isAiFeature(feature) || typeof enabled !== "boolean") {
+    throw new Error("Invalid AI feature toggle.")
+  }
+  if (!appCoreHandle) {
+    throw new Error("Services are not started yet.")
+  }
+  appCoreHandle.setAiFeature(feature, enabled)
+  currentAiFeatures = { ...currentAiFeatures, [feature]: enabled }
+  const key = AI_CONFIG_KEY[feature]
+  if (activeConfig) activeConfig = { ...activeConfig, [key]: enabled }
+  await persistConfig((existing) => ({ ...existing, [key]: enabled }))
+  return { aiFeatures: currentAiFeatures }
 })
 
 /**
@@ -1110,6 +1159,11 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
     // default for every fresh install; changeable afterward only via the
     // live dashboard toggle (set-enable-sermon-notes).
     enableSermonNotes: existing?.enableSermonNotes ?? false,
+    // ARCHITECTURE.md sections 123-125: not setup-screen controls; live
+    // toggles only (set-ai-feature), off by default for every install.
+    ...(existing?.aiTranscriptCleanup === undefined ? {} : { aiTranscriptCleanup: existing.aiTranscriptCleanup }),
+    ...(existing?.aiSemanticDetection === undefined ? {} : { aiSemanticDetection: existing.aiSemanticDetection }),
+    ...(existing?.aiSermonCopilot === undefined ? {} : { aiSermonCopilot: existing.aiSermonCopilot }),
     // ARCHITECTURE.md section 82: not a setup-screen control (same
     // reasoning as verseConfirmationMode above) — "fullscreen" is the
     // confirmed default for every fresh install; changeable afterward
@@ -1360,6 +1414,11 @@ function escapeHtml(text: string): string {
  */
 async function renderQuoteCardPng(entry: SessionEntry): Promise<Buffer> {
   const reference = `${capitalizeBookName(entry.reference.book)} ${entry.reference.chapter}:${entry.reference.verse}`
+  return renderCardPng(entry.text, reference)
+}
+
+/** The shared renderer behind verse cards (section 65.8) and the AI-selected cards of section 126. */
+async function renderCardPng(text: string, label: string): Promise<Buffer> {
   const html = `<!DOCTYPE html>
 <html><head><style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -1380,8 +1439,8 @@ async function renderQuoteCardPng(entry: SessionEntry): Promise<Buffer> {
 </style></head>
 <body>
   <div class="card">
-    <div class="text">${escapeHtml(entry.text)}</div>
-    <div class="ref">${escapeHtml(reference)}</div>
+    <div class="text">${escapeHtml(text)}</div>
+    <div class="ref">${escapeHtml(label)}</div>
   </div>
 </body></html>`
 
@@ -1559,6 +1618,98 @@ ipcMain.handle("generate-service-summary", async (_event, sermonNotesText: unkno
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     logger.error({ component: "main", event: "service-summary.failed", error: message })
+    return { error: message }
+  }
+})
+
+/**
+ * ARCHITECTURE.md section 126: post-service extras (French + English recap,
+ * AI-selected quote cards, notes export), a strictly one-shot extension of the
+ * section 93 summary. Needs the Anthropic key; built only from the verses
+ * actually shown plus the notes text the dashboard already holds. The
+ * validated result is kept in memory so the export writes exactly what the
+ * operator saw. Errors are returned, scrubbed (AGENTS.md sections 24, 46).
+ */
+const serviceExtrasBudget = new CallBudget(3)
+let serviceExtrasBusy = false
+let lastServiceExtras: { extras: ServiceExtras; entries: readonly SessionEntry[]; notesText: string } | null = null
+const MAX_EXTRAS_NOTES_IPC_CHARS = 20_000
+
+function describeExtrasCard(card: ServiceExtras["cards"][number]): { kind: "verse" | "note"; label: string; text: string } {
+  return card.kind === "verse"
+    ? {
+        kind: "verse",
+        label: `${capitalizeBookName(card.entry.reference.book)} ${card.entry.reference.chapter}:${card.entry.reference.verse}`,
+        text: card.entry.text,
+      }
+    : { kind: "note", label: "Sermon note (AI)", text: card.text }
+}
+
+ipcMain.handle("generate-service-extras", async (_event, sermonNotesText: unknown) => {
+  if (!appCoreHandle || !activeConfig) {
+    throw new Error("services are not started yet")
+  }
+  const entries = appCoreHandle.getSessionEntries()
+  const notesText = typeof sermonNotesText === "string" ? sermonNotesText.slice(-MAX_EXTRAS_NOTES_IPC_CHARS) : ""
+  if (entries.length === 0 && !notesText.trim()) {
+    return { error: "Nothing was shown or noted this session yet." }
+  }
+  if (!activeConfig.anthropicApiKey) {
+    return { error: "An Anthropic API key is required for the recap, quote cards and notes export." }
+  }
+  if (serviceExtrasBusy) return { error: "A recap is already being generated." }
+  if (!serviceExtrasBudget.tryTake()) return { error: "Too many requests. Try again in a minute." }
+  serviceExtrasBusy = true
+  try {
+    const extras = await new ServiceExtrasGenerator(new ClaudeClient({ apiKey: activeConfig.anthropicApiKey })).generate(entries, notesText)
+    lastServiceExtras = { extras, entries, notesText }
+    logger.info({ component: "main", event: "service-extras.generated", metadata: { verseCount: entries.length, cards: extras.cards.length } })
+    return { extras: { recap: extras.recap, cards: extras.cards.map(describeExtrasCard) } }
+  } catch (err) {
+    const message = scrubSecrets(err instanceof Error ? err.message : String(err))
+    logger.error({ component: "main", event: "service-extras.failed", error: message })
+    return { error: message }
+  } finally {
+    serviceExtrasBusy = false
+  }
+})
+
+ipcMain.handle("export-service-extras", async () => {
+  if (!dashboardWindow) {
+    throw new Error("dashboard window is not available")
+  }
+  if (!lastServiceExtras) {
+    return { error: "Generate the recap first." }
+  }
+  const result = await dialog.showOpenDialog(dashboardWindow, {
+    title: "Choose a folder to export to",
+    properties: ["openDirectory", "createDirectory"],
+  })
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true as const }
+  }
+  const targetDir = result.filePaths[0] as string
+  try {
+    const { extras, entries, notesText } = lastServiceExtras
+    const cardFiles = extras.cards.map((_card, i) => `quote-card-ai-${i + 1}.png`)
+    for (let i = 0; i < extras.cards.length; i++) {
+      const card = describeExtrasCard(extras.cards[i] as ServiceExtras["cards"][number])
+      await writeFile(join(targetDir, cardFiles[i] as string), await renderCardPng(card.text, card.label))
+    }
+    const markdown = buildServiceNotesMarkdown({
+      title: activeConfig?.organizationName?.trim() || "Service notes",
+      date: new Date().toISOString().slice(0, 10),
+      extras,
+      entries,
+      notesText,
+      cardFiles,
+    })
+    await writeFile(join(targetDir, "service-notes.md"), markdown, "utf8")
+    logger.info({ component: "main", event: "service-extras.exported", metadata: { cards: cardFiles.length, targetDir } })
+    return { canceled: false as const, targetDir, count: cardFiles.length }
+  } catch (err) {
+    const message = scrubSecrets(err instanceof Error ? err.message : String(err))
+    logger.error({ component: "main", event: "service-extras.export-failed", error: message })
     return { error: message }
   }
 })
