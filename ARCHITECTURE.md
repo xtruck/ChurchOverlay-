@@ -58,20 +58,20 @@ Version 1 includes:
 The following are not implemented in v1.
 They must remain documented in `ROADMAP.md` and must not enter the implementation accidentally.
 
-- Local ASR.
-- Hybrid ASR.
-- Semantic Bible-reference detection.
-- Paraphrase detection.
+- Local ASR (**implemented as an offline backup behind the failover chain; see sections 99 and 113**).
+- Hybrid ASR (**implemented as cloud-to-local failover; see sections 95 and 119**).
+- Semantic Bible-reference detection (**implemented as optional, suggestion-only; see sections 121 and 124**).
+- Paraphrase detection (**same as above; see section 124**).
 - Vector search.
-- Multiple Bible translations.
-- Offline Bible database.
+- Multiple Bible translations (**one extra French translation, Darby; see section 107**).
+- Offline Bible database (**narrow French fallback only; see section 77**).
 - Media library (**implemented; see sections 60 and 74**).
 - Songs/lyrics (**removed from Phase 2; see section 60**).
 - Scenes (**implemented; see sections 64 and 66**).
 - Rundown/service planning (**implemented in memory; persistence remains deferred; see section 64**).
 - Cameras.
-- Branding engine.
-- AI agent (**approved for Phase 2 as a broader AI copilot; sermon-notes side channel implemented, broader copilot remains deferred; see sections 59 and 65.7**).
+- Branding engine (**bounded overlay style system implemented; see section 110**).
+- AI agent (**approved for Phase 2 as a broader AI copilot; implemented as optional, key-gated helpers: operator-only sermon copilot, transcript cleanup, semantic suggestions and post-service extras; still no free-form chat agent; see sections 59, 65.7, 121 and 123-126**).
 - MCP server.
 - ProPresenter integration.
 - Planning Center integration.
@@ -6337,3 +6337,15 @@ accuracy were **not measured** (no local engine installed on the development mac
 **Tests.** `service-extras.test.ts`: input building and bounds; strict parsing (missing recap, out-of-range / duplicate / non-integer card indexes, invented or paraphrased note quotes, hostile text); generator with a fake completer; Markdown output for both languages, with and without cards. The Electron dialog / PNG glue in `desktop/main/index.ts` is thin and not unit-tested (it needs a running Electron).
 
 **Not done / open.** Prompt quality, real card legibility with long notes lines, and the dialog glue were not exercised against the live API or a running Electron app in this session.
+
+## 127. AppCore Seam: SuggestionArbiter and AiSuggestionCoordinator (refactor, no behaviour change)
+
+**Why.** `app-core.ts` had grown past 2,500 lines and kept absorbing each AI feature (AGENTS.md section 26, no god objects). The AI suggestion logic and the small state it shares with the deterministic suggestion paths were the fastest-growing part, so they were extracted first, behind the existing tests (AGENTS.md sections 30 and 57).
+
+**`core/suggestion-arbiter.ts` (`SuggestionArbiter`).** Pure and clock-injectable, same style as `InterpreterEchoGuard`. It owns the per-verse cooldown map (60 s, pruned above 200 entries) and the "a DETECTED verse is waiting for approval" hold (20 s). Quotation matching, near-miss repair, transcript cleanup and semantic suggestions all ask it `canOffer()` before a lookup and call `markOffered()` only once the suggestion is really about to be offered, so a failed lookup never hides a verse. The hold is released when any verse is shown or when a non-detected suggestion takes the pending slot.
+
+**`core/ai-suggestion-coordinator.ts` (`AiSuggestionCoordinator`).** Owns the three live-toggled helpers of sections 123-125 (cleanup, semantic, copilot): their flags, budgets, rolling windows, in-flight guards and the copilot timer. It never imports the detector, the index, the verse source or the WebSocket server: AppCore passes ports (`detectValidated`, `validateProposal`, `resolve`, `offerPending`, `sendToOperators`, ...), so the hallucination guard (detector, known-valid index, verse source, pending only) is unchanged and still enforced by what the ports do. AppCore keeps its call sites (`cleanupTranscript`, `onFinalAnalyzed`, `setFeature`, `stop`).
+
+**Unchanged on purpose.** Event names and log levels (`component: "app-core"`), the order of the guards, the re-checks after every `await`, and the WebSocket protocol. Not touched here: the implicit pending-slot state machine, whether repair and quotation should also respect the review-mode hold, and the operator-only audience of `translation:final` and AI `verse:pending` (all are behaviour changes, to be decided separately).
+
+**Tests.** `suggestion-arbiter.test.ts` (fake clock: cooldown, hold, pruning), `ai-suggestion-coordinator.test.ts` (stop mid-call and mid-lookup, failed lookup, hold, partials and defaults, copilot operator-only), plus the unchanged AI blocks of `app-core.test.ts`.

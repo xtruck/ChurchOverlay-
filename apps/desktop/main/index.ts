@@ -353,11 +353,16 @@ async function startServices(
   let quoteSource: OfflineBibleData | null = null
   try {
     quoteSource = await getOfflineBibleData()
-  } catch {
-    // Already logged inside buildFrenchSource()/getOfflineBibleData()'s own
-    // error path if this same load is attempted there too; nothing further
-    // to do here beyond quoteSource staying null (section 65.8 already
-    // treats a missing quoteMatcher as an optional capability).
+  } catch (err) {
+    // buildFrenchSource() only logs when the French translation is ls1910, so
+    // log here too: otherwise a Darby install silently loses quote matching.
+    // quoteSource stays null (section 65.8 treats a missing quoteMatcher as an
+    // optional capability).
+    logger.error({
+      component: "main",
+      event: "offline-bible-data.quote-source-failed",
+      error: err instanceof Error ? err.message : String(err),
+    })
   }
   const frenchTranslation = config.frenchTranslation ?? "ls1910"
   const frenchSource = await buildFrenchSource(frenchTranslation)
@@ -712,10 +717,15 @@ ipcMain.handle("get-startup-status", async () => {
       organizationName = existing.organizationName
       accentColor = existing.accentColor
     }
-  } catch {
-    // Corrupt/unreadable config: default silently here. complete-setup's
-    // own recovery path (section on setup.existing-config-unreadable)
-    // is where that gets actually fixed, not this read-only status check.
+  } catch (err) {
+    // Corrupt/unreadable config: fall back to defaults for this read-only status
+    // check, but leave a trace. complete-setup's own recovery path (section on
+    // setup.existing-config-unreadable) is where it actually gets fixed.
+    logger.warn({
+      component: "main",
+      event: "setup.status-config-unreadable",
+      error: err instanceof Error ? err.message : String(err),
+    })
   }
 
   if (appCoreHandle && currentTokens && localizedVerseSource) {
@@ -944,8 +954,8 @@ ipcMain.handle("set-ai-feature", async (_event, payload: unknown) => {
   currentAiFeatures = { ...currentAiFeatures, [feature]: enabled }
   const key = AI_CONFIG_KEY[feature]
   if (activeConfig) activeConfig = { ...activeConfig, [key]: enabled }
-  await persistConfig((existing) => ({ ...existing, [key]: enabled }))
-  return { aiFeatures: currentAiFeatures }
+  const persisted = await persistConfig((existing) => ({ ...existing, [key]: enabled }))
+  return { aiFeatures: currentAiFeatures, persisted }
 })
 
 /**
@@ -1207,12 +1217,16 @@ ipcMain.handle("complete-setup", async (_event, payload: unknown) => {
  * (ConfigStore.update is serialized). A failure is logged, not thrown:
  * the live setting already applied, and refusing the toggle because the
  * file could not be written would be worse than losing persistence once.
+ * Returns whether the change reached the disk, so a caller whose setting is an
+ * opt-in (cost, privacy) can tell the operator it will not survive a restart.
  */
-async function persistConfig(mutate: (current: AppConfig) => AppConfig): Promise<void> {
+async function persistConfig(mutate: (current: AppConfig) => AppConfig): Promise<boolean> {
   try {
     await getConfigStore().update(mutate)
+    return true
   } catch (err) {
     logger.error({ component: "main", event: "config.persist-failed", error: err instanceof Error ? err.message : String(err) })
+    return false
   }
 }
 

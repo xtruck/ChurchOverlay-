@@ -194,6 +194,7 @@
   const onScreenEl = document.getElementById("on-screen")
   const onScreenStateEl = document.getElementById("on-screen-state")
   const onScreenRefEl = document.getElementById("on-screen-ref")
+  const onScreenAnnounceEl = document.getElementById("on-screen-announce")
   const clearVerseBtn = document.getElementById("clear-verse-btn")
   const sceneListEl = document.getElementById("scene-list")
   const prevBtn = document.getElementById("prev-btn")
@@ -279,6 +280,7 @@
     document.body.classList.toggle("is-live", Boolean(label))
     onScreenStateEl.textContent = label ? t("onAir") : t("offAir")
     onScreenRefEl.textContent = label || ""
+    onScreenAnnounceEl.textContent = label ? t("onAir") + ": " + label : t("offAir")
   }
 
   function sceneSummary(scene) {
