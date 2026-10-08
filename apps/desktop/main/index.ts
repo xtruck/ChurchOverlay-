@@ -17,7 +17,8 @@ import { QuoteMatcher, type QuoteMatch } from "../../server/detector/quote-match
 import { OfflineFallbackVerseSource } from "../../server/verse/offline-fallback-verse-source"
 import { GroqProvider } from "../../server/asr/groq-provider"
 import { DeepgramProvider } from "../../server/asr/deepgram-provider"
-import { CallBudget, ClaudeClient } from "../../server/ai/claude-client"
+import { CallBudget } from "../../server/ai/claude-client"
+import { AI_PROVIDERS, aiProviderReady, createTextCompleter, selectedAiProvider, type AiProvider } from "../../server/ai/ai-provider"
 import { ServiceExtrasGenerator, buildServiceNotesMarkdown, type ServiceExtras } from "../../server/ai/service-extras"
 import { isAiFeature, type AiFeature, type AiFeatureFlags } from "../../server/ai/ai-features"
 import { FailoverAsrProvider } from "../../server/asr/failover-provider"
@@ -504,8 +505,9 @@ async function startServices(
     // sermonNotesEnabled below, so a live dashboard toggle can turn it on
     // mid-service without reconstructing AppCore.
     ...(config.groqApiKey ? { sermonNotesGenerator: new SermonNotesGenerator({ apiKey: config.groqApiKey }) } : {}),
-    // Optional Anthropic key: the AI helpers stay off (undefined) without it.
-    claudeClient: config.anthropicApiKey ? new ClaudeClient({ apiKey: config.anthropicApiKey }) : undefined,
+    // ARCHITECTURE.md section 128: the AI helpers run on the provider the operator chose
+    // (Anthropic, or the free Groq text models) and stay off (undefined) when that provider has no key.
+    claudeClient: createTextCompleter(config),
     sermonNotesEnabled: config.enableSermonNotes,
     aiFeatures: aiFeaturesFromConfig(config),
     // ARCHITECTURE.md section 65.4: a voice-triggered display-mode switch
@@ -631,6 +633,7 @@ async function startServices(
     return left.groqApiKey === right.groqApiKey &&
       left.deepgramApiKey === right.deepgramApiKey &&
       left.anthropicApiKey === right.anthropicApiKey &&
+      left.aiProvider === right.aiProvider &&
       left.displayMode === right.displayMode &&
       left.uiLanguage === right.uiLanguage &&
       left.allowPhoneRemote === right.allowPhoneRemote &&
@@ -763,6 +766,10 @@ function currentAsrStatus(): {
   hasGroq: boolean
   hasDeepgram: boolean
   hasAnthropic: boolean
+  /** The provider selected for the AI helpers (explicit choice, or Anthropic by default when its key exists). */
+  aiProvider: AiProvider | null
+  /** True when the selected provider has the key it needs, i.e. the helpers can run. */
+  aiReady: boolean
   strategy: AsrStrategy
   autoGain: boolean
   localEnabled: boolean
@@ -774,6 +781,8 @@ function currentAsrStatus(): {
     hasGroq: Boolean(activeConfig?.groqApiKey),
     hasDeepgram: Boolean(activeConfig?.deepgramApiKey),
     hasAnthropic: Boolean(activeConfig?.anthropicApiKey),
+    aiProvider: activeConfig ? selectedAiProvider(activeConfig) : null,
+    aiReady: activeConfig ? aiProviderReady(activeConfig) : false,
     strategy: activeConfig?.asrStrategy ?? "streaming-first",
     autoGain: activeConfig?.autoGain ?? true,
     localEnabled: activeConfig?.localAsrEnabled ?? false,
@@ -860,6 +869,20 @@ ipcMain.handle("set-local-asr", async (_event, payload: unknown) => {
 ipcMain.handle("set-asr-strategy", async (_event, payload: unknown) => {
   if (!ASR_STRATEGIES.includes(payload as AsrStrategy)) throw new Error("Invalid ASR strategy.")
   const updated = await getConfigStore().update((existing) => ({ ...existing, asrStrategy: payload as AsrStrategy }))
+  if (!updated) throw new Error("Services are not configured yet.")
+  await startServices(updated)
+  return currentAsrStatus()
+})
+
+/**
+ * ARCHITECTURE.md section 128: which service runs the optional AI helpers (Anthropic, or the
+ * free Groq text models). The client is built once at service start, so this saves and restarts
+ * the services, exactly like set-asr-strategy. A provider whose key is missing is accepted: the
+ * helpers then stay inert and the dashboard says why (no silent switch to the other provider).
+ */
+ipcMain.handle("set-ai-provider", async (_event, payload: unknown) => {
+  if (!AI_PROVIDERS.includes(payload as AiProvider)) throw new Error("Invalid AI provider.")
+  const updated = await getConfigStore().update((existing) => ({ ...existing, aiProvider: payload as AiProvider }))
   if (!updated) throw new Error("Services are not configured yet.")
   await startServices(updated)
   return currentAsrStatus()
@@ -1668,14 +1691,15 @@ ipcMain.handle("generate-service-extras", async (_event, sermonNotesText: unknow
   if (entries.length === 0 && !notesText.trim()) {
     return { error: "Nothing was shown or noted this session yet." }
   }
-  if (!activeConfig.anthropicApiKey) {
-    return { error: "An Anthropic API key is required for the recap, quote cards and notes export." }
+  const extrasCompleter = createTextCompleter(activeConfig)
+  if (!extrasCompleter) {
+    return { error: "An AI provider with its API key (Anthropic, or the free Groq option) is required for the recap, quote cards and notes export." }
   }
   if (serviceExtrasBusy) return { error: "A recap is already being generated." }
   if (!serviceExtrasBudget.tryTake()) return { error: "Too many requests. Try again in a minute." }
   serviceExtrasBusy = true
   try {
-    const extras = await new ServiceExtrasGenerator(new ClaudeClient({ apiKey: activeConfig.anthropicApiKey })).generate(entries, notesText)
+    const extras = await new ServiceExtrasGenerator(extrasCompleter).generate(entries, notesText)
     lastServiceExtras = { extras, entries, notesText }
     logger.info({ component: "main", event: "service-extras.generated", metadata: { verseCount: entries.length, cards: extras.cards.length } })
     return { extras: { recap: extras.recap, cards: extras.cards.map(describeExtrasCard) } }

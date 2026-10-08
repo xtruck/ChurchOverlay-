@@ -968,6 +968,34 @@
       .then(() => log(t("copilot.copied"), "sent", { toast: true }))
       .catch((err) => log(t("log.importFailed", { error: err.message }), "error"))
   })
+  // ARCHITECTURE.md section 128: which service runs the helpers (an explicit choice, never a silent switch).
+  const aiProviderToggleEl = document.getElementById("ai-provider-toggle")
+  function renderAiProvider(status) {
+    setActiveOption(aiProviderToggleEl, "aiProvider", status.aiProvider || "")
+    const hintKey = status.aiProvider ? "ai.noKey" : "ai.noProvider"
+    aiNoKeyHintEl.dataset.i18n = hintKey // stays right if the UI language changes
+    aiNoKeyHintEl.textContent = t(hintKey)
+  }
+  aiProviderToggleEl.querySelectorAll("button").forEach((button) => {
+    button.addEventListener("click", () => {
+      const provider = button.dataset.aiProvider
+      if (!asrStatus || provider === asrStatus.aiProvider) return
+      aiProviderToggleEl.querySelectorAll("button").forEach((b) => (b.disabled = true))
+      log(t("ai.provider.restarting"), "sent")
+      window.churchOverlay
+        .setAiProvider(provider)
+        .then((status) => {
+          aiProviderToggleEl.querySelectorAll("button").forEach((b) => (b.disabled = false))
+          renderAsrStatus(status)
+          log(t("log.aiProviderChanged", { provider }), "sent")
+        })
+        .catch((err) => {
+          aiProviderToggleEl.querySelectorAll("button").forEach((b) => (b.disabled = false))
+          log(t("ai.toggleFailed", { error: err.message }), "error")
+          renderAsrStatus(asrStatus)
+        })
+    })
+  })
   function renderAiAvailability(hasKey) {
     aiNoKeyHintEl.hidden = Boolean(hasKey)
     aiFeatureToggleEls.forEach((groupEl) => {
@@ -980,7 +1008,8 @@
   function renderAsrStatus(status) {
     asrStatus = status || null
     if (!asrStatus) return
-    renderAiAvailability(asrStatus.hasAnthropic)
+    renderAiAvailability(asrStatus.aiReady)
+    renderAiProvider(asrStatus)
     const both = asrStatus.hasGroq && asrStatus.hasDeepgram
     setActiveOption(asrStrategyToggleEl, "asrStrategy", asrStatus.strategy)
     asrStrategyToggleEl.querySelectorAll("button").forEach((button) => {

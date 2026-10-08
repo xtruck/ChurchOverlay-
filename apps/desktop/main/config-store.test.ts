@@ -625,3 +625,23 @@ test("ConfigStore: load() throws on a non-boolean AI feature toggle", async () =
     }
   })
 })
+
+// ARCHITECTURE.md section 128: the AI provider choice is optional (absent = Anthropic when a key exists), preserved when present, and corruption is loud.
+test("ConfigStore: aiProvider round-trips, an older file loads without it, and an unknown value is loud corruption", async () => {
+  await withTempDir(async (dir) => {
+    const path = join(dir, "config.json")
+    const codec = new FakeSecretCodec()
+    const store = new ConfigStore(path, codec)
+    await store.save({ ...SAMPLE_CONFIG, aiProvider: "groq" })
+    assert.equal((await store.load())?.aiProvider, "groq")
+
+    await store.save(SAMPLE_CONFIG)
+    assert.equal((await store.load())?.aiProvider, undefined)
+
+    const { readFile, writeFile } = await import("node:fs/promises")
+    const raw = JSON.parse(await readFile(path, "utf8"))
+    raw.aiProvider = "openai"
+    await writeFile(path, JSON.stringify(raw))
+    await assert.rejects(store.load(), /invalid aiProvider/)
+  })
+})

@@ -1003,8 +1003,18 @@
               <svg class="icon panel-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z"/></svg>
               <h2 class="card-title" data-i18n="ai.title">AI assistants</h2>
             </div>
-            <p class="settings-hint" data-i18n="ai.hint">Optional helpers powered by Anthropic. Only transcript text (never audio) is sent. Everything they propose is checked like any other verse, and nothing is ever shown to the congregation without you.</p>
-            <p id="ai-no-key-hint" class="settings-hint" data-i18n="ai.noKey" hidden>Add an Anthropic API key in setup to use these helpers.</p>
+            <p class="settings-hint" data-i18n="ai.hint">Optional helpers. Only transcript text (never audio) is sent to the AI service you choose below. Everything they propose is checked like any other verse, and nothing is ever shown to the congregation without you.</p>
+            <div class="ai-feature-row">
+              <div class="ai-feature-text">
+                <div class="ai-feature-name" data-i18n="ai.provider.title">AI service</div>
+                <p class="settings-hint" id="ai-provider-note" data-i18n="ai.provider.hint">Free uses the Groq key you already have for transcription (a free plan with daily limits; smaller models, so fewer suggestions). Anthropic needs its own key and is more accurate.</p>
+              </div>
+              <div id="ai-provider-toggle" class="segmented" role="group" data-i18n-aria-label="ai.provider.title" data-i18n-title="ai.provider.title">
+                <button type="button" data-ai-provider="groq" data-i18n="ai.provider.groq">Free (Groq)</button>
+                <button type="button" data-ai-provider="anthropic" data-i18n="ai.provider.anthropic">Anthropic</button>
+              </div>
+            </div>
+            <p id="ai-no-key-hint" class="settings-hint" data-i18n="ai.noKey" hidden>The chosen AI service has no API key. Add it in setup, or choose the other service.</p>
             <div class="ai-feature-row">
               <div class="ai-feature-text">
                 <div class="ai-feature-name" data-i18n="ai.cleanup.title">Smarter transcript cleanup</div>

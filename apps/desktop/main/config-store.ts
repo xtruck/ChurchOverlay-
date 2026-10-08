@@ -3,6 +3,7 @@ import { dirname } from "node:path"
 import type { DisplayMode, VerseConfirmationMode, VerseLayout } from "../../../packages/contracts"
 import type { AudioProfile } from "../../server/audio/audio-profile"
 import { ASR_STRATEGIES, type AsrStrategy } from "../../server/asr/asr-strategy"
+import { AI_PROVIDERS, type AiProvider } from "../../server/ai/ai-provider"
 import type { OverlayStyleSettings } from "../../../packages/contracts/overlay-style"
 import { normalizeOverlayStyleSettings } from "../../server/overlay/overlay-style"
 import { isNotFoundError, isPlainObject } from "../../../packages/shared/type-guards"
@@ -47,6 +48,11 @@ export type AppConfig = {
   readonly deepgramApiKey?: string
   /** Optional Anthropic key for the AI helpers; absent means the helpers stay off. */
   readonly anthropicApiKey?: string
+  /**
+   * ARCHITECTURE.md section 128: which service runs the optional AI helpers. Absent means
+   * Anthropic when an Anthropic key exists, otherwise no AI until the operator picks one.
+   */
+  readonly aiProvider?: AiProvider
   readonly microphoneId: string | null
   readonly operatorToken: string
   readonly viewerToken: string
@@ -161,6 +167,7 @@ type StoredConfig = {
   readonly organizationName?: string
   readonly accentColor?: string
   readonly asrStrategy?: string
+  readonly aiProvider?: string
   readonly autoGain?: boolean
   readonly localAsrEnabled?: boolean
   readonly localAsrModel?: string
@@ -265,6 +272,7 @@ export class ConfigStore {
       ...(config.organizationName === undefined ? {} : { organizationName: config.organizationName }),
       ...(config.accentColor === undefined ? {} : { accentColor: config.accentColor }),
       ...(config.asrStrategy === undefined ? {} : { asrStrategy: config.asrStrategy }),
+      ...(config.aiProvider === undefined ? {} : { aiProvider: config.aiProvider }),
       ...(config.autoGain === undefined ? {} : { autoGain: config.autoGain }),
       ...(config.localAsrEnabled === undefined ? {} : { localAsrEnabled: config.localAsrEnabled }),
       ...(config.localAsrModel === undefined ? {} : { localAsrModel: config.localAsrModel }),
@@ -319,6 +327,7 @@ export class ConfigStore {
       organizationName,
       accentColor,
       asrStrategy,
+      aiProvider,
       autoGain,
       localAsrEnabled,
       localAsrModel,
@@ -401,6 +410,9 @@ export class ConfigStore {
     if (asrStrategy !== undefined && !ASR_STRATEGIES.includes(asrStrategy as AsrStrategy)) {
       throw new Error(`ConfigStore: ${this.filePath} has an invalid asrStrategy`)
     }
+    if (aiProvider !== undefined && !AI_PROVIDERS.includes(aiProvider as AiProvider)) {
+      throw new Error(`ConfigStore: ${this.filePath} has an invalid aiProvider`)
+    }
     if (frenchTranslation !== undefined && !FRENCH_TRANSLATIONS.includes(frenchTranslation as string)) {
       throw new Error(`ConfigStore: ${this.filePath} has an invalid frenchTranslation`)
     }
@@ -445,6 +457,7 @@ export class ConfigStore {
       ...(organizationName === undefined ? {} : { organizationName }),
       ...(accentColor === undefined ? {} : { accentColor }),
       ...(asrStrategy === undefined ? {} : { asrStrategy: asrStrategy as AsrStrategy }),
+      ...(aiProvider === undefined ? {} : { aiProvider: aiProvider as AiProvider }),
       ...(autoGain === undefined ? {} : { autoGain }),
       ...(localAsrEnabled === undefined ? {} : { localAsrEnabled }),
       ...(localAsrModel === undefined ? {} : { localAsrModel: localAsrModel as "base" | "small" }),
