@@ -54,7 +54,9 @@
   }
   *, *::before, *::after { box-sizing: border-box; }
   * { -webkit-tap-highlight-color: transparent; }
-  html { background: var(--bg); -webkit-text-size-adjust: 100%; }
+  /* A focused field scrolled into view must not end up under the fixed bottom tab bar. */
+  html { background: var(--bg); -webkit-text-size-adjust: 100%; scroll-padding-bottom: calc(var(--nav-h) + 24px + var(--safe-b)); }
+  .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
   body {
     margin: 0 auto;
     max-width: 560px;
@@ -554,7 +556,9 @@
 
   <main id="app">
     <!-- On-air tally: above every tab, so the operator never loses sight of it. -->
-    <section id="on-screen" aria-live="polite">
+    <section id="on-screen">
+      <!-- One short sentence per change; the section itself is not a live region, so the Clear button is not re-read. -->
+      <div id="on-screen-announce" class="sr-only" role="status" aria-live="polite"></div>
       <div class="tally-row">
         <div id="on-screen-state" data-t="offAir">Nothing on screen</div>
         <span class="on-air-badge" aria-hidden="true"><span class="on-air-dot"></span><span data-t="onAirTag">On air</span></span>

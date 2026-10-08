@@ -241,12 +241,12 @@
               <label for="reference" data-i18n="override.referenceLabel">Verse reference</label>
               <div id="reference-field" class="command-field">
                 <svg class="icon command-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/></svg>
-                <input id="reference" type="text" data-i18n-placeholder="placeholder.verseReference" autocomplete="off" />
+                <input id="reference" type="text" aria-keyshortcuts="Control+K" data-i18n-placeholder="placeholder.verseReference" autocomplete="off" />
                 <span class="command-kbd" aria-hidden="true"><kbd>Ctrl</kbd><kbd>K</kbd></span>
               </div>
               <div class="btn-row">
                 <button id="show-btn" class="btn-primary" data-i18n="override.showButton">Show on overlay</button>
-                <button id="clear-btn" class="btn-danger" data-i18n="override.clearButton">Clear</button>
+                <button id="clear-btn" class="btn-danger" aria-keyshortcuts="Shift+Escape" data-i18n="override.clearButton">Clear</button>
               </div>
             </div>
             <!-- Session-only quick recall: each chip re-sends the reference
@@ -254,7 +254,7 @@
                  and looked up exactly like a typed reference (AGENTS.md 50). -->
             <div class="recent-strip">
               <span class="recent-label" data-i18n="recent.label">Recent</span>
-              <div id="recent-verses" class="recent-verses" role="list">
+              <div id="recent-verses" class="recent-verses">
                 <span class="recent-empty" data-i18n="recent.empty">Verses shown this session appear here for one-click recall.</span>
               </div>
             </div>
@@ -270,7 +270,7 @@
               <h2 id="live-preview-label" class="live-preview-label" data-i18n="livePreview.label">Congregation screen</h2>
               <span class="onair-label" aria-hidden="true"><span class="onair-dot"></span><span data-i18n="tally.onAir">On air</span></span>
               <span id="on-air-timer" class="on-air-timer" aria-hidden="true"></span>
-              <span id="tally-chip" class="tally-chip" role="status" data-i18n="livePreview.offAir">Nothing on screen</span>
+              <span id="tally-chip" class="tally-chip" data-i18n="livePreview.offAir">Nothing on screen</span>
             </div>
             <div class="program-screen">
               <iframe
@@ -289,7 +289,7 @@
                 <span data-i18n="mic.lastTranscriptLabel">Heard</span>
               </span>
               <span id="transcript-lang" class="lang-badge" hidden></span>
-              <div id="transcript" aria-live="polite" data-i18n="mic.waitingForSpeech">Waiting for speech…</div>
+              <div id="transcript" aria-live="off" data-i18n="mic.waitingForSpeech">Waiting for speech…</div>
               <div id="transcript-translation" class="transcript-translation" hidden></div>
             </div>
             <!-- ARCHITECTURE.md section 91: a final transcript with verse
@@ -307,12 +307,15 @@
                 <h2 id="queue-title" class="card-title" data-i18n="queue.title">Verse queue</h2>
                 <span class="panel-kbd" aria-hidden="true"><kbd>Ctrl</kbd><kbd>Enter</kbd></span>
               </div>
-              <div id="verse-pending-banner" class="verse-pending-banner" style="display: none" role="region" aria-live="assertive">
+              <!-- Always rendered (a live region that appears together with its content is not
+                   reliably announced): one sentence per waiting verse, filled by showPendingVerse(). -->
+              <div id="pending-announce" class="sr-only" role="status" aria-live="polite"></div>
+              <div id="verse-pending-banner" class="verse-pending-banner" style="display: none" role="group" aria-labelledby="queue-title">
                 <div class="verse-pending-label"><span data-i18n="livePreview.pendingLabel">To confirm</span></div>
                 <div id="verse-pending-origin" class="verse-pending-origin" style="display: none" data-i18n="livePreview.pendingFromQuote">Recognized from a reading — no reference was said.</div>
                 <div id="verse-pending-ref"></div>
                 <div id="verse-pending-text"></div>
-                <button id="verse-pending-confirm-btn" class="btn-primary btn-lg" data-i18n="livePreview.pendingConfirm">Show on screen</button>
+                <button id="verse-pending-confirm-btn" class="btn-primary btn-lg" aria-keyshortcuts="Control+Enter" data-i18n="livePreview.pendingConfirm">Show on screen</button>
                 <div id="verse-pending-alternatives" class="verse-pending-alternatives"></div>
               </div>
               <div class="queue-empty empty-state">

@@ -144,6 +144,7 @@
   const posterDurationInputEl = document.getElementById("poster-duration-input")
   const posterDurationApplyBtn = document.getElementById("poster-duration-apply-btn")
   const versePendingBannerEl = document.getElementById("verse-pending-banner")
+  const pendingAnnounceEl = document.getElementById("pending-announce")
   const versePendingTextEl = document.getElementById("verse-pending-text")
   const versePendingRefEl = document.getElementById("verse-pending-ref")
   const versePendingConfirmBtn = document.getElementById("verse-pending-confirm-btn")
@@ -530,6 +531,10 @@
     versePendingBannerEl.style.display = "flex"
     livePreviewEl.classList.add("has-pending")
     globalPendingBtn.style.display = ""
+    // One sentence in an always-present live region (the banner itself is not announced).
+    const waiting = t("livePreview.pendingLabel") + ": " + versePendingRefEl.textContent
+    pendingAnnounceEl.textContent = waiting + ". " + t("livePreview.pendingConfirm") + " (Ctrl+Enter)"
+    globalPendingBtn.setAttribute("aria-label", waiting)
   }
 
   // Header shortcut to a waiting verse, so it is noticed from any view.
@@ -565,6 +570,8 @@
     versePendingBannerEl.style.display = "none"
     livePreviewEl.classList.remove("has-pending")
     globalPendingBtn.style.display = "none"
+    pendingAnnounceEl.textContent = ""
+    globalPendingBtn.removeAttribute("aria-label")
   }
 
   versePendingConfirmBtn.addEventListener("click", () => {
@@ -2852,7 +2859,7 @@
       const chip = document.createElement("button")
       chip.type = "button"
       chip.className = "recent-chip" + (onScreen.verse === entry.label ? " live" : "")
-      chip.setAttribute("role", "listitem")
+      if (onScreen.verse === entry.label) chip.setAttribute("aria-current", "true")
       chip.title = t("recent.recallHint", { reference: entry.label, key: String(index + 1) })
       const num = document.createElement("span")
       num.className = "recent-chip-key"
@@ -3131,7 +3138,8 @@
     } else if (!typing && !ctrl && key === "/") {
       event.preventDefault()
       focusReferenceInput()
-    } else if (ctrl && key === "Enter" && versePendingBannerEl.style.display !== "none") {
+    } else if (ctrl && key === "Enter" && !event.repeat && versePendingBannerEl.style.display !== "none") {
+      // A held key must not confirm twice.
       event.preventDefault()
       versePendingConfirmBtn.click()
     } else if (event.shiftKey && key === "Escape") {

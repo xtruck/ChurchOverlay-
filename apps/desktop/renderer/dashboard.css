@@ -535,9 +535,22 @@ header.topbar {
 .global-tally-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); }
 .global-tally[data-state="on"] { background: var(--on-air-fill); border-color: var(--on-air-fill); color: #ffffff; }
 .global-tally[data-state="on"] .global-tally-dot { background: #ffffff; animation: tally-pulse 2.4s ease-in-out infinite; }
+/* Visually hidden, still read by assistive technology (live-region announcements). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .global-pending {
-  height: 28px;
-  min-height: 28px;
+  height: 32px;
+  min-height: 32px;
   padding: 0 12px 0 8px;
   border-radius: var(--radius-pill);
   display: inline-flex;

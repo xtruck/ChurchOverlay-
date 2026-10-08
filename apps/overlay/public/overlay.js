@@ -218,9 +218,12 @@
 
   function showVerse(verse) {
     textEl.textContent = verse.text
+    // The page is declared English; say so when the verse is French (screen readers, hyphenation).
+    textEl.lang = FRENCH_TRANSLATIONS.has(String(verse.translation || "").toLowerCase()) ? "fr" : "en"
     refEl.textContent = formatVerseReference(verse)
 
     if (verse.secondary) {
+      secondaryTextEl.lang = "en"
       secondaryTextEl.textContent = verse.secondary.text
       secondaryTextEl.classList.add("visible")
     } else {
