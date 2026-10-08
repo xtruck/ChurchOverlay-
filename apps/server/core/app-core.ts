@@ -33,6 +33,7 @@ import { generateUlid } from "../../../packages/shared/ulid"
 import type { Logger } from "../../../packages/shared/logger"
 import { scrubSecrets } from "../../../packages/shared/logger"
 import { InterpreterEchoGuard, guessSpokenLanguage } from "./interpreter-echo-guard"
+import { SuggestionArbiter, suggestionKey } from "./suggestion-arbiter"
 import { CallBudget, type TextCompleter } from "../ai/claude-client"
 import { ReferenceRepairer } from "../ai/reference-repairer"
 import { LiveTranslator } from "../ai/live-translator"
@@ -430,10 +431,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   let overlayStyleRevision = 1
   const currentOverlayStyle = (): OverlayStyle => resolveOverlayStyle(overlayStyleSettings, overlayStyleRevision)
   let pendingVerse: Verse | null = null
-  // When a DETECTED (not AI-suggested) verse last started waiting for approval; 0 = none waiting.
-  let detectedPendingAt = 0
-  const QUOTE_SUGGESTION_COOLDOWN_MS = 60_000
-  const recentQuoteSuggestions = new Map<string, number>()
+  // Cooldown and "a detected verse is waiting" hold shared by every suggestion path.
+  const suggestionArbiter = new SuggestionArbiter()
   // ARCHITECTURE.md section 61.4: updated by every verse:show, however
   // triggered (detected, manual override, or navigation itself) — "next
   // verse" after an operator's manual override continues from wherever
@@ -693,7 +692,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // detected next is intentional, never an interpreter's echo.
     if (trigger !== "detected") interpreterEchoGuard.forget()
     // Whatever was waiting for approval has now been dealt with (shown, overridden, rundown).
-    detectedPendingAt = 0
+    suggestionArbiter.clearDetectedWaiting()
     currentVersePosition = verse.reference
     // TASK B: Update ASR prompt with current verse reference for dynamic context
     const refStr = `${verse.reference.book} ${verse.reference.chapter}:${verse.reference.verse}`
@@ -882,7 +881,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       }
       const delivery = verseConfirmationMode === "review" ? "pending" : "screen"
       if (delivery === "pending") {
-        detectedPendingAt = Date.now()
+        suggestionArbiter.noteDetectedWaiting()
         broadcastPendingVerse(verse, transcript.correlationId)
       } else broadcastVerse(verse, "detected", transcript.correlationId)
       const durationMs = Date.now() - transcript.timestamp
@@ -899,7 +898,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
 
   function broadcastPendingVerse(verse: Verse, correlationId?: string): void {
     // A suggestion (quote, repair, inferred volume, AI) that takes the slot means no detection is waiting any more.
-    if ((verse as Verse & { origin?: string }).origin !== undefined) detectedPendingAt = 0
+    if ((verse as Verse & { origin?: string }).origin !== undefined) suggestionArbiter.clearDetectedWaiting()
     pendingVerse = verse
     wsServer.broadcast({ id: generateUlid(), type: "verse:pending", timestamp: Date.now(), correlationId, payload: verse })
   }
@@ -1752,48 +1751,19 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     broadcastPendingVerse({ ...verse, origin: "ai" } as Verse, transcript.correlationId)
   }
 
-  function suggestionKey(reference: VerseReference): string {
-    return `${reference.book} ${reference.chapter}:${reference.verse}`
-  }
-
-  /**
-   * Shared by every suggestion path (quotation, repair, cleanup, semantic): not
-   * already on screen, and not offered within the per-verse cooldown (one 60 s
-   * map for all helpers, so a verse is not suggested twice by two of them).
-   */
+  // Shared by every suggestion path (quotation, repair, cleanup, semantic): the rules live in
+  // SuggestionArbiter (per-verse 60 s cooldown started only once a suggestion is really
+  // offered, not on screen, and the 20 s hold protecting a DETECTED verse waiting for approval).
   function canOfferSuggestion(reference: VerseReference): boolean {
-    const onScreen =
-      currentVersePosition !== null &&
-      currentVersePosition.book === reference.book &&
-      currentVersePosition.chapter === reference.chapter &&
-      currentVersePosition.verse === reference.verse
-    if (onScreen) return false
-    return Date.now() - (recentQuoteSuggestions.get(suggestionKey(reference)) ?? 0) >= QUOTE_SUGGESTION_COOLDOWN_MS
+    return suggestionArbiter.canOffer(reference, currentVersePosition)
   }
 
-  /**
-   * Starts the cooldown, and only once the suggestion is really about to be
-   * offered: a failed verse lookup must not hide the verse for 60 s. The map is
-   * pruned so it cannot grow without bound (AGENTS.md section 36).
-   */
   function markSuggestionOffered(reference: VerseReference): void {
-    const now = Date.now()
-    if (recentQuoteSuggestions.size > 200) {
-      for (const [oldKey, at] of recentQuoteSuggestions) {
-        if (now - at >= QUOTE_SUGGESTION_COOLDOWN_MS) recentQuoteSuggestions.delete(oldKey)
-      }
-    }
-    recentQuoteSuggestions.set(suggestionKey(reference), now)
+    suggestionArbiter.markOffered(reference)
   }
 
-  /**
-   * A detected verse waiting for approval (review mode) must not be replaced by
-   * an AI guess that arrives a moment later; an AI suggestion is skipped while
-   * a detection is waiting (20 s). The flag is cleared when anything is shown,
-   * on verse:clear, and when a non-detected suggestion takes the pending slot.
-   */
   function aiMayReplacePending(): boolean {
-    return Date.now() - detectedPendingAt > 20_000
+    return suggestionArbiter.aiMayReplacePending()
   }
 
   /**
