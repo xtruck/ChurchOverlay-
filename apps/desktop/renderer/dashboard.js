@@ -3441,9 +3441,18 @@
   // iframe instead. Setting src only once (skipping a redundant
   // reassignment on every status poll) avoids reloading — and briefly
   // blanking — the live preview's own independent WS connection.
+  //
+  // The preview is a SECOND copy of the overlay page running beside the real
+  // one (OBS / the audience window). If it also played the cue's audio, every
+  // video/song would sound twice a few ms apart: an echo, and worse when the
+  // same laptop feeds the mixer and listens to it. `muted=1` keeps the
+  // preview silent; only the real output plays sound.
   function renderOverlayPreview(overlayUrl) {
-    if (overlayUrl && overlayPreviewFrameEl.src !== overlayUrl) {
-      overlayPreviewFrameEl.src = overlayUrl
+    if (!overlayUrl) return
+    const previewUrl = new URL(overlayUrl)
+    previewUrl.searchParams.set("muted", "1")
+    if (overlayPreviewFrameEl.src !== previewUrl.href) {
+      overlayPreviewFrameEl.src = previewUrl.href
     }
   }
 

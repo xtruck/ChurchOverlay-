@@ -29,6 +29,13 @@
   const mediaImageEl = document.getElementById("media-image")
   const mediaVideoEl = document.getElementById("media-video")
   const mediaAudioEl = document.getElementById("media-audio")
+  // Embedded previews (dashboard live view, design editor) load this same page
+  // as a second copy beside the real output. Only the real output may make
+  // sound, or every video/song is heard twice (echo).
+  if (params.get("muted") === "1" || params.get("designPreview") === "1") {
+    mediaVideoEl.muted = true
+    mediaAudioEl.muted = true
+  }
   const announcementEl = document.getElementById("announcement")
   const announcementTitleEl = document.getElementById("announcement-title")
   const announcementBodyEl = document.getElementById("announcement-body")
