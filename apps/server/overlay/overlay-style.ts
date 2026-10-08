@@ -1,7 +1,9 @@
 import {
   CUSTOM_PALETTE_ID,
+  OVERLAY_BACKGROUNDS,
   OVERLAY_BRAND_FONTS,
   OVERLAY_CARD_DESIGNS,
+  type OverlayBackground,
   type OverlayBrandFont,
   type OverlayBrandLogo,
   type OverlayBrandName,
@@ -33,6 +35,7 @@ export function defaultOverlayStyleSettings(): OverlayStyleSettings {
   return {
     paletteId: DEFAULT_PALETTE_ID,
     card: "classic",
+    background: "none",
     brand: {
       name: { visible: false, text: "", font: "sans", size: 28, weight: 600, plate: true, ...DEFAULT_NAME_PLACEMENT },
       logo: { visible: false, version: 0, ...DEFAULT_LOGO_PLACEMENT },
@@ -127,6 +130,7 @@ export function normalizeOverlayStyleSettings(input: unknown): OverlayStyleSetti
   const out: OverlayStyleSettings = {
     paletteId,
     card: oneOf<OverlayCardDesign>(r.card, OVERLAY_CARD_DESIGNS, d.card),
+    background: oneOf<OverlayBackground>(r.background, OVERLAY_BACKGROUNDS, d.background),
     brand: { name: normalizeName(brand.name, d.brand.name), logo: normalizeLogo(brand.logo, d.brand.logo) },
   }
   if (paletteId === CUSTOM_PALETTE_ID) out.customColors = normalizeColors(r.customColors, DEFAULT_COLORS)

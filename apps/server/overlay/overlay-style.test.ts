@@ -82,3 +82,25 @@ test("isOverlayStylePayload accepts resolved styles and rejects anything that ne
   assert.equal(isOverlayStylePayload({ ...good, extra: 1 }), false)
   assert.equal(isOverlayStylePayload(null), false)
 })
+
+// ARCHITECTURE.md section 129: the animated background is a closed list, "none" by default.
+test("background: defaults to none, keeps a known name, and repairs anything else to none", () => {
+  assert.equal(defaultOverlayStyleSettings().background, "none")
+  assert.equal(normalizeOverlayStyleSettings({ background: "fire" }).background, "fire")
+  for (const bad of ["Fire", "lava", "<script>", "", 7, null, undefined, {}, []]) {
+    assert.equal(normalizeOverlayStyleSettings({ background: bad }).background, "none")
+  }
+})
+
+test("background: an older stored style without the field loads as none, and the resolved style carries it to viewers", () => {
+  const { background: _omitted, ...legacy } = defaultOverlayStyleSettings()
+  void _omitted
+  assert.equal(normalizeOverlayStyleSettings(legacy).background, "none")
+  assert.equal(resolveOverlayStyle(normalizeOverlayStyleSettings({ background: "fire" }), 2).background, "fire")
+})
+
+test("background: an overlay:style payload with an unknown background is rejected, a known one accepted", () => {
+  const fire = resolveOverlayStyle(normalizeOverlayStyleSettings({ background: "fire" }), 4)
+  assert.equal(isOverlayStylePayload(fire), true)
+  assert.equal(isOverlayStylePayload({ ...fire, background: "lava" }), false)
+})

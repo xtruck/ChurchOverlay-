@@ -6365,3 +6365,19 @@ accuracy were **not measured** (no local engine installed on the development mac
 **Open.** The free plan's limits and the model name come from Groq's public documentation (sources disagree on the daily token figure) and were not exercised against the live API: tests use a fake `fetch`. Limits are shared at organisation level, so a heavy AI day could eat into the transcription quota: measure on a real service before relying on it.
 
 **Tests.** `groq-text-client.test.ts` (request shape, Authorization header, scrubbing, malformed bodies, timeout), `ai-provider.test.ts` (selection rule, no silent fallback), `config-store.test.ts` (round trip, old file, corruption).
+
+## 129. Animated Overlay Backgrounds (Phase 2, owner-requested scope change)
+
+**Scope change (ROADMAP item 22).** The owner asked for moving backdrops (fire, prayer, softness, freshness, waves) behind the verse instead of a static image. AGENTS.md section 4 keeps the *branding engine* bounded (section 110); this is a bounded slice of that same style system, not a general animation tool, not a video or asset library and not user-supplied animation.
+
+**Data model.** `OverlayStyleSettings.background` is one of a closed list `OVERLAY_BACKGROUNDS` (`none`, `fire`). It travels in the existing `overlay:style` event (no new WebSocket command, section 110.4) and is normalized like `card`: anything unknown becomes `none`, and an older stored style without the field loads as `none`, so an existing install looks exactly as before.
+
+**Drawing.** Procedural, in the overlay page only: `apps/overlay/public/fire-background.js` simulates a low-resolution heat grid (96x54) painted into a `<canvas>` that CSS scales and softens. No dependency, no asset, no network, nothing sent. The overlay remains a read-only viewer (section 20): it only reads a validated name.
+
+**Where it shows.** Only in the full-screen layout, and only while a verse is visible. In the lower-third layout the card sits over live video and no backdrop is drawn. A dark text halo is added while a background is active so the palette's contrast (section 110.3, tested against the plain backdrop) holds over moving light.
+
+**Cost controls (OBS and NDI render this next to live video).** 30 steps per second at most, about 5,000 cells per step; started and stopped by the verse's visibility (never animating off air); `prefers-reduced-motion` draws one still frame. The canvas never takes input.
+
+**Not done / open.** Cost has not been measured inside a real OBS or NDI session (AGENTS.md section 34): do that before adding more backgrounds. The remaining ideas (candle for prayer, soft light rays, water or waves, clouds or stars, an ember overlay for the lower-third) are separate, one at a time. The "3D" look is simulated with layered light and blur; a WebGL version would need its own note (dependency discipline, section 40).
+
+**Tests.** `fire-background.test.ts` (deterministic simulation, bounded heat, flames die before the top, transparent cold cells, source guard of the overlay wiring), `overlay-style.test.ts` (closed list, legacy default, payload validation).

@@ -17,6 +17,7 @@
     handles: $("ov-handles"),
     palettes: $("ov-palettes"),
     cards: $("ov-cards"),
+    backgrounds: $("ov-backgrounds"),
     customBox: $("ov-custom"),
     customGrid: $("ov-custom-grid"),
     customOpacity: $("ov-custom-opacity"),
@@ -154,6 +155,19 @@
       els.cards.appendChild(b)
     }
   }
+  // ARCHITECTURE.md section 129: the animated backdrop (full-screen layout), a closed list from the server.
+  function buildBackgrounds() {
+    if (!els.backgrounds) return
+    els.backgrounds.textContent = ""
+    for (const background of meta.backgrounds || []) {
+      const b = document.createElement("button")
+      b.type = "button"
+      b.dataset.background = background
+      b.textContent = t("overlay.background." + background)
+      b.addEventListener("click", () => edit((s) => { s.background = background }))
+      els.backgrounds.appendChild(b)
+    }
+  }
   function buildCustom() {
     els.customGrid.textContent = ""
     for (const role of COLOR_ROLES) {
@@ -185,9 +199,10 @@
 
   function render(rebuildLists) {
     if (!style || !meta) return
-    if (rebuildLists) { buildPalettes(); buildCards(); buildCustom(); buildFonts() }
+    if (rebuildLists) { buildPalettes(); buildCards(); buildBackgrounds(); buildCustom(); buildFonts() }
     els.palettes.querySelectorAll("[data-palette]").forEach((b) => b.classList.toggle("active", b.dataset.palette === style.paletteId))
     els.cards.querySelectorAll("[data-card]").forEach((b) => b.classList.toggle("active", b.dataset.card === style.card))
+    if (els.backgrounds) els.backgrounds.querySelectorAll("[data-background]").forEach((b) => b.classList.toggle("active", b.dataset.background === (style.background || "none")))
     const isCustom = style.paletteId === "custom"
     els.customBox.hidden = !isCustom
     if (isCustom) {

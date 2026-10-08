@@ -174,6 +174,7 @@ All use fake completers; nothing here calls the real Anthropic API (see "Not aut
 | Service extras: numbered shown verses, verse cards and note quotes verified against the real entries, hostile text bounded, Markdown export incl. empty service | `service-extras.test.ts` |
 | AI suggestions end to end (pending only, never shown; invalid references rejected; off by default; no key = inert; budgets and intervals; toggle live; operator-only copilot; a failed verse lookup does not start the 60 s cooldown; toggling off mid-flight drops the result; a shown verse releases the detection hold; a failed copilot call keeps its trigger armed) | `app-core.test.ts` (sections "AI cleanup", "AI semantic", "AI copilot", "Review hardening") |
 | Quote-matcher index built in time slices equals the synchronous one | `quote-matcher.test.ts` |
+| Animated background (section 129): closed list with `none` default, older styles load as `none`, unknown names rejected in `overlay:style`; fire simulation deterministic, bounded, flames die before the top, palette transparency; overlay wiring (full-screen only, validated name) | `overlay-style.test.ts`, `fire-background.test.ts` |
 | Suggestion cooldown (60 s, only after a successful lookup), detected-verse hold (20 s), bounded map, with a fake clock | `suggestion-arbiter.test.ts` |
 | Coordinator ports: stop mid-call and mid-lookup, failed lookup, hold, partials and OFF defaults, copilot operator-only and switched off in flight | `ai-suggestion-coordinator.test.ts` |
 

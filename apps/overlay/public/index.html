@@ -181,7 +181,35 @@
     transition: opacity var(--ov-enter) var(--ov-ease), transform var(--ov-enter) var(--ov-ease);
   }
 
+  /*
+    ARCHITECTURE.md section 129: animated backdrop. A small canvas scaled up and softened
+    by CSS, hidden unless overlay.js marks it .active (full-screen layout, verse visible,
+    background chosen). It sits behind the card, never takes input, and fades out toward
+    the top so the verse text keeps the palette's contrast. Kept dim on purpose.
+  */
+  #verse-bg {
+    display: none;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.55;
+    filter: blur(3px) saturate(1.2);
+    -webkit-mask-image: linear-gradient(to top, #000 0%, rgba(0, 0, 0, 0.8) 40%, transparent 85%);
+    mask-image: linear-gradient(to top, #000 0%, rgba(0, 0, 0, 0.8) 40%, transparent 85%);
+  }
+  #verse-bg.active { display: block; }
+  /* Over moving light the palette's contrast is not enough on its own: a soft dark halo keeps every word readable. */
+  #verse.has-bg #verse-text,
+  #verse.has-bg #verse-secondary-text,
+  #verse.has-bg #verse-reference {
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 16px rgba(0, 0, 0, 0.75);
+  }
   #verse-card {
+    position: relative;
+    z-index: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -803,6 +831,8 @@
   </div>
   <audio id="media-audio"></audio>
   <div id="verse">
+    <!-- Animated backdrop (ARCHITECTURE.md section 129): decorative, drawn by fire-background.js, full-screen layout only. -->
+    <canvas id="verse-bg" aria-hidden="true"></canvas>
     <div id="verse-card">
       <div id="verse-text"></div>
       <div id="verse-secondary-text"></div>
@@ -831,6 +861,7 @@
     </div>
   </div>
   <div id="canvas-layer"></div>
+  <script src="fire-background.js"></script>
   <script src="overlay.js"></script>
 </body>
 </html>

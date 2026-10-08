@@ -22,6 +22,24 @@
   const posterImageEl = document.getElementById("poster-image")
   const verseEl = document.getElementById("verse")
   const verseCardEl = document.getElementById("verse-card")
+
+  // ARCHITECTURE.md section 129: an animated backdrop behind the verse, full-screen layout only.
+  // The name comes from the validated overlay:style; fire-background.js owns the drawing and the
+  // cost controls (30 fps cap, stopped whenever no verse is showing, one still frame if the
+  // viewer prefers reduced motion).
+  const verseBgEl = document.getElementById("verse-bg")
+  const BACKGROUNDS = ["none", "fire"]
+  let backgroundName = "none"
+  const fireBackground = window.OverlayFire && verseBgEl ? window.OverlayFire.attach(verseBgEl) : null
+  function syncBackground() {
+    if (!verseBgEl) return
+    const want = backgroundName === "fire" && verseEl.classList.contains("visible") && verseEl.classList.contains("fullscreen")
+    verseBgEl.classList.toggle("active", want)
+    verseEl.classList.toggle("has-bg", want)
+    if (!fireBackground) return
+    if (want) fireBackground.start()
+    else fireBackground.stop()
+  }
   const textEl = document.getElementById("verse-text")
   const secondaryTextEl = document.getElementById("verse-secondary-text")
   const refEl = document.getElementById("verse-reference")
@@ -232,6 +250,7 @@
     }
 
     verseEl.classList.add("visible")
+    syncBackground()
     // Restart the reveal even if a verse is already on screen: removing the
     // class and forcing a reflow lets the same keyframes play again.
     verseCardEl.classList.remove("reveal")
@@ -242,6 +261,7 @@
 
   function clearVerse() {
     verseEl.classList.remove("visible")
+    syncBackground()
   }
 
   // ARCHITECTURE.md section 82 — "fullscreen" is the confirmed default
@@ -255,6 +275,7 @@
 
   function setVerseLayout(layout) {
     verseEl.classList.toggle("fullscreen", layout === "fullscreen")
+    syncBackground()
     if (verseEl.classList.contains("visible")) requestAnimationFrame(() => fitVerseText())
   }
 
@@ -320,6 +341,8 @@
     verseCardEl.classList.remove(...CARD_CLASSES)
     if (style.card && style.card !== "classic") verseCardEl.classList.add("tpl-" + style.card)
     verseCardEl.classList.toggle("no-card", c.cardOpacity === 0)
+    backgroundName = BACKGROUNDS.includes(style.background) ? style.background : "none"
+    syncBackground()
 
     const name = style.brand && style.brand.name
     if (name && name.visible && name.text) {
@@ -379,6 +402,7 @@
     refEl.textContent = "Reference 1:1"
     secondaryTextEl.classList.remove("visible")
     verseEl.classList.add("visible")
+    syncBackground()
     requestAnimationFrame(() => fitVerseText())
   }
 

@@ -6,7 +6,15 @@
 export const OVERLAY_CARD_DESIGNS = ["classic", "banner", "minimal", "elegant", "glass", "ribbon"] as const
 export type OverlayCardDesign = (typeof OVERLAY_CARD_DESIGNS)[number]
 
-export const OVERLAY_BRAND_FONTS = ["serif", "sans", "mono"] as const
+/**
+ * ARCHITECTURE.md section 129: an animated, procedurally drawn backdrop behind the verse in the
+ * full-screen layout. A closed list: the overlay only ever draws a name from it, and the
+ * default "none" leaves every existing install looking exactly as before.
+ */
+export const OVERLAY_BACKGROUNDS = ["none", "fire"] as const
+export type OverlayBackground = (typeof OVERLAY_BACKGROUNDS)[number]
+
+export const OVERLAY_BRAND_FONTS =["serif", "sans", "mono"] as const
 export type OverlayBrandFont = (typeof OVERLAY_BRAND_FONTS)[number]
 
 export const OVERLAY_PALETTE_GROUPS = ["classic", "light", "liturgical", "bold", "high-contrast", "clear-text"] as const
@@ -56,6 +64,8 @@ export interface OverlayStyleSettings {
   paletteId: string
   customColors?: OverlayColors
   card: OverlayCardDesign
+  /** Animated backdrop (full-screen layout only); "none" by default. */
+  background: OverlayBackground
   brand: { name: OverlayBrandName; logo: OverlayBrandLogo }
 }
 
