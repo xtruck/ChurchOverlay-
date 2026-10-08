@@ -184,9 +184,11 @@ as a bug.
     local users/processes on the same machine. (Section 113.)
 
 22. **The optional Anthropic (Claude) helpers send transcript text only, are off by default,
-    and never reach the screen on their own.** Nothing is sent without an Anthropic key, and
+    and never reach the screen on their own.** Nothing is sent unless an AI service has been chosen and has its key, and
     every helper (transcript cleanup, semantic suggestions, sermon copilot) has its own live
-    toggle that defaults to OFF (`DEFAULT_AI_FEATURES`, `apps/server/ai/ai-features.ts`).
+    toggle that defaults to OFF, and the AI service itself is an explicit choice (Anthropic, or the
+    free Groq text models reusing the transcription key) that never switches silently
+    (ARCHITECTURE.md section 128) (`DEFAULT_AI_FEATURES`, `apps/server/ai/ai-features.ts`).
     What leaves the machine is FINAL transcript text (a partial never reaches a helper, and
     no audio is ever sent) when a helper is on; a post-service extras export sends the session
     notes only on an explicit button press. The key stays in the main process (the renderer only
@@ -196,7 +198,8 @@ as a bug.
     a `verse:pending` suggestion, never `verse:show`; the copilot's output goes to operator
     clients only. Residual risk: caption and slide text written by the model is free text that is
     not grounded in the Bible (an operator who pastes it to the screen is responsible for it), and
-    anyone audible to the microphone can influence the transcript the model reads.
+    anyone audible to the microphone can influence the transcript the model reads. With the Groq
+    option the final transcript text goes to Groq, which already receives the audio.
     (ARCHITECTURE.md sections 121, 123-126.)
 
 

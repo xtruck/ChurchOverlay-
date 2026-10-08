@@ -84,6 +84,7 @@ contextBridge.exposeInMainWorld("churchOverlay", {
   getPipelineLatency: () => ipcRenderer.invoke("get-pipeline-latency"),
   setEnableSermonNotes: (enabled: boolean) => ipcRenderer.invoke("set-enable-sermon-notes", enabled),
   setAiFeature: (feature: string, enabled: boolean) => ipcRenderer.invoke("set-ai-feature", { feature, enabled }),
+  setAiProvider: (provider: string) => ipcRenderer.invoke("set-ai-provider", provider),
   setNdiEnabled: (enabled: boolean) => ipcRenderer.invoke("set-ndi-enabled", enabled),
   getNdiStatus: () => ipcRenderer.invoke("get-ndi-status"),
   setAllowPhoneRemote: (enabled: boolean) => ipcRenderer.invoke("set-allow-phone-remote", enabled),

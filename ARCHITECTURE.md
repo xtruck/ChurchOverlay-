@@ -6349,3 +6349,19 @@ accuracy were **not measured** (no local engine installed on the development mac
 **Unchanged on purpose.** Event names and log levels (`component: "app-core"`), the order of the guards, the re-checks after every `await`, and the WebSocket protocol. Not touched here: the implicit pending-slot state machine, whether repair and quotation should also respect the review-mode hold, and the operator-only audience of `translation:final` and AI `verse:pending` (all are behaviour changes, to be decided separately).
 
 **Tests.** `suggestion-arbiter.test.ts` (fake clock: cooldown, hold, pruning), `ai-suggestion-coordinator.test.ts` (stop mid-call and mid-lookup, failed lookup, hold, partials and defaults, copilot operator-only), plus the unchanged AI blocks of `app-core.test.ts`.
+
+## 128. Choosing the AI Service: Anthropic or the Free Groq Text Models (Phase 2)
+
+**Why.** Sections 121-126 made every optional helper depend on an Anthropic key, so a church without one had no AI at all. Groq already holds the transcription key and exposes small text models on a free plan; a second adapter behind the same interface gives a free option without a new account.
+
+**Seam (unchanged).** Every helper depends only on `TextCompleter`. `GroqTextClient` (`server/ai/groq-text-client.ts`) implements it over Groq's OpenAI-compatible chat endpoint (default model `llama-3.1-8b-instant`, temperature 0, bounded timeout and tokens, errors through `scrubSecrets`). `createTextCompleter()` (`server/ai/ai-provider.ts`) picks the implementation.
+
+**Selection rule (AGENTS.md section 46, no silent fallback).** `aiProvider` (`"anthropic"` or `"groq"`) is an explicit operator choice stored in the config and changed from the AI card of the dashboard (`set-ai-provider`, which restarts the services like `set-asr-strategy`). Absent means Anthropic when an Anthropic key exists (exactly the old behaviour), otherwise no AI until one is chosen. A chosen provider without its key yields no completer: the helpers stay inert and the dashboard says why. It never switches to the other provider on its own, errors included.
+
+**Safety is unchanged.** Parsers stay strict and every proposal still goes detector, known-valid index, verse source, then `verse:pending` (sections 123-125). A smaller model costs suggestions, not correctness. Call budgets are per helper, so a burst cannot exhaust a free plan's daily limits by itself.
+
+**Privacy.** With the Groq option, final transcript text (never audio, never partials) is sent to Groq, which already receives the audio for transcription. SECURITY.md item 22 states this.
+
+**Open.** The free plan's limits and the model name come from Groq's public documentation (sources disagree on the daily token figure) and were not exercised against the live API: tests use a fake `fetch`. Limits are shared at organisation level, so a heavy AI day could eat into the transcription quota: measure on a real service before relying on it.
+
+**Tests.** `groq-text-client.test.ts` (request shape, Authorization header, scrubbing, malformed bodies, timeout), `ai-provider.test.ts` (selection rule, no silent fallback), `config-store.test.ts` (round trip, old file, corruption).

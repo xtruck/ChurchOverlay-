@@ -166,6 +166,8 @@ All use fake completers; nothing here calls the real Anthropic API (see "Not aut
 |---|---|
 | Client: key sent in a header and never leaked on error, timeout abort, per-minute call budget | `claude-helpers.test.ts` |
 | Reference repair, FR/EN translation, sermon notes: strict parsing, refusal of doubtful answers | `claude-helpers.test.ts` |
+| Free Groq text client: request shape, Authorization header, key scrubbed, malformed bodies, timeout | `groq-text-client.test.ts` |
+| AI service choice: Anthropic by default when its key exists, explicit Groq, no AI with only the transcription key, no silent fallback; stored in the config | `ai-provider.test.ts`, `config-store.test.ts` |
 | Transcript cleanup: correct-only prompt, 400-character input bound, implausible/multi-line/unchanged answers ignored, timeout, failure falls back to the raw text, three toggles all OFF by default | `transcript-cleaner.test.ts` |
 | Semantic proposal: only an explicit "high" confidence is accepted, bounded window, failure drops silently | `semantic-verse-proposer.test.ts` |
 | Copilot parsing: bounded, control characters stripped, HTML kept inert, at most 3 verses and 4 slide lines | `sermon-copilot.test.ts` |
