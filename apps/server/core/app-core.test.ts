@@ -5324,3 +5324,132 @@ test("AppCore (AI copilot): a failing or unusable model answer is dropped silent
     await app.stop()
   }
 })
+
+// ---------------------------------------------------------------------------
+// Review hardening: cooldown only after a successful lookup, hold released when a
+// verse is shown, copilot trigger kept armed after a failed call
+// ---------------------------------------------------------------------------
+
+/** Throws for its first `failures` lookups of any verse, then answers like StubVerseSource. */
+class FlakyVerseSource implements VerseSource {
+  calls = 0
+  constructor(private readonly byBook: Record<string, Verse>, private readonly failures: number) {}
+  async getVerse(reference: VerseReference): Promise<Verse | null> {
+    this.calls += 1
+    if (this.calls <= this.failures) throw new Error("bible source unavailable")
+    return this.byBook[reference.book] ?? null
+  }
+}
+
+const JOHN_316 = makeVerse({ book: "john", chapter: 3, verse: 16 }, "For God so loved the world...")
+
+test("AppCore (AI cleanup): a failed verse lookup does not hide the verse for 60 s: the next attempt is still offered", async () => {
+  const claude = fakeClaude((system) => (system.includes(CLEANUP_MARK) ? FIXED : ""))
+  const source = new FlakyVerseSource({ john: JOHN_316 }, 1)
+  const { asr, app, viewer, verses } = await startAiApp(claude, { aiFeatures: { transcriptCleanup: true }, source })
+  try {
+    asr.emitTranscript(final("01A", GARBLED))
+    await waitFor(() => source.calls === 1)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(verses().length, 0)
+
+    asr.emitTranscript(final("01B", GARBLED))
+    await waitFor(() => verses().length === 1)
+    assert.equal(verses()[0]?.type, "verse:pending")
+  } finally {
+    viewer.close()
+    await app.stop()
+  }
+})
+
+test("AppCore (AI semantic): a failed verse lookup does not hide the verse for 60 s: the next attempt is still offered", async () => {
+  const claude = fakeClaude(semanticAnswer)
+  const source = new FlakyVerseSource({ john: JOHN_316 }, 1)
+  const { asr, app, viewer, verses } = await startAiApp(claude, { aiFeatures: { semanticDetection: true }, source, aiSemanticMinIntervalMs: 20 })
+  try {
+    asr.emitTranscript(final("01A", PARAPHRASE))
+    await waitFor(() => source.calls === 1)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(verses().length, 0)
+
+    asr.emitTranscript(final("01B", PARAPHRASE))
+    await waitFor(() => verses().length === 1)
+    assert.equal(verses()[0]?.type, "verse:pending")
+  } finally {
+    viewer.close()
+    await app.stop()
+  }
+})
+
+test("AppCore (AI cleanup): switching the feature off while the model call is in flight drops its result", async () => {
+  let release: (answer: string) => void = () => {}
+  const claude: AiTestClaude = {
+    calls: [],
+    complete: (request) => {
+      claude.calls.push(request)
+      if (!request.system.includes(CLEANUP_MARK)) return Promise.resolve("")
+      return new Promise<string>((resolve) => { release = resolve })
+    },
+  }
+  const { asr, app, viewer, verses } = await startAiApp(claude, { aiFeatures: { transcriptCleanup: true } })
+  try {
+    asr.emitTranscript(final("01A", GARBLED))
+    await waitFor(() => claude.calls.some((c) => c.system.includes(CLEANUP_MARK)))
+    app.setAiFeature("transcriptCleanup", false)
+    release(FIXED)
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.equal(verses().length, 0)
+  } finally {
+    viewer.close()
+    await app.stop()
+  }
+})
+
+test("AppCore (AI cleanup): once the operator shows another verse, a detection no longer waiting does not keep blocking AI suggestions", async () => {
+  const claude = fakeClaude((system) => (system.includes(CLEANUP_MARK) ? FIXED : ""))
+  const { asr, app, viewer, verses } = await startAiApp(claude, { aiFeatures: { transcriptCleanup: true }, verseConfirmationMode: "review" })
+  const operator = await connect(app.wsServer.port, TOKENS.operatorToken)
+  try {
+    // A detection starts waiting for approval (this also arms the 20 s hold on AI suggestions).
+    asr.emitTranscript(final("01A", "Lisons Romains 8 verset 28"))
+    await waitFor(() => verses().length === 1)
+    assert.equal(verses()[0]?.type, "verse:pending")
+
+    // The operator shows a verse by hand: nothing is waiting any more.
+    operator.send(JSON.stringify({ id: "01O", type: "verse:override", timestamp: Date.now(), payload: { book: "romans", chapter: 8, verse: 28 } }))
+    await waitFor(() => verses().some((m) => m.type === "verse:show"))
+
+    asr.emitTranscript(final("01B", GARBLED))
+    await waitFor(() => verses().filter((m) => m.type === "verse:pending").length === 2)
+    const last = verses().filter((m) => m.type === "verse:pending")[1]
+    assert.equal((last?.payload as { origin?: string }).origin, "ai")
+  } finally {
+    operator.close()
+    viewer.close()
+    await app.stop()
+  }
+})
+
+test("AppCore (AI copilot): a failed model call keeps the trigger armed: the same text is retried without new speech", async () => {
+  let attempt = 0
+  const claude: AiTestClaude = {
+    calls: [],
+    complete: async (request) => {
+      claude.calls.push(request)
+      if (!request.system.includes(COPILOT_MARK)) return ""
+      attempt += 1
+      if (attempt === 1) throw new Error("Claude request failed (529)")
+      return COPILOT_ANSWER
+    },
+  }
+  const { asr, app, viewer, operator, suggestions } = await startCopilotApp(claude, { aiFeatures: { sermonCopilot: true } })
+  try {
+    asr.emitTranscript(final("03A", SERMON_FILLER))
+    await waitFor(() => suggestions().length === 1)
+    assert.equal(copilotCalls(claude), 2)
+  } finally {
+    viewer.close()
+    operator.close()
+    await app.stop()
+  }
+})

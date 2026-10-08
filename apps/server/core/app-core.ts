@@ -532,7 +532,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   const sermonNotesIntervalMs = options.sermonNotesIntervalMs ?? 60000
   const copilotTimer: ReturnType<typeof setInterval> | null = sermonCopilot
     ? setInterval(() => {
-        runCopilotCycle().catch((err) => logger.debug({ component: "app-core", event: "ai.copilot-failed", error: scrubSecrets(err instanceof Error ? err.message : String(err)) }))
+        runCopilotCycle().catch((err) => logger.warn({ component: "app-core", event: "ai.copilot-failed", error: scrubSecrets(err instanceof Error ? err.message : String(err)) }))
       }, options.aiCopilotIntervalMs ?? 45_000)
     : null
   let sermonNotesEnabled = options.sermonNotesEnabled ?? false
@@ -692,6 +692,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // The operator (override, navigation, rundown) took control: whatever is
     // detected next is intentional, never an interpreter's echo.
     if (trigger !== "detected") interpreterEchoGuard.forget()
+    // Whatever was waiting for approval has now been dealt with (shown, overridden, rundown).
+    detectedPendingAt = 0
     currentVersePosition = verse.reference
     // TASK B: Update ASR prompt with current verse reference for dynamic context
     const refStr = `${verse.reference.book} ${verse.reference.chapter}:${verse.reference.verse}`
@@ -772,7 +774,6 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   function broadcastVerse(verse: Verse, trigger: VerseTrigger, correlationId?: string): void {
     const rundownState = rundownController.interrupt()
     if (rundownState) broadcastRundownState(rundownState, correlationId)
-    detectedPendingAt = 0
     showVerse(verse, trigger, correlationId)
   }
 
@@ -897,6 +898,8 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   }
 
   function broadcastPendingVerse(verse: Verse, correlationId?: string): void {
+    // A suggestion (quote, repair, inferred volume, AI) that takes the slot means no detection is waiting any more.
+    if ((verse as Verse & { origin?: string }).origin !== undefined) detectedPendingAt = 0
     pendingVerse = verse
     wsServer.broadcast({ id: generateUlid(), type: "verse:pending", timestamp: Date.now(), correlationId, payload: verse })
   }
@@ -1740,49 +1743,54 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       logger.info({ component: "app-core", event: "ai.repair-rejected", correlationId: transcript.correlationId, metadata: { proposed: repaired } })
       return
     }
-    const key = `${reference.book} ${reference.chapter}:${reference.verse}`
-    const now = Date.now()
-    const onScreen =
-      currentVersePosition !== null &&
-      currentVersePosition.book === reference.book &&
-      currentVersePosition.chapter === reference.chapter &&
-      currentVersePosition.verse === reference.verse
-    if (onScreen || now - (recentQuoteSuggestions.get(key) ?? 0) < QUOTE_SUGGESTION_COOLDOWN_MS) return
-    recentQuoteSuggestions.set(key, now)
+    if (!canOfferSuggestion(reference)) return
     const verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
-    if (!verse) return
-    logger.info({ component: "app-core", event: "ai.repair-suggested", correlationId: transcript.correlationId, metadata: { reference: key } })
+    // Re-checked after the await: another helper may have offered the same verse meanwhile.
+    if (!verse || !canOfferSuggestion(reference)) return
+    markSuggestionOffered(reference)
+    logger.info({ component: "app-core", event: "ai.repair-suggested", correlationId: transcript.correlationId, metadata: { reference: suggestionKey(reference) } })
     broadcastPendingVerse({ ...verse, origin: "ai" } as Verse, transcript.correlationId)
   }
 
+  function suggestionKey(reference: VerseReference): string {
+    return `${reference.book} ${reference.chapter}:${reference.verse}`
+  }
+
   /**
-   * Shared by the AI suggestion paths (sections 123, 124): per-verse cooldown
-   * (the same 60 s and the same map as quotation suggestions, so a verse is not
-   * suggested twice by two different helpers) and "already on screen". The map
-   * is pruned so it cannot grow without bound.
+   * Shared by every suggestion path (quotation, repair, cleanup, semantic): not
+   * already on screen, and not offered within the per-verse cooldown (one 60 s
+   * map for all helpers, so a verse is not suggested twice by two of them).
    */
-  function claimAiSuggestion(reference: VerseReference): boolean {
+  function canOfferSuggestion(reference: VerseReference): boolean {
     const onScreen =
       currentVersePosition !== null &&
       currentVersePosition.book === reference.book &&
       currentVersePosition.chapter === reference.chapter &&
       currentVersePosition.verse === reference.verse
-    const key = `${reference.book} ${reference.chapter}:${reference.verse}`
+    if (onScreen) return false
+    return Date.now() - (recentQuoteSuggestions.get(suggestionKey(reference)) ?? 0) >= QUOTE_SUGGESTION_COOLDOWN_MS
+  }
+
+  /**
+   * Starts the cooldown, and only once the suggestion is really about to be
+   * offered: a failed verse lookup must not hide the verse for 60 s. The map is
+   * pruned so it cannot grow without bound (AGENTS.md section 36).
+   */
+  function markSuggestionOffered(reference: VerseReference): void {
     const now = Date.now()
-    if (onScreen || now - (recentQuoteSuggestions.get(key) ?? 0) < QUOTE_SUGGESTION_COOLDOWN_MS) return false
     if (recentQuoteSuggestions.size > 200) {
       for (const [oldKey, at] of recentQuoteSuggestions) {
         if (now - at >= QUOTE_SUGGESTION_COOLDOWN_MS) recentQuoteSuggestions.delete(oldKey)
       }
     }
-    recentQuoteSuggestions.set(key, now)
-    return true
+    recentQuoteSuggestions.set(suggestionKey(reference), now)
   }
 
   /**
    * A detected verse waiting for approval (review mode) must not be replaced by
    * an AI guess that arrives a moment later; an AI suggestion is skipped while
-   * a detection is waiting (20 s), and the flag is cleared on show/confirm.
+   * a detection is waiting (20 s). The flag is cleared when anything is shown,
+   * on verse:clear, and when a non-detected suggestion takes the pending slot.
    */
   function aiMayReplacePending(): boolean {
     return Date.now() - detectedPendingAt > 20_000
@@ -1806,7 +1814,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     try {
       cleaned = await transcriptCleaner.clean(transcript.text)
     } catch (err) {
-      logger.info({
+      logger.warn({
         component: "app-core",
         event: "ai.cleanup-fallback-raw",
         correlationId: transcript.correlationId,
@@ -1816,22 +1824,24 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     } finally {
       cleanupsInFlight -= 1
     }
-    if (!cleaned || !aiFlags.transcriptCleanup) return
+    if (!cleaned || !aiFlags.transcriptCleanup || stopped) return
     const candidates = detector
       .detect(cleaned)
       .filter((ref) => index.exists(ref))
-      .filter((ref) => !rawKeys.has(`${ref.book} ${ref.chapter}:${ref.verse}`))
+      .filter((ref) => !rawKeys.has(suggestionKey(ref)))
     const reference = candidates[0]
     if (!reference) return
-    if (!aiMayReplacePending() || !claimAiSuggestion(reference)) return
+    if (!aiMayReplacePending() || !canOfferSuggestion(reference)) return
     const verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
-    // Re-checked after the await: a detection may have started waiting meanwhile.
-    if (!verse || !aiMayReplacePending()) return
+    // Re-checked after the await: a detection may have started waiting, the same
+    // verse may have been offered by another helper, or the feature/core stopped.
+    if (!verse || !aiFlags.transcriptCleanup || stopped || !aiMayReplacePending() || !canOfferSuggestion(reference)) return
+    markSuggestionOffered(reference)
     logger.info({
       component: "app-core",
       event: "ai.cleanup-suggested",
       correlationId: transcript.correlationId,
-      metadata: { reference: `${reference.book} ${reference.chapter}:${reference.verse}` },
+      metadata: { reference: suggestionKey(reference) },
     })
     broadcastPendingVerse({ ...verse, origin: "ai", suggestedBy: "cleanup" } as Verse, transcript.correlationId)
   }
@@ -1856,7 +1866,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     } finally {
       semanticInFlight = false
     }
-    if (!proposal || !aiFlags.semanticDetection) return
+    if (!proposal || !aiFlags.semanticDetection || stopped) return
     const reference = detector
       .detect(`${proposal.book} ${proposal.chapter}:${proposal.verse}`)
       .find((candidate) => index.exists(candidate))
@@ -1864,14 +1874,15 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       logger.info({ component: "app-core", event: "ai.semantic-rejected", correlationId: transcript.correlationId, metadata: { proposed: { book: proposal.book, chapter: proposal.chapter, verse: proposal.verse } } })
       return
     }
-    if (!aiMayReplacePending() || !claimAiSuggestion(reference)) return
+    if (!aiMayReplacePending() || !canOfferSuggestion(reference)) return
     const verse = await resolveVerse(reference, source, cache, circuitBreaker, translationIdFor(source), logger)
-    if (!verse || !aiFlags.semanticDetection || !aiMayReplacePending()) return
+    if (!verse || !aiFlags.semanticDetection || stopped || !aiMayReplacePending() || !canOfferSuggestion(reference)) return
+    markSuggestionOffered(reference)
     logger.info({
       component: "app-core",
       event: "ai.semantic-suggested",
       correlationId: transcript.correlationId,
-      metadata: { reference: `${reference.book} ${reference.chapter}:${reference.verse}` },
+      metadata: { reference: suggestionKey(reference) },
     })
     broadcastPendingVerse({ ...verse, origin: "ai", suggestedBy: "semantic" } as Verse, transcript.correlationId)
   }
@@ -1885,6 +1896,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     if (!sermonCopilot || !aiFlags.sermonCopilot || copilotInFlight || stopped) return
     if (copilotNewChars < COPILOT_MIN_NEW_CHARS || !copilotBudget.tryTake()) return
     copilotInFlight = true
+    const consumedChars = copilotNewChars
     copilotNewChars = 0
     try {
       // push("") adds nothing; it only expires old entries and returns the current window.
@@ -1919,7 +1931,9 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       })
       logger.info({ component: "app-core", event: "ai.copilot-suggested", metadata: { verses: relatedVerses.length, keyPoint: draft.keyPoint !== null } })
     } catch (err) {
-      logger.debug({ component: "app-core", event: "ai.copilot-failed", error: scrubSecrets(err instanceof Error ? err.message : String(err)) })
+      // A failed call must not throw away the text it was meant to cover: keep the trigger armed (the budget still bounds retries).
+      if (aiFlags.sermonCopilot) copilotNewChars += consumedChars
+      logger.warn({ component: "app-core", event: "ai.copilot-failed", error: scrubSecrets(err instanceof Error ? err.message : String(err)) })
     } finally {
       copilotInFlight = false
     }
@@ -1945,22 +1959,15 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
   async function suggestQuotedVerse(transcript: TranscriptResult, windowText: string): Promise<void> {
     const match = options.quoteMatcher?.match(windowText)
     if (!match || !index.exists(match.reference)) return
-    const key = `${match.reference.book} ${match.reference.chapter}:${match.reference.verse}`
-    const now = Date.now()
-    const onScreen =
-      currentVersePosition !== null &&
-      currentVersePosition.book === match.reference.book &&
-      currentVersePosition.chapter === match.reference.chapter &&
-      currentVersePosition.verse === match.reference.verse
-    if (onScreen || now - (recentQuoteSuggestions.get(key) ?? 0) < QUOTE_SUGGESTION_COOLDOWN_MS) return
-    recentQuoteSuggestions.set(key, now)
+    if (!canOfferSuggestion(match.reference)) return
     const verse = await resolveVerse(match.reference, source, cache, circuitBreaker, translationIdFor(source), logger)
-    if (!verse) return
+    if (!verse || !canOfferSuggestion(match.reference)) return
+    markSuggestionOffered(match.reference)
     logger.info({
       component: "app-core",
       event: "quote.suggested",
       correlationId: transcript.correlationId,
-      metadata: { reference: key, matchedRuns: match.matchedRuns, coverage: match.coverage },
+      metadata: { reference: suggestionKey(match.reference), matchedRuns: match.matchedRuns, coverage: match.coverage },
     })
     broadcastPendingVerse({ ...verse, origin: "quote" } as Verse, transcript.correlationId)
   }
@@ -2169,13 +2176,13 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
       // (ARCHITECTURE.md section 120); nothing downstream reads it.
       payload: { ...transcript, language: guessSpokenLanguage(transcript.text) },
     })
-    translateForOperator(transcript).catch((err) => logger.debug({
+    translateForOperator(transcript).catch((err) => logger.warn({
       component: "app-core",
       event: "ai.translate-failed",
       correlationId: transcript.correlationId,
       error: err instanceof Error ? err.message : String(err),
     }))
-    suggestFromCleanedTranscript(transcript).catch((err) => logger.debug({
+    suggestFromCleanedTranscript(transcript).catch((err) => logger.warn({
       component: "app-core",
       event: "ai.cleanup-failed",
       correlationId: transcript.correlationId,
@@ -2286,7 +2293,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
         metadata: { text: transcript.text },
       })
       recordAndBroadcastNearMiss(transcript.text, transcript.correlationId)
-      suggestRepairedVerse(transcript).catch((err) => logger.debug({
+      suggestRepairedVerse(transcript).catch((err) => logger.warn({
         component: "app-core",
         event: "ai.repair-failed",
         correlationId: transcript.correlationId,
@@ -2351,7 +2358,7 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     if (semanticProposer && aiFlags.semanticDetection && passesTranscriptGate(transcript)) {
       const semanticText = semanticWindow.push(transcript.text, transcript.timestamp)
       if (validatedRefs.length === 0 && navCommands.length === 0) {
-        suggestSemanticVerse(transcript, semanticText).catch((err) => logger.debug({
+        suggestSemanticVerse(transcript, semanticText).catch((err) => logger.warn({
           component: "app-core",
           event: "ai.semantic-failed",
           correlationId: transcript.correlationId,
