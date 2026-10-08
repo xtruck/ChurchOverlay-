@@ -50,6 +50,7 @@ import { passesTranscriptGate } from "./transcript-gate"
 import { LatencyTracker, type LatencySnapshot } from "./latency-tracker"
 import { correctTranscription, detectHallucination } from "../asr/transcription-corrector"
 import { postprocessTranscript } from "../asr/postprocess/pipeline"
+import { hasForeignScript } from "../asr/script-guard"
 import { TranscriptAssembler } from "../asr/transcript-assembler"
 import { RollingTranscriptWindow } from "../asr/rolling-transcript-window"
 import { allFamiliesAtVolume, applyVolumeHints, buildVolumeHints } from "../detector/volume-inference"
@@ -1916,6 +1917,18 @@ export async function startAppCore(options: StartAppCoreOptions): Promise<AppCor
     // "V.C." into "V. C." and silently breaks the token match, so the
     // exact hallucination this correction exists to catch would reach
     // every downstream consumer uncorrected.
+    // French and English only: an engine that hallucinates Hindi/Urdu/etc. over
+    // noise or silence must never reach a detector or the dashboard.
+    if (hasForeignScript(transcript.text)) {
+      logger.debug({
+        component: "asr",
+        event: "asr.foreign-script-dropped",
+        correlationId: transcript.correlationId,
+        sequence: transcript.sequence,
+        metadata: { textPreview: transcript.text.slice(0, 40) },
+      })
+      return
+    }
     const corrected = correctTranscription(transcript.text)
     const correctedText = postprocessTranscript(corrected.correctedText)
     // Audit trail at debug so it never drowns the info-level transcript
