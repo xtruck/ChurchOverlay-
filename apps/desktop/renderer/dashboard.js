@@ -3622,6 +3622,9 @@
       if (groupEl.dataset.aiFeature === "sermonCopilot") setCopilotFeatureOn(value === "on")
       window.churchOverlay
         .setAiFeature(groupEl.dataset.aiFeature, value === "on")
+        .then((result) => {
+          if (result && result.persisted === false) log(t("ai.toggleNotSaved"), "error")
+        })
         .catch((err) => log(t("ai.toggleFailed", { error: err.message }), "error"))
     })
   })
