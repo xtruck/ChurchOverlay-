@@ -112,7 +112,24 @@ this list — approved for Phase 2 development, in that order, each still requir
 own dedicated architecture note before code (ARCHITECTURE.md section 59.3). Also
 approved: a generic, brandable audience (church name/branding in first-run setup, no
 church-specific defaults) — still a local single-install app, not a hosted product.
-Everything else above remains locked exactly as before.
+
+**Amendment 2 (recorded after the fact; the approvals are in ARCHITECTURE.md):** the
+following items of the list above were later approved and built, each within the limits
+stated in its own section. Read those sections before touching them.
+
+```text
+local ASR / hybrid ASR       offline backup behind the same failover chain, never a silent
+                             switch: ARCHITECTURE.md sections 95, 99, 113, 119
+semantic detection           optional, key-gated, SUGGESTION-ONLY (verse:pending, never
+paraphrase detection         verse:show): sections 121, 123, 124 (default OFF, partials never)
+multiple translations        one extra French translation (Darby), live toggle: section 107
+offline Bible database       narrow French fallback only, not a general database: section 77
+branding engine              the bounded overlay style system, not a general engine: section 110
+```
+
+Still locked: vector search, a general offline Bible database, cameras, MCP, ProPresenter,
+Planning Center, automatic OBS control, remote server, cloud synchronization, mobile app,
+dynamic plugins. Everything else above remains locked exactly as before.
 
 ## 5. Never Bypass Architectural Boundaries
 
@@ -399,6 +416,10 @@ status:update
 transcript:partial
 verse:show
 ```
+
+The lists above are the original core. The registry has grown with approved features;
+`apps/server/ws/action-registry.ts` is the source of truth for the current set (see also
+ARCHITECTURE.md section 30). The principle is unchanged.
 
 Do not turn every internal event into a public WebSocket action.
 Keep the public action registry small.

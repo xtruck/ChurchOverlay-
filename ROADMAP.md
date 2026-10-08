@@ -5,7 +5,7 @@ See `ARCHITECTURE.md` section 3 for the authoritative out-of-scope list, section
 
 ## v1 (current)
 
-Core pipeline only: mic → cloud ASR (Groq) → regex verse detection → hallucination-guarded lookup → OBS overlay. See `ARCHITECTURE.md` for the full spec.
+Core pipeline only: mic → cloud ASR (Deepgram streaming primary, Groq failover; see `ARCHITECTURE.md` section 95) → regex verse detection → hallucination-guarded lookup → OBS overlay. See `ARCHITECTURE.md` for the full spec.
 
 ## Phase 2 (approved — scope change recorded in ARCHITECTURE.md section 59)
 

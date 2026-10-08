@@ -25,8 +25,9 @@ as a bug.
    `Sec-WebSocket-Protocol`, never with the page URL.
 
 4. **Tokens are encrypted at rest.**
-   `ConfigStore` (`apps/desktop/main/config-store.ts`) encrypts the Groq API key and
-   both WS tokens via Electron's `safeStorage` before writing `config.json`. The app
+   `ConfigStore` (`apps/desktop/main/config-store.ts`) encrypts the Groq, Deepgram and
+   Anthropic API keys (the latter two optional) and both WS tokens via Electron's
+   `safeStorage` before writing `config.json`. The app
    refuses to start if `safeStorage.isEncryptionAvailable()` is false rather than
    falling back to plaintext.
 
@@ -181,6 +182,22 @@ as a bug.
     (16 MiB), and accepts only 16 kHz mono PCM WAV. It receives audio only; no keys or tokens.
     Residual risk: the pinned packages themselves, and that localhost ports are reachable by other
     local users/processes on the same machine. (Section 113.)
+
+22. **The optional Anthropic (Claude) helpers send transcript text only, are off by default,
+    and never reach the screen on their own.** Nothing is sent without an Anthropic key, and
+    every helper (transcript cleanup, semantic suggestions, sermon copilot) has its own live
+    toggle that defaults to OFF (`DEFAULT_AI_FEATURES`, `apps/server/ai/ai-features.ts`).
+    What leaves the machine is FINAL transcript text (a partial never reaches a helper, and
+    no audio is ever sent) when a helper is on; a post-service extras export sends the session
+    notes only on an explicit button press. The key stays in the main process (the renderer only
+    learns whether one exists); errors and log lines go through `scrubSecrets`; every helper is
+    rate-capped (`CallBudget`) and bounded in flight. The model is never trusted: a proposed
+    reference goes through the detector, the known-valid index and the verse source and ends as
+    a `verse:pending` suggestion, never `verse:show`; the copilot's output goes to operator
+    clients only. Residual risk: caption and slide text written by the model is free text that is
+    not grounded in the Bible (an operator who pastes it to the screen is responsible for it), and
+    anyone audible to the microphone can influence the transcript the model reads.
+    (ARCHITECTURE.md sections 121, 123-126.)
 
 
 ## Known, deliberate trade-offs

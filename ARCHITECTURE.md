@@ -58,20 +58,20 @@ Version 1 includes:
 The following are not implemented in v1.
 They must remain documented in `ROADMAP.md` and must not enter the implementation accidentally.
 
-- Local ASR.
-- Hybrid ASR.
-- Semantic Bible-reference detection.
-- Paraphrase detection.
+- Local ASR (**implemented as an offline backup behind the failover chain; see sections 99 and 113**).
+- Hybrid ASR (**implemented as cloud-to-local failover; see sections 95 and 119**).
+- Semantic Bible-reference detection (**implemented as optional, suggestion-only; see sections 121 and 124**).
+- Paraphrase detection (**same as above; see section 124**).
 - Vector search.
-- Multiple Bible translations.
-- Offline Bible database.
+- Multiple Bible translations (**one extra French translation, Darby; see section 107**).
+- Offline Bible database (**narrow French fallback only; see section 77**).
 - Media library (**implemented; see sections 60 and 74**).
 - Songs/lyrics (**removed from Phase 2; see section 60**).
 - Scenes (**implemented; see sections 64 and 66**).
 - Rundown/service planning (**implemented in memory; persistence remains deferred; see section 64**).
 - Cameras.
-- Branding engine.
-- AI agent (**approved for Phase 2 as a broader AI copilot; sermon-notes side channel implemented, broader copilot remains deferred; see sections 59 and 65.7**).
+- Branding engine (**bounded overlay style system implemented; see section 110**).
+- AI agent (**approved for Phase 2 as a broader AI copilot; implemented as optional, key-gated helpers: operator-only sermon copilot, transcript cleanup, semantic suggestions and post-service extras; still no free-form chat agent; see sections 59, 65.7, 121 and 123-126**).
 - MCP server.
 - ProPresenter integration.
 - Planning Center integration.

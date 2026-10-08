@@ -128,13 +128,19 @@ a dedicated test would exercise nothing real.
 | Real engine end to end (manual, Windows x64): install, `/health`, `/inference` with French/English speech | Run once per release; see section 113 for the measured result |
 | Dashboard EN/FR key parity, placeholder parity, every `data-i18n` and `t("…")` key defined | `apps/desktop/renderer/i18n.test.ts` |
 
+| Behavior | Covered by |
+|---|---|
 | Reference split across finals up to 25 s apart; chatter in between; bare trailing number; stale/complete/unrelated fragments never join | `transcript-assembler.test.ts` |
 | "un/une Corinthiens" is volume 1; "un Jean" untouched; live mishearings need a volume | `spoken-reference-normalizer.test.ts` |
 | Rolling window of finals; a verse read across two finals is matched | `rolling-transcript-window.test.ts` |
 
+| Behavior | Covered by |
+|---|---|
 | Volume hints (book on screen over rundown plan, ambiguous plan = no hint), bare vs qualified books | `volume-inference.test.ts` |
 | A bare volume is a PENDING `inferred` suggestion in auto mode and the relative verse does not also show | `app-core.test.ts` |
 
+| Behavior | Covered by |
+|---|---|
 | Quiet-point cut, continuous speech not cut, context prompt (planned books, book on screen, previous sentence), forced cut lands at the pause | `local-whisper-provider.test.ts` |
 | Decoder thresholds sent to `/inference`; a prompt echo is dropped and retried once without the prompt (both logged with the correlationId); a short reference found in the prompt is not an echo | `local-whisper-provider.test.ts`, `prompt-echo.test.ts` (injected `fetchImpl`) |
 | Request timeout: floor, scales with audio, capped, never infinite; a hung engine is aborted with a clear error | `local-whisper-provider.test.ts` |
@@ -142,3 +148,34 @@ a dedicated test would exercise nothing real.
 | Model download: Range resume, Range ignored (rewrite from zero), cut connection kept for resume then completed, free-space refusal, hash mismatch deletes the partial, oversized body refused | `local-asr-installer.test.ts` (injected `fetchImpl` and `freeBytes`, real temp dir) |
 | Segment filter: no-speech AND low-logprob dropped, either alone kept, extreme compression dropped, missing fields / unreadable `segments` are a no-op; provider requests `verbose_json`, rebuilds text without the dropped segment and logs it | `segment-quality.test.ts`, `local-whisper-provider.test.ts` |
 | Sidecar thresholds and `verbose_json` segments against the real faster-whisper 1.2.1 + `base` model (manual) | Not automated (needs the downloaded runtime); see section 117 |
+
+### ASR strategy, failover and interpreter echo (ARCHITECTURE.md sections 95, 99, 118, 119)
+
+| Behavior | Covered by |
+|---|---|
+| Which providers run for which keys (Groq only, Deepgram only, both, batch-first), bilingual code-switching language, biblical vocabulary per language, offline engine last in the chain | `asr-strategy.test.ts` |
+| Failover: sustained limit opens the secondary on demand, streaming-first socket error / unreachable primary / failed send re-routes, batch-first error is reported not failed over, nothing after stop(), manual return to primary and its rollback, auto-return backoff | `failover-provider.test.ts` |
+| Hybrid provider: no key is a safe no-op, key set/cleared live, errors forwarded | `hybrid-provider.test.ts` |
+| Interpreter echo guard (a French repeat of an English verse is not shown twice), language guess, learned delay within bounds, operator action forgets it | `interpreter-echo-guard.test.ts` |
+
+### Optional AI helpers (ARCHITECTURE.md sections 121-126)
+
+All use fake completers; nothing here calls the real Anthropic API (see "Not automated").
+
+| Behavior | Covered by |
+|---|---|
+| Client: key sent in a header and never leaked on error, timeout abort, per-minute call budget | `claude-helpers.test.ts` |
+| Reference repair, FR/EN translation, sermon notes: strict parsing, refusal of doubtful answers | `claude-helpers.test.ts` |
+| Transcript cleanup: correct-only prompt, 400-character input bound, implausible/multi-line/unchanged answers ignored, timeout, failure falls back to the raw text, three toggles all OFF by default | `transcript-cleaner.test.ts` |
+| Semantic proposal: only an explicit "high" confidence is accepted, bounded window, failure drops silently | `semantic-verse-proposer.test.ts` |
+| Copilot parsing: bounded, control characters stripped, HTML kept inert, at most 3 verses and 4 slide lines | `sermon-copilot.test.ts` |
+| Service extras: numbered shown verses, verse cards and note quotes verified against the real entries, hostile text bounded, Markdown export incl. empty service | `service-extras.test.ts` |
+| AI suggestions end to end (pending only, never shown; invalid references rejected; off by default; no key = inert; budgets and intervals; toggle live; operator-only copilot; a failed verse lookup does not start the 60 s cooldown; toggling off mid-flight drops the result; a shown verse releases the detection hold; a failed copilot call keeps its trigger armed) | `app-core.test.ts` (sections "AI cleanup", "AI semantic", "AI copilot", "Review hardening") |
+| Quote-matcher index built in time slices equals the synchronous one | `quote-matcher.test.ts` |
+
+
+### Not automated (AI helpers)
+
+- Prompts for cleanup, semantic suggestions, copilot and service extras have never been run against the live Anthropic API; a wrong prompt fails soft and would silently do nothing.
+- The `set-ai-feature` IPC handler and the service-extras dialog / PNG rendering live in the Electron main process and are not exercised by `npm test`.
+- Suggestion-timing limits (20 s detection hold, 60 s cooldown) use `Date.now()` directly, so their exact boundaries are not tested.
